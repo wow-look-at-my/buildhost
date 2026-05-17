@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -37,19 +38,15 @@ func (n *NPM) Repackage(_ context.Context, input Input) (*Output, error) {
 	npmOS := npmPlatform(input.Artifact.OS)
 	npmArch := npmArch(input.Artifact.Arch)
 
-	packageJSON := fmt.Sprintf(`{
-  "name": "@buildhost/%s-%s-%s",
-  "version": "%s",
-  "description": "%s",
-  "os": ["%s"],
-  "cpu": ["%s"],
-  "bin": {
-    "%s": "./bin/%s"
-  }
-}
-`, input.Project.Name, npmOS, npmArch, version,
-		firstNonEmpty(input.Project.Description, input.Project.Name),
-		npmOS, npmArch, input.Project.Name, input.Project.Name)
+	pkgJSON, _ := json.MarshalIndent(map[string]any{
+		"name":        "@buildhost/" + input.Project.Name + "-" + npmOS + "-" + npmArch,
+		"version":     version,
+		"description": firstNonEmpty(input.Project.Description, input.Project.Name),
+		"os":          []string{npmOS},
+		"cpu":         []string{npmArch},
+		"bin":         map[string]string{input.Project.Name: "./bin/" + input.Project.Name},
+	}, "", "  ")
+	packageJSON := string(pkgJSON) + "\n"
 
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)

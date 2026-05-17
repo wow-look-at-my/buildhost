@@ -31,16 +31,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if project.IsPrivate {
-		t := auth.TokenFrom(r.Context())
-		if t == nil || !t.HasScope("read") {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		if !t.AuthorizedForProject(project.ID) {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
+	if status, ok := auth.EnforceProjectRead(r, project); !ok {
+		http.Error(w, http.StatusText(status), status)
+		return
 	}
 
 	switch {

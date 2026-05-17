@@ -44,9 +44,9 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 
 	controlContent := fmt.Sprintf(
 		"Package: %s\nVersion: %s\nArchitecture: %s\nMaintainer: %s\nDescription: %s\nSection: utils\nPriority: optional\n",
-		input.Project.Name, version, arch,
-		firstNonEmpty(input.Project.Homepage, "unknown"),
-		firstNonEmpty(input.Project.Description, input.Project.Name))
+		sanitizeControlField(input.Project.Name), version, arch,
+		sanitizeControlField(firstNonEmpty(input.Project.Homepage, "unknown")),
+		sanitizeControlField(firstNonEmpty(input.Project.Description, input.Project.Name)))
 
 	controlTar, err := buildTarGZ([]tarEntry{{
 		Name: "./control",
@@ -150,6 +150,10 @@ func debArch(a model.Arch) string {
 	default:
 		return string(a)
 	}
+}
+
+func sanitizeControlField(s string) string {
+	return strings.NewReplacer("\n", " ", "\r", " ").Replace(s)
 }
 
 func firstNonEmpty(vals ...string) string {

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
@@ -46,16 +47,9 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, packa
 		return
 	}
 
-	if project.IsPrivate {
-		t := auth.TokenFrom(r.Context())
-		if t == nil || !t.HasScope("read") {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		if !t.AuthorizedForProject(project.ID) {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
+	if status, ok := auth.EnforceProjectRead(r, project); !ok {
+		http.Error(w, http.StatusText(status), status)
+		return
 	}
 
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)
@@ -121,16 +115,9 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, path stri
 		return
 	}
 
-	if project.IsPrivate {
-		t := auth.TokenFrom(r.Context())
-		if t == nil || !t.HasScope("read") {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		if !t.AuthorizedForProject(project.ID) {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
+	if status, ok := auth.EnforceProjectRead(r, project); !ok {
+		http.Error(w, http.StatusText(status), status)
+		return
 	}
 
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)

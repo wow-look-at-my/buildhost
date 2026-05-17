@@ -52,6 +52,7 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, projectN
 		version = fmt.Sprintf("%d", release.VersionNum)
 	}
 
+	desc := strings.NewReplacer("\n", " ", "\r", " ").Replace(project.Description)
 	entry := fmt.Sprintf(`Package: %s
 Version: %s
 Architecture: %s
@@ -61,8 +62,7 @@ SHA256: %s
 Description: %s
 
 `, projectName, version, arch, projectName, version, arch,
-		artifact.Size, artifact.SHA256,
-		project.Description)
+		artifact.Size, artifact.SHA256, desc)
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write([]byte(entry))

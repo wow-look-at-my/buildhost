@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/api"
 	"github.com/wow-look-at-my/buildhost/internal/apt"
@@ -36,7 +37,7 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 		cfg:          cfg,
 		db:           database,
 		store:        store,
-		authMW:       &auth.Middleware{DB: database},
+		authMW:       &auth.Middleware{DB: database, Verifier: auth.NewOIDCVerifier()},
 		apiHandler:   &api.Handler{DB: database, Store: store, Orchestrator: orchestrator},
 		dlHandler:    &dl.Handler{DB: database, Store: store},
 		aptHandler:   &apt.Handler{DB: database, Store: store},
@@ -48,13 +49,22 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 }
 
 func (s *Server) ListenAndServe() error {
-	return http.ListenAndServe(s.cfg.ListenAddr, s.Handler())
+	srv := &http.Server{
+		Addr:              s.cfg.ListenAddr,
+		Handler:           s.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       5 * time.Minute,
+		WriteTimeout:      10 * time.Minute,
+		IdleTimeout:       120 * time.Second,
+	}
+	return srv.ListenAndServe()
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := s.routes()
 	var handler http.Handler = mux
 	handler = s.authMW.Authenticate(handler)
+	handler = securityHeaders(handler)
 	handler = loggingMiddleware(handler)
 	handler = recoveryMiddleware(handler)
 	return handler

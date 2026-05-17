@@ -28,6 +28,11 @@ func setupTestHandler(t *testing.T) *Handler {
 }
 
 func writeToken(ctx context.Context, scopes string) context.Context {
-	tok := &model.APIToken{ID: 1, Scopes: scopes}
+	tok := &model.APIToken{ID: 99999, Scopes: scopes}
+	return auth.WithToken(ctx, tok)
+}
+
+func projectWriteToken(ctx context.Context, projectID int64) context.Context {
+	tok := &model.APIToken{ID: 99999, Scopes: "read,write", ProjectID: &projectID}
 	return auth.WithToken(ctx, tok)
 }
