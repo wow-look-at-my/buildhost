@@ -20,9 +20,7 @@ type createProjectRequest struct {
 }
 
 func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
-	t := auth.TokenFrom(r.Context())
-	if t == nil || !t.HasScope("write") {
-		jsonError(w, http.StatusUnauthorized, "authentication required")
+	if h.requireWrite(w, r) == nil {
 		return
 	}
 
@@ -68,26 +66,14 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("project")
-	p, err := h.DB.GetProject(r.Context(), name)
-	if errors.Is(err, db.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "project not found")
+	project := h.getProject(w, r, r.PathValue("project"))
+	if project == nil {
 		return
 	}
-	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "failed to get project")
+	if !h.checkReadAccess(w, r, project) {
 		return
 	}
-
-	if p.IsPrivate {
-		t := auth.TokenFrom(r.Context())
-		if t == nil || !t.HasScope("read") {
-			jsonError(w, http.StatusUnauthorized, "authentication required")
-			return
-		}
-	}
-
-	jsonResponse(w, http.StatusOK, p)
+	jsonResponse(w, http.StatusOK, project)
 }
 
 func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {

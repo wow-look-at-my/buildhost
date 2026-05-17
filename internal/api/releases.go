@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
@@ -21,20 +20,13 @@ type createReleaseRequest struct {
 }
 
 func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
-	t := auth.TokenFrom(r.Context())
-	if t == nil || !t.HasScope("write") {
-		jsonError(w, http.StatusUnauthorized, "authentication required")
+	t := h.requireWrite(w, r)
+	if t == nil {
 		return
 	}
 
-	projectName := r.PathValue("project")
-	project, err := h.DB.GetProject(r.Context(), projectName)
-	if errors.Is(err, db.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "project not found")
-		return
-	}
-	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "failed to get project")
+	project := h.getProject(w, r, r.PathValue("project"))
+	if project == nil {
 		return
 	}
 
@@ -98,33 +90,16 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetRelease(w http.ResponseWriter, r *http.Request) {
-	projectName := r.PathValue("project")
-	project, err := h.DB.GetProject(r.Context(), projectName)
-	if errors.Is(err, db.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "project not found")
+	project := h.getProject(w, r, r.PathValue("project"))
+	if project == nil {
 		return
 	}
-	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "failed to get project")
+	if !h.checkReadAccess(w, r, project) {
 		return
 	}
 
-	if project.IsPrivate {
-		t := auth.TokenFrom(r.Context())
-		if t == nil || !t.HasScope("read") {
-			jsonError(w, http.StatusUnauthorized, "authentication required")
-			return
-		}
-	}
-
-	version := r.PathValue("version")
-	rel, err := h.DB.GetRelease(r.Context(), project.ID, version)
-	if errors.Is(err, db.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "release not found")
-		return
-	}
-	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "failed to get release")
+	rel := h.getRelease(w, r, project.ID, r.PathValue("version"))
+	if rel == nil {
 		return
 	}
 
@@ -132,23 +107,12 @@ func (h *Handler) GetRelease(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListReleases(w http.ResponseWriter, r *http.Request) {
-	projectName := r.PathValue("project")
-	project, err := h.DB.GetProject(r.Context(), projectName)
-	if errors.Is(err, db.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "project not found")
+	project := h.getProject(w, r, r.PathValue("project"))
+	if project == nil {
 		return
 	}
-	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "failed to get project")
+	if !h.checkReadAccess(w, r, project) {
 		return
-	}
-
-	if project.IsPrivate {
-		t := auth.TokenFrom(r.Context())
-		if t == nil || !t.HasScope("read") {
-			jsonError(w, http.StatusUnauthorized, "authentication required")
-			return
-		}
 	}
 
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)
