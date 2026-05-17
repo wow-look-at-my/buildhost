@@ -35,6 +35,23 @@ func RequireWrite(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func RequireWriteForProject(next http.HandlerFunc, getProjectID func(r *http.Request) (int64, bool)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		t := TokenFrom(r.Context())
+		if t == nil || !t.HasScope("write") {
+			http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
+			return
+		}
+		if pid, ok := getProjectID(r); ok {
+			if !t.AuthorizedForProject(pid) {
+				http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
+				return
+			}
+		}
+		next(w, r)
+	}
+}
+
 func RequireReadForProject(next http.HandlerFunc, getProject func(r *http.Request) *model.Project) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		proj := getProject(r)

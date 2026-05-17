@@ -46,6 +46,18 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, packa
 		return
 	}
 
+	if project.IsPrivate {
+		t := auth.TokenFrom(r.Context())
+		if t == nil || !t.HasScope("read") {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if !t.AuthorizedForProject(project.ID) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+	}
+
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -107,6 +119,18 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, path stri
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
+	}
+
+	if project.IsPrivate {
+		t := auth.TokenFrom(r.Context())
+		if t == nil || !t.HasScope("read") {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if !t.AuthorizedForProject(project.ID) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 	}
 
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)

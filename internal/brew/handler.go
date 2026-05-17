@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
@@ -32,6 +33,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
+	}
+
+	if project.IsPrivate {
+		t := auth.TokenFrom(r.Context())
+		if t == nil || !t.HasScope("read") {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if !t.AuthorizedForProject(project.ID) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 	}
 
 	release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
@@ -68,3 +81,4 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	http.NotFound(w, r)
 }
+

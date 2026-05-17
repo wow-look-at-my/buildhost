@@ -23,6 +23,23 @@ func (t APIToken) HasScope(scope string) bool {
 	return false
 }
 
+func (t APIToken) IsExpired() bool {
+	return t.ExpiresAt != nil && t.ExpiresAt.Before(time.Now())
+}
+
+func (t APIToken) IsGlobal() bool {
+	return t.ProjectID == nil
+}
+
+func (t APIToken) AuthorizedForProject(projectID int64) bool {
+	return t.ProjectID == nil || *t.ProjectID == projectID
+}
+
+var ValidScopes = map[string]bool{
+	"read":  true,
+	"write": true,
+}
+
 func splitScopes(s string) []string {
 	var out []string
 	start := 0

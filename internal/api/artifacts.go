@@ -6,11 +6,32 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"path/filepath"
+	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
+
+func sanitizeFilename(name string) string {
+	name = filepath.Base(name)
+	if name == "." || name == "/" {
+		return ""
+	}
+	name = strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 {
+			return -1
+		}
+		return r
+	}, name)
+	if len(name) > 255 {
+		name = name[:255]
+	}
+	return name
+}
+
+const maxUploadSize = 2 << 30 // 2 GiB
 
 func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 	t := auth.TokenFrom(r.Context())
@@ -27,6 +48,11 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed to get project")
+		return
+	}
+
+	if !t.AuthorizedForProject(project.ID) {
+		jsonError(w, http.StatusForbidden, "token not authorized for this project")
 		return
 	}
 
@@ -69,6 +95,8 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
+
 	hasher := sha256.New()
 	body := io.TeeReader(r.Body, hasher)
 
@@ -80,6 +108,8 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 
 	sha256hex := hex.EncodeToString(hasher.Sum(nil))
 
+	filename := sanitizeFilename(r.Header.Get("X-Artifact-Filename"))
+
 	a := &model.Artifact{
 		ReleaseID:  release.ID,
 		OS:         model.OS(osStr),
@@ -88,7 +118,7 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		StorageKey: storageKey,
 		Size:       size,
 		SHA256:     sha256hex,
-		Filename:   r.Header.Get("X-Artifact-Filename"),
+		Filename:   filename,
 	}
 
 	if err := h.DB.CreateArtifact(r.Context(), a); err != nil {

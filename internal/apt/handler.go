@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
@@ -29,7 +30,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	_ = project
+
+	if project.IsPrivate {
+		t := auth.TokenFrom(r.Context())
+		if t == nil || !t.HasScope("read") {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if !t.AuthorizedForProject(project.ID) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+	}
 
 	switch {
 	case subpath == "dists/stable/Release" || subpath == "dists/stable/InRelease":

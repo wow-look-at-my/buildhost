@@ -38,6 +38,11 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !t.AuthorizedForProject(project.ID) {
+		jsonError(w, http.StatusForbidden, "token not authorized for this project")
+		return
+	}
+
 	var req createReleaseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, http.StatusBadRequest, "invalid request body")
