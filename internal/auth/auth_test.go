@@ -83,7 +83,7 @@ func TestWithToken_TokenFrom_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	// Before setting, TokenFrom returns nil.
-	require.NoError(t, TokenFrom(ctx))
+	require.Nil(t, TokenFrom(ctx))
 
 	ctx = WithToken(ctx, tok)
 	got := TokenFrom(ctx)
