@@ -15,8 +15,9 @@ import (
 )
 
 func sanitizeFilename(name string) string {
+	name = strings.ReplaceAll(name, `\`, "/")
 	name = filepath.Base(name)
-	if name == "." || name == "/" {
+	if name == "." || name == "/" || name == ".." {
 		return ""
 	}
 	name = strings.Map(func(r rune) rune {

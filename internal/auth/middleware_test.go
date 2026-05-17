@@ -234,3 +234,72 @@ func TestRequireReadForProject_PrivateProject_CorrectToken_PassesThrough(t *test
 	assert.True(t, called)
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
+
+func TestEnforceProjectRead_PublicProject_OK(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	project := &model.Project{ID: 1, IsPrivate: false}
+	status, ok := EnforceProjectRead(req, project)
+	assert.True(t, ok)
+	assert.Equal(t, 0, status)
+}
+
+func TestEnforceProjectRead_NilProject_OK(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	status, ok := EnforceProjectRead(req, nil)
+	assert.True(t, ok)
+	assert.Equal(t, 0, status)
+}
+
+func TestEnforceProjectRead_PrivateNoToken_401(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	project := &model.Project{ID: 1, IsPrivate: true}
+	status, ok := EnforceProjectRead(req, project)
+	assert.False(t, ok)
+	assert.Equal(t, 401, status)
+}
+
+func TestEnforceProjectRead_PrivateWrongProject_403(t *testing.T) {
+	otherID := int64(99)
+	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: &otherID}
+	ctx := WithToken(context.Background(), tok)
+	req := httptest.NewRequest("GET", "/", nil)
+	req = req.WithContext(ctx)
+	project := &model.Project{ID: 1, IsPrivate: true}
+	status, ok := EnforceProjectRead(req, project)
+	assert.False(t, ok)
+	assert.Equal(t, 403, status)
+}
+
+func TestEnforceProjectRead_PrivateCorrectToken_OK(t *testing.T) {
+	projID := int64(1)
+	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: &projID}
+	ctx := WithToken(context.Background(), tok)
+	req := httptest.NewRequest("GET", "/", nil)
+	req = req.WithContext(ctx)
+	project := &model.Project{ID: 1, IsPrivate: true}
+	status, ok := EnforceProjectRead(req, project)
+	assert.True(t, ok)
+	assert.Equal(t, 0, status)
+}
+
+func TestEnforceProjectRead_PrivateGlobalToken_OK(t *testing.T) {
+	tok := &model.APIToken{ID: 1, Scopes: "read"}
+	ctx := WithToken(context.Background(), tok)
+	req := httptest.NewRequest("GET", "/", nil)
+	req = req.WithContext(ctx)
+	project := &model.Project{ID: 1, IsPrivate: true}
+	status, ok := EnforceProjectRead(req, project)
+	assert.True(t, ok)
+	assert.Equal(t, 0, status)
+}
+
+func TestEnforceProjectRead_PrivateWriteOnlyScope_401(t *testing.T) {
+	tok := &model.APIToken{ID: 1, Scopes: "write"}
+	ctx := WithToken(context.Background(), tok)
+	req := httptest.NewRequest("GET", "/", nil)
+	req = req.WithContext(ctx)
+	project := &model.Project{ID: 1, IsPrivate: true}
+	status, ok := EnforceProjectRead(req, project)
+	assert.False(t, ok)
+	assert.Equal(t, 401, status)
+}
