@@ -331,14 +331,23 @@ func signJWT(t *testing.T, key *rsa.PrivateKey, kid string, claims map[string]an
 	return content + "." + base64.RawURLEncoding.EncodeToString(sig)
 }
 
+// jwksServer starts a test server that serves both the OIDC discovery document
+// (/.well-known/openid-configuration) and the JWKS, so it works with fetchJWKS
+// which uses OIDC discovery to locate the jwks_uri.
 func jwksServer(t *testing.T, pub *rsa.PublicKey, kid string) *httptest.Server {
 	t.Helper()
 	n := base64.RawURLEncoding.EncodeToString(pub.N.Bytes())
 	e := base64.RawURLEncoding.EncodeToString([]byte{1, 0, 1})
-	body := fmt.Sprintf(`{"keys":[{"kty":"RSA","kid":"%s","n":"%s","e":"%s"}]}`, kid, n, e)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	jwksBody := fmt.Sprintf(`{"keys":[{"kty":"RSA","kid":"%s","n":"%s","e":"%s"}]}`, kid, n, e)
+
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(body))
+		if r.URL.Path == "/.well-known/openid-configuration" {
+			fmt.Fprintf(w, `{"jwks_uri":"%s/.well-known/jwks"}`, srv.URL)
+			return
+		}
+		w.Write([]byte(jwksBody))
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -463,4 +472,126 @@ func TestParseRSAPublicKey(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, key.PublicKey.N, pub.N)
 	assert.Equal(t, 65537, pub.E)
+}
+
+func TestParseRSAPublicKey_InvalidExponent(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	n := base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes())
+
+	// Exponent of 1 is invalid (< 3).
+	e1 := base64.RawURLEncoding.EncodeToString([]byte{1})
+	_, err = parseRSAPublicKey(n, e1)
+	assert.Error(t, err)
+
+	// Exponent of 2 is invalid (even).
+	e2 := base64.RawURLEncoding.EncodeToString([]byte{2})
+	_, err = parseRSAPublicKey(n, e2)
+	assert.Error(t, err)
+}
+
+func TestVerifyToken_RejectsTokenWithNoExpiry(t *testing.T) {
+	v := NewOIDCVerifier()
+
+	header, _ := json.Marshal(jwtHeader{Alg: "RS256", Kid: "key1"})
+	// exp is omitted → Expiry=0
+	claims, _ := json.Marshal(map[string]any{
+		"iss": "https://token.actions.githubusercontent.com",
+		"sub": "repo:org/repo:ref:refs/heads/main",
+	})
+
+	token := base64.RawURLEncoding.EncodeToString(header) + "." +
+		base64.RawURLEncoding.EncodeToString(claims) + "." +
+		base64.RawURLEncoding.EncodeToString([]byte("fake-signature"))
+
+	policies := []model.OIDCPolicy{{
+		Issuer:         "https://token.actions.githubusercontent.com",
+		SubjectPattern: "*",
+		Scopes:         "read,write",
+	}}
+
+	_, err := v.VerifyToken(context.Background(), token, policies)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing exp claim")
+}
+
+func TestVerifyToken_FullPipeline_AudienceMatch(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	srv := jwksServer(t, &key.PublicKey, "kid-aud-ok")
+
+	claims := map[string]any{
+		"iss": srv.URL,
+		"sub": "repo:myorg/myrepo:ref:refs/heads/main",
+		"aud": "https://buildhost.example.com",
+		"exp": time.Now().Add(10 * time.Minute).Unix(),
+	}
+	token := signJWT(t, key, "kid-aud-ok", claims)
+
+	policies := []model.OIDCPolicy{{
+		Issuer:         srv.URL,
+		SubjectPattern: "repo:myorg/myrepo:*",
+		Audience:       "https://buildhost.example.com",
+		Scopes:         "read",
+	}}
+
+	v := NewOIDCVerifier()
+	tok, err := v.VerifyToken(context.Background(), token, policies)
+	require.NoError(t, err)
+	assert.Equal(t, "read", tok.Scopes)
+}
+
+func TestVerifyToken_FullPipeline_AudienceMismatch(t *testing.T) {
+	v := NewOIDCVerifier()
+
+	header, _ := json.Marshal(jwtHeader{Alg: "RS256", Kid: "key1"})
+	claims, _ := json.Marshal(map[string]any{
+		"iss": "https://token.actions.githubusercontent.com",
+		"sub": "repo:org/repo:ref:refs/heads/main",
+		"aud": "https://other-service.example.com",
+		"exp": time.Now().Add(1 * time.Hour).Unix(),
+	})
+
+	token := base64.RawURLEncoding.EncodeToString(header) + "." +
+		base64.RawURLEncoding.EncodeToString(claims) + "." +
+		base64.RawURLEncoding.EncodeToString([]byte("fake-signature"))
+
+	policies := []model.OIDCPolicy{{
+		Issuer:         "https://token.actions.githubusercontent.com",
+		SubjectPattern: "*",
+		Audience:       "https://buildhost.example.com",
+		Scopes:         "read",
+	}}
+
+	_, err := v.VerifyToken(context.Background(), token, policies)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "audience")
+}
+
+func TestVerifyToken_FullPipeline_NoAudienceInPolicy_AnyAudienceAccepted(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	srv := jwksServer(t, &key.PublicKey, "kid-noaud")
+
+	claims := map[string]any{
+		"iss": srv.URL,
+		"sub": "repo:myorg/myrepo:ref:refs/heads/main",
+		"aud": "https://some-other-service.example.com",
+		"exp": time.Now().Add(10 * time.Minute).Unix(),
+	}
+	token := signJWT(t, key, "kid-noaud", claims)
+
+	// Policy has no audience constraint — any audience is accepted.
+	policies := []model.OIDCPolicy{{
+		Issuer:         srv.URL,
+		SubjectPattern: "repo:myorg/myrepo:*",
+		Scopes:         "read",
+	}}
+
+	v := NewOIDCVerifier()
+	tok, err := v.VerifyToken(context.Background(), token, policies)
+	require.NoError(t, err)
+	assert.Equal(t, "read", tok.Scopes)
 }

@@ -88,8 +88,12 @@ func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []m
 		return nil, fmt.Errorf("parse claims: %w", err)
 	}
 
+	// exp is required — tokens with no expiry are not accepted.
+	if claims.Expiry == 0 {
+		return nil, errors.New("token missing exp claim")
+	}
 	now := time.Now().Unix()
-	if claims.Expiry != 0 && now > claims.Expiry {
+	if now > claims.Expiry {
 		return nil, errors.New("token expired")
 	}
 	if claims.NotBefore != 0 && now < claims.NotBefore-60 {
@@ -109,6 +113,13 @@ func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []m
 	}
 	if matchedPolicy == nil {
 		return nil, ErrOIDCNotMatched
+	}
+
+	// Validate audience if the policy specifies one.
+	if matchedPolicy.Audience != "" {
+		if !audienceContains(claims.Audience, matchedPolicy.Audience) {
+			return nil, errors.New("token audience does not match policy")
+		}
 	}
 
 	keys, err := v.getKeys(ctx, claims.Issuer)
@@ -171,20 +182,45 @@ func (v *OIDCVerifier) getKeys(ctx context.Context, issuer string) ([]jwkKey, er
 	return keys, nil
 }
 
+// fetchJWKS discovers the JWKS URI from the OIDC discovery document and fetches keys.
 func fetchJWKS(ctx context.Context, issuer string) ([]jwkKey, error) {
-	url := strings.TrimSuffix(issuer, "/") + "/.well-known/jwks"
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	// Discover the JWKS URI via the standard OIDC discovery document.
+	discoveryURL := strings.TrimSuffix(issuer, "/") + "/.well-known/openid-configuration"
+	req, err := http.NewRequestWithContext(ctx, "GET", discoveryURL, nil)
 	if err != nil {
 		return nil, err
 	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetch OIDC discovery: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("OIDC discovery returned %d", resp.StatusCode)
+	}
 
+	var discovery struct {
+		JWKSURI string `json:"jwks_uri"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&discovery); err != nil {
+		return nil, fmt.Errorf("parse OIDC discovery: %w", err)
+	}
+	if discovery.JWKSURI == "" {
+		return nil, errors.New("OIDC discovery missing jwks_uri")
+	}
+
+	// Fetch the JWKS.
+	req, err = http.NewRequestWithContext(ctx, "GET", discovery.JWKSURI, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err = client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch JWKS: %w", err)
+	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("JWKS endpoint returned %d", resp.StatusCode)
 	}
@@ -230,7 +266,18 @@ func parseRSAPublicKey(nStr, eStr string) (*rsa.PublicKey, error) {
 	}
 	n := new(big.Int).SetBytes(nBytes)
 	e := new(big.Int).SetBytes(eBytes)
-	return &rsa.PublicKey{N: n, E: int(e.Int64())}, nil
+
+	if !e.IsInt64() {
+		return nil, errors.New("RSA exponent too large")
+	}
+	eInt := e.Int64()
+	// RSA exponents must be odd and >= 3. Standard values are 3, 17, 65537.
+	const maxValidExponent = 1<<31 - 1
+	if eInt < 3 || eInt > maxValidExponent || eInt%2 == 0 {
+		return nil, fmt.Errorf("invalid RSA exponent: %d", eInt)
+	}
+
+	return &rsa.PublicKey{N: n, E: int(eInt)}, nil
 }
 
 func base64URLDecode(s string) ([]byte, error) {
@@ -251,4 +298,19 @@ func matchSubject(pattern, subject string) bool {
 		return strings.HasPrefix(subject, prefix)
 	}
 	return pattern == subject
+}
+
+// audienceContains checks if expected appears in the JWT aud claim (string or []string).
+func audienceContains(aud any, expected string) bool {
+	switch v := aud.(type) {
+	case string:
+		return v == expected
+	case []any:
+		for _, a := range v {
+			if s, ok := a.(string); ok && s == expected {
+				return true
+			}
+		}
+	}
+	return false
 }

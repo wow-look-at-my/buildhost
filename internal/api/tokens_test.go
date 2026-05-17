@@ -293,6 +293,33 @@ func TestCreateToken_GlobalTokenCanCreateProjectScoped(t *testing.T) {
 	assert.NotEmpty(t, resp["token"])
 }
 
+func TestCreateToken_CannotGrantScopeNotHeld(t *testing.T) {
+	h := setupTestHandler(t)
+
+	// Caller only has "write" scope and tries to create a "read,write" token.
+	body := `{"name":"escalate","scopes":"read,write"}`
+	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader(body))
+	req = req.WithContext(writeToken(req.Context(), "write"))
+	rec := httptest.NewRecorder()
+	h.CreateToken(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Contains(t, rec.Body.String(), "cannot grant scope")
+}
+
+func TestCreateToken_ScopesNormalizedWithSpaces(t *testing.T) {
+	h := setupTestHandler(t)
+
+	// "read, write" with a space should be accepted and stored as "read,write".
+	body := `{"name":"spaced","scopes":"read, write"}`
+	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader(body))
+	req = req.WithContext(writeToken(req.Context(), "read,write"))
+	rec := httptest.NewRecorder()
+	h.CreateToken(rec, req)
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
 func TestCreateToken_ProjectScopedCanCreateForSameProject(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()

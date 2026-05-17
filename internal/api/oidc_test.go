@@ -163,6 +163,33 @@ func TestDeleteOIDCPolicy_NotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
+func TestCreateOIDCPolicy_WithAudience(t *testing.T) {
+	h := setupTestHandler(t)
+
+	body := `{"issuer":"https://example.com","subject_pattern":"sub:*","audience":"https://buildhost.example.com","scopes":"read"}`
+	req := httptest.NewRequest("POST", "/api/v1/oidc/policies", strings.NewReader(body))
+	req = req.WithContext(globalWriteCtx())
+	rec := httptest.NewRecorder()
+	h.CreateOIDCPolicy(rec, req)
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+	var p model.OIDCPolicy
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
+	assert.Equal(t, "https://buildhost.example.com", p.Audience)
+}
+
+func TestCreateOIDCPolicy_ScopesNormalizedWithSpaces(t *testing.T) {
+	h := setupTestHandler(t)
+
+	body := `{"issuer":"https://example.com","subject_pattern":"sub:spaced","scopes":"read, write"}`
+	req := httptest.NewRequest("POST", "/api/v1/oidc/policies", strings.NewReader(body))
+	req = req.WithContext(globalWriteCtx())
+	rec := httptest.NewRecorder()
+	h.CreateOIDCPolicy(rec, req)
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
 func TestDeleteOIDCPolicy_InvalidID(t *testing.T) {
 	h := setupTestHandler(t)
 

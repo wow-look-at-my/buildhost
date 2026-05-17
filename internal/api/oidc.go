@@ -15,6 +15,7 @@ import (
 type createOIDCPolicyRequest struct {
 	Issuer         string `json:"issuer"`
 	SubjectPattern string `json:"subject_pattern"`
+	Audience       string `json:"audience"`
 	ProjectID      *int64 `json:"project_id"`
 	Scopes         string `json:"scopes"`
 }
@@ -40,16 +41,21 @@ func (h *Handler) CreateOIDCPolicy(w http.ResponseWriter, r *http.Request) {
 	if req.Scopes == "" {
 		req.Scopes = "read,write"
 	}
+	var normalizedScopes []string
 	for _, s := range strings.Split(req.Scopes, ",") {
+		s = strings.TrimSpace(s)
 		if !model.ValidScopes[s] {
 			jsonError(w, http.StatusBadRequest, "invalid scope: "+s)
 			return
 		}
+		normalizedScopes = append(normalizedScopes, s)
 	}
+	req.Scopes = strings.Join(normalizedScopes, ",")
 
 	p := &model.OIDCPolicy{
 		Issuer:         req.Issuer,
 		SubjectPattern: req.SubjectPattern,
+		Audience:       req.Audience,
 		ProjectID:      req.ProjectID,
 		Scopes:         req.Scopes,
 	}

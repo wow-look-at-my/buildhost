@@ -38,9 +38,22 @@ func (h *Handler) CreateToken(w http.ResponseWriter, r *http.Request) {
 		req.Scopes = "read,write"
 	}
 
+	// Normalize and validate scopes.
+	var normalizedScopes []string
 	for _, s := range strings.Split(req.Scopes, ",") {
+		s = strings.TrimSpace(s)
 		if !model.ValidScopes[s] {
 			jsonError(w, http.StatusBadRequest, "invalid scope: "+s)
+			return
+		}
+		normalizedScopes = append(normalizedScopes, s)
+	}
+	req.Scopes = strings.Join(normalizedScopes, ",")
+
+	// New tokens may only grant scopes the caller already holds.
+	for _, s := range normalizedScopes {
+		if !t.HasScope(s) {
+			jsonError(w, http.StatusForbidden, "cannot grant scope not held by caller: "+s)
 			return
 		}
 	}
