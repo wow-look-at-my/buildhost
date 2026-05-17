@@ -6,8 +6,8 @@ CREATE TABLE IF NOT EXISTS projects (
     license     TEXT NOT NULL DEFAULT '',
     is_private  INTEGER NOT NULL DEFAULT 0,
     versioning  TEXT NOT NULL DEFAULT 'auto',
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS releases (
@@ -19,8 +19,8 @@ CREATE TABLE IF NOT EXISTS releases (
     git_commit   TEXT NOT NULL DEFAULT '',
     notes        TEXT NOT NULL DEFAULT '',
     published    INTEGER NOT NULL DEFAULT 0,
-    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
-    published_at TEXT,
+    created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
+    published_at DATETIME,
     UNIQUE(project_id, version)
 );
 
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
     debug_storage_key     TEXT NOT NULL DEFAULT '',
     debug_size            INTEGER NOT NULL DEFAULT 0,
     filename             TEXT NOT NULL DEFAULT '',
-    created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at           DATETIME NOT NULL DEFAULT (datetime('now')),
     UNIQUE(release_id, os, arch, kind)
 );
 
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS packaged_artifacts (
     sha256       TEXT NOT NULL,
     filename     TEXT NOT NULL DEFAULT '',
     metadata     TEXT NOT NULL DEFAULT '{}',
-    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
     UNIQUE(artifact_id, format)
 );
 
@@ -63,9 +63,9 @@ CREATE TABLE IF NOT EXISTS api_tokens (
     token_prefix TEXT NOT NULL,
     project_id   INTEGER REFERENCES projects(id),
     scopes       TEXT NOT NULL DEFAULT 'read,write',
-    expires_at   TEXT,
-    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
-    last_used_at TEXT
+    expires_at   DATETIME,
+    created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
+    last_used_at DATETIME
 );
 
 CREATE INDEX IF NOT EXISTS idx_releases_project ON releases(project_id, version_num DESC);
