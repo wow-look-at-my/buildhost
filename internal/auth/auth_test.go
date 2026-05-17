@@ -1,0 +1,107 @@
+package auth
+
+import (
+	"context"
+	"encoding/base64"
+	"net/http"
+	"testing"
+
+	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/testify/require"
+)
+
+func TestExtractToken_Bearer(t *testing.T) {
+	r, _ := http.NewRequest("GET", "/", nil)
+	r.Header.Set("Authorization", "Bearer my-secret-token")
+
+	got := ExtractToken(r)
+	require.Equal(t, "my-secret-token", got)
+
+}
+
+func TestExtractToken_BasicAuth(t *testing.T) {
+	r, _ := http.NewRequest("GET", "/", nil)
+	cred := base64.StdEncoding.EncodeToString([]byte("user:the-password-token"))
+	r.Header.Set("Authorization", "Basic "+cred)
+
+	got := ExtractToken(r)
+	require.Equal(t, "the-password-token", got)
+
+}
+
+func TestExtractToken_QueryParam(t *testing.T) {
+	r, _ := http.NewRequest("GET", "/?token=query-token-value", nil)
+
+	got := ExtractToken(r)
+	require.Equal(t, "query-token-value", got)
+
+}
+
+func TestExtractToken_NoAuth(t *testing.T) {
+	r, _ := http.NewRequest("GET", "/", nil)
+
+	got := ExtractToken(r)
+	require.Equal(t, "", got)
+
+}
+
+func TestExtractToken_BearerTakesPrecedenceOverBasic(t *testing.T) {
+	r, _ := http.NewRequest("GET", "/?token=query", nil)
+	r.Header.Set("Authorization", "Bearer bearer-wins")
+
+	got := ExtractToken(r)
+	require.Equal(t, "bearer-wins", got)
+
+}
+
+func TestExtractToken_BasicTakesPrecedenceOverQuery(t *testing.T) {
+	r, _ := http.NewRequest("GET", "/?token=query", nil)
+	cred := base64.StdEncoding.EncodeToString([]byte("x:basic-wins"))
+	r.Header.Set("Authorization", "Basic "+cred)
+
+	got := ExtractToken(r)
+	require.Equal(t, "basic-wins", got)
+
+}
+
+func TestExtractToken_InvalidBasicEncoding(t *testing.T) {
+	r, _ := http.NewRequest("GET", "/", nil)
+	r.Header.Set("Authorization", "Basic %%%not-base64%%%")
+
+	got := ExtractToken(r)
+	require.Equal(t, "", got)
+
+}
+
+func TestWithToken_TokenFrom_RoundTrip(t *testing.T) {
+	tok := &model.APIToken{
+		ID:	42,
+		Name:	"test-token",
+		Scopes:	"read,write",
+	}
+
+	ctx := context.Background()
+
+	// Before setting, TokenFrom returns nil.
+	require.Nil(t, TokenFrom(ctx))
+
+	ctx = WithToken(ctx, tok)
+	got := TokenFrom(ctx)
+	require.NotNil(t, got)
+
+	require.Equal(t, int64(42), got.ID)
+
+	require.Equal(t, "test-token", got.Name)
+
+	require.Equal(t, "read,write", got.Scopes)
+
+}
+
+func TestIsAuthenticated(t *testing.T) {
+	ctx := context.Background()
+	require.False(t, IsAuthenticated(ctx))
+
+	ctx = WithToken(ctx, &model.APIToken{ID: 1, Scopes: "read"})
+	require.True(t, IsAuthenticated(ctx))
+
+}
