@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/wow-look-at-my/buildhost/internal/model"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestExtractToken_Bearer(t *testing.T) {
@@ -15,8 +14,9 @@ func TestExtractToken_Bearer(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer my-secret-token")
 
 	got := ExtractToken(r)
-	require.Equal(t, "my-secret-token", got)
-
+	if got != "my-secret-token" {
+		t.Fatalf("ExtractToken(Bearer) = %q, want %q", got, "my-secret-token")
+	}
 }
 
 func TestExtractToken_BasicAuth(t *testing.T) {
@@ -25,24 +25,27 @@ func TestExtractToken_BasicAuth(t *testing.T) {
 	r.Header.Set("Authorization", "Basic "+cred)
 
 	got := ExtractToken(r)
-	require.Equal(t, "the-password-token", got)
-
+	if got != "the-password-token" {
+		t.Fatalf("ExtractToken(Basic) = %q, want %q", got, "the-password-token")
+	}
 }
 
 func TestExtractToken_QueryParam(t *testing.T) {
 	r, _ := http.NewRequest("GET", "/?token=query-token-value", nil)
 
 	got := ExtractToken(r)
-	require.Equal(t, "query-token-value", got)
-
+	if got != "query-token-value" {
+		t.Fatalf("ExtractToken(query) = %q, want %q", got, "query-token-value")
+	}
 }
 
 func TestExtractToken_NoAuth(t *testing.T) {
 	r, _ := http.NewRequest("GET", "/", nil)
 
 	got := ExtractToken(r)
-	require.Equal(t, "", got)
-
+	if got != "" {
+		t.Fatalf("ExtractToken(no auth) = %q, want empty string", got)
+	}
 }
 
 func TestExtractToken_BearerTakesPrecedenceOverBasic(t *testing.T) {
@@ -50,8 +53,9 @@ func TestExtractToken_BearerTakesPrecedenceOverBasic(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer bearer-wins")
 
 	got := ExtractToken(r)
-	require.Equal(t, "bearer-wins", got)
-
+	if got != "bearer-wins" {
+		t.Fatalf("ExtractToken(precedence) = %q, want %q", got, "bearer-wins")
+	}
 }
 
 func TestExtractToken_BasicTakesPrecedenceOverQuery(t *testing.T) {
@@ -60,8 +64,9 @@ func TestExtractToken_BasicTakesPrecedenceOverQuery(t *testing.T) {
 	r.Header.Set("Authorization", "Basic "+cred)
 
 	got := ExtractToken(r)
-	require.Equal(t, "basic-wins", got)
-
+	if got != "basic-wins" {
+		t.Fatalf("ExtractToken(precedence) = %q, want %q", got, "basic-wins")
+	}
 }
 
 func TestExtractToken_InvalidBasicEncoding(t *testing.T) {
@@ -69,39 +74,49 @@ func TestExtractToken_InvalidBasicEncoding(t *testing.T) {
 	r.Header.Set("Authorization", "Basic %%%not-base64%%%")
 
 	got := ExtractToken(r)
-	require.Equal(t, "", got)
-
+	if got != "" {
+		t.Fatalf("ExtractToken(bad base64) = %q, want empty", got)
+	}
 }
 
 func TestWithToken_TokenFrom_RoundTrip(t *testing.T) {
 	tok := &model.APIToken{
-		ID:	42,
-		Name:	"test-token",
-		Scopes:	"read,write",
+		ID:     42,
+		Name:   "test-token",
+		Scopes: "read,write",
 	}
 
 	ctx := context.Background()
 
 	// Before setting, TokenFrom returns nil.
-	require.Nil(t, TokenFrom(ctx))
+	if got := TokenFrom(ctx); got != nil {
+		t.Fatalf("TokenFrom(empty ctx) = %v, want nil", got)
+	}
 
 	ctx = WithToken(ctx, tok)
 	got := TokenFrom(ctx)
-	require.NotNil(t, got)
-
-	require.Equal(t, int64(42), got.ID)
-
-	require.Equal(t, "test-token", got.Name)
-
-	require.Equal(t, "read,write", got.Scopes)
-
+	if got == nil {
+		t.Fatal("TokenFrom(ctx with token) = nil, want non-nil")
+	}
+	if got.ID != 42 {
+		t.Fatalf("TokenFrom.ID = %d, want 42", got.ID)
+	}
+	if got.Name != "test-token" {
+		t.Fatalf("TokenFrom.Name = %q, want %q", got.Name, "test-token")
+	}
+	if got.Scopes != "read,write" {
+		t.Fatalf("TokenFrom.Scopes = %q, want %q", got.Scopes, "read,write")
+	}
 }
 
 func TestIsAuthenticated(t *testing.T) {
 	ctx := context.Background()
-	require.False(t, IsAuthenticated(ctx))
+	if IsAuthenticated(ctx) {
+		t.Fatal("IsAuthenticated(empty ctx) = true, want false")
+	}
 
 	ctx = WithToken(ctx, &model.APIToken{ID: 1, Scopes: "read"})
-	require.True(t, IsAuthenticated(ctx))
-
+	if !IsAuthenticated(ctx) {
+		t.Fatal("IsAuthenticated(ctx with token) = false, want true")
+	}
 }
