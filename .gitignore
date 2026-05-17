@@ -1,5 +1,5 @@
-buildhost
-buildhost-cli
+/buildhost
+/buildhost-cli
 *.exe
 *.db
 *.db-journal
