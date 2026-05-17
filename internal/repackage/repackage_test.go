@@ -7,10 +7,13 @@ import (
 	"compress/gzip"
 	"context"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
 )
@@ -402,4 +405,158 @@ func TestFormats(t *testing.T) {
 		assert.Equal(t, tt.format, got)
 
 	}
+}
+
+// --- marshalMetadata tests ---
+
+func TestMarshalMetadata_Empty(t *testing.T) {
+	assert.Equal(t, "{}", marshalMetadata(nil))
+	assert.Equal(t, "{}", marshalMetadata(map[string]string{}))
+}
+
+func TestMarshalMetadata_SingleEntry(t *testing.T) {
+	m := map[string]string{"os": "linux"}
+	result := marshalMetadata(m)
+	assert.Equal(t, `{"os":"linux"}`, result)
+}
+
+func TestMarshalMetadata_MultipleEntries(t *testing.T) {
+	m := map[string]string{"os": "linux", "arch": "amd64"}
+	result := marshalMetadata(m)
+	// Order is not guaranteed, so check both possibilities.
+	assert.True(t,
+		result == `{"os":"linux","arch":"amd64"}` || result == `{"arch":"amd64","os":"linux"}`,
+		"got: %s", result)
+}
+
+// --- Orchestrator tests ---
+
+func openTestDB(t *testing.T) *db.DB {
+	t.Helper()
+	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { d.Close() })
+	return d
+}
+
+func openTestStore(t *testing.T) *storage.Filesystem {
+	t.Helper()
+	store, err := storage.NewFilesystem(t.TempDir())
+	require.NoError(t, err)
+	return store
+}
+
+func TestOrchestrator_PublishRelease_NoArtifacts(t *testing.T) {
+	d := openTestDB(t)
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "empty-proj", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	o := NewOrchestrator(store, d, "https://builds.example.com")
+
+	err := o.PublishRelease(ctx, *proj, *rel)
+	require.NoError(t, err)
+
+	// Verify the release was published.
+	got, err := d.GetRelease(ctx, proj.ID, "1.0.0")
+	require.NoError(t, err)
+	assert.True(t, got.Published)
+}
+
+func TestOrchestrator_PublishRelease_WithArtifact(t *testing.T) {
+	d := openTestDB(t)
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Description: "test app", Homepage: "https://example.com", License: "MIT", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	// Store a fake binary.
+	binaryContent := "fake-binary-content"
+	key, size, err := store.Put(ctx, strings.NewReader(binaryContent))
+	require.NoError(t, err)
+
+	a := &model.Artifact{
+		ReleaseID:  rel.ID,
+		OS:         model.OSLinux,
+		Arch:       model.ArchAMD64,
+		Kind:       model.KindAssets, // Use Assets to skip strip attempt.
+		StorageKey: key,
+		Size:       size,
+		SHA256:     key,
+	}
+	require.NoError(t, d.CreateArtifact(ctx, a))
+
+	o := NewOrchestrator(store, d, "https://builds.example.com")
+
+	err = o.PublishRelease(ctx, *proj, *rel)
+	require.NoError(t, err)
+
+	// Verify packaged artifacts were created (at least tar.gz, tar.xz, tar.zst, zip).
+	for _, format := range []string{"tar.gz", "tar.xz", "tar.zst", "zip"} {
+		storageKey, sz, _, _, err := d.GetPackagedArtifact(ctx, a.ID, format)
+		require.NoError(t, err, "format %s should exist", format)
+		assert.NotEmpty(t, storageKey, "format %s should have storage key", format)
+		assert.Greater(t, sz, int64(0), "format %s should have positive size", format)
+	}
+}
+
+func TestOrchestrator_PublishRelease_BinaryKind_AttemptsStrip(t *testing.T) {
+	d := openTestDB(t)
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "binapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	// Store a fake binary that is NOT a real ELF (strip will fail, but that is handled gracefully).
+	binaryContent := "not-a-real-elf-binary"
+	key, size, err := store.Put(ctx, strings.NewReader(binaryContent))
+	require.NoError(t, err)
+
+	a := &model.Artifact{
+		ReleaseID:  rel.ID,
+		OS:         model.OSLinux,
+		Arch:       model.ArchAMD64,
+		Kind:       model.KindBinary,
+		StorageKey: key,
+		Size:       size,
+		SHA256:     key,
+	}
+	require.NoError(t, d.CreateArtifact(ctx, a))
+
+	o := NewOrchestrator(store, d, "https://builds.example.com")
+
+	// Should not error even when strip fails (it logs a warning and continues).
+	err = o.PublishRelease(ctx, *proj, *rel)
+	require.NoError(t, err)
+
+	// Release should be published regardless.
+	got, err := d.GetRelease(ctx, proj.ID, "1.0.0")
+	require.NoError(t, err)
+	assert.True(t, got.Published)
+}
+
+func TestNewOrchestrator(t *testing.T) {
+	d := openTestDB(t)
+	store := openTestStore(t)
+
+	o := NewOrchestrator(store, d, "https://example.com")
+	require.NotNil(t, o)
+	assert.Equal(t, "https://example.com", o.BaseURL)
+	assert.Equal(t, d, o.DB)
+	assert.Equal(t, store, o.Store)
+	// Should have 7 default repackagers.
+	assert.Equal(t, 7, len(o.Repackagers))
 }
