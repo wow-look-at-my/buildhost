@@ -7,6 +7,7 @@ require (
 	github.com/klauspost/compress v1.18.6
 	github.com/spf13/cobra v1.10.2
 	github.com/ulikunitz/xz v0.5.15
+	github.com/wow-look-at-my/testify v0.0.0-20260217010200-5fd2c08e3abb
 	modernc.org/sqlite v1.50.1
 )
 
@@ -19,6 +20,7 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	golang.org/x/sys v0.42.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/libc v1.72.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
