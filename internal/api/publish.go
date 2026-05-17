@@ -26,6 +26,11 @@ func (h *Handler) PublishRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !t.AuthorizedForProject(project.ID) {
+		jsonError(w, http.StatusForbidden, "token not authorized for this project")
+		return
+	}
+
 	version := r.PathValue("version")
 	release, err := h.DB.GetRelease(r.Context(), project.ID, version)
 	if errors.Is(err, db.ErrNotFound) {

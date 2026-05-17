@@ -1,0 +1,1 @@
+ALTER TABLE oidc_policies ADD COLUMN audience TEXT NOT NULL DEFAULT '';

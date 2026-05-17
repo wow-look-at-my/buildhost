@@ -2,6 +2,7 @@ package repackage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -205,15 +206,9 @@ func marshalMetadata(m map[string]string) string {
 	if len(m) == 0 {
 		return "{}"
 	}
-	s := "{"
-	first := true
-	for k, v := range m {
-		if !first {
-			s += ","
-		}
-		s += `"` + k + `":"` + v + `"`
-		first = false
+	data, err := json.Marshal(m)
+	if err != nil {
+		return "{}"
 	}
-	s += "}"
-	return s
+	return string(data)
 }

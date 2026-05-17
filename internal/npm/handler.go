@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
@@ -43,6 +44,11 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, packa
 	}
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	if status, ok := auth.EnforceProjectRead(r, project); !ok {
+		http.Error(w, http.StatusText(status), status)
 		return
 	}
 
@@ -106,6 +112,11 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, path stri
 	}
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	if status, ok := auth.EnforceProjectRead(r, project); !ok {
+		http.Error(w, http.StatusText(status), status)
 		return
 	}
 

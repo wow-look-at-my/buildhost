@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
@@ -117,4 +118,125 @@ func TestServeHTTP_Success(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/x-ruby", rec.Header().Get("Content-Type"))
 	assert.Contains(t, rec.Body.String(), "class Myapp")
+}
+
+// --- Private project auth tests ----------------------------------------------
+
+func TestServeHTTP_PrivateProject_NoAuth(t *testing.T) {
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	req := httptest.NewRequest("GET", "/secret.rb", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestServeHTTP_PrivateProject_WrongProjectToken(t *testing.T) {
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	wrongProjID := int64(999)
+	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: &wrongProjID}
+	ctx2 := auth.WithToken(context.Background(), tok)
+	req := httptest.NewRequest("GET", "/secret.rb", nil)
+	req = req.WithContext(ctx2)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestServeHTTP_PrivateProject_ValidToken(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, strings.NewReader("binary"))
+	require.NoError(t, err)
+	a := &model.Artifact{
+		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
+		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}
+	require.NoError(t, d.CreateArtifact(ctx, a))
+
+	brewContent := "class Secret < Formula\n  desc \"secret\"\nend\n"
+	brewKey, brewSize, err := store.Put(ctx, strings.NewReader(brewContent))
+	require.NoError(t, err)
+	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "brew", brewKey, brewSize, brewKey, "secret.rb", "{}"))
+
+	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: &proj.ID}
+	ctx2 := auth.WithToken(context.Background(), tok)
+	req := httptest.NewRequest("GET", "/secret.rb", nil)
+	req = req.WithContext(ctx2)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "class Secret")
+}
+
+func TestServeHTTP_PrivateProject_GlobalToken(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, strings.NewReader("binary"))
+	require.NoError(t, err)
+	a := &model.Artifact{
+		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
+		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}
+	require.NoError(t, d.CreateArtifact(ctx, a))
+
+	brewContent := "class Secret < Formula\n  desc \"secret\"\nend\n"
+	brewKey, brewSize, err := store.Put(ctx, strings.NewReader(brewContent))
+	require.NoError(t, err)
+	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "brew", brewKey, brewSize, brewKey, "secret.rb", "{}"))
+
+	// Global token (nil ProjectID) should be allowed.
+	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: nil}
+	ctx2 := auth.WithToken(context.Background(), tok)
+	req := httptest.NewRequest("GET", "/secret.rb", nil)
+	req = req.WithContext(ctx2)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "class Secret")
+}
+
+func TestServeHTTP_PrivateProject_WriteOnlyToken(t *testing.T) {
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	// Token with only write scope should be rejected for reading private projects.
+	tok := &model.APIToken{ID: 1, Scopes: "write", ProjectID: &proj.ID}
+	ctx2 := auth.WithToken(context.Background(), tok)
+	req := httptest.NewRequest("GET", "/secret.rb", nil)
+	req = req.WithContext(ctx2)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 }

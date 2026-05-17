@@ -553,5 +553,35 @@ func TestDeleteTokenNotFound(t *testing.T) {
 	d := openTestDB(t)
 	err := d.DeleteToken(context.Background(), 99999)
 	assert.True(t, errors.Is(err, ErrNotFound))
+}
 
+func TestLookupToken_ExpiredTokenReturnsNotFound(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	plaintext, tok, err := d.CreateToken(ctx, "expiring", nil, "read")
+	require.NoError(t, err)
+
+	_, err = d.ExecContext(ctx,
+		"UPDATE api_tokens SET expires_at = datetime('now', '-1 hour') WHERE id = ?", tok.ID)
+	require.NoError(t, err)
+
+	_, err = d.LookupToken(ctx, plaintext)
+	assert.True(t, errors.Is(err, ErrNotFound))
+}
+
+func TestLookupToken_FutureExpirySucceeds(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	plaintext, tok, err := d.CreateToken(ctx, "valid-future", nil, "read")
+	require.NoError(t, err)
+
+	_, err = d.ExecContext(ctx,
+		"UPDATE api_tokens SET expires_at = datetime('now', '+1 hour') WHERE id = ?", tok.ID)
+	require.NoError(t, err)
+
+	got, err := d.LookupToken(ctx, plaintext)
+	require.NoError(t, err)
+	assert.Equal(t, tok.ID, got.ID)
 }

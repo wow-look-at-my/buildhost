@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
@@ -29,7 +30,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	_ = project
+
+	if status, ok := auth.EnforceProjectRead(r, project); !ok {
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
 
 	switch {
 	case subpath == "dists/stable/Release" || subpath == "dists/stable/InRelease":

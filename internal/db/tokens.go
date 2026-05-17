@@ -59,6 +59,10 @@ func (d *DB) LookupToken(ctx context.Context, plaintext string) (*model.APIToken
 		return nil, fmt.Errorf("lookup token: %w", err)
 	}
 
+	if t.IsExpired() {
+		return nil, ErrNotFound
+	}
+
 	d.ExecContext(ctx, "UPDATE api_tokens SET last_used_at = datetime('now') WHERE id = ?", t.ID)
 	return t, nil
 }

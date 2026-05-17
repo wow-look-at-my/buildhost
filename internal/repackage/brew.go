@@ -12,6 +12,13 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
+func sanitizeBrewString(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "\n", " ")
+	return s
+}
+
 type Brew struct{}
 
 func (b *Brew) Format() Format { return FormatBrew }
@@ -96,11 +103,11 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 
 	d := brewData{
 		ClassName:   brewClassName(input.Project.Name),
-		Name:        input.Project.Name,
-		Description: firstNonEmpty(input.Project.Description, input.Project.Name),
-		Homepage:    firstNonEmpty(input.Project.Homepage, input.BaseURL),
+		Name:        sanitizeBrewString(input.Project.Name),
+		Description: sanitizeBrewString(firstNonEmpty(input.Project.Description, input.Project.Name)),
+		Homepage:    sanitizeBrewString(firstNonEmpty(input.Project.Homepage, input.BaseURL)),
 		Version:     version,
-		License:     firstNonEmpty(input.Project.License, "MIT"),
+		License:     sanitizeBrewString(firstNonEmpty(input.Project.License, "MIT")),
 		Kind:        string(input.Artifact.Kind),
 		Resources: []brewResource{{
 			OS:     brewOS,

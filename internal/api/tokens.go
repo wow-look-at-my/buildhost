@@ -5,9 +5,11 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
 type createTokenRequest struct {
@@ -36,6 +38,33 @@ func (h *Handler) CreateToken(w http.ResponseWriter, r *http.Request) {
 		req.Scopes = "read,write"
 	}
 
+	// Normalize and validate scopes.
+	var normalizedScopes []string
+	for _, s := range strings.Split(req.Scopes, ",") {
+		s = strings.TrimSpace(s)
+		if !model.ValidScopes[s] {
+			jsonError(w, http.StatusBadRequest, "invalid scope: "+s)
+			return
+		}
+		normalizedScopes = append(normalizedScopes, s)
+	}
+	req.Scopes = strings.Join(normalizedScopes, ",")
+
+	// New tokens may only grant scopes the caller already holds.
+	for _, s := range normalizedScopes {
+		if !t.HasScope(s) {
+			jsonError(w, http.StatusForbidden, "cannot grant scope not held by caller: "+s)
+			return
+		}
+	}
+
+	if !t.IsGlobal() {
+		if req.ProjectID == nil || *req.ProjectID != *t.ProjectID {
+			jsonError(w, http.StatusForbidden, "project-scoped tokens can only create tokens for the same project")
+			return
+		}
+	}
+
 	plaintext, token, err := h.DB.CreateToken(r.Context(), req.Name, req.ProjectID, req.Scopes)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed to create token")
@@ -55,6 +84,11 @@ func (h *Handler) ListTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !t.IsGlobal() {
+		jsonError(w, http.StatusForbidden, "only global tokens can list tokens")
+		return
+	}
+
 	tokens, err := h.DB.ListTokens(r.Context())
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed to list tokens")
@@ -71,10 +105,20 @@ func (h *Handler) DeleteToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !t.IsGlobal() {
+		jsonError(w, http.StatusForbidden, "only global tokens can delete tokens")
+		return
+	}
+
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		jsonError(w, http.StatusBadRequest, "invalid token id")
+		return
+	}
+
+	if id == t.ID {
+		jsonError(w, http.StatusBadRequest, "cannot delete your own token")
 		return
 	}
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
@@ -57,8 +58,13 @@ func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, projectN
 
 func (h *Handler) serveBlob(w http.ResponseWriter, r *http.Request, digest string) {
 	key := digest
-	if idx := len("sha256:"); len(digest) > idx && digest[:idx] == "sha256:" {
-		key = digest[idx:]
+	if strings.HasPrefix(digest, "sha256:") {
+		key = digest[7:]
+	}
+
+	if len(key) < 4 {
+		http.NotFound(w, r)
+		return
 	}
 
 	rc, size, err := h.Store.Get(r.Context(), key)

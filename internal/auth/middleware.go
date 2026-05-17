@@ -8,13 +8,24 @@ import (
 )
 
 type Middleware struct {
-	DB *db.DB
+	DB       *db.DB
+	Verifier *OIDCVerifier
 }
 
 func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw := ExtractToken(r)
 		if raw != "" {
+			if LooksLikeJWT(raw) && m.Verifier != nil {
+				policies, err := m.DB.ListOIDCPolicies(r.Context())
+				if err == nil && len(policies) > 0 {
+					if token, err := m.Verifier.VerifyToken(r.Context(), raw, policies); err == nil {
+						r = r.WithContext(WithToken(r.Context(), token))
+						next.ServeHTTP(w, r)
+						return
+					}
+				}
+			}
 			token, err := m.DB.LookupToken(r.Context(), raw)
 			if err == nil {
 				r = r.WithContext(WithToken(r.Context(), token))
@@ -30,6 +41,23 @@ func RequireWrite(next http.HandlerFunc) http.HandlerFunc {
 		if t == nil || !t.HasScope("write") {
 			http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
 			return
+		}
+		next(w, r)
+	}
+}
+
+func RequireWriteForProject(next http.HandlerFunc, getProjectID func(r *http.Request) (int64, bool)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		t := TokenFrom(r.Context())
+		if t == nil || !t.HasScope("write") {
+			http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
+			return
+		}
+		if pid, ok := getProjectID(r); ok {
+			if !t.AuthorizedForProject(pid) {
+				http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
+				return
+			}
 		}
 		next(w, r)
 	}
@@ -51,4 +79,18 @@ func RequireReadForProject(next http.HandlerFunc, getProject func(r *http.Reques
 		}
 		next(w, r)
 	}
+}
+
+func EnforceProjectRead(r *http.Request, project *model.Project) (status int, ok bool) {
+	if project == nil || !project.IsPrivate {
+		return 0, true
+	}
+	t := TokenFrom(r.Context())
+	if t == nil || !t.HasScope("read") {
+		return http.StatusUnauthorized, false
+	}
+	if !t.AuthorizedForProject(project.ID) {
+		return http.StatusForbidden, false
+	}
+	return 0, true
 }
