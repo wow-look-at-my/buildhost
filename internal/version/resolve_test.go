@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestResolve_AutoVersioned_ExactMatch(t *testing.T) {
@@ -15,12 +16,10 @@ func TestResolve_AutoVersioned_ExactMatch(t *testing.T) {
 	}
 
 	got, err := Resolve(nil, project, "2", releases)
-	if err != nil {
-		t.Fatalf("Resolve auto exact: %v", err)
-	}
-	if got.VersionNum != 2 {
-		t.Fatalf("Resolve auto exact: got VersionNum=%d, want 2", got.VersionNum)
-	}
+	require.Nil(t, err)
+
+	require.Equal(t, int64(2), got.VersionNum)
+
 }
 
 func TestResolve_AutoVersioned_Latest(t *testing.T) {
@@ -32,12 +31,10 @@ func TestResolve_AutoVersioned_Latest(t *testing.T) {
 	}
 
 	got, err := Resolve(nil, project, "latest", releases)
-	if err != nil {
-		t.Fatalf("Resolve auto latest: %v", err)
-	}
-	if got.VersionNum != 3 {
-		t.Fatalf("Resolve auto latest: got VersionNum=%d, want 3", got.VersionNum)
-	}
+	require.Nil(t, err)
+
+	require.Equal(t, int64(3), got.VersionNum)
+
 }
 
 func TestResolve_AutoVersioned_EmptySpec(t *testing.T) {
@@ -47,12 +44,10 @@ func TestResolve_AutoVersioned_EmptySpec(t *testing.T) {
 	}
 
 	got, err := Resolve(nil, project, "", releases)
-	if err != nil {
-		t.Fatalf("Resolve auto empty spec: %v", err)
-	}
-	if got.VersionNum != 5 {
-		t.Fatalf("Resolve auto empty spec: got VersionNum=%d, want 5", got.VersionNum)
-	}
+	require.Nil(t, err)
+
+	require.Equal(t, int64(5), got.VersionNum)
+
 }
 
 func TestResolve_AutoVersioned_NotFound(t *testing.T) {
@@ -62,9 +57,8 @@ func TestResolve_AutoVersioned_NotFound(t *testing.T) {
 	}
 
 	_, err := Resolve(nil, project, "99", releases)
-	if err == nil {
-		t.Fatal("Resolve auto not found: expected error, got nil")
-	}
+	require.NotNil(t, err)
+
 }
 
 func TestResolve_AutoVersioned_InvalidSpec(t *testing.T) {
@@ -74,9 +68,8 @@ func TestResolve_AutoVersioned_InvalidSpec(t *testing.T) {
 	}
 
 	_, err := Resolve(nil, project, "not-a-number", releases)
-	if err == nil {
-		t.Fatal("Resolve auto invalid: expected error, got nil")
-	}
+	require.NotNil(t, err)
+
 }
 
 func TestResolve_Semver_ExactMatch(t *testing.T) {
@@ -88,12 +81,10 @@ func TestResolve_Semver_ExactMatch(t *testing.T) {
 	}
 
 	got, err := Resolve(nil, project, "1.1.0", releases)
-	if err != nil {
-		t.Fatalf("Resolve semver exact: %v", err)
-	}
-	if got.Version != "1.1.0" {
-		t.Fatalf("Resolve semver exact: got %q, want %q", got.Version, "1.1.0")
-	}
+	require.Nil(t, err)
+
+	require.Equal(t, "1.1.0", got.Version)
+
 }
 
 func TestResolve_Semver_ExactMatchWithVPrefix(t *testing.T) {
@@ -104,12 +95,10 @@ func TestResolve_Semver_ExactMatchWithVPrefix(t *testing.T) {
 	}
 
 	got, err := Resolve(nil, project, "v1.0.0", releases)
-	if err != nil {
-		t.Fatalf("Resolve semver v-prefix: %v", err)
-	}
-	if got.ID != 1 {
-		t.Fatalf("Resolve semver v-prefix: got ID=%d, want 1", got.ID)
-	}
+	require.Nil(t, err)
+
+	require.Equal(t, int64(1), got.ID)
+
 }
 
 func TestResolve_Semver_MajorPrefix(t *testing.T) {
@@ -123,12 +112,10 @@ func TestResolve_Semver_MajorPrefix(t *testing.T) {
 
 	// "1" should match the first (highest) release starting with "1."
 	got, err := Resolve(nil, project, "1", releases)
-	if err != nil {
-		t.Fatalf("Resolve semver major: %v", err)
-	}
-	if got.Version != "1.3.0" {
-		t.Fatalf("Resolve semver major: got %q, want %q", got.Version, "1.3.0")
-	}
+	require.Nil(t, err)
+
+	require.Equal(t, "1.3.0", got.Version)
+
 }
 
 func TestResolve_Semver_MajorMinorPrefix(t *testing.T) {
@@ -142,12 +129,10 @@ func TestResolve_Semver_MajorMinorPrefix(t *testing.T) {
 
 	// "1.2" should match the first (highest) release starting with "1.2."
 	got, err := Resolve(nil, project, "1.2", releases)
-	if err != nil {
-		t.Fatalf("Resolve semver major.minor: %v", err)
-	}
-	if got.Version != "1.2.3" {
-		t.Fatalf("Resolve semver major.minor: got %q, want %q", got.Version, "1.2.3")
-	}
+	require.Nil(t, err)
+
+	require.Equal(t, "1.2.3", got.Version)
+
 }
 
 func TestResolve_Semver_SkipsPrerelease(t *testing.T) {
@@ -160,12 +145,10 @@ func TestResolve_Semver_SkipsPrerelease(t *testing.T) {
 
 	// "1" prefix should skip the prerelease and land on 1.2.0
 	got, err := Resolve(nil, project, "1", releases)
-	if err != nil {
-		t.Fatalf("Resolve semver skip prerelease: %v", err)
-	}
-	if got.Version != "1.2.0" {
-		t.Fatalf("Resolve semver skip prerelease: got %q, want %q", got.Version, "1.2.0")
-	}
+	require.Nil(t, err)
+
+	require.Equal(t, "1.2.0", got.Version)
+
 }
 
 func TestResolve_Semver_NotFound(t *testing.T) {
@@ -175,9 +158,8 @@ func TestResolve_Semver_NotFound(t *testing.T) {
 	}
 
 	_, err := Resolve(nil, project, "9.9.9", releases)
-	if err == nil {
-		t.Fatal("Resolve semver not found: expected error, got nil")
-	}
+	require.NotNil(t, err)
+
 }
 
 func TestResolve_Semver_Latest(t *testing.T) {
@@ -188,33 +170,27 @@ func TestResolve_Semver_Latest(t *testing.T) {
 	}
 
 	got, err := Resolve(nil, project, "latest", releases)
-	if err != nil {
-		t.Fatalf("Resolve semver latest: %v", err)
-	}
-	if got.Version != "2.0.0" {
-		t.Fatalf("Resolve semver latest: got %q, want %q", got.Version, "2.0.0")
-	}
+	require.Nil(t, err)
+
+	require.Equal(t, "2.0.0", got.Version)
+
 }
 
 func TestResolve_EmptyReleases(t *testing.T) {
 	project := &model.Project{ID: 1, Versioning: model.VersioningAuto}
 
 	_, err := Resolve(nil, project, "1", nil)
-	if err == nil {
-		t.Fatal("Resolve empty releases: expected error, got nil")
-	}
+	require.NotNil(t, err)
 
 	_, err = Resolve(nil, project, "latest", []model.Release{})
-	if err == nil {
-		t.Fatal("Resolve empty slice: expected error, got nil")
-	}
+	require.NotNil(t, err)
+
 }
 
 func TestResolve_EmptyReleases_Semver(t *testing.T) {
 	project := &model.Project{ID: 1, Versioning: model.VersioningSemver}
 
 	_, err := Resolve(nil, project, "1.0.0", nil)
-	if err == nil {
-		t.Fatal("Resolve semver empty releases: expected error, got nil")
-	}
+	require.NotNil(t, err)
+
 }
