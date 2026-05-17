@@ -25,10 +25,9 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/tokens", s.apiHandler.ListTokens)
 	mux.HandleFunc("DELETE /api/v1/tokens/{id}", s.apiHandler.DeleteToken)
 
-	mux.HandleFunc("GET /dl/{project}/{version}/{os}/{arch}", s.dlHandler.Download)
-	mux.HandleFunc("GET /dl/{project}/{version}/debug/{os}/{arch}", s.dlHandler.DownloadDebug)
-	mux.HandleFunc("GET /dl/{project}/branch/{branch}/{os}/{arch}", s.dlHandler.DownloadBranch)
 	mux.HandleFunc("GET /dl/{project}/latest/{os}/{arch}", s.dlHandler.DownloadLatest)
+	mux.HandleFunc("GET /dl/{project}/branch/{branch}/{os}/{arch}", s.dlHandler.DownloadBranch)
+	mux.HandleFunc("GET /dl/{project}/{version}/{os}/{arch}", s.dlHandler.Download)
 
 	mux.Handle("/apt/", http.StripPrefix("/apt", s.aptHandler))
 	mux.Handle("/brew/", http.StripPrefix("/brew", s.brewHandler))

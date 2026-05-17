@@ -123,55 +123,6 @@ func (h *Handler) DownloadBranch(w http.ResponseWriter, r *http.Request) {
 	h.serveArtifact(w, r, project, release, osStr, archStr)
 }
 
-func (h *Handler) DownloadDebug(w http.ResponseWriter, r *http.Request) {
-	projectName := r.PathValue("project")
-	versionStr := r.PathValue("version")
-	osStr := r.PathValue("os")
-	archStr := r.PathValue("arch")
-
-	project, err := h.DB.GetProject(r.Context(), projectName)
-	if errors.Is(err, db.ErrNotFound) {
-		http.NotFound(w, r)
-		return
-	}
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if project.IsPrivate && !h.authorized(r, project) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	release, err := h.DB.GetRelease(r.Context(), project.ID, versionStr)
-	if errors.Is(err, db.ErrNotFound) {
-		http.NotFound(w, r)
-		return
-	}
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, osStr, archStr)
-	if errors.Is(err, db.ErrNotFound) {
-		http.NotFound(w, r)
-		return
-	}
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if artifact.DebugStorageKey == "" {
-		http.NotFound(w, r)
-		return
-	}
-
-	h.serveBlob(w, artifact.DebugStorageKey, fmt.Sprintf("%s-%s.debug", project.Name, versionStr))
-}
-
 func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project *model.Project, release *model.Release, osStr, archStr string) {
 	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, osStr, archStr)
 	if errors.Is(err, db.ErrNotFound) {
@@ -180,6 +131,15 @@ func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project 
 	}
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	if r.URL.Query().Get("debug") == "1" {
+		if artifact.DebugStorageKey == "" {
+			http.NotFound(w, r)
+			return
+		}
+		h.serveBlob(w, artifact.DebugStorageKey, fmt.Sprintf("%s-%s.debug", project.Name, release.Version))
 		return
 	}
 
