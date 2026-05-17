@@ -1,0 +1,11 @@
+buildhost
+buildhost-cli
+*.exe
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+data/
+dist/
+coverage.out
+coverage.html
