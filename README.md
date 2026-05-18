@@ -14,6 +14,14 @@ From a single uploaded binary, buildhost serves:
 - **npm registry** (platform-specific npm packages)
 - **OCI/Docker registry** (minimal container images)
 
+## Container image
+
+A container image is published to `ghcr.io/wow-look-at-my/buildhost:latest` on every push to master.
+
+```bash
+docker run -p 8080:8080 -v buildhost-data:/data ghcr.io/wow-look-at-my/buildhost:latest
+```
+
 ## Quick start
 
 ```bash
