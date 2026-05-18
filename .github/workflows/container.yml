@@ -2,7 +2,7 @@ name: Container Image
 
 on:
   push:
-    branches: [master, claude/buildhost-container-image-yKEDL]
+    branches: [master]
 
 permissions:
   contents: read
