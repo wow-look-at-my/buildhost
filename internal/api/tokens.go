@@ -7,9 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
 type createTokenRequest struct {
@@ -19,9 +17,8 @@ type createTokenRequest struct {
 }
 
 func (h *Handler) CreateToken(w http.ResponseWriter, r *http.Request) {
-	t := auth.TokenFrom(r.Context())
-	if t == nil || !t.HasScope("write") {
-		jsonError(w, http.StatusUnauthorized, "authentication required")
+	t := h.requireWrite(w, r)
+	if t == nil {
 		return
 	}
 
@@ -34,24 +31,14 @@ func (h *Handler) CreateToken(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	if req.Scopes == "" {
-		req.Scopes = "read,write"
-	}
 
-	// Normalize and validate scopes.
-	var normalizedScopes []string
-	for _, s := range strings.Split(req.Scopes, ",") {
-		s = strings.TrimSpace(s)
-		if !model.ValidScopes[s] {
-			jsonError(w, http.StatusBadRequest, "invalid scope: "+s)
-			return
-		}
-		normalizedScopes = append(normalizedScopes, s)
+	scopes := validateScopes(w, req.Scopes)
+	if scopes == "" {
+		return
 	}
-	req.Scopes = strings.Join(normalizedScopes, ",")
 
 	// New tokens may only grant scopes the caller already holds.
-	for _, s := range normalizedScopes {
+	for _, s := range strings.Split(scopes, ",") {
 		if !t.HasScope(s) {
 			jsonError(w, http.StatusForbidden, "cannot grant scope not held by caller: "+s)
 			return
@@ -65,7 +52,7 @@ func (h *Handler) CreateToken(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	plaintext, token, err := h.DB.CreateToken(r.Context(), req.Name, req.ProjectID, req.Scopes)
+	plaintext, token, err := h.DB.CreateToken(r.Context(), req.Name, req.ProjectID, scopes)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed to create token")
 		return
@@ -78,9 +65,8 @@ func (h *Handler) CreateToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListTokens(w http.ResponseWriter, r *http.Request) {
-	t := auth.TokenFrom(r.Context())
-	if t == nil || !t.HasScope("write") {
-		jsonError(w, http.StatusUnauthorized, "authentication required")
+	t := h.requireWrite(w, r)
+	if t == nil {
 		return
 	}
 
@@ -99,9 +85,8 @@ func (h *Handler) ListTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteToken(w http.ResponseWriter, r *http.Request) {
-	t := auth.TokenFrom(r.Context())
-	if t == nil || !t.HasScope("write") {
-		jsonError(w, http.StatusUnauthorized, "authentication required")
+	t := h.requireWrite(w, r)
+	if t == nil {
 		return
 	}
 

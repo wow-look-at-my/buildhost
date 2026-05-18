@@ -5,9 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 
-	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
@@ -21,9 +19,7 @@ type createOIDCPolicyRequest struct {
 }
 
 func (h *Handler) CreateOIDCPolicy(w http.ResponseWriter, r *http.Request) {
-	t := auth.TokenFrom(r.Context())
-	if t == nil || !t.HasScope("write") || !t.IsGlobal() {
-		jsonError(w, http.StatusForbidden, "global write token required")
+	if h.requireGlobalWrite(w, r) == nil {
 		return
 	}
 
@@ -38,26 +34,17 @@ func (h *Handler) CreateOIDCPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Scopes == "" {
-		req.Scopes = "read,write"
+	scopes := validateScopes(w, req.Scopes)
+	if scopes == "" {
+		return
 	}
-	var normalizedScopes []string
-	for _, s := range strings.Split(req.Scopes, ",") {
-		s = strings.TrimSpace(s)
-		if !model.ValidScopes[s] {
-			jsonError(w, http.StatusBadRequest, "invalid scope: "+s)
-			return
-		}
-		normalizedScopes = append(normalizedScopes, s)
-	}
-	req.Scopes = strings.Join(normalizedScopes, ",")
 
 	p := &model.OIDCPolicy{
 		Issuer:         req.Issuer,
 		SubjectPattern: req.SubjectPattern,
 		Audience:       req.Audience,
 		ProjectID:      req.ProjectID,
-		Scopes:         req.Scopes,
+		Scopes:         scopes,
 	}
 
 	if err := h.DB.CreateOIDCPolicy(r.Context(), p); err != nil {
@@ -73,9 +60,7 @@ func (h *Handler) CreateOIDCPolicy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListOIDCPolicies(w http.ResponseWriter, r *http.Request) {
-	t := auth.TokenFrom(r.Context())
-	if t == nil || !t.HasScope("write") || !t.IsGlobal() {
-		jsonError(w, http.StatusForbidden, "global write token required")
+	if h.requireGlobalWrite(w, r) == nil {
 		return
 	}
 
@@ -92,9 +77,7 @@ func (h *Handler) ListOIDCPolicies(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteOIDCPolicy(w http.ResponseWriter, r *http.Request) {
-	t := auth.TokenFrom(r.Context())
-	if t == nil || !t.HasScope("write") || !t.IsGlobal() {
-		jsonError(w, http.StatusForbidden, "global write token required")
+	if h.requireGlobalWrite(w, r) == nil {
 		return
 	}
 

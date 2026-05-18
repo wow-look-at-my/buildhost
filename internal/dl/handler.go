@@ -17,120 +17,88 @@ type Handler struct {
 	Store storage.Storage
 }
 
-func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
-	projectName := r.PathValue("project")
-	versionStr := r.PathValue("version")
-	osStr := r.PathValue("os")
-	archStr := r.PathValue("arch")
-
-	project, err := h.DB.GetProject(r.Context(), projectName)
+// handleDBErr writes the appropriate HTTP error for a database lookup failure.
+// Returns true if an error was written (caller should return).
+func handleDBErr(w http.ResponseWriter, r *http.Request, err error) bool {
 	if errors.Is(err, db.ErrNotFound) {
 		http.NotFound(w, r)
-		return
+		return true
 	}
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+		return true
 	}
+	return false
+}
 
-	if project.IsPrivate && !h.authorized(r, project) {
+// loadProject fetches a project by name, enforces private-project auth, and writes
+// the appropriate error response on failure. Returns nil if the caller should return.
+func (h *Handler) loadProject(w http.ResponseWriter, r *http.Request, name string) *model.Project {
+	p, err := h.DB.GetProject(r.Context(), name)
+	if handleDBErr(w, r, err) {
+		return nil
+	}
+	if p.IsPrivate && !h.authorized(r, p) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return nil
+	}
+	return p
+}
+
+func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
+	project := h.loadProject(w, r, r.PathValue("project"))
+	if project == nil {
 		return
 	}
 
-	var release *model.Release
+	versionStr := r.PathValue("version")
+	var (
+		release *model.Release
+		err     error
+	)
 	if versionStr == "latest" {
 		release, err = h.DB.GetLatestRelease(r.Context(), project.ID)
 	} else {
 		release, err = h.DB.GetRelease(r.Context(), project.ID, versionStr)
 	}
-	if errors.Is(err, db.ErrNotFound) {
-		http.NotFound(w, r)
-		return
-	}
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+	if handleDBErr(w, r, err) {
 		return
 	}
 
-	h.serveArtifact(w, r, project, release, osStr, archStr)
+	h.serveArtifact(w, r, project, release, r.PathValue("os"), r.PathValue("arch"))
 }
 
 func (h *Handler) DownloadLatest(w http.ResponseWriter, r *http.Request) {
-	projectName := r.PathValue("project")
-	osStr := r.PathValue("os")
-	archStr := r.PathValue("arch")
-
-	project, err := h.DB.GetProject(r.Context(), projectName)
-	if errors.Is(err, db.ErrNotFound) {
-		http.NotFound(w, r)
-		return
-	}
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if project.IsPrivate && !h.authorized(r, project) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	project := h.loadProject(w, r, r.PathValue("project"))
+	if project == nil {
 		return
 	}
 
 	release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
-	if errors.Is(err, db.ErrNotFound) {
-		http.NotFound(w, r)
-		return
-	}
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+	if handleDBErr(w, r, err) {
 		return
 	}
 
-	h.serveArtifact(w, r, project, release, osStr, archStr)
+	h.serveArtifact(w, r, project, release, r.PathValue("os"), r.PathValue("arch"))
 }
 
 func (h *Handler) DownloadBranch(w http.ResponseWriter, r *http.Request) {
-	projectName := r.PathValue("project")
-	branch := r.PathValue("branch")
-	osStr := r.PathValue("os")
-	archStr := r.PathValue("arch")
-
-	project, err := h.DB.GetProject(r.Context(), projectName)
-	if errors.Is(err, db.ErrNotFound) {
-		http.NotFound(w, r)
-		return
-	}
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+	project := h.loadProject(w, r, r.PathValue("project"))
+	if project == nil {
 		return
 	}
 
-	if project.IsPrivate && !h.authorized(r, project) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	release, err := h.DB.GetLatestReleaseByBranch(r.Context(), project.ID, r.PathValue("branch"))
+	if handleDBErr(w, r, err) {
 		return
 	}
 
-	release, err := h.DB.GetLatestReleaseByBranch(r.Context(), project.ID, branch)
-	if errors.Is(err, db.ErrNotFound) {
-		http.NotFound(w, r)
-		return
-	}
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	h.serveArtifact(w, r, project, release, osStr, archStr)
+	h.serveArtifact(w, r, project, release, r.PathValue("os"), r.PathValue("arch"))
 }
 
 func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project *model.Project, release *model.Release, osStr, archStr string) {
 	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, osStr, archStr)
-	if errors.Is(err, db.ErrNotFound) {
-		http.NotFound(w, r)
-		return
-	}
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+	if handleDBErr(w, r, err) {
 		return
 	}
 

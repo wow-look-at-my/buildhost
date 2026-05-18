@@ -8,19 +8,10 @@ import (
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
-func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, projectName, reference string) {
-	project, err := h.DB.GetProject(r.Context(), projectName)
-	if errors.Is(err, db.ErrNotFound) {
-		http.NotFound(w, r)
-		return
-	}
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
+func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, project *model.Project, reference string) {
 	release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
 	if errors.Is(err, db.ErrNotFound) {
 		http.NotFound(w, r)

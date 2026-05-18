@@ -32,7 +32,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	projectName := parts[0]
-
 	action := parts[1]
 
 	switch action {
@@ -54,7 +53,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, http.StatusText(status), status)
 			return
 		}
-		h.serveManifest(w, r, projectName, parts[2])
+		h.serveManifest(w, r, project, parts[2])
 	case "blobs":
 		if len(parts) < 3 {
 			http.NotFound(w, r)

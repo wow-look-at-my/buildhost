@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
@@ -35,20 +34,13 @@ func sanitizeFilename(name string) string {
 const maxUploadSize = 2 << 30 // 2 GiB
 
 func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
-	t := auth.TokenFrom(r.Context())
-	if t == nil || !t.HasScope("write") {
-		jsonError(w, http.StatusUnauthorized, "authentication required")
+	t := h.requireWrite(w, r)
+	if t == nil {
 		return
 	}
 
-	projectName := r.PathValue("project")
-	project, err := h.DB.GetProject(r.Context(), projectName)
-	if errors.Is(err, db.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "project not found")
-		return
-	}
-	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "failed to get project")
+	project := h.getProject(w, r, r.PathValue("project"))
+	if project == nil {
 		return
 	}
 
@@ -57,14 +49,8 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	version := r.PathValue("version")
-	release, err := h.DB.GetRelease(r.Context(), project.ID, version)
-	if errors.Is(err, db.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "release not found")
-		return
-	}
-	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "failed to get release")
+	release := h.getRelease(w, r, project.ID, r.PathValue("version"))
+	if release == nil {
 		return
 	}
 
