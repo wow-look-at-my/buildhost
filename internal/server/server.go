@@ -4,58 +4,32 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/wow-look-at-my/buildhost/internal/api"
-	"github.com/wow-look-at-my/buildhost/internal/apt"
-	"github.com/wow-look-at-my/buildhost/internal/auth"
-	"github.com/wow-look-at-my/buildhost/internal/brew"
+	_ "github.com/wow-look-at-my/buildhost/internal/api"
+	_ "github.com/wow-look-at-my/buildhost/internal/apt"
+	_ "github.com/wow-look-at-my/buildhost/internal/brew"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/dl"
-	npmhandler "github.com/wow-look-at-my/buildhost/internal/npm"
-	"github.com/wow-look-at-my/buildhost/internal/oci"
-	"github.com/wow-look-at-my/buildhost/internal/repackage"
+	_ "github.com/wow-look-at-my/buildhost/internal/dl"
+	_ "github.com/wow-look-at-my/buildhost/internal/npm"
+	_ "github.com/wow-look-at-my/buildhost/internal/oci"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
+
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 )
 
 type Server struct {
-	cfg          config.Config
-	db           *db.DB
-	store        storage.Storage
-	authMW       *auth.Middleware
-	apiHandler   *api.Handler
-	dlHandler    *dl.Handler
-	aptHandler   *apt.Handler
-	brewHandler  *brew.Handler
-	npmHandler   *npmhandler.Handler
-	ociHandler   *oci.Handler
-	orchestrator *repackage.Orchestrator
+	cfg config.Config
 }
 
 func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
-	orchestrator := repackage.NewOrchestrator(store, database, cfg.BaseURL)
-	return &Server{
-		cfg:          cfg,
-		db:           database,
-		store:        store,
-		authMW:       &auth.Middleware{DB: database, Verifier: auth.NewOIDCVerifier()},
-		apiHandler:   &api.Handler{DB: database, Store: store, Orchestrator: orchestrator},
-		dlHandler:    &dl.Handler{DB: database, Store: store},
-		aptHandler:   &apt.Handler{DB: database, Store: store},
-		brewHandler:  &brew.Handler{DB: database, Store: store},
-		npmHandler:   &npmhandler.Handler{DB: database, Store: store, BaseURL: cfg.BaseURL},
-		ociHandler:   &oci.Handler{DB: database, Store: store},
-		orchestrator: orchestrator,
-	}
+	auth.Init(database, store, cfg.BaseURL)
+	return &Server{cfg: cfg}
 }
 
 func (s *Server) ListenAndServe() error {
 	srv := &http.Server{
 		Addr:    s.cfg.ListenAddr,
 		Handler: s.Handler(),
-		// ReadHeaderTimeout guards against slow-header attacks.
-		// ReadTimeout and WriteTimeout are left at zero (unlimited) because
-		// uploads can be up to 2 GiB and downloads are unbounded; body-size
-		// is enforced per-handler via MaxBytesReader instead.
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
@@ -63,11 +37,15 @@ func (s *Server) ListenAndServe() error {
 }
 
 func (s *Server) Handler() http.Handler {
-	mux := s.routes()
-	var handler http.Handler = mux
-	handler = s.authMW.Authenticate(handler)
-	handler = securityHeaders(handler)
-	handler = loggingMiddleware(handler)
-	handler = recoveryMiddleware(handler)
-	return handler
+	mux := auth.Mux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+	var h http.Handler = mux
+	h = auth.GetMiddleware().Authenticate(h)
+	h = securityHeaders(h)
+	h = loggingMiddleware(h)
+	h = recoveryMiddleware(h)
+	return h
 }

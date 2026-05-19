@@ -6,9 +6,16 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
+
+func init() {
+	auth.HandleRaw("POST /api/v1/oidc/policies", handler.CreateOIDCPolicy)
+	auth.HandleRaw("GET /api/v1/oidc/policies", handler.ListOIDCPolicies)
+	auth.HandleRaw("DELETE /api/v1/oidc/policies/{id}", handler.DeleteOIDCPolicy)
+}
 
 type createOIDCPolicyRequest struct {
 	Issuer         string `json:"issuer"`

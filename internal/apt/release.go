@@ -3,16 +3,19 @@ package apt
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 )
 
-func (h *Handler) serveRelease(w http.ResponseWriter, _ *http.Request, projectName string) {
+func (h *Handler) serveRelease(w http.ResponseWriter, r *http.Request) {
+	project := auth.ProjectFrom(r.Context())
 	content := fmt.Sprintf(`Origin: buildhost
 Label: %s
 Suite: stable
 Codename: stable
 Architectures: amd64 arm64 i386 armhf
 Components: main
-`, projectName)
+`, project.Name)
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write([]byte(content))

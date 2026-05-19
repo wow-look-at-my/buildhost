@@ -1,8 +1,8 @@
 package npm
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,8 +10,53 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
+
+var handler Handler
+
+func init() {
+	auth.OnReady(func() {
+		handler.DB = auth.DB()
+		handler.Store = auth.Store()
+		handler.BaseURL = auth.BaseURL()
+	})
+	auth.HandleHandler("/npm/", parseRoute, http.StripPrefix("/npm", &handler))
+}
+
+type route struct {
+	project   string
+	isTarball bool
+	filename  string
+}
+
+func (r route) ProjectName() string     { return r.project }
+func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
+
+func parseRoute(r *http.Request) auth.RouteInfo {
+	path := strings.TrimPrefix(r.URL.Path, "/npm/")
+
+	if strings.Contains(path, "/-/") {
+		parts := strings.SplitN(path, "/-/", 2)
+		packagePath := parts[0]
+		filename := parts[1]
+		projectName := strings.TrimPrefix(packagePath, "@buildhost/")
+		mainProject := strings.SplitN(projectName, "-", 2)[0]
+		return route{project: mainProject, isTarball: true, filename: filename}
+	}
+
+	projectName := strings.TrimPrefix(path, "@buildhost/")
+	parts := strings.SplitN(projectName, "-", 2)
+	if len(parts) > 0 {
+		projectName = parts[0]
+	}
+	return route{project: projectName}
+}
+
+func routeFrom(ctx context.Context) route {
+	return auth.RouteInfoFrom(ctx).(route)
+}
 
 type Handler struct {
 	DB      *db.DB
@@ -20,37 +65,19 @@ type Handler struct {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/")
+	project := auth.ProjectFrom(r.Context())
+	ri := routeFrom(r.Context())
 
-	if strings.Contains(path, "/-/") {
-		h.serveTarball(w, r, path)
+	if ri.isTarball {
+		h.serveTarball(w, r, project, ri.filename)
 		return
 	}
 
-	h.servePackageInfo(w, r, path)
+	h.servePackageInfo(w, r, project)
 }
 
-func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, packageName string) {
-	projectName := strings.TrimPrefix(packageName, "@buildhost/")
-	parts := strings.SplitN(projectName, "-", 2)
-	if len(parts) > 0 {
-		projectName = parts[0]
-	}
-
-	project, err := h.DB.GetProject(r.Context(), projectName)
-	if errors.Is(err, db.ErrNotFound) {
-		http.NotFound(w, r)
-		return
-	}
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if status, ok := auth.EnforceProjectRead(r, project); !ok {
-		http.Error(w, http.StatusText(status), status)
-		return
-	}
+func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, project *model.Project) {
+	projectName := project.Name
 
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)
 	if err != nil {
@@ -92,34 +119,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, packa
 	json.NewEncoder(w).Encode(info)
 }
 
-func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, path string) {
-	parts := strings.Split(path, "/-/")
-	if len(parts) != 2 {
-		http.NotFound(w, r)
-		return
-	}
-
-	filename := parts[1]
-	packagePath := parts[0]
-
-	projectName := strings.TrimPrefix(packagePath, "@buildhost/")
-	mainProject := strings.SplitN(projectName, "-", 2)[0]
-
-	project, err := h.DB.GetProject(r.Context(), mainProject)
-	if errors.Is(err, db.ErrNotFound) {
-		http.NotFound(w, r)
-		return
-	}
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if status, ok := auth.EnforceProjectRead(r, project); !ok {
-		http.Error(w, http.StatusText(status), status)
-		return
-	}
-
+func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, project *model.Project, filename string) {
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)

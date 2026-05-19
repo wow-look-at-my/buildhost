@@ -7,8 +7,15 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
+
+func init() {
+	auth.HandleRaw("POST /api/v1/tokens", handler.CreateToken)
+	auth.HandleRaw("GET /api/v1/tokens", handler.ListTokens)
+	auth.HandleRaw("DELETE /api/v1/tokens/{id}", handler.DeleteToken)
+}
 
 type createTokenRequest struct {
 	Name      string `json:"name"`

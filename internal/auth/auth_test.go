@@ -97,11 +97,38 @@ func TestWithToken_TokenFrom_RoundTrip(t *testing.T) {
 
 }
 
-func TestIsAuthenticated(t *testing.T) {
+func TestWithProject_ProjectFrom_RoundTrip(t *testing.T) {
 	ctx := context.Background()
-	require.False(t, IsAuthenticated(ctx))
 
-	ctx = WithToken(ctx, &model.APIToken{ID: 1, Scopes: "read"})
-	require.True(t, IsAuthenticated(ctx))
+	// Before setting, ProjectFrom returns nil.
+	require.Nil(t, ProjectFrom(ctx))
 
+	proj := &model.Project{ID: 7, Name: "testproj"}
+	ctx = WithProject(ctx, proj)
+	got := ProjectFrom(ctx)
+	require.NotNil(t, got)
+	require.Equal(t, int64(7), got.ID)
+	require.Equal(t, "testproj", got.Name)
+}
+
+type testRoute struct {
+	project string
+	access  AccessLevel
+}
+
+func (r testRoute) ProjectName() string  { return r.project }
+func (r testRoute) Access() AccessLevel  { return r.access }
+
+func TestWithRouteInfo_RouteInfoFrom_RoundTrip(t *testing.T) {
+	ctx := context.Background()
+
+	// Before setting, RouteInfoFrom returns zero value.
+	ri := RouteInfoFrom(ctx)
+	require.Equal(t, "", ri.ProjectName())
+
+	ri2 := testRoute{project: "myapp", access: WriteAccess}
+	ctx = WithRouteInfo(ctx, ri2)
+	got := RouteInfoFrom(ctx)
+	require.Equal(t, "myapp", got.ProjectName())
+	require.Equal(t, WriteAccess, got.Access())
 }
