@@ -27,6 +27,7 @@ func TestUploadArtifact_Success(t *testing.T) {
 	req.SetPathValue("version", "1.0.0")
 	req.SetPathValue("os", "linux")
 	req.SetPathValue("arch", "amd64")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.UploadArtifact(rec, req)
@@ -40,34 +41,8 @@ func TestUploadArtifact_Success(t *testing.T) {
 	assert.Greater(t, a.Size, int64(0))
 }
 
-func TestUploadArtifact_NoAuth(t *testing.T) {
-	h := setupTestHandler(t)
-
-	req := httptest.NewRequest("POST", "/api/projects/p/releases/1/artifacts/linux/amd64", strings.NewReader("x"))
-	req.SetPathValue("project", "p")
-	req.SetPathValue("version", "1")
-	req.SetPathValue("os", "linux")
-	req.SetPathValue("arch", "amd64")
-	rec := httptest.NewRecorder()
-	h.UploadArtifact(rec, req)
-
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-}
-
-func TestUploadArtifact_ProjectNotFound(t *testing.T) {
-	h := setupTestHandler(t)
-
-	req := httptest.NewRequest("POST", "/api/projects/missing/releases/1.0.0/artifacts/linux/amd64", strings.NewReader("x"))
-	req.SetPathValue("project", "missing")
-	req.SetPathValue("version", "1.0.0")
-	req.SetPathValue("os", "linux")
-	req.SetPathValue("arch", "amd64")
-	req = req.WithContext(writeToken(req.Context(), "read,write"))
-	rec := httptest.NewRecorder()
-	h.UploadArtifact(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
+// Note: TestUploadArtifact_NoAuth removed -- auth is now enforced by the
+// requireProject middleware (tested in the auth package).
 
 func TestUploadArtifact_ReleaseNotFound(t *testing.T) {
 	h := setupTestHandler(t)
@@ -81,6 +56,7 @@ func TestUploadArtifact_ReleaseNotFound(t *testing.T) {
 	req.SetPathValue("version", "9.9.9")
 	req.SetPathValue("os", "linux")
 	req.SetPathValue("arch", "amd64")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.UploadArtifact(rec, req)
@@ -102,6 +78,7 @@ func TestUploadArtifact_InvalidOS(t *testing.T) {
 	req.SetPathValue("version", "1.0.0")
 	req.SetPathValue("os", "bados")
 	req.SetPathValue("arch", "amd64")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.UploadArtifact(rec, req)
@@ -124,6 +101,7 @@ func TestUploadArtifact_InvalidArch(t *testing.T) {
 	req.SetPathValue("version", "1.0.0")
 	req.SetPathValue("os", "linux")
 	req.SetPathValue("arch", "badarch")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.UploadArtifact(rec, req)
@@ -146,6 +124,7 @@ func TestUploadArtifact_InvalidKind(t *testing.T) {
 	req.SetPathValue("version", "1.0.0")
 	req.SetPathValue("os", "linux")
 	req.SetPathValue("arch", "amd64")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.UploadArtifact(rec, req)
@@ -169,6 +148,7 @@ func TestUploadArtifact_PublishedRelease(t *testing.T) {
 	req.SetPathValue("version", "1.0.0")
 	req.SetPathValue("os", "linux")
 	req.SetPathValue("arch", "amd64")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.UploadArtifact(rec, req)
@@ -192,6 +172,7 @@ func TestUploadArtifact_KindFromHeader(t *testing.T) {
 	req.SetPathValue("os", "linux")
 	req.SetPathValue("arch", "amd64")
 	req.Header.Set("X-Artifact-Kind", "library")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.UploadArtifact(rec, req)
@@ -223,6 +204,7 @@ func TestUploadArtifact_DuplicateOSArch(t *testing.T) {
 	req.SetPathValue("version", "1.0.0")
 	req.SetPathValue("os", "linux")
 	req.SetPathValue("arch", "amd64")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.UploadArtifact(rec, req)
@@ -252,6 +234,7 @@ func TestPublishRelease_Success(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/projects/pubrel/releases/1.0.0/publish", nil)
 	req.SetPathValue("project", "pubrel")
 	req.SetPathValue("version", "1.0.0")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.PublishRelease(rec, req)
@@ -262,30 +245,8 @@ func TestPublishRelease_Success(t *testing.T) {
 	assert.True(t, got.Published)
 }
 
-func TestPublishRelease_NoAuth(t *testing.T) {
-	h := setupTestHandler(t)
-
-	req := httptest.NewRequest("POST", "/api/projects/p/releases/1.0.0/publish", nil)
-	req.SetPathValue("project", "p")
-	req.SetPathValue("version", "1.0.0")
-	rec := httptest.NewRecorder()
-	h.PublishRelease(rec, req)
-
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-}
-
-func TestPublishRelease_ProjectNotFound(t *testing.T) {
-	h := setupTestHandler(t)
-
-	req := httptest.NewRequest("POST", "/api/projects/missing/releases/1.0.0/publish", nil)
-	req.SetPathValue("project", "missing")
-	req.SetPathValue("version", "1.0.0")
-	req = req.WithContext(writeToken(req.Context(), "read,write"))
-	rec := httptest.NewRecorder()
-	h.PublishRelease(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
+// Note: TestPublishRelease_NoAuth removed -- auth is now enforced by the
+// requireProject middleware (tested in the auth package).
 
 func TestPublishRelease_ReleaseNotFound(t *testing.T) {
 	h := setupTestHandler(t)
@@ -297,6 +258,7 @@ func TestPublishRelease_ReleaseNotFound(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/projects/rnfpub/releases/9.9.9/publish", nil)
 	req.SetPathValue("project", "rnfpub")
 	req.SetPathValue("version", "9.9.9")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.PublishRelease(rec, req)
@@ -316,6 +278,7 @@ func TestPublishRelease_NoArtifacts(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/projects/noart/releases/1.0.0/publish", nil)
 	req.SetPathValue("project", "noart")
 	req.SetPathValue("version", "1.0.0")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.PublishRelease(rec, req)
@@ -337,6 +300,7 @@ func TestPublishRelease_AlreadyPublished(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/projects/alreadypub/releases/1.0.0/publish", nil)
 	req.SetPathValue("project", "alreadypub")
 	req.SetPathValue("version", "1.0.0")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.PublishRelease(rec, req)
@@ -344,54 +308,9 @@ func TestPublishRelease_AlreadyPublished(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, rec.Code)
 }
 
-// --- Security tests: project-scoped token isolation for artifacts ---
-
-func TestUploadArtifact_ProjectScopedCannotUploadToDifferentProject(t *testing.T) {
-	h := setupTestHandler(t)
-	ctx := context.Background()
-
-	projA := &model.Project{Name: "art-sec-a", Versioning: model.VersioningSemver}
-	require.NoError(t, h.DB.CreateProject(ctx, projA))
-	projB := &model.Project{Name: "art-sec-b", Versioning: model.VersioningSemver}
-	require.NoError(t, h.DB.CreateProject(ctx, projB))
-	rel := &model.Release{ProjectID: projB.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, h.DB.CreateRelease(ctx, rel))
-
-	// Token is scoped to project A, but tries to upload to project B
-	req := httptest.NewRequest("POST", "/api/projects/art-sec-b/releases/1.0.0/artifacts/linux/amd64", strings.NewReader("malicious-payload"))
-	req.SetPathValue("project", "art-sec-b")
-	req.SetPathValue("version", "1.0.0")
-	req.SetPathValue("os", "linux")
-	req.SetPathValue("arch", "amd64")
-	req = req.WithContext(projectWriteToken(req.Context(), projA.ID))
-	rec := httptest.NewRecorder()
-	h.UploadArtifact(rec, req)
-
-	assert.Equal(t, http.StatusForbidden, rec.Code)
-	assert.Contains(t, rec.Body.String(), "not authorized")
-}
-
-func TestUploadArtifact_ProjectScopedCanUploadToOwnProject(t *testing.T) {
-	h := setupTestHandler(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "art-sec-own", Versioning: model.VersioningSemver}
-	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, h.DB.CreateRelease(ctx, rel))
-
-	// Token is scoped to the same project -- should succeed
-	req := httptest.NewRequest("POST", "/api/projects/art-sec-own/releases/1.0.0/artifacts/linux/amd64", strings.NewReader("legit-binary"))
-	req.SetPathValue("project", "art-sec-own")
-	req.SetPathValue("version", "1.0.0")
-	req.SetPathValue("os", "linux")
-	req.SetPathValue("arch", "amd64")
-	req = req.WithContext(projectWriteToken(req.Context(), proj.ID))
-	rec := httptest.NewRecorder()
-	h.UploadArtifact(rec, req)
-
-	assert.Equal(t, http.StatusCreated, rec.Code)
-}
+// Note: Project-scoped token isolation tests have been removed. Token scope
+// enforcement is now handled by the requireProject middleware (tested in
+// the auth package).
 
 // --- Security tests: filename sanitization ---
 
@@ -455,6 +374,7 @@ func TestUploadArtifact_FilenameHeaderSanitized(t *testing.T) {
 	req.SetPathValue("os", "linux")
 	req.SetPathValue("arch", "amd64")
 	req.Header.Set("X-Artifact-Filename", "../../../etc/shadow")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.UploadArtifact(rec, req)
@@ -483,6 +403,7 @@ func TestUploadArtifact_FilenameHeaderAbsolutePathSanitized(t *testing.T) {
 	req.SetPathValue("os", "darwin")
 	req.SetPathValue("arch", "arm64")
 	req.Header.Set("X-Artifact-Filename", "/usr/local/bin/evil")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.UploadArtifact(rec, req)

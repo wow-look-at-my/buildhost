@@ -119,6 +119,7 @@ func TestGetProject_Success(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/api/projects/testproj", nil)
 	req.SetPathValue("project", "testproj")
+	req = withProjectRoute(req, proj)
 	rec := httptest.NewRecorder()
 	h.GetProject(rec, req)
 
@@ -128,31 +129,8 @@ func TestGetProject_Success(t *testing.T) {
 	assert.Equal(t, "testproj", p.Name)
 }
 
-func TestGetProject_NotFound(t *testing.T) {
-	h := setupTestHandler(t)
-
-	req := httptest.NewRequest("GET", "/api/projects/missing", nil)
-	req.SetPathValue("project", "missing")
-	rec := httptest.NewRecorder()
-	h.GetProject(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
-
-func TestGetProject_PrivateWithoutAuth(t *testing.T) {
-	h := setupTestHandler(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningAuto}
-	require.NoError(t, h.DB.CreateProject(ctx, proj))
-
-	req := httptest.NewRequest("GET", "/api/projects/secret", nil)
-	req.SetPathValue("project", "secret")
-	rec := httptest.NewRecorder()
-	h.GetProject(rec, req)
-
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-}
+// Note: GetProject auth (private project, not found) is tested via requireProject
+// middleware in the auth package.
 
 func TestListProjects_FiltersPrivate(t *testing.T) {
 	h := setupTestHandler(t)
