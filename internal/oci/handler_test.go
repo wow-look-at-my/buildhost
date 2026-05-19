@@ -161,7 +161,10 @@ func TestServeHTTP_Manifests_Success(t *testing.T) {
 }
 
 func TestServeHTTP_Blobs_MissingDigest(t *testing.T) {
-	h, _, _ := setupTest(t)
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
+
+	require.NoError(t, d.CreateProject(ctx, &model.Project{Name: "myapp", Versioning: model.VersioningSemver}))
 
 	req := httptest.NewRequest("GET", "/v2/myapp/blobs", nil)
 	rec := httptest.NewRecorder()
@@ -171,7 +174,10 @@ func TestServeHTTP_Blobs_MissingDigest(t *testing.T) {
 }
 
 func TestServeHTTP_Blobs_NotFound(t *testing.T) {
-	h, _, _ := setupTest(t)
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
+
+	require.NoError(t, d.CreateProject(ctx, &model.Project{Name: "myapp", Versioning: model.VersioningSemver}))
 
 	req := httptest.NewRequest("GET", "/v2/myapp/blobs/sha256:deadbeef", nil)
 	rec := httptest.NewRecorder()
@@ -181,8 +187,10 @@ func TestServeHTTP_Blobs_NotFound(t *testing.T) {
 }
 
 func TestServeHTTP_Blobs_Success(t *testing.T) {
-	h, _, store := setupTest(t)
+	h, d, store := setupTest(t)
 	ctx := context.Background()
+
+	require.NoError(t, d.CreateProject(ctx, &model.Project{Name: "myapp", Versioning: model.VersioningSemver}))
 
 	content := "blob-layer-content"
 	key, _, err := store.Put(ctx, strings.NewReader(content))
@@ -198,7 +206,37 @@ func TestServeHTTP_Blobs_Success(t *testing.T) {
 	assert.Equal(t, content, rec.Body.String())
 }
 
-// --- Private project auth tests (manifests only, blobs are project-agnostic) -
+func TestServeHTTP_Blobs_PrivateProject_NoAuth(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	require.NoError(t, d.CreateProject(ctx, &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}))
+
+	content := "private-blob"
+	key, _, err := store.Put(ctx, strings.NewReader(content))
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "/v2/secret/blobs/sha256:"+key, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestServeHTTP_Blobs_InvalidDigest(t *testing.T) {
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
+
+	require.NoError(t, d.CreateProject(ctx, &model.Project{Name: "myapp", Versioning: model.VersioningSemver}))
+
+	req := httptest.NewRequest("GET", "/v2/myapp/blobs/../../etc/passwd", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// --- Private project auth tests ---
 
 func TestServeHTTP_PrivateProject_Manifests_NoAuth(t *testing.T) {
 	h, d, _ := setupTest(t)

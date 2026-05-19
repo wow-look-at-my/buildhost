@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
+	"regexp"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
+
+var validDigest = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 
 func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, project *model.Project, reference string) {
 	release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
@@ -48,15 +50,11 @@ func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, project 
 }
 
 func (h *Handler) serveBlob(w http.ResponseWriter, r *http.Request, digest string) {
-	key := digest
-	if strings.HasPrefix(digest, "sha256:") {
-		key = digest[7:]
-	}
-
-	if len(key) < 4 {
+	if !validDigest.MatchString(digest) {
 		http.NotFound(w, r)
 		return
 	}
+	key := digest[7:]
 
 	rc, size, err := h.Store.Get(r.Context(), key)
 	if err != nil {

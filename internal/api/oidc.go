@@ -23,6 +23,7 @@ func (h *Handler) CreateOIDCPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
 	var req createOIDCPolicyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, http.StatusBadRequest, "invalid request body")

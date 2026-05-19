@@ -19,6 +19,8 @@ type Handler struct {
 	Orchestrator *repackage.Orchestrator
 }
 
+const maxJSONBody = 1 << 20 // 1 MiB
+
 func jsonResponse(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -63,12 +65,16 @@ func (h *Handler) getProject(w http.ResponseWriter, r *http.Request, name string
 	return p
 }
 
-// checkReadAccess verifies the caller can read a private project, writing a 401 on failure.
+// checkReadAccess verifies the caller can read a private project, writing an error on failure.
 func (h *Handler) checkReadAccess(w http.ResponseWriter, r *http.Request, project *model.Project) bool {
 	if project.IsPrivate {
 		t := auth.TokenFrom(r.Context())
 		if t == nil || !t.HasScope("read") {
 			jsonError(w, http.StatusUnauthorized, "authentication required")
+			return false
+		}
+		if !t.AuthorizedForProject(project.ID) {
+			jsonError(w, http.StatusForbidden, "token not authorized for this project")
 			return false
 		}
 	}
@@ -90,10 +96,10 @@ func (h *Handler) getRelease(w http.ResponseWriter, r *http.Request, projectID i
 }
 
 // validateScopes normalizes and validates a comma-separated scope string.
-// An empty input defaults to "read,write". Returns "" and writes a 400 on invalid scope.
+// An empty input defaults to "read". Returns "" and writes a 400 on invalid scope.
 func validateScopes(w http.ResponseWriter, scopes string) string {
 	if scopes == "" {
-		return "read,write"
+		return "read"
 	}
 	var parts []string
 	for _, s := range strings.Split(scopes, ",") {

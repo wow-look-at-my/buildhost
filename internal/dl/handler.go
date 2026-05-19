@@ -1,6 +1,7 @@
 package dl
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -135,7 +136,7 @@ func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project 
 }
 
 func (h *Handler) serveBlob(w http.ResponseWriter, key, filename string) {
-	rc, size, err := h.Store.Get(nil, key)
+	rc, size, err := h.Store.Get(context.Background(), key)
 	if err != nil {
 		http.Error(w, "blob not found", http.StatusNotFound)
 		return
