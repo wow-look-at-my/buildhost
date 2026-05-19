@@ -11,12 +11,18 @@ import (
 	"strings"
 	"testing"
 
+	_ "github.com/wow-look-at-my/buildhost/internal/api"
+	_ "github.com/wow-look-at-my/buildhost/internal/apt"
+	_ "github.com/wow-look-at-my/buildhost/internal/brew"
 	"github.com/wow-look-at-my/buildhost/internal/config"
-	"github.com/wow-look-at-my/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	_ "github.com/wow-look-at-my/buildhost/internal/dl"
 	"github.com/wow-look-at-my/buildhost/internal/model"
+	_ "github.com/wow-look-at-my/buildhost/internal/npm"
+	_ "github.com/wow-look-at-my/buildhost/internal/oci"
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/testify/require"
 )
 
 // testEnv bundles the objects needed by every integration test.

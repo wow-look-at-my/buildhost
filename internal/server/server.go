@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -9,6 +10,8 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
+
+var healthzOnce sync.Once
 
 type Server struct {
 	cfg config.Config
@@ -31,9 +34,11 @@ func (s *Server) ListenAndServe() error {
 
 func (s *Server) Handler() http.Handler {
 	mux := auth.Mux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
+	healthzOnce.Do(func() {
+		mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("ok"))
+		})
 	})
 	var h http.Handler = mux
 	h = auth.GetMiddleware().Authenticate(h)
