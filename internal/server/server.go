@@ -4,17 +4,10 @@ import (
 	"net/http"
 	"time"
 
-	_ "github.com/wow-look-at-my/buildhost/internal/api"
-	_ "github.com/wow-look-at-my/buildhost/internal/apt"
-	_ "github.com/wow-look-at-my/buildhost/internal/brew"
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	_ "github.com/wow-look-at-my/buildhost/internal/dl"
-	_ "github.com/wow-look-at-my/buildhost/internal/npm"
-	_ "github.com/wow-look-at-my/buildhost/internal/oci"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-
-	"github.com/wow-look-at-my/buildhost/internal/auth"
 )
 
 type Server struct {
