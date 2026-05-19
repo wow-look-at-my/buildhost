@@ -12,17 +12,17 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 
 ## Project structure
 
-- `cmd/buildhost/` - CLI entrypoint (cobra, one subcommand per file, self-registering via init())
-- `internal/server/` - HTTP server, routing, middleware
-- `internal/api/` - REST API handlers (projects, releases, artifacts, publish, tokens)
-- `internal/dl/` - Download handlers with version/branch resolution
-- `internal/apt/` - APT repository endpoint
-- `internal/brew/` - Homebrew tap endpoint
-- `internal/npm/` - npm registry endpoint
-- `internal/oci/` - OCI distribution endpoint
-- `internal/auth/` - Token auth, OIDC JWT verification, middleware (EnforceProjectRead, RequireWrite)
+- `cmd/buildhost/` - CLI entrypoint (cobra, one subcommand per file, self-registering via init()). Backend imports (backend_*.go) trigger init() registration for each handler package.
+- `internal/server/` - HTTP server, global middleware chain (auth, security headers, logging, recovery)
+- `internal/api/` - REST API handlers (projects, releases, artifacts, publish, tokens). Each handler file registers its own routes in init().
+- `internal/dl/` - Download handlers with version/branch resolution. Self-registering via init().
+- `internal/apt/` - APT repository endpoint. Self-registering via init().
+- `internal/brew/` - Homebrew tap endpoint. Self-registering via init().
+- `internal/npm/` - npm registry endpoint. Self-registering via init().
+- `internal/oci/` - OCI distribution endpoint. Self-registering via init().
+- `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler), RouteInfo interface
 - `internal/db/` - SQLite database layer (modernc.org/sqlite, no CGo), OIDC policy storage
-- `internal/storage/` - Content-addressed blob storage (filesystem backend)
+- `internal/storage/` - Content-addressed blob storage (filesystem backend, key validation)
 - `internal/repackage/` - Repackaging pipeline (tar.gz, tar.xz, tar.zst, zip, deb, brew, npm, oci)
 - `internal/strip/` - Binary debug info stripping (shells out to strip/objcopy)
 - `internal/model/` - Data types (Project, Release, Artifact, APIToken, OIDCPolicy)
@@ -39,9 +39,14 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - Auth: Bearer token, Basic auth, or query param — all resolve to the same token system
 - OIDC: JWT-based auth for GitHub Actions (and any OIDC provider), verified via JWKS
 - Private projects require auth on all endpoints including format-specific ones (APT, Brew, NPM, OCI)
+- Project auth enforced once in centralized requireProject middleware — handlers never check auth
+- Each backend defines a RouteInfo implementation (private route struct) for full URL parsing
+- Backends self-register routes via init() on auth.Mux(); adding a backend = adding files, no existing files modified
 - Tokens are project-scoped or global; project-scoped tokens cannot escalate privileges
 - Token expiry is enforced at lookup time
-- Upload size capped at 2 GiB
+- Default token scope is "read" (least privilege)
+- Upload size capped at 2 GiB; JSON endpoints capped at 1 MiB
+- Storage keys validated as hex SHA-256 to prevent path traversal
 
 ## First-time setup
 
