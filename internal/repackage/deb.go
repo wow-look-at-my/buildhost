@@ -6,7 +6,6 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/model"
@@ -21,11 +20,6 @@ func (d *Deb) Applicable(a model.Artifact) bool {
 }
 
 func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
-	size, err := inputSize(input.Binary)
-	if err != nil {
-		return nil, fmt.Errorf("get input size: %w", err)
-	}
-
 	arch := debArch(input.Artifact.Arch)
 	version := strings.TrimPrefix(input.Release.Version, "v")
 	if version == "" {
@@ -70,7 +64,11 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 		mode = 0o755
 	}
 
-	dataTar, err := buildStreamingTarGZ("." + installDir + fileName, size, mode, input.Binary)
+	dataTar, err := buildTarGZ([]tarEntry{{
+		Name: "." + installDir + fileName,
+		Data: input.Data,
+		Mode: mode,
+	}})
 	if err != nil {
 		return nil, fmt.Errorf("build data.tar.gz: %w", err)
 	}
@@ -116,27 +114,6 @@ func buildTarGZ(entries []tarEntry) ([]byte, error) {
 		if _, err := tw.Write(e.Data); err != nil {
 			return nil, err
 		}
-	}
-
-	tw.Close()
-	gw.Close()
-	return buf.Bytes(), nil
-}
-
-func buildStreamingTarGZ(name string, size, mode int64, r io.Reader) ([]byte, error) {
-	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gw)
-
-	if err := tw.WriteHeader(&tar.Header{
-		Name: name,
-		Size: size,
-		Mode: mode,
-	}); err != nil {
-		return nil, err
-	}
-	if _, err := io.Copy(tw, r); err != nil {
-		return nil, err
 	}
 
 	tw.Close()

@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 
 	"github.com/ulikunitz/xz"
 	"github.com/wow-look-at-my/buildhost/internal/model"
@@ -18,11 +17,6 @@ func (t *TarXZ) Format() Format { return FormatTarXZ }
 func (t *TarXZ) Applicable(_ model.Artifact) bool { return true }
 
 func (t *TarXZ) Repackage(_ context.Context, input Input) (*Output, error) {
-	size, err := inputSize(input.Binary)
-	if err != nil {
-		return nil, fmt.Errorf("get input size: %w", err)
-	}
-
 	var buf bytes.Buffer
 	xw, err := xz.NewWriter(&buf)
 	if err != nil {
@@ -37,12 +31,12 @@ func (t *TarXZ) Repackage(_ context.Context, input Input) (*Output, error) {
 
 	if err := tw.WriteHeader(&tar.Header{
 		Name: input.Project.Name,
-		Size: size,
+		Size: int64(len(input.Data)),
 		Mode: mode,
 	}); err != nil {
 		return nil, err
 	}
-	if _, err := io.Copy(tw, input.Binary); err != nil {
+	if _, err := tw.Write(input.Data); err != nil {
 		return nil, err
 	}
 	tw.Close()

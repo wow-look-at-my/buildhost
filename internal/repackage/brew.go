@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"io"
 	"regexp"
 	"strings"
 	"text/template"
@@ -76,11 +75,8 @@ type brewResource struct {
 }
 
 func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
-	h := sha256.New()
-	if _, err := io.Copy(h, input.Binary); err != nil {
-		return nil, fmt.Errorf("hash binary: %w", err)
-	}
-	sha := fmt.Sprintf("%x", h.Sum(nil))
+	h := sha256.Sum256(input.Data)
+	sha := fmt.Sprintf("%x", h)
 
 	version := strings.TrimPrefix(input.Release.Version, "v")
 	if version == "" {

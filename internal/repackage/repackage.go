@@ -12,6 +12,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/buildhost/internal/strip"
+	"github.com/wow-look-at-my/go-mmap"
 )
 
 type Format string
@@ -31,7 +32,7 @@ type Input struct {
 	Project  model.Project
 	Release  model.Release
 	Artifact model.Artifact
-	Binary   io.ReadSeeker
+	Data     []byte
 	BaseURL  string
 }
 
@@ -109,18 +110,25 @@ func (o *Orchestrator) PublishRelease(ctx context.Context, project model.Project
 				slog.Error("copy artifact to temp", "err", err)
 				continue
 			}
-			tmpFile.Seek(0, io.SeekStart)
+			tmpFile.Close()
+
+			m, err := mmap.MapFile(tmpFile.Name())
+			if err != nil {
+				os.Remove(tmpFile.Name())
+				slog.Error("mmap artifact", "err", err)
+				continue
+			}
 
 			input := Input{
 				Project:  project,
 				Release:  release,
 				Artifact: *a,
-				Binary:   tmpFile,
+				Data:     m,
 				BaseURL:  o.BaseURL,
 			}
 
 			output, err := rp.Repackage(ctx, input)
-			tmpFile.Close()
+			m.Unmap()
 			os.Remove(tmpFile.Name())
 
 			if err != nil {
@@ -196,17 +204,6 @@ func (o *Orchestrator) stripArtifact(ctx context.Context, a *model.Artifact) err
 	a.DebugSize = debugSize
 
 	return o.DB.UpdateArtifactStripped(ctx, a.ID, strippedKey, strippedSize, strippedKey, debugKey, debugSize)
-}
-
-func inputSize(rs io.ReadSeeker) (int64, error) {
-	size, err := rs.Seek(0, io.SeekEnd)
-	if err != nil {
-		return 0, err
-	}
-	if _, err := rs.Seek(0, io.SeekStart); err != nil {
-		return 0, err
-	}
-	return size, nil
 }
 
 func copyToTempFile(r io.Reader, prefix string) (*os.File, error) {

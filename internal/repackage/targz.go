@@ -6,7 +6,6 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
 
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
@@ -18,16 +17,9 @@ func (t *TarGZ) Format() Format { return FormatTarGZ }
 func (t *TarGZ) Applicable(_ model.Artifact) bool { return true }
 
 func (t *TarGZ) Repackage(_ context.Context, input Input) (*Output, error) {
-	size, err := inputSize(input.Binary)
-	if err != nil {
-		return nil, fmt.Errorf("get input size: %w", err)
-	}
-
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
-
-	name := input.Project.Name
 
 	mode := int64(0o644)
 	if input.Artifact.Kind == model.KindBinary {
@@ -35,13 +27,13 @@ func (t *TarGZ) Repackage(_ context.Context, input Input) (*Output, error) {
 	}
 
 	if err := tw.WriteHeader(&tar.Header{
-		Name: name,
-		Size: size,
+		Name: input.Project.Name,
+		Size: int64(len(input.Data)),
 		Mode: mode,
 	}); err != nil {
 		return nil, err
 	}
-	if _, err := io.Copy(tw, input.Binary); err != nil {
+	if _, err := tw.Write(input.Data); err != nil {
 		return nil, err
 	}
 	tw.Close()

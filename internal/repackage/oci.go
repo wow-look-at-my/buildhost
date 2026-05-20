@@ -18,22 +18,17 @@ func (o *OCI) Applicable(a model.Artifact) bool {
 }
 
 func (o *OCI) Repackage(_ context.Context, input Input) (*Output, error) {
-	size, err := inputSize(input.Binary)
-	if err != nil {
-		return nil, fmt.Errorf("get input size: %w", err)
-	}
-
 	manifest := map[string]any{
 		"schemaVersion": 2,
 		"mediaType":     "application/vnd.oci.image.manifest.v1+json",
 		"config": map[string]any{
 			"mediaType": "application/vnd.oci.image.config.v1+json",
-			"size":      size,
+			"size":      len(input.Data),
 		},
 		"layers": []map[string]any{
 			{
 				"mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
-				"size":      size,
+				"size":      len(input.Data),
 			},
 		},
 	}

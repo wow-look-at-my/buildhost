@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
@@ -31,7 +30,7 @@ func (z *Zip) Repackage(_ context.Context, input Input) (*Output, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := io.Copy(w, input.Binary); err != nil {
+	if _, err := w.Write(input.Data); err != nil {
 		return nil, err
 	}
 	zw.Close()
