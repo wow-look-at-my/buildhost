@@ -1,5 +1,7 @@
 package api
 
+//go:generate env GOPROXY=direct go run github.com/wow-look-at-my/go-regex-compiler/cmd/regex-gen@master -regex ^[a-z0-9][a-z0-9._-]{0,127}$ -func validProjectName -package api -output project_name.go -match full
+
 import (
 	"encoding/json"
 	"errors"
