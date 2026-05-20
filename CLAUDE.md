@@ -62,7 +62,7 @@ buildhost bootstrap --name admin-token
 BUILDHOST_LISTEN_ADDR=:8080 BUILDHOST_BASE_URL=https://example.com buildhost serve
 ```
 
-The admin dashboard starts automatically on a separate port (default `:9090`). It requires authentication with a global token that has write scope -- the same tokens used for the API. Set `BUILDHOST_ADMIN_LISTEN_ADDR` to change the address, or set it to empty to disable.
+The admin dashboard starts automatically on a separate port (default `:9090`). Set `BUILDHOST_ADMIN_LISTEN_ADDR` to change the address, or set it to empty to disable.
 
 ```bash
 BUILDHOST_ADMIN_LISTEN_ADDR=:9090 buildhost serve   # listen on all interfaces (default)
