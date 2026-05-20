@@ -7,22 +7,19 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
-func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, projectName, subpath string) {
+func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath string) {
 	arch := extractDebArch(subpath)
 	if arch == "" {
 		http.NotFound(w, r)
 		return
 	}
 
-	project, err := h.DB.GetProject(r.Context(), projectName)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
+	project := auth.ProjectFrom(r.Context())
 
 	release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
 	if errors.Is(err, db.ErrNotFound) {
@@ -61,25 +58,21 @@ Size: %d
 SHA256: %s
 Description: %s
 
-`, projectName, version, arch, projectName, version, arch,
+`, project.Name, version, arch, project.Name, version, arch,
 		artifact.Size, artifact.SHA256, desc)
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write([]byte(entry))
 }
 
-func (h *Handler) servePool(w http.ResponseWriter, r *http.Request, projectName, subpath string) {
+func (h *Handler) servePool(w http.ResponseWriter, r *http.Request, subpath string) {
 	filename := strings.TrimPrefix(subpath, "pool/")
 	if filename == "" {
 		http.NotFound(w, r)
 		return
 	}
 
-	project, err := h.DB.GetProject(r.Context(), projectName)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
+	project := auth.ProjectFrom(r.Context())
 
 	release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
 	if errors.Is(err, db.ErrNotFound) {

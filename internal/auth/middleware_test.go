@@ -148,18 +148,42 @@ func TestRequireWrite_TokenWithWriteScope_PassesThrough(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
-func TestRequireReadForProject_PublicProject_PassesThrough(t *testing.T) {
+// testRouteInfo implements RouteInfo for test purposes.
+type testRouteInfo struct {
+	project string
+	access  AccessLevel
+}
+
+func (r testRouteInfo) ProjectName() string { return r.project }
+func (r testRouteInfo) Access() AccessLevel { return r.access }
+
+// initTestMiddleware sets up the package-level mw variable for tests.
+func initTestMiddleware(t *testing.T, d *db.DB) {
+	t.Helper()
+	mw = &Middleware{DB: d}
+	t.Cleanup(func() { mw = nil })
+}
+
+func TestRequireProject_PublicProject_ReadAccess_PassesThrough(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "pub", Versioning: "auto"}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "pub", access: ReadAccess}
+	}
+
 	var called bool
+	var gotProject *model.Project
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
+		gotProject = ProjectFrom(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
 
-	getProject := func(r *http.Request) *model.Project {
-		return &model.Project{ID: 1, IsPrivate: false}
-	}
-
-	handler := RequireReadForProject(inner, getProject)
+	handler := requireProjectFunc(parse, inner)
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
@@ -167,18 +191,68 @@ func TestRequireReadForProject_PublicProject_PassesThrough(t *testing.T) {
 
 	assert.True(t, called)
 	assert.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, gotProject)
+	assert.Equal(t, "pub", gotProject.Name)
 }
 
-func TestRequireReadForProject_PrivateProject_NoToken_Returns401(t *testing.T) {
+func TestRequireProject_NonexistentProject_Returns404(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "nosuch", access: ReadAccess}
+	}
+
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler should not be called")
 	})
 
-	getProject := func(r *http.Request) *model.Project {
-		return &model.Project{ID: 1, IsPrivate: true}
+	handler := requireProjectFunc(parse, inner)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestRequireProject_EmptyProjectName_Returns404(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "", access: ReadAccess}
 	}
 
-	handler := RequireReadForProject(inner, getProject)
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestRequireProject_PrivateProject_NoToken_Returns401(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: "auto"}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "secret", access: ReadAccess}
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	})
+
+	handler := requireProjectFunc(parse, inner)
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
@@ -187,18 +261,24 @@ func TestRequireReadForProject_PrivateProject_NoToken_Returns401(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 }
 
-func TestRequireReadForProject_PrivateProject_WrongProjectToken_Returns403(t *testing.T) {
+func TestRequireProject_PrivateProject_WrongProjectToken_Returns403(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: "auto"}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "secret", access: ReadAccess}
+	}
+
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler should not be called")
 	})
 
-	getProject := func(r *http.Request) *model.Project {
-		return &model.Project{ID: 1, IsPrivate: true}
-	}
+	handler := requireProjectFunc(parse, inner)
 
-	handler := RequireReadForProject(inner, getProject)
-
-	otherProjectID := int64(99)
+	otherProjectID := int64(999)
 	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: &otherProjectID}
 	ctx := WithToken(context.Background(), tok)
 	req := httptest.NewRequest("GET", "/", nil)
@@ -210,21 +290,26 @@ func TestRequireReadForProject_PrivateProject_WrongProjectToken_Returns403(t *te
 	assert.Contains(t, rec.Body.String(), "not authorized for this project")
 }
 
-func TestRequireReadForProject_PrivateProject_CorrectToken_PassesThrough(t *testing.T) {
+func TestRequireProject_PrivateProject_CorrectToken_PassesThrough(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: "auto"}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "secret", access: ReadAccess}
+	}
+
 	var called bool
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	})
 
-	getProject := func(r *http.Request) *model.Project {
-		return &model.Project{ID: 1, IsPrivate: true}
-	}
+	handler := requireProjectFunc(parse, inner)
 
-	handler := RequireReadForProject(inner, getProject)
-
-	projectID := int64(1)
-	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: &projectID}
+	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: &proj.ID}
 	ctx := WithToken(context.Background(), tok)
 	req := httptest.NewRequest("GET", "/", nil)
 	req = req.WithContext(ctx)
@@ -235,71 +320,179 @@ func TestRequireReadForProject_PrivateProject_CorrectToken_PassesThrough(t *test
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
-func TestEnforceProjectRead_PublicProject_OK(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
-	project := &model.Project{ID: 1, IsPrivate: false}
-	status, ok := EnforceProjectRead(req, project)
-	assert.True(t, ok)
-	assert.Equal(t, 0, status)
-}
+func TestRequireProject_PrivateProject_GlobalToken_PassesThrough(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
 
-func TestEnforceProjectRead_NilProject_OK(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
-	status, ok := EnforceProjectRead(req, nil)
-	assert.True(t, ok)
-	assert.Equal(t, 0, status)
-}
+	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: "auto"}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
 
-func TestEnforceProjectRead_PrivateNoToken_401(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
-	project := &model.Project{ID: 1, IsPrivate: true}
-	status, ok := EnforceProjectRead(req, project)
-	assert.False(t, ok)
-	assert.Equal(t, 401, status)
-}
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "secret", access: ReadAccess}
+	}
 
-func TestEnforceProjectRead_PrivateWrongProject_403(t *testing.T) {
-	otherID := int64(99)
-	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: &otherID}
-	ctx := WithToken(context.Background(), tok)
-	req := httptest.NewRequest("GET", "/", nil)
-	req = req.WithContext(ctx)
-	project := &model.Project{ID: 1, IsPrivate: true}
-	status, ok := EnforceProjectRead(req, project)
-	assert.False(t, ok)
-	assert.Equal(t, 403, status)
-}
+	var called bool
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
 
-func TestEnforceProjectRead_PrivateCorrectToken_OK(t *testing.T) {
-	projID := int64(1)
-	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: &projID}
-	ctx := WithToken(context.Background(), tok)
-	req := httptest.NewRequest("GET", "/", nil)
-	req = req.WithContext(ctx)
-	project := &model.Project{ID: 1, IsPrivate: true}
-	status, ok := EnforceProjectRead(req, project)
-	assert.True(t, ok)
-	assert.Equal(t, 0, status)
-}
+	handler := requireProjectFunc(parse, inner)
 
-func TestEnforceProjectRead_PrivateGlobalToken_OK(t *testing.T) {
+	// Global token (nil ProjectID) should be allowed.
 	tok := &model.APIToken{ID: 1, Scopes: "read"}
 	ctx := WithToken(context.Background(), tok)
 	req := httptest.NewRequest("GET", "/", nil)
 	req = req.WithContext(ctx)
-	project := &model.Project{ID: 1, IsPrivate: true}
-	status, ok := EnforceProjectRead(req, project)
-	assert.True(t, ok)
-	assert.Equal(t, 0, status)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.True(t, called)
+	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
-func TestEnforceProjectRead_PrivateWriteOnlyScope_401(t *testing.T) {
-	tok := &model.APIToken{ID: 1, Scopes: "write"}
+func TestRequireProject_PrivateProject_WriteOnlyScope_Returns401(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: "auto"}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "secret", access: ReadAccess}
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	// Token with write-only scope should be rejected for read access.
+	tok := &model.APIToken{ID: 1, Scopes: "write", ProjectID: &proj.ID}
 	ctx := WithToken(context.Background(), tok)
 	req := httptest.NewRequest("GET", "/", nil)
 	req = req.WithContext(ctx)
-	project := &model.Project{ID: 1, IsPrivate: true}
-	status, ok := EnforceProjectRead(req, project)
-	assert.False(t, ok)
-	assert.Equal(t, 401, status)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestRequireProject_WriteAccess_NoToken_Returns401(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "pub", Versioning: "auto"}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "pub", access: WriteAccess}
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	req := httptest.NewRequest("POST", "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestRequireProject_WriteAccess_ReadOnlyToken_Returns401(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "pub", Versioning: "auto"}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "pub", access: WriteAccess}
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	tok := &model.APIToken{ID: 1, Scopes: "read"}
+	ctx := WithToken(context.Background(), tok)
+	req := httptest.NewRequest("POST", "/", nil)
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestRequireProject_WriteAccess_WrongProject_Returns403(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "pub", Versioning: "auto"}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "pub", access: WriteAccess}
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	otherProjectID := int64(999)
+	tok := &model.APIToken{ID: 1, Scopes: "read,write", ProjectID: &otherProjectID}
+	ctx := WithToken(context.Background(), tok)
+	req := httptest.NewRequest("POST", "/", nil)
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestRequireProject_WriteAccess_ValidToken_PassesThrough(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "pub", Versioning: "auto"}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "pub", access: WriteAccess}
+	}
+
+	var called bool
+	var gotProject *model.Project
+	var gotRI RouteInfo
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		gotProject = ProjectFrom(r.Context())
+		gotRI = RouteInfoFrom(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	tok := &model.APIToken{ID: 1, Scopes: "read,write", ProjectID: &proj.ID}
+	ctx := WithToken(context.Background(), tok)
+	req := httptest.NewRequest("POST", "/", nil)
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.True(t, called)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, gotProject)
+	assert.Equal(t, "pub", gotProject.Name)
+	require.NotNil(t, gotRI)
+	assert.Equal(t, "pub", gotRI.ProjectName())
+	assert.Equal(t, WriteAccess, gotRI.Access())
 }

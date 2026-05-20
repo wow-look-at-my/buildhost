@@ -23,6 +23,7 @@ func TestCreateRelease_Semver(t *testing.T) {
 	body := `{"version":"v1.2.3","git_branch":"main","git_commit":"abc123"}`
 	req := httptest.NewRequest("POST", "/api/projects/semproj/releases", strings.NewReader(body))
 	req.SetPathValue("project", "semproj")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.CreateRelease(rec, req)
@@ -44,6 +45,7 @@ func TestCreateRelease_Auto(t *testing.T) {
 	body := `{}`
 	req := httptest.NewRequest("POST", "/api/projects/autoproj/releases", strings.NewReader(body))
 	req.SetPathValue("project", "autoproj")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.CreateRelease(rec, req)
@@ -65,6 +67,7 @@ func TestCreateRelease_AutoWithExplicitVersion(t *testing.T) {
 	body := `{"version":"5"}`
 	req := httptest.NewRequest("POST", "/api/projects/autov/releases", strings.NewReader(body))
 	req.SetPathValue("project", "autov")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.CreateRelease(rec, req)
@@ -76,30 +79,8 @@ func TestCreateRelease_AutoWithExplicitVersion(t *testing.T) {
 	assert.Equal(t, int64(5), rel.VersionNum)
 }
 
-func TestCreateRelease_NoAuth(t *testing.T) {
-	h := setupTestHandler(t)
-
-	body := `{"version":"1.0.0"}`
-	req := httptest.NewRequest("POST", "/api/projects/proj/releases", strings.NewReader(body))
-	req.SetPathValue("project", "proj")
-	rec := httptest.NewRecorder()
-	h.CreateRelease(rec, req)
-
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-}
-
-func TestCreateRelease_ProjectNotFound(t *testing.T) {
-	h := setupTestHandler(t)
-
-	body := `{"version":"1.0.0"}`
-	req := httptest.NewRequest("POST", "/api/projects/missing/releases", strings.NewReader(body))
-	req.SetPathValue("project", "missing")
-	req = req.WithContext(writeToken(req.Context(), "read,write"))
-	rec := httptest.NewRecorder()
-	h.CreateRelease(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
+// Note: TestCreateRelease_NoAuth removed -- auth is now enforced by the
+// requireProject middleware (tested in the auth package).
 
 func TestCreateRelease_InvalidBody(t *testing.T) {
 	h := setupTestHandler(t)
@@ -110,6 +91,7 @@ func TestCreateRelease_InvalidBody(t *testing.T) {
 
 	req := httptest.NewRequest("POST", "/api/projects/badbody/releases", strings.NewReader("not json"))
 	req.SetPathValue("project", "badbody")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.CreateRelease(rec, req)
@@ -127,6 +109,7 @@ func TestCreateRelease_SemverMissingVersion(t *testing.T) {
 	body := `{}`
 	req := httptest.NewRequest("POST", "/api/projects/semproj2/releases", strings.NewReader(body))
 	req.SetPathValue("project", "semproj2")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.CreateRelease(rec, req)
@@ -148,6 +131,7 @@ func TestCreateRelease_Duplicate(t *testing.T) {
 	body := `{"version":"1.0.0"}`
 	req := httptest.NewRequest("POST", "/api/projects/duprel/releases", strings.NewReader(body))
 	req.SetPathValue("project", "duprel")
+	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.CreateRelease(rec, req)
@@ -167,6 +151,7 @@ func TestGetRelease_Success(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/projects/relproj/releases/2.0.0", nil)
 	req.SetPathValue("project", "relproj")
 	req.SetPathValue("version", "2.0.0")
+	req = withProjectRoute(req, proj)
 	rec := httptest.NewRecorder()
 	h.GetRelease(rec, req)
 
@@ -174,18 +159,6 @@ func TestGetRelease_Success(t *testing.T) {
 	var got model.Release
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	assert.Equal(t, "2.0.0", got.Version)
-}
-
-func TestGetRelease_ProjectNotFound(t *testing.T) {
-	h := setupTestHandler(t)
-
-	req := httptest.NewRequest("GET", "/api/projects/missing/releases/1.0.0", nil)
-	req.SetPathValue("project", "missing")
-	req.SetPathValue("version", "1.0.0")
-	rec := httptest.NewRecorder()
-	h.GetRelease(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
 func TestGetRelease_ReleaseNotFound(t *testing.T) {
@@ -198,29 +171,15 @@ func TestGetRelease_ReleaseNotFound(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/projects/relproj2/releases/9.9.9", nil)
 	req.SetPathValue("project", "relproj2")
 	req.SetPathValue("version", "9.9.9")
+	req = withProjectRoute(req, proj)
 	rec := httptest.NewRecorder()
 	h.GetRelease(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-func TestGetRelease_PrivateProjectNoAuth(t *testing.T) {
-	h := setupTestHandler(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "privget", IsPrivate: true, Versioning: model.VersioningSemver}
-	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, h.DB.CreateRelease(ctx, rel))
-
-	req := httptest.NewRequest("GET", "/api/projects/privget/releases/1.0.0", nil)
-	req.SetPathValue("project", "privget")
-	req.SetPathValue("version", "1.0.0")
-	rec := httptest.NewRecorder()
-	h.GetRelease(rec, req)
-
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-}
+// Note: GetRelease auth (private project, project not found) is tested via
+// requireProject middleware in the auth package.
 
 func TestListReleases_Success(t *testing.T) {
 	h := setupTestHandler(t)
@@ -233,6 +192,7 @@ func TestListReleases_Success(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/api/projects/listrel/releases", nil)
 	req.SetPathValue("project", "listrel")
+	req = withProjectRoute(req, proj)
 	rec := httptest.NewRecorder()
 	h.ListReleases(rec, req)
 
@@ -242,31 +202,8 @@ func TestListReleases_Success(t *testing.T) {
 	assert.Equal(t, 2, len(releases))
 }
 
-func TestListReleases_ProjectNotFound(t *testing.T) {
-	h := setupTestHandler(t)
-
-	req := httptest.NewRequest("GET", "/api/projects/missing/releases", nil)
-	req.SetPathValue("project", "missing")
-	rec := httptest.NewRecorder()
-	h.ListReleases(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
-
-func TestListReleases_PrivateProjectNoAuth(t *testing.T) {
-	h := setupTestHandler(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "privrel", IsPrivate: true, Versioning: model.VersioningSemver}
-	require.NoError(t, h.DB.CreateProject(ctx, proj))
-
-	req := httptest.NewRequest("GET", "/api/projects/privrel/releases", nil)
-	req.SetPathValue("project", "privrel")
-	rec := httptest.NewRecorder()
-	h.ListReleases(rec, req)
-
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-}
+// Note: ListReleases auth (private project, project not found) is tested via
+// requireProject middleware in the auth package.
 
 func TestSemverToNum(t *testing.T) {
 	tests := []struct {

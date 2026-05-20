@@ -1,6 +1,7 @@
 package brew
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,33 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
+
+var handler Handler
+
+func init() {
+	auth.OnReady(func() {
+		handler.DB = auth.DB()
+		handler.Store = auth.Store()
+	})
+	auth.HandleHandler("/brew/", parseRoute, http.StripPrefix("/brew", &handler))
+}
+
+type route struct {
+	project string
+}
+
+func (r route) ProjectName() string     { return r.project }
+func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
+
+func parseRoute(r *http.Request) auth.RouteInfo {
+	path := strings.TrimPrefix(r.URL.Path, "/brew/")
+	project := strings.TrimSuffix(path, ".rb")
+	return route{project: project}
+}
+
+func routeFrom(ctx context.Context) route {
+	return auth.RouteInfoFrom(ctx).(route)
+}
 
 type Handler struct {
 	DB    *db.DB
@@ -24,21 +52,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	projectName := strings.TrimSuffix(path, ".rb")
-	project, err := h.DB.GetProject(r.Context(), projectName)
-	if errors.Is(err, db.ErrNotFound) {
-		http.NotFound(w, r)
-		return
-	}
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if status, ok := auth.EnforceProjectRead(r, project); !ok {
-		http.Error(w, http.StatusText(status), status)
-		return
-	}
+	project := auth.ProjectFrom(r.Context())
+	projectName := project.Name
 
 	release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
 	if errors.Is(err, db.ErrNotFound) {
@@ -74,4 +89,3 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	http.NotFound(w, r)
 }
-

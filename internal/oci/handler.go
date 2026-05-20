@@ -1,8 +1,8 @@
 package oci
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 
@@ -11,55 +11,72 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
+var handler Handler
+
+func init() {
+	auth.OnReady(func() {
+		handler.DB = auth.DB()
+		handler.Store = auth.Store()
+	})
+	auth.HandleRaw("GET /v2/", handler.V2Root)
+	auth.HandleHandler("/v2/", parseRoute, &handler)
+}
+
+type route struct {
+	project   string
+	action    string
+	reference string
+}
+
+func (r route) ProjectName() string      { return r.project }
+func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
+
+func parseRoute(r *http.Request) auth.RouteInfo {
+	path := strings.TrimPrefix(r.URL.Path, "/v2/")
+	parts := strings.SplitN(path, "/", 3)
+	rt := route{}
+	if len(parts) >= 1 {
+		rt.project = parts[0]
+	}
+	if len(parts) >= 2 {
+		rt.action = parts[1]
+	}
+	if len(parts) >= 3 {
+		rt.reference = parts[2]
+	}
+	return rt
+}
+
+func routeFrom(ctx context.Context) route {
+	return auth.RouteInfoFrom(ctx).(route)
+}
+
 type Handler struct {
 	DB    *db.DB
 	Store storage.Storage
 }
 
+func (h *Handler) V2Root(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{})
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/v2")
+	rt := routeFrom(r.Context())
 
-	if path == "/" || path == "" {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{})
-		return
-	}
-
-	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) < 2 {
-		http.NotFound(w, r)
-		return
-	}
-
-	projectName := parts[0]
-	action := parts[1]
-
-	switch action {
+	switch rt.action {
 	case "manifests":
-		if len(parts) < 3 {
+		if rt.reference == "" {
 			http.NotFound(w, r)
 			return
 		}
-		project, err := h.DB.GetProject(r.Context(), projectName)
-		if errors.Is(err, db.ErrNotFound) {
-			http.NotFound(w, r)
-			return
-		}
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		if status, ok := auth.EnforceProjectRead(r, project); !ok {
-			http.Error(w, http.StatusText(status), status)
-			return
-		}
-		h.serveManifest(w, r, project, parts[2])
+		h.serveManifest(w, r, rt.reference)
 	case "blobs":
-		if len(parts) < 3 {
+		if rt.reference == "" {
 			http.NotFound(w, r)
 			return
 		}
-		h.serveBlob(w, r, parts[2])
+		h.serveBlob(w, r, rt.reference)
 	default:
 		http.NotFound(w, r)
 	}

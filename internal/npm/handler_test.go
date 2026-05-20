@@ -30,14 +30,12 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	return h, d, store
 }
 
-func TestServeHTTP_PackageInfo_ProjectNotFound(t *testing.T) {
-	h, _, _ := setupTest(t)
-
-	req := httptest.NewRequest("GET", "/@buildhost/nonexistent", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
+// withRoute adds project and route info to the request context, simulating
+// what the auth middleware does in production.
+func withRoute(r *http.Request, project *model.Project, rt route) *http.Request {
+	ctx := auth.WithProject(r.Context(), project)
+	ctx = auth.WithRouteInfo(ctx, rt)
+	return r.WithContext(ctx)
 }
 
 func TestServeHTTP_PackageInfo_Success(t *testing.T) {
@@ -51,6 +49,7 @@ func TestServeHTTP_PackageInfo_Success(t *testing.T) {
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	req := httptest.NewRequest("GET", "/@buildhost/myapp", nil)
+	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -74,6 +73,7 @@ func TestServeHTTP_PackageInfo_UnpublishedSkipped(t *testing.T) {
 	require.NoError(t, d.CreateRelease(ctx, &model.Release{ProjectID: proj.ID, Version: "1.0.0-rc1", VersionNum: 1}))
 
 	req := httptest.NewRequest("GET", "/@buildhost/myapp2", nil)
+	req = withRoute(req, proj, route{project: "myapp2"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -85,9 +85,14 @@ func TestServeHTTP_PackageInfo_UnpublishedSkipped(t *testing.T) {
 }
 
 func TestServeHTTP_Tarball_NotFound(t *testing.T) {
-	h, _, _ := setupTest(t)
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "nonexistent", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/@buildhost/nonexistent/-/nonexistent-1.0.0.tgz", nil)
+	req = withRoute(req, proj, route{project: "nonexistent", isTarball: true, filename: "nonexistent-1.0.0.tgz"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -119,6 +124,7 @@ func TestServeHTTP_Tarball_Success(t *testing.T) {
 	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "npm", tgzKey, tgzSize, tgzKey, "myapp-1.0.0.tgz", "{}"))
 
 	req := httptest.NewRequest("GET", "/@buildhost/myapp/-/myapp-1.0.0.tgz", nil)
+	req = withRoute(req, proj, route{project: "myapp", isTarball: true, filename: "myapp-1.0.0.tgz"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -127,53 +133,11 @@ func TestServeHTTP_Tarball_Success(t *testing.T) {
 	assert.Equal(t, tgzContent, rec.Body.String())
 }
 
-func TestServeHTTP_Tarball_BadPath(t *testing.T) {
-	h, _, _ := setupTest(t)
+// Note: Private project auth (unauthorized, wrong token, etc.) is tested via
+// requireProject middleware in the auth package. The handler assumes auth has
+// been enforced by the middleware and context is properly set up.
 
-	// Path without /-/ separator results in package info path, not tarball
-	req := httptest.NewRequest("GET", "/@buildhost/myapp/something", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	// This goes to servePackageInfo which will 404 on missing project.
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
-
-// --- Private project auth tests ----------------------------------------------
-
-func TestServeHTTP_PrivateProject_PackageInfo_NoAuth(t *testing.T) {
-	h, d, _ := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-
-	req := httptest.NewRequest("GET", "/@buildhost/secret", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-}
-
-func TestServeHTTP_PrivateProject_PackageInfo_WrongProjectToken(t *testing.T) {
-	h, d, _ := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-
-	wrongProjID := int64(999)
-	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: &wrongProjID}
-	ctx2 := auth.WithToken(context.Background(), tok)
-	req := httptest.NewRequest("GET", "/@buildhost/secret", nil)
-	req = req.WithContext(ctx2)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusForbidden, rec.Code)
-}
-
-func TestServeHTTP_PrivateProject_PackageInfo_ValidToken(t *testing.T) {
+func TestServeHTTP_PrivateProject_PackageInfo_WithValidContext(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -183,10 +147,8 @@ func TestServeHTTP_PrivateProject_PackageInfo_ValidToken(t *testing.T) {
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
-	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: &proj.ID}
-	ctx2 := auth.WithToken(context.Background(), tok)
 	req := httptest.NewRequest("GET", "/@buildhost/secret", nil)
-	req = req.WithContext(ctx2)
+	req = withRoute(req, proj, route{project: "secret"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -196,69 +158,7 @@ func TestServeHTTP_PrivateProject_PackageInfo_ValidToken(t *testing.T) {
 	assert.Equal(t, "@buildhost/secret", info["name"])
 }
 
-func TestServeHTTP_PrivateProject_Tarball_NoAuth(t *testing.T) {
-	h, d, store := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	binaryKey, binarySize, err := store.Put(ctx, strings.NewReader("binary"))
-	require.NoError(t, err)
-	a := &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: binaryKey, Size: binarySize, SHA256: binaryKey,
-	}
-	require.NoError(t, d.CreateArtifact(ctx, a))
-
-	tgzKey, tgzSize, err := store.Put(ctx, strings.NewReader("fake-tgz"))
-	require.NoError(t, err)
-	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "npm", tgzKey, tgzSize, tgzKey, "secret-1.0.0.tgz", "{}"))
-
-	req := httptest.NewRequest("GET", "/@buildhost/secret/-/secret-1.0.0.tgz", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-}
-
-func TestServeHTTP_PrivateProject_Tarball_WrongProjectToken(t *testing.T) {
-	h, d, store := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	binaryKey, binarySize, err := store.Put(ctx, strings.NewReader("binary"))
-	require.NoError(t, err)
-	a := &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: binaryKey, Size: binarySize, SHA256: binaryKey,
-	}
-	require.NoError(t, d.CreateArtifact(ctx, a))
-
-	tgzKey, tgzSize, err := store.Put(ctx, strings.NewReader("fake-tgz"))
-	require.NoError(t, err)
-	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "npm", tgzKey, tgzSize, tgzKey, "secret-1.0.0.tgz", "{}"))
-
-	wrongProjID := int64(999)
-	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: &wrongProjID}
-	ctx2 := auth.WithToken(context.Background(), tok)
-	req := httptest.NewRequest("GET", "/@buildhost/secret/-/secret-1.0.0.tgz", nil)
-	req = req.WithContext(ctx2)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusForbidden, rec.Code)
-}
-
-func TestServeHTTP_PrivateProject_Tarball_ValidToken(t *testing.T) {
+func TestServeHTTP_PrivateProject_Tarball_WithValidContext(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -281,34 +181,11 @@ func TestServeHTTP_PrivateProject_Tarball_ValidToken(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "npm", tgzKey, tgzSize, tgzKey, "secret-1.0.0.tgz", "{}"))
 
-	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: &proj.ID}
-	ctx2 := auth.WithToken(context.Background(), tok)
 	req := httptest.NewRequest("GET", "/@buildhost/secret/-/secret-1.0.0.tgz", nil)
-	req = req.WithContext(ctx2)
+	req = withRoute(req, proj, route{project: "secret", isTarball: true, filename: "secret-1.0.0.tgz"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, tgzContent, rec.Body.String())
-}
-
-func TestServeHTTP_PrivateProject_GlobalToken(t *testing.T) {
-	h, d, _ := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	// Global token (nil ProjectID) should be allowed.
-	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: nil}
-	ctx2 := auth.WithToken(context.Background(), tok)
-	req := httptest.NewRequest("GET", "/@buildhost/secret", nil)
-	req = req.WithContext(ctx2)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
 }

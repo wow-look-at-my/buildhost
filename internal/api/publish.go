@@ -1,24 +1,21 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/wow-look-at-my/buildhost/internal/auth"
+)
+
+func init() {
+	auth.Handle("POST /api/v1/projects/{project}/releases/{version}/publish",
+		parseRoute, handler.PublishRelease)
+}
 
 func (h *Handler) PublishRelease(w http.ResponseWriter, r *http.Request) {
-	t := h.requireWrite(w, r)
-	if t == nil {
-		return
-	}
+	project := auth.ProjectFrom(r.Context())
+	rt := routeFrom(r.Context())
 
-	project := h.getProject(w, r, r.PathValue("project"))
-	if project == nil {
-		return
-	}
-
-	if !t.AuthorizedForProject(project.ID) {
-		jsonError(w, http.StatusForbidden, "token not authorized for this project")
-		return
-	}
-
-	release := h.getRelease(w, r, project.ID, r.PathValue("version"))
+	release := h.getRelease(w, r, project.ID, rt.version)
 	if release == nil {
 		return
 	}

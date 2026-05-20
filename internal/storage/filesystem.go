@@ -9,7 +9,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 )
+
+var validStorageKey = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type Filesystem struct {
 	root string
@@ -58,6 +61,9 @@ func (fs *Filesystem) Put(_ context.Context, r io.Reader) (string, int64, error)
 }
 
 func (fs *Filesystem) Get(_ context.Context, key string) (io.ReadCloser, int64, error) {
+	if !validStorageKey.MatchString(key) {
+		return nil, 0, os.ErrNotExist
+	}
 	f, err := os.Open(fs.path(key))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -74,6 +80,9 @@ func (fs *Filesystem) Get(_ context.Context, key string) (io.ReadCloser, int64, 
 }
 
 func (fs *Filesystem) Delete(_ context.Context, key string) error {
+	if !validStorageKey.MatchString(key) {
+		return nil
+	}
 	err := os.Remove(fs.path(key))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -82,6 +91,9 @@ func (fs *Filesystem) Delete(_ context.Context, key string) error {
 }
 
 func (fs *Filesystem) Exists(_ context.Context, key string) (bool, error) {
+	if !validStorageKey.MatchString(key) {
+		return false, nil
+	}
 	_, err := os.Stat(fs.path(key))
 	if err == nil {
 		return true, nil

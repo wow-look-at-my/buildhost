@@ -10,6 +10,12 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
+func init() {
+	auth.HandleRaw("POST /api/v1/projects", handler.CreateProject)
+	auth.HandleRaw("GET /api/v1/projects", handler.ListProjects)
+	auth.Handle("GET /api/v1/projects/{project}", parseRoute, handler.GetProject)
+}
+
 type createProjectRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -24,6 +30,7 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
 	var req createProjectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, http.StatusBadRequest, "invalid request body")
@@ -66,14 +73,7 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
-	project := h.getProject(w, r, r.PathValue("project"))
-	if project == nil {
-		return
-	}
-	if !h.checkReadAccess(w, r, project) {
-		return
-	}
-	jsonResponse(w, http.StatusOK, project)
+	jsonResponse(w, http.StatusOK, auth.ProjectFrom(r.Context()))
 }
 
 func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +86,9 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	t := auth.TokenFrom(r.Context())
 	var visible []model.Project
 	for _, p := range projects {
-		if !p.IsPrivate || (t != nil && t.HasScope("read")) {
+		if !p.IsPrivate {
+			visible = append(visible, p)
+		} else if t != nil && t.HasScope("read") && t.AuthorizedForProject(p.ID) {
 			visible = append(visible, p)
 		}
 	}

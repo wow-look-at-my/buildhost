@@ -1,8 +1,8 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 
@@ -13,11 +13,53 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
+var handler Handler
+
+func init() {
+	auth.OnReady(func() {
+		handler.DB = auth.DB()
+		handler.Store = auth.Store()
+		handler.Orchestrator = repackage.NewOrchestrator(auth.Store(), auth.DB(), auth.BaseURL())
+	})
+}
+
+type route struct {
+	project string
+	version string
+	os      string
+	arch    string
+	write   bool
+}
+
+func (r route) ProjectName() string { return r.project }
+func (r route) Access() auth.AccessLevel {
+	if r.write {
+		return auth.WriteAccess
+	}
+	return auth.ReadAccess
+}
+
+func parseRoute(r *http.Request) auth.RouteInfo {
+	return route{
+		project: r.PathValue("project"),
+		version: r.PathValue("version"),
+		os:      r.PathValue("os"),
+		arch:    r.PathValue("arch"),
+		write:   r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE",
+	}
+}
+
+func routeFrom(ctx context.Context) route {
+	return auth.RouteInfoFrom(ctx).(route)
+}
+
 type Handler struct {
 	DB           *db.DB
 	Store        storage.Storage
 	Orchestrator *repackage.Orchestrator
 }
+
+const maxJSONBody = 1 << 20 // 1 MiB
 
 func jsonResponse(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -29,7 +71,6 @@ func jsonError(w http.ResponseWriter, status int, msg string) {
 	jsonResponse(w, status, map[string]string{"error": msg})
 }
 
-// requireWrite checks that the request has a write-scoped token, writing a 401 on failure.
 func (h *Handler) requireWrite(w http.ResponseWriter, r *http.Request) *model.APIToken {
 	t := auth.TokenFrom(r.Context())
 	if t == nil || !t.HasScope("write") {
@@ -39,7 +80,6 @@ func (h *Handler) requireWrite(w http.ResponseWriter, r *http.Request) *model.AP
 	return t
 }
 
-// requireGlobalWrite checks for a global write-scoped token, writing a 403 on failure.
 func (h *Handler) requireGlobalWrite(w http.ResponseWriter, r *http.Request) *model.APIToken {
 	t := auth.TokenFrom(r.Context())
 	if t == nil || !t.HasScope("write") || !t.IsGlobal() {
@@ -49,51 +89,22 @@ func (h *Handler) requireGlobalWrite(w http.ResponseWriter, r *http.Request) *mo
 	return t
 }
 
-// getProject fetches a project by name, writing the error response and returning nil on failure.
-func (h *Handler) getProject(w http.ResponseWriter, r *http.Request, name string) *model.Project {
-	p, err := h.DB.GetProject(r.Context(), name)
-	if errors.Is(err, db.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "project not found")
-		return nil
-	}
-	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "failed to get project")
-		return nil
-	}
-	return p
-}
-
-// checkReadAccess verifies the caller can read a private project, writing a 401 on failure.
-func (h *Handler) checkReadAccess(w http.ResponseWriter, r *http.Request, project *model.Project) bool {
-	if project.IsPrivate {
-		t := auth.TokenFrom(r.Context())
-		if t == nil || !t.HasScope("read") {
-			jsonError(w, http.StatusUnauthorized, "authentication required")
-			return false
-		}
-	}
-	return true
-}
-
-// getRelease fetches a release by project ID and version, writing the error response and returning nil on failure.
 func (h *Handler) getRelease(w http.ResponseWriter, r *http.Request, projectID int64, version string) *model.Release {
 	rel, err := h.DB.GetRelease(r.Context(), projectID, version)
-	if errors.Is(err, db.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "release not found")
-		return nil
-	}
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "failed to get release")
+		if err == db.ErrNotFound {
+			jsonError(w, http.StatusNotFound, "release not found")
+		} else {
+			jsonError(w, http.StatusInternalServerError, "failed to get release")
+		}
 		return nil
 	}
 	return rel
 }
 
-// validateScopes normalizes and validates a comma-separated scope string.
-// An empty input defaults to "read,write". Returns "" and writes a 400 on invalid scope.
 func validateScopes(w http.ResponseWriter, scopes string) string {
 	if scopes == "" {
-		return "read,write"
+		return "read"
 	}
 	var parts []string
 	for _, s := range strings.Split(scopes, ",") {
