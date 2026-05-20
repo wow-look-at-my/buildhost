@@ -88,7 +88,7 @@ func (d *DB) GetLatestReleaseByBranch(ctx context.Context, projectID int64, bran
 func (d *DB) ListReleases(ctx context.Context, projectID int64) ([]model.Release, error) {
 	rows, err := d.QueryContext(ctx,
 		`SELECT id, project_id, version, version_num, git_branch, git_commit, notes, published, created_at, published_at
-		 FROM releases WHERE project_id = ? ORDER BY version_num DESC LIMIT 1000`, projectID)
+		 FROM releases WHERE project_id = ? ORDER BY version_num DESC`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list releases: %w", err)
 	}

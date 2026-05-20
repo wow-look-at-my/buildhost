@@ -108,5 +108,5 @@ The following items have been reviewed and addressed or are intentional design c
 - **No TLS termination**: Intentional -- runs behind a reverse proxy in Docker
 - **Strip temp file permissions**: Runs in a single-user Docker container; permissions are 0600 anyway
 - **APT Release signing**: Not yet implemented (TODO in code). Clients must use `[trusted=yes]`
-- **List endpoint limits**: Capped at 1000 results to prevent unbounded responses
+- **List endpoints**: No LIMIT -- all behind auth, SQLite serialized, not a DoS vector
 - **Symlink rejection**: Storage layer rejects symlinks via Lstat check
