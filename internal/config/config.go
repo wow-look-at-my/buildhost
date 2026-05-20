@@ -13,7 +13,7 @@ type Config struct {
 func Load() Config {
 	c := Config{
 		ListenAddr:      ":8080",
-		AdminListenAddr: "127.0.0.1:9090",
+		AdminListenAddr: ":9090",
 		DataDir:         "./data",
 		DBPath:          "./data/buildhost.db",
 		BaseURL:         "http://localhost:8080",

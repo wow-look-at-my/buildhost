@@ -4,7 +4,9 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/wow-look-at-my/buildhost/internal/config"
@@ -22,7 +24,7 @@ func newTestServer(t *testing.T) (*Server, *db.DB) {
 
 	cfg := config.Config{
 		ListenAddr:      ":8080",
-		AdminListenAddr: "127.0.0.1:9090",
+		AdminListenAddr: ":9090",
 		DataDir:         "./data",
 		BaseURL:         "http://localhost:8080",
 	}
@@ -30,7 +32,7 @@ func newTestServer(t *testing.T) (*Server, *db.DB) {
 	return srv, database
 }
 
-func seedData(t *testing.T, database *db.DB) {
+func seedData(t *testing.T, database *db.DB) string {
 	t.Helper()
 	ctx := context.Background()
 
@@ -47,7 +49,7 @@ func seedData(t *testing.T, database *db.DB) {
 	}
 	require.NoError(t, database.CreateArtifact(ctx, a))
 
-	_, _, err := database.CreateToken(ctx, "test-token", nil, "read,write")
+	plaintext, _, err := database.CreateToken(ctx, "test-token", nil, "read,write")
 	require.NoError(t, err)
 
 	pid := p.ID
@@ -55,7 +57,229 @@ func seedData(t *testing.T, database *db.DB) {
 		Issuer: "https://token.actions.githubusercontent.com", SubjectPattern: "repo:org/repo:*",
 		ProjectID: &pid, Scopes: "read,write",
 	}))
+
+	return plaintext
 }
+
+func authedRequest(method, path, token string) *http.Request {
+	req := httptest.NewRequest(method, path, nil)
+	req.AddCookie(&http.Cookie{Name: cookieName, Value: token})
+	return req
+}
+
+// --- Auth middleware ---
+
+func TestAuthMiddleware_RedirectsToLogin(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	handler := srv.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusSeeOther, w.Code)
+	assert.Equal(t, "/login", w.Header().Get("Location"))
+}
+
+func TestAuthMiddleware_AllowsStaticWithoutAuth(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	handler := srv.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/static/style.css", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAuthMiddleware_AllowsLoginWithoutAuth(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	handler := srv.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAuthMiddleware_ValidCookie(t *testing.T) {
+	srv, database := newTestServer(t)
+	token := seedData(t, database)
+
+	handler := srv.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}))
+
+	req := authedRequest(http.MethodGet, "/", token)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAuthMiddleware_ValidBearerHeader(t *testing.T) {
+	srv, database := newTestServer(t)
+	token := seedData(t, database)
+
+	handler := srv.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAuthMiddleware_InvalidToken_RedirectsToLogin(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	handler := srv.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := authedRequest(http.MethodGet, "/", "bh_bogus_token_value")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusSeeOther, w.Code)
+	assert.Equal(t, "/login", w.Header().Get("Location"))
+}
+
+func TestAuthMiddleware_ReadOnlyToken_RedirectsToLogin(t *testing.T) {
+	srv, database := newTestServer(t)
+	ctx := context.Background()
+	plaintext, _, err := database.CreateToken(ctx, "readonly", nil, "read")
+	require.NoError(t, err)
+
+	handler := srv.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := authedRequest(http.MethodGet, "/", plaintext)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusSeeOther, w.Code)
+}
+
+func TestAuthMiddleware_ProjectScopedToken_RedirectsToLogin(t *testing.T) {
+	srv, database := newTestServer(t)
+	ctx := context.Background()
+	p := &model.Project{Name: "scoped", Versioning: model.VersioningAuto}
+	require.NoError(t, database.CreateProject(ctx, p))
+	pid := p.ID
+	plaintext, _, err := database.CreateToken(ctx, "projtoken", &pid, "read,write")
+	require.NoError(t, err)
+
+	handler := srv.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := authedRequest(http.MethodGet, "/", plaintext)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusSeeOther, w.Code)
+}
+
+// --- Login ---
+
+func TestLoginPage(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	w := httptest.NewRecorder()
+	srv.handleLoginPage(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "Sign in")
+	assert.Contains(t, w.Body.String(), "API Token")
+}
+
+func TestLoginSubmit_Success(t *testing.T) {
+	srv, database := newTestServer(t)
+	token := seedData(t, database)
+
+	form := url.Values{"token": {token}}
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.handleLoginSubmit(w, req)
+
+	assert.Equal(t, http.StatusSeeOther, w.Code)
+	assert.Equal(t, "/", w.Header().Get("Location"))
+
+	cookies := w.Result().Cookies()
+	found := false
+	for _, c := range cookies {
+		if c.Name == cookieName {
+			assert.Equal(t, token, c.Value)
+			assert.True(t, c.HttpOnly)
+			found = true
+		}
+	}
+	assert.True(t, found)
+}
+
+func TestLoginSubmit_EmptyToken(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	form := url.Values{"token": {""}}
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.handleLoginSubmit(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "Token is required")
+}
+
+func TestLoginSubmit_InvalidToken(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	form := url.Values{"token": {"bh_invalid_token_value"}}
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.handleLoginSubmit(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "Invalid token")
+}
+
+func TestLogout(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/logout", nil)
+	w := httptest.NewRecorder()
+	srv.handleLogout(w, req)
+
+	assert.Equal(t, http.StatusSeeOther, w.Code)
+	assert.Equal(t, "/login", w.Header().Get("Location"))
+
+	cookies := w.Result().Cookies()
+	for _, c := range cookies {
+		if c.Name == cookieName {
+			assert.True(t, c.MaxAge < 0)
+		}
+	}
+}
+
+// --- Page handlers (test directly, bypassing auth) ---
 
 func TestDashboardHandler(t *testing.T) {
 	srv, database := newTestServer(t)

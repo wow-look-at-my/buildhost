@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/config"
@@ -16,10 +17,13 @@ import (
 //go:embed templates/*.html static/*
 var content embed.FS
 
+const cookieName = "buildhost_admin"
+
 type Server struct {
 	cfg       config.Config
 	db        *db.DB
 	templates map[string]*template.Template
+	loginTmpl *template.Template
 }
 
 func New(cfg config.Config, database *db.DB) *Server {
@@ -45,12 +49,16 @@ func (s *Server) loadTemplates() {
 			),
 		)
 	}
+	s.loginTmpl = template.Must(template.New("").ParseFS(content, "templates/login.html"))
 }
 
 func (s *Server) ListenAndServe() error {
 	mux := http.NewServeMux()
 
 	mux.Handle("GET /static/", http.FileServerFS(content))
+	mux.HandleFunc("GET /login", s.handleLoginPage)
+	mux.HandleFunc("POST /login", s.handleLoginSubmit)
+	mux.HandleFunc("GET /logout", s.handleLogout)
 
 	mux.HandleFunc("GET /{$}", s.handleDashboard)
 	mux.HandleFunc("GET /projects", s.handleProjects)
@@ -60,13 +68,47 @@ func (s *Server) ListenAndServe() error {
 
 	srv := &http.Server{
 		Addr:              s.cfg.AdminListenAddr,
-		Handler:           securityHeaders(mux),
+		Handler:           securityHeaders(s.requireAuth(mux)),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 	return srv.ListenAndServe()
+}
+
+func (s *Server) requireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/login" || strings.HasPrefix(r.URL.Path, "/static/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		token := tokenFromRequest(r)
+		if token == "" {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		tok, err := s.db.LookupToken(r.Context(), token)
+		if err != nil || !tok.IsGlobal() || !tok.HasScope("write") {
+			http.SetCookie(w, &http.Cookie{Name: cookieName, MaxAge: -1, Path: "/"})
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func tokenFromRequest(r *http.Request) string {
+	if c, err := r.Cookie(cookieName); err == nil && c.Value != "" {
+		return c.Value
+	}
+	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		return auth[7:]
+	}
+	return ""
 }
 
 func securityHeaders(next http.Handler) http.Handler {
@@ -77,6 +119,43 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'")
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) handleLoginPage(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	s.loginTmpl.ExecuteTemplate(w, "login", nil)
+}
+
+func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
+	token := r.FormValue("token")
+	if token == "" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		s.loginTmpl.ExecuteTemplate(w, "login", map[string]string{"Error": "Token is required."})
+		return
+	}
+
+	tok, err := s.db.LookupToken(r.Context(), token)
+	if err != nil || !tok.IsGlobal() || !tok.HasScope("write") {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusForbidden)
+		s.loginTmpl.ExecuteTemplate(w, "login", map[string]string{"Error": "Invalid token. A global token with write scope is required."})
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   30 * 24 * 60 * 60,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{Name: cookieName, MaxAge: -1, Path: "/"})
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 func (s *Server) render(w http.ResponseWriter, name string, data map[string]any) {
