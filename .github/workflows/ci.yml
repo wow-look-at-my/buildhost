@@ -18,15 +18,19 @@ jobs:
           generate: c29114ff2f33
 
   container:
-    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Log in to ghcr.io
+        if: github.ref == 'refs/heads/master'
         run: echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push
         run: |
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
-          docker buildx build --push -t "${IMAGE}:latest" .
+          if [ "${GITHUB_REF}" = "refs/heads/master" ]; then
+            docker buildx build --push -t "${IMAGE}:latest" .
+          else
+            docker buildx build .
+          fi
