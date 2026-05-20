@@ -1,6 +1,6 @@
 package api
 
-//go:generate regex-gen -regex ^[a-z0-9][a-z0-9._-]{0,127}$ -func validProjectName -package api -output project_name.go -match full
+//go:generate go run github.com/wow-look-at-my/go-regex-compiler/cmd/regex-gen@latest -regex ^[a-z0-9][a-z0-9._-]{0,127}$ -func validProjectName -package api -output project_name.go -match full
 
 import (
 	"encoding/json"
