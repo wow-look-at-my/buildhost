@@ -80,10 +80,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue
 		}
-		defer rc.Close()
 		w.Header().Set("Content-Type", "application/x-ruby")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", projectName+".rb"))
 		io.Copy(w, rc)
+		rc.Close()
 		return
 	}
 

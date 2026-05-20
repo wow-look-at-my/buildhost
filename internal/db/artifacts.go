@@ -94,3 +94,20 @@ func (d *DB) GetPackagedArtifact(ctx context.Context, artifactID int64, format s
 	}
 	return
 }
+
+func (d *DB) BlobBelongsToProject(ctx context.Context, projectID int64, storageKey string) (bool, error) {
+	var exists bool
+	err := d.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM artifacts a
+			JOIN releases r ON a.release_id = r.id
+			WHERE r.project_id = ?
+			AND (a.storage_key = ? OR a.stripped_storage_key = ? OR a.debug_storage_key = ?)
+			UNION ALL
+			SELECT 1 FROM packaged_artifacts pa
+			JOIN artifacts a ON pa.artifact_id = a.id
+			JOIN releases r ON a.release_id = r.id
+			WHERE r.project_id = ? AND pa.storage_key = ?
+		)`, projectID, storageKey, storageKey, storageKey, projectID, storageKey).Scan(&exists)
+	return exists, err
+}

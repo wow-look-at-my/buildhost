@@ -49,6 +49,12 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 		version = fmt.Sprintf("%d", release.VersionNum)
 	}
 
+	debStorageKey, debSize, debSHA256, _, err := h.DB.GetPackagedArtifact(r.Context(), artifact.ID, "deb")
+	if err != nil || debStorageKey == "" {
+		debSize = artifact.Size
+		debSHA256 = artifact.SHA256
+	}
+
 	desc := strings.NewReplacer("\n", " ", "\r", " ").Replace(project.Description)
 	entry := fmt.Sprintf(`Package: %s
 Version: %s
@@ -59,7 +65,7 @@ SHA256: %s
 Description: %s
 
 `, project.Name, version, arch, project.Name, version, arch,
-		artifact.Size, artifact.SHA256, desc)
+		debSize, debSHA256, desc)
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write([]byte(entry))
@@ -90,8 +96,13 @@ func (h *Handler) servePool(w http.ResponseWriter, r *http.Request, subpath stri
 		return
 	}
 
+	debArch := extractDebArch(r.URL.Path)
+
 	for _, a := range artifacts {
 		if a.OS != model.OSLinux {
+			continue
+		}
+		if debArch != "" && goArchFromDeb(debArch) != string(a.Arch) {
 			continue
 		}
 		storageKey, size, _, _, err := h.DB.GetPackagedArtifact(r.Context(), a.ID, "deb")
@@ -102,10 +113,10 @@ func (h *Handler) servePool(w http.ResponseWriter, r *http.Request, subpath stri
 		if err != nil {
 			continue
 		}
-		defer rc.Close()
 		w.Header().Set("Content-Type", "application/vnd.debian.binary-package")
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
 		io.Copy(w, rc)
+		rc.Close()
 		return
 	}
 

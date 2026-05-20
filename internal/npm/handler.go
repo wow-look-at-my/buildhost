@@ -139,15 +139,15 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, project *
 			if err != nil {
 				continue
 			}
-			if storedFilename == filename || strings.HasSuffix(filename, storedFilename) {
+			if storedFilename == filename {
 				rc, _, err := h.Store.Get(r.Context(), storageKey)
 				if err != nil {
 					continue
 				}
-				defer rc.Close()
 				w.Header().Set("Content-Type", "application/octet-stream")
 				w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
 				io.Copy(w, rc)
+				rc.Close()
 				return
 			}
 		}

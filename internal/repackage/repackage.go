@@ -109,7 +109,13 @@ func (o *Orchestrator) PublishRelease(ctx context.Context, project model.Project
 				slog.Error("create temp for repackaging", "err", err)
 				continue
 			}
-			io.Copy(tmpFile, rc)
+			if _, err := io.Copy(tmpFile, rc); err != nil {
+				rc.Close()
+				tmpFile.Close()
+				os.Remove(tmpFile.Name())
+				slog.Error("copy artifact to temp", "err", err)
+				continue
+			}
 			rc.Close()
 			tmpFile.Seek(0, io.SeekStart)
 
@@ -161,7 +167,12 @@ func (o *Orchestrator) stripArtifact(ctx context.Context, a *model.Artifact) err
 		rc.Close()
 		return err
 	}
-	io.Copy(tmpFile, rc)
+	if _, err := io.Copy(tmpFile, rc); err != nil {
+		rc.Close()
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+		return fmt.Errorf("copy artifact to temp: %w", err)
+	}
 	rc.Close()
 	tmpFile.Close()
 	defer os.Remove(tmpFile.Name())

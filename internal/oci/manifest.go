@@ -40,10 +40,10 @@ func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, referenc
 		if err != nil {
 			continue
 		}
-		defer rc.Close()
 		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
 		io.Copy(w, rc)
+		rc.Close()
 		return
 	}
 
@@ -56,6 +56,17 @@ func (h *Handler) serveBlob(w http.ResponseWriter, r *http.Request, digest strin
 		return
 	}
 	key := digest[7:]
+
+	project := auth.ProjectFrom(r.Context())
+	belongs, err := h.DB.BlobBelongsToProject(r.Context(), project.ID, key)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if !belongs {
+		http.NotFound(w, r)
+		return
+	}
 
 	rc, size, err := h.Store.Get(r.Context(), key)
 	if err != nil {

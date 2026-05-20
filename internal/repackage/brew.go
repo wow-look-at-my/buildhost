@@ -15,6 +15,7 @@ import (
 func sanitizeBrewString(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "#", `\#`)
 	s = strings.ReplaceAll(s, "\n", " ")
 	return s
 }
@@ -106,7 +107,7 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 		Name:        sanitizeBrewString(input.Project.Name),
 		Description: sanitizeBrewString(firstNonEmpty(input.Project.Description, input.Project.Name)),
 		Homepage:    sanitizeBrewString(firstNonEmpty(input.Project.Homepage, input.BaseURL)),
-		Version:     version,
+		Version:     sanitizeBrewString(version),
 		License:     sanitizeBrewString(firstNonEmpty(input.Project.License, "MIT")),
 		Kind:        string(input.Artifact.Kind),
 		Resources: []brewResource{{

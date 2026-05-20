@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
+
+var validProjectName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
 
 func init() {
 	auth.HandleRaw("POST /api/v1/projects", handler.CreateProject)
@@ -39,6 +42,10 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 
 	if req.Name == "" {
 		jsonError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if !validProjectName.MatchString(req.Name) {
+		jsonError(w, http.StatusBadRequest, "name must match [a-z0-9][a-z0-9._-]{0,127}")
 		return
 	}
 

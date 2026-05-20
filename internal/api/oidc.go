@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -39,6 +40,11 @@ func (h *Handler) CreateOIDCPolicy(w http.ResponseWriter, r *http.Request) {
 
 	if req.Issuer == "" || req.SubjectPattern == "" {
 		jsonError(w, http.StatusBadRequest, "issuer and subject_pattern are required")
+		return
+	}
+
+	if !strings.HasPrefix(req.Issuer, "https://") {
+		jsonError(w, http.StatusBadRequest, "issuer must use https:// scheme")
 		return
 	}
 

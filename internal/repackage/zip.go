@@ -30,7 +30,9 @@ func (z *Zip) Repackage(_ context.Context, input Input) (*Output, error) {
 		name += ".exe"
 	}
 
-	w, err := zw.Create(name)
+	fh := &zip.FileHeader{Name: name}
+	fh.SetMode(0o755)
+	w, err := zw.CreateHeader(fh)
 	if err != nil {
 		return nil, err
 	}
