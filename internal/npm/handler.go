@@ -100,6 +100,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 		versions[version] = map[string]any{
 			"name":    "@buildhost/" + projectName,
 			"version": version,
+			// TODO: add "shasum" and "integrity" fields to dist so npm can verify tarball integrity
 			"dist": map[string]string{
 				"tarball": fmt.Sprintf("%s/npm/@buildhost/%s/-/%s-%s.tgz", h.BaseURL, projectName, projectName, version),
 			},

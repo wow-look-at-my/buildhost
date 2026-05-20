@@ -17,11 +17,6 @@ func (z *Zip) Format() Format { return FormatZip }
 func (z *Zip) Applicable(_ model.Artifact) bool { return true }
 
 func (z *Zip) Repackage(_ context.Context, input Input) (*Output, error) {
-	data, err := io.ReadAll(input.Binary)
-	if err != nil {
-		return nil, fmt.Errorf("read binary: %w", err)
-	}
-
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 
@@ -36,7 +31,7 @@ func (z *Zip) Repackage(_ context.Context, input Input) (*Output, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := w.Write(data); err != nil {
+	if _, err := io.Copy(w, input.Binary); err != nil {
 		return nil, err
 	}
 	zw.Close()

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
@@ -19,9 +18,9 @@ func (o *OCI) Applicable(a model.Artifact) bool {
 }
 
 func (o *OCI) Repackage(_ context.Context, input Input) (*Output, error) {
-	data, err := io.ReadAll(input.Binary)
+	size, err := inputSize(input.Binary)
 	if err != nil {
-		return nil, fmt.Errorf("read binary: %w", err)
+		return nil, fmt.Errorf("get input size: %w", err)
 	}
 
 	manifest := map[string]any{
@@ -29,12 +28,12 @@ func (o *OCI) Repackage(_ context.Context, input Input) (*Output, error) {
 		"mediaType":     "application/vnd.oci.image.manifest.v1+json",
 		"config": map[string]any{
 			"mediaType": "application/vnd.oci.image.config.v1+json",
-			"size":      len(data),
+			"size":      size,
 		},
 		"layers": []map[string]any{
 			{
 				"mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
-				"size":      len(data),
+				"size":      size,
 			},
 		},
 	}

@@ -22,9 +22,9 @@ func (n *NPM) Applicable(a model.Artifact) bool {
 }
 
 func (n *NPM) Repackage(_ context.Context, input Input) (*Output, error) {
-	data, err := io.ReadAll(input.Binary)
+	size, err := inputSize(input.Binary)
 	if err != nil {
-		return nil, fmt.Errorf("read binary: %w", err)
+		return nil, fmt.Errorf("get input size: %w", err)
 	}
 
 	version := strings.TrimPrefix(input.Release.Version, "v")
@@ -65,10 +65,10 @@ func (n *NPM) Repackage(_ context.Context, input Input) (*Output, error) {
 	}
 	tw.WriteHeader(&tar.Header{
 		Name: "package/bin/" + input.Project.Name,
-		Size: int64(len(data)),
+		Size: size,
 		Mode: binMode,
 	})
-	tw.Write(data)
+	io.Copy(tw, input.Binary)
 
 	tw.Close()
 	gw.Close()

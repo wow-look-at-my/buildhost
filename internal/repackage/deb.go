@@ -21,9 +21,9 @@ func (d *Deb) Applicable(a model.Artifact) bool {
 }
 
 func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
-	data, err := io.ReadAll(input.Binary)
+	size, err := inputSize(input.Binary)
 	if err != nil {
-		return nil, fmt.Errorf("read binary: %w", err)
+		return nil, fmt.Errorf("get input size: %w", err)
 	}
 
 	arch := debArch(input.Artifact.Arch)
@@ -70,11 +70,7 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 		mode = 0o755
 	}
 
-	dataTar, err := buildTarGZ([]tarEntry{{
-		Name: "." + installDir + fileName,
-		Data: data,
-		Mode: mode,
-	}})
+	dataTar, err := buildStreamingTarGZ("." + installDir + fileName, size, mode, input.Binary)
 	if err != nil {
 		return nil, fmt.Errorf("build data.tar.gz: %w", err)
 	}
@@ -127,6 +123,27 @@ func buildTarGZ(entries []tarEntry) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+func buildStreamingTarGZ(name string, size, mode int64, r io.Reader) ([]byte, error) {
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+
+	if err := tw.WriteHeader(&tar.Header{
+		Name: name,
+		Size: size,
+		Mode: mode,
+	}); err != nil {
+		return nil, err
+	}
+	if _, err := io.Copy(tw, r); err != nil {
+		return nil, err
+	}
+
+	tw.Close()
+	gw.Close()
+	return buf.Bytes(), nil
+}
+
 func writeArEntry(buf *bytes.Buffer, name string, data []byte) {
 	header := fmt.Sprintf("%-16s%-12d%-6d%-6d%-8s%-10d`\n",
 		name, 0, 0, 0, "100644", len(data))
@@ -164,4 +181,3 @@ func firstNonEmpty(vals ...string) string {
 	}
 	return ""
 }
-

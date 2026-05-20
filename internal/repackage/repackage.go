@@ -198,6 +198,17 @@ func (o *Orchestrator) stripArtifact(ctx context.Context, a *model.Artifact) err
 	return o.DB.UpdateArtifactStripped(ctx, a.ID, strippedKey, strippedSize, strippedKey, debugKey, debugSize)
 }
 
+func inputSize(rs io.ReadSeeker) (int64, error) {
+	size, err := rs.Seek(0, io.SeekEnd)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := rs.Seek(0, io.SeekStart); err != nil {
+		return 0, err
+	}
+	return size, nil
+}
+
 func copyToTempFile(r io.Reader, prefix string) (*os.File, error) {
 	f, err := os.CreateTemp("", prefix)
 	if err != nil {

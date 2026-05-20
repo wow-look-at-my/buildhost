@@ -76,13 +76,11 @@ type brewResource struct {
 }
 
 func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
-	data, err := io.ReadAll(input.Binary)
-	if err != nil {
-		return nil, fmt.Errorf("read binary: %w", err)
+	h := sha256.New()
+	if _, err := io.Copy(h, input.Binary); err != nil {
+		return nil, fmt.Errorf("hash binary: %w", err)
 	}
-
-	h := sha256.Sum256(data)
-	sha := fmt.Sprintf("%x", h)
+	sha := fmt.Sprintf("%x", h.Sum(nil))
 
 	version := strings.TrimPrefix(input.Release.Version, "v")
 	if version == "" {

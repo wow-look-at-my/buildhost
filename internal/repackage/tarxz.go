@@ -18,9 +18,9 @@ func (t *TarXZ) Format() Format { return FormatTarXZ }
 func (t *TarXZ) Applicable(_ model.Artifact) bool { return true }
 
 func (t *TarXZ) Repackage(_ context.Context, input Input) (*Output, error) {
-	data, err := io.ReadAll(input.Binary)
+	size, err := inputSize(input.Binary)
 	if err != nil {
-		return nil, fmt.Errorf("read binary: %w", err)
+		return nil, fmt.Errorf("get input size: %w", err)
 	}
 
 	var buf bytes.Buffer
@@ -37,12 +37,12 @@ func (t *TarXZ) Repackage(_ context.Context, input Input) (*Output, error) {
 
 	if err := tw.WriteHeader(&tar.Header{
 		Name: input.Project.Name,
-		Size: int64(len(data)),
+		Size: size,
 		Mode: mode,
 	}); err != nil {
 		return nil, err
 	}
-	if _, err := tw.Write(data); err != nil {
+	if _, err := io.Copy(tw, input.Binary); err != nil {
 		return nil, err
 	}
 	tw.Close()
