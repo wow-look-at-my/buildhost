@@ -1,5 +1,7 @@
 package api
 
+//go:generate regex-gen -regex ^[a-z0-9][a-z0-9._-]{0,127}$ -func validProjectName -package api -output project_name.go -match full
+
 import (
 	"encoding/json"
 	"errors"
@@ -9,23 +11,6 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
-
-func validProjectName(s string) bool {
-	if len(s) == 0 || len(s) > 128 {
-		return false
-	}
-	c := s[0]
-	if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9') {
-		return false
-	}
-	for i := 1; i < len(s); i++ {
-		c = s[i]
-		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-') {
-			return false
-		}
-	}
-	return true
-}
 
 func init() {
 	auth.HandleRaw("POST /api/v1/projects", handler.CreateProject)
