@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"strings"
@@ -204,7 +205,7 @@ func fetchJWKS(ctx context.Context, issuer string) ([]jwkKey, error) {
 	var discovery struct {
 		JWKSURI string `json:"jwks_uri"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&discovery); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&discovery); err != nil {
 		return nil, fmt.Errorf("parse OIDC discovery: %w", err)
 	}
 	if discovery.JWKSURI == "" {
@@ -228,7 +229,7 @@ func fetchJWKS(ctx context.Context, issuer string) ([]jwkKey, error) {
 	var raw struct {
 		Keys []json.RawMessage `json:"keys"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&raw); err != nil {
 		return nil, err
 	}
 

@@ -24,9 +24,11 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 
 func (s *Server) ListenAndServe() error {
 	srv := &http.Server{
-		Addr:    s.cfg.ListenAddr,
-		Handler: s.Handler(),
+		Addr:              s.cfg.ListenAddr,
+		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       5 * time.Minute,
+		WriteTimeout:      10 * time.Minute,
 		IdleTimeout:       120 * time.Second,
 	}
 	return srv.ListenAndServe()

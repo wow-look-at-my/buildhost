@@ -157,6 +157,7 @@ func (h *Handler) serveBlob(w http.ResponseWriter, key, filename string) {
 	}
 	defer rc.Close()
 
+	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
 	io.Copy(w, rc)

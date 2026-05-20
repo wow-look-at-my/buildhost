@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/model"
@@ -22,11 +21,6 @@ func (n *NPM) Applicable(a model.Artifact) bool {
 }
 
 func (n *NPM) Repackage(_ context.Context, input Input) (*Output, error) {
-	data, err := io.ReadAll(input.Binary)
-	if err != nil {
-		return nil, fmt.Errorf("read binary: %w", err)
-	}
-
 	version := strings.TrimPrefix(input.Release.Version, "v")
 	if version == "" {
 		version = fmt.Sprintf("%d.0.0", input.Release.VersionNum)
@@ -65,10 +59,10 @@ func (n *NPM) Repackage(_ context.Context, input Input) (*Output, error) {
 	}
 	tw.WriteHeader(&tar.Header{
 		Name: "package/bin/" + input.Project.Name,
-		Size: int64(len(data)),
+		Size: int64(len(input.Data)),
 		Mode: binMode,
 	})
-	tw.Write(data)
+	tw.Write(input.Data)
 
 	tw.Close()
 	gw.Close()

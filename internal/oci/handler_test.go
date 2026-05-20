@@ -231,8 +231,15 @@ func TestServeHTTP_Blobs_Success(t *testing.T) {
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	content := "blob-layer-content"
-	key, _, err := store.Put(ctx, strings.NewReader(content))
+	key, size, err := store.Put(ctx, strings.NewReader(content))
 	require.NoError(t, err)
+
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
+		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
+		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
 
 	digest := "sha256:" + key
 	req := httptest.NewRequest("GET", "/v2/myapp/blobs/"+digest, nil)

@@ -49,6 +49,12 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 		version = fmt.Sprintf("%d", release.VersionNum)
 	}
 
+	debStorageKey, debSize, debSHA256, _, err := h.DB.GetPackagedArtifact(r.Context(), artifact.ID, "deb")
+	if err != nil || debStorageKey == "" {
+		debSize = artifact.Size
+		debSHA256 = artifact.SHA256
+	}
+
 	desc := strings.NewReplacer("\n", " ", "\r", " ").Replace(project.Description)
 	entry := fmt.Sprintf(`Package: %s
 Version: %s
@@ -59,7 +65,7 @@ SHA256: %s
 Description: %s
 
 `, project.Name, version, arch, project.Name, version, arch,
-		artifact.Size, artifact.SHA256, desc)
+		debSize, debSHA256, desc)
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write([]byte(entry))
@@ -90,26 +96,37 @@ func (h *Handler) servePool(w http.ResponseWriter, r *http.Request, subpath stri
 		return
 	}
 
+	debArch := extractDebArch(r.URL.Path)
+
 	for _, a := range artifacts {
 		if a.OS != model.OSLinux {
 			continue
 		}
-		storageKey, size, _, _, err := h.DB.GetPackagedArtifact(r.Context(), a.ID, "deb")
-		if err != nil {
+		if debArch != "" && goArchFromDeb(debArch) != string(a.Arch) {
 			continue
 		}
-		rc, _, err := h.Store.Get(r.Context(), storageKey)
-		if err != nil {
-			continue
+		if h.tryServePoolDeb(w, r, a.ID) {
+			return
 		}
-		defer rc.Close()
-		w.Header().Set("Content-Type", "application/vnd.debian.binary-package")
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
-		io.Copy(w, rc)
-		return
 	}
 
 	http.NotFound(w, r)
+}
+
+func (h *Handler) tryServePoolDeb(w http.ResponseWriter, r *http.Request, artifactID int64) bool {
+	storageKey, size, _, _, err := h.DB.GetPackagedArtifact(r.Context(), artifactID, "deb")
+	if err != nil {
+		return false
+	}
+	rc, _, err := h.Store.Get(r.Context(), storageKey)
+	if err != nil {
+		return false
+	}
+	defer rc.Close()
+	w.Header().Set("Content-Type", "application/vnd.debian.binary-package")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
+	io.Copy(w, rc)
+	return true
 }
 
 func extractDebArch(subpath string) string {

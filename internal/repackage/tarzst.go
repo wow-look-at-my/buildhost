@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/wow-look-at-my/buildhost/internal/model"
@@ -18,11 +17,6 @@ func (t *TarZST) Format() Format { return FormatTarZST }
 func (t *TarZST) Applicable(_ model.Artifact) bool { return true }
 
 func (t *TarZST) Repackage(_ context.Context, input Input) (*Output, error) {
-	data, err := io.ReadAll(input.Binary)
-	if err != nil {
-		return nil, fmt.Errorf("read binary: %w", err)
-	}
-
 	var buf bytes.Buffer
 	zw, err := zstd.NewWriter(&buf)
 	if err != nil {
@@ -37,12 +31,12 @@ func (t *TarZST) Repackage(_ context.Context, input Input) (*Output, error) {
 
 	if err := tw.WriteHeader(&tar.Header{
 		Name: input.Project.Name,
-		Size: int64(len(data)),
+		Size: int64(len(input.Data)),
 		Mode: mode,
 	}); err != nil {
 		return nil, err
 	}
-	if _, err := tw.Write(data); err != nil {
+	if _, err := tw.Write(input.Data); err != nil {
 		return nil, err
 	}
 	tw.Close()

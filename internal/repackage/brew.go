@@ -5,18 +5,17 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"io"
+	"regexp"
 	"strings"
 	"text/template"
 
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
+var brewUnsafeChars = regexp.MustCompile(`[^a-zA-Z0-9 .,;:!?@&()/'+*=_-]`)
+
 func sanitizeBrewString(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	s = strings.ReplaceAll(s, "\n", " ")
-	return s
+	return brewUnsafeChars.ReplaceAllString(s, "")
 }
 
 type Brew struct{}
@@ -76,12 +75,7 @@ type brewResource struct {
 }
 
 func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
-	data, err := io.ReadAll(input.Binary)
-	if err != nil {
-		return nil, fmt.Errorf("read binary: %w", err)
-	}
-
-	h := sha256.Sum256(data)
+	h := sha256.Sum256(input.Data)
 	sha := fmt.Sprintf("%x", h)
 
 	version := strings.TrimPrefix(input.Release.Version, "v")
@@ -106,7 +100,7 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 		Name:        sanitizeBrewString(input.Project.Name),
 		Description: sanitizeBrewString(firstNonEmpty(input.Project.Description, input.Project.Name)),
 		Homepage:    sanitizeBrewString(firstNonEmpty(input.Project.Homepage, input.BaseURL)),
-		Version:     version,
+		Version:     sanitizeBrewString(version),
 		License:     sanitizeBrewString(firstNonEmpty(input.Project.License, "MIT")),
 		Kind:        string(input.Artifact.Kind),
 		Resources: []brewResource{{

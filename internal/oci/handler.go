@@ -64,6 +64,7 @@ func (h *Handler) V2Root(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rt := routeFrom(r.Context())
 
+	// TODO: respect rt.reference -- currently all tags/digests resolve to the same manifest
 	switch rt.action {
 	case "manifests":
 		if rt.reference == "" {
