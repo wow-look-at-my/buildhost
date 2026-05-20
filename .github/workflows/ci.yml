@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/go-toolchain@v1
         with:
-          generate: 3930d0f17079
+          generate: 111c11603157
 
   container:
     if: github.ref == 'refs/heads/master'
