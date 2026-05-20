@@ -6,7 +6,6 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/model"
@@ -21,11 +20,6 @@ func (d *Deb) Applicable(a model.Artifact) bool {
 }
 
 func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
-	data, err := io.ReadAll(input.Binary)
-	if err != nil {
-		return nil, fmt.Errorf("read binary: %w", err)
-	}
-
 	arch := debArch(input.Artifact.Arch)
 	version := strings.TrimPrefix(input.Release.Version, "v")
 	if version == "" {
@@ -72,7 +66,7 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 
 	dataTar, err := buildTarGZ([]tarEntry{{
 		Name: "." + installDir + fileName,
-		Data: data,
+		Data: input.Data,
 		Mode: mode,
 	}})
 	if err != nil {
@@ -164,4 +158,3 @@ func firstNonEmpty(vals ...string) string {
 	}
 	return ""
 }
-

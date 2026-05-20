@@ -8,3 +8,4 @@ dist/
 coverage.out
 coverage.html
 /build/
+internal/api/gen_project_name.go

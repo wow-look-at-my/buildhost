@@ -7,6 +7,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 )
 
+// TODO: sign Release/InRelease with GPG and include SHA256 hashes of Packages files
 func (h *Handler) serveRelease(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
 	content := fmt.Sprintf(`Origin: buildhost

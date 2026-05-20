@@ -12,6 +12,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/buildhost/internal/strip"
+	"github.com/wow-look-at-my/go-mmap"
 )
 
 type Format string
@@ -31,7 +32,7 @@ type Input struct {
 	Project  model.Project
 	Release  model.Release
 	Artifact model.Artifact
-	Binary   io.ReadSeeker
+	Data     []byte
 	BaseURL  string
 }
 
@@ -103,26 +104,31 @@ func (o *Orchestrator) PublishRelease(ctx context.Context, project model.Project
 				continue
 			}
 
-			tmpFile, err := os.CreateTemp("", "repackage-*")
+			tmpFile, err := copyToTempFile(rc, "repackage-*")
+			rc.Close()
 			if err != nil {
-				rc.Close()
-				slog.Error("create temp for repackaging", "err", err)
+				slog.Error("copy artifact to temp", "err", err)
 				continue
 			}
-			io.Copy(tmpFile, rc)
-			rc.Close()
-			tmpFile.Seek(0, io.SeekStart)
+			tmpFile.Close()
+
+			m, err := mmap.MapFile(tmpFile.Name())
+			if err != nil {
+				os.Remove(tmpFile.Name())
+				slog.Error("mmap artifact", "err", err)
+				continue
+			}
 
 			input := Input{
 				Project:  project,
 				Release:  release,
 				Artifact: *a,
-				Binary:   tmpFile,
+				Data:     m,
 				BaseURL:  o.BaseURL,
 			}
 
 			output, err := rp.Repackage(ctx, input)
-			tmpFile.Close()
+			m.Unmap()
 			os.Remove(tmpFile.Name())
 
 			if err != nil {
@@ -156,13 +162,11 @@ func (o *Orchestrator) stripArtifact(ctx context.Context, a *model.Artifact) err
 		return err
 	}
 
-	tmpFile, err := os.CreateTemp("", "strip-*")
-	if err != nil {
-		rc.Close()
-		return err
-	}
-	io.Copy(tmpFile, rc)
+	tmpFile, err := copyToTempFile(rc, "strip-*")
 	rc.Close()
+	if err != nil {
+		return fmt.Errorf("copy artifact to temp: %w", err)
+	}
 	tmpFile.Close()
 	defer os.Remove(tmpFile.Name())
 
@@ -200,6 +204,19 @@ func (o *Orchestrator) stripArtifact(ctx context.Context, a *model.Artifact) err
 	a.DebugSize = debugSize
 
 	return o.DB.UpdateArtifactStripped(ctx, a.ID, strippedKey, strippedSize, strippedKey, debugKey, debugSize)
+}
+
+func copyToTempFile(r io.Reader, prefix string) (*os.File, error) {
+	f, err := os.CreateTemp("", prefix)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := io.Copy(f, r); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return nil, err
+	}
+	return f, nil
 }
 
 func marshalMetadata(m map[string]string) string {

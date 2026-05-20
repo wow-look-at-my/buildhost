@@ -37,7 +37,7 @@ func makeInput() Input {
 			Arch:	model.ArchAMD64,
 			Kind:	model.KindBinary,
 		},
-		Binary:		bytes.NewReader(testBinary),
+		Data:		testBinary,
 		BaseURL:	"https://builds.example.com",
 	}
 }
