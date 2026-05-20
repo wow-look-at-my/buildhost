@@ -8,9 +8,16 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
+
+func init() {
+	auth.Handle("POST /api/v1/projects/{project}/releases", parseRoute, handler.CreateRelease)
+	auth.Handle("GET /api/v1/projects/{project}/releases", parseRoute, handler.ListReleases)
+	auth.Handle("GET /api/v1/projects/{project}/releases/{version}", parseRoute, handler.GetRelease)
+}
 
 type createReleaseRequest struct {
 	Version   string `json:"version"`
@@ -20,21 +27,9 @@ type createReleaseRequest struct {
 }
 
 func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
-	t := h.requireWrite(w, r)
-	if t == nil {
-		return
-	}
+	project := auth.ProjectFrom(r.Context())
 
-	project := h.getProject(w, r, r.PathValue("project"))
-	if project == nil {
-		return
-	}
-
-	if !t.AuthorizedForProject(project.ID) {
-		jsonError(w, http.StatusForbidden, "token not authorized for this project")
-		return
-	}
-
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
 	var req createReleaseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, http.StatusBadRequest, "invalid request body")
@@ -90,15 +85,10 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetRelease(w http.ResponseWriter, r *http.Request) {
-	project := h.getProject(w, r, r.PathValue("project"))
-	if project == nil {
-		return
-	}
-	if !h.checkReadAccess(w, r, project) {
-		return
-	}
+	project := auth.ProjectFrom(r.Context())
+	rt := routeFrom(r.Context())
 
-	rel := h.getRelease(w, r, project.ID, r.PathValue("version"))
+	rel := h.getRelease(w, r, project.ID, rt.version)
 	if rel == nil {
 		return
 	}
@@ -107,13 +97,7 @@ func (h *Handler) GetRelease(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListReleases(w http.ResponseWriter, r *http.Request) {
-	project := h.getProject(w, r, r.PathValue("project"))
-	if project == nil {
-		return
-	}
-	if !h.checkReadAccess(w, r, project) {
-		return
-	}
+	project := auth.ProjectFrom(r.Context())
 
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)
 	if err != nil {

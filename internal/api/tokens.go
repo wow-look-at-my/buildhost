@@ -7,8 +7,15 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
+
+func init() {
+	auth.HandleRaw("POST /api/v1/tokens", handler.CreateToken)
+	auth.HandleRaw("GET /api/v1/tokens", handler.ListTokens)
+	auth.HandleRaw("DELETE /api/v1/tokens/{id}", handler.DeleteToken)
+}
 
 type createTokenRequest struct {
 	Name      string `json:"name"`
@@ -22,6 +29,7 @@ func (h *Handler) CreateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
 	var req createTokenRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, http.StatusBadRequest, "invalid request body")

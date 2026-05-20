@@ -29,42 +29,61 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	return h, d, store
 }
 
-func TestServeHTTP_V2Root(t *testing.T) {
+// withRoute adds project and route info to the request context, simulating
+// what the auth middleware does in production.
+func withRoute(r *http.Request, project *model.Project, rt route) *http.Request {
+	ctx := auth.WithProject(r.Context(), project)
+	ctx = auth.WithRouteInfo(ctx, rt)
+	return r.WithContext(ctx)
+}
+
+func TestV2Root(t *testing.T) {
 	h, _, _ := setupTest(t)
 
 	req := httptest.NewRequest("GET", "/v2/", nil)
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	h.V2Root(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 	assert.Equal(t, "{}\n", rec.Body.String())
 }
 
-func TestServeHTTP_V2RootEmpty(t *testing.T) {
-	h, _, _ := setupTest(t)
+func TestParseRoute(t *testing.T) {
+	tests := []struct {
+		name      string
+		path      string
+		project   string
+		action    string
+		reference string
+	}{
+		{"manifests", "/v2/myapp/manifests/latest", "myapp", "manifests", "latest"},
+		{"blobs", "/v2/myapp/blobs/sha256:abc", "myapp", "blobs", "sha256:abc"},
+		{"project only", "/v2/myapp", "myapp", "", ""},
+		{"project and action", "/v2/myapp/manifests", "myapp", "manifests", ""},
+	}
 
-	req := httptest.NewRequest("GET", "/v2", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-}
-
-func TestServeHTTP_TooFewParts(t *testing.T) {
-	h, _, _ := setupTest(t)
-
-	req := httptest.NewRequest("GET", "/v2/onlyone", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.path, nil)
+			ri := parseRoute(req)
+			rt := ri.(route)
+			assert.Equal(t, tt.project, rt.project)
+			assert.Equal(t, tt.action, rt.action)
+			assert.Equal(t, tt.reference, rt.reference)
+		})
+	}
 }
 
 func TestServeHTTP_UnknownAction(t *testing.T) {
-	h, _, _ := setupTest(t)
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/v2/myapp/tags/list", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "tags", reference: "list"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -72,19 +91,14 @@ func TestServeHTTP_UnknownAction(t *testing.T) {
 }
 
 func TestServeHTTP_Manifests_MissingRef(t *testing.T) {
-	h, _, _ := setupTest(t)
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
-
-func TestServeHTTP_Manifests_ProjectNotFound(t *testing.T) {
-	h, _, _ := setupTest(t)
-
-	req := httptest.NewRequest("GET", "/v2/nonexistent/manifests/latest", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -95,9 +109,11 @@ func TestServeHTTP_Manifests_NoRelease(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	require.NoError(t, d.CreateProject(ctx, &model.Project{Name: "myapp", Versioning: model.VersioningSemver}))
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -122,6 +138,7 @@ func TestServeHTTP_Manifests_NoOCIPackage(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -152,6 +169,7 @@ func TestServeHTTP_Manifests_Success(t *testing.T) {
 	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "oci", ociKey, ociSize, ociKey, "myapp-oci.json", "{}"))
 
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -161,9 +179,29 @@ func TestServeHTTP_Manifests_Success(t *testing.T) {
 }
 
 func TestServeHTTP_Blobs_MissingDigest(t *testing.T) {
-	h, _, _ := setupTest(t)
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/v2/myapp/blobs", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "blobs"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestServeHTTP_Blobs_InvalidDigest(t *testing.T) {
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	req := httptest.NewRequest("GET", "/v2/myapp/blobs/../../etc/passwd", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "blobs", reference: "../../etc/passwd"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -171,9 +209,14 @@ func TestServeHTTP_Blobs_MissingDigest(t *testing.T) {
 }
 
 func TestServeHTTP_Blobs_NotFound(t *testing.T) {
-	h, _, _ := setupTest(t)
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
 
-	req := httptest.NewRequest("GET", "/v2/myapp/blobs/sha256:deadbeef", nil)
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	req := httptest.NewRequest("GET", "/v2/myapp/blobs/sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "blobs", reference: "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -181,140 +224,24 @@ func TestServeHTTP_Blobs_NotFound(t *testing.T) {
 }
 
 func TestServeHTTP_Blobs_Success(t *testing.T) {
-	h, _, store := setupTest(t)
+	h, d, store := setupTest(t)
 	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
 
 	content := "blob-layer-content"
 	key, _, err := store.Put(ctx, strings.NewReader(content))
 	require.NoError(t, err)
 
-	req := httptest.NewRequest("GET", "/v2/myapp/blobs/sha256:"+key, nil)
+	digest := "sha256:" + key
+	req := httptest.NewRequest("GET", "/v2/myapp/blobs/"+digest, nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "blobs", reference: digest})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/octet-stream", rec.Header().Get("Content-Type"))
-	assert.Equal(t, "sha256:"+key, rec.Header().Get("Docker-Content-Digest"))
+	assert.Equal(t, digest, rec.Header().Get("Docker-Content-Digest"))
 	assert.Equal(t, content, rec.Body.String())
-}
-
-// --- Private project auth tests (manifests only, blobs are project-agnostic) -
-
-func TestServeHTTP_PrivateProject_Manifests_NoAuth(t *testing.T) {
-	h, d, _ := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-
-	req := httptest.NewRequest("GET", "/v2/secret/manifests/latest", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-}
-
-func TestServeHTTP_PrivateProject_Manifests_WrongProjectToken(t *testing.T) {
-	h, d, _ := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-
-	wrongProjID := int64(999)
-	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: &wrongProjID}
-	ctx2 := auth.WithToken(context.Background(), tok)
-	req := httptest.NewRequest("GET", "/v2/secret/manifests/latest", nil)
-	req = req.WithContext(ctx2)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusForbidden, rec.Code)
-}
-
-func TestServeHTTP_PrivateProject_Manifests_ValidToken(t *testing.T) {
-	h, d, store := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	key, size, err := store.Put(ctx, strings.NewReader("binary"))
-	require.NoError(t, err)
-	a := &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
-	}
-	require.NoError(t, d.CreateArtifact(ctx, a))
-
-	manifest := `{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json"}`
-	ociKey, ociSize, err := store.Put(ctx, strings.NewReader(manifest))
-	require.NoError(t, err)
-	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "oci", ociKey, ociSize, ociKey, "secret-oci.json", "{}"))
-
-	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: &proj.ID}
-	ctx2 := auth.WithToken(context.Background(), tok)
-	req := httptest.NewRequest("GET", "/v2/secret/manifests/latest", nil)
-	req = req.WithContext(ctx2)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Contains(t, rec.Body.String(), "schemaVersion")
-}
-
-func TestServeHTTP_PrivateProject_Manifests_GlobalToken(t *testing.T) {
-	h, d, store := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	key, size, err := store.Put(ctx, strings.NewReader("binary"))
-	require.NoError(t, err)
-	a := &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
-	}
-	require.NoError(t, d.CreateArtifact(ctx, a))
-
-	manifest := `{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json"}`
-	ociKey, ociSize, err := store.Put(ctx, strings.NewReader(manifest))
-	require.NoError(t, err)
-	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "oci", ociKey, ociSize, ociKey, "secret-oci.json", "{}"))
-
-	// Global token (nil ProjectID) should be allowed.
-	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: nil}
-	ctx2 := auth.WithToken(context.Background(), tok)
-	req := httptest.NewRequest("GET", "/v2/secret/manifests/latest", nil)
-	req = req.WithContext(ctx2)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Contains(t, rec.Body.String(), "schemaVersion")
-}
-
-func TestServeHTTP_PrivateProject_Manifests_WriteOnlyToken(t *testing.T) {
-	h, d, _ := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-
-	// Token with write scope only should be rejected for read access.
-	tok := &model.APIToken{ID: 1, Scopes: "write", ProjectID: &proj.ID}
-	ctx2 := auth.WithToken(context.Background(), tok)
-	req := httptest.NewRequest("GET", "/v2/secret/manifests/latest", nil)
-	req = req.WithContext(ctx2)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 }

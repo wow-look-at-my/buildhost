@@ -16,6 +16,14 @@ import (
 	"github.com/wow-look-at-my/testify/require"
 )
 
+// withRoute adds project and route info to the request context, simulating
+// what the auth middleware does in production.
+func withRoute(r *http.Request, project *model.Project, rt route) *http.Request {
+	ctx := auth.WithProject(r.Context(), project)
+	ctx = auth.WithRouteInfo(ctx, rt)
+	return r.WithContext(ctx)
+}
+
 func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	t.Helper()
 	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -132,6 +140,7 @@ func TestDownload_Success_RawBinary(t *testing.T) {
 	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "binary-content-here")
 
 	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
+	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
@@ -147,6 +156,7 @@ func TestDownload_Success_ServesStrippedBinary(t *testing.T) {
 	seedArtifactWithStripped(t, d, store, rel.ID, "linux", "amd64", "original-binary", "stripped-binary")
 
 	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
+	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
@@ -161,6 +171,7 @@ func TestDownload_Success_DebugFlag(t *testing.T) {
 	seedArtifactWithDebug(t, d, store, rel.ID, "linux", "amd64", "binary-content", "debug-symbols")
 
 	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
+	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
 	req.URL.RawQuery = "debug=1"
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
@@ -177,6 +188,7 @@ func TestDownload_DebugFlag_NoDebugAvailable(t *testing.T) {
 	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "binary-content")
 
 	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
+	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
 	req.URL.RawQuery = "debug=1"
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
@@ -197,6 +209,7 @@ func TestDownload_Success_TarGzFormat(t *testing.T) {
 	require.NoError(t, d.CreatePackagedArtifact(context.Background(), a.ID, "tar.gz", tarKey, tarSize, tarKey, "myapp_1.0.0_linux_amd64.tar.gz", ""))
 
 	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
+	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
 	req.URL.RawQuery = "format=tar.gz"
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
@@ -213,6 +226,7 @@ func TestDownload_FormatNotAvailable(t *testing.T) {
 	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "binary-content")
 
 	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
+	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
 	req.URL.RawQuery = "format=tar.gz"
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
@@ -229,6 +243,7 @@ func TestDownload_LatestVersion(t *testing.T) {
 	seedArtifact(t, d, store, rel2.ID, "linux", "amd64", "v2-binary")
 
 	req := makeDownloadRequest("myapp", "latest", "linux", "amd64")
+	req = withRoute(req, proj, route{project: "myapp", version: "latest", os: "linux", arch: "amd64"})
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
@@ -236,21 +251,12 @@ func TestDownload_LatestVersion(t *testing.T) {
 	assert.Equal(t, "v2-binary", rec.Body.String())
 }
 
-func TestDownload_ProjectNotFound(t *testing.T) {
-	h, _, _ := setupTest(t)
-
-	req := makeDownloadRequest("nonexistent", "1.0.0", "linux", "amd64")
-	rec := httptest.NewRecorder()
-	h.Download(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
-
 func TestDownload_ReleaseNotFound(t *testing.T) {
 	h, d, _ := setupTest(t)
-	seedProject(t, d, "myapp", false)
+	proj := seedProject(t, d, "myapp", false)
 
 	req := makeDownloadRequest("myapp", "9.9.9", "linux", "amd64")
+	req = withRoute(req, proj, route{project: "myapp", version: "9.9.9", os: "linux", arch: "amd64"})
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
@@ -263,74 +269,15 @@ func TestDownload_ArtifactNotFound(t *testing.T) {
 	seedRelease(t, d, proj.ID, "1.0.0", "main", true)
 
 	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
+	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-func TestDownload_PrivateProject_Unauthorized(t *testing.T) {
-	h, d, store := setupTest(t)
-	proj := seedProject(t, d, "secret-app", true)
-	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "secret-binary")
-
-	req := makeDownloadRequest("secret-app", "1.0.0", "linux", "amd64")
-	rec := httptest.NewRecorder()
-	h.Download(rec, req)
-
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-}
-
-func TestDownload_PrivateProject_ValidToken(t *testing.T) {
-	h, d, store := setupTest(t)
-	proj := seedProject(t, d, "secret-app", true)
-	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "secret-binary")
-
-	tok := &model.APIToken{ID: 1, Scopes: "read"}
-	ctx := auth.WithToken(context.Background(), tok)
-	req := makeDownloadRequest("secret-app", "1.0.0", "linux", "amd64")
-	req = req.WithContext(ctx)
-	rec := httptest.NewRecorder()
-	h.Download(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "secret-binary", rec.Body.String())
-}
-
-func TestDownload_PrivateProject_WrongProjectToken(t *testing.T) {
-	h, d, store := setupTest(t)
-	proj := seedProject(t, d, "secret-app", true)
-	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "secret-binary")
-
-	otherProjectID := int64(999)
-	tok := &model.APIToken{ID: 1, Scopes: "read", ProjectID: &otherProjectID}
-	ctx := auth.WithToken(context.Background(), tok)
-	req := makeDownloadRequest("secret-app", "1.0.0", "linux", "amd64")
-	req = req.WithContext(ctx)
-	rec := httptest.NewRecorder()
-	h.Download(rec, req)
-
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-}
-
-func TestDownload_PrivateProject_TokenWithoutReadScope(t *testing.T) {
-	h, d, store := setupTest(t)
-	proj := seedProject(t, d, "secret-app", true)
-	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "secret-binary")
-
-	tok := &model.APIToken{ID: 1, Scopes: "write"}
-	ctx := auth.WithToken(context.Background(), tok)
-	req := makeDownloadRequest("secret-app", "1.0.0", "linux", "amd64")
-	req = req.WithContext(ctx)
-	rec := httptest.NewRecorder()
-	h.Download(rec, req)
-
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-}
+// Note: Private project auth (unauthorized, wrong token, etc.) is tested via
+// requireProject middleware in the auth package.
 
 func TestDownloadLatest_Success(t *testing.T) {
 	h, d, store := setupTest(t)
@@ -340,21 +287,12 @@ func TestDownloadLatest_Success(t *testing.T) {
 	seedArtifact(t, d, store, rel2.ID, "darwin", "arm64", "latest-darwin-binary")
 
 	req := makeLatestRequest("myapp", "darwin", "arm64")
+	req = withRoute(req, proj, route{project: "myapp", os: "darwin", arch: "arm64"})
 	rec := httptest.NewRecorder()
 	h.DownloadLatest(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "latest-darwin-binary", rec.Body.String())
-}
-
-func TestDownloadLatest_ProjectNotFound(t *testing.T) {
-	h, _, _ := setupTest(t)
-
-	req := makeLatestRequest("nonexistent", "linux", "amd64")
-	rec := httptest.NewRecorder()
-	h.DownloadLatest(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
 func TestDownloadLatest_NoPublishedReleases(t *testing.T) {
@@ -364,40 +302,11 @@ func TestDownloadLatest_NoPublishedReleases(t *testing.T) {
 	seedRelease(t, d, proj.ID, "1.0.0-rc1", "main", false)
 
 	req := makeLatestRequest("myapp", "linux", "amd64")
+	req = withRoute(req, proj, route{project: "myapp", os: "linux", arch: "amd64"})
 	rec := httptest.NewRecorder()
 	h.DownloadLatest(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
-
-func TestDownloadLatest_PrivateProject_Unauthorized(t *testing.T) {
-	h, d, store := setupTest(t)
-	proj := seedProject(t, d, "private-app", true)
-	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "private-binary")
-
-	req := makeLatestRequest("private-app", "linux", "amd64")
-	rec := httptest.NewRecorder()
-	h.DownloadLatest(rec, req)
-
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-}
-
-func TestDownloadLatest_PrivateProject_ValidToken(t *testing.T) {
-	h, d, store := setupTest(t)
-	proj := seedProject(t, d, "private-app", true)
-	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "private-binary")
-
-	tok := &model.APIToken{ID: 1, Scopes: "read"}
-	ctx := auth.WithToken(context.Background(), tok)
-	req := makeLatestRequest("private-app", "linux", "amd64")
-	req = req.WithContext(ctx)
-	rec := httptest.NewRecorder()
-	h.DownloadLatest(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "private-binary", rec.Body.String())
 }
 
 func TestDownloadBranch_Success(t *testing.T) {
@@ -408,21 +317,12 @@ func TestDownloadBranch_Success(t *testing.T) {
 	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "feature-branch-binary")
 
 	req := makeBranchRequest("myapp", "feature-x", "linux", "amd64")
+	req = withRoute(req, proj, route{project: "myapp", branch: "feature-x", os: "linux", arch: "amd64"})
 	rec := httptest.NewRecorder()
 	h.DownloadBranch(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "feature-branch-binary", rec.Body.String())
-}
-
-func TestDownloadBranch_ProjectNotFound(t *testing.T) {
-	h, _, _ := setupTest(t)
-
-	req := makeBranchRequest("nonexistent", "main", "linux", "amd64")
-	rec := httptest.NewRecorder()
-	h.DownloadBranch(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
 func TestDownloadBranch_BranchNotFound(t *testing.T) {
@@ -431,40 +331,11 @@ func TestDownloadBranch_BranchNotFound(t *testing.T) {
 	seedRelease(t, d, proj.ID, "1.0.0", "main", true)
 
 	req := makeBranchRequest("myapp", "nonexistent-branch", "linux", "amd64")
+	req = withRoute(req, proj, route{project: "myapp", branch: "nonexistent-branch", os: "linux", arch: "amd64"})
 	rec := httptest.NewRecorder()
 	h.DownloadBranch(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
-
-func TestDownloadBranch_PrivateProject_Unauthorized(t *testing.T) {
-	h, d, store := setupTest(t)
-	proj := seedProject(t, d, "private-app", true)
-	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "private-binary")
-
-	req := makeBranchRequest("private-app", "main", "linux", "amd64")
-	rec := httptest.NewRecorder()
-	h.DownloadBranch(rec, req)
-
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-}
-
-func TestDownloadBranch_PrivateProject_ValidToken(t *testing.T) {
-	h, d, store := setupTest(t)
-	proj := seedProject(t, d, "private-app", true)
-	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "private-binary")
-
-	tok := &model.APIToken{ID: 1, Scopes: "read"}
-	ctx := auth.WithToken(context.Background(), tok)
-	req := makeBranchRequest("private-app", "main", "linux", "amd64")
-	req = req.WithContext(ctx)
-	rec := httptest.NewRecorder()
-	h.DownloadBranch(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "private-binary", rec.Body.String())
 }
 
 func TestDownloadBranch_ResolvesLatestOnBranch(t *testing.T) {
@@ -476,6 +347,7 @@ func TestDownloadBranch_ResolvesLatestOnBranch(t *testing.T) {
 	seedArtifact(t, d, store, rel3.ID, "linux", "amd64", "latest-main-binary")
 
 	req := makeBranchRequest("myapp", "main", "linux", "amd64")
+	req = withRoute(req, proj, route{project: "myapp", branch: "main", os: "linux", arch: "amd64"})
 	rec := httptest.NewRecorder()
 	h.DownloadBranch(rec, req)
 

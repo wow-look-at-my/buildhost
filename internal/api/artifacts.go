@@ -9,9 +9,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
+
+func init() {
+	auth.Handle("PUT /api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}",
+		parseRoute, handler.UploadArtifact)
+}
 
 func sanitizeFilename(name string) string {
 	name = strings.ReplaceAll(name, `\`, "/")
@@ -34,22 +40,10 @@ func sanitizeFilename(name string) string {
 const maxUploadSize = 2 << 30 // 2 GiB
 
 func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
-	t := h.requireWrite(w, r)
-	if t == nil {
-		return
-	}
+	project := auth.ProjectFrom(r.Context())
+	rt := routeFrom(r.Context())
 
-	project := h.getProject(w, r, r.PathValue("project"))
-	if project == nil {
-		return
-	}
-
-	if !t.AuthorizedForProject(project.ID) {
-		jsonError(w, http.StatusForbidden, "token not authorized for this project")
-		return
-	}
-
-	release := h.getRelease(w, r, project.ID, r.PathValue("version"))
+	release := h.getRelease(w, r, project.ID, rt.version)
 	if release == nil {
 		return
 	}
@@ -59,13 +53,11 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	osStr := r.PathValue("os")
-	archStr := r.PathValue("arch")
-	if !model.ValidOS(osStr) {
+	if !model.ValidOS(rt.os) {
 		jsonError(w, http.StatusBadRequest, "invalid os")
 		return
 	}
-	if !model.ValidArch(archStr) {
+	if !model.ValidArch(rt.arch) {
 		jsonError(w, http.StatusBadRequest, "invalid arch")
 		return
 	}
@@ -99,8 +91,8 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 
 	a := &model.Artifact{
 		ReleaseID:  release.ID,
-		OS:         model.OS(osStr),
-		Arch:       model.Arch(archStr),
+		OS:         model.OS(rt.os),
+		Arch:       model.Arch(rt.arch),
 		Kind:       model.Kind(kind),
 		StorageKey: storageKey,
 		Size:       size,

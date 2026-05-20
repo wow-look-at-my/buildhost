@@ -1,10 +1,10 @@
 package auth
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
 type Middleware struct {
@@ -46,51 +46,55 @@ func RequireWrite(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func RequireWriteForProject(next http.HandlerFunc, getProjectID func(r *http.Request) (int64, bool)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		t := TokenFrom(r.Context())
-		if t == nil || !t.HasScope("write") {
-			http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
-			return
-		}
-		if pid, ok := getProjectID(r); ok {
-			if !t.AuthorizedForProject(pid) {
-				http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
-				return
-			}
-		}
-		next(w, r)
-	}
+func requireProjectFunc(parse ParseFunc, next http.HandlerFunc) http.HandlerFunc {
+	return requireProject(parse)(http.HandlerFunc(next)).ServeHTTP
 }
 
-func RequireReadForProject(next http.HandlerFunc, getProject func(r *http.Request) *model.Project) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		proj := getProject(r)
-		if proj != nil && proj.IsPrivate {
+func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ri := parse(r)
+			if ri.ProjectName() == "" {
+				http.NotFound(w, r)
+				return
+			}
+
+			project, err := mw.DB.GetProject(r.Context(), ri.ProjectName())
+			if errors.Is(err, db.ErrNotFound) {
+				http.NotFound(w, r)
+				return
+			}
+			if err != nil {
+				http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+				return
+			}
+
 			t := TokenFrom(r.Context())
-			if t == nil || !t.HasScope("read") {
-				http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
-				return
+			switch ri.Access() {
+			case WriteAccess:
+				if t == nil || !t.HasScope("write") {
+					http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
+					return
+				}
+				if !t.AuthorizedForProject(project.ID) {
+					http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
+					return
+				}
+			case ReadAccess:
+				if project.IsPrivate {
+					if t == nil || !t.HasScope("read") {
+						http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
+						return
+					}
+					if !t.AuthorizedForProject(project.ID) {
+						http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
+						return
+					}
+				}
 			}
-			if t.ProjectID != nil && *t.ProjectID != proj.ID {
-				http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
-				return
-			}
-		}
-		next(w, r)
-	}
-}
 
-func EnforceProjectRead(r *http.Request, project *model.Project) (status int, ok bool) {
-	if project == nil || !project.IsPrivate {
-		return 0, true
+			ctx := WithRouteInfo(WithProject(r.Context(), project), ri)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
 	}
-	t := TokenFrom(r.Context())
-	if t == nil || !t.HasScope("read") {
-		return http.StatusUnauthorized, false
-	}
-	if !t.AuthorizedForProject(project.ID) {
-		return http.StatusForbidden, false
-	}
-	return 0, true
 }
