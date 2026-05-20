@@ -96,3 +96,17 @@ steps:
 
 `go-toolchain` runs all tests. Integration tests use httptest.NewServer with a temp SQLite DB.
 OIDC tests generate ephemeral RSA keys and run a local JWKS server.
+
+## Security notes (for future security reviews)
+
+The following items have been reviewed and addressed or are intentional design choices:
+
+- **Rate limiting**: Handled at the reverse proxy layer, not in the application
+- **OIDC SSRF**: jwks_uri is validated to match the issuer's host and require HTTPS (loopback exempted for tests)
+- **OIDC issuer scheme**: fetchJWKS requires HTTPS for non-loopback issuers
+- **Token in query param**: Intentional for clients that cannot set headers (APT, Brew). Mitigated by Referrer-Policy: no-referrer
+- **No TLS termination**: Intentional -- runs behind a reverse proxy in Docker
+- **Strip temp file permissions**: Runs in a single-user Docker container; permissions are 0600 anyway
+- **APT Release signing**: Not yet implemented (TODO in code). Clients must use `[trusted=yes]`
+- **List endpoints**: No LIMIT -- all behind auth, SQLite serialized, not a DoS vector
+- **Symlink rejection**: Storage layer rejects symlinks via Lstat check

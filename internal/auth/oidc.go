@@ -2,9 +2,7 @@ package auth
 
 import (
 	"context"
-	"crypto"
 	"crypto/rsa"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -12,10 +10,13 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
@@ -36,20 +37,11 @@ type jwkKey struct {
 	Pub *rsa.PublicKey
 }
 
-type jwtHeader struct {
-	Alg string `json:"alg"`
-	Kid string `json:"kid"`
+type oidcClaims struct {
+	jwt.RegisteredClaims
 }
 
-type jwtClaims struct {
-	Issuer     string `json:"iss"`
-	Subject    string `json:"sub"`
-	Audience   any    `json:"aud"`
-	Expiry     int64  `json:"exp"`
-	NotBefore  int64  `json:"nbf"`
-	IssuedAt   int64  `json:"iat"`
-	Repository string `json:"repository"`
-}
+const oidcLeeway = 60 * time.Second
 
 func NewOIDCVerifier() *OIDCVerifier {
 	return &OIDCVerifier{cache: make(map[string]*cachedJWKS)}
@@ -61,53 +53,30 @@ func LooksLikeJWT(token string) bool {
 }
 
 func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []model.OIDCPolicy) (*model.APIToken, error) {
-	parts := strings.Split(raw, ".")
-	if len(parts) != 3 {
-		return nil, errors.New("not a JWT")
-	}
-
-	headerBytes, err := base64URLDecode(parts[0])
+	unverified := &oidcClaims{}
+	_, _, err := jwt.NewParser().ParseUnverified(raw, unverified)
 	if err != nil {
-		return nil, fmt.Errorf("decode header: %w", err)
+		return nil, fmt.Errorf("parse token: %w", err)
 	}
 
-	var header jwtHeader
-	if err := json.Unmarshal(headerBytes, &header); err != nil {
-		return nil, fmt.Errorf("parse header: %w", err)
-	}
-	if header.Alg != "RS256" {
-		return nil, fmt.Errorf("unsupported algorithm: %s", header.Alg)
-	}
-
-	payloadBytes, err := base64URLDecode(parts[1])
-	if err != nil {
-		return nil, fmt.Errorf("decode payload: %w", err)
-	}
-
-	var claims jwtClaims
-	if err := json.Unmarshal(payloadBytes, &claims); err != nil {
-		return nil, fmt.Errorf("parse claims: %w", err)
-	}
-
-	// exp is required — tokens with no expiry are not accepted.
-	if claims.Expiry == 0 {
+	if unverified.ExpiresAt == nil {
 		return nil, errors.New("token missing exp claim")
 	}
-	now := time.Now().Unix()
-	if now > claims.Expiry {
+	now := time.Now()
+	if now.After(unverified.ExpiresAt.Time.Add(oidcLeeway)) {
 		return nil, errors.New("token expired")
 	}
-	if claims.NotBefore != 0 && now < claims.NotBefore-60 {
+	if unverified.NotBefore != nil && now.Before(unverified.NotBefore.Time.Add(-oidcLeeway)) {
 		return nil, errors.New("token not yet valid")
 	}
 
 	var matchedPolicy *model.OIDCPolicy
 	for i := range policies {
 		p := &policies[i]
-		if p.Issuer != claims.Issuer {
+		if p.Issuer != unverified.Issuer {
 			continue
 		}
-		if matchSubject(p.SubjectPattern, claims.Subject) {
+		if matchSubject(p.SubjectPattern, unverified.Subject) {
 			matchedPolicy = p
 			break
 		}
@@ -116,43 +85,38 @@ func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []m
 		return nil, ErrOIDCNotMatched
 	}
 
-	// Validate audience if the policy specifies one.
 	if matchedPolicy.Audience != "" {
-		if !audienceContains(claims.Audience, matchedPolicy.Audience) {
+		aud, _ := unverified.GetAudience()
+		if !slices.Contains(aud, matchedPolicy.Audience) {
 			return nil, errors.New("token audience does not match policy")
 		}
 	}
 
-	keys, err := v.getKeys(ctx, claims.Issuer)
+	keys, err := v.getKeys(ctx, unverified.Issuer)
 	if err != nil {
 		return nil, fmt.Errorf("fetch JWKS: %w", err)
 	}
 
-	sig, err := base64URLDecode(parts[2])
+	token, err := jwt.ParseWithClaims(raw, &oidcClaims{}, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unsupported algorithm: %v", t.Header["alg"])
+		}
+		kid, _ := t.Header["kid"].(string)
+		for _, key := range keys {
+			if kid == "" || key.Kid == kid {
+				return key.Pub, nil
+			}
+		}
+		return nil, errors.New("no matching key found")
+	}, jwt.WithLeeway(oidcLeeway), jwt.WithExpirationRequired())
 	if err != nil {
-		return nil, fmt.Errorf("decode signature: %w", err)
+		return nil, fmt.Errorf("verify token: %w", err)
 	}
 
-	signedContent := []byte(parts[0] + "." + parts[1])
-	hash := sha256.Sum256(signedContent)
-
-	var verified bool
-	for _, key := range keys {
-		if header.Kid != "" && key.Kid != header.Kid {
-			continue
-		}
-		if err := rsa.VerifyPKCS1v15(key.Pub, crypto.SHA256, hash[:], sig); err == nil {
-			verified = true
-			break
-		}
-	}
-	if !verified {
-		return nil, errors.New("signature verification failed")
-	}
-
+	verified := token.Claims.(*oidcClaims)
 	return &model.APIToken{
 		ID:        -1,
-		Name:      "oidc:" + claims.Subject,
+		Name:      "oidc:" + verified.Subject,
 		ProjectID: matchedPolicy.ProjectID,
 		Scopes:    matchedPolicy.Scopes,
 	}, nil
@@ -183,8 +147,24 @@ func (v *OIDCVerifier) getKeys(ctx context.Context, issuer string) ([]jwkKey, er
 	return keys, nil
 }
 
+func isLoopback(host string) bool {
+	h := strings.TrimSuffix(host, ".")
+	if i := strings.LastIndex(h, ":"); i >= 0 {
+		h = h[:i]
+	}
+	return h == "127.0.0.1" || h == "::1" || h == "localhost"
+}
+
 // fetchJWKS discovers the JWKS URI from the OIDC discovery document and fetches keys.
 func fetchJWKS(ctx context.Context, issuer string) ([]jwkKey, error) {
+	parsed, err := url.Parse(issuer)
+	if err != nil {
+		return nil, fmt.Errorf("invalid issuer URL: %w", err)
+	}
+	if parsed.Scheme != "https" && !isLoopback(parsed.Host) {
+		return nil, fmt.Errorf("issuer must use HTTPS")
+	}
+
 	client := &http.Client{Timeout: 10 * time.Second}
 
 	// Discover the JWKS URI via the standard OIDC discovery document.
@@ -210,6 +190,10 @@ func fetchJWKS(ctx context.Context, issuer string) ([]jwkKey, error) {
 	}
 	if discovery.JWKSURI == "" {
 		return nil, errors.New("OIDC discovery missing jwks_uri")
+	}
+
+	if err := validateJWKSURI(issuer, discovery.JWKSURI); err != nil {
+		return nil, err
 	}
 
 	// Fetch the JWKS.
@@ -256,6 +240,26 @@ func fetchJWKS(ctx context.Context, issuer string) ([]jwkKey, error) {
 	return keys, nil
 }
 
+func validateJWKSURI(issuer, jwksURI string) error {
+	issuerURL, err := url.Parse(issuer)
+	if err != nil {
+		return fmt.Errorf("invalid issuer URL: %w", err)
+	}
+	jwksURL, err := url.Parse(jwksURI)
+	if err != nil {
+		return fmt.Errorf("invalid jwks_uri: %w", err)
+	}
+	if jwksURL.Scheme != "https" && !isLoopback(jwksURL.Host) {
+		return fmt.Errorf("jwks_uri must use HTTPS, got %q", jwksURL.Scheme)
+	}
+	issuerHost := strings.ToLower(issuerURL.Hostname())
+	jwksHost := strings.ToLower(jwksURL.Hostname())
+	if jwksHost != issuerHost && !strings.HasSuffix(jwksHost, "."+issuerHost) {
+		return fmt.Errorf("jwks_uri host %q does not match issuer host %q", jwksHost, issuerHost)
+	}
+	return nil
+}
+
 func parseRSAPublicKey(nStr, eStr string) (*rsa.PublicKey, error) {
 	nBytes, err := base64URLDecode(nStr)
 	if err != nil {
@@ -299,19 +303,4 @@ func matchSubject(pattern, subject string) bool {
 		return strings.HasPrefix(subject, prefix)
 	}
 	return pattern == subject
-}
-
-// audienceContains checks if expected appears in the JWT aud claim (string or []string).
-func audienceContains(aud any, expected string) bool {
-	switch v := aud.(type) {
-	case string:
-		return v == expected
-	case []any:
-		for _, a := range v {
-			if s, ok := a.(string); ok && s == expected {
-				return true
-			}
-		}
-	}
-	return false
 }

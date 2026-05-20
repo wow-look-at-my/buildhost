@@ -1,5 +1,9 @@
 package api
 
+//go:generate go run github.com/wow-look-at-my/go-regex-compiler/cmd/go-regex-compiler@latest --regex "^[a-zA-Z0-9][a-zA-Z0-9._+-]{0,127}$" --func validVersion --package api --output gen_version.go --match full
+//go:generate go run github.com/wow-look-at-my/go-regex-compiler/cmd/go-regex-compiler@latest --regex "^[a-zA-Z0-9._/-]{1,256}$" --func validGitBranch --package api --output gen_git_branch.go --match full
+//go:generate go run github.com/wow-look-at-my/go-regex-compiler/cmd/go-regex-compiler@latest --regex "^[a-fA-F0-9]{1,64}$" --func validGitCommit --package api --output gen_git_commit.go --match full
+
 import (
 	"encoding/json"
 	"errors"
@@ -60,7 +64,24 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		version = strings.TrimPrefix(req.Version, "v")
+		if !validVersion(version) {
+			jsonError(w, http.StatusBadRequest, "invalid version string")
+			return
+		}
 		versionNum = semverToNum(version)
+	}
+
+	if req.GitBranch != "" && !validGitBranch(req.GitBranch) {
+		jsonError(w, http.StatusBadRequest, "invalid git_branch")
+		return
+	}
+	if req.GitCommit != "" && !validGitCommit(req.GitCommit) {
+		jsonError(w, http.StatusBadRequest, "invalid git_commit")
+		return
+	}
+	if len(req.Notes) > 65536 {
+		jsonError(w, http.StatusBadRequest, "notes too long")
+		return
 	}
 
 	rel := &model.Release{
@@ -122,6 +143,9 @@ func semverToNum(v string) int64 {
 			break
 		}
 		n, _ := strconv.ParseInt(s, 10, 64)
+		if n < 0 {
+			n = 0
+		}
 		switch i {
 		case 0:
 			num += n * 1_000_000

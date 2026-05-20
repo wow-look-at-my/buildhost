@@ -9,3 +9,6 @@ coverage.out
 coverage.html
 /build/
 internal/api/gen_project_name.go
+internal/api/gen_version.go
+internal/api/gen_git_branch.go
+internal/api/gen_git_commit.go
