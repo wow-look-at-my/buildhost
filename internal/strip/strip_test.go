@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/wow-look-at-my/testify/assert"
@@ -47,9 +48,12 @@ func TestStrip_NonELFFile(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "extract debug info")
 
-	// Verify cleanup happened.
-	_, statErr := os.Stat(input + ".stripped")
-	assert.True(t, os.IsNotExist(statErr), "stripped file should be cleaned up on error")
+	// Verify temp files are cleaned up.
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		assert.False(t, strings.HasPrefix(e.Name(), "stripped-"), "stripped temp should be cleaned up")
+		assert.False(t, strings.HasPrefix(e.Name(), "debug-"), "debug temp should be cleaned up")
+	}
 }
 
 func TestStrip_RealELFBinary(t *testing.T) {
@@ -73,8 +77,10 @@ func TestStrip_RealELFBinary(t *testing.T) {
 	result, err := Strip(outputBin)
 	require.NoError(t, err)
 
-	assert.Equal(t, outputBin+".stripped", result.StrippedPath)
-	assert.Equal(t, outputBin+".debug", result.DebugPath)
+	assert.Contains(t, result.StrippedPath, "stripped-")
+	assert.Contains(t, result.DebugPath, "debug-")
+	assert.Equal(t, dir, filepath.Dir(result.StrippedPath))
+	assert.Equal(t, dir, filepath.Dir(result.DebugPath))
 
 	// Both output files should exist.
 	_, err = os.Stat(result.StrippedPath)
