@@ -64,19 +64,25 @@ func (fs *Filesystem) Get(_ context.Context, key string) (io.ReadCloser, int64, 
 	if !validStorageKey.MatchString(key) {
 		return nil, 0, os.ErrNotExist
 	}
-	f, err := os.Open(fs.path(key))
+	p := fs.path(key)
+	linfo, err := os.Lstat(p)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, 0, os.ErrNotExist
 		}
+		return nil, 0, fmt.Errorf("lstat blob: %w", err)
+	}
+	if linfo.Mode()&os.ModeSymlink != 0 {
+		return nil, 0, os.ErrNotExist
+	}
+	if !linfo.Mode().IsRegular() {
+		return nil, 0, os.ErrNotExist
+	}
+	f, err := os.Open(p)
+	if err != nil {
 		return nil, 0, fmt.Errorf("open blob: %w", err)
 	}
-	info, err := f.Stat()
-	if err != nil {
-		f.Close()
-		return nil, 0, fmt.Errorf("stat blob: %w", err)
-	}
-	return f, info.Size(), nil
+	return f, linfo.Size(), nil
 }
 
 func (fs *Filesystem) Delete(_ context.Context, key string) error {
@@ -94,14 +100,14 @@ func (fs *Filesystem) Exists(_ context.Context, key string) (bool, error) {
 	if !validStorageKey.MatchString(key) {
 		return false, nil
 	}
-	_, err := os.Stat(fs.path(key))
-	if err == nil {
-		return true, nil
+	info, err := os.Lstat(fs.path(key))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
 	}
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	return false, err
+	return info.Mode().IsRegular(), nil
 }
 
 func (fs *Filesystem) path(key string) string {

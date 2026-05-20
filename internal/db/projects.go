@@ -46,7 +46,7 @@ func (d *DB) GetProject(ctx context.Context, name string) (*model.Project, error
 func (d *DB) ListProjects(ctx context.Context) ([]model.Project, error) {
 	rows, err := d.QueryContext(ctx,
 		`SELECT id, name, description, homepage, license, is_private, versioning, created_at, updated_at
-		 FROM projects ORDER BY name`)
+		 FROM projects ORDER BY name LIMIT 1000`)
 	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
 	}

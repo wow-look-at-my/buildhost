@@ -70,7 +70,7 @@ func (d *DB) LookupToken(ctx context.Context, plaintext string) (*model.APIToken
 func (d *DB) ListTokens(ctx context.Context) ([]model.APIToken, error) {
 	rows, err := d.QueryContext(ctx,
 		`SELECT id, name, token_prefix, project_id, scopes, expires_at, created_at, last_used_at
-		 FROM api_tokens ORDER BY created_at DESC`)
+		 FROM api_tokens ORDER BY created_at DESC LIMIT 1000`)
 	if err != nil {
 		return nil, fmt.Errorf("list tokens: %w", err)
 	}

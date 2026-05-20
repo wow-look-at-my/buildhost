@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 )
 
 type Result struct {
@@ -12,19 +13,37 @@ type Result struct {
 }
 
 func Strip(inputPath string) (*Result, error) {
-	strippedPath := inputPath + ".stripped"
-	debugPath := inputPath + ".debug"
-
 	data, err := os.ReadFile(inputPath)
 	if err != nil {
 		return nil, fmt.Errorf("read input: %w", err)
 	}
-	if err := os.WriteFile(strippedPath, data, 0o644); err != nil {
+
+	dir := filepath.Dir(inputPath)
+
+	strippedFile, err := os.CreateTemp(dir, "stripped-*")
+	if err != nil {
+		return nil, fmt.Errorf("create stripped temp: %w", err)
+	}
+	strippedPath := strippedFile.Name()
+	strippedFile.Close()
+
+	debugFile, err := os.CreateTemp(dir, "debug-*")
+	if err != nil {
+		os.Remove(strippedPath)
+		return nil, fmt.Errorf("create debug temp: %w", err)
+	}
+	debugPath := debugFile.Name()
+	debugFile.Close()
+
+	if err := os.WriteFile(strippedPath, data, 0o600); err != nil {
+		os.Remove(strippedPath)
+		os.Remove(debugPath)
 		return nil, fmt.Errorf("copy for stripping: %w", err)
 	}
 
 	if err := exec.Command("objcopy", "--only-keep-debug", strippedPath, debugPath).Run(); err != nil {
 		os.Remove(strippedPath)
+		os.Remove(debugPath)
 		return nil, fmt.Errorf("extract debug info: %w", err)
 	}
 

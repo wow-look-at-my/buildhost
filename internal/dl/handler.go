@@ -122,7 +122,7 @@ func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project 
 			http.NotFound(w, r)
 			return
 		}
-		h.serveBlob(w, artifact.DebugStorageKey, fmt.Sprintf("%s-%s.debug", project.Name, release.Version))
+		h.serveBlob(w, r, artifact.DebugStorageKey, fmt.Sprintf("%s-%s.debug", project.Name, release.Version))
 		return
 	}
 
@@ -132,7 +132,7 @@ func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project 
 		if artifact.StrippedStorageKey != "" {
 			key = artifact.StrippedStorageKey
 		}
-		h.serveBlob(w, key, project.Name)
+		h.serveBlob(w, r, key, project.Name)
 		return
 	}
 
@@ -146,11 +146,11 @@ func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project 
 		return
 	}
 
-	h.serveBlob(w, storageKey, filename)
+	h.serveBlob(w, r, storageKey, filename)
 }
 
-func (h *Handler) serveBlob(w http.ResponseWriter, key, filename string) {
-	rc, size, err := h.Store.Get(context.Background(), key)
+func (h *Handler) serveBlob(w http.ResponseWriter, r *http.Request, key, filename string) {
+	rc, size, err := h.Store.Get(r.Context(), key)
 	if err != nil {
 		http.Error(w, "blob not found", http.StatusNotFound)
 		return

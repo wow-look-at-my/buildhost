@@ -5,12 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
+)
+
+var (
+	validVersion   = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._+-]{0,127}$`)
+	validGitBranch = regexp.MustCompile(`^[a-zA-Z0-9._/-]{1,256}$`)
+	validGitCommit = regexp.MustCompile(`^[a-fA-F0-9]{1,64}$`)
 )
 
 func init() {
@@ -60,7 +67,24 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		version = strings.TrimPrefix(req.Version, "v")
+		if !validVersion.MatchString(version) {
+			jsonError(w, http.StatusBadRequest, "invalid version string")
+			return
+		}
 		versionNum = semverToNum(version)
+	}
+
+	if req.GitBranch != "" && !validGitBranch.MatchString(req.GitBranch) {
+		jsonError(w, http.StatusBadRequest, "invalid git_branch")
+		return
+	}
+	if req.GitCommit != "" && !validGitCommit.MatchString(req.GitCommit) {
+		jsonError(w, http.StatusBadRequest, "invalid git_commit")
+		return
+	}
+	if len(req.Notes) > 65536 {
+		jsonError(w, http.StatusBadRequest, "notes too long")
+		return
 	}
 
 	rel := &model.Release{
@@ -122,6 +146,9 @@ func semverToNum(v string) int64 {
 			break
 		}
 		n, _ := strconv.ParseInt(s, 10, 64)
+		if n < 0 || n > 65535 {
+			n = 0
+		}
 		switch i {
 		case 0:
 			num += n * 1_000_000

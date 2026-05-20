@@ -12,6 +12,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -93,8 +94,9 @@ func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []m
 	if claims.Expiry == 0 {
 		return nil, errors.New("token missing exp claim")
 	}
+	const clockSkew = 60
 	now := time.Now().Unix()
-	if now > claims.Expiry {
+	if now > claims.Expiry+clockSkew {
 		return nil, errors.New("token expired")
 	}
 	if claims.NotBefore != 0 && now < claims.NotBefore-60 {
@@ -183,8 +185,24 @@ func (v *OIDCVerifier) getKeys(ctx context.Context, issuer string) ([]jwkKey, er
 	return keys, nil
 }
 
+func isLoopback(host string) bool {
+	h := strings.TrimSuffix(host, ".")
+	if i := strings.LastIndex(h, ":"); i >= 0 {
+		h = h[:i]
+	}
+	return h == "127.0.0.1" || h == "::1" || h == "localhost"
+}
+
 // fetchJWKS discovers the JWKS URI from the OIDC discovery document and fetches keys.
 func fetchJWKS(ctx context.Context, issuer string) ([]jwkKey, error) {
+	parsed, err := url.Parse(issuer)
+	if err != nil {
+		return nil, fmt.Errorf("invalid issuer URL: %w", err)
+	}
+	if parsed.Scheme != "https" && !isLoopback(parsed.Host) {
+		return nil, fmt.Errorf("issuer must use HTTPS")
+	}
+
 	client := &http.Client{Timeout: 10 * time.Second}
 
 	// Discover the JWKS URI via the standard OIDC discovery document.
@@ -210,6 +228,10 @@ func fetchJWKS(ctx context.Context, issuer string) ([]jwkKey, error) {
 	}
 	if discovery.JWKSURI == "" {
 		return nil, errors.New("OIDC discovery missing jwks_uri")
+	}
+
+	if err := validateJWKSURI(issuer, discovery.JWKSURI); err != nil {
+		return nil, err
 	}
 
 	// Fetch the JWKS.
@@ -254,6 +276,26 @@ func fetchJWKS(ctx context.Context, issuer string) ([]jwkKey, error) {
 		keys = append(keys, jwkKey{Kid: k.Kid, Pub: pub})
 	}
 	return keys, nil
+}
+
+func validateJWKSURI(issuer, jwksURI string) error {
+	issuerURL, err := url.Parse(issuer)
+	if err != nil {
+		return fmt.Errorf("invalid issuer URL: %w", err)
+	}
+	jwksURL, err := url.Parse(jwksURI)
+	if err != nil {
+		return fmt.Errorf("invalid jwks_uri: %w", err)
+	}
+	if jwksURL.Scheme != "https" && !isLoopback(jwksURL.Host) {
+		return fmt.Errorf("jwks_uri must use HTTPS, got %q", jwksURL.Scheme)
+	}
+	issuerHost := strings.ToLower(issuerURL.Hostname())
+	jwksHost := strings.ToLower(jwksURL.Hostname())
+	if jwksHost != issuerHost && !strings.HasSuffix(jwksHost, "."+issuerHost) {
+		return fmt.Errorf("jwks_uri host %q does not match issuer host %q", jwksHost, issuerHost)
+	}
+	return nil
 }
 
 func parseRSAPublicKey(nStr, eStr string) (*rsa.PublicKey, error) {
