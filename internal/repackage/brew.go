@@ -6,18 +6,17 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"text/template"
 
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
+var brewUnsafeChars = regexp.MustCompile(`[^a-zA-Z0-9 .,;:!?@&()/'+*=_-]`)
+
 func sanitizeBrewString(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	s = strings.ReplaceAll(s, "#", `\#`)
-	s = strings.ReplaceAll(s, "\n", " ")
-	return s
+	return brewUnsafeChars.ReplaceAllString(s, "")
 }
 
 type Brew struct{}

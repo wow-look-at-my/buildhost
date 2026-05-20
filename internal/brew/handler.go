@@ -72,20 +72,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, a := range artifacts {
-		storageKey, _, _, _, err := h.DB.GetPackagedArtifact(r.Context(), a.ID, "brew")
-		if err != nil {
-			continue
+		if h.tryServeBrew(w, r, a.ID, projectName+".rb") {
+			return
 		}
-		rc, _, err := h.Store.Get(r.Context(), storageKey)
-		if err != nil {
-			continue
-		}
-		w.Header().Set("Content-Type", "application/x-ruby")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", projectName+".rb"))
-		io.Copy(w, rc)
-		rc.Close()
-		return
 	}
 
 	http.NotFound(w, r)
+}
+
+func (h *Handler) tryServeBrew(w http.ResponseWriter, r *http.Request, artifactID int64, filename string) bool {
+	storageKey, _, _, _, err := h.DB.GetPackagedArtifact(r.Context(), artifactID, "brew")
+	if err != nil {
+		return false
+	}
+	rc, _, err := h.Store.Get(r.Context(), storageKey)
+	if err != nil {
+		return false
+	}
+	defer rc.Close()
+	w.Header().Set("Content-Type", "application/x-ruby")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", filename))
+	io.Copy(w, rc)
+	return true
 }

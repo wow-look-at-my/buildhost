@@ -135,23 +135,30 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, project *
 			continue
 		}
 		for _, a := range artifacts {
-			storageKey, size, _, storedFilename, err := h.DB.GetPackagedArtifact(r.Context(), a.ID, "npm")
-			if err != nil {
-				continue
-			}
-			if storedFilename == filename {
-				rc, _, err := h.Store.Get(r.Context(), storageKey)
-				if err != nil {
-					continue
-				}
-				w.Header().Set("Content-Type", "application/octet-stream")
-				w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
-				io.Copy(w, rc)
-				rc.Close()
+			if h.tryServeNpmTarball(w, r, a.ID, filename) {
 				return
 			}
 		}
 	}
 
 	http.NotFound(w, r)
+}
+
+func (h *Handler) tryServeNpmTarball(w http.ResponseWriter, r *http.Request, artifactID int64, filename string) bool {
+	storageKey, size, _, storedFilename, err := h.DB.GetPackagedArtifact(r.Context(), artifactID, "npm")
+	if err != nil {
+		return false
+	}
+	if storedFilename != filename {
+		return false
+	}
+	rc, _, err := h.Store.Get(r.Context(), storageKey)
+	if err != nil {
+		return false
+	}
+	defer rc.Close()
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
+	io.Copy(w, rc)
+	return true
 }

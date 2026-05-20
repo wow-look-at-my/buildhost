@@ -32,22 +32,28 @@ func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, referenc
 	}
 
 	for _, a := range artifacts {
-		storageKey, _, _, _, err := h.DB.GetPackagedArtifact(r.Context(), a.ID, "oci")
-		if err != nil {
-			continue
+		if h.tryServeManifest(w, r, a.ID) {
+			return
 		}
-		rc, size, err := h.Store.Get(r.Context(), storageKey)
-		if err != nil {
-			continue
-		}
-		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
-		io.Copy(w, rc)
-		rc.Close()
-		return
 	}
 
 	http.NotFound(w, r)
+}
+
+func (h *Handler) tryServeManifest(w http.ResponseWriter, r *http.Request, artifactID int64) bool {
+	storageKey, _, _, _, err := h.DB.GetPackagedArtifact(r.Context(), artifactID, "oci")
+	if err != nil {
+		return false
+	}
+	rc, size, err := h.Store.Get(r.Context(), storageKey)
+	if err != nil {
+		return false
+	}
+	defer rc.Close()
+	w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
+	io.Copy(w, rc)
+	return true
 }
 
 func (h *Handler) serveBlob(w http.ResponseWriter, r *http.Request, digest string) {

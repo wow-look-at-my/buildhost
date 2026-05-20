@@ -103,20 +103,12 @@ func (o *Orchestrator) PublishRelease(ctx context.Context, project model.Project
 				continue
 			}
 
-			tmpFile, err := os.CreateTemp("", "repackage-*")
+			tmpFile, err := copyToTempFile(rc, "repackage-*")
+			rc.Close()
 			if err != nil {
-				rc.Close()
-				slog.Error("create temp for repackaging", "err", err)
-				continue
-			}
-			if _, err := io.Copy(tmpFile, rc); err != nil {
-				rc.Close()
-				tmpFile.Close()
-				os.Remove(tmpFile.Name())
 				slog.Error("copy artifact to temp", "err", err)
 				continue
 			}
-			rc.Close()
 			tmpFile.Seek(0, io.SeekStart)
 
 			input := Input{
@@ -162,18 +154,11 @@ func (o *Orchestrator) stripArtifact(ctx context.Context, a *model.Artifact) err
 		return err
 	}
 
-	tmpFile, err := os.CreateTemp("", "strip-*")
+	tmpFile, err := copyToTempFile(rc, "strip-*")
+	rc.Close()
 	if err != nil {
-		rc.Close()
-		return err
-	}
-	if _, err := io.Copy(tmpFile, rc); err != nil {
-		rc.Close()
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
 		return fmt.Errorf("copy artifact to temp: %w", err)
 	}
-	rc.Close()
 	tmpFile.Close()
 	defer os.Remove(tmpFile.Name())
 
@@ -211,6 +196,19 @@ func (o *Orchestrator) stripArtifact(ctx context.Context, a *model.Artifact) err
 	a.DebugSize = debugSize
 
 	return o.DB.UpdateArtifactStripped(ctx, a.ID, strippedKey, strippedSize, strippedKey, debugKey, debugSize)
+}
+
+func copyToTempFile(r io.Reader, prefix string) (*os.File, error) {
+	f, err := os.CreateTemp("", prefix)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := io.Copy(f, r); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return nil, err
+	}
+	return f, nil
 }
 
 func marshalMetadata(m map[string]string) string {
