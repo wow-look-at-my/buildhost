@@ -39,7 +39,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - Storage is content-addressed (SHA-256) for deduplication
 - Auth: Bearer token, Basic auth, or query param — all resolve to the same token system
 - OIDC: JWT-based auth for GitHub Actions (and any OIDC provider), keys fetched from issuer's JWKS endpoint
-- OIDC auto-provisioning: trusted issuers (BUILDHOST_OIDC_ISSUERS) can create projects on first publish -- project name derived from JWT subject claim, org allowlist (BUILDHOST_OIDC_ORGS, use `*` to allow all)
+- OIDC auto-provisioning: trusted issuers (BUILDHOST_OIDC_ISSUERS) can create projects on first publish -- project name derived from JWT subject claim, org allowlist (BUILDHOST_OIDC_ORGS, use `*` to allow all), event allowlist (BUILDHOST_OIDC_EVENTS, defaults to `push` to limit to repo members)
 - Private projects require auth on all endpoints including format-specific ones (APT, Brew, NPM, OCI)
 - Project auth enforced once in centralized requireProject middleware — handlers never check auth
 - Each backend defines a RouteInfo implementation (private route struct) for full URL parsing

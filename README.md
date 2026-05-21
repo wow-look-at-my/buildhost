@@ -124,15 +124,17 @@ Environment variables:
 | `BUILDHOST_BASE_URL` | `http://localhost:8080` | External URL for generated links |
 | `BUILDHOST_OIDC_ISSUERS` | (none) | Comma-separated trusted OIDC issuers for auto-provisioning |
 | `BUILDHOST_OIDC_ORGS` | (none) | Comma-separated allowed orgs for OIDC auto-provisioning (`*` for all) |
+| `BUILDHOST_OIDC_EVENTS` | `push` | Comma-separated allowed event types for OIDC auto-provisioning (`*` for all) |
 
 ## OIDC auto-provisioning
 
 Set `BUILDHOST_OIDC_ISSUERS` to a comma-separated list of trusted OIDC issuers (e.g., `https://token.actions.githubusercontent.com`). When a JWT from a trusted issuer arrives and no explicit OIDC policy matches, buildhost:
 
 1. Fetches the issuer's JWKS keys (via OIDC discovery) and verifies the JWT signature
-2. Derives the project name from the subject claim (`repo:org/name:*` -> `name`)
-3. Auto-creates the project if it doesn't exist (with auto-versioning)
-4. Grants `read,write` scope limited to that one project
+2. Checks the org (from subject) and event type (from `event_name` claim) against the allowlists
+3. Derives the project name from the subject claim (`repo:org/name:*` -> `name`)
+4. Auto-creates the project if it doesn't exist (with auto-versioning)
+5. Grants `read,write` scope limited to that one project
 
 No manual project creation or OIDC policy setup needed.
 
@@ -141,6 +143,8 @@ BUILDHOST_OIDC_ISSUERS=https://token.actions.githubusercontent.com \
   BUILDHOST_OIDC_ORGS=wow-look-at-my,PazerOP \
   buildhost serve
 ```
+
+By default, only `push` events are allowed, which limits auto-provisioning to users with write access to the repository (org members/collaborators). Set `BUILDHOST_OIDC_EVENTS=*` to allow all event types.
 
 If `BUILDHOST_OIDC_ORGS` is empty, no orgs are allowed. Use `*` to allow all orgs.
 

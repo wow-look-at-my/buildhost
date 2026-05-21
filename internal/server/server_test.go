@@ -519,6 +519,7 @@ func TestOIDC_AutoCreateProject(t *testing.T) {
 		BaseURL:     "http://localhost",
 		OIDCIssuers: []string{jwksSrv.URL},
 		OIDCOrgs:    []string{"*"},
+		OIDCEvents:  []string{"push"},
 	}
 
 	srv := server.New(cfg, database, store)
@@ -526,8 +527,9 @@ func TestOIDC_AutoCreateProject(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	token := signJWT(t, key, "kid-auto", map[string]any{
-		"iss": jwksSrv.URL,
-		"sub": "repo:myorg/autoproject:ref:refs/heads/main",
+		"iss":        jwksSrv.URL,
+		"sub":        "repo:myorg/autoproject:ref:refs/heads/main",
+		"event_name": "push",
 		"aud": ts.URL,
 		"exp": time.Now().Add(10 * time.Minute).Unix(),
 		"iat": time.Now().Unix(),
