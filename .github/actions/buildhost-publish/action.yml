@@ -1,6 +1,6 @@
 name: Publish to Buildhost
 version: 1
-description: Publish a build artifact to a buildhost registry using GHA OIDC.
+description: Publish build artifacts to a buildhost registry using GHA OIDC. Understands go-toolchain matrix naming ({project}_{os}_{arch}).
 
 inputs:
   server:
@@ -10,26 +10,11 @@ inputs:
     description: 'Project name on the buildhost instance (defaults to the repository name)'
     required: false
   artifact_name:
-    description: 'GHA run artifact name to download and publish'
-    required: true
-  artifact_file:
-    description: 'Filename within the artifact archive (defaults to the artifact name)'
+    description: 'GHA run artifact name to download (defaults to go-build from go-toolchain)'
     required: false
-  os:
-    description: 'Target OS (linux, darwin, windows)'
-    required: true
-  arch:
-    description: 'Target architecture (amd64, arm64)'
-    required: true
-  kind:
-    description: 'Artifact kind (binary, library, assets, archive)'
-    required: false
-    default: 'binary'
+    default: 'go-build'
   version:
     description: 'Release version (omit for auto-versioned projects)'
-    required: false
-  filename:
-    description: 'Override the artifact filename stored on the server'
     required: false
   git_branch:
     description: 'Git branch (defaults to GITHUB_REF_NAME)'
@@ -37,10 +22,6 @@ inputs:
   git_commit:
     description: 'Git commit SHA (defaults to GITHUB_SHA)'
     required: false
-  publish:
-    description: 'Publish the release after uploading (set to false for multi-artifact uploads)'
-    required: false
-    default: 'true'
 
 runs:
   using: composite
@@ -55,24 +36,17 @@ runs:
       env:
         INPUT_SERVER: ${{ inputs.server }}
         INPUT_PROJECT: ${{ inputs.project }}
-        INPUT_ARTIFACT_FILE: ${{ inputs.artifact_file || inputs.artifact_name }}
-        INPUT_OS: ${{ inputs.os }}
-        INPUT_ARCH: ${{ inputs.arch }}
-        INPUT_KIND: ${{ inputs.kind }}
         INPUT_VERSION: ${{ inputs.version }}
-        INPUT_FILENAME: ${{ inputs.filename }}
         INPUT_GIT_BRANCH: ${{ inputs.git_branch }}
         INPUT_GIT_COMMIT: ${{ inputs.git_commit }}
-        INPUT_PUBLISH: ${{ inputs.publish }}
       run: |
         set -euo pipefail
 
-        INPUT_PROJECT="${INPUT_PROJECT:-${GITHUB_REPOSITORY#*/}}"
+        PROJECT="${INPUT_PROJECT:-${GITHUB_REPOSITORY#*/}}"
         GIT_BRANCH="${INPUT_GIT_BRANCH:-$GITHUB_REF_NAME}"
         GIT_COMMIT="${INPUT_GIT_COMMIT:-$GITHUB_SHA}"
-        ARTIFACT="/tmp/buildhost-publish/${INPUT_ARTIFACT_FILE}"
 
-        # Mint OIDC token for the buildhost audience
+        # Mint OIDC token
         TOKEN=$(curl -sf \
           -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
           "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${INPUT_SERVER}" | jq -r '.value')
@@ -82,13 +56,33 @@ runs:
           exit 1
         fi
 
-        # Build release creation body
+        # Discover matrix artifacts: {project}_{os}_{arch}
+        ARTIFACTS=()
+        for f in /tmp/buildhost-publish/*; do
+          [ -f "$f" ] || continue
+          [ -L "$f" ] && continue
+          name=$(basename "$f")
+          [[ "$name" == checksums.txt ]] && continue
+          [[ "$name" == *.exe ]] && name="${name%.exe}"
+          if [[ "$name" =~ ^${PROJECT}_([a-z]+)_([a-z0-9]+)$ ]]; then
+            ARTIFACTS+=("$f:${BASH_REMATCH[1]}:${BASH_REMATCH[2]}")
+          fi
+        done
+
+        if [ ${#ARTIFACTS[@]} -eq 0 ]; then
+          echo "::error::No matrix artifacts matching '${PROJECT}_{os}_{arch}' found in artifact."
+          ls -la /tmp/buildhost-publish/
+          exit 1
+        fi
+
+        echo "Found ${#ARTIFACTS[@]} artifact(s) to publish"
+
+        # Create release
         BODY=$(jq -n --arg b "${GIT_BRANCH}" --arg c "${GIT_COMMIT}" --arg v "${INPUT_VERSION}" \
           '{git_branch: $b, git_commit: $c} + (if $v != "" then {version: $v} else {} end)')
 
-        # Create release (201 = created, 409 = already exists)
         HTTP_OUT=$(curl -s -w "\n%{http_code}" -X POST \
-          "${INPUT_SERVER}/api/v1/projects/${INPUT_PROJECT}/releases" \
+          "${INPUT_SERVER}/api/v1/projects/${PROJECT}/releases" \
           -H "Authorization: Bearer ${TOKEN}" \
           -H "Content-Type: application/json" \
           -d "${BODY}")
@@ -109,20 +103,20 @@ runs:
           exit 1
         fi
 
-        # Upload artifact
-        UPLOAD_URL="${INPUT_SERVER}/api/v1/projects/${INPUT_PROJECT}/releases/${VERSION}/artifacts/${INPUT_OS}/${INPUT_ARCH}?kind=${INPUT_KIND}"
-        HEADERS=(-H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/octet-stream")
-        if [ -n "${INPUT_FILENAME}" ]; then
-          HEADERS+=(-H "X-Artifact-Filename: ${INPUT_FILENAME}")
-        fi
-
-        curl -sf -X PUT "${UPLOAD_URL}" "${HEADERS[@]}" --data-binary @"${ARTIFACT}"
-        echo "Uploaded ${INPUT_PROJECT}/${VERSION} ${INPUT_OS}/${INPUT_ARCH}"
+        # Upload each artifact
+        for entry in "${ARTIFACTS[@]}"; do
+          IFS=: read -r filepath os arch <<< "${entry}"
+          echo "Uploading ${os}/${arch}..."
+          curl -sf -X PUT \
+            "${INPUT_SERVER}/api/v1/projects/${PROJECT}/releases/${VERSION}/artifacts/${os}/${arch}?kind=binary" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"${filepath}"
+        done
 
         # Publish release
-        if [ "${INPUT_PUBLISH}" = "true" ]; then
-          curl -sf -X POST \
-            "${INPUT_SERVER}/api/v1/projects/${INPUT_PROJECT}/releases/${VERSION}/publish" \
-            -H "Authorization: Bearer ${TOKEN}"
-          echo "Published ${INPUT_PROJECT}/${VERSION} to ${INPUT_SERVER}"
-        fi
+        curl -sf -X POST \
+          "${INPUT_SERVER}/api/v1/projects/${PROJECT}/releases/${VERSION}/publish" \
+          -H "Authorization: Bearer ${TOKEN}"
+
+        echo "Published ${PROJECT}/${VERSION} (${#ARTIFACTS[@]} artifacts) to ${INPUT_SERVER}"

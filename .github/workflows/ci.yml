@@ -16,36 +16,15 @@ jobs:
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           generate: c29114ff2f33
-      - uses: actions/upload-artifact@v4
-        with:
-          name: buildhost-linux-amd64
-          path: build/buildhost
-          if-no-files-found: error
 
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          sparse-checkout: .github/actions
-      - uses: ./.github/actions/buildhost-publish
-        with:
-          server: https://pazer.build
-          artifact_name: buildhost-linux-amd64
-          artifact_file: buildhost
-          os: linux
-          arch: amd64
-
-  container:
+  publish-ghcr:
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: buildhost-linux-amd64
+          name: go-build
           path: build
       - name: Log in to ghcr.io
         if: github.ref == 'refs/heads/master'
@@ -61,3 +40,15 @@ jobs:
           else
             docker buildx build ${BUILD_ARGS} .
           fi
+
+  publish-buildhost-test:
+    needs: build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+      - uses: ./.github/actions/buildhost-publish
+        with:
+          server: https://pazer.build
