@@ -44,7 +44,7 @@ runs:
             const downloadDir = path.join(os.tmpdir(), "buildhost-publish");
 
             // Download artifact via octokit
-            const oct = octokit(env.GITHUB_TOKEN!);
+            const oct = octokit(github.token);
             const [owner, repo] = github.repository.split("/");
             const { data: { artifacts } } = await oct.rest.actions.listWorkflowRunArtifacts({
               owner, repo, run_id: github.run_id,
