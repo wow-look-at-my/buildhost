@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -23,6 +24,8 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 					r = r.WithContext(WithToken(r.Context(), token))
 					next.ServeHTTP(w, r)
 					return
+				} else {
+					slog.Debug("OIDC verification failed", "err", err)
 				}
 			}
 			token, err := m.DB.LookupToken(r.Context(), raw)
@@ -62,7 +65,9 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			if errors.Is(err, db.ErrNotFound) {
 				t := TokenFrom(r.Context())
 				if t == nil || t.OIDCProject == "" || t.OIDCProject != ri.ProjectName() {
-					http.NotFound(w, r)
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusNotFound)
+					w.Write([]byte(`{"error":"project not found"}`))
 					return
 				}
 				project = &model.Project{Name: ri.ProjectName(), Versioning: model.VersioningAuto}
