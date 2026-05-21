@@ -7,8 +7,8 @@ inputs:
     description: 'Buildhost server URL (e.g., https://pazer.build)'
     required: true
   project:
-    description: 'Project name on the buildhost instance'
-    required: true
+    description: 'Project name on the buildhost instance (defaults to the repository name)'
+    required: false
   artifact:
     description: 'Path to the artifact file'
     required: true
@@ -59,6 +59,7 @@ runs:
       run: |
         set -euo pipefail
 
+        INPUT_PROJECT="${INPUT_PROJECT:-${GITHUB_REPOSITORY#*/}}"
         GIT_BRANCH="${INPUT_GIT_BRANCH:-$GITHUB_REF_NAME}"
         GIT_COMMIT="${INPUT_GIT_COMMIT:-$GITHUB_SHA}"
 
