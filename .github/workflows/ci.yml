@@ -16,8 +16,22 @@ jobs:
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           generate: c29114ff2f33
+      - uses: actions/upload-artifact@v4
+        with:
+          name: buildhost-linux-amd64
+          path: build/buildhost
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: buildhost-linux-amd64
+          path: build
       - uses: ./.github/actions/buildhost-publish
-        continue-on-error: true
         with:
           server: https://pazer.build
           artifact: build/buildhost
