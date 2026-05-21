@@ -9,6 +9,7 @@ import (
 var (
 	buildVersion = "dev"
 	buildCommit  = "none"
+	buildDate    = ""
 )
 
 func init() {

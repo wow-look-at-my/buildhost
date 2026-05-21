@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -26,7 +27,13 @@ func newTestServer(t *testing.T) (*Server, *db.DB) {
 		DataDir:         "./data",
 		BaseURL:         "http://localhost:8080",
 	}
-	srv := New(cfg, database)
+	build := BuildInfo{
+		Version: "v1.2.3",
+		Commit:  "abc123def456789000aabbccdd",
+		Date:    "2025-01-15T10:30:00Z",
+		RepoURL: "https://github.com/wow-look-at-my/buildhost",
+	}
+	srv := New(cfg, database, build)
 	return srv, database
 }
 
@@ -70,6 +77,15 @@ func TestDashboardHandler(t *testing.T) {
 	assert.Contains(t, body, "Dashboard")
 	assert.Contains(t, body, "Projects")
 	assert.Contains(t, body, "2.0 KiB")
+	assert.Contains(t, body, "Server Status")
+	assert.Contains(t, body, "v1.2.3")
+	assert.Contains(t, body, "abc123def456")
+	assert.Contains(t, body, "2025-01-15T10:30:00Z")
+	assert.Contains(t, body, "github.com/wow-look-at-my/buildhost/commit/abc123def456789000aabbccdd")
+	assert.Contains(t, body, "Uptime")
+	assert.Contains(t, body, "CPU Usage")
+	assert.Contains(t, body, "CPU Time")
+	assert.Contains(t, body, "Configuration")
 }
 
 func TestDashboardHandler_Empty(t *testing.T) {
@@ -219,4 +235,59 @@ func TestHumanSize(t *testing.T) {
 
 func TestFormatTimePtr_Nil(t *testing.T) {
 	assert.Equal(t, "-", formatTimePtr(nil))
+}
+
+func TestBuildInfo_CommitURL(t *testing.T) {
+	b := BuildInfo{Commit: "abc123", RepoURL: "https://github.com/org/repo"}
+	assert.Equal(t, "https://github.com/org/repo/commit/abc123", b.CommitURL())
+
+	assert.Equal(t, "", BuildInfo{Commit: "none", RepoURL: "https://github.com/org/repo"}.CommitURL())
+	assert.Equal(t, "", BuildInfo{Commit: "", RepoURL: "https://github.com/org/repo"}.CommitURL())
+	assert.Equal(t, "", BuildInfo{Commit: "abc123", RepoURL: ""}.CommitURL())
+}
+
+func TestBuildInfo_ShortCommit(t *testing.T) {
+	assert.Equal(t, "abc123def456", BuildInfo{Commit: "abc123def456789000aabbccdd"}.ShortCommit())
+	assert.Equal(t, "short", BuildInfo{Commit: "short"}.ShortCommit())
+}
+
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		input time.Duration
+		want  string
+	}{
+		{0, "0s"},
+		{500 * time.Millisecond, "0s"},
+		{30 * time.Second, "0m 30s"},
+		{90 * time.Second, "1m 30s"},
+		{3661 * time.Second, "1h 1m 1s"},
+		{90061 * time.Second, "1d 1h 1m"},
+	}
+	for _, tc := range tests {
+		assert.Equal(t, tc.want, formatDuration(tc.input))
+	}
+}
+
+func TestTimeAgo(t *testing.T) {
+	tests := []struct {
+		ago  time.Duration
+		want string
+	}{
+		{0, "just now"},
+		{30 * time.Second, "just now"},
+		{1 * time.Minute, "1 minute ago"},
+		{5 * time.Minute, "5 minutes ago"},
+		{1 * time.Hour, "1 hour ago"},
+		{3 * time.Hour, "3 hours ago"},
+		{24 * time.Hour, "1 day ago"},
+		{72 * time.Hour, "3 days ago"},
+	}
+	for _, tc := range tests {
+		assert.Equal(t, tc.want, timeAgo(time.Now().Add(-tc.ago)))
+	}
+}
+
+func TestGetCPUTime(t *testing.T) {
+	d := getCPUTime()
+	assert.True(t, d >= 0, "CPU time should be non-negative")
 }
