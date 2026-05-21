@@ -201,6 +201,88 @@ func TestOIDCHandler_Empty(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "No OIDC policies configured")
 }
 
+func TestReleaseHandler(t *testing.T) {
+	srv, database := newTestServer(t)
+	seedData(t, database)
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/testproject/releases/1.0.0", nil)
+	req.SetPathValue("name", "testproject")
+	req.SetPathValue("version", "1.0.0")
+	w := httptest.NewRecorder()
+	srv.handleRelease(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "testproject")
+	assert.Contains(t, body, "1.0.0")
+	assert.Contains(t, body, "linux/amd64")
+	assert.Contains(t, body, "2.0 KiB")
+	assert.Contains(t, body, "Download Endpoints")
+	assert.Contains(t, body, "/dl/testproject/1.0.0/")
+	assert.Contains(t, body, "/apt/testproject")
+	assert.Contains(t, body, "/brew/testproject.rb")
+	assert.Contains(t, body, "/npm/@buildhost/testproject")
+}
+
+func TestReleaseHandler_NotFoundProject(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/nope/releases/1.0.0", nil)
+	req.SetPathValue("name", "nope")
+	req.SetPathValue("version", "1.0.0")
+	w := httptest.NewRecorder()
+	srv.handleRelease(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestReleaseHandler_NotFoundVersion(t *testing.T) {
+	srv, database := newTestServer(t)
+	seedData(t, database)
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/testproject/releases/9.9.9", nil)
+	req.SetPathValue("name", "testproject")
+	req.SetPathValue("version", "9.9.9")
+	w := httptest.NewRecorder()
+	srv.handleRelease(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestRegistriesHandler(t *testing.T) {
+	srv, database := newTestServer(t)
+	seedData(t, database)
+
+	req := httptest.NewRequest(http.MethodGet, "/registries", nil)
+	w := httptest.NewRecorder()
+	srv.handleRegistries(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "Registry Endpoints")
+	assert.Contains(t, body, "Direct Downloads")
+	assert.Contains(t, body, "APT Repository")
+	assert.Contains(t, body, "Homebrew Tap")
+	assert.Contains(t, body, "npm Registry")
+	assert.Contains(t, body, "OCI Distribution")
+	assert.Contains(t, body, "REST API")
+	assert.Contains(t, body, "testproject")
+	assert.Contains(t, body, "localhost:8080")
+}
+
+func TestRegistriesHandler_Empty(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/registries", nil)
+	w := httptest.NewRecorder()
+	srv.handleRegistries(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "Registry Endpoints")
+	assert.NotContains(t, body, "Quick links")
+}
+
 func TestStaticFiles(t *testing.T) {
 	srv, _ := newTestServer(t)
 
