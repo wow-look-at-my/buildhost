@@ -20,6 +20,7 @@ jobs:
         with:
           name: buildhost-linux-amd64
           path: build/buildhost
+          if-no-files-found: error
 
   publish:
     needs: build
