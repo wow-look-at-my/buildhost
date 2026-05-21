@@ -13,7 +13,7 @@ permissions:
   packages: write
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,8 +21,8 @@ jobs:
         with:
           generate: c29114ff2f33
 
-  container:
-    needs: test
+  publish-ghcr:
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,3 +44,15 @@ jobs:
           else
             docker buildx build ${BUILD_ARGS} .
           fi
+
+  publish-buildhost-test:
+    needs: build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+      - uses: ./.github/actions/buildhost-publish
+        with:
+          server: https://pazer.build
