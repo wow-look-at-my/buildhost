@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"sync"
 	"time"
@@ -15,15 +16,13 @@ var healthzOnce sync.Once
 
 type Server struct {
 	cfg config.Config
+	srv *http.Server
 }
 
 func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
-	auth.Init(database, store, cfg.BaseURL)
-	return &Server{cfg: cfg}
-}
-
-func (s *Server) ListenAndServe() error {
-	srv := &http.Server{
+	auth.Init(database, store, cfg.BaseURL, cfg.DataDir)
+	s := &Server{cfg: cfg}
+	s.srv = &http.Server{
 		Addr:              s.cfg.ListenAddr,
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -31,7 +30,15 @@ func (s *Server) ListenAndServe() error {
 		WriteTimeout:      10 * time.Minute,
 		IdleTimeout:       120 * time.Second,
 	}
-	return srv.ListenAndServe()
+	return s
+}
+
+func (s *Server) ListenAndServe() error {
+	return s.srv.ListenAndServe()
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.srv.Shutdown(ctx)
 }
 
 func (s *Server) Handler() http.Handler {
