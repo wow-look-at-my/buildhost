@@ -7,6 +7,8 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/config"
@@ -16,15 +18,48 @@ import (
 //go:embed templates/*.html static/*
 var content embed.FS
 
+type BuildInfo struct {
+	Version string
+	Commit  string
+	Date    string
+	RepoURL string
+}
+
+func (b BuildInfo) CommitURL() string {
+	if b.Commit == "" || b.Commit == "none" || b.RepoURL == "" {
+		return ""
+	}
+	return b.RepoURL + "/commit/" + b.Commit
+}
+
+func (b BuildInfo) ShortCommit() string {
+	if len(b.Commit) > 12 {
+		return b.Commit[:12]
+	}
+	return b.Commit
+}
+
 type Server struct {
 	cfg       config.Config
 	db        *db.DB
+	build     BuildInfo
+	startTime time.Time
 	templates map[string]*template.Template
+
+	cpuMu      sync.Mutex
+	cpuPercent float64
+	cpuTotal   time.Duration
 }
 
-func New(cfg config.Config, database *db.DB) *Server {
-	s := &Server{cfg: cfg, db: database}
+func New(cfg config.Config, database *db.DB, build BuildInfo) *Server {
+	s := &Server{
+		cfg:       cfg,
+		db:        database,
+		build:     build,
+		startTime: time.Now(),
+	}
 	s.loadTemplates()
+	s.cpuTotal = getCPUTime()
 	return s
 }
 
@@ -47,6 +82,35 @@ func (s *Server) loadTemplates() {
 	}
 }
 
+func getCPUTime() time.Duration {
+	var usage syscall.Rusage
+	_ = syscall.Getrusage(syscall.RUSAGE_SELF, &usage)
+	return time.Duration(usage.Utime.Nano()) + time.Duration(usage.Stime.Nano())
+}
+
+func (s *Server) startCPUTracker() {
+	prev := getCPUTime()
+	prevWall := time.Now()
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			curr := getCPUTime()
+			wall := time.Now()
+			elapsed := wall.Sub(prevWall)
+			if elapsed > 0 {
+				pct := float64(curr-prev) / float64(elapsed) * 100
+				s.cpuMu.Lock()
+				s.cpuPercent = pct
+				s.cpuTotal = curr
+				s.cpuMu.Unlock()
+			}
+			prev = curr
+			prevWall = wall
+		}
+	}()
+}
+
 func (s *Server) ListenAndServe() error {
 	mux := http.NewServeMux()
 
@@ -57,6 +121,8 @@ func (s *Server) ListenAndServe() error {
 	mux.HandleFunc("GET /projects/{name}", s.handleProject)
 	mux.HandleFunc("GET /tokens", s.handleTokens)
 	mux.HandleFunc("GET /oidc", s.handleOIDCPolicies)
+
+	s.startCPUTracker()
 
 	srv := &http.Server{
 		Addr:              s.cfg.AdminListenAddr,
@@ -106,11 +172,20 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.cpuMu.Lock()
+	cpuPct := s.cpuPercent
+	cpuTotal := s.cpuTotal
+	s.cpuMu.Unlock()
+
 	s.render(w, "dashboard", map[string]any{
-		"Nav":    "dashboard",
-		"Stats":  stats,
-		"Recent": recent,
-		"Config": s.cfg,
+		"Nav":        "dashboard",
+		"Stats":      stats,
+		"Recent":     recent,
+		"Config":     s.cfg,
+		"Build":      s.build,
+		"Uptime":     formatDuration(time.Since(s.startTime)),
+		"CPUPercent": fmt.Sprintf("%.1f%%", cpuPct),
+		"CPUTotal":   formatDuration(cpuTotal),
 	})
 }
 
@@ -228,4 +303,22 @@ func formatTimePtr(t *time.Time) string {
 		return "-"
 	}
 	return formatTime(*t)
+}
+
+func formatDuration(d time.Duration) string {
+	d = d.Truncate(time.Second)
+	if d < time.Second {
+		return "0s"
+	}
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	minutes := int(d.Minutes()) % 60
+	seconds := int(d.Seconds()) % 60
+	if days > 0 {
+		return fmt.Sprintf("%dd %dh %dm", days, hours, minutes)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm %ds", hours, minutes, seconds)
+	}
+	return fmt.Sprintf("%dm %ds", minutes, seconds)
 }
