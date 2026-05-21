@@ -140,7 +140,7 @@ func fakeJWT(header, claims map[string]any) string {
 // --- VerifyToken tests (expired / malformed) ---
 
 func TestVerifyToken_RejectsExpiredToken(t *testing.T) {
-	v := NewOIDCVerifier()
+	v := NewOIDCVerifier(nil, nil)
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
 		map[string]any{
@@ -160,7 +160,7 @@ func TestVerifyToken_RejectsExpiredToken(t *testing.T) {
 }
 
 func TestVerifyToken_RejectsNotYetValidToken(t *testing.T) {
-	v := NewOIDCVerifier()
+	v := NewOIDCVerifier(nil, nil)
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
 		map[string]any{
@@ -181,7 +181,7 @@ func TestVerifyToken_RejectsNotYetValidToken(t *testing.T) {
 }
 
 func TestVerifyToken_RejectsUnsupportedAlgorithm(t *testing.T) {
-	v := NewOIDCVerifier()
+	v := NewOIDCVerifier(nil, nil)
 	token := fakeJWT(
 		map[string]any{"alg": "HS256", "kid": "key1"},
 		map[string]any{
@@ -202,7 +202,7 @@ func TestVerifyToken_RejectsUnsupportedAlgorithm(t *testing.T) {
 }
 
 func TestVerifyToken_RejectsNonJWT(t *testing.T) {
-	v := NewOIDCVerifier()
+	v := NewOIDCVerifier(nil, nil)
 	policies := []model.OIDCPolicy{{
 		Issuer:         "https://example.com",
 		SubjectPattern: "*",
@@ -213,7 +213,7 @@ func TestVerifyToken_RejectsNonJWT(t *testing.T) {
 }
 
 func TestVerifyToken_RejectsNoMatchingPolicy(t *testing.T) {
-	v := NewOIDCVerifier()
+	v := NewOIDCVerifier(nil, nil)
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
 		map[string]any{
@@ -233,7 +233,7 @@ func TestVerifyToken_RejectsNoMatchingPolicy(t *testing.T) {
 }
 
 func TestVerifyToken_RejectsNonMatchingSubject(t *testing.T) {
-	v := NewOIDCVerifier()
+	v := NewOIDCVerifier(nil, nil)
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
 		map[string]any{
@@ -250,6 +250,24 @@ func TestVerifyToken_RejectsNonMatchingSubject(t *testing.T) {
 	_, err := v.VerifyToken(context.Background(), token, policies)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrOIDCNotMatched)
+}
+
+// --- projectFromSubject tests ---
+
+func TestProjectFromSubject_GHA(t *testing.T) {
+	assert.Equal(t, "myrepo", projectFromSubject("repo:myorg/myrepo:ref:refs/heads/main"))
+}
+
+func TestProjectFromSubject_NestedOrg(t *testing.T) {
+	assert.Equal(t, "myrepo", projectFromSubject("repo:myorg/sub/myrepo:ref:refs/heads/main"))
+}
+
+func TestProjectFromSubject_NoPrefix(t *testing.T) {
+	assert.Equal(t, "", projectFromSubject("something:else"))
+}
+
+func TestProjectFromSubject_NoColon(t *testing.T) {
+	assert.Equal(t, "", projectFromSubject("repo:myorg/myrepo"))
 }
 
 // --- Full pipeline tests with real RSA keys ---
@@ -306,7 +324,7 @@ func TestVerifyToken_FullPipeline_ValidJWT(t *testing.T) {
 		Scopes:         "read,write",
 	}}
 
-	v := NewOIDCVerifier()
+	v := NewOIDCVerifier(nil, nil)
 	tok, err := v.VerifyToken(context.Background(), token, policies)
 	require.NoError(t, err)
 	assert.Equal(t, "read,write", tok.Scopes)
@@ -333,7 +351,7 @@ func TestVerifyToken_FullPipeline_ExpiredJWT(t *testing.T) {
 		Scopes:         "read",
 	}}
 
-	v := NewOIDCVerifier()
+	v := NewOIDCVerifier(nil, nil)
 	_, err = v.VerifyToken(context.Background(), token, policies)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "expired")
@@ -360,7 +378,7 @@ func TestVerifyToken_FullPipeline_WrongSignature(t *testing.T) {
 		Scopes:         "read",
 	}}
 
-	v := NewOIDCVerifier()
+	v := NewOIDCVerifier(nil, nil)
 	_, err = v.VerifyToken(context.Background(), token, policies)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "signature")
@@ -385,7 +403,7 @@ func TestVerifyToken_FullPipeline_GlobalPolicy(t *testing.T) {
 		Scopes:         "read",
 	}}
 
-	v := NewOIDCVerifier()
+	v := NewOIDCVerifier(nil, nil)
 	tok, err := v.VerifyToken(context.Background(), token, policies)
 	require.NoError(t, err)
 	assert.Nil(t, tok.ProjectID)
@@ -422,7 +440,7 @@ func TestParseRSAPublicKey_InvalidExponent(t *testing.T) {
 }
 
 func TestVerifyToken_RejectsTokenWithNoExpiry(t *testing.T) {
-	v := NewOIDCVerifier()
+	v := NewOIDCVerifier(nil, nil)
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
 		map[string]any{
@@ -461,14 +479,14 @@ func TestVerifyToken_FullPipeline_AudienceMatch(t *testing.T) {
 		Scopes:         "read",
 	}}
 
-	v := NewOIDCVerifier()
+	v := NewOIDCVerifier(nil, nil)
 	tok, err := v.VerifyToken(context.Background(), token, policies)
 	require.NoError(t, err)
 	assert.Equal(t, "read", tok.Scopes)
 }
 
 func TestVerifyToken_FullPipeline_AudienceMismatch(t *testing.T) {
-	v := NewOIDCVerifier()
+	v := NewOIDCVerifier(nil, nil)
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
 		map[string]any{
@@ -509,8 +527,45 @@ func TestVerifyToken_FullPipeline_NoAudienceInPolicy_AnyAudienceAccepted(t *test
 		Scopes:         "read",
 	}}
 
-	v := NewOIDCVerifier()
+	v := NewOIDCVerifier(nil, nil)
 	tok, err := v.VerifyToken(context.Background(), token, policies)
 	require.NoError(t, err)
 	assert.Equal(t, "read", tok.Scopes)
+}
+
+func TestVerifyToken_TrustedIssuer_NoPolicies(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	srv := jwksServer(t, &key.PublicKey, "kid-trusted")
+
+	claims := map[string]any{
+		"iss": srv.URL,
+		"sub": "repo:myorg/myrepo:ref:refs/heads/main",
+		"exp": time.Now().Add(10 * time.Minute).Unix(),
+		"iat": time.Now().Unix(),
+	}
+	token := signJWT(t, key, "kid-trusted", claims)
+
+	v := NewOIDCVerifier([]string{srv.URL}, nil)
+	tok, err := v.VerifyToken(context.Background(), token, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "read,write", tok.Scopes)
+	assert.Equal(t, "myrepo", tok.OIDCProject)
+	assert.Equal(t, "oidc:repo:myorg/myrepo:ref:refs/heads/main", tok.Name)
+}
+
+func TestVerifyToken_UntrustedIssuer_NoPolicies(t *testing.T) {
+	v := NewOIDCVerifier([]string{"https://trusted.example.com"}, nil)
+	token := fakeJWT(
+		map[string]any{"alg": "RS256", "kid": "key1"},
+		map[string]any{
+			"iss": "https://untrusted.example.com",
+			"sub": "repo:myorg/myrepo:ref:refs/heads/main",
+			"exp": time.Now().Add(1 * time.Hour).Unix(),
+		},
+	)
+	_, err := v.VerifyToken(context.Background(), token, nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrOIDCNotMatched)
 }

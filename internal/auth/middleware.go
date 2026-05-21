@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
 type Middleware struct {
@@ -17,13 +18,11 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 		raw := ExtractToken(r)
 		if raw != "" {
 			if LooksLikeJWT(raw) && m.Verifier != nil {
-				policies, err := m.DB.ListOIDCPolicies(r.Context())
-				if err == nil && len(policies) > 0 {
-					if token, err := m.Verifier.VerifyToken(r.Context(), raw, policies); err == nil {
-						r = r.WithContext(WithToken(r.Context(), token))
-						next.ServeHTTP(w, r)
-						return
-					}
+				policies, _ := m.DB.ListOIDCPolicies(r.Context())
+				if token, err := m.Verifier.VerifyToken(r.Context(), raw, policies); err == nil {
+					r = r.WithContext(WithToken(r.Context(), token))
+					next.ServeHTTP(w, r)
+					return
 				}
 			}
 			token, err := m.DB.LookupToken(r.Context(), raw)
@@ -61,8 +60,25 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 
 			project, err := mw.DB.GetProject(r.Context(), ri.ProjectName())
 			if errors.Is(err, db.ErrNotFound) {
-				http.NotFound(w, r)
-				return
+				t := TokenFrom(r.Context())
+				if t == nil || t.OIDCProject == "" || t.OIDCProject != ri.ProjectName() {
+					http.NotFound(w, r)
+					return
+				}
+				project = &model.Project{Name: ri.ProjectName(), Versioning: model.VersioningAuto}
+				createErr := mw.DB.CreateProject(r.Context(), project)
+				if createErr != nil && !errors.Is(createErr, db.ErrConflict) {
+					http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+					return
+				}
+				if errors.Is(createErr, db.ErrConflict) {
+					project, err = mw.DB.GetProject(r.Context(), ri.ProjectName())
+					if err != nil {
+						http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+						return
+					}
+				}
+				err = nil
 			}
 			if err != nil {
 				http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
@@ -76,7 +92,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 					http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
 					return
 				}
-				if !t.AuthorizedForProject(project.ID) {
+				if !t.AuthorizedForProject(project.ID) || !t.AuthorizedForProjectName(project.Name) {
 					http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
 					return
 				}
@@ -86,7 +102,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
 						return
 					}
-					if !t.AuthorizedForProject(project.ID) {
+					if !t.AuthorizedForProject(project.ID) || !t.AuthorizedForProjectName(project.Name) {
 						http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
 						return
 					}
