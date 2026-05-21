@@ -27,14 +27,13 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
         with:
-          name: buildhost-linux-amd64
-          path: build
+          sparse-checkout: .github/actions
       - uses: ./.github/actions/buildhost-publish
         with:
           server: https://pazer.build
-          artifact: build/buildhost
+          artifact_name: buildhost-linux-amd64
+          artifact_file: buildhost
           os: linux
           arch: amd64
 

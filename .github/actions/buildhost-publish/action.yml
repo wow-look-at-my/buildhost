@@ -9,9 +9,12 @@ inputs:
   project:
     description: 'Project name on the buildhost instance (defaults to the repository name)'
     required: false
-  artifact:
-    description: 'Path to the artifact file'
+  artifact_name:
+    description: 'GHA run artifact name to download and publish'
     required: true
+  artifact_file:
+    description: 'Filename within the artifact archive (defaults to the artifact name)'
+    required: false
   os:
     description: 'Target OS (linux, darwin, windows)'
     required: true
@@ -42,12 +45,17 @@ inputs:
 runs:
   using: composite
   steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact_name }}
+        path: /tmp/buildhost-publish
+
     - name: Publish to buildhost
       shell: bash
       env:
         INPUT_SERVER: ${{ inputs.server }}
         INPUT_PROJECT: ${{ inputs.project }}
-        INPUT_ARTIFACT: ${{ inputs.artifact }}
+        INPUT_ARTIFACT_FILE: ${{ inputs.artifact_file || inputs.artifact_name }}
         INPUT_OS: ${{ inputs.os }}
         INPUT_ARCH: ${{ inputs.arch }}
         INPUT_KIND: ${{ inputs.kind }}
@@ -62,6 +70,7 @@ runs:
         INPUT_PROJECT="${INPUT_PROJECT:-${GITHUB_REPOSITORY#*/}}"
         GIT_BRANCH="${INPUT_GIT_BRANCH:-$GITHUB_REF_NAME}"
         GIT_COMMIT="${INPUT_GIT_COMMIT:-$GITHUB_SHA}"
+        ARTIFACT="/tmp/buildhost-publish/${INPUT_ARTIFACT_FILE}"
 
         # Mint OIDC token for the buildhost audience
         TOKEN=$(curl -sf \
@@ -107,7 +116,7 @@ runs:
           HEADERS+=(-H "X-Artifact-Filename: ${INPUT_FILENAME}")
         fi
 
-        curl -sf -X PUT "${UPLOAD_URL}" "${HEADERS[@]}" --data-binary @"${INPUT_ARTIFACT}"
+        curl -sf -X PUT "${UPLOAD_URL}" "${HEADERS[@]}" --data-binary @"${ARTIFACT}"
         echo "Uploaded ${INPUT_PROJECT}/${VERSION} ${INPUT_OS}/${INPUT_ARCH}"
 
         # Publish release
