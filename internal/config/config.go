@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strings"
+)
 
 type Config struct {
 	ListenAddr      string
@@ -8,6 +11,7 @@ type Config struct {
 	DataDir         string
 	DBPath          string
 	BaseURL         string
+	OIDCIssuers     []string
 }
 
 func Load() Config {
@@ -32,6 +36,13 @@ func Load() Config {
 	}
 	if v := os.Getenv("BUILDHOST_BASE_URL"); v != "" {
 		c.BaseURL = v
+	}
+	if v := os.Getenv("BUILDHOST_OIDC_ISSUERS"); v != "" {
+		for _, iss := range strings.Split(v, ",") {
+			if iss = strings.TrimSpace(iss); iss != "" {
+				c.OIDCIssuers = append(c.OIDCIssuers, iss)
+			}
+		}
 	}
 	return c
 }

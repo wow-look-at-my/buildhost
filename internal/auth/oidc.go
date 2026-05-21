@@ -23,8 +23,9 @@ import (
 var ErrOIDCNotMatched = errors.New("no matching OIDC policy")
 
 type OIDCVerifier struct {
-	mu    sync.RWMutex
-	cache map[string]*cachedJWKS
+	mu             sync.RWMutex
+	cache          map[string]*cachedJWKS
+	trustedIssuers []string
 }
 
 type cachedJWKS struct {
@@ -43,8 +44,8 @@ type oidcClaims struct {
 
 const oidcLeeway = 60 * time.Second
 
-func NewOIDCVerifier() *OIDCVerifier {
-	return &OIDCVerifier{cache: make(map[string]*cachedJWKS)}
+func NewOIDCVerifier(trustedIssuers []string) *OIDCVerifier {
+	return &OIDCVerifier{cache: make(map[string]*cachedJWKS), trustedIssuers: trustedIssuers}
 }
 
 func LooksLikeJWT(token string) bool {
@@ -81,15 +82,15 @@ func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []m
 			break
 		}
 	}
-	if matchedPolicy == nil {
-		return nil, ErrOIDCNotMatched
-	}
-
-	if matchedPolicy.Audience != "" {
+	if matchedPolicy != nil && matchedPolicy.Audience != "" {
 		aud, _ := unverified.GetAudience()
 		if !slices.Contains(aud, matchedPolicy.Audience) {
 			return nil, errors.New("token audience does not match policy")
 		}
+	}
+
+	if matchedPolicy == nil && !slices.Contains(v.trustedIssuers, unverified.Issuer) {
+		return nil, ErrOIDCNotMatched
 	}
 
 	keys, err := v.getKeys(ctx, unverified.Issuer)
@@ -114,11 +115,25 @@ func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []m
 	}
 
 	verified := token.Claims.(*oidcClaims)
+
+	if matchedPolicy != nil {
+		return &model.APIToken{
+			ID:        -1,
+			Name:      "oidc:" + verified.Subject,
+			ProjectID: matchedPolicy.ProjectID,
+			Scopes:    matchedPolicy.Scopes,
+		}, nil
+	}
+
+	project := projectFromSubject(verified.Subject)
+	if project == "" {
+		return nil, errors.New("cannot derive project name from OIDC subject")
+	}
 	return &model.APIToken{
-		ID:        -1,
-		Name:      "oidc:" + verified.Subject,
-		ProjectID: matchedPolicy.ProjectID,
-		Scopes:    matchedPolicy.Scopes,
+		ID:          -1,
+		Name:        "oidc:" + verified.Subject,
+		Scopes:      "read,write",
+		OIDCProject: project,
 	}, nil
 }
 
@@ -288,6 +303,23 @@ func parseRSAPublicKey(nStr, eStr string) (*rsa.PublicKey, error) {
 func base64URLDecode(s string) ([]byte, error) {
 	s = strings.TrimRight(s, "=")
 	return base64.RawURLEncoding.DecodeString(s)
+}
+
+func projectFromSubject(subject string) string {
+	if !strings.HasPrefix(subject, "repo:") {
+		return ""
+	}
+	rest := subject[len("repo:"):]
+	colon := strings.Index(rest, ":")
+	if colon < 0 {
+		return ""
+	}
+	repoPath := rest[:colon]
+	slash := strings.LastIndex(repoPath, "/")
+	if slash < 0 {
+		return ""
+	}
+	return repoPath[slash+1:]
 }
 
 func matchSubject(pattern, subject string) bool {
