@@ -1,0 +1,37 @@
+{{define "title"}}Tokens{{end}}
+{{define "content"}}
+<h1>API Tokens</h1>
+
+<div class="card">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Prefix</th>
+                <th>Scope</th>
+                <th>Project</th>
+                <th>Permissions</th>
+                <th>Created</th>
+                <th>Last Used</th>
+                <th>Expires</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Tokens}}
+            <tr {{if .IsExpired}}class="row-muted"{{end}}>
+                <td>{{.Name}}</td>
+                <td><code>{{.TokenPrefix}}...</code></td>
+                <td>{{if .IsGlobal}}<span class="badge badge-neutral">Global</span>{{else}}<span class="badge badge-info">Project</span>{{end}}</td>
+                <td>{{if .ProjectName}}<a href="/projects/{{.ProjectName}}">{{.ProjectName}}</a>{{else}}-{{end}}</td>
+                <td><code>{{.Scopes}}</code></td>
+                <td title="{{formatTime .CreatedAt}}">{{timeAgo .CreatedAt}}</td>
+                <td>{{if .LastUsedAt}}{{formatTimePtr .LastUsedAt}}{{else}}<span class="muted">Never</span>{{end}}</td>
+                <td>{{if .ExpiresAt}}{{if .IsExpired}}<span class="badge badge-danger">Expired</span> {{end}}{{formatTimePtr .ExpiresAt}}{{else}}<span class="muted">Never</span>{{end}}</td>
+            </tr>
+            {{else}}
+            <tr><td colspan="8" class="empty">No tokens yet</td></tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}

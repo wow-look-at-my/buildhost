@@ -27,6 +27,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - `internal/strip/` - Binary debug info stripping (shells out to strip/objcopy)
 - `internal/model/` - Data types (Project, Release, Artifact, APIToken, OIDCPolicy)
 - `internal/version/` - Version resolution logic
+- `internal/admin/` - Admin dashboard (separate HTTP server, embedded HTML/CSS templates)
 - `internal/config/` - Server configuration from env vars
 - `migrations/` - SQLite schema (embedded via go:embed)
 
@@ -59,6 +60,13 @@ buildhost bootstrap --name admin-token
 
 ```bash
 BUILDHOST_LISTEN_ADDR=:8080 BUILDHOST_BASE_URL=https://example.com buildhost serve
+```
+
+The admin dashboard starts automatically on a separate port (default `:9090`). Set `BUILDHOST_ADMIN_LISTEN_ADDR` to change the address, or set it to empty to disable.
+
+```bash
+BUILDHOST_ADMIN_LISTEN_ADDR=:9090 buildhost serve   # listen on all interfaces (default)
+BUILDHOST_ADMIN_LISTEN_ADDR= buildhost serve         # disable admin dashboard
 ```
 
 ## OIDC for GitHub Actions

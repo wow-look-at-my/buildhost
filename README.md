@@ -75,7 +75,8 @@ Environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BUILDHOST_LISTEN_ADDR` | `:8080` | Listen address |
+| `BUILDHOST_LISTEN_ADDR` | `:8080` | API listen address |
+| `BUILDHOST_ADMIN_LISTEN_ADDR` | `:9090` | Admin dashboard listen address (empty to disable) |
 | `BUILDHOST_DATA_DIR` | `./data` | Data directory |
 | `BUILDHOST_DB_PATH` | `./data/buildhost.db` | SQLite database path |
 | `BUILDHOST_BASE_URL` | `http://localhost:8080` | External URL for generated links |

@@ -1,0 +1,50 @@
+{{define "title"}}{{.Project.Name}}{{end}}
+{{define "content"}}
+<h1>{{.Project.Name}}</h1>
+
+<div class="card">
+    <h2>Project Info</h2>
+    <table class="info-table">
+        <tr><td class="info-label">ID</td><td>{{.Project.ID}}</td></tr>
+        {{if .Project.Description}}<tr><td class="info-label">Description</td><td>{{.Project.Description}}</td></tr>{{end}}
+        {{if .Project.Homepage}}<tr><td class="info-label">Homepage</td><td>{{.Project.Homepage}}</td></tr>{{end}}
+        {{if .Project.License}}<tr><td class="info-label">License</td><td>{{.Project.License}}</td></tr>{{end}}
+        <tr><td class="info-label">Versioning</td><td><span class="badge badge-neutral">{{.Project.Versioning}}</span></td></tr>
+        <tr><td class="info-label">Visibility</td><td>{{if .Project.IsPrivate}}<span class="badge badge-warning">Private</span>{{else}}<span class="badge badge-success">Public</span>{{end}}</td></tr>
+        <tr><td class="info-label">Created</td><td title="{{formatTime .Project.CreatedAt}}">{{timeAgo .Project.CreatedAt}}</td></tr>
+        <tr><td class="info-label">Updated</td><td title="{{formatTime .Project.UpdatedAt}}">{{timeAgo .Project.UpdatedAt}}</td></tr>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Releases</h2>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Version</th>
+                <th>Branch</th>
+                <th>Commit</th>
+                <th>Status</th>
+                <th>Artifacts</th>
+                <th>Published</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Releases}}
+            <tr>
+                <td><code>{{.Version}}</code></td>
+                <td>{{if .GitBranch}}<code>{{.GitBranch}}</code>{{else}}-{{end}}</td>
+                <td>{{if .GitCommit}}<code class="commit">{{.GitCommit}}</code>{{else}}-{{end}}</td>
+                <td>{{if .Published}}<span class="badge badge-success">Published</span>{{else}}<span class="badge badge-warning">Draft</span>{{end}}</td>
+                <td>{{.ArtifactCount}}</td>
+                <td>{{formatTimePtr .PublishedAt}}</td>
+                <td title="{{formatTime .CreatedAt}}">{{timeAgo .CreatedAt}}</td>
+            </tr>
+            {{else}}
+            <tr><td colspan="7" class="empty">No releases yet</td></tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}

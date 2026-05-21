@@ -3,9 +3,11 @@ package main
 import (
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/wow-look-at-my/buildhost/internal/admin"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/server"
@@ -35,6 +37,17 @@ var serveCmd = &cobra.Command{
 		store, err := storage.NewFilesystem(cfg.DataDir + "/blobs")
 		if err != nil {
 			return fmt.Errorf("init storage: %w", err)
+		}
+
+		if cfg.AdminListenAddr != "" {
+			adminSrv := admin.New(cfg, database)
+			go func() {
+				slog.Info("starting admin dashboard", "addr", cfg.AdminListenAddr)
+				if err := adminSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					slog.Error("admin server error", "err", err)
+					os.Exit(1)
+				}
+			}()
 		}
 
 		srv := server.New(cfg, database, store)

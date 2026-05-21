@@ -1,0 +1,35 @@
+{{define "title"}}Projects{{end}}
+{{define "content"}}
+<h1>Projects</h1>
+
+<div class="card">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Versioning</th>
+                <th>Visibility</th>
+                <th>Releases</th>
+                <th>Artifacts</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Projects}}
+            <tr>
+                <td><a href="/projects/{{.Name}}">{{.Name}}</a></td>
+                <td class="truncate">{{.Description}}</td>
+                <td><span class="badge badge-neutral">{{.Versioning}}</span></td>
+                <td>{{if .IsPrivate}}<span class="badge badge-warning">Private</span>{{else}}<span class="badge badge-success">Public</span>{{end}}</td>
+                <td>{{.ReleaseCount}}</td>
+                <td>{{.ArtifactCount}}</td>
+                <td title="{{formatTime .CreatedAt}}">{{timeAgo .CreatedAt}}</td>
+            </tr>
+            {{else}}
+            <tr><td colspan="7" class="empty">No projects yet</td></tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}
