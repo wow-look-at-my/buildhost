@@ -127,7 +127,7 @@ func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []m
 	}
 
 	org := orgFromSubject(verified.Subject)
-	if len(v.allowedOrgs) > 0 && !slices.Contains(v.allowedOrgs, org) {
+	if !slices.Contains(v.allowedOrgs, "*") && !slices.Contains(v.allowedOrgs, org) {
 		return nil, fmt.Errorf("org %q not in allowed list", org)
 	}
 
