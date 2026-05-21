@@ -27,6 +27,8 @@ runs:
   using: composite
   steps:
     - uses: wow-look-at-my/actions@typescript#latest
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
       with:
         script: |
           await (async () => {
