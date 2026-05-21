@@ -122,6 +122,27 @@ Environment variables:
 | `BUILDHOST_DATA_DIR` | `./data` | Data directory |
 | `BUILDHOST_DB_PATH` | `./data/buildhost.db` | SQLite database path |
 | `BUILDHOST_BASE_URL` | `http://localhost:8080` | External URL for generated links |
+| `BUILDHOST_OIDC_ISSUERS` | (none) | Comma-separated trusted OIDC issuers for auto-provisioning |
+| `BUILDHOST_OIDC_ORGS` | (all) | Comma-separated allowed orgs for OIDC auto-provisioning |
+
+## OIDC auto-provisioning
+
+Set `BUILDHOST_OIDC_ISSUERS` to a comma-separated list of trusted OIDC issuers (e.g., `https://token.actions.githubusercontent.com`). When a JWT from a trusted issuer arrives and no explicit OIDC policy matches, buildhost:
+
+1. Verifies the JWT signature via the issuer's JWKS endpoint
+2. Derives the project name from the subject claim (`repo:org/name:*` -> `name`)
+3. Auto-creates the project if it doesn't exist (with auto-versioning)
+4. Grants `read,write` scope limited to that one project
+
+No manual project creation or OIDC policy setup needed.
+
+```bash
+BUILDHOST_OIDC_ISSUERS=https://token.actions.githubusercontent.com \
+  BUILDHOST_OIDC_ORGS=wow-look-at-my,PazerOP \
+  buildhost serve
+```
+
+If `BUILDHOST_OIDC_ORGS` is empty, all orgs are allowed (backwards compatible for single-tenant deployments).
 
 ## License
 
