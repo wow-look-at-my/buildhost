@@ -9,7 +9,7 @@ permissions:
   packages: write
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +22,7 @@ jobs:
           path: build/buildhost
 
   publish:
-    needs: test
+    needs: build
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -38,9 +38,14 @@ jobs:
           arch: amd64
 
   container:
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: buildhost-linux-amd64
+          path: build
       - name: Log in to ghcr.io
         if: github.ref == 'refs/heads/master'
         run: echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
