@@ -26,11 +26,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/download-artifact@v4
-      with:
-        name: ${{ inputs.artifact_name }}
-        path: /tmp/buildhost-publish
-
     - uses: wow-look-at-my/actions@typescript#latest
       with:
         script: |
@@ -39,32 +34,51 @@ runs:
             const inputVersion: string = "${{ inputs.version }}";
             const inputBranch: string = "${{ inputs.git_branch }}";
             const inputCommit: string = "${{ inputs.git_commit }}";
+            const artifactName: string = "${{ inputs.artifact_name }}";
 
             const server = "${{ inputs.server }}";
             const project = inputProject.length > 0 ? inputProject : github.repository.split("/").pop()!;
             const version = inputVersion;
             const gitBranch = inputBranch.length > 0 ? inputBranch : github.ref_name;
             const gitCommit = inputCommit.length > 0 ? inputCommit : github.sha;
-            const downloadDir = "/tmp/buildhost-publish";
+            const downloadDir = path.join(os.tmpdir(), "buildhost-publish");
 
+            // Download artifact via octokit
+            const oct = octokit(env.GITHUB_TOKEN!);
+            const [owner, repo] = github.repository.split("/");
+            const { data: { artifacts } } = await oct.rest.actions.listWorkflowRunArtifacts({
+              owner, repo, run_id: github.run_id,
+            });
+            const artifact = artifacts.find((a: any) => a.name === artifactName);
+            if (!artifact) { core.setFailed(`Artifact '${artifactName}' not found in run`); return; }
+
+            const { data: zip } = await oct.rest.actions.downloadArtifact({
+              owner, repo, artifact_id: artifact.id, archive_format: "zip",
+            });
+            fs.mkdirSync(downloadDir, { recursive: true });
+            const zipPath = path.join(downloadDir, "artifact.zip");
+            fs.writeFileSync(zipPath, Buffer.from(zip as ArrayBuffer));
+            await exec.exec("unzip", ["-o", zipPath, "-d", downloadDir]);
+
+            // Mint OIDC token
             const idTokenUrl = env.ACTIONS_ID_TOKEN_REQUEST_URL;
             const idTokenBearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
             if (!idTokenUrl || !idTokenBearer) {
               core.setFailed("OIDC not available. Add 'permissions: { id-token: write }'.");
               return;
             }
-
             const idResp = await fetch(`${idTokenUrl}&audience=${server}`, {
               headers: { Authorization: `Bearer ${idTokenBearer}` },
             });
             const token: string = ((await idResp.json()) as { value: string }).value;
             if (!token) { core.setFailed("Failed to obtain OIDC token"); return; }
 
+            // Discover matrix artifacts
             const files = fs.readdirSync(downloadDir).filter((f) => {
               const full = path.join(downloadDir, f);
               if (fs.lstatSync(full).isSymbolicLink()) return false;
               if (!fs.statSync(full).isFile()) return false;
-              if (f === "checksums.txt") return false;
+              if (f === "checksums.txt" || f.endsWith(".zip")) return false;
               const base = f.replace(/\.exe$/, "");
               return new RegExp(`^${project}_[a-z]+_[a-z0-9]+$`).test(base);
             });
@@ -84,6 +98,7 @@ runs:
               return { status: resp.status, text: await resp.text() };
             };
 
+            // Create release
             const releaseBody = JSON.stringify({
               git_branch: gitBranch, git_commit: gitCommit,
               ...(version.length > 0 ? { version } : {}),
@@ -102,6 +117,7 @@ runs:
             }
             core.info(`Release: ${project}/${releaseVersion}`);
 
+            // Upload artifacts
             for (const file of files) {
               const base = file.replace(/\.exe$/, "");
               const match = base.match(new RegExp(`^${project}_([a-z]+)_([a-z0-9]+)$`))!;
@@ -112,6 +128,7 @@ runs:
               core.info(`Uploaded ${fileOs}/${arch}`);
             }
 
+            // Publish
             const pub = await api("POST", `/api/v1/projects/${project}/releases/${releaseVersion}/publish`);
             if (pub.status !== 200) { core.setFailed(`Publish failed (${pub.status}): ${pub.text}`); return; }
             core.info(`Published ${project}/${releaseVersion} (${files.length} artifacts) to ${server}`);
