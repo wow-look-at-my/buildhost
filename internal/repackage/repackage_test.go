@@ -457,7 +457,7 @@ func TestOrchestrator_PublishRelease_NoArtifacts(t *testing.T) {
 	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 
-	o := NewOrchestrator(store, d, "https://builds.example.com")
+	o := NewOrchestrator(store, d, "https://builds.example.com", t.TempDir())
 
 	err := o.PublishRelease(ctx, *proj, *rel)
 	require.NoError(t, err)
@@ -495,7 +495,7 @@ func TestOrchestrator_PublishRelease_WithArtifact(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	o := NewOrchestrator(store, d, "https://builds.example.com")
+	o := NewOrchestrator(store, d, "https://builds.example.com", t.TempDir())
 
 	err = o.PublishRelease(ctx, *proj, *rel)
 	require.NoError(t, err)
@@ -536,7 +536,7 @@ func TestOrchestrator_PublishRelease_BinaryKind_AttemptsStrip(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	o := NewOrchestrator(store, d, "https://builds.example.com")
+	o := NewOrchestrator(store, d, "https://builds.example.com", t.TempDir())
 
 	// Should not error even when strip fails (it logs a warning and continues).
 	err = o.PublishRelease(ctx, *proj, *rel)
@@ -552,7 +552,7 @@ func TestNewOrchestrator(t *testing.T) {
 	d := openTestDB(t)
 	store := openTestStore(t)
 
-	o := NewOrchestrator(store, d, "https://example.com")
+	o := NewOrchestrator(store, d, "https://example.com", t.TempDir())
 	require.NotNil(t, o)
 	assert.Equal(t, "https://example.com", o.BaseURL)
 	assert.Equal(t, d, o.DB)

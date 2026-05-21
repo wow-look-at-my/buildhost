@@ -9,14 +9,29 @@ RUN go mod download
 COPY . .
 RUN go-toolchain --generate c29114ff2f33
 
-FROM debian:bookworm-slim
+FROM gcr.io/distroless/static-debian12:nonroot
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends binutils ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+ARG VERSION=dev
+ARG REVISION=unknown
+
+LABEL org.opencontainers.image.source="https://github.com/wow-look-at-my/buildhost"
+LABEL org.opencontainers.image.version="${VERSION}"
+LABEL org.opencontainers.image.revision="${REVISION}"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.description="Universal package registry server"
 
 COPY --from=builder /src/build/buildhost /usr/local/bin/buildhost
 
-EXPOSE 8080
+ENV BUILDHOST_DATA_DIR=/var/lib/buildhost
+ENV BUILDHOST_DB_PATH=/var/lib/buildhost/buildhost.db
+
+VOLUME /var/lib/buildhost
+EXPOSE 8080 9090
+
+STOPSIGNAL SIGTERM
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD ["/usr/local/bin/buildhost", "healthcheck"]
+
+USER nonroot
 ENTRYPOINT ["buildhost"]
 CMD ["serve"]

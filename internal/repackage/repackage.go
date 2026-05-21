@@ -53,14 +53,17 @@ type Orchestrator struct {
 	Store       storage.Storage
 	DB          *db.DB
 	BaseURL     string
+	TempDir     string
 	Repackagers []Repackager
 }
 
-func NewOrchestrator(store storage.Storage, database *db.DB, baseURL string) *Orchestrator {
+func NewOrchestrator(store storage.Storage, database *db.DB, baseURL, tempDir string) *Orchestrator {
+	os.MkdirAll(tempDir, 0o755)
 	return &Orchestrator{
 		Store:   store,
 		DB:      database,
 		BaseURL: baseURL,
+		TempDir: tempDir,
 		Repackagers: []Repackager{
 			&TarGZ{},
 			&TarXZ{},
@@ -104,7 +107,7 @@ func (o *Orchestrator) PublishRelease(ctx context.Context, project model.Project
 				continue
 			}
 
-			tmpFile, err := copyToTempFile(rc, "repackage-*")
+			tmpFile, err := copyToTempFile(rc, o.TempDir, "repackage-*")
 			rc.Close()
 			if err != nil {
 				slog.Error("copy artifact to temp", "err", err)
@@ -162,7 +165,7 @@ func (o *Orchestrator) stripArtifact(ctx context.Context, a *model.Artifact) err
 		return err
 	}
 
-	tmpFile, err := copyToTempFile(rc, "strip-*")
+	tmpFile, err := copyToTempFile(rc, o.TempDir, "strip-*")
 	rc.Close()
 	if err != nil {
 		return fmt.Errorf("copy artifact to temp: %w", err)
@@ -206,8 +209,8 @@ func (o *Orchestrator) stripArtifact(ctx context.Context, a *model.Artifact) err
 	return o.DB.UpdateArtifactStripped(ctx, a.ID, strippedKey, strippedSize, strippedKey, debugKey, debugSize)
 }
 
-func copyToTempFile(r io.Reader, prefix string) (*os.File, error) {
-	f, err := os.CreateTemp("", prefix)
+func copyToTempFile(r io.Reader, dir, prefix string) (*os.File, error) {
+	f, err := os.CreateTemp(dir, prefix)
 	if err != nil {
 		return nil, err
 	}
