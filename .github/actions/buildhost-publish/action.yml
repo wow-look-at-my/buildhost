@@ -1,0 +1,118 @@
+name: Publish to Buildhost
+version: 1
+description: Publish a build artifact to a buildhost registry using GHA OIDC.
+
+inputs:
+  server:
+    description: 'Buildhost server URL (e.g., https://pazer.build)'
+    required: true
+  project:
+    description: 'Project name on the buildhost instance'
+    required: true
+  artifact:
+    description: 'Path to the artifact file'
+    required: true
+  os:
+    description: 'Target OS (linux, darwin, windows)'
+    required: true
+  arch:
+    description: 'Target architecture (amd64, arm64)'
+    required: true
+  kind:
+    description: 'Artifact kind (binary, library, assets, archive)'
+    required: false
+    default: 'binary'
+  version:
+    description: 'Release version (omit for auto-versioned projects)'
+    required: false
+  filename:
+    description: 'Override the artifact filename stored on the server'
+    required: false
+  git_branch:
+    description: 'Git branch (defaults to GITHUB_REF_NAME)'
+    required: false
+  git_commit:
+    description: 'Git commit SHA (defaults to GITHUB_SHA)'
+    required: false
+  publish:
+    description: 'Publish the release after uploading (set to false for multi-artifact uploads)'
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Publish to buildhost
+      shell: bash
+      env:
+        INPUT_SERVER: ${{ inputs.server }}
+        INPUT_PROJECT: ${{ inputs.project }}
+        INPUT_ARTIFACT: ${{ inputs.artifact }}
+        INPUT_OS: ${{ inputs.os }}
+        INPUT_ARCH: ${{ inputs.arch }}
+        INPUT_KIND: ${{ inputs.kind }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_FILENAME: ${{ inputs.filename }}
+        INPUT_GIT_BRANCH: ${{ inputs.git_branch }}
+        INPUT_GIT_COMMIT: ${{ inputs.git_commit }}
+        INPUT_PUBLISH: ${{ inputs.publish }}
+      run: |
+        set -euo pipefail
+
+        GIT_BRANCH="${INPUT_GIT_BRANCH:-$GITHUB_REF_NAME}"
+        GIT_COMMIT="${INPUT_GIT_COMMIT:-$GITHUB_SHA}"
+
+        # Mint OIDC token for the buildhost audience
+        TOKEN=$(curl -sf \
+          -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+          "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${INPUT_SERVER}" | jq -r '.value')
+
+        if [ -z "${TOKEN}" ] || [ "${TOKEN}" = "null" ]; then
+          echo "::error::Failed to obtain OIDC token. Ensure the workflow has 'permissions: { id-token: write }'."
+          exit 1
+        fi
+
+        # Build release creation body
+        BODY=$(jq -n --arg b "${GIT_BRANCH}" --arg c "${GIT_COMMIT}" --arg v "${INPUT_VERSION}" \
+          '{git_branch: $b, git_commit: $c} + (if $v != "" then {version: $v} else {} end)')
+
+        # Create release (201 = created, 409 = already exists)
+        HTTP_OUT=$(curl -s -w "\n%{http_code}" -X POST \
+          "${INPUT_SERVER}/api/v1/projects/${INPUT_PROJECT}/releases" \
+          -H "Authorization: Bearer ${TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d "${BODY}")
+
+        HTTP_STATUS=$(echo "${HTTP_OUT}" | tail -1)
+        HTTP_BODY=$(echo "${HTTP_OUT}" | sed '$d')
+
+        if [ "${HTTP_STATUS}" = "201" ]; then
+          VERSION=$(echo "${HTTP_BODY}" | jq -r '.version')
+        elif [ "${HTTP_STATUS}" = "409" ]; then
+          VERSION="${INPUT_VERSION}"
+          if [ -z "${VERSION}" ]; then
+            echo "::error::Release already exists and no explicit version was provided."
+            exit 1
+          fi
+        else
+          echo "::error::Failed to create release (HTTP ${HTTP_STATUS}): ${HTTP_BODY}"
+          exit 1
+        fi
+
+        # Upload artifact
+        UPLOAD_URL="${INPUT_SERVER}/api/v1/projects/${INPUT_PROJECT}/releases/${VERSION}/artifacts/${INPUT_OS}/${INPUT_ARCH}?kind=${INPUT_KIND}"
+        HEADERS=(-H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/octet-stream")
+        if [ -n "${INPUT_FILENAME}" ]; then
+          HEADERS+=(-H "X-Artifact-Filename: ${INPUT_FILENAME}")
+        fi
+
+        curl -sf -X PUT "${UPLOAD_URL}" "${HEADERS[@]}" --data-binary @"${INPUT_ARTIFACT}"
+        echo "Uploaded ${INPUT_PROJECT}/${VERSION} ${INPUT_OS}/${INPUT_ARCH}"
+
+        # Publish release
+        if [ "${INPUT_PUBLISH}" = "true" ]; then
+          curl -sf -X POST \
+            "${INPUT_SERVER}/api/v1/projects/${INPUT_PROJECT}/releases/${VERSION}/publish" \
+            -H "Authorization: Bearer ${TOKEN}"
+          echo "Published ${INPUT_PROJECT}/${VERSION} to ${INPUT_SERVER}"
+        fi

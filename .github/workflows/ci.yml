@@ -16,30 +16,14 @@ jobs:
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           generate: c29114ff2f33
-      - name: Publish to pazer.build
-        if: github.ref == 'refs/heads/master'
+      - uses: ./.github/actions/buildhost-publish
         continue-on-error: true
-        run: |
-          TOKEN=$(curl -sf -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https://pazer.build" | jq -r '.value')
-
-          VERSION=$(curl -sf -X POST "https://pazer.build/api/v1/projects/buildhost/releases" \
-            -H "Authorization: Bearer ${TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "{\"git_branch\":\"${GITHUB_REF_NAME}\",\"git_commit\":\"${GITHUB_SHA}\"}" \
-            | jq -r '.version')
-
-          curl -sf -X PUT \
-            "https://pazer.build/api/v1/projects/buildhost/releases/${VERSION}/artifacts/linux/amd64?kind=binary" \
-            -H "Authorization: Bearer ${TOKEN}" \
-            -H "Content-Type: application/octet-stream" \
-            --data-binary @build/buildhost
-
-          curl -sf -X POST \
-            "https://pazer.build/api/v1/projects/buildhost/releases/${VERSION}/publish" \
-            -H "Authorization: Bearer ${TOKEN}"
-
-          echo "Published buildhost ${VERSION} to pazer.build"
+        with:
+          server: https://pazer.build
+          project: buildhost
+          artifact: build/buildhost
+          os: linux
+          arch: amd64
 
   container:
     runs-on: ubuntu-latest
