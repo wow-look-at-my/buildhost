@@ -30,7 +30,34 @@
 </div>
 
 <div class="card">
-    <h2>Server Info</h2>
+    <h2>Server Status</h2>
+    <table class="info-table">
+        <tr>
+            <td class="info-label">Version</td>
+            <td>{{.Build.Version}}</td>
+        </tr>
+        <tr>
+            <td class="info-label">Commit</td>
+            <td>
+                {{- if .Build.CommitURL -}}
+                    <a href="{{.Build.CommitURL}}"><code class="commit">{{.Build.ShortCommit}}</code></a>
+                {{- else -}}
+                    <code>{{.Build.Commit}}</code>
+                {{- end -}}
+            </td>
+        </tr>
+        <tr>
+            <td class="info-label">Built</td>
+            <td>{{if .Build.Date}}{{.Build.Date}}{{else}}-{{end}}</td>
+        </tr>
+        <tr><td class="info-label">Uptime</td><td>{{.Uptime}}</td></tr>
+        <tr><td class="info-label">CPU Usage</td><td>{{.CPUPercent}}</td></tr>
+        <tr><td class="info-label">CPU Time</td><td>{{.CPUTotal}}</td></tr>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Configuration</h2>
     <table class="info-table">
         <tr><td class="info-label">Base URL</td><td>{{.Config.BaseURL}}</td></tr>
         <tr><td class="info-label">API Listen</td><td>{{.Config.ListenAddr}}</td></tr>

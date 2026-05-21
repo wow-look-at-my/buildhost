@@ -3,6 +3,10 @@ name: CI
 on:
   push:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   id-token: write
   contents: read
