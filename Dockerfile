@@ -7,7 +7,7 @@ LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.description="Universal package registry server"
 
-COPY build/buildhost_linux_amd64 /usr/local/bin/buildhost
+COPY --chmod=755 build/buildhost_linux_amd64 /usr/local/bin/buildhost
 
 ENV BUILDHOST_DATA_DIR=/var/lib/buildhost
 ENV BUILDHOST_DB_PATH=/var/lib/buildhost/buildhost.db
