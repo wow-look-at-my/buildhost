@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/buildhost/internal/admin"
@@ -27,6 +30,9 @@ var serveCmd = &cobra.Command{
 		if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 			return fmt.Errorf("create data dir: %w", err)
 		}
+		if err := os.MkdirAll(cfg.DataDir+"/tmp", 0o755); err != nil {
+			return fmt.Errorf("create temp dir: %w", err)
+		}
 
 		database, err := db.Open(cfg.DBPath)
 		if err != nil {
@@ -38,6 +44,9 @@ var serveCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("init storage: %w", err)
 		}
+
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+		defer stop()
 
 		if cfg.AdminListenAddr != "" {
 			adminSrv := admin.New(cfg, database)
@@ -52,6 +61,16 @@ var serveCmd = &cobra.Command{
 
 		srv := server.New(cfg, database, store)
 		slog.Info("starting server", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL)
-		return srv.ListenAndServe()
+
+		go func() {
+			<-ctx.Done()
+			slog.Info("shutting down")
+			srv.Shutdown(context.Background())
+		}()
+
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			return err
+		}
+		return nil
 	},
 }

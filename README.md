@@ -18,9 +18,51 @@ From a single uploaded binary, buildhost serves:
 
 A container image is published to `ghcr.io/wow-look-at-my/buildhost:latest` on every push to master.
 
-```bash
-docker run -p 8080:8080 -v buildhost-data:/data ghcr.io/wow-look-at-my/buildhost:latest
+The image is based on `gcr.io/distroless/static-debian12:nonroot` and runs as UID 65532. It contains:
+
+- `/usr/local/bin/buildhost` -- the statically linked binary
+- CA certificates (from distroless base)
+- `/etc/passwd` with `nonroot` user (UID 65532)
+
+No shell, no package manager, no other binaries.
+
+### Recommended docker-compose configuration
+
+```yaml
+services:
+  buildhost:
+    image: ghcr.io/wow-look-at-my/buildhost:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - buildhost-data:/var/lib/buildhost
+    environment:
+      - BUILDHOST_BASE_URL=https://builds.example.com
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    pids_limit: 256
+    mem_limit: 512m
+    networks:
+      - buildhost
+
+  # The admin dashboard (port 9090) has NO built-in authentication.
+  # It MUST be placed behind a reverse proxy with access control
+  # (e.g., Cloudflare Access on a separate hostname).
+  # Do NOT expose port 9090 to untrusted networks.
+
+networks:
+  buildhost:
+    driver: bridge
+    internal: true
+
+volumes:
+  buildhost-data:
 ```
+
+**Note:** Binary stripping (`strip`/`objcopy`) is not available in the hardened image. Uploaded binaries are served as-is. If you need debug info stripping, run it in your CI pipeline before uploading.
 
 ## Quick start
 

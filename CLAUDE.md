@@ -105,6 +105,16 @@ steps:
 `go-toolchain` runs all tests. Integration tests use httptest.NewServer with a temp SQLite DB.
 OIDC tests generate ephemeral RSA keys and run a local JWKS server.
 
+## Docker image
+
+The image is built from `gcr.io/distroless/static-debian12:nonroot`. It runs as UID 65532 (nonroot) with no shell, no package manager, and no writable paths except the data volume. The server handles SIGTERM for graceful shutdown.
+
+The admin dashboard on `:9090` has **no built-in authentication**. It must be placed behind a reverse proxy with access control (e.g., Cloudflare Access on a separate hostname). Never expose port 9090 to untrusted networks.
+
+Binary stripping (`strip`/`objcopy`) is not available in the hardened image. The `strip.Available()` check handles this gracefully -- binaries are served as-is. Run stripping in your CI pipeline before uploading if needed.
+
+All temporary files are written to `BUILDHOST_DATA_DIR/tmp`, not to `/tmp`. The image is compatible with `read_only: true` as long as the data volume is mounted.
+
 ## Security notes (for future security reviews)
 
 The following items have been reviewed and addressed or are intentional design choices:
@@ -118,3 +128,7 @@ The following items have been reviewed and addressed or are intentional design c
 - **APT Release signing**: Not yet implemented (TODO in code). Clients must use `[trusted=yes]`
 - **List endpoints**: No LIMIT -- all behind auth, SQLite serialized, not a DoS vector
 - **Symlink rejection**: Storage layer rejects symlinks via Lstat check
+- **Admin dashboard auth**: None -- must be behind a reverse proxy with access control (Cloudflare Access, etc.)
+- **Container user**: Runs as nonroot (UID 65532) via distroless base image
+- **Graceful shutdown**: Server handles SIGTERM/SIGINT for clean connection draining
+- **No writes outside data dir**: Temp files use BUILDHOST_DATA_DIR/tmp, not system /tmp
