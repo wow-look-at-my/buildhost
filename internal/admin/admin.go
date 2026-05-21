@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/config"
@@ -80,12 +79,6 @@ func (s *Server) loadTemplates() {
 			),
 		)
 	}
-}
-
-func getCPUTime() time.Duration {
-	var usage syscall.Rusage
-	_ = syscall.Getrusage(syscall.RUSAGE_SELF, &usage)
-	return time.Duration(usage.Utime.Nano()) + time.Duration(usage.Stime.Nano())
 }
 
 func (s *Server) startCPUTracker() {
