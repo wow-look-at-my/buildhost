@@ -547,7 +547,7 @@ func TestVerifyToken_TrustedIssuer_NoPolicies(t *testing.T) {
 	}
 	token := signJWT(t, key, "kid-trusted", claims)
 
-	v := NewOIDCVerifier([]string{srv.URL}, nil)
+	v := NewOIDCVerifier([]string{srv.URL}, []string{"*"})
 	tok, err := v.VerifyToken(context.Background(), token, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "read,write", tok.Scopes)

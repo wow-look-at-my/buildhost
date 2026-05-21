@@ -518,6 +518,7 @@ func TestOIDC_AutoCreateProject(t *testing.T) {
 		DBPath:      dbPath,
 		BaseURL:     "http://localhost",
 		OIDCIssuers: []string{jwksSrv.URL},
+		OIDCOrgs:    []string{"*"},
 	}
 
 	srv := server.New(cfg, database, store)
