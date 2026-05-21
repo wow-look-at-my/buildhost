@@ -12,6 +12,7 @@ type APIToken struct {
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	LastUsedAt  *time.Time `json:"last_used_at,omitempty"`
+	OIDCProject string     `json:"-"`
 }
 
 func (t APIToken) HasScope(scope string) bool {
@@ -33,6 +34,13 @@ func (t APIToken) IsGlobal() bool {
 
 func (t APIToken) AuthorizedForProject(projectID int64) bool {
 	return t.ProjectID == nil || *t.ProjectID == projectID
+}
+
+func (t APIToken) AuthorizedForProjectName(name string) bool {
+	if t.OIDCProject != "" {
+		return t.OIDCProject == name
+	}
+	return true
 }
 
 var ValidScopes = map[string]bool{

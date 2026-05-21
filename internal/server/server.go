@@ -20,7 +20,7 @@ type Server struct {
 }
 
 func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
-	auth.Init(database, store, cfg.BaseURL, cfg.DataDir)
+	auth.Init(database, store, cfg.BaseURL, cfg.DataDir, cfg.OIDCIssuers)
 	s := &Server{cfg: cfg}
 	s.srv = &http.Server{
 		Addr:              s.cfg.ListenAddr,
