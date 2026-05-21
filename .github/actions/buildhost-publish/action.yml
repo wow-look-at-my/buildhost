@@ -1,16 +1,16 @@
 name: Publish to Buildhost
 version: 1
-description: Publish build artifacts to a buildhost registry using GHA OIDC. Understands go-toolchain matrix naming ({project}_{os}_{arch}).
+description: Publish go-toolchain matrix artifacts to a buildhost registry using GHA OIDC.
 
 inputs:
   server:
     description: 'Buildhost server URL (e.g., https://pazer.build)'
     required: true
   project:
-    description: 'Project name on the buildhost instance (defaults to the repository name)'
+    description: 'Project name (defaults to the repository name)'
     required: false
   artifact_name:
-    description: 'GHA run artifact name to download (defaults to go-build from go-toolchain)'
+    description: 'GHA run artifact name (defaults to go-build from go-toolchain)'
     required: false
     default: 'go-build'
   version:
@@ -31,92 +31,81 @@ runs:
         name: ${{ inputs.artifact_name }}
         path: /tmp/buildhost-publish
 
-    - name: Publish to buildhost
-      shell: bash
-      env:
-        INPUT_SERVER: ${{ inputs.server }}
-        INPUT_PROJECT: ${{ inputs.project }}
-        INPUT_VERSION: ${{ inputs.version }}
-        INPUT_GIT_BRANCH: ${{ inputs.git_branch }}
-        INPUT_GIT_COMMIT: ${{ inputs.git_commit }}
-      run: |
-        set -euo pipefail
+    - uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          const server = "${{ inputs.server }}";
+          const project = "${{ inputs.project }}" || github.repository.split("/").pop()!;
+          const version = "${{ inputs.version }}" || "";
+          const gitBranch = "${{ inputs.git_branch }}" || github.ref_name;
+          const gitCommit = "${{ inputs.git_commit }}" || github.sha;
+          const downloadDir = "/tmp/buildhost-publish";
 
-        PROJECT="${INPUT_PROJECT:-${GITHUB_REPOSITORY#*/}}"
-        GIT_BRANCH="${INPUT_GIT_BRANCH:-$GITHUB_REF_NAME}"
-        GIT_COMMIT="${INPUT_GIT_COMMIT:-$GITHUB_SHA}"
+          const idTokenUrl = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+          const idTokenBearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+          if (!idTokenUrl || !idTokenBearer) {
+            core.setFailed("OIDC not available. Add 'permissions: { id-token: write }'.");
+            return;
+          }
 
-        # Mint OIDC token
-        TOKEN=$(curl -sf \
-          -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-          "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${INPUT_SERVER}" | jq -r '.value')
+          const idResp = await fetch(`${idTokenUrl}&audience=${server}`, {
+            headers: { Authorization: `Bearer ${idTokenBearer}` },
+          });
+          const token: string = ((await idResp.json()) as { value: string }).value;
+          if (!token) { core.setFailed("Failed to obtain OIDC token"); return; }
 
-        if [ -z "${TOKEN}" ] || [ "${TOKEN}" = "null" ]; then
-          echo "::error::Failed to obtain OIDC token. Ensure the workflow has 'permissions: { id-token: write }'."
-          exit 1
-        fi
+          const files = fs.readdirSync(downloadDir).filter((f) => {
+            const full = path.join(downloadDir, f);
+            if (fs.lstatSync(full).isSymbolicLink()) return false;
+            if (!fs.statSync(full).isFile()) return false;
+            if (f === "checksums.txt") return false;
+            const base = f.replace(/\.exe$/, "");
+            return new RegExp(`^${project}_[a-z]+_[a-z0-9]+$`).test(base);
+          });
 
-        # Discover matrix artifacts: {project}_{os}_{arch}
-        ARTIFACTS=()
-        for f in /tmp/buildhost-publish/*; do
-          [ -f "$f" ] || continue
-          [ -L "$f" ] && continue
-          name=$(basename "$f")
-          [[ "$name" == checksums.txt ]] && continue
-          [[ "$name" == *.exe ]] && name="${name%.exe}"
-          if [[ "$name" =~ ^${PROJECT}_([a-z]+)_([a-z0-9]+)$ ]]; then
-            ARTIFACTS+=("$f:${BASH_REMATCH[1]}:${BASH_REMATCH[2]}")
-          fi
-        done
+          if (files.length === 0) {
+            core.setFailed(`No matrix artifacts matching '${project}_{os}_{arch}' found`);
+            core.info(`Files: ${fs.readdirSync(downloadDir).join(", ")}`);
+            return;
+          }
+          core.info(`Found ${files.length} artifact(s) to publish`);
 
-        if [ ${#ARTIFACTS[@]} -eq 0 ]; then
-          echo "::error::No matrix artifacts matching '${PROJECT}_{os}_{arch}' found in artifact."
-          ls -la /tmp/buildhost-publish/
-          exit 1
-        fi
+          const api = async (method: string, urlPath: string, body?: any) => {
+            const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+            if (typeof body === "string") headers["Content-Type"] = "application/json";
+            else if (body) headers["Content-Type"] = "application/octet-stream";
+            const resp = await fetch(`${server}${urlPath}`, { method, headers, body });
+            return { status: resp.status, text: await resp.text() };
+          };
 
-        echo "Found ${#ARTIFACTS[@]} artifact(s) to publish"
+          const releaseBody = JSON.stringify({
+            git_branch: gitBranch, git_commit: gitCommit,
+            ...(version ? { version } : {}),
+          });
+          const createResp = await api("POST", `/api/v1/projects/${project}/releases`, releaseBody);
 
-        # Create release
-        BODY=$(jq -n --arg b "${GIT_BRANCH}" --arg c "${GIT_COMMIT}" --arg v "${INPUT_VERSION}" \
-          '{git_branch: $b, git_commit: $c} + (if $v != "" then {version: $v} else {} end)')
+          let releaseVersion: string;
+          if (createResp.status === 201) {
+            releaseVersion = JSON.parse(createResp.text).version;
+          } else if (createResp.status === 409) {
+            if (!version) { core.setFailed("Release exists, no explicit version"); return; }
+            releaseVersion = version;
+          } else {
+            core.setFailed(`Create release failed (${createResp.status}): ${createResp.text}`);
+            return;
+          }
+          core.info(`Release: ${project}/${releaseVersion}`);
 
-        HTTP_OUT=$(curl -s -w "\n%{http_code}" -X POST \
-          "${INPUT_SERVER}/api/v1/projects/${PROJECT}/releases" \
-          -H "Authorization: Bearer ${TOKEN}" \
-          -H "Content-Type: application/json" \
-          -d "${BODY}")
+          for (const file of files) {
+            const base = file.replace(/\.exe$/, "");
+            const match = base.match(new RegExp(`^${project}_([a-z]+)_([a-z0-9]+)$`))!;
+            const [, fileOs, arch] = match;
+            const body = fs.readFileSync(path.join(downloadDir, file));
+            const r = await api("PUT", `/api/v1/projects/${project}/releases/${releaseVersion}/artifacts/${fileOs}/${arch}?kind=binary`, body);
+            if (r.status !== 201) { core.setFailed(`Upload ${fileOs}/${arch} failed (${r.status}): ${r.text}`); return; }
+            core.info(`Uploaded ${fileOs}/${arch}`);
+          }
 
-        HTTP_STATUS=$(echo "${HTTP_OUT}" | tail -1)
-        HTTP_BODY=$(echo "${HTTP_OUT}" | sed '$d')
-
-        if [ "${HTTP_STATUS}" = "201" ]; then
-          VERSION=$(echo "${HTTP_BODY}" | jq -r '.version')
-        elif [ "${HTTP_STATUS}" = "409" ]; then
-          VERSION="${INPUT_VERSION}"
-          if [ -z "${VERSION}" ]; then
-            echo "::error::Release already exists and no explicit version was provided."
-            exit 1
-          fi
-        else
-          echo "::error::Failed to create release (HTTP ${HTTP_STATUS}): ${HTTP_BODY}"
-          exit 1
-        fi
-
-        # Upload each artifact
-        for entry in "${ARTIFACTS[@]}"; do
-          IFS=: read -r filepath os arch <<< "${entry}"
-          echo "Uploading ${os}/${arch}..."
-          curl -sf -X PUT \
-            "${INPUT_SERVER}/api/v1/projects/${PROJECT}/releases/${VERSION}/artifacts/${os}/${arch}?kind=binary" \
-            -H "Authorization: Bearer ${TOKEN}" \
-            -H "Content-Type: application/octet-stream" \
-            --data-binary @"${filepath}"
-        done
-
-        # Publish release
-        curl -sf -X POST \
-          "${INPUT_SERVER}/api/v1/projects/${PROJECT}/releases/${VERSION}/publish" \
-          -H "Authorization: Bearer ${TOKEN}"
-
-        echo "Published ${PROJECT}/${VERSION} (${#ARTIFACTS[@]} artifacts) to ${INPUT_SERVER}"
+          const pub = await api("POST", `/api/v1/projects/${project}/releases/${releaseVersion}/publish`);
+          if (pub.status !== 200) { core.setFailed(`Publish failed (${pub.status}): ${pub.text}`); return; }
+          core.info(`Published ${project}/${releaseVersion} (${files.length} artifacts) to ${server}`);
