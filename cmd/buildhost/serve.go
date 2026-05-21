@@ -49,7 +49,12 @@ var serveCmd = &cobra.Command{
 		defer stop()
 
 		if cfg.AdminListenAddr != "" {
-			adminSrv := admin.New(cfg, database)
+			adminSrv := admin.New(cfg, database, admin.BuildInfo{
+				Version: buildVersion,
+				Commit:  buildCommit,
+				Date:    buildDate,
+				RepoURL: "https://github.com/wow-look-at-my/buildhost",
+			})
 			go func() {
 				slog.Info("starting admin dashboard", "addr", cfg.AdminListenAddr)
 				if err := adminSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
