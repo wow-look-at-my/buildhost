@@ -42,6 +42,7 @@ runs:
             const gitBranch = inputBranch.length > 0 ? inputBranch : github.ref_name;
             const gitCommit = inputCommit.length > 0 ? inputCommit : github.sha;
             const downloadDir = path.join(os.tmpdir(), "buildhost-publish");
+            fs.mkdirSync(downloadDir, { recursive: true });
 
             // Download artifact via octokit
             const oct = octokit(process.env.GITHUB_TOKEN!);
@@ -55,12 +56,11 @@ runs:
             const { data: zip } = await oct.rest.actions.downloadArtifact({
               owner, repo, artifact_id: artifact.id, archive_format: "zip",
             });
-            fs.mkdirSync(downloadDir, { recursive: true });
             const zipPath = path.join(downloadDir, "artifact.zip");
             fs.writeFileSync(zipPath, Buffer.from(zip as ArrayBuffer));
             await exec.exec("unzip", ["-o", zipPath, "-d", downloadDir]);
 
-            // Mint OIDC token
+            // Mint OIDC token for buildhost
             const idTokenUrl = env.ACTIONS_ID_TOKEN_REQUEST_URL;
             const idTokenBearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
             if (!idTokenUrl || !idTokenBearer) {
