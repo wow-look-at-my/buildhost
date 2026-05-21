@@ -11,7 +11,8 @@ type Config struct {
 	DataDir         string
 	DBPath          string
 	BaseURL         string
-	OIDCIssuers     []string
+	OIDCIssuers []string
+	OIDCOrgs    []string
 }
 
 func Load() Config {
@@ -41,6 +42,13 @@ func Load() Config {
 		for _, iss := range strings.Split(v, ",") {
 			if iss = strings.TrimSpace(iss); iss != "" {
 				c.OIDCIssuers = append(c.OIDCIssuers, iss)
+			}
+		}
+	}
+	if v := os.Getenv("BUILDHOST_OIDC_ORGS"); v != "" {
+		for _, org := range strings.Split(v, ",") {
+			if org = strings.TrimSpace(org); org != "" {
+				c.OIDCOrgs = append(c.OIDCOrgs, org)
 			}
 		}
 	}

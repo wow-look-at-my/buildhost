@@ -36,6 +36,8 @@
         <tr><td class="info-label">API Listen</td><td>{{.Config.ListenAddr}}</td></tr>
         <tr><td class="info-label">Admin Listen</td><td>{{.Config.AdminListenAddr}}</td></tr>
         <tr><td class="info-label">Data Directory</td><td>{{.Config.DataDir}}</td></tr>
+        <tr><td class="info-label">Trusted OIDC Issuers</td><td>{{if .Config.OIDCIssuers}}{{range $i, $v := .Config.OIDCIssuers}}{{if $i}}, {{end}}<code>{{$v}}</code>{{end}}{{else}}<span class="empty">None</span>{{end}}</td></tr>
+        <tr><td class="info-label">Allowed OIDC Orgs</td><td>{{if .Config.OIDCOrgs}}{{range $i, $v := .Config.OIDCOrgs}}{{if $i}}, {{end}}<code>{{$v}}</code>{{end}}{{else}}<span class="empty">All</span>{{end}}</td></tr>
     </table>
 </div>
 

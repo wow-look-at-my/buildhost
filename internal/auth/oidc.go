@@ -26,6 +26,7 @@ type OIDCVerifier struct {
 	mu             sync.RWMutex
 	cache          map[string]*cachedJWKS
 	trustedIssuers []string
+	allowedOrgs    []string
 }
 
 type cachedJWKS struct {
@@ -44,8 +45,8 @@ type oidcClaims struct {
 
 const oidcLeeway = 60 * time.Second
 
-func NewOIDCVerifier(trustedIssuers []string) *OIDCVerifier {
-	return &OIDCVerifier{cache: make(map[string]*cachedJWKS), trustedIssuers: trustedIssuers}
+func NewOIDCVerifier(trustedIssuers, allowedOrgs []string) *OIDCVerifier {
+	return &OIDCVerifier{cache: make(map[string]*cachedJWKS), trustedIssuers: trustedIssuers, allowedOrgs: allowedOrgs}
 }
 
 func LooksLikeJWT(token string) bool {
@@ -123,6 +124,11 @@ func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []m
 			ProjectID: matchedPolicy.ProjectID,
 			Scopes:    matchedPolicy.Scopes,
 		}, nil
+	}
+
+	org := orgFromSubject(verified.Subject)
+	if len(v.allowedOrgs) > 0 && !slices.Contains(v.allowedOrgs, org) {
+		return nil, fmt.Errorf("org %q not in allowed list", org)
 	}
 
 	project := projectFromSubject(verified.Subject)
@@ -320,6 +326,23 @@ func projectFromSubject(subject string) string {
 		return ""
 	}
 	return repoPath[slash+1:]
+}
+
+func orgFromSubject(subject string) string {
+	if !strings.HasPrefix(subject, "repo:") {
+		return ""
+	}
+	rest := subject[len("repo:"):]
+	colon := strings.Index(rest, ":")
+	if colon < 0 {
+		return ""
+	}
+	repoPath := rest[:colon]
+	slash := strings.Index(repoPath, "/")
+	if slash < 0 {
+		return ""
+	}
+	return repoPath[:slash]
 }
 
 func matchSubject(pattern, subject string) bool {
