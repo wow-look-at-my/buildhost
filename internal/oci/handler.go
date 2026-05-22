@@ -18,7 +18,8 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 	})
-	auth.HandleRaw("GET /v2/", handler.V2Root)
+	auth.HandleRaw("GET /v2/{$}", handler.V2Root)
+	auth.HandleRaw("HEAD /v2/{$}", handler.V2Root)
 	auth.HandleHandler("/v2/", parseRoute, &handler)
 }
 
@@ -58,13 +59,15 @@ type Handler struct {
 
 func (h *Handler) V2Root(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
 	json.NewEncoder(w).Encode(map[string]any{})
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
+
 	rt := routeFrom(r.Context())
 
-	// TODO: respect rt.reference -- currently all tags/digests resolve to the same manifest
 	switch rt.action {
 	case "manifests":
 		if rt.reference == "" {
@@ -78,6 +81,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.serveBlob(w, r, rt.reference)
+	case "tags":
+		h.serveTags(w, r)
 	default:
 		http.NotFound(w, r)
 	}

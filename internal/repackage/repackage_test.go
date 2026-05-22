@@ -145,18 +145,14 @@ func TestNPMApplicable(t *testing.T) {
 func TestOCIApplicable(t *testing.T) {
 	rp := &OCI{}
 
-	// Binary and archive are applicable
-	for _, kind := range []model.Kind{model.KindBinary, model.KindArchive} {
-		a := model.Artifact{OS: model.OSLinux, Kind: kind}
-		assert.True(t, rp.Applicable(a))
+	// Only binary is applicable
+	a := model.Artifact{OS: model.OSLinux, Kind: model.KindBinary}
+	assert.True(t, rp.Applicable(a))
 
-	}
-
-	// Library and assets are not applicable
-	for _, kind := range []model.Kind{model.KindLibrary, model.KindAssets} {
+	// Archive, library, assets are not applicable
+	for _, kind := range []model.Kind{model.KindArchive, model.KindLibrary, model.KindAssets} {
 		a := model.Artifact{OS: model.OSLinux, Kind: kind}
 		assert.False(t, rp.Applicable(a))
-
 	}
 }
 
@@ -355,32 +351,49 @@ func TestNPMRepackage(t *testing.T) {
 }
 
 func TestOCIRepackage(t *testing.T) {
-	rp := &OCI{}
-	input := makeInput()
+	d := openTestDB(t)
+	store := openTestStore(t)
 	ctx := context.Background()
+
+	proj := &model.Project{Name: "testapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "v1.2.3", VersionNum: 1}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	key, size, err := store.Put(ctx, strings.NewReader(string(testBinary)))
+	require.NoError(t, err)
+	a := &model.Artifact{
+		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
+		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}
+	require.NoError(t, d.CreateArtifact(ctx, a))
+
+	rp := &OCI{Store: store, DB: d}
+	input := makeInput()
+	input.Artifact = *a
 
 	output, err := rp.Repackage(ctx, input)
 	require.Nil(t, err)
-
 	require.NotEqual(t, int64(0), output.Size)
-
-	assert.True(t, strings.HasSuffix(output.Filename, "-oci.json"))
+	assert.True(t, strings.HasSuffix(output.Filename, "-oci-manifest.json"))
 
 	data, err := io.ReadAll(output.Reader)
 	require.Nil(t, err)
 
 	body := string(data)
 	assert.Contains(t, body, "schemaVersion")
-
 	assert.Contains(t, body, "application/vnd.oci.image.manifest.v1+json")
+	assert.Contains(t, body, "sha256:")
 
-	// Verify metadata
 	require.NotNil(t, output.Metadata)
-
 	assert.Equal(t, "linux", output.Metadata["os"])
-
 	assert.Equal(t, "amd64", output.Metadata["arch"])
 
+	// Verify config and layer blobs were stored
+	_, _, _, _, err = d.GetPackagedArtifact(ctx, a.ID, "oci-config")
+	require.NoError(t, err)
+	_, _, _, _, err = d.GetPackagedArtifact(ctx, a.ID, "oci-layer")
+	require.NoError(t, err)
 }
 
 // --- Format tests ---
@@ -557,6 +570,6 @@ func TestNewOrchestrator(t *testing.T) {
 	assert.Equal(t, "https://example.com", o.BaseURL)
 	assert.Equal(t, d, o.DB)
 	assert.Equal(t, store, o.Store)
-	// Should have 7 default repackagers.
-	assert.Equal(t, 7, len(o.Repackagers))
+	// Should have 8 default repackagers.
+	assert.Equal(t, 8, len(o.Repackagers))
 }

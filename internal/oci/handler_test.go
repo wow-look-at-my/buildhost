@@ -2,6 +2,10 @@ package oci
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -11,6 +15,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
@@ -29,12 +34,56 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	return h, d, store
 }
 
-// withRoute adds project and route info to the request context, simulating
-// what the auth middleware does in production.
 func withRoute(r *http.Request, project *model.Project, rt route) *http.Request {
 	ctx := auth.WithProject(r.Context(), project)
 	ctx = auth.WithRouteInfo(ctx, rt)
 	return r.WithContext(ctx)
+}
+
+func publishWithOCI(t *testing.T, ctx context.Context, d *db.DB, store *storage.Filesystem, proj *model.Project, version string, versionNum int64) *model.Release {
+	t.Helper()
+
+	rel := &model.Release{ProjectID: proj.ID, Version: version, VersionNum: versionNum}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	binaryData := "#!/bin/sh\necho hello"
+	key, size, err := store.Put(ctx, strings.NewReader(binaryData))
+	require.NoError(t, err)
+
+	a := &model.Artifact{
+		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
+		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}
+	require.NoError(t, d.CreateArtifact(ctx, a))
+
+	oci := &repackage.OCI{Store: store, DB: d}
+	data, err := readAll(store, ctx, key)
+	require.NoError(t, err)
+
+	out, err := oci.Repackage(ctx, repackage.Input{
+		Project:  *proj,
+		Release:  *rel,
+		Artifact: *a,
+		Data:     data,
+	})
+	require.NoError(t, err)
+
+	manifestKey, manifestSize, err := store.Put(ctx, out.Reader)
+	require.NoError(t, err)
+	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "oci", manifestKey, manifestSize, manifestKey, out.Filename, "{}"))
+
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+	return rel
+}
+
+func readAll(store *storage.Filesystem, ctx context.Context, key string) ([]byte, error) {
+	rc, _, err := store.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(rc)
+	return data, err
 }
 
 func TestV2Root(t *testing.T) {
@@ -46,7 +95,19 @@ func TestV2Root(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	assert.Equal(t, "registry/2.0", rec.Header().Get("Docker-Distribution-API-Version"))
 	assert.Equal(t, "{}\n", rec.Body.String())
+}
+
+func TestV2Root_HEAD(t *testing.T) {
+	h, _, _ := setupTest(t)
+
+	req := httptest.NewRequest("HEAD", "/v2/", nil)
+	rec := httptest.NewRecorder()
+	h.V2Root(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "registry/2.0", rec.Header().Get("Docker-Distribution-API-Version"))
 }
 
 func TestParseRoute(t *testing.T) {
@@ -61,6 +122,7 @@ func TestParseRoute(t *testing.T) {
 		{"blobs", "/v2/myapp/blobs/sha256:abc", "myapp", "blobs", "sha256:abc"},
 		{"project only", "/v2/myapp", "myapp", "", ""},
 		{"project and action", "/v2/myapp/manifests", "myapp", "manifests", ""},
+		{"tags list", "/v2/myapp/tags/list", "myapp", "tags", "list"},
 	}
 
 	for _, tt := range tests {
@@ -82,8 +144,8 @@ func TestServeHTTP_UnknownAction(t *testing.T) {
 	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
-	req := httptest.NewRequest("GET", "/v2/myapp/tags/list", nil)
-	req = withRoute(req, proj, route{project: "myapp", action: "tags", reference: "list"})
+	req := httptest.NewRequest("GET", "/v2/myapp/unknown/foo", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "unknown", reference: "foo"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -151,22 +213,7 @@ func TestServeHTTP_Manifests_Success(t *testing.T) {
 
 	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	key, size, err := store.Put(ctx, strings.NewReader("binary"))
-	require.NoError(t, err)
-	a := &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
-	}
-	require.NoError(t, d.CreateArtifact(ctx, a))
-
-	manifest := `{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json"}`
-	ociKey, ociSize, err := store.Put(ctx, strings.NewReader(manifest))
-	require.NoError(t, err)
-	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "oci", ociKey, ociSize, ociKey, "myapp-oci.json", "{}"))
+	publishWithOCI(t, ctx, d, store, proj, "1.0.0", 1000000)
 
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
 	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
@@ -175,7 +222,86 @@ func TestServeHTTP_Manifests_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/vnd.oci.image.manifest.v1+json", rec.Header().Get("Content-Type"))
-	assert.Contains(t, rec.Body.String(), "schemaVersion")
+	assert.NotEmpty(t, rec.Header().Get("Docker-Content-Digest"))
+
+	var manifest map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &manifest))
+	assert.Equal(t, float64(2), manifest["schemaVersion"])
+
+	config := manifest["config"].(map[string]any)
+	assert.Equal(t, "application/vnd.oci.image.config.v1+json", config["mediaType"])
+	assert.Contains(t, config["digest"], "sha256:")
+
+	layers := manifest["layers"].([]any)
+	require.Len(t, layers, 1)
+	layer := layers[0].(map[string]any)
+	assert.Equal(t, "application/vnd.oci.image.layer.v1.tar+gzip", layer["mediaType"])
+	assert.Contains(t, layer["digest"], "sha256:")
+}
+
+func TestServeHTTP_Manifests_ByVersion(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	publishWithOCI(t, ctx, d, store, proj, "1.0.0", 1000000)
+	publishWithOCI(t, ctx, d, store, proj, "2.0.0", 2000000)
+
+	req := httptest.NewRequest("GET", "/v2/myapp/manifests/1.0.0", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "1.0.0"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestServeHTTP_Manifests_ByDigest(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	publishWithOCI(t, ctx, d, store, proj, "1.0.0", 1000000)
+
+	// First get the manifest by tag to get the digest
+	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	digest := rec.Header().Get("Docker-Content-Digest")
+	require.NotEmpty(t, digest)
+
+	// Now fetch by digest
+	req = httptest.NewRequest("GET", "/v2/myapp/manifests/"+digest, nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: digest})
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/vnd.oci.image.manifest.v1+json", rec.Header().Get("Content-Type"))
+	assert.Equal(t, digest, rec.Header().Get("Docker-Content-Digest"))
+}
+
+func TestServeHTTP_Manifests_HEAD(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	publishWithOCI(t, ctx, d, store, proj, "1.0.0", 1000000)
+
+	req := httptest.NewRequest("HEAD", "/v2/myapp/manifests/latest", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/vnd.oci.image.manifest.v1+json", rec.Header().Get("Content-Type"))
+	assert.NotEmpty(t, rec.Header().Get("Docker-Content-Digest"))
+	assert.Empty(t, rec.Body.String())
 }
 
 func TestServeHTTP_Blobs_MissingDigest(t *testing.T) {
@@ -251,4 +377,151 @@ func TestServeHTTP_Blobs_Success(t *testing.T) {
 	assert.Equal(t, "application/octet-stream", rec.Header().Get("Content-Type"))
 	assert.Equal(t, digest, rec.Header().Get("Docker-Content-Digest"))
 	assert.Equal(t, content, rec.Body.String())
+}
+
+func TestServeHTTP_Blobs_HEAD(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	content := "blob-layer-content"
+	key, size, err := store.Put(ctx, strings.NewReader(content))
+	require.NoError(t, err)
+
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
+		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
+		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	digest := "sha256:" + key
+	req := httptest.NewRequest("HEAD", "/v2/myapp/blobs/"+digest, nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "blobs", reference: digest})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, digest, rec.Header().Get("Docker-Content-Digest"))
+	assert.Empty(t, rec.Body.String())
+}
+
+func TestServeHTTP_Tags(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	publishWithOCI(t, ctx, d, store, proj, "1.0.0", 1000000)
+	publishWithOCI(t, ctx, d, store, proj, "2.0.0", 2000000)
+
+	req := httptest.NewRequest("GET", "/v2/myapp/tags/list", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "tags", reference: "list"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+
+	var resp struct {
+		Name string   `json:"name"`
+		Tags []string `json:"tags"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, "myapp", resp.Name)
+	assert.Contains(t, resp.Tags, "1.0.0")
+	assert.Contains(t, resp.Tags, "2.0.0")
+	assert.Contains(t, resp.Tags, "latest")
+}
+
+func TestServeHTTP_Tags_NoReleases(t *testing.T) {
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	req := httptest.NewRequest("GET", "/v2/myapp/tags/list", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "tags", reference: "list"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Tags []string `json:"tags"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Empty(t, resp.Tags)
+}
+
+func TestManifestDigestMatchesContent(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	publishWithOCI(t, ctx, d, store, proj, "1.0.0", 1000000)
+
+	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	body := rec.Body.Bytes()
+	computed := sha256.Sum256(body)
+	expected := "sha256:" + hex.EncodeToString(computed[:])
+	assert.Equal(t, expected, rec.Header().Get("Docker-Content-Digest"))
+}
+
+func TestBlobsReachableFromManifest(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	publishWithOCI(t, ctx, d, store, proj, "1.0.0", 1000000)
+
+	// Get manifest
+	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var manifest struct {
+		Config struct {
+			Digest string `json:"digest"`
+		} `json:"config"`
+		Layers []struct {
+			Digest string `json:"digest"`
+		} `json:"layers"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &manifest))
+
+	// Fetch config blob
+	req = httptest.NewRequest("GET", "/v2/myapp/blobs/"+manifest.Config.Digest, nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "blobs", reference: manifest.Config.Digest})
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var config map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &config))
+	assert.Equal(t, "amd64", config["architecture"])
+	assert.Equal(t, "linux", config["os"])
+
+	// Fetch layer blob
+	for _, layer := range manifest.Layers {
+		req = httptest.NewRequest("GET", "/v2/myapp/blobs/"+layer.Digest, nil)
+		req = withRoute(req, proj, route{project: "myapp", action: "blobs", reference: layer.Digest})
+		rec = httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.NotEmpty(t, rec.Body.Bytes())
+	}
 }

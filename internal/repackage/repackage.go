@@ -72,6 +72,7 @@ func NewOrchestrator(store storage.Storage, database *db.DB, baseURL, tempDir st
 			&Deb{},
 			&Brew{},
 			&NPM{},
+			&OCI{Store: store, DB: database},
 		},
 	}
 }
