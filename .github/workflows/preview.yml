@@ -1,0 +1,12 @@
+name: Deploy PR previews
+
+on:
+    pull_request:
+        types: [opened, reopened, synchronize, closed]
+
+jobs:
+    deploy-preview:
+        uses: PazerOP/pr-preview-action/.github/workflows/preview.yml@v1
+        with:
+            source-dir: ./internal/admin/static/
+        secrets: inherit
