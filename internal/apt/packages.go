@@ -1,6 +1,7 @@
 package apt
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 )
 
 func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath string) {
@@ -49,10 +51,16 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 		version = fmt.Sprintf("%d", release.VersionNum)
 	}
 
-	debStorageKey, debSize, debSHA256, _, err := h.DB.GetPackagedArtifact(r.Context(), artifact.ID, "deb")
-	if err != nil || debStorageKey == "" {
-		debSize = artifact.Size
-		debSHA256 = artifact.SHA256
+	debSize := artifact.Size
+	debSHA := artifact.SHA256
+	out, err := h.Gen.Generate(r.Context(), repackage.FormatDeb, *project, *release, *artifact)
+	if err == nil {
+		data, rerr := io.ReadAll(out.Reader)
+		if rerr == nil {
+			debSize = int64(len(data))
+			h := sha256.Sum256(data)
+			debSHA = fmt.Sprintf("%x", h)
+		}
 	}
 
 	desc := strings.NewReplacer("\n", " ", "\r", " ").Replace(project.Description)
@@ -65,7 +73,7 @@ SHA256: %s
 Description: %s
 
 `, project.Name, version, arch, project.Name, version, arch,
-		debSize, debSHA256, desc)
+		debSize, debSHA, desc)
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write([]byte(entry))
@@ -105,28 +113,17 @@ func (h *Handler) servePool(w http.ResponseWriter, r *http.Request, subpath stri
 		if debArch != "" && goArchFromDeb(debArch) != string(a.Arch) {
 			continue
 		}
-		if h.tryServePoolDeb(w, r, a.ID) {
-			return
+		out, err := h.Gen.Generate(r.Context(), repackage.FormatDeb, *project, *release, a)
+		if err != nil {
+			continue
 		}
+		w.Header().Set("Content-Type", "application/vnd.debian.binary-package")
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", out.Size))
+		io.Copy(w, out.Reader)
+		return
 	}
 
 	http.NotFound(w, r)
-}
-
-func (h *Handler) tryServePoolDeb(w http.ResponseWriter, r *http.Request, artifactID int64) bool {
-	storageKey, size, _, _, err := h.DB.GetPackagedArtifact(r.Context(), artifactID, "deb")
-	if err != nil {
-		return false
-	}
-	rc, _, err := h.Store.Get(r.Context(), storageKey)
-	if err != nil {
-		return false
-	}
-	defer rc.Close()
-	w.Header().Set("Content-Type", "application/vnd.debian.binary-package")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
-	io.Copy(w, rc)
-	return true
 }
 
 func extractDebArch(subpath string) string {

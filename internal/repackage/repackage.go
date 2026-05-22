@@ -2,7 +2,6 @@ package repackage
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,7 +11,6 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/buildhost/internal/strip"
-	"github.com/wow-look-at-my/go-mmap"
 )
 
 type Format string
@@ -50,29 +48,17 @@ type Repackager interface {
 }
 
 type Orchestrator struct {
-	Store       storage.Storage
-	DB          *db.DB
-	BaseURL     string
-	TempDir     string
-	Repackagers []Repackager
+	Store   storage.Storage
+	DB      *db.DB
+	TempDir string
 }
 
-func NewOrchestrator(store storage.Storage, database *db.DB, baseURL, tempDir string) *Orchestrator {
+func NewOrchestrator(store storage.Storage, database *db.DB, tempDir string) *Orchestrator {
 	os.MkdirAll(tempDir, 0o755)
 	return &Orchestrator{
 		Store:   store,
 		DB:      database,
-		BaseURL: baseURL,
 		TempDir: tempDir,
-		Repackagers: []Repackager{
-			&TarGZ{},
-			&TarXZ{},
-			&TarZST{},
-			&Zip{},
-			&Deb{},
-			&Brew{},
-			&NPM{},
-		},
 	}
 }
 
@@ -88,70 +74,6 @@ func (o *Orchestrator) PublishRelease(ctx context.Context, project model.Project
 		if (a.Kind == model.KindBinary || a.Kind == model.KindLibrary) && strip.Available() {
 			if err := o.stripArtifact(ctx, a); err != nil {
 				slog.Warn("strip failed, using original", "artifact", a.ID, "err", err)
-			}
-		}
-
-		for _, rp := range o.Repackagers {
-			if !rp.Applicable(*a) {
-				continue
-			}
-
-			key := a.StorageKey
-			if a.StrippedStorageKey != "" && (a.Kind == model.KindBinary || a.Kind == model.KindLibrary) {
-				key = a.StrippedStorageKey
-			}
-
-			rc, _, err := o.Store.Get(ctx, key)
-			if err != nil {
-				slog.Error("get artifact for repackaging", "format", rp.Format(), "err", err)
-				continue
-			}
-
-			tmpFile, err := copyToTempFile(rc, o.TempDir, "repackage-*")
-			rc.Close()
-			if err != nil {
-				slog.Error("copy artifact to temp", "err", err)
-				continue
-			}
-			tmpFile.Close()
-
-			m, err := mmap.MapFile(tmpFile.Name())
-			if err != nil {
-				os.Remove(tmpFile.Name())
-				slog.Error("mmap artifact", "err", err)
-				continue
-			}
-
-			input := Input{
-				Project:  project,
-				Release:  release,
-				Artifact: *a,
-				Data:     m,
-				BaseURL:  o.BaseURL,
-			}
-
-			output, err := rp.Repackage(ctx, input)
-			m.Unmap()
-			os.Remove(tmpFile.Name())
-
-			if err != nil {
-				slog.Error("repackage failed", "format", rp.Format(), "artifact", a.ID, "err", err)
-				continue
-			}
-
-			storageKey, size, err := o.Store.Put(ctx, output.Reader)
-			if err != nil {
-				slog.Error("store repackaged artifact", "format", rp.Format(), "err", err)
-				continue
-			}
-
-			metadata := "{}"
-			if output.Metadata != nil {
-				metadata = marshalMetadata(output.Metadata)
-			}
-
-			if err := o.DB.CreatePackagedArtifact(ctx, a.ID, string(rp.Format()), storageKey, size, storageKey, output.Filename, metadata); err != nil {
-				slog.Error("record packaged artifact", "format", rp.Format(), "err", err)
 			}
 		}
 	}
@@ -222,13 +144,3 @@ func copyToTempFile(r io.Reader, dir, prefix string) (*os.File, error) {
 	return f, nil
 }
 
-func marshalMetadata(m map[string]string) string {
-	if len(m) == 0 {
-		return "{}"
-	}
-	data, err := json.Marshal(m)
-	if err != nil {
-		return "{}"
-	}
-	return string(data)
-}

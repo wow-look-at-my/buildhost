@@ -10,6 +10,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -19,6 +20,7 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.BaseURL())
 	})
 	auth.Handle("GET /dl/{project}/latest/{os}/{arch}", parseRoute, handler.DownloadLatest)
 	auth.Handle("GET /dl/{project}/branch/{branch}/{os}/{arch}", parseRoute, handler.DownloadBranch)
@@ -53,6 +55,7 @@ func routeFrom(ctx context.Context) route {
 type Handler struct {
 	DB    *db.DB
 	Store storage.Storage
+	Gen   *repackage.Generator
 }
 
 func handleDBErr(w http.ResponseWriter, r *http.Request, err error) bool {
@@ -138,17 +141,19 @@ func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project 
 		return
 	}
 
-	storageKey, _, _, filename, err := h.DB.GetPackagedArtifact(r.Context(), artifact.ID, format)
-	if errors.Is(err, db.ErrNotFound) {
+	output, err := h.Gen.Generate(r.Context(), repackage.Format(format), *project, *release, *artifact)
+	if err != nil {
 		http.Error(w, "format not available", http.StatusNotFound)
 		return
 	}
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
+	h.serveOutput(w, output)
+}
 
-	h.serveBlob(w, r, storageKey, filename)
+func (h *Handler) serveOutput(w http.ResponseWriter, out *repackage.Output) {
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", out.Filename))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", out.Size))
+	io.Copy(w, out.Reader)
 }
 
 func (h *Handler) serveBlob(w http.ResponseWriter, r *http.Request, key, filename string) {

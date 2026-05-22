@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/testify/require"
 )
 
 func BenchmarkRepackage(b *testing.B) {
@@ -16,11 +17,11 @@ func BenchmarkRepackage(b *testing.B) {
 	}
 
 	input := Input{
-		Project:  model.Project{Name: "go-toolchain", Description: "Go build toolchain"},
-		Release:  model.Release{Version: "1.0.0", VersionNum: 1},
-		Artifact: model.Artifact{OS: model.OSLinux, Arch: model.ArchAMD64, Kind: model.KindBinary},
-		Data:     bin,
-		BaseURL:  "https://example.com",
+		Project:	model.Project{Name: "go-toolchain", Description: "Go build toolchain"},
+		Release:	model.Release{Version: "1.0.0", VersionNum: 1},
+		Artifact:	model.Artifact{OS: model.OSLinux, Arch: model.ArchAMD64, Kind: model.KindBinary},
+		Data:		bin,
+		BaseURL:	"https://example.com",
 	}
 
 	repackagers := []Repackager{
@@ -38,9 +39,8 @@ func BenchmarkRepackage(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				out, err := rp.Repackage(context.Background(), input)
-				if err != nil {
-					b.Fatal(err)
-				}
+				require.Nil(b, err)
+
 				io.Copy(io.Discard, out.Reader)
 			}
 		})
