@@ -9,7 +9,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -72,7 +71,7 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	rt := routeFrom(r.Context())
 
 	var (
-		release *model.Release
+		release *db.Release
 		err     error
 	)
 	if rt.version == "latest" {
@@ -111,7 +110,7 @@ func (h *Handler) DownloadBranch(w http.ResponseWriter, r *http.Request) {
 	h.serveArtifact(w, r, project, release, rt.os, rt.arch)
 }
 
-func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project *model.Project, release *model.Release, osStr, archStr string) {
+func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project *db.Project, release *db.Release, osStr, archStr string) {
 	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, osStr, archStr)
 	if handleDBErr(w, r, err) {
 		return

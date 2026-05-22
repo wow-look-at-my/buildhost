@@ -8,7 +8,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
 func init() {
@@ -47,7 +46,7 @@ func (h *Handler) CreateOIDCPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p := &model.OIDCPolicy{
+	p := &db.OIDCPolicy{
 		Issuer:         req.Issuer,
 		SubjectPattern: req.SubjectPattern,
 		Audience:       req.Audience,
@@ -78,7 +77,7 @@ func (h *Handler) ListOIDCPolicies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if policies == nil {
-		policies = []model.OIDCPolicy{}
+		policies = []db.OIDCPolicy{}
 	}
 
 	jsonResponse(w, http.StatusOK, policies)

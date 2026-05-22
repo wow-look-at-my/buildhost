@@ -5,22 +5,19 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-
-	"github.com/wow-look-at-my/buildhost/internal/db/dbgen"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
 var ErrNotFound = errors.New("not found")
 var ErrConflict = errors.New("already exists")
 
-func (d *DB) CreateProject(ctx context.Context, p *model.Project) error {
-	res, err := d.q.InsertProject(ctx, dbgen.InsertProjectParams{
+func (d *DB) CreateProject(ctx context.Context, p *Project) error {
+	res, err := d.q.InsertProject(ctx, InsertProjectParams{
 		Name:        p.Name,
 		Description: p.Description,
 		Homepage:    p.Homepage,
 		License:     p.License,
 		IsPrivate:   p.IsPrivate,
-		Versioning:  string(p.Versioning),
+		Versioning:  p.Versioning,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -33,7 +30,7 @@ func (d *DB) CreateProject(ctx context.Context, p *model.Project) error {
 	return nil
 }
 
-func (d *DB) GetProject(ctx context.Context, name string) (*model.Project, error) {
+func (d *DB) GetProject(ctx context.Context, name string) (*Project, error) {
 	row, err := d.q.GetProjectByName(ctx, name)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -41,33 +38,11 @@ func (d *DB) GetProject(ctx context.Context, name string) (*model.Project, error
 	if err != nil {
 		return nil, fmt.Errorf("get project: %w", err)
 	}
-	return projectFromRow(row), nil
+	return &row, nil
 }
 
-func (d *DB) ListProjects(ctx context.Context) ([]model.Project, error) {
-	rows, err := d.q.ListAllProjects(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list projects: %w", err)
-	}
-	projects := make([]model.Project, len(rows))
-	for i, row := range rows {
-		projects[i] = *projectFromRow(row)
-	}
-	return projects, nil
-}
-
-func projectFromRow(row dbgen.Project) *model.Project {
-	return &model.Project{
-		ID:          row.ID,
-		Name:        row.Name,
-		Description: row.Description,
-		Homepage:    row.Homepage,
-		License:     row.License,
-		IsPrivate:   row.IsPrivate,
-		Versioning:  model.Versioning(row.Versioning),
-		CreatedAt:   row.CreatedAt,
-		UpdatedAt:   row.UpdatedAt,
-	}
+func (d *DB) ListProjects(ctx context.Context) ([]Project, error) {
+	return d.q.ListAllProjects(ctx)
 }
 
 func isUniqueViolation(err error) bool {

@@ -11,7 +11,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
@@ -32,7 +31,7 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 
 // withRoute adds project and route info to the request context, simulating
 // what the auth middleware does in production.
-func withRoute(r *http.Request, project *model.Project, rt route) *http.Request {
+func withRoute(r *http.Request, project *db.Project, rt route) *http.Request {
 	ctx := auth.WithProject(r.Context(), project)
 	ctx = auth.WithRouteInfo(ctx, rt)
 	return r.WithContext(ctx)
@@ -42,9 +41,9 @@ func TestServeHTTP_PackageInfo_Success(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -67,10 +66,10 @@ func TestServeHTTP_PackageInfo_UnpublishedSkipped(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp2", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp2", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 	// Create unpublished release.
-	require.NoError(t, d.CreateRelease(ctx, &model.Release{ProjectID: proj.ID, Version: "1.0.0-rc1", VersionNum: 1}))
+	require.NoError(t, d.CreateRelease(ctx, &db.Release{ProjectID: proj.ID, Version: "1.0.0-rc1", VersionNum: 1}))
 
 	req := httptest.NewRequest("GET", "/@buildhost/myapp2", nil)
 	req = withRoute(req, proj, route{project: "myapp2"})
@@ -88,7 +87,7 @@ func TestServeHTTP_Tarball_NotFound(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "nonexistent", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "nonexistent", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/@buildhost/nonexistent/-/nonexistent-1.0.0.tgz", nil)
@@ -103,17 +102,17 @@ func TestServeHTTP_Tarball_Success(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	binaryKey, binarySize, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
-	a := &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: binaryKey, Size: binarySize, SHA256: binaryKey,
+	a := &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: binaryKey, Size: binarySize, SHA256: binaryKey,
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -141,9 +140,9 @@ func TestServeHTTP_PrivateProject_PackageInfo_WithValidContext(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "secret", IsPrivate: true, Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -162,17 +161,17 @@ func TestServeHTTP_PrivateProject_Tarball_WithValidContext(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "secret", IsPrivate: true, Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	binaryKey, binarySize, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
-	a := &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: binaryKey, Size: binarySize, SHA256: binaryKey,
+	a := &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: binaryKey, Size: binarySize, SHA256: binaryKey,
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 

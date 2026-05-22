@@ -5,12 +5,32 @@ sql:
     schema: "internal/db/schema.sql"
     gen:
       go:
-        package: "dbgen"
-        out: "internal/db/dbgen"
+        package: "db"
+        out: "internal/db"
+        emit_json_tags: true
         emit_empty_slices: true
         emit_pointers_for_null_types: true
+        json_tags_case_style: "snake"
+        rename:
+          os: "OS"
+          sha256: "SHA256"
+          stripped_sha256: "StrippedSHA256"
         overrides:
           - column: "projects.is_private"
             go_type: "bool"
           - column: "releases.published"
             go_type: "bool"
+          - column: "projects.versioning"
+            go_type:
+              type: "Versioning"
+          - column: "artifacts.os"
+            go_type:
+              type: "OS"
+          - column: "artifacts.arch"
+            go_type:
+              type: "Arch"
+          - column: "artifacts.kind"
+            go_type:
+              type: "Kind"
+          - column: "api_tokens.token_hash"
+            go_struct_tag: 'json:"-"'

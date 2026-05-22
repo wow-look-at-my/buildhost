@@ -3,7 +3,7 @@
 //   sqlc v1.28.0
 // source: artifacts.sql
 
-package dbgen
+package db
 
 import (
 	"context"
@@ -25,8 +25,8 @@ SELECT EXISTS(
 `
 
 type BlobBelongsToProjectParams struct {
-	ProjectID  int64
-	StorageKey string
+	ProjectID  int64  `json:"project_id"`
+	StorageKey string `json:"storage_key"`
 }
 
 func (q *Queries) BlobBelongsToProject(ctx context.Context, arg BlobBelongsToProjectParams) (int64, error) {
@@ -44,26 +44,26 @@ FROM artifacts WHERE release_id = ? AND os = ? AND arch = ?
 `
 
 type GetArtifactByReleaseOSArchParams struct {
-	ReleaseID int64
-	Os        string
-	Arch      string
+	ReleaseID int64 `json:"release_id"`
+	OS        OS    `json:"os"`
+	Arch      Arch  `json:"arch"`
 }
 
 func (q *Queries) GetArtifactByReleaseOSArch(ctx context.Context, arg GetArtifactByReleaseOSArchParams) (Artifact, error) {
-	row := q.db.QueryRowContext(ctx, getArtifactByReleaseOSArch, arg.ReleaseID, arg.Os, arg.Arch)
+	row := q.db.QueryRowContext(ctx, getArtifactByReleaseOSArch, arg.ReleaseID, arg.OS, arg.Arch)
 	var i Artifact
 	err := row.Scan(
 		&i.ID,
 		&i.ReleaseID,
-		&i.Os,
+		&i.OS,
 		&i.Arch,
 		&i.Kind,
 		&i.StorageKey,
 		&i.Size,
-		&i.Sha256,
+		&i.SHA256,
 		&i.StrippedStorageKey,
 		&i.StrippedSize,
-		&i.StrippedSha256,
+		&i.StrippedSHA256,
 		&i.DebugStorageKey,
 		&i.DebugSize,
 		&i.Filename,
@@ -78,15 +78,15 @@ WHERE artifact_id = ? AND format = ?
 `
 
 type GetPackagedArtifactParams struct {
-	ArtifactID int64
-	Format     string
+	ArtifactID int64  `json:"artifact_id"`
+	Format     string `json:"format"`
 }
 
 type GetPackagedArtifactRow struct {
-	StorageKey string
-	Size       int64
-	Sha256     string
-	Filename   string
+	StorageKey string `json:"storage_key"`
+	Size       int64  `json:"size"`
+	SHA256     string `json:"sha256"`
+	Filename   string `json:"filename"`
 }
 
 func (q *Queries) GetPackagedArtifact(ctx context.Context, arg GetPackagedArtifactParams) (GetPackagedArtifactRow, error) {
@@ -95,7 +95,7 @@ func (q *Queries) GetPackagedArtifact(ctx context.Context, arg GetPackagedArtifa
 	err := row.Scan(
 		&i.StorageKey,
 		&i.Size,
-		&i.Sha256,
+		&i.SHA256,
 		&i.Filename,
 	)
 	return i, err
@@ -107,25 +107,25 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertArtifactParams struct {
-	ReleaseID  int64
-	Os         string
-	Arch       string
-	Kind       string
-	StorageKey string
-	Size       int64
-	Sha256     string
-	Filename   string
+	ReleaseID  int64  `json:"release_id"`
+	OS         OS     `json:"os"`
+	Arch       Arch   `json:"arch"`
+	Kind       Kind   `json:"kind"`
+	StorageKey string `json:"storage_key"`
+	Size       int64  `json:"size"`
+	SHA256     string `json:"sha256"`
+	Filename   string `json:"filename"`
 }
 
 func (q *Queries) InsertArtifact(ctx context.Context, arg InsertArtifactParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, insertArtifact,
 		arg.ReleaseID,
-		arg.Os,
+		arg.OS,
 		arg.Arch,
 		arg.Kind,
 		arg.StorageKey,
 		arg.Size,
-		arg.Sha256,
+		arg.SHA256,
 		arg.Filename,
 	)
 }
@@ -149,15 +149,15 @@ func (q *Queries) ListArtifactsByRelease(ctx context.Context, releaseID int64) (
 		if err := rows.Scan(
 			&i.ID,
 			&i.ReleaseID,
-			&i.Os,
+			&i.OS,
 			&i.Arch,
 			&i.Kind,
 			&i.StorageKey,
 			&i.Size,
-			&i.Sha256,
+			&i.SHA256,
 			&i.StrippedStorageKey,
 			&i.StrippedSize,
-			&i.StrippedSha256,
+			&i.StrippedSHA256,
 			&i.DebugStorageKey,
 			&i.DebugSize,
 			&i.Filename,
@@ -183,19 +183,19 @@ WHERE id = ?
 `
 
 type UpdateArtifactStrippedParams struct {
-	StrippedStorageKey string
-	StrippedSize       int64
-	StrippedSha256     string
-	DebugStorageKey    string
-	DebugSize          int64
-	ID                 int64
+	StrippedStorageKey string `json:"stripped_storage_key"`
+	StrippedSize       int64  `json:"stripped_size"`
+	StrippedSHA256     string `json:"stripped_sha256"`
+	DebugStorageKey    string `json:"debug_storage_key"`
+	DebugSize          int64  `json:"debug_size"`
+	ID                 int64  `json:"id"`
 }
 
 func (q *Queries) UpdateArtifactStripped(ctx context.Context, arg UpdateArtifactStrippedParams) error {
 	_, err := q.db.ExecContext(ctx, updateArtifactStripped,
 		arg.StrippedStorageKey,
 		arg.StrippedSize,
-		arg.StrippedSha256,
+		arg.StrippedSHA256,
 		arg.DebugStorageKey,
 		arg.DebugSize,
 		arg.ID,
@@ -209,13 +209,13 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type UpsertPackagedArtifactParams struct {
-	ArtifactID int64
-	Format     string
-	StorageKey string
-	Size       int64
-	Sha256     string
-	Filename   string
-	Metadata   string
+	ArtifactID int64  `json:"artifact_id"`
+	Format     string `json:"format"`
+	StorageKey string `json:"storage_key"`
+	Size       int64  `json:"size"`
+	SHA256     string `json:"sha256"`
+	Filename   string `json:"filename"`
+	Metadata   string `json:"metadata"`
 }
 
 func (q *Queries) UpsertPackagedArtifact(ctx context.Context, arg UpsertPackagedArtifactParams) error {
@@ -224,7 +224,7 @@ func (q *Queries) UpsertPackagedArtifact(ctx context.Context, arg UpsertPackaged
 		arg.Format,
 		arg.StorageKey,
 		arg.Size,
-		arg.Sha256,
+		arg.SHA256,
 		arg.Filename,
 		arg.Metadata,
 	)

@@ -5,13 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-
-	"github.com/wow-look-at-my/buildhost/internal/db/dbgen"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
-func (d *DB) CreateRelease(ctx context.Context, r *model.Release) error {
-	res, err := d.q.InsertRelease(ctx, dbgen.InsertReleaseParams{
+func (d *DB) CreateRelease(ctx context.Context, r *Release) error {
+	res, err := d.q.InsertRelease(ctx, InsertReleaseParams{
 		ProjectID:  r.ProjectID,
 		Version:    r.Version,
 		VersionNum: r.VersionNum,
@@ -41,8 +38,8 @@ func (d *DB) NextVersionNum(ctx context.Context, projectID int64) (int64, error)
 	return maxNum + 1, nil
 }
 
-func (d *DB) GetRelease(ctx context.Context, projectID int64, version string) (*model.Release, error) {
-	row, err := d.q.GetReleaseByProjectAndVersion(ctx, dbgen.GetReleaseByProjectAndVersionParams{
+func (d *DB) GetRelease(ctx context.Context, projectID int64, version string) (*Release, error) {
+	row, err := d.q.GetReleaseByProjectAndVersion(ctx, GetReleaseByProjectAndVersionParams{
 		ProjectID: projectID,
 		Version:   version,
 	})
@@ -52,10 +49,10 @@ func (d *DB) GetRelease(ctx context.Context, projectID int64, version string) (*
 	if err != nil {
 		return nil, fmt.Errorf("get release: %w", err)
 	}
-	return releaseFromRow(row), nil
+	return &row, nil
 }
 
-func (d *DB) GetLatestRelease(ctx context.Context, projectID int64) (*model.Release, error) {
+func (d *DB) GetLatestRelease(ctx context.Context, projectID int64) (*Release, error) {
 	row, err := d.q.GetLatestPublishedRelease(ctx, projectID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -63,11 +60,11 @@ func (d *DB) GetLatestRelease(ctx context.Context, projectID int64) (*model.Rele
 	if err != nil {
 		return nil, fmt.Errorf("get latest release: %w", err)
 	}
-	return releaseFromRow(row), nil
+	return &row, nil
 }
 
-func (d *DB) GetLatestReleaseByBranch(ctx context.Context, projectID int64, branch string) (*model.Release, error) {
-	row, err := d.q.GetLatestPublishedReleaseByBranch(ctx, dbgen.GetLatestPublishedReleaseByBranchParams{
+func (d *DB) GetLatestReleaseByBranch(ctx context.Context, projectID int64, branch string) (*Release, error) {
+	row, err := d.q.GetLatestPublishedReleaseByBranch(ctx, GetLatestPublishedReleaseByBranchParams{
 		ProjectID: projectID,
 		GitBranch: branch,
 	})
@@ -77,36 +74,13 @@ func (d *DB) GetLatestReleaseByBranch(ctx context.Context, projectID int64, bran
 	if err != nil {
 		return nil, fmt.Errorf("get latest release by branch: %w", err)
 	}
-	return releaseFromRow(row), nil
+	return &row, nil
 }
 
-func (d *DB) ListReleases(ctx context.Context, projectID int64) ([]model.Release, error) {
-	rows, err := d.q.ListReleasesByProject(ctx, projectID)
-	if err != nil {
-		return nil, fmt.Errorf("list releases: %w", err)
-	}
-	releases := make([]model.Release, len(rows))
-	for i, row := range rows {
-		releases[i] = *releaseFromRow(row)
-	}
-	return releases, nil
+func (d *DB) ListReleases(ctx context.Context, projectID int64) ([]Release, error) {
+	return d.q.ListReleasesByProject(ctx, projectID)
 }
 
 func (d *DB) PublishRelease(ctx context.Context, releaseID int64) error {
 	return d.q.PublishRelease(ctx, releaseID)
-}
-
-func releaseFromRow(row dbgen.Release) *model.Release {
-	return &model.Release{
-		ID:          row.ID,
-		ProjectID:   row.ProjectID,
-		Version:     row.Version,
-		VersionNum:  row.VersionNum,
-		GitBranch:   row.GitBranch,
-		GitCommit:   row.GitCommit,
-		Notes:       row.Notes,
-		Published:   row.Published,
-		CreatedAt:   row.CreatedAt,
-		PublishedAt: row.PublishedAt,
-	}
 }

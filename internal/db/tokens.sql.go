@@ -3,7 +3,7 @@
 //   sqlc v1.28.0
 // source: tokens.sql
 
-package dbgen
+package db
 
 import (
 	"context"
@@ -47,11 +47,11 @@ VALUES (?, ?, ?, ?, ?)
 `
 
 type InsertTokenParams struct {
-	Name        string
-	TokenHash   string
-	TokenPrefix string
-	ProjectID   *int64
-	Scopes      string
+	Name        string `json:"name"`
+	TokenHash   string `json:"-"`
+	TokenPrefix string `json:"token_prefix"`
+	ProjectID   *int64 `json:"project_id"`
+	Scopes      string `json:"scopes"`
 }
 
 func (q *Queries) InsertToken(ctx context.Context, arg InsertTokenParams) (sql.Result, error) {
@@ -70,14 +70,14 @@ FROM api_tokens ORDER BY created_at DESC
 `
 
 type ListAllTokensRow struct {
-	ID          int64
-	Name        string
-	TokenPrefix string
-	ProjectID   *int64
-	Scopes      string
-	ExpiresAt   *time.Time
-	CreatedAt   time.Time
-	LastUsedAt  *time.Time
+	ID          int64      `json:"id"`
+	Name        string     `json:"name"`
+	TokenPrefix string     `json:"token_prefix"`
+	ProjectID   *int64     `json:"project_id"`
+	Scopes      string     `json:"scopes"`
+	ExpiresAt   *time.Time `json:"expires_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+	LastUsedAt  *time.Time `json:"last_used_at"`
 }
 
 func (q *Queries) ListAllTokens(ctx context.Context) ([]ListAllTokensRow, error) {

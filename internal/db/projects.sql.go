@@ -3,7 +3,7 @@
 //   sqlc v1.28.0
 // source: projects.sql
 
-package dbgen
+package db
 
 import (
 	"context"
@@ -38,12 +38,12 @@ VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type InsertProjectParams struct {
-	Name        string
-	Description string
-	Homepage    string
-	License     string
-	IsPrivate   bool
-	Versioning  string
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	Homepage    string     `json:"homepage"`
+	License     string     `json:"license"`
+	IsPrivate   bool       `json:"is_private"`
+	Versioning  Versioning `json:"versioning"`
 }
 
 func (q *Queries) InsertProject(ctx context.Context, arg InsertProjectParams) (sql.Result, error) {

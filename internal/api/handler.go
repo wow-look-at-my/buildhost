@@ -8,7 +8,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
@@ -71,7 +70,7 @@ func jsonError(w http.ResponseWriter, status int, msg string) {
 	jsonResponse(w, status, map[string]string{"error": msg})
 }
 
-func (h *Handler) requireWrite(w http.ResponseWriter, r *http.Request) *model.APIToken {
+func (h *Handler) requireWrite(w http.ResponseWriter, r *http.Request) *db.APIToken {
 	t := auth.TokenFrom(r.Context())
 	if t == nil || !t.HasScope("write") {
 		jsonError(w, http.StatusUnauthorized, "authentication required")
@@ -80,7 +79,7 @@ func (h *Handler) requireWrite(w http.ResponseWriter, r *http.Request) *model.AP
 	return t
 }
 
-func (h *Handler) requireGlobalWrite(w http.ResponseWriter, r *http.Request) *model.APIToken {
+func (h *Handler) requireGlobalWrite(w http.ResponseWriter, r *http.Request) *db.APIToken {
 	t := auth.TokenFrom(r.Context())
 	if t == nil || !t.HasScope("write") || !t.IsGlobal() {
 		jsonError(w, http.StatusForbidden, "global write token required")
@@ -89,7 +88,7 @@ func (h *Handler) requireGlobalWrite(w http.ResponseWriter, r *http.Request) *mo
 	return t
 }
 
-func (h *Handler) getRelease(w http.ResponseWriter, r *http.Request, projectID int64, version string) *model.Release {
+func (h *Handler) getRelease(w http.ResponseWriter, r *http.Request, projectID int64, version string) *db.Release {
 	rel, err := h.DB.GetRelease(r.Context(), projectID, version)
 	if err != nil {
 		if err == db.ErrNotFound {
@@ -109,7 +108,7 @@ func validateScopes(w http.ResponseWriter, scopes string) string {
 	var parts []string
 	for _, s := range strings.Split(scopes, ",") {
 		s = strings.TrimSpace(s)
-		if !model.ValidScopes[s] {
+		if !db.ValidScopes[s] {
 			jsonError(w, http.StatusBadRequest, "invalid scope: "+s)
 			return ""
 		}

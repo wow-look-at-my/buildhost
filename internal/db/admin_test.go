@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
 )
@@ -21,24 +21,24 @@ func TestGetDashboardStats_Empty(t *testing.T) {
 	assert.Equal(t, int64(0), stats.ArtifactCount)
 	assert.Equal(t, int64(0), stats.TotalStorageBytes)
 	assert.Equal(t, int64(0), stats.TokenCount)
-	assert.Equal(t, int64(0), stats.OIDCPolicyCount)
+	assert.Equal(t, int64(0), stats.OidcPolicyCount)
 }
 
 func TestGetDashboardStats_WithData(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	p := &model.Project{Name: "statsproject", Versioning: model.VersioningAuto}
+	p := &Project{Name: "statsproject", Versioning: VersioningAuto}
 	require.NoError(t, d.CreateProject(ctx, p))
 
-	r := &model.Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1}
+	r := &Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1}
 	require.NoError(t, d.CreateRelease(ctx, r))
 
-	a := &model.Artifact{
+	a := &Artifact{
 		ReleaseID:  r.ID,
-		OS:         model.OSLinux,
-		Arch:       model.ArchAMD64,
-		Kind:       model.KindBinary,
+		OS:         OSLinux,
+		Arch:       ArchAMD64,
+		Kind:       KindBinary,
 		StorageKey: "abc",
 		Size:       4096,
 		SHA256:     "deadbeef",
@@ -48,7 +48,7 @@ func TestGetDashboardStats_WithData(t *testing.T) {
 	_, _, err := d.CreateToken(ctx, "tok", nil, "read")
 	require.NoError(t, err)
 
-	require.NoError(t, d.CreateOIDCPolicy(ctx, &model.OIDCPolicy{
+	require.NoError(t, d.CreateOIDCPolicy(ctx, &OIDCPolicy{
 		Issuer:         "https://token.actions.githubusercontent.com",
 		SubjectPattern: "repo:org/repo:*",
 		Scopes:         "read",
@@ -62,18 +62,18 @@ func TestGetDashboardStats_WithData(t *testing.T) {
 	assert.Equal(t, int64(1), stats.ArtifactCount)
 	assert.Equal(t, int64(4096), stats.TotalStorageBytes)
 	assert.Equal(t, int64(1), stats.TokenCount)
-	assert.Equal(t, int64(1), stats.OIDCPolicyCount)
+	assert.Equal(t, int64(1), stats.OidcPolicyCount)
 }
 
 func TestListRecentReleases(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	p := &model.Project{Name: "recentproj", Versioning: model.VersioningAuto}
+	p := &Project{Name: "recentproj", Versioning: VersioningAuto}
 	require.NoError(t, d.CreateProject(ctx, p))
 
 	for i, v := range []string{"1.0.0", "2.0.0", "3.0.0"} {
-		r := &model.Release{ProjectID: p.ID, Version: v, VersionNum: int64(i + 1)}
+		r := &Release{ProjectID: p.ID, Version: v, VersionNum: int64(i + 1)}
 		require.NoError(t, d.CreateRelease(ctx, r))
 	}
 
@@ -95,19 +95,19 @@ func TestListProjectSummaries(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	p := &model.Project{Name: "alpha", Versioning: model.VersioningAuto}
+	p := &Project{Name: "alpha", Versioning: VersioningAuto}
 	require.NoError(t, d.CreateProject(ctx, p))
 
-	r := &model.Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1}
+	r := &Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1}
 	require.NoError(t, d.CreateRelease(ctx, r))
 
-	a := &model.Artifact{
-		ReleaseID: r.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: "k", Size: 100, SHA256: "h",
+	a := &Artifact{
+		ReleaseID: r.ID, OS: OSLinux, Arch: ArchAMD64,
+		Kind: KindBinary, StorageKey: "k", Size: 100, SHA256: "h",
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	p2 := &model.Project{Name: "beta", Versioning: model.VersioningSemver}
+	p2 := &Project{Name: "beta", Versioning: VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, p2))
 
 	summaries, err := d.ListProjectSummaries(ctx)
@@ -127,15 +127,15 @@ func TestListReleaseSummaries(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	p := &model.Project{Name: "relsum", Versioning: model.VersioningAuto}
+	p := &Project{Name: "relsum", Versioning: VersioningAuto}
 	require.NoError(t, d.CreateProject(ctx, p))
 
-	r := &model.Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1, GitBranch: "main"}
+	r := &Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1, GitBranch: "main"}
 	require.NoError(t, d.CreateRelease(ctx, r))
 
-	a := &model.Artifact{
-		ReleaseID: r.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: "k", Size: 50, SHA256: "h",
+	a := &Artifact{
+		ReleaseID: r.ID, OS: OSLinux, Arch: ArchAMD64,
+		Kind: KindBinary, StorageKey: "k", Size: 50, SHA256: "h",
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -150,7 +150,7 @@ func TestListTokenDetails(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	p := &model.Project{Name: "tokproj", Versioning: model.VersioningAuto}
+	p := &Project{Name: "tokproj", Versioning: VersioningAuto}
 	require.NoError(t, d.CreateProject(ctx, p))
 
 	_, _, err := d.CreateToken(ctx, "global-tok", nil, "read,write")
@@ -181,18 +181,18 @@ func TestListOIDCPolicyDetails(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	p := &model.Project{Name: "oidcproj", Versioning: model.VersioningAuto}
+	p := &Project{Name: "oidcproj", Versioning: VersioningAuto}
 	require.NoError(t, d.CreateProject(ctx, p))
 
 	pid := p.ID
-	require.NoError(t, d.CreateOIDCPolicy(ctx, &model.OIDCPolicy{
+	require.NoError(t, d.CreateOIDCPolicy(ctx, &OIDCPolicy{
 		Issuer:         "https://token.actions.githubusercontent.com",
 		SubjectPattern: "repo:org/repo:*",
 		ProjectID:      &pid,
 		Scopes:         "read,write",
 	}))
 
-	require.NoError(t, d.CreateOIDCPolicy(ctx, &model.OIDCPolicy{
+	require.NoError(t, d.CreateOIDCPolicy(ctx, &OIDCPolicy{
 		Issuer:         "https://accounts.google.com",
 		SubjectPattern: "*",
 		Scopes:         "read",

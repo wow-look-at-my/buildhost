@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 var ErrOIDCNotMatched = errors.New("no matching OIDC policy")
@@ -56,25 +56,25 @@ func LooksLikeJWT(token string) bool {
 	return len(parts) == 3 && len(token) > 100
 }
 
-func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []model.OIDCPolicy) (*model.APIToken, error) {
+func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []db.OIDCPolicy) (*db.APIToken, string, error) {
 	unverified := &oidcClaims{}
 	_, _, err := jwt.NewParser().ParseUnverified(raw, unverified)
 	if err != nil {
-		return nil, fmt.Errorf("parse token: %w", err)
+		return nil, "", fmt.Errorf("parse token: %w", err)
 	}
 
 	if unverified.ExpiresAt == nil {
-		return nil, errors.New("token missing exp claim")
+		return nil, "", errors.New("token missing exp claim")
 	}
 	now := time.Now()
 	if now.After(unverified.ExpiresAt.Time.Add(oidcLeeway)) {
-		return nil, errors.New("token expired")
+		return nil, "", errors.New("token expired")
 	}
 	if unverified.NotBefore != nil && now.Before(unverified.NotBefore.Time.Add(-oidcLeeway)) {
-		return nil, errors.New("token not yet valid")
+		return nil, "", errors.New("token not yet valid")
 	}
 
-	var matchedPolicy *model.OIDCPolicy
+	var matchedPolicy *db.OIDCPolicy
 	for i := range policies {
 		p := &policies[i]
 		if p.Issuer != unverified.Issuer {
@@ -88,17 +88,17 @@ func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []m
 	if matchedPolicy != nil && matchedPolicy.Audience != "" {
 		aud, _ := unverified.GetAudience()
 		if !slices.Contains(aud, matchedPolicy.Audience) {
-			return nil, errors.New("token audience does not match policy")
+			return nil, "", errors.New("token audience does not match policy")
 		}
 	}
 
 	if matchedPolicy == nil && !slices.Contains(v.trustedIssuers, unverified.Issuer) {
-		return nil, ErrOIDCNotMatched
+		return nil, "", ErrOIDCNotMatched
 	}
 
 	keys, err := v.getKeys(ctx, unverified.Issuer)
 	if err != nil {
-		return nil, fmt.Errorf("fetch JWKS: %w", err)
+		return nil, "", fmt.Errorf("fetch JWKS: %w", err)
 	}
 
 	token, err := jwt.ParseWithClaims(raw, &oidcClaims{}, func(t *jwt.Token) (any, error) {
@@ -114,39 +114,38 @@ func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []m
 		return nil, errors.New("no matching key found")
 	}, jwt.WithLeeway(oidcLeeway), jwt.WithExpirationRequired())
 	if err != nil {
-		return nil, fmt.Errorf("verify token: %w", err)
+		return nil, "", fmt.Errorf("verify token: %w", err)
 	}
 
 	verified := token.Claims.(*oidcClaims)
 
 	if matchedPolicy != nil {
-		return &model.APIToken{
+		return &db.APIToken{
 			ID:        -1,
 			Name:      "oidc:" + verified.Subject,
 			ProjectID: matchedPolicy.ProjectID,
 			Scopes:    matchedPolicy.Scopes,
-		}, nil
+		}, "", nil
 	}
 
 	org := orgFromSubject(verified.Subject)
 	if !slices.Contains(v.allowedOrgs, "*") && !slices.Contains(v.allowedOrgs, org) {
-		return nil, fmt.Errorf("org %q not in allowed list", org)
+		return nil, "", fmt.Errorf("org %q not in allowed list", org)
 	}
 
 	if verified.EventName != "" && !slices.Contains(v.allowedEvents, "*") && !slices.Contains(v.allowedEvents, verified.EventName) {
-		return nil, fmt.Errorf("event %q not in allowed list", verified.EventName)
+		return nil, "", fmt.Errorf("event %q not in allowed list", verified.EventName)
 	}
 
 	project := projectFromSubject(verified.Subject)
 	if project == "" {
-		return nil, errors.New("cannot derive project name from OIDC subject")
+		return nil, "", errors.New("cannot derive project name from OIDC subject")
 	}
-	return &model.APIToken{
-		ID:          -1,
-		Name:        "oidc:" + verified.Subject,
-		Scopes:      "read,write",
-		OIDCProject: project,
-	}, nil
+	return &db.APIToken{
+		ID:     -1,
+		Name:   "oidc:" + verified.Subject,
+		Scopes: "read,write",
+	}, project, nil
 }
 
 func (v *OIDCVerifier) getKeys(ctx context.Context, issuer string) ([]jwkKey, error) {

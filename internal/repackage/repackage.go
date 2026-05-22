@@ -9,7 +9,6 @@ import (
 	"os"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/buildhost/internal/strip"
 	"github.com/wow-look-at-my/go-mmap"
@@ -29,9 +28,9 @@ const (
 )
 
 type Input struct {
-	Project  model.Project
-	Release  model.Release
-	Artifact model.Artifact
+	Project  db.Project
+	Release  db.Release
+	Artifact db.Artifact
 	Data     []byte
 	BaseURL  string
 }
@@ -45,7 +44,7 @@ type Output struct {
 
 type Repackager interface {
 	Format() Format
-	Applicable(artifact model.Artifact) bool
+	Applicable(artifact db.Artifact) bool
 	Repackage(ctx context.Context, input Input) (*Output, error)
 }
 
@@ -76,7 +75,7 @@ func NewOrchestrator(store storage.Storage, database *db.DB, baseURL, tempDir st
 	}
 }
 
-func (o *Orchestrator) PublishRelease(ctx context.Context, project model.Project, release model.Release) error {
+func (o *Orchestrator) PublishRelease(ctx context.Context, project db.Project, release db.Release) error {
 	artifacts, err := o.DB.ListArtifacts(ctx, release.ID)
 	if err != nil {
 		return fmt.Errorf("list artifacts: %w", err)
@@ -85,7 +84,7 @@ func (o *Orchestrator) PublishRelease(ctx context.Context, project model.Project
 	for i := range artifacts {
 		a := &artifacts[i]
 
-		if (a.Kind == model.KindBinary || a.Kind == model.KindLibrary) && strip.Available() {
+		if (a.Kind == db.KindBinary || a.Kind == db.KindLibrary) && strip.Available() {
 			if err := o.stripArtifact(ctx, a); err != nil {
 				slog.Warn("strip failed, using original", "artifact", a.ID, "err", err)
 			}
@@ -97,7 +96,7 @@ func (o *Orchestrator) PublishRelease(ctx context.Context, project model.Project
 			}
 
 			key := a.StorageKey
-			if a.StrippedStorageKey != "" && (a.Kind == model.KindBinary || a.Kind == model.KindLibrary) {
+			if a.StrippedStorageKey != "" && (a.Kind == db.KindBinary || a.Kind == db.KindLibrary) {
 				key = a.StrippedStorageKey
 			}
 
@@ -159,7 +158,7 @@ func (o *Orchestrator) PublishRelease(ctx context.Context, project model.Project
 	return o.DB.PublishRelease(ctx, release.ID)
 }
 
-func (o *Orchestrator) stripArtifact(ctx context.Context, a *model.Artifact) error {
+func (o *Orchestrator) stripArtifact(ctx context.Context, a *db.Artifact) error {
 	rc, _, err := o.Store.Get(ctx, a.StorageKey)
 	if err != nil {
 		return err

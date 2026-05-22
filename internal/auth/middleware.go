@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
 type Middleware struct {
@@ -20,8 +19,12 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 		if raw != "" {
 			if LooksLikeJWT(raw) && m.Verifier != nil {
 				policies, _ := m.DB.ListOIDCPolicies(r.Context())
-				if token, err := m.Verifier.VerifyToken(r.Context(), raw, policies); err == nil {
-					r = r.WithContext(WithToken(r.Context(), token))
+				if token, oidcProject, err := m.Verifier.VerifyToken(r.Context(), raw, policies); err == nil {
+					ctx := WithToken(r.Context(), token)
+					if oidcProject != "" {
+						ctx = WithOIDCProject(ctx, oidcProject)
+					}
+					r = r.WithContext(ctx)
 					next.ServeHTTP(w, r)
 					return
 				} else {
@@ -64,13 +67,14 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			project, err := mw.DB.GetProject(r.Context(), ri.ProjectName())
 			if errors.Is(err, db.ErrNotFound) {
 				t := TokenFrom(r.Context())
-				if t == nil || t.OIDCProject == "" || t.OIDCProject != ri.ProjectName() {
+				oidcProject := OIDCProjectFrom(r.Context())
+				if t == nil || oidcProject == "" || oidcProject != ri.ProjectName() {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusNotFound)
 					w.Write([]byte(`{"error":"project not found"}`))
 					return
 				}
-				project = &model.Project{Name: ri.ProjectName(), Versioning: model.VersioningAuto}
+				project = &db.Project{Name: ri.ProjectName(), Versioning: db.VersioningAuto}
 				createErr := mw.DB.CreateProject(r.Context(), project)
 				if createErr != nil && !errors.Is(createErr, db.ErrConflict) {
 					http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
@@ -97,7 +101,8 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 					http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
 					return
 				}
-				if !t.AuthorizedForProject(project.ID) || !t.AuthorizedForProjectName(project.Name) {
+				oidcProject := OIDCProjectFrom(r.Context())
+				if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && oidcProject != project.Name) {
 					http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
 					return
 				}
@@ -107,7 +112,8 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
 						return
 					}
-					if !t.AuthorizedForProject(project.ID) || !t.AuthorizedForProjectName(project.Name) {
+					oidcProject := OIDCProjectFrom(r.Context())
+					if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && oidcProject != project.Name) {
 						http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
 						return
 					}

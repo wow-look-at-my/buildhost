@@ -9,7 +9,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
 func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath string) {
@@ -33,7 +32,7 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 	}
 
 	goArch := goArchFromDeb(arch)
-	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, string(model.OSLinux), goArch)
+	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, string(db.OSLinux), goArch)
 	if errors.Is(err, db.ErrNotFound) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte(""))
@@ -99,7 +98,7 @@ func (h *Handler) servePool(w http.ResponseWriter, r *http.Request, subpath stri
 	debArch := extractDebArch(r.URL.Path)
 
 	for _, a := range artifacts {
-		if a.OS != model.OSLinux {
+		if a.OS != db.OSLinux {
 			continue
 		}
 		if debArch != "" && goArchFromDeb(debArch) != string(a.Arch) {

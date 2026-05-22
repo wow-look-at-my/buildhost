@@ -10,7 +10,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -76,7 +76,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.servePackageInfo(w, r, project)
 }
 
-func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, project *model.Project) {
+func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, project *db.Project) {
 	projectName := project.Name
 
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)
@@ -120,7 +120,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 	json.NewEncoder(w).Encode(info)
 }
 
-func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, project *model.Project, filename string) {
+func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, project *db.Project, filename string) {
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)

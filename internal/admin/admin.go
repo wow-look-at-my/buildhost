@@ -286,7 +286,7 @@ func (s *Server) handleRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	artifacts, err := s.db.ListArtifactDetails(ctx, release.ID)
+	rows, pkgs, err := s.db.ListArtifactDetails(ctx, release.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -298,8 +298,14 @@ func (s *Server) handleRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	type artifactView struct {
+		db.ListArtifactDetailsWithDownloadsRow
+		Packages []db.ListPackagedFormatsRow
+	}
+	artifacts := make([]artifactView, len(rows))
 	var totalSize int64
-	for _, a := range artifacts {
+	for i, a := range rows {
+		artifacts[i] = artifactView{a, pkgs[i]}
 		totalSize += a.Size
 	}
 

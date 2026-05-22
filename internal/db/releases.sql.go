@@ -3,7 +3,7 @@
 //   sqlc v1.28.0
 // source: releases.sql
 
-package dbgen
+package db
 
 import (
 	"context"
@@ -41,8 +41,8 @@ ORDER BY version_num DESC LIMIT 1
 `
 
 type GetLatestPublishedReleaseByBranchParams struct {
-	ProjectID int64
-	GitBranch string
+	ProjectID int64  `json:"project_id"`
+	GitBranch string `json:"git_branch"`
 }
 
 func (q *Queries) GetLatestPublishedReleaseByBranch(ctx context.Context, arg GetLatestPublishedReleaseByBranchParams) (Release, error) {
@@ -80,8 +80,8 @@ FROM releases WHERE project_id = ? AND version = ?
 `
 
 type GetReleaseByProjectAndVersionParams struct {
-	ProjectID int64
-	Version   string
+	ProjectID int64  `json:"project_id"`
+	Version   string `json:"version"`
 }
 
 func (q *Queries) GetReleaseByProjectAndVersion(ctx context.Context, arg GetReleaseByProjectAndVersionParams) (Release, error) {
@@ -108,12 +108,12 @@ VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type InsertReleaseParams struct {
-	ProjectID  int64
-	Version    string
-	VersionNum int64
-	GitBranch  string
-	GitCommit  string
-	Notes      string
+	ProjectID  int64  `json:"project_id"`
+	Version    string `json:"version"`
+	VersionNum int64  `json:"version_num"`
+	GitBranch  string `json:"git_branch"`
+	GitCommit  string `json:"git_commit"`
+	Notes      string `json:"notes"`
 }
 
 func (q *Queries) InsertRelease(ctx context.Context, arg InsertReleaseParams) (sql.Result, error) {

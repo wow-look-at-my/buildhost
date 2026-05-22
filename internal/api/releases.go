@@ -14,7 +14,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
 func init() {
@@ -43,7 +42,7 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 	var version string
 	var versionNum int64
 
-	if project.Versioning == model.VersioningAuto {
+	if project.Versioning == db.VersioningAuto {
 		nextNum, err := h.DB.NextVersionNum(r.Context(), project.ID)
 		if err != nil {
 			jsonError(w, http.StatusInternalServerError, "failed to determine next version")
@@ -84,7 +83,7 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rel := &model.Release{
+	rel := &db.Release{
 		ProjectID:  project.ID,
 		Version:    version,
 		VersionNum: versionNum,
@@ -126,7 +125,7 @@ func (h *Handler) ListReleases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if releases == nil {
-		releases = []model.Release{}
+		releases = []db.Release{}
 	}
 
 	jsonResponse(w, http.StatusOK, releases)

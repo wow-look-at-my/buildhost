@@ -5,13 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-
-	"github.com/wow-look-at-my/buildhost/internal/db/dbgen"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
-func (d *DB) CreateOIDCPolicy(ctx context.Context, p *model.OIDCPolicy) error {
-	res, err := d.q.InsertOIDCPolicy(ctx, dbgen.InsertOIDCPolicyParams{
+func (d *DB) CreateOIDCPolicy(ctx context.Context, p *OIDCPolicy) error {
+	res, err := d.q.InsertOIDCPolicy(ctx, InsertOIDCPolicyParams{
 		Issuer:         p.Issuer,
 		SubjectPattern: p.SubjectPattern,
 		Audience:       p.Audience,
@@ -29,20 +26,12 @@ func (d *DB) CreateOIDCPolicy(ctx context.Context, p *model.OIDCPolicy) error {
 	return nil
 }
 
-func (d *DB) ListOIDCPolicies(ctx context.Context) ([]model.OIDCPolicy, error) {
-	rows, err := d.q.ListAllOIDCPolicies(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list oidc policies: %w", err)
-	}
-	return oidcPoliciesFromRows(rows), nil
+func (d *DB) ListOIDCPolicies(ctx context.Context) ([]OIDCPolicy, error) {
+	return d.q.ListAllOIDCPolicies(ctx)
 }
 
-func (d *DB) ListOIDCPoliciesByIssuer(ctx context.Context, issuer string) ([]model.OIDCPolicy, error) {
-	rows, err := d.q.ListOIDCPoliciesByIssuer(ctx, issuer)
-	if err != nil {
-		return nil, fmt.Errorf("list oidc policies by issuer: %w", err)
-	}
-	return oidcPoliciesFromRows(rows), nil
+func (d *DB) ListOIDCPoliciesByIssuer(ctx context.Context, issuer string) ([]OIDCPolicy, error) {
+	return d.q.ListOIDCPoliciesByIssuer(ctx, issuer)
 }
 
 func (d *DB) DeleteOIDCPolicy(ctx context.Context, id int64) error {
@@ -57,7 +46,7 @@ func (d *DB) DeleteOIDCPolicy(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (d *DB) GetOIDCPolicyByID(ctx context.Context, id int64) (*model.OIDCPolicy, error) {
+func (d *DB) GetOIDCPolicyByID(ctx context.Context, id int64) (*OIDCPolicy, error) {
 	row, err := d.q.GetOIDCPolicyByID(ctx, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -65,25 +54,5 @@ func (d *DB) GetOIDCPolicyByID(ctx context.Context, id int64) (*model.OIDCPolicy
 	if err != nil {
 		return nil, fmt.Errorf("get oidc policy: %w", err)
 	}
-	return oidcPolicyFromRow(row), nil
-}
-
-func oidcPolicyFromRow(row dbgen.OidcPolicy) *model.OIDCPolicy {
-	return &model.OIDCPolicy{
-		ID:             row.ID,
-		Issuer:         row.Issuer,
-		SubjectPattern: row.SubjectPattern,
-		Audience:       row.Audience,
-		ProjectID:      row.ProjectID,
-		Scopes:         row.Scopes,
-		CreatedAt:      row.CreatedAt,
-	}
-}
-
-func oidcPoliciesFromRows(rows []dbgen.OidcPolicy) []model.OIDCPolicy {
-	policies := make([]model.OIDCPolicy, len(rows))
-	for i, row := range rows {
-		policies[i] = *oidcPolicyFromRow(row)
-	}
-	return policies
+	return &row, nil
 }

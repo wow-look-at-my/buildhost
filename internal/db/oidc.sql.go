@@ -3,7 +3,7 @@
 //   sqlc v1.28.0
 // source: oidc.sql
 
-package dbgen
+package db
 
 import (
 	"context"
@@ -44,11 +44,11 @@ VALUES (?, ?, ?, ?, ?)
 `
 
 type InsertOIDCPolicyParams struct {
-	Issuer         string
-	SubjectPattern string
-	Audience       string
-	ProjectID      *int64
-	Scopes         string
+	Issuer         string `json:"issuer"`
+	SubjectPattern string `json:"subject_pattern"`
+	Audience       string `json:"audience"`
+	ProjectID      *int64 `json:"project_id"`
+	Scopes         string `json:"scopes"`
 }
 
 func (q *Queries) InsertOIDCPolicy(ctx context.Context, arg InsertOIDCPolicyParams) (sql.Result, error) {

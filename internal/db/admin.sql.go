@@ -3,7 +3,7 @@
 //   sqlc v1.28.0
 // source: admin.sql
 
-package dbgen
+package db
 
 import (
 	"context"
@@ -21,12 +21,12 @@ SELECT
 `
 
 type GetDashboardStatsRow struct {
-	ProjectCount      int64
-	ReleaseCount      int64
-	ArtifactCount     int64
-	TotalStorageBytes int64
-	TokenCount        int64
-	OidcPolicyCount   int64
+	ProjectCount      int64 `json:"project_count"`
+	ReleaseCount      int64 `json:"release_count"`
+	ArtifactCount     int64 `json:"artifact_count"`
+	TotalStorageBytes int64 `json:"total_storage_bytes"`
+	TokenCount        int64 `json:"token_count"`
+	OidcPolicyCount   int64 `json:"oidc_policy_count"`
 }
 
 func (q *Queries) GetDashboardStats(ctx context.Context) (GetDashboardStatsRow, error) {
@@ -52,14 +52,14 @@ ORDER BY o.created_at DESC
 `
 
 type ListOIDCPolicyDetailsRow struct {
-	ID             int64
-	Issuer         string
-	SubjectPattern string
-	Audience       string
-	ProjectID      *int64
-	Scopes         string
-	CreatedAt      time.Time
-	ProjectName    string
+	ID             int64     `json:"id"`
+	Issuer         string    `json:"issuer"`
+	SubjectPattern string    `json:"subject_pattern"`
+	Audience       string    `json:"audience"`
+	ProjectID      *int64    `json:"project_id"`
+	Scopes         string    `json:"scopes"`
+	CreatedAt      time.Time `json:"created_at"`
+	ProjectName    string    `json:"project_name"`
 }
 
 func (q *Queries) ListOIDCPolicyDetails(ctx context.Context) ([]ListOIDCPolicyDetailsRow, error) {
@@ -104,17 +104,17 @@ ORDER BY p.name
 `
 
 type ListProjectSummariesRow struct {
-	ID            int64
-	Name          string
-	Description   string
-	Homepage      string
-	License       string
-	IsPrivate     bool
-	Versioning    string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-	ReleaseCount  int64
-	ArtifactCount int64
+	ID            int64      `json:"id"`
+	Name          string     `json:"name"`
+	Description   string     `json:"description"`
+	Homepage      string     `json:"homepage"`
+	License       string     `json:"license"`
+	IsPrivate     bool       `json:"is_private"`
+	Versioning    Versioning `json:"versioning"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	ReleaseCount  int64      `json:"release_count"`
+	ArtifactCount int64      `json:"artifact_count"`
 }
 
 func (q *Queries) ListProjectSummaries(ctx context.Context) ([]ListProjectSummariesRow, error) {
@@ -162,17 +162,17 @@ LIMIT ?
 `
 
 type ListRecentReleasesRow struct {
-	ID          int64
-	ProjectID   int64
-	Version     string
-	VersionNum  int64
-	GitBranch   string
-	GitCommit   string
-	Notes       string
-	Published   bool
-	CreatedAt   time.Time
-	PublishedAt *time.Time
-	ProjectName string
+	ID          int64      `json:"id"`
+	ProjectID   int64      `json:"project_id"`
+	Version     string     `json:"version"`
+	VersionNum  int64      `json:"version_num"`
+	GitBranch   string     `json:"git_branch"`
+	GitCommit   string     `json:"git_commit"`
+	Notes       string     `json:"notes"`
+	Published   bool       `json:"published"`
+	CreatedAt   time.Time  `json:"created_at"`
+	PublishedAt *time.Time `json:"published_at"`
+	ProjectName string     `json:"project_name"`
 }
 
 func (q *Queries) ListRecentReleases(ctx context.Context, limit int64) ([]ListRecentReleasesRow, error) {
@@ -220,17 +220,17 @@ ORDER BY r.version_num DESC
 `
 
 type ListReleaseSummariesRow struct {
-	ID            int64
-	ProjectID     int64
-	Version       string
-	VersionNum    int64
-	GitBranch     string
-	GitCommit     string
-	Notes         string
-	Published     bool
-	CreatedAt     time.Time
-	PublishedAt   *time.Time
-	ArtifactCount int64
+	ID            int64      `json:"id"`
+	ProjectID     int64      `json:"project_id"`
+	Version       string     `json:"version"`
+	VersionNum    int64      `json:"version_num"`
+	GitBranch     string     `json:"git_branch"`
+	GitCommit     string     `json:"git_commit"`
+	Notes         string     `json:"notes"`
+	Published     bool       `json:"published"`
+	CreatedAt     time.Time  `json:"created_at"`
+	PublishedAt   *time.Time `json:"published_at"`
+	ArtifactCount int64      `json:"artifact_count"`
 }
 
 func (q *Queries) ListReleaseSummaries(ctx context.Context, projectID int64) ([]ListReleaseSummariesRow, error) {
@@ -277,15 +277,15 @@ ORDER BY t.created_at DESC
 `
 
 type ListTokenDetailsRow struct {
-	ID          int64
-	Name        string
-	TokenPrefix string
-	ProjectID   *int64
-	Scopes      string
-	ExpiresAt   *time.Time
-	CreatedAt   time.Time
-	LastUsedAt  *time.Time
-	ProjectName string
+	ID          int64      `json:"id"`
+	Name        string     `json:"name"`
+	TokenPrefix string     `json:"token_prefix"`
+	ProjectID   *int64     `json:"project_id"`
+	Scopes      string     `json:"scopes"`
+	ExpiresAt   *time.Time `json:"expires_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+	LastUsedAt  *time.Time `json:"last_used_at"`
+	ProjectName string     `json:"project_name"`
 }
 
 func (q *Queries) ListTokenDetails(ctx context.Context) ([]ListTokenDetailsRow, error) {

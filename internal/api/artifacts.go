@@ -11,7 +11,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
 func init() {
@@ -53,11 +52,11 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !model.ValidOS(rt.os) {
+	if !db.ValidOS(rt.os) {
 		jsonError(w, http.StatusBadRequest, "invalid os")
 		return
 	}
-	if !model.ValidArch(rt.arch) {
+	if !db.ValidArch(rt.arch) {
 		jsonError(w, http.StatusBadRequest, "invalid arch")
 		return
 	}
@@ -69,7 +68,7 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 	if kind == "" {
 		kind = "binary"
 	}
-	if !model.ValidKind(kind) {
+	if !db.ValidKind(kind) {
 		jsonError(w, http.StatusBadRequest, "invalid kind")
 		return
 	}
@@ -89,11 +88,11 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 
 	filename := sanitizeFilename(r.Header.Get("X-Artifact-Filename"))
 
-	a := &model.Artifact{
+	a := &db.Artifact{
 		ReleaseID:  release.ID,
-		OS:         model.OS(rt.os),
-		Arch:       model.Arch(rt.arch),
-		Kind:       model.Kind(kind),
+		OS:         db.OS(rt.os),
+		Arch:       db.Arch(rt.arch),
+		Kind:       db.Kind(kind),
 		StorageKey: storageKey,
 		Size:       size,
 		SHA256:     sha256hex,

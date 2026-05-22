@@ -3,7 +3,7 @@
 //   sqlc v1.28.0
 // source: download_counts.sql
 
-package dbgen
+package db
 
 import (
 	"context"
@@ -46,22 +46,22 @@ ORDER BY a.os, a.arch, a.kind
 `
 
 type ListArtifactDetailsWithDownloadsRow struct {
-	ID                 int64
-	ReleaseID          int64
-	Os                 string
-	Arch               string
-	Kind               string
-	StorageKey         string
-	Size               int64
-	Sha256             string
-	StrippedStorageKey string
-	StrippedSize       int64
-	StrippedSha256     string
-	DebugStorageKey    string
-	DebugSize          int64
-	Filename           string
-	CreatedAt          time.Time
-	DownloadCount      int64
+	ID                 int64     `json:"id"`
+	ReleaseID          int64     `json:"release_id"`
+	OS                 OS        `json:"os"`
+	Arch               Arch      `json:"arch"`
+	Kind               Kind      `json:"kind"`
+	StorageKey         string    `json:"storage_key"`
+	Size               int64     `json:"size"`
+	SHA256             string    `json:"sha256"`
+	StrippedStorageKey string    `json:"stripped_storage_key"`
+	StrippedSize       int64     `json:"stripped_size"`
+	StrippedSHA256     string    `json:"stripped_sha256"`
+	DebugStorageKey    string    `json:"debug_storage_key"`
+	DebugSize          int64     `json:"debug_size"`
+	Filename           string    `json:"filename"`
+	CreatedAt          time.Time `json:"created_at"`
+	DownloadCount      int64     `json:"download_count"`
 }
 
 func (q *Queries) ListArtifactDetailsWithDownloads(ctx context.Context, releaseID int64) ([]ListArtifactDetailsWithDownloadsRow, error) {
@@ -76,15 +76,15 @@ func (q *Queries) ListArtifactDetailsWithDownloads(ctx context.Context, releaseI
 		if err := rows.Scan(
 			&i.ID,
 			&i.ReleaseID,
-			&i.Os,
+			&i.OS,
 			&i.Arch,
 			&i.Kind,
 			&i.StorageKey,
 			&i.Size,
-			&i.Sha256,
+			&i.SHA256,
 			&i.StrippedStorageKey,
 			&i.StrippedSize,
-			&i.StrippedSha256,
+			&i.StrippedSHA256,
 			&i.DebugStorageKey,
 			&i.DebugSize,
 			&i.Filename,
@@ -110,10 +110,10 @@ WHERE artifact_id = ? ORDER BY format
 `
 
 type ListPackagedFormatsRow struct {
-	Format   string
-	Size     int64
-	Sha256   string
-	Filename string
+	Format   string `json:"format"`
+	Size     int64  `json:"size"`
+	SHA256   string `json:"sha256"`
+	Filename string `json:"filename"`
 }
 
 func (q *Queries) ListPackagedFormats(ctx context.Context, artifactID int64) ([]ListPackagedFormatsRow, error) {
@@ -128,7 +128,7 @@ func (q *Queries) ListPackagedFormats(ctx context.Context, artifactID int64) ([]
 		if err := rows.Scan(
 			&i.Format,
 			&i.Size,
-			&i.Sha256,
+			&i.SHA256,
 			&i.Filename,
 		); err != nil {
 			return nil, err

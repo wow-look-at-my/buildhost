@@ -9,15 +9,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 type NPM struct{}
 
 func (n *NPM) Format() Format { return FormatNPM }
 
-func (n *NPM) Applicable(a model.Artifact) bool {
-	return a.Kind != model.KindLibrary
+func (n *NPM) Applicable(a db.Artifact) bool {
+	return a.Kind != db.KindLibrary
 }
 
 func (n *NPM) Repackage(_ context.Context, input Input) (*Output, error) {
@@ -54,7 +54,7 @@ func (n *NPM) Repackage(_ context.Context, input Input) (*Output, error) {
 	tw.Write([]byte(packageJSON))
 
 	binMode := int64(0o644)
-	if input.Artifact.Kind == model.KindBinary {
+	if input.Artifact.Kind == db.KindBinary {
 		binMode = 0o755
 	}
 	tw.WriteHeader(&tar.Header{
@@ -75,24 +75,24 @@ func (n *NPM) Repackage(_ context.Context, input Input) (*Output, error) {
 	}, nil
 }
 
-func npmPlatform(os model.OS) string {
+func npmPlatform(os db.OS) string {
 	switch os {
-	case model.OSDarwin:
+	case db.OSDarwin:
 		return "darwin"
-	case model.OSWindows:
+	case db.OSWindows:
 		return "win32"
 	default:
 		return string(os)
 	}
 }
 
-func npmArch(a model.Arch) string {
+func npmArch(a db.Arch) string {
 	switch a {
-	case model.ArchAMD64:
+	case db.ArchAMD64:
 		return "x64"
-	case model.ArchARM64:
+	case db.ArchARM64:
 		return "arm64"
-	case model.Arch386:
+	case db.Arch386:
 		return "ia32"
 	default:
 		return string(a)

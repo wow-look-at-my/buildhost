@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
 )
@@ -15,7 +15,7 @@ func TestOIDCPolicy_CRUD(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a policy.
-	p := &model.OIDCPolicy{
+	p := &OIDCPolicy{
 		Issuer:         "https://token.actions.githubusercontent.com",
 		SubjectPattern: "repo:myorg/myrepo:*",
 		Scopes:         "read,write",
@@ -46,7 +46,7 @@ func TestOIDCPolicy_CreateDuplicateReturnsErrConflict(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	p1 := &model.OIDCPolicy{
+	p1 := &OIDCPolicy{
 		Issuer:         "https://token.actions.githubusercontent.com",
 		SubjectPattern: "repo:myorg/myrepo:*",
 		Scopes:         "read",
@@ -54,7 +54,7 @@ func TestOIDCPolicy_CreateDuplicateReturnsErrConflict(t *testing.T) {
 	require.NoError(t, d.CreateOIDCPolicy(ctx, p1))
 
 	// Duplicate issuer+subject_pattern should return ErrConflict.
-	p2 := &model.OIDCPolicy{
+	p2 := &OIDCPolicy{
 		Issuer:         "https://token.actions.githubusercontent.com",
 		SubjectPattern: "repo:myorg/myrepo:*",
 		Scopes:         "write",
@@ -76,11 +76,11 @@ func TestOIDCPolicy_WithProjectScope(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a project to scope the policy to.
-	proj := &model.Project{Name: "scoped", Versioning: model.VersioningAuto}
+	proj := &Project{Name: "scoped", Versioning: VersioningAuto}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	pid := proj.ID
-	p := &model.OIDCPolicy{
+	p := &OIDCPolicy{
 		Issuer:         "https://token.actions.githubusercontent.com",
 		SubjectPattern: "repo:myorg/scoped:*",
 		ProjectID:      &pid,
@@ -108,7 +108,7 @@ func TestOIDCPolicy_ListByIssuer(t *testing.T) {
 		{"https://issuer-a.example.com", "sub:repo-3"},
 	}
 	for _, entry := range policies {
-		p := &model.OIDCPolicy{
+		p := &OIDCPolicy{
 			Issuer:         entry.issuer,
 			SubjectPattern: entry.sub,
 			Scopes:         "read",
@@ -145,14 +145,14 @@ func TestOIDCPolicy_DifferentSubjectPatternAllowed(t *testing.T) {
 	ctx := context.Background()
 
 	// Same issuer but different subject_pattern should succeed.
-	p1 := &model.OIDCPolicy{
+	p1 := &OIDCPolicy{
 		Issuer:         "https://token.actions.githubusercontent.com",
 		SubjectPattern: "repo:myorg/repo-a:*",
 		Scopes:         "read",
 	}
 	require.NoError(t, d.CreateOIDCPolicy(ctx, p1))
 
-	p2 := &model.OIDCPolicy{
+	p2 := &OIDCPolicy{
 		Issuer:         "https://token.actions.githubusercontent.com",
 		SubjectPattern: "repo:myorg/repo-b:*",
 		Scopes:         "read,write",

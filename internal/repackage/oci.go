@@ -6,15 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 type OCI struct{}
 
 func (o *OCI) Format() Format { return FormatOCI }
 
-func (o *OCI) Applicable(a model.Artifact) bool {
-	return a.Kind == model.KindBinary || a.Kind == model.KindArchive
+func (o *OCI) Applicable(a db.Artifact) bool {
+	return a.Kind == db.KindBinary || a.Kind == db.KindArchive
 }
 
 func (o *OCI) Repackage(_ context.Context, input Input) (*Output, error) {

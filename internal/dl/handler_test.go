@@ -10,7 +10,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
@@ -18,7 +17,7 @@ import (
 
 // withRoute adds project and route info to the request context, simulating
 // what the auth middleware does in production.
-func withRoute(r *http.Request, project *model.Project, rt route) *http.Request {
+func withRoute(r *http.Request, project *db.Project, rt route) *http.Request {
 	ctx := auth.WithProject(r.Context(), project)
 	ctx = auth.WithRouteInfo(ctx, rt)
 	return r.WithContext(ctx)
@@ -37,18 +36,18 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	return h, d, store
 }
 
-func seedProject(t *testing.T, d *db.DB, name string, private bool) *model.Project {
+func seedProject(t *testing.T, d *db.DB, name string, private bool) *db.Project {
 	t.Helper()
-	p := &model.Project{Name: name, IsPrivate: private, Versioning: model.VersioningSemver}
+	p := &db.Project{Name: name, IsPrivate: private, Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(context.Background(), p))
 	return p
 }
 
-func seedRelease(t *testing.T, d *db.DB, projectID int64, version, branch string, published bool) *model.Release {
+func seedRelease(t *testing.T, d *db.DB, projectID int64, version, branch string, published bool) *db.Release {
 	t.Helper()
 	num, err := d.NextVersionNum(context.Background(), projectID)
 	require.NoError(t, err)
-	r := &model.Release{
+	r := &db.Release{
 		ProjectID:  projectID,
 		Version:    version,
 		VersionNum: num,
@@ -62,16 +61,16 @@ func seedRelease(t *testing.T, d *db.DB, projectID int64, version, branch string
 	return r
 }
 
-func seedArtifact(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, os, arch, content string) *model.Artifact {
+func seedArtifact(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, os, arch, content string) *db.Artifact {
 	t.Helper()
 	key, size, err := store.Put(context.Background(), strings.NewReader(content))
 	require.NoError(t, err)
 
-	a := &model.Artifact{
+	a := &db.Artifact{
 		ReleaseID:  releaseID,
-		OS:         model.OS(os),
-		Arch:       model.Arch(arch),
-		Kind:       model.KindBinary,
+		OS:         db.OS(os),
+		Arch:       db.Arch(arch),
+		Kind:       db.KindBinary,
 		StorageKey: key,
 		Size:       size,
 		SHA256:     key,
@@ -80,7 +79,7 @@ func seedArtifact(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID i
 	return a
 }
 
-func seedArtifactWithDebug(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, os, arch, content, debugContent string) *model.Artifact {
+func seedArtifactWithDebug(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, os, arch, content, debugContent string) *db.Artifact {
 	t.Helper()
 	a := seedArtifact(t, d, store, releaseID, os, arch, content)
 
@@ -93,7 +92,7 @@ func seedArtifactWithDebug(t *testing.T, d *db.DB, store *storage.Filesystem, re
 	return a
 }
 
-func seedArtifactWithStripped(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, os, arch, content, strippedContent string) *model.Artifact {
+func seedArtifactWithStripped(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, os, arch, content, strippedContent string) *db.Artifact {
 	t.Helper()
 	a := seedArtifact(t, d, store, releaseID, os, arch, content)
 

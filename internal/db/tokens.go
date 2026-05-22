@@ -9,12 +9,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-
-	"github.com/wow-look-at-my/buildhost/internal/db/dbgen"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
-func (d *DB) CreateToken(ctx context.Context, name string, projectID *int64, scopes string) (plaintext string, token *model.APIToken, err error) {
+func (d *DB) CreateToken(ctx context.Context, name string, projectID *int64, scopes string) (plaintext string, token *APIToken, err error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", nil, fmt.Errorf("generate token: %w", err)
@@ -25,7 +22,7 @@ func (d *DB) CreateToken(ctx context.Context, name string, projectID *int64, sco
 	hash := hex.EncodeToString(h[:])
 	prefix := plaintext[:11]
 
-	res, err := d.q.InsertToken(ctx, dbgen.InsertTokenParams{
+	res, err := d.q.InsertToken(ctx, InsertTokenParams{
 		Name:        name,
 		TokenHash:   hash,
 		TokenPrefix: prefix,
@@ -37,7 +34,7 @@ func (d *DB) CreateToken(ctx context.Context, name string, projectID *int64, sco
 	}
 
 	id, _ := res.LastInsertId()
-	token = &model.APIToken{
+	token = &APIToken{
 		ID:          id,
 		Name:        name,
 		TokenPrefix: prefix,
@@ -47,7 +44,7 @@ func (d *DB) CreateToken(ctx context.Context, name string, projectID *int64, sco
 	return plaintext, token, nil
 }
 
-func (d *DB) LookupToken(ctx context.Context, plaintext string) (*model.APIToken, error) {
+func (d *DB) LookupToken(ctx context.Context, plaintext string) (*APIToken, error) {
 	h := sha256.Sum256([]byte(plaintext))
 	hash := hex.EncodeToString(h[:])
 
@@ -59,18 +56,7 @@ func (d *DB) LookupToken(ctx context.Context, plaintext string) (*model.APIToken
 		return nil, fmt.Errorf("lookup token: %w", err)
 	}
 
-	t := &model.APIToken{
-		ID:          row.ID,
-		Name:        row.Name,
-		TokenHash:   row.TokenHash,
-		TokenPrefix: row.TokenPrefix,
-		ProjectID:   row.ProjectID,
-		Scopes:      row.Scopes,
-		ExpiresAt:   row.ExpiresAt,
-		CreatedAt:   row.CreatedAt,
-		LastUsedAt:  row.LastUsedAt,
-	}
-
+	t := &row
 	if t.IsExpired() {
 		return nil, ErrNotFound
 	}
@@ -79,25 +65,8 @@ func (d *DB) LookupToken(ctx context.Context, plaintext string) (*model.APIToken
 	return t, nil
 }
 
-func (d *DB) ListTokens(ctx context.Context) ([]model.APIToken, error) {
-	rows, err := d.q.ListAllTokens(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list tokens: %w", err)
-	}
-	tokens := make([]model.APIToken, len(rows))
-	for i, row := range rows {
-		tokens[i] = model.APIToken{
-			ID:          row.ID,
-			Name:        row.Name,
-			TokenPrefix: row.TokenPrefix,
-			ProjectID:   row.ProjectID,
-			Scopes:      row.Scopes,
-			ExpiresAt:   row.ExpiresAt,
-			CreatedAt:   row.CreatedAt,
-			LastUsedAt:  row.LastUsedAt,
-		}
-	}
-	return tokens, nil
+func (d *DB) ListTokens(ctx context.Context) ([]ListAllTokensRow, error) {
+	return d.q.ListAllTokens(ctx)
 }
 
 func (d *DB) DeleteToken(ctx context.Context, id int64) error {

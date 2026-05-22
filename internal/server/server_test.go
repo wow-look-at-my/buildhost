@@ -24,7 +24,6 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	_ "github.com/wow-look-at-my/buildhost/internal/dl"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	_ "github.com/wow-look-at-my/buildhost/internal/npm"
 	_ "github.com/wow-look-at-my/buildhost/internal/oci"
 	"github.com/wow-look-at-my/buildhost/internal/server"
@@ -140,17 +139,17 @@ func TestFullLifecycle(t *testing.T) {
 	resp := env.postJSON(t, "/api/v1/projects", `{"name":"myapp","versioning":"auto"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
-	var project model.Project
+	var project db.Project
 	decodeJSON(t, resp, &project)
 	require.Equal(t, "myapp", project.Name)
 
-	require.Equal(t, model.VersioningAuto, project.Versioning)
+	require.Equal(t, db.VersioningAuto, project.Versioning)
 
 	// (b) List projects
 	resp = env.authGet(t, "/api/v1/projects")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	var projects []model.Project
+	var projects []db.Project
 	decodeJSON(t, resp, &projects)
 	found := false
 	for _, p := range projects {
@@ -164,7 +163,7 @@ func TestFullLifecycle(t *testing.T) {
 	resp = env.postJSON(t, "/api/v1/projects/myapp/releases", `{"git_branch":"main","git_commit":"abc123"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
-	var release model.Release
+	var release db.Release
 	decodeJSON(t, resp, &release)
 	require.Equal(t, "1", release.Version)
 
@@ -178,11 +177,11 @@ func TestFullLifecycle(t *testing.T) {
 	resp = env.putBody(t, "/api/v1/projects/myapp/releases/1/artifacts/linux/amd64", binaryPayload)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
-	var artifact model.Artifact
+	var artifact db.Artifact
 	decodeJSON(t, resp, &artifact)
-	require.Equal(t, model.OSLinux, artifact.OS)
+	require.Equal(t, db.OSLinux, artifact.OS)
 
-	require.Equal(t, model.ArchAMD64, artifact.Arch)
+	require.Equal(t, db.ArchAMD64, artifact.Arch)
 
 	require.Equal(t, int64(len(binaryPayload)), artifact.Size)
 
@@ -190,7 +189,7 @@ func TestFullLifecycle(t *testing.T) {
 	resp = env.postJSON(t, "/api/v1/projects/myapp/releases/1/publish", `{}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	var published model.Release
+	var published db.Release
 	decodeJSON(t, resp, &published)
 	require.True(t, published.Published)
 
@@ -410,7 +409,7 @@ func TestListProjects_HidesPrivateWithoutAuth(t *testing.T) {
 	resp = env.get(t, "/api/v1/projects")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	var projects []model.Project
+	var projects []db.Project
 	decodeJSON(t, resp, &projects)
 
 	for _, p := range projects {
@@ -450,7 +449,7 @@ func TestAutoVersioning_IncrementsBeyondFirst(t *testing.T) {
 	resp = env.postJSON(t, "/api/v1/projects/multiver/releases", `{"git_branch":"main","git_commit":"aaa"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
-	var rel1 model.Release
+	var rel1 db.Release
 	decodeJSON(t, resp, &rel1)
 	require.Equal(t, "1", rel1.Version)
 
@@ -458,7 +457,7 @@ func TestAutoVersioning_IncrementsBeyondFirst(t *testing.T) {
 	resp = env.postJSON(t, "/api/v1/projects/multiver/releases", `{"git_branch":"main","git_commit":"bbb"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
-	var rel2 model.Release
+	var rel2 db.Release
 	decodeJSON(t, resp, &rel2)
 	require.Equal(t, "2", rel2.Version)
 

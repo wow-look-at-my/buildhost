@@ -8,15 +8,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 type Deb struct{}
 
 func (d *Deb) Format() Format { return FormatDeb }
 
-func (d *Deb) Applicable(a model.Artifact) bool {
-	return a.OS == model.OSLinux
+func (d *Deb) Applicable(a db.Artifact) bool {
+	return a.OS == db.OSLinux
 }
 
 func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
@@ -28,11 +28,11 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 
 	installDir := "/usr/bin/"
 	switch input.Artifact.Kind {
-	case model.KindLibrary:
+	case db.KindLibrary:
 		installDir = fmt.Sprintf("/usr/lib/%s/", input.Project.Name)
-	case model.KindAssets:
+	case db.KindAssets:
 		installDir = fmt.Sprintf("/usr/share/%s/", input.Project.Name)
-	case model.KindArchive:
+	case db.KindArchive:
 		installDir = fmt.Sprintf("/usr/share/%s/", input.Project.Name)
 	}
 
@@ -52,7 +52,7 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 	}
 
 	fileName := input.Project.Name
-	if input.Artifact.Kind == model.KindLibrary {
+	if input.Artifact.Kind == db.KindLibrary {
 		fileName = input.Artifact.Filename
 		if fileName == "" {
 			fileName = "lib" + input.Project.Name + ".so"
@@ -60,7 +60,7 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 	}
 
 	mode := int64(0o644)
-	if input.Artifact.Kind == model.KindBinary {
+	if input.Artifact.Kind == db.KindBinary {
 		mode = 0o755
 	}
 
@@ -131,15 +131,15 @@ func writeArEntry(buf *bytes.Buffer, name string, data []byte) {
 	}
 }
 
-func debArch(a model.Arch) string {
+func debArch(a db.Arch) string {
 	switch a {
-	case model.ArchAMD64:
+	case db.ArchAMD64:
 		return "amd64"
-	case model.ArchARM64:
+	case db.ArchARM64:
 		return "arm64"
-	case model.Arch386:
+	case db.Arch386:
 		return "i386"
-	case model.ArchARM:
+	case db.ArchARM:
 		return "armhf"
 	default:
 		return string(a)
