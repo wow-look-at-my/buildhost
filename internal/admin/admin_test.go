@@ -283,6 +283,23 @@ func TestRegistriesHandler_Empty(t *testing.T) {
 	assert.NotContains(t, body, "Quick links")
 }
 
+func TestSecurityHeaders(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := securityHeaders(inner)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
+	assert.Equal(t, "SAMEORIGIN", w.Header().Get("X-Frame-Options"))
+	assert.Equal(t, "no-referrer", w.Header().Get("Referrer-Policy"))
+	assert.Equal(t, "default-src 'self'", w.Header().Get("Content-Security-Policy"))
+}
+
 func TestStaticFiles(t *testing.T) {
 	srv, _ := newTestServer(t)
 
