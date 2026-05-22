@@ -13,6 +13,7 @@ type Config struct {
 	BaseURL         string
 	OIDCIssuers []string
 	OIDCOrgs    []string
+	OIDCEvents  []string
 }
 
 func Load() Config {
@@ -53,6 +54,16 @@ func Load() Config {
 				c.OIDCOrgs = append(c.OIDCOrgs, org)
 			}
 		}
+	}
+	if v := os.Getenv("BUILDHOST_OIDC_EVENTS"); v != "" {
+		for _, ev := range strings.Split(v, ",") {
+			if ev = strings.TrimSpace(ev); ev != "" {
+				c.OIDCEvents = append(c.OIDCEvents, ev)
+			}
+		}
+	}
+	if len(c.OIDCEvents) == 0 {
+		c.OIDCEvents = []string{"push"}
 	}
 	return c
 }

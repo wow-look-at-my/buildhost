@@ -27,6 +27,7 @@ type OIDCVerifier struct {
 	cache          map[string]*cachedJWKS
 	trustedIssuers []string
 	allowedOrgs    []string
+	allowedEvents  []string
 }
 
 type cachedJWKS struct {
@@ -41,12 +42,13 @@ type jwkKey struct {
 
 type oidcClaims struct {
 	jwt.RegisteredClaims
+	EventName string `json:"event_name"`
 }
 
 const oidcLeeway = 60 * time.Second
 
-func NewOIDCVerifier(trustedIssuers, allowedOrgs []string) *OIDCVerifier {
-	return &OIDCVerifier{cache: make(map[string]*cachedJWKS), trustedIssuers: trustedIssuers, allowedOrgs: allowedOrgs}
+func NewOIDCVerifier(trustedIssuers, allowedOrgs, allowedEvents []string) *OIDCVerifier {
+	return &OIDCVerifier{cache: make(map[string]*cachedJWKS), trustedIssuers: trustedIssuers, allowedOrgs: allowedOrgs, allowedEvents: allowedEvents}
 }
 
 func LooksLikeJWT(token string) bool {
@@ -129,6 +131,10 @@ func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []m
 	org := orgFromSubject(verified.Subject)
 	if !slices.Contains(v.allowedOrgs, "*") && !slices.Contains(v.allowedOrgs, org) {
 		return nil, fmt.Errorf("org %q not in allowed list", org)
+	}
+
+	if verified.EventName != "" && !slices.Contains(v.allowedEvents, "*") && !slices.Contains(v.allowedEvents, verified.EventName) {
+		return nil, fmt.Errorf("event %q not in allowed list", verified.EventName)
 	}
 
 	project := projectFromSubject(verified.Subject)
