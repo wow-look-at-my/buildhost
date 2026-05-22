@@ -336,3 +336,78 @@ h2 {
 .row-muted {
     opacity: 0.5;
 }
+
+.section-desc {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin: -8px 0 16px 0;
+}
+
+.code-block {
+    margin-top: 16px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.code-label {
+    background: #f1f5f9;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+}
+
+.code-block pre {
+    padding: 12px;
+    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre;
+    margin: 0;
+}
+
+.dl-links {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.dl-links a {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 8px;
+    background: #dbeafe;
+    color: #1e40af;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.dl-links a:hover {
+    background: #bfdbfe;
+    text-decoration: none;
+}
+
+.pkg-row {
+    padding: 6px 12px 10px 12px;
+}
+
+.pkg-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: 16px;
+    font-size: 13px;
+}
+
+h1 a {
+    color: var(--text-muted);
+}
+
+h1 a:hover {
+    color: var(--blue);
+}
