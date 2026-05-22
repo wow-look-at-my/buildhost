@@ -1,0 +1,137 @@
+name: Publish to Buildhost
+version: 1
+description: Publish go-toolchain matrix artifacts to a buildhost registry using GHA OIDC.
+
+inputs:
+  server:
+    description: 'Buildhost server URL (e.g., https://pazer.build)'
+    required: true
+  project:
+    description: 'Project name (defaults to the repository name)'
+    required: false
+  artifact_name:
+    description: 'GHA run artifact name (defaults to go-build from go-toolchain)'
+    required: false
+    default: 'go-build'
+  version:
+    description: 'Release version (omit for auto-versioned projects)'
+    required: false
+  git_branch:
+    description: 'Git branch (defaults to GITHUB_REF_NAME)'
+    required: false
+  git_commit:
+    description: 'Git commit SHA (defaults to GITHUB_SHA)'
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - uses: wow-look-at-my/actions@typescript#latest
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      with:
+        script: |
+          await (async () => {
+            const inputProject: string = "${{ inputs.project }}";
+            const inputVersion: string = "${{ inputs.version }}";
+            const inputBranch: string = "${{ inputs.git_branch }}";
+            const inputCommit: string = "${{ inputs.git_commit }}";
+            const artifactName: string = "${{ inputs.artifact_name }}";
+
+            const server = "${{ inputs.server }}";
+            const project = inputProject.length > 0 ? inputProject : github.repository.split("/").pop()!;
+            const version = inputVersion;
+            const gitBranch = inputBranch.length > 0 ? inputBranch : github.ref_name;
+            const gitCommit = inputCommit.length > 0 ? inputCommit : github.sha;
+            const downloadDir = path.join(os.tmpdir(), "buildhost-publish");
+            fs.mkdirSync(downloadDir, { recursive: true });
+
+            // Download artifact via octokit
+            const oct = octokit(process.env.GITHUB_TOKEN!);
+            const [owner, repo] = github.repository.split("/");
+            const { data: { artifacts } } = await oct.rest.actions.listWorkflowRunArtifacts({
+              owner, repo, run_id: github.run_id,
+            });
+            const artifact = artifacts.find((a: any) => a.name === artifactName);
+            if (!artifact) { core.setFailed(`Artifact '${artifactName}' not found in run`); return; }
+
+            const { data: zip } = await oct.rest.actions.downloadArtifact({
+              owner, repo, artifact_id: artifact.id, archive_format: "zip",
+            });
+            const zipPath = path.join(downloadDir, "artifact.zip");
+            fs.writeFileSync(zipPath, Buffer.from(zip as ArrayBuffer));
+            await exec.exec("unzip", ["-o", zipPath, "-d", downloadDir]);
+
+            // Mint OIDC token for buildhost
+            const idTokenUrl = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+            const idTokenBearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+            if (!idTokenUrl || !idTokenBearer) {
+              core.setFailed("OIDC not available. Add 'permissions: { id-token: write }'.");
+              return;
+            }
+            const idResp = await fetch(`${idTokenUrl}&audience=${server}`, {
+              headers: { Authorization: `Bearer ${idTokenBearer}` },
+            });
+            const token: string = ((await idResp.json()) as { value: string }).value;
+            if (!token) { core.setFailed("Failed to obtain OIDC token"); return; }
+
+            // Discover matrix artifacts
+            const files = fs.readdirSync(downloadDir).filter((f) => {
+              const full = path.join(downloadDir, f);
+              if (fs.lstatSync(full).isSymbolicLink()) return false;
+              if (!fs.statSync(full).isFile()) return false;
+              if (f === "checksums.txt" || f.endsWith(".zip")) return false;
+              const base = f.replace(/\.exe$/, "");
+              return new RegExp(`^${project}_[a-z]+_[a-z0-9]+$`).test(base);
+            });
+
+            if (files.length === 0) {
+              core.setFailed(`No matrix artifacts matching '${project}_{os}_{arch}' found`);
+              core.info(`Files: ${fs.readdirSync(downloadDir).join(", ")}`);
+              return;
+            }
+            core.info(`Found ${files.length} artifact(s) to publish`);
+
+            const api = async (method: string, urlPath: string, body?: string | Buffer) => {
+              const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+              if (typeof body === "string") headers["Content-Type"] = "application/json";
+              else if (body) headers["Content-Type"] = "application/octet-stream";
+              const resp = await fetch(`${server}${urlPath}`, { method, headers, body });
+              return { status: resp.status, text: await resp.text() };
+            };
+
+            // Create release
+            const releaseBody = JSON.stringify({
+              git_branch: gitBranch, git_commit: gitCommit,
+              ...(version.length > 0 ? { version } : {}),
+            });
+            const createResp = await api("POST", `/api/v1/projects/${project}/releases`, releaseBody);
+
+            let releaseVersion: string;
+            if (createResp.status === 201) {
+              releaseVersion = JSON.parse(createResp.text).version;
+            } else if (createResp.status === 409) {
+              if (version.length === 0) { core.setFailed("Release exists, no explicit version"); return; }
+              releaseVersion = version;
+            } else {
+              core.setFailed(`Create release failed (${createResp.status}): ${createResp.text}`);
+              return;
+            }
+            core.info(`Release: ${project}/${releaseVersion}`);
+
+            // Upload artifacts
+            for (const file of files) {
+              const base = file.replace(/\.exe$/, "");
+              const match = base.match(new RegExp(`^${project}_([a-z]+)_([a-z0-9]+)$`))!;
+              const [, fileOs, arch] = match;
+              const body = fs.readFileSync(path.join(downloadDir, file));
+              const r = await api("PUT", `/api/v1/projects/${project}/releases/${releaseVersion}/artifacts/${fileOs}/${arch}?kind=binary`, body);
+              if (r.status !== 201) { core.setFailed(`Upload ${fileOs}/${arch} failed (${r.status}): ${r.text}`); return; }
+              core.info(`Uploaded ${fileOs}/${arch}`);
+            }
+
+            // Publish
+            const pub = await api("POST", `/api/v1/projects/${project}/releases/${releaseVersion}/publish`);
+            if (pub.status !== 200) { core.setFailed(`Publish failed (${pub.status}): ${pub.text}`); return; }
+            core.info(`Published ${project}/${releaseVersion} (${files.length} artifacts) to ${server}`);
+          })();

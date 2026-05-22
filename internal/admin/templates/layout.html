@@ -37,6 +37,22 @@
                 OIDC Policies
             </a></li>
         </ul>
+        <div class="sidebar-footer">
+            {{- with .Sidebar}}
+            {{- if .Build.CommitURL}}
+            <div class="sidebar-info-row"><span class="sidebar-info-label">Commit</span> <a href="{{.Build.CommitURL}}" class="sidebar-info-link">{{.Build.ShortCommit}}</a></div>
+            {{- else if .Build.Commit}}
+            <div class="sidebar-info-row"><span class="sidebar-info-label">Commit</span> <span>{{.Build.ShortCommit}}</span></div>
+            {{- end}}
+            {{- if .BuildAge}}
+            <div class="sidebar-info-row"><span class="sidebar-info-label">Built</span> <span>{{.BuildAge}}</span></div>
+            {{- end}}
+            <div class="sidebar-info-row"><span class="sidebar-info-label">CPU</span> <span>{{.CPUPercent}}</span></div>
+            {{- if .DiskTotal}}
+            <div class="sidebar-info-row"><span class="sidebar-info-label">Disk</span> <span>{{.DiskUsed}} / {{.DiskTotal}}</span></div>
+            {{- end}}
+            {{- end}}
+        </div>
     </nav>
     <main class="content">
         {{template "content" .}}
