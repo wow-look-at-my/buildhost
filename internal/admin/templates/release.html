@@ -80,16 +80,16 @@
     <table class="info-table">
         <tr>
             <td class="info-label">Direct (latest)</td>
-            <td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/dl/{{.Project.Name}}/latest/{os}/{arch}</code></td>
+            <td class="endpoint-cell"><span class="url-tpl" data-tpl="{{.BaseURL}}/dl/{{.Project.Name}}/latest/{os}/{arch}"><code>{{.BaseURL}}/dl/{{.Project.Name}}/latest/</code><select class="tpl-select" data-var="os"><option value="linux">linux</option><option value="darwin">darwin</option><option value="windows">windows</option><option value="freebsd">freebsd</option></select><code>/</code><select class="tpl-select" data-var="arch"><option value="amd64">amd64</option><option value="arm64">arm64</option><option value="386">386</option><option value="arm">arm</option></select></span></td>
         </tr>
         <tr>
             <td class="info-label">Direct (version)</td>
-            <td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/dl/{{.Project.Name}}/{{.Release.Version}}/{os}/{arch}</code></td>
+            <td class="endpoint-cell"><span class="url-tpl" data-tpl="{{.BaseURL}}/dl/{{.Project.Name}}/{{.Release.Version}}/{os}/{arch}"><code>{{.BaseURL}}/dl/{{.Project.Name}}/{{.Release.Version}}/</code><select class="tpl-select" data-var="os"><option value="linux">linux</option><option value="darwin">darwin</option><option value="windows">windows</option><option value="freebsd">freebsd</option></select><code>/</code><select class="tpl-select" data-var="arch"><option value="amd64">amd64</option><option value="arm64">arm64</option><option value="386">386</option><option value="arm">arm</option></select></span></td>
         </tr>
         {{if .Release.GitBranch}}
         <tr>
             <td class="info-label">Direct (branch)</td>
-            <td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/dl/{{.Project.Name}}/branch/{{.Release.GitBranch}}/{os}/{arch}</code></td>
+            <td class="endpoint-cell"><span class="url-tpl" data-tpl="{{.BaseURL}}/dl/{{.Project.Name}}/branch/{{.Release.GitBranch}}/{os}/{arch}"><code>{{.BaseURL}}/dl/{{.Project.Name}}/branch/{{.Release.GitBranch}}/</code><select class="tpl-select" data-var="os"><option value="linux">linux</option><option value="darwin">darwin</option><option value="windows">windows</option><option value="freebsd">freebsd</option></select><code>/</code><select class="tpl-select" data-var="arch"><option value="amd64">amd64</option><option value="arm64">arm64</option><option value="386">386</option><option value="arm">arm</option></select></span></td>
         </tr>
         {{end}}
         <tr>

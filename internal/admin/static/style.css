@@ -450,6 +450,39 @@ h1 a:hover {
     cursor: pointer;
 }
 
+.url-tpl {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0;
+}
+
+.tpl-select {
+    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.8125em;
+    padding: 1px 4px;
+    border: 1px solid var(--blue);
+    border-radius: 4px;
+    background: #eff6ff;
+    color: #1e40af;
+    cursor: pointer;
+    outline: none;
+    font-weight: 600;
+}
+
+.tpl-select:hover {
+    background: #dbeafe;
+}
+
+.tpl-select:focus {
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+}
+
+.tpl-select-sm {
+    font-size: 0.75em;
+    padding: 0 2px;
+}
+
 .endpoint-cell {
     display: flex;
     align-items: center;

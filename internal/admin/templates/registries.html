@@ -6,7 +6,7 @@
     <h2>Direct Downloads</h2>
     <p class="section-desc">Download artifacts directly by platform. Supports version pinning, latest, and branch-based resolution.</p>
     <table class="info-table">
-        <tr><td class="info-label">Latest</td><td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/dl/{project}/latest/{os}/{arch}</code></td></tr>
+        <tr><td class="info-label">Latest</td><td class="endpoint-cell"><span class="url-tpl" data-tpl="{{.BaseURL}}/dl/{project}/latest/{os}/{arch}"><code>{{.BaseURL}}/dl/{project}/latest/</code><select class="tpl-select" data-var="os"><option value="linux">linux</option><option value="darwin">darwin</option><option value="windows">windows</option><option value="freebsd">freebsd</option></select><code>/</code><select class="tpl-select" data-var="arch"><option value="amd64">amd64</option><option value="arm64">arm64</option><option value="386">386</option><option value="arm">arm</option></select></span></td></tr>
         <tr><td class="info-label">Version</td><td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/dl/{project}/{version}/{os}/{arch}</code></td></tr>
         <tr><td class="info-label">Branch</td><td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/dl/{project}/branch/{branch}/{os}/{arch}</code></td></tr>
     </table>
@@ -145,7 +145,7 @@ curl "{{.BaseURL}}/api/v1/projects?token=$TOKEN"</pre>
             <tr>
                 <td><a href="/projects/{{.Name}}">{{.Name}}</a></td>
                 <td>{{if .IsPrivate}}<span class="badge badge-warning">Private</span>{{else}}<span class="badge badge-success">Public</span>{{end}}</td>
-                <td><code class="copyable truncate">{{$.BaseURL}}/dl/{{.Name}}/latest/{os}/{arch}</code></td>
+                <td><span class="url-tpl" data-tpl="{{$.BaseURL}}/dl/{{.Name}}/latest/{os}/{arch}"><code class="truncate">{{$.BaseURL}}/dl/{{.Name}}/latest/</code><select class="tpl-select tpl-select-sm" data-var="os"><option value="linux">linux</option><option value="darwin">darwin</option><option value="windows">windows</option><option value="freebsd">freebsd</option></select><code>/</code><select class="tpl-select tpl-select-sm" data-var="arch"><option value="amd64">amd64</option><option value="arm64">arm64</option><option value="386">386</option><option value="arm">arm</option></select></span></td>
                 <td><a href="{{$.BaseURL}}/apt/{{.Name}}/dists/stable/Release" class="copyable truncate" data-copy="{{$.BaseURL}}/apt/{{.Name}}">{{$.BaseURL}}/apt/{{.Name}}</a></td>
                 <td><a href="{{$.BaseURL}}/brew/{{.Name}}.rb" class="copyable truncate" data-copy="{{$.BaseURL}}/brew/{{.Name}}.rb">{{$.BaseURL}}/brew/{{.Name}}.rb</a></td>
                 <td><a href="{{$.BaseURL}}/npm/@buildhost/{{.Name}}" class="copyable truncate" data-copy="{{$.BaseURL}}/npm/@buildhost/{{.Name}}">{{$.BaseURL}}/npm/@buildhost/{{.Name}}</a></td>
