@@ -22,6 +22,7 @@ func Load() Config {
 		DataDir:         "./data",
 		DBPath:          "./data/buildhost.db",
 		BaseURL:         "http://localhost:8080",
+		OIDCIssuers:     []string{"https://token.actions.githubusercontent.com"},
 	}
 	if v := os.Getenv("BUILDHOST_LISTEN_ADDR"); v != "" {
 		c.ListenAddr = v
@@ -39,6 +40,7 @@ func Load() Config {
 		c.BaseURL = v
 	}
 	if v := os.Getenv("BUILDHOST_OIDC_ISSUERS"); v != "" {
+		c.OIDCIssuers = nil
 		for _, iss := range strings.Split(v, ",") {
 			if iss = strings.TrimSpace(iss); iss != "" {
 				c.OIDCIssuers = append(c.OIDCIssuers, iss)
