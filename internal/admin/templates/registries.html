@@ -1,0 +1,158 @@
+{{define "title"}}Registries{{end}}
+{{define "content"}}
+<h1>Registry Endpoints</h1>
+
+<div class="card">
+    <h2>Direct Downloads</h2>
+    <p class="section-desc">Download artifacts directly by platform. Supports version pinning, latest, and branch-based resolution.</p>
+    <table class="info-table">
+        <tr><td class="info-label">Latest</td><td><code>{{.BaseURL}}/dl/{project}/latest/{os}/{arch}</code></td></tr>
+        <tr><td class="info-label">Version</td><td><code>{{.BaseURL}}/dl/{project}/{version}/{os}/{arch}</code></td></tr>
+        <tr><td class="info-label">Branch</td><td><code>{{.BaseURL}}/dl/{project}/branch/{branch}/{os}/{arch}</code></td></tr>
+    </table>
+    <div class="code-block">
+        <div class="code-label">curl</div>
+        <pre>curl -fsSL -H "Authorization: Bearer $TOKEN" \
+  {{.BaseURL}}/dl/{project}/latest/linux/amd64 -o {project}</pre>
+    </div>
+    <div class="code-block">
+        <div class="code-label">Query parameters</div>
+        <pre>?format=raw       # Default binary (stripped if available)
+?format=deb       # Debian package
+?format=brew      # Homebrew bottle
+?format=npm       # npm tarball
+?debug=1          # Debug symbols</pre>
+    </div>
+</div>
+
+<div class="card">
+    <h2>APT Repository</h2>
+    <p class="section-desc">Debian/Ubuntu package repository. Packages are generated at publish time.</p>
+    <table class="info-table">
+        <tr><td class="info-label">Release</td><td><code>{{.BaseURL}}/apt/{project}/dists/stable/Release</code></td></tr>
+        <tr><td class="info-label">InRelease</td><td><code>{{.BaseURL}}/apt/{project}/dists/stable/InRelease</code></td></tr>
+        <tr><td class="info-label">Packages</td><td><code>{{.BaseURL}}/apt/{project}/dists/stable/main/binary-{arch}/Packages</code></td></tr>
+        <tr><td class="info-label">Pool</td><td><code>{{.BaseURL}}/apt/{project}/pool/{filename}</code></td></tr>
+    </table>
+    <div class="code-block">
+        <div class="code-label">Setup (public project)</div>
+        <pre>echo "deb [trusted=yes] {{.BaseURL}}/apt/{project} stable main" \
+  | sudo tee /etc/apt/sources.list.d/{project}.list
+sudo apt update && sudo apt install {project}</pre>
+    </div>
+    <div class="code-block">
+        <div class="code-label">Setup (private project)</div>
+        <pre>echo "deb [trusted=yes] {{.BaseURL}}/apt/{project} stable main" \
+  | sudo tee /etc/apt/sources.list.d/{project}.list
+cat &lt;&lt;EOF | sudo tee /etc/apt/auth.conf.d/{project}.conf
+machine {{.BaseURL}}/apt/{project}
+  login token
+  password $TOKEN
+EOF
+sudo apt update && sudo apt install {project}</pre>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Homebrew Tap</h2>
+    <p class="section-desc">Homebrew formula served as a single .rb file. Auto-detects macOS and Linux bottles.</p>
+    <table class="info-table">
+        <tr><td class="info-label">Formula</td><td><code>{{.BaseURL}}/brew/{project}.rb</code></td></tr>
+    </table>
+    <div class="code-block">
+        <div class="code-label">Install (public project)</div>
+        <pre>brew install {{.BaseURL}}/brew/{project}.rb</pre>
+    </div>
+    <div class="code-block">
+        <div class="code-label">Install (private project)</div>
+        <pre>HOMEBREW_BUILDHOST_TOKEN=$TOKEN brew install {{.BaseURL}}/brew/{project}.rb</pre>
+    </div>
+</div>
+
+<div class="card">
+    <h2>npm Registry</h2>
+    <p class="section-desc">npm-compatible registry. Packages are scoped under <code>@buildhost</code>.</p>
+    <table class="info-table">
+        <tr><td class="info-label">Package metadata</td><td><code>{{.BaseURL}}/npm/@buildhost/{project}</code></td></tr>
+        <tr><td class="info-label">Tarball</td><td><code>{{.BaseURL}}/npm/@buildhost/{project}/-/{project}-{version}.tgz</code></td></tr>
+    </table>
+    <div class="code-block">
+        <div class="code-label">Setup</div>
+        <pre>npm config set @buildhost:registry {{.BaseURL}}/npm/
+npm config set //{{.BaseURL}}/npm/:_authToken $TOKEN   # if private
+npm install @buildhost/{project}</pre>
+    </div>
+</div>
+
+<div class="card">
+    <h2>OCI Distribution (Docker)</h2>
+    <p class="section-desc">OCI-compatible registry for pulling artifacts as container images.</p>
+    <table class="info-table">
+        <tr><td class="info-label">API check</td><td><code>{{.BaseURL}}/v2/</code></td></tr>
+        <tr><td class="info-label">Manifest</td><td><code>{{.BaseURL}}/v2/{project}/manifests/{reference}</code></td></tr>
+        <tr><td class="info-label">Blob</td><td><code>{{.BaseURL}}/v2/{project}/blobs/{digest}</code></td></tr>
+    </table>
+    <div class="code-block">
+        <div class="code-label">Docker pull</div>
+        <pre>docker pull {{.BaseURL}}/{project}:{version}</pre>
+    </div>
+    <div class="code-block">
+        <div class="code-label">Private project</div>
+        <pre>echo $TOKEN | docker login {{.BaseURL}} -u token --password-stdin
+docker pull {{.BaseURL}}/{project}:{version}</pre>
+    </div>
+</div>
+
+<div class="card">
+    <h2>REST API</h2>
+    <p class="section-desc">JSON API for managing projects, releases, and artifacts programmatically.</p>
+    <table class="info-table">
+        <tr><td class="info-label">List projects</td><td><code>GET {{.BaseURL}}/api/v1/projects</code></td></tr>
+        <tr><td class="info-label">Get project</td><td><code>GET {{.BaseURL}}/api/v1/projects/{project}</code></td></tr>
+        <tr><td class="info-label">List releases</td><td><code>GET {{.BaseURL}}/api/v1/projects/{project}/releases</code></td></tr>
+        <tr><td class="info-label">Publish</td><td><code>POST {{.BaseURL}}/api/v1/projects/{project}/publish</code></td></tr>
+    </table>
+    <div class="code-block">
+        <div class="code-label">Authentication</div>
+        <pre># Bearer token
+curl -H "Authorization: Bearer $TOKEN" {{.BaseURL}}/api/v1/projects
+
+# Basic auth
+curl -u "token:$TOKEN" {{.BaseURL}}/api/v1/projects
+
+# Query parameter (for clients that can't set headers)
+curl "{{.BaseURL}}/api/v1/projects?token=$TOKEN"</pre>
+    </div>
+</div>
+
+{{if .Projects}}
+<div class="card">
+    <h2>Projects</h2>
+    <p class="section-desc">Quick links to project-specific endpoints.</p>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Project</th>
+                <th>Visibility</th>
+                <th>Direct Download</th>
+                <th>APT</th>
+                <th>Brew</th>
+                <th>npm</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Projects}}
+            <tr>
+                <td><a href="/projects/{{.Name}}">{{.Name}}</a></td>
+                <td>{{if .IsPrivate}}<span class="badge badge-warning">Private</span>{{else}}<span class="badge badge-success">Public</span>{{end}}</td>
+                <td><code class="truncate">{{$.BaseURL}}/dl/{{.Name}}/latest/{os}/{arch}</code></td>
+                <td><code class="truncate">{{$.BaseURL}}/apt/{{.Name}}</code></td>
+                <td><code class="truncate">{{$.BaseURL}}/brew/{{.Name}}.rb</code></td>
+                <td><code class="truncate">{{$.BaseURL}}/npm/@buildhost/{{.Name}}</code></td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}
+{{end}}

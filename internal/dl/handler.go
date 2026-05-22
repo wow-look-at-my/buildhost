@@ -117,6 +117,8 @@ func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project 
 		return
 	}
 
+	_ = h.DB.IncrementDownloadCount(r.Context(), artifact.ID)
+
 	if r.URL.Query().Get("debug") == "1" {
 		if artifact.DebugStorageKey == "" {
 			http.NotFound(w, r)

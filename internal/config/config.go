@@ -13,6 +13,7 @@ type Config struct {
 	BaseURL         string
 	OIDCIssuers []string
 	OIDCOrgs    []string
+	OIDCEvents  []string
 }
 
 func Load() Config {
@@ -22,6 +23,7 @@ func Load() Config {
 		DataDir:         "./data",
 		DBPath:          "./data/buildhost.db",
 		BaseURL:         "http://localhost:8080",
+		OIDCIssuers:     []string{"https://token.actions.githubusercontent.com"},
 	}
 	if v := os.Getenv("BUILDHOST_LISTEN_ADDR"); v != "" {
 		c.ListenAddr = v
@@ -39,6 +41,7 @@ func Load() Config {
 		c.BaseURL = v
 	}
 	if v := os.Getenv("BUILDHOST_OIDC_ISSUERS"); v != "" {
+		c.OIDCIssuers = nil
 		for _, iss := range strings.Split(v, ",") {
 			if iss = strings.TrimSpace(iss); iss != "" {
 				c.OIDCIssuers = append(c.OIDCIssuers, iss)
@@ -51,6 +54,16 @@ func Load() Config {
 				c.OIDCOrgs = append(c.OIDCOrgs, org)
 			}
 		}
+	}
+	if v := os.Getenv("BUILDHOST_OIDC_EVENTS"); v != "" {
+		for _, ev := range strings.Split(v, ",") {
+			if ev = strings.TrimSpace(ev); ev != "" {
+				c.OIDCEvents = append(c.OIDCEvents, ev)
+			}
+		}
+	}
+	if len(c.OIDCEvents) == 0 {
+		c.OIDCEvents = []string{"push"}
 	}
 	return c
 }
