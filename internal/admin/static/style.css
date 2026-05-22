@@ -392,18 +392,6 @@ h2 {
     text-decoration: none;
 }
 
-.pkg-row {
-    padding: 6px 12px 10px 12px;
-}
-
-.pkg-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin-right: 16px;
-    font-size: 13px;
-}
-
 h1 a {
     color: var(--text-muted);
 }
