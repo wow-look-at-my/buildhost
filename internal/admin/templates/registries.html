@@ -6,9 +6,9 @@
     <h2>Direct Downloads</h2>
     <p class="section-desc">Download artifacts directly by platform. Supports version pinning, latest, and branch-based resolution.</p>
     <table class="info-table">
-        <tr><td class="info-label">Latest</td><td class="endpoint-cell"><span class="url-tpl" data-tpl="{{.BaseURL}}/dl/{project}/latest/{os}/{arch}"><code>{{.BaseURL}}/dl/{project}/latest/</code><select class="tpl-select" data-var="os"><option value="linux">linux</option><option value="darwin">darwin</option><option value="windows">windows</option><option value="freebsd">freebsd</option></select><code>/</code><select class="tpl-select" data-var="arch"><option value="amd64">amd64</option><option value="arm64">arm64</option><option value="386">386</option><option value="arm">arm</option></select><copy-btn></copy-btn></span></td></tr>
-        <tr><td class="info-label">Version</td><td class="endpoint-cell"><copy-btn><code>{{.BaseURL}}/dl/{project}/{version}/{os}/{arch}</code></copy-btn></td></tr>
-        <tr><td class="info-label">Branch</td><td class="endpoint-cell"><copy-btn><code>{{.BaseURL}}/dl/{project}/branch/{branch}/{os}/{arch}</code></copy-btn></td></tr>
+        <tr><td class="info-label">Latest</td><td class="endpoint-cell"><span class="url-tpl" data-tpl="{{.BaseURL}}/dl/{project}/latest/{os}/{arch}"><code>{{.BaseURL}}/dl/{project}/latest/</code><select class="tpl-select" data-var="os"><option value="linux">linux</option><option value="darwin">darwin</option><option value="windows">windows</option><option value="freebsd">freebsd</option></select><code>/</code><select class="tpl-select" data-var="arch"><option value="amd64">amd64</option><option value="arm64">arm64</option><option value="386">386</option><option value="arm">arm</option></select></span><copy-btn></copy-btn></td></tr>
+        <tr><td class="info-label">Version</td><td class="endpoint-cell"><code>{{.BaseURL}}/dl/{project}/{version}/{os}/{arch}</code><copy-btn data-src="code"></copy-btn></td></tr>
+        <tr><td class="info-label">Branch</td><td class="endpoint-cell"><code>{{.BaseURL}}/dl/{project}/branch/{branch}/{os}/{arch}</code><copy-btn data-src="code"></copy-btn></td></tr>
     </table>
     <div class="code-block">
         <div class="code-label">curl<copy-btn class="code-copy-btn" data-src="pre"></copy-btn></div>
@@ -29,10 +29,10 @@
     <h2>APT Repository</h2>
     <p class="section-desc">Debian/Ubuntu package repository. Packages are generated at publish time.</p>
     <table class="info-table">
-        <tr><td class="info-label">Release</td><td class="endpoint-cell"><copy-btn><code>{{.BaseURL}}/apt/{project}/dists/stable/Release</code></copy-btn></td></tr>
-        <tr><td class="info-label">InRelease</td><td class="endpoint-cell"><copy-btn><code>{{.BaseURL}}/apt/{project}/dists/stable/InRelease</code></copy-btn></td></tr>
-        <tr><td class="info-label">Packages</td><td class="endpoint-cell"><copy-btn><code>{{.BaseURL}}/apt/{project}/dists/stable/main/binary-{arch}/Packages</code></copy-btn></td></tr>
-        <tr><td class="info-label">Pool</td><td class="endpoint-cell"><copy-btn><code>{{.BaseURL}}/apt/{project}/pool/{filename}</code></copy-btn></td></tr>
+        <tr><td class="info-label">Release</td><td class="endpoint-cell"><code>{{.BaseURL}}/apt/{project}/dists/stable/Release</code><copy-btn data-src="code"></copy-btn></td></tr>
+        <tr><td class="info-label">InRelease</td><td class="endpoint-cell"><code>{{.BaseURL}}/apt/{project}/dists/stable/InRelease</code><copy-btn data-src="code"></copy-btn></td></tr>
+        <tr><td class="info-label">Packages</td><td class="endpoint-cell"><code>{{.BaseURL}}/apt/{project}/dists/stable/main/binary-{arch}/Packages</code><copy-btn data-src="code"></copy-btn></td></tr>
+        <tr><td class="info-label">Pool</td><td class="endpoint-cell"><code>{{.BaseURL}}/apt/{project}/pool/{filename}</code><copy-btn data-src="code"></copy-btn></td></tr>
     </table>
     <div class="code-block">
         <div class="code-label">Setup (public project)<copy-btn class="code-copy-btn" data-src="pre"></copy-btn></div>
@@ -57,7 +57,7 @@ sudo apt update && sudo apt install {project}</pre>
     <h2>Homebrew Tap</h2>
     <p class="section-desc">Homebrew formula served as a single .rb file. Auto-detects macOS and Linux bottles.</p>
     <table class="info-table">
-        <tr><td class="info-label">Formula</td><td class="endpoint-cell"><copy-btn><code>{{.BaseURL}}/brew/{project}.rb</code></copy-btn></td></tr>
+        <tr><td class="info-label">Formula</td><td class="endpoint-cell"><code>{{.BaseURL}}/brew/{project}.rb</code><copy-btn data-src="code"></copy-btn></td></tr>
     </table>
     <div class="code-block">
         <div class="code-label">Install (public project)<copy-btn class="code-copy-btn" data-src="pre"></copy-btn></div>
@@ -73,8 +73,8 @@ sudo apt update && sudo apt install {project}</pre>
     <h2>npm Registry</h2>
     <p class="section-desc">npm-compatible registry. Packages are scoped under <code>@buildhost</code>.</p>
     <table class="info-table">
-        <tr><td class="info-label">Package metadata</td><td class="endpoint-cell"><copy-btn><code>{{.BaseURL}}/npm/@buildhost/{project}</code></copy-btn></td></tr>
-        <tr><td class="info-label">Tarball</td><td class="endpoint-cell"><copy-btn><code>{{.BaseURL}}/npm/@buildhost/{project}/-/{project}-{version}.tgz</code></copy-btn></td></tr>
+        <tr><td class="info-label">Package metadata</td><td class="endpoint-cell"><code>{{.BaseURL}}/npm/@buildhost/{project}</code><copy-btn data-src="code"></copy-btn></td></tr>
+        <tr><td class="info-label">Tarball</td><td class="endpoint-cell"><code>{{.BaseURL}}/npm/@buildhost/{project}/-/{project}-{version}.tgz</code><copy-btn data-src="code"></copy-btn></td></tr>
     </table>
     <div class="code-block">
         <div class="code-label">Setup<copy-btn class="code-copy-btn" data-src="pre"></copy-btn></div>
@@ -88,9 +88,9 @@ npm install @buildhost/{project}</pre>
     <h2>OCI Distribution (Docker)</h2>
     <p class="section-desc">OCI-compatible registry for pulling artifacts as container images.</p>
     <table class="info-table">
-        <tr><td class="info-label">API check</td><td class="endpoint-cell"><copy-btn><a href="{{.BaseURL}}/v2/" data-copy="{{.BaseURL}}/v2/">{{.BaseURL}}/v2/</a></copy-btn></td></tr>
-        <tr><td class="info-label">Manifest</td><td class="endpoint-cell"><copy-btn><code>{{.BaseURL}}/v2/{project}/manifests/{reference}</code></copy-btn></td></tr>
-        <tr><td class="info-label">Blob</td><td class="endpoint-cell"><copy-btn><code>{{.BaseURL}}/v2/{project}/blobs/{digest}</code></copy-btn></td></tr>
+        <tr><td class="info-label">API check</td><td class="endpoint-cell"><a href="{{.BaseURL}}/v2/" data-copy="{{.BaseURL}}/v2/">{{.BaseURL}}/v2/</a><copy-btn data-src="a"></copy-btn></td></tr>
+        <tr><td class="info-label">Manifest</td><td class="endpoint-cell"><code>{{.BaseURL}}/v2/{project}/manifests/{reference}</code><copy-btn data-src="code"></copy-btn></td></tr>
+        <tr><td class="info-label">Blob</td><td class="endpoint-cell"><code>{{.BaseURL}}/v2/{project}/blobs/{digest}</code><copy-btn data-src="code"></copy-btn></td></tr>
     </table>
     <div class="code-block">
         <div class="code-label">Docker pull<copy-btn class="code-copy-btn" data-src="pre"></copy-btn></div>
@@ -107,10 +107,10 @@ docker pull {{.BaseURL}}/{project}:{version}</pre>
     <h2>REST API</h2>
     <p class="section-desc">JSON API for managing projects, releases, and artifacts programmatically.</p>
     <table class="info-table">
-        <tr><td class="info-label">List projects</td><td class="endpoint-cell"><copy-btn><a href="{{.BaseURL}}/api/v1/projects">GET {{.BaseURL}}/api/v1/projects</a></copy-btn></td></tr>
-        <tr><td class="info-label">Get project</td><td class="endpoint-cell"><copy-btn><code>GET {{.BaseURL}}/api/v1/projects/{project}</code></copy-btn></td></tr>
-        <tr><td class="info-label">List releases</td><td class="endpoint-cell"><copy-btn><code>GET {{.BaseURL}}/api/v1/projects/{project}/releases</code></copy-btn></td></tr>
-        <tr><td class="info-label">Publish</td><td class="endpoint-cell"><copy-btn><code>POST {{.BaseURL}}/api/v1/projects/{project}/publish</code></copy-btn></td></tr>
+        <tr><td class="info-label">List projects</td><td class="endpoint-cell"><a href="{{.BaseURL}}/api/v1/projects">GET {{.BaseURL}}/api/v1/projects</a><copy-btn data-src="a"></copy-btn></td></tr>
+        <tr><td class="info-label">Get project</td><td class="endpoint-cell"><code>GET {{.BaseURL}}/api/v1/projects/{project}</code><copy-btn data-src="code"></copy-btn></td></tr>
+        <tr><td class="info-label">List releases</td><td class="endpoint-cell"><code>GET {{.BaseURL}}/api/v1/projects/{project}/releases</code><copy-btn data-src="code"></copy-btn></td></tr>
+        <tr><td class="info-label">Publish</td><td class="endpoint-cell"><code>POST {{.BaseURL}}/api/v1/projects/{project}/publish</code><copy-btn data-src="code"></copy-btn></td></tr>
     </table>
     <div class="code-block">
         <div class="code-label">Authentication<copy-btn class="code-copy-btn" data-src="pre"></copy-btn></div>
@@ -145,10 +145,10 @@ curl "{{.BaseURL}}/api/v1/projects?token=$TOKEN"</pre>
             <tr>
                 <td><a href="/projects/{{.Name}}">{{.Name}}</a></td>
                 <td>{{if .IsPrivate}}<span class="badge badge-warning">Private</span>{{else}}<span class="badge badge-success">Public</span>{{end}}</td>
-                <td><span class="url-tpl" data-tpl="{{$.BaseURL}}/dl/{{.Name}}/latest/{os}/{arch}"><code class="truncate">{{$.BaseURL}}/dl/{{.Name}}/latest/</code><select class="tpl-select tpl-select-sm" data-var="os"><option value="linux">linux</option><option value="darwin">darwin</option><option value="windows">windows</option><option value="freebsd">freebsd</option></select><code>/</code><select class="tpl-select tpl-select-sm" data-var="arch"><option value="amd64">amd64</option><option value="arm64">arm64</option><option value="386">386</option><option value="arm">arm</option></select><copy-btn></copy-btn></span></td>
-                <td><copy-btn><a href="{{$.BaseURL}}/apt/{{.Name}}/dists/stable/Release" data-copy="{{$.BaseURL}}/apt/{{.Name}}">{{$.BaseURL}}/apt/{{.Name}}</a></copy-btn></td>
-                <td><copy-btn><a href="{{$.BaseURL}}/brew/{{.Name}}.rb">{{$.BaseURL}}/brew/{{.Name}}.rb</a></copy-btn></td>
-                <td><copy-btn><a href="{{$.BaseURL}}/npm/@buildhost/{{.Name}}">{{$.BaseURL}}/npm/@buildhost/{{.Name}}</a></copy-btn></td>
+                <td class="endpoint-cell"><span class="url-tpl" data-tpl="{{$.BaseURL}}/dl/{{.Name}}/latest/{os}/{arch}"><code class="truncate">{{$.BaseURL}}/dl/{{.Name}}/latest/</code><select class="tpl-select tpl-select-sm" data-var="os"><option value="linux">linux</option><option value="darwin">darwin</option><option value="windows">windows</option><option value="freebsd">freebsd</option></select><code>/</code><select class="tpl-select tpl-select-sm" data-var="arch"><option value="amd64">amd64</option><option value="arm64">arm64</option><option value="386">386</option><option value="arm">arm</option></select></span><copy-btn></copy-btn></td>
+                <td class="endpoint-cell"><a href="{{$.BaseURL}}/apt/{{.Name}}/dists/stable/Release" data-copy="{{$.BaseURL}}/apt/{{.Name}}">{{$.BaseURL}}/apt/{{.Name}}</a><copy-btn data-src="a"></copy-btn></td>
+                <td class="endpoint-cell"><a href="{{$.BaseURL}}/brew/{{.Name}}.rb">{{$.BaseURL}}/brew/{{.Name}}.rb</a><copy-btn data-src="a"></copy-btn></td>
+                <td class="endpoint-cell"><a href="{{$.BaseURL}}/npm/@buildhost/{{.Name}}">{{$.BaseURL}}/npm/@buildhost/{{.Name}}</a><copy-btn data-src="a"></copy-btn></td>
             </tr>
             {{end}}
         </tbody>
