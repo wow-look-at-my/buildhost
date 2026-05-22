@@ -138,12 +138,49 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+func (s *Server) sidebarData() map[string]any {
+	s.cpuMu.Lock()
+	cpuPct := s.cpuPercent
+	s.cpuMu.Unlock()
+
+	sb := map[string]any{
+		"Build":      s.build,
+		"BuildAge":   s.buildAge(),
+		"CPUPercent": fmt.Sprintf("%.1f%%", cpuPct),
+	}
+
+	if du, err := getDiskUsage(s.cfg.DataDir); err == nil && du.Total > 0 {
+		sb["DiskUsed"] = humanSize(int64(du.Used))
+		sb["DiskTotal"] = humanSize(int64(du.Total))
+	}
+
+	return sb
+}
+
+func (s *Server) buildAge() string {
+	if s.build.Date == "" {
+		return ""
+	}
+	for _, layout := range []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05Z",
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+	} {
+		if t, err := time.Parse(layout, s.build.Date); err == nil {
+			return timeAgo(t)
+		}
+	}
+	return s.build.Date
+}
+
 func (s *Server) render(w http.ResponseWriter, name string, data map[string]any) {
 	tmpl, ok := s.templates[name]
 	if !ok {
 		http.Error(w, "template not found", http.StatusInternalServerError)
 		return
 	}
+	data["Sidebar"] = s.sidebarData()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.ExecuteTemplate(w, "layout", data); err != nil {
 		slog.Error("render template", "name", name, "err", err)
