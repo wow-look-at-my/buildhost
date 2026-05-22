@@ -50,9 +50,9 @@ var serveCmd = &cobra.Command{
 
 		if cfg.AdminListenAddr != "" {
 			adminSrv := admin.New(cfg, database, admin.BuildInfo{
-				Version: buildVersion,
-				Commit:  buildCommit,
-				Date:    buildDate,
+				Version: resolvedVersion(),
+				Commit:  resolvedCommit(),
+				Date:    resolvedDate(),
 				RepoURL: "https://github.com/wow-look-at-my/buildhost",
 			})
 			go func() {
