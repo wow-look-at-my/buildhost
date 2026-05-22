@@ -22,8 +22,8 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - `internal/oci/` - OCI distribution endpoint. Self-registering via init().
 - `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler), RouteInfo interface
 - `internal/db/` - SQLite database layer (modernc.org/sqlite, no CGo), OIDC policy storage
-- `internal/storage/` - Content-addressed blob storage (filesystem backend, key validation)
-- `internal/repackage/` - Repackaging pipeline (tar.gz, tar.xz, tar.zst, zip, deb, brew, npm, oci)
+- `internal/storage/` - Content-addressed blob storage (filesystem backend, zstd-compressed, key validation)
+- `internal/repackage/` - On-demand repackaging (tar.gz, tar.xz, tar.zst, zip, deb, brew, npm, oci). Generator type used by handlers; Orchestrator handles publish-time stripping only.
 - `internal/strip/` - Binary debug info stripping (shells out to strip/objcopy)
 - `internal/model/` - Data types (Project, Release, Artifact, APIToken, OIDCPolicy)
 - `internal/version/` - Version resolution logic
@@ -35,8 +35,8 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 
 - Versioning: auto-increment (default) or semver (opt-in per project)
 - Git branch is a first-class field on releases, not just metadata
-- Repackaging happens eagerly at publish time, not on-the-fly
-- Storage is content-addressed (SHA-256) for deduplication
+- Repackaging happens on-demand at download time, not at publish time. Only binary stripping is eager (at publish).
+- Storage is content-addressed (SHA-256) with zstd compression and deduplication
 - Auth: Bearer token, Basic auth, or query param — all resolve to the same token system
 - OIDC: JWT-based auth for GitHub Actions (and any OIDC provider), keys fetched from issuer's JWKS endpoint
 - OIDC auto-provisioning: trusted issuers (BUILDHOST_OIDC_ISSUERS) can create projects on first publish -- project name derived from JWT subject claim, org allowlist (BUILDHOST_OIDC_ORGS, use `*` to allow all), event allowlist (BUILDHOST_OIDC_EVENTS, defaults to `push` to limit to repo members)
