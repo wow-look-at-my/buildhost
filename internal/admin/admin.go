@@ -68,6 +68,7 @@ func (s *Server) loadTemplates() {
 		"timeAgo":       timeAgo,
 		"formatTime":    formatTime,
 		"formatTimePtr": formatTimePtr,
+		"dedupRatio":    dedupRatio,
 	}
 
 	s.templates = make(map[string]*template.Template)
@@ -402,6 +403,14 @@ func formatTimePtr(t *time.Time) string {
 		return "-"
 	}
 	return formatTime(*t)
+}
+
+func dedupRatio(logical, physical int64) string {
+	if physical == 0 {
+		return "1.0x"
+	}
+	ratio := float64(logical) / float64(physical)
+	return fmt.Sprintf("%.1fx", ratio)
 }
 
 func formatDuration(d time.Duration) string {

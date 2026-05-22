@@ -14,6 +14,8 @@ type DashboardStats struct {
 	TotalStorageBytes int64
 	TokenCount        int64
 	OIDCPolicyCount   int64
+	LogicalBytes      int64
+	PhysicalBytes     int64
 }
 
 func (d *DB) GetDashboardStats(ctx context.Context) (*DashboardStats, error) {
@@ -25,8 +27,23 @@ func (d *DB) GetDashboardStats(ctx context.Context) (*DashboardStats, error) {
 			(SELECT COUNT(*) FROM artifacts),
 			(SELECT COALESCE(SUM(size), 0) FROM artifacts),
 			(SELECT COUNT(*) FROM api_tokens),
-			(SELECT COUNT(*) FROM oidc_policies)
-	`).Scan(&s.ProjectCount, &s.ReleaseCount, &s.ArtifactCount, &s.TotalStorageBytes, &s.TokenCount, &s.OIDCPolicyCount)
+			(SELECT COUNT(*) FROM oidc_policies),
+			(SELECT COALESCE(SUM(size), 0) FROM artifacts)
+				+ (SELECT COALESCE(SUM(CASE WHEN stripped_storage_key != '' THEN stripped_size ELSE 0 END), 0) FROM artifacts)
+				+ (SELECT COALESCE(SUM(CASE WHEN debug_storage_key != '' THEN debug_size ELSE 0 END), 0) FROM artifacts)
+				+ (SELECT COALESCE(SUM(size), 0) FROM packaged_artifacts),
+			(SELECT COALESCE(SUM(sz), 0) FROM (
+				SELECT k, MAX(sz) AS sz FROM (
+					SELECT storage_key AS k, size AS sz FROM artifacts
+					UNION ALL
+					SELECT stripped_storage_key, stripped_size FROM artifacts WHERE stripped_storage_key != ''
+					UNION ALL
+					SELECT debug_storage_key, debug_size FROM artifacts WHERE debug_storage_key != ''
+					UNION ALL
+					SELECT storage_key, size FROM packaged_artifacts
+				) GROUP BY k
+			))
+	`).Scan(&s.ProjectCount, &s.ReleaseCount, &s.ArtifactCount, &s.TotalStorageBytes, &s.TokenCount, &s.OIDCPolicyCount, &s.LogicalBytes, &s.PhysicalBytes)
 	if err != nil {
 		return nil, fmt.Errorf("dashboard stats: %w", err)
 	}

@@ -27,6 +27,10 @@
         <div class="stat-value">{{.Stats.OIDCPolicyCount}}</div>
         <div class="stat-label">OIDC Policies</div>
     </div>
+    <div class="stat-card">
+        <div class="stat-value">{{dedupRatio .Stats.LogicalBytes .Stats.PhysicalBytes}}</div>
+        <div class="stat-label">Dedup Ratio</div>
+    </div>
 </div>
 
 <div class="card">
