@@ -4,11 +4,16 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/wow-look-at-my/buildhost/internal/db/dbgen"
+
 	_ "modernc.org/sqlite"
 )
 
+//go:generate sqlc generate -f ../../sqlc.yaml
+
 type DB struct {
 	*sql.DB
+	q *dbgen.Queries
 }
 
 func Open(path string) (*DB, error) {
@@ -18,7 +23,7 @@ func Open(path string) (*DB, error) {
 	}
 	sqlDB.SetMaxOpenConns(1)
 
-	d := &DB{DB: sqlDB}
+	d := &DB{DB: sqlDB, q: dbgen.New(sqlDB)}
 	if err := d.migrate(); err != nil {
 		sqlDB.Close()
 		return nil, fmt.Errorf("migrate: %w", err)

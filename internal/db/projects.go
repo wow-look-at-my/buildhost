@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/wow-look-at-my/buildhost/internal/db/dbgen"
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
@@ -13,10 +14,14 @@ var ErrNotFound = errors.New("not found")
 var ErrConflict = errors.New("already exists")
 
 func (d *DB) CreateProject(ctx context.Context, p *model.Project) error {
-	res, err := d.ExecContext(ctx,
-		`INSERT INTO projects (name, description, homepage, license, is_private, versioning)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		p.Name, p.Description, p.Homepage, p.License, p.IsPrivate, p.Versioning)
+	res, err := d.q.InsertProject(ctx, dbgen.InsertProjectParams{
+		Name:        p.Name,
+		Description: p.Description,
+		Homepage:    p.Homepage,
+		License:     p.License,
+		IsPrivate:   p.IsPrivate,
+		Versioning:  string(p.Versioning),
+	})
 	if err != nil {
 		if isUniqueViolation(err) {
 			return fmt.Errorf("project %q: %w", p.Name, ErrConflict)
@@ -29,38 +34,40 @@ func (d *DB) CreateProject(ctx context.Context, p *model.Project) error {
 }
 
 func (d *DB) GetProject(ctx context.Context, name string) (*model.Project, error) {
-	p := &model.Project{}
-	err := d.QueryRowContext(ctx,
-		`SELECT id, name, description, homepage, license, is_private, versioning, created_at, updated_at
-		 FROM projects WHERE name = ?`, name).Scan(
-		&p.ID, &p.Name, &p.Description, &p.Homepage, &p.License, &p.IsPrivate, &p.Versioning, &p.CreatedAt, &p.UpdatedAt)
+	row, err := d.q.GetProjectByName(ctx, name)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get project: %w", err)
 	}
-	return p, nil
+	return projectFromRow(row), nil
 }
 
 func (d *DB) ListProjects(ctx context.Context) ([]model.Project, error) {
-	rows, err := d.QueryContext(ctx,
-		`SELECT id, name, description, homepage, license, is_private, versioning, created_at, updated_at
-		 FROM projects ORDER BY name`)
+	rows, err := d.q.ListAllProjects(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
 	}
-	defer rows.Close()
-
-	var projects []model.Project
-	for rows.Next() {
-		var p model.Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Homepage, &p.License, &p.IsPrivate, &p.Versioning, &p.CreatedAt, &p.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan project: %w", err)
-		}
-		projects = append(projects, p)
+	projects := make([]model.Project, len(rows))
+	for i, row := range rows {
+		projects[i] = *projectFromRow(row)
 	}
-	return projects, rows.Err()
+	return projects, nil
+}
+
+func projectFromRow(row dbgen.Project) *model.Project {
+	return &model.Project{
+		ID:          row.ID,
+		Name:        row.Name,
+		Description: row.Description,
+		Homepage:    row.Homepage,
+		License:     row.License,
+		IsPrivate:   row.IsPrivate,
+		Versioning:  model.Versioning(row.Versioning),
+		CreatedAt:   row.CreatedAt,
+		UpdatedAt:   row.UpdatedAt,
+	}
 }
 
 func isUniqueViolation(err error) bool {

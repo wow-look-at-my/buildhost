@@ -1,0 +1,16 @@
+version: "2"
+sql:
+  - engine: "sqlite"
+    queries: "internal/db/queries/"
+    schema: "internal/db/schema.sql"
+    gen:
+      go:
+        package: "dbgen"
+        out: "internal/db/dbgen"
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        overrides:
+          - column: "projects.is_private"
+            go_type: "bool"
+          - column: "releases.published"
+            go_type: "bool"

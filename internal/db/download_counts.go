@@ -7,13 +7,6 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
-func (d *DB) IncrementDownloadCount(ctx context.Context, artifactID int64) error {
-	_, err := d.ExecContext(ctx,
-		`INSERT INTO download_counts (artifact_id, count) VALUES (?, 1)
-		 ON CONFLICT(artifact_id) DO UPDATE SET count = count + 1`, artifactID)
-	return err
-}
-
 type PackagedFormat struct {
 	Format   string
 	Size     int64
@@ -27,35 +20,38 @@ type ArtifactDetail struct {
 	Packages      []PackagedFormat
 }
 
+func (d *DB) IncrementDownloadCount(ctx context.Context, artifactID int64) error {
+	return d.q.IncrementDownloadCount(ctx, artifactID)
+}
+
 func (d *DB) ListArtifactDetails(ctx context.Context, releaseID int64) ([]ArtifactDetail, error) {
-	rows, err := d.QueryContext(ctx, `
-		SELECT a.id, a.release_id, a.os, a.arch, a.kind, a.storage_key, a.size, a.sha256,
-		       a.stripped_storage_key, a.stripped_size, a.stripped_sha256,
-		       a.debug_storage_key, a.debug_size, a.filename, a.created_at,
-		       COALESCE(dc.count, 0)
-		FROM artifacts a
-		LEFT JOIN download_counts dc ON dc.artifact_id = a.id
-		WHERE a.release_id = ?
-		ORDER BY a.os, a.arch, a.kind`, releaseID)
+	rows, err := d.q.ListArtifactDetailsWithDownloads(ctx, releaseID)
 	if err != nil {
 		return nil, fmt.Errorf("list artifact details: %w", err)
 	}
-	defer rows.Close()
 
-	var details []ArtifactDetail
-	for rows.Next() {
-		var d ArtifactDetail
-		if err := rows.Scan(&d.ID, &d.ReleaseID, &d.OS, &d.Arch, &d.Kind,
-			&d.StorageKey, &d.Size, &d.SHA256,
-			&d.StrippedStorageKey, &d.StrippedSize, &d.StrippedSHA256,
-			&d.DebugStorageKey, &d.DebugSize, &d.Filename, &d.CreatedAt,
-			&d.DownloadCount); err != nil {
-			return nil, fmt.Errorf("scan artifact detail: %w", err)
+	details := make([]ArtifactDetail, len(rows))
+	for i, row := range rows {
+		details[i] = ArtifactDetail{
+			Artifact: model.Artifact{
+				ID:                 row.ID,
+				ReleaseID:          row.ReleaseID,
+				OS:                 model.OS(row.Os),
+				Arch:               model.Arch(row.Arch),
+				Kind:               model.Kind(row.Kind),
+				StorageKey:         row.StorageKey,
+				Size:               row.Size,
+				SHA256:             row.Sha256,
+				StrippedStorageKey: row.StrippedStorageKey,
+				StrippedSize:       row.StrippedSize,
+				StrippedSHA256:     row.StrippedSha256,
+				DebugStorageKey:    row.DebugStorageKey,
+				DebugSize:          row.DebugSize,
+				Filename:           row.Filename,
+				CreatedAt:          row.CreatedAt,
+			},
+			DownloadCount: row.DownloadCount,
 		}
-		details = append(details, d)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 
 	for i, a := range details {
@@ -70,31 +66,26 @@ func (d *DB) ListArtifactDetails(ctx context.Context, releaseID int64) ([]Artifa
 }
 
 func (d *DB) listPackagedFormats(ctx context.Context, artifactID int64) ([]PackagedFormat, error) {
-	rows, err := d.QueryContext(ctx,
-		`SELECT format, size, sha256, filename FROM packaged_artifacts WHERE artifact_id = ? ORDER BY format`,
-		artifactID)
+	rows, err := d.q.ListPackagedFormats(ctx, artifactID)
 	if err != nil {
 		return nil, fmt.Errorf("list packaged formats: %w", err)
 	}
-	defer rows.Close()
-
-	var pkgs []PackagedFormat
-	for rows.Next() {
-		var p PackagedFormat
-		if err := rows.Scan(&p.Format, &p.Size, &p.SHA256, &p.Filename); err != nil {
-			return nil, fmt.Errorf("scan packaged format: %w", err)
+	pkgs := make([]PackagedFormat, len(rows))
+	for i, row := range rows {
+		pkgs[i] = PackagedFormat{
+			Format:   row.Format,
+			Size:     row.Size,
+			SHA256:   row.Sha256,
+			Filename: row.Filename,
 		}
-		pkgs = append(pkgs, p)
 	}
-	return pkgs, rows.Err()
+	return pkgs, nil
 }
 
 func (d *DB) GetTotalDownloads(ctx context.Context, releaseID int64) (int64, error) {
-	var count int64
-	err := d.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(dc.count), 0)
-		FROM download_counts dc
-		JOIN artifacts a ON dc.artifact_id = a.id
-		WHERE a.release_id = ?`, releaseID).Scan(&count)
-	return count, err
+	count, err := d.q.GetTotalDownloads(ctx, releaseID)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }

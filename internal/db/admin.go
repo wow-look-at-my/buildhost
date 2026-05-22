@@ -17,20 +17,18 @@ type DashboardStats struct {
 }
 
 func (d *DB) GetDashboardStats(ctx context.Context) (*DashboardStats, error) {
-	s := &DashboardStats{}
-	err := d.QueryRowContext(ctx, `
-		SELECT
-			(SELECT COUNT(*) FROM projects),
-			(SELECT COUNT(*) FROM releases),
-			(SELECT COUNT(*) FROM artifacts),
-			(SELECT COALESCE(SUM(size), 0) FROM artifacts),
-			(SELECT COUNT(*) FROM api_tokens),
-			(SELECT COUNT(*) FROM oidc_policies)
-	`).Scan(&s.ProjectCount, &s.ReleaseCount, &s.ArtifactCount, &s.TotalStorageBytes, &s.TokenCount, &s.OIDCPolicyCount)
+	row, err := d.q.GetDashboardStats(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("dashboard stats: %w", err)
 	}
-	return s, nil
+	return &DashboardStats{
+		ProjectCount:      row.ProjectCount,
+		ReleaseCount:      row.ReleaseCount,
+		ArtifactCount:     row.ArtifactCount,
+		TotalStorageBytes: row.TotalStorageBytes,
+		TokenCount:        row.TokenCount,
+		OIDCPolicyCount:   row.OidcPolicyCount,
+	}, nil
 }
 
 type RecentRelease struct {
@@ -39,28 +37,29 @@ type RecentRelease struct {
 }
 
 func (d *DB) ListRecentReleases(ctx context.Context, limit int) ([]RecentRelease, error) {
-	rows, err := d.QueryContext(ctx, `
-		SELECT r.id, r.project_id, r.version, r.version_num, r.git_branch, r.git_commit,
-		       r.notes, r.published, r.created_at, r.published_at, p.name
-		FROM releases r
-		JOIN projects p ON r.project_id = p.id
-		ORDER BY r.created_at DESC, r.id DESC
-		LIMIT ?`, limit)
+	rows, err := d.q.ListRecentReleases(ctx, int64(limit))
 	if err != nil {
 		return nil, fmt.Errorf("list recent releases: %w", err)
 	}
-	defer rows.Close()
-
-	var releases []RecentRelease
-	for rows.Next() {
-		var r RecentRelease
-		if err := rows.Scan(&r.ID, &r.ProjectID, &r.Version, &r.VersionNum, &r.GitBranch, &r.GitCommit,
-			&r.Notes, &r.Published, &r.CreatedAt, &r.PublishedAt, &r.ProjectName); err != nil {
-			return nil, fmt.Errorf("scan recent release: %w", err)
+	releases := make([]RecentRelease, len(rows))
+	for i, row := range rows {
+		releases[i] = RecentRelease{
+			Release: model.Release{
+				ID:          row.ID,
+				ProjectID:   row.ProjectID,
+				Version:     row.Version,
+				VersionNum:  row.VersionNum,
+				GitBranch:   row.GitBranch,
+				GitCommit:   row.GitCommit,
+				Notes:       row.Notes,
+				Published:   row.Published,
+				CreatedAt:   row.CreatedAt,
+				PublishedAt: row.PublishedAt,
+			},
+			ProjectName: row.ProjectName,
 		}
-		releases = append(releases, r)
 	}
-	return releases, rows.Err()
+	return releases, nil
 }
 
 type ProjectSummary struct {
@@ -70,28 +69,29 @@ type ProjectSummary struct {
 }
 
 func (d *DB) ListProjectSummaries(ctx context.Context) ([]ProjectSummary, error) {
-	rows, err := d.QueryContext(ctx, `
-		SELECT p.id, p.name, p.description, p.homepage, p.license, p.is_private, p.versioning,
-		       p.created_at, p.updated_at,
-		       (SELECT COUNT(*) FROM releases WHERE project_id = p.id) AS release_count,
-		       (SELECT COUNT(*) FROM artifacts a JOIN releases r ON a.release_id = r.id WHERE r.project_id = p.id) AS artifact_count
-		FROM projects p
-		ORDER BY p.name`)
+	rows, err := d.q.ListProjectSummaries(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list project summaries: %w", err)
 	}
-	defer rows.Close()
-
-	var projects []ProjectSummary
-	for rows.Next() {
-		var p ProjectSummary
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Homepage, &p.License, &p.IsPrivate, &p.Versioning,
-			&p.CreatedAt, &p.UpdatedAt, &p.ReleaseCount, &p.ArtifactCount); err != nil {
-			return nil, fmt.Errorf("scan project summary: %w", err)
+	projects := make([]ProjectSummary, len(rows))
+	for i, row := range rows {
+		projects[i] = ProjectSummary{
+			Project: model.Project{
+				ID:          row.ID,
+				Name:        row.Name,
+				Description: row.Description,
+				Homepage:    row.Homepage,
+				License:     row.License,
+				IsPrivate:   row.IsPrivate,
+				Versioning:  model.Versioning(row.Versioning),
+				CreatedAt:   row.CreatedAt,
+				UpdatedAt:   row.UpdatedAt,
+			},
+			ReleaseCount:  row.ReleaseCount,
+			ArtifactCount: row.ArtifactCount,
 		}
-		projects = append(projects, p)
 	}
-	return projects, rows.Err()
+	return projects, nil
 }
 
 type ReleaseSummary struct {
@@ -100,28 +100,29 @@ type ReleaseSummary struct {
 }
 
 func (d *DB) ListReleaseSummaries(ctx context.Context, projectID int64) ([]ReleaseSummary, error) {
-	rows, err := d.QueryContext(ctx, `
-		SELECT r.id, r.project_id, r.version, r.version_num, r.git_branch, r.git_commit,
-		       r.notes, r.published, r.created_at, r.published_at,
-		       (SELECT COUNT(*) FROM artifacts WHERE release_id = r.id) AS artifact_count
-		FROM releases r
-		WHERE r.project_id = ?
-		ORDER BY r.version_num DESC`, projectID)
+	rows, err := d.q.ListReleaseSummaries(ctx, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list release summaries: %w", err)
 	}
-	defer rows.Close()
-
-	var releases []ReleaseSummary
-	for rows.Next() {
-		var r ReleaseSummary
-		if err := rows.Scan(&r.ID, &r.ProjectID, &r.Version, &r.VersionNum, &r.GitBranch, &r.GitCommit,
-			&r.Notes, &r.Published, &r.CreatedAt, &r.PublishedAt, &r.ArtifactCount); err != nil {
-			return nil, fmt.Errorf("scan release summary: %w", err)
+	releases := make([]ReleaseSummary, len(rows))
+	for i, row := range rows {
+		releases[i] = ReleaseSummary{
+			Release: model.Release{
+				ID:          row.ID,
+				ProjectID:   row.ProjectID,
+				Version:     row.Version,
+				VersionNum:  row.VersionNum,
+				GitBranch:   row.GitBranch,
+				GitCommit:   row.GitCommit,
+				Notes:       row.Notes,
+				Published:   row.Published,
+				CreatedAt:   row.CreatedAt,
+				PublishedAt: row.PublishedAt,
+			},
+			ArtifactCount: row.ArtifactCount,
 		}
-		releases = append(releases, r)
 	}
-	return releases, rows.Err()
+	return releases, nil
 }
 
 type TokenDetail struct {
@@ -130,27 +131,27 @@ type TokenDetail struct {
 }
 
 func (d *DB) ListTokenDetails(ctx context.Context) ([]TokenDetail, error) {
-	rows, err := d.QueryContext(ctx, `
-		SELECT t.id, t.name, t.token_prefix, t.project_id, t.scopes, t.expires_at, t.created_at, t.last_used_at,
-		       COALESCE(p.name, '') AS project_name
-		FROM api_tokens t
-		LEFT JOIN projects p ON t.project_id = p.id
-		ORDER BY t.created_at DESC`)
+	rows, err := d.q.ListTokenDetails(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list token details: %w", err)
 	}
-	defer rows.Close()
-
-	var tokens []TokenDetail
-	for rows.Next() {
-		var t TokenDetail
-		if err := rows.Scan(&t.ID, &t.Name, &t.TokenPrefix, &t.ProjectID, &t.Scopes, &t.ExpiresAt, &t.CreatedAt, &t.LastUsedAt,
-			&t.ProjectName); err != nil {
-			return nil, fmt.Errorf("scan token detail: %w", err)
+	tokens := make([]TokenDetail, len(rows))
+	for i, row := range rows {
+		tokens[i] = TokenDetail{
+			APIToken: model.APIToken{
+				ID:          row.ID,
+				Name:        row.Name,
+				TokenPrefix: row.TokenPrefix,
+				ProjectID:   row.ProjectID,
+				Scopes:      row.Scopes,
+				ExpiresAt:   row.ExpiresAt,
+				CreatedAt:   row.CreatedAt,
+				LastUsedAt:  row.LastUsedAt,
+			},
+			ProjectName: row.ProjectName,
 		}
-		tokens = append(tokens, t)
 	}
-	return tokens, rows.Err()
+	return tokens, nil
 }
 
 type OIDCPolicyDetail struct {
@@ -159,25 +160,24 @@ type OIDCPolicyDetail struct {
 }
 
 func (d *DB) ListOIDCPolicyDetails(ctx context.Context) ([]OIDCPolicyDetail, error) {
-	rows, err := d.QueryContext(ctx, `
-		SELECT o.id, o.issuer, o.subject_pattern, o.audience, o.project_id, o.scopes, o.created_at,
-		       COALESCE(p.name, '') AS project_name
-		FROM oidc_policies o
-		LEFT JOIN projects p ON o.project_id = p.id
-		ORDER BY o.created_at DESC`)
+	rows, err := d.q.ListOIDCPolicyDetails(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list oidc policy details: %w", err)
 	}
-	defer rows.Close()
-
-	var policies []OIDCPolicyDetail
-	for rows.Next() {
-		var p OIDCPolicyDetail
-		if err := rows.Scan(&p.ID, &p.Issuer, &p.SubjectPattern, &p.Audience, &p.ProjectID, &p.Scopes, &p.CreatedAt,
-			&p.ProjectName); err != nil {
-			return nil, fmt.Errorf("scan oidc policy detail: %w", err)
+	policies := make([]OIDCPolicyDetail, len(rows))
+	for i, row := range rows {
+		policies[i] = OIDCPolicyDetail{
+			OIDCPolicy: model.OIDCPolicy{
+				ID:             row.ID,
+				Issuer:         row.Issuer,
+				SubjectPattern: row.SubjectPattern,
+				Audience:       row.Audience,
+				ProjectID:      row.ProjectID,
+				Scopes:         row.Scopes,
+				CreatedAt:      row.CreatedAt,
+			},
+			ProjectName: row.ProjectName,
 		}
-		policies = append(policies, p)
 	}
-	return policies, rows.Err()
+	return policies, nil
 }
