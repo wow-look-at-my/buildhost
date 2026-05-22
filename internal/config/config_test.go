@@ -78,3 +78,31 @@ func TestLoad_AllOverrides(t *testing.T) {
 	assert.Equal(t, "/opt/data/prod.db", c.DBPath)
 	assert.Equal(t, "https://prod.example.com", c.BaseURL)
 }
+
+func TestLoad_OIDCIssuers(t *testing.T) {
+	t.Setenv("BUILDHOST_OIDC_ISSUERS", "https://issuer1.example.com, https://issuer2.example.com")
+
+	c := Load()
+	assert.Equal(t, []string{"https://issuer1.example.com", "https://issuer2.example.com"}, c.OIDCIssuers)
+}
+
+func TestLoad_OIDCOrgs(t *testing.T) {
+	t.Setenv("BUILDHOST_OIDC_ORGS", "myorg, otherorg")
+
+	c := Load()
+	assert.Equal(t, []string{"myorg", "otherorg"}, c.OIDCOrgs)
+}
+
+func TestLoad_OIDCEvents_Custom(t *testing.T) {
+	t.Setenv("BUILDHOST_OIDC_EVENTS", "push, workflow_dispatch")
+
+	c := Load()
+	assert.Equal(t, []string{"push", "workflow_dispatch"}, c.OIDCEvents)
+}
+
+func TestLoad_OIDCEvents_Default(t *testing.T) {
+	t.Setenv("BUILDHOST_OIDC_EVENTS", "")
+
+	c := Load()
+	assert.Equal(t, []string{"push"}, c.OIDCEvents)
+}

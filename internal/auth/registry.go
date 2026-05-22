@@ -28,12 +28,12 @@ func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
 }
 
-func Init(database *db.DB, store storage.Storage, baseURL, dataDir string, trustedIssuers, allowedOrgs []string) {
+func Init(database *db.DB, store storage.Storage, baseURL, dataDir string, trustedIssuers, allowedOrgs, allowedEvents []string) {
 	sharedDB = database
 	sharedStore = store
 	sharedBase = baseURL
 	sharedData = dataDir
-	mw = &Middleware{DB: database, Verifier: NewOIDCVerifier(trustedIssuers, allowedOrgs)}
+	mw = &Middleware{DB: database, Verifier: NewOIDCVerifier(trustedIssuers, allowedOrgs, allowedEvents)}
 	for _, fn := range readyFuncs {
 		fn()
 	}

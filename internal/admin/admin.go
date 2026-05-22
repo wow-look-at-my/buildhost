@@ -71,7 +71,7 @@ func (s *Server) loadTemplates() {
 	}
 
 	s.templates = make(map[string]*template.Template)
-	for _, page := range []string{"dashboard", "projects", "project", "tokens", "oidc"} {
+	for _, page := range []string{"dashboard", "projects", "project", "release", "registries", "tokens", "oidc"} {
 		s.templates[page] = template.Must(
 			template.New("").Funcs(fm).ParseFS(content,
 				"templates/layout.html",
@@ -112,6 +112,8 @@ func (s *Server) ListenAndServe() error {
 	mux.HandleFunc("GET /{$}", s.handleDashboard)
 	mux.HandleFunc("GET /projects", s.handleProjects)
 	mux.HandleFunc("GET /projects/{name}", s.handleProject)
+	mux.HandleFunc("GET /projects/{name}/releases/{version}", s.handleRelease)
+	mux.HandleFunc("GET /registries", s.handleRegistries)
 	mux.HandleFunc("GET /tokens", s.handleTokens)
 	mux.HandleFunc("GET /oidc", s.handleOIDCPolicies)
 
@@ -138,12 +140,49 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+func (s *Server) sidebarData() map[string]any {
+	s.cpuMu.Lock()
+	cpuPct := s.cpuPercent
+	s.cpuMu.Unlock()
+
+	sb := map[string]any{
+		"Build":      s.build,
+		"BuildAge":   s.buildAge(),
+		"CPUPercent": fmt.Sprintf("%.1f%%", cpuPct),
+	}
+
+	if du, err := getDiskUsage(s.cfg.DataDir); err == nil && du.Total > 0 {
+		sb["DiskUsed"] = humanSize(int64(du.Used))
+		sb["DiskTotal"] = humanSize(int64(du.Total))
+	}
+
+	return sb
+}
+
+func (s *Server) buildAge() string {
+	if s.build.Date == "" {
+		return ""
+	}
+	for _, layout := range []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05Z",
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+	} {
+		if t, err := time.Parse(layout, s.build.Date); err == nil {
+			return timeAgo(t)
+		}
+	}
+	return s.build.Date
+}
+
 func (s *Server) render(w http.ResponseWriter, name string, data map[string]any) {
 	tmpl, ok := s.templates[name]
 	if !ok {
 		http.Error(w, "template not found", http.StatusInternalServerError)
 		return
 	}
+	data["Sidebar"] = s.sidebarData()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.ExecuteTemplate(w, "layout", data); err != nil {
 		slog.Error("render template", "name", name, "err", err)
@@ -219,6 +258,73 @@ func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
 		"Nav":      "projects",
 		"Project":  project,
 		"Releases": releases,
+	})
+}
+
+func (s *Server) handleRelease(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	name := r.PathValue("name")
+	version := r.PathValue("version")
+
+	project, err := s.db.GetProject(ctx, name)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	release, err := s.db.GetRelease(ctx, project.ID, version)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	artifacts, err := s.db.ListArtifactDetails(ctx, release.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	totalDownloads, err := s.db.GetTotalDownloads(ctx, release.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var totalSize int64
+	for _, a := range artifacts {
+		totalSize += a.Size
+	}
+
+	s.render(w, "release", map[string]any{
+		"Nav":            "projects",
+		"Project":        project,
+		"Release":        release,
+		"Artifacts":      artifacts,
+		"TotalDownloads": totalDownloads,
+		"TotalSize":      totalSize,
+		"BaseURL":        s.cfg.BaseURL,
+	})
+}
+
+func (s *Server) handleRegistries(w http.ResponseWriter, r *http.Request) {
+	projects, err := s.db.ListProjectSummaries(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	s.render(w, "registries", map[string]any{
+		"Nav":      "registries",
+		"BaseURL":  s.cfg.BaseURL,
+		"Projects": projects,
 	})
 }
 
