@@ -85,7 +85,7 @@
             {{range .Recent}}
             <tr>
                 <td><a href="/projects/{{.ProjectName}}">{{.ProjectName}}</a></td>
-                <td><code>{{.Version}}</code></td>
+                <td><a href="/projects/{{.ProjectName}}/releases/{{.Version}}"><code>{{.Version}}</code></a></td>
                 <td>{{if .GitBranch}}<code>{{.GitBranch}}</code>{{else}}-{{end}}</td>
                 <td>{{if .Published}}<span class="badge badge-success">Published</span>{{else}}<span class="badge badge-warning">Draft</span>{{end}}</td>
                 <td title="{{formatTime .CreatedAt}}">{{timeAgo .CreatedAt}}</td>
