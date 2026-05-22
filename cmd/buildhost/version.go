@@ -8,8 +8,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var buildVersion = "dev"
-
 func init() {
 	rootCmd.AddCommand(versionCmd)
 }
@@ -23,15 +21,12 @@ var versionCmd = &cobra.Command{
 }
 
 func resolvedVersion() string {
-	if buildVersion != "dev" {
-		return buildVersion
-	}
 	if vcs := getVCS(); vcs.time != "" {
 		if t, err := time.Parse(time.RFC3339, vcs.time); err == nil {
 			return fmt.Sprintf("v0.0.%d", t.Unix())
 		}
 	}
-	return buildVersion
+	return "dev"
 }
 
 func resolvedCommit() string {
