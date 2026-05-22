@@ -8,24 +8,24 @@
 
 :root {
     --sidebar-width: 250px;
-    --sidebar-bg: #0f172a;
-    --sidebar-hover: #1e293b;
-    --sidebar-active: #3b82f6;
-    --bg: #0f172a;
-    --card-bg: #1e293b;
-    --text: #e2e8f0;
-    --text-muted: #94a3b8;
-    --border: #334155;
-    --blue: #60a5fa;
-    --green: #4ade80;
-    --yellow: #facc15;
-    --red: #f87171;
-    --neutral: #64748b;
-    --code-bg: #0f172a;
+    --sidebar-bg: #25282b;
+    --sidebar-hover: #333639;
+    --sidebar-active: #ee7381;
+    --bg: #202326;
+    --card-bg: #2e3236;
+    --text: rgba(255, 255, 255, 0.85);
+    --text-muted: #aab0b8;
+    --border: #505356;
+    --blue: #88ccff;
+    --green: #3fb950;
+    --yellow: #ffeca1;
+    --red: #f85149;
+    --pink: #ee7381;
+    --code-bg: #1d1d1d;
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     background: var(--bg);
     color: var(--text);
     line-height: 1.5;
@@ -39,15 +39,17 @@ a {
 
 a:hover {
     text-decoration: underline;
+    color: #99ddff;
 }
 
 code {
-    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-family: "JetBrains Mono", "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
     font-size: 0.875em;
     background: var(--code-bg);
     color: #e2e8f0;
-    padding: 0.125em 0.375em;
+    padding: 0.15em 0.4em;
     border-radius: 4px;
+    border: 1px solid #3a3d41;
 }
 
 .sidebar {
@@ -57,7 +59,7 @@ code {
     bottom: 0;
     width: var(--sidebar-width);
     background: var(--sidebar-bg);
-    color: #e2e8f0;
+    color: #ddd;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -75,7 +77,7 @@ code {
 .logo {
     width: 36px;
     height: 36px;
-    background: var(--sidebar-active);
+    background: var(--pink);
     color: white;
     border-radius: 8px;
     display: flex;
@@ -89,12 +91,12 @@ code {
 .sidebar-title {
     font-weight: 600;
     font-size: 16px;
-    color: #f8fafc;
+    color: #fefefe;
 }
 
 .sidebar-subtitle {
     font-size: 12px;
-    color: #94a3b8;
+    color: #aab0b8;
 }
 
 .nav-list {
@@ -107,7 +109,7 @@ code {
     padding: 12px 16px;
     border-top: 1px solid var(--border);
     font-size: 11px;
-    color: #94a3b8;
+    color: #aab0b8;
     line-height: 1.6;
 }
 
@@ -118,17 +120,17 @@ code {
 }
 
 .sidebar-info-label {
-    color: #64748b;
+    color: #7a7f87;
 }
 
 .sidebar-info-link {
-    color: #94a3b8;
+    color: #aab0b8;
     text-decoration: none;
-    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
 }
 
 .sidebar-info-link:hover {
-    color: #cbd5e1;
+    color: #ddd;
     text-decoration: underline;
 }
 
@@ -137,7 +139,7 @@ code {
     align-items: center;
     gap: 10px;
     padding: 10px 20px;
-    color: #94a3b8;
+    color: #bbb;
     text-decoration: none;
     font-size: 14px;
     font-weight: 500;
@@ -147,13 +149,13 @@ code {
 
 .nav-list li a:hover {
     background: var(--sidebar-hover);
-    color: #f8fafc;
+    color: #fefefe;
     text-decoration: none;
 }
 
 .nav-list li a.active {
     background: var(--sidebar-hover);
-    color: #f8fafc;
+    color: #fefefe;
     border-left-color: var(--sidebar-active);
 }
 
@@ -177,14 +179,14 @@ h1 {
     font-size: 24px;
     font-weight: 700;
     margin-bottom: 24px;
-    color: var(--text);
+    color: #fefefe;
 }
 
 h2 {
     font-size: 16px;
     font-weight: 600;
     margin-bottom: 16px;
-    color: var(--text);
+    color: #fefefe;
 }
 
 .stat-grid {
@@ -204,7 +206,7 @@ h2 {
 .stat-value {
     font-size: 28px;
     font-weight: 700;
-    color: var(--text);
+    color: #fefefe;
     line-height: 1.2;
 }
 
@@ -230,7 +232,7 @@ h2 {
 
 .info-table td {
     padding: 8px 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid #3a3d41;
     font-size: 14px;
 }
 
@@ -263,12 +265,12 @@ h2 {
 .data-table td {
     padding: 10px 12px;
     font-size: 14px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid #3a3d41;
     vertical-align: middle;
 }
 
 .data-table tbody tr:hover {
-    background: #1a2332;
+    background: #363a3e;
 }
 
 .data-table tbody tr:last-child td {
@@ -285,28 +287,28 @@ h2 {
 }
 
 .badge-success {
-    background: #064e3b;
+    background: #28382d;
     color: #6ee7b7;
 }
 
 .badge-warning {
-    background: #78350f;
-    color: #fde68a;
+    background: #444033;
+    color: var(--yellow);
 }
 
 .badge-danger {
-    background: #7f1d1d;
-    color: #fca5a5;
+    background: #443333;
+    color: #ffcccc;
 }
 
 .badge-info {
-    background: #1e3a5f;
-    color: #93c5fd;
+    background: #303d4f;
+    color: #bfeeff;
 }
 
 .badge-neutral {
-    background: #334155;
-    color: #cbd5e1;
+    background: #3b3e41;
+    color: #ccc;
 }
 
 .empty {
@@ -354,7 +356,7 @@ h2 {
 }
 
 .code-label {
-    background: #1a2332;
+    background: #3b3e41;
     padding: 6px 12px;
     font-size: 12px;
     font-weight: 600;
@@ -366,9 +368,9 @@ h2 {
 
 .code-block pre {
     padding: 12px;
-    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-family: "JetBrains Mono", "SF Mono", "Cascadia Code", Consolas, monospace;
     font-size: 13px;
-    line-height: 1.5;
+    line-height: 1.6;
     overflow-x: auto;
     white-space: pre;
     margin: 0;
@@ -386,16 +388,18 @@ h2 {
     font-size: 12px;
     font-weight: 600;
     padding: 2px 8px;
-    background: #1e3a5f;
-    color: #93c5fd;
+    background: #303d4f;
+    color: #bfeeff;
     border-radius: 4px;
     white-space: nowrap;
+    border: 1px solid transparent;
 }
 
 .dl-links a:hover {
-    background: #2563eb;
+    background: #3a5068;
     color: #ffffff;
     text-decoration: none;
+    border-color: var(--blue);
 }
 
 h1 a {
@@ -412,9 +416,9 @@ h1 a:hover {
     margin-left: 6px;
     font-size: 11px;
     font-weight: 600;
-    color: var(--text-muted);
-    background: var(--card-bg);
-    border: 1px solid var(--border);
+    color: #8b949e;
+    background: #2a303c;
+    border: 1px solid #3e4450;
     border-radius: 4px;
     cursor: pointer;
     vertical-align: middle;
@@ -422,14 +426,15 @@ h1 a:hover {
 }
 
 .copy-btn:hover {
-    background: #334155;
-    color: var(--text);
+    background: #3e4450;
+    color: #ccc;
+    border-color: #8b949e;
 }
 
 .copy-btn.copied {
-    background: #064e3b;
-    color: #6ee7b7;
-    border-color: #065f46;
+    background: #238636;
+    color: #ffffff;
+    border-color: #3fb950;
 }
 
 .code-copy-btn {
@@ -452,25 +457,25 @@ h1 a:hover {
 }
 
 .tpl-select {
-    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
     font-size: 0.8125em;
     padding: 1px 4px;
     border: 1px solid var(--blue);
     border-radius: 4px;
-    background: #1e3a5f;
-    color: #93c5fd;
+    background: #303d4f;
+    color: #bfeeff;
     cursor: pointer;
     outline: none;
     font-weight: 600;
 }
 
 .tpl-select:hover {
-    background: #2563eb;
+    background: #3a5068;
     color: #ffffff;
 }
 
 .tpl-select:focus {
-    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.3);
+    box-shadow: 0 0 0 2px rgba(136, 204, 255, 0.3);
 }
 
 .tpl-select-sm {
