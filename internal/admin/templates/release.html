@@ -80,33 +80,33 @@
     <table class="info-table">
         <tr>
             <td class="info-label">Direct (latest)</td>
-            <td><code>{{.BaseURL}}/dl/{{.Project.Name}}/latest/{os}/{arch}</code></td>
+            <td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/dl/{{.Project.Name}}/latest/{os}/{arch}</code></td>
         </tr>
         <tr>
             <td class="info-label">Direct (version)</td>
-            <td><code>{{.BaseURL}}/dl/{{.Project.Name}}/{{.Release.Version}}/{os}/{arch}</code></td>
+            <td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/dl/{{.Project.Name}}/{{.Release.Version}}/{os}/{arch}</code></td>
         </tr>
         {{if .Release.GitBranch}}
         <tr>
             <td class="info-label">Direct (branch)</td>
-            <td><code>{{.BaseURL}}/dl/{{.Project.Name}}/branch/{{.Release.GitBranch}}/{os}/{arch}</code></td>
+            <td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/dl/{{.Project.Name}}/branch/{{.Release.GitBranch}}/{os}/{arch}</code></td>
         </tr>
         {{end}}
         <tr>
             <td class="info-label">APT</td>
-            <td><code>{{.BaseURL}}/apt/{{.Project.Name}}</code></td>
+            <td class="endpoint-cell"><a href="{{.BaseURL}}/apt/{{.Project.Name}}/dists/stable/Release" class="copyable" data-copy="{{.BaseURL}}/apt/{{.Project.Name}}">{{.BaseURL}}/apt/{{.Project.Name}}</a></td>
         </tr>
         <tr>
             <td class="info-label">Homebrew</td>
-            <td><code>{{.BaseURL}}/brew/{{.Project.Name}}.rb</code></td>
+            <td class="endpoint-cell"><a href="{{.BaseURL}}/brew/{{.Project.Name}}.rb" class="copyable" data-copy="{{.BaseURL}}/brew/{{.Project.Name}}.rb">{{.BaseURL}}/brew/{{.Project.Name}}.rb</a></td>
         </tr>
         <tr>
             <td class="info-label">npm</td>
-            <td><code>{{.BaseURL}}/npm/@buildhost/{{.Project.Name}}</code></td>
+            <td class="endpoint-cell"><a href="{{.BaseURL}}/npm/@buildhost/{{.Project.Name}}" class="copyable" data-copy="{{.BaseURL}}/npm/@buildhost/{{.Project.Name}}">{{.BaseURL}}/npm/@buildhost/{{.Project.Name}}</a></td>
         </tr>
         <tr>
             <td class="info-label">OCI</td>
-            <td><code>{{.BaseURL}}/v2/{{.Project.Name}}/manifests/{{.Release.Version}}</code></td>
+            <td class="endpoint-cell"><a href="{{.BaseURL}}/v2/{{.Project.Name}}/manifests/{{.Release.Version}}" class="copyable" data-copy="{{.BaseURL}}/v2/{{.Project.Name}}/manifests/{{.Release.Version}}">{{.BaseURL}}/v2/{{.Project.Name}}/manifests/{{.Release.Version}}</a></td>
         </tr>
     </table>
 </div>

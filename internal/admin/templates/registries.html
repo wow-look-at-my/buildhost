@@ -6,9 +6,9 @@
     <h2>Direct Downloads</h2>
     <p class="section-desc">Download artifacts directly by platform. Supports version pinning, latest, and branch-based resolution.</p>
     <table class="info-table">
-        <tr><td class="info-label">Latest</td><td><code>{{.BaseURL}}/dl/{project}/latest/{os}/{arch}</code></td></tr>
-        <tr><td class="info-label">Version</td><td><code>{{.BaseURL}}/dl/{project}/{version}/{os}/{arch}</code></td></tr>
-        <tr><td class="info-label">Branch</td><td><code>{{.BaseURL}}/dl/{project}/branch/{branch}/{os}/{arch}</code></td></tr>
+        <tr><td class="info-label">Latest</td><td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/dl/{project}/latest/{os}/{arch}</code></td></tr>
+        <tr><td class="info-label">Version</td><td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/dl/{project}/{version}/{os}/{arch}</code></td></tr>
+        <tr><td class="info-label">Branch</td><td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/dl/{project}/branch/{branch}/{os}/{arch}</code></td></tr>
     </table>
     <div class="code-block">
         <div class="code-label">curl</div>
@@ -29,10 +29,10 @@
     <h2>APT Repository</h2>
     <p class="section-desc">Debian/Ubuntu package repository. Packages are generated at publish time.</p>
     <table class="info-table">
-        <tr><td class="info-label">Release</td><td><code>{{.BaseURL}}/apt/{project}/dists/stable/Release</code></td></tr>
-        <tr><td class="info-label">InRelease</td><td><code>{{.BaseURL}}/apt/{project}/dists/stable/InRelease</code></td></tr>
-        <tr><td class="info-label">Packages</td><td><code>{{.BaseURL}}/apt/{project}/dists/stable/main/binary-{arch}/Packages</code></td></tr>
-        <tr><td class="info-label">Pool</td><td><code>{{.BaseURL}}/apt/{project}/pool/{filename}</code></td></tr>
+        <tr><td class="info-label">Release</td><td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/apt/{project}/dists/stable/Release</code></td></tr>
+        <tr><td class="info-label">InRelease</td><td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/apt/{project}/dists/stable/InRelease</code></td></tr>
+        <tr><td class="info-label">Packages</td><td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/apt/{project}/dists/stable/main/binary-{arch}/Packages</code></td></tr>
+        <tr><td class="info-label">Pool</td><td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/apt/{project}/pool/{filename}</code></td></tr>
     </table>
     <div class="code-block">
         <div class="code-label">Setup (public project)</div>
@@ -57,7 +57,7 @@ sudo apt update && sudo apt install {project}</pre>
     <h2>Homebrew Tap</h2>
     <p class="section-desc">Homebrew formula served as a single .rb file. Auto-detects macOS and Linux bottles.</p>
     <table class="info-table">
-        <tr><td class="info-label">Formula</td><td><code>{{.BaseURL}}/brew/{project}.rb</code></td></tr>
+        <tr><td class="info-label">Formula</td><td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/brew/{project}.rb</code></td></tr>
     </table>
     <div class="code-block">
         <div class="code-label">Install (public project)</div>
@@ -73,8 +73,8 @@ sudo apt update && sudo apt install {project}</pre>
     <h2>npm Registry</h2>
     <p class="section-desc">npm-compatible registry. Packages are scoped under <code>@buildhost</code>.</p>
     <table class="info-table">
-        <tr><td class="info-label">Package metadata</td><td><code>{{.BaseURL}}/npm/@buildhost/{project}</code></td></tr>
-        <tr><td class="info-label">Tarball</td><td><code>{{.BaseURL}}/npm/@buildhost/{project}/-/{project}-{version}.tgz</code></td></tr>
+        <tr><td class="info-label">Package metadata</td><td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/npm/@buildhost/{project}</code></td></tr>
+        <tr><td class="info-label">Tarball</td><td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/npm/@buildhost/{project}/-/{project}-{version}.tgz</code></td></tr>
     </table>
     <div class="code-block">
         <div class="code-label">Setup</div>
@@ -88,9 +88,9 @@ npm install @buildhost/{project}</pre>
     <h2>OCI Distribution (Docker)</h2>
     <p class="section-desc">OCI-compatible registry for pulling artifacts as container images.</p>
     <table class="info-table">
-        <tr><td class="info-label">API check</td><td><code>{{.BaseURL}}/v2/</code></td></tr>
-        <tr><td class="info-label">Manifest</td><td><code>{{.BaseURL}}/v2/{project}/manifests/{reference}</code></td></tr>
-        <tr><td class="info-label">Blob</td><td><code>{{.BaseURL}}/v2/{project}/blobs/{digest}</code></td></tr>
+        <tr><td class="info-label">API check</td><td class="endpoint-cell"><a href="{{.BaseURL}}/v2/" class="copyable" data-copy="{{.BaseURL}}/v2/">{{.BaseURL}}/v2/</a></td></tr>
+        <tr><td class="info-label">Manifest</td><td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/v2/{project}/manifests/{reference}</code></td></tr>
+        <tr><td class="info-label">Blob</td><td class="endpoint-cell"><code class="copyable">{{.BaseURL}}/v2/{project}/blobs/{digest}</code></td></tr>
     </table>
     <div class="code-block">
         <div class="code-label">Docker pull</div>
@@ -107,10 +107,10 @@ docker pull {{.BaseURL}}/{project}:{version}</pre>
     <h2>REST API</h2>
     <p class="section-desc">JSON API for managing projects, releases, and artifacts programmatically.</p>
     <table class="info-table">
-        <tr><td class="info-label">List projects</td><td><code>GET {{.BaseURL}}/api/v1/projects</code></td></tr>
-        <tr><td class="info-label">Get project</td><td><code>GET {{.BaseURL}}/api/v1/projects/{project}</code></td></tr>
-        <tr><td class="info-label">List releases</td><td><code>GET {{.BaseURL}}/api/v1/projects/{project}/releases</code></td></tr>
-        <tr><td class="info-label">Publish</td><td><code>POST {{.BaseURL}}/api/v1/projects/{project}/publish</code></td></tr>
+        <tr><td class="info-label">List projects</td><td class="endpoint-cell"><a href="{{.BaseURL}}/api/v1/projects" class="copyable" data-copy="{{.BaseURL}}/api/v1/projects">GET {{.BaseURL}}/api/v1/projects</a></td></tr>
+        <tr><td class="info-label">Get project</td><td class="endpoint-cell"><code class="copyable">GET {{.BaseURL}}/api/v1/projects/{project}</code></td></tr>
+        <tr><td class="info-label">List releases</td><td class="endpoint-cell"><code class="copyable">GET {{.BaseURL}}/api/v1/projects/{project}/releases</code></td></tr>
+        <tr><td class="info-label">Publish</td><td class="endpoint-cell"><code class="copyable">POST {{.BaseURL}}/api/v1/projects/{project}/publish</code></td></tr>
     </table>
     <div class="code-block">
         <div class="code-label">Authentication</div>
@@ -145,10 +145,10 @@ curl "{{.BaseURL}}/api/v1/projects?token=$TOKEN"</pre>
             <tr>
                 <td><a href="/projects/{{.Name}}">{{.Name}}</a></td>
                 <td>{{if .IsPrivate}}<span class="badge badge-warning">Private</span>{{else}}<span class="badge badge-success">Public</span>{{end}}</td>
-                <td><code class="truncate">{{$.BaseURL}}/dl/{{.Name}}/latest/{os}/{arch}</code></td>
-                <td><code class="truncate">{{$.BaseURL}}/apt/{{.Name}}</code></td>
-                <td><code class="truncate">{{$.BaseURL}}/brew/{{.Name}}.rb</code></td>
-                <td><code class="truncate">{{$.BaseURL}}/npm/@buildhost/{{.Name}}</code></td>
+                <td><code class="copyable truncate">{{$.BaseURL}}/dl/{{.Name}}/latest/{os}/{arch}</code></td>
+                <td><a href="{{$.BaseURL}}/apt/{{.Name}}/dists/stable/Release" class="copyable truncate" data-copy="{{$.BaseURL}}/apt/{{.Name}}">{{$.BaseURL}}/apt/{{.Name}}</a></td>
+                <td><a href="{{$.BaseURL}}/brew/{{.Name}}.rb" class="copyable truncate" data-copy="{{$.BaseURL}}/brew/{{.Name}}.rb">{{$.BaseURL}}/brew/{{.Name}}.rb</a></td>
+                <td><a href="{{$.BaseURL}}/npm/@buildhost/{{.Name}}" class="copyable truncate" data-copy="{{$.BaseURL}}/npm/@buildhost/{{.Name}}">{{$.BaseURL}}/npm/@buildhost/{{.Name}}</a></td>
             </tr>
             {{end}}
         </tbody>
