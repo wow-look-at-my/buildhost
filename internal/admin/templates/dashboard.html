@@ -32,12 +32,12 @@
         <div class="stat-label">Logical Size</div>
     </div>
     <div class="stat-card">
-        <div class="stat-value">{{humanSize .Stats.PhysicalBytes}}</div>
+        <div class="stat-value">{{humanSize .DiskBytes}}</div>
         <div class="stat-label">Disk Size</div>
     </div>
     <div class="stat-card">
-        <div class="stat-value">{{dedupRatio .Stats.LogicalBytes .Stats.PhysicalBytes}}</div>
-        <div class="stat-label">Dedup Ratio</div>
+        <div class="stat-value">{{dedupRatio .Stats.LogicalBytes .DiskBytes}}</div>
+        <div class="stat-label">Compression</div>
     </div>
 </div>
 

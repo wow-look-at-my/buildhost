@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -219,6 +221,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"Uptime":     formatDuration(time.Since(s.startTime)),
 		"CPUPercent": fmt.Sprintf("%.1f%%", cpuPct),
 		"CPUTotal":   formatDuration(cpuTotal),
+		"DiskBytes":  blobsDiskUsage(s.cfg.DataDir + "/blobs"),
 	})
 }
 
@@ -403,6 +406,22 @@ func formatTimePtr(t *time.Time) string {
 		return "-"
 	}
 	return formatTime(*t)
+}
+
+func blobsDiskUsage(dir string) int64 {
+	var total int64
+	filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		info, ierr := d.Info()
+		if ierr != nil {
+			return nil
+		}
+		total += info.Size()
+		return nil
+	})
+	return total
 }
 
 func dedupRatio(logical, physical int64) string {
