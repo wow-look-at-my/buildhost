@@ -28,6 +28,14 @@
         <div class="stat-label">OIDC Policies</div>
     </div>
     <div class="stat-card">
+        <div class="stat-value">{{humanSize .Stats.LogicalBytes}}</div>
+        <div class="stat-label">Logical Size</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{humanSize .Stats.PhysicalBytes}}</div>
+        <div class="stat-label">Disk Size</div>
+    </div>
+    <div class="stat-card">
         <div class="stat-value">{{dedupRatio .Stats.LogicalBytes .Stats.PhysicalBytes}}</div>
         <div class="stat-label">Dedup Ratio</div>
     </div>
