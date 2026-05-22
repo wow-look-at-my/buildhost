@@ -8,23 +8,45 @@
 
 :root {
     --sidebar-width: 250px;
-    --sidebar-bg: #1e293b;
-    --sidebar-hover: #334155;
-    --sidebar-active: #3b82f6;
-    --bg: #f1f5f9;
-    --card-bg: #ffffff;
-    --text: #1e293b;
-    --text-muted: #64748b;
-    --border: #e2e8f0;
-    --blue: #3b82f6;
-    --green: #22c55e;
-    --yellow: #eab308;
-    --red: #ef4444;
-    --neutral: #94a3b8;
+    --sidebar-bg: #25282b;
+    --sidebar-hover: #333639;
+    --sidebar-active: #ee7381;
+    --bg: #202326;
+    --card-bg: #2e3236;
+    --text: rgba(255, 255, 255, 0.85);
+    --text-bright: #fefefe;
+    --text-muted: #aab0b8;
+    --text-dim: #7a7f87;
+    --border: #505356;
+    --border-subtle: #3a3d41;
+    --hover-bg: #363a3e;
+    --blue: #88ccff;
+    --blue-hover: #99ddff;
+    --green: #3fb950;
+    --yellow: #ffeca1;
+    --red: #f85149;
+    --pink: #ee7381;
+    --code-bg: #1d1d1d;
+    --badge-success-bg: #28382d;
+    --badge-success-fg: #6ee7b7;
+    --badge-warning-bg: #444033;
+    --badge-danger-bg: #443333;
+    --badge-danger-fg: #ffcccc;
+    --badge-info-bg: #303d4f;
+    --badge-info-fg: #bfeeff;
+    --badge-neutral-bg: #3b3e41;
+    --copybtn-bg: #2a303c;
+    --copybtn-bg-hover: #3e4450;
+    --copybtn-border: #3e4450;
+    --copybtn-border-hover: #8b949e;
+    --copybtn-fg: #8b949e;
+    --copybtn-success-bg: #238636;
+    --copybtn-success-fg: #ffffff;
+    --copybtn-success-border: #3fb950;
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     background: var(--bg);
     color: var(--text);
     line-height: 1.5;
@@ -38,14 +60,17 @@ a {
 
 a:hover {
     text-decoration: underline;
+    color: var(--blue-hover);
 }
 
 code {
-    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-family: "JetBrains Mono", "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
     font-size: 0.875em;
-    background: #f1f5f9;
-    padding: 0.125em 0.375em;
+    background: var(--code-bg);
+    color: var(--text);
+    padding: 0.15em 0.4em;
     border-radius: 4px;
+    border: 1px solid var(--border-subtle);
 }
 
 .sidebar {
@@ -55,10 +80,11 @@ code {
     bottom: 0;
     width: var(--sidebar-width);
     background: var(--sidebar-bg);
-    color: #e2e8f0;
+    color: var(--text-muted);
     overflow-y: auto;
     display: flex;
     flex-direction: column;
+    border-right: 1px solid var(--border);
 }
 
 .sidebar-header {
@@ -66,14 +92,14 @@ code {
     align-items: center;
     gap: 12px;
     padding: 20px;
-    border-bottom: 1px solid #334155;
+    border-bottom: 1px solid var(--border);
 }
 
 .logo {
     width: 36px;
     height: 36px;
-    background: var(--blue);
-    color: white;
+    background: var(--pink);
+    color: var(--text-bright);
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -86,12 +112,12 @@ code {
 .sidebar-title {
     font-weight: 600;
     font-size: 16px;
-    color: #f8fafc;
+    color: var(--text-bright);
 }
 
 .sidebar-subtitle {
     font-size: 12px;
-    color: #94a3b8;
+    color: var(--text-muted);
 }
 
 .nav-list {
@@ -102,9 +128,9 @@ code {
 
 .sidebar-footer {
     padding: 12px 16px;
-    border-top: 1px solid #334155;
+    border-top: 1px solid var(--border);
     font-size: 11px;
-    color: #94a3b8;
+    color: var(--text-muted);
     line-height: 1.6;
 }
 
@@ -115,17 +141,17 @@ code {
 }
 
 .sidebar-info-label {
-    color: #64748b;
+    color: var(--text-dim);
 }
 
 .sidebar-info-link {
-    color: #94a3b8;
+    color: var(--text-muted);
     text-decoration: none;
-    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
 }
 
 .sidebar-info-link:hover {
-    color: #cbd5e1;
+    color: var(--text);
     text-decoration: underline;
 }
 
@@ -134,7 +160,7 @@ code {
     align-items: center;
     gap: 10px;
     padding: 10px 20px;
-    color: #cbd5e1;
+    color: var(--text-muted);
     text-decoration: none;
     font-size: 14px;
     font-weight: 500;
@@ -144,13 +170,13 @@ code {
 
 .nav-list li a:hover {
     background: var(--sidebar-hover);
-    color: #f8fafc;
+    color: var(--text-bright);
     text-decoration: none;
 }
 
 .nav-list li a.active {
     background: var(--sidebar-hover);
-    color: #f8fafc;
+    color: var(--text-bright);
     border-left-color: var(--sidebar-active);
 }
 
@@ -174,14 +200,14 @@ h1 {
     font-size: 24px;
     font-weight: 700;
     margin-bottom: 24px;
-    color: var(--text);
+    color: var(--text-bright);
 }
 
 h2 {
     font-size: 16px;
     font-weight: 600;
     margin-bottom: 16px;
-    color: var(--text);
+    color: var(--text-bright);
 }
 
 .stat-grid {
@@ -201,7 +227,7 @@ h2 {
 .stat-value {
     font-size: 28px;
     font-weight: 700;
-    color: var(--text);
+    color: var(--text-bright);
     line-height: 1.2;
 }
 
@@ -227,7 +253,7 @@ h2 {
 
 .info-table td {
     padding: 8px 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--border-subtle);
     font-size: 14px;
 }
 
@@ -260,12 +286,12 @@ h2 {
 .data-table td {
     padding: 10px 12px;
     font-size: 14px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--border-subtle);
     vertical-align: middle;
 }
 
 .data-table tbody tr:hover {
-    background: #f8fafc;
+    background: var(--hover-bg);
 }
 
 .data-table tbody tr:last-child td {
@@ -282,28 +308,28 @@ h2 {
 }
 
 .badge-success {
-    background: #dcfce7;
-    color: #166534;
+    background: var(--badge-success-bg);
+    color: var(--badge-success-fg);
 }
 
 .badge-warning {
-    background: #fef9c3;
-    color: #854d0e;
+    background: var(--badge-warning-bg);
+    color: var(--yellow);
 }
 
 .badge-danger {
-    background: #fee2e2;
-    color: #991b1b;
+    background: var(--badge-danger-bg);
+    color: var(--badge-danger-fg);
 }
 
 .badge-info {
-    background: #dbeafe;
-    color: #1e40af;
+    background: var(--badge-info-bg);
+    color: var(--badge-info-fg);
 }
 
 .badge-neutral {
-    background: #f1f5f9;
-    color: #475569;
+    background: var(--badge-neutral-bg);
+    color: var(--text-muted);
 }
 
 .empty {
@@ -351,7 +377,7 @@ h2 {
 }
 
 .code-label {
-    background: #f1f5f9;
+    background: var(--badge-neutral-bg);
     padding: 6px 12px;
     font-size: 12px;
     font-weight: 600;
@@ -359,16 +385,19 @@ h2 {
     text-transform: uppercase;
     letter-spacing: 0.05em;
     border-bottom: 1px solid var(--border);
+    position: relative;
 }
 
 .code-block pre {
     padding: 12px;
-    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-family: "JetBrains Mono", "SF Mono", "Cascadia Code", Consolas, monospace;
     font-size: 13px;
-    line-height: 1.5;
+    line-height: 1.6;
     overflow-x: auto;
     white-space: pre;
     margin: 0;
+    color: var(--text);
+    background: var(--code-bg);
 }
 
 .dl-links {
@@ -381,27 +410,18 @@ h2 {
     font-size: 12px;
     font-weight: 600;
     padding: 2px 8px;
-    background: #dbeafe;
-    color: #1e40af;
+    background: var(--badge-info-bg);
+    color: var(--badge-info-fg);
     border-radius: 4px;
     white-space: nowrap;
+    border: 1px solid transparent;
 }
 
 .dl-links a:hover {
-    background: #bfdbfe;
+    background: var(--blue);
+    color: var(--bg);
     text-decoration: none;
-}
-
-.pkg-row {
-    padding: 6px 12px 10px 12px;
-}
-
-.pkg-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin-right: 16px;
-    font-size: 13px;
+    border-color: var(--blue);
 }
 
 h1 a {
@@ -410,4 +430,99 @@ h1 a {
 
 h1 a:hover {
     color: var(--blue);
+}
+
+.copy-btn {
+    display: inline-block;
+    padding: 1px 6px;
+    margin-left: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--copybtn-fg);
+    background: var(--copybtn-bg);
+    border: 1px solid var(--copybtn-border);
+    border-radius: 4px;
+    cursor: pointer;
+    vertical-align: middle;
+    line-height: 1.4;
+}
+
+.copy-btn:hover {
+    background: var(--copybtn-bg-hover);
+    color: var(--text-muted);
+    border-color: var(--copybtn-border-hover);
+}
+
+.copy-btn.copied {
+    background: var(--copybtn-success-bg);
+    color: var(--copybtn-success-fg);
+    border-color: var(--copybtn-success-border);
+}
+
+.code-copy-btn {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    margin-left: 0;
+}
+
+copy-btn {
+    display: inline;
+}
+
+.url-tpl {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0;
+}
+
+.tpl-select {
+    font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+    font-size: 0.8125em;
+    padding: 1px 4px;
+    border: 1px solid var(--blue);
+    border-radius: 4px;
+    background: var(--badge-info-bg);
+    color: var(--badge-info-fg);
+    cursor: pointer;
+    outline: none;
+    font-weight: 600;
+}
+
+.tpl-select:hover {
+    background: var(--blue);
+    color: var(--bg);
+}
+
+.tpl-select:focus {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 30%, transparent);
+}
+
+.tpl-select-sm {
+    font-size: 0.75em;
+    padding: 0 2px;
+}
+
+.endpoint-cell {
+    display: flex;
+    align-items: center;
+    gap: 0;
+}
+
+.endpoint-cell code {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.endpoint-cell a {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
