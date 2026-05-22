@@ -343,6 +343,12 @@ h2 {
     margin: -8px 0 16px 0;
 }
 
+.endpoint-cell code,
+.endpoint-cell a,
+.info-table code {
+    color: var(--text);
+}
+
 .code-block {
     margin-top: 16px;
     border: 1px solid var(--border);
@@ -369,6 +375,7 @@ h2 {
     overflow-x: auto;
     white-space: pre;
     margin: 0;
+    color: var(--text);
 }
 
 .dl-links {
