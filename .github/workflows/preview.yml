@@ -6,7 +6,7 @@ on:
 
 jobs:
     deploy-preview:
-        uses: PazerOP/pr-preview-action/.github/workflows/preview.yml@v1
+        uses: PazerOP/pr-preview-action/.github/workflows/preview.yml@master
         with:
             source-dir: ./internal/admin/static/
         secrets: inherit
