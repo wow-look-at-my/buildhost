@@ -346,7 +346,7 @@ func TestSecurityHeaders(t *testing.T) {
 	assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
 	assert.Equal(t, "SAMEORIGIN", w.Header().Get("X-Frame-Options"))
 	assert.Equal(t, "no-referrer", w.Header().Get("Referrer-Policy"))
-	assert.Equal(t, "default-src 'self'", w.Header().Get("Content-Security-Policy"))
+	assert.Equal(t, "default-src 'self'; img-src 'self' data:", w.Header().Get("Content-Security-Policy"))
 }
 
 func TestServeSPA_StaticFile(t *testing.T) {
