@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
@@ -69,8 +70,11 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 }
 
 func ociCreateLayer(data []byte, name string) (compressed []byte, diffID string, err error) {
-	var tarBuf bytes.Buffer
-	tw := tar.NewWriter(&tarBuf)
+	var gzBuf bytes.Buffer
+	gz := gzip.NewWriter(&gzBuf)
+	tarHasher := sha256.New()
+
+	tw := tar.NewWriter(io.MultiWriter(tarHasher, gz))
 	if err := tw.WriteHeader(&tar.Header{
 		Name:     name,
 		Size:     int64(len(data)),
@@ -85,19 +89,11 @@ func ociCreateLayer(data []byte, name string) (compressed []byte, diffID string,
 	if err := tw.Close(); err != nil {
 		return nil, "", err
 	}
-
-	h := sha256.Sum256(tarBuf.Bytes())
-	diffID = hex.EncodeToString(h[:])
-
-	var gzBuf bytes.Buffer
-	gz := gzip.NewWriter(&gzBuf)
-	if _, err := gz.Write(tarBuf.Bytes()); err != nil {
-		return nil, "", err
-	}
 	if err := gz.Close(); err != nil {
 		return nil, "", err
 	}
 
+	diffID = hex.EncodeToString(tarHasher.Sum(nil))
 	return gzBuf.Bytes(), diffID, nil
 }
 

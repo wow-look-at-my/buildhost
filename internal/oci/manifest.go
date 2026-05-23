@@ -122,6 +122,10 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *mo
 }
 
 func (h *Handler) serveManifestByDigest(w http.ResponseWriter, r *http.Request, project *model.Project, digest string) {
+	if !validDigest.MatchString(digest) {
+		ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "invalid digest format")
+		return
+	}
 	key := digest[7:]
 
 	belongs, err := h.DB.BlobBelongsToProject(r.Context(), project.ID, key)
