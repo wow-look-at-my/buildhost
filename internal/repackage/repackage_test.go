@@ -419,7 +419,7 @@ func openTestDB(t *testing.T) *db.DB {
 
 func openTestStore(t *testing.T) *storage.Filesystem {
 	t.Helper()
-	store, err := storage.NewFilesystem(t.TempDir())
+	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 	return store
 }

@@ -15,7 +15,7 @@ import (
 )
 
 func TestPutStoresContentAndReturnsCorrectKey(t *testing.T) {
-	fs, err := NewFilesystem(t.TempDir())
+	fs, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
 	content := []byte("hello world")
@@ -32,7 +32,7 @@ func TestPutStoresContentAndReturnsCorrectKey(t *testing.T) {
 }
 
 func TestPutDeduplicates(t *testing.T) {
-	fs, err := NewFilesystem(t.TempDir())
+	fs, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
 	content := []byte("duplicate me")
@@ -50,7 +50,7 @@ func TestPutDeduplicates(t *testing.T) {
 }
 
 func TestGetReturnsStoredContent(t *testing.T) {
-	fs, err := NewFilesystem(t.TempDir())
+	fs, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
 	content := []byte("retrieve me")
@@ -72,7 +72,7 @@ func TestGetReturnsStoredContent(t *testing.T) {
 }
 
 func TestGetInvalidKeyReturnsErrNotExist(t *testing.T) {
-	store, err := NewFilesystem(t.TempDir())
+	store, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
 	_, _, err = store.Get(context.Background(), "not-a-valid-key")
@@ -80,7 +80,7 @@ func TestGetInvalidKeyReturnsErrNotExist(t *testing.T) {
 }
 
 func TestGetMissingKeyReturnsErrNotExist(t *testing.T) {
-	fs, err := NewFilesystem(t.TempDir())
+	fs, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
 	// Use a valid-looking hex key so the shard path is well-formed.
@@ -92,7 +92,7 @@ func TestGetMissingKeyReturnsErrNotExist(t *testing.T) {
 }
 
 func TestDeleteRemovesContent(t *testing.T) {
-	fs, err := NewFilesystem(t.TempDir())
+	fs, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
 	content := []byte("delete me")
@@ -108,7 +108,7 @@ func TestDeleteRemovesContent(t *testing.T) {
 
 func TestGetReadsLegacyUncompressedBlob(t *testing.T) {
 	dir := t.TempDir()
-	store, err := NewFilesystem(dir)
+	store, err := NewFilesystem(dir, true)
 	require.Nil(t, err)
 
 	content := []byte("legacy uncompressed content that was stored before compression was added")
@@ -130,7 +130,7 @@ func TestGetReadsLegacyUncompressedBlob(t *testing.T) {
 
 func TestGetTinyLegacyBlob(t *testing.T) {
 	dir := t.TempDir()
-	store, err := NewFilesystem(dir)
+	store, err := NewFilesystem(dir, true)
 	require.Nil(t, err)
 
 	content := []byte("ab")
@@ -150,9 +150,33 @@ func TestGetTinyLegacyBlob(t *testing.T) {
 	assert.Equal(t, int64(2), size)
 }
 
+func TestPutNoCompressRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewFilesystem(dir, false)
+	require.Nil(t, err)
+
+	content := bytes.Repeat([]byte("compressible data "), 1000)
+	key, size, err := store.Put(context.Background(), bytes.NewReader(content))
+	require.Nil(t, err)
+	assert.Equal(t, int64(len(content)), size)
+
+	diskPath := filepath.Join(dir, key[:2], key)
+	info, err := os.Stat(diskPath)
+	require.Nil(t, err)
+	assert.Equal(t, int64(len(content)), info.Size())
+
+	rc, gotSize, err := store.Get(context.Background(), key)
+	require.Nil(t, err)
+	defer rc.Close()
+	assert.Equal(t, int64(len(content)), gotSize)
+	got, err := io.ReadAll(rc)
+	require.Nil(t, err)
+	assert.True(t, bytes.Equal(got, content))
+}
+
 func TestPutCompressesOnDisk(t *testing.T) {
 	dir := t.TempDir()
-	store, err := NewFilesystem(dir)
+	store, err := NewFilesystem(dir, true)
 	require.Nil(t, err)
 
 	content := bytes.Repeat([]byte("compressible data "), 1000)
@@ -167,7 +191,7 @@ func TestPutCompressesOnDisk(t *testing.T) {
 }
 
 func TestDeleteIdempotent(t *testing.T) {
-	fs, err := NewFilesystem(t.TempDir())
+	fs, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
 	fakeKey := "bb" + hex.EncodeToString(make([]byte, 31))
@@ -177,7 +201,7 @@ func TestDeleteIdempotent(t *testing.T) {
 }
 
 func TestExistsReturnsCorrectBoolean(t *testing.T) {
-	fs, err := NewFilesystem(t.TempDir())
+	fs, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
 	fakeKey := "cc" + hex.EncodeToString(make([]byte, 31))

@@ -21,10 +21,11 @@ var (
 )
 
 type Filesystem struct {
-	root *os.Root
+	root     *os.Root
+	compress bool
 }
 
-func NewFilesystem(rootPath string) (*Filesystem, error) {
+func NewFilesystem(rootPath string, compress bool) (*Filesystem, error) {
 	if err := os.MkdirAll(rootPath, 0o755); err != nil {
 		return nil, fmt.Errorf("create storage root: %w", err)
 	}
@@ -32,7 +33,7 @@ func NewFilesystem(rootPath string) (*Filesystem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open storage root: %w", err)
 	}
-	return &Filesystem{root: root}, nil
+	return &Filesystem{root: root, compress: compress}, nil
 }
 
 func (fs *Filesystem) Put(_ context.Context, r io.Reader) (string, int64, error) {
@@ -56,6 +57,20 @@ func (fs *Filesystem) Put(_ context.Context, r io.Reader) (string, int64, error)
 	rel := fs.rel(key)
 
 	if _, err := fs.root.Stat(rel); err == nil {
+		return key, size, nil
+	}
+
+	if err := fs.root.MkdirAll(key[:2], 0o755); err != nil {
+		return "", 0, fmt.Errorf("create shard dir: %w", err)
+	}
+
+	if !fs.compress {
+		if err := rawTmp.Close(); err != nil {
+			return "", 0, fmt.Errorf("close temp file: %w", err)
+		}
+		if err := fs.root.Rename(rawBase, rel); err != nil {
+			return "", 0, fmt.Errorf("rename to final: %w", err)
+		}
 		return key, size, nil
 	}
 
@@ -94,9 +109,6 @@ func (fs *Filesystem) Put(_ context.Context, r io.Reader) (string, int64, error)
 		return "", 0, fmt.Errorf("close compress temp: %w", err)
 	}
 
-	if err := fs.root.MkdirAll(key[:2], 0o755); err != nil {
-		return "", 0, fmt.Errorf("create shard dir: %w", err)
-	}
 	if err := fs.root.Rename(cmpBase, rel); err != nil {
 		return "", 0, fmt.Errorf("rename to final: %w", err)
 	}

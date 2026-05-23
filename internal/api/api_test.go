@@ -40,7 +40,7 @@ func setupTestHandler(t *testing.T) *Handler {
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
 
-	store, err := storage.NewFilesystem(t.TempDir())
+	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
 	orch := repackage.NewOrchestrator(store, d)

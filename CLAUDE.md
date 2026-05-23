@@ -63,6 +63,12 @@ buildhost bootstrap --name admin-token
 BUILDHOST_LISTEN_ADDR=:8080 BUILDHOST_BASE_URL=https://example.com buildhost serve
 ```
 
+To disable application-level zstd compression (e.g., on ZFS or Btrfs with filesystem-level compression):
+
+```bash
+BUILDHOST_STORAGE_COMPRESS=false buildhost serve
+```
+
 The admin dashboard starts automatically on a separate port (default `:9090`). Set `BUILDHOST_ADMIN_LISTEN_ADDR` to change the address, or set it to empty to disable.
 
 ```bash
