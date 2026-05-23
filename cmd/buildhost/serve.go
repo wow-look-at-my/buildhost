@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/buildhost/internal/admin"
@@ -48,18 +49,21 @@ var serveCmd = &cobra.Command{
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer stop()
 
+		errc := make(chan error, 2)
+
+		var adminHTTP *http.Server
 		if cfg.AdminListenAddr != "" {
-			adminSrv := admin.New(cfg, database, admin.BuildInfo{
+			adminDash := admin.New(cfg, database, admin.BuildInfo{
 				Version: buildVersion,
 				Commit:  buildCommit,
 				Date:    buildDate,
 				RepoURL: "https://github.com/wow-look-at-my/buildhost",
 			})
+			adminHTTP = adminDash.NewHTTPServer()
 			go func() {
 				slog.Info("starting admin dashboard", "addr", cfg.AdminListenAddr)
-				if err := adminSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-					slog.Error("admin server error", "err", err)
-					os.Exit(1)
+				if err := adminHTTP.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					errc <- fmt.Errorf("admin server: %w", err)
 				}
 			}()
 		}
@@ -68,14 +72,38 @@ var serveCmd = &cobra.Command{
 		slog.Info("starting server", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL)
 
 		go func() {
-			<-ctx.Done()
-			slog.Info("shutting down")
-			srv.Shutdown(context.Background())
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				errc <- fmt.Errorf("main server: %w", err)
+			}
 		}()
 
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		select {
+		case err := <-errc:
 			return err
+		case <-ctx.Done():
 		}
+
+		slog.Info("shutting down, waiting for in-flight requests")
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer shutdownCancel()
+
+		var shutdownErr error
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			shutdownErr = fmt.Errorf("main server shutdown: %w", err)
+		}
+		if adminHTTP != nil {
+			if err := adminHTTP.Shutdown(shutdownCtx); err != nil {
+				shutdownErr = fmt.Errorf("admin server shutdown: %w", err)
+			}
+		}
+
+		if shutdownErr != nil {
+			if shutdownCtx.Err() == context.DeadlineExceeded {
+				slog.Error("shutdown timed out after 5 minutes")
+			}
+			return shutdownErr
+		}
+		slog.Info("shutdown complete")
 		return nil
 	},
 }
