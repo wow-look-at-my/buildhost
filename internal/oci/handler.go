@@ -71,19 +71,29 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch rt.action {
 	case "manifests":
 		if rt.reference == "" {
-			http.NotFound(w, r)
+			ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest reference required")
 			return
 		}
 		h.serveManifest(w, r, rt.reference)
 	case "blobs":
 		if rt.reference == "" {
-			http.NotFound(w, r)
+			ociError(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob digest required")
 			return
 		}
 		h.serveBlob(w, r, rt.reference)
 	case "tags":
 		h.serveTags(w, r)
 	default:
-		http.NotFound(w, r)
+		ociError(w, http.StatusNotFound, "NAME_UNKNOWN", "unknown endpoint")
 	}
+}
+
+func ociError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]any{
+		"errors": []map[string]string{
+			{"code": code, "message": message},
+		},
+	})
 }

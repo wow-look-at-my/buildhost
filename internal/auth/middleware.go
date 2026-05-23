@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
@@ -46,6 +47,17 @@ func RequireWrite(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/v2/") {
+		w.Header().Set("Www-Authenticate", `Basic realm="buildhost"`)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"errors":[{"code":"UNAUTHORIZED","message":"authentication required"}]}`))
+		return
+	}
+	http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
 }
 
 func requireProjectFunc(parse ParseFunc, next http.HandlerFunc) http.HandlerFunc {
@@ -94,7 +106,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			switch ri.Access() {
 			case WriteAccess:
 				if t == nil || !t.HasScope("write") {
-					http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
+					unauthorizedResponse(w, r)
 					return
 				}
 				if !t.AuthorizedForProject(project.ID) || !t.AuthorizedForProjectName(project.Name) {
@@ -104,7 +116,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			case ReadAccess:
 				if project.IsPrivate {
 					if t == nil || !t.HasScope("read") {
-						http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
+						unauthorizedResponse(w, r)
 						return
 					}
 					if !t.AuthorizedForProject(project.ID) || !t.AuthorizedForProjectName(project.Name) {

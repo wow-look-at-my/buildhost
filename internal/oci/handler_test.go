@@ -150,6 +150,8 @@ func TestServeHTTP_UnknownAction(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	assert.Contains(t, rec.Body.String(), `"code":"NAME_UNKNOWN"`)
 }
 
 func TestServeHTTP_Manifests_MissingRef(t *testing.T) {

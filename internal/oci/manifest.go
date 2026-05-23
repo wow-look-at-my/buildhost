@@ -27,7 +27,7 @@ func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, referenc
 
 	release, err := h.resolveTag(r.Context(), project, reference)
 	if err != nil {
-		http.NotFound(w, r)
+		ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest unknown")
 		return
 	}
 
@@ -58,7 +58,7 @@ func (h *Handler) resolveTag(ctx context.Context, project *model.Project, tag st
 func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *model.Project, release *model.Release) {
 	artifacts, err := h.DB.ListArtifacts(r.Context(), release.ID)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		ociError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 		return
 	}
 
@@ -89,7 +89,7 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *mo
 	}
 
 	if len(manifests) == 0 {
-		http.NotFound(w, r)
+		ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "no OCI artifacts for this release")
 		return
 	}
 
@@ -126,13 +126,13 @@ func (h *Handler) serveManifestByDigest(w http.ResponseWriter, r *http.Request, 
 
 	belongs, err := h.DB.BlobBelongsToProject(r.Context(), project.ID, key)
 	if err != nil || !belongs {
-		http.NotFound(w, r)
+		ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest unknown")
 		return
 	}
 
 	rc, size, err := h.Store.Get(r.Context(), key)
 	if err != nil {
-		http.NotFound(w, r)
+		ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest unknown")
 		return
 	}
 	defer rc.Close()
@@ -148,7 +148,7 @@ func (h *Handler) serveManifestByDigest(w http.ResponseWriter, r *http.Request, 
 
 func (h *Handler) serveBlob(w http.ResponseWriter, r *http.Request, digest string) {
 	if !validDigest.MatchString(digest) {
-		http.NotFound(w, r)
+		ociError(w, http.StatusNotFound, "BLOB_UNKNOWN", "invalid digest format")
 		return
 	}
 	key := digest[7:]
@@ -156,17 +156,17 @@ func (h *Handler) serveBlob(w http.ResponseWriter, r *http.Request, digest strin
 	project := auth.ProjectFrom(r.Context())
 	belongs, err := h.DB.BlobBelongsToProject(r.Context(), project.ID, key)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		ociError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 		return
 	}
 	if !belongs {
-		http.NotFound(w, r)
+		ociError(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob unknown to registry")
 		return
 	}
 
 	rc, size, err := h.Store.Get(r.Context(), key)
 	if err != nil {
-		http.NotFound(w, r)
+		ociError(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob unknown to registry")
 		return
 	}
 	defer rc.Close()
@@ -184,11 +184,11 @@ func (h *Handler) serveTags(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		ociError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 		return
 	}
 
-	var tags []string
+	tags := []string{}
 	hasOCI := false
 	for _, rel := range releases {
 		if !rel.Published {
