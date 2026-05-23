@@ -55,19 +55,10 @@
                     <a href="{{$.BaseURL}}/dl/{{$.Project.Name}}/{{$.Release.Version}}/{{$a.OS}}/{{$a.Arch}}" title="Direct download">raw</a>
                     {{if $a.DebugStorageKey}}<a href="{{$.BaseURL}}/dl/{{$.Project.Name}}/{{$.Release.Version}}/{{$a.OS}}/{{$a.Arch}}?debug=1" title="Debug symbols">debug</a>{{end}}
                     {{range $a.Packages}}
-                    <a href="{{$.BaseURL}}/dl/{{$.Project.Name}}/{{$.Release.Version}}/{{$a.OS}}/{{$a.Arch}}?format={{.Format}}" title="{{.Format}} package">{{.Format}}</a>
+                    <a href="{{$.BaseURL}}/dl/{{$.Project.Name}}/{{$.Release.Version}}/{{$a.OS}}/{{$a.Arch}}?format={{.Format}}" title="{{.Filename}} ({{humanSize .Size}})">{{.Format}}</a>
                     {{end}}
                 </td>
             </tr>
-            {{if $a.Packages}}
-            <tr class="row-muted">
-                <td colspan="6" class="pkg-row">
-                    {{range $a.Packages}}
-                    <span class="pkg-item"><span class="badge badge-neutral">{{.Format}}</span> {{.Filename}} ({{humanSize .Size}})</span>
-                    {{end}}
-                </td>
-            </tr>
-            {{end}}
             {{else}}
             <tr><td colspan="6" class="empty">No artifacts</td></tr>
             {{end}}
@@ -80,33 +71,33 @@
     <table class="info-table">
         <tr>
             <td class="info-label">Direct (latest)</td>
-            <td><code>{{.BaseURL}}/dl/{{.Project.Name}}/latest/{os}/{arch}</code></td>
+            <td class="endpoint-cell"><span class="url-tpl" data-tpl="{{.BaseURL}}/dl/{{.Project.Name}}/latest/{os}/{arch}"><code>{{.BaseURL}}/dl/{{.Project.Name}}/latest/</code><select class="tpl-select" data-var="os"><option value="linux">linux</option><option value="darwin">darwin</option><option value="windows">windows</option><option value="freebsd">freebsd</option></select><code>/</code><select class="tpl-select" data-var="arch"><option value="amd64">amd64</option><option value="arm64">arm64</option><option value="386">386</option><option value="arm">arm</option></select><copy-btn></copy-btn></span></td>
         </tr>
         <tr>
             <td class="info-label">Direct (version)</td>
-            <td><code>{{.BaseURL}}/dl/{{.Project.Name}}/{{.Release.Version}}/{os}/{arch}</code></td>
+            <td class="endpoint-cell"><span class="url-tpl" data-tpl="{{.BaseURL}}/dl/{{.Project.Name}}/{{.Release.Version}}/{os}/{arch}"><code>{{.BaseURL}}/dl/{{.Project.Name}}/{{.Release.Version}}/</code><select class="tpl-select" data-var="os"><option value="linux">linux</option><option value="darwin">darwin</option><option value="windows">windows</option><option value="freebsd">freebsd</option></select><code>/</code><select class="tpl-select" data-var="arch"><option value="amd64">amd64</option><option value="arm64">arm64</option><option value="386">386</option><option value="arm">arm</option></select><copy-btn></copy-btn></span></td>
         </tr>
         {{if .Release.GitBranch}}
         <tr>
             <td class="info-label">Direct (branch)</td>
-            <td><code>{{.BaseURL}}/dl/{{.Project.Name}}/branch/{{.Release.GitBranch}}/{os}/{arch}</code></td>
+            <td class="endpoint-cell"><span class="url-tpl" data-tpl="{{.BaseURL}}/dl/{{.Project.Name}}/branch/{{.Release.GitBranch}}/{os}/{arch}"><code>{{.BaseURL}}/dl/{{.Project.Name}}/branch/{{.Release.GitBranch}}/</code><select class="tpl-select" data-var="os"><option value="linux">linux</option><option value="darwin">darwin</option><option value="windows">windows</option><option value="freebsd">freebsd</option></select><code>/</code><select class="tpl-select" data-var="arch"><option value="amd64">amd64</option><option value="arm64">arm64</option><option value="386">386</option><option value="arm">arm</option></select><copy-btn></copy-btn></span></td>
         </tr>
         {{end}}
         <tr>
             <td class="info-label">APT</td>
-            <td><code>{{.BaseURL}}/apt/{{.Project.Name}}</code></td>
+            <td class="endpoint-cell"><copy-btn><a href="{{.BaseURL}}/apt/{{.Project.Name}}/dists/stable/Release" data-copy="{{.BaseURL}}/apt/{{.Project.Name}}">{{.BaseURL}}/apt/{{.Project.Name}}</a></copy-btn></td>
         </tr>
         <tr>
             <td class="info-label">Homebrew</td>
-            <td><code>{{.BaseURL}}/brew/{{.Project.Name}}.rb</code></td>
+            <td class="endpoint-cell"><copy-btn><a href="{{.BaseURL}}/brew/{{.Project.Name}}.rb">{{.BaseURL}}/brew/{{.Project.Name}}.rb</a></copy-btn></td>
         </tr>
         <tr>
             <td class="info-label">npm</td>
-            <td><code>{{.BaseURL}}/npm/@buildhost/{{.Project.Name}}</code></td>
+            <td class="endpoint-cell"><copy-btn><a href="{{.BaseURL}}/npm/@buildhost/{{.Project.Name}}">{{.BaseURL}}/npm/@buildhost/{{.Project.Name}}</a></copy-btn></td>
         </tr>
         <tr>
             <td class="info-label">OCI</td>
-            <td><code>{{.BaseURL}}/v2/{{.Project.Name}}/manifests/{{.Release.Version}}</code></td>
+            <td class="endpoint-cell"><copy-btn><a href="{{.BaseURL}}/v2/{{.Project.Name}}/manifests/{{.Release.Version}}">{{.BaseURL}}/v2/{{.Project.Name}}/manifests/{{.Release.Version}}</a></copy-btn></td>
         </tr>
     </table>
 </div>
