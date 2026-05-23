@@ -29,15 +29,27 @@ func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
 func parseRoute(r *http.Request) auth.RouteInfo {
-	// parseRoute sees the original URL (before StripPrefix runs).
-	// Strip the "/apt/" prefix, then split into project + subpath.
+	// APT repo path: /apt/{project}/{dists|pool}/...
+	// {project} may contain '/' (multi-segment names), so we can't take the
+	// first '/'-separated token. Find the LAST occurrence of /dists/ or /pool/
+	// -- everything before is the project, everything from that boundary
+	// onward is the subpath. LastIndex (not Index) so a project name
+	// containing the literal "dists" or "pool" still resolves correctly.
 	path := strings.TrimPrefix(r.URL.Path, "/apt/")
-	parts := strings.SplitN(path, "/", 2)
-	rt := route{project: parts[0]}
-	if len(parts) == 2 {
-		rt.subPath = parts[1]
+	for _, marker := range []string{"/dists/", "/pool/"} {
+		if i := strings.LastIndex(path, marker); i > 0 {
+			return route{
+				project: path[:i],
+				// Keep the marker (without the leading '/') in subPath so
+				// the handler's prefix matches against "dists/..." / "pool/..."
+				// continue to work unchanged.
+				subPath: path[i+1:],
+			}
+		}
 	}
-	return rt
+	// No marker: treat whole path as project (will 404 at the handler since
+	// the subPath switch only matches known prefixes).
+	return route{project: path}
 }
 
 func routeFrom(ctx context.Context) route {

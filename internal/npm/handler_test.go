@@ -17,6 +17,82 @@ import (
 	"github.com/wow-look-at-my/testify/require"
 )
 
+func TestParseRoute(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want route
+	}{
+		{
+			name: "package info, single-word name",
+			path: "/npm/@buildhost/buildhost",
+			want: route{project: "buildhost"},
+		},
+		{
+			name: "package info, dashed name",
+			path: "/npm/@buildhost/go-toolchain",
+			want: route{project: "go-toolchain"},
+		},
+		{
+			name: "package info, multi-dashed name",
+			path: "/npm/@buildhost/foo-bar-baz",
+			want: route{project: "foo-bar-baz"},
+		},
+		{
+			name: "tarball, single-word name",
+			path: "/npm/@buildhost/buildhost/-/buildhost-1.0.0.tgz",
+			want: route{project: "buildhost", isTarball: true, filename: "buildhost-1.0.0.tgz"},
+		},
+		{
+			name: "tarball, dashed name",
+			path: "/npm/@buildhost/go-toolchain/-/go-toolchain-2.0.0.tgz",
+			want: route{project: "go-toolchain", isTarball: true, filename: "go-toolchain-2.0.0.tgz"},
+		},
+		{
+			name: "tarball, multi-dashed name",
+			path: "/npm/@buildhost/foo-bar-baz/-/foo-bar-baz-1.0.0.tgz",
+			want: route{project: "foo-bar-baz", isTarball: true, filename: "foo-bar-baz-1.0.0.tgz"},
+		},
+		{
+			name: "package info, name with dots",
+			path: "/npm/@buildhost/foo.bar",
+			want: route{project: "foo.bar"},
+		},
+		{
+			name: "package info, name with underscore",
+			path: "/npm/@buildhost/foo_bar",
+			want: route{project: "foo_bar"},
+		},
+		{
+			name: "package info, multi-segment name (slash)",
+			path: "/npm/@buildhost/library/foo",
+			want: route{project: "library/foo"},
+		},
+		{
+			name: "package info, deeply nested multi-segment name",
+			path: "/npm/@buildhost/team/group/proj-name",
+			want: route{project: "team/group/proj-name"},
+		},
+		{
+			name: "tarball, multi-segment name",
+			path: "/npm/@buildhost/library/foo/-/foo-1.0.0.tgz",
+			want: route{project: "library/foo", isTarball: true, filename: "foo-1.0.0.tgz"},
+		},
+		{
+			name: "tarball, multi-segment name with dashed final segment",
+			path: "/npm/@buildhost/team/go-toolchain/-/go-toolchain-2.0.0.tgz",
+			want: route{project: "team/go-toolchain", isTarball: true, filename: "go-toolchain-2.0.0.tgz"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.path, nil)
+			got := parseRoute(req).(route)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	t.Helper()
 	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))

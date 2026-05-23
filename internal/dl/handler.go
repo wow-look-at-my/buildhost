@@ -20,6 +20,9 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 	})
+	// {project} matches one URL segment. For multi-segment project names the
+	// client URL-encodes the slash as %2F: Go's ServeMux matches on the raw
+	// path (so %2F is not split) and r.PathValue returns the decoded value.
 	auth.Handle("GET /dl/{project}/latest/{os}/{arch}", parseRoute, handler.DownloadLatest)
 	auth.Handle("GET /dl/{project}/branch/{branch}/{os}/{arch}", parseRoute, handler.DownloadBranch)
 	auth.Handle("GET /dl/{project}/{version}/{os}/{arch}", parseRoute, handler.Download)

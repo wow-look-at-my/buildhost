@@ -31,20 +31,58 @@ type route struct {
 func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
+// ociActions are the reserved action keywords from the OCI distribution spec.
+// They sit between the (possibly multi-segment) name and the reference.
+var ociActions = []string{"manifests", "blobs", "tags"}
+
 func parseRoute(r *http.Request) auth.RouteInfo {
+	// OCI distribution path: /v2/{name}/{action}/{reference}
+	// {name} may contain '/' (e.g. "library/nginx"), so a naive split-by-'/'
+	// can't distinguish "library/nginx" + "manifests" from a 3-segment name.
+	//
+	// References (tags, digests) never contain '/' per spec, so the right
+	// boundary is the RIGHTMOST /<action>/ whose trailing portion has no '/'.
+	// This handles names that themselves contain an action keyword as a segment
+	// (e.g. project "foo/manifests" with action "blobs").
 	path := strings.TrimPrefix(r.URL.Path, "/v2/")
-	parts := strings.SplitN(path, "/", 3)
-	rt := route{}
-	if len(parts) >= 1 {
-		rt.project = parts[0]
+
+	bestI := -1
+	var bestAction string
+	for _, action := range ociActions {
+		needle := "/" + action + "/"
+		i := strings.LastIndex(path, needle)
+		if i <= 0 {
+			continue
+		}
+		ref := path[i+len(needle):]
+		if strings.Contains(ref, "/") {
+			continue
+		}
+		if i > bestI {
+			bestI = i
+			bestAction = action
+		}
 	}
-	if len(parts) >= 2 {
-		rt.action = parts[1]
+	if bestI > 0 {
+		return route{
+			project:   path[:bestI],
+			action:    bestAction,
+			reference: path[bestI+len("/"+bestAction+"/"):],
+		}
 	}
-	if len(parts) >= 3 {
-		rt.reference = parts[2]
+
+	// Action-only URLs: /v2/{name}/{action} with no reference (will 404).
+	for _, action := range ociActions {
+		suffix := "/" + action
+		if strings.HasSuffix(path, suffix) && len(path) > len(suffix) {
+			return route{
+				project: path[:len(path)-len(suffix)],
+				action:  action,
+			}
+		}
 	}
-	return rt
+	// Bare name (or /v2/ root). Auth/handler will 404 -- nothing to serve.
+	return route{project: path}
 }
 
 func routeFrom(ctx context.Context) route {
