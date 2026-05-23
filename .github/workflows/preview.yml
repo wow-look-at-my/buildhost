@@ -4,6 +4,13 @@ on:
     pull_request:
         types: [opened, reopened, synchronize, closed]
 
+permissions:
+    contents: write
+    pull-requests: write
+    pages: write
+    id-token: write
+    statuses: write
+
 jobs:
     deploy-preview:
         uses: PazerOP/pr-preview-action/.github/workflows/preview.yml@master
