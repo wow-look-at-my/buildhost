@@ -28,7 +28,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - `internal/repackage/` - Repackaging pipeline (tar.gz, tar.xz, tar.zst, zip, deb, brew, npm, oci)
 - `internal/strip/` - Binary debug info stripping (shells out to strip/objcopy)
 - `internal/version/` - Version resolution logic
-- `internal/admin/` - Admin dashboard (separate HTTP server, embedded HTML/CSS templates)
+- `internal/admin/` - Admin dashboard (separate HTTP server, JSON API + static SPA frontend)
 - `internal/config/` - Server configuration from env vars
 - `migrations/` - SQLite schema (embedded via go:embed)
 

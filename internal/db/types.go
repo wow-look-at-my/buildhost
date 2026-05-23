@@ -66,6 +66,13 @@ func ValidKind(s string) bool {
 type APIToken = ApiToken
 type OIDCPolicy = OidcPolicy
 
+type DashboardStats = GetDashboardStatsRow
+type RecentRelease = ListRecentReleasesRow
+type ProjectSummary = ListProjectSummariesRow
+type ReleaseSummary = ListReleaseSummariesRow
+type TokenDetail = ListTokenDetailsRow
+type OIDCPolicyDetail = ListOIDCPolicyDetailsRow
+
 var ValidScopes = map[string]bool{
 	"read":  true,
 	"write": true,

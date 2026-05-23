@@ -2,9 +2,10 @@ package admin
 
 import (
 	"embed"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -14,14 +15,14 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
-//go:embed templates/*.html static/*
+//go:embed static/*
 var content embed.FS
 
 type BuildInfo struct {
-	Version string
-	Commit  string
-	Date    string
-	RepoURL string
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
+	Date    string `json:"date"`
+	RepoURL string `json:"-"`
 }
 
 func (b BuildInfo) CommitURL() string {
@@ -43,42 +44,29 @@ type Server struct {
 	db        *db.DB
 	build     BuildInfo
 	startTime time.Time
-	templates map[string]*template.Template
 
 	cpuMu      sync.Mutex
 	cpuPercent float64
 	cpuTotal   time.Duration
+
+	staticFS  fs.FS
+	indexHTML []byte
 }
 
 func New(cfg config.Config, database *db.DB, build BuildInfo) *Server {
+	staticFS, _ := fs.Sub(content, "static")
+	indexHTML, _ := fs.ReadFile(staticFS, "index.html")
+
 	s := &Server{
 		cfg:       cfg,
 		db:        database,
 		build:     build,
 		startTime: time.Now(),
+		staticFS:  staticFS,
+		indexHTML:  indexHTML,
 	}
-	s.loadTemplates()
 	s.cpuTotal = getCPUTime()
 	return s
-}
-
-func (s *Server) loadTemplates() {
-	fm := template.FuncMap{
-		"humanSize":     humanSize,
-		"timeAgo":       timeAgo,
-		"formatTime":    formatTime,
-		"formatTimePtr": formatTimePtr,
-	}
-
-	s.templates = make(map[string]*template.Template)
-	for _, page := range []string{"dashboard", "projects", "project", "release", "registries", "tokens", "oidc"} {
-		s.templates[page] = template.Must(
-			template.New("").Funcs(fm).ParseFS(content,
-				"templates/layout.html",
-				"templates/"+page+".html",
-			),
-		)
-	}
 }
 
 func (s *Server) startCPUTracker() {
@@ -107,15 +95,16 @@ func (s *Server) startCPUTracker() {
 func (s *Server) ListenAndServe() error {
 	mux := http.NewServeMux()
 
-	mux.Handle("GET /static/", http.FileServerFS(content))
+	mux.HandleFunc("GET /api/sidebar", s.apiSidebar)
+	mux.HandleFunc("GET /api/dashboard", s.apiDashboard)
+	mux.HandleFunc("GET /api/projects/{name}/releases/{version}", s.apiRelease)
+	mux.HandleFunc("GET /api/projects/{name}", s.apiProject)
+	mux.HandleFunc("GET /api/projects", s.apiProjects)
+	mux.HandleFunc("GET /api/registries", s.apiRegistries)
+	mux.HandleFunc("GET /api/tokens", s.apiTokens)
+	mux.HandleFunc("GET /api/oidc", s.apiOIDC)
 
-	mux.HandleFunc("GET /{$}", s.handleDashboard)
-	mux.HandleFunc("GET /projects", s.handleProjects)
-	mux.HandleFunc("GET /projects/{name}", s.handleProject)
-	mux.HandleFunc("GET /projects/{name}/releases/{version}", s.handleRelease)
-	mux.HandleFunc("GET /registries", s.handleRegistries)
-	mux.HandleFunc("GET /tokens", s.handleTokens)
-	mux.HandleFunc("GET /oidc", s.handleOIDCPolicies)
+	mux.HandleFunc("GET /", s.serveSPA)
 
 	s.startCPUTracker()
 
@@ -140,56 +129,53 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) sidebarData() map[string]any {
+func (s *Server) serveSPA(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	if path == "/" {
+		path = "/index.html"
+	}
+	if f, err := s.staticFS.Open(path[1:]); err == nil {
+		f.Close()
+		http.ServeFileFS(w, r, s.staticFS, path[1:])
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(s.indexHTML)
+}
+
+func (s *Server) writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Error("encode json", "err", err)
+	}
+}
+
+func (s *Server) apiSidebar(w http.ResponseWriter, r *http.Request) {
 	s.cpuMu.Lock()
 	cpuPct := s.cpuPercent
 	s.cpuMu.Unlock()
 
-	sb := map[string]any{
-		"Build":      s.build,
-		"BuildAge":   s.buildAge(),
-		"CPUPercent": fmt.Sprintf("%.1f%%", cpuPct),
+	resp := map[string]any{
+		"build": map[string]any{
+			"version":      s.build.Version,
+			"commit":       s.build.Commit,
+			"commit_url":   s.build.CommitURL(),
+			"short_commit": s.build.ShortCommit(),
+			"date":         s.build.Date,
+		},
+		"build_age":   s.buildAge(),
+		"cpu_percent": fmt.Sprintf("%.1f%%", cpuPct),
 	}
 
 	if du, err := getDiskUsage(s.cfg.DataDir); err == nil && du.Total > 0 {
-		sb["DiskUsed"] = humanSize(int64(du.Used))
-		sb["DiskTotal"] = humanSize(int64(du.Total))
+		resp["disk_used"] = humanSize(int64(du.Used))
+		resp["disk_total"] = humanSize(int64(du.Total))
 	}
 
-	return sb
+	s.writeJSON(w, resp)
 }
 
-func (s *Server) buildAge() string {
-	if s.build.Date == "" {
-		return ""
-	}
-	for _, layout := range []string{
-		time.RFC3339,
-		"2006-01-02T15:04:05Z",
-		"2006-01-02 15:04:05",
-		"2006-01-02",
-	} {
-		if t, err := time.Parse(layout, s.build.Date); err == nil {
-			return timeAgo(t)
-		}
-	}
-	return s.build.Date
-}
-
-func (s *Server) render(w http.ResponseWriter, name string, data map[string]any) {
-	tmpl, ok := s.templates[name]
-	if !ok {
-		http.Error(w, "template not found", http.StatusInternalServerError)
-		return
-	}
-	data["Sidebar"] = s.sidebarData()
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tmpl.ExecuteTemplate(w, "layout", data); err != nil {
-		slog.Error("render template", "name", name, "err", err)
-	}
-}
-
-func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+func (s *Server) apiDashboard(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	stats, err := s.db.GetDashboardStats(ctx)
@@ -203,38 +189,53 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if recent == nil {
+		recent = []db.RecentRelease{}
+	}
 
 	s.cpuMu.Lock()
 	cpuPct := s.cpuPercent
 	cpuTotal := s.cpuTotal
 	s.cpuMu.Unlock()
 
-	s.render(w, "dashboard", map[string]any{
-		"Nav":        "dashboard",
-		"Stats":      stats,
-		"Recent":     recent,
-		"Config":     s.cfg,
-		"Build":      s.build,
-		"Uptime":     formatDuration(time.Since(s.startTime)),
-		"CPUPercent": fmt.Sprintf("%.1f%%", cpuPct),
-		"CPUTotal":   formatDuration(cpuTotal),
+	s.writeJSON(w, map[string]any{
+		"stats":  stats,
+		"recent": recent,
+		"config": map[string]any{
+			"base_url":           s.cfg.BaseURL,
+			"listen_addr":        s.cfg.ListenAddr,
+			"admin_listen_addr":  s.cfg.AdminListenAddr,
+			"data_dir":           s.cfg.DataDir,
+			"oidc_issuers":       s.cfg.OIDCIssuers,
+			"oidc_orgs":          s.cfg.OIDCOrgs,
+			"oidc_events":        s.cfg.OIDCEvents,
+		},
+		"build": map[string]any{
+			"version":      s.build.Version,
+			"commit":       s.build.Commit,
+			"commit_url":   s.build.CommitURL(),
+			"short_commit": s.build.ShortCommit(),
+			"date":         s.build.Date,
+		},
+		"uptime":      formatDuration(time.Since(s.startTime)),
+		"cpu_percent": fmt.Sprintf("%.1f%%", cpuPct),
+		"cpu_total":   formatDuration(cpuTotal),
 	})
 }
 
-func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
+func (s *Server) apiProjects(w http.ResponseWriter, r *http.Request) {
 	projects, err := s.db.ListProjectSummaries(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	s.render(w, "projects", map[string]any{
-		"Nav":      "projects",
-		"Projects": projects,
-	})
+	if projects == nil {
+		projects = []db.ProjectSummary{}
+	}
+	s.writeJSON(w, projects)
 }
 
-func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
+func (s *Server) apiProject(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	name := r.PathValue("name")
 
@@ -253,15 +254,17 @@ func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if releases == nil {
+		releases = []db.ReleaseSummary{}
+	}
 
-	s.render(w, "project", map[string]any{
-		"Nav":      "projects",
-		"Project":  project,
-		"Releases": releases,
+	s.writeJSON(w, map[string]any{
+		"project":  project,
+		"releases": releases,
 	})
 }
 
-func (s *Server) handleRelease(w http.ResponseWriter, r *http.Request) {
+func (s *Server) apiRelease(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	name := r.PathValue("name")
 	version := r.PathValue("version")
@@ -300,64 +303,104 @@ func (s *Server) handleRelease(w http.ResponseWriter, r *http.Request) {
 
 	type artifactView struct {
 		db.ListArtifactDetailsWithDownloadsRow
-		Packages []db.ListPackagedFormatsRow
+		Packages []db.ListPackagedFormatsRow `json:"packages"`
 	}
 	artifacts := make([]artifactView, len(rows))
 	var totalSize int64
 	for i, a := range rows {
-		artifacts[i] = artifactView{a, pkgs[i]}
+		artifacts[i] = artifactView{ListArtifactDetailsWithDownloadsRow: a, Packages: pkgs[i]}
 		totalSize += a.Size
 	}
 
-	s.render(w, "release", map[string]any{
-		"Nav":            "projects",
-		"Project":        project,
-		"Release":        release,
-		"Artifacts":      artifacts,
-		"TotalDownloads": totalDownloads,
-		"TotalSize":      totalSize,
-		"BaseURL":        s.cfg.BaseURL,
+	s.writeJSON(w, map[string]any{
+		"project":         project,
+		"release":         release,
+		"artifacts":       artifacts,
+		"total_downloads": totalDownloads,
+		"total_size":      totalSize,
+		"base_url":        s.cfg.BaseURL,
 	})
 }
 
-func (s *Server) handleRegistries(w http.ResponseWriter, r *http.Request) {
+func (s *Server) apiRegistries(w http.ResponseWriter, r *http.Request) {
 	projects, err := s.db.ListProjectSummaries(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if projects == nil {
+		projects = []db.ProjectSummary{}
+	}
 
-	s.render(w, "registries", map[string]any{
-		"Nav":      "registries",
-		"BaseURL":  s.cfg.BaseURL,
-		"Projects": projects,
+	s.writeJSON(w, map[string]any{
+		"base_url": s.cfg.BaseURL,
+		"projects": projects,
 	})
 }
 
-func (s *Server) handleTokens(w http.ResponseWriter, r *http.Request) {
+func (s *Server) apiTokens(w http.ResponseWriter, r *http.Request) {
 	tokens, err := s.db.ListTokenDetails(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	s.render(w, "tokens", map[string]any{
-		"Nav":    "tokens",
-		"Tokens": tokens,
-	})
+	type tokenResp struct {
+		Name        string     `json:"name"`
+		TokenPrefix string     `json:"token_prefix"`
+		IsGlobal    bool       `json:"is_global"`
+		ProjectName string     `json:"project_name"`
+		Scopes      string     `json:"scopes"`
+		IsExpired   bool       `json:"is_expired"`
+		CreatedAt   time.Time  `json:"created_at"`
+		LastUsedAt  *time.Time `json:"last_used_at,omitempty"`
+		ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	}
+
+	resp := make([]tokenResp, 0, len(tokens))
+	for _, t := range tokens {
+		resp = append(resp, tokenResp{
+			Name:        t.Name,
+			TokenPrefix: t.TokenPrefix,
+			IsGlobal:    t.IsGlobal(),
+			ProjectName: t.ProjectName,
+			Scopes:      t.Scopes,
+			IsExpired:   t.IsExpired(),
+			CreatedAt:   t.CreatedAt,
+			LastUsedAt:  t.LastUsedAt,
+			ExpiresAt:   t.ExpiresAt,
+		})
+	}
+	s.writeJSON(w, resp)
 }
 
-func (s *Server) handleOIDCPolicies(w http.ResponseWriter, r *http.Request) {
+func (s *Server) apiOIDC(w http.ResponseWriter, r *http.Request) {
 	policies, err := s.db.ListOIDCPolicyDetails(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if policies == nil {
+		policies = []db.OIDCPolicyDetail{}
+	}
+	s.writeJSON(w, policies)
+}
 
-	s.render(w, "oidc", map[string]any{
-		"Nav":      "oidc",
-		"Policies": policies,
-	})
+func (s *Server) buildAge() string {
+	if s.build.Date == "" {
+		return ""
+	}
+	for _, layout := range []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05Z",
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+	} {
+		if t, err := time.Parse(layout, s.build.Date); err == nil {
+			return timeAgo(t)
+		}
+	}
+	return s.build.Date
 }
 
 func humanSize(b int64) string {

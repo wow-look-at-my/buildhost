@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -63,223 +64,271 @@ func seedData(t *testing.T, database *db.DB) {
 	}))
 }
 
-func TestDashboardHandler(t *testing.T) {
+func TestAPIDashboard(t *testing.T) {
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
 	w := httptest.NewRecorder()
-	srv.handleDashboard(w, req)
+	srv.apiDashboard(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	body := w.Body.String()
-	assert.Contains(t, body, "Dashboard")
-	assert.Contains(t, body, "Projects")
-	assert.Contains(t, body, "2.0 KiB")
-	assert.Contains(t, body, "Server Status")
-	assert.Contains(t, body, "v1.2.3")
-	assert.Contains(t, body, "abc123def456")
-	assert.Contains(t, body, "2025-01-15T10:30:00Z")
-	assert.Contains(t, body, "github.com/wow-look-at-my/buildhost/commit/abc123def456789000aabbccdd")
-	assert.Contains(t, body, "Uptime")
-	assert.Contains(t, body, "CPU Usage")
-	assert.Contains(t, body, "CPU Time")
-	assert.Contains(t, body, "Configuration")
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	stats := resp["stats"].(map[string]any)
+	assert.Equal(t, float64(1), stats["project_count"])
+	assert.Equal(t, float64(1), stats["release_count"])
+	assert.Equal(t, float64(1), stats["artifact_count"])
+	assert.Equal(t, float64(2048), stats["total_storage_bytes"])
+
+	build := resp["build"].(map[string]any)
+	assert.Equal(t, "v1.2.3", build["version"])
+	assert.Equal(t, "abc123def456", build["short_commit"])
+	assert.Contains(t, build["commit_url"], "github.com/wow-look-at-my/buildhost/commit/abc123def456789000aabbccdd")
+
+	recent := resp["recent"].([]any)
+	assert.Len(t, recent, 1)
+	assert.Equal(t, "testproject", recent[0].(map[string]any)["project_name"])
+
+	assert.NotEmpty(t, resp["uptime"])
+	assert.Contains(t, resp["cpu_percent"], "%")
 }
 
-func TestDashboardHandler_Empty(t *testing.T) {
+func TestAPIDashboard_Empty(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
 	w := httptest.NewRecorder()
-	srv.handleDashboard(w, req)
+	srv.apiDashboard(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "No releases yet")
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	recent := resp["recent"].([]any)
+	assert.Empty(t, recent)
 }
 
-func TestProjectsHandler(t *testing.T) {
+func TestAPIProjects(t *testing.T) {
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
-	req := httptest.NewRequest(http.MethodGet, "/projects", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
 	w := httptest.NewRecorder()
-	srv.handleProjects(w, req)
+	srv.apiProjects(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	body := w.Body.String()
-	assert.Contains(t, body, "testproject")
-	assert.Contains(t, body, "auto")
+
+	var resp []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Len(t, resp, 1)
+	assert.Equal(t, "testproject", resp[0]["name"])
+	assert.Equal(t, float64(1), resp[0]["release_count"])
 }
 
-func TestProjectsHandler_Empty(t *testing.T) {
+func TestAPIProjects_Empty(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/projects", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
 	w := httptest.NewRecorder()
-	srv.handleProjects(w, req)
+	srv.apiProjects(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "No projects yet")
+
+	var resp []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Empty(t, resp)
 }
 
-func TestProjectHandler(t *testing.T) {
+func TestAPIProject(t *testing.T) {
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
-	req := httptest.NewRequest(http.MethodGet, "/projects/testproject", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/projects/testproject", nil)
 	req.SetPathValue("name", "testproject")
 	w := httptest.NewRecorder()
-	srv.handleProject(w, req)
+	srv.apiProject(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	body := w.Body.String()
-	assert.Contains(t, body, "testproject")
-	assert.Contains(t, body, "1.0.0")
-	assert.Contains(t, body, "Published")
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	project := resp["project"].(map[string]any)
+	assert.Equal(t, "testproject", project["name"])
+
+	releases := resp["releases"].([]any)
+	assert.Len(t, releases, 1)
+	assert.Equal(t, "1.0.0", releases[0].(map[string]any)["version"])
 }
 
-func TestProjectHandler_NotFound(t *testing.T) {
+func TestAPIProject_NotFound(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/projects/nonexistent", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/projects/nonexistent", nil)
 	req.SetPathValue("name", "nonexistent")
 	w := httptest.NewRecorder()
-	srv.handleProject(w, req)
+	srv.apiProject(w, req)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-func TestTokensHandler(t *testing.T) {
+func TestAPIRelease(t *testing.T) {
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
-	req := httptest.NewRequest(http.MethodGet, "/tokens", nil)
-	w := httptest.NewRecorder()
-	srv.handleTokens(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	body := w.Body.String()
-	assert.Contains(t, body, "test-token")
-	assert.Contains(t, body, "read,write")
-}
-
-func TestTokensHandler_Empty(t *testing.T) {
-	srv, _ := newTestServer(t)
-
-	req := httptest.NewRequest(http.MethodGet, "/tokens", nil)
-	w := httptest.NewRecorder()
-	srv.handleTokens(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "No tokens yet")
-}
-
-func TestOIDCHandler(t *testing.T) {
-	srv, database := newTestServer(t)
-	seedData(t, database)
-
-	req := httptest.NewRequest(http.MethodGet, "/oidc", nil)
-	w := httptest.NewRecorder()
-	srv.handleOIDCPolicies(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	body := w.Body.String()
-	assert.Contains(t, body, "token.actions.githubusercontent.com")
-	assert.Contains(t, body, "testproject")
-}
-
-func TestOIDCHandler_Empty(t *testing.T) {
-	srv, _ := newTestServer(t)
-
-	req := httptest.NewRequest(http.MethodGet, "/oidc", nil)
-	w := httptest.NewRecorder()
-	srv.handleOIDCPolicies(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "No OIDC policies configured")
-}
-
-func TestReleaseHandler(t *testing.T) {
-	srv, database := newTestServer(t)
-	seedData(t, database)
-
-	req := httptest.NewRequest(http.MethodGet, "/projects/testproject/releases/1.0.0", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/projects/testproject/releases/1.0.0", nil)
 	req.SetPathValue("name", "testproject")
 	req.SetPathValue("version", "1.0.0")
 	w := httptest.NewRecorder()
-	srv.handleRelease(w, req)
+	srv.apiRelease(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	body := w.Body.String()
-	assert.Contains(t, body, "testproject")
-	assert.Contains(t, body, "1.0.0")
-	assert.Contains(t, body, "linux/amd64")
-	assert.Contains(t, body, "2.0 KiB")
-	assert.Contains(t, body, "Download Endpoints")
-	assert.Contains(t, body, "/dl/testproject/1.0.0/")
-	assert.Contains(t, body, "/apt/testproject")
-	assert.Contains(t, body, "/brew/testproject.rb")
-	assert.Contains(t, body, "/npm/@buildhost/testproject")
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	project := resp["project"].(map[string]any)
+	assert.Equal(t, "testproject", project["name"])
+
+	release := resp["release"].(map[string]any)
+	assert.Equal(t, "1.0.0", release["version"])
+
+	artifacts := resp["artifacts"].([]any)
+	assert.Len(t, artifacts, 1)
+	a := artifacts[0].(map[string]any)
+	assert.Equal(t, "linux", a["os"])
+	assert.Equal(t, "amd64", a["arch"])
+	assert.Equal(t, float64(2048), a["size"])
+
+	assert.Equal(t, float64(2048), resp["total_size"])
+	assert.Equal(t, "http://localhost:8080", resp["base_url"])
 }
 
-func TestReleaseHandler_NotFoundProject(t *testing.T) {
+func TestAPIRelease_NotFoundProject(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/projects/nope/releases/1.0.0", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/projects/nope/releases/1.0.0", nil)
 	req.SetPathValue("name", "nope")
 	req.SetPathValue("version", "1.0.0")
 	w := httptest.NewRecorder()
-	srv.handleRelease(w, req)
+	srv.apiRelease(w, req)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-func TestReleaseHandler_NotFoundVersion(t *testing.T) {
+func TestAPIRelease_NotFoundVersion(t *testing.T) {
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
-	req := httptest.NewRequest(http.MethodGet, "/projects/testproject/releases/9.9.9", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/projects/testproject/releases/9.9.9", nil)
 	req.SetPathValue("name", "testproject")
 	req.SetPathValue("version", "9.9.9")
 	w := httptest.NewRecorder()
-	srv.handleRelease(w, req)
+	srv.apiRelease(w, req)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-func TestRegistriesHandler(t *testing.T) {
+func TestAPIRegistries(t *testing.T) {
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
-	req := httptest.NewRequest(http.MethodGet, "/registries", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/registries", nil)
 	w := httptest.NewRecorder()
-	srv.handleRegistries(w, req)
+	srv.apiRegistries(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	body := w.Body.String()
-	assert.Contains(t, body, "Registry Endpoints")
-	assert.Contains(t, body, "Direct Downloads")
-	assert.Contains(t, body, "APT Repository")
-	assert.Contains(t, body, "Homebrew Tap")
-	assert.Contains(t, body, "npm Registry")
-	assert.Contains(t, body, "OCI Distribution")
-	assert.Contains(t, body, "REST API")
-	assert.Contains(t, body, "testproject")
-	assert.Contains(t, body, "localhost:8080")
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, "http://localhost:8080", resp["base_url"])
+
+	projects := resp["projects"].([]any)
+	assert.Len(t, projects, 1)
+	assert.Equal(t, "testproject", projects[0].(map[string]any)["name"])
 }
 
-func TestRegistriesHandler_Empty(t *testing.T) {
-	srv, _ := newTestServer(t)
+func TestAPITokens(t *testing.T) {
+	srv, database := newTestServer(t)
+	seedData(t, database)
 
-	req := httptest.NewRequest(http.MethodGet, "/registries", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/tokens", nil)
 	w := httptest.NewRecorder()
-	srv.handleRegistries(w, req)
+	srv.apiTokens(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	body := w.Body.String()
-	assert.Contains(t, body, "Registry Endpoints")
-	assert.NotContains(t, body, "Quick links")
+
+	var resp []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Len(t, resp, 1)
+	assert.Equal(t, "test-token", resp[0]["name"])
+	assert.Equal(t, "read,write", resp[0]["scopes"])
+	assert.Equal(t, true, resp[0]["is_global"])
+}
+
+func TestAPITokens_Empty(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tokens", nil)
+	w := httptest.NewRecorder()
+	srv.apiTokens(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Empty(t, resp)
+}
+
+func TestAPIOIDC(t *testing.T) {
+	srv, database := newTestServer(t)
+	seedData(t, database)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/oidc", nil)
+	w := httptest.NewRecorder()
+	srv.apiOIDC(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Len(t, resp, 1)
+	assert.Contains(t, resp[0]["issuer"], "token.actions.githubusercontent.com")
+	assert.Equal(t, "testproject", resp[0]["project_name"])
+}
+
+func TestAPIOIDC_Empty(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/oidc", nil)
+	w := httptest.NewRecorder()
+	srv.apiOIDC(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Empty(t, resp)
+}
+
+func TestAPISidebar(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sidebar", nil)
+	w := httptest.NewRecorder()
+	srv.apiSidebar(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	build := resp["build"].(map[string]any)
+	assert.Equal(t, "v1.2.3", build["version"])
+	assert.Equal(t, "abc123def456", build["short_commit"])
+	assert.Contains(t, resp["cpu_percent"], "%")
 }
 
 func TestSecurityHeaders(t *testing.T) {
@@ -299,19 +348,27 @@ func TestSecurityHeaders(t *testing.T) {
 	assert.Equal(t, "default-src 'self'", w.Header().Get("Content-Security-Policy"))
 }
 
-func TestStaticFiles(t *testing.T) {
+func TestServeSPA_StaticFile(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	mux := http.NewServeMux()
-	mux.Handle("GET /static/", http.FileServerFS(content))
-
-	req := httptest.NewRequest(http.MethodGet, "/static/style.css", nil)
+	req := httptest.NewRequest(http.MethodGet, "/style.css", nil)
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
+	srv.serveSPA(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "--sidebar-bg")
-	_ = srv
+}
+
+func TestServeSPA_Fallback(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/anything", nil)
+	w := httptest.NewRecorder()
+	srv.serveSPA(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
+	assert.Contains(t, w.Body.String(), "Buildhost Admin")
 }
 
 func TestHumanSize(t *testing.T) {
