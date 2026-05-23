@@ -7,7 +7,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-//go:generate sqlc generate -f ../../sqlc.yaml
+//go:generate go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.28.0 generate -f ../../sqlc.yaml
 
 type DB struct {
 	*sql.DB

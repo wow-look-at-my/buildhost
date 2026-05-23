@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/go-toolchain@v1
         with:
-          generate: e80d601922cd
+          generate: e53b1ab27f98
 
   publish-ghcr:
     needs: build
