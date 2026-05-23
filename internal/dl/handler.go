@@ -12,6 +12,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/buildhost/internal/strip"
 )
 
 var handler Handler
@@ -122,22 +123,31 @@ func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project 
 
 	_ = h.DB.IncrementDownloadCount(r.Context(), artifact.ID)
 
-	if r.URL.Query().Get("debug") == "1" {
-		if artifact.DebugStorageKey == "" {
+	format := r.URL.Query().Get("format")
+	wantDebug := r.URL.Query().Get("debug") == "1"
+
+	if wantDebug || format == "" || format == "raw" {
+		data, err := h.readArtifact(r.Context(), artifact.StorageKey)
+		if err != nil {
+			http.Error(w, "blob not found", http.StatusNotFound)
+			return
+		}
+		if (artifact.Kind == model.KindBinary || artifact.Kind == model.KindLibrary) && strip.Available() {
+			if result, serr := strip.StripBytes(data); serr == nil {
+				if wantDebug {
+					h.serveBytes(w, result.Debug, fmt.Sprintf("%s-%s.debug", project.Name, release.Version))
+					return
+				}
+				data = result.Stripped
+			} else if wantDebug {
+				http.NotFound(w, r)
+				return
+			}
+		} else if wantDebug {
 			http.NotFound(w, r)
 			return
 		}
-		h.serveBlob(w, r, artifact.DebugStorageKey, fmt.Sprintf("%s-%s.debug", project.Name, release.Version))
-		return
-	}
-
-	format := r.URL.Query().Get("format")
-	if format == "" || format == "raw" {
-		key := artifact.StorageKey
-		if artifact.StrippedStorageKey != "" {
-			key = artifact.StrippedStorageKey
-		}
-		h.serveBlob(w, r, key, project.Name)
+		h.serveBytes(w, data, project.Name)
 		return
 	}
 
@@ -147,6 +157,22 @@ func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project 
 		return
 	}
 	h.serveOutput(w, output)
+}
+
+func (h *Handler) readArtifact(ctx context.Context, key string) ([]byte, error) {
+	rc, _, err := h.Store.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	return io.ReadAll(rc)
+}
+
+func (h *Handler) serveBytes(w http.ResponseWriter, data []byte, filename string) {
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+	w.Write(data)
 }
 
 func (h *Handler) serveOutput(w http.ResponseWriter, out *repackage.Output) {

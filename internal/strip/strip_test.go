@@ -56,6 +56,28 @@ func TestStrip_NonELFFile(t *testing.T) {
 	}
 }
 
+func TestStripBytes_NonELF(t *testing.T) {
+	if !Available() {
+		t.Skip("strip/objcopy not available")
+	}
+	_, err := StripBytes([]byte("not an ELF"))
+	require.Error(t, err)
+}
+
+func TestStripBytes_RealBinary(t *testing.T) {
+	if !Available() {
+		t.Skip("strip/objcopy not available")
+	}
+	data, err := os.ReadFile("/usr/local/bin/go-toolchain")
+	if err != nil {
+		t.Skip("go-toolchain not found")
+	}
+	result, err := StripBytes(data)
+	require.NoError(t, err)
+	assert.Less(t, len(result.Stripped), len(data))
+	assert.NotEmpty(t, result.Debug)
+}
+
 func TestStrip_RealELFBinary(t *testing.T) {
 	if !Available() {
 		t.Skip("strip/objcopy not available")

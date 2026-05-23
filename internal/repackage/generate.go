@@ -7,6 +7,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/buildhost/internal/strip"
 )
 
 type Generator struct {
@@ -30,12 +31,7 @@ func (g *Generator) Generate(ctx context.Context, format Format, project model.P
 		return nil, fmt.Errorf("unsupported format: %s", format)
 	}
 
-	key := artifact.StorageKey
-	if artifact.StrippedStorageKey != "" && (artifact.Kind == model.KindBinary || artifact.Kind == model.KindLibrary) {
-		key = artifact.StrippedStorageKey
-	}
-
-	rc, _, err := g.store.Get(ctx, key)
+	rc, _, err := g.store.Get(ctx, artifact.StorageKey)
 	if err != nil {
 		return nil, fmt.Errorf("get artifact: %w", err)
 	}
@@ -44,6 +40,12 @@ func (g *Generator) Generate(ctx context.Context, format Format, project model.P
 	data, err := io.ReadAll(rc)
 	if err != nil {
 		return nil, fmt.Errorf("read artifact: %w", err)
+	}
+
+	if (artifact.Kind == model.KindBinary || artifact.Kind == model.KindLibrary) && strip.Available() {
+		if result, err := strip.StripBytes(data); err == nil {
+			data = result.Stripped
+		}
 	}
 
 	return rp.Repackage(ctx, Input{

@@ -150,11 +150,11 @@ func TestDownload_Success_RawBinary(t *testing.T) {
 	assert.Contains(t, rec.Header().Get("Content-Disposition"), "myapp")
 }
 
-func TestDownload_Success_ServesStrippedBinary(t *testing.T) {
+func TestDownload_Success_RawFallsBackWhenStripFails(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	seedArtifactWithStripped(t, d, store, rel.ID, "linux", "amd64", "original-binary", "stripped-binary")
+	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "not-an-elf")
 
 	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
 	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
@@ -162,14 +162,14 @@ func TestDownload_Success_ServesStrippedBinary(t *testing.T) {
 	h.Download(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "stripped-binary", rec.Body.String())
+	assert.Equal(t, "not-an-elf", rec.Body.String())
 }
 
-func TestDownload_Success_DebugFlag(t *testing.T) {
+func TestDownload_DebugReturns404WhenStripFails(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	seedArtifactWithDebug(t, d, store, rel.ID, "linux", "amd64", "binary-content", "debug-symbols")
+	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "not-an-elf")
 
 	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
 	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
@@ -177,9 +177,7 @@ func TestDownload_Success_DebugFlag(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "debug-symbols", rec.Body.String())
-	assert.Contains(t, rec.Header().Get("Content-Disposition"), "myapp-1.0.0.debug")
+	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
 func TestDownload_DebugFlag_NoDebugAvailable(t *testing.T) {
