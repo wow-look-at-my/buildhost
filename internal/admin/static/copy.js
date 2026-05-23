@@ -7,7 +7,6 @@ class CopyBtn extends HTMLElement {
         if (this.hasAttribute("class")) {
             btn.className += " " + this.getAttribute("class");
         }
-        btn.textContent = "Copy";
         btn.title = "Copy to clipboard";
         var self = this;
         btn.addEventListener("click", function (e) {
@@ -16,26 +15,29 @@ class CopyBtn extends HTMLElement {
             var text = self.copyText;
             if (!text) return;
             navigator.clipboard.writeText(text).then(function () {
-                btn.textContent = "Copied!";
                 btn.classList.add("copied");
                 setTimeout(function () {
-                    btn.textContent = "Copy";
                     btn.classList.remove("copied");
                 }, 1500);
             });
         });
-        this.prepend(btn);
+        this.appendChild(btn);
     }
 
     get copyText() {
         var src = this.getAttribute("data-src");
         if (src) {
-            var scope = this.closest(".code-block") || this.closest(".card") || document;
+            var scope = this.closest("td") || this.closest(".code-block") || this.closest(".card") || document;
             var el = scope.querySelector(src);
-            return el ? el.textContent : "";
+            if (!el) return "";
+            return el.getAttribute("data-copy") || el.textContent;
         }
 
         var tpl = this.closest(".url-tpl");
+        if (!tpl) {
+            var scope = this.closest("td") || this.closest(".card") || document;
+            tpl = scope.querySelector(".url-tpl");
+        }
         if (tpl) {
             var url = tpl.getAttribute("data-tpl");
             tpl.querySelectorAll(".tpl-select").forEach(function (sel) {

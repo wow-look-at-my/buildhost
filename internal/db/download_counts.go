@@ -15,16 +15,16 @@ func (d *DB) IncrementDownloadCount(ctx context.Context, artifactID int64) error
 }
 
 type PackagedFormat struct {
-	Format   string
-	Size     int64
-	SHA256   string
-	Filename string
+	Format   string `json:"format"`
+	Size     int64  `json:"size"`
+	SHA256   string `json:"sha256"`
+	Filename string `json:"filename"`
 }
 
 type ArtifactDetail struct {
 	model.Artifact
-	DownloadCount int64
-	Packages      []PackagedFormat
+	DownloadCount int64            `json:"download_count"`
+	Packages      []PackagedFormat `json:"packages"`
 }
 
 func (d *DB) ListArtifactDetails(ctx context.Context, releaseID int64) ([]ArtifactDetail, error) {
