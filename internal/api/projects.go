@@ -1,6 +1,9 @@
 package api
 
-//go:generate go run github.com/wow-look-at-my/go-regex-compiler/cmd/go-regex-compiler@latest --regex "^[a-z0-9][a-z0-9._-]{0,127}$" --func validProjectName --package api --output gen_project_name.go --match full
+// Project names may contain multiple `/`-separated segments. Each segment matches
+// the same alphabet as a single-segment name and must start with [a-z0-9]. No
+// leading, trailing, or consecutive slashes. Total length capped in validProjectName.
+//go:generate go run github.com/wow-look-at-my/go-regex-compiler/cmd/go-regex-compiler@latest --regex "^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$" --func validProjectNameRegex --package api --output gen_project_name.go --match full
 
 import (
 	"encoding/json"
@@ -27,6 +30,15 @@ type createProjectRequest struct {
 	Versioning  string `json:"versioning"`
 }
 
+// validProjectName enforces the structural regex (validProjectNameRegex, generated)
+// plus a total-length cap. The regex itself does not bound length, so a separate
+// check keeps multi-segment names from growing without limit.
+const maxProjectNameLen = 255
+
+func validProjectName(s string) bool {
+	return len(s) >= 1 && len(s) <= maxProjectNameLen && validProjectNameRegex(s)
+}
+
 func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	if h.requireWrite(w, r) == nil {
 		return
@@ -44,7 +56,7 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !validProjectName(req.Name) {
-		jsonError(w, http.StatusBadRequest, "name must match [a-z0-9][a-z0-9._-]{0,127}")
+		jsonError(w, http.StatusBadRequest, "name must be 1-255 chars; each '/'-separated segment must match [a-z0-9][a-z0-9._-]*")
 		return
 	}
 
