@@ -79,6 +79,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		w.Header().Set("Content-Type", "application/x-ruby")
+		w.Header().Set("Cache-Control", "public, max-age=60")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", project.Name+".rb"))
 		io.Copy(w, out.Reader)
 		return

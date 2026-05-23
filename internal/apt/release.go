@@ -19,5 +19,6 @@ Components: main
 `, project.Name)
 
 	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Cache-Control", "public, max-age=60")
 	w.Write([]byte(content))
 }

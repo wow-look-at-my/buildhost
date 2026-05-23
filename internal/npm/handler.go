@@ -119,6 +119,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=60")
 	json.NewEncoder(w).Encode(info)
 }
 
@@ -146,6 +147,7 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, project *
 				continue
 			}
 			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 			w.Header().Set("Content-Length", fmt.Sprintf("%d", out.Size))
 			io.Copy(w, out.Reader)
 			return

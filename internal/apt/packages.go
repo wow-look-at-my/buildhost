@@ -76,6 +76,7 @@ Description: %s
 		debSize, debSHA, desc)
 
 	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Cache-Control", "public, max-age=60")
 	w.Write([]byte(entry))
 }
 
@@ -118,6 +119,7 @@ func (h *Handler) servePool(w http.ResponseWriter, r *http.Request, subpath stri
 			continue
 		}
 		w.Header().Set("Content-Type", "application/vnd.debian.binary-package")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", out.Size))
 		io.Copy(w, out.Reader)
 		return
