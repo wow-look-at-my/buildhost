@@ -8,14 +8,14 @@ import (
 )
 
 type DashboardStats struct {
-	ProjectCount      int64
-	ReleaseCount      int64
-	ArtifactCount     int64
-	TotalStorageBytes int64
-	TokenCount        int64
-	OIDCPolicyCount   int64
-	LogicalBytes      int64
-	PhysicalBytes     int64
+	ProjectCount      int64 `json:"project_count"`
+	ReleaseCount      int64 `json:"release_count"`
+	ArtifactCount     int64 `json:"artifact_count"`
+	TotalStorageBytes int64 `json:"total_storage_bytes"`
+	TokenCount        int64 `json:"token_count"`
+	OIDCPolicyCount   int64 `json:"oidc_policy_count"`
+	LogicalBytes      int64 `json:"logical_bytes"`
+	PhysicalBytes     int64 `json:"physical_bytes"`
 }
 
 func (d *DB) GetDashboardStats(ctx context.Context) (*DashboardStats, error) {
@@ -52,7 +52,7 @@ func (d *DB) GetDashboardStats(ctx context.Context) (*DashboardStats, error) {
 
 type RecentRelease struct {
 	model.Release
-	ProjectName string
+	ProjectName string `json:"project_name"`
 }
 
 func (d *DB) ListRecentReleases(ctx context.Context, limit int) ([]RecentRelease, error) {
@@ -82,8 +82,8 @@ func (d *DB) ListRecentReleases(ctx context.Context, limit int) ([]RecentRelease
 
 type ProjectSummary struct {
 	model.Project
-	ReleaseCount  int64
-	ArtifactCount int64
+	ReleaseCount  int64 `json:"release_count"`
+	ArtifactCount int64 `json:"artifact_count"`
 }
 
 func (d *DB) ListProjectSummaries(ctx context.Context) ([]ProjectSummary, error) {
@@ -113,7 +113,7 @@ func (d *DB) ListProjectSummaries(ctx context.Context) ([]ProjectSummary, error)
 
 type ReleaseSummary struct {
 	model.Release
-	ArtifactCount int64
+	ArtifactCount int64 `json:"artifact_count"`
 }
 
 func (d *DB) ListReleaseSummaries(ctx context.Context, projectID int64) ([]ReleaseSummary, error) {
@@ -143,7 +143,7 @@ func (d *DB) ListReleaseSummaries(ctx context.Context, projectID int64) ([]Relea
 
 type TokenDetail struct {
 	model.APIToken
-	ProjectName string
+	ProjectName string `json:"project_name"`
 }
 
 func (d *DB) ListTokenDetails(ctx context.Context) ([]TokenDetail, error) {
@@ -172,7 +172,7 @@ func (d *DB) ListTokenDetails(ctx context.Context) ([]TokenDetail, error) {
 
 type OIDCPolicyDetail struct {
 	model.OIDCPolicy
-	ProjectName string
+	ProjectName string `json:"project_name"`
 }
 
 func (d *DB) ListOIDCPolicyDetails(ctx context.Context) ([]OIDCPolicyDetail, error) {
