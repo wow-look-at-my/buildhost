@@ -71,10 +71,7 @@ func handleDBErr(w http.ResponseWriter, r *http.Request, err error) bool {
 	return false
 }
 
-const (
-	cacheImmutable = "public, max-age=31536000, immutable"
-	cacheShort     = "public, max-age=60"
-)
+const cacheImmutable = "public, max-age=31536000, immutable"
 
 func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
@@ -85,7 +82,7 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		err     error
 	)
 	if rt.version == "latest" {
-		w.Header().Set("Cache-Control", cacheShort)
+		w.Header().Set("Cache-Control", "no-cache")
 		release, err = h.DB.GetLatestRelease(r.Context(), project.ID)
 	} else {
 		w.Header().Set("Cache-Control", cacheImmutable)
@@ -102,7 +99,7 @@ func (h *Handler) DownloadLatest(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
 	rt := routeFrom(r.Context())
 
-	w.Header().Set("Cache-Control", cacheShort)
+	w.Header().Set("Cache-Control", "no-cache")
 	release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
 	if handleDBErr(w, r, err) {
 		return
@@ -115,7 +112,7 @@ func (h *Handler) DownloadBranch(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
 	rt := routeFrom(r.Context())
 
-	w.Header().Set("Cache-Control", cacheShort)
+	w.Header().Set("Cache-Control", "no-cache")
 	release, err := h.DB.GetLatestReleaseByBranch(r.Context(), project.ID, rt.branch)
 	if handleDBErr(w, r, err) {
 		return

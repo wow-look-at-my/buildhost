@@ -119,7 +119,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "public, max-age=60")
+	w.Header().Set("Cache-Control", "no-cache")
 	json.NewEncoder(w).Encode(info)
 }
 

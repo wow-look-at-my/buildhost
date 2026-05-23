@@ -32,7 +32,7 @@ func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, referenc
 			continue
 		}
 		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
-		w.Header().Set("Cache-Control", "public, max-age=60")
+		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", out.Size))
 		io.Copy(w, out.Reader)
 		return
