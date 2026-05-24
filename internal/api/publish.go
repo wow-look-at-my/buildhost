@@ -3,6 +3,9 @@ package api
 import (
 	"net/http"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 )
 
@@ -12,8 +15,16 @@ func init() {
 }
 
 func (h *Handler) PublishRelease(w http.ResponseWriter, r *http.Request) {
-	project := auth.ProjectFrom(r.Context())
-	rt := routeFrom(r.Context())
+	ctx, span := apiTracer.Start(r.Context(), "api.publish_release")
+	defer span.End()
+
+	project := auth.ProjectFrom(ctx)
+	rt := routeFrom(ctx)
+
+	span.SetAttributes(
+		attribute.String("publish.project", project.Name),
+		attribute.String("publish.version", rt.version),
+	)
 
 	release := h.getRelease(w, r, project.ID, rt.version)
 	if release == nil {
@@ -25,8 +36,10 @@ func (h *Handler) PublishRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	artifacts, err := h.DB.ListArtifacts(r.Context(), release.ID)
+	artifacts, err := h.DB.ListArtifacts(ctx, release.ID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "list artifacts failed")
 		jsonError(w, http.StatusInternalServerError, "failed to list artifacts")
 		return
 	}
@@ -35,7 +48,11 @@ func (h *Handler) PublishRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Orchestrator.PublishRelease(r.Context(), *project, *release); err != nil {
+	span.SetAttributes(attribute.Int("publish.artifact_count", len(artifacts)))
+
+	if err := h.Orchestrator.PublishRelease(ctx, *project, *release); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "publish failed")
 		jsonError(w, http.StatusInternalServerError, "failed to publish release")
 		return
 	}

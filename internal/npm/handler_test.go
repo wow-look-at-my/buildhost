@@ -487,3 +487,24 @@ func TestServeHTTP_PrivateProject_Tarball_WithValidContext(t *testing.T) {
 	assert.Equal(t, "application/octet-stream", rec.Header().Get("Content-Type"))
 	assert.NotEmpty(t, rec.Body.Bytes())
 }
+
+func TestExtractVersionFromFilename(t *testing.T) {
+	tests := []struct {
+		project  string
+		filename string
+		want     string
+	}{
+		{"myapp", "myapp-1.0.0.tgz", "1.0.0"},
+		{"go-toolchain", "go-toolchain-6.0.0.tgz", "6.0.0"},
+		{"myapp", "myapp-1.0.0-rc.1.tgz", "1.0.0-rc.1"},
+		{"myapp", "wrong-1.0.0.tgz", ""},
+		{"myapp", "myapp.tgz", ""},
+		{"myapp", "myapp-1.0.0.tar.gz", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.filename, func(t *testing.T) {
+			got := extractVersionFromFilename(tt.project, tt.filename)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
