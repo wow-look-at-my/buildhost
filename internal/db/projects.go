@@ -43,6 +43,16 @@ func (d *DB) GetProject(ctx context.Context, name string) (*model.Project, error
 	return p, nil
 }
 
+func (d *DB) SetProjectVisibility(ctx context.Context, id int64, isPrivate bool) error {
+	_, err := d.ExecContext(ctx,
+		`UPDATE projects SET is_private = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		isPrivate, id)
+	if err != nil {
+		return fmt.Errorf("set project visibility: %w", err)
+	}
+	return nil
+}
+
 func (d *DB) ListProjects(ctx context.Context) ([]model.Project, error) {
 	rows, err := d.QueryContext(ctx,
 		`SELECT id, name, description, homepage, license, is_private, versioning, created_at, updated_at
