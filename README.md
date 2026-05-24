@@ -98,6 +98,28 @@ Git branch and commit are tracked on every release. Download the latest build of
 GET /dl/myapp/branch/main/linux/amd64
 ```
 
+## Static sites
+
+Host small, self-contained static sites with independent per-branch deployments. Each branch gets its own site that exists from first deploy until explicitly deleted.
+
+```bash
+# Deploy a site from a directory
+buildhost publish-site \
+  --server http://localhost:8080 \
+  --token $TOKEN \
+  --project myapp \
+  --branch main \
+  --dir ./dist
+
+# The site is available at:
+# http://localhost:8080/sites/myapp/branch/main/
+
+# Re-deploying the same branch replaces the previous site atomically.
+# Deleting a branch deployment:
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/sites/myapp/branch/main
+```
+
 ## API
 
 | Method | Path | Description |
@@ -110,6 +132,10 @@ GET /dl/myapp/branch/main/linux/amd64
 | GET | `/dl/{project}/{version}/{os}/{arch}` | Download |
 | GET | `/dl/{project}/latest/{os}/{arch}` | Download latest |
 | GET | `/dl/{project}/branch/{branch}/{os}/{arch}` | Download latest for branch |
+| PUT | `/sites/{project}/branch/{branch}` | Deploy static site (tar.gz body) |
+| DELETE | `/sites/{project}/branch/{branch}` | Remove static site |
+| GET | `/sites/{project}/branch/{branch}/{path}` | Serve static site file |
+| GET | `/api/v1/projects/{project}/sites` | List branch deployments |
 
 ## Configuration
 

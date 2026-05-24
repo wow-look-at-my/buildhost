@@ -60,6 +60,7 @@ var NAV_ITEMS = [
     { id: "projects", href: "#/projects", label: "Projects", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>' },
     { id: "registries", href: "#/registries", label: "Registries", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 0h8v3H6V4zm0 5h8v2H6V9zm0 4h5v2H6v-2z" clip-rule="evenodd"/></svg>' },
     { id: "tokens", href: "#/tokens", label: "Tokens", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/></svg>' },
+    { id: "sites", href: "#/sites", label: "Sites", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4.083 9h1.946c.089-1.546.383-2.97.837-4.118A6.004 6.004 0 004.083 9zM10 2a8 8 0 100 16 8 8 0 000-16zm0 2c-.076 0-.232.032-.465.262-.238.234-.497.623-.737 1.182-.389.907-.673 2.142-.766 3.556h3.936c-.093-1.414-.377-2.649-.766-3.556-.24-.56-.5-.948-.737-1.182C10.232 4.032 10.076 4 10 4zm3.971 5c-.089-1.546-.383-2.97-.837-4.118A6.004 6.004 0 0115.917 9h-1.946zm-2.003 2H8.032c.093 1.414.377 2.649.766 3.556.24.56.5.948.737 1.182.233.23.389.262.465.262.076 0 .232-.032.465-.262.238-.234.497-.623.737-1.182.389-.907.673-2.142.766-3.556zm1.166 4.118c.454-1.147.748-2.572.837-4.118h1.946a6.004 6.004 0 01-2.783 4.118zm-6.268 0C6.412 13.97 6.118 12.546 6.029 11H4.083a6.004 6.004 0 002.783 4.118z" clip-rule="evenodd"/></svg>' },
     { id: "oidc", href: "#/oidc", label: "OIDC Policies", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' }
 ];
 
@@ -118,7 +119,7 @@ App.pages.dashboard = function () {
         var html = '<h1>Dashboard</h1><div class="stat-grid">';
         var cards = [
             [s.project_count, "Projects"], [s.release_count, "Releases"], [s.artifact_count, "Artifacts"],
-            [App.humanSize(s.total_storage_bytes || 0), "Storage Used"], [s.token_count, "API Tokens"], [s.oidc_policy_count, "OIDC Policies"]
+            [App.humanSize(s.total_storage_bytes || 0), "Storage Used"], [s.token_count, "API Tokens"], [s.site_count || 0, "Sites"]
         ];
         for (var i = 0; i < cards.length; i++) html += '<div class="stat-card"><div class="stat-value">' + App.h(cards[i][0]) + '</div><div class="stat-label">' + cards[i][1] + "</div></div>";
         html += "</div>";
@@ -222,6 +223,23 @@ App.pages.project = function (name) {
             }
         }
         html += "</tbody></table></div>";
+
+        var sites = d.sites || [];
+        if (sites.length > 0) {
+            var bu = d.base_url || "";
+            html += '<div class="card"><h2>Sites</h2><table class="data-table"><thead><tr><th>Branch</th><th>Files</th><th>Size</th><th>Commit</th><th>Updated</th><th>Link</th></tr></thead><tbody>';
+            for (var k = 0; k < sites.length; k++) {
+                var si = sites[k];
+                html += "<tr><td><code>" + App.h(si.branch) + "</code></td>";
+                html += "<td>" + si.file_count + "</td>";
+                html += "<td>" + App.h(App.humanSize(si.size)) + "</td>";
+                html += "<td>" + (si.git_commit ? '<code class="commit">' + App.h(si.git_commit.substring(0, 12)) + "</code>" : "-") + "</td>";
+                html += '<td title="' + App.h(App.formatTime(si.updated_at)) + '">' + App.h(App.timeAgo(si.updated_at)) + "</td>";
+                html += '<td><a href="' + App.h(bu) + "/sites/" + App.h(p.name) + "/branch/" + App.h(si.branch) + '/" target="_blank">Open</a></td></tr>';
+            }
+            html += "</tbody></table></div>";
+        }
+
         document.getElementById("content").innerHTML = html;
     });
 };
@@ -339,6 +357,16 @@ App.pages.registries = function () {
         html += App.codeBlock("Private project", "echo $TOKEN | docker login " + bu + " -u token --password-stdin\ndocker pull " + bu + "/{project}:{version}");
         html += "</div>";
 
+        html += '<div class="card"><h2>Static Sites</h2><p class="section-desc">Host small, self-contained static sites with independent per-branch deployments.</p>';
+        html += '<table class="info-table">';
+        html += "<tr><td class='info-label'>Deploy</td><td class='endpoint-cell'><code>PUT " + App.h(bu) + "/sites/{project}/branch/{branch}</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Serve</td><td class='endpoint-cell'><code>" + App.h(bu) + "/sites/{project}/branch/{branch}/{path}</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Delete</td><td class='endpoint-cell'><code>DELETE " + App.h(bu) + "/sites/{project}/branch/{branch}</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>List</td><td class='endpoint-cell'><code>GET " + App.h(bu) + "/api/v1/projects/{project}/sites</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "</table>";
+        html += App.codeBlock("Deploy", "buildhost publish-site \\\n  --server " + bu + " \\\n  --token $TOKEN \\\n  --project {project} \\\n  --branch {branch} \\\n  --dir ./dist");
+        html += "</div>";
+
         html += '<div class="card"><h2>REST API</h2><p class="section-desc">JSON API for managing projects, releases, and artifacts programmatically.</p>';
         html += '<table class="info-table">';
         html += "<tr><td class='info-label'>List projects</td><td class='endpoint-cell'><a href='" + App.h(bu) + "/api/v1/projects'>GET " + App.h(bu) + "/api/v1/projects</a><copy-btn data-src='a'></copy-btn></td></tr>";
@@ -403,6 +431,87 @@ App.pages.tokens = function () {
     });
 };
 
+App.pages.sites = function () {
+    App.setTitle("Sites");
+    App.renderSidebar("sites");
+    App.fetch("/sites").then(function (d) {
+        var bu = d.base_url || "";
+        var sites = d.sites || [];
+
+        var byProject = {};
+        for (var i = 0; i < sites.length; i++) {
+            var s = sites[i];
+            if (!byProject[s.project_name]) {
+                byProject[s.project_name] = { branches: 0, total_size: 0, total_files: 0, last_updated: s.updated_at };
+            }
+            var p = byProject[s.project_name];
+            p.branches++;
+            p.total_size += s.size || 0;
+            p.total_files += s.file_count || 0;
+            if (s.updated_at > p.last_updated) p.last_updated = s.updated_at;
+        }
+
+        var names = Object.keys(byProject).sort();
+        var html = '<h1>Static Sites</h1><div class="card"><table class="data-table"><thead><tr><th>Project</th><th>Branches</th><th>Files</th><th>Total Size</th><th>Last Updated</th></tr></thead><tbody>';
+        if (names.length === 0) {
+            html += '<tr><td colspan="5" class="empty">No sites deployed</td></tr>';
+        } else {
+            for (var j = 0; j < names.length; j++) {
+                var name = names[j];
+                var info = byProject[name];
+                html += "<tr><td><a href='#/sites/" + App.h(name) + "'>" + App.h(name) + "</a></td>";
+                html += "<td>" + info.branches + "</td>";
+                html += "<td>" + info.total_files + "</td>";
+                html += "<td>" + App.h(App.humanSize(info.total_size)) + "</td>";
+                html += '<td title="' + App.h(App.formatTime(info.last_updated)) + '">' + App.h(App.timeAgo(info.last_updated)) + "</td></tr>";
+            }
+        }
+        html += "</tbody></table></div>";
+
+        html += '<div class="card"><h2>Deploy a Site</h2>';
+        html += App.codeBlock("CLI", "buildhost publish-site \\\n  --server " + bu + " \\\n  --token $TOKEN \\\n  --project {project} \\\n  --branch {branch} \\\n  --dir ./dist");
+        html += App.codeBlock("curl", 'tar czf - -C ./dist . | curl -X PUT \\\n  -H "Authorization: Bearer $TOKEN" \\\n  -H "Content-Type: application/gzip" \\\n  --data-binary @- \\\n  ' + bu + "/sites/{project}/branch/{branch}");
+        html += "</div>";
+
+        document.getElementById("content").innerHTML = html;
+    });
+};
+
+App.pages.site = function (name) {
+    App.setTitle(name + " - Sites");
+    App.renderSidebar("sites");
+    App.fetch("/projects/" + encodeURIComponent(name)).then(function (d) {
+        var p = d.project;
+        var bu = d.base_url || "";
+        var sites = d.sites || [];
+
+        var html = '<h1><a href="#/sites">Sites</a> / ' + App.h(p.name) + "</h1>";
+
+        html += '<div class="card"><table class="data-table"><thead><tr><th>Branch</th><th>Files</th><th>Size</th><th>Commit</th><th>Updated</th><th>Link</th></tr></thead><tbody>';
+        if (sites.length === 0) {
+            html += '<tr><td colspan="6" class="empty">No branches deployed</td></tr>';
+        } else {
+            for (var i = 0; i < sites.length; i++) {
+                var s = sites[i];
+                html += "<tr><td><code>" + App.h(s.branch) + "</code></td>";
+                html += "<td>" + s.file_count + "</td>";
+                html += "<td>" + App.h(App.humanSize(s.size)) + "</td>";
+                html += "<td>" + (s.git_commit ? '<code class="commit">' + App.h(s.git_commit.substring(0, 12)) + "</code>" : "-") + "</td>";
+                html += '<td title="' + App.h(App.formatTime(s.updated_at)) + '">' + App.h(App.timeAgo(s.updated_at)) + "</td>";
+                html += '<td><a href="' + App.h(bu) + "/sites/" + App.h(p.name) + "/branch/" + App.h(s.branch) + '/" target="_blank">Open</a></td></tr>';
+            }
+        }
+        html += "</tbody></table></div>";
+
+        html += '<div class="card"><h2>Deploy to ' + App.h(p.name) + "</h2>";
+        html += App.codeBlock("CLI", "buildhost publish-site \\\n  --server " + bu + " \\\n  --token $TOKEN \\\n  --project " + p.name + " \\\n  --branch {branch} \\\n  --dir ./dist");
+        html += App.codeBlock("Delete a branch", 'curl -X DELETE \\\n  -H "Authorization: Bearer $TOKEN" \\\n  ' + bu + "/sites/" + p.name + "/branch/{branch}");
+        html += "</div>";
+
+        document.getElementById("content").innerHTML = html;
+    });
+};
+
 App.pages.oidc = function () {
     App.setTitle("OIDC Policies");
     App.renderSidebar("oidc");
@@ -441,6 +550,10 @@ App.route = function () {
         App.pages.projects();
     } else if (parts[0] === "registries") {
         App.pages.registries();
+    } else if (parts[0] === "sites" && parts.length === 2) {
+        App.pages.site(parts[1]);
+    } else if (parts[0] === "sites") {
+        App.pages.sites();
     } else if (parts[0] === "tokens") {
         App.pages.tokens();
     } else if (parts[0] === "oidc") {
@@ -455,7 +568,7 @@ App.route = function () {
 App.demoData = {
     "/sidebar": { build: { version: "v0.0.0-demo", commit: "demo", commit_url: "", short_commit: "demo", date: "" }, build_age: "", cpu_percent: "0.0%", disk_used: "0 B", disk_total: "0 B" },
     "/dashboard": {
-        stats: { project_count: 2, release_count: 5, artifact_count: 12, total_storage_bytes: 52428800, token_count: 3, oidc_policy_count: 1 },
+        stats: { project_count: 2, release_count: 5, artifact_count: 12, total_storage_bytes: 52428800, token_count: 3, site_count: 3 },
         recent: [
             { project_name: "myapp", version: "3", git_branch: "main", published: true, created_at: new Date(Date.now() - 3600000).toISOString() },
             { project_name: "cli-tool", version: "1.2.0", git_branch: "release", published: true, created_at: new Date(Date.now() - 86400000).toISOString() }
@@ -470,9 +583,12 @@ App.demoData = {
     ],
     "/projects/myapp": {
         project: { id: 1, name: "myapp", description: "Main application", versioning: "auto", is_private: false, created_at: new Date(Date.now() - 864e5 * 30).toISOString(), updated_at: new Date(Date.now() - 3600000).toISOString() },
-        releases: [{ version: "3", git_branch: "main", git_commit: "abc123", published: true, artifact_count: 4, published_at: new Date(Date.now() - 3600000).toISOString(), created_at: new Date(Date.now() - 3600000).toISOString() }]
+        releases: [{ version: "3", git_branch: "main", git_commit: "abc123", published: true, artifact_count: 4, published_at: new Date(Date.now() - 3600000).toISOString(), created_at: new Date(Date.now() - 3600000).toISOString() }],
+        sites: [{ branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }],
+        base_url: "https://builds.example.com"
     },
     "/registries": { base_url: "https://builds.example.com", projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
+    "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com" },
     "/tokens": [{ name: "deploy", token_prefix: "bh_abc", is_global: false, project_name: "myapp", scopes: "read,write", is_expired: false, created_at: new Date(Date.now() - 864e5 * 7).toISOString(), last_used_at: new Date(Date.now() - 3600000).toISOString() }],
     "/oidc": [{ issuer: "https://token.actions.githubusercontent.com", subject_pattern: "repo:myorg/myapp:*", audience: "", project_name: "myapp", scopes: "read,write", created_at: new Date(Date.now() - 864e5 * 14).toISOString() }]
 };

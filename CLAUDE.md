@@ -21,12 +21,13 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - `internal/brew/` - Homebrew tap endpoint. Formula download URLs point to `/static`. Self-registering via init().
 - `internal/npm/` - npm registry endpoint. Tarball URLs point to `/static`. Self-registering via init().
 - `internal/oci/` - OCI distribution endpoint. Self-registering via init().
+- `internal/sites/` - Static site hosting endpoint. Upload tar.gz archives, serve files per branch. Self-registering via init().
 - `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler), RouteInfo interface
 - `internal/db/` - SQLite database layer (modernc.org/sqlite, no CGo), OIDC policy storage
 - `internal/storage/` - Content-addressed blob storage (filesystem backend, zstd-compressed, key validation)
 - `internal/repackage/` - On-demand repackaging and stripping (tar.gz, tar.xz, tar.zst, zip, deb, brew, npm, oci). Self-registering via init(); Generator uses registry. Orchestrator just publishes releases.
 - `internal/strip/` - Binary debug info stripping (shells out to strip/objcopy)
-- `internal/model/` - Data types (Project, Release, Artifact, APIToken, OIDCPolicy)
+- `internal/model/` - Data types (Project, Release, Artifact, APIToken, OIDCPolicy, Site)
 - `internal/version/` - Version resolution logic
 - `internal/admin/` - Admin dashboard (separate HTTP server, JSON API + static SPA frontend), inflight write counter for update coordination
 - `internal/config/` - Server configuration from env vars
@@ -51,6 +52,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - Default token scope is "read" (least privilege)
 - Upload size capped at 2 GiB; JSON endpoints capped at 1 MiB
 - Storage keys validated as hex SHA-256 to prevent path traversal
+- Static sites: uploaded as tar.gz, stored as raw tar in content-addressed storage, served by scanning tar headers per request. Each branch is an independent deployment (one row in `sites` table). Re-deploying a branch replaces the previous site atomically. Upload size capped at 256 MiB, max 10,000 files per site.
 
 ## First-time setup
 
