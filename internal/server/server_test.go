@@ -51,7 +51,7 @@ func setup(t *testing.T) *testEnv {
 
 	t.Cleanup(func() { database.Close() })
 
-	store, err := storage.NewFilesystem(storeDir)
+	store, err := storage.NewFilesystem(storeDir, true)
 	require.Nil(t, err)
 
 	cfg := config.Config{
@@ -504,7 +504,7 @@ func TestOIDC_AutoCreateProject(t *testing.T) {
 	require.Nil(t, err)
 	t.Cleanup(func() { database.Close() })
 
-	store, err := storage.NewFilesystem(storeDir)
+	store, err := storage.NewFilesystem(storeDir, true)
 	require.Nil(t, err)
 
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
