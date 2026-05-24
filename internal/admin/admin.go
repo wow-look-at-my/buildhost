@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -224,6 +225,7 @@ func (s *Server) apiDashboard(w http.ResponseWriter, r *http.Request) {
 		"uptime":      formatDuration(time.Since(s.startTime)),
 		"cpu_percent": fmt.Sprintf("%.1f%%", cpuPct),
 		"cpu_total":   formatDuration(cpuTotal),
+		"disk_bytes":  blobsDiskUsage(s.cfg.DataDir + "/blobs"),
 	})
 }
 
@@ -452,6 +454,22 @@ func formatTimePtr(t *time.Time) string {
 		return "-"
 	}
 	return formatTime(*t)
+}
+
+func blobsDiskUsage(dir string) int64 {
+	var total int64
+	filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		info, ierr := d.Info()
+		if ierr != nil {
+			return nil
+		}
+		total += info.Size()
+		return nil
+	})
+	return total
 }
 
 func formatDuration(d time.Duration) string {

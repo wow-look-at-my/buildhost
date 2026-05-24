@@ -41,7 +41,7 @@ var serveCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		store, err := storage.NewFilesystem(cfg.DataDir + "/blobs")
+		store, err := storage.NewFilesystem(cfg.DataDir+"/blobs", cfg.StorageCompress)
 		if err != nil {
 			return fmt.Errorf("init storage: %w", err)
 		}
@@ -54,9 +54,9 @@ var serveCmd = &cobra.Command{
 		var adminHTTP *http.Server
 		if cfg.AdminListenAddr != "" {
 			adminDash := admin.New(cfg, database, admin.BuildInfo{
-				Version: buildVersion,
-				Commit:  buildCommit,
-				Date:    buildDate,
+				Version: resolvedVersion(),
+				Commit:  resolvedCommit(),
+				Date:    resolvedDate(),
 				RepoURL: "https://github.com/wow-look-at-my/buildhost",
 			})
 			adminHTTP = adminDash.NewHTTPServer()
