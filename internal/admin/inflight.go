@@ -8,6 +8,10 @@ import (
 
 var inflightWrites int64
 
+func InflightWrites() int64 {
+	return atomic.LoadInt64(&inflightWrites)
+}
+
 func TrackInflight(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
