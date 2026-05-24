@@ -17,7 +17,7 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
-		handler.Gen = repackage.NewGenerator(auth.Store(), auth.BaseURL())
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL())
 	})
 	auth.HandleHandler("/apt/", parseRoute, http.StripPrefix("/apt", &handler))
 }
