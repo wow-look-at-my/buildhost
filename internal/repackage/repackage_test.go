@@ -544,3 +544,43 @@ func TestNewOrchestrator(t *testing.T) {
 	assert.Equal(t, d, o.DB)
 	assert.Equal(t, store, o.Store)
 }
+
+func TestGenerator_Generate(t *testing.T) {
+	d := openTestDB(t)
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "genapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	key, size, err := store.Put(ctx, strings.NewReader(string(testBinary)))
+	require.NoError(t, err)
+
+	a := &model.Artifact{
+		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
+		Kind: model.KindAssets, StorageKey: key, Size: size, SHA256: key,
+	}
+	require.NoError(t, d.CreateArtifact(ctx, a))
+
+	gen := NewGenerator(store, d, "https://example.com")
+	require.True(t, gen.Supports(FormatTarGZ))
+	require.False(t, gen.Supports(Format("bogus")))
+
+	out, err := gen.Generate(ctx, FormatTarGZ, *proj, *rel, *a)
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	assert.True(t, strings.HasSuffix(out.Filename, ".tar.gz"))
+	assert.Greater(t, out.Size, int64(0))
+}
+
+func TestGenerator_Generate_UnsupportedFormat(t *testing.T) {
+	d := openTestDB(t)
+	store := openTestStore(t)
+
+	gen := NewGenerator(store, d, "https://example.com")
+	_, err := gen.Generate(context.Background(), Format("bogus"), model.Project{}, model.Release{}, model.Artifact{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported format")
+}
