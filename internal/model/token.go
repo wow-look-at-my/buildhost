@@ -13,6 +13,7 @@ type APIToken struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	LastUsedAt  *time.Time `json:"last_used_at,omitempty"`
 	OIDCProject string     `json:"-"`
+	OIDCPrivate bool       `json:"-"`
 }
 
 func (t APIToken) HasScope(scope string) bool {

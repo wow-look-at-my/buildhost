@@ -42,7 +42,8 @@ type jwkKey struct {
 
 type oidcClaims struct {
 	jwt.RegisteredClaims
-	EventName string `json:"event_name"`
+	EventName            string `json:"event_name"`
+	RepositoryVisibility string `json:"repository_visibility"`
 }
 
 const oidcLeeway = 60 * time.Second
@@ -146,6 +147,7 @@ func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []m
 		Name:        "oidc:" + verified.Subject,
 		Scopes:      "read,write",
 		OIDCProject: project,
+		OIDCPrivate: verified.RepositoryVisibility != "public",
 	}, nil
 }
 

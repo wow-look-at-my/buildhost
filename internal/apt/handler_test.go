@@ -2,7 +2,6 @@ package apt
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -216,38 +215,12 @@ func TestServePool_Success(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/vnd.debian.binary-package", rec.Header().Get("Content-Type"))
-	assert.NotEmpty(t, rec.Body.Bytes())
-}
-
-func TestServePool_NoDebPackage(t *testing.T) {
-	h, d, store := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	key, size, err := store.Put(ctx, strings.NewReader("binary"))
-	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
-	}))
-
-	// On-demand generation means any supported format works as long as
-	// there is an artifact in storage -- no packaged_artifacts row needed.
-	req := httptest.NewRequest("GET", "/myapp/pool/myapp_1.0.0_amd64.deb", nil)
-	req = withRoute(req, proj, route{project: "myapp", subPath: "pool/myapp_1.0.0_amd64.deb"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/vnd.debian.binary-package", rec.Header().Get("Content-Type"))
-	assert.NotEmpty(t, rec.Body.Bytes())
+	assert.Equal(t, http.StatusFound, rec.Code)
+	loc := rec.Header().Get("Location")
+	assert.Contains(t, loc, "/static?")
+	assert.Contains(t, loc, "id=myapp")
+	assert.Contains(t, loc, "fmt=deb")
+	assert.Contains(t, loc, "v=1.0.0")
 }
 
 func TestServePool_EmptyFilename(t *testing.T) {
@@ -360,10 +333,9 @@ func TestServeHTTP_PrivateProject_Pool_WithValidContext(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/vnd.debian.binary-package", rec.Header().Get("Content-Type"))
-	assert.NotEmpty(t, rec.Body.Bytes())
+	assert.Equal(t, http.StatusFound, rec.Code)
+	loc := rec.Header().Get("Location")
+	assert.Contains(t, loc, "/static?")
+	assert.Contains(t, loc, "id=secret")
+	assert.Contains(t, loc, "fmt=deb")
 }
-
-// Suppress unused import warning.
-var _ = fmt.Sprintf
