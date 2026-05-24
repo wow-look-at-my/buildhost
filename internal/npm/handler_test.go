@@ -343,6 +343,31 @@ func TestServeHTTP_BasePackageWrapperTarball(t *testing.T) {
 	assert.Greater(t, rec.Body.Len(), 0)
 }
 
+func TestServeHTTP_WrapperTarball_NonexistentVersion(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	bk, bs, err := store.Put(ctx, strings.NewReader("binary"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
+		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
+		Kind: model.KindBinary, StorageKey: bk, Size: bs, SHA256: bk,
+	}))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	req := httptest.NewRequest("GET", "/@buildhost/myapp/-/myapp-99.99.99.tgz", nil)
+	req = withRoute(req, proj, route{project: "myapp", isTarball: true, filename: "myapp-99.99.99.tgz"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
 func TestServeHTTP_Tarball_NotFound(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()

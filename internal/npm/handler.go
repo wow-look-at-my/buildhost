@@ -278,16 +278,28 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, project *
 	}
 
 	if ri.platform == "" {
-		h.serveWrapperTarball(w, r, project, ri.filename)
+		h.serveWrapperTarball(w, r, project, ri.filename, releases)
 		return
 	}
 
 	http.NotFound(w, r)
 }
 
-func (h *Handler) serveWrapperTarball(w http.ResponseWriter, r *http.Request, project *model.Project, filename string) {
+func (h *Handler) serveWrapperTarball(w http.ResponseWriter, r *http.Request, project *model.Project, filename string, releases []model.Release) {
 	version := extractVersionFromFilename(project.Name, filename)
 	if version == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	found := false
+	for _, rel := range releases {
+		if rel.Published && normalizeVersion(rel.Version) == version {
+			found = true
+			break
+		}
+	}
+	if !found {
 		http.NotFound(w, r)
 		return
 	}
