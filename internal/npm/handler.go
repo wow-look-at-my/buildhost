@@ -32,9 +32,11 @@ func init() {
 
 type route struct {
 	project   string
-	platform  string // e.g. "linux-x64", empty for base package
+	platform  string // e.g. "linux-x64", metadata routes only
 	isTarball bool
-	version   string
+	version   string // tarball routes only
+	os        string // tarball routes only, e.g. "linux"
+	arch      string // tarball routes only, e.g. "x64"
 }
 
 func (r route) ProjectName() string     { return r.project }
@@ -66,12 +68,14 @@ func parseRoute(r *http.Request) auth.RouteInfo {
 	if strings.Contains(path, "/-/") {
 		parts := strings.SplitN(path, "/-/", 2)
 		packageName := strings.TrimPrefix(parts[0], "@buildhost/")
-		projectName, platform := splitPlatform(packageName)
-		version := parts[1]
-		if idx := strings.IndexByte(version, '/'); idx >= 0 {
-			version = version[:idx]
+		projectName, _ := splitPlatform(packageName)
+		segments := strings.Split(parts[1], "/")
+		r := route{project: projectName, isTarball: true, version: segments[0]}
+		if len(segments) >= 3 {
+			r.os = segments[1]
+			r.arch = segments[2]
 		}
-		return route{project: projectName, platform: platform, isTarball: true, version: version}
+		return r
 	}
 
 	packageName := strings.TrimPrefix(path, "@buildhost/")
@@ -221,7 +225,7 @@ func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Reques
 			"os":      []string{platOS},
 			"cpu":     []string{platArch},
 			"dist": map[string]string{
-				"tarball": fmt.Sprintf("%s/npm/@buildhost/%s/-/%s", h.BaseURL, packageName, version),
+				"tarball": fmt.Sprintf("%s/npm/@buildhost/%s/-/%s/%s/%s", h.BaseURL, projectName, version, platOS, platArch),
 			},
 		}
 		if _, ok := distTags["latest"]; !ok {
@@ -259,18 +263,12 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, project *
 
 	version := normalizeVersion(release.Version)
 
-	if ri.platform == "" {
+	if ri.os == "" {
 		h.serveWrapperTarball(w, project.Name, version)
 		return
 	}
 
-	platParts := strings.SplitN(ri.platform, "-", 2)
-	if len(platParts) != 2 {
-		http.NotFound(w, r)
-		return
-	}
-
-	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, reverseNpmPlatform(platParts[0]), reverseNpmArch(platParts[1]))
+	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, reverseNpmPlatform(ri.os), reverseNpmArch(ri.arch))
 	if err != nil {
 		http.NotFound(w, r)
 		return
