@@ -44,7 +44,7 @@ func TestParseRoute(t *testing.T) {
 		wantProj string
 		wantPlat string
 		wantTar  bool
-		wantFile string
+		wantVer  string
 	}{
 		// Package info: simple names
 		{"simple", "/npm/@buildhost/myapp", "myapp", "", false, ""},
@@ -70,36 +70,39 @@ func TestParseRoute(t *testing.T) {
 		{"hyphenated scope and project", "/npm/@build-host/go-toolchain", "@build-host/go-toolchain", "", false, ""},
 		{"multi-segment scope", "/npm/@build/build-host/go-toolchain", "@build/build-host/go-toolchain", "", false, ""},
 
-		// Tarball: simple names
-		{"tarball simple", "/npm/@buildhost/myapp/-/myapp-1.0.0.tgz", "myapp", "", true, "myapp-1.0.0.tgz"},
-		{"tarball prerelease", "/npm/@buildhost/myapp/-/myapp-1.0.0-rc.1.tgz", "myapp", "", true, "myapp-1.0.0-rc.1.tgz"},
+		// Tarball: version as path segment
+		{"tarball simple", "/npm/@buildhost/myapp/-/1.0.0", "myapp", "", true, "1.0.0"},
+		{"tarball prerelease", "/npm/@buildhost/myapp/-/1.0.0-rc.1", "myapp", "", true, "1.0.0-rc.1"},
 
 		// Tarball: hyphenated project names
-		{"tarball hyphenated", "/npm/@buildhost/go-toolchain/-/go-toolchain-1.0.0.tgz", "go-toolchain", "", true, "go-toolchain-1.0.0.tgz"},
-		{"tarball multi-hyphen", "/npm/@buildhost/my-cool-app/-/my-cool-app-2.3.1.tgz", "my-cool-app", "", true, "my-cool-app-2.3.1.tgz"},
+		{"tarball hyphenated", "/npm/@buildhost/go-toolchain/-/1.0.0", "go-toolchain", "", true, "1.0.0"},
+		{"tarball multi-hyphen", "/npm/@buildhost/my-cool-app/-/2.3.1", "my-cool-app", "", true, "2.3.1"},
 
 		// Tarball: platform packages
-		{"tarball platform", "/npm/@buildhost/go-toolchain-linux-x64/-/go-toolchain-6.0.0-linux-x64.tgz", "go-toolchain", "linux-x64", true, "go-toolchain-6.0.0-linux-x64.tgz"},
-		{"tarball platform darwin", "/npm/@buildhost/myapp-darwin-arm64/-/myapp-1.0.0-darwin-arm64.tgz", "myapp", "darwin-arm64", true, "myapp-1.0.0-darwin-arm64.tgz"},
+		{"tarball platform", "/npm/@buildhost/go-toolchain-linux-x64/-/6.0.0", "go-toolchain", "linux-x64", true, "6.0.0"},
+		{"tarball platform darwin", "/npm/@buildhost/myapp-darwin-arm64/-/1.0.0", "myapp", "darwin-arm64", true, "1.0.0"},
 
 		// Tarball: hyphenated scope names
-		{"tarball hyphenated scope", "/npm/@build-host/gotoolchain/-/gotoolchain-1.0.0.tgz", "@build-host/gotoolchain", "", true, "gotoolchain-1.0.0.tgz"},
-		{"tarball hyphenated scope+proj", "/npm/@build-host/go-toolchain/-/go-toolchain-1.0.0.tgz", "@build-host/go-toolchain", "", true, "go-toolchain-1.0.0.tgz"},
+		{"tarball hyphenated scope", "/npm/@build-host/gotoolchain/-/1.0.0", "@build-host/gotoolchain", "", true, "1.0.0"},
+		{"tarball hyphenated scope+proj", "/npm/@build-host/go-toolchain/-/1.0.0", "@build-host/go-toolchain", "", true, "1.0.0"},
+
+		// Tarball: trailing path after version is ignored
+		{"tarball with filename", "/npm/@buildhost/myapp/-/1.0.0/myapp.tgz", "myapp", "", true, "1.0.0"},
 
 		// Unscoped names
 		{"unscoped simple", "/npm/myapp", "myapp", "", false, ""},
 		{"unscoped hyphenated", "/npm/build-host", "build-host", "", false, ""},
 		{"unscoped multi-hyphen", "/npm/my-build-host", "my-build-host", "", false, ""},
-		{"unscoped tarball", "/npm/build-host/-/build-host-1.0.0.tgz", "build-host", "", true, "build-host-1.0.0.tgz"},
+		{"unscoped tarball", "/npm/build-host/-/1.0.0", "build-host", "", true, "1.0.0"},
 
 		// Multiple slashes in path
 		{"extra slash in scope", "/npm/@build/host/myapp", "@build/host/myapp", "", false, ""},
 		{"deep path no tarball", "/npm/@build/build-host/go-toolchain", "@build/build-host/go-toolchain", "", false, ""},
-		{"deep path tarball", "/npm/@build/host/myapp/-/myapp-1.0.0.tgz", "@build/host/myapp", "", true, "myapp-1.0.0.tgz"},
+		{"deep path tarball", "/npm/@build/host/myapp/-/1.0.0", "@build/host/myapp", "", true, "1.0.0"},
 
 		// Edge cases
 		{"bare scope", "/npm/@buildhost/", "", "", false, ""},
-		{"tarball empty filename", "/npm/@buildhost/myapp/-/", "myapp", "", true, ""},
+		{"tarball empty version", "/npm/@buildhost/myapp/-/", "myapp", "", true, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -108,7 +111,7 @@ func TestParseRoute(t *testing.T) {
 			assert.Equal(t, tt.wantProj, ri.project, "project")
 			assert.Equal(t, tt.wantPlat, ri.platform, "platform")
 			assert.Equal(t, tt.wantTar, ri.isTarball, "isTarball")
-			assert.Equal(t, tt.wantFile, ri.filename, "filename")
+			assert.Equal(t, tt.wantVer, ri.version, "version")
 		})
 	}
 }
@@ -231,7 +234,7 @@ func TestServeHTTP_PackageInfo_OptionalDependencies(t *testing.T) {
 	assert.Equal(t, "6.0.0", optDeps["@buildhost/go-toolchain-linux-x64"])
 
 	dist := v["dist"].(map[string]any)
-	assert.Contains(t, dist["tarball"], "/npm/@buildhost/go-toolchain/-/go-toolchain-6.0.0.tgz")
+	assert.Contains(t, dist["tarball"], "/npm/@buildhost/go-toolchain/-/6.0.0")
 }
 
 func TestServeHTTP_PlatformPackageInfo(t *testing.T) {
@@ -267,7 +270,7 @@ func TestServeHTTP_PlatformPackageInfo(t *testing.T) {
 	assert.Equal(t, []any{"linux"}, v["os"])
 	assert.Equal(t, []any{"x64"}, v["cpu"])
 	dist := v["dist"].(map[string]any)
-	assert.Contains(t, dist["tarball"], "go-toolchain-6.0.0-linux-x64.tgz")
+	assert.Contains(t, dist["tarball"], "/npm/@buildhost/go-toolchain-linux-x64/-/6.0.0")
 }
 
 func TestServeHTTP_PlatformPackageInfo_NotFound(t *testing.T) {
@@ -305,8 +308,8 @@ func TestServeHTTP_PlatformTarball_Success(t *testing.T) {
 	}))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
-	req := httptest.NewRequest("GET", "/@buildhost/go-toolchain-linux-x64/-/go-toolchain-6.0.0-linux-x64.tgz", nil)
-	req = withRoute(req, proj, route{project: "go-toolchain", platform: "linux-x64", isTarball: true, filename: "go-toolchain-6.0.0-linux-x64.tgz"})
+	req := httptest.NewRequest("GET", "/@buildhost/go-toolchain-linux-x64/-/6.0.0", nil)
+	req = withRoute(req, proj, route{project: "go-toolchain", platform: "linux-x64", isTarball: true, version: "6.0.0"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -333,8 +336,8 @@ func TestServeHTTP_BasePackageWrapperTarball(t *testing.T) {
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	// The base package tarball URL (from metadata) should serve a generated wrapper
-	req := httptest.NewRequest("GET", "/@buildhost/go-toolchain/-/go-toolchain-6.0.0.tgz", nil)
-	req = withRoute(req, proj, route{project: "go-toolchain", isTarball: true, filename: "go-toolchain-6.0.0.tgz"})
+	req := httptest.NewRequest("GET", "/@buildhost/go-toolchain/-/6.0.0", nil)
+	req = withRoute(req, proj, route{project: "go-toolchain", isTarball: true, version: "6.0.0"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -360,8 +363,8 @@ func TestServeHTTP_WrapperTarball_NonexistentVersion(t *testing.T) {
 	}))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
-	req := httptest.NewRequest("GET", "/@buildhost/myapp/-/myapp-99.99.99.tgz", nil)
-	req = withRoute(req, proj, route{project: "myapp", isTarball: true, filename: "myapp-99.99.99.tgz"})
+	req := httptest.NewRequest("GET", "/@buildhost/myapp/-/99.99.99", nil)
+	req = withRoute(req, proj, route{project: "myapp", isTarball: true, version: "99.99.99"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -375,8 +378,8 @@ func TestServeHTTP_Tarball_NotFound(t *testing.T) {
 	proj := &model.Project{Name: "nonexistent", Versioning: model.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
-	req := httptest.NewRequest("GET", "/@buildhost/nonexistent-linux-x64/-/nonexistent-1.0.0-linux-x64.tgz", nil)
-	req = withRoute(req, proj, route{project: "nonexistent", platform: "linux-x64", isTarball: true, filename: "nonexistent-1.0.0-linux-x64.tgz"})
+	req := httptest.NewRequest("GET", "/@buildhost/nonexistent-linux-x64/-/1.0.0", nil)
+	req = withRoute(req, proj, route{project: "nonexistent", platform: "linux-x64", isTarball: true, version: "1.0.0"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -400,8 +403,8 @@ func TestServeHTTP_Tarball_Success(t *testing.T) {
 		Kind: model.KindBinary, StorageKey: binaryKey, Size: binarySize, SHA256: binaryKey,
 	}))
 
-	req := httptest.NewRequest("GET", "/@buildhost/myapp-linux-x64/-/myapp-1.0.0-linux-x64.tgz", nil)
-	req = withRoute(req, proj, route{project: "myapp", platform: "linux-x64", isTarball: true, filename: "myapp-1.0.0-linux-x64.tgz"})
+	req := httptest.NewRequest("GET", "/@buildhost/myapp-linux-x64/-/1.0.0", nil)
+	req = withRoute(req, proj, route{project: "myapp", platform: "linux-x64", isTarball: true, version: "1.0.0"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -434,7 +437,7 @@ func TestServeHTTP_HyphenatedProject_PackageInfo(t *testing.T) {
 	assert.Contains(t, versions, "1.2.0")
 	v := versions["1.2.0"].(map[string]any)
 	dist := v["dist"].(map[string]any)
-	assert.Contains(t, dist["tarball"], "/npm/@buildhost/go-toolchain/-/go-toolchain-1.2.0.tgz")
+	assert.Contains(t, dist["tarball"], "/npm/@buildhost/go-toolchain/-/1.2.0")
 }
 
 // Private project auth is tested in the auth package. These tests verify
@@ -478,8 +481,8 @@ func TestServeHTTP_PrivateProject_Tarball_WithValidContext(t *testing.T) {
 		Kind: model.KindBinary, StorageKey: binaryKey, Size: binarySize, SHA256: binaryKey,
 	}))
 
-	req := httptest.NewRequest("GET", "/@buildhost/secret-linux-x64/-/secret-1.0.0-linux-x64.tgz", nil)
-	req = withRoute(req, proj, route{project: "secret", platform: "linux-x64", isTarball: true, filename: "secret-1.0.0-linux-x64.tgz"})
+	req := httptest.NewRequest("GET", "/@buildhost/secret-linux-x64/-/1.0.0", nil)
+	req = withRoute(req, proj, route{project: "secret", platform: "linux-x64", isTarball: true, version: "1.0.0"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -488,23 +491,4 @@ func TestServeHTTP_PrivateProject_Tarball_WithValidContext(t *testing.T) {
 	assert.NotEmpty(t, rec.Body.Bytes())
 }
 
-func TestExtractVersionFromFilename(t *testing.T) {
-	tests := []struct {
-		project  string
-		filename string
-		want     string
-	}{
-		{"myapp", "myapp-1.0.0.tgz", "1.0.0"},
-		{"go-toolchain", "go-toolchain-6.0.0.tgz", "6.0.0"},
-		{"myapp", "myapp-1.0.0-rc.1.tgz", "1.0.0-rc.1"},
-		{"myapp", "wrong-1.0.0.tgz", ""},
-		{"myapp", "myapp.tgz", ""},
-		{"myapp", "myapp-1.0.0.tar.gz", ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.filename, func(t *testing.T) {
-			got := extractVersionFromFilename(tt.project, tt.filename)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
+

@@ -34,7 +34,7 @@ type route struct {
 	project   string
 	platform  string // e.g. "linux-x64", empty for base package
 	isTarball bool
-	filename  string
+	version   string
 }
 
 func (r route) ProjectName() string     { return r.project }
@@ -67,7 +67,11 @@ func parseRoute(r *http.Request) auth.RouteInfo {
 		parts := strings.SplitN(path, "/-/", 2)
 		packageName := strings.TrimPrefix(parts[0], "@buildhost/")
 		projectName, platform := splitPlatform(packageName)
-		return route{project: projectName, platform: platform, isTarball: true, filename: parts[1]}
+		version := parts[1]
+		if idx := strings.IndexByte(version, '/'); idx >= 0 {
+			version = version[:idx]
+		}
+		return route{project: projectName, platform: platform, isTarball: true, version: version}
 	}
 
 	packageName := strings.TrimPrefix(path, "@buildhost/")
@@ -99,28 +103,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type npmArtifactInfo struct {
-	os       string
-	arch     string
-	filename string
+	os   string
+	arch string
 }
 
-func (h *Handler) collectNpmArtifacts(ctx context.Context, projectName, releaseVersion string, releaseID int64) []npmArtifactInfo {
+func (h *Handler) collectNpmArtifacts(ctx context.Context, releaseID int64) []npmArtifactInfo {
 	artifacts, err := h.DB.ListArtifacts(ctx, releaseID)
 	if err != nil {
 		return nil
 	}
-	version := normalizeVersion(releaseVersion)
 	var infos []npmArtifactInfo
 	for _, a := range artifacts {
 		if a.Kind == model.KindLibrary {
 			continue
 		}
-		os := npmPlatform(a.OS)
-		arch := npmArch(a.Arch)
 		infos = append(infos, npmArtifactInfo{
-			os:       os,
-			arch:     arch,
-			filename: fmt.Sprintf("%s-%s-%s-%s.tgz", projectName, version, os, arch),
+			os:   npmPlatform(a.OS),
+			arch: npmArch(a.Arch),
 		})
 	}
 	return infos
@@ -149,7 +148,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 		}
 		version := normalizeVersion(rel.Version)
 
-		npmInfos := h.collectNpmArtifacts(r.Context(), projectName, rel.Version, rel.ID)
+		npmInfos := h.collectNpmArtifacts(r.Context(), rel.ID)
 
 		optDeps := map[string]string{}
 		for _, info := range npmInfos {
@@ -161,7 +160,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 			"name":    "@buildhost/" + projectName,
 			"version": version,
 			"dist": map[string]string{
-				"tarball": fmt.Sprintf("%s/npm/@buildhost/%s/-/%s-%s.tgz", h.BaseURL, projectName, projectName, version),
+				"tarball": fmt.Sprintf("%s/npm/@buildhost/%s/-/%s", h.BaseURL, projectName, version),
 			},
 		}
 		if len(optDeps) > 0 {
@@ -204,15 +203,15 @@ func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Reques
 		}
 		version := normalizeVersion(rel.Version)
 
-		npmInfos := h.collectNpmArtifacts(r.Context(), projectName, rel.Version, rel.ID)
-		var matched *npmArtifactInfo
-		for i := range npmInfos {
-			if npmInfos[i].os == platOS && npmInfos[i].arch == platArch {
-				matched = &npmInfos[i]
+		npmInfos := h.collectNpmArtifacts(r.Context(), rel.ID)
+		found := false
+		for _, info := range npmInfos {
+			if info.os == platOS && info.arch == platArch {
+				found = true
 				break
 			}
 		}
-		if matched == nil {
+		if !found {
 			continue
 		}
 
@@ -222,7 +221,7 @@ func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Reques
 			"os":      []string{platOS},
 			"cpu":     []string{platArch},
 			"dist": map[string]string{
-				"tarball": fmt.Sprintf("%s/npm/@buildhost/%s/-/%s", h.BaseURL, packageName, matched.filename),
+				"tarball": fmt.Sprintf("%s/npm/@buildhost/%s/-/%s", h.BaseURL, packageName, version),
 			},
 		}
 		if _, ok := distTags["latest"]; !ok {
@@ -247,20 +246,21 @@ func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, project *model.Project, ri route) {
-	if ri.platform == "" {
-		h.serveWrapperTarball(w, r, project, ri.filename)
+	if ri.version == "" {
+		http.Error(w, "missing version", http.StatusBadRequest)
 		return
 	}
 
-	version := extractPlatformVersion(project.Name, ri.filename, ri.platform)
-	if version == "" {
-		http.NotFound(w, r)
-		return
-	}
-
-	release := h.findReleaseByNpmVersion(r.Context(), project.ID, version)
+	release := h.findReleaseByNpmVersion(r.Context(), project.ID, ri.version)
 	if release == nil || !release.Published {
 		http.NotFound(w, r)
+		return
+	}
+
+	version := normalizeVersion(release.Version)
+
+	if ri.platform == "" {
+		h.serveWrapperTarball(w, project.Name, version)
 		return
 	}
 
@@ -306,15 +306,6 @@ func (h *Handler) findReleaseByNpmVersion(ctx context.Context, projectID int64, 
 	return nil
 }
 
-func extractPlatformVersion(projectName, filename, platform string) string {
-	prefix := projectName + "-"
-	suffix := "-" + platform + ".tgz"
-	if !strings.HasPrefix(filename, prefix) || !strings.HasSuffix(filename, suffix) {
-		return ""
-	}
-	return strings.TrimSuffix(strings.TrimPrefix(filename, prefix), suffix)
-}
-
 func reverseNpmPlatform(npm string) string {
 	switch npm {
 	case "win32":
@@ -335,21 +326,9 @@ func reverseNpmArch(npm string) string {
 	}
 }
 
-func (h *Handler) serveWrapperTarball(w http.ResponseWriter, r *http.Request, project *model.Project, filename string) {
-	version := extractVersionFromFilename(project.Name, filename)
-	if version == "" {
-		http.NotFound(w, r)
-		return
-	}
-
-	release := h.findReleaseByNpmVersion(r.Context(), project.ID, version)
-	if release == nil || !release.Published {
-		http.NotFound(w, r)
-		return
-	}
-
+func (h *Handler) serveWrapperTarball(w http.ResponseWriter, projectName, version string) {
 	pkgJSON, _ := json.MarshalIndent(map[string]any{
-		"name":    "@buildhost/" + project.Name,
+		"name":    "@buildhost/" + projectName,
 		"version": version,
 	}, "", "  ")
 
@@ -370,15 +349,6 @@ func (h *Handler) serveWrapperTarball(w http.ResponseWriter, r *http.Request, pr
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", buf.Len()))
 	io.Copy(w, &buf)
-}
-
-func extractVersionFromFilename(projectName, filename string) string {
-	prefix := projectName + "-"
-	suffix := ".tgz"
-	if !strings.HasPrefix(filename, prefix) || !strings.HasSuffix(filename, suffix) {
-		return ""
-	}
-	return strings.TrimSuffix(strings.TrimPrefix(filename, prefix), suffix)
 }
 
 func normalizeVersion(v string) string {
