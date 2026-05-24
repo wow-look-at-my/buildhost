@@ -12,6 +12,41 @@ type Result struct {
 	DebugPath    string
 }
 
+type ByteResult struct {
+	Stripped []byte
+	Debug    []byte
+}
+
+func StripBytes(data []byte) (*ByteResult, error) {
+	tmp, err := os.CreateTemp("", "strip-input-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return nil, err
+	}
+	tmp.Close()
+
+	result, err := Strip(tmp.Name())
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(result.StrippedPath)
+	defer os.Remove(result.DebugPath)
+
+	stripped, err := os.ReadFile(result.StrippedPath)
+	if err != nil {
+		return nil, err
+	}
+	debug, err := os.ReadFile(result.DebugPath)
+	if err != nil {
+		return nil, err
+	}
+	return &ByteResult{Stripped: stripped, Debug: debug}, nil
+}
+
 func Strip(inputPath string) (*Result, error) {
 	data, err := os.ReadFile(inputPath)
 	if err != nil {
