@@ -73,6 +73,8 @@ type ReleaseSummary = ListReleaseSummariesRow
 type TokenDetail = ListTokenDetailsRow
 type OIDCPolicyDetail = ListOIDCPolicyDetailsRow
 type SiteDetail = ListSiteDetailsRow
+type AllArtifact = ListAllArtifactsRow
+type StorageBreakdown = GetStorageBreakdownRow
 
 var ValidScopes = map[string]bool{
 	"read":  true,

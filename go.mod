@@ -54,3 +54,31 @@ require (
 replace gonum.org/v1/gonum v0.17.0 => github.com/gonum/gonum v0.17.0
 
 replace go.yaml.in/yaml/v3 v3.0.4 => github.com/yaml/go-yaml/v3 v3.0.4
+
+replace modernc.org/cc/v4 v4.28.2 => gitlab.com/cznic/cc/v4 v4.28.2
+
+replace modernc.org/ccgo/v4 v4.34.0 => gitlab.com/cznic/ccgo/v4 v4.34.0
+
+replace modernc.org/fileutil v1.4.0 => gitlab.com/cznic/fileutil v1.4.0
+
+replace modernc.org/gc/v2 v2.6.5 => gitlab.com/cznic/gc/v2 v2.6.5
+
+replace modernc.org/gc/v3 v3.1.2 => gitlab.com/cznic/gc/v3 v3.1.2
+
+replace modernc.org/goabi0 v0.2.0 => gitlab.com/cznic/goabi0 v0.2.0
+
+replace modernc.org/libc v1.72.3 => gitlab.com/cznic/libc v1.72.3
+
+replace modernc.org/mathutil v1.7.1 => gitlab.com/cznic/mathutil v1.7.1
+
+replace modernc.org/memory v1.11.0 => gitlab.com/cznic/memory v1.11.0
+
+replace modernc.org/opt v0.2.0 => gitlab.com/cznic/opt v0.2.0
+
+replace modernc.org/sortutil v1.2.1 => gitlab.com/cznic/sortutil v1.2.1
+
+replace modernc.org/sqlite v1.50.1 => gitlab.com/cznic/sqlite v1.50.1
+
+replace modernc.org/strutil v1.2.1 => gitlab.com/cznic/strutil v1.2.1
+
+replace modernc.org/token v1.1.0 => gitlab.com/cznic/token v1.1.0

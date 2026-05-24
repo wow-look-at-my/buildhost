@@ -67,6 +67,116 @@ func (q *Queries) GetDashboardStats(ctx context.Context) (GetDashboardStatsRow, 
 	return i, err
 }
 
+const getStorageBreakdown = `-- name: GetStorageBreakdown :many
+SELECT p.id, p.name,
+       CAST(COALESCE(SUM(a.size), 0) AS INTEGER) AS total_bytes,
+       COUNT(a.id) AS artifact_count,
+       COUNT(DISTINCT r.id) AS release_count
+FROM projects p
+LEFT JOIN releases r ON r.project_id = p.id
+LEFT JOIN artifacts a ON a.release_id = r.id
+GROUP BY p.id, p.name
+ORDER BY total_bytes DESC
+`
+
+type GetStorageBreakdownRow struct {
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	TotalBytes    int64  `json:"total_bytes"`
+	ArtifactCount int64  `json:"artifact_count"`
+	ReleaseCount  int64  `json:"release_count"`
+}
+
+func (q *Queries) GetStorageBreakdown(ctx context.Context) ([]GetStorageBreakdownRow, error) {
+	rows, err := q.db.QueryContext(ctx, getStorageBreakdown)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetStorageBreakdownRow{}
+	for rows.Next() {
+		var i GetStorageBreakdownRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.TotalBytes,
+			&i.ArtifactCount,
+			&i.ReleaseCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllArtifacts = `-- name: ListAllArtifacts :many
+SELECT a.id, a.os, a.arch, a.kind, a.size, a.filename, a.created_at,
+       r.version, r.git_branch,
+       p.name AS project_name,
+       CAST(COALESCE(dc.count, 0) AS INTEGER) AS download_count
+FROM artifacts a
+JOIN releases r ON a.release_id = r.id
+JOIN projects p ON r.project_id = p.id
+LEFT JOIN download_counts dc ON dc.artifact_id = a.id
+ORDER BY a.created_at DESC, a.id DESC
+`
+
+type ListAllArtifactsRow struct {
+	ID            int64     `json:"id"`
+	OS            OS        `json:"os"`
+	Arch          Arch      `json:"arch"`
+	Kind          Kind      `json:"kind"`
+	Size          int64     `json:"size"`
+	Filename      string    `json:"filename"`
+	CreatedAt     time.Time `json:"created_at"`
+	Version       string    `json:"version"`
+	GitBranch     string    `json:"git_branch"`
+	ProjectName   string    `json:"project_name"`
+	DownloadCount int64     `json:"download_count"`
+}
+
+func (q *Queries) ListAllArtifacts(ctx context.Context) ([]ListAllArtifactsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAllArtifacts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAllArtifactsRow{}
+	for rows.Next() {
+		var i ListAllArtifactsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OS,
+			&i.Arch,
+			&i.Kind,
+			&i.Size,
+			&i.Filename,
+			&i.CreatedAt,
+			&i.Version,
+			&i.GitBranch,
+			&i.ProjectName,
+			&i.DownloadCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOIDCPolicyDetails = `-- name: ListOIDCPolicyDetails :many
 SELECT o.id, o.issuer, o.subject_pattern, o.audience, o.project_id, o.scopes, o.created_at,
        COALESCE(p.name, '') AS project_name
