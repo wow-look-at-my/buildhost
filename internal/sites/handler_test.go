@@ -394,3 +394,43 @@ func TestServe_ContentLength(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, fmt.Sprintf("%d", len(content)), rec.Header().Get("Content-Length"))
 }
+
+func TestRouteAccess(t *testing.T) {
+	r := route{project: "p", branch: "b", write: true}
+	assert.Equal(t, auth.WriteAccess, r.Access())
+
+	r.write = false
+	assert.Equal(t, auth.ReadAccess, r.Access())
+}
+
+func TestParseRoute(t *testing.T) {
+	req := httptest.NewRequest("PUT", "/sites/myapp/branch/main/some/file.txt", nil)
+	req.SetPathValue("project", "myapp")
+	req.SetPathValue("branch", "main")
+	req.SetPathValue("path", "some/file.txt")
+
+	ri := parseRoute(req)
+	r := ri.(route)
+	assert.Equal(t, "myapp", r.ProjectName())
+	assert.Equal(t, "main", r.branch)
+	assert.Equal(t, "some/file.txt", r.path)
+	assert.True(t, r.write)
+
+	req2 := httptest.NewRequest("GET", "/sites/myapp/branch/dev/index.html", nil)
+	req2.SetPathValue("project", "myapp")
+	req2.SetPathValue("branch", "dev")
+	req2.SetPathValue("path", "index.html")
+
+	r2 := parseRoute(req2).(route)
+	assert.False(t, r2.write)
+}
+
+func TestParseAPIRoute(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/v1/projects/myapp/sites", nil)
+	req.SetPathValue("project", "myapp")
+
+	ri := parseAPIRoute(req)
+	r := ri.(route)
+	assert.Equal(t, "myapp", r.ProjectName())
+	assert.Equal(t, "", r.branch)
+}
