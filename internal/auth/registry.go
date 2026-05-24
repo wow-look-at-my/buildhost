@@ -33,7 +33,7 @@ func Init(database *db.DB, store storage.Storage, baseURL, dataDir string, trust
 	sharedStore = store
 	sharedBase = baseURL
 	sharedData = dataDir
-	mw = &Middleware{DB: database, Verifier: NewOIDCVerifier(trustedIssuers, allowedOrgs, allowedEvents)}
+	mw = &Middleware{DB: database, Verifier: NewOIDCVerifier(baseURL, trustedIssuers, allowedOrgs, allowedEvents)}
 	for _, fn := range readyFuncs {
 		fn()
 	}

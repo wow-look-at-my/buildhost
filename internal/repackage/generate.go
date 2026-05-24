@@ -13,16 +13,17 @@ import (
 type Generator struct {
 	store       storage.Storage
 	baseURL     string
+	tmpDir      string
 	repackagers map[Format]Repackager
 }
 
-func NewGenerator(store storage.Storage, baseURL string) *Generator {
+func NewGenerator(store storage.Storage, baseURL string, tmpDir string) *Generator {
 	rps := []Repackager{&TarGZ{}, &TarXZ{}, &TarZST{}, &Zip{}, &Deb{}, &Brew{}, &NPM{}, &OCI{}}
 	m := make(map[Format]Repackager, len(rps))
 	for _, rp := range rps {
 		m[rp.Format()] = rp
 	}
-	return &Generator{store: store, baseURL: baseURL, repackagers: m}
+	return &Generator{store: store, baseURL: baseURL, tmpDir: tmpDir, repackagers: m}
 }
 
 func (g *Generator) Generate(ctx context.Context, format Format, project model.Project, release model.Release, artifact model.Artifact) (*Output, error) {
@@ -43,7 +44,7 @@ func (g *Generator) Generate(ctx context.Context, format Format, project model.P
 	}
 
 	if (artifact.Kind == model.KindBinary || artifact.Kind == model.KindLibrary) && strip.Available() {
-		if result, err := strip.StripBytes(data); err == nil {
+		if result, err := strip.StripBytes(data, g.tmpDir); err == nil {
 			data = result.Stripped
 		}
 	}

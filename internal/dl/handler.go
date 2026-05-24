@@ -21,7 +21,8 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
-		handler.Gen = repackage.NewGenerator(auth.Store(), auth.BaseURL())
+		handler.TmpDir = auth.DataDir() + "/tmp"
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.BaseURL(), auth.DataDir()+"/tmp")
 	})
 	auth.Handle("GET /dl/{project}/latest/{os}/{arch}", parseRoute, handler.DownloadLatest)
 	auth.Handle("GET /dl/{project}/branch/{branch}/{os}/{arch}", parseRoute, handler.DownloadBranch)
@@ -54,9 +55,10 @@ func routeFrom(ctx context.Context) route {
 }
 
 type Handler struct {
-	DB    *db.DB
-	Store storage.Storage
-	Gen   *repackage.Generator
+	DB     *db.DB
+	Store  storage.Storage
+	Gen    *repackage.Generator
+	TmpDir string
 }
 
 func handleDBErr(w http.ResponseWriter, r *http.Request, err error) bool {
@@ -139,7 +141,7 @@ func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project 
 			return
 		}
 		if (artifact.Kind == model.KindBinary || artifact.Kind == model.KindLibrary) && strip.Available() {
-			if result, serr := strip.StripBytes(data); serr == nil {
+			if result, serr := strip.StripBytes(data, h.TmpDir); serr == nil {
 				if wantDebug {
 					h.serveBytes(w, result.Debug, fmt.Sprintf("%s-%s.debug", project.Name, release.Version))
 					return

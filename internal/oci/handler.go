@@ -18,7 +18,7 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
-		handler.Gen = repackage.NewGenerator(auth.Store(), auth.BaseURL())
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.BaseURL(), auth.DataDir()+"/tmp")
 	})
 	auth.HandleRaw("GET /v2/", handler.V2Root)
 	auth.HandleHandler("/v2/", parseRoute, &handler)
