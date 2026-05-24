@@ -1,12 +1,21 @@
 package static
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/assert"
+	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestCanonicalQuery(t *testing.T) {
@@ -98,11 +107,6 @@ func TestServe_StripsUnknownParams(t *testing.T) {
 	assert.NotContains(t, loc, "garbage")
 }
 
-func TestResolveVersion(t *testing.T) {
-	// resolveVersion is tested implicitly through the handler, but
-	// we can test the fallback logic directly once we have a DB.
-	// For now, test that it returns ErrNotFound for nonexistent versions.
-}
 
 func TestFmtRegistry(t *testing.T) {
 	_, ok := LookupFmt("raw")
@@ -128,4 +132,270 @@ func TestComputeETag(t *testing.T) {
 	ctx2.Artifact.StorageKey = "abc123"
 	etag3 := computeETag(ctx2, "raw")
 	assert.NotEqual(t, etag1, etag3)
+}
+
+func setupIntegration(t *testing.T) (*staticHandler, *db.DB, *storage.Filesystem) {
+	t.Helper()
+	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { d.Close() })
+
+	store, err := storage.NewFilesystem(t.TempDir(), true)
+	require.NoError(t, err)
+
+	return &staticHandler{DB: d, Store: store, BaseURL: "http://localhost:8080"}, d, store
+}
+
+func withProject(r *http.Request, p *model.Project) *http.Request {
+	ctx := auth.WithProject(r.Context(), p)
+	return r.WithContext(ctx)
+}
+
+func TestServe_RawFormat_Success(t *testing.T) {
+	h, d, store := setupIntegration(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, strings.NewReader("hello-binary"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
+		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
+		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
+	req = withProject(req, proj)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "hello-binary")
+	assert.NotEmpty(t, rec.Header().Get("ETag"))
+	assert.Equal(t, "public, max-age=31536000, immutable", rec.Header().Get("Cache-Control"))
+}
+
+func TestServe_ETag_NotModified(t *testing.T) {
+	h, d, store := setupIntegration(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, strings.NewReader("binary"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
+		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
+		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
+	req = withProject(req, proj)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+	etag := rec.Header().Get("ETag")
+	require.NotEmpty(t, etag)
+
+	req2 := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
+	req2 = withProject(req2, proj)
+	req2.Header.Set("If-None-Match", etag)
+	rec2 := httptest.NewRecorder()
+	h.Serve(rec2, req2)
+	assert.Equal(t, http.StatusNotModified, rec2.Code)
+}
+
+func TestServe_VersionNotFound(t *testing.T) {
+	h, d, _ := setupIntegration(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=9.9.9", nil)
+	req = withProject(req, proj)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestServe_ArtifactNotFound(t *testing.T) {
+	h, d, _ := setupIntegration(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
+	req = withProject(req, proj)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestServe_VersionResolution_StripV(t *testing.T) {
+	h, d, store := setupIntegration(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "2.0.0", VersionNum: 2000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, strings.NewReader("bin"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
+		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
+		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=v2.0.0", nil)
+	req = withProject(req, proj)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestServe_VersionResolution_StripDotZeroZero(t *testing.T) {
+	h, d, store := setupIntegration(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp"}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "5", VersionNum: 5}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, strings.NewReader("bin"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
+		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
+		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=5.0.0", nil)
+	req = withProject(req, proj)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestServe_AnyOSArch(t *testing.T) {
+	h, d, _ := setupIntegration(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	req := httptest.NewRequest("GET", "/static?arch=any&fmt=raw&id=myapp&os=any&v=1.0.0", nil)
+	req = withProject(req, proj)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code, "raw format requires an artifact, so os=any should fail")
+}
+
+func TestServe_DebugSymbolsHeader(t *testing.T) {
+	h, d, store := setupIntegration(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, strings.NewReader("not-an-elf"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
+		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
+		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
+	req = withProject(req, proj)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	hdr := rec.Header().Get("X-Debug-Symbols")
+	assert.Contains(t, []string{"available", "unavailable"}, hdr, "should indicate symbol availability")
+}
+
+func TestRedirect(t *testing.T) {
+	req := httptest.NewRequest("GET", "/dl/myapp/1.0.0/linux/amd64", nil)
+	rec := httptest.NewRecorder()
+	Redirect(rec, req, "https://example.com", For("myapp").WithVersion("1.0.0").WithOS("linux").WithArch("amd64").WithFmt("raw"))
+	assert.Equal(t, http.StatusFound, rec.Code)
+	loc := rec.Header().Get("Location")
+	assert.Equal(t, "https://example.com/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", loc)
+}
+
+func TestParseRoute_ExtractsID(t *testing.T) {
+	req := httptest.NewRequest("GET", "/static?id=myapp&v=1", nil)
+	ri := parseRoute(req)
+	assert.Equal(t, "myapp", ri.ProjectName())
+
+	req2 := httptest.NewRequest("GET", "/static?id=@buildhost/myapp&v=1", nil)
+	ri2 := parseRoute(req2)
+	assert.Equal(t, "myapp", ri2.ProjectName(), "strips @buildhost/ prefix")
+}
+
+func TestResolveVersion(t *testing.T) {
+	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(t, err)
+	defer d.Close()
+
+	ctx := context.Background()
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "3.0.0", VersionNum: 3000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	r, err := resolveVersion(ctx, d, proj.ID, "3.0.0")
+	require.NoError(t, err)
+	assert.Equal(t, "3.0.0", r.Version)
+
+	r, err = resolveVersion(ctx, d, proj.ID, "v3.0.0")
+	require.NoError(t, err)
+	assert.Equal(t, "3.0.0", r.Version)
+
+	_, err = resolveVersion(ctx, d, proj.ID, "9.9.9")
+	assert.ErrorIs(t, err, db.ErrNotFound)
+
+	_, err = resolveVersion(ctx, d, proj.ID, "latest")
+	assert.ErrorIs(t, err, db.ErrNotFound, "latest is not a valid version for /static")
+}
+
+func TestResolveVersion_AutoVersioning(t *testing.T) {
+	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(t, err)
+	defer d.Close()
+
+	ctx := context.Background()
+	proj := &model.Project{Name: "tool"}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: fmt.Sprintf("%d", 7), VersionNum: 7}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	r, err := resolveVersion(ctx, d, proj.ID, "7")
+	require.NoError(t, err)
+	assert.Equal(t, "7", r.Version)
+
+	r, err = resolveVersion(ctx, d, proj.ID, "7.0.0")
+	require.NoError(t, err)
+	assert.Equal(t, "7", r.Version)
 }
