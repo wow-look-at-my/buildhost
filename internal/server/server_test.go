@@ -237,7 +237,19 @@ func TestHealthz(t *testing.T) {
 
 	body := readBody(t, resp)
 	require.Equal(t, "ok", string(body))
+}
 
+func TestHealthz_DBClosed(t *testing.T) {
+	env := setup(t)
+
+	// Close the database to simulate an unreachable DB.
+	env.database.Close()
+
+	resp := env.get(t, "/healthz")
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+	body := readBody(t, resp)
+	require.Equal(t, "database unreachable", string(body))
 }
 
 // ---------------------------------------------------------------------------
