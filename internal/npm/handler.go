@@ -253,77 +253,56 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, project *
 		return
 	}
 
-	if ri.platform == "" {
-		h.serveWrapperTarball(w, r, project, ri.filename, releases)
-		return
-	}
-
-	version := extractPlatformVersion(project.Name, ri.filename, ri.platform)
-	if version == "" {
-		http.Error(w, "bad tarball filename", http.StatusBadRequest)
-		return
-	}
-
-	var rel *model.Release
-	for i := range releases {
-		if releases[i].Published && normalizeVersion(releases[i].Version) == version {
-			rel = &releases[i]
-			break
-		}
-	}
-	if rel == nil {
-		http.NotFound(w, r)
-		return
-	}
-
 	platParts := strings.SplitN(ri.platform, "-", 2)
-	wantOS, wantArch := platParts[0], platParts[1]
 
-	artifacts, err := h.DB.ListArtifacts(r.Context(), rel.ID)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	for _, a := range artifacts {
-		if npmPlatform(a.OS) != wantOS || npmArch(a.Arch) != wantArch {
+	for _, rel := range releases {
+		if !rel.Published {
 			continue
 		}
-		out, err := h.Gen.Generate(r.Context(), repackage.FormatNPM, *project, *rel, a)
+		version := normalizeVersion(rel.Version)
+
+		if ri.platform == "" {
+			if fmt.Sprintf("%s-%s.tgz", project.Name, version) != ri.filename {
+				continue
+			}
+			h.serveWrapperTarballVersion(w, project.Name, version)
+			return
+		}
+
+		wantOS, wantArch := platParts[0], platParts[1]
+		if fmt.Sprintf("%s-%s-%s-%s.tgz", project.Name, version, wantOS, wantArch) != ri.filename {
+			continue
+		}
+
+		artifacts, err := h.DB.ListArtifacts(r.Context(), rel.ID)
 		if err != nil {
-			continue
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
 		}
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", out.Size))
-		io.Copy(w, out.Reader)
-		return
+
+		for _, a := range artifacts {
+			if npmPlatform(a.OS) != wantOS || npmArch(a.Arch) != wantArch {
+				continue
+			}
+			out, err := h.Gen.Generate(r.Context(), repackage.FormatNPM, *project, rel, a)
+			if err != nil {
+				continue
+			}
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", out.Size))
+			io.Copy(w, out.Reader)
+			return
+		}
+		break
 	}
 
 	http.NotFound(w, r)
 }
 
-func (h *Handler) serveWrapperTarball(w http.ResponseWriter, r *http.Request, project *model.Project, filename string, releases []model.Release) {
-	version := extractVersionFromFilename(project.Name, filename)
-	if version == "" {
-		http.NotFound(w, r)
-		return
-	}
-
-	found := false
-	for _, rel := range releases {
-		if rel.Published && normalizeVersion(rel.Version) == version {
-			found = true
-			break
-		}
-	}
-	if !found {
-		http.NotFound(w, r)
-		return
-	}
-
+func (h *Handler) serveWrapperTarballVersion(w http.ResponseWriter, projectName, version string) {
 	pkgJSON, _ := json.MarshalIndent(map[string]any{
-		"name":    "@buildhost/" + project.Name,
+		"name":    "@buildhost/" + projectName,
 		"version": version,
 	}, "", "  ")
 
@@ -344,24 +323,6 @@ func (h *Handler) serveWrapperTarball(w http.ResponseWriter, r *http.Request, pr
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", buf.Len()))
 	io.Copy(w, &buf)
-}
-
-func extractPlatformVersion(projectName, filename, platform string) string {
-	prefix := projectName + "-"
-	suffix := "-" + platform + ".tgz"
-	if !strings.HasPrefix(filename, prefix) || !strings.HasSuffix(filename, suffix) {
-		return ""
-	}
-	return strings.TrimSuffix(strings.TrimPrefix(filename, prefix), suffix)
-}
-
-func extractVersionFromFilename(projectName, filename string) string {
-	prefix := projectName + "-"
-	suffix := ".tgz"
-	if !strings.HasPrefix(filename, prefix) || !strings.HasSuffix(filename, suffix) {
-		return ""
-	}
-	return strings.TrimSuffix(strings.TrimPrefix(filename, prefix), suffix)
 }
 
 func normalizeVersion(v string) string {
