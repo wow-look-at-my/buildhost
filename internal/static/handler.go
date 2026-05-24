@@ -25,6 +25,7 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 		handler.BaseURL = auth.BaseURL()
+		handler.TmpDir = auth.DataDir() + "/tmp"
 
 		for _, format := range repackage.RegisteredFormats() {
 			RegisterRepackageFmt(format)
@@ -50,6 +51,7 @@ type staticHandler struct {
 	DB      *db.DB
 	Store   storage.Storage
 	BaseURL string
+	TmpDir  string
 }
 
 func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +104,7 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 		Release: *release,
 		Store:   h.Store,
 		BaseURL: h.BaseURL,
+		TmpDir:  h.TmpDir,
 	}
 
 	if osStr != "any" && archStr != "any" {

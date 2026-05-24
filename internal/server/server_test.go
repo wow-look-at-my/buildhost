@@ -530,9 +530,9 @@ func TestOIDC_AutoCreateProject(t *testing.T) {
 		"iss":        jwksSrv.URL,
 		"sub":        "repo:myorg/autoproject:ref:refs/heads/main",
 		"event_name": "push",
-		"aud": ts.URL,
-		"exp": time.Now().Add(10 * time.Minute).Unix(),
-		"iat": time.Now().Unix(),
+		"aud":        cfg.BaseURL,
+		"exp":        time.Now().Add(10 * time.Minute).Unix(),
+		"iat":        time.Now().Unix(),
 	})
 
 	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/projects/autoproject/releases", strings.NewReader(`{}`))

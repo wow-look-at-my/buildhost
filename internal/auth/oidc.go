@@ -25,6 +25,7 @@ var ErrOIDCNotMatched = errors.New("no matching OIDC policy")
 type OIDCVerifier struct {
 	mu             sync.RWMutex
 	cache          map[string]*cachedJWKS
+	baseURL        string
 	trustedIssuers []string
 	allowedOrgs    []string
 	allowedEvents  []string
@@ -48,8 +49,21 @@ type oidcClaims struct {
 
 const oidcLeeway = 60 * time.Second
 
-func NewOIDCVerifier(trustedIssuers, allowedOrgs, allowedEvents []string) *OIDCVerifier {
-	return &OIDCVerifier{cache: make(map[string]*cachedJWKS), trustedIssuers: trustedIssuers, allowedOrgs: allowedOrgs, allowedEvents: allowedEvents}
+type OIDCConfig struct {
+	BaseURL        string
+	TrustedIssuers []string
+	AllowedOrgs    []string
+	AllowedEvents  []string
+}
+
+func NewOIDCVerifier(cfg OIDCConfig) *OIDCVerifier {
+	return &OIDCVerifier{
+		cache:          make(map[string]*cachedJWKS),
+		baseURL:        cfg.BaseURL,
+		trustedIssuers: cfg.TrustedIssuers,
+		allowedOrgs:    cfg.AllowedOrgs,
+		allowedEvents:  cfg.AllowedEvents,
+	}
 }
 
 func LooksLikeJWT(token string) bool {
@@ -136,6 +150,13 @@ func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []m
 
 	if verified.EventName != "" && !slices.Contains(v.allowedEvents, "*") && !slices.Contains(v.allowedEvents, verified.EventName) {
 		return nil, fmt.Errorf("event %q not in allowed list", verified.EventName)
+	}
+
+	if v.baseURL != "" {
+		aud, _ := verified.GetAudience()
+		if !slices.Contains(aud, v.baseURL) {
+			return nil, fmt.Errorf("token audience %v does not contain expected %q", aud, v.baseURL)
+		}
 	}
 
 	project := projectFromSubject(verified.Subject)
@@ -333,7 +354,27 @@ func projectFromSubject(subject string) string {
 	if slash < 0 {
 		return ""
 	}
-	return repoPath[slash+1:]
+	name := strings.ToLower(repoPath[slash+1:])
+	if !validOIDCProjectName(name) {
+		return ""
+	}
+	return name
+}
+
+func validOIDCProjectName(name string) bool {
+	if len(name) == 0 || len(name) > 128 {
+		return false
+	}
+	for i, c := range name {
+		if c >= 'a' && c <= 'z' || c >= '0' && c <= '9' {
+			continue
+		}
+		if i > 0 && (c == '.' || c == '_' || c == '-') {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func orgFromSubject(subject string) string {
