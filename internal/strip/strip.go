@@ -17,8 +17,12 @@ type ByteResult struct {
 	Debug    []byte
 }
 
-func StripBytes(data []byte) (*ByteResult, error) {
-	tmp, err := os.CreateTemp("", "strip-input-*")
+func StripBytes(data []byte, tmpDir ...string) (*ByteResult, error) {
+	dir := ""
+	if len(tmpDir) > 0 {
+		dir = tmpDir[0]
+	}
+	tmp, err := os.CreateTemp(dir, "strip-input-*")
 	if err != nil {
 		return nil, err
 	}

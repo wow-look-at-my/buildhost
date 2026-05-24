@@ -18,6 +18,8 @@ func sanitizeBrewString(s string) string {
 	return brewUnsafeChars.ReplaceAllString(s, "")
 }
 
+func init() { Register(&Brew{}) }
+
 type Brew struct{}
 
 func (b *Brew) Format() Format { return FormatBrew }
@@ -92,8 +94,13 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 		brewArch = "intel"
 	}
 
-	url := fmt.Sprintf("%s/dl/%s/v%s/%s/%s?format=tar.gz",
-		input.BaseURL, input.Project.Name, version, input.Artifact.OS, input.Artifact.Arch)
+	var url string
+	if input.DownloadURL != nil {
+		url = input.DownloadURL(input.Project.Name, version, input.Artifact.OS, input.Artifact.Arch, "tar.gz")
+	} else {
+		url = fmt.Sprintf("%s/dl/%s/v%s/%s/%s?format=tar.gz",
+			input.BaseURL, input.Project.Name, version, input.Artifact.OS, input.Artifact.Arch)
+	}
 
 	d := brewData{
 		ClassName:   brewClassName(input.Project.Name),

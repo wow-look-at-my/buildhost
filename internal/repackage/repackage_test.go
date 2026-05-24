@@ -564,7 +564,7 @@ func TestGenerator_Generate(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	gen := NewGenerator(store, d, "https://example.com")
+	gen := NewGenerator(store, d, "https://example.com", t.TempDir())
 	require.True(t, gen.Supports(FormatTarGZ))
 	require.False(t, gen.Supports(Format("bogus")))
 
@@ -579,7 +579,7 @@ func TestGenerator_Generate_UnsupportedFormat(t *testing.T) {
 	d := openTestDB(t)
 	store := openTestStore(t)
 
-	gen := NewGenerator(store, d, "https://example.com")
+	gen := NewGenerator(store, d, "https://example.com", t.TempDir())
 	_, err := gen.Generate(context.Background(), Format("bogus"), model.Project{}, model.Release{}, model.Artifact{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported format")

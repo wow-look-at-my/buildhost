@@ -10,6 +10,8 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
+func init() { Register(&TarZST{}) }
+
 type TarZST struct{}
 
 func (t *TarZST) Format() Format { return FormatTarZST }

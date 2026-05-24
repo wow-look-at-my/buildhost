@@ -49,6 +49,13 @@ func (s *Server) Handler() http.Handler {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("ok"))
 		})
+		mux.HandleFunc("GET /ready-to-update", func(w http.ResponseWriter, _ *http.Request) {
+			if admin.InflightWrites() > 0 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		})
 	})
 	var h http.Handler = mux
 	h = auth.GetMiddleware().Authenticate(h)
