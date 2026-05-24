@@ -1,21 +1,16 @@
 package npm
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
-	"github.com/wow-look-at-my/buildhost/internal/repackage"
-	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/buildhost/internal/static"
 )
 
 var handler Handler
@@ -23,9 +18,7 @@ var handler Handler
 func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
-		handler.Store = auth.Store()
 		handler.BaseURL = auth.BaseURL()
-		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL())
 	})
 	auth.HandleHandler("/npm/", parseRoute, http.StripPrefix("/npm", &handler))
 }
@@ -88,9 +81,7 @@ func routeFrom(ctx context.Context) route {
 
 type Handler struct {
 	DB      *db.DB
-	Store   storage.Storage
 	BaseURL string
-	Gen     *repackage.Generator
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -163,7 +154,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 			"name":    "@buildhost/" + projectName,
 			"version": version,
 			"dist": map[string]string{
-				"tarball": fmt.Sprintf("%s/npm/static?name=@buildhost/%s&v=%s", h.BaseURL, projectName, version),
+				"tarball": static.URL(h.BaseURL, static.For(projectName).WithVersion(version).WithOS("any").WithArch("any").WithFmt("npm-wrapper")),
 			},
 		}
 		if len(optDeps) > 0 {
@@ -224,7 +215,7 @@ func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Reques
 			"os":      []string{platOS},
 			"cpu":     []string{platArch},
 			"dist": map[string]string{
-				"tarball": fmt.Sprintf("%s/npm/static?name=@buildhost/%s&v=%s&os=%s&arch=%s", h.BaseURL, projectName, version, platOS, platArch),
+				"tarball": static.URL(h.BaseURL, static.For(projectName).WithVersion(version).WithOS(model.OS(reverseNpmPlatform(platOS))).WithArch(model.Arch(reverseNpmArch(platArch))).WithFmt("npm")),
 			},
 		}
 		if _, ok := distTags["latest"]; !ok {
@@ -263,30 +254,11 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, project *
 	version := normalizeVersion(release.Version)
 
 	if ri.os == "" {
-		h.serveWrapperTarball(w, project.Name, version)
+		static.Redirect(w, r, h.BaseURL, static.For(project.Name).WithVersion(version).WithOS("any").WithArch("any").WithFmt("npm-wrapper"))
 		return
 	}
 
-	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, reverseNpmPlatform(ri.os), reverseNpmArch(ri.arch))
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	if artifact.Kind == model.KindLibrary {
-		http.NotFound(w, r)
-		return
-	}
-
-	out, err := h.Gen.Generate(r.Context(), repackage.FormatNPM, *project, *release, *artifact)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", out.Size))
-	io.Copy(w, out.Reader)
+	static.Redirect(w, r, h.BaseURL, static.For(project.Name).WithVersion(version).WithOS(model.OS(reverseNpmPlatform(ri.os))).WithArch(model.Arch(reverseNpmArch(ri.arch))).WithFmt("npm"))
 }
 
 func (h *Handler) findReleaseByNpmVersion(ctx context.Context, projectID int64, npmVersion string) *model.Release {
@@ -323,30 +295,6 @@ func reverseNpmArch(npm string) string {
 	}
 }
 
-func (h *Handler) serveWrapperTarball(w http.ResponseWriter, projectName, version string) {
-	pkgJSON, _ := json.MarshalIndent(map[string]any{
-		"name":    "@buildhost/" + projectName,
-		"version": version,
-	}, "", "  ")
-
-	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gw)
-
-	content := string(pkgJSON) + "\n"
-	tw.WriteHeader(&tar.Header{
-		Name: "package/package.json",
-		Size: int64(len(content)),
-		Mode: 0o644,
-	})
-	tw.Write([]byte(content))
-	tw.Close()
-	gw.Close()
-
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", buf.Len()))
-	io.Copy(w, &buf)
-}
 
 func normalizeVersion(v string) string {
 	version := strings.TrimPrefix(v, "v")
