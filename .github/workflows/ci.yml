@@ -17,17 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: stable
-      - name: Build go-toolchain from source
-        run: |
-          GOBIN="$RUNNER_TEMP" go install github.com/wow-look-at-my/go-toolchain/src@latest
-          mv "$RUNNER_TEMP/src" "$RUNNER_TEMP/go-toolchain"
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           generate: c29114ff2f33
-          binary: ${{ runner.temp }}/go-toolchain
 
   publish-ghcr:
     needs: build
