@@ -48,8 +48,21 @@ type oidcClaims struct {
 
 const oidcLeeway = 60 * time.Second
 
-func NewOIDCVerifier(baseURL string, trustedIssuers, allowedOrgs, allowedEvents []string) *OIDCVerifier {
-	return &OIDCVerifier{cache: make(map[string]*cachedJWKS), baseURL: baseURL, trustedIssuers: trustedIssuers, allowedOrgs: allowedOrgs, allowedEvents: allowedEvents}
+type OIDCConfig struct {
+	BaseURL        string
+	TrustedIssuers []string
+	AllowedOrgs    []string
+	AllowedEvents  []string
+}
+
+func NewOIDCVerifier(cfg OIDCConfig) *OIDCVerifier {
+	return &OIDCVerifier{
+		cache:          make(map[string]*cachedJWKS),
+		baseURL:        cfg.BaseURL,
+		trustedIssuers: cfg.TrustedIssuers,
+		allowedOrgs:    cfg.AllowedOrgs,
+		allowedEvents:  cfg.AllowedEvents,
+	}
 }
 
 func LooksLikeJWT(token string) bool {
