@@ -118,10 +118,14 @@ App.pages.dashboard = function () {
         var cfg = d.config || {};
         var html = '<h1>Dashboard</h1><div class="stat-grid">';
         var cards = [
-            [s.project_count, "Projects"], [s.release_count, "Releases"], [s.artifact_count, "Artifacts"],
-            [App.humanSize(s.total_storage_bytes || 0), "Storage Used"], [s.token_count, "API Tokens"], [s.site_count || 0, "Sites"]
+            [s.project_count, "Projects", "#/projects"],
+            [s.release_count, "Releases", "#/projects"],
+            [s.artifact_count, "Artifacts", "#/artifacts"],
+            [App.humanSize(s.total_storage_bytes || 0), "Storage Used", "#/storage"],
+            [s.token_count, "API Tokens", "#/tokens"],
+            [s.site_count || 0, "Sites", "#/sites"]
         ];
-        for (var i = 0; i < cards.length; i++) html += '<div class="stat-card"><div class="stat-value">' + App.h(cards[i][0]) + '</div><div class="stat-label">' + cards[i][1] + "</div></div>";
+        for (var i = 0; i < cards.length; i++) html += '<a href="' + cards[i][2] + '" class="stat-card stat-card-link"><div class="stat-value">' + App.h(cards[i][0]) + '</div><div class="stat-label">' + cards[i][1] + "</div></a>";
         html += "</div>";
 
         html += '<div class="card"><h2>Server Status</h2><table class="info-table">';
@@ -536,6 +540,62 @@ App.pages.oidc = function () {
     });
 };
 
+App.pages.artifacts = function () {
+    App.setTitle("Artifacts");
+    App.renderSidebar("dashboard");
+    App.fetch("/artifacts").then(function (artifacts) {
+        var html = '<h1>All Artifacts</h1><div class="card"><table class="data-table"><thead><tr><th>Project</th><th>Version</th><th>Platform</th><th>Kind</th><th>Filename</th><th>Size</th><th>Downloads</th><th>Created</th></tr></thead><tbody>';
+        if (artifacts.length === 0) {
+            html += '<tr><td colspan="8" class="empty">No artifacts yet</td></tr>';
+        } else {
+            for (var i = 0; i < artifacts.length; i++) {
+                var a = artifacts[i];
+                html += "<tr><td><a href='#/projects/" + App.h(a.project_name) + "'>" + App.h(a.project_name) + "</a></td>";
+                html += "<td><a href='#/projects/" + App.h(a.project_name) + "/releases/" + App.h(a.version) + "'><code>" + App.h(a.version) + "</code></a></td>";
+                html += "<td>" + App.badge("info", a.os + "/" + a.arch) + "</td>";
+                html += "<td>" + App.badge("neutral", a.kind) + "</td>";
+                html += "<td>" + (a.filename ? "<code>" + App.h(a.filename) + "</code>" : '<span class="muted">-</span>') + "</td>";
+                html += "<td>" + App.h(App.humanSize(a.size)) + "</td>";
+                html += "<td>" + a.download_count + "</td>";
+                html += '<td title="' + App.h(App.formatTime(a.created_at)) + '">' + App.h(App.timeAgo(a.created_at)) + "</td></tr>";
+            }
+        }
+        html += "</tbody></table></div>";
+        document.getElementById("content").innerHTML = html;
+    });
+};
+
+App.pages.storage = function () {
+    App.setTitle("Storage");
+    App.renderSidebar("dashboard");
+    App.fetch("/storage").then(function (d) {
+        var projects = d.projects || [];
+        var html = '<h1>Storage Usage</h1><div class="stat-grid">';
+        html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(d.total_bytes || 0)) + '</div><div class="stat-label">Artifact Storage</div></div>';
+        html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(d.logical_bytes || 0)) + '</div><div class="stat-label">Logical Size</div></div>';
+        html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(d.physical_bytes || 0)) + '</div><div class="stat-label">Physical Size (dedup)</div></div>';
+        html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(d.disk_bytes || 0)) + '</div><div class="stat-label">Blobs on Disk</div></div>';
+        if (d.disk_total) {
+            html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(d.disk_used || 0)) + " / " + App.h(App.humanSize(d.disk_total || 0)) + '</div><div class="stat-label">Filesystem Usage</div></div>';
+        }
+        html += "</div>";
+        html += '<div class="card"><h2>Per-Project Breakdown</h2><table class="data-table"><thead><tr><th>Project</th><th>Releases</th><th>Artifacts</th><th>Total Size</th></tr></thead><tbody>';
+        if (projects.length === 0) {
+            html += '<tr><td colspan="4" class="empty">No projects yet</td></tr>';
+        } else {
+            for (var i = 0; i < projects.length; i++) {
+                var p = projects[i];
+                html += "<tr><td><a href='#/projects/" + App.h(p.name) + "'>" + App.h(p.name) + "</a></td>";
+                html += "<td>" + p.release_count + "</td>";
+                html += "<td>" + p.artifact_count + "</td>";
+                html += "<td>" + App.h(App.humanSize(p.total_bytes)) + "</td></tr>";
+            }
+        }
+        html += "</tbody></table></div>";
+        document.getElementById("content").innerHTML = html;
+    });
+};
+
 // --- Router ---
 
 App.route = function () {
@@ -558,6 +618,10 @@ App.route = function () {
         App.pages.tokens();
     } else if (parts[0] === "oidc") {
         App.pages.oidc();
+    } else if (parts[0] === "artifacts") {
+        App.pages.artifacts();
+    } else if (parts[0] === "storage") {
+        App.pages.storage();
     } else {
         App.pages.dashboard();
     }
@@ -590,7 +654,20 @@ App.demoData = {
     "/registries": { base_url: "https://builds.example.com", projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
     "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com" },
     "/tokens": [{ name: "deploy", token_prefix: "bh_abc", is_global: false, project_name: "myapp", scopes: "read,write", is_expired: false, created_at: new Date(Date.now() - 864e5 * 7).toISOString(), last_used_at: new Date(Date.now() - 3600000).toISOString() }],
-    "/oidc": [{ issuer: "https://token.actions.githubusercontent.com", subject_pattern: "repo:myorg/myapp:*", audience: "", project_name: "myapp", scopes: "read,write", created_at: new Date(Date.now() - 864e5 * 14).toISOString() }]
+    "/oidc": [{ issuer: "https://token.actions.githubusercontent.com", subject_pattern: "repo:myorg/myapp:*", audience: "", project_name: "myapp", scopes: "read,write", created_at: new Date(Date.now() - 864e5 * 14).toISOString() }],
+    "/artifacts": [
+        { id: 1, os: "linux", arch: "amd64", kind: "binary", size: 15728640, filename: "myapp", created_at: new Date(Date.now() - 3600000).toISOString(), version: "3", git_branch: "main", project_name: "myapp", download_count: 42 },
+        { id: 2, os: "darwin", arch: "arm64", kind: "binary", size: 14680064, filename: "myapp", created_at: new Date(Date.now() - 3600000).toISOString(), version: "3", git_branch: "main", project_name: "myapp", download_count: 18 },
+        { id: 3, os: "linux", arch: "amd64", kind: "binary", size: 10485760, filename: "cli-tool", created_at: new Date(Date.now() - 86400000).toISOString(), version: "1.2.0", git_branch: "release", project_name: "cli-tool", download_count: 7 }
+    ],
+    "/storage": {
+        projects: [
+            { id: 1, name: "myapp", total_bytes: 45000000, artifact_count: 8, release_count: 3 },
+            { id: 2, name: "cli-tool", total_bytes: 7428800, artifact_count: 4, release_count: 2 }
+        ],
+        total_bytes: 52428800, logical_bytes: 58000000, physical_bytes: 48000000, disk_bytes: 50000000,
+        disk_used: 120000000, disk_total: 500000000
+    }
 };
 
 // --- Init ---

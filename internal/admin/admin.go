@@ -105,6 +105,8 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/tokens", s.apiTokens)
 	mux.HandleFunc("GET /api/oidc", s.apiOIDC)
 	mux.HandleFunc("GET /api/sites", s.apiSites)
+	mux.HandleFunc("GET /api/artifacts", s.apiArtifacts)
+	mux.HandleFunc("GET /api/storage", s.apiStorage)
 	mux.HandleFunc("GET /admin/inflight", InflightHandler)
 
 	mux.HandleFunc("GET /", s.serveSPA)
@@ -414,6 +416,50 @@ func (s *Server) apiOIDC(w http.ResponseWriter, r *http.Request) {
 		policies = []db.OIDCPolicyDetail{}
 	}
 	s.writeJSON(w, policies)
+}
+
+func (s *Server) apiArtifacts(w http.ResponseWriter, r *http.Request) {
+	artifacts, err := s.db.ListAllArtifacts(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if artifacts == nil {
+		artifacts = []db.AllArtifact{}
+	}
+	s.writeJSON(w, artifacts)
+}
+
+func (s *Server) apiStorage(w http.ResponseWriter, r *http.Request) {
+	breakdown, err := s.db.GetStorageBreakdown(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if breakdown == nil {
+		breakdown = []db.StorageBreakdown{}
+	}
+
+	stats, err := s.db.GetDashboardStats(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]any{
+		"projects":       breakdown,
+		"logical_bytes":  stats.LogicalBytes,
+		"physical_bytes": stats.PhysicalBytes,
+		"total_bytes":    stats.TotalStorageBytes,
+		"disk_bytes":     blobsDiskUsage(s.cfg.DataDir + "/blobs"),
+	}
+
+	if du, err := getDiskUsage(s.cfg.DataDir); err == nil && du.Total > 0 {
+		resp["disk_used"] = du.Used
+		resp["disk_total"] = du.Total
+	}
+
+	s.writeJSON(w, resp)
 }
 
 func (s *Server) buildAge() string {
