@@ -10,7 +10,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/assert"
@@ -30,14 +29,14 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	return h, d, store
 }
 
-func withProject(ctx context.Context, p *model.Project) context.Context {
+func withProject(ctx context.Context, p *db.Project) context.Context {
 	return auth.WithProject(ctx, p)
 }
 
 func TestServeHTTP_NotRB(t *testing.T) {
 	h, _, _ := setupTest(t)
 
-	proj := &model.Project{Name: "myapp"}
+	proj := &db.Project{Name: "myapp"}
 	req := httptest.NewRequest("GET", "/myapp.txt", nil)
 	req = req.WithContext(withProject(req.Context(), proj))
 	rec := httptest.NewRecorder()
@@ -50,7 +49,7 @@ func TestServeHTTP_NoRelease(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/myapp.rb", nil)
@@ -65,9 +64,9 @@ func TestServeHTTP_NoBrewPackage(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -75,9 +74,9 @@ func TestServeHTTP_NoBrewPackage(t *testing.T) {
 	// generated from the binary, no packaged_artifacts row needed.
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/myapp.rb", nil)
@@ -94,17 +93,17 @@ func TestServeHTTP_Success(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
-	a := &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	a := &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 

@@ -5,14 +5,14 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
 type ServeContext struct {
-	Project  model.Project
-	Release  model.Release
-	Artifact model.Artifact
+	Project  db.Project
+	Release  db.Release
+	Artifact db.Artifact
 	Store    storage.Storage
 	BaseURL  string
 	TmpDir   string
@@ -44,16 +44,16 @@ func LookupFmt(name string) (Fmt, bool) {
 type Params struct {
 	ID      string
 	Version string
-	OS      model.OS
-	Arch    model.Arch
+	OS      db.OS
+	Arch    db.Arch
 	Fmt     string
 	Debug   bool
 }
 
 func For(id string) Params                        { return Params{ID: id} }
 func (p Params) WithVersion(v string) Params      { p.Version = v; return p }
-func (p Params) WithOS(os model.OS) Params        { p.OS = os; return p }
-func (p Params) WithArch(a model.Arch) Params     { p.Arch = a; return p }
+func (p Params) WithOS(os db.OS) Params        { p.OS = os; return p }
+func (p Params) WithArch(a db.Arch) Params     { p.Arch = a; return p }
 func (p Params) WithFmt(f string) Params          { p.Fmt = f; return p }
 func (p Params) WithDebug(d bool) Params          { p.Debug = d; return p }
 

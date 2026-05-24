@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
 )
@@ -27,13 +27,13 @@ func TestCreateAndGetProject(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	p := &model.Project{
+	p := &Project{
 		Name:		"myproject",
 		Description:	"A test project",
 		Homepage:	"https://example.com",
 		License:	"MIT",
 		IsPrivate:	false,
-		Versioning:	model.VersioningAuto,
+		Versioning:	VersioningAuto,
 	}
 	require.NoError(t, d.CreateProject(ctx, p))
 
@@ -48,7 +48,7 @@ func TestCreateAndGetProject(t *testing.T) {
 
 	assert.Equal(t, "MIT", got.License)
 
-	assert.Equal(t, model.VersioningAuto, got.Versioning)
+	assert.Equal(t, VersioningAuto, got.Versioning)
 
 }
 
@@ -63,10 +63,10 @@ func TestCreateProjectDuplicateReturnsErrConflict(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	p := &model.Project{Name: "dup", Versioning: model.VersioningAuto}
+	p := &Project{Name: "dup", Versioning: VersioningAuto}
 	require.NoError(t, d.CreateProject(ctx, p))
 
-	p2 := &model.Project{Name: "dup", Versioning: model.VersioningAuto}
+	p2 := &Project{Name: "dup", Versioning: VersioningAuto}
 	err := d.CreateProject(ctx, p2)
 	assert.True(t, errors.Is(err, ErrConflict))
 
@@ -77,7 +77,7 @@ func TestListProjects(t *testing.T) {
 	ctx := context.Background()
 
 	for _, name := range []string{"bravo", "alpha", "charlie"} {
-		p := &model.Project{Name: name, Versioning: model.VersioningAuto}
+		p := &Project{Name: name, Versioning: VersioningAuto}
 		require.NoError(t, d.CreateProject(ctx, p))
 
 	}
@@ -94,9 +94,9 @@ func TestListProjects(t *testing.T) {
 
 // --- Releases ----------------------------------------------------------------
 
-func createTestProject(t *testing.T, d *DB) *model.Project {
+func createTestProject(t *testing.T, d *DB) *Project {
 	t.Helper()
-	p := &model.Project{Name: "relpkg", Versioning: model.VersioningAuto}
+	p := &Project{Name: "relpkg", Versioning: VersioningAuto}
 	require.NoError(t, d.CreateProject(context.Background(), p))
 
 	return p
@@ -107,7 +107,7 @@ func TestCreateAndGetRelease(t *testing.T) {
 	ctx := context.Background()
 	p := createTestProject(t, d)
 
-	r := &model.Release{
+	r := &Release{
 		ProjectID:	p.ID,
 		Version:	"1.0.0",
 		VersionNum:	1,
@@ -144,7 +144,7 @@ func TestListReleases(t *testing.T) {
 	p := createTestProject(t, d)
 
 	for i, v := range []string{"1.0.0", "2.0.0", "3.0.0"} {
-		r := &model.Release{
+		r := &Release{
 			ProjectID:	p.ID,
 			Version:	v,
 			VersionNum:	int64(i + 1),
@@ -174,7 +174,7 @@ func TestNextVersionNum(t *testing.T) {
 
 	assert.Equal(t, int64(1), num)
 
-	r := &model.Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1}
+	r := &Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1}
 	require.NoError(t, d.CreateRelease(ctx, r))
 
 	num, err = d.NextVersionNum(ctx, p.ID)
@@ -189,7 +189,7 @@ func TestPublishRelease(t *testing.T) {
 	ctx := context.Background()
 	p := createTestProject(t, d)
 
-	r := &model.Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1}
+	r := &Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1}
 	require.NoError(t, d.CreateRelease(ctx, r))
 
 	require.NoError(t, d.PublishRelease(ctx, r.ID))
@@ -214,7 +214,7 @@ func TestGetLatestRelease(t *testing.T) {
 
 	// Create and publish two releases.
 	for i, v := range []string{"1.0.0", "2.0.0"} {
-		r := &model.Release{ProjectID: p.ID, Version: v, VersionNum: int64(i + 1)}
+		r := &Release{ProjectID: p.ID, Version: v, VersionNum: int64(i + 1)}
 		require.NoError(t, d.CreateRelease(ctx, r))
 
 		require.NoError(t, d.PublishRelease(ctx, r.ID))
@@ -243,7 +243,7 @@ func TestGetLatestReleaseByBranch(t *testing.T) {
 		{"3.0.0-rc1", 3, "develop"},
 	}
 	for _, rl := range releases {
-		r := &model.Release{
+		r := &Release{
 			ProjectID:	p.ID,
 			Version:	rl.version,
 			VersionNum:	rl.num,
@@ -272,10 +272,10 @@ func TestGetLatestReleaseByBranch(t *testing.T) {
 
 // --- Artifacts ---------------------------------------------------------------
 
-func createTestRelease(t *testing.T, d *DB) (*model.Project, *model.Release) {
+func createTestRelease(t *testing.T, d *DB) (*Project, *Release) {
 	t.Helper()
 	p := createTestProject(t, d)
-	r := &model.Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1}
+	r := &Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1}
 	require.NoError(t, d.CreateRelease(context.Background(), r))
 
 	return p, r
@@ -286,11 +286,11 @@ func TestCreateAndGetArtifact(t *testing.T) {
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)
 
-	a := &model.Artifact{
+	a := &Artifact{
 		ReleaseID:	r.ID,
-		OS:		model.OSLinux,
-		Arch:		model.ArchAMD64,
-		Kind:		model.KindBinary,
+		OS:		OSLinux,
+		Arch:		ArchAMD64,
+		Kind:		KindBinary,
 		StorageKey:	"deadbeef",
 		Size:		1024,
 		SHA256:		"aabbccdd",
@@ -300,7 +300,7 @@ func TestCreateAndGetArtifact(t *testing.T) {
 
 	require.NotEqual(t, int64(0), a.ID)
 
-	got, err := d.GetArtifact(ctx, r.ID, string(model.OSLinux), string(model.ArchAMD64))
+	got, err := d.GetArtifact(ctx, r.ID, string(OSLinux), string(ArchAMD64))
 	require.Nil(t, err)
 
 	assert.Equal(t, "deadbeef", got.StorageKey)
@@ -325,19 +325,19 @@ func TestListArtifacts(t *testing.T) {
 	_, r := createTestRelease(t, d)
 
 	artifacts := []struct {
-		os	model.OS
-		arch	model.Arch
+		os	OS
+		arch	Arch
 	}{
-		{model.OSLinux, model.ArchAMD64},
-		{model.OSLinux, model.ArchARM64},
-		{model.OSDarwin, model.ArchAMD64},
+		{OSLinux, ArchAMD64},
+		{OSLinux, ArchARM64},
+		{OSDarwin, ArchAMD64},
 	}
 	for _, art := range artifacts {
-		a := &model.Artifact{
+		a := &Artifact{
 			ReleaseID:	r.ID,
 			OS:		art.os,
 			Arch:		art.arch,
-			Kind:		model.KindBinary,
+			Kind:		KindBinary,
 			StorageKey:	"key",
 			Size:		100,
 			SHA256:		"hash",
@@ -358,11 +358,11 @@ func TestUpdateArtifactStripped(t *testing.T) {
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)
 
-	a := &model.Artifact{
+	a := &Artifact{
 		ReleaseID:	r.ID,
-		OS:		model.OSLinux,
-		Arch:		model.ArchAMD64,
-		Kind:		model.KindBinary,
+		OS:		OSLinux,
+		Arch:		ArchAMD64,
+		Kind:		KindBinary,
 		StorageKey:	"orig-key",
 		Size:		2048,
 		SHA256:		"origsha",
@@ -371,7 +371,7 @@ func TestUpdateArtifactStripped(t *testing.T) {
 
 	require.NoError(t, d.UpdateArtifactStripped(ctx, a.ID, "strip-key", 1024, "stripsha", "dbg-key", 512))
 
-	got, err := d.GetArtifact(ctx, r.ID, string(model.OSLinux), string(model.ArchAMD64))
+	got, err := d.GetArtifact(ctx, r.ID, string(OSLinux), string(ArchAMD64))
 	require.Nil(t, err)
 
 	assert.Equal(t, "strip-key", got.StrippedStorageKey)
@@ -393,11 +393,11 @@ func TestCreateAndGetPackagedArtifact(t *testing.T) {
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)
 
-	a := &model.Artifact{
+	a := &Artifact{
 		ReleaseID:	r.ID,
-		OS:		model.OSLinux,
-		Arch:		model.ArchAMD64,
-		Kind:		model.KindBinary,
+		OS:		OSLinux,
+		Arch:		ArchAMD64,
+		Kind:		KindBinary,
 		StorageKey:	"binkey",
 		Size:		500,
 		SHA256:		"binhash",
@@ -424,11 +424,11 @@ func TestGetPackagedArtifactNotFound(t *testing.T) {
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)
 
-	a := &model.Artifact{
+	a := &Artifact{
 		ReleaseID:	r.ID,
-		OS:		model.OSLinux,
-		Arch:		model.ArchAMD64,
-		Kind:		model.KindBinary,
+		OS:		OSLinux,
+		Arch:		ArchAMD64,
+		Kind:		KindBinary,
 		StorageKey:	"k",
 		Size:		1,
 		SHA256:		"h",
@@ -445,11 +445,11 @@ func TestCreatePackagedArtifactUpserts(t *testing.T) {
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)
 
-	a := &model.Artifact{
+	a := &Artifact{
 		ReleaseID:	r.ID,
-		OS:		model.OSLinux,
-		Arch:		model.ArchAMD64,
-		Kind:		model.KindBinary,
+		OS:		OSLinux,
+		Arch:		ArchAMD64,
+		Kind:		KindBinary,
 		StorageKey:	"k",
 		Size:		1,
 		SHA256:		"h",
@@ -507,7 +507,7 @@ func TestCreateTokenWithProjectScope(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	p := &model.Project{Name: "scoped", Versioning: model.VersioningAuto}
+	p := &Project{Name: "scoped", Versioning: VersioningAuto}
 	require.NoError(t, d.CreateProject(ctx, p))
 
 	pid := p.ID
@@ -593,11 +593,11 @@ func TestIncrementDownloadCount(t *testing.T) {
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)
 
-	a := &model.Artifact{
+	a := &Artifact{
 		ReleaseID:  r.ID,
-		OS:         model.OSLinux,
-		Arch:       model.ArchAMD64,
-		Kind:       model.KindBinary,
+		OS:         OSLinux,
+		Arch:       ArchAMD64,
+		Kind:       KindBinary,
 		StorageKey: "key1",
 		Size:       100,
 		SHA256:     "hash1",
@@ -628,11 +628,11 @@ func TestListArtifactDetails(t *testing.T) {
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)
 
-	a := &model.Artifact{
+	a := &Artifact{
 		ReleaseID:  r.ID,
-		OS:         model.OSLinux,
-		Arch:       model.ArchAMD64,
-		Kind:       model.KindBinary,
+		OS:         OSLinux,
+		Arch:       ArchAMD64,
+		Kind:       KindBinary,
 		StorageKey: "binkey",
 		Size:       500,
 		SHA256:     "binhash",
@@ -644,7 +644,7 @@ func TestListArtifactDetails(t *testing.T) {
 	require.NoError(t, d.IncrementDownloadCount(ctx, a.ID))
 	require.NoError(t, d.IncrementDownloadCount(ctx, a.ID))
 
-	details, err := d.ListArtifactDetails(ctx, r.ID)
+	details, pkgs, err := d.ListArtifactDetails(ctx, r.ID)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(details))
 
@@ -652,9 +652,9 @@ func TestListArtifactDetails(t *testing.T) {
 	assert.Equal(t, "mybin", detail.Filename)
 	assert.Equal(t, int64(500), detail.Size)
 	assert.Equal(t, int64(2), detail.DownloadCount)
-	require.Equal(t, 2, len(detail.Packages))
-	assert.Equal(t, "deb", detail.Packages[0].Format)
-	assert.Equal(t, "npm", detail.Packages[1].Format)
+	require.Equal(t, 2, len(pkgs[0]))
+	assert.Equal(t, "deb", pkgs[0][0].Format)
+	assert.Equal(t, "npm", pkgs[0][1].Format)
 }
 
 func TestListArtifactDetailsEmpty(t *testing.T) {
@@ -662,7 +662,7 @@ func TestListArtifactDetailsEmpty(t *testing.T) {
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)
 
-	details, err := d.ListArtifactDetails(ctx, r.ID)
+	details, _, err := d.ListArtifactDetails(ctx, r.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 0, len(details))
 }

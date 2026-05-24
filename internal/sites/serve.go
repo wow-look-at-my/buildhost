@@ -16,7 +16,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
 func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +100,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sites == nil {
-		sites = []model.Site{}
+		sites = []db.Site{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

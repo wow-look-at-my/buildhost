@@ -6,10 +6,9 @@ import (
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
-func Resolve(d *db.DB, project *model.Project, spec string, releases []model.Release) (*model.Release, error) {
+func Resolve(d *db.DB, project *db.Project, spec string, releases []db.Release) (*db.Release, error) {
 	if len(releases) == 0 {
 		return nil, fmt.Errorf("no published releases")
 	}
@@ -20,7 +19,7 @@ func Resolve(d *db.DB, project *model.Project, spec string, releases []model.Rel
 		return &releases[0], nil
 	}
 
-	if project.Versioning == model.VersioningAuto {
+	if project.Versioning == db.VersioningAuto {
 		num, err := strconv.ParseInt(spec, 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid version %q for auto-versioned project", spec)

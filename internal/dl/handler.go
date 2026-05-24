@@ -12,7 +12,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/static"
 )
 
@@ -80,7 +79,7 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 
 	_, span := dlTracer.Start(r.Context(), "dl.resolve_version")
 	var (
-		release *model.Release
+		release *db.Release
 		err     error
 	)
 	if rt.version == "latest" {
@@ -124,7 +123,7 @@ func (h *Handler) DownloadBranch(w http.ResponseWriter, r *http.Request) {
 	h.redirectToStatic(w, r, project, release, rt)
 }
 
-func (h *Handler) redirectToStatic(w http.ResponseWriter, r *http.Request, project *model.Project, release *model.Release, rt route) {
+func (h *Handler) redirectToStatic(w http.ResponseWriter, r *http.Request, project *db.Project, release *db.Release, rt route) {
 	format := r.URL.Query().Get("format")
 	if format == "" {
 		format = "raw"
@@ -135,10 +134,9 @@ func (h *Handler) redirectToStatic(w http.ResponseWriter, r *http.Request, proje
 		version = fmt.Sprintf("%d", release.VersionNum)
 	}
 
-	p := static.For(project.Name).WithVersion(version).WithOS(model.OS(rt.os)).WithArch(model.Arch(rt.arch)).WithFmt(format)
+	p := static.For(project.Name).WithVersion(version).WithOS(db.OS(rt.os)).WithArch(db.Arch(rt.arch)).WithFmt(format)
 	if r.URL.Query().Get("debug") == "1" {
 		p = p.WithDebug(true)
 	}
 	static.Redirect(w, r, h.BaseURL, p)
 }
-

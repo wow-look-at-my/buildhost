@@ -10,7 +10,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
@@ -147,7 +146,7 @@ func computeETag(ctx ServeContext, fmtStr string) string {
 	return fmt.Sprintf(`"%x"`, h[:8])
 }
 
-func resolveVersion(ctx context.Context, database *db.DB, projectID int64, version string) (*model.Release, error) {
+func resolveVersion(ctx context.Context, database *db.DB, projectID int64, version string) (*db.Release, error) {
 	rel, err := database.GetRelease(ctx, projectID, version)
 	if err == nil {
 		return rel, nil

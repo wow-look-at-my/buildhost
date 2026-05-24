@@ -12,7 +12,6 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -23,8 +22,8 @@ type OCI struct {
 
 func (o *OCI) Format() Format { return FormatOCI }
 
-func (o *OCI) Applicable(a model.Artifact) bool {
-	return a.Kind == model.KindBinary
+func (o *OCI) Applicable(a db.Artifact) bool {
+	return a.Kind == db.KindBinary
 }
 
 func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {

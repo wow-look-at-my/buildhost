@@ -10,7 +10,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/static"
 )
@@ -36,7 +35,7 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 	}
 
 	goArch := goArchFromDeb(arch)
-	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, string(model.OSLinux), goArch)
+	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, string(db.OSLinux), goArch)
 	if errors.Is(err, db.ErrNotFound) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte(""))
@@ -108,7 +107,7 @@ func (h *Handler) servePool(w http.ResponseWriter, r *http.Request, subpath stri
 		version = fmt.Sprintf("%d", release.VersionNum)
 	}
 
-	static.Redirect(w, r, h.BaseURL, static.For(project.Name).WithVersion(version).WithOS(model.OSLinux).WithArch(model.Arch(goArch)).WithFmt("deb"))
+	static.Redirect(w, r, h.BaseURL, static.For(project.Name).WithVersion(version).WithOS(db.OSLinux).WithArch(db.Arch(goArch)).WithFmt("deb"))
 }
 
 func extractDebArch(subpath string) string {

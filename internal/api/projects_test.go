@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
 )
@@ -24,10 +24,10 @@ func TestCreateProject_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, rec.Code)
 
-	var p model.Project
+	var p db.Project
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
 	assert.Equal(t, "myproject", p.Name)
-	assert.Equal(t, model.VersioningSemver, p.Versioning)
+	assert.Equal(t, db.VersioningSemver, p.Versioning)
 }
 
 func TestCreateProject_NoAuth(t *testing.T) {
@@ -89,16 +89,16 @@ func TestCreateProject_DefaultVersioning(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, rec.Code)
 
-	var p model.Project
+	var p db.Project
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
-	assert.Equal(t, model.VersioningAuto, p.Versioning)
+	assert.Equal(t, db.VersioningAuto, p.Versioning)
 }
 
 func TestCreateProject_Duplicate(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "dup", Versioning: model.VersioningAuto}
+	proj := &db.Project{Name: "dup", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	body := `{"name":"dup"}`
@@ -114,7 +114,7 @@ func TestGetProject_Success(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "testproj", Versioning: model.VersioningAuto}
+	proj := &db.Project{Name: "testproj", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/api/projects/testproj", nil)
@@ -124,7 +124,7 @@ func TestGetProject_Success(t *testing.T) {
 	h.GetProject(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	var p model.Project
+	var p db.Project
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
 	assert.Equal(t, "testproj", p.Name)
 }
@@ -136,15 +136,15 @@ func TestListProjects_FiltersPrivate(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	require.NoError(t, h.DB.CreateProject(ctx, &model.Project{Name: "public1", Versioning: model.VersioningAuto}))
-	require.NoError(t, h.DB.CreateProject(ctx, &model.Project{Name: "private1", IsPrivate: true, Versioning: model.VersioningAuto}))
+	require.NoError(t, h.DB.CreateProject(ctx, &db.Project{Name: "public1", Versioning: db.VersioningAuto}))
+	require.NoError(t, h.DB.CreateProject(ctx, &db.Project{Name: "private1", IsPrivate: true, Versioning: db.VersioningAuto}))
 
 	req := httptest.NewRequest("GET", "/api/projects", nil)
 	rec := httptest.NewRecorder()
 	h.ListProjects(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	var projects []model.Project
+	var projects []db.Project
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &projects))
 	assert.Equal(t, 1, len(projects))
 	assert.Equal(t, "public1", projects[0].Name)
@@ -154,8 +154,8 @@ func TestListProjects_AuthSeesPrivate(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	require.NoError(t, h.DB.CreateProject(ctx, &model.Project{Name: "pub", Versioning: model.VersioningAuto}))
-	require.NoError(t, h.DB.CreateProject(ctx, &model.Project{Name: "priv", IsPrivate: true, Versioning: model.VersioningAuto}))
+	require.NoError(t, h.DB.CreateProject(ctx, &db.Project{Name: "pub", Versioning: db.VersioningAuto}))
+	require.NoError(t, h.DB.CreateProject(ctx, &db.Project{Name: "priv", IsPrivate: true, Versioning: db.VersioningAuto}))
 
 	req := httptest.NewRequest("GET", "/api/projects", nil)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
@@ -163,7 +163,7 @@ func TestListProjects_AuthSeesPrivate(t *testing.T) {
 	h.ListProjects(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	var projects []model.Project
+	var projects []db.Project
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &projects))
 	assert.Equal(t, 2, len(projects))
 }

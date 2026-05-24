@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/strip"
 )
@@ -36,7 +36,7 @@ func (f *repackageFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeCo
 		return fmt.Errorf("read artifact: %w", err)
 	}
 
-	if (ctx.Artifact.Kind == model.KindBinary || ctx.Artifact.Kind == model.KindLibrary) && strip.Available() {
+	if (ctx.Artifact.Kind == db.KindBinary || ctx.Artifact.Kind == db.KindLibrary) && strip.Available() {
 		if result, err := strip.StripBytes(data, ctx.TmpDir); err == nil {
 			data = result.Stripped
 		}
@@ -53,7 +53,7 @@ func (f *repackageFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeCo
 		Artifact: ctx.Artifact,
 		Data:     data,
 		BaseURL: ctx.BaseURL,
-		DownloadURL: func(name, version string, os model.OS, arch model.Arch, format string) string {
+		DownloadURL: func(name, version string, os db.OS, arch db.Arch, format string) string {
 			return URL(ctx.BaseURL, For(name).WithVersion(version).WithOS(os).WithArch(arch).WithFmt(format))
 		},
 	})

@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 func init() { Register(&Zip{}) }
@@ -15,14 +15,14 @@ type Zip struct{}
 
 func (z *Zip) Format() Format { return FormatZip }
 
-func (z *Zip) Applicable(_ model.Artifact) bool { return true }
+func (z *Zip) Applicable(_ db.Artifact) bool { return true }
 
 func (z *Zip) Repackage(_ context.Context, input Input) (*Output, error) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 
 	name := input.Project.Name
-	if input.Artifact.OS == model.OSWindows && input.Artifact.Kind == model.KindBinary {
+	if input.Artifact.OS == db.OSWindows && input.Artifact.Kind == db.KindBinary {
 		name += ".exe"
 	}
 

@@ -11,7 +11,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
 )
@@ -42,16 +41,16 @@ func seedData(t *testing.T, database *db.DB) {
 	t.Helper()
 	ctx := context.Background()
 
-	p := &model.Project{Name: "testproject", Description: "A test project", Versioning: model.VersioningAuto}
+	p := &db.Project{Name: "testproject", Description: "A test project", Versioning: db.VersioningAuto}
 	require.NoError(t, database.CreateProject(ctx, p))
 
-	r := &model.Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1, GitBranch: "main"}
+	r := &db.Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1, GitBranch: "main"}
 	require.NoError(t, database.CreateRelease(ctx, r))
 	require.NoError(t, database.PublishRelease(ctx, r.ID))
 
-	a := &model.Artifact{
-		ReleaseID: r.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: "abc123", Size: 2048, SHA256: "deadbeef",
+	a := &db.Artifact{
+		ReleaseID: r.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: "abc123", Size: 2048, SHA256: "deadbeef",
 	}
 	require.NoError(t, database.CreateArtifact(ctx, a))
 
@@ -59,7 +58,7 @@ func seedData(t *testing.T, database *db.DB) {
 	require.NoError(t, err)
 
 	pid := p.ID
-	require.NoError(t, database.CreateOIDCPolicy(ctx, &model.OIDCPolicy{
+	require.NoError(t, database.CreateOIDCPolicy(ctx, &db.OIDCPolicy{
 		Issuer: "https://token.actions.githubusercontent.com", SubjectPattern: "repo:org/repo:*",
 		ProjectID: &pid, Scopes: "read,write",
 	}))
@@ -320,7 +319,7 @@ func TestAPISites(t *testing.T) {
 
 	ctx := context.Background()
 	p, _ := database.GetProject(ctx, "testproject")
-	_, err := database.UpsertSite(ctx, &model.Site{
+	_, err := database.UpsertSite(ctx, &db.Site{
 		ProjectID: p.ID, Branch: "main", StorageKey: "sitekey1",
 		Size: 4096, SHA256: "sitehash", FileCount: 10, GitCommit: "abc123",
 	})
@@ -361,7 +360,7 @@ func TestAPIProject_IncludesSites(t *testing.T) {
 
 	ctx := context.Background()
 	p, _ := database.GetProject(ctx, "testproject")
-	_, err := database.UpsertSite(ctx, &model.Site{
+	_, err := database.UpsertSite(ctx, &db.Site{
 		ProjectID: p.ID, Branch: "dev", StorageKey: "sitekey2",
 		Size: 2048, SHA256: "sitehash2", FileCount: 5,
 	})
