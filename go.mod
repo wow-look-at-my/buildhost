@@ -8,6 +8,7 @@ require (
 	github.com/klauspost/compress v1.18.6
 	github.com/spf13/cobra v1.10.2
 	github.com/ulikunitz/xz v0.5.15
+	github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260520105527-317d2038d915
 	github.com/wow-look-at-my/testify v0.0.0-20260217010200-5fd2c08e3abb
 	go.opentelemetry.io/contrib/bridges/otelslog v0.18.0
 	go.opentelemetry.io/otel v1.43.0
@@ -32,7 +33,6 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260520105527-317d2038d915 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.43.0 // indirect
 	go.opentelemetry.io/otel/log v0.19.0 // indirect
