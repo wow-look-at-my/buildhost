@@ -437,19 +437,33 @@ App.pages.sites = function () {
     App.fetch("/sites").then(function (d) {
         var bu = d.base_url || "";
         var sites = d.sites || [];
-        var html = '<h1>Static Sites</h1><div class="card"><table class="data-table"><thead><tr><th>Project</th><th>Branch</th><th>Files</th><th>Size</th><th>Commit</th><th>Updated</th><th>Link</th></tr></thead><tbody>';
-        if (sites.length === 0) {
-            html += '<tr><td colspan="7" class="empty">No sites deployed</td></tr>';
+
+        var byProject = {};
+        for (var i = 0; i < sites.length; i++) {
+            var s = sites[i];
+            if (!byProject[s.project_name]) {
+                byProject[s.project_name] = { branches: 0, total_size: 0, total_files: 0, last_updated: s.updated_at };
+            }
+            var p = byProject[s.project_name];
+            p.branches++;
+            p.total_size += s.size || 0;
+            p.total_files += s.file_count || 0;
+            if (s.updated_at > p.last_updated) p.last_updated = s.updated_at;
+        }
+
+        var names = Object.keys(byProject).sort();
+        var html = '<h1>Static Sites</h1><div class="card"><table class="data-table"><thead><tr><th>Project</th><th>Branches</th><th>Files</th><th>Total Size</th><th>Last Updated</th></tr></thead><tbody>';
+        if (names.length === 0) {
+            html += '<tr><td colspan="5" class="empty">No sites deployed</td></tr>';
         } else {
-            for (var i = 0; i < sites.length; i++) {
-                var s = sites[i];
-                html += "<tr><td><a href='#/projects/" + App.h(s.project_name) + "'>" + App.h(s.project_name) + "</a></td>";
-                html += "<td><code>" + App.h(s.branch) + "</code></td>";
-                html += "<td>" + s.file_count + "</td>";
-                html += "<td>" + App.h(App.humanSize(s.size)) + "</td>";
-                html += "<td>" + (s.git_commit ? '<code class="commit">' + App.h(s.git_commit.substring(0, 12)) + "</code>" : "-") + "</td>";
-                html += '<td title="' + App.h(App.formatTime(s.updated_at)) + '">' + App.h(App.timeAgo(s.updated_at)) + "</td>";
-                html += '<td><a href="' + App.h(bu) + "/sites/" + App.h(s.project_name) + "/branch/" + App.h(s.branch) + '/" target="_blank">Open</a></td></tr>';
+            for (var j = 0; j < names.length; j++) {
+                var name = names[j];
+                var info = byProject[name];
+                html += "<tr><td><a href='#/sites/" + App.h(name) + "'>" + App.h(name) + "</a></td>";
+                html += "<td>" + info.branches + "</td>";
+                html += "<td>" + info.total_files + "</td>";
+                html += "<td>" + App.h(App.humanSize(info.total_size)) + "</td>";
+                html += '<td title="' + App.h(App.formatTime(info.last_updated)) + '">' + App.h(App.timeAgo(info.last_updated)) + "</td></tr>";
             }
         }
         html += "</tbody></table></div>";
@@ -457,6 +471,41 @@ App.pages.sites = function () {
         html += '<div class="card"><h2>Deploy a Site</h2>';
         html += App.codeBlock("CLI", "buildhost publish-site \\\n  --server " + bu + " \\\n  --token $TOKEN \\\n  --project {project} \\\n  --branch {branch} \\\n  --dir ./dist");
         html += App.codeBlock("curl", 'tar czf - -C ./dist . | curl -X PUT \\\n  -H "Authorization: Bearer $TOKEN" \\\n  -H "Content-Type: application/gzip" \\\n  --data-binary @- \\\n  ' + bu + "/sites/{project}/branch/{branch}");
+        html += "</div>";
+
+        document.getElementById("content").innerHTML = html;
+    });
+};
+
+App.pages.site = function (name) {
+    App.setTitle(name + " - Sites");
+    App.renderSidebar("sites");
+    App.fetch("/projects/" + encodeURIComponent(name)).then(function (d) {
+        var p = d.project;
+        var bu = d.base_url || "";
+        var sites = d.sites || [];
+
+        var html = '<h1><a href="#/sites">Sites</a> / ' + App.h(p.name) + "</h1>";
+
+        html += '<div class="card"><table class="data-table"><thead><tr><th>Branch</th><th>Files</th><th>Size</th><th>Commit</th><th>Updated</th><th>Link</th></tr></thead><tbody>';
+        if (sites.length === 0) {
+            html += '<tr><td colspan="6" class="empty">No branches deployed</td></tr>';
+        } else {
+            for (var i = 0; i < sites.length; i++) {
+                var s = sites[i];
+                html += "<tr><td><code>" + App.h(s.branch) + "</code></td>";
+                html += "<td>" + s.file_count + "</td>";
+                html += "<td>" + App.h(App.humanSize(s.size)) + "</td>";
+                html += "<td>" + (s.git_commit ? '<code class="commit">' + App.h(s.git_commit.substring(0, 12)) + "</code>" : "-") + "</td>";
+                html += '<td title="' + App.h(App.formatTime(s.updated_at)) + '">' + App.h(App.timeAgo(s.updated_at)) + "</td>";
+                html += '<td><a href="' + App.h(bu) + "/sites/" + App.h(p.name) + "/branch/" + App.h(s.branch) + '/" target="_blank">Open</a></td></tr>';
+            }
+        }
+        html += "</tbody></table></div>";
+
+        html += '<div class="card"><h2>Deploy to ' + App.h(p.name) + "</h2>";
+        html += App.codeBlock("CLI", "buildhost publish-site \\\n  --server " + bu + " \\\n  --token $TOKEN \\\n  --project " + p.name + " \\\n  --branch {branch} \\\n  --dir ./dist");
+        html += App.codeBlock("Delete a branch", 'curl -X DELETE \\\n  -H "Authorization: Bearer $TOKEN" \\\n  ' + bu + "/sites/" + p.name + "/branch/{branch}");
         html += "</div>";
 
         document.getElementById("content").innerHTML = html;
@@ -501,6 +550,8 @@ App.route = function () {
         App.pages.projects();
     } else if (parts[0] === "registries") {
         App.pages.registries();
+    } else if (parts[0] === "sites" && parts.length === 2) {
+        App.pages.site(parts[1]);
     } else if (parts[0] === "sites") {
         App.pages.sites();
     } else if (parts[0] === "tokens") {
@@ -517,7 +568,7 @@ App.route = function () {
 App.demoData = {
     "/sidebar": { build: { version: "v0.0.0-demo", commit: "demo", commit_url: "", short_commit: "demo", date: "" }, build_age: "", cpu_percent: "0.0%", disk_used: "0 B", disk_total: "0 B" },
     "/dashboard": {
-        stats: { project_count: 2, release_count: 5, artifact_count: 12, total_storage_bytes: 52428800, token_count: 3, site_count: 2 },
+        stats: { project_count: 2, release_count: 5, artifact_count: 12, total_storage_bytes: 52428800, token_count: 3, site_count: 3 },
         recent: [
             { project_name: "myapp", version: "3", git_branch: "main", published: true, created_at: new Date(Date.now() - 3600000).toISOString() },
             { project_name: "cli-tool", version: "1.2.0", git_branch: "release", published: true, created_at: new Date(Date.now() - 86400000).toISOString() }
@@ -537,7 +588,7 @@ App.demoData = {
         base_url: "https://builds.example.com"
     },
     "/registries": { base_url: "https://builds.example.com", projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
-    "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }], base_url: "https://builds.example.com" },
+    "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com" },
     "/tokens": [{ name: "deploy", token_prefix: "bh_abc", is_global: false, project_name: "myapp", scopes: "read,write", is_expired: false, created_at: new Date(Date.now() - 864e5 * 7).toISOString(), last_used_at: new Date(Date.now() - 3600000).toISOString() }],
     "/oidc": [{ issuer: "https://token.actions.githubusercontent.com", subject_pattern: "repo:myorg/myapp:*", audience: "", project_name: "myapp", scopes: "read,write", created_at: new Date(Date.now() - 864e5 * 14).toISOString() }]
 };
