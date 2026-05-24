@@ -11,6 +11,8 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
+func init() { Register(&Deb{}) }
+
 type Deb struct{}
 
 func (d *Deb) Format() Format { return FormatDeb }
