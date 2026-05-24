@@ -20,21 +20,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: wow-look-at-my/go-toolchain
-          token: ${{ secrets.GITHUB_TOKEN }}
-          path: /tmp/go-toolchain-src
+          path: go-toolchain-src
       - uses: actions/setup-go@v5
         with:
-          go-version-file: /tmp/go-toolchain-src/go.mod
-          cache-dependency-path: /tmp/go-toolchain-src/go.sum
+          go-version-file: go-toolchain-src/go.mod
+          cache-dependency-path: go-toolchain-src/go.sum
       - name: Build go-toolchain from source
-        run: |
-          cd /tmp/go-toolchain-src
-          go build -o /tmp/go-toolchain ./src
+        run: go build -o "$RUNNER_TEMP/go-toolchain" ./go-toolchain-src/src
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           generate: c29114ff2f33
-          binary: /tmp/go-toolchain
+          binary: ${{ runner.temp }}/go-toolchain
 
   publish-ghcr:
     needs: build
