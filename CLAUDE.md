@@ -13,7 +13,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 ## Project structure
 
 - `cmd/buildhost/` - CLI entrypoint (cobra, one subcommand per file, self-registering via init()). Backend imports (backend_*.go) trigger init() registration for each handler package.
-- `internal/server/` - HTTP server, global middleware chain (auth, security headers, logging, recovery)
+- `internal/server/` - HTTP server, global middleware chain (auth, inflight tracking, security headers, logging, recovery)
 - `internal/api/` - REST API handlers (projects, releases, artifacts, publish, tokens). Each handler file registers its own routes in init().
 - `internal/dl/` - Download handlers with version/branch resolution. Self-registering via init().
 - `internal/apt/` - APT repository endpoint. Self-registering via init().
@@ -27,7 +27,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - `internal/strip/` - Binary debug info stripping (shells out to strip/objcopy)
 - `internal/model/` - Data types (Project, Release, Artifact, APIToken, OIDCPolicy)
 - `internal/version/` - Version resolution logic
-- `internal/admin/` - Admin dashboard (separate HTTP server, JSON API + static SPA frontend)
+- `internal/admin/` - Admin dashboard (separate HTTP server, JSON API + static SPA frontend), inflight write counter for update coordination
 - `internal/config/` - Server configuration from env vars
 - `migrations/` - SQLite schema (embedded via go:embed)
 
@@ -74,6 +74,28 @@ The admin dashboard starts automatically on a separate port (default `:9090`). S
 ```bash
 BUILDHOST_ADMIN_LISTEN_ADDR=:9090 buildhost serve   # listen on all interfaces (default)
 BUILDHOST_ADMIN_LISTEN_ADDR= buildhost serve         # disable admin dashboard
+```
+
+## Graceful shutdown and update coordination
+
+The server handles SIGTERM/SIGINT by calling `http.Server.Shutdown` with a 5-minute timeout, allowing in-flight requests (especially large uploads) to complete before the process exits.
+
+For watchtower-managed deployments, use the `try-update` subcommand as a pre-update lifecycle hook:
+
+```bash
+buildhost try-update              # queries admin :9090 for in-flight writes
+buildhost try-update --admin http://127.0.0.1:9090
+```
+
+Exit 0 means idle (safe to update); non-zero means busy or unreachable (skip this poll cycle). The admin endpoint `GET /admin/inflight` returns `{"inflight": N}` with the count of in-flight write requests (PUT/POST/PATCH/DELETE) on the main :8080 server.
+
+Docker Compose label configuration:
+
+```yaml
+labels:
+  - com.centurylinklabs.watchtower.lifecycle.pre-update=/usr/local/bin/buildhost try-update
+  - com.centurylinklabs.watchtower.lifecycle.pre-update-timeout=1
+stop_grace_period: 5m
 ```
 
 ## OIDC for GitHub Actions
@@ -137,6 +159,7 @@ The following items have been reviewed and addressed or are intentional design c
 - **Symlink rejection**: Storage layer rejects symlinks via Lstat check
 - **Admin dashboard auth**: None -- must be behind a reverse proxy with access control (Cloudflare Access, etc.)
 - **Container user**: Runs as nonroot (UID 65532) via distroless base image
-- **Graceful shutdown**: Server handles SIGTERM/SIGINT for clean connection draining
+- **Graceful shutdown**: Server handles SIGTERM/SIGINT with 5-minute timeout for clean connection draining
+- **Inflight endpoint**: `GET /admin/inflight` on :9090 is unauthenticated -- same trust model as the rest of the admin dashboard (internal-only, behind reverse proxy)
 - **No writes outside data dir**: Temp files use BUILDHOST_DATA_DIR/tmp, not system /tmp
 - **OIDC auto-provisioning**: Trusted issuers can auto-create projects. Project name derived from subject claim (repo:org/name:* -> name). Scoped to read,write on that project only -- cannot access other projects. Optional BUILDHOST_OIDC_ORGS allowlist restricts which orgs can auto-provision

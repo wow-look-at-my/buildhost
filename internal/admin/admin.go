@@ -93,7 +93,7 @@ func (s *Server) startCPUTracker() {
 	}()
 }
 
-func (s *Server) ListenAndServe() error {
+func (s *Server) NewHTTPServer() *http.Server {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/sidebar", s.apiSidebar)
@@ -104,12 +104,13 @@ func (s *Server) ListenAndServe() error {
 	mux.HandleFunc("GET /api/registries", s.apiRegistries)
 	mux.HandleFunc("GET /api/tokens", s.apiTokens)
 	mux.HandleFunc("GET /api/oidc", s.apiOIDC)
+	mux.HandleFunc("GET /admin/inflight", InflightHandler)
 
 	mux.HandleFunc("GET /", s.serveSPA)
 
 	s.startCPUTracker()
 
-	srv := &http.Server{
+	return &http.Server{
 		Addr:              s.cfg.AdminListenAddr,
 		Handler:           securityHeaders(mux),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -117,7 +118,10 @@ func (s *Server) ListenAndServe() error {
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-	return srv.ListenAndServe()
+}
+
+func (s *Server) ListenAndServe() error {
+	return s.NewHTTPServer().ListenAndServe()
 }
 
 func securityHeaders(next http.Handler) http.Handler {
@@ -125,7 +129,7 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self' data:")
 		next.ServeHTTP(w, r)
 	})
 }
