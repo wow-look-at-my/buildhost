@@ -36,3 +36,11 @@ func (d *DB) ListOIDCPolicyDetails(ctx context.Context) ([]ListOIDCPolicyDetails
 func (d *DB) ListSiteDetails(ctx context.Context) ([]ListSiteDetailsRow, error) {
 	return d.q.ListSiteDetails(ctx)
 }
+
+func (d *DB) ListAllArtifacts(ctx context.Context) ([]ListAllArtifactsRow, error) {
+	return d.q.ListAllArtifacts(ctx)
+}
+
+func (d *DB) GetStorageBreakdown(ctx context.Context) ([]GetStorageBreakdownRow, error) {
+	return d.q.GetStorageBreakdown(ctx)
+}

@@ -71,3 +71,25 @@ SELECT s.id, s.project_id, s.branch, s.storage_key, s.size, s.sha256,
 FROM sites s
 JOIN projects p ON s.project_id = p.id
 ORDER BY s.updated_at DESC;
+
+-- name: ListAllArtifacts :many
+SELECT a.id, a.os, a.arch, a.kind, a.size, a.filename, a.created_at,
+       r.version, r.git_branch,
+       p.name AS project_name,
+       CAST(COALESCE(dc.count, 0) AS INTEGER) AS download_count
+FROM artifacts a
+JOIN releases r ON a.release_id = r.id
+JOIN projects p ON r.project_id = p.id
+LEFT JOIN download_counts dc ON dc.artifact_id = a.id
+ORDER BY a.created_at DESC, a.id DESC;
+
+-- name: GetStorageBreakdown :many
+SELECT p.id, p.name,
+       CAST(COALESCE(SUM(a.size), 0) AS INTEGER) AS total_bytes,
+       COUNT(a.id) AS artifact_count,
+       COUNT(DISTINCT r.id) AS release_count
+FROM projects p
+LEFT JOIN releases r ON r.project_id = p.id
+LEFT JOIN artifacts a ON a.release_id = r.id
+GROUP BY p.id, p.name
+ORDER BY total_bytes DESC;
