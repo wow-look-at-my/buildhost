@@ -27,10 +27,10 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
 
-	store, err := storage.NewFilesystem(t.TempDir())
+	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, Store: store}
+	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, "http://localhost:8080")}
 	return h, d, store
 }
 
@@ -201,12 +201,16 @@ func TestServeHTTP_Manifests_NoOCIPackage(t *testing.T) {
 		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
+	// On-demand generation means a manifest is generated from the binary
+	// artifact -- no packaged_artifacts row needed.
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
 	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/vnd.oci.image.manifest.v1+json", rec.Header().Get("Content-Type"))
+	assert.NotEmpty(t, rec.Body.Bytes())
 }
 
 func TestServeHTTP_Manifests_Success(t *testing.T) {
@@ -266,7 +270,6 @@ func TestServeHTTP_Manifests_ByDigest(t *testing.T) {
 	require.NoError(t, d.CreateProject(ctx, proj))
 	publishWithOCI(t, ctx, d, store, proj, "1.0.0", 1000000)
 
-	// First get the manifest by tag to get the digest
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
 	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
 	rec := httptest.NewRecorder()
@@ -276,7 +279,6 @@ func TestServeHTTP_Manifests_ByDigest(t *testing.T) {
 	digest := rec.Header().Get("Docker-Content-Digest")
 	require.NotEmpty(t, digest)
 
-	// Now fetch by digest
 	req = httptest.NewRequest("GET", "/v2/myapp/manifests/"+digest, nil)
 	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: digest})
 	rec = httptest.NewRecorder()

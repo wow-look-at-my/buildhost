@@ -13,6 +13,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 )
 
 var validDigest = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
@@ -74,14 +75,19 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *mo
 
 	var manifests []indexEntry
 	for _, a := range artifacts {
-		storageKey, size, _, _, err := h.DB.GetPackagedArtifact(r.Context(), a.ID, "oci")
+		out, err := h.Gen.Generate(r.Context(), repackage.FormatOCI, *project, *release, a)
 		if err != nil {
 			continue
 		}
+		manifestData, err := io.ReadAll(out.Reader)
+		if err != nil {
+			continue
+		}
+		digest := sha256.Sum256(manifestData)
 		entry := indexEntry{
 			MediaType: "application/vnd.oci.image.manifest.v1+json",
-			Digest:    "sha256:" + storageKey,
-			Size:      size,
+			Digest:    "sha256:" + hex.EncodeToString(digest[:]),
+			Size:      int64(len(manifestData)),
 		}
 		entry.Platform.Architecture = string(a.Arch)
 		entry.Platform.OS = string(a.OS)
@@ -93,9 +99,8 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *mo
 		return
 	}
 
-	// Single platform: serve the manifest directly instead of an index
 	if len(manifests) == 1 {
-		h.serveManifestByDigest(w, r, project, manifests[0].Digest)
+		h.serveSingleManifest(w, r, project, release, manifests[0])
 		return
 	}
 
@@ -119,6 +124,45 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *mo
 	if r.Method != http.MethodHead {
 		w.Write(indexData)
 	}
+}
+
+func (h *Handler) serveSingleManifest(w http.ResponseWriter, r *http.Request, project *model.Project, release *model.Release, entry struct {
+	MediaType string `json:"mediaType"`
+	Digest    string `json:"digest"`
+	Size      int64  `json:"size"`
+	Platform  struct {
+		Architecture string `json:"architecture"`
+		OS           string `json:"os"`
+	} `json:"platform"`
+}) {
+	artifacts, err := h.DB.ListArtifacts(r.Context(), release.ID)
+	if err != nil {
+		ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest unknown")
+		return
+	}
+
+	for _, a := range artifacts {
+		out, err := h.Gen.Generate(r.Context(), repackage.FormatOCI, *project, *release, a)
+		if err != nil {
+			continue
+		}
+		manifestData, err := io.ReadAll(out.Reader)
+		if err != nil {
+			continue
+		}
+		digest := sha256.Sum256(manifestData)
+
+		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(manifestData)))
+		w.Header().Set("Docker-Content-Digest", "sha256:"+hex.EncodeToString(digest[:]))
+
+		if r.Method != http.MethodHead {
+			w.Write(manifestData)
+		}
+		return
+	}
+
+	ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest unknown")
 }
 
 func (h *Handler) serveManifestByDigest(w http.ResponseWriter, r *http.Request, project *model.Project, digest string) {
@@ -176,6 +220,7 @@ func (h *Handler) serveBlob(w http.ResponseWriter, r *http.Request, digest strin
 	defer rc.Close()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
 	w.Header().Set("Docker-Content-Digest", digest)
 
@@ -193,7 +238,6 @@ func (h *Handler) serveTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tags := []string{}
-	hasOCI := false
 	for _, rel := range releases {
 		if !rel.Published {
 			continue
@@ -203,14 +247,13 @@ func (h *Handler) serveTags(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		for _, a := range artifacts {
-			if _, _, _, _, err := h.DB.GetPackagedArtifact(r.Context(), a.ID, "oci"); err == nil {
+			if a.Kind == model.KindBinary {
 				tags = append(tags, rel.Version)
-				hasOCI = true
 				break
 			}
 		}
 	}
-	if hasOCI {
+	if len(tags) > 0 {
 		tags = append(tags, "latest")
 	}
 

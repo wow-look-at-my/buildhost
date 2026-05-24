@@ -11,6 +11,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
@@ -30,10 +31,10 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
 
-	store, err := storage.NewFilesystem(t.TempDir())
+	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, Store: store}
+	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, "http://localhost:8080")}
 	return h, d, store
 }
 
@@ -149,11 +150,11 @@ func TestDownload_Success_RawBinary(t *testing.T) {
 	assert.Contains(t, rec.Header().Get("Content-Disposition"), "myapp")
 }
 
-func TestDownload_Success_ServesStrippedBinary(t *testing.T) {
+func TestDownload_Success_RawFallsBackWhenStripFails(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	seedArtifactWithStripped(t, d, store, rel.ID, "linux", "amd64", "original-binary", "stripped-binary")
+	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "not-an-elf")
 
 	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
 	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
@@ -161,14 +162,14 @@ func TestDownload_Success_ServesStrippedBinary(t *testing.T) {
 	h.Download(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "stripped-binary", rec.Body.String())
+	assert.Equal(t, "not-an-elf", rec.Body.String())
 }
 
-func TestDownload_Success_DebugFlag(t *testing.T) {
+func TestDownload_DebugReturns404WhenStripFails(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	seedArtifactWithDebug(t, d, store, rel.ID, "linux", "amd64", "binary-content", "debug-symbols")
+	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "not-an-elf")
 
 	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
 	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
@@ -176,9 +177,7 @@ func TestDownload_Success_DebugFlag(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "debug-symbols", rec.Body.String())
-	assert.Contains(t, rec.Header().Get("Content-Disposition"), "myapp-1.0.0.debug")
+	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
 func TestDownload_DebugFlag_NoDebugAvailable(t *testing.T) {
@@ -200,13 +199,7 @@ func TestDownload_Success_TarGzFormat(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	a := seedArtifact(t, d, store, rel.ID, "linux", "amd64", "binary-content")
-
-	// Seed a packaged artifact for tar.gz format.
-	tarContent := "fake-tar-gz-content"
-	tarKey, tarSize, err := store.Put(context.Background(), strings.NewReader(tarContent))
-	require.NoError(t, err)
-	require.NoError(t, d.CreatePackagedArtifact(context.Background(), a.ID, "tar.gz", tarKey, tarSize, tarKey, "myapp_1.0.0_linux_amd64.tar.gz", ""))
+	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "binary-content")
 
 	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
 	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
@@ -215,8 +208,8 @@ func TestDownload_Success_TarGzFormat(t *testing.T) {
 	h.Download(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "fake-tar-gz-content", rec.Body.String())
-	assert.Contains(t, rec.Header().Get("Content-Disposition"), "myapp_1.0.0_linux_amd64.tar.gz")
+	assert.Greater(t, rec.Body.Len(), 0)
+	assert.Contains(t, rec.Header().Get("Content-Disposition"), ".tar.gz")
 }
 
 func TestDownload_FormatNotAvailable(t *testing.T) {
@@ -227,7 +220,7 @@ func TestDownload_FormatNotAvailable(t *testing.T) {
 
 	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
 	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
-	req.URL.RawQuery = "format=tar.gz"
+	req.URL.RawQuery = "format=nonexistent"
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 

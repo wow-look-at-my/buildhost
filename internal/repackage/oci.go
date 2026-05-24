@@ -41,8 +41,8 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store layer: %w", err)
 	}
-	if err := o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-layer", layerKey, layerSize, layerKey, "layer.tar.gz", "{}"); err != nil {
-		return nil, fmt.Errorf("record layer: %w", err)
+	if input.Artifact.ID > 0 && o.DB != nil {
+		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-layer", layerKey, layerSize, layerKey, "layer.tar.gz", "{}")
 	}
 
 	configData := ociCreateConfig(string(input.Artifact.OS), string(input.Artifact.Arch), diffID, input.Project.Name)
@@ -51,8 +51,8 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store config: %w", err)
 	}
-	if err := o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-config", configKey, configSize, configKey, "config.json", "{}"); err != nil {
-		return nil, fmt.Errorf("record config: %w", err)
+	if input.Artifact.ID > 0 && o.DB != nil {
+		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-config", configKey, configSize, configKey, "config.json", "{}")
 	}
 
 	manifestData := ociCreateManifest(configKey, configSize, layerKey, layerSize)
