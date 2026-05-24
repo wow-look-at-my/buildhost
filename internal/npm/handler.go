@@ -9,7 +9,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/static"
 )
 
@@ -85,7 +84,7 @@ func (h *Handler) collectNpmArtifacts(ctx context.Context, releaseID int64) []np
 	}
 	var infos []npmArtifactInfo
 	for _, a := range artifacts {
-		if a.Kind == model.KindLibrary {
+		if a.Kind == db.KindLibrary {
 			continue
 		}
 		infos = append(infos, npmArtifactInfo{
@@ -96,7 +95,7 @@ func (h *Handler) collectNpmArtifacts(ctx context.Context, releaseID int64) []np
 	return infos
 }
 
-func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, project *model.Project, platform string) {
+func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, project *db.Project, platform string) {
 	projectName := project.Name
 
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)
@@ -156,7 +155,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 	json.NewEncoder(w).Encode(info)
 }
 
-func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Request, project *model.Project, platform string, releases []model.Release) {
+func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Request, project *db.Project, platform string, releases []db.Release) {
 	projectName := project.Name
 	platParts := strings.SplitN(platform, "-", 2)
 	if len(platParts) != 2 {
@@ -193,7 +192,7 @@ func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Reques
 			"os":      []string{platOS},
 			"cpu":     []string{platArch},
 			"dist": map[string]string{
-				"tarball": static.URL(h.BaseURL, static.For(projectName).WithVersion(version).WithOS(model.OS(reverseNpmPlatform(platOS))).WithArch(model.Arch(reverseNpmArch(platArch))).WithFmt("npm")),
+				"tarball": static.URL(h.BaseURL, static.For(projectName).WithVersion(version).WithOS(db.OS(reverseNpmPlatform(platOS))).WithArch(db.Arch(reverseNpmArch(platArch))).WithFmt("npm")),
 			},
 		}
 		if _, ok := distTags["latest"]; !ok {
@@ -245,24 +244,24 @@ func normalizeVersion(v string) string {
 	return version
 }
 
-func npmPlatform(os model.OS) string {
+func npmPlatform(os db.OS) string {
 	switch os {
-	case model.OSDarwin:
+	case db.OSDarwin:
 		return "darwin"
-	case model.OSWindows:
+	case db.OSWindows:
 		return "win32"
 	default:
 		return string(os)
 	}
 }
 
-func npmArch(a model.Arch) string {
+func npmArch(a db.Arch) string {
 	switch a {
-	case model.ArchAMD64:
+	case db.ArchAMD64:
 		return "x64"
-	case model.ArchARM64:
+	case db.ArchARM64:
 		return "arm64"
-	case model.Arch386:
+	case db.Arch386:
 		return "ia32"
 	default:
 		return string(a)

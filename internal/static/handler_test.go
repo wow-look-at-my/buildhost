@@ -12,7 +12,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
@@ -146,7 +145,7 @@ func setupIntegration(t *testing.T) (*staticHandler, *db.DB, *storage.Filesystem
 	return &staticHandler{DB: d, Store: store, BaseURL: "http://localhost:8080"}, d, store
 }
 
-func withProject(r *http.Request, p *model.Project) *http.Request {
+func withProject(r *http.Request, p *db.Project) *http.Request {
 	ctx := auth.WithProject(r.Context(), p)
 	return r.WithContext(ctx)
 }
@@ -155,17 +154,17 @@ func TestServe_RawFormat_Success(t *testing.T) {
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	key, size, err := store.Put(ctx, strings.NewReader("hello-binary"))
 	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
@@ -183,17 +182,17 @@ func TestServe_ETag_NotModified(t *testing.T) {
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
@@ -215,7 +214,7 @@ func TestServe_VersionNotFound(t *testing.T) {
 	h, d, _ := setupIntegration(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=9.9.9", nil)
@@ -229,9 +228,9 @@ func TestServe_ArtifactNotFound(t *testing.T) {
 	h, d, _ := setupIntegration(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -246,17 +245,17 @@ func TestServe_VersionResolution_StripV(t *testing.T) {
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "2.0.0", VersionNum: 2000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "2.0.0", VersionNum: 2000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	key, size, err := store.Put(ctx, strings.NewReader("bin"))
 	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=v2.0.0", nil)
@@ -270,17 +269,17 @@ func TestServe_VersionResolution_StripDotZeroZero(t *testing.T) {
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp"}
+	proj := &db.Project{Name: "myapp"}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "5", VersionNum: 5}
+	rel := &db.Release{ProjectID: proj.ID, Version: "5", VersionNum: 5}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	key, size, err := store.Put(ctx, strings.NewReader("bin"))
 	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=5.0.0", nil)
@@ -294,9 +293,9 @@ func TestServe_AnyOSArch(t *testing.T) {
 	h, d, _ := setupIntegration(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -311,17 +310,17 @@ func TestServe_DebugSymbolsHeader(t *testing.T) {
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	key, size, err := store.Put(ctx, strings.NewReader("not-an-elf"))
 	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
@@ -361,17 +360,17 @@ func TestServe_SymbolsFormat_NoStrip(t *testing.T) {
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	key, size, err := store.Put(ctx, strings.NewReader("not-elf"))
 	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=symbols&id=myapp&os=linux&v=1.0.0", nil)
@@ -385,17 +384,17 @@ func TestServe_RepackageFormat(t *testing.T) {
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	key, size, err := store.Put(ctx, strings.NewReader("binary-data"))
 	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	RegisterRepackageFmt("tar.gz")
@@ -414,9 +413,9 @@ func TestResolveVersion(t *testing.T) {
 	defer d.Close()
 
 	ctx := context.Background()
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "3.0.0", VersionNum: 3000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "3.0.0", VersionNum: 3000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -441,9 +440,9 @@ func TestResolveVersion_AutoVersioning(t *testing.T) {
 	defer d.Close()
 
 	ctx := context.Background()
-	proj := &model.Project{Name: "tool"}
+	proj := &db.Project{Name: "tool"}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: fmt.Sprintf("%d", 7), VersionNum: 7}
+	rel := &db.Release{ProjectID: proj.ID, Version: fmt.Sprintf("%d", 7), VersionNum: 7}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 

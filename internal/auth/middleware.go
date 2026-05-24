@@ -12,7 +12,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
 var authTracer = otel.Tracer("buildhost.auth")
@@ -29,7 +28,8 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 			if LooksLikeJWT(raw) && m.Verifier != nil {
 				ctx, span := authTracer.Start(r.Context(), "auth.verify_oidc")
 				policies, _ := m.DB.ListOIDCPolicies(ctx)
-				token, err := m.Verifier.VerifyToken(ctx, raw, policies)
+				var vr VerifyResult
+				token, oidcProject, err := m.Verifier.VerifyTokenFull(ctx, raw, policies, &vr)
 				if err != nil {
 					span.SetAttributes(attribute.String("auth.result", "oidc_failed"))
 					span.End()
@@ -39,7 +39,12 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 					span.End()
 					parentSpan := trace.SpanFromContext(r.Context())
 					parentSpan.SetAttributes(attribute.String("auth.type", "oidc"))
-					r = r.WithContext(WithToken(r.Context(), token))
+					rctx := WithToken(r.Context(), token)
+					if oidcProject != "" {
+						rctx = WithOIDCProject(rctx, oidcProject)
+						rctx = WithOIDCPrivate(rctx, vr.OIDCPrivate)
+					}
+					r = r.WithContext(rctx)
 					next.ServeHTTP(w, r)
 					return
 				}
@@ -99,13 +104,15 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			project, err := mw.DB.GetProject(r.Context(), ri.ProjectName())
 			if errors.Is(err, db.ErrNotFound) {
 				t := TokenFrom(r.Context())
-				if t == nil || t.OIDCProject == "" || t.OIDCProject != ri.ProjectName() {
+				oidcProject := OIDCProjectFrom(r.Context())
+				if t == nil || oidcProject == "" || oidcProject != ri.ProjectName() {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusNotFound)
 					w.Write([]byte(`{"error":"project not found"}`))
 					return
 				}
-				project = &model.Project{Name: ri.ProjectName(), Versioning: model.VersioningAuto, IsPrivate: t.OIDCPrivate}
+				oidcPrivate, _ := OIDCPrivateFrom(r.Context())
+				project = &db.Project{Name: ri.ProjectName(), Versioning: db.VersioningAuto, IsPrivate: oidcPrivate}
 				createErr := mw.DB.CreateProject(r.Context(), project)
 				if createErr != nil && !errors.Is(createErr, db.ErrConflict) {
 					http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
@@ -129,10 +136,14 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			}
 
 			t := TokenFrom(r.Context())
-			if t != nil && t.OIDCProject != "" && t.OIDCProject == project.Name && project.IsPrivate != t.OIDCPrivate {
-				if updateErr := mw.DB.SetProjectVisibility(r.Context(), project.ID, t.OIDCPrivate); updateErr == nil {
-					project.IsPrivate = t.OIDCPrivate
-					parentSpan.SetAttributes(attribute.Bool("project.visibility_synced", true))
+			oidcProject := OIDCProjectFrom(r.Context())
+			if t != nil && oidcProject != "" && oidcProject == project.Name {
+				oidcPrivate, hasPrivate := OIDCPrivateFrom(r.Context())
+				if hasPrivate && project.IsPrivate != oidcPrivate {
+					if updateErr := mw.DB.SetProjectVisibility(r.Context(), project.ID, oidcPrivate); updateErr == nil {
+						project.IsPrivate = oidcPrivate
+						parentSpan.SetAttributes(attribute.Bool("project.visibility_synced", true))
+					}
 				}
 			}
 			switch ri.Access() {
@@ -142,7 +153,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 					unauthorizedResponse(w, r)
 					return
 				}
-				if !t.AuthorizedForProject(project.ID) || !t.AuthorizedForProjectName(project.Name) {
+				if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && oidcProject != project.Name) {
 					http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
 					return
 				}
@@ -153,7 +164,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						unauthorizedResponse(w, r)
 						return
 					}
-					if !t.AuthorizedForProject(project.ID) || !t.AuthorizedForProjectName(project.Name) {
+					if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && oidcProject != project.Name) {
 						http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
 						return
 					}

@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/ulikunitz/xz"
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 func init() { Register(&TarXZ{}) }
@@ -16,7 +16,7 @@ type TarXZ struct{}
 
 func (t *TarXZ) Format() Format { return FormatTarXZ }
 
-func (t *TarXZ) Applicable(_ model.Artifact) bool { return true }
+func (t *TarXZ) Applicable(_ db.Artifact) bool { return true }
 
 func (t *TarXZ) Repackage(_ context.Context, input Input) (*Output, error) {
 	var buf bytes.Buffer
@@ -27,7 +27,7 @@ func (t *TarXZ) Repackage(_ context.Context, input Input) (*Output, error) {
 	tw := tar.NewWriter(xw)
 
 	mode := int64(0o644)
-	if input.Artifact.Kind == model.KindBinary {
+	if input.Artifact.Kind == db.KindBinary {
 		mode = 0o755
 	}
 

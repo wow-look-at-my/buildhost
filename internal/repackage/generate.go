@@ -10,7 +10,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/buildhost/internal/strip"
 )
@@ -34,7 +33,7 @@ func NewGenerator(store storage.Storage, database *db.DB, baseURL, tmpDir string
 	return &Generator{store: store, baseURL: baseURL, tmpDir: tmpDir, repackagers: m}
 }
 
-func (g *Generator) Generate(ctx context.Context, format Format, project model.Project, release model.Release, artifact model.Artifact) (*Output, error) {
+func (g *Generator) Generate(ctx context.Context, format Format, project db.Project, release db.Release, artifact db.Artifact) (*Output, error) {
 	ctx, span := repackTracer.Start(ctx, "repackage.generate")
 	defer span.End()
 	span.SetAttributes(
@@ -74,7 +73,7 @@ func (g *Generator) Generate(ctx context.Context, format Format, project model.P
 	}
 	readSpan.End()
 
-	if (artifact.Kind == model.KindBinary || artifact.Kind == model.KindLibrary) && strip.Available() {
+	if (artifact.Kind == db.KindBinary || artifact.Kind == db.KindLibrary) && strip.Available() {
 		_, stripSpan := repackTracer.Start(ctx, "repackage.strip")
 		stripSpan.SetAttributes(attribute.Int("strip.input_bytes", len(data)))
 		if result, err := strip.StripBytes(data, g.tmpDir); err == nil {

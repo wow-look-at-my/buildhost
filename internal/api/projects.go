@@ -9,7 +9,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
 func init() {
@@ -48,16 +47,16 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	versioning := model.Versioning(req.Versioning)
+	versioning := db.Versioning(req.Versioning)
 	if versioning == "" {
-		versioning = model.VersioningAuto
+		versioning = db.VersioningAuto
 	}
-	if versioning != model.VersioningAuto && versioning != model.VersioningSemver {
+	if versioning != db.VersioningAuto && versioning != db.VersioningSemver {
 		jsonError(w, http.StatusBadRequest, "versioning must be 'auto' or 'semver'")
 		return
 	}
 
-	p := &model.Project{
+	p := &db.Project{
 		Name:        req.Name,
 		Description: req.Description,
 		Homepage:    req.Homepage,
@@ -90,7 +89,7 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	t := auth.TokenFrom(r.Context())
-	var visible []model.Project
+	var visible []db.Project
 	for _, p := range projects {
 		if !p.IsPrivate {
 			visible = append(visible, p)
@@ -99,7 +98,7 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if visible == nil {
-		visible = []model.Project{}
+		visible = []db.Project{}
 	}
 
 	jsonResponse(w, http.StatusOK, visible)

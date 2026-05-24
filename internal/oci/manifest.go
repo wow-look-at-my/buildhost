@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 )
 
@@ -35,7 +35,7 @@ func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, referenc
 	h.serveIndex(w, r, project, release)
 }
 
-func (h *Handler) resolveTag(ctx context.Context, project *model.Project, tag string) (*model.Release, error) {
+func (h *Handler) resolveTag(ctx context.Context, project *db.Project, tag string) (*db.Release, error) {
 	if tag == "latest" {
 		return h.DB.GetLatestRelease(ctx, project.ID)
 	}
@@ -56,7 +56,7 @@ func (h *Handler) resolveTag(ctx context.Context, project *model.Project, tag st
 	return nil, fmt.Errorf("tag not found: %s", tag)
 }
 
-func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *model.Project, release *model.Release) {
+func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db.Project, release *db.Release) {
 	artifacts, err := h.DB.ListArtifacts(r.Context(), release.ID)
 	if err != nil {
 		ociError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -126,7 +126,7 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *mo
 	}
 }
 
-func (h *Handler) serveSingleManifest(w http.ResponseWriter, r *http.Request, project *model.Project, release *model.Release, entry struct {
+func (h *Handler) serveSingleManifest(w http.ResponseWriter, r *http.Request, project *db.Project, release *db.Release, entry struct {
 	MediaType string `json:"mediaType"`
 	Digest    string `json:"digest"`
 	Size      int64  `json:"size"`
@@ -165,7 +165,7 @@ func (h *Handler) serveSingleManifest(w http.ResponseWriter, r *http.Request, pr
 	ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest unknown")
 }
 
-func (h *Handler) serveManifestByDigest(w http.ResponseWriter, r *http.Request, project *model.Project, digest string) {
+func (h *Handler) serveManifestByDigest(w http.ResponseWriter, r *http.Request, project *db.Project, digest string) {
 	if !validDigest.MatchString(digest) {
 		ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "invalid digest format")
 		return
@@ -247,7 +247,7 @@ func (h *Handler) serveTags(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		for _, a := range artifacts {
-			if a.Kind == model.KindBinary {
+			if a.Kind == db.KindBinary {
 				tags = append(tags, rel.Version)
 				break
 			}

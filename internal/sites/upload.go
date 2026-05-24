@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 const (
@@ -74,13 +74,13 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	gitCommit := r.Header.Get("X-Git-Commit")
 
-	site := &model.Site{
+	site := &db.Site{
 		ProjectID:  project.ID,
 		Branch:     rt.branch,
 		StorageKey: storageKey,
 		Size:       size,
 		SHA256:     sha256hex,
-		FileCount:  fileCount,
+		FileCount:  int64(fileCount),
 		GitCommit:  gitCommit,
 	}
 

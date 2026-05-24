@@ -5,14 +5,13 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
 )
 
-func createSiteTestProject(t *testing.T, d *DB) *model.Project {
+func createSiteTestProject(t *testing.T, d *DB) *Project {
 	t.Helper()
-	p := &model.Project{Name: "siteproj", Versioning: model.VersioningAuto}
+	p := &Project{Name: "siteproj", Versioning: VersioningAuto}
 	require.NoError(t, d.CreateProject(context.Background(), p))
 	return p
 }
@@ -22,7 +21,7 @@ func TestUpsertSite_CreateNew(t *testing.T) {
 	ctx := context.Background()
 	p := createSiteTestProject(t, d)
 
-	s := &model.Site{
+	s := &Site{
 		ProjectID:  p.ID,
 		Branch:     "main",
 		StorageKey: "abc123",
@@ -42,7 +41,7 @@ func TestUpsertSite_ReplaceExisting(t *testing.T) {
 	ctx := context.Background()
 	p := createSiteTestProject(t, d)
 
-	s1 := &model.Site{
+	s1 := &Site{
 		ProjectID:  p.ID,
 		Branch:     "main",
 		StorageKey: "key1",
@@ -53,7 +52,7 @@ func TestUpsertSite_ReplaceExisting(t *testing.T) {
 	_, err := d.UpsertSite(ctx, s1)
 	require.NoError(t, err)
 
-	s2 := &model.Site{
+	s2 := &Site{
 		ProjectID:  p.ID,
 		Branch:     "main",
 		StorageKey: "key2",
@@ -85,7 +84,7 @@ func TestListSites_Empty(t *testing.T) {
 
 	sites, err := d.ListSites(ctx, p.ID)
 	require.NoError(t, err)
-	assert.Nil(t, sites)
+	assert.Equal(t, 0, len(sites))
 }
 
 func TestListSites_MultipleBranches(t *testing.T) {
@@ -94,7 +93,7 @@ func TestListSites_MultipleBranches(t *testing.T) {
 	p := createSiteTestProject(t, d)
 
 	for _, branch := range []string{"main", "dev", "feature"} {
-		s := &model.Site{
+		s := &Site{
 			ProjectID:  p.ID,
 			Branch:     branch,
 			StorageKey: "key-" + branch,
@@ -116,7 +115,7 @@ func TestDeleteSite(t *testing.T) {
 	ctx := context.Background()
 	p := createSiteTestProject(t, d)
 
-	s := &model.Site{
+	s := &Site{
 		ProjectID:  p.ID,
 		Branch:     "main",
 		StorageKey: "delkey",
