@@ -17,9 +17,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Download go-toolchain from GitHub releases (fallback)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo wow-look-at-my/go-toolchain --pattern 'go-toolchain_linux_amd64' --dir /tmp/go-toolchain-dl
+          chmod +x /tmp/go-toolchain-dl/go-toolchain_linux_amd64
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           generate: c29114ff2f33
+          binary: /tmp/go-toolchain-dl/go-toolchain_linux_amd64
 
   publish-ghcr:
     needs: build
