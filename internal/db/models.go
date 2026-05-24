@@ -89,3 +89,16 @@ type Release struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	PublishedAt *time.Time `json:"published_at"`
 }
+
+type Site struct {
+	ID         int64     `json:"id"`
+	ProjectID  int64     `json:"project_id"`
+	Branch     string    `json:"branch"`
+	StorageKey string    `json:"storage_key"`
+	Size       int64     `json:"size"`
+	SHA256     string    `json:"sha256"`
+	FileCount  int64     `json:"file_count"`
+	GitCommit  string    `json:"git_commit"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}

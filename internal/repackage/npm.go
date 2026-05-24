@@ -48,26 +48,38 @@ func (n *NPM) Repackage(_ context.Context, input Input) (*Output, error) {
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
 
-	tw.WriteHeader(&tar.Header{
+	if err := tw.WriteHeader(&tar.Header{
 		Name: "package/package.json",
 		Size: int64(len(packageJSON)),
 		Mode: 0o644,
-	})
-	tw.Write([]byte(packageJSON))
+	}); err != nil {
+		return nil, fmt.Errorf("write tar header: %w", err)
+	}
+	if _, err := tw.Write([]byte(packageJSON)); err != nil {
+		return nil, fmt.Errorf("write package.json: %w", err)
+	}
 
 	binMode := int64(0o644)
 	if input.Artifact.Kind == db.KindBinary {
 		binMode = 0o755
 	}
-	tw.WriteHeader(&tar.Header{
+	if err := tw.WriteHeader(&tar.Header{
 		Name: "package/bin/" + input.Project.Name,
 		Size: int64(len(input.Data)),
 		Mode: binMode,
-	})
-	tw.Write(input.Data)
+	}); err != nil {
+		return nil, fmt.Errorf("write tar header: %w", err)
+	}
+	if _, err := tw.Write(input.Data); err != nil {
+		return nil, fmt.Errorf("write binary: %w", err)
+	}
 
-	tw.Close()
-	gw.Close()
+	if err := tw.Close(); err != nil {
+		return nil, fmt.Errorf("close tar: %w", err)
+	}
+	if err := gw.Close(); err != nil {
+		return nil, fmt.Errorf("close gzip: %w", err)
+	}
 
 	filename := fmt.Sprintf("%s-%s-%s-%s.tgz", input.Project.Name, version, npmOS, npmArch)
 	return &Output{

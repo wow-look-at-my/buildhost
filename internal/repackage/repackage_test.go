@@ -22,22 +22,22 @@ var testBinary = []byte("#!/bin/sh\necho hello\n")
 func makeInput() Input {
 	return Input{
 		Project: db.Project{
-			Name:        "testapp",
-			Description: "A test application",
-			Homepage:    "https://example.com",
-			License:     "MIT",
+			Name:		"testapp",
+			Description:	"A test application",
+			Homepage:	"https://example.com",
+			License:	"MIT",
 		},
 		Release: db.Release{
-			Version:    "v1.2.3",
-			VersionNum: 1,
+			Version:	"v1.2.3",
+			VersionNum:	1,
 		},
 		Artifact: db.Artifact{
-			OS:   db.OSLinux,
-			Arch: db.ArchAMD64,
-			Kind: db.KindBinary,
+			OS:	db.OSLinux,
+			Arch:	db.ArchAMD64,
+			Kind:	db.KindBinary,
 		},
-		Data:    testBinary,
-		BaseURL: "https://builds.example.com",
+		Data:		testBinary,
+		BaseURL:	"https://builds.example.com",
 	}
 }
 
@@ -399,8 +399,8 @@ func TestOCIRepackage(t *testing.T) {
 
 func TestFormats(t *testing.T) {
 	tests := []struct {
-		rp     Repackager
-		format Format
+		rp	Repackager
+		format	Format
 	}{
 		{&TarGZ{}, FormatTarGZ},
 		{&TarXZ{}, FormatTarXZ},
@@ -563,7 +563,7 @@ func TestGenerator_Generate(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	gen := NewGenerator(store, d, "https://example.com")
+	gen := NewGenerator(store, d, "https://example.com", t.TempDir())
 	require.True(t, gen.Supports(FormatTarGZ))
 	require.False(t, gen.Supports(Format("bogus")))
 
@@ -578,7 +578,7 @@ func TestGenerator_Generate_UnsupportedFormat(t *testing.T) {
 	d := openTestDB(t)
 	store := openTestStore(t)
 
-	gen := NewGenerator(store, d, "https://example.com")
+	gen := NewGenerator(store, d, "https://example.com", t.TempDir())
 	_, err := gen.Generate(context.Background(), Format("bogus"), db.Project{}, db.Release{}, db.Artifact{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported format")

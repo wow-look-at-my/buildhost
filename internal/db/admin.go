@@ -32,3 +32,7 @@ func (d *DB) ListTokenDetails(ctx context.Context) ([]ListTokenDetailsRow, error
 func (d *DB) ListOIDCPolicyDetails(ctx context.Context) ([]ListOIDCPolicyDetailsRow, error) {
 	return d.q.ListOIDCPolicyDetails(ctx)
 }
+
+func (d *DB) ListSiteDetails(ctx context.Context) ([]ListSiteDetailsRow, error) {
+	return d.q.ListSiteDetails(ctx)
+}

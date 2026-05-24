@@ -72,6 +72,7 @@ type ProjectSummary = ListProjectSummariesRow
 type ReleaseSummary = ListReleaseSummariesRow
 type TokenDetail = ListTokenDetailsRow
 type OIDCPolicyDetail = ListOIDCPolicyDetailsRow
+type SiteDetail = ListSiteDetailsRow
 
 var ValidScopes = map[string]bool{
 	"read":  true,

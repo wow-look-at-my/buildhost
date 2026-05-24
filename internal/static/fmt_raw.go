@@ -32,7 +32,7 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 
 	if strip.Available() {
 		w.Header().Set("X-Debug-Symbols", "available")
-		result, serr := strip.StripBytes(data)
+		result, serr := strip.StripBytes(data, ctx.TmpDir)
 		if serr == nil && !debug {
 			data = result.Stripped
 		}
@@ -71,7 +71,7 @@ func (f *symbolsFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeCont
 		return fmt.Errorf("read artifact: %w", err)
 	}
 
-	result, err := strip.StripBytes(data)
+	result, err := strip.StripBytes(data, ctx.TmpDir)
 	if err != nil {
 		return fmt.Errorf("no debug symbols")
 	}

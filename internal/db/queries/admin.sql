@@ -6,6 +6,7 @@ SELECT
     CAST((SELECT COALESCE(SUM(size), 0) FROM artifacts) AS INTEGER) AS total_storage_bytes,
     (SELECT COUNT(*) FROM api_tokens) AS token_count,
     (SELECT COUNT(*) FROM oidc_policies) AS oidc_policy_count,
+    (SELECT COUNT(*) FROM sites) AS site_count,
     CAST(
         (SELECT COALESCE(SUM(size), 0) FROM artifacts)
         + (SELECT COALESCE(SUM(CASE WHEN stripped_storage_key != '' THEN stripped_size ELSE 0 END), 0) FROM artifacts)
@@ -36,7 +37,8 @@ LIMIT ?;
 SELECT p.id, p.name, p.description, p.homepage, p.license, p.is_private, p.versioning,
        p.created_at, p.updated_at,
        (SELECT COUNT(*) FROM releases WHERE project_id = p.id) AS release_count,
-       (SELECT COUNT(*) FROM artifacts a JOIN releases r ON a.release_id = r.id WHERE r.project_id = p.id) AS artifact_count
+       (SELECT COUNT(*) FROM artifacts a JOIN releases r ON a.release_id = r.id WHERE r.project_id = p.id) AS artifact_count,
+       (SELECT COUNT(*) FROM sites WHERE project_id = p.id) AS site_count
 FROM projects p
 ORDER BY p.name;
 
@@ -61,3 +63,11 @@ SELECT o.id, o.issuer, o.subject_pattern, o.audience, o.project_id, o.scopes, o.
 FROM oidc_policies o
 LEFT JOIN projects p ON o.project_id = p.id
 ORDER BY o.created_at DESC;
+
+-- name: ListSiteDetails :many
+SELECT s.id, s.project_id, s.branch, s.storage_key, s.size, s.sha256,
+       s.file_count, s.git_commit, s.created_at, s.updated_at,
+       p.name AS project_name
+FROM sites s
+JOIN projects p ON s.project_id = p.id
+ORDER BY s.updated_at DESC;

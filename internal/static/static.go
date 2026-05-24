@@ -15,6 +15,7 @@ type ServeContext struct {
 	Artifact db.Artifact
 	Store    storage.Storage
 	BaseURL  string
+	TmpDir   string
 }
 
 type Fmt interface {

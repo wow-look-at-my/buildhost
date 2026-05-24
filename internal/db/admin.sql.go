@@ -18,6 +18,7 @@ SELECT
     CAST((SELECT COALESCE(SUM(size), 0) FROM artifacts) AS INTEGER) AS total_storage_bytes,
     (SELECT COUNT(*) FROM api_tokens) AS token_count,
     (SELECT COUNT(*) FROM oidc_policies) AS oidc_policy_count,
+    (SELECT COUNT(*) FROM sites) AS site_count,
     CAST(
         (SELECT COALESCE(SUM(size), 0) FROM artifacts)
         + (SELECT COALESCE(SUM(CASE WHEN stripped_storage_key != '' THEN stripped_size ELSE 0 END), 0) FROM artifacts)
@@ -44,6 +45,7 @@ type GetDashboardStatsRow struct {
 	TotalStorageBytes int64 `json:"total_storage_bytes"`
 	TokenCount        int64 `json:"token_count"`
 	OidcPolicyCount   int64 `json:"oidc_policy_count"`
+	SiteCount         int64 `json:"site_count"`
 	LogicalBytes      int64 `json:"logical_bytes"`
 	PhysicalBytes     int64 `json:"physical_bytes"`
 }
@@ -58,6 +60,7 @@ func (q *Queries) GetDashboardStats(ctx context.Context) (GetDashboardStatsRow, 
 		&i.TotalStorageBytes,
 		&i.TokenCount,
 		&i.OidcPolicyCount,
+		&i.SiteCount,
 		&i.LogicalBytes,
 		&i.PhysicalBytes,
 	)
@@ -119,7 +122,8 @@ const listProjectSummaries = `-- name: ListProjectSummaries :many
 SELECT p.id, p.name, p.description, p.homepage, p.license, p.is_private, p.versioning,
        p.created_at, p.updated_at,
        (SELECT COUNT(*) FROM releases WHERE project_id = p.id) AS release_count,
-       (SELECT COUNT(*) FROM artifacts a JOIN releases r ON a.release_id = r.id WHERE r.project_id = p.id) AS artifact_count
+       (SELECT COUNT(*) FROM artifacts a JOIN releases r ON a.release_id = r.id WHERE r.project_id = p.id) AS artifact_count,
+       (SELECT COUNT(*) FROM sites WHERE project_id = p.id) AS site_count
 FROM projects p
 ORDER BY p.name
 `
@@ -136,6 +140,7 @@ type ListProjectSummariesRow struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 	ReleaseCount  int64      `json:"release_count"`
 	ArtifactCount int64      `json:"artifact_count"`
+	SiteCount     int64      `json:"site_count"`
 }
 
 func (q *Queries) ListProjectSummaries(ctx context.Context) ([]ListProjectSummariesRow, error) {
@@ -159,6 +164,7 @@ func (q *Queries) ListProjectSummaries(ctx context.Context) ([]ListProjectSummar
 			&i.UpdatedAt,
 			&i.ReleaseCount,
 			&i.ArtifactCount,
+			&i.SiteCount,
 		); err != nil {
 			return nil, err
 		}
@@ -275,6 +281,64 @@ func (q *Queries) ListReleaseSummaries(ctx context.Context, projectID int64) ([]
 			&i.CreatedAt,
 			&i.PublishedAt,
 			&i.ArtifactCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSiteDetails = `-- name: ListSiteDetails :many
+SELECT s.id, s.project_id, s.branch, s.storage_key, s.size, s.sha256,
+       s.file_count, s.git_commit, s.created_at, s.updated_at,
+       p.name AS project_name
+FROM sites s
+JOIN projects p ON s.project_id = p.id
+ORDER BY s.updated_at DESC
+`
+
+type ListSiteDetailsRow struct {
+	ID          int64     `json:"id"`
+	ProjectID   int64     `json:"project_id"`
+	Branch      string    `json:"branch"`
+	StorageKey  string    `json:"storage_key"`
+	Size        int64     `json:"size"`
+	SHA256      string    `json:"sha256"`
+	FileCount   int64     `json:"file_count"`
+	GitCommit   string    `json:"git_commit"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	ProjectName string    `json:"project_name"`
+}
+
+func (q *Queries) ListSiteDetails(ctx context.Context) ([]ListSiteDetailsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSiteDetails)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSiteDetailsRow{}
+	for rows.Next() {
+		var i ListSiteDetailsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.Branch,
+			&i.StorageKey,
+			&i.Size,
+			&i.SHA256,
+			&i.FileCount,
+			&i.GitCommit,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ProjectName,
 		); err != nil {
 			return nil, err
 		}
