@@ -10,6 +10,8 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
+func init() { Register(&TarGZ{}) }
+
 type TarGZ struct{}
 
 func (t *TarGZ) Format() Format { return FormatTarGZ }

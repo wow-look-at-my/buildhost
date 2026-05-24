@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/buildhost/internal/admin"
@@ -15,6 +16,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/buildhost/internal/telemetry"
 )
 
 func init() {
@@ -26,6 +28,19 @@ var serveCmd = &cobra.Command{
 	Short: "Start the registry server",
 	RunE: func(_ *cobra.Command, _ []string) error {
 		cfg := config.Load()
+
+		if cfg.OTELEndpoint != "" {
+			shutdown, err := telemetry.Init(context.Background(), cfg.OTELEndpoint, resolvedVersion())
+			if err != nil {
+				return fmt.Errorf("init telemetry: %w", err)
+			}
+			defer func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				shutdown(ctx)
+			}()
+			slog.Info("telemetry enabled", "endpoint", cfg.OTELEndpoint)
+		}
 
 		if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 			return fmt.Errorf("create data dir: %w", err)
@@ -40,26 +55,30 @@ var serveCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		store, err := storage.NewFilesystem(cfg.DataDir+"/blobs", cfg.StorageCompress)
+		fsStore, err := storage.NewFilesystem(cfg.DataDir+"/blobs", cfg.StorageCompress)
 		if err != nil {
 			return fmt.Errorf("init storage: %w", err)
 		}
+		store := storage.NewTraced(fsStore)
 
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer stop()
 
+		errc := make(chan error, 2)
+
+		var adminHTTP *http.Server
 		if cfg.AdminListenAddr != "" {
-			adminSrv := admin.New(cfg, database, admin.BuildInfo{
-				Version: buildVersion,
-				Commit:  buildCommit,
-				Date:    buildDate,
+			adminDash := admin.New(cfg, database, admin.BuildInfo{
+				Version: resolvedVersion(),
+				Commit:  resolvedCommit(),
+				Date:    resolvedDate(),
 				RepoURL: "https://github.com/wow-look-at-my/buildhost",
 			})
+			adminHTTP = adminDash.NewHTTPServer()
 			go func() {
 				slog.Info("starting admin dashboard", "addr", cfg.AdminListenAddr)
-				if err := adminSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-					slog.Error("admin server error", "err", err)
-					os.Exit(1)
+				if err := adminHTTP.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					errc <- fmt.Errorf("admin server: %w", err)
 				}
 			}()
 		}
@@ -68,14 +87,38 @@ var serveCmd = &cobra.Command{
 		slog.Info("starting server", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL)
 
 		go func() {
-			<-ctx.Done()
-			slog.Info("shutting down")
-			srv.Shutdown(context.Background())
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				errc <- fmt.Errorf("main server: %w", err)
+			}
 		}()
 
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		select {
+		case err := <-errc:
 			return err
+		case <-ctx.Done():
 		}
+
+		slog.Info("shutting down, waiting for in-flight requests")
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer shutdownCancel()
+
+		var shutdownErr error
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			shutdownErr = fmt.Errorf("main server shutdown: %w", err)
+		}
+		if adminHTTP != nil {
+			if err := adminHTTP.Shutdown(shutdownCtx); err != nil {
+				shutdownErr = fmt.Errorf("admin server shutdown: %w", err)
+			}
+		}
+
+		if shutdownErr != nil {
+			if shutdownCtx.Err() == context.DeadlineExceeded {
+				slog.Error("shutdown timed out after 5 minutes")
+			}
+			return shutdownErr
+		}
+		slog.Info("shutdown complete")
 		return nil
 	},
 }

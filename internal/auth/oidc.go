@@ -42,7 +42,8 @@ type jwkKey struct {
 
 type oidcClaims struct {
 	jwt.RegisteredClaims
-	EventName string `json:"event_name"`
+	EventName            string `json:"event_name"`
+	RepositoryVisibility string `json:"repository_visibility"`
 }
 
 const oidcLeeway = 60 * time.Second
@@ -56,7 +57,20 @@ func LooksLikeJWT(token string) bool {
 	return len(parts) == 3 && len(token) > 100
 }
 
+// VerifyResult holds the result of OIDC verification beyond the token itself.
+type VerifyResult struct {
+	OIDCPrivate bool
+}
+
 func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []db.OIDCPolicy) (*db.APIToken, string, error) {
+	return v.verifyTokenFull(ctx, raw, policies, nil)
+}
+
+func (v *OIDCVerifier) VerifyTokenFull(ctx context.Context, raw string, policies []db.OIDCPolicy, result *VerifyResult) (*db.APIToken, string, error) {
+	return v.verifyTokenFull(ctx, raw, policies, result)
+}
+
+func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies []db.OIDCPolicy, result *VerifyResult) (*db.APIToken, string, error) {
 	unverified := &oidcClaims{}
 	_, _, err := jwt.NewParser().ParseUnverified(raw, unverified)
 	if err != nil {
@@ -140,6 +154,9 @@ func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []d
 	project := projectFromSubject(verified.Subject)
 	if project == "" {
 		return nil, "", errors.New("cannot derive project name from OIDC subject")
+	}
+	if result != nil {
+		result.OIDCPrivate = verified.RepositoryVisibility != "public"
 	}
 	return &db.APIToken{
 		ID:     -1,

@@ -553,6 +553,7 @@ func TestVerifyToken_TrustedIssuer_NoPolicies(t *testing.T) {
 	assert.Equal(t, "read,write", tok.Scopes)
 	assert.Equal(t, "myrepo", oidcProject)
 	assert.Equal(t, "oidc:repo:myorg/myrepo:ref:refs/heads/main", tok.Name)
+	assert.True(t, tok.OIDCPrivate, "missing repository_visibility should default to private")
 }
 
 func TestVerifyToken_TrustedIssuer_AllowedEvent(t *testing.T) {
@@ -595,6 +596,48 @@ func TestVerifyToken_TrustedIssuer_RejectedEvent(t *testing.T) {
 	_, _, err = v.VerifyToken(context.Background(), token, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "event")
+}
+
+func TestVerifyToken_TrustedIssuer_PrivateRepoVisibility(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	srv := jwksServer(t, &key.PublicKey, "kid-vis-priv")
+
+	claims := map[string]any{
+		"iss":                   srv.URL,
+		"sub":                   "repo:myorg/myrepo:ref:refs/heads/main",
+		"exp":                   time.Now().Add(10 * time.Minute).Unix(),
+		"iat":                   time.Now().Unix(),
+		"repository_visibility": "private",
+	}
+	token := signJWT(t, key, "kid-vis-priv", claims)
+
+	v := NewOIDCVerifier([]string{srv.URL}, []string{"*"}, []string{"push"})
+	tok, err := v.VerifyToken(context.Background(), token, nil)
+	require.NoError(t, err)
+	assert.True(t, tok.OIDCPrivate)
+}
+
+func TestVerifyToken_TrustedIssuer_PublicRepoVisibility(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	srv := jwksServer(t, &key.PublicKey, "kid-vis-pub")
+
+	claims := map[string]any{
+		"iss":                   srv.URL,
+		"sub":                   "repo:myorg/myrepo:ref:refs/heads/main",
+		"exp":                   time.Now().Add(10 * time.Minute).Unix(),
+		"iat":                   time.Now().Unix(),
+		"repository_visibility": "public",
+	}
+	token := signJWT(t, key, "kid-vis-pub", claims)
+
+	v := NewOIDCVerifier([]string{srv.URL}, []string{"*"}, []string{"push"})
+	tok, err := v.VerifyToken(context.Background(), token, nil)
+	require.NoError(t, err)
+	assert.False(t, tok.OIDCPrivate)
 }
 
 func TestVerifyToken_UntrustedIssuer_NoPolicies(t *testing.T) {

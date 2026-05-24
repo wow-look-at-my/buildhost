@@ -13,6 +13,7 @@ const (
 	projectKey
 	routeKey
 	oidcProjectKey
+	oidcPrivateKey
 )
 
 func WithToken(ctx context.Context, t *db.APIToken) context.Context {
@@ -49,4 +50,13 @@ func WithOIDCProject(ctx context.Context, name string) context.Context {
 func OIDCProjectFrom(ctx context.Context) string {
 	s, _ := ctx.Value(oidcProjectKey).(string)
 	return s
+}
+
+func WithOIDCPrivate(ctx context.Context, private bool) context.Context {
+	return context.WithValue(ctx, oidcPrivateKey, private)
+}
+
+func OIDCPrivateFrom(ctx context.Context) (bool, bool) {
+	v, ok := ctx.Value(oidcPrivateKey).(bool)
+	return v, ok
 }

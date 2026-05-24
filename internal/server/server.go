@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wow-look-at-my/buildhost/internal/admin"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -51,8 +52,10 @@ func (s *Server) Handler() http.Handler {
 	})
 	var h http.Handler = mux
 	h = auth.GetMiddleware().Authenticate(h)
+	h = admin.TrackInflight(h)
 	h = securityHeaders(h)
 	h = loggingMiddleware(h)
 	h = recoveryMiddleware(h)
+	h = tracingMiddleware(h)
 	return h
 }

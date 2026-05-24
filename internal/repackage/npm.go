@@ -12,6 +12,8 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
+func init() { Register(&NPM{}) }
+
 type NPM struct{}
 
 func (n *NPM) Format() Format { return FormatNPM }

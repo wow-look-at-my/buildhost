@@ -2,7 +2,6 @@ package apt
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -26,7 +25,7 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, "http://localhost:8080")}
+	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, "http://localhost:8080")}
 	return h, d, store
 }
 
@@ -215,38 +214,12 @@ func TestServePool_Success(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/vnd.debian.binary-package", rec.Header().Get("Content-Type"))
-	assert.NotEmpty(t, rec.Body.Bytes())
-}
-
-func TestServePool_NoDebPackage(t *testing.T) {
-	h, d, store := setupTest(t)
-	ctx := context.Background()
-
-	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	key, size, err := store.Put(ctx, strings.NewReader("binary"))
-	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
-	}))
-
-	// On-demand generation means any supported format works as long as
-	// there is an artifact in storage -- no packaged_artifacts row needed.
-	req := httptest.NewRequest("GET", "/myapp/pool/myapp_1.0.0_amd64.deb", nil)
-	req = withRoute(req, proj, route{project: "myapp", subPath: "pool/myapp_1.0.0_amd64.deb"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/vnd.debian.binary-package", rec.Header().Get("Content-Type"))
-	assert.NotEmpty(t, rec.Body.Bytes())
+	assert.Equal(t, http.StatusFound, rec.Code)
+	loc := rec.Header().Get("Location")
+	assert.Contains(t, loc, "/static?")
+	assert.Contains(t, loc, "id=myapp")
+	assert.Contains(t, loc, "fmt=deb")
+	assert.Contains(t, loc, "v=1.0.0")
 }
 
 func TestServePool_EmptyFilename(t *testing.T) {
@@ -359,10 +332,9 @@ func TestServeHTTP_PrivateProject_Pool_WithValidContext(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/vnd.debian.binary-package", rec.Header().Get("Content-Type"))
-	assert.NotEmpty(t, rec.Body.Bytes())
+	assert.Equal(t, http.StatusFound, rec.Code)
+	loc := rec.Header().Get("Location")
+	assert.Contains(t, loc, "/static?")
+	assert.Contains(t, loc, "id=secret")
+	assert.Contains(t, loc, "fmt=deb")
 }
-
-// Suppress unused import warning.
-var _ = fmt.Sprintf

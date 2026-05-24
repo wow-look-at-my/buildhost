@@ -9,9 +9,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
+
+var apiTracer = otel.Tracer("buildhost.api")
 
 func init() {
 	auth.Handle("PUT /api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}",
@@ -39,8 +45,18 @@ func sanitizeFilename(name string) string {
 const maxUploadSize = 2 << 30 // 2 GiB
 
 func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
-	project := auth.ProjectFrom(r.Context())
-	rt := routeFrom(r.Context())
+	ctx, span := apiTracer.Start(r.Context(), "api.upload_artifact")
+	defer span.End()
+
+	project := auth.ProjectFrom(ctx)
+	rt := routeFrom(ctx)
+
+	span.SetAttributes(
+		attribute.String("artifact.project", project.Name),
+		attribute.String("artifact.version", rt.version),
+		attribute.String("artifact.os", rt.os),
+		attribute.String("artifact.arch", rt.arch),
+	)
 
 	release := h.getRelease(w, r, project.ID, rt.version)
 	if release == nil {
@@ -78,13 +94,16 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 	hasher := sha256.New()
 	body := io.TeeReader(r.Body, hasher)
 
-	storageKey, size, err := h.Store.Put(r.Context(), body)
+	storageKey, size, err := h.Store.Put(ctx, body)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "store failed")
 		jsonError(w, http.StatusInternalServerError, "failed to store artifact")
 		return
 	}
 
 	sha256hex := hex.EncodeToString(hasher.Sum(nil))
+	span.SetAttributes(attribute.Int64("artifact.size", size))
 
 	filename := sanitizeFilename(r.Header.Get("X-Artifact-Filename"))
 
@@ -99,7 +118,9 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		Filename:   filename,
 	}
 
-	if err := h.DB.CreateArtifact(r.Context(), a); err != nil {
+	if err := h.DB.CreateArtifact(ctx, a); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "create artifact failed")
 		if errors.Is(err, db.ErrConflict) {
 			jsonError(w, http.StatusConflict, "artifact already exists for this os/arch")
 			return

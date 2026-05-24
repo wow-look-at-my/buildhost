@@ -9,6 +9,8 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
+func init() { Register(&Zip{}) }
+
 type Zip struct{}
 
 func (z *Zip) Format() Format { return FormatZip }

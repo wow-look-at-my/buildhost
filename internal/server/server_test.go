@@ -104,7 +104,12 @@ func (e *testEnv) doRequest(t *testing.T, method, path, contentType string, body
 	if auth {
 		req.Header.Set("Authorization", "Bearer "+e.token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
 	require.Nil(t, err)
 
 	return resp
@@ -193,40 +198,31 @@ func TestFullLifecycle(t *testing.T) {
 	decodeJSON(t, resp, &published)
 	require.True(t, published.Published)
 
-	// (f) Download raw binary by exact version (no auth needed for public project)
+	// (f) Download raw binary by exact version -- redirects to /static
 	resp = env.get(t, "/dl/myapp/1/linux/amd64")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "/static?")
 
-	dlBody := readBody(t, resp)
-	require.True(t, bytes.Equal(dlBody, binaryPayload))
-
-	// (g) Download via "latest" alias
+	// (g) Download via "latest" alias -- redirects with resolved version
 	resp = env.get(t, "/dl/myapp/latest/linux/amd64")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "/static?")
+	require.Contains(t, resp.Header.Get("Location"), "id=myapp")
 
-	dlBody = readBody(t, resp)
-	require.True(t, bytes.Equal(dlBody, binaryPayload))
-
-	// (h) Download via branch
+	// (h) Download via branch -- redirects with resolved version
 	resp = env.get(t, "/dl/myapp/branch/main/linux/amd64")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "/static?")
 
-	dlBody = readBody(t, resp)
-	require.True(t, bytes.Equal(dlBody, binaryPayload))
-
-	// (i) Download tar.gz packaged version
+	// (i) Download tar.gz -- redirects with fmt=tar.gz
 	resp = env.get(t, "/dl/myapp/1/linux/amd64?format=tar.gz")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "fmt=tar.gz")
 
-	targzBody := readBody(t, resp)
-	require.NotEqual(t, 0, len(targzBody))
-
-	// (j) Download zip packaged version
+	// (j) Download zip -- redirects with fmt=zip
 	resp = env.get(t, "/dl/myapp/1/linux/amd64?format=zip")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	zipBody := readBody(t, resp)
-	require.NotEqual(t, 0, len(zipBody))
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "fmt=zip")
 
 }
 
@@ -254,7 +250,12 @@ func TestCreateProject_NoAuth_Returns401(t *testing.T) {
 	req, _ := http.NewRequest("POST", env.ts.URL+"/api/v1/projects", strings.NewReader(`{"name":"noauth","versioning":"auto"}`))
 	req.Header.Set("Content-Type", "application/json")
 	// No Authorization header.
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
 	require.Nil(t, err)
 
 	defer resp.Body.Close()
@@ -310,12 +311,11 @@ func TestPrivateProject_DownloadWithoutAuth_Returns401(t *testing.T) {
 
 	resp.Body.Close()
 
-	// With auth, download should succeed.
+	// With auth, download should redirect to /static.
 	resp = env.authGet(t, "/dl/secretapp/1/linux/amd64")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	dlBody := readBody(t, resp)
-	require.True(t, bytes.Equal(dlBody, binaryPayload))
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "/static?")
+	require.Contains(t, resp.Header.Get("Location"), "id=secretapp")
 
 }
 

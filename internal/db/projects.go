@@ -41,6 +41,13 @@ func (d *DB) GetProject(ctx context.Context, name string) (*Project, error) {
 	return &row, nil
 }
 
+func (d *DB) SetProjectVisibility(ctx context.Context, id int64, isPrivate bool) error {
+	return d.q.SetProjectVisibility(ctx, SetProjectVisibilityParams{
+		IsPrivate: isPrivate,
+		ID:        id,
+	})
+}
+
 func (d *DB) ListProjects(ctx context.Context) ([]Project, error) {
 	return d.q.ListAllProjects(ctx)
 }

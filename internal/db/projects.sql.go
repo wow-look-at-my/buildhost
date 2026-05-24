@@ -94,3 +94,17 @@ func (q *Queries) ListAllProjects(ctx context.Context) ([]Project, error) {
 	}
 	return items, nil
 }
+
+const setProjectVisibility = `-- name: SetProjectVisibility :exec
+UPDATE projects SET is_private = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type SetProjectVisibilityParams struct {
+	IsPrivate bool  `json:"is_private"`
+	ID        int64 `json:"id"`
+}
+
+func (q *Queries) SetProjectVisibility(ctx context.Context, arg SetProjectVisibilityParams) error {
+	_, err := q.db.ExecContext(ctx, setProjectVisibility, arg.IsPrivate, arg.ID)
+	return err
+}
