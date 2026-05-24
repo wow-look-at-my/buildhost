@@ -11,6 +11,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -23,6 +24,10 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
+
+		for _, format := range repackage.RegisteredFormats() {
+			RegisterRepackageFmt(format)
+		}
 	})
 	auth.Handle("GET /static", parseRoute, handler.Serve)
 }

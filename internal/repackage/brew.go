@@ -18,6 +18,8 @@ func sanitizeBrewString(s string) string {
 	return brewUnsafeChars.ReplaceAllString(s, "")
 }
 
+func init() { Register(&Brew{}) }
+
 type Brew struct{}
 
 func (b *Brew) Format() Format { return FormatBrew }

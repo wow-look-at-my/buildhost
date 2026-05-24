@@ -43,6 +43,25 @@ type Repackager interface {
 	Repackage(ctx context.Context, input Input) (*Output, error)
 }
 
+var registry = map[Format]Repackager{}
+
+func Register(r Repackager) {
+	registry[r.Format()] = r
+}
+
+func LookupRepackager(f Format) (Repackager, bool) {
+	r, ok := registry[f]
+	return r, ok
+}
+
+func RegisteredFormats() []Format {
+	formats := make([]Format, 0, len(registry))
+	for f := range registry {
+		formats = append(formats, f)
+	}
+	return formats
+}
+
 type Orchestrator struct {
 	Store storage.Storage
 	DB    *db.DB

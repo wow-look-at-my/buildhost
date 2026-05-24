@@ -24,11 +24,12 @@ type Generator struct {
 }
 
 func NewGenerator(store storage.Storage, database *db.DB, baseURL string) *Generator {
-	rps := []Repackager{&TarGZ{}, &TarXZ{}, &TarZST{}, &Zip{}, &Deb{}, &Brew{}, &NPM{}, &OCI{Store: store, DB: database}}
-	m := make(map[Format]Repackager, len(rps))
-	for _, rp := range rps {
-		m[rp.Format()] = rp
+	m := make(map[Format]Repackager, len(registry)+1)
+	for f, rp := range registry {
+		m[f] = rp
 	}
+	oci := &OCI{Store: store, DB: database}
+	m[oci.Format()] = oci
 	return &Generator{store: store, baseURL: baseURL, repackagers: m}
 }
 
