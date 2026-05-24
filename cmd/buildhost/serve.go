@@ -41,7 +41,7 @@ var serveCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		store, err := storage.NewFilesystem(cfg.DataDir + "/blobs")
+		store, err := storage.NewFilesystem(cfg.DataDir+"/blobs", cfg.StorageCompress)
 		if err != nil {
 			return fmt.Errorf("init storage: %w", err)
 		}

@@ -1,14 +1,13 @@
 package oci
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"regexp"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
-	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 )
 
 var validDigest = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
@@ -16,12 +15,8 @@ var validDigest = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, reference string) {
 	project := auth.ProjectFrom(r.Context())
 	release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
-	if errors.Is(err, db.ErrNotFound) {
-		http.NotFound(w, r)
-		return
-	}
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		http.NotFound(w, r)
 		return
 	}
 
@@ -32,28 +27,18 @@ func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, referenc
 	}
 
 	for _, a := range artifacts {
-		if h.tryServeManifest(w, r, a.ID) {
-			return
+		out, err := h.Gen.Generate(r.Context(), repackage.FormatOCI, *project, *release, a)
+		if err != nil {
+			continue
 		}
+		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", out.Size))
+		io.Copy(w, out.Reader)
+		return
 	}
 
 	http.NotFound(w, r)
-}
-
-func (h *Handler) tryServeManifest(w http.ResponseWriter, r *http.Request, artifactID int64) bool {
-	storageKey, _, _, _, err := h.DB.GetPackagedArtifact(r.Context(), artifactID, "oci")
-	if err != nil {
-		return false
-	}
-	rc, size, err := h.Store.Get(r.Context(), storageKey)
-	if err != nil {
-		return false
-	}
-	defer rc.Close()
-	w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
-	io.Copy(w, rc)
-	return true
 }
 
 func (h *Handler) serveBlob(w http.ResponseWriter, r *http.Request, digest string) {
@@ -82,6 +67,7 @@ func (h *Handler) serveBlob(w http.ResponseWriter, r *http.Request, digest strin
 	defer rc.Close()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
 	w.Header().Set("Docker-Content-Digest", digest)
 	io.Copy(w, rc)

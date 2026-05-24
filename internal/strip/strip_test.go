@@ -56,6 +56,40 @@ func TestStrip_NonELFFile(t *testing.T) {
 	}
 }
 
+func TestStripBytes_NonELF(t *testing.T) {
+	if !Available() {
+		t.Skip("strip/objcopy not available")
+	}
+	_, err := StripBytes([]byte("not an ELF"))
+	require.Error(t, err)
+}
+
+func TestStripBytes_RealBinary(t *testing.T) {
+	if !Available() {
+		t.Skip("strip/objcopy not available")
+	}
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "main.go")
+	require.NoError(t, os.WriteFile(src, []byte("package main\nfunc main() {}\n"), 0o644))
+
+	bin := filepath.Join(dir, "testbin")
+	cmd := exec.Command("go", "build", "-o", bin, src)
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Skipf("failed to build test binary: %s: %s", err, out)
+	}
+
+	data, err := os.ReadFile(bin)
+	require.NoError(t, err)
+
+	result, err := StripBytes(data)
+	require.NoError(t, err)
+	assert.Less(t, len(result.Stripped), len(data))
+	assert.NotEmpty(t, result.Debug)
+}
+
 func TestStrip_RealELFBinary(t *testing.T) {
 	if !Available() {
 		t.Skip("strip/objcopy not available")
