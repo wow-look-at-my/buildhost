@@ -41,6 +41,7 @@ App.formatTime = function (s) {
 };
 
 App.fetch = function (path) {
+    if (App.demo) return Promise.resolve(App.demoData[path] || {});
     return fetch("/api" + path).then(function (r) {
         if (!r.ok) throw new Error(r.status);
         return r.json();
@@ -479,6 +480,7 @@ App.demoData = {
 // --- Init ---
 
 document.addEventListener("DOMContentLoaded", function () {
+    if (window.location.pathname !== "/") App.demo = true;
     App.fetch("/sidebar").then(function (data) {
         App.sidebarCache = data;
         App.route();
