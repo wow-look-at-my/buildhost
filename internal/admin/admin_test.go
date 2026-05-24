@@ -314,6 +314,73 @@ func TestAPIOIDC_Empty(t *testing.T) {
 	assert.Empty(t, resp)
 }
 
+func TestAPISites(t *testing.T) {
+	srv, database := newTestServer(t)
+	seedData(t, database)
+
+	ctx := context.Background()
+	p, _ := database.GetProject(ctx, "testproject")
+	_, err := database.UpsertSite(ctx, &model.Site{
+		ProjectID: p.ID, Branch: "main", StorageKey: "sitekey1",
+		Size: 4096, SHA256: "sitehash", FileCount: 10, GitCommit: "abc123",
+	})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sites", nil)
+	w := httptest.NewRecorder()
+	srv.apiSites(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	sites := resp["sites"].([]any)
+	assert.Len(t, sites, 1)
+	assert.Equal(t, "testproject", sites[0].(map[string]any)["project_name"])
+	assert.Equal(t, "main", sites[0].(map[string]any)["branch"])
+}
+
+func TestAPISites_Empty(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sites", nil)
+	w := httptest.NewRecorder()
+	srv.apiSites(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	sites := resp["sites"].([]any)
+	assert.Empty(t, sites)
+}
+
+func TestAPIProject_IncludesSites(t *testing.T) {
+	srv, database := newTestServer(t)
+	seedData(t, database)
+
+	ctx := context.Background()
+	p, _ := database.GetProject(ctx, "testproject")
+	_, err := database.UpsertSite(ctx, &model.Site{
+		ProjectID: p.ID, Branch: "dev", StorageKey: "sitekey2",
+		Size: 2048, SHA256: "sitehash2", FileCount: 5,
+	})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/projects/testproject", nil)
+	req.SetPathValue("name", "testproject")
+	w := httptest.NewRecorder()
+	srv.apiProject(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	sites := resp["sites"].([]any)
+	assert.Len(t, sites, 1)
+	assert.Equal(t, "dev", sites[0].(map[string]any)["branch"])
+}
+
 func TestAPISidebar(t *testing.T) {
 	srv, _ := newTestServer(t)
 

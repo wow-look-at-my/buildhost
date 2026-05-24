@@ -14,6 +14,7 @@ type DashboardStats struct {
 	TotalStorageBytes int64 `json:"total_storage_bytes"`
 	TokenCount        int64 `json:"token_count"`
 	OIDCPolicyCount   int64 `json:"oidc_policy_count"`
+	SiteCount         int64 `json:"site_count"`
 	LogicalBytes      int64 `json:"logical_bytes"`
 	PhysicalBytes     int64 `json:"physical_bytes"`
 }
@@ -28,6 +29,7 @@ func (d *DB) GetDashboardStats(ctx context.Context) (*DashboardStats, error) {
 			(SELECT COALESCE(SUM(size), 0) FROM artifacts),
 			(SELECT COUNT(*) FROM api_tokens),
 			(SELECT COUNT(*) FROM oidc_policies),
+			(SELECT COUNT(*) FROM sites),
 			(SELECT COALESCE(SUM(size), 0) FROM artifacts)
 				+ (SELECT COALESCE(SUM(CASE WHEN stripped_storage_key != '' THEN stripped_size ELSE 0 END), 0) FROM artifacts)
 				+ (SELECT COALESCE(SUM(CASE WHEN debug_storage_key != '' THEN debug_size ELSE 0 END), 0) FROM artifacts)
@@ -43,7 +45,7 @@ func (d *DB) GetDashboardStats(ctx context.Context) (*DashboardStats, error) {
 					SELECT storage_key, size FROM packaged_artifacts
 				) GROUP BY k
 			))
-	`).Scan(&s.ProjectCount, &s.ReleaseCount, &s.ArtifactCount, &s.TotalStorageBytes, &s.TokenCount, &s.OIDCPolicyCount, &s.LogicalBytes, &s.PhysicalBytes)
+	`).Scan(&s.ProjectCount, &s.ReleaseCount, &s.ArtifactCount, &s.TotalStorageBytes, &s.TokenCount, &s.OIDCPolicyCount, &s.SiteCount, &s.LogicalBytes, &s.PhysicalBytes)
 	if err != nil {
 		return nil, fmt.Errorf("dashboard stats: %w", err)
 	}
@@ -84,6 +86,7 @@ type ProjectSummary struct {
 	model.Project
 	ReleaseCount  int64 `json:"release_count"`
 	ArtifactCount int64 `json:"artifact_count"`
+	SiteCount     int64 `json:"site_count"`
 }
 
 func (d *DB) ListProjectSummaries(ctx context.Context) ([]ProjectSummary, error) {
@@ -91,7 +94,8 @@ func (d *DB) ListProjectSummaries(ctx context.Context) ([]ProjectSummary, error)
 		SELECT p.id, p.name, p.description, p.homepage, p.license, p.is_private, p.versioning,
 		       p.created_at, p.updated_at,
 		       (SELECT COUNT(*) FROM releases WHERE project_id = p.id) AS release_count,
-		       (SELECT COUNT(*) FROM artifacts a JOIN releases r ON a.release_id = r.id WHERE r.project_id = p.id) AS artifact_count
+		       (SELECT COUNT(*) FROM artifacts a JOIN releases r ON a.release_id = r.id WHERE r.project_id = p.id) AS artifact_count,
+		       (SELECT COUNT(*) FROM sites WHERE project_id = p.id) AS site_count
 		FROM projects p
 		ORDER BY p.name`)
 	if err != nil {
@@ -103,7 +107,7 @@ func (d *DB) ListProjectSummaries(ctx context.Context) ([]ProjectSummary, error)
 	for rows.Next() {
 		var p ProjectSummary
 		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Homepage, &p.License, &p.IsPrivate, &p.Versioning,
-			&p.CreatedAt, &p.UpdatedAt, &p.ReleaseCount, &p.ArtifactCount); err != nil {
+			&p.CreatedAt, &p.UpdatedAt, &p.ReleaseCount, &p.ArtifactCount, &p.SiteCount); err != nil {
 			return nil, fmt.Errorf("scan project summary: %w", err)
 		}
 		projects = append(projects, p)
@@ -139,6 +143,36 @@ func (d *DB) ListReleaseSummaries(ctx context.Context, projectID int64) ([]Relea
 		releases = append(releases, r)
 	}
 	return releases, rows.Err()
+}
+
+type SiteDetail struct {
+	model.Site
+	ProjectName string `json:"project_name"`
+}
+
+func (d *DB) ListSiteDetails(ctx context.Context) ([]SiteDetail, error) {
+	rows, err := d.QueryContext(ctx, `
+		SELECT s.id, s.project_id, s.branch, s.storage_key, s.size, s.sha256,
+		       s.file_count, s.git_commit, s.created_at, s.updated_at,
+		       p.name AS project_name
+		FROM sites s
+		JOIN projects p ON s.project_id = p.id
+		ORDER BY s.updated_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("list site details: %w", err)
+	}
+	defer rows.Close()
+
+	var sites []SiteDetail
+	for rows.Next() {
+		var s SiteDetail
+		if err := rows.Scan(&s.ID, &s.ProjectID, &s.Branch, &s.StorageKey, &s.Size, &s.SHA256,
+			&s.FileCount, &s.GitCommit, &s.CreatedAt, &s.UpdatedAt, &s.ProjectName); err != nil {
+			return nil, fmt.Errorf("scan site detail: %w", err)
+		}
+		sites = append(sites, s)
+	}
+	return sites, rows.Err()
 }
 
 type TokenDetail struct {

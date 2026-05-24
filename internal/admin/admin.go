@@ -104,6 +104,7 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/registries", s.apiRegistries)
 	mux.HandleFunc("GET /api/tokens", s.apiTokens)
 	mux.HandleFunc("GET /api/oidc", s.apiOIDC)
+	mux.HandleFunc("GET /api/sites", s.apiSites)
 	mux.HandleFunc("GET /admin/inflight", InflightHandler)
 
 	mux.HandleFunc("GET /", s.serveSPA)
@@ -264,9 +265,17 @@ func (s *Server) apiProject(w http.ResponseWriter, r *http.Request) {
 		releases = []db.ReleaseSummary{}
 	}
 
+	sites, err := s.db.ListSites(ctx, project.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	s.writeJSON(w, map[string]any{
 		"project":  project,
 		"releases": releases,
+		"sites":    sites,
+		"base_url": s.cfg.BaseURL,
 	})
 }
 
@@ -375,6 +384,21 @@ func (s *Server) apiTokens(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	s.writeJSON(w, resp)
+}
+
+func (s *Server) apiSites(w http.ResponseWriter, r *http.Request) {
+	sites, err := s.db.ListSiteDetails(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if sites == nil {
+		sites = []db.SiteDetail{}
+	}
+	s.writeJSON(w, map[string]any{
+		"sites":    sites,
+		"base_url": s.cfg.BaseURL,
+	})
 }
 
 func (s *Server) apiOIDC(w http.ResponseWriter, r *http.Request) {
