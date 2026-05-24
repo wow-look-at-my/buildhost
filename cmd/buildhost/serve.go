@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cloudflare/tableflip"
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/buildhost/internal/admin"
 	"github.com/wow-look-at-my/buildhost/internal/config"
@@ -61,13 +62,39 @@ var serveCmd = &cobra.Command{
 		}
 		store := storage.NewTraced(fsStore)
 
-		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-		defer stop()
+		upg, err := tableflip.New(tableflip.Options{
+			UpgradeTimeout: 30 * time.Second,
+			PIDFile:        cfg.DataDir + "/buildhost.pid",
+		})
+		if err != nil {
+			return fmt.Errorf("init tableflip: %w", err)
+		}
+		defer upg.Stop()
+
+		go func() {
+			sig := make(chan os.Signal, 1)
+			signal.Notify(sig, syscall.SIGHUP)
+			for range sig {
+				if err := upg.Upgrade(); err != nil {
+					slog.Error("upgrade failed", "err", err)
+				}
+			}
+		}()
+
+		mainLn, err := upg.Listen("tcp", cfg.ListenAddr)
+		if err != nil {
+			return fmt.Errorf("listen %s: %w", cfg.ListenAddr, err)
+		}
 
 		errc := make(chan error, 2)
 
 		var adminHTTP *http.Server
 		if cfg.AdminListenAddr != "" {
+			adminLn, err := upg.Listen("tcp", cfg.AdminListenAddr)
+			if err != nil {
+				return fmt.Errorf("listen admin %s: %w", cfg.AdminListenAddr, err)
+			}
+
 			adminDash := admin.New(cfg, database, admin.BuildInfo{
 				Version: resolvedVersion(),
 				Commit:  resolvedCommit(),
@@ -77,24 +104,33 @@ var serveCmd = &cobra.Command{
 			adminHTTP = adminDash.NewHTTPServer()
 			go func() {
 				slog.Info("starting admin dashboard", "addr", cfg.AdminListenAddr)
-				if err := adminHTTP.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				if err := adminHTTP.Serve(adminLn); err != nil && err != http.ErrServerClosed {
 					errc <- fmt.Errorf("admin server: %w", err)
 				}
 			}()
 		}
 
 		srv := server.New(cfg, database, store)
-		slog.Info("starting server", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL)
+		slog.Info("starting server", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL, "pid", os.Getpid())
 
 		go func() {
-			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			if err := srv.Serve(mainLn); err != nil && err != http.ErrServerClosed {
 				errc <- fmt.Errorf("main server: %w", err)
 			}
 		}()
 
+		if err := upg.Ready(); err != nil {
+			return fmt.Errorf("tableflip ready: %w", err)
+		}
+
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+		defer stop()
+
 		select {
 		case err := <-errc:
 			return err
+		case <-upg.Exit():
+			slog.Info("graceful upgrade: new process ready, draining connections")
 		case <-ctx.Done():
 		}
 

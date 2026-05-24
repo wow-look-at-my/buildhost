@@ -96,7 +96,11 @@ When `BUILDHOST_OTEL_ENDPOINT` is unset (default), tracing is fully disabled wit
 
 ## Graceful shutdown and update coordination
 
-The server handles SIGTERM/SIGINT by calling `http.Server.Shutdown` with a 5-minute timeout, allowing in-flight requests (especially large uploads) to complete before the process exits.
+The server supports zero-downtime restarts via `cloudflare/tableflip`. On SIGHUP, it spawns a new process that inherits the listening socket FDs. The new process starts accepting connections immediately while the old process drains in-flight requests (up to 5 minutes) before exiting. No connections are dropped during the upgrade.
+
+- **SIGHUP**: Triggers a graceful upgrade (new process inherits sockets)
+- **SIGTERM/SIGINT**: Triggers a graceful shutdown (drain and exit)
+- **PID file**: Written to `BUILDHOST_DATA_DIR/buildhost.pid`
 
 ### Ready-to-update endpoint
 

@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	github.com/cloudflare/tableflip v1.2.3
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/klauspost/compress v1.18.6
 	github.com/spf13/cobra v1.10.2

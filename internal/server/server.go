@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -36,6 +37,10 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 
 func (s *Server) ListenAndServe() error {
 	return s.srv.ListenAndServe()
+}
+
+func (s *Server) Serve(ln net.Listener) error {
+	return s.srv.Serve(ln)
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
