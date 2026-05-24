@@ -27,6 +27,7 @@ import (
 	_ "github.com/wow-look-at-my/buildhost/internal/npm"
 	_ "github.com/wow-look-at-my/buildhost/internal/oci"
 	"github.com/wow-look-at-my/buildhost/internal/server"
+	_ "github.com/wow-look-at-my/buildhost/internal/sites"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/require"
 )
