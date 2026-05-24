@@ -3,7 +3,6 @@ package repackage
 import (
 	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,6 +10,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
@@ -42,7 +42,7 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		return nil, fmt.Errorf("store layer: %w", err)
 	}
 	if input.Artifact.ID > 0 && o.DB != nil {
-		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-layer", layerKey, layerSize, layerKey, "layer.tar.gz", "{}")
+		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-layer", layerKey, layerSize, layerKey, "layer.tar.zst", "{}")
 	}
 
 	configData := ociCreateConfig(string(input.Artifact.OS), string(input.Artifact.Arch), diffID, input.Project.Name)
@@ -70,11 +70,14 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 }
 
 func ociCreateLayer(data []byte, name string) (compressed []byte, diffID string, err error) {
-	var gzBuf bytes.Buffer
-	gz := gzip.NewWriter(&gzBuf)
+	var buf bytes.Buffer
+	zw, err := zstd.NewWriter(&buf)
+	if err != nil {
+		return nil, "", fmt.Errorf("create zstd writer: %w", err)
+	}
 	tarHasher := sha256.New()
 
-	tw := tar.NewWriter(io.MultiWriter(tarHasher, gz))
+	tw := tar.NewWriter(io.MultiWriter(tarHasher, zw))
 	if err := tw.WriteHeader(&tar.Header{
 		Name:     name,
 		Size:     int64(len(data)),
@@ -89,12 +92,12 @@ func ociCreateLayer(data []byte, name string) (compressed []byte, diffID string,
 	if err := tw.Close(); err != nil {
 		return nil, "", err
 	}
-	if err := gz.Close(); err != nil {
+	if err := zw.Close(); err != nil {
 		return nil, "", err
 	}
 
 	diffID = hex.EncodeToString(tarHasher.Sum(nil))
-	return gzBuf.Bytes(), diffID, nil
+	return buf.Bytes(), diffID, nil
 }
 
 func ociCreateConfig(os, arch, diffID, name string) []byte {
@@ -124,7 +127,7 @@ func ociCreateManifest(configKey string, configSize int64, layerKey string, laye
 		},
 		"layers": []map[string]any{
 			{
-				"mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+				"mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
 				"digest":    "sha256:" + layerKey,
 				"size":      layerSize,
 			},
