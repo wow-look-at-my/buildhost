@@ -78,14 +78,6 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-func (h *Handler) ServeIndex(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	rt := routeFrom(ctx)
-	rt.path = "index.html"
-	r = r.WithContext(auth.WithRouteInfo(ctx, rt))
-	h.Serve(w, r)
-}
-
 func (h *Handler) ServeRedirect(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
 }

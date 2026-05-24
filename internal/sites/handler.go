@@ -23,7 +23,6 @@ func init() {
 	auth.Handle("PUT /sites/{project}/branch/{branch}", parseRoute, handler.Upload)
 	auth.Handle("DELETE /sites/{project}/branch/{branch}", parseRoute, handler.Delete)
 	auth.Handle("GET /sites/{project}/branch/{branch}/{path...}", parseRoute, handler.Serve)
-	auth.Handle("GET /sites/{project}/branch/{branch}/", parseRoute, handler.ServeIndex)
 	auth.Handle("GET /sites/{project}/branch/{branch}", parseRoute, handler.ServeRedirect)
 	auth.Handle("GET /api/v1/projects/{project}/sites", parseAPIRoute, handler.List)
 }
