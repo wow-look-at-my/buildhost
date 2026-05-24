@@ -1,21 +1,16 @@
 package npm
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
-	"github.com/wow-look-at-my/buildhost/internal/repackage"
-	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/buildhost/internal/static"
 )
 
 var handler Handler
@@ -23,18 +18,14 @@ var handler Handler
 func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
-		handler.Store = auth.Store()
 		handler.BaseURL = auth.BaseURL()
-		handler.Gen = repackage.NewGenerator(auth.Store(), auth.BaseURL(), auth.DataDir()+"/tmp")
 	})
 	auth.HandleHandler("/npm/", parseRoute, http.StripPrefix("/npm", &handler))
 }
 
 type route struct {
-	project   string
-	platform  string // e.g. "linux-x64", empty for base package
-	isTarball bool
-	filename  string
+	project  string
+	platform string // e.g. "linux-x64", empty for base package
 }
 
 func (r route) ProjectName() string     { return r.project }
@@ -62,14 +53,6 @@ func splitPlatform(name string) (project, platform string) {
 
 func parseRoute(r *http.Request) auth.RouteInfo {
 	path := strings.TrimPrefix(r.URL.Path, "/npm/")
-
-	if strings.Contains(path, "/-/") {
-		parts := strings.SplitN(path, "/-/", 2)
-		packageName := strings.TrimPrefix(parts[0], "@buildhost/")
-		projectName, platform := splitPlatform(packageName)
-		return route{project: projectName, platform: platform, isTarball: true, filename: parts[1]}
-	}
-
 	packageName := strings.TrimPrefix(path, "@buildhost/")
 	projectName, platform := splitPlatform(packageName)
 	return route{project: projectName, platform: platform}
@@ -81,46 +64,33 @@ func routeFrom(ctx context.Context) route {
 
 type Handler struct {
 	DB      *db.DB
-	Store   storage.Storage
 	BaseURL string
-	Gen     *repackage.Generator
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
 	ri := routeFrom(r.Context())
-
-	if ri.isTarball {
-		h.serveTarball(w, r, project, ri)
-		return
-	}
-
 	h.servePackageInfo(w, r, project, ri.platform)
 }
 
 type npmArtifactInfo struct {
-	os       string
-	arch     string
-	filename string
+	os   string
+	arch string
 }
 
-func (h *Handler) collectNpmArtifacts(ctx context.Context, projectName, releaseVersion string, releaseID int64) []npmArtifactInfo {
+func (h *Handler) collectNpmArtifacts(ctx context.Context, releaseID int64) []npmArtifactInfo {
 	artifacts, err := h.DB.ListArtifacts(ctx, releaseID)
 	if err != nil {
 		return nil
 	}
-	version := normalizeVersion(releaseVersion)
 	var infos []npmArtifactInfo
 	for _, a := range artifacts {
 		if a.Kind == model.KindLibrary {
 			continue
 		}
-		os := npmPlatform(a.OS)
-		arch := npmArch(a.Arch)
 		infos = append(infos, npmArtifactInfo{
-			os:       os,
-			arch:     arch,
-			filename: fmt.Sprintf("%s-%s-%s-%s.tgz", projectName, version, os, arch),
+			os:   npmPlatform(a.OS),
+			arch: npmArch(a.Arch),
 		})
 	}
 	return infos
@@ -149,7 +119,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 		}
 		version := normalizeVersion(rel.Version)
 
-		npmInfos := h.collectNpmArtifacts(r.Context(), projectName, rel.Version, rel.ID)
+		npmInfos := h.collectNpmArtifacts(r.Context(), rel.ID)
 
 		optDeps := map[string]string{}
 		for _, info := range npmInfos {
@@ -160,8 +130,9 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 		versionEntry := map[string]any{
 			"name":    "@buildhost/" + projectName,
 			"version": version,
+			"bin":     map[string]string{projectName: "./bin/run.js"},
 			"dist": map[string]string{
-				"tarball": fmt.Sprintf("%s/npm/@buildhost/%s/-/%s-%s.tgz", h.BaseURL, projectName, projectName, version),
+				"tarball": static.URL(h.BaseURL, static.For(projectName).WithVersion(version).WithOS("any").WithArch("any").WithFmt("npm-wrapper")),
 			},
 		}
 		if len(optDeps) > 0 {
@@ -204,15 +175,15 @@ func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Reques
 		}
 		version := normalizeVersion(rel.Version)
 
-		npmInfos := h.collectNpmArtifacts(r.Context(), projectName, rel.Version, rel.ID)
-		var matched *npmArtifactInfo
-		for i := range npmInfos {
-			if npmInfos[i].os == platOS && npmInfos[i].arch == platArch {
-				matched = &npmInfos[i]
+		npmInfos := h.collectNpmArtifacts(r.Context(), rel.ID)
+		found := false
+		for _, info := range npmInfos {
+			if info.os == platOS && info.arch == platArch {
+				found = true
 				break
 			}
 		}
-		if matched == nil {
+		if !found {
 			continue
 		}
 
@@ -222,7 +193,7 @@ func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Reques
 			"os":      []string{platOS},
 			"cpu":     []string{platArch},
 			"dist": map[string]string{
-				"tarball": fmt.Sprintf("%s/npm/@buildhost/%s/-/%s", h.BaseURL, packageName, matched.filename),
+				"tarball": static.URL(h.BaseURL, static.For(projectName).WithVersion(version).WithOS(model.OS(reverseNpmPlatform(platOS))).WithArch(model.Arch(reverseNpmArch(platArch))).WithFmt("npm")),
 			},
 		}
 		if _, ok := distTags["latest"]; !ok {
@@ -246,95 +217,24 @@ func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(info)
 }
 
-func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, project *model.Project, ri route) {
-	releases, err := h.DB.ListReleases(r.Context(), project.ID)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+func reverseNpmPlatform(npm string) string {
+	switch npm {
+	case "win32":
+		return "windows"
+	default:
+		return npm
 	}
-
-	for _, rel := range releases {
-		if !rel.Published {
-			continue
-		}
-		artifacts, err := h.DB.ListArtifacts(r.Context(), rel.ID)
-		if err != nil {
-			continue
-		}
-		for _, a := range artifacts {
-			out, err := h.Gen.Generate(r.Context(), repackage.FormatNPM, *project, rel, a)
-			if err != nil {
-				continue
-			}
-			if out.Filename != ri.filename {
-				continue
-			}
-			w.Header().Set("Content-Type", "application/octet-stream")
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", out.Size))
-			io.Copy(w, out.Reader)
-			return
-		}
-	}
-
-	if ri.platform == "" {
-		h.serveWrapperTarball(w, r, project, ri.filename, releases)
-		return
-	}
-
-	http.NotFound(w, r)
 }
 
-func (h *Handler) serveWrapperTarball(w http.ResponseWriter, r *http.Request, project *model.Project, filename string, releases []model.Release) {
-	version := extractVersionFromFilename(project.Name, filename)
-	if version == "" {
-		http.NotFound(w, r)
-		return
+func reverseNpmArch(npm string) string {
+	switch npm {
+	case "x64":
+		return "amd64"
+	case "ia32":
+		return "386"
+	default:
+		return npm
 	}
-
-	found := false
-	for _, rel := range releases {
-		if rel.Published && normalizeVersion(rel.Version) == version {
-			found = true
-			break
-		}
-	}
-	if !found {
-		http.NotFound(w, r)
-		return
-	}
-
-	pkgJSON, _ := json.MarshalIndent(map[string]any{
-		"name":    "@buildhost/" + project.Name,
-		"version": version,
-	}, "", "  ")
-
-	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gw)
-
-	content := string(pkgJSON) + "\n"
-	tw.WriteHeader(&tar.Header{
-		Name: "package/package.json",
-		Size: int64(len(content)),
-		Mode: 0o644,
-	})
-	tw.Write([]byte(content))
-	tw.Close()
-	gw.Close()
-
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", buf.Len()))
-	io.Copy(w, &buf)
-}
-
-func extractVersionFromFilename(projectName, filename string) string {
-	prefix := projectName + "-"
-	suffix := ".tgz"
-	if !strings.HasPrefix(filename, prefix) || !strings.HasSuffix(filename, suffix) {
-		return ""
-	}
-	return strings.TrimSuffix(strings.TrimPrefix(filename, prefix), suffix)
 }
 
 func normalizeVersion(v string) string {
@@ -367,4 +267,17 @@ func npmArch(a model.Arch) string {
 	default:
 		return string(a)
 	}
+}
+
+func wrapperRunScript(projectName string) string {
+	return `#!/usr/bin/env node
+var pkg = "@buildhost/` + projectName + `-" + process.platform + "-" + process.arch;
+var path = require("path");
+var bin;
+try { bin = path.join(path.dirname(require.resolve(pkg + "/package.json")), "bin", "` + projectName + `"); }
+catch (e) { console.error("No binary package found for " + process.platform + "/" + process.arch + ". Install " + pkg); process.exit(1); }
+var r = require("child_process").spawnSync(bin, process.argv.slice(2), { stdio: "inherit" });
+if (r.error) throw r.error;
+process.exitCode = r.status;
+`
 }

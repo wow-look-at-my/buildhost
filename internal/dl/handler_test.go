@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,7 +12,6 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
-	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
@@ -34,7 +34,7 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, "http://localhost:8080", t.TempDir())}
+	h := &Handler{DB: d, BaseURL: "http://localhost:8080"}
 	return h, d, store
 }
 
@@ -134,6 +134,19 @@ func makeBranchRequest(project, branch, os, arch string) *http.Request {
 	return req
 }
 
+// requireRedirect asserts 302 with a Location containing "/static?" and returns
+// the parsed query params from the redirect URL for further assertions.
+func requireRedirect(t *testing.T, rec *httptest.ResponseRecorder) url.Values {
+	t.Helper()
+	assert.Equal(t, http.StatusFound, rec.Code)
+	loc := rec.Header().Get("Location")
+	require.NotEmpty(t, loc, "expected Location header on redirect")
+	assert.Contains(t, loc, "/static?")
+	u, err := url.Parse(loc)
+	require.NoError(t, err)
+	return u.Query()
+}
+
 func TestDownload_Success_RawBinary(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
@@ -145,9 +158,12 @@ func TestDownload_Success_RawBinary(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "binary-content-here", rec.Body.String())
-	assert.Contains(t, rec.Header().Get("Content-Disposition"), "myapp")
+	q := requireRedirect(t, rec)
+	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "1.0.0", q.Get("v"))
+	assert.Equal(t, "linux", q.Get("os"))
+	assert.Equal(t, "amd64", q.Get("arch"))
+	assert.Equal(t, "raw", q.Get("fmt"))
 }
 
 func TestDownload_Success_RawFallsBackWhenStripFails(t *testing.T) {
@@ -161,8 +177,10 @@ func TestDownload_Success_RawFallsBackWhenStripFails(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "not-an-elf", rec.Body.String())
+	q := requireRedirect(t, rec)
+	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "1.0.0", q.Get("v"))
+	assert.Equal(t, "raw", q.Get("fmt"))
 }
 
 func TestDownload_DebugReturns404WhenStripFails(t *testing.T) {
@@ -177,7 +195,10 @@ func TestDownload_DebugReturns404WhenStripFails(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
-	assert.Equal(t, http.StatusNotFound, rec.Code)
+	q := requireRedirect(t, rec)
+	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "1.0.0", q.Get("v"))
+	assert.Equal(t, "1", q.Get("debug"))
 }
 
 func TestDownload_DebugFlag_NoDebugAvailable(t *testing.T) {
@@ -192,7 +213,10 @@ func TestDownload_DebugFlag_NoDebugAvailable(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
-	assert.Equal(t, http.StatusNotFound, rec.Code)
+	q := requireRedirect(t, rec)
+	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "1.0.0", q.Get("v"))
+	assert.Equal(t, "1", q.Get("debug"))
 }
 
 func TestDownload_Success_TarGzFormat(t *testing.T) {
@@ -207,9 +231,12 @@ func TestDownload_Success_TarGzFormat(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Greater(t, rec.Body.Len(), 0)
-	assert.Contains(t, rec.Header().Get("Content-Disposition"), ".tar.gz")
+	q := requireRedirect(t, rec)
+	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "1.0.0", q.Get("v"))
+	assert.Equal(t, "linux", q.Get("os"))
+	assert.Equal(t, "amd64", q.Get("arch"))
+	assert.Equal(t, "tar.gz", q.Get("fmt"))
 }
 
 func TestDownload_FormatNotAvailable(t *testing.T) {
@@ -224,8 +251,10 @@ func TestDownload_FormatNotAvailable(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-	assert.Contains(t, rec.Body.String(), "format not available")
+	q := requireRedirect(t, rec)
+	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "1.0.0", q.Get("v"))
+	assert.Equal(t, "nonexistent", q.Get("fmt"))
 }
 
 func TestDownload_LatestVersion(t *testing.T) {
@@ -240,8 +269,12 @@ func TestDownload_LatestVersion(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "v2-binary", rec.Body.String())
+	q := requireRedirect(t, rec)
+	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "2.0.0", q.Get("v"))
+	assert.Equal(t, "linux", q.Get("os"))
+	assert.Equal(t, "amd64", q.Get("arch"))
+	assert.Equal(t, "raw", q.Get("fmt"))
 }
 
 func TestDownload_ReleaseNotFound(t *testing.T) {
@@ -266,7 +299,14 @@ func TestDownload_ArtifactNotFound(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
-	assert.Equal(t, http.StatusNotFound, rec.Code)
+	// dl handler only resolves release/version, then redirects; artifact
+	// resolution now happens at /static.
+	q := requireRedirect(t, rec)
+	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "1.0.0", q.Get("v"))
+	assert.Equal(t, "linux", q.Get("os"))
+	assert.Equal(t, "amd64", q.Get("arch"))
+	assert.Equal(t, "raw", q.Get("fmt"))
 }
 
 // Note: Private project auth (unauthorized, wrong token, etc.) is tested via
@@ -284,8 +324,12 @@ func TestDownloadLatest_Success(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.DownloadLatest(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "latest-darwin-binary", rec.Body.String())
+	q := requireRedirect(t, rec)
+	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "2.0.0", q.Get("v"))
+	assert.Equal(t, "darwin", q.Get("os"))
+	assert.Equal(t, "arm64", q.Get("arch"))
+	assert.Equal(t, "raw", q.Get("fmt"))
 }
 
 func TestDownloadLatest_NoPublishedReleases(t *testing.T) {
@@ -314,8 +358,12 @@ func TestDownloadBranch_Success(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.DownloadBranch(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "feature-branch-binary", rec.Body.String())
+	q := requireRedirect(t, rec)
+	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "1.1.0-dev", q.Get("v"))
+	assert.Equal(t, "linux", q.Get("os"))
+	assert.Equal(t, "amd64", q.Get("arch"))
+	assert.Equal(t, "raw", q.Get("fmt"))
 }
 
 func TestDownloadBranch_BranchNotFound(t *testing.T) {
@@ -344,6 +392,10 @@ func TestDownloadBranch_ResolvesLatestOnBranch(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.DownloadBranch(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "latest-main-binary", rec.Body.String())
+	q := requireRedirect(t, rec)
+	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "1.2.0", q.Get("v"))
+	assert.Equal(t, "linux", q.Get("os"))
+	assert.Equal(t, "amd64", q.Get("arch"))
+	assert.Equal(t, "raw", q.Get("fmt"))
 }

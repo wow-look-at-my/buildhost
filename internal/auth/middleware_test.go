@@ -496,3 +496,249 @@ func TestRequireProject_WriteAccess_ValidToken_PassesThrough(t *testing.T) {
 	assert.Equal(t, "pub", gotRI.ProjectName())
 	assert.Equal(t, WriteAccess, gotRI.Access())
 }
+
+func TestRequireProject_AutoCreate_OIDCPrivate(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "docker-updater", access: WriteAccess}
+	}
+
+	var gotProject *model.Project
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotProject = ProjectFrom(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	tok := &model.APIToken{ID: -1, Scopes: "read,write", OIDCProject: "docker-updater", OIDCPrivate: true}
+	ctx := WithToken(context.Background(), tok)
+	req := httptest.NewRequest("PUT", "/", nil)
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, gotProject)
+	assert.Equal(t, "docker-updater", gotProject.Name)
+	assert.True(t, gotProject.IsPrivate, "auto-created project should be private when OIDCPrivate is set")
+}
+
+func TestRequireProject_AutoCreate_OIDCPublic(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "public-repo", access: WriteAccess}
+	}
+
+	var gotProject *model.Project
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotProject = ProjectFrom(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	tok := &model.APIToken{ID: -1, Scopes: "read,write", OIDCProject: "public-repo", OIDCPrivate: false}
+	ctx := WithToken(context.Background(), tok)
+	req := httptest.NewRequest("PUT", "/", nil)
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, gotProject)
+	assert.Equal(t, "public-repo", gotProject.Name)
+	assert.False(t, gotProject.IsPrivate, "auto-created project should be public when OIDCPrivate is not set")
+}
+
+func TestRequireProject_OIDCSyncsVisibility_PublicToPrivate(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "myrepo", Versioning: "auto", IsPrivate: false}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "myrepo", access: WriteAccess}
+	}
+
+	var gotProject *model.Project
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotProject = ProjectFrom(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	tok := &model.APIToken{ID: -1, Scopes: "read,write", OIDCProject: "myrepo", OIDCPrivate: true}
+	ctx := WithToken(context.Background(), tok)
+	req := httptest.NewRequest("PUT", "/", nil)
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, gotProject)
+	assert.True(t, gotProject.IsPrivate, "OIDC token should sync visibility from public to private")
+
+	reloaded, err := d.GetProject(context.Background(), "myrepo")
+	require.NoError(t, err)
+	assert.True(t, reloaded.IsPrivate, "visibility change should be persisted in DB")
+}
+
+func TestRequireProject_OIDCSyncsVisibility_PrivateToPublic(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "myrepo2", Versioning: "auto", IsPrivate: true}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "myrepo2", access: WriteAccess}
+	}
+
+	var gotProject *model.Project
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotProject = ProjectFrom(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	tok := &model.APIToken{ID: -1, Scopes: "read,write", OIDCProject: "myrepo2", OIDCPrivate: false}
+	ctx := WithToken(context.Background(), tok)
+	req := httptest.NewRequest("PUT", "/", nil)
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, gotProject)
+	assert.False(t, gotProject.IsPrivate, "OIDC token should sync visibility from private to public")
+
+	reloaded, err := d.GetProject(context.Background(), "myrepo2")
+	require.NoError(t, err)
+	assert.False(t, reloaded.IsPrivate, "visibility change should be persisted in DB")
+}
+
+func TestRequireProject_NonOIDCToken_CannotChangeVisibility(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "stable", Versioning: "auto", IsPrivate: false}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "stable", access: WriteAccess}
+	}
+
+	var gotProject *model.Project
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotProject = ProjectFrom(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	tok := &model.APIToken{ID: 1, Scopes: "read,write", ProjectID: &proj.ID, OIDCPrivate: true}
+	ctx := WithToken(context.Background(), tok)
+	req := httptest.NewRequest("PUT", "/", nil)
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, gotProject)
+	assert.False(t, gotProject.IsPrivate, "non-OIDC token must not change visibility")
+
+	reloaded, err := d.GetProject(context.Background(), "stable")
+	require.NoError(t, err)
+	assert.False(t, reloaded.IsPrivate, "visibility must remain unchanged in DB")
+}
+
+func TestRequireProject_WrongOIDCProject_CannotChangeVisibility(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "target", Versioning: "auto", IsPrivate: false}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "target", access: WriteAccess}
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	tok := &model.APIToken{ID: -1, Scopes: "read,write", OIDCProject: "other-repo", OIDCPrivate: true}
+	ctx := WithToken(context.Background(), tok)
+	req := httptest.NewRequest("PUT", "/", nil)
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+
+	reloaded, err := d.GetProject(context.Background(), "target")
+	require.NoError(t, err)
+	assert.False(t, reloaded.IsPrivate, "wrong OIDC project token must not change visibility")
+}
+
+func TestRequireProject_PrivateProject_OCI_Returns401WithWWWAuthenticate(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: "auto"}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "secret", access: ReadAccess}
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	req := httptest.NewRequest("GET", "/v2/secret/manifests/latest", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Equal(t, `Basic realm="buildhost"`, rec.Header().Get("Www-Authenticate"))
+	assert.Contains(t, rec.Body.String(), "UNAUTHORIZED")
+}
+
+func TestRequireProject_PrivateProject_NonOCI_NoWWWAuthenticate(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: "auto"}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "secret", access: ReadAccess}
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	req := httptest.NewRequest("GET", "/api/v1/projects/secret", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Empty(t, rec.Header().Get("Www-Authenticate"))
+	assert.Contains(t, rec.Body.String(), "authentication required")
+}
