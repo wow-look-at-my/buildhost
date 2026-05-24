@@ -50,3 +50,5 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
+
+replace gonum.org/v1/gonum v0.17.0 => github.com/gonum/gonum v0.17.0
