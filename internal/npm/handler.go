@@ -65,7 +65,7 @@ func splitPlatform(name string) (project, platform string) {
 func parseRoute(r *http.Request) auth.RouteInfo {
 	path := strings.TrimPrefix(r.URL.Path, "/npm/")
 
-	if path == "pkg" || path == "pkg/" {
+	if path == "static" || path == "static/" {
 		q := r.URL.Query()
 		name := strings.TrimPrefix(q.Get("name"), "@buildhost/")
 		return route{
@@ -163,7 +163,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 			"name":    "@buildhost/" + projectName,
 			"version": version,
 			"dist": map[string]string{
-				"tarball": fmt.Sprintf("%s/npm/pkg?name=@buildhost/%s&v=%s", h.BaseURL, projectName, version),
+				"tarball": fmt.Sprintf("%s/npm/static?name=@buildhost/%s&v=%s", h.BaseURL, projectName, version),
 			},
 		}
 		if len(optDeps) > 0 {
@@ -224,7 +224,7 @@ func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Reques
 			"os":      []string{platOS},
 			"cpu":     []string{platArch},
 			"dist": map[string]string{
-				"tarball": fmt.Sprintf("%s/npm/pkg?name=@buildhost/%s&v=%s&os=%s&arch=%s", h.BaseURL, projectName, version, platOS, platArch),
+				"tarball": fmt.Sprintf("%s/npm/static?name=@buildhost/%s&v=%s&os=%s&arch=%s", h.BaseURL, projectName, version, platOS, platArch),
 			},
 		}
 		if _, ok := distTags["latest"]; !ok {
