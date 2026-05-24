@@ -10,6 +10,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -19,6 +20,7 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.BaseURL())
 	})
 	auth.HandleHandler("/brew/", parseRoute, http.StripPrefix("/brew", &handler))
 }
@@ -43,6 +45,7 @@ func routeFrom(ctx context.Context) route {
 type Handler struct {
 	DB    *db.DB
 	Store storage.Storage
+	Gen   *repackage.Generator
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +56,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	project := auth.ProjectFrom(r.Context())
-	projectName := project.Name
 
 	release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
 	if errors.Is(err, db.ErrNotFound) {
@@ -72,26 +74,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, a := range artifacts {
-		if h.tryServeBrew(w, r, a.ID, projectName+".rb") {
-			return
+		out, err := h.Gen.Generate(r.Context(), repackage.FormatBrew, *project, *release, a)
+		if err != nil {
+			continue
 		}
+		w.Header().Set("Content-Type", "application/x-ruby")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", project.Name+".rb"))
+		io.Copy(w, out.Reader)
+		return
 	}
 
 	http.NotFound(w, r)
-}
-
-func (h *Handler) tryServeBrew(w http.ResponseWriter, r *http.Request, artifactID int64, filename string) bool {
-	storageKey, _, _, _, err := h.DB.GetPackagedArtifact(r.Context(), artifactID, "brew")
-	if err != nil {
-		return false
-	}
-	rc, _, err := h.Store.Get(r.Context(), storageKey)
-	if err != nil {
-		return false
-	}
-	defer rc.Close()
-	w.Header().Set("Content-Type", "application/x-ruby")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", filename))
-	io.Copy(w, rc)
-	return true
 }

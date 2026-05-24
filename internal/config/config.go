@@ -6,11 +6,12 @@ import (
 )
 
 type Config struct {
-	ListenAddr      string
-	AdminListenAddr string
-	DataDir         string
-	DBPath          string
-	BaseURL         string
+	ListenAddr       string
+	AdminListenAddr  string
+	DataDir          string
+	DBPath           string
+	BaseURL          string
+	StorageCompress  bool
 	OIDCIssuers []string
 	OIDCOrgs    []string
 	OIDCEvents  []string
@@ -23,6 +24,7 @@ func Load() Config {
 		DataDir:         "./data",
 		DBPath:          "./data/buildhost.db",
 		BaseURL:         "http://localhost:8080",
+		StorageCompress: true,
 		OIDCIssuers:     []string{"https://token.actions.githubusercontent.com"},
 	}
 	if v := os.Getenv("BUILDHOST_LISTEN_ADDR"); v != "" {
@@ -39,6 +41,9 @@ func Load() Config {
 	}
 	if v := os.Getenv("BUILDHOST_BASE_URL"); v != "" {
 		c.BaseURL = v
+	}
+	if v := os.Getenv("BUILDHOST_STORAGE_COMPRESS"); v == "false" || v == "0" {
+		c.StorageCompress = false
 	}
 	if v := os.Getenv("BUILDHOST_OIDC_ISSUERS"); v != "" {
 		c.OIDCIssuers = nil
