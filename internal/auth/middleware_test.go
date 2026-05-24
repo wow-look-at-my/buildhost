@@ -732,7 +732,6 @@ func TestRequireProject_PrivateProject_NonOCI_NoWWWAuthenticate(t *testing.T) {
 
 	proj := &db.Project{Name: "secret", IsPrivate: true, Versioning: "auto"}
 	require.NoError(t, d.CreateProject(context.Background(), proj))
-
 	parse := func(r *http.Request) RouteInfo {
 		return testRouteInfo{project: "secret", access: ReadAccess}
 	}
@@ -742,11 +741,9 @@ func TestRequireProject_PrivateProject_NonOCI_NoWWWAuthenticate(t *testing.T) {
 	})
 
 	handler := requireProjectFunc(parse, inner)
-
 	req := httptest.NewRequest("GET", "/api/v1/projects/secret", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 	assert.Empty(t, rec.Header().Get("Www-Authenticate"))
 	assert.Contains(t, rec.Body.String(), "authentication required")
