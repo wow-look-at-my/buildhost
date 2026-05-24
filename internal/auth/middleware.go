@@ -105,7 +105,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 					w.Write([]byte(`{"error":"project not found"}`))
 					return
 				}
-				project = &model.Project{Name: ri.ProjectName(), Versioning: model.VersioningAuto}
+				project = &model.Project{Name: ri.ProjectName(), Versioning: model.VersioningAuto, IsPrivate: t.OIDCPrivate}
 				createErr := mw.DB.CreateProject(r.Context(), project)
 				if createErr != nil && !errors.Is(createErr, db.ErrConflict) {
 					http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)

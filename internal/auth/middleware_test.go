@@ -497,6 +497,64 @@ func TestRequireProject_WriteAccess_ValidToken_PassesThrough(t *testing.T) {
 	assert.Equal(t, WriteAccess, gotRI.Access())
 }
 
+func TestRequireProject_AutoCreate_OIDCPrivate(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "docker-updater", access: WriteAccess}
+	}
+
+	var gotProject *model.Project
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotProject = ProjectFrom(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	tok := &model.APIToken{ID: -1, Scopes: "read,write", OIDCProject: "docker-updater", OIDCPrivate: true}
+	ctx := WithToken(context.Background(), tok)
+	req := httptest.NewRequest("PUT", "/", nil)
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, gotProject)
+	assert.Equal(t, "docker-updater", gotProject.Name)
+	assert.True(t, gotProject.IsPrivate, "auto-created project should be private when OIDCPrivate is set")
+}
+
+func TestRequireProject_AutoCreate_OIDCPublic(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "public-repo", access: WriteAccess}
+	}
+
+	var gotProject *model.Project
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotProject = ProjectFrom(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	tok := &model.APIToken{ID: -1, Scopes: "read,write", OIDCProject: "public-repo", OIDCPrivate: false}
+	ctx := WithToken(context.Background(), tok)
+	req := httptest.NewRequest("PUT", "/", nil)
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, gotProject)
+	assert.Equal(t, "public-repo", gotProject.Name)
+	assert.False(t, gotProject.IsPrivate, "auto-created project should be public when OIDCPrivate is not set")
+}
+
 func TestRequireProject_PrivateProject_OCI_Returns401WithWWWAuthenticate(t *testing.T) {
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
