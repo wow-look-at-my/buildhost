@@ -496,3 +496,55 @@ func TestRequireProject_WriteAccess_ValidToken_PassesThrough(t *testing.T) {
 	assert.Equal(t, "pub", gotRI.ProjectName())
 	assert.Equal(t, WriteAccess, gotRI.Access())
 }
+
+func TestRequireProject_PrivateProject_OCI_Returns401WithWWWAuthenticate(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: "auto"}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "secret", access: ReadAccess}
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	req := httptest.NewRequest("GET", "/v2/secret/manifests/latest", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Equal(t, `Basic realm="buildhost"`, rec.Header().Get("Www-Authenticate"))
+	assert.Contains(t, rec.Body.String(), "UNAUTHORIZED")
+}
+
+func TestRequireProject_PrivateProject_NonOCI_NoWWWAuthenticate(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: "auto"}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "secret", access: ReadAccess}
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	})
+
+	handler := requireProjectFunc(parse, inner)
+
+	req := httptest.NewRequest("GET", "/api/v1/projects/secret", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Empty(t, rec.Header().Get("Www-Authenticate"))
+	assert.Contains(t, rec.Body.String(), "authentication required")
+}
