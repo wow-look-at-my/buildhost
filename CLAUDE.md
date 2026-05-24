@@ -15,15 +15,16 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - `cmd/buildhost/` - CLI entrypoint (cobra, one subcommand per file, self-registering via init()). Backend imports (backend_*.go) trigger init() registration for each handler package.
 - `internal/server/` - HTTP server, global middleware chain (auth, inflight tracking, security headers, logging, recovery)
 - `internal/api/` - REST API handlers (projects, releases, artifacts, publish, tokens). Each handler file registers its own routes in init().
-- `internal/dl/` - Download handlers with version/branch resolution. Self-registering via init().
-- `internal/apt/` - APT repository endpoint. Self-registering via init().
-- `internal/brew/` - Homebrew tap endpoint. Self-registering via init().
-- `internal/npm/` - npm registry endpoint. Self-registering via init().
+- `internal/static/` - Unified `/static` download endpoint. All artifact downloads go through here. Fmt interface with self-registration; query params: `id`, `v`, `os`, `arch`, `fmt`. Includes raw/symbols formats and a bridge for repackage-based formats.
+- `internal/dl/` - Download handlers with version/branch resolution. Redirects to `/static`. Self-registering via init().
+- `internal/apt/` - APT repository endpoint. Pool downloads redirect to `/static`. Self-registering via init().
+- `internal/brew/` - Homebrew tap endpoint. Formula download URLs point to `/static`. Self-registering via init().
+- `internal/npm/` - npm registry endpoint. Tarball URLs point to `/static`. Self-registering via init().
 - `internal/oci/` - OCI distribution endpoint. Self-registering via init().
 - `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler), RouteInfo interface
 - `internal/db/` - SQLite database layer (modernc.org/sqlite, no CGo), OIDC policy storage
 - `internal/storage/` - Content-addressed blob storage (filesystem backend, zstd-compressed, key validation)
-- `internal/repackage/` - On-demand repackaging and stripping (tar.gz, tar.xz, tar.zst, zip, deb, brew, npm, oci). Generator type used by handlers; Orchestrator just publishes releases.
+- `internal/repackage/` - On-demand repackaging and stripping (tar.gz, tar.xz, tar.zst, zip, deb, brew, npm, oci). Self-registering via init(); Generator uses registry. Orchestrator just publishes releases.
 - `internal/strip/` - Binary debug info stripping (shells out to strip/objcopy)
 - `internal/model/` - Data types (Project, Release, Artifact, APIToken, OIDCPolicy)
 - `internal/version/` - Version resolution logic
@@ -36,6 +37,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - Versioning: auto-increment (default) or semver (opt-in per project)
 - Git branch is a first-class field on releases, not just metadata
 - Repackaging and stripping happen on-demand at download time, not at publish time. Only the original upload is stored.
+- All artifact downloads go through `/static?id=&v=&os=&arch=&fmt=` -- a single CDN-cacheable endpoint with sorted query params, strong ETags, and immutable cache headers. Format handlers (dl, apt, brew, npm) redirect to `/static` after resolving version/branch. `v=latest` returns 400 (callers must resolve first). Repackage formats self-register via `Fmt` interface.
 - Storage is content-addressed (SHA-256) with zstd compression and deduplication
 - Auth: Bearer token, Basic auth, or query param — all resolve to the same token system
 - OIDC: JWT-based auth for GitHub Actions (and any OIDC provider), keys fetched from issuer's JWKS endpoint
