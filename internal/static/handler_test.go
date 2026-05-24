@@ -352,6 +352,62 @@ func TestParseRoute_ExtractsID(t *testing.T) {
 	assert.Equal(t, "myapp", ri2.ProjectName(), "strips @buildhost/ prefix")
 }
 
+func TestRoute_Access(t *testing.T) {
+	r := route{project: "myapp"}
+	assert.Equal(t, auth.ReadAccess, r.Access())
+}
+
+func TestServe_SymbolsFormat_NoStrip(t *testing.T) {
+	h, d, store := setupIntegration(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, strings.NewReader("not-elf"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
+		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
+		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=symbols&id=myapp&os=linux&v=1.0.0", nil)
+	req = withProject(req, proj)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestServe_RepackageFormat(t *testing.T) {
+	h, d, store := setupIntegration(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, strings.NewReader("binary-data"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
+		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
+		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	RegisterRepackageFmt("tar.gz")
+
+	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=tar.gz&id=myapp&os=linux&v=1.0.0", nil)
+	req = withProject(req, proj)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.NotEmpty(t, rec.Body.Bytes())
+}
+
 func TestResolveVersion(t *testing.T) {
 	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
 	require.NoError(t, err)
