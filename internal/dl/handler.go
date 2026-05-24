@@ -161,15 +161,27 @@ func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project 
 			return
 		}
 		if (artifact.Kind == model.KindBinary || artifact.Kind == model.KindLibrary) && strip.Available() {
-			if result, serr := strip.StripBytes(data); serr == nil {
+			_, stripSpan := dlTracer.Start(ctx, "dl.strip")
+			stripSpan.SetAttributes(attribute.Int("strip.input_bytes", len(data)))
+			result, serr := strip.StripBytes(data)
+			if serr == nil {
+				stripSpan.SetAttributes(
+					attribute.Int("strip.stripped_bytes", len(result.Stripped)),
+					attribute.Int("strip.debug_bytes", len(result.Debug)),
+				)
+				stripSpan.End()
 				if wantDebug {
 					h.serveBytes(w, result.Debug, fmt.Sprintf("%s-%s.debug", project.Name, release.Version))
 					return
 				}
 				data = result.Stripped
-			} else if wantDebug {
-				http.NotFound(w, r)
-				return
+			} else {
+				stripSpan.SetAttributes(attribute.String("strip.error", serr.Error()))
+				stripSpan.End()
+				if wantDebug {
+					http.NotFound(w, r)
+					return
+				}
 			}
 		} else if wantDebug {
 			http.NotFound(w, r)

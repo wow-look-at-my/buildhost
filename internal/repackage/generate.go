@@ -59,19 +59,36 @@ func (g *Generator) Generate(ctx context.Context, format Format, project model.P
 	}
 	defer rc.Close()
 
+	_, readSpan := repackTracer.Start(ctx, "repackage.read_blob")
 	data, err := io.ReadAll(rc)
+	readSpan.SetAttributes(attribute.Int("repackage.blob_bytes", len(data)))
 	if err != nil {
+		readSpan.RecordError(err)
+		readSpan.SetStatus(codes.Error, "read artifact failed")
+		readSpan.End()
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "read artifact failed")
 		return nil, fmt.Errorf("read artifact: %w", err)
 	}
+	readSpan.End()
 
 	if (artifact.Kind == model.KindBinary || artifact.Kind == model.KindLibrary) && strip.Available() {
+		_, stripSpan := repackTracer.Start(ctx, "repackage.strip")
+		stripSpan.SetAttributes(attribute.Int("strip.input_bytes", len(data)))
 		if result, err := strip.StripBytes(data); err == nil {
+			stripSpan.SetAttributes(attribute.Int("strip.output_bytes", len(result.Stripped)))
 			data = result.Stripped
+		} else {
+			stripSpan.SetAttributes(attribute.String("strip.skip_reason", err.Error()))
 		}
+		stripSpan.End()
 	}
 
+	_, convertSpan := repackTracer.Start(ctx, "repackage.convert")
+	convertSpan.SetAttributes(
+		attribute.String("repackage.format", string(format)),
+		attribute.Int("repackage.input_bytes", len(data)),
+	)
 	out, err := rp.Repackage(ctx, Input{
 		Project:  project,
 		Release:  release,
@@ -80,10 +97,16 @@ func (g *Generator) Generate(ctx context.Context, format Format, project model.P
 		BaseURL:  g.baseURL,
 	})
 	if err != nil {
+		convertSpan.RecordError(err)
+		convertSpan.SetStatus(codes.Error, "repackage failed")
+		convertSpan.End()
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "repackage failed")
+		return nil, err
 	}
-	return out, err
+	convertSpan.SetAttributes(attribute.Int64("repackage.output_bytes", out.Size))
+	convertSpan.End()
+	return out, nil
 }
 
 func (g *Generator) Supports(format Format) bool {

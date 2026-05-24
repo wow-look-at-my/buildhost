@@ -4,10 +4,29 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/wow-look-at-my/testify/assert"
+	"github.com/wow-look-at-my/testify/require"
 )
+
+func TestInit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	shutdown, err := Init(context.Background(), srv.URL, "v0.0.1-test")
+	require.NoError(t, err)
+	require.NotNil(t, shutdown)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, shutdown(ctx))
+}
 
 func TestFanoutHandler(t *testing.T) {
 	var buf1, buf2 bytes.Buffer
