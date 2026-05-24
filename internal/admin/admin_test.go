@@ -380,6 +380,75 @@ func TestAPIProject_IncludesSites(t *testing.T) {
 	assert.Equal(t, "dev", sites[0].(map[string]any)["branch"])
 }
 
+func TestAPIArtifacts(t *testing.T) {
+	srv, database := newTestServer(t)
+	seedData(t, database)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/artifacts", nil)
+	w := httptest.NewRecorder()
+	srv.apiArtifacts(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Len(t, resp, 1)
+	assert.Equal(t, "testproject", resp[0]["project_name"])
+	assert.Equal(t, "1.0.0", resp[0]["version"])
+	assert.Equal(t, "linux", resp[0]["os"])
+	assert.Equal(t, "amd64", resp[0]["arch"])
+}
+
+func TestAPIArtifacts_Empty(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/artifacts", nil)
+	w := httptest.NewRecorder()
+	srv.apiArtifacts(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Empty(t, resp)
+}
+
+func TestAPIStorage(t *testing.T) {
+	srv, database := newTestServer(t)
+	seedData(t, database)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/storage", nil)
+	w := httptest.NewRecorder()
+	srv.apiStorage(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	projects := resp["projects"].([]any)
+	assert.Len(t, projects, 1)
+	assert.Equal(t, "testproject", projects[0].(map[string]any)["name"])
+	assert.Equal(t, float64(2048), projects[0].(map[string]any)["total_bytes"])
+	assert.Equal(t, float64(2048), resp["total_bytes"])
+}
+
+func TestAPIStorage_Empty(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/storage", nil)
+	w := httptest.NewRecorder()
+	srv.apiStorage(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	projects := resp["projects"].([]any)
+	assert.Empty(t, projects)
+}
+
 func TestAPISidebar(t *testing.T) {
 	srv, _ := newTestServer(t)
 
@@ -396,6 +465,20 @@ func TestAPISidebar(t *testing.T) {
 	assert.Equal(t, "v1.2.3", build["version"])
 	assert.Equal(t, "abc123def456", build["short_commit"])
 	assert.Contains(t, resp["cpu_percent"], "%")
+}
+
+func TestNewHTTPServer(t *testing.T) {
+	srv, _ := newTestServer(t)
+	httpSrv := srv.NewHTTPServer()
+
+	assert.Equal(t, ":9090", httpSrv.Addr)
+	assert.NotNil(t, httpSrv.Handler)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	w := httptest.NewRecorder()
+	httpSrv.Handler.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
 }
 
 func TestSecurityHeaders(t *testing.T) {
