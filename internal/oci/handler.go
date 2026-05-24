@@ -18,9 +18,10 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
-		handler.Gen = repackage.NewGenerator(auth.Store(), auth.BaseURL())
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL())
 	})
-	auth.HandleRaw("GET /v2/", handler.V2Root)
+	auth.HandleRaw("GET /v2/{$}", handler.V2Root)
+	auth.HandleRaw("HEAD /v2/{$}", handler.V2Root)
 	auth.HandleHandler("/v2/", parseRoute, &handler)
 }
 
@@ -61,27 +62,41 @@ type Handler struct {
 
 func (h *Handler) V2Root(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
 	json.NewEncoder(w).Encode(map[string]any{})
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
+
 	rt := routeFrom(r.Context())
 
-	// TODO: respect rt.reference -- currently all tags/digests resolve to the same manifest
 	switch rt.action {
 	case "manifests":
 		if rt.reference == "" {
-			http.NotFound(w, r)
+			ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest reference required")
 			return
 		}
 		h.serveManifest(w, r, rt.reference)
 	case "blobs":
 		if rt.reference == "" {
-			http.NotFound(w, r)
+			ociError(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob digest required")
 			return
 		}
 		h.serveBlob(w, r, rt.reference)
+	case "tags":
+		h.serveTags(w, r)
 	default:
-		http.NotFound(w, r)
+		ociError(w, http.StatusNotFound, "NAME_UNKNOWN", "unknown endpoint")
 	}
+}
+
+func ociError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]any{
+		"errors": []map[string]string{
+			{"code": code, "message": message},
+		},
+	})
 }

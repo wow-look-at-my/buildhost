@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/buildhost/internal/strip"
@@ -16,8 +17,8 @@ type Generator struct {
 	repackagers map[Format]Repackager
 }
 
-func NewGenerator(store storage.Storage, baseURL string) *Generator {
-	rps := []Repackager{&TarGZ{}, &TarXZ{}, &TarZST{}, &Zip{}, &Deb{}, &Brew{}, &NPM{}, &OCI{}}
+func NewGenerator(store storage.Storage, database *db.DB, baseURL string) *Generator {
+	rps := []Repackager{&TarGZ{}, &TarXZ{}, &TarZST{}, &Zip{}, &Deb{}, &Brew{}, &NPM{}, &OCI{Store: store, DB: database}}
 	m := make(map[Format]Repackager, len(rps))
 	for _, rp := range rps {
 		m[rp.Format()] = rp

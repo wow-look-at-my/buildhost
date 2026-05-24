@@ -25,7 +25,7 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 		handler.BaseURL = auth.BaseURL()
-		handler.Gen = repackage.NewGenerator(auth.Store(), auth.BaseURL())
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL())
 	})
 	auth.HandleHandler("/npm/", parseRoute, http.StripPrefix("/npm", &handler))
 }
