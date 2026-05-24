@@ -17,17 +17,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: wow-look-at-my/go-toolchain
-          path: go-toolchain-src
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go-toolchain-src/go.mod
-          cache-dependency-path: go-toolchain-src/go.sum
+          go-version: stable
       - name: Build go-toolchain from source
-        run: go build -o "$RUNNER_TEMP/go-toolchain" ./go-toolchain-src/src
-      - uses: actions/checkout@v4
+        run: |
+          GOBIN="$RUNNER_TEMP" go install github.com/wow-look-at-my/go-toolchain/src@latest
+          mv "$RUNNER_TEMP/src" "$RUNNER_TEMP/go-toolchain"
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           generate: c29114ff2f33
