@@ -105,7 +105,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 					w.Write([]byte(`{"error":"project not found"}`))
 					return
 				}
-				project = &model.Project{Name: ri.ProjectName(), Versioning: model.VersioningAuto}
+				project = &model.Project{Name: ri.ProjectName(), Versioning: model.VersioningAuto, IsPrivate: t.OIDCPrivate}
 				createErr := mw.DB.CreateProject(r.Context(), project)
 				if createErr != nil && !errors.Is(createErr, db.ErrConflict) {
 					http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
@@ -129,6 +129,12 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			}
 
 			t := TokenFrom(r.Context())
+			if t != nil && t.OIDCProject != "" && t.OIDCProject == project.Name && project.IsPrivate != t.OIDCPrivate {
+				if updateErr := mw.DB.SetProjectVisibility(r.Context(), project.ID, t.OIDCPrivate); updateErr == nil {
+					project.IsPrivate = t.OIDCPrivate
+					parentSpan.SetAttributes(attribute.Bool("project.visibility_synced", true))
+				}
+			}
 			switch ri.Access() {
 			case WriteAccess:
 				parentSpan.SetAttributes(attribute.String("project.access", "write"))
