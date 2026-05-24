@@ -253,32 +253,50 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, project *
 		return
 	}
 
-	for _, rel := range releases {
-		if !rel.Published {
+	if ri.platform == "" {
+		h.serveWrapperTarball(w, r, project, ri.filename, releases)
+		return
+	}
+
+	version := extractPlatformVersion(project.Name, ri.filename, ri.platform)
+	if version == "" {
+		http.Error(w, "bad tarball filename", http.StatusBadRequest)
+		return
+	}
+
+	var rel *model.Release
+	for i := range releases {
+		if releases[i].Published && normalizeVersion(releases[i].Version) == version {
+			rel = &releases[i]
+			break
+		}
+	}
+	if rel == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	platParts := strings.SplitN(ri.platform, "-", 2)
+	wantOS, wantArch := platParts[0], platParts[1]
+
+	artifacts, err := h.DB.ListArtifacts(r.Context(), rel.ID)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	for _, a := range artifacts {
+		if npmPlatform(a.OS) != wantOS || npmArch(a.Arch) != wantArch {
 			continue
 		}
-		artifacts, err := h.DB.ListArtifacts(r.Context(), rel.ID)
+		out, err := h.Gen.Generate(r.Context(), repackage.FormatNPM, *project, *rel, a)
 		if err != nil {
 			continue
 		}
-		for _, a := range artifacts {
-			out, err := h.Gen.Generate(r.Context(), repackage.FormatNPM, *project, rel, a)
-			if err != nil {
-				continue
-			}
-			if out.Filename != ri.filename {
-				continue
-			}
-			w.Header().Set("Content-Type", "application/octet-stream")
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", out.Size))
-			io.Copy(w, out.Reader)
-			return
-		}
-	}
-
-	if ri.platform == "" {
-		h.serveWrapperTarball(w, r, project, ri.filename, releases)
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", out.Size))
+		io.Copy(w, out.Reader)
 		return
 	}
 
@@ -326,6 +344,15 @@ func (h *Handler) serveWrapperTarball(w http.ResponseWriter, r *http.Request, pr
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", buf.Len()))
 	io.Copy(w, &buf)
+}
+
+func extractPlatformVersion(projectName, filename, platform string) string {
+	prefix := projectName + "-"
+	suffix := "-" + platform + ".tgz"
+	if !strings.HasPrefix(filename, prefix) || !strings.HasSuffix(filename, suffix) {
+		return ""
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(filename, prefix), suffix)
 }
 
 func extractVersionFromFilename(projectName, filename string) string {
