@@ -20,17 +20,18 @@ var repackTracer = otel.Tracer("buildhost.repackage")
 type Generator struct {
 	store       storage.Storage
 	baseURL     string
+	tmpDir      string
 	repackagers map[Format]Repackager
 }
 
-func NewGenerator(store storage.Storage, database *db.DB, baseURL string) *Generator {
+func NewGenerator(store storage.Storage, database *db.DB, baseURL, tmpDir string) *Generator {
 	m := make(map[Format]Repackager, len(registry)+1)
 	for f, rp := range registry {
 		m[f] = rp
 	}
 	oci := &OCI{Store: store, DB: database}
 	m[oci.Format()] = oci
-	return &Generator{store: store, baseURL: baseURL, repackagers: m}
+	return &Generator{store: store, baseURL: baseURL, tmpDir: tmpDir, repackagers: m}
 }
 
 func (g *Generator) Generate(ctx context.Context, format Format, project model.Project, release model.Release, artifact model.Artifact) (*Output, error) {
@@ -76,7 +77,7 @@ func (g *Generator) Generate(ctx context.Context, format Format, project model.P
 	if (artifact.Kind == model.KindBinary || artifact.Kind == model.KindLibrary) && strip.Available() {
 		_, stripSpan := repackTracer.Start(ctx, "repackage.strip")
 		stripSpan.SetAttributes(attribute.Int("strip.input_bytes", len(data)))
-		if result, err := strip.StripBytes(data); err == nil {
+		if result, err := strip.StripBytes(data, g.tmpDir); err == nil {
 			stripSpan.SetAttributes(attribute.Int("strip.output_bytes", len(result.Stripped)))
 			data = result.Stripped
 		} else {

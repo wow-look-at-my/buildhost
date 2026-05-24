@@ -37,7 +37,7 @@ func (f *repackageFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeCo
 	}
 
 	if (ctx.Artifact.Kind == model.KindBinary || ctx.Artifact.Kind == model.KindLibrary) && strip.Available() {
-		if result, err := strip.StripBytes(data); err == nil {
+		if result, err := strip.StripBytes(data, ctx.TmpDir); err == nil {
 			data = result.Stripped
 		}
 	}
