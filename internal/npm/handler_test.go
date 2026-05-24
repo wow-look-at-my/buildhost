@@ -12,6 +12,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
@@ -23,10 +24,10 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
 
-	store, err := storage.NewFilesystem(t.TempDir())
+	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, Store: store, BaseURL: "http://localhost:8080"}
+	h := &Handler{DB: d, Store: store, BaseURL: "http://localhost:8080", Gen: repackage.NewGenerator(store, "http://localhost:8080")}
 	return h, d, store
 }
 
@@ -111,26 +112,21 @@ func TestServeHTTP_Tarball_Success(t *testing.T) {
 
 	binaryKey, binarySize, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
-	a := &model.Artifact{
+	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
 		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
 		Kind: model.KindBinary, StorageKey: binaryKey, Size: binarySize, SHA256: binaryKey,
-	}
-	require.NoError(t, d.CreateArtifact(ctx, a))
+	}))
 
-	// Store npm tarball.
-	tgzContent := "fake-tgz-content"
-	tgzKey, tgzSize, err := store.Put(ctx, strings.NewReader(tgzContent))
-	require.NoError(t, err)
-	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "npm", tgzKey, tgzSize, tgzKey, "myapp-1.0.0.tgz", "{}"))
-
-	req := httptest.NewRequest("GET", "/@buildhost/myapp/-/myapp-1.0.0.tgz", nil)
-	req = withRoute(req, proj, route{project: "myapp", isTarball: true, filename: "myapp-1.0.0.tgz"})
+	// On-demand generation: the NPM repackager generates filenames as
+	// name-version-os-arch.tgz (e.g. myapp-1.0.0-linux-x64.tgz).
+	req := httptest.NewRequest("GET", "/@buildhost/myapp/-/myapp-1.0.0-linux-x64.tgz", nil)
+	req = withRoute(req, proj, route{project: "myapp", isTarball: true, filename: "myapp-1.0.0-linux-x64.tgz"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/octet-stream", rec.Header().Get("Content-Type"))
-	assert.Equal(t, tgzContent, rec.Body.String())
+	assert.NotEmpty(t, rec.Body.Bytes())
 }
 
 func TestParseRoute(t *testing.T) {
@@ -292,22 +288,18 @@ func TestServeHTTP_PrivateProject_Tarball_WithValidContext(t *testing.T) {
 
 	binaryKey, binarySize, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
-	a := &model.Artifact{
+	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
 		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
 		Kind: model.KindBinary, StorageKey: binaryKey, Size: binarySize, SHA256: binaryKey,
-	}
-	require.NoError(t, d.CreateArtifact(ctx, a))
+	}))
 
-	tgzContent := "fake-tgz-content"
-	tgzKey, tgzSize, err := store.Put(ctx, strings.NewReader(tgzContent))
-	require.NoError(t, err)
-	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "npm", tgzKey, tgzSize, tgzKey, "secret-1.0.0.tgz", "{}"))
-
-	req := httptest.NewRequest("GET", "/@buildhost/secret/-/secret-1.0.0.tgz", nil)
-	req = withRoute(req, proj, route{project: "secret", isTarball: true, filename: "secret-1.0.0.tgz"})
+	// On-demand generation: filename is secret-1.0.0-linux-x64.tgz.
+	req := httptest.NewRequest("GET", "/@buildhost/secret/-/secret-1.0.0-linux-x64.tgz", nil)
+	req = withRoute(req, proj, route{project: "secret", isTarball: true, filename: "secret-1.0.0-linux-x64.tgz"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, tgzContent, rec.Body.String())
+	assert.Equal(t, "application/octet-stream", rec.Header().Get("Content-Type"))
+	assert.NotEmpty(t, rec.Body.Bytes())
 }

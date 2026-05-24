@@ -11,6 +11,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -21,6 +22,7 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 		handler.BaseURL = auth.BaseURL()
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.BaseURL())
 	})
 	auth.HandleHandler("/npm/", parseRoute, http.StripPrefix("/npm", &handler))
 }
@@ -55,6 +57,7 @@ type Handler struct {
 	DB      *db.DB
 	Store   storage.Storage
 	BaseURL string
+	Gen     *repackage.Generator
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +96,6 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 		versions[version] = map[string]any{
 			"name":    "@buildhost/" + projectName,
 			"version": version,
-			// TODO: add "shasum" and "integrity" fields to dist so npm can verify tarball integrity
 			"dist": map[string]string{
 				"tarball": fmt.Sprintf("%s/npm/@buildhost/%s/-/%s-%s.tgz", h.BaseURL, projectName, projectName, version),
 			},
@@ -110,6 +112,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache")
 	json.NewEncoder(w).Encode(info)
 }
 
@@ -129,30 +132,20 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, project *
 			continue
 		}
 		for _, a := range artifacts {
-			if h.tryServeNpmTarball(w, r, a.ID, filename) {
-				return
+			out, err := h.Gen.Generate(r.Context(), repackage.FormatNPM, *project, rel, a)
+			if err != nil {
+				continue
 			}
+			if out.Filename != filename {
+				continue
+			}
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", out.Size))
+			io.Copy(w, out.Reader)
+			return
 		}
 	}
 
 	http.NotFound(w, r)
-}
-
-func (h *Handler) tryServeNpmTarball(w http.ResponseWriter, r *http.Request, artifactID int64, filename string) bool {
-	storageKey, size, _, storedFilename, err := h.DB.GetPackagedArtifact(r.Context(), artifactID, "npm")
-	if err != nil {
-		return false
-	}
-	if storedFilename != filename {
-		return false
-	}
-	rc, _, err := h.Store.Get(r.Context(), storageKey)
-	if err != nil {
-		return false
-	}
-	defer rc.Close()
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
-	io.Copy(w, rc)
-	return true
 }
