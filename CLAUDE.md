@@ -98,21 +98,27 @@ When `BUILDHOST_OTEL_ENDPOINT` is unset (default), tracing is fully disabled wit
 
 The server handles SIGTERM/SIGINT by calling `http.Server.Shutdown` with a 5-minute timeout, allowing in-flight requests (especially large uploads) to complete before the process exits.
 
-For watchtower-managed deployments, use the `try-update` subcommand as a pre-update lifecycle hook:
+### Ready-to-update endpoint
+
+`GET /ready-to-update` on the main server (`:8080`) returns HTTP 200 when the server is idle, or HTTP 503 when there are in-flight write requests. This is designed for docker-updater's HTTP pre-update checks -- docker-updater can query this endpoint directly (via the container's IP from the host network) without joining the container's network or exec'ing a process.
+
+The `try-update` CLI subcommand wraps this endpoint for manual use or other pre-update hooks:
 
 ```bash
-buildhost try-update              # queries admin :9090 for in-flight writes
-buildhost try-update --admin http://127.0.0.1:9090
+buildhost try-update                    # queries localhost:8080/ready-to-update
+buildhost try-update --addr :9090       # custom listen address
 ```
 
-Exit 0 means idle (safe to update); non-zero means busy or unreachable (skip this poll cycle). The admin endpoint `GET /admin/inflight` returns `{"inflight": N}` with the count of in-flight write requests (PUT/POST/PATCH/DELETE) on the main :8080 server.
+Exit 0 means idle (safe to update); non-zero means busy or unreachable (skip this poll cycle).
 
-Docker Compose label configuration:
+The admin endpoint `GET /admin/inflight` on `:9090` still returns `{"inflight": N}` with the raw count for dashboards.
+
+Docker Compose label configuration for docker-updater:
 
 ```yaml
 labels:
-  - com.centurylinklabs.watchtower.lifecycle.pre-update=/usr/local/bin/buildhost try-update
-  - com.centurylinklabs.watchtower.lifecycle.pre-update-timeout=1
+  docker-updater.enable: "true"
+  docker-updater.pre-check.url: ":8080/ready-to-update"
 stop_grace_period: 5m
 ```
 
@@ -178,6 +184,7 @@ The following items have been reviewed and addressed or are intentional design c
 - **Admin dashboard auth**: None -- must be behind a reverse proxy with access control (Cloudflare Access, etc.)
 - **Container user**: Runs as nonroot (UID 65532) via distroless base image
 - **Graceful shutdown**: Server handles SIGTERM/SIGINT with 5-minute timeout for clean connection draining
+- **Ready-to-update endpoint**: `GET /ready-to-update` on :8080 returns 200/503 with no body content -- reveals only idle/busy state, no sensitive data
 - **Inflight endpoint**: `GET /admin/inflight` on :9090 is unauthenticated -- same trust model as the rest of the admin dashboard (internal-only, behind reverse proxy)
 - **No writes outside data dir**: Temp files use BUILDHOST_DATA_DIR/tmp, not system /tmp
 - **OIDC audience check**: Auto-provisioning verifies the token's `aud` claim matches `BUILDHOST_BASE_URL`. GHA workflows must request tokens with the buildhost URL as the audience: `core.getIDToken('https://buildhost.example.com')`
