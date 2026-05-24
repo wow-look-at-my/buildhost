@@ -96,11 +96,9 @@ When `BUILDHOST_OTEL_ENDPOINT` is unset (default), tracing is fully disabled wit
 
 ## Graceful shutdown and update coordination
 
-The server supports zero-downtime restarts via `cloudflare/tableflip`. On SIGHUP, it spawns a new process that inherits the listening socket FDs. The new process starts accepting connections immediately while the old process drains in-flight requests (up to 5 minutes) before exiting. No connections are dropped during the upgrade.
+The server handles SIGTERM/SIGINT by calling `http.Server.Shutdown` with a 5-minute timeout, allowing in-flight requests (especially large uploads) to complete before the process exits.
 
-- **SIGHUP**: Triggers a graceful upgrade (new process inherits sockets)
-- **SIGTERM/SIGINT**: Triggers a graceful shutdown (drain and exit)
-- **PID file**: Written to `BUILDHOST_DATA_DIR/buildhost.pid`
+For zero-downtime updates, use docker-updater's rolling update mode (`docker-updater.rolling: "true"`) with an nginx sidecar. docker-updater starts the new container before stopping the old one; nginx routes via Docker DNS. See `deploy/` for an example compose stack.
 
 ### Ready-to-update endpoint
 
@@ -117,12 +115,12 @@ Exit 0 means idle (safe to update); non-zero means busy or unreachable (skip thi
 
 The admin endpoint `GET /admin/inflight` on `:9090` still returns `{"inflight": N}` with the raw count for dashboards.
 
-Docker Compose label configuration for docker-updater:
+Docker Compose label configuration for docker-updater with rolling updates:
 
 ```yaml
 labels:
   docker-updater.enable: "true"
-  docker-updater.pre-check.url: ":8080/ready-to-update"
+  docker-updater.rolling: "true"
 stop_grace_period: 5m
 ```
 
