@@ -160,6 +160,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 		versionEntry := map[string]any{
 			"name":    "@buildhost/" + projectName,
 			"version": version,
+			"bin":     map[string]string{projectName: "./bin/run.js"},
 			"dist": map[string]string{
 				"tarball": fmt.Sprintf("%s/npm/@buildhost/%s/-/%s-%s.tgz", h.BaseURL, projectName, projectName, version),
 			},
@@ -307,7 +308,10 @@ func (h *Handler) serveWrapperTarball(w http.ResponseWriter, r *http.Request, pr
 	pkgJSON, _ := json.MarshalIndent(map[string]any{
 		"name":    "@buildhost/" + project.Name,
 		"version": version,
+		"bin":     map[string]string{project.Name: "./bin/run.js"},
 	}, "", "  ")
+
+	runJS := wrapperRunScript(project.Name)
 
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
@@ -320,6 +324,14 @@ func (h *Handler) serveWrapperTarball(w http.ResponseWriter, r *http.Request, pr
 		Mode: 0o644,
 	})
 	tw.Write([]byte(content))
+
+	tw.WriteHeader(&tar.Header{
+		Name: "package/bin/run.js",
+		Size: int64(len(runJS)),
+		Mode: 0o755,
+	})
+	tw.Write([]byte(runJS))
+
 	tw.Close()
 	gw.Close()
 
@@ -367,4 +379,17 @@ func npmArch(a model.Arch) string {
 	default:
 		return string(a)
 	}
+}
+
+func wrapperRunScript(projectName string) string {
+	return `#!/usr/bin/env node
+var pkg = "@buildhost/` + projectName + `-" + process.platform + "-" + process.arch;
+var path = require("path");
+var bin;
+try { bin = path.join(path.dirname(require.resolve(pkg + "/package.json")), "bin", "` + projectName + `"); }
+catch (e) { console.error("No binary package found for " + process.platform + "/" + process.arch + ". Install " + pkg); process.exit(1); }
+var r = require("child_process").spawnSync(bin, process.argv.slice(2), { stdio: "inherit" });
+if (r.error) throw r.error;
+process.exitCode = r.status;
+`
 }
