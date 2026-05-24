@@ -56,5 +56,6 @@ func (s *Server) Handler() http.Handler {
 	h = securityHeaders(h)
 	h = loggingMiddleware(h)
 	h = recoveryMiddleware(h)
+	h = tracingMiddleware(h)
 	return h
 }

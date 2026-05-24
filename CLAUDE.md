@@ -76,6 +76,22 @@ BUILDHOST_ADMIN_LISTEN_ADDR=:9090 buildhost serve   # listen on all interfaces (
 BUILDHOST_ADMIN_LISTEN_ADDR= buildhost serve         # disable admin dashboard
 ```
 
+## Telemetry (OpenTelemetry)
+
+Set `BUILDHOST_OTEL_ENDPOINT` to enable distributed tracing and log export via OTLP/HTTP:
+
+```bash
+BUILDHOST_OTEL_ENDPOINT=https://otel.example.com buildhost serve
+```
+
+When set, the server exports:
+- **Traces** to `{endpoint}/v1/traces` -- every HTTP request gets a root span, with child spans for DB queries (`db.exec`, `db.query`, `db.query_row`), storage operations (`storage.put`, `storage.get`, `storage.delete`, `storage.exists`), auth (OIDC verification), repackaging (`repackage.generate`), and download resolution (`dl.serve_artifact`).
+- **Logs** to `{endpoint}/v1/logs` -- all slog output is bridged to OTEL with trace/span correlation.
+
+Spans include attributes like `project.name`, `auth.type`, `http.method`, `url.path`, `http.status_code`, `db.statement`, `storage.key`, `storage.size`, `repackage.format`, etc.
+
+When `BUILDHOST_OTEL_ENDPOINT` is unset (default), tracing is fully disabled with zero overhead (noop tracer).
+
 ## Graceful shutdown and update coordination
 
 The server handles SIGTERM/SIGINT by calling `http.Server.Shutdown` with a 5-minute timeout, allowing in-flight requests (especially large uploads) to complete before the process exits.

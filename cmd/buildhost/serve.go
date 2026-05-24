@@ -16,6 +16,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/buildhost/internal/telemetry"
 )
 
 func init() {
@@ -27,6 +28,19 @@ var serveCmd = &cobra.Command{
 	Short: "Start the registry server",
 	RunE: func(_ *cobra.Command, _ []string) error {
 		cfg := config.Load()
+
+		if cfg.OTELEndpoint != "" {
+			shutdown, err := telemetry.Init(context.Background(), cfg.OTELEndpoint, resolvedVersion())
+			if err != nil {
+				return fmt.Errorf("init telemetry: %w", err)
+			}
+			defer func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				shutdown(ctx)
+			}()
+			slog.Info("telemetry enabled", "endpoint", cfg.OTELEndpoint)
+		}
 
 		if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 			return fmt.Errorf("create data dir: %w", err)
@@ -41,10 +55,11 @@ var serveCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		store, err := storage.NewFilesystem(cfg.DataDir+"/blobs", cfg.StorageCompress)
+		fsStore, err := storage.NewFilesystem(cfg.DataDir+"/blobs", cfg.StorageCompress)
 		if err != nil {
 			return fmt.Errorf("init storage: %w", err)
 		}
+		store := storage.NewTraced(fsStore)
 
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer stop()
