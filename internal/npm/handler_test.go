@@ -133,6 +133,128 @@ func TestServeHTTP_Tarball_Success(t *testing.T) {
 	assert.Equal(t, tgzContent, rec.Body.String())
 }
 
+func TestParseRoute(t *testing.T) {
+	tests := []struct {
+		name     string
+		url      string
+		wantProj string
+		wantTar  bool
+		wantFile string
+	}{
+		// Package info: simple names
+		{"simple package info", "/npm/@buildhost/myapp", "myapp", false, ""},
+		{"numeric package info", "/npm/@buildhost/app123", "app123", false, ""},
+		{"dotted package info", "/npm/@buildhost/my.app", "my.app", false, ""},
+
+		// Package info: hyphenated project names
+		{"hyphenated package info", "/npm/@buildhost/go-toolchain", "go-toolchain", false, ""},
+		{"multi-hyphen package info", "/npm/@buildhost/my-cool-app", "my-cool-app", false, ""},
+		{"leading-hyphen-segment", "/npm/@buildhost/a-b-c-d-e", "a-b-c-d-e", false, ""},
+
+		// Package info: hyphenated scope names (non-@buildhost scopes)
+		{"hyphenated scope", "/npm/@build-host/gotoolchain", "@build-host/gotoolchain", false, ""},
+		{"hyphenated scope and project", "/npm/@build-host/go-toolchain", "@build-host/go-toolchain", false, ""},
+		{"multi-segment scope", "/npm/@build/build-host/go-toolchain", "@build/build-host/go-toolchain", false, ""},
+
+		// Tarball: simple names
+		{"simple tarball", "/npm/@buildhost/myapp/-/myapp-1.0.0.tgz", "myapp", true, "myapp-1.0.0.tgz"},
+		{"tarball semver prerelease", "/npm/@buildhost/myapp/-/myapp-1.0.0-rc.1.tgz", "myapp", true, "myapp-1.0.0-rc.1.tgz"},
+
+		// Tarball: hyphenated project names
+		{"hyphenated tarball", "/npm/@buildhost/go-toolchain/-/go-toolchain-1.0.0.tgz", "go-toolchain", true, "go-toolchain-1.0.0.tgz"},
+		{"multi-hyphen tarball", "/npm/@buildhost/my-cool-app/-/my-cool-app-2.3.1.tgz", "my-cool-app", true, "my-cool-app-2.3.1.tgz"},
+
+		// Tarball: hyphenated scope names
+		{"hyphenated scope tarball", "/npm/@build-host/gotoolchain/-/gotoolchain-1.0.0.tgz", "@build-host/gotoolchain", true, "gotoolchain-1.0.0.tgz"},
+		{"hyphenated scope and project tarball", "/npm/@build-host/go-toolchain/-/go-toolchain-1.0.0.tgz", "@build-host/go-toolchain", true, "go-toolchain-1.0.0.tgz"},
+
+		// Unscoped names (no @ prefix)
+		{"no scope simple", "/npm/myapp", "myapp", false, ""},
+		{"no scope hyphenated", "/npm/build-host", "build-host", false, ""},
+		{"no scope multi-hyphen", "/npm/my-build-host", "my-build-host", false, ""},
+		{"no scope tarball", "/npm/build-host/-/build-host-1.0.0.tgz", "build-host", true, "build-host-1.0.0.tgz"},
+
+		// Multiple slashes in path
+		{"extra slash in scope", "/npm/@build/host/myapp", "@build/host/myapp", false, ""},
+		{"deep path no tarball", "/npm/@build/build-host/go-toolchain", "@build/build-host/go-toolchain", false, ""},
+		{"deep path tarball", "/npm/@build/host/myapp/-/myapp-1.0.0.tgz", "@build/host/myapp", true, "myapp-1.0.0.tgz"},
+		{"triple slash", "/npm/a/b/c", "a/b/c", false, ""},
+		{"triple slash tarball", "/npm/a/b/c/-/c-1.0.0.tgz", "a/b/c", true, "c-1.0.0.tgz"},
+
+		// Edge cases
+		{"bare scope", "/npm/@buildhost/", "", false, ""},
+		{"tarball empty filename", "/npm/@buildhost/myapp/-/", "myapp", true, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.url, nil)
+			ri := parseRoute(req).(route)
+			assert.Equal(t, tt.wantProj, ri.project)
+			assert.Equal(t, tt.wantTar, ri.isTarball)
+			assert.Equal(t, tt.wantFile, ri.filename)
+		})
+	}
+}
+
+func TestServeHTTP_HyphenatedProject_PackageInfo(t *testing.T) {
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "go-toolchain", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.2.0", VersionNum: 1002000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	req := httptest.NewRequest("GET", "/@buildhost/go-toolchain", nil)
+	req = withRoute(req, proj, route{project: "go-toolchain"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var info map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
+	assert.Equal(t, "@buildhost/go-toolchain", info["name"])
+
+	versions := info["versions"].(map[string]any)
+	assert.Contains(t, versions, "1.2.0")
+	v := versions["1.2.0"].(map[string]any)
+	dist := v["dist"].(map[string]any)
+	assert.Contains(t, dist["tarball"], "/npm/@buildhost/go-toolchain/-/go-toolchain-1.2.0.tgz")
+}
+
+func TestServeHTTP_HyphenatedProject_Tarball(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &model.Project{Name: "go-toolchain", Versioning: model.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &model.Release{ProjectID: proj.ID, Version: "1.2.0", VersionNum: 1002000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	binaryKey, binarySize, err := store.Put(ctx, strings.NewReader("binary"))
+	require.NoError(t, err)
+	a := &model.Artifact{
+		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
+		Kind: model.KindBinary, StorageKey: binaryKey, Size: binarySize, SHA256: binaryKey,
+	}
+	require.NoError(t, d.CreateArtifact(ctx, a))
+
+	tgzContent := "fake-tgz-content"
+	tgzKey, tgzSize, err := store.Put(ctx, strings.NewReader(tgzContent))
+	require.NoError(t, err)
+	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "npm", tgzKey, tgzSize, tgzKey, "go-toolchain-1.2.0.tgz", "{}"))
+
+	req := httptest.NewRequest("GET", "/@buildhost/go-toolchain/-/go-toolchain-1.2.0.tgz", nil)
+	req = withRoute(req, proj, route{project: "go-toolchain", isTarball: true, filename: "go-toolchain-1.2.0.tgz"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, tgzContent, rec.Body.String())
+}
+
 // Note: Private project auth (unauthorized, wrong token, etc.) is tested via
 // requireProject middleware in the auth package. The handler assumes auth has
 // been enforced by the middleware and context is properly set up.

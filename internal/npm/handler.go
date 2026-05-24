@@ -39,18 +39,11 @@ func parseRoute(r *http.Request) auth.RouteInfo {
 
 	if strings.Contains(path, "/-/") {
 		parts := strings.SplitN(path, "/-/", 2)
-		packagePath := parts[0]
-		filename := parts[1]
-		projectName := strings.TrimPrefix(packagePath, "@buildhost/")
-		mainProject := strings.SplitN(projectName, "-", 2)[0]
-		return route{project: mainProject, isTarball: true, filename: filename}
+		projectName := strings.TrimPrefix(parts[0], "@buildhost/")
+		return route{project: projectName, isTarball: true, filename: parts[1]}
 	}
 
 	projectName := strings.TrimPrefix(path, "@buildhost/")
-	parts := strings.SplitN(projectName, "-", 2)
-	if len(parts) > 0 {
-		projectName = parts[0]
-	}
 	return route{project: projectName}
 }
 
