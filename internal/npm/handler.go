@@ -160,6 +160,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 		versionEntry := map[string]any{
 			"name":    "@buildhost/" + projectName,
 			"version": version,
+			"bin":     map[string]string{projectName: "./bin/run.js"},
 			"dist": map[string]string{
 				"tarball": fmt.Sprintf("%s/npm/@buildhost/%s/-/%s-%s.tgz", h.BaseURL, projectName, projectName, version),
 			},
@@ -247,59 +248,103 @@ func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, project *model.Project, ri route) {
-	releases, err := h.DB.ListReleases(r.Context(), project.ID)
+	if ri.platform == "" {
+		h.serveWrapperTarball(w, r, project, ri.filename)
+		return
+	}
+
+	version := extractPlatformVersion(project.Name, ri.filename, ri.platform)
+	if version == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	release := h.findReleaseByNpmVersion(r.Context(), project.ID, version)
+	if release == nil || !release.Published {
+		http.NotFound(w, r)
+		return
+	}
+
+	platParts := strings.SplitN(ri.platform, "-", 2)
+	if len(platParts) != 2 {
+		http.NotFound(w, r)
+		return
+	}
+
+	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, reverseNpmPlatform(platParts[0]), reverseNpmArch(platParts[1]))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if artifact.Kind == model.KindLibrary {
+		http.NotFound(w, r)
+		return
+	}
+
+	out, err := h.Gen.Generate(r.Context(), repackage.FormatNPM, *project, *release, *artifact)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
-	for _, rel := range releases {
-		if !rel.Published {
-			continue
-		}
-		artifacts, err := h.DB.ListArtifacts(r.Context(), rel.ID)
-		if err != nil {
-			continue
-		}
-		for _, a := range artifacts {
-			out, err := h.Gen.Generate(r.Context(), repackage.FormatNPM, *project, rel, a)
-			if err != nil {
-				continue
-			}
-			if out.Filename != ri.filename {
-				continue
-			}
-			w.Header().Set("Content-Type", "application/octet-stream")
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", out.Size))
-			io.Copy(w, out.Reader)
-			return
-		}
-	}
-
-	if ri.platform == "" {
-		h.serveWrapperTarball(w, r, project, ri.filename, releases)
-		return
-	}
-
-	http.NotFound(w, r)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", out.Size))
+	io.Copy(w, out.Reader)
 }
 
-func (h *Handler) serveWrapperTarball(w http.ResponseWriter, r *http.Request, project *model.Project, filename string, releases []model.Release) {
+func (h *Handler) findReleaseByNpmVersion(ctx context.Context, projectID int64, npmVersion string) *model.Release {
+	rel, err := h.DB.GetRelease(ctx, projectID, npmVersion)
+	if err == nil {
+		return rel
+	}
+	if strings.HasSuffix(npmVersion, ".0.0") {
+		rel, err = h.DB.GetRelease(ctx, projectID, strings.TrimSuffix(npmVersion, ".0.0"))
+		if err == nil {
+			return rel
+		}
+	}
+	return nil
+}
+
+func extractPlatformVersion(projectName, filename, platform string) string {
+	prefix := projectName + "-"
+	suffix := "-" + platform + ".tgz"
+	if !strings.HasPrefix(filename, prefix) || !strings.HasSuffix(filename, suffix) {
+		return ""
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(filename, prefix), suffix)
+}
+
+func reverseNpmPlatform(npm string) string {
+	switch npm {
+	case "win32":
+		return "windows"
+	default:
+		return npm
+	}
+}
+
+func reverseNpmArch(npm string) string {
+	switch npm {
+	case "x64":
+		return "amd64"
+	case "ia32":
+		return "386"
+	default:
+		return npm
+	}
+}
+
+func (h *Handler) serveWrapperTarball(w http.ResponseWriter, r *http.Request, project *model.Project, filename string) {
 	version := extractVersionFromFilename(project.Name, filename)
 	if version == "" {
 		http.NotFound(w, r)
 		return
 	}
 
-	found := false
-	for _, rel := range releases {
-		if rel.Published && normalizeVersion(rel.Version) == version {
-			found = true
-			break
-		}
-	}
-	if !found {
+	release := h.findReleaseByNpmVersion(r.Context(), project.ID, version)
+	if release == nil || !release.Published {
 		http.NotFound(w, r)
 		return
 	}
@@ -307,7 +352,10 @@ func (h *Handler) serveWrapperTarball(w http.ResponseWriter, r *http.Request, pr
 	pkgJSON, _ := json.MarshalIndent(map[string]any{
 		"name":    "@buildhost/" + project.Name,
 		"version": version,
+		"bin":     map[string]string{project.Name: "./bin/run.js"},
 	}, "", "  ")
+
+	runJS := wrapperRunScript(project.Name)
 
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
@@ -320,6 +368,14 @@ func (h *Handler) serveWrapperTarball(w http.ResponseWriter, r *http.Request, pr
 		Mode: 0o644,
 	})
 	tw.Write([]byte(content))
+
+	tw.WriteHeader(&tar.Header{
+		Name: "package/bin/run.js",
+		Size: int64(len(runJS)),
+		Mode: 0o755,
+	})
+	tw.Write([]byte(runJS))
+
 	tw.Close()
 	gw.Close()
 
@@ -367,4 +423,17 @@ func npmArch(a model.Arch) string {
 	default:
 		return string(a)
 	}
+}
+
+func wrapperRunScript(projectName string) string {
+	return `#!/usr/bin/env node
+var pkg = "@buildhost/` + projectName + `-" + process.platform + "-" + process.arch;
+var path = require("path");
+var bin;
+try { bin = path.join(path.dirname(require.resolve(pkg + "/package.json")), "bin", "` + projectName + `"); }
+catch (e) { console.error("No binary package found for " + process.platform + "/" + process.arch + ". Install " + pkg); process.exit(1); }
+var r = require("child_process").spawnSync(bin, process.argv.slice(2), { stdio: "inherit" });
+if (r.error) throw r.error;
+process.exitCode = r.status;
+`
 }

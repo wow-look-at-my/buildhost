@@ -1,8 +1,11 @@
 package npm
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -230,6 +233,10 @@ func TestServeHTTP_PackageInfo_OptionalDependencies(t *testing.T) {
 	assert.Contains(t, optDeps, "@buildhost/go-toolchain-darwin-arm64")
 	assert.Equal(t, "6.0.0", optDeps["@buildhost/go-toolchain-linux-x64"])
 
+	bin, ok := v["bin"].(map[string]any)
+	require.True(t, ok, "expected bin")
+	assert.Equal(t, "./bin/run.js", bin["go-toolchain"])
+
 	dist := v["dist"].(map[string]any)
 	assert.Contains(t, dist["tarball"], "/npm/@buildhost/go-toolchain/-/go-toolchain-6.0.0.tgz")
 }
@@ -332,15 +339,40 @@ func TestServeHTTP_BasePackageWrapperTarball(t *testing.T) {
 	}))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
-	// The base package tarball URL (from metadata) should serve a generated wrapper
 	req := httptest.NewRequest("GET", "/@buildhost/go-toolchain/-/go-toolchain-6.0.0.tgz", nil)
 	req = withRoute(req, proj, route{project: "go-toolchain", isTarball: true, filename: "go-toolchain-6.0.0.tgz"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/octet-stream", rec.Header().Get("Content-Type"))
-	assert.Greater(t, rec.Body.Len(), 0)
+
+	gr, err := gzip.NewReader(rec.Body)
+	require.NoError(t, err)
+	tr := tar.NewReader(gr)
+
+	files := map[string]string{}
+	for {
+		hdr, err := tr.Next()
+		if err != nil {
+			break
+		}
+		data, _ := io.ReadAll(tr)
+		files[hdr.Name] = string(data)
+	}
+
+	require.Contains(t, files, "package/package.json")
+	require.Contains(t, files, "package/bin/run.js")
+
+	var pkgJSON map[string]any
+	require.NoError(t, json.Unmarshal([]byte(files["package/package.json"]), &pkgJSON))
+	assert.Equal(t, "@buildhost/go-toolchain", pkgJSON["name"])
+	assert.Equal(t, "6.0.0", pkgJSON["version"])
+	bin := pkgJSON["bin"].(map[string]any)
+	assert.Equal(t, "./bin/run.js", bin["go-toolchain"])
+
+	assert.Contains(t, files["package/bin/run.js"], "@buildhost/go-toolchain-")
+	assert.Contains(t, files["package/bin/run.js"], "#!/usr/bin/env node")
 }
 
 func TestServeHTTP_WrapperTarball_NonexistentVersion(t *testing.T) {
