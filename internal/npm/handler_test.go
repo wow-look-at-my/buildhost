@@ -42,60 +42,25 @@ func TestParseRoute(t *testing.T) {
 		url      string
 		wantProj string
 		wantPlat string
-		wantTar  bool
-		wantVer  string
-		wantOS   string
-		wantArch string
 	}{
-		// Package info: simple names
-		{"simple", "/npm/@buildhost/myapp", "myapp", "", false, "", "", ""},
-		{"numeric", "/npm/@buildhost/app123", "app123", "", false, "", "", ""},
-		{"dotted", "/npm/@buildhost/my.app", "my.app", "", false, "", "", ""},
-
-		// Package info: hyphenated project names
-		{"hyphenated", "/npm/@buildhost/go-toolchain", "go-toolchain", "", false, "", "", ""},
-		{"multi-hyphen", "/npm/@buildhost/my-cool-app", "my-cool-app", "", false, "", "", ""},
-		{"many-hyphens", "/npm/@buildhost/a-b-c-d-e", "a-b-c-d-e", "", false, "", "", ""},
-
-		// Package info: platform packages
-		{"platform linux-x64", "/npm/@buildhost/go-toolchain-linux-x64", "go-toolchain", "linux-x64", false, "", "", ""},
-		{"platform darwin-arm64", "/npm/@buildhost/go-toolchain-darwin-arm64", "go-toolchain", "darwin-arm64", false, "", "", ""},
-		{"platform win32-x64", "/npm/@buildhost/myapp-win32-x64", "myapp", "win32-x64", false, "", "", ""},
-		{"platform linux-arm64", "/npm/@buildhost/myapp-linux-arm64", "myapp", "linux-arm64", false, "", "", ""},
-		{"platform linux-ia32", "/npm/@buildhost/myapp-linux-ia32", "myapp", "linux-ia32", false, "", "", ""},
-		{"platform darwin-x64", "/npm/@buildhost/myapp-darwin-x64", "myapp", "darwin-x64", false, "", "", ""},
-		{"platform win32-arm64", "/npm/@buildhost/myapp-win32-arm64", "myapp", "win32-arm64", false, "", "", ""},
-
-		// Package info: hyphenated scope names (non-@buildhost scopes)
-		{"hyphenated scope", "/npm/@build-host/gotoolchain", "@build-host/gotoolchain", "", false, "", "", ""},
-		{"hyphenated scope and project", "/npm/@build-host/go-toolchain", "@build-host/go-toolchain", "", false, "", "", ""},
-		{"multi-segment scope", "/npm/@build/build-host/go-toolchain", "@build/build-host/go-toolchain", "", false, "", "", ""},
-
-		// Tarball: query params (wrapper)
-		{"tarball simple", "/npm/static?name=@buildhost/myapp&v=1.0.0", "myapp", "", true, "1.0.0", "", ""},
-		{"tarball prerelease", "/npm/static?name=@buildhost/myapp&v=1.0.0-rc.1", "myapp", "", true, "1.0.0-rc.1", "", ""},
-		{"tarball hyphenated", "/npm/static?name=@buildhost/go-toolchain&v=1.0.0", "go-toolchain", "", true, "1.0.0", "", ""},
-		{"tarball multi-hyphen", "/npm/static?name=@buildhost/my-cool-app&v=2.3.1", "my-cool-app", "", true, "2.3.1", "", ""},
-
-		// Tarball: query params (platform)
-		{"tarball platform", "/npm/static?name=@buildhost/go-toolchain&v=6.0.0&os=linux&arch=x64", "go-toolchain", "", true, "6.0.0", "linux", "x64"},
-		{"tarball platform darwin", "/npm/static?name=@buildhost/myapp&v=1.0.0&os=darwin&arch=arm64", "myapp", "", true, "1.0.0", "darwin", "arm64"},
-		{"tarball platform win32", "/npm/static?name=@buildhost/myapp&v=2.0.0&os=win32&arch=x64", "myapp", "", true, "2.0.0", "win32", "x64"},
-
-		// Unscoped names
-		{"unscoped simple", "/npm/myapp", "myapp", "", false, "", "", ""},
-		{"unscoped hyphenated", "/npm/build-host", "build-host", "", false, "", "", ""},
-		{"unscoped multi-hyphen", "/npm/my-build-host", "my-build-host", "", false, "", "", ""},
-		{"unscoped tarball", "/npm/static?name=build-host&v=1.0.0", "build-host", "", true, "1.0.0", "", ""},
-
-		// Multiple slashes in path
-		{"extra slash in scope", "/npm/@build/host/myapp", "@build/host/myapp", "", false, "", "", ""},
-		{"deep path no tarball", "/npm/@build/build-host/go-toolchain", "@build/build-host/go-toolchain", "", false, "", "", ""},
-		{"deep path tarball", "/npm/static?name=@build/host/myapp&v=1.0.0", "@build/host/myapp", "", true, "1.0.0", "", ""},
-
-		// Edge cases
-		{"bare scope", "/npm/@buildhost/", "", "", false, "", "", ""},
-		{"tarball missing version", "/npm/static?name=@buildhost/myapp", "myapp", "", true, "", "", ""},
+		{"simple", "/npm/@buildhost/myapp", "myapp", ""},
+		{"numeric", "/npm/@buildhost/app123", "app123", ""},
+		{"dotted", "/npm/@buildhost/my.app", "my.app", ""},
+		{"hyphenated", "/npm/@buildhost/go-toolchain", "go-toolchain", ""},
+		{"multi-hyphen", "/npm/@buildhost/my-cool-app", "my-cool-app", ""},
+		{"many-hyphens", "/npm/@buildhost/a-b-c-d-e", "a-b-c-d-e", ""},
+		{"platform linux-x64", "/npm/@buildhost/go-toolchain-linux-x64", "go-toolchain", "linux-x64"},
+		{"platform darwin-arm64", "/npm/@buildhost/go-toolchain-darwin-arm64", "go-toolchain", "darwin-arm64"},
+		{"platform win32-x64", "/npm/@buildhost/myapp-win32-x64", "myapp", "win32-x64"},
+		{"platform linux-arm64", "/npm/@buildhost/myapp-linux-arm64", "myapp", "linux-arm64"},
+		{"platform linux-ia32", "/npm/@buildhost/myapp-linux-ia32", "myapp", "linux-ia32"},
+		{"platform darwin-x64", "/npm/@buildhost/myapp-darwin-x64", "myapp", "darwin-x64"},
+		{"platform win32-arm64", "/npm/@buildhost/myapp-win32-arm64", "myapp", "win32-arm64"},
+		{"hyphenated scope", "/npm/@build-host/gotoolchain", "@build-host/gotoolchain", ""},
+		{"unscoped simple", "/npm/myapp", "myapp", ""},
+		{"unscoped hyphenated", "/npm/build-host", "build-host", ""},
+		{"extra slash in scope", "/npm/@build/host/myapp", "@build/host/myapp", ""},
+		{"bare scope", "/npm/@buildhost/", "", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -103,10 +68,6 @@ func TestParseRoute(t *testing.T) {
 			ri := parseRoute(req).(route)
 			assert.Equal(t, tt.wantProj, ri.project, "project")
 			assert.Equal(t, tt.wantPlat, ri.platform, "platform")
-			assert.Equal(t, tt.wantTar, ri.isTarball, "isTarball")
-			assert.Equal(t, tt.wantVer, ri.version, "version")
-			assert.Equal(t, tt.wantOS, ri.os, "os")
-			assert.Equal(t, tt.wantArch, ri.arch, "arch")
 		})
 	}
 }
@@ -228,8 +189,12 @@ func TestServeHTTP_PackageInfo_OptionalDependencies(t *testing.T) {
 	assert.Contains(t, optDeps, "@buildhost/go-toolchain-darwin-arm64")
 	assert.Equal(t, "6.0.0", optDeps["@buildhost/go-toolchain-linux-x64"])
 
+	bin, ok := v["bin"].(map[string]any)
+	require.True(t, ok, "expected bin")
+	assert.Equal(t, "./bin/run.js", bin["go-toolchain"])
+
 	dist := v["dist"].(map[string]any)
-	assert.Contains(t, dist["tarball"], "/npm/static?name=@buildhost/go-toolchain&v=6.0.0")
+	assert.Contains(t, dist["tarball"], "/static?arch=any&fmt=npm-wrapper&id=go-toolchain&os=any&v=6.0.0")
 }
 
 func TestServeHTTP_PlatformPackageInfo(t *testing.T) {
@@ -265,7 +230,7 @@ func TestServeHTTP_PlatformPackageInfo(t *testing.T) {
 	assert.Equal(t, []any{"linux"}, v["os"])
 	assert.Equal(t, []any{"x64"}, v["cpu"])
 	dist := v["dist"].(map[string]any)
-	assert.Contains(t, dist["tarball"], "/npm/static?name=@buildhost/go-toolchain&v=6.0.0&os=linux&arch=x64")
+	assert.Contains(t, dist["tarball"], "/static?arch=amd64&fmt=npm&id=go-toolchain&os=linux&v=6.0.0")
 }
 
 func TestServeHTTP_PlatformPackageInfo_NotFound(t *testing.T) {
@@ -284,128 +249,6 @@ func TestServeHTTP_PlatformPackageInfo_NotFound(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
-
-func TestServeHTTP_PlatformTarball_Success(t *testing.T) {
-	h, d, store := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "go-toolchain", Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "6.0.0", VersionNum: 6000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-
-	bk, bs, err := store.Put(ctx, strings.NewReader("binary"))
-	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: bk, Size: bs, SHA256: bk,
-	}))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	req := httptest.NewRequest("GET", "/static?name=@buildhost/go-toolchain&v=6.0.0&os=linux&arch=x64", nil)
-	req = withRoute(req, proj, route{project: "go-toolchain", isTarball: true, os: "linux", arch: "x64", version: "6.0.0"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/octet-stream", rec.Header().Get("Content-Type"))
-	assert.NotEmpty(t, rec.Body.Bytes())
-}
-
-func TestServeHTTP_BasePackageWrapperTarball(t *testing.T) {
-	h, d, store := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "go-toolchain", Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "6.0.0", VersionNum: 6000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-
-	bk, bs, err := store.Put(ctx, strings.NewReader("binary"))
-	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: bk, Size: bs, SHA256: bk,
-	}))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	// The base package tarball URL (from metadata) should serve a generated wrapper
-	req := httptest.NewRequest("GET", "/static?name=@buildhost/go-toolchain&v=6.0.0", nil)
-	req = withRoute(req, proj, route{project: "go-toolchain", isTarball: true, version: "6.0.0"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/octet-stream", rec.Header().Get("Content-Type"))
-	assert.Greater(t, rec.Body.Len(), 0)
-}
-
-func TestServeHTTP_WrapperTarball_NonexistentVersion(t *testing.T) {
-	h, d, store := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-
-	bk, bs, err := store.Put(ctx, strings.NewReader("binary"))
-	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: bk, Size: bs, SHA256: bk,
-	}))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	req := httptest.NewRequest("GET", "/static?name=@buildhost/myapp&v=99.99.99", nil)
-	req = withRoute(req, proj, route{project: "myapp", isTarball: true, version: "99.99.99"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
-
-func TestServeHTTP_Tarball_NotFound(t *testing.T) {
-	h, d, _ := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "nonexistent", Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-
-	req := httptest.NewRequest("GET", "/static?name=@buildhost/nonexistent&v=1.0.0&os=linux&arch=x64", nil)
-	req = withRoute(req, proj, route{project: "nonexistent", isTarball: true, os: "linux", arch: "x64", version: "1.0.0"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
-
-func TestServeHTTP_Tarball_Success(t *testing.T) {
-	h, d, store := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	binaryKey, binarySize, err := store.Put(ctx, strings.NewReader("binary"))
-	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: binaryKey, Size: binarySize, SHA256: binaryKey,
-	}))
-
-	req := httptest.NewRequest("GET", "/static?name=@buildhost/myapp&v=1.0.0&os=linux&arch=x64", nil)
-	req = withRoute(req, proj, route{project: "myapp", isTarball: true, os: "linux", arch: "x64", version: "1.0.0"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/octet-stream", rec.Header().Get("Content-Type"))
-	assert.NotEmpty(t, rec.Body.Bytes())
 }
 
 func TestServeHTTP_HyphenatedProject_PackageInfo(t *testing.T) {
@@ -432,7 +275,7 @@ func TestServeHTTP_HyphenatedProject_PackageInfo(t *testing.T) {
 	assert.Contains(t, versions, "1.2.0")
 	v := versions["1.2.0"].(map[string]any)
 	dist := v["dist"].(map[string]any)
-	assert.Contains(t, dist["tarball"], "/npm/static?name=@buildhost/go-toolchain&v=1.2.0")
+	assert.Contains(t, dist["tarball"], "/static?arch=any&fmt=npm-wrapper&id=go-toolchain&os=any&v=1.2.0")
 }
 
 // Private project auth is tested in the auth package. These tests verify
@@ -458,32 +301,3 @@ func TestServeHTTP_PrivateProject_PackageInfo_WithValidContext(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
 	assert.Equal(t, "@buildhost/secret", info["name"])
 }
-
-func TestServeHTTP_PrivateProject_Tarball_WithValidContext(t *testing.T) {
-	h, d, store := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	binaryKey, binarySize, err := store.Put(ctx, strings.NewReader("binary"))
-	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: binaryKey, Size: binarySize, SHA256: binaryKey,
-	}))
-
-	req := httptest.NewRequest("GET", "/static?name=@buildhost/secret&v=1.0.0&os=linux&arch=x64", nil)
-	req = withRoute(req, proj, route{project: "secret", isTarball: true, os: "linux", arch: "x64", version: "1.0.0"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/octet-stream", rec.Header().Get("Content-Type"))
-	assert.NotEmpty(t, rec.Body.Bytes())
-}
-
-

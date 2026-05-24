@@ -33,7 +33,10 @@ func (f *npmWrapperFmt) Serve(w http.ResponseWriter, r *http.Request, ctx static
 	pkgJSON, _ := json.MarshalIndent(map[string]any{
 		"name":    "@buildhost/" + ctx.Project.Name,
 		"version": version,
+		"bin":     map[string]string{ctx.Project.Name: "./bin/run.js"},
 	}, "", "  ")
+
+	runJS := wrapperRunScript(ctx.Project.Name)
 
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
@@ -46,6 +49,14 @@ func (f *npmWrapperFmt) Serve(w http.ResponseWriter, r *http.Request, ctx static
 		Mode: 0o644,
 	})
 	tw.Write([]byte(content))
+
+	tw.WriteHeader(&tar.Header{
+		Name: "package/bin/run.js",
+		Size: int64(len(runJS)),
+		Mode: 0o755,
+	})
+	tw.Write([]byte(runJS))
+
 	tw.Close()
 	gw.Close()
 

@@ -52,3 +52,5 @@ require (
 )
 
 replace gonum.org/v1/gonum v0.17.0 => github.com/gonum/gonum v0.17.0
+
+replace go.yaml.in/yaml/v3 v3.0.4 => github.com/yaml/go-yaml/v3 v3.0.4

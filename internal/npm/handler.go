@@ -24,12 +24,8 @@ func init() {
 }
 
 type route struct {
-	project   string
-	platform  string // e.g. "linux-x64", metadata routes only
-	isTarball bool
-	version   string // tarball routes only
-	os        string // tarball routes only, e.g. "linux"
-	arch      string // tarball routes only, e.g. "x64"
+	project  string
+	platform string // e.g. "linux-x64", empty for base package
 }
 
 func (r route) ProjectName() string     { return r.project }
@@ -57,19 +53,6 @@ func splitPlatform(name string) (project, platform string) {
 
 func parseRoute(r *http.Request) auth.RouteInfo {
 	path := strings.TrimPrefix(r.URL.Path, "/npm/")
-
-	if path == "static" || path == "static/" {
-		q := r.URL.Query()
-		name := strings.TrimPrefix(q.Get("name"), "@buildhost/")
-		return route{
-			project:   name,
-			isTarball: true,
-			version:   q.Get("v"),
-			os:        q.Get("os"),
-			arch:      q.Get("arch"),
-		}
-	}
-
 	packageName := strings.TrimPrefix(path, "@buildhost/")
 	projectName, platform := splitPlatform(packageName)
 	return route{project: projectName, platform: platform}
@@ -87,12 +70,6 @@ type Handler struct {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
 	ri := routeFrom(r.Context())
-
-	if ri.isTarball {
-		h.serveTarball(w, r, project, ri)
-		return
-	}
-
 	h.servePackageInfo(w, r, project, ri.platform)
 }
 
@@ -153,6 +130,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 		versionEntry := map[string]any{
 			"name":    "@buildhost/" + projectName,
 			"version": version,
+			"bin":     map[string]string{projectName: "./bin/run.js"},
 			"dist": map[string]string{
 				"tarball": static.URL(h.BaseURL, static.For(projectName).WithVersion(version).WithOS("any").WithArch("any").WithFmt("npm-wrapper")),
 			},
@@ -239,42 +217,6 @@ func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(info)
 }
 
-func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request, project *model.Project, ri route) {
-	if ri.version == "" {
-		http.Error(w, "missing version", http.StatusBadRequest)
-		return
-	}
-
-	release := h.findReleaseByNpmVersion(r.Context(), project.ID, ri.version)
-	if release == nil || !release.Published {
-		http.NotFound(w, r)
-		return
-	}
-
-	version := normalizeVersion(release.Version)
-
-	if ri.os == "" {
-		static.Redirect(w, r, h.BaseURL, static.For(project.Name).WithVersion(version).WithOS("any").WithArch("any").WithFmt("npm-wrapper"))
-		return
-	}
-
-	static.Redirect(w, r, h.BaseURL, static.For(project.Name).WithVersion(version).WithOS(model.OS(reverseNpmPlatform(ri.os))).WithArch(model.Arch(reverseNpmArch(ri.arch))).WithFmt("npm"))
-}
-
-func (h *Handler) findReleaseByNpmVersion(ctx context.Context, projectID int64, npmVersion string) *model.Release {
-	rel, err := h.DB.GetRelease(ctx, projectID, npmVersion)
-	if err == nil {
-		return rel
-	}
-	if strings.HasSuffix(npmVersion, ".0.0") {
-		rel, err = h.DB.GetRelease(ctx, projectID, strings.TrimSuffix(npmVersion, ".0.0"))
-		if err == nil {
-			return rel
-		}
-	}
-	return nil
-}
-
 func reverseNpmPlatform(npm string) string {
 	switch npm {
 	case "win32":
@@ -294,7 +236,6 @@ func reverseNpmArch(npm string) string {
 		return npm
 	}
 }
-
 
 func normalizeVersion(v string) string {
 	version := strings.TrimPrefix(v, "v")
@@ -326,4 +267,17 @@ func npmArch(a model.Arch) string {
 	default:
 		return string(a)
 	}
+}
+
+func wrapperRunScript(projectName string) string {
+	return `#!/usr/bin/env node
+var pkg = "@buildhost/` + projectName + `-" + process.platform + "-" + process.arch;
+var path = require("path");
+var bin;
+try { bin = path.join(path.dirname(require.resolve(pkg + "/package.json")), "bin", "` + projectName + `"); }
+catch (e) { console.error("No binary package found for " + process.platform + "/" + process.arch + ". Install " + pkg); process.exit(1); }
+var r = require("child_process").spawnSync(bin, process.argv.slice(2), { stdio: "inherit" });
+if (r.error) throw r.error;
+process.exitCode = r.status;
+`
 }
