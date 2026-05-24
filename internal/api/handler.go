@@ -18,7 +18,7 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
-		handler.Orchestrator = repackage.NewOrchestrator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
+		handler.Orchestrator = repackage.NewOrchestrator(auth.Store(), auth.DB())
 	})
 }
 

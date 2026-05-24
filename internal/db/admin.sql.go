@@ -17,7 +17,24 @@ SELECT
     (SELECT COUNT(*) FROM artifacts) AS artifact_count,
     CAST((SELECT COALESCE(SUM(size), 0) FROM artifacts) AS INTEGER) AS total_storage_bytes,
     (SELECT COUNT(*) FROM api_tokens) AS token_count,
-    (SELECT COUNT(*) FROM oidc_policies) AS oidc_policy_count
+    (SELECT COUNT(*) FROM oidc_policies) AS oidc_policy_count,
+    CAST(
+        (SELECT COALESCE(SUM(size), 0) FROM artifacts)
+        + (SELECT COALESCE(SUM(CASE WHEN stripped_storage_key != '' THEN stripped_size ELSE 0 END), 0) FROM artifacts)
+        + (SELECT COALESCE(SUM(CASE WHEN debug_storage_key != '' THEN debug_size ELSE 0 END), 0) FROM artifacts)
+        + (SELECT COALESCE(SUM(size), 0) FROM packaged_artifacts)
+    AS INTEGER) AS logical_bytes,
+    CAST((SELECT COALESCE(SUM(sz), 0) FROM (
+        SELECT k, MAX(sz) AS sz FROM (
+            SELECT storage_key AS k, size AS sz FROM artifacts
+            UNION ALL
+            SELECT stripped_storage_key, stripped_size FROM artifacts WHERE stripped_storage_key != ''
+            UNION ALL
+            SELECT debug_storage_key, debug_size FROM artifacts WHERE debug_storage_key != ''
+            UNION ALL
+            SELECT storage_key, size FROM packaged_artifacts
+        ) GROUP BY k
+    )) AS INTEGER) AS physical_bytes
 `
 
 type GetDashboardStatsRow struct {
@@ -27,6 +44,8 @@ type GetDashboardStatsRow struct {
 	TotalStorageBytes int64 `json:"total_storage_bytes"`
 	TokenCount        int64 `json:"token_count"`
 	OidcPolicyCount   int64 `json:"oidc_policy_count"`
+	LogicalBytes      int64 `json:"logical_bytes"`
+	PhysicalBytes     int64 `json:"physical_bytes"`
 }
 
 func (q *Queries) GetDashboardStats(ctx context.Context) (GetDashboardStatsRow, error) {
@@ -39,6 +58,8 @@ func (q *Queries) GetDashboardStats(ctx context.Context) (GetDashboardStatsRow, 
 		&i.TotalStorageBytes,
 		&i.TokenCount,
 		&i.OidcPolicyCount,
+		&i.LogicalBytes,
+		&i.PhysicalBytes,
 	)
 	return i, err
 }

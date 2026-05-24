@@ -406,28 +406,6 @@ func TestFormats(t *testing.T) {
 	}
 }
 
-// --- marshalMetadata tests ---
-
-func TestMarshalMetadata_Empty(t *testing.T) {
-	assert.Equal(t, "{}", marshalMetadata(nil))
-	assert.Equal(t, "{}", marshalMetadata(map[string]string{}))
-}
-
-func TestMarshalMetadata_SingleEntry(t *testing.T) {
-	m := map[string]string{"os": "linux"}
-	result := marshalMetadata(m)
-	assert.Equal(t, `{"os":"linux"}`, result)
-}
-
-func TestMarshalMetadata_MultipleEntries(t *testing.T) {
-	m := map[string]string{"os": "linux", "arch": "amd64"}
-	result := marshalMetadata(m)
-	// Order is not guaranteed, so check both possibilities.
-	assert.True(t,
-		result == `{"os":"linux","arch":"amd64"}` || result == `{"arch":"amd64","os":"linux"}`,
-		"got: %s", result)
-}
-
 // --- Orchestrator tests ---
 
 func openTestDB(t *testing.T) *db.DB {
@@ -440,7 +418,7 @@ func openTestDB(t *testing.T) *db.DB {
 
 func openTestStore(t *testing.T) *storage.Filesystem {
 	t.Helper()
-	store, err := storage.NewFilesystem(t.TempDir())
+	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 	return store
 }
@@ -456,7 +434,7 @@ func TestOrchestrator_PublishRelease_NoArtifacts(t *testing.T) {
 	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 
-	o := NewOrchestrator(store, d, "https://builds.example.com", t.TempDir())
+	o := NewOrchestrator(store, d)
 
 	err := o.PublishRelease(ctx, *proj, *rel)
 	require.NoError(t, err)
@@ -494,18 +472,14 @@ func TestOrchestrator_PublishRelease_WithArtifact(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	o := NewOrchestrator(store, d, "https://builds.example.com", t.TempDir())
+	o := NewOrchestrator(store, d)
 
 	err = o.PublishRelease(ctx, *proj, *rel)
 	require.NoError(t, err)
 
-	// Verify packaged artifacts were created (at least tar.gz, tar.xz, tar.zst, zip).
-	for _, format := range []string{"tar.gz", "tar.xz", "tar.zst", "zip"} {
-		storageKey, sz, _, _, err := d.GetPackagedArtifact(ctx, a.ID, format)
-		require.NoError(t, err, "format %s should exist", format)
-		assert.NotEmpty(t, storageKey, "format %s should have storage key", format)
-		assert.Greater(t, sz, int64(0), "format %s should have positive size", format)
-	}
+	got, err := d.GetRelease(ctx, proj.ID, "1.0.0")
+	require.NoError(t, err)
+	assert.True(t, got.Published)
 }
 
 func TestOrchestrator_PublishRelease_BinaryKind_AttemptsStrip(t *testing.T) {
@@ -535,7 +509,7 @@ func TestOrchestrator_PublishRelease_BinaryKind_AttemptsStrip(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	o := NewOrchestrator(store, d, "https://builds.example.com", t.TempDir())
+	o := NewOrchestrator(store, d)
 
 	// Should not error even when strip fails (it logs a warning and continues).
 	err = o.PublishRelease(ctx, *proj, *rel)
@@ -551,11 +525,8 @@ func TestNewOrchestrator(t *testing.T) {
 	d := openTestDB(t)
 	store := openTestStore(t)
 
-	o := NewOrchestrator(store, d, "https://example.com", t.TempDir())
+	o := NewOrchestrator(store, d)
 	require.NotNil(t, o)
-	assert.Equal(t, "https://example.com", o.BaseURL)
 	assert.Equal(t, d, o.DB)
 	assert.Equal(t, store, o.Store)
-	// Should have 7 default repackagers.
-	assert.Equal(t, 7, len(o.Repackagers))
 }

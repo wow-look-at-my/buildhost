@@ -3,7 +3,6 @@ package apt
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
@@ -23,10 +23,10 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
 
-	store, err := storage.NewFilesystem(t.TempDir())
+	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, Store: store}
+	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, "http://localhost:8080")}
 	return h, d, store
 }
 
@@ -205,17 +205,10 @@ func TestServePool_Success(t *testing.T) {
 
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
-	a := &db.Artifact{
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
 		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
-	}
-	require.NoError(t, d.CreateArtifact(ctx, a))
-
-	// Create deb packaged artifact.
-	debContent := "!<arch>\nfake-deb-content"
-	debKey, debSize, err := store.Put(ctx, strings.NewReader(debContent))
-	require.NoError(t, err)
-	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "deb", debKey, debSize, debKey, "myapp_1.0.0_amd64.deb", "{}"))
+	}))
 
 	req := httptest.NewRequest("GET", "/myapp/pool/myapp_1.0.0_amd64.deb", nil)
 	req = withRoute(req, proj, route{project: "myapp", subPath: "pool/myapp_1.0.0_amd64.deb"})
@@ -224,9 +217,7 @@ func TestServePool_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/vnd.debian.binary-package", rec.Header().Get("Content-Type"))
-
-	body, _ := io.ReadAll(rec.Result().Body)
-	assert.Equal(t, debContent, string(body))
+	assert.NotEmpty(t, rec.Body.Bytes())
 }
 
 func TestServePool_NoDebPackage(t *testing.T) {
@@ -246,12 +237,16 @@ func TestServePool_NoDebPackage(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
+	// On-demand generation means any supported format works as long as
+	// there is an artifact in storage -- no packaged_artifacts row needed.
 	req := httptest.NewRequest("GET", "/myapp/pool/myapp_1.0.0_amd64.deb", nil)
 	req = withRoute(req, proj, route{project: "myapp", subPath: "pool/myapp_1.0.0_amd64.deb"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/vnd.debian.binary-package", rec.Header().Get("Content-Type"))
+	assert.NotEmpty(t, rec.Body.Bytes())
 }
 
 func TestServePool_EmptyFilename(t *testing.T) {
@@ -354,16 +349,10 @@ func TestServeHTTP_PrivateProject_Pool_WithValidContext(t *testing.T) {
 
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
-	a := &db.Artifact{
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
 		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
-	}
-	require.NoError(t, d.CreateArtifact(ctx, a))
-
-	debContent := "fake-deb-content"
-	debKey, debSize, err := store.Put(ctx, strings.NewReader(debContent))
-	require.NoError(t, err)
-	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "deb", debKey, debSize, debKey, "secret_1.0.0_amd64.deb", "{}"))
+	}))
 
 	req := httptest.NewRequest("GET", "/secret/pool/secret_1.0.0_amd64.deb", nil)
 	req = withRoute(req, proj, route{project: "secret", subPath: "pool/secret_1.0.0_amd64.deb"})
@@ -371,7 +360,8 @@ func TestServeHTTP_PrivateProject_Pool_WithValidContext(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, debContent, rec.Body.String())
+	assert.Equal(t, "application/vnd.debian.binary-package", rec.Header().Get("Content-Type"))
+	assert.NotEmpty(t, rec.Body.Bytes())
 }
 
 // Suppress unused import warning.

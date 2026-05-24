@@ -4,8 +4,9 @@ description: Publish go-toolchain matrix artifacts to a buildhost registry using
 
 inputs:
   server:
-    description: 'Buildhost server URL (e.g., https://pazer.build)'
-    required: true
+    description: 'Buildhost server URL'
+    required: false
+    default: 'https://pazer.build'
   project:
     description: 'Project name (defaults to the repository name)'
     required: false

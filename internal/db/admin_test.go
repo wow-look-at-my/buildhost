@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
 )
@@ -22,6 +21,8 @@ func TestGetDashboardStats_Empty(t *testing.T) {
 	assert.Equal(t, int64(0), stats.TotalStorageBytes)
 	assert.Equal(t, int64(0), stats.TokenCount)
 	assert.Equal(t, int64(0), stats.OidcPolicyCount)
+	assert.Equal(t, int64(0), stats.LogicalBytes)
+	assert.Equal(t, int64(0), stats.PhysicalBytes)
 }
 
 func TestGetDashboardStats_WithData(t *testing.T) {
@@ -63,6 +64,46 @@ func TestGetDashboardStats_WithData(t *testing.T) {
 	assert.Equal(t, int64(4096), stats.TotalStorageBytes)
 	assert.Equal(t, int64(1), stats.TokenCount)
 	assert.Equal(t, int64(1), stats.OidcPolicyCount)
+	assert.Equal(t, int64(4096), stats.LogicalBytes)
+	assert.Equal(t, int64(4096), stats.PhysicalBytes)
+}
+
+func TestGetDashboardStats_DedupRatio(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	p := &Project{Name: "dedupproject", Versioning: VersioningAuto}
+	require.NoError(t, d.CreateProject(ctx, p))
+
+	r := &Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1}
+	require.NoError(t, d.CreateRelease(ctx, r))
+
+	// Two artifacts sharing the same storage_key (deduplication).
+	a1 := &Artifact{
+		ReleaseID: r.ID, OS: OSLinux, Arch: ArchAMD64,
+		Kind: KindBinary, StorageKey: "aaa", Size: 1000, SHA256: "aaa",
+	}
+	require.NoError(t, d.CreateArtifact(ctx, a1))
+
+	a2 := &Artifact{
+		ReleaseID: r.ID, OS: OSDarwin, Arch: ArchAMD64,
+		Kind: KindBinary, StorageKey: "aaa", Size: 1000, SHA256: "aaa",
+	}
+	require.NoError(t, d.CreateArtifact(ctx, a2))
+
+	// Add stripped/debug to a1 with unique keys.
+	require.NoError(t, d.UpdateArtifactStripped(ctx, a1.ID, "bbb", 800, "bbb", "ccc", 200))
+
+	// Add a packaged artifact reusing a1's stripped key.
+	require.NoError(t, d.CreatePackagedArtifact(ctx, a1.ID, "deb", "bbb", 800, "bbb", "pkg.deb", "{}"))
+
+	stats, err := d.GetDashboardStats(ctx)
+	require.NoError(t, err)
+
+	// Logical: a1.size(1000) + a2.size(1000) + a1.stripped(800) + a1.debug(200) + pkg(800) = 3800
+	assert.Equal(t, int64(3800), stats.LogicalBytes)
+	// Physical: unique keys: "aaa"(1000) + "bbb"(800) + "ccc"(200) = 2000
+	assert.Equal(t, int64(2000), stats.PhysicalBytes)
 }
 
 func TestListRecentReleases(t *testing.T) {

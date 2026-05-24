@@ -54,5 +54,3 @@ jobs:
         with:
           sparse-checkout: .github/actions
       - uses: ./.github/actions/buildhost-publish
-        with:
-          server: https://pazer.build

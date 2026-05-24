@@ -10,6 +10,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
@@ -21,10 +22,10 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
 
-	store, err := storage.NewFilesystem(t.TempDir())
+	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, Store: store}
+	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, "http://localhost:8080")}
 	return h, d, store
 }
 
@@ -69,7 +70,8 @@ func TestServeHTTP_NoBrewPackage(t *testing.T) {
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
-	// Create artifact but no packaged brew format.
+	// Create artifact -- on-demand generation means brew formula is
+	// generated from the binary, no packaged_artifacts row needed.
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
@@ -82,7 +84,9 @@ func TestServeHTTP_NoBrewPackage(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/x-ruby", rec.Header().Get("Content-Type"))
+	assert.NotEmpty(t, rec.Body.Bytes())
 }
 
 func TestServeHTTP_Success(t *testing.T) {
@@ -103,12 +107,7 @@ func TestServeHTTP_Success(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	// Create packaged brew artifact.
-	brewContent := "class Myapp < Formula\n  desc \"myapp\"\nend\n"
-	brewKey, brewSize, err := store.Put(ctx, strings.NewReader(brewContent))
-	require.NoError(t, err)
-	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "brew", brewKey, brewSize, brewKey, "myapp.rb", "{}"))
-
+	// On-demand generation: no CreatePackagedArtifact needed.
 	req := httptest.NewRequest("GET", "/myapp.rb", nil)
 	req = req.WithContext(withProject(req.Context(), proj))
 	rec := httptest.NewRecorder()
@@ -116,7 +115,7 @@ func TestServeHTTP_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/x-ruby", rec.Header().Get("Content-Type"))
-	assert.Contains(t, rec.Body.String(), "class Myapp")
+	assert.NotEmpty(t, rec.Body.Bytes())
 }
 
 func TestParseRoute(t *testing.T) {
