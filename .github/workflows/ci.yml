@@ -17,25 +17,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: wow-look-at-my/go-toolchain
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: /tmp/go-toolchain-src
       - uses: actions/setup-go@v5
         with:
-          go-version: stable
-      - uses: actions/cache@v4
-        with:
-          path: /tmp/go-toolchain-build
-          key: go-toolchain-source-${{ runner.os }}-${{ runner.arch }}
+          go-version-file: /tmp/go-toolchain-src/go.mod
+          cache-dependency-path: /tmp/go-toolchain-src/go.sum
       - name: Build go-toolchain from source
         run: |
-          if [ ! -x /tmp/go-toolchain-build/go-toolchain ]; then
-            git clone --depth 1 https://${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/go-toolchain.git /tmp/go-toolchain-src
-            cd /tmp/go-toolchain-src
-            mkdir -p /tmp/go-toolchain-build
-            go build -o /tmp/go-toolchain-build/go-toolchain ./cmd/go-toolchain
-          fi
+          cd /tmp/go-toolchain-src
+          go build -o /tmp/go-toolchain ./src
+      - uses: actions/checkout@v4
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           generate: c29114ff2f33
-          binary: /tmp/go-toolchain-build/go-toolchain
+          binary: /tmp/go-toolchain
 
   publish-ghcr:
     needs: build
