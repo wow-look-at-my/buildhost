@@ -548,12 +548,13 @@ func TestVerifyToken_TrustedIssuer_NoPolicies(t *testing.T) {
 	token := signJWT(t, key, "kid-trusted", claims)
 
 	v := NewOIDCVerifier([]string{srv.URL}, []string{"*"}, []string{"push"})
-	tok, oidcProject, err := v.VerifyToken(context.Background(), token, nil)
+	var vr VerifyResult
+	tok, oidcProject, err := v.VerifyTokenFull(context.Background(), token, nil, &vr)
 	require.NoError(t, err)
 	assert.Equal(t, "read,write", tok.Scopes)
 	assert.Equal(t, "myrepo", oidcProject)
 	assert.Equal(t, "oidc:repo:myorg/myrepo:ref:refs/heads/main", tok.Name)
-	assert.True(t, tok.OIDCPrivate, "missing repository_visibility should default to private")
+	assert.True(t, vr.OIDCPrivate, "missing repository_visibility should default to private")
 }
 
 func TestVerifyToken_TrustedIssuer_AllowedEvent(t *testing.T) {
@@ -614,9 +615,10 @@ func TestVerifyToken_TrustedIssuer_PrivateRepoVisibility(t *testing.T) {
 	token := signJWT(t, key, "kid-vis-priv", claims)
 
 	v := NewOIDCVerifier([]string{srv.URL}, []string{"*"}, []string{"push"})
-	tok, err := v.VerifyToken(context.Background(), token, nil)
+	var vr VerifyResult
+	_, _, err = v.VerifyTokenFull(context.Background(), token, nil, &vr)
 	require.NoError(t, err)
-	assert.True(t, tok.OIDCPrivate)
+	assert.True(t, vr.OIDCPrivate)
 }
 
 func TestVerifyToken_TrustedIssuer_PublicRepoVisibility(t *testing.T) {
@@ -635,9 +637,10 @@ func TestVerifyToken_TrustedIssuer_PublicRepoVisibility(t *testing.T) {
 	token := signJWT(t, key, "kid-vis-pub", claims)
 
 	v := NewOIDCVerifier([]string{srv.URL}, []string{"*"}, []string{"push"})
-	tok, err := v.VerifyToken(context.Background(), token, nil)
+	var vr VerifyResult
+	_, _, err = v.VerifyTokenFull(context.Background(), token, nil, &vr)
 	require.NoError(t, err)
-	assert.False(t, tok.OIDCPrivate)
+	assert.False(t, vr.OIDCPrivate)
 }
 
 func TestVerifyToken_UntrustedIssuer_NoPolicies(t *testing.T) {
