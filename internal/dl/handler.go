@@ -7,6 +7,9 @@ import (
 	"io"
 	"net/http"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/model"
@@ -14,6 +17,8 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/buildhost/internal/strip"
 )
+
+var dlTracer = otel.Tracer("buildhost.dl")
 
 var handler Handler
 
@@ -77,6 +82,7 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
 	rt := routeFrom(r.Context())
 
+	_, span := dlTracer.Start(r.Context(), "dl.resolve_version")
 	var (
 		release *model.Release
 		err     error
@@ -84,10 +90,13 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	if rt.version == "latest" {
 		w.Header().Set("Cache-Control", "no-cache")
 		release, err = h.DB.GetLatestRelease(r.Context(), project.ID)
+		span.SetAttributes(attribute.String("dl.resolution", "latest"))
 	} else {
 		w.Header().Set("Cache-Control", cacheImmutable)
 		release, err = h.DB.GetRelease(r.Context(), project.ID, rt.version)
+		span.SetAttributes(attribute.String("dl.resolution", "exact"))
 	}
+	span.End()
 	if handleDBErr(w, r, err) {
 		return
 	}
@@ -122,32 +131,57 @@ func (h *Handler) DownloadBranch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project *model.Project, release *model.Release, osStr, archStr string) {
-	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, osStr, archStr)
+	ctx, span := dlTracer.Start(r.Context(), "dl.serve_artifact")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("dl.version", release.Version),
+		attribute.String("dl.os", osStr),
+		attribute.String("dl.arch", archStr),
+	)
+
+	artifact, err := h.DB.GetArtifact(ctx, release.ID, osStr, archStr)
 	if handleDBErr(w, r, err) {
 		return
 	}
 
-	_ = h.DB.IncrementDownloadCount(r.Context(), artifact.ID)
+	_ = h.DB.IncrementDownloadCount(ctx, artifact.ID)
 
 	format := r.URL.Query().Get("format")
 	wantDebug := r.URL.Query().Get("debug") == "1"
 
+	span.SetAttributes(
+		attribute.String("dl.format", format),
+		attribute.Bool("dl.debug", wantDebug),
+	)
+
 	if wantDebug || format == "" || format == "raw" {
-		data, err := h.readArtifact(r.Context(), artifact.StorageKey)
+		data, err := h.readArtifact(ctx, artifact.StorageKey)
 		if err != nil {
 			http.Error(w, "blob not found", http.StatusNotFound)
 			return
 		}
 		if (artifact.Kind == model.KindBinary || artifact.Kind == model.KindLibrary) && strip.Available() {
-			if result, serr := strip.StripBytes(data); serr == nil {
+			_, stripSpan := dlTracer.Start(ctx, "dl.strip")
+			stripSpan.SetAttributes(attribute.Int("strip.input_bytes", len(data)))
+			result, serr := strip.StripBytes(data)
+			if serr == nil {
+				stripSpan.SetAttributes(
+					attribute.Int("strip.stripped_bytes", len(result.Stripped)),
+					attribute.Int("strip.debug_bytes", len(result.Debug)),
+				)
+				stripSpan.End()
 				if wantDebug {
 					h.serveBytes(w, result.Debug, fmt.Sprintf("%s-%s.debug", project.Name, release.Version))
 					return
 				}
 				data = result.Stripped
-			} else if wantDebug {
-				http.NotFound(w, r)
-				return
+			} else {
+				stripSpan.SetAttributes(attribute.String("strip.error", serr.Error()))
+				stripSpan.End()
+				if wantDebug {
+					http.NotFound(w, r)
+					return
+				}
 			}
 		} else if wantDebug {
 			http.NotFound(w, r)
@@ -157,7 +191,7 @@ func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, project 
 		return
 	}
 
-	output, err := h.Gen.Generate(r.Context(), repackage.Format(format), *project, *release, *artifact)
+	output, err := h.Gen.Generate(ctx, repackage.Format(format), *project, *release, *artifact)
 	if err != nil {
 		http.Error(w, "format not available", http.StatusNotFound)
 		return
