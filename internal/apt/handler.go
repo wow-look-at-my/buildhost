@@ -7,6 +7,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -16,6 +17,7 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.BaseURL())
 	})
 	auth.HandleHandler("/apt/", parseRoute, http.StripPrefix("/apt", &handler))
 }
@@ -59,6 +61,7 @@ func routeFrom(ctx context.Context) route {
 type Handler struct {
 	DB    *db.DB
 	Store storage.Storage
+	Gen   *repackage.Generator
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

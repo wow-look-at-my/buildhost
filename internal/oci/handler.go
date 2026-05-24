@@ -8,6 +8,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -17,6 +18,7 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.BaseURL())
 	})
 	auth.HandleRaw("GET /v2/", handler.V2Root)
 	auth.HandleHandler("/v2/", parseRoute, &handler)
@@ -92,6 +94,7 @@ func routeFrom(ctx context.Context) route {
 type Handler struct {
 	DB    *db.DB
 	Store storage.Storage
+	Gen   *repackage.Generator
 }
 
 func (h *Handler) V2Root(w http.ResponseWriter, r *http.Request) {
