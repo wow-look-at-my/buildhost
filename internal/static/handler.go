@@ -24,6 +24,7 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
+		handler.BaseURL = auth.BaseURL()
 
 		for _, format := range repackage.RegisteredFormats() {
 			RegisterRepackageFmt(format)
@@ -46,8 +47,9 @@ func parseRoute(r *http.Request) auth.RouteInfo {
 }
 
 type staticHandler struct {
-	DB    *db.DB
-	Store storage.Storage
+	DB      *db.DB
+	Store   storage.Storage
+	BaseURL string
 }
 
 func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
@@ -99,6 +101,7 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 		Project: *project,
 		Release: *release,
 		Store:   h.Store,
+		BaseURL: h.BaseURL,
 	}
 
 	if osStr != "any" && archStr != "any" {

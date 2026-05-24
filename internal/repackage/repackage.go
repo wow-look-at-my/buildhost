@@ -23,11 +23,12 @@ const (
 )
 
 type Input struct {
-	Project  model.Project
-	Release  model.Release
-	Artifact model.Artifact
-	Data     []byte
-	BaseURL  string
+	Project     model.Project
+	Release     model.Release
+	Artifact    model.Artifact
+	Data        []byte
+	BaseURL     string
+	DownloadURL func(name, version string, os model.OS, arch model.Arch, format string) string
 }
 
 type Output struct {

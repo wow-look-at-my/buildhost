@@ -14,6 +14,7 @@ type ServeContext struct {
 	Release  model.Release
 	Artifact model.Artifact
 	Store    storage.Storage
+	BaseURL  string
 }
 
 type Fmt interface {
