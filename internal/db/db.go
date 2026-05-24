@@ -16,7 +16,10 @@ func Open(path string) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
-	sqlDB.SetMaxOpenConns(1)
+	// WAL mode supports concurrent readers with a single writer.
+	// Allow enough connections for parallel read-heavy request handling.
+	sqlDB.SetMaxOpenConns(16)
+	sqlDB.SetMaxIdleConns(4)
 
 	d := &DB{DB: sqlDB}
 	if err := d.migrate(); err != nil {
