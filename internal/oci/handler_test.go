@@ -241,7 +241,7 @@ func TestServeHTTP_Manifests_Success(t *testing.T) {
 	layers := manifest["layers"].([]any)
 	require.Len(t, layers, 1)
 	layer := layers[0].(map[string]any)
-	assert.Equal(t, "application/vnd.oci.image.layer.v1.tar+gzip", layer["mediaType"])
+	assert.Equal(t, "application/vnd.oci.image.layer.v1.tar+zstd", layer["mediaType"])
 	assert.Contains(t, layer["digest"], "sha256:")
 }
 
