@@ -299,7 +299,14 @@ func TestDownload_ArtifactNotFound(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
-	assert.Equal(t, http.StatusNotFound, rec.Code)
+	// dl handler only resolves release/version, then redirects; artifact
+	// resolution now happens at /static.
+	q := requireRedirect(t, rec)
+	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "1.0.0", q.Get("v"))
+	assert.Equal(t, "linux", q.Get("os"))
+	assert.Equal(t, "amd64", q.Get("arch"))
+	assert.Equal(t, "raw", q.Get("fmt"))
 }
 
 // Note: Private project auth (unauthorized, wrong token, etc.) is tested via
