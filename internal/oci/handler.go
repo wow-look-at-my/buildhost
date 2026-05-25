@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -19,35 +18,33 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
+
+		auth.HandleRaw(auth.ServiceRoute("oci", "GET /v2/{$}"), handler.V2Root)
+		auth.HandleRaw(auth.ServiceRoute("oci", "HEAD /v2/{$}"), handler.V2Root)
+		auth.Handle(auth.ServiceRoute("oci", "GET /v2/{project}/manifests/{reference}"), parseRoute, handler.ServeManifest)
+		auth.Handle(auth.ServiceRoute("oci", "HEAD /v2/{project}/manifests/{reference}"), parseRoute, handler.ServeManifestHead)
+		auth.Handle(auth.ServiceRoute("oci", "GET /v2/{project}/blobs/{digest}"), parseRoute, handler.ServeBlob)
+		auth.Handle(auth.ServiceRoute("oci", "GET /v2/{project}/tags/list"), parseRoute, handler.ServeTags)
+
+		auth.ServiceRedirect("docker", "oci", true)
 	})
-	auth.HandleRaw("GET /v2/{$}", handler.V2Root)
-	auth.HandleRaw("HEAD /v2/{$}", handler.V2Root)
-	auth.HandleHandler("/v2/", parseRoute, &handler)
 }
 
 type route struct {
 	project   string
-	action    string
 	reference string
+	digest    string
 }
 
 func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
 func parseRoute(r *http.Request) auth.RouteInfo {
-	path := strings.TrimPrefix(r.URL.Path, "/v2/")
-	parts := strings.SplitN(path, "/", 3)
-	rt := route{}
-	if len(parts) >= 1 {
-		rt.project = parts[0]
+	return route{
+		project:   r.PathValue("project"),
+		reference: r.PathValue("reference"),
+		digest:    r.PathValue("digest"),
 	}
-	if len(parts) >= 2 {
-		rt.action = parts[1]
-	}
-	if len(parts) >= 3 {
-		rt.reference = parts[2]
-	}
-	return rt
 }
 
 func routeFrom(ctx context.Context) route {
@@ -66,29 +63,27 @@ func (h *Handler) V2Root(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{})
 }
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) ServeManifest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
-
 	rt := routeFrom(r.Context())
+	h.serveManifest(w, r, rt.reference)
+}
 
-	switch rt.action {
-	case "manifests":
-		if rt.reference == "" {
-			ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest reference required")
-			return
-		}
-		h.serveManifest(w, r, rt.reference)
-	case "blobs":
-		if rt.reference == "" {
-			ociError(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob digest required")
-			return
-		}
-		h.serveBlob(w, r, rt.reference)
-	case "tags":
-		h.serveTags(w, r)
-	default:
-		ociError(w, http.StatusNotFound, "NAME_UNKNOWN", "unknown endpoint")
-	}
+func (h *Handler) ServeManifestHead(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
+	rt := routeFrom(r.Context())
+	h.serveManifest(w, r, rt.reference)
+}
+
+func (h *Handler) ServeBlob(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
+	rt := routeFrom(r.Context())
+	h.serveBlob(w, r, rt.digest)
+}
+
+func (h *Handler) ServeTags(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
+	h.serveTags(w, r)
 }
 
 func ociError(w http.ResponseWriter, status int, code, message string) {

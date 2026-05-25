@@ -3,6 +3,7 @@ package apt
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -17,9 +18,11 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
+		handler.StaticURL = auth.StaticURL()
 		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
+
+		auth.HandleHandler(auth.ServiceRoute("apt", "/{project}/{subpath...}"), parseRoute, &handler)
 	})
-	auth.HandleHandler("/apt/", parseRoute, http.StripPrefix("/apt", &handler))
 }
 
 type route struct {
@@ -31,15 +34,10 @@ func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
 func parseRoute(r *http.Request) auth.RouteInfo {
-	// parseRoute sees the original URL (before StripPrefix runs).
-	// Strip the "/apt/" prefix, then split into project + subpath.
-	path := strings.TrimPrefix(r.URL.Path, "/apt/")
-	parts := strings.SplitN(path, "/", 2)
-	rt := route{project: parts[0]}
-	if len(parts) == 2 {
-		rt.subPath = parts[1]
+	return route{
+		project: r.PathValue("project"),
+		subPath: r.PathValue("subpath"),
 	}
-	return rt
 }
 
 func routeFrom(ctx context.Context) route {
@@ -47,10 +45,10 @@ func routeFrom(ctx context.Context) route {
 }
 
 type Handler struct {
-	DB      *db.DB
-	Store   storage.Storage
-	BaseURL string
-	Gen     *repackage.Generator
+	DB        *db.DB
+	Store     storage.Storage
+	StaticURL *url.URL
+	Gen       *repackage.Generator
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

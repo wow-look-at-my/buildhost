@@ -19,12 +19,13 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
+
+		auth.Handle(auth.ServiceRoute("sites", "PUT /{project}/branch/{branch}"), parseRoute, handler.Upload)
+		auth.Handle(auth.ServiceRoute("sites", "DELETE /{project}/branch/{branch}"), parseRoute, handler.Delete)
+		auth.Handle(auth.ServiceRoute("sites", "GET /{project}/branch/{branch}/{path...}"), parseRoute, handler.Serve)
+		auth.Handle(auth.ServiceRoute("sites", "GET /{project}/branch/{branch}"), parseRoute, handler.ServeRedirect)
+		auth.Handle(auth.ServiceRoute("sites", "GET /{project}/branches"), parseRoute, handler.List)
 	})
-	auth.Handle("PUT /sites/{project}/branch/{branch}", parseRoute, handler.Upload)
-	auth.Handle("DELETE /sites/{project}/branch/{branch}", parseRoute, handler.Delete)
-	auth.Handle("GET /sites/{project}/branch/{branch}/{path...}", parseRoute, handler.Serve)
-	auth.Handle("GET /sites/{project}/branch/{branch}", parseRoute, handler.ServeRedirect)
-	auth.Handle("GET /api/v1/projects/{project}/sites", parseAPIRoute, handler.List)
 }
 
 type route struct {
@@ -48,12 +49,6 @@ func parseRoute(r *http.Request) auth.RouteInfo {
 		branch:  r.PathValue("branch"),
 		path:    r.PathValue("path"),
 		write:   r.Method == "PUT" || r.Method == "DELETE",
-	}
-}
-
-func parseAPIRoute(r *http.Request) auth.RouteInfo {
-	return route{
-		project: r.PathValue("project"),
 	}
 }
 

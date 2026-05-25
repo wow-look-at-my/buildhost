@@ -16,6 +16,7 @@ type Config struct {
 	OIDCOrgs         []string
 	OIDCEvents       []string
 	OTELEndpoint     string
+	Domain           string
 }
 
 func Load() Config {
@@ -73,6 +74,9 @@ func Load() Config {
 	}
 	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
 		c.OTELEndpoint = v
+	}
+	if v := os.Getenv("BUILDHOST_DOMAIN"); v != "" {
+		c.Domain = v
 	}
 	return c
 }

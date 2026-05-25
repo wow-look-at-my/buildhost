@@ -425,11 +425,11 @@ func TestParseRoute(t *testing.T) {
 	assert.False(t, r2.write)
 }
 
-func TestParseAPIRoute(t *testing.T) {
-	req := httptest.NewRequest("GET", "/api/v1/projects/myapp/sites", nil)
+func TestParseRoute_BranchList(t *testing.T) {
+	req := httptest.NewRequest("GET", "/sites/myapp/branches", nil)
 	req.SetPathValue("project", "myapp")
 
-	ri := parseAPIRoute(req)
+	ri := parseRoute(req)
 	r := ri.(route)
 	assert.Equal(t, "myapp", r.ProjectName())
 	assert.Equal(t, "", r.branch)

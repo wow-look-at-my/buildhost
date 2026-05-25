@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,7 +26,8 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, BaseURL: "http://localhost:8080"}
+	staticURL, _ := url.Parse("http://localhost:8080")
+	h := &Handler{DB: d, StaticURL: staticURL}
 	return h, d, store
 }
 
