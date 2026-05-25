@@ -17,6 +17,57 @@ import (
 	"github.com/wow-look-at-my/testify/require"
 )
 
+func TestParseRoute(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want route
+	}{
+		{
+			name: "release, single-segment name",
+			path: "/buildhost/dists/stable/Release",
+			want: route{project: "buildhost", subPath: "dists/stable/Release"},
+		},
+		{
+			name: "release, dashed name",
+			path: "/go-toolchain/dists/stable/Release",
+			want: route{project: "go-toolchain", subPath: "dists/stable/Release"},
+		},
+		{
+			name: "release, multi-segment name (decoded path with literal '/')",
+			path: "/library/foo/dists/stable/Release",
+			want: route{project: "library/foo", subPath: "dists/stable/Release"},
+		},
+		{
+			name: "release, deeply nested multi-segment name",
+			path: "/team/group/proj-name/dists/stable/InRelease",
+			want: route{project: "team/group/proj-name", subPath: "dists/stable/InRelease"},
+		},
+		{
+			name: "binary-amd64 packages, multi-segment name",
+			path: "/library/foo/dists/stable/main/binary-amd64/Packages",
+			want: route{project: "library/foo", subPath: "dists/stable/main/binary-amd64/Packages"},
+		},
+		{
+			name: "pool, multi-segment name",
+			path: "/library/foo/pool/foo_1.0.0_amd64.deb",
+			want: route{project: "library/foo", subPath: "pool/foo_1.0.0_amd64.deb"},
+		},
+		{
+			name: "name itself contains literal 'dists' segment, distinguished by LastIndex",
+			path: "/foo/dists/bar/dists/stable/Release",
+			want: route{project: "foo/dists/bar", subPath: "dists/stable/Release"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.path, nil)
+			got := parseRoute(req).(route)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	t.Helper()
 	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -255,6 +306,34 @@ func TestExtractDebArch(t *testing.T) {
 		got := extractDebArch(tt.input)
 		assert.Equal(t, tt.expected, got, "extractDebArch(%q)", tt.input)
 	}
+}
+
+func TestExtractPoolArch(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"myapp_1.0.0_amd64.deb", "amd64"},
+		{"myapp_1.0.0_arm64.deb", "arm64"},
+		{"myapp_1.0.0_i386.deb", "i386"},
+		{"myapp.deb", ""},
+		{"noext", ""},
+		{"", ""},
+		{"myapp_1.0.0_amd64.rpm", ""},
+	}
+
+	for _, tt := range tests {
+		got := extractPoolArch(tt.input)
+		assert.Equal(t, tt.expected, got, "extractPoolArch(%q)", tt.input)
+	}
+}
+
+func TestValidDebVersion(t *testing.T) {
+	assert.True(t, validDebVersion.MatchString("1.0.0"))
+	assert.True(t, validDebVersion.MatchString("1.0.0~beta1"))
+	assert.True(t, validDebVersion.MatchString("2:1.0.0+dfsg-1"))
+	assert.False(t, validDebVersion.MatchString("1.0.0\nEvil: yes"))
+	assert.False(t, validDebVersion.MatchString(""))
 }
 
 func TestGoArchFromDeb(t *testing.T) {

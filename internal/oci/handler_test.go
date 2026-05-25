@@ -87,6 +87,82 @@ func readAll(store *storage.Filesystem, ctx context.Context, key string) ([]byte
 	return data, err
 }
 
+func TestParseRoute(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want route
+	}{
+		{
+			name: "manifest, single-segment name",
+			path: "/v2/buildhost/manifests/latest",
+			want: route{project: "buildhost", action: "manifests", reference: "latest"},
+		},
+		{
+			name: "manifest, dashed name",
+			path: "/v2/go-toolchain/manifests/latest",
+			want: route{project: "go-toolchain", action: "manifests", reference: "latest"},
+		},
+		{
+			name: "blob, single-segment name",
+			path: "/v2/buildhost/blobs/sha256:abc",
+			want: route{project: "buildhost", action: "blobs", reference: "sha256:abc"},
+		},
+		{
+			name: "manifest, multi-segment name (decoded path with literal '/')",
+			path: "/v2/library/foo/manifests/latest",
+			want: route{project: "library/foo", action: "manifests", reference: "latest"},
+		},
+		{
+			name: "manifest, deeply nested multi-segment name",
+			path: "/v2/team/group/proj-name/manifests/v1",
+			want: route{project: "team/group/proj-name", action: "manifests", reference: "v1"},
+		},
+		{
+			name: "blob, multi-segment name",
+			path: "/v2/library/foo/blobs/sha256:def",
+			want: route{project: "library/foo", action: "blobs", reference: "sha256:def"},
+		},
+		{
+			name: "name itself contains literal 'manifests' segment, distinguished by LastIndex",
+			path: "/v2/foo/manifests/bar/manifests/latest",
+			want: route{project: "foo/manifests/bar", action: "manifests", reference: "latest"},
+		},
+		{
+			name: "tags listing, multi-segment name",
+			path: "/v2/library/foo/tags/list",
+			want: route{project: "library/foo", action: "tags", reference: "list"},
+		},
+		{
+			name: "bare project, single-segment",
+			path: "/v2/myapp",
+			want: route{project: "myapp"},
+		},
+		{
+			name: "action only, no reference, single-segment",
+			path: "/v2/myapp/manifests",
+			want: route{project: "myapp", action: "manifests"},
+		},
+		{
+			name: "action only, no reference, multi-segment name",
+			path: "/v2/library/foo/manifests",
+			want: route{project: "library/foo", action: "manifests"},
+		},
+		{
+			name: "name itself contains an action keyword as final segment",
+			path: "/v2/foo/manifests/blobs/sha256:abc",
+			want: route{project: "foo/manifests", action: "blobs", reference: "sha256:abc"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.path, nil)
+			got := parseRoute(req).(route)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestV2Root(t *testing.T) {
 	h, _, _ := setupTest(t)
 
@@ -111,34 +187,39 @@ func TestV2Root_HEAD(t *testing.T) {
 	assert.Equal(t, "registry/2.0", rec.Header().Get("Docker-Distribution-API-Version"))
 }
 
-func TestParseRoute(t *testing.T) {
-	tests := []struct {
-		name      string
-		project   string
-		reference string
-		digest    string
-	}{
-		{"manifests", "myapp", "latest", ""},
-		{"blobs", "myapp", "", "sha256:abc"},
-		{"tags", "myapp", "", ""},
-	}
+func TestServeHTTP_UnknownAction(t *testing.T) {
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/v2/test", nil)
-			req.SetPathValue("project", tt.project)
-			req.SetPathValue("reference", tt.reference)
-			req.SetPathValue("digest", tt.digest)
-			ri := parseRoute(req)
-			rt := ri.(route)
-			assert.Equal(t, tt.project, rt.project)
-			assert.Equal(t, tt.reference, rt.reference)
-			assert.Equal(t, tt.digest, rt.digest)
-		})
-	}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	req := httptest.NewRequest("GET", "/v2/myapp/unknown/foo", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "unknown", reference: "foo"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	assert.Contains(t, rec.Body.String(), `"code":"NAME_UNKNOWN"`)
 }
 
-func TestServeManifest_NoRelease(t *testing.T) {
+func TestServeHTTP_Manifests_MissingRef(t *testing.T) {
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	req := httptest.NewRequest("GET", "/v2/myapp/manifests", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestServeHTTP_Manifests_NoRelease(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -146,14 +227,14 @@ func TestServeManifest_NoRelease(t *testing.T) {
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
-	req = withRoute(req, proj, route{project: "myapp", reference: "latest"})
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
 	rec := httptest.NewRecorder()
-	h.ServeManifest(rec, req)
+	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-func TestServeManifest_NoOCIPackage(t *testing.T) {
+func TestServeHTTP_Manifests_NoOCIPackage(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -173,16 +254,16 @@ func TestServeManifest_NoOCIPackage(t *testing.T) {
 	// On-demand generation means a manifest is generated from the binary
 	// artifact -- no packaged_artifacts row needed.
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
-	req = withRoute(req, proj, route{project: "myapp", reference: "latest"})
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
 	rec := httptest.NewRecorder()
-	h.ServeManifest(rec, req)
+	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/vnd.oci.image.manifest.v1+json", rec.Header().Get("Content-Type"))
 	assert.NotEmpty(t, rec.Body.Bytes())
 }
 
-func TestServeManifest_Success(t *testing.T) {
+func TestServeHTTP_Manifests_Success(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -191,9 +272,9 @@ func TestServeManifest_Success(t *testing.T) {
 	publishWithOCI(t, ctx, d, store, proj, "1.0.0", 1000000)
 
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
-	req = withRoute(req, proj, route{project: "myapp", reference: "latest"})
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
 	rec := httptest.NewRecorder()
-	h.ServeManifest(rec, req)
+	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/vnd.oci.image.manifest.v1+json", rec.Header().Get("Content-Type"))
@@ -214,7 +295,7 @@ func TestServeManifest_Success(t *testing.T) {
 	assert.Contains(t, layer["digest"], "sha256:")
 }
 
-func TestServeManifest_ByVersion(t *testing.T) {
+func TestServeHTTP_Manifests_ByVersion(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -224,14 +305,14 @@ func TestServeManifest_ByVersion(t *testing.T) {
 	publishWithOCI(t, ctx, d, store, proj, "2.0.0", 2000000)
 
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests/1.0.0", nil)
-	req = withRoute(req, proj, route{project: "myapp", reference: "1.0.0"})
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "1.0.0"})
 	rec := httptest.NewRecorder()
-	h.ServeManifest(rec, req)
+	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
-func TestServeManifest_ByDigest(t *testing.T) {
+func TestServeHTTP_Manifests_ByDigest(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -240,25 +321,25 @@ func TestServeManifest_ByDigest(t *testing.T) {
 	publishWithOCI(t, ctx, d, store, proj, "1.0.0", 1000000)
 
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
-	req = withRoute(req, proj, route{project: "myapp", reference: "latest"})
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
 	rec := httptest.NewRecorder()
-	h.ServeManifest(rec, req)
+	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	digest := rec.Header().Get("Docker-Content-Digest")
 	require.NotEmpty(t, digest)
 
 	req = httptest.NewRequest("GET", "/v2/myapp/manifests/"+digest, nil)
-	req = withRoute(req, proj, route{project: "myapp", reference: digest})
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: digest})
 	rec = httptest.NewRecorder()
-	h.ServeManifest(rec, req)
+	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/vnd.oci.image.manifest.v1+json", rec.Header().Get("Content-Type"))
 	assert.Equal(t, digest, rec.Header().Get("Docker-Content-Digest"))
 }
 
-func TestServeManifestHead(t *testing.T) {
+func TestServeHTTP_Manifests_HEAD(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -267,9 +348,9 @@ func TestServeManifestHead(t *testing.T) {
 	publishWithOCI(t, ctx, d, store, proj, "1.0.0", 1000000)
 
 	req := httptest.NewRequest("HEAD", "/v2/myapp/manifests/latest", nil)
-	req = withRoute(req, proj, route{project: "myapp", reference: "latest"})
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
 	rec := httptest.NewRecorder()
-	h.ServeManifestHead(rec, req)
+	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/vnd.oci.image.manifest.v1+json", rec.Header().Get("Content-Type"))
@@ -277,7 +358,22 @@ func TestServeManifestHead(t *testing.T) {
 	assert.Empty(t, rec.Body.String())
 }
 
-func TestServeBlob_InvalidDigest(t *testing.T) {
+func TestServeHTTP_Blobs_MissingDigest(t *testing.T) {
+	h, d, _ := setupTest(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	req := httptest.NewRequest("GET", "/v2/myapp/blobs", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "blobs"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestServeHTTP_Blobs_InvalidDigest(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -285,14 +381,14 @@ func TestServeBlob_InvalidDigest(t *testing.T) {
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/v2/myapp/blobs/../../etc/passwd", nil)
-	req = withRoute(req, proj, route{project: "myapp", digest: "../../etc/passwd"})
+	req = withRoute(req, proj, route{project: "myapp", action: "blobs", reference: "../../etc/passwd"})
 	rec := httptest.NewRecorder()
-	h.ServeBlob(rec, req)
+	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-func TestServeBlob_NotFound(t *testing.T) {
+func TestServeHTTP_Blobs_NotFound(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -300,14 +396,14 @@ func TestServeBlob_NotFound(t *testing.T) {
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/v2/myapp/blobs/sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", nil)
-	req = withRoute(req, proj, route{project: "myapp", digest: "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"})
+	req = withRoute(req, proj, route{project: "myapp", action: "blobs", reference: "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"})
 	rec := httptest.NewRecorder()
-	h.ServeBlob(rec, req)
+	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-func TestServeBlob_Success(t *testing.T) {
+func TestServeHTTP_Blobs_Success(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -327,9 +423,9 @@ func TestServeBlob_Success(t *testing.T) {
 
 	digest := "sha256:" + key
 	req := httptest.NewRequest("GET", "/v2/myapp/blobs/"+digest, nil)
-	req = withRoute(req, proj, route{project: "myapp", digest: digest})
+	req = withRoute(req, proj, route{project: "myapp", action: "blobs", reference: digest})
 	rec := httptest.NewRecorder()
-	h.ServeBlob(rec, req)
+	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/octet-stream", rec.Header().Get("Content-Type"))
@@ -337,7 +433,7 @@ func TestServeBlob_Success(t *testing.T) {
 	assert.Equal(t, content, rec.Body.String())
 }
 
-func TestServeBlob_HEAD(t *testing.T) {
+func TestServeHTTP_Blobs_HEAD(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -357,16 +453,16 @@ func TestServeBlob_HEAD(t *testing.T) {
 
 	digest := "sha256:" + key
 	req := httptest.NewRequest("HEAD", "/v2/myapp/blobs/"+digest, nil)
-	req = withRoute(req, proj, route{project: "myapp", digest: digest})
+	req = withRoute(req, proj, route{project: "myapp", action: "blobs", reference: digest})
 	rec := httptest.NewRecorder()
-	h.ServeBlob(rec, req)
+	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, digest, rec.Header().Get("Docker-Content-Digest"))
 	assert.Empty(t, rec.Body.String())
 }
 
-func TestServeTags(t *testing.T) {
+func TestServeHTTP_Tags(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -376,9 +472,9 @@ func TestServeTags(t *testing.T) {
 	publishWithOCI(t, ctx, d, store, proj, "2.0.0", 2000000)
 
 	req := httptest.NewRequest("GET", "/v2/myapp/tags/list", nil)
-	req = withRoute(req, proj, route{project: "myapp"})
+	req = withRoute(req, proj, route{project: "myapp", action: "tags", reference: "list"})
 	rec := httptest.NewRecorder()
-	h.ServeTags(rec, req)
+	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
@@ -394,7 +490,7 @@ func TestServeTags(t *testing.T) {
 	assert.Contains(t, resp.Tags, "latest")
 }
 
-func TestServeTags_NoReleases(t *testing.T) {
+func TestServeHTTP_Tags_NoReleases(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -402,9 +498,9 @@ func TestServeTags_NoReleases(t *testing.T) {
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/v2/myapp/tags/list", nil)
-	req = withRoute(req, proj, route{project: "myapp"})
+	req = withRoute(req, proj, route{project: "myapp", action: "tags", reference: "list"})
 	rec := httptest.NewRecorder()
-	h.ServeTags(rec, req)
+	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 
@@ -424,9 +520,9 @@ func TestManifestDigestMatchesContent(t *testing.T) {
 	publishWithOCI(t, ctx, d, store, proj, "1.0.0", 1000000)
 
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
-	req = withRoute(req, proj, route{project: "myapp", reference: "latest"})
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
 	rec := httptest.NewRecorder()
-	h.ServeManifest(rec, req)
+	h.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
 
@@ -446,9 +542,9 @@ func TestBlobsReachableFromManifest(t *testing.T) {
 
 	// Get manifest
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
-	req = withRoute(req, proj, route{project: "myapp", reference: "latest"})
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
 	rec := httptest.NewRecorder()
-	h.ServeManifest(rec, req)
+	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var manifest struct {
@@ -463,9 +559,9 @@ func TestBlobsReachableFromManifest(t *testing.T) {
 
 	// Fetch config blob
 	req = httptest.NewRequest("GET", "/v2/myapp/blobs/"+manifest.Config.Digest, nil)
-	req = withRoute(req, proj, route{project: "myapp", digest: manifest.Config.Digest})
+	req = withRoute(req, proj, route{project: "myapp", action: "blobs", reference: manifest.Config.Digest})
 	rec = httptest.NewRecorder()
-	h.ServeBlob(rec, req)
+	h.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
 
 	var config map[string]any
@@ -476,9 +572,9 @@ func TestBlobsReachableFromManifest(t *testing.T) {
 	// Fetch layer blob
 	for _, layer := range manifest.Layers {
 		req = httptest.NewRequest("GET", "/v2/myapp/blobs/"+layer.Digest, nil)
-		req = withRoute(req, proj, route{project: "myapp", digest: layer.Digest})
+		req = withRoute(req, proj, route{project: "myapp", action: "blobs", reference: layer.Digest})
 		rec = httptest.NewRecorder()
-		h.ServeBlob(rec, req)
+		h.ServeHTTP(rec, req)
 		assert.Equal(t, http.StatusOK, rec.Code)
 		assert.NotEmpty(t, rec.Body.Bytes())
 	}

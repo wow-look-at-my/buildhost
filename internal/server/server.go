@@ -49,6 +49,7 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 		ReadTimeout:       5 * time.Minute,
 		WriteTimeout:      10 * time.Minute,
 		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 16,
 	}
 	return s
 }

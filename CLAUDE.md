@@ -190,10 +190,10 @@ The following items have been reviewed and addressed or are intentional design c
 - **Rate limiting**: Handled at the reverse proxy layer, not in the application
 - **OIDC SSRF**: jwks_uri is validated to match the issuer's host and require HTTPS (loopback exempted for tests)
 - **OIDC issuer scheme**: fetchJWKS requires HTTPS for non-loopback issuers
-- **Token in query param**: Intentional for clients that cannot set headers (APT, Brew). Mitigated by Referrer-Policy: no-referrer
+- **Token in query param**: Intentional for clients that cannot set headers (APT, Brew). Mitigated by Referrer-Policy: no-referrer and redaction from OTEL trace attributes
 - **No TLS termination**: Intentional -- runs behind a reverse proxy in Docker
 - **Strip temp file permissions**: Runs in a single-user Docker container; permissions are 0600 anyway
-- **APT Release signing**: Not yet implemented (TODO in code). Clients must use `[trusted=yes]`
+- **APT Release signing**: RSA 4096 key auto-generated on first startup, stored in `BUILDHOST_DATA_DIR/apt-signing.key`. InRelease (clearsigned), Release.gpg (detached), and key.asc (public key) endpoints are all served. Clients add the key via `curl .../key.asc | gpg --dearmor > /etc/apt/keyrings/buildhost.gpg` and use `[signed-by=/etc/apt/keyrings/buildhost.gpg]` in sources.list
 - **List endpoints**: No LIMIT -- all behind auth, SQLite serialized, not a DoS vector
 - **Symlink rejection**: Storage layer rejects symlinks via Lstat check
 - **Admin dashboard auth**: None -- must be behind a reverse proxy with access control (Cloudflare Access, etc.)
@@ -202,6 +202,12 @@ The following items have been reviewed and addressed or are intentional design c
 - **Ready-to-update endpoint**: `GET /ready-to-update` on :8080 returns 200/503 with no body content -- reveals only idle/busy state, no sensitive data
 - **Inflight endpoint**: `GET /admin/inflight` on :9090 is unauthenticated -- same trust model as the rest of the admin dashboard (internal-only, behind reverse proxy)
 - **No writes outside data dir**: Temp files use BUILDHOST_DATA_DIR/tmp, not system /tmp
-- **OIDC audience check**: Auto-provisioning verifies the token's `aud` claim matches `BUILDHOST_BASE_URL`. GHA workflows must request tokens with the buildhost URL as the audience: `core.getIDToken('https://buildhost.example.com')`
+- **OIDC audience check**: Auto-provisioning requires `BUILDHOST_BASE_URL` to be set and verifies the token's `aud` claim matches it. GHA workflows must request tokens with the buildhost URL as the audience: `core.getIDToken('https://buildhost.example.com')`
+- **OIDC event check**: Tokens without an `event_name` claim are rejected when `BUILDHOST_OIDC_EVENTS` is configured (default: `push`). This prevents bypass via providers that omit the claim
+- **OIDC RSA key size**: JWKS keys below 2048 bits are rejected
+- **OIDC visibility sync**: When an OIDC token's `repository_visibility` claim changes project visibility, the change is logged at WARN level with project name, old/new visibility, and OIDC subject
+- **Sites decompression**: Decompressed tar size is capped at 1 GiB to prevent gzip bomb attacks
+- **Admin error messages**: Admin API handlers return generic error messages; raw errors are logged server-side only
+- **Migrations**: Each migration runs in a single transaction (DDL + schema_migrations record) to prevent partial application on crash
 - **OIDC auto-provisioning**: Trusted issuers can auto-create projects. Project name derived from subject claim (repo:org/name:* -> name), lowercased and validated against `[a-z0-9][a-z0-9._-]{0,127}`. Scoped to read,write on that project only -- cannot access other projects. Optional BUILDHOST_OIDC_ORGS allowlist restricts which orgs can auto-provision
 - **OIDC_ORGS wildcard risk**: Setting `BUILDHOST_OIDC_ORGS=*` allows any GitHub org to auto-provision projects. Since project names are derived from repo names, any repo in any org with the same name as an existing project would derive the same project name. The first push creates the project; subsequent pushes from other orgs are blocked by `AuthorizedForProjectName`. However, avoid `BUILDHOST_OIDC_ORGS=*` in production -- scope the allowlist to trusted orgs only

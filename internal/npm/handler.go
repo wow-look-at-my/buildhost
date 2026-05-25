@@ -269,6 +269,11 @@ func npmArch(a db.Arch) string {
 }
 
 func wrapperRunScript(projectName string) string {
+	for _, c := range projectName {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-') {
+			return ""
+		}
+	}
 	return `#!/usr/bin/env node
 var pkg = "@buildhost/` + projectName + `-" + process.platform + "-" + process.arch;
 var path = require("path");

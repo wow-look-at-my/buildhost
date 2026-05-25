@@ -20,8 +20,9 @@ func init() {
 		handler.Store = auth.Store()
 		handler.StaticURL = auth.StaticURL()
 		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
+		handler.Signer = NewSigner(auth.DataDir())
 
-		auth.HandleHandler(auth.ServiceRoute("apt", "/{project}/{subpath...}"), parseRoute, &handler)
+		auth.HandleHandler(auth.ServiceRoute("apt", "/{path...}"), parseRoute, &handler)
 	})
 }
 
@@ -34,10 +35,20 @@ func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
 func parseRoute(r *http.Request) auth.RouteInfo {
-	return route{
-		project: r.PathValue("project"),
-		subPath: r.PathValue("subpath"),
+	path := strings.TrimPrefix(r.URL.Path, "/")
+	for _, marker := range []string{"/dists/", "/pool/"} {
+		if i := strings.LastIndex(path, marker); i > 0 {
+			return route{
+				project: path[:i],
+				subPath: path[i+1:],
+			}
+		}
 	}
+	if strings.HasSuffix(path, "/key.asc") {
+		i := strings.LastIndex(path, "/key.asc")
+		return route{project: path[:i], subPath: "key.asc"}
+	}
+	return route{project: path}
 }
 
 func routeFrom(ctx context.Context) route {
@@ -49,14 +60,21 @@ type Handler struct {
 	Store     storage.Storage
 	StaticURL *url.URL
 	Gen       *repackage.Generator
+	Signer    *Signer
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	subpath := routeFrom(r.Context()).subPath
 
 	switch {
-	case subpath == "dists/stable/Release" || subpath == "dists/stable/InRelease":
-		h.serveRelease(w, r)
+	case subpath == "dists/stable/InRelease":
+		h.serveRelease(w, r, true)
+	case subpath == "dists/stable/Release":
+		h.serveRelease(w, r, false)
+	case subpath == "dists/stable/Release.gpg":
+		h.serveReleaseGPG(w, r)
+	case subpath == "key.asc":
+		h.serveKey(w, r)
 	case strings.HasPrefix(subpath, "dists/stable/main/binary-"):
 		h.servePackages(w, r, subpath)
 	case strings.HasPrefix(subpath, "pool/"):
