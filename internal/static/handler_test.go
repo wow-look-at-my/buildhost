@@ -58,7 +58,7 @@ func TestURL_ParamsSorted(t *testing.T) {
 }
 
 func TestServe_MissingVersion(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?arch=amd64&project=myapp&os=linux", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&os=linux&project=myapp", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
@@ -66,7 +66,7 @@ func TestServe_MissingVersion(t *testing.T) {
 }
 
 func TestServe_LatestVersion(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?arch=amd64&project=myapp&os=linux&v=latest", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&os=linux&project=myapp&v=latest", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
@@ -74,7 +74,7 @@ func TestServe_LatestVersion(t *testing.T) {
 }
 
 func TestServe_MissingOSArch(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?project=myapp&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?project=myapp&v=1.0.0", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
@@ -82,7 +82,7 @@ func TestServe_MissingOSArch(t *testing.T) {
 }
 
 func TestServe_UnsupportedFormat(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=nonexistent&project=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=nonexistent&os=linux&project=myapp&v=1.0.0", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
@@ -90,17 +90,17 @@ func TestServe_UnsupportedFormat(t *testing.T) {
 }
 
 func TestServe_CanonicalRedirect(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?v=1&project=myapp&os=linux&arch=amd64&fmt=raw", nil)
+	req := httptest.NewRequest("GET", "/file?v=1&project=myapp&os=linux&arch=amd64&fmt=raw", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
 	assert.Equal(t, http.StatusMovedPermanently, rec.Code)
 	loc := rec.Header().Get("Location")
-	assert.Contains(t, loc, "arch=amd64&fmt=raw&project=myapp&os=linux&v=1")
+	assert.Contains(t, loc, "arch=amd64&fmt=raw&os=linux&project=myapp&v=1")
 }
 
 func TestServe_StripsUnknownParams(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&garbage=yes&project=myapp&os=linux&v=1", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&garbage=yes&os=linux&project=myapp&v=1", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
@@ -145,7 +145,8 @@ func setupIntegration(t *testing.T) (*staticHandler, *db.DB, *storage.Filesystem
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	return &staticHandler{DB: d, Store: store, BaseURL: "http://localhost:8080"}, d, store
+	staticURL, _ := url.Parse("http://localhost:8080")
+	return &staticHandler{DB: d, Store: store, StaticURL: staticURL, BaseURL: "http://localhost:8080"}, d, store
 }
 
 func withProject(r *http.Request, p *db.Project) *http.Request {
@@ -170,7 +171,7 @@ func TestServe_RawFormat_Success(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&project=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -198,14 +199,14 @@ func TestServe_ETag_NotModified(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&project=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
 	etag := rec.Header().Get("ETag")
 	require.NotEmpty(t, etag)
 
-	req2 := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&project=myapp&os=linux&v=1.0.0", nil)
+	req2 := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req2 = withProject(req2, proj)
 	req2.Header.Set("If-None-Match", etag)
 	rec2 := httptest.NewRecorder()
@@ -220,7 +221,7 @@ func TestServe_VersionNotFound(t *testing.T) {
 	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&project=myapp&os=linux&v=9.9.9", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=9.9.9", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -237,7 +238,7 @@ func TestServe_ArtifactNotFound(t *testing.T) {
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&project=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -261,7 +262,7 @@ func TestServe_VersionResolution_StripV(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&project=myapp&os=linux&v=v2.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=v2.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -285,7 +286,7 @@ func TestServe_VersionResolution_StripDotZeroZero(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&project=myapp&os=linux&v=5.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=5.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -302,7 +303,7 @@ func TestServe_AnyOSArch(t *testing.T) {
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
-	req := httptest.NewRequest("GET", "/static?arch=any&fmt=raw&project=myapp&os=any&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=any&fmt=raw&os=any&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -326,7 +327,7 @@ func TestServe_DebugSymbolsHeader(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&project=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -346,13 +347,13 @@ func TestRedirect(t *testing.T) {
 }
 
 func TestParseRoute_ExtractsID(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?project=myapp&v=1", nil)
+	req := httptest.NewRequest("GET", "/file?project=myapp&v=1", nil)
 	ri := parseRoute(req)
 	assert.Equal(t, "myapp", ri.ProjectName())
 
-	req2 := httptest.NewRequest("GET", "/static?project=@buildhost/myapp&v=1", nil)
+	req2 := httptest.NewRequest("GET", "/file?project=other-app&v=1", nil)
 	ri2 := parseRoute(req2)
-	assert.Equal(t, "myapp", ri2.ProjectName(), "strips @buildhost/ prefix")
+	assert.Equal(t, "other-app", ri2.ProjectName())
 }
 
 func TestRoute_Access(t *testing.T) {
@@ -377,7 +378,7 @@ func TestServe_SymbolsFormat_NoStrip(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=symbols&project=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=symbols&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -403,7 +404,7 @@ func TestServe_RepackageFormat(t *testing.T) {
 
 	RegisterRepackageFmt("tar.gz")
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=tar.gz&project=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=tar.gz&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)

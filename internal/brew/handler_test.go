@@ -119,7 +119,8 @@ func TestServeFormula_Success(t *testing.T) {
 }
 
 func TestParseRoute(t *testing.T) {
-	req := httptest.NewRequest("GET", "/brew/myapp.rb", nil)
+	req := httptest.NewRequest("GET", "/myapp", nil)
+	req.SetPathValue("project", "myapp")
 	ri := parseRoute(req)
 	assert.Equal(t, "myapp", ri.ProjectName())
 	assert.Equal(t, auth.ReadAccess, ri.Access())

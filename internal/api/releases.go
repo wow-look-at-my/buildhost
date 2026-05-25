@@ -17,9 +17,11 @@ import (
 )
 
 func init() {
-	auth.Handle("POST /api/v1/projects/{project}/releases", parseRoute, handler.CreateRelease)
-	auth.Handle("GET /api/v1/projects/{project}/releases", parseRoute, handler.ListReleases)
-	auth.Handle("GET /api/v1/projects/{project}/releases/{version}", parseRoute, handler.GetRelease)
+	auth.OnReady(func() {
+		auth.Handle("POST /api/v1/projects/{project}/releases", parseRoute, handler.CreateRelease)
+		auth.Handle("GET /api/v1/projects/{project}/releases", parseRoute, handler.ListReleases)
+		auth.Handle("GET /api/v1/projects/{project}/releases/{version}", parseRoute, handler.GetRelease)
+	})
 }
 
 type createReleaseRequest struct {

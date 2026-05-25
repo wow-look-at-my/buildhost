@@ -38,6 +38,7 @@ func OnReady(fn func()) {
 }
 
 func Init(database *db.DB, store storage.Storage, baseURL, dataDir, domain string, trustedIssuers, allowedOrgs, allowedEvents []string) {
+	mux = http.NewServeMux()
 	sharedDB = database
 	sharedStore = store
 	sharedBase = baseURL

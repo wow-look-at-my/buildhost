@@ -14,15 +14,15 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 
 - `cmd/buildhost/` - CLI entrypoint (cobra, one subcommand per file, self-registering via init()). Backend imports (backend_*.go) trigger init() registration for each handler package.
 - `internal/server/` - HTTP server, global middleware chain (auth, inflight tracking, security headers, logging, recovery)
-- `internal/api/` - REST API handlers (projects, releases, artifacts, publish, tokens). Each handler file registers its own routes in init().
-- `internal/static/` - Unified `/static` download endpoint. All artifact downloads go through here. Fmt interface with self-registration; query params: `id`, `v`, `os`, `arch`, `fmt`. Includes raw/symbols formats and a bridge for repackage-based formats.
-- `internal/dl/` - Download handlers with version/branch resolution. Redirects to `/static`. Self-registering via init().
-- `internal/apt/` - APT repository endpoint. Pool downloads redirect to `/static`. Self-registering via init().
-- `internal/brew/` - Homebrew tap endpoint. Formula download URLs point to `/static`. Self-registering via init().
-- `internal/npm/` - npm registry endpoint. Tarball URLs point to `/static`. Self-registering via init().
-- `internal/oci/` - OCI distribution endpoint. Self-registering via init().
-- `internal/sites/` - Static site hosting endpoint. Upload tar.gz archives, serve files per branch. Self-registering via init().
-- `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler), RouteInfo interface
+- `internal/api/` - REST API handlers (projects, releases, artifacts, publish, tokens). Each handler file registers its own routes via auth.OnReady().
+- `internal/static/` - Unified download endpoint on `static.{domain}/file`. All artifact downloads go through here. Fmt interface with self-registration; query params: `project`, `v`, `os`, `arch`, `fmt`. Includes raw/symbols formats and a bridge for repackage-based formats.
+- `internal/dl/` - Download handler on `dl.{domain}/{project}` with version/branch resolution via query params. Redirects to static. Self-registering via auth.OnReady().
+- `internal/apt/` - APT repository endpoint on `apt.{domain}/{project}/...`. Pool downloads redirect to static. Self-registering via auth.OnReady().
+- `internal/brew/` - Homebrew tap endpoint on `brew.{domain}/{project}`. Formula download URLs point to static. Self-registering via auth.OnReady().
+- `internal/npm/` - npm registry endpoint on `npm.{domain}/@buildhost/{project}`. Tarball URLs point to static. Self-registering via auth.OnReady().
+- `internal/oci/` - OCI distribution endpoint on `oci.{domain}/v2/{project}/...`. `docker.{domain}` permanently redirects to `oci.{domain}`. Self-registering via auth.OnReady().
+- `internal/sites/` - Static site hosting endpoint on `sites.{domain}/{project}/...`. Upload tar.gz archives, serve files per branch or version. Self-registering via auth.OnReady().
+- `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler/ServiceRoute/ServiceRedirect), RouteInfo interface
 - `internal/db/` - SQLite database layer (modernc.org/sqlite, no CGo), OIDC policy storage. Types (Project, Release, Artifact, APIToken, OIDCPolicy) and validation functions live here. Uses sqlc for query generation from `internal/db/queries/*.sql` with schema in `internal/db/schema.sql`.
 - `internal/db/queries/` - SQL query files for sqlc code generation
 - `internal/db/schema.sql` - SQLite schema used by sqlc
@@ -39,7 +39,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - Versioning: auto-increment (default) or semver (opt-in per project)
 - Git branch is a first-class field on releases, not just metadata
 - Repackaging and stripping happen on-demand at download time, not at publish time. Only the original upload is stored.
-- All artifact downloads go through `/static?id=&v=&os=&arch=&fmt=` -- a single CDN-cacheable endpoint with sorted query params, strong ETags, and immutable cache headers. Format handlers (dl, apt, brew, npm) redirect to `/static` after resolving version/branch. `v=latest` returns 400 (callers must resolve first). Repackage formats self-register via `Fmt` interface.
+- All artifact downloads go through `static.{domain}/file?project=&v=&os=&arch=&fmt=` -- a single CDN-cacheable endpoint with sorted query params, strong ETags, and immutable cache headers. Format handlers (dl, apt, brew, npm) redirect to static after resolving version/branch. `v=latest` returns 400 (callers must resolve first). Repackage formats self-register via `Fmt` interface.
 - Storage is content-addressed (SHA-256) with zstd compression and deduplication
 - Auth: Bearer token, Basic auth, or query param — all resolve to the same token system
 - OIDC: JWT-based auth for GitHub Actions (and any OIDC provider), keys fetched from issuer's JWKS endpoint
@@ -47,7 +47,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - Private projects require auth on all endpoints including format-specific ones (APT, Brew, NPM, OCI)
 - Project auth enforced once in centralized requireProject middleware — handlers never check auth
 - Each backend defines a RouteInfo implementation (private route struct) for full URL parsing
-- Backends self-register routes via init() on auth.Mux(); adding a backend = adding files, no existing files modified
+- Backends self-register routes via auth.OnReady() on auth.Mux(); adding a backend = adding files, no existing files modified. Each backend uses auth.ServiceRoute(subdomain, pattern) for host-based routing.
 - Tokens are project-scoped or global; project-scoped tokens cannot escalate privileges
 - Token expiry is enforced at lookup time
 - Default token scope is "read" (least privilege)
@@ -65,8 +65,10 @@ buildhost bootstrap --name admin-token
 ## Running
 
 ```bash
-BUILDHOST_LISTEN_ADDR=:8080 BUILDHOST_BASE_URL=https://example.com buildhost serve
+BUILDHOST_LISTEN_ADDR=:8080 BUILDHOST_BASE_URL=https://example.com BUILDHOST_DOMAIN=example.com buildhost serve
 ```
+
+`BUILDHOST_DOMAIN` is required. Each service gets its own subdomain: `apt.example.com`, `brew.example.com`, `npm.example.com`, `oci.example.com` (canonical, `docker.example.com` 301-redirects), `dl.example.com`, `sites.example.com`, `static.example.com`. API routes stay on the main domain.
 
 To disable application-level zstd compression (e.g., on ZFS or Btrfs with filesystem-level compression):
 

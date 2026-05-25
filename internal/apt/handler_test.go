@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,7 +26,8 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, "http://localhost:8080", t.TempDir())}
+	staticURL, _ := url.Parse("http://localhost:8080")
+	h := &Handler{DB: d, Store: store, StaticURL: staticURL, Gen: repackage.NewGenerator(store, d, "http://localhost:8080", t.TempDir())}
 	return h, d, store
 }
 
@@ -216,8 +218,8 @@ func TestServePool_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusFound, rec.Code)
 	loc := rec.Header().Get("Location")
-	assert.Contains(t, loc, "/static?")
-	assert.Contains(t, loc, "id=myapp")
+	assert.Contains(t, loc, "/file?")
+	assert.Contains(t, loc, "project=myapp")
 	assert.Contains(t, loc, "fmt=deb")
 	assert.Contains(t, loc, "v=1.0.0")
 }
@@ -334,7 +336,7 @@ func TestServeHTTP_PrivateProject_Pool_WithValidContext(t *testing.T) {
 
 	assert.Equal(t, http.StatusFound, rec.Code)
 	loc := rec.Header().Get("Location")
-	assert.Contains(t, loc, "/static?")
-	assert.Contains(t, loc, "id=secret")
+	assert.Contains(t, loc, "/file?")
+	assert.Contains(t, loc, "project=secret")
 	assert.Contains(t, loc, "fmt=deb")
 }
