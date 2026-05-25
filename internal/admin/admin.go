@@ -120,6 +120,7 @@ func (s *Server) NewHTTPServer() *http.Server {
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 16,
 	}
 }
 
@@ -130,9 +131,12 @@ func (s *Server) ListenAndServe() error {
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		w.Header().Set("Content-Security-Policy", "default-src 'self' data:")
+		w.Header().Set("X-Permitted-Cross-Domain-Policies", "none")
+		w.Header().Set("Permissions-Policy", "interest-cohort=()")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -188,13 +192,15 @@ func (s *Server) apiDashboard(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := s.db.GetDashboardStats(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
 	recent, err := s.db.ListRecentReleases(ctx, 10)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if recent == nil {
@@ -235,7 +241,8 @@ func (s *Server) apiDashboard(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiProjects(w http.ResponseWriter, r *http.Request) {
 	projects, err := s.db.ListProjectSummaries(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if projects == nil {
@@ -254,13 +261,15 @@ func (s *Server) apiProject(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
 	releases, err := s.db.ListReleaseSummaries(ctx, project.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if releases == nil {
@@ -269,7 +278,8 @@ func (s *Server) apiProject(w http.ResponseWriter, r *http.Request) {
 
 	sites, err := s.db.ListSites(ctx, project.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -292,7 +302,8 @@ func (s *Server) apiRelease(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -302,19 +313,22 @@ func (s *Server) apiRelease(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
 	rows, pkgs, err := s.db.ListArtifactDetails(ctx, release.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
 	totalDownloads, err := s.db.GetTotalDownloads(ctx, release.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -342,7 +356,8 @@ func (s *Server) apiRelease(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiRegistries(w http.ResponseWriter, r *http.Request) {
 	projects, err := s.db.ListProjectSummaries(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if projects == nil {
@@ -358,7 +373,8 @@ func (s *Server) apiRegistries(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiTokens(w http.ResponseWriter, r *http.Request) {
 	tokens, err := s.db.ListTokenDetails(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -394,7 +410,8 @@ func (s *Server) apiTokens(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiSites(w http.ResponseWriter, r *http.Request) {
 	sites, err := s.db.ListSiteDetails(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if sites == nil {
@@ -409,7 +426,8 @@ func (s *Server) apiSites(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiOIDC(w http.ResponseWriter, r *http.Request) {
 	policies, err := s.db.ListOIDCPolicyDetails(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if policies == nil {
@@ -421,7 +439,8 @@ func (s *Server) apiOIDC(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiArtifacts(w http.ResponseWriter, r *http.Request) {
 	artifacts, err := s.db.ListAllArtifacts(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if artifacts == nil {
@@ -433,7 +452,8 @@ func (s *Server) apiArtifacts(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiStorage(w http.ResponseWriter, r *http.Request) {
 	breakdown, err := s.db.GetStorageBreakdown(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if breakdown == nil {
@@ -442,7 +462,8 @@ func (s *Server) apiStorage(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := s.db.GetDashboardStats(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 

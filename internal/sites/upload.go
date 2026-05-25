@@ -21,8 +21,9 @@ import (
 )
 
 const (
-	maxSiteUploadSize = 256 << 20 // 256 MiB
-	maxFileCount      = 10000
+	maxSiteUploadSize       = 256 << 20 // 256 MiB
+	maxSiteDecompressedSize = 1 << 30   // 1 GiB
+	maxFileCount            = 10000
 )
 
 func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
@@ -48,12 +49,18 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	var buf bytes.Buffer
 	hasher := sha256.New()
-	tee := io.TeeReader(gz, &buf)
+	limited := io.LimitReader(gz, maxSiteDecompressedSize+1)
+	tee := io.TeeReader(limited, &buf)
 
 	fileCount, err := validateTar(io.TeeReader(tee, hasher))
 	if err != nil {
 		span.RecordError(err)
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		http.Error(w, `{"error":"invalid archive"}`, http.StatusBadRequest)
+		return
+	}
+
+	if int64(buf.Len()) > maxSiteDecompressedSize {
+		http.Error(w, `{"error":"decompressed archive too large"}`, http.StatusRequestEntityTooLarge)
 		return
 	}
 

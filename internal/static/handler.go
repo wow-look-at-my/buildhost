@@ -130,7 +130,7 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 
 	if err := f.Serve(w, r, sctx); err != nil {
 		if w.Header().Get("Content-Length") == "" {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			http.Error(w, "not found", http.StatusNotFound)
 		}
 	}
 }
