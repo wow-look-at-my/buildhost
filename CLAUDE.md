@@ -68,7 +68,9 @@ buildhost bootstrap --name admin-token
 BUILDHOST_LISTEN_ADDR=:8080 BUILDHOST_BASE_URL=https://example.com BUILDHOST_DOMAIN=example.com buildhost serve
 ```
 
-`BUILDHOST_DOMAIN` is required. Each service gets its own subdomain: `apt.example.com`, `brew.example.com`, `npm.example.com`, `oci.example.com` (canonical, `docker.example.com` 301-redirects), `dl.example.com`, `sites.example.com`, `static.example.com`. API routes stay on the main domain.
+`BUILDHOST_DOMAIN` derives subdomain URLs for each service: `apt.example.com`, `brew.example.com`, `npm.example.com`, `oci.example.com` (canonical, `docker.example.com` 301-redirects), `dl.example.com`, `sites.example.com`, `static.example.com`. API routes stay on the main domain.
+
+Individual service URLs can be overridden with `BUILDHOST_<SERVICE>_URL` env vars (e.g., `BUILDHOST_STATIC_URL=https://cdn.example.com`). This allows subdomains, path-based routing, or completely different domains per service. Supported services: `APT`, `BREW`, `DL`, `NPM`, `OCI`, `SITES`, `STATIC`.
 
 To disable application-level zstd compression (e.g., on ZFS or Btrfs with filesystem-level compression):
 

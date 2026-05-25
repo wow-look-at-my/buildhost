@@ -17,6 +17,7 @@ type Config struct {
 	OIDCEvents       []string
 	OTELEndpoint     string
 	Domain           string
+	ServiceURLs      map[string]string
 }
 
 func Load() Config {
@@ -77,6 +78,13 @@ func Load() Config {
 	}
 	if v := os.Getenv("BUILDHOST_DOMAIN"); v != "" {
 		c.Domain = v
+	}
+	c.ServiceURLs = make(map[string]string)
+	for _, svc := range []string{"apt", "brew", "dl", "npm", "oci", "sites", "static"} {
+		envKey := "BUILDHOST_" + strings.ToUpper(svc) + "_URL"
+		if v := os.Getenv(envKey); v != "" {
+			c.ServiceURLs[svc] = v
+		}
 	}
 	return c
 }

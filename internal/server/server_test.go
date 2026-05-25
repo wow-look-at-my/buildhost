@@ -564,6 +564,7 @@ func TestOIDC_AutoCreateProject(t *testing.T) {
 		DataDir:     dbDir,
 		DBPath:      dbPath,
 		BaseURL:     "http://localhost",
+		Domain:      "test.local",
 		OIDCIssuers: []string{jwksSrv.URL},
 		OIDCOrgs:    []string{"*"},
 		OIDCEvents:  []string{"push"},
