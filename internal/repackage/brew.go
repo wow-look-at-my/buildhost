@@ -9,7 +9,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 var brewUnsafeChars = regexp.MustCompile(`[^a-zA-Z0-9 .,;:!?@&()/'+*=_-]`)
@@ -18,15 +18,17 @@ func sanitizeBrewString(s string) string {
 	return brewUnsafeChars.ReplaceAllString(s, "")
 }
 
+func init() { Register(&Brew{}) }
+
 type Brew struct{}
 
 func (b *Brew) Format() Format { return FormatBrew }
 
-func (b *Brew) Applicable(a model.Artifact) bool {
-	if a.Kind == model.KindAssets {
+func (b *Brew) Applicable(a db.Artifact) bool {
+	if a.Kind == db.KindAssets {
 		return false
 	}
-	return a.OS == model.OSLinux || a.OS == model.OSDarwin
+	return a.OS == db.OSLinux || a.OS == db.OSDarwin
 }
 
 var brewTemplate = template.Must(template.New("formula").Parse(`class {{ .ClassName }} < Formula
@@ -84,16 +86,21 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 	}
 
 	brewOS := "macos"
-	if input.Artifact.OS == model.OSLinux {
+	if input.Artifact.OS == db.OSLinux {
 		brewOS = "linux"
 	}
 	brewArch := "arm"
-	if input.Artifact.Arch == model.ArchAMD64 {
+	if input.Artifact.Arch == db.ArchAMD64 {
 		brewArch = "intel"
 	}
 
-	url := fmt.Sprintf("%s/dl/%s/v%s/%s/%s?format=tar.gz",
-		input.BaseURL, input.Project.Name, version, input.Artifact.OS, input.Artifact.Arch)
+	var url string
+	if input.DownloadURL != nil {
+		url = input.DownloadURL(input.Project.Name, version, input.Artifact.OS, input.Artifact.Arch, "tar.gz")
+	} else {
+		url = fmt.Sprintf("%s/dl/%s/v%s/%s/%s?format=tar.gz",
+			input.BaseURL, input.Project.Name, version, input.Artifact.OS, input.Artifact.Arch)
+	}
 
 	d := brewData{
 		ClassName:   brewClassName(input.Project.Name),

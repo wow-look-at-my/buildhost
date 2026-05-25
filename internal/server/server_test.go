@@ -24,10 +24,10 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	_ "github.com/wow-look-at-my/buildhost/internal/dl"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	_ "github.com/wow-look-at-my/buildhost/internal/npm"
 	_ "github.com/wow-look-at-my/buildhost/internal/oci"
 	"github.com/wow-look-at-my/buildhost/internal/server"
+	_ "github.com/wow-look-at-my/buildhost/internal/sites"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/require"
 )
@@ -105,7 +105,12 @@ func (e *testEnv) doRequest(t *testing.T, method, path, contentType string, body
 	if auth {
 		req.Header.Set("Authorization", "Bearer "+e.token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
 	require.Nil(t, err)
 
 	return resp
@@ -140,17 +145,17 @@ func TestFullLifecycle(t *testing.T) {
 	resp := env.postJSON(t, "/api/v1/projects", `{"name":"myapp","versioning":"auto"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
-	var project model.Project
+	var project db.Project
 	decodeJSON(t, resp, &project)
 	require.Equal(t, "myapp", project.Name)
 
-	require.Equal(t, model.VersioningAuto, project.Versioning)
+	require.Equal(t, db.VersioningAuto, project.Versioning)
 
 	// (b) List projects
 	resp = env.authGet(t, "/api/v1/projects")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	var projects []model.Project
+	var projects []db.Project
 	decodeJSON(t, resp, &projects)
 	found := false
 	for _, p := range projects {
@@ -164,7 +169,7 @@ func TestFullLifecycle(t *testing.T) {
 	resp = env.postJSON(t, "/api/v1/projects/myapp/releases", `{"git_branch":"main","git_commit":"abc123"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
-	var release model.Release
+	var release db.Release
 	decodeJSON(t, resp, &release)
 	require.Equal(t, "1", release.Version)
 
@@ -178,11 +183,11 @@ func TestFullLifecycle(t *testing.T) {
 	resp = env.putBody(t, "/api/v1/projects/myapp/releases/1/artifacts/linux/amd64", binaryPayload)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
-	var artifact model.Artifact
+	var artifact db.Artifact
 	decodeJSON(t, resp, &artifact)
-	require.Equal(t, model.OSLinux, artifact.OS)
+	require.Equal(t, db.OSLinux, artifact.OS)
 
-	require.Equal(t, model.ArchAMD64, artifact.Arch)
+	require.Equal(t, db.ArchAMD64, artifact.Arch)
 
 	require.Equal(t, int64(len(binaryPayload)), artifact.Size)
 
@@ -190,44 +195,35 @@ func TestFullLifecycle(t *testing.T) {
 	resp = env.postJSON(t, "/api/v1/projects/myapp/releases/1/publish", `{}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	var published model.Release
+	var published db.Release
 	decodeJSON(t, resp, &published)
 	require.True(t, published.Published)
 
-	// (f) Download raw binary by exact version (no auth needed for public project)
+	// (f) Download raw binary by exact version -- redirects to /static
 	resp = env.get(t, "/dl/myapp/1/linux/amd64")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "/static?")
 
-	dlBody := readBody(t, resp)
-	require.True(t, bytes.Equal(dlBody, binaryPayload))
-
-	// (g) Download via "latest" alias
+	// (g) Download via "latest" alias -- redirects with resolved version
 	resp = env.get(t, "/dl/myapp/latest/linux/amd64")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "/static?")
+	require.Contains(t, resp.Header.Get("Location"), "id=myapp")
 
-	dlBody = readBody(t, resp)
-	require.True(t, bytes.Equal(dlBody, binaryPayload))
-
-	// (h) Download via branch
+	// (h) Download via branch -- redirects with resolved version
 	resp = env.get(t, "/dl/myapp/branch/main/linux/amd64")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "/static?")
 
-	dlBody = readBody(t, resp)
-	require.True(t, bytes.Equal(dlBody, binaryPayload))
-
-	// (i) Download tar.gz packaged version
+	// (i) Download tar.gz -- redirects with fmt=tar.gz
 	resp = env.get(t, "/dl/myapp/1/linux/amd64?format=tar.gz")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "fmt=tar.gz")
 
-	targzBody := readBody(t, resp)
-	require.NotEqual(t, 0, len(targzBody))
-
-	// (j) Download zip packaged version
+	// (j) Download zip -- redirects with fmt=zip
 	resp = env.get(t, "/dl/myapp/1/linux/amd64?format=zip")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	zipBody := readBody(t, resp)
-	require.NotEqual(t, 0, len(zipBody))
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "fmt=zip")
 
 }
 
@@ -242,7 +238,19 @@ func TestHealthz(t *testing.T) {
 
 	body := readBody(t, resp)
 	require.Equal(t, "ok", string(body))
+}
 
+func TestHealthz_DBClosed(t *testing.T) {
+	env := setup(t)
+
+	// Close the database to simulate an unreachable DB.
+	env.database.Close()
+
+	resp := env.get(t, "/healthz")
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+	body := readBody(t, resp)
+	require.Equal(t, "database unreachable", string(body))
 }
 
 // ---------------------------------------------------------------------------
@@ -255,7 +263,12 @@ func TestCreateProject_NoAuth_Returns401(t *testing.T) {
 	req, _ := http.NewRequest("POST", env.ts.URL+"/api/v1/projects", strings.NewReader(`{"name":"noauth","versioning":"auto"}`))
 	req.Header.Set("Content-Type", "application/json")
 	// No Authorization header.
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
 	require.Nil(t, err)
 
 	defer resp.Body.Close()
@@ -311,12 +324,11 @@ func TestPrivateProject_DownloadWithoutAuth_Returns401(t *testing.T) {
 
 	resp.Body.Close()
 
-	// With auth, download should succeed.
+	// With auth, download should redirect to /static.
 	resp = env.authGet(t, "/dl/secretapp/1/linux/amd64")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	dlBody := readBody(t, resp)
-	require.True(t, bytes.Equal(dlBody, binaryPayload))
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "/static?")
+	require.Contains(t, resp.Header.Get("Location"), "id=secretapp")
 
 }
 
@@ -410,7 +422,7 @@ func TestListProjects_HidesPrivateWithoutAuth(t *testing.T) {
 	resp = env.get(t, "/api/v1/projects")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	var projects []model.Project
+	var projects []db.Project
 	decodeJSON(t, resp, &projects)
 
 	for _, p := range projects {
@@ -450,7 +462,7 @@ func TestAutoVersioning_IncrementsBeyondFirst(t *testing.T) {
 	resp = env.postJSON(t, "/api/v1/projects/multiver/releases", `{"git_branch":"main","git_commit":"aaa"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
-	var rel1 model.Release
+	var rel1 db.Release
 	decodeJSON(t, resp, &rel1)
 	require.Equal(t, "1", rel1.Version)
 
@@ -458,7 +470,7 @@ func TestAutoVersioning_IncrementsBeyondFirst(t *testing.T) {
 	resp = env.postJSON(t, "/api/v1/projects/multiver/releases", `{"git_branch":"main","git_commit":"bbb"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
-	var rel2 model.Release
+	var rel2 db.Release
 	decodeJSON(t, resp, &rel2)
 	require.Equal(t, "2", rel2.Version)
 
@@ -530,9 +542,9 @@ func TestOIDC_AutoCreateProject(t *testing.T) {
 		"iss":        jwksSrv.URL,
 		"sub":        "repo:myorg/autoproject:ref:refs/heads/main",
 		"event_name": "push",
-		"aud": ts.URL,
-		"exp": time.Now().Add(10 * time.Minute).Unix(),
-		"iat": time.Now().Unix(),
+		"aud":        cfg.BaseURL,
+		"exp":        time.Now().Add(10 * time.Minute).Unix(),
+		"iat":        time.Now().Unix(),
 	})
 
 	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/projects/autoproject/releases", strings.NewReader(`{}`))

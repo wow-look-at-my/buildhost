@@ -11,7 +11,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
 )
@@ -42,16 +41,16 @@ func seedData(t *testing.T, database *db.DB) {
 	t.Helper()
 	ctx := context.Background()
 
-	p := &model.Project{Name: "testproject", Description: "A test project", Versioning: model.VersioningAuto}
+	p := &db.Project{Name: "testproject", Description: "A test project", Versioning: db.VersioningAuto}
 	require.NoError(t, database.CreateProject(ctx, p))
 
-	r := &model.Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1, GitBranch: "main"}
+	r := &db.Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1, GitBranch: "main"}
 	require.NoError(t, database.CreateRelease(ctx, r))
 	require.NoError(t, database.PublishRelease(ctx, r.ID))
 
-	a := &model.Artifact{
-		ReleaseID: r.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: "abc123", Size: 2048, SHA256: "deadbeef",
+	a := &db.Artifact{
+		ReleaseID: r.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: "abc123", Size: 2048, SHA256: "deadbeef",
 	}
 	require.NoError(t, database.CreateArtifact(ctx, a))
 
@@ -59,7 +58,7 @@ func seedData(t *testing.T, database *db.DB) {
 	require.NoError(t, err)
 
 	pid := p.ID
-	require.NoError(t, database.CreateOIDCPolicy(ctx, &model.OIDCPolicy{
+	require.NoError(t, database.CreateOIDCPolicy(ctx, &db.OIDCPolicy{
 		Issuer: "https://token.actions.githubusercontent.com", SubjectPattern: "repo:org/repo:*",
 		ProjectID: &pid, Scopes: "read,write",
 	}))
@@ -314,6 +313,142 @@ func TestAPIOIDC_Empty(t *testing.T) {
 	assert.Empty(t, resp)
 }
 
+func TestAPISites(t *testing.T) {
+	srv, database := newTestServer(t)
+	seedData(t, database)
+
+	ctx := context.Background()
+	p, _ := database.GetProject(ctx, "testproject")
+	_, err := database.UpsertSite(ctx, &db.Site{
+		ProjectID: p.ID, Branch: "main", StorageKey: "sitekey1",
+		Size: 4096, SHA256: "sitehash", FileCount: 10, GitCommit: "abc123",
+	})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sites", nil)
+	w := httptest.NewRecorder()
+	srv.apiSites(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	sites := resp["sites"].([]any)
+	assert.Len(t, sites, 1)
+	assert.Equal(t, "testproject", sites[0].(map[string]any)["project_name"])
+	assert.Equal(t, "main", sites[0].(map[string]any)["branch"])
+}
+
+func TestAPISites_Empty(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sites", nil)
+	w := httptest.NewRecorder()
+	srv.apiSites(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	sites := resp["sites"].([]any)
+	assert.Empty(t, sites)
+}
+
+func TestAPIProject_IncludesSites(t *testing.T) {
+	srv, database := newTestServer(t)
+	seedData(t, database)
+
+	ctx := context.Background()
+	p, _ := database.GetProject(ctx, "testproject")
+	_, err := database.UpsertSite(ctx, &db.Site{
+		ProjectID: p.ID, Branch: "dev", StorageKey: "sitekey2",
+		Size: 2048, SHA256: "sitehash2", FileCount: 5,
+	})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/projects/testproject", nil)
+	req.SetPathValue("name", "testproject")
+	w := httptest.NewRecorder()
+	srv.apiProject(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	sites := resp["sites"].([]any)
+	assert.Len(t, sites, 1)
+	assert.Equal(t, "dev", sites[0].(map[string]any)["branch"])
+}
+
+func TestAPIArtifacts(t *testing.T) {
+	srv, database := newTestServer(t)
+	seedData(t, database)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/artifacts", nil)
+	w := httptest.NewRecorder()
+	srv.apiArtifacts(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Len(t, resp, 1)
+	assert.Equal(t, "testproject", resp[0]["project_name"])
+	assert.Equal(t, "1.0.0", resp[0]["version"])
+	assert.Equal(t, "linux", resp[0]["os"])
+	assert.Equal(t, "amd64", resp[0]["arch"])
+}
+
+func TestAPIArtifacts_Empty(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/artifacts", nil)
+	w := httptest.NewRecorder()
+	srv.apiArtifacts(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Empty(t, resp)
+}
+
+func TestAPIStorage(t *testing.T) {
+	srv, database := newTestServer(t)
+	seedData(t, database)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/storage", nil)
+	w := httptest.NewRecorder()
+	srv.apiStorage(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	projects := resp["projects"].([]any)
+	assert.Len(t, projects, 1)
+	assert.Equal(t, "testproject", projects[0].(map[string]any)["name"])
+	assert.Equal(t, float64(2048), projects[0].(map[string]any)["total_bytes"])
+	assert.Equal(t, float64(2048), resp["total_bytes"])
+}
+
+func TestAPIStorage_Empty(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/storage", nil)
+	w := httptest.NewRecorder()
+	srv.apiStorage(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	projects := resp["projects"].([]any)
+	assert.Empty(t, projects)
+}
+
 func TestAPISidebar(t *testing.T) {
 	srv, _ := newTestServer(t)
 
@@ -332,6 +467,20 @@ func TestAPISidebar(t *testing.T) {
 	assert.Contains(t, resp["cpu_percent"], "%")
 }
 
+func TestNewHTTPServer(t *testing.T) {
+	srv, _ := newTestServer(t)
+	httpSrv := srv.NewHTTPServer()
+
+	assert.Equal(t, ":9090", httpSrv.Addr)
+	assert.NotNil(t, httpSrv.Handler)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	w := httptest.NewRecorder()
+	httpSrv.Handler.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
+}
+
 func TestSecurityHeaders(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -346,7 +495,7 @@ func TestSecurityHeaders(t *testing.T) {
 	assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
 	assert.Equal(t, "SAMEORIGIN", w.Header().Get("X-Frame-Options"))
 	assert.Equal(t, "no-referrer", w.Header().Get("Referrer-Policy"))
-	assert.Equal(t, "default-src 'self'", w.Header().Get("Content-Security-Policy"))
+	assert.Equal(t, "default-src 'self' data:", w.Header().Get("Content-Security-Policy"))
 }
 
 func TestServeSPA_StaticFile(t *testing.T) {

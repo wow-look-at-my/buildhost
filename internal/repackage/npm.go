@@ -9,15 +9,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
+
+func init() { Register(&NPM{}) }
 
 type NPM struct{}
 
 func (n *NPM) Format() Format { return FormatNPM }
 
-func (n *NPM) Applicable(a model.Artifact) bool {
-	return a.Kind != model.KindLibrary
+func (n *NPM) Applicable(a db.Artifact) bool {
+	return a.Kind != db.KindLibrary
 }
 
 func (n *NPM) Repackage(_ context.Context, input Input) (*Output, error) {
@@ -46,26 +48,38 @@ func (n *NPM) Repackage(_ context.Context, input Input) (*Output, error) {
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
 
-	tw.WriteHeader(&tar.Header{
+	if err := tw.WriteHeader(&tar.Header{
 		Name: "package/package.json",
 		Size: int64(len(packageJSON)),
 		Mode: 0o644,
-	})
-	tw.Write([]byte(packageJSON))
+	}); err != nil {
+		return nil, fmt.Errorf("write tar header: %w", err)
+	}
+	if _, err := tw.Write([]byte(packageJSON)); err != nil {
+		return nil, fmt.Errorf("write package.json: %w", err)
+	}
 
 	binMode := int64(0o644)
-	if input.Artifact.Kind == model.KindBinary {
+	if input.Artifact.Kind == db.KindBinary {
 		binMode = 0o755
 	}
-	tw.WriteHeader(&tar.Header{
+	if err := tw.WriteHeader(&tar.Header{
 		Name: "package/bin/" + input.Project.Name,
 		Size: int64(len(input.Data)),
 		Mode: binMode,
-	})
-	tw.Write(input.Data)
+	}); err != nil {
+		return nil, fmt.Errorf("write tar header: %w", err)
+	}
+	if _, err := tw.Write(input.Data); err != nil {
+		return nil, fmt.Errorf("write binary: %w", err)
+	}
 
-	tw.Close()
-	gw.Close()
+	if err := tw.Close(); err != nil {
+		return nil, fmt.Errorf("close tar: %w", err)
+	}
+	if err := gw.Close(); err != nil {
+		return nil, fmt.Errorf("close gzip: %w", err)
+	}
 
 	filename := fmt.Sprintf("%s-%s-%s-%s.tgz", input.Project.Name, version, npmOS, npmArch)
 	return &Output{
@@ -75,24 +89,24 @@ func (n *NPM) Repackage(_ context.Context, input Input) (*Output, error) {
 	}, nil
 }
 
-func npmPlatform(os model.OS) string {
+func npmPlatform(os db.OS) string {
 	switch os {
-	case model.OSDarwin:
+	case db.OSDarwin:
 		return "darwin"
-	case model.OSWindows:
+	case db.OSWindows:
 		return "win32"
 	default:
 		return string(os)
 	}
 }
 
-func npmArch(a model.Arch) string {
+func npmArch(a db.Arch) string {
 	switch a {
-	case model.ArchAMD64:
+	case db.ArchAMD64:
 		return "x64"
-	case model.ArchARM64:
+	case db.ArchARM64:
 		return "arm64"
-	case model.Arch386:
+	case db.Arch386:
 		return "ia32"
 	default:
 		return string(a)

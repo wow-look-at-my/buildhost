@@ -8,7 +8,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/require"
@@ -16,14 +15,14 @@ import (
 
 // withRoute adds project and route info to the request context, simulating
 // what the auth middleware does in production.
-func withRoute(r *http.Request, project *model.Project, rt route) *http.Request {
+func withRoute(r *http.Request, project *db.Project, rt route) *http.Request {
 	ctx := auth.WithProject(r.Context(), project)
 	ctx = auth.WithRouteInfo(ctx, rt)
 	return r.WithContext(ctx)
 }
 
 // withProjectRoute adds project and route info derived from the request's path values.
-func withProjectRoute(r *http.Request, project *model.Project) *http.Request {
+func withProjectRoute(r *http.Request, project *db.Project) *http.Request {
 	rt := route{
 		project: r.PathValue("project"),
 		version: r.PathValue("version"),
@@ -49,11 +48,11 @@ func setupTestHandler(t *testing.T) *Handler {
 }
 
 func writeToken(ctx context.Context, scopes string) context.Context {
-	tok := &model.APIToken{ID: 99999, Scopes: scopes}
+	tok := &db.APIToken{ID: 99999, Scopes: scopes}
 	return auth.WithToken(ctx, tok)
 }
 
 func projectWriteToken(ctx context.Context, projectID int64) context.Context {
-	tok := &model.APIToken{ID: 99999, Scopes: "read,write", ProjectID: &projectID}
+	tok := &db.APIToken{ID: 99999, Scopes: "read,write", ProjectID: &projectID}
 	return auth.WithToken(ctx, tok)
 }

@@ -93,7 +93,7 @@ func (s *Server) startCPUTracker() {
 	}()
 }
 
-func (s *Server) ListenAndServe() error {
+func (s *Server) NewHTTPServer() *http.Server {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/sidebar", s.apiSidebar)
@@ -104,12 +104,16 @@ func (s *Server) ListenAndServe() error {
 	mux.HandleFunc("GET /api/registries", s.apiRegistries)
 	mux.HandleFunc("GET /api/tokens", s.apiTokens)
 	mux.HandleFunc("GET /api/oidc", s.apiOIDC)
+	mux.HandleFunc("GET /api/sites", s.apiSites)
+	mux.HandleFunc("GET /api/artifacts", s.apiArtifacts)
+	mux.HandleFunc("GET /api/storage", s.apiStorage)
+	mux.HandleFunc("GET /admin/inflight", InflightHandler)
 
 	mux.HandleFunc("GET /", s.serveSPA)
 
 	s.startCPUTracker()
 
-	srv := &http.Server{
+	return &http.Server{
 		Addr:              s.cfg.AdminListenAddr,
 		Handler:           securityHeaders(mux),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -117,7 +121,10 @@ func (s *Server) ListenAndServe() error {
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-	return srv.ListenAndServe()
+}
+
+func (s *Server) ListenAndServe() error {
+	return s.NewHTTPServer().ListenAndServe()
 }
 
 func securityHeaders(next http.Handler) http.Handler {
@@ -125,7 +132,7 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self' data:")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -260,9 +267,17 @@ func (s *Server) apiProject(w http.ResponseWriter, r *http.Request) {
 		releases = []db.ReleaseSummary{}
 	}
 
+	sites, err := s.db.ListSites(ctx, project.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	s.writeJSON(w, map[string]any{
 		"project":  project,
 		"releases": releases,
+		"sites":    sites,
+		"base_url": s.cfg.BaseURL,
 	})
 }
 
@@ -291,13 +306,10 @@ func (s *Server) apiRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	artifacts, err := s.db.ListArtifactDetails(ctx, release.ID)
+	rows, pkgs, err := s.db.ListArtifactDetails(ctx, release.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-	if artifacts == nil {
-		artifacts = []db.ArtifactDetail{}
 	}
 
 	totalDownloads, err := s.db.GetTotalDownloads(ctx, release.ID)
@@ -306,8 +318,14 @@ func (s *Server) apiRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	type artifactView struct {
+		db.ListArtifactDetailsWithDownloadsRow
+		Packages []db.ListPackagedFormatsRow `json:"packages"`
+	}
+	artifacts := make([]artifactView, len(rows))
 	var totalSize int64
-	for _, a := range artifacts {
+	for i, a := range rows {
+		artifacts[i] = artifactView{ListArtifactDetailsWithDownloadsRow: a, Packages: pkgs[i]}
 		totalSize += a.Size
 	}
 
@@ -373,6 +391,21 @@ func (s *Server) apiTokens(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, resp)
 }
 
+func (s *Server) apiSites(w http.ResponseWriter, r *http.Request) {
+	sites, err := s.db.ListSiteDetails(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if sites == nil {
+		sites = []db.SiteDetail{}
+	}
+	s.writeJSON(w, map[string]any{
+		"sites":    sites,
+		"base_url": s.cfg.BaseURL,
+	})
+}
+
 func (s *Server) apiOIDC(w http.ResponseWriter, r *http.Request) {
 	policies, err := s.db.ListOIDCPolicyDetails(r.Context())
 	if err != nil {
@@ -383,6 +416,50 @@ func (s *Server) apiOIDC(w http.ResponseWriter, r *http.Request) {
 		policies = []db.OIDCPolicyDetail{}
 	}
 	s.writeJSON(w, policies)
+}
+
+func (s *Server) apiArtifacts(w http.ResponseWriter, r *http.Request) {
+	artifacts, err := s.db.ListAllArtifacts(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if artifacts == nil {
+		artifacts = []db.AllArtifact{}
+	}
+	s.writeJSON(w, artifacts)
+}
+
+func (s *Server) apiStorage(w http.ResponseWriter, r *http.Request) {
+	breakdown, err := s.db.GetStorageBreakdown(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if breakdown == nil {
+		breakdown = []db.StorageBreakdown{}
+	}
+
+	stats, err := s.db.GetDashboardStats(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]any{
+		"projects":       breakdown,
+		"logical_bytes":  stats.LogicalBytes,
+		"physical_bytes": stats.PhysicalBytes,
+		"total_bytes":    stats.TotalStorageBytes,
+		"disk_bytes":     blobsDiskUsage(s.cfg.DataDir + "/blobs"),
+	}
+
+	if du, err := getDiskUsage(s.cfg.DataDir); err == nil && du.Total > 0 {
+		resp["disk_used"] = du.Used
+		resp["disk_total"] = du.Total
+	}
+
+	s.writeJSON(w, resp)
 }
 
 func (s *Server) buildAge() string {

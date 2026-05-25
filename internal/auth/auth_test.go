@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/testify/require"
 )
 
@@ -74,7 +74,7 @@ func TestExtractToken_InvalidBasicEncoding(t *testing.T) {
 }
 
 func TestWithToken_TokenFrom_RoundTrip(t *testing.T) {
-	tok := &model.APIToken{
+	tok := &db.APIToken{
 		ID:	42,
 		Name:	"test-token",
 		Scopes:	"read,write",
@@ -103,7 +103,7 @@ func TestWithProject_ProjectFrom_RoundTrip(t *testing.T) {
 	// Before setting, ProjectFrom returns nil.
 	require.Nil(t, ProjectFrom(ctx))
 
-	proj := &model.Project{ID: 7, Name: "testproj"}
+	proj := &db.Project{ID: 7, Name: "testproj"}
 	ctx = WithProject(ctx, proj)
 	got := ProjectFrom(ctx)
 	require.NotNil(t, got)

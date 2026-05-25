@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
 )
@@ -17,7 +17,7 @@ func TestCreateRelease_Semver(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "semproj", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "semproj", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	body := `{"version":"v1.2.3","git_branch":"main","git_commit":"abc123"}`
@@ -29,7 +29,7 @@ func TestCreateRelease_Semver(t *testing.T) {
 	h.CreateRelease(rec, req)
 
 	assert.Equal(t, http.StatusCreated, rec.Code)
-	var rel model.Release
+	var rel db.Release
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
 	assert.Equal(t, "1.2.3", rel.Version)
 	assert.Equal(t, "main", rel.GitBranch)
@@ -39,7 +39,7 @@ func TestCreateRelease_Auto(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "autoproj", Versioning: model.VersioningAuto}
+	proj := &db.Project{Name: "autoproj", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	body := `{}`
@@ -51,7 +51,7 @@ func TestCreateRelease_Auto(t *testing.T) {
 	h.CreateRelease(rec, req)
 
 	assert.Equal(t, http.StatusCreated, rec.Code)
-	var rel model.Release
+	var rel db.Release
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
 	assert.Equal(t, "1", rel.Version)
 	assert.Equal(t, int64(1), rel.VersionNum)
@@ -61,7 +61,7 @@ func TestCreateRelease_AutoWithExplicitVersion(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "autov", Versioning: model.VersioningAuto}
+	proj := &db.Project{Name: "autov", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	body := `{"version":"5"}`
@@ -73,7 +73,7 @@ func TestCreateRelease_AutoWithExplicitVersion(t *testing.T) {
 	h.CreateRelease(rec, req)
 
 	assert.Equal(t, http.StatusCreated, rec.Code)
-	var rel model.Release
+	var rel db.Release
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
 	assert.Equal(t, "5", rel.Version)
 	assert.Equal(t, int64(5), rel.VersionNum)
@@ -86,7 +86,7 @@ func TestCreateRelease_InvalidBody(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "badbody", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "badbody", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("POST", "/api/projects/badbody/releases", strings.NewReader("not json"))
@@ -103,7 +103,7 @@ func TestCreateRelease_SemverMissingVersion(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "semproj2", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "semproj2", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	body := `{}`
@@ -122,10 +122,10 @@ func TestCreateRelease_Duplicate(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "duprel", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "duprel", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, h.DB.CreateRelease(ctx, rel))
 
 	body := `{"version":"1.0.0"}`
@@ -143,9 +143,9 @@ func TestGetRelease_Success(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "relproj", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "relproj", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "2.0.0", VersionNum: 2000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "2.0.0", VersionNum: 2000000}
 	require.NoError(t, h.DB.CreateRelease(ctx, rel))
 
 	req := httptest.NewRequest("GET", "/api/projects/relproj/releases/2.0.0", nil)
@@ -156,7 +156,7 @@ func TestGetRelease_Success(t *testing.T) {
 	h.GetRelease(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	var got model.Release
+	var got db.Release
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	assert.Equal(t, "2.0.0", got.Version)
 }
@@ -165,7 +165,7 @@ func TestGetRelease_ReleaseNotFound(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "relproj2", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "relproj2", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/api/projects/relproj2/releases/9.9.9", nil)
@@ -185,10 +185,10 @@ func TestListReleases_Success(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "listrel", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "listrel", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	require.NoError(t, h.DB.CreateRelease(ctx, &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}))
-	require.NoError(t, h.DB.CreateRelease(ctx, &model.Release{ProjectID: proj.ID, Version: "2.0.0", VersionNum: 2000000}))
+	require.NoError(t, h.DB.CreateRelease(ctx, &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}))
+	require.NoError(t, h.DB.CreateRelease(ctx, &db.Release{ProjectID: proj.ID, Version: "2.0.0", VersionNum: 2000000}))
 
 	req := httptest.NewRequest("GET", "/api/projects/listrel/releases", nil)
 	req.SetPathValue("project", "listrel")
@@ -197,7 +197,7 @@ func TestListReleases_Success(t *testing.T) {
 	h.ListReleases(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	var releases []model.Release
+	var releases []db.Release
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &releases))
 	assert.Equal(t, 2, len(releases))
 }

@@ -10,8 +10,8 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
+	"github.com/wow-look-at-my/buildhost/internal/static"
 )
 
 func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath string) {
@@ -35,7 +35,7 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 	}
 
 	goArch := goArchFromDeb(arch)
-	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, string(model.OSLinux), goArch)
+	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, string(db.OSLinux), goArch)
 	if errors.Is(err, db.ErrNotFound) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte(""))
@@ -99,33 +99,15 @@ func (h *Handler) servePool(w http.ResponseWriter, r *http.Request, subpath stri
 		return
 	}
 
-	artifacts, err := h.DB.ListArtifacts(r.Context(), release.ID)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+	debArch := extractDebArch(subpath)
+	goArch := goArchFromDeb(debArch)
+
+	version := strings.TrimPrefix(release.Version, "v")
+	if version == "" {
+		version = fmt.Sprintf("%d", release.VersionNum)
 	}
 
-	debArch := extractDebArch(r.URL.Path)
-
-	for _, a := range artifacts {
-		if a.OS != model.OSLinux {
-			continue
-		}
-		if debArch != "" && goArchFromDeb(debArch) != string(a.Arch) {
-			continue
-		}
-		out, err := h.Gen.Generate(r.Context(), repackage.FormatDeb, *project, *release, a)
-		if err != nil {
-			continue
-		}
-		w.Header().Set("Content-Type", "application/vnd.debian.binary-package")
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", out.Size))
-		io.Copy(w, out.Reader)
-		return
-	}
-
-	http.NotFound(w, r)
+	static.Redirect(w, r, h.BaseURL, static.For(project.Name).WithVersion(version).WithOS(db.OSLinux).WithArch(db.Arch(goArch)).WithFmt("deb"))
 }
 
 func extractDebArch(subpath string) string {

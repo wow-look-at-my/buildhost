@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
@@ -22,20 +21,20 @@ var testBinary = []byte("#!/bin/sh\necho hello\n")
 
 func makeInput() Input {
 	return Input{
-		Project: model.Project{
+		Project: db.Project{
 			Name:		"testapp",
 			Description:	"A test application",
 			Homepage:	"https://example.com",
 			License:	"MIT",
 		},
-		Release: model.Release{
+		Release: db.Release{
 			Version:	"v1.2.3",
 			VersionNum:	1,
 		},
-		Artifact: model.Artifact{
-			OS:	model.OSLinux,
-			Arch:	model.ArchAMD64,
-			Kind:	model.KindBinary,
+		Artifact: db.Artifact{
+			OS:	db.OSLinux,
+			Arch:	db.ArchAMD64,
+			Kind:	db.KindBinary,
 		},
 		Data:		testBinary,
 		BaseURL:	"https://builds.example.com",
@@ -46,9 +45,9 @@ func makeInput() Input {
 
 func TestTarGZApplicable(t *testing.T) {
 	rp := &TarGZ{}
-	for _, kind := range []model.Kind{model.KindBinary, model.KindLibrary, model.KindAssets, model.KindArchive} {
-		for _, os := range []model.OS{model.OSLinux, model.OSDarwin, model.OSWindows, model.OSFreeBSD} {
-			a := model.Artifact{OS: os, Kind: kind}
+	for _, kind := range []db.Kind{db.KindBinary, db.KindLibrary, db.KindAssets, db.KindArchive} {
+		for _, os := range []db.OS{db.OSLinux, db.OSDarwin, db.OSWindows, db.OSFreeBSD} {
+			a := db.Artifact{OS: os, Kind: kind}
 			assert.True(t, rp.Applicable(a))
 
 		}
@@ -57,9 +56,9 @@ func TestTarGZApplicable(t *testing.T) {
 
 func TestTarXZApplicable(t *testing.T) {
 	rp := &TarXZ{}
-	for _, kind := range []model.Kind{model.KindBinary, model.KindLibrary, model.KindAssets, model.KindArchive} {
-		for _, os := range []model.OS{model.OSLinux, model.OSDarwin, model.OSWindows, model.OSFreeBSD} {
-			a := model.Artifact{OS: os, Kind: kind}
+	for _, kind := range []db.Kind{db.KindBinary, db.KindLibrary, db.KindAssets, db.KindArchive} {
+		for _, os := range []db.OS{db.OSLinux, db.OSDarwin, db.OSWindows, db.OSFreeBSD} {
+			a := db.Artifact{OS: os, Kind: kind}
 			assert.True(t, rp.Applicable(a))
 
 		}
@@ -68,9 +67,9 @@ func TestTarXZApplicable(t *testing.T) {
 
 func TestTarZSTApplicable(t *testing.T) {
 	rp := &TarZST{}
-	for _, kind := range []model.Kind{model.KindBinary, model.KindLibrary, model.KindAssets, model.KindArchive} {
-		for _, os := range []model.OS{model.OSLinux, model.OSDarwin, model.OSWindows, model.OSFreeBSD} {
-			a := model.Artifact{OS: os, Kind: kind}
+	for _, kind := range []db.Kind{db.KindBinary, db.KindLibrary, db.KindAssets, db.KindArchive} {
+		for _, os := range []db.OS{db.OSLinux, db.OSDarwin, db.OSWindows, db.OSFreeBSD} {
+			a := db.Artifact{OS: os, Kind: kind}
 			assert.True(t, rp.Applicable(a))
 
 		}
@@ -79,9 +78,9 @@ func TestTarZSTApplicable(t *testing.T) {
 
 func TestZipApplicable(t *testing.T) {
 	rp := &Zip{}
-	for _, kind := range []model.Kind{model.KindBinary, model.KindLibrary, model.KindAssets, model.KindArchive} {
-		for _, os := range []model.OS{model.OSLinux, model.OSDarwin, model.OSWindows, model.OSFreeBSD} {
-			a := model.Artifact{OS: os, Kind: kind}
+	for _, kind := range []db.Kind{db.KindBinary, db.KindLibrary, db.KindAssets, db.KindArchive} {
+		for _, os := range []db.OS{db.OSLinux, db.OSDarwin, db.OSWindows, db.OSFreeBSD} {
+			a := db.Artifact{OS: os, Kind: kind}
 			assert.True(t, rp.Applicable(a))
 
 		}
@@ -91,11 +90,11 @@ func TestZipApplicable(t *testing.T) {
 func TestDebApplicable(t *testing.T) {
 	rp := &Deb{}
 
-	linuxArtifact := model.Artifact{OS: model.OSLinux, Kind: model.KindBinary}
+	linuxArtifact := db.Artifact{OS: db.OSLinux, Kind: db.KindBinary}
 	assert.True(t, rp.Applicable(linuxArtifact))
 
-	for _, os := range []model.OS{model.OSDarwin, model.OSWindows, model.OSFreeBSD} {
-		a := model.Artifact{OS: os, Kind: model.KindBinary}
+	for _, os := range []db.OS{db.OSDarwin, db.OSWindows, db.OSFreeBSD} {
+		a := db.Artifact{OS: os, Kind: db.KindBinary}
 		assert.False(t, rp.Applicable(a))
 
 	}
@@ -105,22 +104,22 @@ func TestBrewApplicable(t *testing.T) {
 	rp := &Brew{}
 
 	// Linux and Darwin binaries are applicable
-	for _, os := range []model.OS{model.OSLinux, model.OSDarwin} {
-		a := model.Artifact{OS: os, Kind: model.KindBinary}
+	for _, os := range []db.OS{db.OSLinux, db.OSDarwin} {
+		a := db.Artifact{OS: os, Kind: db.KindBinary}
 		assert.True(t, rp.Applicable(a))
 
 	}
 
 	// Assets kind is not applicable even on linux/darwin
-	for _, os := range []model.OS{model.OSLinux, model.OSDarwin} {
-		a := model.Artifact{OS: os, Kind: model.KindAssets}
+	for _, os := range []db.OS{db.OSLinux, db.OSDarwin} {
+		a := db.Artifact{OS: os, Kind: db.KindAssets}
 		assert.False(t, rp.Applicable(a))
 
 	}
 
 	// Windows and FreeBSD are not applicable
-	for _, os := range []model.OS{model.OSWindows, model.OSFreeBSD} {
-		a := model.Artifact{OS: os, Kind: model.KindBinary}
+	for _, os := range []db.OS{db.OSWindows, db.OSFreeBSD} {
+		a := db.Artifact{OS: os, Kind: db.KindBinary}
 		assert.False(t, rp.Applicable(a))
 
 	}
@@ -130,14 +129,14 @@ func TestNPMApplicable(t *testing.T) {
 	rp := &NPM{}
 
 	// Binary, assets, archive are applicable
-	for _, kind := range []model.Kind{model.KindBinary, model.KindAssets, model.KindArchive} {
-		a := model.Artifact{OS: model.OSLinux, Kind: kind}
+	for _, kind := range []db.Kind{db.KindBinary, db.KindAssets, db.KindArchive} {
+		a := db.Artifact{OS: db.OSLinux, Kind: kind}
 		assert.True(t, rp.Applicable(a))
 
 	}
 
 	// Library is not applicable
-	a := model.Artifact{OS: model.OSLinux, Kind: model.KindLibrary}
+	a := db.Artifact{OS: db.OSLinux, Kind: db.KindLibrary}
 	assert.False(t, rp.Applicable(a))
 
 }
@@ -145,18 +144,14 @@ func TestNPMApplicable(t *testing.T) {
 func TestOCIApplicable(t *testing.T) {
 	rp := &OCI{}
 
-	// Binary and archive are applicable
-	for _, kind := range []model.Kind{model.KindBinary, model.KindArchive} {
-		a := model.Artifact{OS: model.OSLinux, Kind: kind}
-		assert.True(t, rp.Applicable(a))
+	// Only binary is applicable
+	a := db.Artifact{OS: db.OSLinux, Kind: db.KindBinary}
+	assert.True(t, rp.Applicable(a))
 
-	}
-
-	// Library and assets are not applicable
-	for _, kind := range []model.Kind{model.KindLibrary, model.KindAssets} {
-		a := model.Artifact{OS: model.OSLinux, Kind: kind}
+	// Archive, library, assets are not applicable
+	for _, kind := range []db.Kind{db.KindArchive, db.KindLibrary, db.KindAssets} {
+		a := db.Artifact{OS: db.OSLinux, Kind: kind}
 		assert.False(t, rp.Applicable(a))
-
 	}
 }
 
@@ -355,32 +350,49 @@ func TestNPMRepackage(t *testing.T) {
 }
 
 func TestOCIRepackage(t *testing.T) {
-	rp := &OCI{}
-	input := makeInput()
+	d := openTestDB(t)
+	store := openTestStore(t)
 	ctx := context.Background()
+
+	proj := &db.Project{Name: "testapp", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "v1.2.3", VersionNum: 1}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	key, size, err := store.Put(ctx, strings.NewReader(string(testBinary)))
+	require.NoError(t, err)
+	a := &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}
+	require.NoError(t, d.CreateArtifact(ctx, a))
+
+	rp := &OCI{Store: store, DB: d}
+	input := makeInput()
+	input.Artifact = *a
 
 	output, err := rp.Repackage(ctx, input)
 	require.Nil(t, err)
-
 	require.NotEqual(t, int64(0), output.Size)
-
-	assert.True(t, strings.HasSuffix(output.Filename, "-oci.json"))
+	assert.True(t, strings.HasSuffix(output.Filename, "-oci-manifest.json"))
 
 	data, err := io.ReadAll(output.Reader)
 	require.Nil(t, err)
 
 	body := string(data)
 	assert.Contains(t, body, "schemaVersion")
-
 	assert.Contains(t, body, "application/vnd.oci.image.manifest.v1+json")
+	assert.Contains(t, body, "sha256:")
 
-	// Verify metadata
 	require.NotNil(t, output.Metadata)
-
 	assert.Equal(t, "linux", output.Metadata["os"])
-
 	assert.Equal(t, "amd64", output.Metadata["arch"])
 
+	// Verify config and layer blobs were stored
+	_, _, _, _, err = d.GetPackagedArtifact(ctx, a.ID, "oci-config")
+	require.NoError(t, err)
+	_, _, _, _, err = d.GetPackagedArtifact(ctx, a.ID, "oci-layer")
+	require.NoError(t, err)
 }
 
 // --- Format tests ---
@@ -429,10 +441,10 @@ func TestOrchestrator_PublishRelease_NoArtifacts(t *testing.T) {
 	store := openTestStore(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "empty-proj", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "empty-proj", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 
 	o := NewOrchestrator(store, d)
@@ -451,10 +463,10 @@ func TestOrchestrator_PublishRelease_WithArtifact(t *testing.T) {
 	store := openTestStore(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Description: "test app", Homepage: "https://example.com", License: "MIT", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Description: "test app", Homepage: "https://example.com", License: "MIT", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 
 	// Store a fake binary.
@@ -462,11 +474,11 @@ func TestOrchestrator_PublishRelease_WithArtifact(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader(binaryContent))
 	require.NoError(t, err)
 
-	a := &model.Artifact{
+	a := &db.Artifact{
 		ReleaseID:  rel.ID,
-		OS:         model.OSLinux,
-		Arch:       model.ArchAMD64,
-		Kind:       model.KindAssets, // Use Assets to skip strip attempt.
+		OS:         db.OSLinux,
+		Arch:       db.ArchAMD64,
+		Kind:       db.KindAssets, // Use Assets to skip strip attempt.
 		StorageKey: key,
 		Size:       size,
 		SHA256:     key,
@@ -488,10 +500,10 @@ func TestOrchestrator_PublishRelease_BinaryKind_AttemptsStrip(t *testing.T) {
 	store := openTestStore(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "binapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "binapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 
 	// Store a fake binary that is NOT a real ELF (strip will fail, but that is handled gracefully).
@@ -499,11 +511,11 @@ func TestOrchestrator_PublishRelease_BinaryKind_AttemptsStrip(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader(binaryContent))
 	require.NoError(t, err)
 
-	a := &model.Artifact{
+	a := &db.Artifact{
 		ReleaseID:  rel.ID,
-		OS:         model.OSLinux,
-		Arch:       model.ArchAMD64,
-		Kind:       model.KindBinary,
+		OS:         db.OSLinux,
+		Arch:       db.ArchAMD64,
+		Kind:       db.KindBinary,
 		StorageKey: key,
 		Size:       size,
 		SHA256:     key,
@@ -530,4 +542,44 @@ func TestNewOrchestrator(t *testing.T) {
 	require.NotNil(t, o)
 	assert.Equal(t, d, o.DB)
 	assert.Equal(t, store, o.Store)
+}
+
+func TestGenerator_Generate(t *testing.T) {
+	d := openTestDB(t)
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "genapp", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	key, size, err := store.Put(ctx, strings.NewReader(string(testBinary)))
+	require.NoError(t, err)
+
+	a := &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindAssets, StorageKey: key, Size: size, SHA256: key,
+	}
+	require.NoError(t, d.CreateArtifact(ctx, a))
+
+	gen := NewGenerator(store, d, "https://example.com", t.TempDir())
+	require.True(t, gen.Supports(FormatTarGZ))
+	require.False(t, gen.Supports(Format("bogus")))
+
+	out, err := gen.Generate(ctx, FormatTarGZ, *proj, *rel, *a)
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	assert.True(t, strings.HasSuffix(out.Filename, ".tar.gz"))
+	assert.Greater(t, out.Size, int64(0))
+}
+
+func TestGenerator_Generate_UnsupportedFormat(t *testing.T) {
+	d := openTestDB(t)
+	store := openTestStore(t)
+
+	gen := NewGenerator(store, d, "https://example.com", t.TempDir())
+	_, err := gen.Generate(context.Background(), Format("bogus"), db.Project{}, db.Release{}, db.Artifact{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported format")
 }
