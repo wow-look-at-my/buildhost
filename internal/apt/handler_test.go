@@ -16,6 +16,57 @@ import (
 	"github.com/wow-look-at-my/testify/require"
 )
 
+func TestParseRoute(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want route
+	}{
+		{
+			name: "release, single-segment name",
+			path: "/apt/buildhost/dists/stable/Release",
+			want: route{project: "buildhost", subPath: "dists/stable/Release"},
+		},
+		{
+			name: "release, dashed name",
+			path: "/apt/go-toolchain/dists/stable/Release",
+			want: route{project: "go-toolchain", subPath: "dists/stable/Release"},
+		},
+		{
+			name: "release, multi-segment name (decoded path with literal '/')",
+			path: "/apt/library/foo/dists/stable/Release",
+			want: route{project: "library/foo", subPath: "dists/stable/Release"},
+		},
+		{
+			name: "release, deeply nested multi-segment name",
+			path: "/apt/team/group/proj-name/dists/stable/InRelease",
+			want: route{project: "team/group/proj-name", subPath: "dists/stable/InRelease"},
+		},
+		{
+			name: "binary-amd64 packages, multi-segment name",
+			path: "/apt/library/foo/dists/stable/main/binary-amd64/Packages",
+			want: route{project: "library/foo", subPath: "dists/stable/main/binary-amd64/Packages"},
+		},
+		{
+			name: "pool, multi-segment name",
+			path: "/apt/library/foo/pool/foo_1.0.0_amd64.deb",
+			want: route{project: "library/foo", subPath: "pool/foo_1.0.0_amd64.deb"},
+		},
+		{
+			name: "name itself contains literal 'dists' segment, distinguished by LastIndex",
+			path: "/apt/foo/dists/bar/dists/stable/Release",
+			want: route{project: "foo/dists/bar", subPath: "dists/stable/Release"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.path, nil)
+			got := parseRoute(req).(route)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	t.Helper()
 	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))

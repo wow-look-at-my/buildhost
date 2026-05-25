@@ -87,6 +87,82 @@ func readAll(store *storage.Filesystem, ctx context.Context, key string) ([]byte
 	return data, err
 }
 
+func TestParseRoute(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want route
+	}{
+		{
+			name: "manifest, single-segment name",
+			path: "/v2/buildhost/manifests/latest",
+			want: route{project: "buildhost", action: "manifests", reference: "latest"},
+		},
+		{
+			name: "manifest, dashed name",
+			path: "/v2/go-toolchain/manifests/latest",
+			want: route{project: "go-toolchain", action: "manifests", reference: "latest"},
+		},
+		{
+			name: "blob, single-segment name",
+			path: "/v2/buildhost/blobs/sha256:abc",
+			want: route{project: "buildhost", action: "blobs", reference: "sha256:abc"},
+		},
+		{
+			name: "manifest, multi-segment name (decoded path with literal '/')",
+			path: "/v2/library/foo/manifests/latest",
+			want: route{project: "library/foo", action: "manifests", reference: "latest"},
+		},
+		{
+			name: "manifest, deeply nested multi-segment name",
+			path: "/v2/team/group/proj-name/manifests/v1",
+			want: route{project: "team/group/proj-name", action: "manifests", reference: "v1"},
+		},
+		{
+			name: "blob, multi-segment name",
+			path: "/v2/library/foo/blobs/sha256:def",
+			want: route{project: "library/foo", action: "blobs", reference: "sha256:def"},
+		},
+		{
+			name: "name itself contains literal 'manifests' segment, distinguished by LastIndex",
+			path: "/v2/foo/manifests/bar/manifests/latest",
+			want: route{project: "foo/manifests/bar", action: "manifests", reference: "latest"},
+		},
+		{
+			name: "tags listing, multi-segment name",
+			path: "/v2/library/foo/tags/list",
+			want: route{project: "library/foo", action: "tags", reference: "list"},
+		},
+		{
+			name: "bare project, single-segment",
+			path: "/v2/myapp",
+			want: route{project: "myapp"},
+		},
+		{
+			name: "action only, no reference, single-segment",
+			path: "/v2/myapp/manifests",
+			want: route{project: "myapp", action: "manifests"},
+		},
+		{
+			name: "action only, no reference, multi-segment name",
+			path: "/v2/library/foo/manifests",
+			want: route{project: "library/foo", action: "manifests"},
+		},
+		{
+			name: "name itself contains an action keyword as final segment",
+			path: "/v2/foo/manifests/blobs/sha256:abc",
+			want: route{project: "foo/manifests", action: "blobs", reference: "sha256:abc"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.path, nil)
+			got := parseRoute(req).(route)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestV2Root(t *testing.T) {
 	h, _, _ := setupTest(t)
 
@@ -109,33 +185,6 @@ func TestV2Root_HEAD(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "registry/2.0", rec.Header().Get("Docker-Distribution-API-Version"))
-}
-
-func TestParseRoute(t *testing.T) {
-	tests := []struct {
-		name      string
-		path      string
-		project   string
-		action    string
-		reference string
-	}{
-		{"manifests", "/v2/myapp/manifests/latest", "myapp", "manifests", "latest"},
-		{"blobs", "/v2/myapp/blobs/sha256:abc", "myapp", "blobs", "sha256:abc"},
-		{"project only", "/v2/myapp", "myapp", "", ""},
-		{"project and action", "/v2/myapp/manifests", "myapp", "manifests", ""},
-		{"tags list", "/v2/myapp/tags/list", "myapp", "tags", "list"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", tt.path, nil)
-			ri := parseRoute(req)
-			rt := ri.(route)
-			assert.Equal(t, tt.project, rt.project)
-			assert.Equal(t, tt.action, rt.action)
-			assert.Equal(t, tt.reference, rt.reference)
-		})
-	}
 }
 
 func TestServeHTTP_UnknownAction(t *testing.T) {

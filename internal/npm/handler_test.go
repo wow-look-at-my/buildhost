@@ -60,6 +60,8 @@ func TestParseRoute(t *testing.T) {
 		{"hyphenated scope", "/npm/@build-host/gotoolchain", "@build-host/gotoolchain", ""},
 		{"unscoped simple", "/npm/myapp", "myapp", ""},
 		{"unscoped hyphenated", "/npm/build-host", "build-host", ""},
+		{"multi-segment name", "/npm/@buildhost/library/foo", "library/foo", ""},
+		{"deeply nested multi-segment", "/npm/@buildhost/team/group/proj-name", "team/group/proj-name", ""},
 		{"extra slash in scope", "/npm/@build/host/myapp", "@build/host/myapp", ""},
 		{"bare scope", "/npm/@buildhost/", "", ""},
 	}
