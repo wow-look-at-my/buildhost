@@ -141,6 +141,12 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				oidcPrivate, hasPrivate := OIDCPrivateFrom(r.Context())
 				if hasPrivate && project.IsPrivate != oidcPrivate {
 					if updateErr := mw.DB.SetProjectVisibility(r.Context(), project.ID, oidcPrivate); updateErr == nil {
+						slog.WarnContext(r.Context(), "OIDC visibility sync",
+							"project", project.Name,
+							"was_private", project.IsPrivate,
+							"now_private", oidcPrivate,
+							"oidc_subject", t.Name,
+						)
 						project.IsPrivate = oidcPrivate
 						parentSpan.SetAttributes(attribute.Bool("project.visibility_synced", true))
 					}

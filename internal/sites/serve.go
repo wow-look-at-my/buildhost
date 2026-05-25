@@ -24,17 +24,18 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 
 	project := auth.ProjectFrom(ctx)
 	rt := routeFrom(ctx)
-	filePath := rt.path
+
+	isDir := rt.path == "" || strings.HasSuffix(rt.path, "/")
+	filePath := path.Clean(rt.path)
+	if isDir || filePath == "." {
+		filePath = path.Join(filePath, "index.html")
+	}
 
 	span.SetAttributes(
 		attribute.String("sites.project", project.Name),
 		attribute.String("sites.branch", rt.branch),
 		attribute.String("sites.path", filePath),
 	)
-
-	if filePath == "" || strings.HasSuffix(filePath, "/") {
-		filePath = path.Join(filePath, "index.html")
-	}
 
 	site, err := h.DB.GetSite(ctx, project.ID, rt.branch)
 	if errors.Is(err, db.ErrNotFound) {

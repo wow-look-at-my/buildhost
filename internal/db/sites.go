@@ -68,23 +68,35 @@ func (d *DB) ListSites(ctx context.Context, projectID int64) ([]Site, error) {
 }
 
 func (d *DB) DeleteSite(ctx context.Context, projectID int64, branch string) (storageKey string, err error) {
-	row, err := d.q.GetSiteStorageKey(ctx, GetSiteStorageKeyParams{
+	tx, err := d.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	q := New(tx)
+
+	row, lookupErr := q.GetSiteStorageKey(ctx, GetSiteStorageKeyParams{
 		ProjectID: projectID,
 		Branch:    branch,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
+	if errors.Is(lookupErr, sql.ErrNoRows) {
 		return "", ErrNotFound
 	}
-	if err != nil {
-		return "", fmt.Errorf("lookup site for delete: %w", err)
+	if lookupErr != nil {
+		return "", fmt.Errorf("lookup site for delete: %w", lookupErr)
 	}
 
-	err = d.q.DeleteSiteByProjectAndBranch(ctx, DeleteSiteByProjectAndBranchParams{
+	err = q.DeleteSiteByProjectAndBranch(ctx, DeleteSiteByProjectAndBranchParams{
 		ProjectID: projectID,
 		Branch:    branch,
 	})
 	if err != nil {
 		return "", fmt.Errorf("delete site: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit: %w", err)
 	}
 	return row, nil
 }
