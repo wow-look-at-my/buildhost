@@ -189,7 +189,7 @@ The following items have been reviewed and addressed or are intentional design c
 - **Token in query param**: Intentional for clients that cannot set headers (APT, Brew). Mitigated by Referrer-Policy: no-referrer and redaction from OTEL trace attributes
 - **No TLS termination**: Intentional -- runs behind a reverse proxy in Docker
 - **Strip temp file permissions**: Runs in a single-user Docker container; permissions are 0600 anyway
-- **APT Release signing**: Not yet implemented (TODO in code). Clients must use `[trusted=yes]`
+- **APT Release signing**: RSA 4096 key auto-generated on first startup, stored in `BUILDHOST_DATA_DIR/apt-signing.key`. InRelease (clearsigned), Release.gpg (detached), and key.asc (public key) endpoints are all served. Clients add the key via `curl .../key.asc | gpg --dearmor > /etc/apt/keyrings/buildhost.gpg` and use `[signed-by=/etc/apt/keyrings/buildhost.gpg]` in sources.list
 - **List endpoints**: No LIMIT -- all behind auth, SQLite serialized, not a DoS vector
 - **Symlink rejection**: Storage layer rejects symlinks via Lstat check
 - **Admin dashboard auth**: None -- must be behind a reverse proxy with access control (Cloudflare Access, etc.)
