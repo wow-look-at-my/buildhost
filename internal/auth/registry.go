@@ -15,6 +15,7 @@ var (
 	sharedStore storage.Storage
 	sharedBase  string
 	sharedData  string
+	patterns    []string
 )
 
 func Mux() *http.ServeMux        { return mux }
@@ -44,14 +45,19 @@ func Init(database *db.DB, store storage.Storage, baseURL, dataDir string, trust
 	}
 }
 
+func Patterns() []string { return patterns }
+
 func Handle(pattern string, parse ParseFunc, handler http.HandlerFunc) {
+	patterns = append(patterns, pattern)
 	mux.HandleFunc(pattern, requireProjectFunc(parse, handler))
 }
 
 func HandleRaw(pattern string, handler http.HandlerFunc) {
+	patterns = append(patterns, pattern)
 	mux.HandleFunc(pattern, handler)
 }
 
 func HandleHandler(pattern string, parse ParseFunc, handler http.Handler) {
+	patterns = append(patterns, pattern)
 	mux.Handle(pattern, requireProject(parse)(handler))
 }

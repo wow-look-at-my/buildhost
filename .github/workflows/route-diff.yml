@@ -1,0 +1,104 @@
+name: Route Diff
+
+on:
+    pull_request:
+        types: [opened, reopened, synchronize]
+
+permissions:
+    contents: read
+    pull-requests: write
+    id-token: write
+
+jobs:
+    route-diff:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: wow-look-at-my/go-toolchain@v1
+              with:
+                  generate: 52b76a04057b
+
+            - name: Diff routes
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  set -euo pipefail
+
+                  ./build/buildhost routes > /tmp/pr-routes.txt
+                  PR="${{ github.event.pull_request.number }}"
+
+                  # Look for an existing route-diff comment
+                  COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" \
+                    --paginate --jq '[.[] | select(.body | contains("<!-- route-diff -->")) | .id] | last // empty')
+
+                  HAVE_BASELINE=false
+
+                  if [ -n "$COMMENT_ID" ]; then
+                    BODY=$(gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" --jq .body)
+
+                    # If PR routes match the previously commented routes, nothing to do
+                    echo "$BODY" | sed -n '/^<!-- route-diff-pr-routes$/,/^route-diff-pr-routes -->$/p' \
+                      | sed '1d;$d' > /tmp/prev-pr-routes.txt
+                    if diff -q /tmp/prev-pr-routes.txt /tmp/pr-routes.txt >/dev/null 2>&1; then
+                      echo "Routes unchanged since last comment"
+                      exit 0
+                    fi
+
+                    # Reuse the cached base routes from the existing comment
+                    if echo "$BODY" | sed -n '/^<!-- route-diff-base-routes$/,/^route-diff-base-routes -->$/p' \
+                        | sed '1d;$d' > /tmp/base-routes.txt && [ -s /tmp/base-routes.txt ]; then
+                      HAVE_BASELINE=true
+                    fi
+                  fi
+
+                  if [ "$HAVE_BASELINE" = false ]; then
+                    BASE="${{ github.event.pull_request.base.sha }}"
+                    git fetch origin "$BASE" --depth=1
+                    git checkout -f "$BASE"
+                    rm -rf build/
+                    if go-toolchain --generate 52b76a04057b 2>&1; then
+                      ./build/buildhost routes > /tmp/base-routes.txt 2>/dev/null || touch /tmp/base-routes.txt
+                    else
+                      touch /tmp/base-routes.txt
+                    fi
+                  fi
+
+                  # If routes match the base branch, remove stale comment and exit
+                  if diff -q /tmp/base-routes.txt /tmp/pr-routes.txt >/dev/null 2>&1; then
+                    echo "Routes match base branch"
+                    if [ -n "$COMMENT_ID" ]; then
+                      gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X DELETE || true
+                    fi
+                    exit 0
+                  fi
+
+                  DIFF=$(diff -u /tmp/base-routes.txt /tmp/pr-routes.txt --label base --label pr || true)
+
+                  {
+                    echo '<!-- route-diff -->'
+                    echo '<!-- route-diff-base-routes'
+                    cat /tmp/base-routes.txt
+                    echo 'route-diff-base-routes -->'
+                    echo '<!-- route-diff-pr-routes'
+                    cat /tmp/pr-routes.txt
+                    echo 'route-diff-pr-routes -->'
+                    echo '### Route changes'
+                    echo ''
+                    echo '```diff'
+                    echo "$DIFF"
+                    echo '```'
+                    echo ''
+                    echo '<details><summary>Full route list</summary>'
+                    echo ''
+                    echo '```'
+                    cat /tmp/pr-routes.txt
+                    echo '```'
+                    echo '</details>'
+                  } > /tmp/comment.md
+
+                  if [ -n "$COMMENT_ID" ]; then
+                    gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" \
+                      -X PATCH --field body=@/tmp/comment.md
+                  else
+                    gh pr comment "$PR" --body-file /tmp/comment.md
+                  fi

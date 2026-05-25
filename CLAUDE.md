@@ -62,6 +62,12 @@ buildhost bootstrap          # Creates initial admin token (only works when no t
 buildhost bootstrap --name admin-token
 ```
 
+## Listing routes
+
+```bash
+buildhost routes   # prints all registered HTTP routes, sorted
+```
+
 ## Running
 
 ```bash
