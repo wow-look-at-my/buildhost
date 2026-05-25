@@ -161,15 +161,16 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 		return nil, "", fmt.Errorf("org %q not in allowed list", org)
 	}
 
-	if verified.EventName != "" && !slices.Contains(v.allowedEvents, "*") && !slices.Contains(v.allowedEvents, verified.EventName) {
+	if !slices.Contains(v.allowedEvents, "*") && !slices.Contains(v.allowedEvents, verified.EventName) {
 		return nil, "", fmt.Errorf("event %q not in allowed list", verified.EventName)
 	}
 
-	if v.baseURL != "" {
-		aud, _ := verified.GetAudience()
-		if !slices.Contains(aud, v.baseURL) {
-			return nil, "", fmt.Errorf("token audience %v does not contain expected %q", aud, v.baseURL)
-		}
+	if v.baseURL == "" {
+		return nil, "", errors.New("BUILDHOST_BASE_URL must be set for OIDC auto-provisioning")
+	}
+	aud, _ := verified.GetAudience()
+	if !slices.Contains(aud, v.baseURL) {
+		return nil, "", fmt.Errorf("token audience %v does not contain expected %q", aud, v.baseURL)
 	}
 
 	project := projectFromSubject(verified.Subject)
@@ -346,7 +347,11 @@ func parseRSAPublicKey(nStr, eStr string) (*rsa.PublicKey, error) {
 		return nil, fmt.Errorf("invalid RSA exponent: %d", eInt)
 	}
 
-	return &rsa.PublicKey{N: n, E: int(eInt)}, nil
+	pub := &rsa.PublicKey{N: n, E: int(eInt)}
+	if pub.N.BitLen() < 2048 {
+		return nil, fmt.Errorf("RSA key too small: %d bits (minimum 2048)", pub.N.BitLen())
+	}
+	return pub, nil
 }
 
 func base64URLDecode(s string) ([]byte, error) {

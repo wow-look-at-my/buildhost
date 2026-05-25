@@ -18,6 +18,7 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
+		handler.Signer = NewSigner(auth.DataDir())
 	})
 	auth.HandleHandler("/apt/", parseRoute, http.StripPrefix("/apt", &handler))
 }
@@ -51,14 +52,21 @@ type Handler struct {
 	Store   storage.Storage
 	BaseURL string
 	Gen     *repackage.Generator
+	Signer  *Signer
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	subpath := routeFrom(r.Context()).subPath
 
 	switch {
-	case subpath == "dists/stable/Release" || subpath == "dists/stable/InRelease":
-		h.serveRelease(w, r)
+	case subpath == "dists/stable/InRelease":
+		h.serveRelease(w, r, true)
+	case subpath == "dists/stable/Release":
+		h.serveRelease(w, r, false)
+	case subpath == "dists/stable/Release.gpg":
+		h.serveReleaseGPG(w, r)
+	case subpath == "key.asc":
+		h.serveKey(w, r)
 	case strings.HasPrefix(subpath, "dists/stable/main/binary-"):
 		h.servePackages(w, r, subpath)
 	case strings.HasPrefix(subpath, "pool/"):
