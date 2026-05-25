@@ -18,26 +18,36 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 	}
 
 	debug := r.URL.Query().Get("debug") == "1"
+	shouldStrip := strip.Available() && !debug
 
-	rc, _, err := ctx.Store.Get(r.Context(), ctx.Artifact.StorageKey)
+	rc, size, err := ctx.Store.Get(r.Context(), ctx.Artifact.StorageKey)
 	if err != nil {
 		return fmt.Errorf("artifact not found")
 	}
 	defer rc.Close()
+
+	if strip.Available() {
+		w.Header().Set("X-Debug-Symbols", "available")
+	} else {
+		w.Header().Set("X-Debug-Symbols", "unavailable")
+	}
+
+	if !shouldStrip {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", ctx.Project.Name))
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
+		io.Copy(w, rc)
+		return nil
+	}
 
 	data, err := io.ReadAll(rc)
 	if err != nil {
 		return fmt.Errorf("read artifact: %w", err)
 	}
 
-	if strip.Available() {
-		w.Header().Set("X-Debug-Symbols", "available")
-		result, serr := strip.StripBytes(data, ctx.TmpDir)
-		if serr == nil && !debug {
-			data = result.Stripped
-		}
-	} else {
-		w.Header().Set("X-Debug-Symbols", "unavailable")
+	result, serr := strip.StripBytes(data, ctx.TmpDir)
+	if serr == nil {
+		data = result.Stripped
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
@@ -66,6 +76,7 @@ func (f *symbolsFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeCont
 	}
 	defer rc.Close()
 
+	// Must buffer: stripping requires full binary in memory.
 	data, err := io.ReadAll(rc)
 	if err != nil {
 		return fmt.Errorf("read artifact: %w", err)

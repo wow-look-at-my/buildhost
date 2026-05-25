@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -540,14 +541,16 @@ func TestVerifyToken_TrustedIssuer_NoPolicies(t *testing.T) {
 	srv := jwksServer(t, &key.PublicKey, "kid-trusted")
 
 	claims := map[string]any{
-		"iss": srv.URL,
-		"sub": "repo:myorg/myrepo:ref:refs/heads/main",
-		"exp": time.Now().Add(10 * time.Minute).Unix(),
-		"iat": time.Now().Unix(),
+		"iss":        srv.URL,
+		"sub":        "repo:myorg/myrepo:ref:refs/heads/main",
+		"aud":        "https://buildhost.example.com",
+		"exp":        time.Now().Add(10 * time.Minute).Unix(),
+		"iat":        time.Now().Unix(),
+		"event_name": "push",
 	}
 	token := signJWT(t, key, "kid-trusted", claims)
 
-	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
+	v := NewOIDCVerifier(OIDCConfig{BaseURL: "https://buildhost.example.com", TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
 	var vr VerifyResult
 	tok, oidcProject, err := v.VerifyTokenFull(context.Background(), token, nil, &vr)
 	require.NoError(t, err)
@@ -566,13 +569,14 @@ func TestVerifyToken_TrustedIssuer_AllowedEvent(t *testing.T) {
 	claims := map[string]any{
 		"iss":        srv.URL,
 		"sub":        "repo:myorg/myrepo:ref:refs/heads/main",
+		"aud":        "https://buildhost.example.com",
 		"exp":        time.Now().Add(10 * time.Minute).Unix(),
 		"iat":        time.Now().Unix(),
 		"event_name": "push",
 	}
 	token := signJWT(t, key, "kid-event-ok", claims)
 
-	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
+	v := NewOIDCVerifier(OIDCConfig{BaseURL: "https://buildhost.example.com", TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
 	_, oidcProject, err := v.VerifyToken(context.Background(), token, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "myrepo", oidcProject)
@@ -606,10 +610,11 @@ func TestVerifyToken_TrustedIssuer_AudienceCheck(t *testing.T) {
 	srv := jwksServer(t, &key.PublicKey, "kid-aud-auto")
 
 	claims := map[string]any{
-		"iss": srv.URL,
-		"sub": "repo:myorg/myrepo:ref:refs/heads/main",
-		"aud": "https://buildhost.example.com",
-		"exp": time.Now().Add(10 * time.Minute).Unix(),
+		"iss":        srv.URL,
+		"sub":        "repo:myorg/myrepo:ref:refs/heads/main",
+		"aud":        "https://buildhost.example.com",
+		"exp":        time.Now().Add(10 * time.Minute).Unix(),
+		"event_name": "push",
 	}
 	token := signJWT(t, key, "kid-aud-auto", claims)
 
@@ -626,10 +631,11 @@ func TestVerifyToken_TrustedIssuer_AudienceMismatch(t *testing.T) {
 	srv := jwksServer(t, &key.PublicKey, "kid-aud-bad")
 
 	claims := map[string]any{
-		"iss": srv.URL,
-		"sub": "repo:myorg/myrepo:ref:refs/heads/main",
-		"aud": "https://other-service.example.com",
-		"exp": time.Now().Add(10 * time.Minute).Unix(),
+		"iss":        srv.URL,
+		"sub":        "repo:myorg/myrepo:ref:refs/heads/main",
+		"aud":        "https://other-service.example.com",
+		"exp":        time.Now().Add(10 * time.Minute).Unix(),
+		"event_name": "push",
 	}
 	token := signJWT(t, key, "kid-aud-bad", claims)
 
@@ -657,13 +663,15 @@ func TestVerifyToken_TrustedIssuer_PrivateRepoVisibility(t *testing.T) {
 	claims := map[string]any{
 		"iss":                   srv.URL,
 		"sub":                   "repo:myorg/myrepo:ref:refs/heads/main",
+		"aud":                   "https://buildhost.example.com",
 		"exp":                   time.Now().Add(10 * time.Minute).Unix(),
 		"iat":                   time.Now().Unix(),
+		"event_name":            "push",
 		"repository_visibility": "private",
 	}
 	token := signJWT(t, key, "kid-vis-priv", claims)
 
-	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
+	v := NewOIDCVerifier(OIDCConfig{BaseURL: "https://buildhost.example.com", TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
 	var vr VerifyResult
 	_, _, err = v.VerifyTokenFull(context.Background(), token, nil, &vr)
 	require.NoError(t, err)
@@ -679,17 +687,69 @@ func TestVerifyToken_TrustedIssuer_PublicRepoVisibility(t *testing.T) {
 	claims := map[string]any{
 		"iss":                   srv.URL,
 		"sub":                   "repo:myorg/myrepo:ref:refs/heads/main",
+		"aud":                   "https://buildhost.example.com",
 		"exp":                   time.Now().Add(10 * time.Minute).Unix(),
 		"iat":                   time.Now().Unix(),
+		"event_name":            "push",
 		"repository_visibility": "public",
 	}
 	token := signJWT(t, key, "kid-vis-pub", claims)
 
-	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
+	v := NewOIDCVerifier(OIDCConfig{BaseURL: "https://buildhost.example.com", TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
 	var vr VerifyResult
 	_, _, err = v.VerifyTokenFull(context.Background(), token, nil, &vr)
 	require.NoError(t, err)
 	assert.False(t, vr.OIDCPrivate)
+}
+
+func TestVerifyToken_TrustedIssuer_EmptyEventRejected(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	srv := jwksServer(t, &key.PublicKey, "kid-no-event")
+
+	claims := map[string]any{
+		"iss": srv.URL,
+		"sub": "repo:myorg/myrepo:ref:refs/heads/main",
+		"aud": "https://buildhost.example.com",
+		"exp": time.Now().Add(10 * time.Minute).Unix(),
+	}
+	token := signJWT(t, key, "kid-no-event", claims)
+
+	v := NewOIDCVerifier(OIDCConfig{BaseURL: "https://buildhost.example.com", TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
+	_, _, err = v.VerifyToken(context.Background(), token, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not in allowed list")
+}
+
+func TestVerifyToken_TrustedIssuer_BaseURLRequired(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	srv := jwksServer(t, &key.PublicKey, "kid-no-base")
+
+	claims := map[string]any{
+		"iss":        srv.URL,
+		"sub":        "repo:myorg/myrepo:ref:refs/heads/main",
+		"exp":        time.Now().Add(10 * time.Minute).Unix(),
+		"event_name": "push",
+	}
+	token := signJWT(t, key, "kid-no-base", claims)
+
+	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
+	_, _, err = v.VerifyToken(context.Background(), token, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "BUILDHOST_BASE_URL")
+}
+
+func TestParseRSAPublicKey_TooSmall(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 1024)
+	require.NoError(t, err)
+	n := base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes())
+	e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.PublicKey.E)).Bytes())
+	_, err = parseRSAPublicKey(n, e)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "too small")
 }
 
 func TestVerifyToken_UntrustedIssuer_NoPolicies(t *testing.T) {

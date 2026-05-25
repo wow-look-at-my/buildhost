@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -13,6 +14,8 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/static"
 )
+
+var validDebVersion = regexp.MustCompile(`^[a-zA-Z0-9.+~:-]+$`)
 
 func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath string) {
 	arch := extractDebArch(subpath)
@@ -63,6 +66,11 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 		}
 	}
 
+	if !validDebVersion.MatchString(version) {
+		http.Error(w, "invalid version for deb format", http.StatusInternalServerError)
+		return
+	}
+
 	desc := strings.NewReplacer("\n", " ", "\r", " ").Replace(project.Description)
 	entry := fmt.Sprintf(`Package: %s
 Version: %s
@@ -99,7 +107,11 @@ func (h *Handler) servePool(w http.ResponseWriter, r *http.Request, subpath stri
 		return
 	}
 
-	debArch := extractDebArch(subpath)
+	debArch := extractPoolArch(filename)
+	if debArch == "" {
+		http.NotFound(w, r)
+		return
+	}
 	goArch := goArchFromDeb(debArch)
 
 	version := strings.TrimPrefix(release.Version, "v")
@@ -118,6 +130,18 @@ func extractDebArch(subpath string) string {
 		}
 	}
 	return ""
+}
+
+func extractPoolArch(filename string) string {
+	name := strings.TrimSuffix(filename, ".deb")
+	if name == filename {
+		return ""
+	}
+	i := strings.LastIndex(name, "_")
+	if i < 0 {
+		return ""
+	}
+	return name[i+1:]
 }
 
 func goArchFromDeb(debArch string) string {

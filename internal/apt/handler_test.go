@@ -255,6 +255,34 @@ func TestExtractDebArch(t *testing.T) {
 	}
 }
 
+func TestExtractPoolArch(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"myapp_1.0.0_amd64.deb", "amd64"},
+		{"myapp_1.0.0_arm64.deb", "arm64"},
+		{"myapp_1.0.0_i386.deb", "i386"},
+		{"myapp.deb", ""},
+		{"noext", ""},
+		{"", ""},
+		{"myapp_1.0.0_amd64.rpm", ""},
+	}
+
+	for _, tt := range tests {
+		got := extractPoolArch(tt.input)
+		assert.Equal(t, tt.expected, got, "extractPoolArch(%q)", tt.input)
+	}
+}
+
+func TestValidDebVersion(t *testing.T) {
+	assert.True(t, validDebVersion.MatchString("1.0.0"))
+	assert.True(t, validDebVersion.MatchString("1.0.0~beta1"))
+	assert.True(t, validDebVersion.MatchString("2:1.0.0+dfsg-1"))
+	assert.False(t, validDebVersion.MatchString("1.0.0\nEvil: yes"))
+	assert.False(t, validDebVersion.MatchString(""))
+}
+
 func TestGoArchFromDeb(t *testing.T) {
 	tests := []struct {
 		debArch string
