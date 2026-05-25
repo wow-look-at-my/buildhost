@@ -5,15 +5,19 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-
-	"github.com/wow-look-at-my/buildhost/internal/model"
 )
 
-func (d *DB) CreateArtifact(ctx context.Context, a *model.Artifact) error {
-	res, err := d.ExecContext(ctx,
-		`INSERT INTO artifacts (release_id, os, arch, kind, storage_key, size, sha256, filename)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.ReleaseID, a.OS, a.Arch, a.Kind, a.StorageKey, a.Size, a.SHA256, a.Filename)
+func (d *DB) CreateArtifact(ctx context.Context, a *Artifact) error {
+	res, err := d.q.InsertArtifact(ctx, InsertArtifactParams{
+		ReleaseID:  a.ReleaseID,
+		OS:         a.OS,
+		Arch:       a.Arch,
+		Kind:       a.Kind,
+		StorageKey: a.StorageKey,
+		Size:       a.Size,
+		SHA256:     a.SHA256,
+		Filename:   a.Filename,
+	})
 	if err != nil {
 		if isUniqueViolation(err) {
 			return fmt.Errorf("artifact %s/%s: %w", a.OS, a.Arch, ErrConflict)
@@ -26,88 +30,65 @@ func (d *DB) CreateArtifact(ctx context.Context, a *model.Artifact) error {
 }
 
 func (d *DB) UpdateArtifactStripped(ctx context.Context, id int64, strippedKey string, strippedSize int64, strippedSHA256 string, debugKey string, debugSize int64) error {
-	_, err := d.ExecContext(ctx,
-		`UPDATE artifacts SET stripped_storage_key = ?, stripped_size = ?, stripped_sha256 = ?,
-		 debug_storage_key = ?, debug_size = ?
-		 WHERE id = ?`,
-		strippedKey, strippedSize, strippedSHA256, debugKey, debugSize, id)
-	return err
+	return d.q.UpdateArtifactStripped(ctx, UpdateArtifactStrippedParams{
+		ID:                 id,
+		StrippedStorageKey: strippedKey,
+		StrippedSize:       strippedSize,
+		StrippedSHA256:     strippedSHA256,
+		DebugStorageKey:    debugKey,
+		DebugSize:          debugSize,
+	})
 }
 
-func (d *DB) GetArtifact(ctx context.Context, releaseID int64, os, arch string) (*model.Artifact, error) {
-	a := &model.Artifact{}
-	err := d.QueryRowContext(ctx,
-		`SELECT id, release_id, os, arch, kind, storage_key, size, sha256,
-		        stripped_storage_key, stripped_size, stripped_sha256,
-		        debug_storage_key, debug_size, filename, created_at
-		 FROM artifacts WHERE release_id = ? AND os = ? AND arch = ?`, releaseID, os, arch).Scan(
-		&a.ID, &a.ReleaseID, &a.OS, &a.Arch, &a.Kind, &a.StorageKey, &a.Size, &a.SHA256,
-		&a.StrippedStorageKey, &a.StrippedSize, &a.StrippedSHA256,
-		&a.DebugStorageKey, &a.DebugSize, &a.Filename, &a.CreatedAt)
+func (d *DB) GetArtifact(ctx context.Context, releaseID int64, os, arch string) (*Artifact, error) {
+	row, err := d.q.GetArtifactByReleaseOSArch(ctx, GetArtifactByReleaseOSArchParams{
+		ReleaseID: releaseID,
+		OS:        OS(os),
+		Arch:      Arch(arch),
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get artifact: %w", err)
 	}
-	return a, nil
+	return &row, nil
 }
 
-func (d *DB) ListArtifacts(ctx context.Context, releaseID int64) ([]model.Artifact, error) {
-	rows, err := d.QueryContext(ctx,
-		`SELECT id, release_id, os, arch, kind, storage_key, size, sha256,
-		        stripped_storage_key, stripped_size, stripped_sha256,
-		        debug_storage_key, debug_size, filename, created_at
-		 FROM artifacts WHERE release_id = ?`, releaseID)
-	if err != nil {
-		return nil, fmt.Errorf("list artifacts: %w", err)
-	}
-	defer rows.Close()
-
-	var artifacts []model.Artifact
-	for rows.Next() {
-		var a model.Artifact
-		if err := rows.Scan(&a.ID, &a.ReleaseID, &a.OS, &a.Arch, &a.Kind, &a.StorageKey, &a.Size, &a.SHA256,
-			&a.StrippedStorageKey, &a.StrippedSize, &a.StrippedSHA256,
-			&a.DebugStorageKey, &a.DebugSize, &a.Filename, &a.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scan artifact: %w", err)
-		}
-		artifacts = append(artifacts, a)
-	}
-	return artifacts, rows.Err()
+func (d *DB) ListArtifacts(ctx context.Context, releaseID int64) ([]Artifact, error) {
+	return d.q.ListArtifactsByRelease(ctx, releaseID)
 }
 
 func (d *DB) CreatePackagedArtifact(ctx context.Context, artifactID int64, format, storageKey string, size int64, sha256, filename, metadata string) error {
-	_, err := d.ExecContext(ctx,
-		`INSERT OR REPLACE INTO packaged_artifacts (artifact_id, format, storage_key, size, sha256, filename, metadata)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		artifactID, format, storageKey, size, sha256, filename, metadata)
-	return err
+	return d.q.UpsertPackagedArtifact(ctx, UpsertPackagedArtifactParams{
+		ArtifactID: artifactID,
+		Format:     format,
+		StorageKey: storageKey,
+		Size:       size,
+		SHA256:     sha256,
+		Filename:   filename,
+		Metadata:   metadata,
+	})
 }
 
 func (d *DB) GetPackagedArtifact(ctx context.Context, artifactID int64, format string) (storageKey string, size int64, sha256sum string, filename string, err error) {
-	err = d.QueryRowContext(ctx,
-		`SELECT storage_key, size, sha256, filename FROM packaged_artifacts
-		 WHERE artifact_id = ? AND format = ?`, artifactID, format).Scan(&storageKey, &size, &sha256sum, &filename)
+	row, err := d.q.GetPackagedArtifact(ctx, GetPackagedArtifactParams{
+		ArtifactID: artifactID,
+		Format:     format,
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", 0, "", "", ErrNotFound
 	}
-	return
+	if err != nil {
+		return "", 0, "", "", err
+	}
+	return row.StorageKey, row.Size, row.SHA256, row.Filename, nil
 }
 
 func (d *DB) BlobBelongsToProject(ctx context.Context, projectID int64, storageKey string) (bool, error) {
-	var exists bool
-	err := d.QueryRowContext(ctx, `
-		SELECT EXISTS(
-			SELECT 1 FROM artifacts a
-			JOIN releases r ON a.release_id = r.id
-			WHERE r.project_id = ?
-			AND (a.storage_key = ? OR a.stripped_storage_key = ? OR a.debug_storage_key = ?)
-			UNION ALL
-			SELECT 1 FROM packaged_artifacts pa
-			JOIN artifacts a ON pa.artifact_id = a.id
-			JOIN releases r ON a.release_id = r.id
-			WHERE r.project_id = ? AND pa.storage_key = ?
-		)`, projectID, storageKey, storageKey, storageKey, projectID, storageKey).Scan(&exists)
-	return exists, err
+	exists, err := d.q.BlobBelongsToProject(ctx, BlobBelongsToProjectParams{
+		ProjectID:  projectID,
+		StorageKey: storageKey,
+	})
+	return exists != 0, err
 }

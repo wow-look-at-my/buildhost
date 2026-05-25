@@ -11,88 +11,10 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
-	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
 )
-
-func TestParseRoute(t *testing.T) {
-	tests := []struct {
-		name string
-		path string
-		want route
-	}{
-		{
-			name: "package info, single-word name",
-			path: "/npm/@buildhost/buildhost",
-			want: route{project: "buildhost"},
-		},
-		{
-			name: "package info, dashed name",
-			path: "/npm/@buildhost/go-toolchain",
-			want: route{project: "go-toolchain"},
-		},
-		{
-			name: "package info, multi-dashed name",
-			path: "/npm/@buildhost/foo-bar-baz",
-			want: route{project: "foo-bar-baz"},
-		},
-		{
-			name: "tarball, single-word name",
-			path: "/npm/@buildhost/buildhost/-/buildhost-1.0.0.tgz",
-			want: route{project: "buildhost", isTarball: true, filename: "buildhost-1.0.0.tgz"},
-		},
-		{
-			name: "tarball, dashed name",
-			path: "/npm/@buildhost/go-toolchain/-/go-toolchain-2.0.0.tgz",
-			want: route{project: "go-toolchain", isTarball: true, filename: "go-toolchain-2.0.0.tgz"},
-		},
-		{
-			name: "tarball, multi-dashed name",
-			path: "/npm/@buildhost/foo-bar-baz/-/foo-bar-baz-1.0.0.tgz",
-			want: route{project: "foo-bar-baz", isTarball: true, filename: "foo-bar-baz-1.0.0.tgz"},
-		},
-		{
-			name: "package info, name with dots",
-			path: "/npm/@buildhost/foo.bar",
-			want: route{project: "foo.bar"},
-		},
-		{
-			name: "package info, name with underscore",
-			path: "/npm/@buildhost/foo_bar",
-			want: route{project: "foo_bar"},
-		},
-		{
-			name: "package info, multi-segment name (slash)",
-			path: "/npm/@buildhost/library/foo",
-			want: route{project: "library/foo"},
-		},
-		{
-			name: "package info, deeply nested multi-segment name",
-			path: "/npm/@buildhost/team/group/proj-name",
-			want: route{project: "team/group/proj-name"},
-		},
-		{
-			name: "tarball, multi-segment name",
-			path: "/npm/@buildhost/library/foo/-/foo-1.0.0.tgz",
-			want: route{project: "library/foo", isTarball: true, filename: "foo-1.0.0.tgz"},
-		},
-		{
-			name: "tarball, multi-segment name with dashed final segment",
-			path: "/npm/@buildhost/team/go-toolchain/-/go-toolchain-2.0.0.tgz",
-			want: route{project: "team/go-toolchain", isTarball: true, filename: "go-toolchain-2.0.0.tgz"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", tt.path, nil)
-			got := parseRoute(req).(route)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
 
 func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	t.Helper()
@@ -103,25 +25,91 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, Store: store, BaseURL: "http://localhost:8080", Gen: repackage.NewGenerator(store, "http://localhost:8080")}
+	h := &Handler{DB: d, BaseURL: "http://localhost:8080"}
 	return h, d, store
 }
 
 // withRoute adds project and route info to the request context, simulating
 // what the auth middleware does in production.
-func withRoute(r *http.Request, project *model.Project, rt route) *http.Request {
+func withRoute(r *http.Request, project *db.Project, rt route) *http.Request {
 	ctx := auth.WithProject(r.Context(), project)
 	ctx = auth.WithRouteInfo(ctx, rt)
 	return r.WithContext(ctx)
+}
+
+func TestParseRoute(t *testing.T) {
+	tests := []struct {
+		name     string
+		url      string
+		wantProj string
+		wantPlat string
+	}{
+		{"simple", "/npm/@buildhost/myapp", "myapp", ""},
+		{"numeric", "/npm/@buildhost/app123", "app123", ""},
+		{"dotted", "/npm/@buildhost/my.app", "my.app", ""},
+		{"hyphenated", "/npm/@buildhost/go-toolchain", "go-toolchain", ""},
+		{"multi-hyphen", "/npm/@buildhost/my-cool-app", "my-cool-app", ""},
+		{"many-hyphens", "/npm/@buildhost/a-b-c-d-e", "a-b-c-d-e", ""},
+		{"platform linux-x64", "/npm/@buildhost/go-toolchain-linux-x64", "go-toolchain", "linux-x64"},
+		{"platform darwin-arm64", "/npm/@buildhost/go-toolchain-darwin-arm64", "go-toolchain", "darwin-arm64"},
+		{"platform win32-x64", "/npm/@buildhost/myapp-win32-x64", "myapp", "win32-x64"},
+		{"platform linux-arm64", "/npm/@buildhost/myapp-linux-arm64", "myapp", "linux-arm64"},
+		{"platform linux-ia32", "/npm/@buildhost/myapp-linux-ia32", "myapp", "linux-ia32"},
+		{"platform darwin-x64", "/npm/@buildhost/myapp-darwin-x64", "myapp", "darwin-x64"},
+		{"platform win32-arm64", "/npm/@buildhost/myapp-win32-arm64", "myapp", "win32-arm64"},
+		{"hyphenated scope", "/npm/@build-host/gotoolchain", "@build-host/gotoolchain", ""},
+		{"unscoped simple", "/npm/myapp", "myapp", ""},
+		{"unscoped hyphenated", "/npm/build-host", "build-host", ""},
+		{"multi-segment name", "/npm/@buildhost/library/foo", "library/foo", ""},
+		{"deeply nested multi-segment", "/npm/@buildhost/team/group/proj-name", "team/group/proj-name", ""},
+		{"extra slash in scope", "/npm/@build/host/myapp", "@build/host/myapp", ""},
+		{"bare scope", "/npm/@buildhost/", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.url, nil)
+			ri := parseRoute(req).(route)
+			assert.Equal(t, tt.wantProj, ri.project, "project")
+			assert.Equal(t, tt.wantPlat, ri.platform, "platform")
+		})
+	}
+}
+
+func TestSplitPlatform(t *testing.T) {
+	tests := []struct {
+		input    string
+		wantProj string
+		wantPlat string
+	}{
+		{"myapp", "myapp", ""},
+		{"go-toolchain", "go-toolchain", ""},
+		{"go-toolchain-linux-x64", "go-toolchain", "linux-x64"},
+		{"go-toolchain-darwin-arm64", "go-toolchain", "darwin-arm64"},
+		{"go-toolchain-win32-x64", "go-toolchain", "win32-x64"},
+		{"my-cool-app-linux-arm64", "my-cool-app", "linux-arm64"},
+		{"app-linux-ia32", "app", "linux-ia32"},
+		{"a-b-c-darwin-x64", "a-b-c", "darwin-x64"},
+		// Not a known platform - treated as project name
+		{"myapp-freebsd-amd64", "myapp-freebsd-amd64", ""},
+		{"myapp-linux", "myapp-linux", ""},
+		{"myapp-x64", "myapp-x64", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			proj, plat := splitPlatform(tt.input)
+			assert.Equal(t, tt.wantProj, proj, "project")
+			assert.Equal(t, tt.wantPlat, plat, "platform")
+		})
+	}
 }
 
 func TestServeHTTP_PackageInfo_Success(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -144,10 +132,10 @@ func TestServeHTTP_PackageInfo_UnpublishedSkipped(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp2", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp2", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 	// Create unpublished release.
-	require.NoError(t, d.CreateRelease(ctx, &model.Release{ProjectID: proj.ID, Version: "1.0.0-rc1", VersionNum: 1}))
+	require.NoError(t, d.CreateRelease(ctx, &db.Release{ProjectID: proj.ID, Version: "1.0.0-rc1", VersionNum: 1}))
 
 	req := httptest.NewRequest("GET", "/@buildhost/myapp2", nil)
 	req = withRoute(req, proj, route{project: "myapp2"})
@@ -161,61 +149,149 @@ func TestServeHTTP_PackageInfo_UnpublishedSkipped(t *testing.T) {
 	assert.Equal(t, 0, len(versions))
 }
 
-func TestServeHTTP_Tarball_NotFound(t *testing.T) {
+func TestServeHTTP_PackageInfo_OptionalDependencies(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "go-toolchain", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "6.0.0", VersionNum: 6000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	for _, plat := range []struct {
+		os   db.OS
+		arch db.Arch
+	}{
+		{db.OSLinux, db.ArchAMD64},
+		{db.OSDarwin, db.ArchARM64},
+	} {
+		bk, bs, err := store.Put(ctx, strings.NewReader("bin-"+string(plat.os)))
+		require.NoError(t, err)
+		require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+			ReleaseID: rel.ID, OS: plat.os, Arch: plat.arch,
+			Kind: db.KindBinary, StorageKey: bk, Size: bs, SHA256: bk,
+		}))
+	}
+
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	req := httptest.NewRequest("GET", "/@buildhost/go-toolchain", nil)
+	req = withRoute(req, proj, route{project: "go-toolchain"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var info map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
+
+	versions := info["versions"].(map[string]any)
+	v := versions["6.0.0"].(map[string]any)
+
+	optDeps, ok := v["optionalDependencies"].(map[string]any)
+	require.True(t, ok, "expected optionalDependencies")
+	assert.Contains(t, optDeps, "@buildhost/go-toolchain-linux-x64")
+	assert.Contains(t, optDeps, "@buildhost/go-toolchain-darwin-arm64")
+	assert.Equal(t, "6.0.0", optDeps["@buildhost/go-toolchain-linux-x64"])
+
+	bin, ok := v["bin"].(map[string]any)
+	require.True(t, ok, "expected bin")
+	assert.Equal(t, "./bin/run.js", bin["go-toolchain"])
+
+	dist := v["dist"].(map[string]any)
+	assert.Contains(t, dist["tarball"], "/static?arch=any&fmt=npm-wrapper&id=go-toolchain&os=any&v=6.0.0")
+}
+
+func TestServeHTTP_PlatformPackageInfo(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "go-toolchain", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "6.0.0", VersionNum: 6000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	bk, bs, err := store.Put(ctx, strings.NewReader("bin"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: bk, Size: bs, SHA256: bk,
+	}))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	req := httptest.NewRequest("GET", "/@buildhost/go-toolchain-linux-x64", nil)
+	req = withRoute(req, proj, route{project: "go-toolchain", platform: "linux-x64"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var info map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
+
+	assert.Equal(t, "@buildhost/go-toolchain-linux-x64", info["name"])
+	versions := info["versions"].(map[string]any)
+	v := versions["6.0.0"].(map[string]any)
+
+	assert.Equal(t, []any{"linux"}, v["os"])
+	assert.Equal(t, []any{"x64"}, v["cpu"])
+	dist := v["dist"].(map[string]any)
+	assert.Contains(t, dist["tarball"], "/static?arch=amd64&fmt=npm&id=go-toolchain&os=linux&v=6.0.0")
+}
+
+func TestServeHTTP_PlatformPackageInfo_NotFound(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "nonexistent", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
-	req := httptest.NewRequest("GET", "/@buildhost/nonexistent/-/nonexistent-1.0.0.tgz", nil)
-	req = withRoute(req, proj, route{project: "nonexistent", isTarball: true, filename: "nonexistent-1.0.0.tgz"})
+	req := httptest.NewRequest("GET", "/@buildhost/myapp-win32-ia32", nil)
+	req = withRoute(req, proj, route{project: "myapp", platform: "win32-ia32"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-func TestServeHTTP_Tarball_Success(t *testing.T) {
-	h, d, store := setupTest(t)
+func TestServeHTTP_HyphenatedProject_PackageInfo(t *testing.T) {
+	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "go-toolchain", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.2.0", VersionNum: 1002000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
-	binaryKey, binarySize, err := store.Put(ctx, strings.NewReader("binary"))
-	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: binaryKey, Size: binarySize, SHA256: binaryKey,
-	}))
-
-	// On-demand generation: the NPM repackager generates filenames as
-	// name-version-os-arch.tgz (e.g. myapp-1.0.0-linux-x64.tgz).
-	req := httptest.NewRequest("GET", "/@buildhost/myapp/-/myapp-1.0.0-linux-x64.tgz", nil)
-	req = withRoute(req, proj, route{project: "myapp", isTarball: true, filename: "myapp-1.0.0-linux-x64.tgz"})
+	req := httptest.NewRequest("GET", "/@buildhost/go-toolchain", nil)
+	req = withRoute(req, proj, route{project: "go-toolchain"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/octet-stream", rec.Header().Get("Content-Type"))
-	assert.NotEmpty(t, rec.Body.Bytes())
+	var info map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
+	assert.Equal(t, "@buildhost/go-toolchain", info["name"])
+
+	versions := info["versions"].(map[string]any)
+	assert.Contains(t, versions, "1.2.0")
+	v := versions["1.2.0"].(map[string]any)
+	dist := v["dist"].(map[string]any)
+	assert.Contains(t, dist["tarball"], "/static?arch=any&fmt=npm-wrapper&id=go-toolchain&os=any&v=1.2.0")
 }
 
-// Note: Private project auth (unauthorized, wrong token, etc.) is tested via
-// requireProject middleware in the auth package. The handler assumes auth has
-// been enforced by the middleware and context is properly set up.
+// Private project auth is tested in the auth package. These tests verify
+// the handler works correctly when auth context is already set up.
 
 func TestServeHTTP_PrivateProject_PackageInfo_WithValidContext(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "secret", IsPrivate: true, Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -228,32 +304,4 @@ func TestServeHTTP_PrivateProject_PackageInfo_WithValidContext(t *testing.T) {
 	var info map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
 	assert.Equal(t, "@buildhost/secret", info["name"])
-}
-
-func TestServeHTTP_PrivateProject_Tarball_WithValidContext(t *testing.T) {
-	h, d, store := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	binaryKey, binarySize, err := store.Put(ctx, strings.NewReader("binary"))
-	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: binaryKey, Size: binarySize, SHA256: binaryKey,
-	}))
-
-	// On-demand generation: filename is secret-1.0.0-linux-x64.tgz.
-	req := httptest.NewRequest("GET", "/@buildhost/secret/-/secret-1.0.0-linux-x64.tgz", nil)
-	req = withRoute(req, proj, route{project: "secret", isTarball: true, filename: "secret-1.0.0-linux-x64.tgz"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/octet-stream", rec.Header().Get("Content-Type"))
-	assert.NotEmpty(t, rec.Body.Bytes())
 }

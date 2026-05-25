@@ -12,9 +12,10 @@ type Config struct {
 	DBPath           string
 	BaseURL          string
 	StorageCompress  bool
-	OIDCIssuers []string
-	OIDCOrgs    []string
-	OIDCEvents  []string
+	OIDCIssuers      []string
+	OIDCOrgs         []string
+	OIDCEvents       []string
+	OTELEndpoint     string
 }
 
 func Load() Config {
@@ -69,6 +70,9 @@ func Load() Config {
 	}
 	if len(c.OIDCEvents) == 0 {
 		c.OIDCEvents = []string{"push"}
+	}
+	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
+		c.OTELEndpoint = v
 	}
 	return c
 }

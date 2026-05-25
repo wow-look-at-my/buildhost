@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
 )
@@ -82,7 +82,7 @@ func TestCreateToken_WithProjectID(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "scoped", Versioning: model.VersioningAuto}
+	proj := &db.Project{Name: "scoped", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	body := `{"name":"project-token","project_id":` + strconv.FormatInt(proj.ID, 10) + `,"scopes":"read"}`
@@ -107,7 +107,7 @@ func TestListTokens_Success(t *testing.T) {
 	h.ListTokens(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	var tokens []model.APIToken
+	var tokens []db.ListAllTokensRow
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &tokens))
 	assert.GreaterOrEqual(t, len(tokens), 1)
 }
@@ -180,7 +180,7 @@ func TestCreateToken_ProjectScopedCannotCreateGlobalToken(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "proj-a", Versioning: model.VersioningAuto}
+	proj := &db.Project{Name: "proj-a", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	// Request body has no project_id, meaning it would create a global token
@@ -197,9 +197,9 @@ func TestCreateToken_ProjectScopedCannotCreateTokenForDifferentProject(t *testin
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	projA := &model.Project{Name: "proj-scope-a", Versioning: model.VersioningAuto}
+	projA := &db.Project{Name: "proj-scope-a", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, projA))
-	projB := &model.Project{Name: "proj-scope-b", Versioning: model.VersioningAuto}
+	projB := &db.Project{Name: "proj-scope-b", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, projB))
 
 	// Token is scoped to project A, but tries to create a token for project B
@@ -216,7 +216,7 @@ func TestListTokens_ProjectScopedCannotList(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "proj-list", Versioning: model.VersioningAuto}
+	proj := &db.Project{Name: "proj-list", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/api/tokens", nil)
@@ -231,7 +231,7 @@ func TestDeleteToken_ProjectScopedCannotDelete(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "proj-del", Versioning: model.VersioningAuto}
+	proj := &db.Project{Name: "proj-del", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	// Create a token that the project-scoped token will try to delete
@@ -277,7 +277,7 @@ func TestCreateToken_GlobalTokenCanCreateProjectScoped(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "proj-global-create", Versioning: model.VersioningAuto}
+	proj := &db.Project{Name: "proj-global-create", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	body := `{"name":"project-token","scopes":"read,write","project_id":` + strconv.FormatInt(proj.ID, 10) + `}`
@@ -324,7 +324,7 @@ func TestCreateToken_ProjectScopedCanCreateForSameProject(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "proj-same", Versioning: model.VersioningAuto}
+	proj := &db.Project{Name: "proj-same", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	// Project-scoped token CAN create a token for the same project

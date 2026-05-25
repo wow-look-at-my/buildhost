@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/model"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
 )
@@ -17,9 +17,9 @@ func TestUploadArtifact_Success(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "artproj", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "artproj", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, h.DB.CreateRelease(ctx, rel))
 
 	req := httptest.NewRequest("POST", "/api/projects/artproj/releases/1.0.0/artifacts/linux/amd64", strings.NewReader("binary-data"))
@@ -33,11 +33,11 @@ func TestUploadArtifact_Success(t *testing.T) {
 	h.UploadArtifact(rec, req)
 
 	assert.Equal(t, http.StatusCreated, rec.Code)
-	var a model.Artifact
+	var a db.Artifact
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &a))
-	assert.Equal(t, model.OSLinux, a.OS)
-	assert.Equal(t, model.ArchAMD64, a.Arch)
-	assert.Equal(t, model.KindBinary, a.Kind)
+	assert.Equal(t, db.OSLinux, a.OS)
+	assert.Equal(t, db.ArchAMD64, a.Arch)
+	assert.Equal(t, db.KindBinary, a.Kind)
 	assert.Greater(t, a.Size, int64(0))
 }
 
@@ -48,7 +48,7 @@ func TestUploadArtifact_ReleaseNotFound(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "rnf", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "rnf", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("POST", "/api/projects/rnf/releases/9.9.9/artifacts/linux/amd64", strings.NewReader("x"))
@@ -68,9 +68,9 @@ func TestUploadArtifact_InvalidOS(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "ostest", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "ostest", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, h.DB.CreateRelease(ctx, rel))
 
 	req := httptest.NewRequest("POST", "/api/projects/ostest/releases/1.0.0/artifacts/bados/amd64", strings.NewReader("x"))
@@ -91,9 +91,9 @@ func TestUploadArtifact_InvalidArch(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "archtest", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "archtest", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, h.DB.CreateRelease(ctx, rel))
 
 	req := httptest.NewRequest("POST", "/api/projects/archtest/releases/1.0.0/artifacts/linux/badarch", strings.NewReader("x"))
@@ -114,9 +114,9 @@ func TestUploadArtifact_InvalidKind(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "kindtest", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "kindtest", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, h.DB.CreateRelease(ctx, rel))
 
 	req := httptest.NewRequest("POST", "/api/projects/kindtest/releases/1.0.0/artifacts/linux/amd64?kind=badkind", strings.NewReader("x"))
@@ -137,9 +137,9 @@ func TestUploadArtifact_PublishedRelease(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "pubtest", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "pubtest", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, h.DB.CreateRelease(ctx, rel))
 	require.NoError(t, h.DB.PublishRelease(ctx, rel.ID))
 
@@ -161,9 +161,9 @@ func TestUploadArtifact_KindFromHeader(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "hdrtest", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "hdrtest", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, h.DB.CreateRelease(ctx, rel))
 
 	req := httptest.NewRequest("POST", "/api/projects/hdrtest/releases/1.0.0/artifacts/linux/amd64", strings.NewReader("lib-data"))
@@ -178,25 +178,25 @@ func TestUploadArtifact_KindFromHeader(t *testing.T) {
 	h.UploadArtifact(rec, req)
 
 	assert.Equal(t, http.StatusCreated, rec.Code)
-	var a model.Artifact
+	var a db.Artifact
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &a))
-	assert.Equal(t, model.KindLibrary, a.Kind)
+	assert.Equal(t, db.KindLibrary, a.Kind)
 }
 
 func TestUploadArtifact_DuplicateOSArch(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "duptest", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "duptest", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, h.DB.CreateRelease(ctx, rel))
 
 	key, size, err := h.Store.Put(ctx, strings.NewReader("first"))
 	require.NoError(t, err)
-	require.NoError(t, h.DB.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	require.NoError(t, h.DB.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("POST", "/api/projects/duptest/releases/1.0.0/artifacts/linux/amd64", strings.NewReader("second"))
@@ -219,16 +219,16 @@ func TestPublishRelease_Success(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "pubrel", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "pubrel", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, h.DB.CreateRelease(ctx, rel))
 
 	key, size, err := h.Store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
-	require.NoError(t, h.DB.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindAssets, StorageKey: key, Size: size, SHA256: key,
+	require.NoError(t, h.DB.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindAssets, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("POST", "/api/projects/pubrel/releases/1.0.0/publish", nil)
@@ -240,7 +240,7 @@ func TestPublishRelease_Success(t *testing.T) {
 	h.PublishRelease(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	var got model.Release
+	var got db.Release
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	assert.True(t, got.Published)
 }
@@ -252,7 +252,7 @@ func TestPublishRelease_ReleaseNotFound(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "rnfpub", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "rnfpub", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("POST", "/api/projects/rnfpub/releases/9.9.9/publish", nil)
@@ -270,9 +270,9 @@ func TestPublishRelease_NoArtifacts(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "noart", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "noart", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, h.DB.CreateRelease(ctx, rel))
 
 	req := httptest.NewRequest("POST", "/api/projects/noart/releases/1.0.0/publish", nil)
@@ -291,9 +291,9 @@ func TestPublishRelease_AlreadyPublished(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "alreadypub", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "alreadypub", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, h.DB.CreateRelease(ctx, rel))
 	require.NoError(t, h.DB.PublishRelease(ctx, rel.ID))
 
@@ -362,9 +362,9 @@ func TestUploadArtifact_FilenameHeaderSanitized(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "fname-test", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "fname-test", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, h.DB.CreateRelease(ctx, rel))
 
 	// Attempt path traversal via X-Artifact-Filename header
@@ -380,7 +380,7 @@ func TestUploadArtifact_FilenameHeaderSanitized(t *testing.T) {
 	h.UploadArtifact(rec, req)
 
 	assert.Equal(t, http.StatusCreated, rec.Code)
-	var a model.Artifact
+	var a db.Artifact
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &a))
 	// The path traversal must be stripped, leaving only the base filename
 	assert.Equal(t, "shadow", a.Filename)
@@ -392,9 +392,9 @@ func TestUploadArtifact_FilenameHeaderAbsolutePathSanitized(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "fname-abs", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "fname-abs", Versioning: db.VersioningSemver}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, h.DB.CreateRelease(ctx, rel))
 
 	req := httptest.NewRequest("POST", "/api/projects/fname-abs/releases/1.0.0/artifacts/darwin/arm64", strings.NewReader("data"))
@@ -409,7 +409,7 @@ func TestUploadArtifact_FilenameHeaderAbsolutePathSanitized(t *testing.T) {
 	h.UploadArtifact(rec, req)
 
 	assert.Equal(t, http.StatusCreated, rec.Code)
-	var a model.Artifact
+	var a db.Artifact
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &a))
 	assert.Equal(t, "evil", a.Filename)
 }

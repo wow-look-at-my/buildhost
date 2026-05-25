@@ -2,7 +2,6 @@ package apt
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/model"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/testify/assert"
@@ -78,13 +76,13 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, "http://localhost:8080")}
+	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, "http://localhost:8080", t.TempDir())}
 	return h, d, store
 }
 
 // withRoute adds project and route info to the request context, simulating
 // what the auth middleware does in production.
-func withRoute(r *http.Request, project *model.Project, rt route) *http.Request {
+func withRoute(r *http.Request, project *db.Project, rt route) *http.Request {
 	ctx := auth.WithProject(r.Context(), project)
 	ctx = auth.WithRouteInfo(ctx, rt)
 	return r.WithContext(ctx)
@@ -94,7 +92,7 @@ func TestServeHTTP_NoSubpath(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/myapp", nil)
@@ -109,7 +107,7 @@ func TestServeHTTP_UnknownSubpath(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/myapp/unknown/path", nil)
@@ -124,7 +122,7 @@ func TestServeRelease(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/myapp/dists/stable/Release", nil)
@@ -144,7 +142,7 @@ func TestServeRelease_InRelease(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/myapp/dists/stable/InRelease", nil)
@@ -160,7 +158,7 @@ func TestServePackages_NoRelease(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/myapp/dists/stable/main/binary-amd64/Packages", nil)
@@ -176,17 +174,17 @@ func TestServePackages_Success(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Description: "A test app", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Description: "A test app", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.2.3", VersionNum: 1002003}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.2.3", VersionNum: 1002003}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/myapp/dists/stable/main/binary-amd64/Packages", nil)
@@ -205,18 +203,18 @@ func TestServePackages_NoArtifactForArch(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	// Only amd64 artifact.
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	// Request arm64 which doesn't exist.
@@ -233,7 +231,7 @@ func TestServePackages_BadArch(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	// No arch segment in the path.
@@ -249,17 +247,17 @@ func TestServePool_Success(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/myapp/pool/myapp_1.0.0_amd64.deb", nil)
@@ -267,45 +265,19 @@ func TestServePool_Success(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/vnd.debian.binary-package", rec.Header().Get("Content-Type"))
-	assert.NotEmpty(t, rec.Body.Bytes())
-}
-
-func TestServePool_NoDebPackage(t *testing.T) {
-	h, d, store := setupTest(t)
-	ctx := context.Background()
-
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	key, size, err := store.Put(ctx, strings.NewReader("binary"))
-	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
-	}))
-
-	// On-demand generation means any supported format works as long as
-	// there is an artifact in storage -- no packaged_artifacts row needed.
-	req := httptest.NewRequest("GET", "/myapp/pool/myapp_1.0.0_amd64.deb", nil)
-	req = withRoute(req, proj, route{project: "myapp", subPath: "pool/myapp_1.0.0_amd64.deb"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/vnd.debian.binary-package", rec.Header().Get("Content-Type"))
-	assert.NotEmpty(t, rec.Body.Bytes())
+	assert.Equal(t, http.StatusFound, rec.Code)
+	loc := rec.Header().Get("Location")
+	assert.Contains(t, loc, "/static?")
+	assert.Contains(t, loc, "id=myapp")
+	assert.Contains(t, loc, "fmt=deb")
+	assert.Contains(t, loc, "v=1.0.0")
 }
 
 func TestServePool_EmptyFilename(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "myapp", Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/myapp/pool/", nil)
@@ -362,7 +334,7 @@ func TestServeHTTP_PrivateProject_Release_WithValidContext(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningAuto}
+	proj := &db.Project{Name: "secret", IsPrivate: true, Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/secret/dists/stable/Release", nil)
@@ -378,7 +350,7 @@ func TestServeHTTP_PrivateProject_Packages_WithValidContext(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningAuto}
+	proj := &db.Project{Name: "secret", IsPrivate: true, Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
 	req := httptest.NewRequest("GET", "/secret/dists/stable/main/binary-amd64/Packages", nil)
@@ -393,17 +365,17 @@ func TestServeHTTP_PrivateProject_Pool_WithValidContext(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
-	proj := &model.Project{Name: "secret", IsPrivate: true, Versioning: model.VersioningSemver}
+	proj := &db.Project{Name: "secret", IsPrivate: true, Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &model.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &model.Artifact{
-		ReleaseID: rel.ID, OS: model.OSLinux, Arch: model.ArchAMD64,
-		Kind: model.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/secret/pool/secret_1.0.0_amd64.deb", nil)
@@ -411,10 +383,9 @@ func TestServeHTTP_PrivateProject_Pool_WithValidContext(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/vnd.debian.binary-package", rec.Header().Get("Content-Type"))
-	assert.NotEmpty(t, rec.Body.Bytes())
+	assert.Equal(t, http.StatusFound, rec.Code)
+	loc := rec.Header().Get("Location")
+	assert.Contains(t, loc, "/static?")
+	assert.Contains(t, loc, "id=secret")
+	assert.Contains(t, loc, "fmt=deb")
 }
-
-// Suppress unused import warning.
-var _ = fmt.Sprintf

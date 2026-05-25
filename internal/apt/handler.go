@@ -17,7 +17,7 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
-		handler.Gen = repackage.NewGenerator(auth.Store(), auth.BaseURL())
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
 	})
 	auth.HandleHandler("/apt/", parseRoute, http.StripPrefix("/apt", &handler))
 }
@@ -59,9 +59,10 @@ func routeFrom(ctx context.Context) route {
 }
 
 type Handler struct {
-	DB    *db.DB
-	Store storage.Storage
-	Gen   *repackage.Generator
+	DB      *db.DB
+	Store   storage.Storage
+	BaseURL string
+	Gen     *repackage.Generator
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
