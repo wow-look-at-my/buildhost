@@ -1,11 +1,14 @@
 package server
 
-import "testing"
+import (
+	"testing"
+	"github.com/wow-look-at-my/testify/assert"
+)
 
 func TestRedactQuery(t *testing.T) {
 	tests := []struct {
-		input string
-		want  string
+		input	string
+		want	string
 	}{
 		{"", ""},
 		{"id=foo&v=1", "id=foo&v=1"},
@@ -14,8 +17,8 @@ func TestRedactQuery(t *testing.T) {
 		{"id=foo&v=1&fmt=deb", "id=foo&v=1&fmt=deb"},
 	}
 	for _, tt := range tests {
-		if got := redactQuery(tt.input); got != tt.want {
-			t.Errorf("redactQuery(%q) = %q, want %q", tt.input, got, tt.want)
-		}
+		got := redactQuery(tt.input)
+		assert.Equal(t, tt.want, got)
+
 	}
 }
