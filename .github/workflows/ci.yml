@@ -11,7 +11,6 @@ permissions:
   id-token: write
   contents: read
   packages: write
-  pull-requests: write
 
 jobs:
   build:
@@ -25,6 +24,8 @@ jobs:
   route-diff:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
       - uses: actions/download-artifact@v4
         with:
