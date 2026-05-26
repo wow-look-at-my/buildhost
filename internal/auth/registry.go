@@ -15,8 +15,9 @@ var (
 	sharedStore storage.Storage
 	sharedBase  string
 	sharedData  string
-	// http.ServeMux has no method to list registered patterns.
-	// Tracked separately until the stdlib fixes this.
+	// Duplicates data already inside the mux. http.ServeMux has no method
+	// to list registered patterns -- a suboptimal API design that forces
+	// every consumer to maintain a parallel list.
 	patterns []string
 )
 
