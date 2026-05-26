@@ -18,87 +18,105 @@ jobs:
               with:
                   generate: 52b76a04057b
 
+            - name: Capture PR routes
+              id: routes
+              run: echo "routes=$(./build/buildhost routes | base64 -w0)" >> "$GITHUB_OUTPUT"
+
             - name: Diff routes
-              env:
-                  GH_TOKEN: ${{ github.token }}
-              run: |
-                  set -euo pipefail
+              uses: wow-look-at-my/actions@typescript#latest
+              with:
+                  script: |
+                      const MARKER = "<!-- route-diff -->";
+                      const BASE_START = "<!-- route-diff-base-routes";
+                      const BASE_END = "route-diff-base-routes -->";
+                      const PR_START = "<!-- route-diff-pr-routes";
+                      const PR_END = "route-diff-pr-routes -->";
 
-                  ./build/buildhost routes > /tmp/pr-routes.txt
-                  PR="${{ github.event.pull_request.number }}"
+                      const prRoutes = Buffer.from("${{ steps.routes.outputs.routes }}", "base64").toString();
+                      const pr = context.issue.number;
+                      const repo = { owner: context.repo.owner, repo: context.repo.repo };
+                      const gh = octokit("${{ github.token }}");
 
-                  # Look for an existing route-diff comment
-                  COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" \
-                    --paginate --jq '[.[] | select(.body | contains("<!-- route-diff -->")) | .id] | last // empty')
+                      function extractBlock(body: string, start: string, end: string): string {
+                          const s = body.indexOf(start);
+                          const e = body.indexOf(end);
+                          if (s === -1 || e === -1) return "";
+                          return body.slice(s + start.length + 1, e).trimEnd();
+                      }
 
-                  HAVE_BASELINE=false
+                      // Find existing route-diff comment
+                      const comments = await gh.paginate(gh.rest.issues.listComments, { ...repo, issue_number: pr });
+                      const existing = comments.filter((c: any) => c.body?.includes(MARKER)).pop();
 
-                  if [ -n "$COMMENT_ID" ]; then
-                    BODY=$(gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" --jq .body)
+                      let baseRoutes = "";
 
-                    # If PR routes match the previously commented routes, nothing to do
-                    echo "$BODY" | sed -n '/^<!-- route-diff-pr-routes$/,/^route-diff-pr-routes -->$/p' \
-                      | sed '1d;$d' > /tmp/prev-pr-routes.txt
-                    if diff -q /tmp/prev-pr-routes.txt /tmp/pr-routes.txt >/dev/null 2>&1; then
-                      echo "Routes unchanged since last comment"
-                      exit 0
-                    fi
+                      if (existing) {
+                          const prevPR = extractBlock(existing.body!, PR_START, PR_END);
+                          if (prevPR === prRoutes.trimEnd()) {
+                              core.info("Routes unchanged since last comment");
+                              return;
+                          }
+                          baseRoutes = extractBlock(existing.body!, BASE_START, BASE_END);
+                      }
 
-                    # Reuse the cached base routes from the existing comment
-                    if echo "$BODY" | sed -n '/^<!-- route-diff-base-routes$/,/^route-diff-base-routes -->$/p' \
-                        | sed '1d;$d' > /tmp/base-routes.txt && [ -s /tmp/base-routes.txt ]; then
-                      HAVE_BASELINE=true
-                    fi
-                  fi
+                      if (!baseRoutes) {
+                          // Build base branch to get baseline routes
+                          const base = "${{ github.event.pull_request.base.sha }}";
+                          await $`git fetch origin ${base} --depth=1`;
+                          await $`git checkout -f ${base}`;
+                          await $`rm -rf build/`;
+                          try {
+                              await $`go-toolchain --generate 52b76a04057b`;
+                              const { stdout } = child_process.spawnSync("./build/buildhost", ["routes"], { encoding: "utf8" });
+                              baseRoutes = stdout || "";
+                          } catch {
+                              baseRoutes = "";
+                          }
+                      }
 
-                  if [ "$HAVE_BASELINE" = false ]; then
-                    BASE="${{ github.event.pull_request.base.sha }}"
-                    git fetch origin "$BASE" --depth=1
-                    git checkout -f "$BASE"
-                    rm -rf build/
-                    if go-toolchain --generate 52b76a04057b 2>&1; then
-                      ./build/buildhost routes > /tmp/base-routes.txt 2>/dev/null || touch /tmp/base-routes.txt
-                    else
-                      touch /tmp/base-routes.txt
-                    fi
-                  fi
+                      // If routes match base, remove stale comment
+                      if (baseRoutes.trimEnd() === prRoutes.trimEnd()) {
+                          core.info("Routes match base branch");
+                          if (existing) {
+                              await gh.rest.issues.deleteComment({ ...repo, comment_id: existing.id });
+                          }
+                          return;
+                      }
 
-                  # If routes match the base branch, remove stale comment and exit
-                  if diff -q /tmp/base-routes.txt /tmp/pr-routes.txt >/dev/null 2>&1; then
-                    echo "Routes match base branch"
-                    if [ -n "$COMMENT_ID" ]; then
-                      gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X DELETE || true
-                    fi
-                    exit 0
-                  fi
+                      // Generate diff
+                      const baseLines = baseRoutes.trimEnd().split("\n");
+                      const prLines = prRoutes.trimEnd().split("\n");
+                      const added = prLines.filter(l => !baseLines.includes(l));
+                      const removed = baseLines.filter(l => !prLines.includes(l));
 
-                  DIFF=$(diff -u /tmp/base-routes.txt /tmp/pr-routes.txt --label base --label pr || true)
+                      let diff = "";
+                      for (const r of removed) diff += `-${r}\n`;
+                      for (const a of added) diff += `+${a}\n`;
 
-                  {
-                    echo '<!-- route-diff -->'
-                    echo '<!-- route-diff-base-routes'
-                    cat /tmp/base-routes.txt
-                    echo 'route-diff-base-routes -->'
-                    echo '<!-- route-diff-pr-routes'
-                    cat /tmp/pr-routes.txt
-                    echo 'route-diff-pr-routes -->'
-                    echo '### Route changes'
-                    echo ''
-                    echo '```diff'
-                    echo "$DIFF"
-                    echo '```'
-                    echo ''
-                    echo '<details><summary>Full route list</summary>'
-                    echo ''
-                    echo '```'
-                    cat /tmp/pr-routes.txt
-                    echo '```'
-                    echo '</details>'
-                  } > /tmp/comment.md
+                      const body = [
+                          MARKER,
+                          BASE_START,
+                          baseRoutes.trimEnd(),
+                          BASE_END,
+                          PR_START,
+                          prRoutes.trimEnd(),
+                          PR_END,
+                          "### Route changes",
+                          "",
+                          "```diff",
+                          diff.trimEnd(),
+                          "```",
+                          "",
+                          "<details><summary>Full route list</summary>",
+                          "",
+                          "```",
+                          prRoutes.trimEnd(),
+                          "```",
+                          "</details>",
+                      ].join("\n");
 
-                  if [ -n "$COMMENT_ID" ]; then
-                    gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" \
-                      -X PATCH --field body=@/tmp/comment.md
-                  else
-                    gh pr comment "$PR" --body-file /tmp/comment.md
-                  fi
+                      if (existing) {
+                          await gh.rest.issues.updateComment({ ...repo, comment_id: existing.id, body });
+                      } else {
+                          await gh.rest.issues.createComment({ ...repo, issue_number: pr, body });
+                      }
