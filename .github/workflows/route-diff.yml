@@ -4,6 +4,10 @@ on:
     pull_request:
         types: [opened, reopened, synchronize]
 
+concurrency:
+    group: route-diff-${{ github.event.pull_request.number }}
+    cancel-in-progress: true
+
 permissions:
     contents: read
     pull-requests: write
@@ -81,13 +85,6 @@ jobs:
                           "```diff",
                           diff.trimEnd(),
                           "```",
-                          "",
-                          "<details><summary>Full route list</summary>",
-                          "",
-                          "```",
-                          prRoutes,
-                          "```",
-                          "</details>",
                       ].join("\n");
 
                       if (existing) {
