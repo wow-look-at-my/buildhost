@@ -5,28 +5,25 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/router"
 )
 
 var (
-	mux         = http.NewServeMux()
+	mux         = router.New()
 	mw          *Middleware
 	readyFuncs  []func()
 	sharedDB    *db.DB
 	sharedStore storage.Storage
 	sharedBase  string
 	sharedData  string
-	// Duplicates data already inside the mux. http.ServeMux has no method
-	// to list registered patterns -- a suboptimal API design that forces
-	// every consumer to maintain a parallel list.
-	patterns []string
 )
 
-func Mux() *http.ServeMux        { return mux }
-func DB() *db.DB                 { return sharedDB }
-func Store() storage.Storage     { return sharedStore }
-func BaseURL() string            { return sharedBase }
-func DataDir() string            { return sharedData }
-func GetMiddleware() *Middleware  { return mw }
+func Router() *router.Router        { return mux }
+func DB() *db.DB                    { return sharedDB }
+func Store() storage.Storage        { return sharedStore }
+func BaseURL() string               { return sharedBase }
+func DataDir() string               { return sharedData }
+func GetMiddleware() *Middleware     { return mw }
 
 func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
@@ -48,19 +45,14 @@ func Init(database *db.DB, store storage.Storage, baseURL, dataDir string, trust
 	}
 }
 
-func Patterns() []string { return patterns }
-
 func Handle(pattern string, parse ParseFunc, handler http.HandlerFunc) {
-	patterns = append(patterns, pattern)
-	mux.HandleFunc(pattern, requireProjectFunc(parse, handler))
+	mux.HandleFunc(pattern, router.Allow, requireProjectFunc(parse, handler))
 }
 
 func HandleRaw(pattern string, handler http.HandlerFunc) {
-	patterns = append(patterns, pattern)
-	mux.HandleFunc(pattern, handler)
+	mux.HandleFunc(pattern, router.Allow, handler)
 }
 
 func HandleHandler(pattern string, parse ParseFunc, handler http.Handler) {
-	patterns = append(patterns, pattern)
-	mux.Handle(pattern, requireProject(parse)(handler))
+	mux.Handle(pattern, router.Allow, requireProject(parse)(handler))
 }
