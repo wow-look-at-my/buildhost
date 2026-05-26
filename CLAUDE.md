@@ -22,7 +22,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - `internal/npm/` - npm registry endpoint. Tarball URLs point to `/static`. Self-registering via init().
 - `internal/oci/` - OCI distribution endpoint. Self-registering via init().
 - `internal/sites/` - Static site hosting endpoint. Upload tar.gz archives, serve files per branch. Self-registering via init().
-- `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler), RouteInfo interface
+- `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler) backed by `github.com/wow-look-at-my/router`, RouteInfo interface
 - `internal/db/` - SQLite database layer (modernc.org/sqlite, no CGo), OIDC policy storage. Types (Project, Release, Artifact, APIToken, OIDCPolicy) and validation functions live here. Uses sqlc for query generation from `internal/db/queries/*.sql` with schema in `internal/db/schema.sql`.
 - `internal/db/queries/` - SQL query files for sqlc code generation
 - `internal/db/schema.sql` - SQLite schema used by sqlc
@@ -47,7 +47,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - Private projects require auth on all endpoints including format-specific ones (APT, Brew, NPM, OCI)
 - Project auth enforced once in centralized requireProject middleware — handlers never check auth
 - Each backend defines a RouteInfo implementation (private route struct) for full URL parsing
-- Backends self-register routes via init() on auth.Mux(); adding a backend = adding files, no existing files modified
+- Backends self-register routes via init() on auth.Router(); adding a backend = adding files, no existing files modified
 - Tokens are project-scoped or global; project-scoped tokens cannot escalate privileges
 - Token expiry is enforced at lookup time
 - Default token scope is "read" (least privilege)
@@ -60,6 +60,12 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 ```bash
 buildhost bootstrap          # Creates initial admin token (only works when no tokens exist)
 buildhost bootstrap --name admin-token
+```
+
+## Listing routes
+
+```bash
+buildhost routes   # prints all registered HTTP routes, sorted
 ```
 
 ## Running
