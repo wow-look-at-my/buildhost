@@ -58,23 +58,7 @@ jobs:
                           }
                       }
 
-                      if (!baseRoutes) {
-                          const base = "${{ github.event.pull_request.base.sha }}";
-                          await $`git fetch origin ${base} --depth=1`;
-                          await $`git checkout -f ${base}`;
-                          await $`rm -rf build/`;
-                          try {
-                              await $`go-toolchain --generate 52b76a04057b`;
-                              const { stdout } = child_process.spawnSync(
-                                  "./build/buildhost_linux_amd64", ["routes"], { encoding: "utf8" },
-                              );
-                              baseRoutes = (stdout || "").trimEnd();
-                          } catch {
-                              baseRoutes = "";
-                          }
-                      }
-
-                      if (baseRoutes === prRoutes) {
+                      if (baseRoutes && baseRoutes === prRoutes) {
                           core.info("Routes match base branch");
                           if (existing) {
                               await gh.rest.issues.deleteComment({ ...repo, comment_id: existing.id });
