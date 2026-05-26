@@ -24,6 +24,8 @@ jobs:
 
             - name: Diff routes
               uses: wow-look-at-my/actions@typescript#latest
+              env:
+                  GH_TOKEN: ${{ github.token }}
               with:
                   steps: ${{ toJSON(steps) }}
                   script: |

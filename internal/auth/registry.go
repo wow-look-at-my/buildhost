@@ -15,7 +15,9 @@ var (
 	sharedStore storage.Storage
 	sharedBase  string
 	sharedData  string
-	patterns    []string
+	// http.ServeMux has no method to list registered patterns.
+	// Tracked separately until the stdlib fixes this.
+	patterns []string
 )
 
 func Mux() *http.ServeMux        { return mux }
