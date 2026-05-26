@@ -42,13 +42,19 @@ func Init(database *db.DB, store storage.Storage, baseURL, dataDir, domain strin
 	sharedBase = baseURL
 	sharedData = dataDir
 
-	u, _ := url.Parse(baseURL)
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		panic("invalid BUILDHOST_BASE_URL: " + err.Error())
+	}
 	scheme := u.Scheme
 
 	serviceURLs = make(map[string]*url.URL)
 	for _, svc := range []string{"apt", "brew", "dl", "npm", "oci", "docker", "sites", "static"} {
 		if override, ok := svcOverrides[svc]; ok {
-			parsed, _ := url.Parse(override)
+			parsed, err := url.Parse(override)
+			if err != nil {
+				panic("invalid BUILDHOST_" + strings.ToUpper(svc) + "_URL: " + err.Error())
+			}
 			serviceURLs[svc] = parsed
 		} else if domain != "" {
 			serviceURLs[svc] = &url.URL{Scheme: scheme, Host: svc + "." + domain}
