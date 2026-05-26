@@ -405,19 +405,41 @@ App.pages.registries = function () {
 App.pages.tokens = function () {
     App.setTitle("Tokens");
     App.renderSidebar("tokens");
-    App.fetch("/tokens").then(function (tokens) {
-        var html = '<h1>API Tokens</h1><div class="card"><table class="data-table"><thead><tr><th>Name</th><th>Prefix</th><th>Scope</th><th>Project</th><th>Permissions</th><th>Created</th><th>Last Used</th><th>Expires</th></tr></thead><tbody>';
+
+    function renderTokens(tokens, projects, newToken) {
+        var html = '<h1>API Tokens</h1>';
+
+        if (newToken) {
+            html += '<div class="token-reveal"><div class="token-reveal-label">New token — copy it now, it won\'t be shown again</div>';
+            html += '<div class="token-reveal-value"><code id="new-token-val">' + App.h(newToken) + '</code>';
+            html += '<button class="btn btn-sm" onclick="App.copyText(\'new-token-val\')">Copy</button></div></div>';
+        }
+
+        var projectOpts = '<option value="">Global</option>';
+        for (var pi = 0; pi < projects.length; pi++) {
+            projectOpts += '<option value="' + App.h(projects[pi].id) + '">' + App.h(projects[pi].name) + '</option>';
+        }
+
+        html += '<div class="card"><h2>Create Token</h2>';
+        html += '<form id="create-token-form" class="inline-form">';
+        html += '<input class="form-input" type="text" id="tok-name" placeholder="Name" required>';
+        html += '<select class="form-select" id="tok-scopes"><option value="read,write">read+write</option><option value="read">read</option><option value="write">write</option></select>';
+        html += '<select class="form-select" id="tok-project">' + projectOpts + '</select>';
+        html += '<button class="btn btn-primary" type="submit">Create</button>';
+        html += '</form></div>';
+
+        html += '<div class="card"><table class="data-table"><thead><tr><th>Name</th><th>Prefix</th><th>Scope</th><th>Project</th><th>Permissions</th><th>Created</th><th>Last Used</th><th>Expires</th><th></th></tr></thead><tbody>';
         if (tokens.length === 0) {
-            html += '<tr><td colspan="8" class="empty">No tokens yet</td></tr>';
+            html += '<tr><td colspan="9" class="empty">No tokens yet</td></tr>';
         } else {
             for (var i = 0; i < tokens.length; i++) {
                 var t = tokens[i];
-                html += "<tr" + (t.is_expired ? ' class="row-muted"' : "") + ">";
-                html += "<td>" + App.h(t.name) + "</td>";
+                html += '<tr id="tok-row-' + t.id + '"' + (t.is_expired ? ' class="row-muted"' : "") + ">";
+                html += '<td id="tok-row-name-' + t.id + '">' + App.h(t.name) + "</td>";
                 html += "<td><code>" + App.h(t.token_prefix) + "...</code></td>";
                 html += "<td>" + (t.is_global ? App.badge("neutral", "Global") : App.badge("info", "Project")) + "</td>";
                 html += "<td>" + (t.project_name ? "<a href='#/projects/" + App.h(t.project_name) + "'>" + App.h(t.project_name) + "</a>" : "-") + "</td>";
-                html += "<td><code>" + App.h(t.scopes) + "</code></td>";
+                html += '<td id="tok-row-scopes-' + t.id + '"><code>' + App.h(t.scopes) + "</code></td>";
                 html += '<td title="' + App.h(App.formatTime(t.created_at)) + '">' + App.h(App.timeAgo(t.created_at)) + "</td>";
                 html += "<td>" + (t.last_used_at ? App.h(App.formatTime(t.last_used_at)) : '<span class="muted">Never</span>') + "</td>";
                 var exp = "";
@@ -427,11 +449,91 @@ App.pages.tokens = function () {
                 } else {
                     exp = '<span class="muted">Never</span>';
                 }
-                html += "<td>" + exp + "</td></tr>";
+                html += "<td>" + exp + "</td>";
+                html += '<td class="row-actions"><button class="btn btn-sm" onclick="App.editToken(' + t.id + ',\'' + App.h(t.name) + '\',\'' + App.h(t.scopes) + '\')">Edit</button> ';
+                html += '<button class="btn btn-sm btn-danger" onclick="App.deleteToken(' + t.id + ')">Delete</button></td>';
+                html += "</tr>";
             }
         }
         html += "</tbody></table></div>";
         document.getElementById("content").innerHTML = html;
+
+        var form = document.getElementById("create-token-form");
+        if (form) {
+            form.addEventListener("submit", function (e) {
+                e.preventDefault();
+                var name = document.getElementById("tok-name").value.trim();
+                var scopes = document.getElementById("tok-scopes").value;
+                var projVal = document.getElementById("tok-project").value;
+                var body = { name: name, scopes: scopes };
+                if (projVal) body.project_id = parseInt(projVal, 10);
+                fetch("/api/tokens", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body)
+                }).then(function (r) {
+                    if (!r.ok) return r.text().then(function (t) { alert("Error: " + t); });
+                    return r.json().then(function (d) {
+                        App.pages.tokens._reload(d.token);
+                    });
+                });
+            });
+        }
+    }
+
+    App.pages.tokens._reload = function (newToken) {
+        Promise.all([App.fetch("/tokens"), App.fetch("/projects")]).then(function (results) {
+            renderTokens(results[0], results[1], newToken || null);
+        });
+    };
+
+    App.pages.tokens._reload();
+};
+
+App.copyText = function (elemId) {
+    var el = document.getElementById(elemId);
+    if (!el) return;
+    navigator.clipboard.writeText(el.textContent || el.innerText);
+};
+
+App.editToken = function (id, name, scopes) {
+    var nameCell = document.getElementById("tok-row-name-" + id);
+    var scopesCell = document.getElementById("tok-row-scopes-" + id);
+    var row = document.getElementById("tok-row-" + id);
+    if (!nameCell || !scopesCell) return;
+
+    nameCell.innerHTML = '<input class="form-input form-input-sm" type="text" id="edit-name-' + id + '" value="' + App.h(name) + '">';
+    scopesCell.innerHTML = '<select class="form-select form-select-sm" id="edit-scopes-' + id + '">' +
+        '<option value="read,write"' + (scopes === "read,write" ? " selected" : "") + '>read+write</option>' +
+        '<option value="read"' + (scopes === "read" ? " selected" : "") + '>read</option>' +
+        '<option value="write"' + (scopes === "write" ? " selected" : "") + '>write</option>' +
+        '</select>';
+    var actionsCell = row.querySelector(".row-actions");
+    if (actionsCell) {
+        actionsCell.innerHTML = '<button class="btn btn-sm btn-primary" onclick="App.saveToken(' + id + ')">Save</button> ' +
+            '<button class="btn btn-sm" onclick="App.pages.tokens._reload()">Cancel</button>';
+    }
+};
+
+App.saveToken = function (id) {
+    var nameEl = document.getElementById("edit-name-" + id);
+    var scopesEl = document.getElementById("edit-scopes-" + id);
+    if (!nameEl || !scopesEl) return;
+    fetch("/api/tokens/" + id, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nameEl.value.trim(), scopes: scopesEl.value })
+    }).then(function (r) {
+        if (!r.ok) return r.text().then(function (t) { alert("Error: " + t); });
+        App.pages.tokens._reload();
+    });
+};
+
+App.deleteToken = function (id) {
+    if (!confirm("Delete this token? This cannot be undone.")) return;
+    fetch("/api/tokens/" + id, { method: "DELETE" }).then(function (r) {
+        if (!r.ok) return r.text().then(function (t) { alert("Error: " + t); });
+        App.pages.tokens._reload();
     });
 };
 
@@ -653,7 +755,7 @@ App.demoData = {
     },
     "/registries": { base_url: "https://builds.example.com", projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
     "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com" },
-    "/tokens": [{ name: "deploy", token_prefix: "bh_abc", is_global: false, project_name: "myapp", scopes: "read,write", is_expired: false, created_at: new Date(Date.now() - 864e5 * 7).toISOString(), last_used_at: new Date(Date.now() - 3600000).toISOString() }],
+    "/tokens": [{ id: 1, name: "deploy", token_prefix: "bh_abc", is_global: false, project_id: 1, project_name: "myapp", scopes: "read,write", is_expired: false, created_at: new Date(Date.now() - 864e5 * 7).toISOString(), last_used_at: new Date(Date.now() - 3600000).toISOString() }],
     "/oidc": [{ issuer: "https://token.actions.githubusercontent.com", subject_pattern: "repo:myorg/myapp:*", audience: "", project_name: "myapp", scopes: "read,write", created_at: new Date(Date.now() - 864e5 * 14).toISOString() }],
     "/artifacts": [
         { id: 1, os: "linux", arch: "amd64", kind: "binary", size: 15728640, filename: "myapp", created_at: new Date(Date.now() - 3600000).toISOString(), version: "3", git_branch: "main", project_name: "myapp", download_count: 42 },
