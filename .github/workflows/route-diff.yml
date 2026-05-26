@@ -20,11 +20,12 @@ jobs:
 
             - name: Capture PR routes
               id: routes
-              run: echo "routes=$(./build/buildhost routes | base64 -w0)" >> "$GITHUB_OUTPUT"
+              run: echo "routes=$(./build/buildhost_linux_amd64 routes | base64 -w0)" >> "$GITHUB_OUTPUT"
 
             - name: Diff routes
               uses: wow-look-at-my/actions@typescript#latest
               with:
+                  steps: ${{ toJSON(steps) }}
                   script: |
                       const MARKER = "<!-- route-diff -->";
                       const BASE_START = "<!-- route-diff-base-routes";
@@ -32,10 +33,10 @@ jobs:
                       const PR_START = "<!-- route-diff-pr-routes";
                       const PR_END = "route-diff-pr-routes -->";
 
-                      const prRoutes = Buffer.from("${{ steps.routes.outputs.routes }}", "base64").toString();
+                      const prRoutes = Buffer.from(steps.routes.outputs.routes, "base64").toString();
                       const pr = context.issue.number;
                       const repo = { owner: context.repo.owner, repo: context.repo.repo };
-                      const gh = octokit("${{ github.token }}");
+                      const gh = octokit(env.GH_TOKEN || "");
 
                       function extractBlock(body: string, start: string, end: string): string {
                           const s = body.indexOf(start);
@@ -54,36 +55,35 @@ jobs:
                           const prevPR = extractBlock(existing.body!, PR_START, PR_END);
                           if (prevPR === prRoutes.trimEnd()) {
                               core.info("Routes unchanged since last comment");
-                              return;
+                              process.exit(0);
                           }
                           baseRoutes = extractBlock(existing.body!, BASE_START, BASE_END);
                       }
 
                       if (!baseRoutes) {
-                          // Build base branch to get baseline routes
                           const base = "${{ github.event.pull_request.base.sha }}";
                           await $`git fetch origin ${base} --depth=1`;
                           await $`git checkout -f ${base}`;
                           await $`rm -rf build/`;
                           try {
                               await $`go-toolchain --generate 52b76a04057b`;
-                              const { stdout } = child_process.spawnSync("./build/buildhost", ["routes"], { encoding: "utf8" });
+                              const { stdout } = child_process.spawnSync(
+                                  "./build/buildhost_linux_amd64", ["routes"], { encoding: "utf8" },
+                              );
                               baseRoutes = stdout || "";
                           } catch {
                               baseRoutes = "";
                           }
                       }
 
-                      // If routes match base, remove stale comment
                       if (baseRoutes.trimEnd() === prRoutes.trimEnd()) {
                           core.info("Routes match base branch");
                           if (existing) {
                               await gh.rest.issues.deleteComment({ ...repo, comment_id: existing.id });
                           }
-                          return;
+                          process.exit(0);
                       }
 
-                      // Generate diff
                       const baseLines = baseRoutes.trimEnd().split("\n");
                       const prLines = prRoutes.trimEnd().split("\n");
                       const added = prLines.filter(l => !baseLines.includes(l));
