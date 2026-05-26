@@ -24,8 +24,6 @@ jobs:
 
             - name: Diff routes
               uses: wow-look-at-my/actions@typescript#latest
-              env:
-                  GH_TOKEN: ${{ github.token }}
               with:
                   steps: ${{ toJSON(steps) }}
                   script: |
@@ -38,7 +36,7 @@ jobs:
                       const prRoutes = Buffer.from(steps.routes.outputs.routes, "base64").toString();
                       const pr = context.issue.number;
                       const repo = { owner: context.repo.owner, repo: context.repo.repo };
-                      const gh = octokit(env.GH_TOKEN || "");
+                      const gh = octokit("${{ github.token }}");
 
                       function extractBlock(body: string, start: string, end: string): string {
                           const s = body.indexOf(start);
