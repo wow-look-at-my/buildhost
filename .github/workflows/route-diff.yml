@@ -27,37 +27,35 @@ jobs:
               with:
                   steps: ${{ toJSON(steps) }}
                   script: |
-                      const MARKER = "<!-- route-diff -->";
-                      const BASE_START = "<!-- route-diff-base-routes";
-                      const BASE_END = "route-diff-base-routes -->";
-                      const PR_START = "<!-- route-diff-pr-routes";
-                      const PR_END = "route-diff-pr-routes -->";
-
-                      const prRoutes = Buffer.from(steps.routes.outputs.routes, "base64").toString();
+                      const MARKER = "<!-- route-diff:";
+                      const prRoutes = Buffer.from(steps.routes.outputs.routes, "base64").toString().trimEnd();
                       const pr = context.issue.number;
                       const repo = { owner: context.repo.owner, repo: context.repo.repo };
                       const gh = octokit("${{ github.token }}");
 
-                      function extractBlock(body: string, start: string, end: string): string {
-                          const s = body.indexOf(start);
-                          const e = body.indexOf(end);
-                          if (s === -1 || e === -1) return "";
-                          return body.slice(s + start.length + 1, e).trimEnd();
+                      interface CachedData { base: string; pr: string }
+
+                      function parseCache(body: string): CachedData | null {
+                          const m = body.match(/<!-- route-diff:(.+?) -->/);
+                          if (!m) return null;
+                          try { return JSON.parse(Buffer.from(m[1], "base64").toString()); }
+                          catch { return null; }
                       }
 
-                      // Find existing route-diff comment
                       const comments = await gh.paginate(gh.rest.issues.listComments, { ...repo, issue_number: pr });
-                      const existing = comments.filter((c: any) => c.body?.includes(MARKER)).pop();
+                      const existing = comments.filter((c: any) => c.body?.includes("<!-- route-diff:")).pop();
 
                       let baseRoutes = "";
 
                       if (existing) {
-                          const prevPR = extractBlock(existing.body!, PR_START, PR_END);
-                          if (prevPR === prRoutes.trimEnd()) {
-                              core.info("Routes unchanged since last comment");
-                              process.exit(0);
+                          const cached = parseCache(existing.body!);
+                          if (cached) {
+                              if (cached.pr === prRoutes) {
+                                  core.info("Routes unchanged since last comment");
+                                  process.exit(0);
+                              }
+                              baseRoutes = cached.base;
                           }
-                          baseRoutes = extractBlock(existing.body!, BASE_START, BASE_END);
                       }
 
                       if (!baseRoutes) {
@@ -70,13 +68,13 @@ jobs:
                               const { stdout } = child_process.spawnSync(
                                   "./build/buildhost_linux_amd64", ["routes"], { encoding: "utf8" },
                               );
-                              baseRoutes = stdout || "";
+                              baseRoutes = (stdout || "").trimEnd();
                           } catch {
                               baseRoutes = "";
                           }
                       }
 
-                      if (baseRoutes.trimEnd() === prRoutes.trimEnd()) {
+                      if (baseRoutes === prRoutes) {
                           core.info("Routes match base branch");
                           if (existing) {
                               await gh.rest.issues.deleteComment({ ...repo, comment_id: existing.id });
@@ -84,23 +82,16 @@ jobs:
                           process.exit(0);
                       }
 
-                      const baseLines = baseRoutes.trimEnd().split("\n");
-                      const prLines = prRoutes.trimEnd().split("\n");
-                      const added = prLines.filter(l => !baseLines.includes(l));
-                      const removed = baseLines.filter(l => !prLines.includes(l));
+                      fs.writeFileSync("/tmp/base-routes.txt", baseRoutes + "\n");
+                      fs.writeFileSync("/tmp/pr-routes.txt", prRoutes + "\n");
+                      const { stdout: diff } = child_process.spawnSync(
+                          "diff", ["-u", "--label", "base", "--label", "pr", "/tmp/base-routes.txt", "/tmp/pr-routes.txt"],
+                          { encoding: "utf8" },
+                      );
 
-                      let diff = "";
-                      for (const r of removed) diff += `-${r}\n`;
-                      for (const a of added) diff += `+${a}\n`;
-
+                      const cache = Buffer.from(JSON.stringify({ base: baseRoutes, pr: prRoutes })).toString("base64");
                       const body = [
-                          MARKER,
-                          BASE_START,
-                          baseRoutes.trimEnd(),
-                          BASE_END,
-                          PR_START,
-                          prRoutes.trimEnd(),
-                          PR_END,
+                          `<!-- route-diff:${cache} -->`,
                           "### Route changes",
                           "",
                           "```diff",
@@ -110,7 +101,7 @@ jobs:
                           "<details><summary>Full route list</summary>",
                           "",
                           "```",
-                          prRoutes.trimEnd(),
+                          prRoutes,
                           "```",
                           "</details>",
                       ].join("\n");
