@@ -6,8 +6,9 @@ inputs:
     description: 'Buildhost server URL'
     required: true
   token:
-    description: 'Admin API token with global write scope'
-    required: true
+    description: 'Admin API token with global write scope, or omit to use OIDC'
+    required: false
+    default: ''
   issuer:
     description: 'OIDC issuer URL'
     required: true
@@ -45,7 +46,15 @@ runs:
         script: |
           await (async () => {
             const server: string = "${{ inputs.server }}";
-            const token: string = "${{ inputs.token }}";
+            let token: string = "${{ inputs.token }}";
+            if (!token) {
+              const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+              const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+              if (url && bearer) {
+                const r = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
+                token = ((await r.json()) as { value: string }).value || '';
+              }
+            }
             const projectId: string = "${{ inputs.project_id }}";
 
             const body: Record<string, string | number> = {

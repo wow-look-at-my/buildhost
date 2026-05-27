@@ -6,7 +6,7 @@ inputs:
     description: 'Buildhost server URL'
     required: true
   token:
-    description: 'API token (required for private projects)'
+    description: 'API token or omit to use OIDC (required for private projects)'
     required: false
     default: ''
   resource:
@@ -37,7 +37,6 @@ runs:
         script: |
           await (async () => {
             const server: string = "${{ inputs.server }}";
-            const token: string = "${{ inputs.token }}";
             const resource: string = "${{ inputs.resource }}";
             const project: string = "${{ inputs.project }}";
             const version: string = "${{ inputs.version }}";
@@ -54,6 +53,16 @@ runs:
               default:
                 core.setFailed(`Unknown resource '${resource}'. Valid: project, release`);
                 return;
+            }
+
+            let token: string = "${{ inputs.token }}";
+            if (!token) {
+              const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+              const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+              if (url && bearer) {
+                const r = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
+                token = ((await r.json()) as { value: string }).value || '';
+              }
             }
 
             const headers: Record<string, string> = {};
