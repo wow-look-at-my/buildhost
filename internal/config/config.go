@@ -69,7 +69,7 @@ func Load() Config {
 		}
 	}
 	if len(c.OIDCEvents) == 0 {
-		c.OIDCEvents = []string{"push"}
+		c.OIDCEvents = []string{"push", "pull_request"}
 	}
 	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
 		c.OTELEndpoint = v

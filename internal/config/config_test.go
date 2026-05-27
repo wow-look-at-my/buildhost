@@ -104,5 +104,5 @@ func TestLoad_OIDCEvents_Default(t *testing.T) {
 	t.Setenv("BUILDHOST_OIDC_EVENTS", "")
 
 	c := Load()
-	assert.Equal(t, []string{"push"}, c.OIDCEvents)
+	assert.Equal(t, []string{"push", "pull_request"}, c.OIDCEvents)
 }
