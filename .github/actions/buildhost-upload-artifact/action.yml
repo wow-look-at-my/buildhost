@@ -1,0 +1,90 @@
+name: Buildhost - Upload Artifact
+description: Uploads a binary artifact to a release in a Buildhost registry.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: false
+    default: 'https://pazer.build'
+  token:
+    description: 'API token with write scope, or omit to use OIDC'
+    required: false
+    default: ''
+  project:
+    description: 'Project name'
+    required: true
+  version:
+    description: 'Release version'
+    required: true
+  os:
+    description: 'Target OS (linux, darwin, windows, freebsd)'
+    required: true
+  arch:
+    description: 'Target arch (amd64, arm64, 386, arm)'
+    required: true
+  path:
+    description: 'Path to the artifact file to upload'
+    required: true
+  kind:
+    description: 'Artifact kind: binary, library, assets, archive'
+    required: false
+    default: 'binary'
+  filename:
+    description: 'Download filename hint (optional)'
+    required: false
+    default: ''
+
+outputs:
+  response:
+    description: 'JSON response from the API'
+    value: ${{ steps.upload.outputs.response }}
+  sha256:
+    description: 'SHA-256 digest of the uploaded artifact'
+    value: ${{ steps.upload.outputs.sha256 }}
+
+runs:
+  using: composite
+  steps:
+    - id: upload
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            const server: string = "${{ inputs.server }}";
+            let token: string = "${{ inputs.token }}";
+            if (!token) {
+              const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+              const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+              if (url && bearer) {
+                const r = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
+                token = ((await r.json()) as { value: string }).value || '';
+              }
+            }
+            const project: string = "${{ inputs.project }}";
+            const version: string = "${{ inputs.version }}";
+            const artifactOs: string = "${{ inputs.os }}";
+            const arch: string = "${{ inputs.arch }}";
+            const kind: string = "${{ inputs.kind }}";
+            const filename: string = "${{ inputs.filename }}";
+
+            const body = fs.readFileSync("${{ inputs.path }}");
+            core.info(`Uploading ${body.length} bytes (${artifactOs}/${arch})`);
+
+            const headers: Record<string, string> = {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/octet-stream',
+            };
+            if (filename) headers['X-Artifact-Filename'] = filename;
+
+            const resp = await fetch(
+              `${server}/api/v1/projects/${project}/releases/${version}/artifacts/${artifactOs}/${arch}?kind=${kind}`,
+              { method: 'PUT', headers, body },
+            );
+            const text = await resp.text();
+            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
+
+            const data = JSON.parse(text);
+            core.info(JSON.stringify(data, null, 2));
+            core.setOutput('response', text);
+            core.setOutput('sha256', data.sha256);
+          })();

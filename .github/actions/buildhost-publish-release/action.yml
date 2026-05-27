@@ -1,0 +1,55 @@
+name: Buildhost - Publish Release
+description: Publishes a release (makes it immutable) in a Buildhost registry.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: false
+    default: 'https://pazer.build'
+  token:
+    description: 'API token with write scope, or omit to use OIDC'
+    required: false
+    default: ''
+  project:
+    description: 'Project name'
+    required: true
+  version:
+    description: 'Release version to publish'
+    required: true
+
+outputs:
+  response:
+    description: 'JSON response from the API'
+    value: ${{ steps.publish.outputs.response }}
+
+runs:
+  using: composite
+  steps:
+    - id: publish
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            const server: string = "${{ inputs.server }}";
+            let token: string = "${{ inputs.token }}";
+            if (!token) {
+              const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+              const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+              if (url && bearer) {
+                const r = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
+                token = ((await r.json()) as { value: string }).value || '';
+              }
+            }
+            const project: string = "${{ inputs.project }}";
+            const version: string = "${{ inputs.version }}";
+
+            const resp = await fetch(`${server}/api/v1/projects/${project}/releases/${version}/publish`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}` },
+            });
+            const text = await resp.text();
+            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
+
+            core.info(JSON.stringify(JSON.parse(text), null, 2));
+            core.setOutput('response', text);
+          })();

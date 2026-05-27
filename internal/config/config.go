@@ -16,6 +16,7 @@ type Config struct {
 	OIDCOrgs         []string
 	OIDCEvents       []string
 	OTELEndpoint     string
+	SiteFetchDomains []string
 }
 
 func Load() Config {
@@ -69,10 +70,17 @@ func Load() Config {
 		}
 	}
 	if len(c.OIDCEvents) == 0 {
-		c.OIDCEvents = []string{"push"}
+		c.OIDCEvents = []string{"push", "pull_request"}
 	}
 	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
 		c.OTELEndpoint = v
+	}
+	if v := os.Getenv("BUILDHOST_SITE_FETCH_DOMAINS"); v != "" {
+		for _, d := range strings.Split(v, ",") {
+			if d = strings.TrimSpace(d); d != "" {
+				c.SiteFetchDomains = append(c.SiteFetchDomains, d)
+			}
+		}
 	}
 	return c
 }
