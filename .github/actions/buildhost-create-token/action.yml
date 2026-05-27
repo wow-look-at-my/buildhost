@@ -28,47 +28,38 @@ outputs:
     description: 'Plaintext token value (only returned once)'
     value: ${{ steps.create.outputs.token_value }}
   token_id:
-    description: 'Token ID (for future management operations)'
+    description: 'Token ID'
     value: ${{ steps.create.outputs.token_id }}
 
 runs:
   using: composite
   steps:
     - id: create
-      shell: bash
-      env:
-        SERVER: ${{ inputs.server }}
-        TOKEN: ${{ inputs.token }}
-        NAME: ${{ inputs.name }}
-        SCOPES: ${{ inputs.scopes }}
-        PROJECT_ID: ${{ inputs.project_id }}
-      run: |
-        body=$(jq -n \
-          --arg name "$NAME" \
-          --arg scopes "$SCOPES" \
-          --arg project_id "$PROJECT_ID" \
-          '{name:$name,scopes:$scopes} +
-           (if $project_id != "" then {project_id:($project_id|tonumber)} else {} end)')
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            const server: string = "${{ inputs.server }}";
+            const token: string = "${{ inputs.token }}";
+            const projectId: string = "${{ inputs.project_id }}";
 
-        tmpfile=$(mktemp)
-        status=$(curl -s -o "$tmpfile" -w '%{http_code}' -X POST "$SERVER/api/v1/tokens" \
-          -H "Authorization: Bearer $TOKEN" \
-          -H "Content-Type: application/json" \
-          -d "$body")
-        response=$(cat "$tmpfile"); rm -f "$tmpfile"
+            const body: Record<string, string | number> = {
+              name:   "${{ inputs.name }}",
+              scopes: "${{ inputs.scopes }}",
+            };
+            if (projectId) body['project_id'] = Number(projectId);
 
-        echo "$response" | jq .
-        if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-          echo "::error::buildhost-create-token: HTTP $status: $response"
-          exit 1
-        fi
-        echo "response=$(echo "$response" | jq -c .)" >> "$GITHUB_OUTPUT"
-        echo "token_value=$(echo "$response" | jq -r '.token')" >> "$GITHUB_OUTPUT"
-        echo "token_id=$(echo "$response" | jq -r '.details.id')" >> "$GITHUB_OUTPUT"
-        {
-          echo "## Created Token: $NAME"
-          echo "**Save the token value — it will not be shown again.**"
-          echo '```json'
-          echo "$response" | jq .
-          echo '```'
-        } >> "$GITHUB_STEP_SUMMARY"
+            const resp = await fetch(`${server}/api/v1/tokens`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            const text = await resp.text();
+            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
+
+            const data = JSON.parse(text);
+            core.info(JSON.stringify(data, null, 2));
+            core.setOutput('response', text);
+            core.setOutput('token_value', data.token);
+            core.setOutput('token_id', String(data.details.id));
+          })();

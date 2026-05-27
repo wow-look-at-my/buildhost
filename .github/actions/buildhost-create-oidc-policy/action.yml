@@ -40,42 +40,32 @@ runs:
   using: composite
   steps:
     - id: create
-      shell: bash
-      env:
-        SERVER: ${{ inputs.server }}
-        TOKEN: ${{ inputs.token }}
-        ISSUER: ${{ inputs.issuer }}
-        SUBJECT_PATTERN: ${{ inputs.subject_pattern }}
-        SCOPES: ${{ inputs.scopes }}
-        PROJECT_ID: ${{ inputs.project_id }}
-        AUDIENCE: ${{ inputs.audience }}
-      run: |
-        body=$(jq -n \
-          --arg issuer "$ISSUER" \
-          --arg subject_pattern "$SUBJECT_PATTERN" \
-          --arg scopes "$SCOPES" \
-          --arg audience "$AUDIENCE" \
-          --arg project_id "$PROJECT_ID" \
-          '{issuer:$issuer,subject_pattern:$subject_pattern,scopes:$scopes,audience:$audience} +
-           (if $project_id != "" then {project_id:($project_id|tonumber)} else {} end)')
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            const server: string = "${{ inputs.server }}";
+            const token: string = "${{ inputs.token }}";
+            const projectId: string = "${{ inputs.project_id }}";
 
-        tmpfile=$(mktemp)
-        status=$(curl -s -o "$tmpfile" -w '%{http_code}' -X POST "$SERVER/api/v1/oidc/policies" \
-          -H "Authorization: Bearer $TOKEN" \
-          -H "Content-Type: application/json" \
-          -d "$body")
-        response=$(cat "$tmpfile"); rm -f "$tmpfile"
+            const body: Record<string, string | number> = {
+              issuer:          "${{ inputs.issuer }}",
+              subject_pattern: "${{ inputs.subject_pattern }}",
+              scopes:          "${{ inputs.scopes }}",
+              audience:        "${{ inputs.audience }}",
+            };
+            if (projectId) body['project_id'] = Number(projectId);
 
-        echo "$response" | jq .
-        if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-          echo "::error::buildhost-create-oidc-policy: HTTP $status: $response"
-          exit 1
-        fi
-        echo "response=$(echo "$response" | jq -c .)" >> "$GITHUB_OUTPUT"
-        echo "policy_id=$(echo "$response" | jq -r '.id')" >> "$GITHUB_OUTPUT"
-        {
-          echo "## Created OIDC Policy"
-          echo '```json'
-          echo "$response" | jq .
-          echo '```'
-        } >> "$GITHUB_STEP_SUMMARY"
+            const resp = await fetch(`${server}/api/v1/oidc/policies`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            const text = await resp.text();
+            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
+
+            const data = JSON.parse(text);
+            core.info(JSON.stringify(data, null, 2));
+            core.setOutput('response', text);
+            core.setOutput('policy_id', String(data.id));
+          })();

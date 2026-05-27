@@ -32,45 +32,38 @@ runs:
   using: composite
   steps:
     - id: get
-      shell: bash
-      env:
-        SERVER: ${{ inputs.server }}
-        TOKEN: ${{ inputs.token }}
-        RESOURCE: ${{ inputs.resource }}
-        PROJECT: ${{ inputs.project }}
-        VERSION: ${{ inputs.version }}
-      run: |
-        case "$RESOURCE" in
-          project)
-            url="$SERVER/api/v1/projects/$PROJECT"
-            label="Project: $PROJECT"
-            ;;
-          release)
-            [ -z "$VERSION" ] && { echo "::error::version is required for resource=release"; exit 1; }
-            url="$SERVER/api/v1/projects/$PROJECT/releases/$VERSION"
-            label="Release: $PROJECT/$VERSION"
-            ;;
-          *)
-            echo "::error::Unknown resource '$RESOURCE'. Valid values: project, release"
-            exit 1
-            ;;
-        esac
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            const server: string = "${{ inputs.server }}";
+            const token: string = "${{ inputs.token }}";
+            const resource: string = "${{ inputs.resource }}";
+            const project: string = "${{ inputs.project }}";
+            const version: string = "${{ inputs.version }}";
 
-        tmpfile=$(mktemp)
-        status=$(curl -s -o "$tmpfile" -w '%{http_code}' "$url" \
-          ${TOKEN:+-H "Authorization: Bearer $TOKEN"})
-        response=$(cat "$tmpfile"); rm -f "$tmpfile"
+            let url: string;
+            switch (resource) {
+              case 'project':
+                url = `${server}/api/v1/projects/${project}`;
+                break;
+              case 'release':
+                if (!version) { core.setFailed('version is required for resource=release'); return; }
+                url = `${server}/api/v1/projects/${project}/releases/${version}`;
+                break;
+              default:
+                core.setFailed(`Unknown resource '${resource}'. Valid: project, release`);
+                return;
+            }
 
-        echo "$response" | jq .
-        if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-          echo "::error::buildhost-get ($RESOURCE): HTTP $status: $response"
-          exit 1
-        fi
-        echo "response=$(echo "$response" | jq -c .)" >> "$GITHUB_OUTPUT"
-        echo "id=$(echo "$response" | jq -r '.id')" >> "$GITHUB_OUTPUT"
-        {
-          echo "## $label"
-          echo '```json'
-          echo "$response" | jq .
-          echo '```'
-        } >> "$GITHUB_STEP_SUMMARY"
+            const headers: Record<string, string> = {};
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            const resp = await fetch(url, { headers });
+            const text = await resp.text();
+            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
+
+            const data = JSON.parse(text);
+            core.info(JSON.stringify(data, null, 2));
+            core.setOutput('response', text);
+            core.setOutput('id', String(data.id));
+          })();

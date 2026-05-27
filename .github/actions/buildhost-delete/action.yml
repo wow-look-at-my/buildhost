@@ -27,48 +27,44 @@ inputs:
 runs:
   using: composite
   steps:
-    - shell: bash
-      env:
-        SERVER: ${{ inputs.server }}
-        TOKEN: ${{ inputs.token }}
-        RESOURCE: ${{ inputs.resource }}
-        ID: ${{ inputs.id }}
-        PROJECT: ${{ inputs.project }}
-        BRANCH: ${{ inputs.branch }}
-      run: |
-        case "$RESOURCE" in
-          token)
-            [ -z "$ID" ] && { echo "::error::id is required for resource=token"; exit 1; }
-            url="$SERVER/api/v1/tokens/$ID"
-            label="Token ID: $ID"
-            ;;
-          oidc-policy)
-            [ -z "$ID" ] && { echo "::error::id is required for resource=oidc-policy"; exit 1; }
-            url="$SERVER/api/v1/oidc/policies/$ID"
-            label="OIDC Policy ID: $ID"
-            ;;
-          site)
-            [ -z "$PROJECT" ] && { echo "::error::project is required for resource=site"; exit 1; }
-            [ -z "$BRANCH" ] && { echo "::error::branch is required for resource=site"; exit 1; }
-            url="$SERVER/sites/$PROJECT/branch/$BRANCH"
-            label="Site: $PROJECT/$BRANCH"
-            ;;
-          *)
-            echo "::error::Unknown resource '$RESOURCE'. Valid values: token, oidc-policy, site"
-            exit 1
-            ;;
-        esac
+    - uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            const server: string = "${{ inputs.server }}";
+            const token: string = "${{ inputs.token }}";
+            const resource: string = "${{ inputs.resource }}";
+            const id: string = "${{ inputs.id }}";
+            const project: string = "${{ inputs.project }}";
+            const branch: string = "${{ inputs.branch }}";
 
-        tmpfile=$(mktemp)
-        status=$(curl -s -o "$tmpfile" -w '%{http_code}' \
-          -X DELETE "$url" \
-          -H "Authorization: Bearer $TOKEN")
-        response=$(cat "$tmpfile"); rm -f "$tmpfile"
+            let url: string;
+            switch (resource) {
+              case 'token':
+                if (!id) { core.setFailed('id is required for resource=token'); return; }
+                url = `${server}/api/v1/tokens/${id}`;
+                break;
+              case 'oidc-policy':
+                if (!id) { core.setFailed('id is required for resource=oidc-policy'); return; }
+                url = `${server}/api/v1/oidc/policies/${id}`;
+                break;
+              case 'site':
+                if (!project) { core.setFailed('project is required for resource=site'); return; }
+                if (!branch)  { core.setFailed('branch is required for resource=site'); return; }
+                url = `${server}/sites/${project}/branch/${branch}`;
+                break;
+              default:
+                core.setFailed(`Unknown resource '${resource}'. Valid: token, oidc-policy, site`);
+                return;
+            }
 
-        echo "HTTP $status"
-        [ -n "$response" ] && echo "$response" | jq . 2>/dev/null || true
-        if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-          echo "::error::buildhost-delete ($RESOURCE): HTTP $status: $response"
-          exit 1
-        fi
-        echo "## Deleted $label" >> "$GITHUB_STEP_SUMMARY"
+            const resp = await fetch(url, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (!resp.ok) {
+              core.setFailed(`HTTP ${resp.status}: ${await resp.text()}`);
+              return;
+            }
+            core.info(`Deleted ${resource} ${id || `${project}/${branch}`}`);
+          })();

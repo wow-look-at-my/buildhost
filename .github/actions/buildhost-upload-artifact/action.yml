@@ -44,42 +44,37 @@ runs:
   using: composite
   steps:
     - id: upload
-      shell: bash
-      env:
-        SERVER: ${{ inputs.server }}
-        TOKEN: ${{ inputs.token }}
-        PROJECT: ${{ inputs.project }}
-        VERSION: ${{ inputs.version }}
-        OS: ${{ inputs.os }}
-        ARCH: ${{ inputs.arch }}
-        KIND: ${{ inputs.kind }}
-        ARTIFACT_PATH: ${{ inputs.path }}
-        FILENAME: ${{ inputs.filename }}
-      run: |
-        extra_headers=()
-        if [ -n "$FILENAME" ]; then
-          extra_headers+=(-H "X-Artifact-Filename: $FILENAME")
-        fi
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            const server: string = "${{ inputs.server }}";
+            const token: string = "${{ inputs.token }}";
+            const project: string = "${{ inputs.project }}";
+            const version: string = "${{ inputs.version }}";
+            const artifactOs: string = "${{ inputs.os }}";
+            const arch: string = "${{ inputs.arch }}";
+            const kind: string = "${{ inputs.kind }}";
+            const filename: string = "${{ inputs.filename }}";
 
-        tmpfile=$(mktemp)
-        status=$(curl -s -o "$tmpfile" -w '%{http_code}' \
-          -X PUT "$SERVER/api/v1/projects/$PROJECT/releases/$VERSION/artifacts/$OS/$ARCH?kind=$KIND" \
-          -H "Authorization: Bearer $TOKEN" \
-          -H "Content-Type: application/octet-stream" \
-          "${extra_headers[@]}" \
-          --data-binary "@$ARTIFACT_PATH")
-        response=$(cat "$tmpfile"); rm -f "$tmpfile"
+            const body = fs.readFileSync("${{ inputs.path }}");
+            core.info(`Uploading ${body.length} bytes (${artifactOs}/${arch})`);
 
-        echo "$response" | jq .
-        if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-          echo "::error::buildhost-upload-artifact: HTTP $status: $response"
-          exit 1
-        fi
-        echo "response=$(echo "$response" | jq -c .)" >> "$GITHUB_OUTPUT"
-        echo "sha256=$(echo "$response" | jq -r '.sha256')" >> "$GITHUB_OUTPUT"
-        {
-          echo "## Uploaded Artifact: $PROJECT/$VERSION ($OS/$ARCH)"
-          echo '```json'
-          echo "$response" | jq .
-          echo '```'
-        } >> "$GITHUB_STEP_SUMMARY"
+            const headers: Record<string, string> = {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/octet-stream',
+            };
+            if (filename) headers['X-Artifact-Filename'] = filename;
+
+            const resp = await fetch(
+              `${server}/api/v1/projects/${project}/releases/${version}/artifacts/${artifactOs}/${arch}?kind=${kind}`,
+              { method: 'PUT', headers, body },
+            );
+            const text = await resp.text();
+            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
+
+            const data = JSON.parse(text);
+            core.info(JSON.stringify(data, null, 2));
+            core.setOutput('response', text);
+            core.setOutput('sha256', data.sha256);
+          })();

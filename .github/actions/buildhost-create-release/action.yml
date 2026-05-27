@@ -16,11 +16,11 @@ inputs:
     required: false
     default: ''
   git_branch:
-    description: 'Git branch (defaults to github.ref_name if empty)'
+    description: 'Git branch (defaults to github.ref_name)'
     required: false
     default: ''
   git_commit:
-    description: 'Git commit SHA (defaults to github.sha if empty)'
+    description: 'Git commit SHA (defaults to github.sha)'
     required: false
     default: ''
   notes:
@@ -40,42 +40,30 @@ runs:
   using: composite
   steps:
     - id: create
-      shell: bash
-      env:
-        SERVER: ${{ inputs.server }}
-        TOKEN: ${{ inputs.token }}
-        PROJECT: ${{ inputs.project }}
-        VERSION: ${{ inputs.version }}
-        GIT_BRANCH: ${{ inputs.git_branch || github.ref_name }}
-        GIT_COMMIT: ${{ inputs.git_commit || github.sha }}
-        NOTES: ${{ inputs.notes }}
-      run: |
-        body=$(jq -n \
-          --arg version "$VERSION" \
-          --arg git_branch "$GIT_BRANCH" \
-          --arg git_commit "$GIT_COMMIT" \
-          --arg notes "$NOTES" \
-          '{git_branch:$git_branch,git_commit:$git_commit,notes:$notes} +
-           (if $version != "" then {version:$version} else {} end)')
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            const server: string = "${{ inputs.server }}";
+            const token: string = "${{ inputs.token }}";
+            const project: string = "${{ inputs.project }}";
+            const version: string = "${{ inputs.version }}";
+            const gitBranch: string = "${{ inputs.git_branch }}" || github.ref_name;
+            const gitCommit: string = "${{ inputs.git_commit }}" || github.sha;
 
-        tmpfile=$(mktemp)
-        status=$(curl -s -o "$tmpfile" -w '%{http_code}' \
-          -X POST "$SERVER/api/v1/projects/$PROJECT/releases" \
-          -H "Authorization: Bearer $TOKEN" \
-          -H "Content-Type: application/json" \
-          -d "$body")
-        response=$(cat "$tmpfile"); rm -f "$tmpfile"
+            const body: Record<string, string> = { git_branch: gitBranch, git_commit: gitCommit, notes: "${{ inputs.notes }}" };
+            if (version) body['version'] = version;
 
-        echo "$response" | jq .
-        if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-          echo "::error::buildhost-create-release: HTTP $status: $response"
-          exit 1
-        fi
-        echo "response=$(echo "$response" | jq -c .)" >> "$GITHUB_OUTPUT"
-        echo "version=$(echo "$response" | jq -r '.version')" >> "$GITHUB_OUTPUT"
-        {
-          echo "## Created Release: $PROJECT/$(echo "$response" | jq -r '.version')"
-          echo '```json'
-          echo "$response" | jq .
-          echo '```'
-        } >> "$GITHUB_STEP_SUMMARY"
+            const resp = await fetch(`${server}/api/v1/projects/${project}/releases`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            const text = await resp.text();
+            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
+
+            const data = JSON.parse(text);
+            core.info(JSON.stringify(data, null, 2));
+            core.setOutput('response', text);
+            core.setOutput('version', data.version);
+          })();

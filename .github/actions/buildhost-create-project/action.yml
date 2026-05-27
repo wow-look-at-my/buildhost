@@ -44,43 +44,30 @@ runs:
   using: composite
   steps:
     - id: create
-      shell: bash
-      env:
-        SERVER: ${{ inputs.server }}
-        TOKEN: ${{ inputs.token }}
-        NAME: ${{ inputs.name }}
-        DESCRIPTION: ${{ inputs.description }}
-        HOMEPAGE: ${{ inputs.homepage }}
-        LICENSE: ${{ inputs.license }}
-        PRIVATE: ${{ inputs.private }}
-        VERSIONING: ${{ inputs.versioning }}
-      run: |
-        body=$(jq -n \
-          --arg name "$NAME" \
-          --arg description "$DESCRIPTION" \
-          --arg homepage "$HOMEPAGE" \
-          --arg license "$LICENSE" \
-          --argjson is_private "$PRIVATE" \
-          --arg versioning "$VERSIONING" \
-          '{name:$name,description:$description,homepage:$homepage,license:$license,is_private:$is_private,versioning:$versioning}')
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            const server: string = "${{ inputs.server }}";
+            const token: string = "${{ inputs.token }}";
 
-        tmpfile=$(mktemp)
-        status=$(curl -s -o "$tmpfile" -w '%{http_code}' -X POST "$SERVER/api/v1/projects" \
-          -H "Authorization: Bearer $TOKEN" \
-          -H "Content-Type: application/json" \
-          -d "$body")
-        response=$(cat "$tmpfile"); rm -f "$tmpfile"
+            const resp = await fetch(`${server}/api/v1/projects`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name:        "${{ inputs.name }}",
+                description: "${{ inputs.description }}",
+                homepage:    "${{ inputs.homepage }}",
+                license:     "${{ inputs.license }}",
+                is_private:  "${{ inputs.private }}" === 'true',
+                versioning:  "${{ inputs.versioning }}",
+              }),
+            });
+            const text = await resp.text();
+            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
 
-        echo "$response" | jq .
-        if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-          echo "::error::buildhost-create-project: HTTP $status: $response"
-          exit 1
-        fi
-        echo "response=$(echo "$response" | jq -c .)" >> "$GITHUB_OUTPUT"
-        echo "id=$(echo "$response" | jq -r '.id')" >> "$GITHUB_OUTPUT"
-        {
-          echo "## Created Project: $NAME"
-          echo '```json'
-          echo "$response" | jq .
-          echo '```'
-        } >> "$GITHUB_STEP_SUMMARY"
+            const data = JSON.parse(text);
+            core.info(JSON.stringify(data, null, 2));
+            core.setOutput('response', text);
+            core.setOutput('id', String(data.id));
+          })();
