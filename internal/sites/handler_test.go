@@ -8,9 +8,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -519,6 +521,129 @@ func TestZipToTar_PathTraversal(t *testing.T) {
 	_, err = zipToTar(buf.Bytes(), &out)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "path traversal")
+}
+
+func TestUpload_Fetch(t *testing.T) {
+	// Serve a zip from an httptest server acting as the remote.
+	remote := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/zip")
+		w.Write(makeZip(t, map[string]string{"index.html": "<h1>fetched</h1>"}))
+	}))
+	defer remote.Close()
+
+	// Swap in the TLS client from the test server.
+	orig := siteFetchClient
+	siteFetchClient = remote.Client()
+	defer func() { siteFetchClient = orig }()
+
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "mysite")
+	h.FetchDomains = []string{remote.Listener.Addr().(*net.TCPAddr).IP.String()}
+
+	body := fmt.Sprintf(`{"url":%q,"headers":{"Authorization":"Bearer test-token"}}`, remote.URL+"/artifact.zip")
+	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})
+	rec := httptest.NewRecorder()
+	h.Upload(rec, req)
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	// Verify the site is served correctly.
+	req2 := httptest.NewRequest("GET", "/sites/mysite/branch/main/", nil)
+	req2 = withRoute(req2, proj, route{project: "mysite", branch: "main", path: ""})
+	rec2 := httptest.NewRecorder()
+	h.Serve(rec2, req2)
+	assert.Equal(t, http.StatusOK, rec2.Code)
+	assert.Equal(t, "<h1>fetched</h1>", rec2.Body.String())
+}
+
+func TestUpload_Fetch_DomainNotAllowed(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "mysite")
+	h.FetchDomains = []string{"allowed.example.com"}
+
+	body := `{"url":"https://evil.example.com/site.zip"}`
+	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})
+	rec := httptest.NewRecorder()
+	h.Upload(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "not in allowed list")
+}
+
+func TestUpload_Fetch_Disabled(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "mysite")
+	// FetchDomains is empty — fetch mode disabled.
+
+	body := `{"url":"https://example.com/site.zip"}`
+	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})
+	rec := httptest.NewRecorder()
+	h.Upload(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "not enabled")
+}
+
+func TestUpload_Fetch_InvalidJSON(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "mysite")
+	h.FetchDomains = []string{"example.com"}
+
+	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", strings.NewReader(`not json`))
+	req.Header.Set("Content-Type", "application/json")
+	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})
+	rec := httptest.NewRecorder()
+	h.Upload(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestUpload_Fetch_HttpURL(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "mysite")
+	h.FetchDomains = []string{"example.com"}
+
+	body := `{"url":"http://example.com/site.zip"}`
+	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})
+	rec := httptest.NewRecorder()
+	h.Upload(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "only https")
+}
+
+func TestUpload_Fetch_NonOK(t *testing.T) {
+	remote := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer remote.Close()
+
+	orig := siteFetchClient
+	siteFetchClient = remote.Client()
+	defer func() { siteFetchClient = orig }()
+
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "mysite")
+	h.FetchDomains = []string{remote.Listener.Addr().(*net.TCPAddr).IP.String()}
+
+	body := fmt.Sprintf(`{"url":%q}`, remote.URL+"/artifact.zip")
+	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})
+	rec := httptest.NewRecorder()
+	h.Upload(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "fetch returned 404")
 }
 
 func TestZipToTar_AbsolutePath(t *testing.T) {
