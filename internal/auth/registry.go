@@ -8,13 +8,14 @@ import (
 )
 
 var (
-	mux         = http.NewServeMux()
-	mw          *Middleware
-	readyFuncs  []func()
-	sharedDB    *db.DB
-	sharedStore storage.Storage
-	sharedBase  string
-	sharedData  string
+	mux              = http.NewServeMux()
+	mw               *Middleware
+	readyFuncs       []func()
+	sharedDB         *db.DB
+	sharedStore      storage.Storage
+	sharedBase       string
+	sharedData       string
+	sharedFetchDomains []string
 )
 
 func Mux() *http.ServeMux        { return mux }
@@ -23,16 +24,18 @@ func Store() storage.Storage     { return sharedStore }
 func BaseURL() string            { return sharedBase }
 func DataDir() string            { return sharedData }
 func GetMiddleware() *Middleware  { return mw }
+func SiteFetchDomains() []string { return sharedFetchDomains }
 
 func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
 }
 
-func Init(database *db.DB, store storage.Storage, baseURL, dataDir string, trustedIssuers, allowedOrgs, allowedEvents []string) {
+func Init(database *db.DB, store storage.Storage, baseURL, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string) {
 	sharedDB = database
 	sharedStore = store
 	sharedBase = baseURL
 	sharedData = dataDir
+	sharedFetchDomains = siteFetchDomains
 	mw = &Middleware{DB: database, Verifier: NewOIDCVerifier(OIDCConfig{
 		BaseURL:        baseURL,
 		TrustedIssuers: trustedIssuers,

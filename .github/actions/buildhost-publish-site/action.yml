@@ -1,0 +1,108 @@
+name: Publish Site to Buildhost
+version: 1
+description: Publish a GHA artifact as a static site to buildhost using OIDC authentication.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: false
+    default: 'https://pazer.build'
+  project:
+    description: 'Project name (defaults to the repository name)'
+    required: false
+  branch:
+    description: 'Branch name to publish the site under'
+    required: true
+  artifact_name:
+    description: 'GHA run artifact name containing the site files'
+    required: false
+    default: 'site'
+  git_commit:
+    description: 'Git commit SHA (defaults to GITHUB_SHA)'
+    required: false
+
+outputs:
+  site_url:
+    description: 'URL of the published site'
+    value: ${{ steps.publish.outputs.site_url }}
+
+runs:
+  using: composite
+  steps:
+    - id: publish
+      uses: wow-look-at-my/actions@typescript#latest
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      with:
+        script: |
+          await (async () => {
+            const inputProject: string = "${{ inputs.project }}";
+            const inputCommit: string = "${{ inputs.git_commit }}";
+            const artifactName: string = "${{ inputs.artifact_name }}";
+            const branch: string = "${{ inputs.branch }}";
+            const server: string = "${{ inputs.server }}";
+
+            const project = inputProject.length > 0 ? inputProject : github.repository.split("/").pop()!;
+            const gitCommit = inputCommit.length > 0 ? inputCommit : github.sha;
+
+            const downloadDir = path.join(os.tmpdir(), "buildhost-site-publish");
+            const extractDir = path.join(downloadDir, "extracted");
+            fs.mkdirSync(downloadDir, { recursive: true });
+            fs.mkdirSync(extractDir, { recursive: true });
+
+            // Download artifact via octokit
+            const oct = octokit(process.env.GITHUB_TOKEN!);
+            const [owner, repo] = github.repository.split("/");
+            const { data: { artifacts } } = await oct.rest.actions.listWorkflowRunArtifacts({
+              owner, repo, run_id: github.run_id,
+            });
+            const artifact = artifacts.find((a: any) => a.name === artifactName);
+            if (!artifact) { core.setFailed(`Artifact '${artifactName}' not found in run`); return; }
+
+            const { data: zip } = await oct.rest.actions.downloadArtifact({
+              owner, repo, artifact_id: artifact.id, archive_format: "zip",
+            });
+            const zipPath = path.join(downloadDir, "site.zip");
+            fs.writeFileSync(zipPath, Buffer.from(zip as ArrayBuffer));
+            await exec.exec("unzip", ["-o", zipPath, "-d", extractDir]);
+
+            // Mint OIDC token for buildhost
+            const idTokenUrl = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+            const idTokenBearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+            if (!idTokenUrl || !idTokenBearer) {
+              core.setFailed("OIDC not available. Add 'permissions: { id-token: write }'.");
+              return;
+            }
+            const idResp = await fetch(`${idTokenUrl}&audience=${server}`, {
+              headers: { Authorization: `Bearer ${idTokenBearer}` },
+            });
+            const token: string = ((await idResp.json()) as { value: string }).value;
+            if (!token) { core.setFailed("Failed to obtain OIDC token"); return; }
+
+            // Pack extracted contents as tar.gz
+            const tarPath = path.join(downloadDir, "site.tar.gz");
+            await exec.exec("bash", ["-c", `tar -czf "${tarPath}" -C "${extractDir}" .`]);
+
+            // Upload to buildhost sites endpoint
+            const siteData = fs.readFileSync(tarPath);
+            const headers: Record<string, string> = {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/gzip",
+            };
+            if (gitCommit) headers["X-Git-Commit"] = gitCommit;
+
+            const resp = await fetch(`${server}/sites/${project}/branch/${branch}`, {
+              method: "PUT",
+              headers,
+              body: siteData,
+            });
+
+            if (resp.status !== 201) {
+              core.setFailed(`Upload failed (${resp.status}): ${await resp.text()}`);
+              return;
+            }
+
+            const siteURL = `${server}/sites/${project}/branch/${branch}/`;
+            core.info(`Published site to ${siteURL}`);
+            core.setOutput("site_url", siteURL);
+          })();
