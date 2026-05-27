@@ -46,9 +46,7 @@ runs:
             const gitCommit = inputCommit.length > 0 ? inputCommit : github.sha;
 
             const downloadDir = path.join(os.tmpdir(), "buildhost-site-publish");
-            const extractDir = path.join(downloadDir, "extracted");
             fs.mkdirSync(downloadDir, { recursive: true });
-            fs.mkdirSync(extractDir, { recursive: true });
 
             // Download artifact via octokit
             const oct = octokit(process.env.GITHUB_TOKEN!);
@@ -64,7 +62,6 @@ runs:
             });
             const zipPath = path.join(downloadDir, "site.zip");
             fs.writeFileSync(zipPath, Buffer.from(zip as ArrayBuffer));
-            await exec.exec("unzip", ["-o", zipPath, "-d", extractDir]);
 
             // Mint OIDC token for buildhost
             const idTokenUrl = env.ACTIONS_ID_TOKEN_REQUEST_URL;
@@ -79,15 +76,11 @@ runs:
             const token: string = ((await idResp.json()) as { value: string }).value;
             if (!token) { core.setFailed("Failed to obtain OIDC token"); return; }
 
-            // Pack extracted contents as tar.gz
-            const tarPath = path.join(downloadDir, "site.tar.gz");
-            await exec.exec("bash", ["-c", `tar -czf "${tarPath}" -C "${extractDir}" .`]);
-
             // Upload to buildhost sites endpoint
-            const siteData = fs.readFileSync(tarPath);
+            const siteData = fs.readFileSync(zipPath);
             const headers: Record<string, string> = {
               Authorization: `Bearer ${token}`,
-              "Content-Type": "application/gzip",
+              "Content-Type": "application/zip",
             };
             if (gitCommit) headers["X-Git-Commit"] = gitCommit;
 
