@@ -2,6 +2,7 @@ package sites
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
@@ -40,23 +41,36 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxSiteUploadSize)
 
-	gz, err := gzip.NewReader(r.Body)
-	if err != nil {
-		http.Error(w, `{"error":"invalid gzip data"}`, http.StatusBadRequest)
-		return
-	}
-	defer gz.Close()
-
 	var buf bytes.Buffer
-	hasher := sha256.New()
-	limited := io.LimitReader(gz, maxSiteDecompressedSize+1)
-	tee := io.TeeReader(limited, &buf)
+	var fileCount int
 
-	fileCount, err := validateTar(io.TeeReader(tee, hasher))
-	if err != nil {
-		span.RecordError(err)
-		http.Error(w, `{"error":"invalid archive"}`, http.StatusBadRequest)
-		return
+	if r.Header.Get("Content-Type") == "application/zip" {
+		zipData, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, `{"error":"failed to read request body"}`, http.StatusBadRequest)
+			return
+		}
+		fileCount, err = zipToTar(zipData, &buf)
+		if err != nil {
+			span.RecordError(err)
+			http.Error(w, `{"error":"invalid archive"}`, http.StatusBadRequest)
+			return
+		}
+	} else {
+		gz, err := gzip.NewReader(r.Body)
+		if err != nil {
+			http.Error(w, `{"error":"invalid gzip data"}`, http.StatusBadRequest)
+			return
+		}
+		defer gz.Close()
+
+		limited := io.LimitReader(gz, maxSiteDecompressedSize+1)
+		fileCount, err = validateTar(io.TeeReader(limited, &buf))
+		if err != nil {
+			span.RecordError(err)
+			http.Error(w, `{"error":"invalid archive"}`, http.StatusBadRequest)
+			return
+		}
 	}
 
 	if int64(buf.Len()) > maxSiteDecompressedSize {
@@ -64,6 +78,8 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	hasher := sha256.New()
+	hasher.Write(buf.Bytes())
 	sha256hex := hex.EncodeToString(hasher.Sum(nil))
 
 	span.SetAttributes(
@@ -149,4 +165,75 @@ func validateTar(r io.Reader) (int, error) {
 		return 0, fmt.Errorf("archive contains no files")
 	}
 	return count, nil
+}
+
+// zipToTar converts a ZIP archive to tar format, applying the same safety
+// checks as validateTar (path traversal, file count, entry type restrictions).
+func zipToTar(data []byte, out *bytes.Buffer) (int, error) {
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return 0, fmt.Errorf("invalid zip archive: %w", err)
+	}
+
+	tw := tar.NewWriter(out)
+	count := 0
+
+	for _, f := range zr.File {
+		name := path.Clean(f.Name)
+
+		if path.IsAbs(name) {
+			return 0, fmt.Errorf("absolute path not allowed: %s", f.Name)
+		}
+		if strings.HasPrefix(name, "..") || strings.Contains(name, "/..") {
+			return 0, fmt.Errorf("path traversal not allowed: %s", f.Name)
+		}
+
+		info := f.FileInfo()
+		if info.IsDir() {
+			if err := tw.WriteHeader(&tar.Header{
+				Typeflag: tar.TypeDir,
+				Name:     name + "/",
+				Mode:     0755,
+			}); err != nil {
+				return 0, fmt.Errorf("write dir header %s: %w", name, err)
+			}
+			continue
+		}
+
+		if !info.Mode().IsRegular() {
+			return 0, fmt.Errorf("unsupported entry type for %s (only regular files and directories allowed)", f.Name)
+		}
+
+		rc, err := f.Open()
+		if err != nil {
+			return 0, fmt.Errorf("open entry %s: %w", f.Name, err)
+		}
+
+		if err := tw.WriteHeader(&tar.Header{
+			Typeflag: tar.TypeReg,
+			Name:     name,
+			Size:     int64(f.UncompressedSize64),
+			Mode:     0644,
+		}); err != nil {
+			rc.Close()
+			return 0, fmt.Errorf("write header %s: %w", name, err)
+		}
+
+		if _, err := io.Copy(tw, rc); err != nil {
+			rc.Close()
+			return 0, fmt.Errorf("copy entry %s: %w", name, err)
+		}
+		rc.Close()
+
+		count++
+		if count > maxFileCount {
+			return 0, fmt.Errorf("too many files (max %d)", maxFileCount)
+		}
+	}
+
+	if count == 0 {
+		return 0, fmt.Errorf("archive contains no files")
+	}
+
+	return count, tw.Close()
 }
