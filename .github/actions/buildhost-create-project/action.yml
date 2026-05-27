@@ -1,0 +1,86 @@
+name: Buildhost - Create Project
+description: Creates a project in a Buildhost registry.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: true
+  token:
+    description: 'API token with write scope'
+    required: true
+  name:
+    description: 'Project name'
+    required: true
+  description:
+    description: 'Project description'
+    required: false
+    default: ''
+  homepage:
+    description: 'Homepage URL'
+    required: false
+    default: ''
+  license:
+    description: 'License (e.g. MIT, Apache-2.0)'
+    required: false
+    default: ''
+  private:
+    description: 'Private project (true/false)'
+    required: false
+    default: 'false'
+  versioning:
+    description: 'Versioning scheme: auto or semver'
+    required: false
+    default: 'auto'
+
+outputs:
+  response:
+    description: 'JSON response from the API'
+    value: ${{ steps.create.outputs.response }}
+  id:
+    description: 'Created project ID'
+    value: ${{ steps.create.outputs.id }}
+
+runs:
+  using: composite
+  steps:
+    - id: create
+      shell: bash
+      env:
+        SERVER: ${{ inputs.server }}
+        TOKEN: ${{ inputs.token }}
+        NAME: ${{ inputs.name }}
+        DESCRIPTION: ${{ inputs.description }}
+        HOMEPAGE: ${{ inputs.homepage }}
+        LICENSE: ${{ inputs.license }}
+        PRIVATE: ${{ inputs.private }}
+        VERSIONING: ${{ inputs.versioning }}
+      run: |
+        body=$(jq -n \
+          --arg name "$NAME" \
+          --arg description "$DESCRIPTION" \
+          --arg homepage "$HOMEPAGE" \
+          --arg license "$LICENSE" \
+          --argjson is_private "$PRIVATE" \
+          --arg versioning "$VERSIONING" \
+          '{name:$name,description:$description,homepage:$homepage,license:$license,is_private:$is_private,versioning:$versioning}')
+
+        tmpfile=$(mktemp)
+        status=$(curl -s -o "$tmpfile" -w '%{http_code}' -X POST "$SERVER/api/v1/projects" \
+          -H "Authorization: Bearer $TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "$body")
+        response=$(cat "$tmpfile"); rm -f "$tmpfile"
+
+        echo "$response" | jq .
+        if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+          echo "::error::buildhost-create-project: HTTP $status: $response"
+          exit 1
+        fi
+        echo "response=$(echo "$response" | jq -c .)" >> "$GITHUB_OUTPUT"
+        echo "id=$(echo "$response" | jq -r '.id')" >> "$GITHUB_OUTPUT"
+        {
+          echo "## Created Project: $NAME"
+          echo '```json'
+          echo "$response" | jq .
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"

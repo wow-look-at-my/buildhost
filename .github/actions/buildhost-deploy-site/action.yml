@@ -1,0 +1,73 @@
+name: Buildhost - Deploy Site
+description: Deploys a static site directory to a Buildhost registry branch.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: true
+  token:
+    description: 'API token with write scope'
+    required: true
+  project:
+    description: 'Project name'
+    required: true
+  branch:
+    description: 'Deployment branch (e.g. main, staging, pr-42)'
+    required: true
+  source_dir:
+    description: 'Directory to deploy'
+    required: true
+  git_commit:
+    description: 'Git commit SHA (defaults to github.sha)'
+    required: false
+    default: ''
+
+outputs:
+  response:
+    description: 'JSON response from the API'
+    value: ${{ steps.deploy.outputs.response }}
+
+runs:
+  using: composite
+  steps:
+    - id: deploy
+      shell: bash
+      env:
+        SERVER: ${{ inputs.server }}
+        TOKEN: ${{ inputs.token }}
+        PROJECT: ${{ inputs.project }}
+        BRANCH: ${{ inputs.branch }}
+        SOURCE_DIR: ${{ inputs.source_dir }}
+        GIT_COMMIT: ${{ inputs.git_commit || github.sha }}
+      run: |
+        archive=$(mktemp --suffix=.tar.gz)
+        tar -czf "$archive" -C "$SOURCE_DIR" .
+        echo "Archive size: $(du -sh "$archive" | cut -f1)"
+
+        extra_headers=()
+        if [ -n "$GIT_COMMIT" ]; then
+          extra_headers+=(-H "X-Git-Commit: $GIT_COMMIT")
+        fi
+
+        tmpfile=$(mktemp)
+        status=$(curl -s -o "$tmpfile" -w '%{http_code}' \
+          -X PUT "$SERVER/sites/$PROJECT/branch/$BRANCH" \
+          -H "Authorization: Bearer $TOKEN" \
+          -H "Content-Type: application/gzip" \
+          "${extra_headers[@]}" \
+          --data-binary "@$archive")
+        response=$(cat "$tmpfile"); rm -f "$tmpfile" "$archive"
+
+        echo "$response" | jq .
+        if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+          echo "::error::buildhost-deploy-site: HTTP $status: $response"
+          exit 1
+        fi
+        echo "response=$(echo "$response" | jq -c .)" >> "$GITHUB_OUTPUT"
+        {
+          echo "## Deployed Site: $PROJECT/$BRANCH"
+          echo "URL: $SERVER/sites/$PROJECT/branch/$BRANCH/"
+          echo '```json'
+          echo "$response" | jq .
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"

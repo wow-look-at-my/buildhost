@@ -1,0 +1,76 @@
+name: Buildhost - List
+description: Lists resources in a Buildhost registry.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: true
+  token:
+    description: 'API token (required for private projects, tokens, and oidc-policies)'
+    required: false
+    default: ''
+  resource:
+    description: 'Resource to list: projects | releases | tokens | oidc-policies | sites'
+    required: true
+  project:
+    description: 'Project name (required for: releases, sites)'
+    required: false
+    default: ''
+
+outputs:
+  response:
+    description: 'JSON array of the listed resources'
+    value: ${{ steps.list.outputs.response }}
+
+runs:
+  using: composite
+  steps:
+    - id: list
+      shell: bash
+      env:
+        SERVER: ${{ inputs.server }}
+        TOKEN: ${{ inputs.token }}
+        RESOURCE: ${{ inputs.resource }}
+        PROJECT: ${{ inputs.project }}
+      run: |
+        case "$RESOURCE" in
+          projects)
+            url="$SERVER/api/v1/projects"
+            ;;
+          releases)
+            [ -z "$PROJECT" ] && { echo "::error::project is required for resource=releases"; exit 1; }
+            url="$SERVER/api/v1/projects/$PROJECT/releases"
+            ;;
+          tokens)
+            url="$SERVER/api/v1/tokens"
+            ;;
+          oidc-policies)
+            url="$SERVER/api/v1/oidc/policies"
+            ;;
+          sites)
+            [ -z "$PROJECT" ] && { echo "::error::project is required for resource=sites"; exit 1; }
+            url="$SERVER/api/v1/projects/$PROJECT/sites"
+            ;;
+          *)
+            echo "::error::Unknown resource '$RESOURCE'. Valid values: projects, releases, tokens, oidc-policies, sites"
+            exit 1
+            ;;
+        esac
+
+        tmpfile=$(mktemp)
+        status=$(curl -s -o "$tmpfile" -w '%{http_code}' "$url" \
+          ${TOKEN:+-H "Authorization: Bearer $TOKEN"})
+        response=$(cat "$tmpfile"); rm -f "$tmpfile"
+
+        echo "$response" | jq .
+        if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+          echo "::error::buildhost-list ($RESOURCE): HTTP $status: $response"
+          exit 1
+        fi
+        echo "response=$(echo "$response" | jq -c .)" >> "$GITHUB_OUTPUT"
+        {
+          echo "## $RESOURCE${PROJECT:+: $PROJECT}"
+          echo '```json'
+          echo "$response" | jq .
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"

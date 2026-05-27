@@ -1,0 +1,51 @@
+name: Buildhost - Publish Release
+description: Publishes a release (makes it immutable) in a Buildhost registry.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: true
+  token:
+    description: 'API token with write scope'
+    required: true
+  project:
+    description: 'Project name'
+    required: true
+  version:
+    description: 'Release version to publish'
+    required: true
+
+outputs:
+  response:
+    description: 'JSON response from the API'
+    value: ${{ steps.publish.outputs.response }}
+
+runs:
+  using: composite
+  steps:
+    - id: publish
+      shell: bash
+      env:
+        SERVER: ${{ inputs.server }}
+        TOKEN: ${{ inputs.token }}
+        PROJECT: ${{ inputs.project }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        tmpfile=$(mktemp)
+        status=$(curl -s -o "$tmpfile" -w '%{http_code}' \
+          -X POST "$SERVER/api/v1/projects/$PROJECT/releases/$VERSION/publish" \
+          -H "Authorization: Bearer $TOKEN")
+        response=$(cat "$tmpfile"); rm -f "$tmpfile"
+
+        echo "$response" | jq .
+        if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+          echo "::error::buildhost-publish-release: HTTP $status: $response"
+          exit 1
+        fi
+        echo "response=$(echo "$response" | jq -c .)" >> "$GITHUB_OUTPUT"
+        {
+          echo "## Published: $PROJECT/$VERSION"
+          echo '```json'
+          echo "$response" | jq .
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"

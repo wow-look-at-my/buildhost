@@ -1,0 +1,74 @@
+name: Buildhost - Create Token
+description: Creates an API token in a Buildhost registry.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: true
+  token:
+    description: 'Admin API token with global write scope'
+    required: true
+  name:
+    description: 'Token name'
+    required: true
+  scopes:
+    description: 'Scopes (comma-separated: read, write)'
+    required: false
+    default: 'read,write'
+  project_id:
+    description: 'Project ID to scope token to (omit for global token)'
+    required: false
+    default: ''
+
+outputs:
+  response:
+    description: 'JSON response from the API (includes plaintext token — save it)'
+    value: ${{ steps.create.outputs.response }}
+  token_value:
+    description: 'Plaintext token value (only returned once)'
+    value: ${{ steps.create.outputs.token_value }}
+  token_id:
+    description: 'Token ID (for future management operations)'
+    value: ${{ steps.create.outputs.token_id }}
+
+runs:
+  using: composite
+  steps:
+    - id: create
+      shell: bash
+      env:
+        SERVER: ${{ inputs.server }}
+        TOKEN: ${{ inputs.token }}
+        NAME: ${{ inputs.name }}
+        SCOPES: ${{ inputs.scopes }}
+        PROJECT_ID: ${{ inputs.project_id }}
+      run: |
+        body=$(jq -n \
+          --arg name "$NAME" \
+          --arg scopes "$SCOPES" \
+          --arg project_id "$PROJECT_ID" \
+          '{name:$name,scopes:$scopes} +
+           (if $project_id != "" then {project_id:($project_id|tonumber)} else {} end)')
+
+        tmpfile=$(mktemp)
+        status=$(curl -s -o "$tmpfile" -w '%{http_code}' -X POST "$SERVER/api/v1/tokens" \
+          -H "Authorization: Bearer $TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "$body")
+        response=$(cat "$tmpfile"); rm -f "$tmpfile"
+
+        echo "$response" | jq .
+        if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+          echo "::error::buildhost-create-token: HTTP $status: $response"
+          exit 1
+        fi
+        echo "response=$(echo "$response" | jq -c .)" >> "$GITHUB_OUTPUT"
+        echo "token_value=$(echo "$response" | jq -r '.token')" >> "$GITHUB_OUTPUT"
+        echo "token_id=$(echo "$response" | jq -r '.details.id')" >> "$GITHUB_OUTPUT"
+        {
+          echo "## Created Token: $NAME"
+          echo "**Save the token value — it will not be shown again.**"
+          echo '```json'
+          echo "$response" | jq .
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"

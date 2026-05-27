@@ -1,0 +1,74 @@
+name: Buildhost - Delete
+description: Deletes a resource from a Buildhost registry.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: true
+  token:
+    description: 'API token with write scope'
+    required: true
+  resource:
+    description: 'Resource type: token | oidc-policy | site'
+    required: true
+  id:
+    description: 'Numeric ID of the resource (required for: token, oidc-policy)'
+    required: false
+    default: ''
+  project:
+    description: 'Project name (required for: site)'
+    required: false
+    default: ''
+  branch:
+    description: 'Branch name (required for: site)'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        SERVER: ${{ inputs.server }}
+        TOKEN: ${{ inputs.token }}
+        RESOURCE: ${{ inputs.resource }}
+        ID: ${{ inputs.id }}
+        PROJECT: ${{ inputs.project }}
+        BRANCH: ${{ inputs.branch }}
+      run: |
+        case "$RESOURCE" in
+          token)
+            [ -z "$ID" ] && { echo "::error::id is required for resource=token"; exit 1; }
+            url="$SERVER/api/v1/tokens/$ID"
+            label="Token ID: $ID"
+            ;;
+          oidc-policy)
+            [ -z "$ID" ] && { echo "::error::id is required for resource=oidc-policy"; exit 1; }
+            url="$SERVER/api/v1/oidc/policies/$ID"
+            label="OIDC Policy ID: $ID"
+            ;;
+          site)
+            [ -z "$PROJECT" ] && { echo "::error::project is required for resource=site"; exit 1; }
+            [ -z "$BRANCH" ] && { echo "::error::branch is required for resource=site"; exit 1; }
+            url="$SERVER/sites/$PROJECT/branch/$BRANCH"
+            label="Site: $PROJECT/$BRANCH"
+            ;;
+          *)
+            echo "::error::Unknown resource '$RESOURCE'. Valid values: token, oidc-policy, site"
+            exit 1
+            ;;
+        esac
+
+        tmpfile=$(mktemp)
+        status=$(curl -s -o "$tmpfile" -w '%{http_code}' \
+          -X DELETE "$url" \
+          -H "Authorization: Bearer $TOKEN")
+        response=$(cat "$tmpfile"); rm -f "$tmpfile"
+
+        echo "HTTP $status"
+        [ -n "$response" ] && echo "$response" | jq . 2>/dev/null || true
+        if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+          echo "::error::buildhost-delete ($RESOURCE): HTTP $status: $response"
+          exit 1
+        fi
+        echo "## Deleted $label" >> "$GITHUB_STEP_SUMMARY"

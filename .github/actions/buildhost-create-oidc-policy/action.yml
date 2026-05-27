@@ -1,0 +1,81 @@
+name: Buildhost - Create OIDC Policy
+description: Creates an OIDC authentication policy in a Buildhost registry.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: true
+  token:
+    description: 'Admin API token with global write scope'
+    required: true
+  issuer:
+    description: 'OIDC issuer URL'
+    required: true
+    default: 'https://token.actions.githubusercontent.com'
+  subject_pattern:
+    description: 'Subject claim pattern (e.g. repo:myorg/myrepo:*)'
+    required: true
+  scopes:
+    description: 'Scopes to grant (comma-separated: read, write)'
+    required: false
+    default: 'read,write'
+  project_id:
+    description: 'Project ID to scope policy to (omit for global)'
+    required: false
+    default: ''
+  audience:
+    description: 'Required audience claim (omit to accept any)'
+    required: false
+    default: ''
+
+outputs:
+  response:
+    description: 'JSON response from the API'
+    value: ${{ steps.create.outputs.response }}
+  policy_id:
+    description: 'Created policy ID'
+    value: ${{ steps.create.outputs.policy_id }}
+
+runs:
+  using: composite
+  steps:
+    - id: create
+      shell: bash
+      env:
+        SERVER: ${{ inputs.server }}
+        TOKEN: ${{ inputs.token }}
+        ISSUER: ${{ inputs.issuer }}
+        SUBJECT_PATTERN: ${{ inputs.subject_pattern }}
+        SCOPES: ${{ inputs.scopes }}
+        PROJECT_ID: ${{ inputs.project_id }}
+        AUDIENCE: ${{ inputs.audience }}
+      run: |
+        body=$(jq -n \
+          --arg issuer "$ISSUER" \
+          --arg subject_pattern "$SUBJECT_PATTERN" \
+          --arg scopes "$SCOPES" \
+          --arg audience "$AUDIENCE" \
+          --arg project_id "$PROJECT_ID" \
+          '{issuer:$issuer,subject_pattern:$subject_pattern,scopes:$scopes,audience:$audience} +
+           (if $project_id != "" then {project_id:($project_id|tonumber)} else {} end)')
+
+        tmpfile=$(mktemp)
+        status=$(curl -s -o "$tmpfile" -w '%{http_code}' -X POST "$SERVER/api/v1/oidc/policies" \
+          -H "Authorization: Bearer $TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "$body")
+        response=$(cat "$tmpfile"); rm -f "$tmpfile"
+
+        echo "$response" | jq .
+        if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+          echo "::error::buildhost-create-oidc-policy: HTTP $status: $response"
+          exit 1
+        fi
+        echo "response=$(echo "$response" | jq -c .)" >> "$GITHUB_OUTPUT"
+        echo "policy_id=$(echo "$response" | jq -r '.id')" >> "$GITHUB_OUTPUT"
+        {
+          echo "## Created OIDC Policy"
+          echo '```json'
+          echo "$response" | jq .
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
