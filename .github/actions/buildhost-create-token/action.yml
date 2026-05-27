@@ -1,0 +1,75 @@
+name: Buildhost - Create Token
+description: Creates an API token in a Buildhost registry.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: false
+    default: 'https://pazer.build'
+  token:
+    description: 'Admin API token with global write scope, or omit to use OIDC'
+    required: false
+    default: ''
+  name:
+    description: 'Token name'
+    required: true
+  scopes:
+    description: 'Scopes (comma-separated: read, write)'
+    required: false
+    default: 'read,write'
+  project_id:
+    description: 'Project ID to scope token to (omit for global token)'
+    required: false
+    default: ''
+
+outputs:
+  response:
+    description: 'JSON response from the API (includes plaintext token — save it)'
+    value: ${{ steps.create.outputs.response }}
+  token_value:
+    description: 'Plaintext token value (only returned once)'
+    value: ${{ steps.create.outputs.token_value }}
+  token_id:
+    description: 'Token ID'
+    value: ${{ steps.create.outputs.token_id }}
+
+runs:
+  using: composite
+  steps:
+    - id: create
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            const server: string = "${{ inputs.server }}";
+            let token: string = "${{ inputs.token }}";
+            if (!token) {
+              const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+              const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+              if (url && bearer) {
+                const r = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
+                token = ((await r.json()) as { value: string }).value || '';
+              }
+            }
+            const projectId: string = "${{ inputs.project_id }}";
+
+            const body: Record<string, string | number> = {
+              name:   "${{ inputs.name }}",
+              scopes: "${{ inputs.scopes }}",
+            };
+            if (projectId) body['project_id'] = Number(projectId);
+
+            const resp = await fetch(`${server}/api/v1/tokens`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            const text = await resp.text();
+            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
+
+            const data = JSON.parse(text);
+            core.info(JSON.stringify(data, null, 2));
+            core.setOutput('response', text);
+            core.setOutput('token_value', data.token);
+            core.setOutput('token_id', String(data.details.id));
+          })();

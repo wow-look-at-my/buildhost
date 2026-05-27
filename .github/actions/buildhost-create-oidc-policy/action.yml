@@ -1,0 +1,81 @@
+name: Buildhost - Create OIDC Policy
+description: Creates an OIDC authentication policy in a Buildhost registry.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: false
+    default: 'https://pazer.build'
+  token:
+    description: 'Admin API token with global write scope, or omit to use OIDC'
+    required: false
+    default: ''
+  issuer:
+    description: 'OIDC issuer URL'
+    required: true
+    default: 'https://token.actions.githubusercontent.com'
+  subject_pattern:
+    description: 'Subject claim pattern (e.g. repo:myorg/myrepo:*)'
+    required: true
+  scopes:
+    description: 'Scopes to grant (comma-separated: read, write)'
+    required: false
+    default: 'read,write'
+  project_id:
+    description: 'Project ID to scope policy to (omit for global)'
+    required: false
+    default: ''
+  audience:
+    description: 'Required audience claim (omit to accept any)'
+    required: false
+    default: ''
+
+outputs:
+  response:
+    description: 'JSON response from the API'
+    value: ${{ steps.create.outputs.response }}
+  policy_id:
+    description: 'Created policy ID'
+    value: ${{ steps.create.outputs.policy_id }}
+
+runs:
+  using: composite
+  steps:
+    - id: create
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            const server: string = "${{ inputs.server }}";
+            let token: string = "${{ inputs.token }}";
+            if (!token) {
+              const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+              const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+              if (url && bearer) {
+                const r = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
+                token = ((await r.json()) as { value: string }).value || '';
+              }
+            }
+            const projectId: string = "${{ inputs.project_id }}";
+
+            const body: Record<string, string | number> = {
+              issuer:          "${{ inputs.issuer }}",
+              subject_pattern: "${{ inputs.subject_pattern }}",
+              scopes:          "${{ inputs.scopes }}",
+              audience:        "${{ inputs.audience }}",
+            };
+            if (projectId) body['project_id'] = Number(projectId);
+
+            const resp = await fetch(`${server}/api/v1/oidc/policies`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            const text = await resp.text();
+            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
+
+            const data = JSON.parse(text);
+            core.info(JSON.stringify(data, null, 2));
+            core.setOutput('response', text);
+            core.setOutput('policy_id', String(data.id));
+          })();
