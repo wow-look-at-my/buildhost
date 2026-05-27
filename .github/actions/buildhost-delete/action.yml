@@ -4,7 +4,8 @@ description: Deletes a resource from a Buildhost registry.
 inputs:
   server:
     description: 'Buildhost server URL'
-    required: true
+    required: false
+    default: 'https://pazer.build'
   token:
     description: 'API token with write scope, or omit to use OIDC'
     required: false

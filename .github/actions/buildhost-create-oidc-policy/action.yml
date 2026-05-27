@@ -4,7 +4,8 @@ description: Creates an OIDC authentication policy in a Buildhost registry.
 inputs:
   server:
     description: 'Buildhost server URL'
-    required: true
+    required: false
+    default: 'https://pazer.build'
   token:
     description: 'Admin API token with global write scope, or omit to use OIDC'
     required: false
