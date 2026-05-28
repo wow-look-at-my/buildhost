@@ -10,6 +10,28 @@ go-toolchain
 
 This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use bare `go` commands.
 
+### Admin frontend (TypeScript)
+
+The admin dashboard frontend is written in TypeScript. Source files live in `internal/admin/frontend/src/` and compile to `internal/admin/static/*.js` (which are embedded into the Go binary via `go:embed`). The built JS files are checked in so `go-toolchain` works without Node.js.
+
+After editing TypeScript source files, rebuild before running `go-toolchain`:
+
+```bash
+cd internal/admin/frontend && npm run build
+```
+
+Type checking (no emit):
+
+```bash
+cd internal/admin/frontend && npm run check
+```
+
+First-time setup (install esbuild + typescript):
+
+```bash
+cd internal/admin/frontend && npm install
+```
+
 ## Project structure
 
 - `cmd/buildhost/` - CLI entrypoint (cobra, one subcommand per file, self-registering via init()). Backend imports (backend_*.go) trigger init() registration for each handler package.
@@ -30,7 +52,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - `internal/repackage/` - On-demand repackaging and stripping (tar.gz, tar.xz, tar.zst, zip, deb, brew, npm, oci). Self-registering via init(); Generator uses registry. Orchestrator just publishes releases.
 - `internal/strip/` - Binary debug info stripping (shells out to strip/objcopy)
 - `internal/version/` - Version resolution logic
-- `internal/admin/` - Admin dashboard (separate HTTP server, JSON API + static SPA frontend), inflight write counter for update coordination
+- `internal/admin/` - Admin dashboard (separate HTTP server, JSON API + static SPA frontend), inflight write counter for update coordination. Frontend TypeScript source in `frontend/src/`, compiled JS output in `static/`.
 - `internal/config/` - Server configuration from env vars
 - `migrations/` - SQLite schema (embedded via go:embed)
 
