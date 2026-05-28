@@ -1,0 +1,74 @@
+name: Buildhost - List
+description: Lists resources in a Buildhost registry.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: false
+    default: 'https://pazer.build'
+  token:
+    description: 'API token or omit to use OIDC (required for private projects, tokens, and oidc-policies)'
+    required: false
+    default: ''
+  resource:
+    description: 'Resource to list: projects | releases | tokens | oidc-policies | sites'
+    required: true
+  project:
+    description: 'Project name (required for: releases, sites)'
+    required: false
+    default: ''
+
+outputs:
+  response:
+    description: 'JSON array of the listed resources'
+    value: ${{ steps.list.outputs.response }}
+
+runs:
+  using: composite
+  steps:
+    - id: list
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            const server: string = "${{ inputs.server }}";
+            const resource: string = "${{ inputs.resource }}";
+            const project: string = "${{ inputs.project }}";
+
+            let url: string;
+            switch (resource) {
+              case 'projects':      url = `${server}/api/v1/projects`; break;
+              case 'releases':
+                if (!project) { core.setFailed('project is required for resource=releases'); return; }
+                url = `${server}/api/v1/projects/${project}/releases`;
+                break;
+              case 'tokens':        url = `${server}/api/v1/tokens`; break;
+              case 'oidc-policies': url = `${server}/api/v1/oidc/policies`; break;
+              case 'sites':
+                if (!project) { core.setFailed('project is required for resource=sites'); return; }
+                url = `${server}/api/v1/projects/${project}/sites`;
+                break;
+              default:
+                core.setFailed(`Unknown resource '${resource}'. Valid: projects, releases, tokens, oidc-policies, sites`);
+                return;
+            }
+
+            let token: string = "${{ inputs.token }}";
+            if (!token) {
+              const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+              const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+              if (url && bearer) {
+                const r = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
+                token = ((await r.json()) as { value: string }).value || '';
+              }
+            }
+
+            const headers: Record<string, string> = {};
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            const resp = await fetch(url, { headers });
+            const text = await resp.text();
+            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
+
+            core.info(JSON.stringify(JSON.parse(text), null, 2));
+            core.setOutput('response', text);
+          })();

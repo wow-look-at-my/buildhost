@@ -53,7 +53,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - Default token scope is "read" (least privilege)
 - Upload size capped at 2 GiB; JSON endpoints capped at 1 MiB
 - Storage keys validated as hex SHA-256 to prevent path traversal
-- Static sites: uploaded as tar.gz, stored as raw tar in content-addressed storage, served by scanning tar headers per request. Each branch is an independent deployment (one row in `sites` table). Re-deploying a branch replaces the previous site atomically. Upload size capped at 256 MiB, max 10,000 files per site.
+- Static sites: uploaded as tar.gz (`Content-Type: application/gzip`) or zip (`Content-Type: application/zip`). Both formats are stored as raw tar internally and served by scanning tar headers per request. Each branch is an independent deployment (one row in `sites` table). Re-deploying a branch replaces the previous site atomically. Upload size capped at 256 MiB, max 10,000 files per site.
 
 ## First-time setup
 
@@ -199,10 +199,10 @@ The following items have been reviewed and addressed or are intentional design c
 - **Inflight endpoint**: `GET /admin/inflight` on :9090 is unauthenticated -- same trust model as the rest of the admin dashboard (internal-only, behind reverse proxy)
 - **No writes outside data dir**: Temp files use BUILDHOST_DATA_DIR/tmp, not system /tmp
 - **OIDC audience check**: Auto-provisioning requires `BUILDHOST_BASE_URL` to be set and verifies the token's `aud` claim matches it. GHA workflows must request tokens with the buildhost URL as the audience: `core.getIDToken('https://buildhost.example.com')`
-- **OIDC event check**: Tokens without an `event_name` claim are rejected when `BUILDHOST_OIDC_EVENTS` is configured (default: `push`). This prevents bypass via providers that omit the claim
+- **OIDC event check**: Tokens without an `event_name` claim are rejected when `BUILDHOST_OIDC_EVENTS` is configured (default: `push,pull_request`). This prevents bypass via providers that omit the claim. Fork PRs in GitHub Actions do not receive OIDC tokens, so `pull_request` is safe to include by default.
 - **OIDC RSA key size**: JWKS keys below 2048 bits are rejected
 - **OIDC visibility sync**: When an OIDC token's `repository_visibility` claim changes project visibility, the change is logged at WARN level with project name, old/new visibility, and OIDC subject
-- **Sites decompression**: Decompressed tar size is capped at 1 GiB to prevent gzip bomb attacks
+- **Sites decompression**: Decompressed tar size is capped at 1 GiB to prevent gzip bomb attacks. ZIP uploads are also bounded by the 256 MiB upload limit and the 1 GiB decompressed tar cap.
 - **Admin error messages**: Admin API handlers return generic error messages; raw errors are logged server-side only
 - **Migrations**: Each migration runs in a single transaction (DDL + schema_migrations record) to prevent partial application on crash
 - **OIDC auto-provisioning**: Trusted issuers can auto-create projects. Project name derived from subject claim (repo:org/name:* -> name), lowercased and validated against `[a-z0-9][a-z0-9._-]{0,127}`. Scoped to read,write on that project only -- cannot access other projects. Optional BUILDHOST_OIDC_ORGS allowlist restricts which orgs can auto-provision

@@ -19,6 +19,7 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
+		handler.FetchDomains = auth.SiteFetchDomains()
 	})
 	auth.Handle("PUT /sites/{project}/branch/{branch}", parseRoute, handler.Upload)
 	auth.Handle("DELETE /sites/{project}/branch/{branch}", parseRoute, handler.Delete)
@@ -62,6 +63,7 @@ func routeFrom(ctx context.Context) route {
 }
 
 type Handler struct {
-	DB    *db.DB
-	Store storage.Storage
+	DB           *db.DB
+	Store        storage.Storage
+	FetchDomains []string
 }

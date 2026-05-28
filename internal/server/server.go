@@ -24,7 +24,7 @@ type Server struct {
 }
 
 func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
-	auth.Init(database, store, cfg.BaseURL, cfg.DataDir, cfg.OIDCIssuers, cfg.OIDCOrgs, cfg.OIDCEvents)
+	auth.Init(database, store, cfg.BaseURL, cfg.DataDir, cfg.OIDCIssuers, cfg.OIDCOrgs, cfg.OIDCEvents, cfg.SiteFetchDomains)
 	healthDB = database
 	s := &Server{cfg: cfg}
 	s.srv = &http.Server{
