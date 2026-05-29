@@ -3,6 +3,7 @@ package apt
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -17,10 +18,12 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
+		handler.StaticURL = auth.StaticURL()
 		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
 		handler.Signer = NewSigner(auth.DataDir())
+
+		auth.HandleHandler(auth.ServiceRoute("apt", "/{path...}"), parseRoute, &handler)
 	})
-	auth.HandleHandler("/apt/", parseRoute, http.StripPrefix("/apt", &handler))
 }
 
 type route struct {
@@ -32,26 +35,19 @@ func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
 func parseRoute(r *http.Request) auth.RouteInfo {
-	// APT repo path: /apt/{project}/{dists|pool}/...
-	// {project} may contain '/' (multi-segment names), so we can't take the
-	// first '/'-separated token. Find the LAST occurrence of /dists/ or /pool/
-	// -- everything before is the project, everything from that boundary
-	// onward is the subpath. LastIndex (not Index) so a project name
-	// containing the literal "dists" or "pool" still resolves correctly.
-	path := strings.TrimPrefix(r.URL.Path, "/apt/")
+	path := strings.TrimPrefix(r.URL.Path, "/")
 	for _, marker := range []string{"/dists/", "/pool/"} {
 		if i := strings.LastIndex(path, marker); i > 0 {
 			return route{
 				project: path[:i],
-				// Keep the marker (without the leading '/') in subPath so
-				// the handler's prefix matches against "dists/..." / "pool/..."
-				// continue to work unchanged.
 				subPath: path[i+1:],
 			}
 		}
 	}
-	// No marker: treat whole path as project (will 404 at the handler since
-	// the subPath switch only matches known prefixes).
+	if strings.HasSuffix(path, "/key.asc") {
+		i := strings.LastIndex(path, "/key.asc")
+		return route{project: path[:i], subPath: "key.asc"}
+	}
 	return route{project: path}
 }
 
@@ -60,11 +56,11 @@ func routeFrom(ctx context.Context) route {
 }
 
 type Handler struct {
-	DB      *db.DB
-	Store   storage.Storage
-	BaseURL string
-	Gen     *repackage.Generator
-	Signer  *Signer
+	DB        *db.DB
+	Store     storage.Storage
+	StaticURL *url.URL
+	Gen       *repackage.Generator
+	Signer    *Signer
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

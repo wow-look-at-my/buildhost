@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,37 +25,37 @@ func TestParseRoute(t *testing.T) {
 	}{
 		{
 			name: "release, single-segment name",
-			path: "/apt/buildhost/dists/stable/Release",
+			path: "/buildhost/dists/stable/Release",
 			want: route{project: "buildhost", subPath: "dists/stable/Release"},
 		},
 		{
 			name: "release, dashed name",
-			path: "/apt/go-toolchain/dists/stable/Release",
+			path: "/go-toolchain/dists/stable/Release",
 			want: route{project: "go-toolchain", subPath: "dists/stable/Release"},
 		},
 		{
 			name: "release, multi-segment name (decoded path with literal '/')",
-			path: "/apt/library/foo/dists/stable/Release",
+			path: "/library/foo/dists/stable/Release",
 			want: route{project: "library/foo", subPath: "dists/stable/Release"},
 		},
 		{
 			name: "release, deeply nested multi-segment name",
-			path: "/apt/team/group/proj-name/dists/stable/InRelease",
+			path: "/team/group/proj-name/dists/stable/InRelease",
 			want: route{project: "team/group/proj-name", subPath: "dists/stable/InRelease"},
 		},
 		{
 			name: "binary-amd64 packages, multi-segment name",
-			path: "/apt/library/foo/dists/stable/main/binary-amd64/Packages",
+			path: "/library/foo/dists/stable/main/binary-amd64/Packages",
 			want: route{project: "library/foo", subPath: "dists/stable/main/binary-amd64/Packages"},
 		},
 		{
 			name: "pool, multi-segment name",
-			path: "/apt/library/foo/pool/foo_1.0.0_amd64.deb",
+			path: "/library/foo/pool/foo_1.0.0_amd64.deb",
 			want: route{project: "library/foo", subPath: "pool/foo_1.0.0_amd64.deb"},
 		},
 		{
 			name: "name itself contains literal 'dists' segment, distinguished by LastIndex",
-			path: "/apt/foo/dists/bar/dists/stable/Release",
+			path: "/foo/dists/bar/dists/stable/Release",
 			want: route{project: "foo/dists/bar", subPath: "dists/stable/Release"},
 		},
 	}
@@ -76,7 +77,8 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, "http://localhost:8080", t.TempDir())}
+	staticURL, _ := url.Parse("http://localhost:8080")
+	h := &Handler{DB: d, Store: store, StaticURL: staticURL, Gen: repackage.NewGenerator(store, d, "http://localhost:8080", t.TempDir())}
 	return h, d, store
 }
 
@@ -267,8 +269,8 @@ func TestServePool_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusFound, rec.Code)
 	loc := rec.Header().Get("Location")
-	assert.Contains(t, loc, "/static?")
-	assert.Contains(t, loc, "id=myapp")
+	assert.Contains(t, loc, "/file?")
+	assert.Contains(t, loc, "project=myapp")
 	assert.Contains(t, loc, "fmt=deb")
 	assert.Contains(t, loc, "v=1.0.0")
 }
@@ -413,7 +415,7 @@ func TestServeHTTP_PrivateProject_Pool_WithValidContext(t *testing.T) {
 
 	assert.Equal(t, http.StatusFound, rec.Code)
 	loc := rec.Header().Get("Location")
-	assert.Contains(t, loc, "/static?")
-	assert.Contains(t, loc, "id=secret")
+	assert.Contains(t, loc, "/file?")
+	assert.Contains(t, loc, "project=secret")
 	assert.Contains(t, loc, "fmt=deb")
 }

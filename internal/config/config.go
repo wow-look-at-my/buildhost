@@ -16,6 +16,8 @@ type Config struct {
 	OIDCOrgs         []string
 	OIDCEvents       []string
 	OTELEndpoint     string
+	Domain           string
+	ServiceURLs      map[string]string
 	SiteFetchDomains []string
 }
 
@@ -74,6 +76,16 @@ func Load() Config {
 	}
 	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
 		c.OTELEndpoint = v
+	}
+	if v := os.Getenv("BUILDHOST_DOMAIN"); v != "" {
+		c.Domain = v
+	}
+	c.ServiceURLs = make(map[string]string)
+	for _, svc := range []string{"apt", "brew", "dl", "npm", "oci", "sites", "static"} {
+		envKey := "BUILDHOST_" + strings.ToUpper(svc) + "_URL"
+		if v := os.Getenv(envKey); v != "" {
+			c.ServiceURLs[svc] = v
+		}
 	}
 	if v := os.Getenv("BUILDHOST_SITE_FETCH_DOMAINS"); v != "" {
 		for _, d := range strings.Split(v, ",") {

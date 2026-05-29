@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -23,14 +24,16 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
+		handler.StaticURL = auth.StaticURL()
 		handler.BaseURL = auth.BaseURL()
 		handler.TmpDir = auth.DataDir() + "/tmp"
 
 		for _, format := range repackage.RegisteredFormats() {
 			RegisterRepackageFmt(format)
 		}
+
+		auth.Handle(auth.ServiceRoute("static", "GET /file"), parseRoute, handler.Serve)
 	})
-	auth.Handle("GET /static", parseRoute, handler.Serve)
 }
 
 type route struct {
@@ -41,16 +44,15 @@ func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
 func parseRoute(r *http.Request) auth.RouteInfo {
-	id := r.URL.Query().Get("id")
-	id = strings.TrimPrefix(id, "@buildhost/")
-	return route{project: id}
+	return route{project: r.URL.Query().Get("project")}
 }
 
 type staticHandler struct {
-	DB      *db.DB
-	Store   storage.Storage
-	BaseURL string
-	TmpDir  string
+	DB        *db.DB
+	Store     storage.Storage
+	StaticURL *url.URL
+	BaseURL   string
+	TmpDir    string
 }
 
 func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
@@ -99,11 +101,12 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sctx := ServeContext{
-		Project: *project,
-		Release: *release,
-		Store:   h.Store,
-		BaseURL: h.BaseURL,
-		TmpDir:  h.TmpDir,
+		Project:   *project,
+		Release:   *release,
+		Store:     h.Store,
+		StaticURL: h.StaticURL,
+		BaseURL:   h.BaseURL,
+		TmpDir:    h.TmpDir,
 	}
 
 	if osStr != "any" && archStr != "any" {

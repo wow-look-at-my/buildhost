@@ -23,10 +23,10 @@ func TestCanonicalQuery(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"already sorted", "arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", "arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0"},
-		{"unsorted", "v=1.0.0&id=myapp&os=linux&arch=amd64&fmt=raw", "arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0"},
-		{"strips unknown", "arch=amd64&foo=bar&id=myapp&os=linux&v=1", "arch=amd64&id=myapp&os=linux&v=1"},
-		{"keeps debug", "debug=1&id=myapp&v=1&os=linux&arch=amd64", "arch=amd64&debug=1&id=myapp&os=linux&v=1"},
+		{"already sorted", "arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", "arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0"},
+		{"unsorted", "v=1.0.0&project=myapp&os=linux&arch=amd64&fmt=raw", "arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0"},
+		{"strips unknown", "arch=amd64&foo=bar&project=myapp&os=linux&v=1", "arch=amd64&os=linux&project=myapp&v=1"},
+		{"keeps debug", "debug=1&project=myapp&v=1&os=linux&arch=amd64", "arch=amd64&debug=1&os=linux&project=myapp&v=1"},
 		{"empty", "", ""},
 		{"only unknown", "foo=bar&baz=qux", ""},
 	}
@@ -40,22 +40,25 @@ func TestCanonicalQuery(t *testing.T) {
 }
 
 func TestURL(t *testing.T) {
-	u := URL("https://example.com", For("myapp").WithVersion("1.0.0").WithOS("linux").WithArch("amd64").WithFmt("raw"))
-	assert.Equal(t, "https://example.com/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", u)
+	base, _ := url.Parse("https://example.com")
+	u := URL(base, For("myapp").WithVersion("1.0.0").WithOS("linux").WithArch("amd64").WithFmt("raw"))
+	assert.Equal(t, "https://example.com/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", u)
 }
 
 func TestURL_WithDebug(t *testing.T) {
-	u := URL("https://example.com", For("myapp").WithVersion("1").WithOS("linux").WithArch("amd64").WithFmt("raw").WithDebug(true))
-	assert.Equal(t, "https://example.com/static?arch=amd64&debug=1&fmt=raw&id=myapp&os=linux&v=1", u)
+	base, _ := url.Parse("https://example.com")
+	u := URL(base, For("myapp").WithVersion("1").WithOS("linux").WithArch("amd64").WithFmt("raw").WithDebug(true))
+	assert.Equal(t, "https://example.com/file?arch=amd64&debug=1&fmt=raw&os=linux&project=myapp&v=1", u)
 }
 
 func TestURL_ParamsSorted(t *testing.T) {
-	u := URL("", For("z-project").WithVersion("9").WithOS("darwin").WithArch("arm64").WithFmt("npm"))
-	assert.Equal(t, "/static?arch=arm64&fmt=npm&id=z-project&os=darwin&v=9", u)
+	base, _ := url.Parse("")
+	u := URL(base, For("z-project").WithVersion("9").WithOS("darwin").WithArch("arm64").WithFmt("npm"))
+	assert.Equal(t, "/file?arch=arm64&fmt=npm&os=darwin&project=z-project&v=9", u)
 }
 
 func TestServe_MissingVersion(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?arch=amd64&id=myapp&os=linux", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&os=linux&project=myapp", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
@@ -63,7 +66,7 @@ func TestServe_MissingVersion(t *testing.T) {
 }
 
 func TestServe_LatestVersion(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?arch=amd64&id=myapp&os=linux&v=latest", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&os=linux&project=myapp&v=latest", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
@@ -71,7 +74,7 @@ func TestServe_LatestVersion(t *testing.T) {
 }
 
 func TestServe_MissingOSArch(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?id=myapp&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?project=myapp&v=1.0.0", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
@@ -79,7 +82,7 @@ func TestServe_MissingOSArch(t *testing.T) {
 }
 
 func TestServe_UnsupportedFormat(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=nonexistent&id=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=nonexistent&os=linux&project=myapp&v=1.0.0", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
@@ -87,17 +90,17 @@ func TestServe_UnsupportedFormat(t *testing.T) {
 }
 
 func TestServe_CanonicalRedirect(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?v=1&id=myapp&os=linux&arch=amd64&fmt=raw", nil)
+	req := httptest.NewRequest("GET", "/file?v=1&project=myapp&os=linux&arch=amd64&fmt=raw", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
 	assert.Equal(t, http.StatusMovedPermanently, rec.Code)
 	loc := rec.Header().Get("Location")
-	assert.Contains(t, loc, "arch=amd64&fmt=raw&id=myapp&os=linux&v=1")
+	assert.Contains(t, loc, "arch=amd64&fmt=raw&os=linux&project=myapp&v=1")
 }
 
 func TestServe_StripsUnknownParams(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&garbage=yes&id=myapp&os=linux&v=1", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&garbage=yes&os=linux&project=myapp&v=1", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
@@ -142,7 +145,8 @@ func setupIntegration(t *testing.T) (*staticHandler, *db.DB, *storage.Filesystem
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	return &staticHandler{DB: d, Store: store, BaseURL: "http://localhost:8080"}, d, store
+	staticURL, _ := url.Parse("http://localhost:8080")
+	return &staticHandler{DB: d, Store: store, StaticURL: staticURL, BaseURL: "http://localhost:8080"}, d, store
 }
 
 func withProject(r *http.Request, p *db.Project) *http.Request {
@@ -167,7 +171,7 @@ func TestServe_RawFormat_Success(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -195,14 +199,14 @@ func TestServe_ETag_NotModified(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
 	etag := rec.Header().Get("ETag")
 	require.NotEmpty(t, etag)
 
-	req2 := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
+	req2 := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req2 = withProject(req2, proj)
 	req2.Header.Set("If-None-Match", etag)
 	rec2 := httptest.NewRecorder()
@@ -217,7 +221,7 @@ func TestServe_VersionNotFound(t *testing.T) {
 	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=9.9.9", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=9.9.9", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -234,7 +238,7 @@ func TestServe_ArtifactNotFound(t *testing.T) {
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -258,7 +262,7 @@ func TestServe_VersionResolution_StripV(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=v2.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=v2.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -282,7 +286,7 @@ func TestServe_VersionResolution_StripDotZeroZero(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=5.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=5.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -299,7 +303,7 @@ func TestServe_AnyOSArch(t *testing.T) {
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
-	req := httptest.NewRequest("GET", "/static?arch=any&fmt=raw&id=myapp&os=any&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=any&fmt=raw&os=any&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -323,7 +327,7 @@ func TestServe_DebugSymbolsHeader(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -335,20 +339,21 @@ func TestServe_DebugSymbolsHeader(t *testing.T) {
 func TestRedirect(t *testing.T) {
 	req := httptest.NewRequest("GET", "/dl/myapp/1.0.0/linux/amd64", nil)
 	rec := httptest.NewRecorder()
-	Redirect(rec, req, "https://example.com", For("myapp").WithVersion("1.0.0").WithOS("linux").WithArch("amd64").WithFmt("raw"))
+	base, _ := url.Parse("https://example.com")
+	Redirect(rec, req, base, For("myapp").WithVersion("1.0.0").WithOS("linux").WithArch("amd64").WithFmt("raw"), http.StatusFound)
 	assert.Equal(t, http.StatusFound, rec.Code)
 	loc := rec.Header().Get("Location")
-	assert.Equal(t, "https://example.com/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", loc)
+	assert.Equal(t, "https://example.com/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", loc)
 }
 
 func TestParseRoute_ExtractsID(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?id=myapp&v=1", nil)
+	req := httptest.NewRequest("GET", "/file?project=myapp&v=1", nil)
 	ri := parseRoute(req)
 	assert.Equal(t, "myapp", ri.ProjectName())
 
-	req2 := httptest.NewRequest("GET", "/static?id=@buildhost/myapp&v=1", nil)
+	req2 := httptest.NewRequest("GET", "/file?project=other-app&v=1", nil)
 	ri2 := parseRoute(req2)
-	assert.Equal(t, "myapp", ri2.ProjectName(), "strips @buildhost/ prefix")
+	assert.Equal(t, "other-app", ri2.ProjectName())
 }
 
 func TestRoute_Access(t *testing.T) {
@@ -373,7 +378,7 @@ func TestServe_SymbolsFormat_NoStrip(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=symbols&id=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=symbols&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -399,7 +404,7 @@ func TestServe_RepackageFormat(t *testing.T) {
 
 	RegisterRepackageFmt("tar.gz")
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=tar.gz&id=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=tar.gz&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)

@@ -19,10 +19,13 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
+
+		auth.HandleRaw(auth.ServiceRoute("oci", "GET /v2/{$}"), handler.V2Root)
+		auth.HandleRaw(auth.ServiceRoute("oci", "HEAD /v2/{$}"), handler.V2Root)
+		auth.HandleHandler(auth.ServiceRoute("oci", "/v2/"), parseRoute, &handler)
+
+		auth.ServiceRedirect("docker", "oci", true)
 	})
-	auth.HandleRaw("GET /v2/{$}", handler.V2Root)
-	auth.HandleRaw("HEAD /v2/{$}", handler.V2Root)
-	auth.HandleHandler("/v2/", parseRoute, &handler)
 }
 
 type route struct {
@@ -34,19 +37,9 @@ type route struct {
 func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
-// ociActions are the reserved action keywords from the OCI distribution spec.
-// They sit between the (possibly multi-segment) name and the reference.
 var ociActions = []string{"manifests", "blobs", "tags"}
 
 func parseRoute(r *http.Request) auth.RouteInfo {
-	// OCI distribution path: /v2/{name}/{action}/{reference}
-	// {name} may contain '/' (e.g. "library/nginx"), so a naive split-by-'/'
-	// can't distinguish "library/nginx" + "manifests" from a 3-segment name.
-	//
-	// References (tags, digests) never contain '/' per spec, so the right
-	// boundary is the RIGHTMOST /<action>/ whose trailing portion has no '/'.
-	// This handles names that themselves contain an action keyword as a segment
-	// (e.g. project "foo/manifests" with action "blobs").
 	path := strings.TrimPrefix(r.URL.Path, "/v2/")
 
 	bestI := -1
@@ -74,7 +67,6 @@ func parseRoute(r *http.Request) auth.RouteInfo {
 		}
 	}
 
-	// Action-only URLs: /v2/{name}/{action} with no reference (will 404).
 	for _, action := range ociActions {
 		suffix := "/" + action
 		if strings.HasSuffix(path, suffix) && len(path) > len(suffix) {
@@ -84,7 +76,6 @@ func parseRoute(r *http.Request) auth.RouteInfo {
 			}
 		}
 	}
-	// Bare name (or /v2/ root). Auth/handler will 404 -- nothing to serve.
 	return route{project: path}
 }
 

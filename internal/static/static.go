@@ -10,12 +10,13 @@ import (
 )
 
 type ServeContext struct {
-	Project  db.Project
-	Release  db.Release
-	Artifact db.Artifact
-	Store    storage.Storage
-	BaseURL  string
-	TmpDir   string
+	Project   db.Project
+	Release   db.Release
+	Artifact  db.Artifact
+	Store     storage.Storage
+	StaticURL *url.URL
+	BaseURL   string
+	TmpDir    string
 }
 
 type Fmt interface {
@@ -42,7 +43,7 @@ func LookupFmt(name string) (Fmt, bool) {
 }
 
 type Params struct {
-	ID      string
+	Project string
 	Version string
 	OS      db.OS
 	Arch    db.Arch
@@ -50,24 +51,25 @@ type Params struct {
 	Debug   bool
 }
 
-func For(id string) Params                        { return Params{ID: id} }
+func For(project string) Params                   { return Params{Project: project} }
 func (p Params) WithVersion(v string) Params      { p.Version = v; return p }
-func (p Params) WithOS(os db.OS) Params        { p.OS = os; return p }
-func (p Params) WithArch(a db.Arch) Params     { p.Arch = a; return p }
+func (p Params) WithOS(os db.OS) Params           { p.OS = os; return p }
+func (p Params) WithArch(a db.Arch) Params        { p.Arch = a; return p }
 func (p Params) WithFmt(f string) Params          { p.Fmt = f; return p }
 func (p Params) WithDebug(d bool) Params          { p.Debug = d; return p }
 
-const RedirectCode = http.StatusFound
-
-func URL(baseURL string, p Params) string {
-	return baseURL + "/static?" + p.query()
+func URL(staticBase *url.URL, p Params) string {
+	u := *staticBase
+	u.Path = "/file"
+	u.RawQuery = p.values().Encode()
+	return u.String()
 }
 
-func Redirect(w http.ResponseWriter, r *http.Request, baseURL string, p Params) {
-	http.Redirect(w, r, URL(baseURL, p), RedirectCode)
+func Redirect(w http.ResponseWriter, r *http.Request, staticBase *url.URL, p Params, code int) {
+	http.Redirect(w, r, URL(staticBase, p), code)
 }
 
-func (p Params) query() string {
+func (p Params) values() url.Values {
 	q := url.Values{}
 	if p.Arch != "" {
 		q.Set("arch", string(p.Arch))
@@ -78,8 +80,8 @@ func (p Params) query() string {
 	if p.Fmt != "" {
 		q.Set("fmt", p.Fmt)
 	}
-	if p.ID != "" {
-		q.Set("id", p.ID)
+	if p.Project != "" {
+		q.Set("project", p.Project)
 	}
 	if p.OS != "" {
 		q.Set("os", string(p.OS))
@@ -87,12 +89,12 @@ func (p Params) query() string {
 	if p.Version != "" {
 		q.Set("v", p.Version)
 	}
-	return q.Encode()
+	return q
 }
 
 var knownParams = map[string]bool{
 	"arch": true, "debug": true, "fmt": true,
-	"id": true, "os": true, "v": true,
+	"project": true, "os": true, "v": true,
 }
 
 func canonicalQuery(raw url.Values) string {
