@@ -24,6 +24,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	_ "github.com/wow-look-at-my/buildhost/internal/dl"
+	_ "github.com/wow-look-at-my/buildhost/internal/llms"
 	_ "github.com/wow-look-at-my/buildhost/internal/npm"
 	_ "github.com/wow-look-at-my/buildhost/internal/oci"
 	"github.com/wow-look-at-my/buildhost/internal/server"
@@ -251,6 +252,21 @@ func TestHealthz_DBClosed(t *testing.T) {
 
 	body := readBody(t, resp)
 	require.Equal(t, "database unreachable", string(body))
+}
+
+func TestLLMsTxt_PublicAndRendersBaseURL(t *testing.T) {
+	env := setup(t)
+
+	// No auth token: the endpoint must be publicly reachable.
+	resp := env.get(t, "/llms.txt")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, "text/plain; charset=utf-8", resp.Header.Get("Content-Type"))
+
+	body := string(readBody(t, resp))
+	require.Contains(t, body, "# buildhost")
+	// The configured base URL ("http://localhost") is substituted into examples.
+	require.Contains(t, body, "http://localhost/dl/myapp/latest/linux/amd64")
+	require.NotContains(t, body, "__BASE_URL__")
 }
 
 // ---------------------------------------------------------------------------
