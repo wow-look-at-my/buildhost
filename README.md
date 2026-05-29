@@ -136,6 +136,11 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 | DELETE | `/sites/{project}/branch/{branch}` | Remove static site |
 | GET | `/sites/{project}/branch/{branch}/{path}` | Serve static site file |
 | GET | `/api/v1/projects/{project}/sites` | List branch deployments |
+| GET | `/llms.txt` | Plain-text guide to buildhost for LLMs ([llmstxt.org](https://llmstxt.org)) |
+
+## llms.txt
+
+`GET /llms.txt` serves a public, unauthenticated plain-text document that explains what buildhost is and how to use it, aimed at LLMs and automated agents. Example URLs in the document are rendered against the configured `BUILDHOST_BASE_URL`, so they always point at the live deployment.
 
 ## Configuration
 
