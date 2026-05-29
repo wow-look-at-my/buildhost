@@ -1,0 +1,119 @@
+name: Buildhost - Publish Site
+version: 1
+description: Publish a static site to a Buildhost registry branch.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: false
+    default: 'https://pazer.build'
+  token:
+    description: 'API token with write scope, or omit to use OIDC'
+    required: false
+    default: ''
+  project:
+    description: 'Project name (defaults to the repository name)'
+    required: false
+    default: ''
+  branch:
+    description: 'Branch name to publish the site under'
+    required: true
+  source_dir:
+    description: 'Local directory to publish (mutually exclusive with artifact_name)'
+    required: false
+    default: ''
+  artifact_name:
+    description: 'GHA run artifact name to download and publish (mutually exclusive with source_dir)'
+    required: false
+    default: ''
+  git_commit:
+    description: 'Git commit SHA (defaults to github.sha)'
+    required: false
+    default: ''
+
+outputs:
+  response:
+    description: 'JSON response from the API'
+    value: ${{ steps.publish.outputs.response }}
+  site_url:
+    description: 'URL of the published site'
+    value: ${{ steps.publish.outputs.site_url }}
+
+runs:
+  using: composite
+  steps:
+    - id: publish
+      uses: wow-look-at-my/actions@typescript#latest
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      with:
+        script: |
+          await (async () => {
+            const server: string = "${{ inputs.server }}";
+            const sourceDir: string = "${{ inputs.source_dir }}";
+            const artifactName: string = "${{ inputs.artifact_name }}";
+
+            if (sourceDir && artifactName) {
+              core.setFailed('Specify source_dir or artifact_name, not both'); return;
+            }
+            if (!sourceDir && !artifactName) {
+              core.setFailed('Either source_dir or artifact_name is required'); return;
+            }
+
+            const project: string = "${{ inputs.project }}" || github.repository.split('/').pop()!;
+            const branch: string = "${{ inputs.branch }}";
+            const gitCommit: string = "${{ inputs.git_commit }}" || github.sha;
+
+            let token: string = "${{ inputs.token }}";
+            if (!token) {
+              const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+              const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+              if (url && bearer) {
+                const r = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
+                token = ((await r.json()) as { value: string }).value || '';
+              }
+            }
+
+            let siteDir: string;
+            if (artifactName) {
+              const downloadDir = path.join(os.tmpdir(), 'buildhost-site');
+              fs.mkdirSync(downloadDir, { recursive: true });
+              const oct = octokit(process.env.GITHUB_TOKEN!);
+              const [owner, repo] = github.repository.split('/');
+              const { data: { artifacts } } = await oct.rest.actions.listWorkflowRunArtifacts({ owner, repo, run_id: github.run_id });
+              const artifact = artifacts.find((a: any) => a.name === artifactName);
+              if (!artifact) { core.setFailed(`Artifact '${artifactName}' not found in run`); return; }
+              const { data: zip } = await oct.rest.actions.downloadArtifact({ owner, repo, artifact_id: artifact.id, archive_format: 'zip' });
+              const zipPath = path.join(downloadDir, 'site.zip');
+              fs.writeFileSync(zipPath, Buffer.from(zip as ArrayBuffer));
+              siteDir = path.join(downloadDir, 'extracted');
+              fs.mkdirSync(siteDir, { recursive: true });
+              await exec.exec('unzip', ['-o', zipPath, '-d', siteDir]);
+            } else {
+              siteDir = sourceDir;
+            }
+
+            const tarPath = path.join(os.tmpdir(), 'site.tar.gz');
+            await exec.exec('tar', ['-czf', tarPath, '-C', siteDir, '.']);
+            const body = fs.readFileSync(tarPath);
+            fs.unlinkSync(tarPath);
+            core.info(`Archive size: ${body.length} bytes`);
+
+            const resp = await fetch(`${server}/sites/${project}/branch/${branch}`, {
+              method: 'PUT',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/gzip',
+                'X-Git-Commit': gitCommit,
+              },
+              body,
+            });
+            const text = await resp.text();
+            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
+
+            const siteURL = `${server}/sites/${project}/branch/${branch}/`;
+            core.info(`Published site to ${siteURL}`);
+            core.info(JSON.stringify(JSON.parse(text), null, 2));
+            core.setOutput('response', text);
+            core.setOutput('site_url', siteURL);
+          })();

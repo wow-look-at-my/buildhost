@@ -1,0 +1,83 @@
+name: Buildhost - Create Project
+description: Creates a project in a Buildhost registry.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: false
+    default: 'https://pazer.build'
+  token:
+    description: 'API token with write scope, or omit to use OIDC'
+    required: false
+    default: ''
+  name:
+    description: 'Project name'
+    required: true
+  description:
+    description: 'Project description'
+    required: false
+    default: ''
+  homepage:
+    description: 'Homepage URL'
+    required: false
+    default: ''
+  license:
+    description: 'License (e.g. MIT, Apache-2.0)'
+    required: false
+    default: ''
+  private:
+    description: 'Private project (true/false)'
+    required: false
+    default: 'false'
+  versioning:
+    description: 'Versioning scheme: auto or semver'
+    required: false
+    default: 'auto'
+
+outputs:
+  response:
+    description: 'JSON response from the API'
+    value: ${{ steps.create.outputs.response }}
+  id:
+    description: 'Created project ID'
+    value: ${{ steps.create.outputs.id }}
+
+runs:
+  using: composite
+  steps:
+    - id: create
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            const server: string = "${{ inputs.server }}";
+            let token: string = "${{ inputs.token }}";
+            if (!token) {
+              const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+              const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+              if (url && bearer) {
+                const r = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
+                token = ((await r.json()) as { value: string }).value || '';
+              }
+            }
+
+            const resp = await fetch(`${server}/api/v1/projects`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name:        "${{ inputs.name }}",
+                description: "${{ inputs.description }}",
+                homepage:    "${{ inputs.homepage }}",
+                license:     "${{ inputs.license }}",
+                is_private:  "${{ inputs.private }}" === 'true',
+                versioning:  "${{ inputs.versioning }}",
+              }),
+            });
+            const text = await resp.text();
+            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
+
+            const data = JSON.parse(text);
+            core.info(JSON.stringify(data, null, 2));
+            core.setOutput('response', text);
+            core.setOutput('id', String(data.id));
+          })();
