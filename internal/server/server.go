@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/admin"
@@ -12,7 +13,10 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
-var healthDB *db.DB
+var (
+	healthzOnce sync.Once
+	healthDB    *db.DB
+)
 
 type Server struct {
 	cfg config.Config
@@ -22,25 +26,6 @@ type Server struct {
 func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 	auth.Init(database, store, cfg.BaseURL, cfg.DataDir, cfg.Domain, cfg.ServiceURLs, cfg.OIDCIssuers, cfg.OIDCOrgs, cfg.OIDCEvents, cfg.SiteFetchDomains)
 	healthDB = database
-
-	mux := auth.Mux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		if err := healthDB.PingContext(r.Context()); err != nil {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte("database unreachable"))
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
-	})
-	mux.HandleFunc("GET /ready-to-update", func(w http.ResponseWriter, _ *http.Request) {
-		if admin.InflightWrites() > 0 {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
-
 	s := &Server{cfg: cfg}
 	s.srv = &http.Server{
 		Addr:              s.cfg.ListenAddr,
@@ -63,7 +48,26 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func (s *Server) Handler() http.Handler {
-	var h http.Handler = auth.Mux()
+	mux := auth.Mux()
+	healthzOnce.Do(func() {
+		mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+			if err := healthDB.PingContext(r.Context()); err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				w.Write([]byte("database unreachable"))
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("ok"))
+		})
+		mux.HandleFunc("GET /ready-to-update", func(w http.ResponseWriter, _ *http.Request) {
+			if admin.InflightWrites() > 0 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		})
+	})
+	var h http.Handler = mux
 	h = auth.GetMiddleware().Authenticate(h)
 	h = admin.TrackInflight(h)
 	h = securityHeaders(h)

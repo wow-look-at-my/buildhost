@@ -77,7 +77,6 @@ func Load() Config {
 	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
 		c.OTELEndpoint = v
 	}
-<<<<<<< HEAD
 	if v := os.Getenv("BUILDHOST_DOMAIN"); v != "" {
 		c.Domain = v
 	}
@@ -86,13 +85,13 @@ func Load() Config {
 		envKey := "BUILDHOST_" + strings.ToUpper(svc) + "_URL"
 		if v := os.Getenv(envKey); v != "" {
 			c.ServiceURLs[svc] = v
-=======
+		}
+	}
 	if v := os.Getenv("BUILDHOST_SITE_FETCH_DOMAINS"); v != "" {
 		for _, d := range strings.Split(v, ",") {
 			if d = strings.TrimSpace(d); d != "" {
 				c.SiteFetchDomains = append(c.SiteFetchDomains, d)
 			}
->>>>>>> 58a52bf902b3ef2bcb2522afb3b76b4031a29b22
 		}
 	}
 	return c

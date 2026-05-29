@@ -10,35 +10,14 @@ import (
 )
 
 var (
-<<<<<<< HEAD
-	mux         = http.NewServeMux()
-	mw          *Middleware
-	readyFuncs  []func()
-	sharedDB    *db.DB
-	sharedStore storage.Storage
-	sharedBase  string
-	sharedData  string
-	serviceURLs map[string]*url.URL
-)
-
-func Mux() *http.ServeMux       { return mux }
-func DB() *db.DB                { return sharedDB }
-func Store() storage.Storage    { return sharedStore }
-func BaseURL() string           { return sharedBase }
-func DataDir() string           { return sharedData }
-func GetMiddleware() *Middleware { return mw }
-
-func ServiceURL(name string) *url.URL { return serviceURLs[name] }
-func StaticURL() *url.URL             { return serviceURLs["static"] }
-func DLBaseURL() *url.URL             { return serviceURLs["dl"] }
-=======
-	mux              = http.NewServeMux()
-	mw               *Middleware
-	readyFuncs       []func()
-	sharedDB         *db.DB
-	sharedStore      storage.Storage
-	sharedBase       string
-	sharedData       string
+	mux                = http.NewServeMux()
+	mw                 *Middleware
+	readyFuncs         []func()
+	sharedDB           *db.DB
+	sharedStore        storage.Storage
+	sharedBase         string
+	sharedData         string
+	serviceURLs        map[string]*url.URL
 	sharedFetchDomains []string
 )
 
@@ -47,9 +26,12 @@ func DB() *db.DB                 { return sharedDB }
 func Store() storage.Storage     { return sharedStore }
 func BaseURL() string            { return sharedBase }
 func DataDir() string            { return sharedData }
-func GetMiddleware() *Middleware  { return mw }
+func GetMiddleware() *Middleware { return mw }
 func SiteFetchDomains() []string { return sharedFetchDomains }
->>>>>>> 58a52bf902b3ef2bcb2522afb3b76b4031a29b22
+
+func ServiceURL(name string) *url.URL { return serviceURLs[name] }
+func StaticURL() *url.URL             { return serviceURLs["static"] }
+func DLBaseURL() *url.URL             { return serviceURLs["dl"] }
 
 func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
@@ -61,7 +43,7 @@ func Init(database *db.DB, store storage.Storage, baseURL, dataDir, domain strin
 	sharedStore = store
 	sharedBase = baseURL
 	sharedData = dataDir
-<<<<<<< HEAD
+	sharedFetchDomains = siteFetchDomains
 
 	u, err := url.Parse(baseURL)
 	if err != nil {
@@ -82,9 +64,6 @@ func Init(database *db.DB, store storage.Storage, baseURL, dataDir, domain strin
 		}
 	}
 
-=======
-	sharedFetchDomains = siteFetchDomains
->>>>>>> 58a52bf902b3ef2bcb2522afb3b76b4031a29b22
 	mw = &Middleware{DB: database, Verifier: NewOIDCVerifier(OIDCConfig{
 		BaseURL:        baseURL,
 		TrustedIssuers: trustedIssuers,
