@@ -30,6 +30,7 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	require.NoError(t, err)
 
 	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, "http://localhost:8080", t.TempDir())}
+	h.uploads = newUploadStore(filepath.Join(t.TempDir(), "oci-uploads"), 10<<30)
 	return h, d, store
 }
 
@@ -153,11 +154,22 @@ func TestParseRoute(t *testing.T) {
 			path: "/v2/foo/manifests/blobs/sha256:abc",
 			want: route{project: "foo/manifests", action: "blobs", reference: "sha256:abc"},
 		},
+		{
+			name: "blob upload start (no uuid)",
+			path: "/v2/myapp/blobs/uploads/",
+			want: route{project: "myapp", action: "uploads"},
+		},
+		{
+			name: "blob upload chunk by uuid, multi-segment name",
+			path: "/v2/library/foo/blobs/uploads/upload-123",
+			want: route{project: "library/foo", action: "uploads", reference: "upload-123"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", tt.path, nil)
-			got := parseRoute(req).(route)
+			// parseOCIPath is the pure path parser; parseRoute just trims the
+			// /v2/ prefix and stamps the HTTP method onto the result.
+			got := parseOCIPath(strings.TrimPrefix(tt.path, "/v2/"))
 			assert.Equal(t, tt.want, got)
 		})
 	}

@@ -178,6 +178,31 @@ func TestServe_RawFormat_Success(t *testing.T) {
 	assert.Equal(t, "public, max-age=31536000, immutable", rec.Header().Get("Cache-Control"))
 }
 
+func TestServe_DockerArtifact_NotServed(t *testing.T) {
+	h, d, store := setupIntegration(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1", VersionNum: 1}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, strings.NewReader("oci-manifest-json"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindDocker, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	// A docker image is OCI-only; /static must not serve it as a raw download.
+	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=ollama&os=linux&v=1", nil)
+	req = withProject(req, proj)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
 func TestServe_ETag_NotModified(t *testing.T) {
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()

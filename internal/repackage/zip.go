@@ -15,7 +15,7 @@ type Zip struct{}
 
 func (z *Zip) Format() Format { return FormatZip }
 
-func (z *Zip) Applicable(_ db.Artifact) bool { return true }
+func (z *Zip) Applicable(a db.Artifact) bool { return !a.Kind.ServedViaDockerOnly() }
 
 func (z *Zip) Repackage(_ context.Context, input Input) (*Output, error) {
 	var buf bytes.Buffer

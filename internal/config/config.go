@@ -2,8 +2,57 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 )
+
+const (
+	// defaultMaxUploadSize caps a single REST artifact upload (PUT .../artifacts).
+	// It is a disk-fill guard, not a memory limit -- uploads stream to disk.
+	defaultMaxUploadSize int64 = 2 << 30 // 2 GiB
+	// defaultMaxBlobSize caps a single OCI blob (image layer) pushed via the
+	// docker registry endpoint. Layers are streamed, so this is also just a
+	// disk-fill guard; it is far larger than the REST cap because container
+	// image layers (e.g. CUDA runtimes) routinely exceed 2 GiB.
+	defaultMaxBlobSize int64 = 10 << 30 // 10 GiB
+)
+
+// MaxUploadSize is the cap for a single REST artifact upload, overridable via
+// BUILDHOST_MAX_UPLOAD_SIZE (plain bytes, or with a K/M/G suffix).
+func MaxUploadSize() int64 { return envBytes("BUILDHOST_MAX_UPLOAD_SIZE", defaultMaxUploadSize) }
+
+// MaxBlobSize is the cap for a single OCI blob pushed to the registry endpoint,
+// overridable via BUILDHOST_MAX_BLOB_SIZE (plain bytes, or with a K/M/G suffix).
+func MaxBlobSize() int64 { return envBytes("BUILDHOST_MAX_BLOB_SIZE", defaultMaxBlobSize) }
+
+// envBytes parses a byte size from an env var, accepting a plain integer or an
+// integer with a single-letter binary suffix (K, M, G, T). Invalid values fall
+// back to def.
+func envBytes(name string, def int64) int64 {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return def
+	}
+	mult := int64(1)
+	switch v[len(v)-1] {
+	case 'k', 'K':
+		mult = 1 << 10
+	case 'm', 'M':
+		mult = 1 << 20
+	case 'g', 'G':
+		mult = 1 << 30
+	case 't', 'T':
+		mult = 1 << 40
+	}
+	if mult != 1 {
+		v = strings.TrimSpace(v[:len(v)-1])
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n * mult
+}
 
 type Config struct {
 	ListenAddr       string

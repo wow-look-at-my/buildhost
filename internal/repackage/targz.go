@@ -16,7 +16,7 @@ type TarGZ struct{}
 
 func (t *TarGZ) Format() Format { return FormatTarGZ }
 
-func (t *TarGZ) Applicable(_ db.Artifact) bool { return true }
+func (t *TarGZ) Applicable(a db.Artifact) bool { return !a.Kind.ServedViaDockerOnly() }
 
 func (t *TarGZ) Repackage(_ context.Context, input Input) (*Output, error) {
 	var buf bytes.Buffer

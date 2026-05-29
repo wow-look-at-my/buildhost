@@ -116,6 +116,12 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
+		// Docker images are served only via the OCI endpoint; they have no bare
+		// binary to download or repackage.
+		if artifact.Kind.ServedViaDockerOnly() {
+			http.NotFound(w, r)
+			return
+		}
 		sctx.Artifact = *artifact
 	}
 
