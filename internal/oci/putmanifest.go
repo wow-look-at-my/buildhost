@@ -128,6 +128,18 @@ func (h *Handler) PutManifest(w http.ResponseWriter, r *http.Request, reference 
 		return
 	}
 
+	// If this exact image (same manifest digest) is already tagged, point the
+	// new tag at the existing release rather than creating a duplicate. This is
+	// the common ":sha" + ":latest" double-tag of one build.
+	if relID := h.releaseForDigest(ctx, project.ID, digest); relID != 0 {
+		if err := h.DB.SetOCITag(ctx, project.ID, reference, digest, relID); err != nil {
+			ociError(w, http.StatusInternalServerError, "UNKNOWN", "failed to set tag")
+			return
+		}
+		writeManifestCreated(w, project.Name, digest)
+		return
+	}
+
 	release, err := h.createDockerRelease(ctx, project.ID, m.Annotations["org.opencontainers.image.revision"], m.Annotations["org.opencontainers.image.source"])
 	if err != nil {
 		ociError(w, http.StatusInternalServerError, "UNKNOWN", "failed to create release")
@@ -161,6 +173,21 @@ func (h *Handler) PutManifest(w http.ResponseWriter, r *http.Request, reference 
 		return
 	}
 	writeManifestCreated(w, project.Name, digest)
+}
+
+// releaseForDigest returns the release a manifest digest is already tagged
+// under in this project, or 0 if none. Tag counts are small, so a scan is fine.
+func (h *Handler) releaseForDigest(ctx context.Context, projectID int64, digest string) int64 {
+	tags, err := h.DB.ListOCITags(ctx, projectID)
+	if err != nil {
+		return 0
+	}
+	for _, t := range tags {
+		if t.ManifestDigest == digest {
+			return t.ReleaseID
+		}
+	}
+	return 0
 }
 
 // createDockerRelease auto-versions a release, retrying on the rare version_num

@@ -266,6 +266,29 @@ func TestPush_RepushTag(t *testing.T) {
 	assert.Equal(t, http.StatusOK, got.Code, "old digest remains pullable")
 }
 
+func TestPush_ShaAndLatestShareRelease(t *testing.T) {
+	h, d, _ := setupTest(t)
+	ctx := t.Context()
+	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	m, md := pushImage(t, h, proj, "linux", "amd64")
+	require.Equal(t, http.StatusCreated, putManifest(t, h, proj, "abc123sha", mediaImageManifest, m).Code)
+	require.Equal(t, http.StatusCreated, putManifest(t, h, proj, "latest", mediaImageManifest, m).Code)
+
+	shaTag, err := d.GetOCITag(ctx, proj.ID, "abc123sha")
+	require.NoError(t, err)
+	latestTag, err := d.GetOCITag(ctx, proj.ID, "latest")
+	require.NoError(t, err)
+	assert.Equal(t, md, shaTag.ManifestDigest)
+	assert.Equal(t, md, latestTag.ManifestDigest)
+	assert.Equal(t, shaTag.ReleaseID, latestTag.ReleaseID)
+
+	rels, err := d.ListReleases(ctx, proj.ID)
+	require.NoError(t, err)
+	assert.Len(t, rels, 1, "sha + latest of the same image should share one release")
+}
+
 func TestPush_TagsListIncludesDockerTags(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := t.Context()
