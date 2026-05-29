@@ -170,6 +170,8 @@ sqlc generate
 `go-toolchain` runs all tests. Integration tests use httptest.NewServer with a temp SQLite DB.
 OIDC tests generate ephemeral RSA keys and run a local JWKS server.
 
+`internal/server/llms_endpoints_test.go` guards the `/llms.txt` document against drift: it parses the *served* document and asserts every URL it references resolves to a registered route, then exercises the documented flows (downloads, APT/Brew/npm/OCI, the `/static` latest-rejection) end to end against a seeded server. Editing `internal/llms/template.md` to reference a nonexistent endpoint fails CI.
+
 ## Docker image
 
 The image is built from `gcr.io/distroless/static-debian12:nonroot`. It runs as UID 65532 (nonroot) with no shell, no package manager, and no writable paths except the data volume. The server handles SIGTERM for graceful shutdown.
