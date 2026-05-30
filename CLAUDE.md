@@ -22,6 +22,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - `internal/npm/` - npm registry endpoint. Tarball URLs point to `/static`. Self-registering via init().
 - `internal/oci/` - OCI distribution endpoint. Self-registering via init().
 - `internal/sites/` - Static site hosting endpoint. Upload tar.gz archives, serve files per branch. Self-registering via init().
+- `internal/llms/` - Public `/llms.txt` endpoint (https://llmstxt.org). Serves a plain-text guide to buildhost for LLMs/agents, rendered once from an embedded `template.md` with the configured base URL substituted in. Public (registered via `HandleRaw`, no auth). Self-registering via init().
 - `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler), RouteInfo interface
 - `internal/db/` - SQLite database layer (modernc.org/sqlite, no CGo), OIDC policy storage. Types (Project, Release, Artifact, APIToken, OIDCPolicy) and validation functions live here. Uses sqlc for query generation from `internal/db/queries/*.sql` with schema in `internal/db/schema.sql`.
 - `internal/db/queries/` - SQL query files for sqlc code generation
@@ -168,6 +169,8 @@ sqlc generate
 
 `go-toolchain` runs all tests. Integration tests use httptest.NewServer with a temp SQLite DB.
 OIDC tests generate ephemeral RSA keys and run a local JWKS server.
+
+`internal/server/llms_endpoints_test.go` guards the `/llms.txt` document against drift: it parses the *served* document and asserts every URL it references resolves to a registered route, then exercises the documented flows (downloads, APT/Brew/npm/OCI, the `/static` latest-rejection) end to end against a seeded server. Editing `internal/llms/template.md` to reference a nonexistent endpoint fails CI.
 
 ## Docker image
 

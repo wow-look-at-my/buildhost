@@ -24,6 +24,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	_ "github.com/wow-look-at-my/buildhost/internal/dl"
+	_ "github.com/wow-look-at-my/buildhost/internal/llms"
 	_ "github.com/wow-look-at-my/buildhost/internal/npm"
 	_ "github.com/wow-look-at-my/buildhost/internal/oci"
 	"github.com/wow-look-at-my/buildhost/internal/server"
