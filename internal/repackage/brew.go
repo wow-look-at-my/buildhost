@@ -25,7 +25,7 @@ type Brew struct{}
 func (b *Brew) Format() Format { return FormatBrew }
 
 func (b *Brew) Applicable(a db.Artifact) bool {
-	if a.Kind == db.KindAssets {
+	if a.Kind == db.KindAssets || a.Kind.ServedViaDockerOnly() {
 		return false
 	}
 	return a.OS == db.OSLinux || a.OS == db.OSDarwin

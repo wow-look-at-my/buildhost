@@ -21,6 +21,9 @@ SELECT EXISTS(
     JOIN artifacts a ON pa.artifact_id = a.id
     JOIN releases r ON a.release_id = r.id
     WHERE r.project_id = ?1 AND pa.storage_key = ?2
+    UNION ALL
+    SELECT 1 FROM oci_blob_links obl
+    WHERE obl.project_id = ?1 AND obl.storage_key = ?2
 ) AS blob_exists
 `
 

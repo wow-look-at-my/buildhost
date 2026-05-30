@@ -26,6 +26,14 @@ func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, referenc
 		return
 	}
 
+	// Real docker images pushed to the registry: the tag points at a stored
+	// manifest or image index, which is served verbatim.
+	if tag, err := h.DB.GetOCITag(r.Context(), project.ID, reference); err == nil {
+		h.serveManifestByDigest(w, r, project, tag.ManifestDigest)
+		return
+	}
+
+	// Binary projects: synthesize a minimal OCI image from the uploaded binary.
 	release, err := h.resolveTag(r.Context(), project, reference)
 	if err != nil {
 		ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest unknown")
@@ -185,7 +193,7 @@ func (h *Handler) serveManifestByDigest(w http.ResponseWriter, r *http.Request, 
 	}
 	defer rc.Close()
 
-	w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+	w.Header().Set("Content-Type", h.manifestContentType(r.Context(), project, key))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
 	w.Header().Set("Docker-Content-Digest", digest)
 
@@ -229,15 +237,43 @@ func (h *Handler) serveBlob(w http.ResponseWriter, r *http.Request, digest strin
 	}
 }
 
+// manifestContentType returns the media type a stored manifest/index should be
+// served with, recovered from its blob-link record (so an image index is not
+// mislabelled as an image manifest). Falls back to the OCI image manifest type.
+func (h *Handler) manifestContentType(ctx context.Context, project *db.Project, key string) string {
+	if link, err := h.DB.GetOCIBlobLink(ctx, project.ID, key); err == nil && link.MediaType != "" {
+		return link.MediaType
+	}
+	return "application/vnd.oci.image.manifest.v1+json"
+}
+
 func (h *Handler) serveTags(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
+
+	seen := map[string]bool{}
+	tags := []string{}
+	add := func(t string) {
+		if t != "" && !seen[t] {
+			seen[t] = true
+			tags = append(tags, t)
+		}
+	}
+
+	// Real docker tags pushed via the registry push API.
+	if ociTags, err := h.DB.ListOCITags(r.Context(), project.ID); err == nil {
+		for _, t := range ociTags {
+			add(t.Tag)
+		}
+	}
+
+	// Binary projects: each published release with a binary artifact is a
+	// synthesized image tagged by version, plus a "latest" alias.
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)
 	if err != nil {
 		ociError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 		return
 	}
-
-	tags := []string{}
+	hasBinary := false
 	for _, rel := range releases {
 		if !rel.Published {
 			continue
@@ -248,13 +284,14 @@ func (h *Handler) serveTags(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, a := range artifacts {
 			if a.Kind == db.KindBinary {
-				tags = append(tags, rel.Version)
+				add(rel.Version)
+				hasBinary = true
 				break
 			}
 		}
 	}
-	if len(tags) > 0 {
-		tags = append(tags, "latest")
+	if hasBinary {
+		add("latest")
 	}
 
 	resp := map[string]any{
