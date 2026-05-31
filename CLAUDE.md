@@ -23,7 +23,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - `internal/oci/` - OCI distribution endpoint (read + write). Self-registering via init(). GET/HEAD pulls; POST/PATCH/PUT pushes (`docker push`). Pull side synthesizes a minimal image from a binary artifact OR serves a real pushed image. Push side (`push.go`, `upload.go`, `putmanifest.go`) accepts blob uploads (monolithic + chunked, streamed to `DataDir/tmp/oci-uploads`) and manifest/index PUTs, recording `kind=docker` artifacts. Route `Access()` is method-aware (write for push verbs).
 - `internal/sites/` - Static site hosting endpoint. Upload tar.gz archives, serve files per branch. Self-registering via init().
 - `internal/llms/` - Public `/llms.txt` endpoint (https://llmstxt.org). Serves a plain-text guide to buildhost for LLMs/agents, rendered once from an embedded `template.md` with the configured base URL substituted in. Public (registered via `HandleRaw`, no auth). Self-registering via init().
-- `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler), RouteInfo interface
+- `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler) backed by `github.com/wow-look-at-my/router`, RouteInfo interface
 - `internal/db/` - SQLite database layer (modernc.org/sqlite, no CGo), OIDC policy storage. Types (Project, Release, Artifact, APIToken, OIDCPolicy) and validation functions live here. Uses sqlc for query generation from `internal/db/queries/*.sql` with schema in `internal/db/schema.sql`.
 - `internal/db/queries/` - SQL query files for sqlc code generation
 - `internal/db/schema.sql` - SQLite schema used by sqlc
@@ -48,7 +48,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - Private projects require auth on all endpoints including format-specific ones (APT, Brew, NPM, OCI)
 - Project auth enforced once in centralized requireProject middleware — handlers never check auth
 - Each backend defines a RouteInfo implementation (private route struct) for full URL parsing
-- Backends self-register routes via init() on auth.Mux(); adding a backend = adding files, no existing files modified
+- Backends self-register routes via init() on auth.Router(); adding a backend = adding files, no existing files modified
 - Tokens are project-scoped or global; project-scoped tokens cannot escalate privileges
 - Token expiry is enforced at lookup time
 - Default token scope is "read" (least privilege)
@@ -62,6 +62,12 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 ```bash
 buildhost bootstrap          # Creates initial admin token (only works when no tokens exist)
 buildhost bootstrap --name admin-token
+```
+
+## Listing routes
+
+```bash
+buildhost routes   # prints all registered HTTP routes, sorted
 ```
 
 ## Running

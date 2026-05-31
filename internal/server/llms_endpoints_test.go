@@ -2,7 +2,6 @@ package server_test
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
@@ -10,6 +9,24 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/testify/require"
 )
+
+func routePatternMatches(pattern, path string) bool {
+	patSegs := strings.Split(strings.TrimRight(pattern, "/"), "/")
+	pathSegs := strings.Split(strings.TrimRight(path, "/"), "/")
+	for i, ps := range patSegs {
+		if strings.HasPrefix(ps, "{") {
+			if strings.HasSuffix(ps, "...}") {
+				return true
+			}
+			continue
+		}
+		if i >= len(pathSegs) || ps != pathSegs[i] {
+			return false
+		}
+	}
+	return len(patSegs) == len(pathSegs) ||
+		(strings.HasSuffix(pattern, "/") && len(pathSegs) >= len(patSegs))
+}
 
 // These tests guard against documentation drift in the /llms.txt endpoint.
 // The document advertises a hand-written list of buildhost URLs; without a
@@ -52,11 +69,11 @@ func TestLLMsTxt_DocumentedRoutesAreRegistered(t *testing.T) {
 	paths := documentedPaths(body, "http://localhost")
 	require.NotEmpty(t, paths, "expected to extract documented endpoints from /llms.txt")
 
-	mux := auth.Mux()
+	routes := auth.Router().Routes()
 	for _, p := range paths {
 		registered := false
-		for _, m := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete} {
-			if _, pattern := mux.Handler(httptest.NewRequest(m, p, nil)); pattern != "" {
+		for _, route := range routes {
+			if routePatternMatches(route.Pattern, p) {
 				registered = true
 				break
 			}
