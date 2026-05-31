@@ -199,6 +199,33 @@ func TestServePackages_Success(t *testing.T) {
 	assert.Contains(t, body, "Architecture: amd64")
 }
 
+func TestServePackages_DockerArtifact_Empty(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1", VersionNum: 1}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, strings.NewReader("oci-manifest"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindDocker, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	// A docker-only release exposes no apt package.
+	req := httptest.NewRequest("GET", "/ollama/dists/stable/main/binary-amd64/Packages", nil)
+	req = withRoute(req, proj, route{project: "ollama", subPath: "dists/stable/main/binary-amd64/Packages"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Empty(t, rec.Body.String())
+}
+
 func TestServePackages_NoArtifactForArch(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()

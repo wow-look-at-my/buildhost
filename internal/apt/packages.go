@@ -48,6 +48,12 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	// Docker images aren't debs: a docker-only release exposes no apt package.
+	if artifact.Kind.ServedViaDockerOnly() {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte(""))
+		return
+	}
 
 	version := strings.TrimPrefix(release.Version, "v")
 	if version == "" {

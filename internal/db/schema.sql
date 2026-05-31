@@ -97,3 +97,24 @@ CREATE TABLE sites (
     updated_at  DATETIME NOT NULL DEFAULT (datetime('now')),
     UNIQUE(project_id, branch)
 );
+
+CREATE TABLE oci_blob_links (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id  INTEGER NOT NULL REFERENCES projects(id),
+    storage_key TEXT NOT NULL,
+    media_type  TEXT NOT NULL DEFAULT '',
+    size        INTEGER NOT NULL DEFAULT 0,
+    is_manifest INTEGER NOT NULL DEFAULT 0,
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(project_id, storage_key)
+);
+
+CREATE TABLE oci_tags (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id      INTEGER NOT NULL REFERENCES projects(id),
+    tag             TEXT NOT NULL,
+    manifest_digest TEXT NOT NULL,
+    release_id      INTEGER NOT NULL REFERENCES releases(id),
+    updated_at      DATETIME NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(project_id, tag)
+);
