@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,8 +29,13 @@ func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, referenc
 
 	// Real docker images pushed to the registry: the tag points at a stored
 	// manifest or image index, which is served verbatim.
-	if tag, err := h.DB.GetOCITag(r.Context(), project.ID, reference); err == nil {
+	tag, err := h.DB.GetOCITag(r.Context(), project.ID, reference)
+	if err == nil {
 		h.serveManifestByDigest(w, r, project, tag.ManifestDigest)
+		return
+	}
+	if !errors.Is(err, db.ErrNotFound) {
+		ociError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 		return
 	}
 

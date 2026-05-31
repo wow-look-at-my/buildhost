@@ -19,7 +19,9 @@ runs:
           exit 1
         fi
         server_url='${{ inputs.server }}'
+        # Registry host is the URL authority only (strip scheme and any path).
         registry="${server_url#*://}"
+        registry="${registry%%/*}"
         # Mint a GHA OIDC token with the buildhost URL as the audience and use it
         # as the docker password. buildhost verifies the JWT and auto-provisions
         # the project on first push.

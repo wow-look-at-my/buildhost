@@ -10,11 +10,10 @@ CREATE TABLE IF NOT EXISTS oci_blob_links (
     size        INTEGER NOT NULL DEFAULT 0,
     is_manifest INTEGER NOT NULL DEFAULT 0,
     created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    -- UNIQUE provides the implicit (project_id, storage_key) index SQLite uses
+    -- for BlobBelongsToProject lookups; no separate index is needed.
     UNIQUE(project_id, storage_key)
 );
-
-CREATE INDEX IF NOT EXISTS idx_oci_blob_links_project_key
-    ON oci_blob_links(project_id, storage_key);
 
 -- oci_tags maps a pushed image tag (a git sha, "latest", a semver, ...) to the
 -- manifest digest and release it currently points at. This decouples the mutable

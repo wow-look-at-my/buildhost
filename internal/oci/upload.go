@@ -24,6 +24,7 @@ var errBlobTooLarge = errors.New("blob exceeds maximum size")
 // digest can be verified against the client-supplied digest.
 type uploadSession struct {
 	uuid    string
+	mu      sync.Mutex // serializes appendChunk/finalize for one session
 	file    *os.File
 	hasher  hash.Hash
 	written int64
@@ -86,6 +87,8 @@ func (s *uploadStore) remove(sess *uploadSession) {
 
 // appendChunk streams r into the session, enforcing the per-blob cap.
 func (s *uploadStore) appendChunk(sess *uploadSession, r io.Reader) (int64, error) {
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
 	capped := &cappedReader{r: r, remaining: s.maxBlob - sess.written}
 	n, err := io.Copy(io.MultiWriter(sess.file, sess.hasher), capped)
 	sess.written += n
@@ -98,6 +101,8 @@ func (s *uploadStore) appendChunk(sess *uploadSession, r io.Reader) (int64, erro
 // finalize verifies the accumulated digest against expectedDigest, then stores
 // the blob in content-addressed storage (whose key equals the digest hex).
 func (s *uploadStore) finalize(ctx context.Context, store storage.Storage, sess *uploadSession, expectedDigest string) (digest string, size int64, err error) {
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
 	defer s.remove(sess)
 
 	gotDigest := "sha256:" + hex.EncodeToString(sess.hasher.Sum(nil))

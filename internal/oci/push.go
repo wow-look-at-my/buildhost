@@ -74,9 +74,15 @@ func (h *Handler) PatchBlobUpload(w http.ResponseWriter, r *http.Request, uuid s
 		h.uploadError(w, err)
 		return
 	}
+	// Range is the inclusive byte range received so far. Clamp the end to >= 0 so
+	// an empty/zero-byte chunk reports "0-0" rather than an invalid "0--1".
+	end := sess.written - 1
+	if end < 0 {
+		end = 0
+	}
 	w.Header().Set("Location", uploadPath(project.Name, sess.uuid))
 	w.Header().Set("Docker-Upload-UUID", sess.uuid)
-	w.Header().Set("Range", fmt.Sprintf("0-%d", sess.written-1))
+	w.Header().Set("Range", fmt.Sprintf("0-%d", end))
 	w.WriteHeader(http.StatusAccepted)
 }
 

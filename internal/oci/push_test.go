@@ -404,3 +404,85 @@ func TestPush_ManifestMissingBlob(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Contains(t, rec.Body.String(), "MANIFEST_BLOB_UNKNOWN")
 }
+
+func TestPush_ManifestDigestMismatch(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
+	require.NoError(t, d.CreateProject(t.Context(), proj))
+
+	manifestBytes, _ := pushImage(t, h, proj, "linux", "amd64")
+	// Push the manifest by a digest that does not match its bytes.
+	wrong := digestOf([]byte("not-the-manifest"))
+	rec := putManifest(t, h, proj, wrong, mediaImageManifest, manifestBytes)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "DIGEST_INVALID")
+}
+
+func TestPush_ManifestContentTypeParams(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
+	require.NoError(t, d.CreateProject(t.Context(), proj))
+
+	manifestBytes, _ := pushImage(t, h, proj, "linux", "amd64")
+	// A Content-Type with parameters must be stored/served stripped to the bare
+	// media type, or strict OCI clients reject the manifest.
+	rec := putManifest(t, h, proj, "v1", mediaImageManifest+"; charset=utf-8", manifestBytes)
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	got := getManifest(t, h, proj, "v1")
+	require.Equal(t, http.StatusOK, got.Code)
+	assert.Equal(t, mediaImageManifest, got.Header().Get("Content-Type"))
+}
+
+func TestPush_EmptyPatchRange(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
+	require.NoError(t, d.CreateProject(t.Context(), proj))
+
+	req := httptest.NewRequest("POST", "/v2/ollama/blobs/uploads/", nil)
+	req = withRoute(req, proj, route{project: proj.Name, action: "uploads"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	uuid := rec.Header().Get("Docker-Upload-UUID")
+	require.NotEmpty(t, uuid)
+
+	// A zero-byte PATCH must report a valid range ("0-0"), never "0--1".
+	req = httptest.NewRequest("PATCH", "/v2/ollama/blobs/uploads/"+uuid, nil)
+	req = withRoute(req, proj, route{project: proj.Name, action: "uploads", reference: uuid})
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	assert.Equal(t, "0-0", rec.Header().Get("Range"))
+}
+
+func TestPush_ManifestDBError(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
+	require.NoError(t, d.CreateProject(t.Context(), proj))
+
+	manifestBytes, _ := pushImage(t, h, proj, "linux", "amd64")
+	d.Close() // break the DB before the manifest is recorded
+
+	rec := putManifest(t, h, proj, "v1", mediaImageManifest, manifestBytes)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+func TestServeManifest_TagDBError(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
+	require.NoError(t, d.CreateProject(t.Context(), proj))
+	d.Close() // a tag lookup now fails with a real error, not "not found"
+
+	got := getManifest(t, h, proj, "sometag")
+	assert.Equal(t, http.StatusInternalServerError, got.Code)
+}
+
+func TestLinkReferencedBlob_DBError(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
+	require.NoError(t, d.CreateProject(t.Context(), proj))
+	d.Close()
+
+	_, err := h.linkReferencedBlob(t.Context(), proj.ID, descriptor{Digest: digestOf([]byte("x"))}, false)
+	assert.Error(t, err)
+}

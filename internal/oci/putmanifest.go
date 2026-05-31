@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -62,6 +63,12 @@ func (h *Handler) PutManifest(w http.ResponseWriter, r *http.Request, reference 
 	}
 	digest := "sha256:" + hex.EncodeToString(sha256Sum(body))
 
+	// Pushing a manifest by digest must match the body's actual digest.
+	if validDigest.MatchString(reference) && reference != digest {
+		ociError(w, http.StatusBadRequest, "DIGEST_INVALID", "manifest digest does not match reference")
+		return
+	}
+
 	var m parsedManifest
 	if err := json.Unmarshal(body, &m); err != nil {
 		ociError(w, http.StatusBadRequest, "MANIFEST_INVALID", "manifest is not valid JSON")
@@ -70,6 +77,11 @@ func (h *Handler) PutManifest(w http.ResponseWriter, r *http.Request, reference 
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = m.MediaType
+	}
+	// Drop any media-type parameters (e.g. "; charset=utf-8"); strict OCI clients
+	// reject manifests whose stored/served media type carries parameters.
+	if i := strings.IndexByte(contentType, ';'); i >= 0 {
+		contentType = strings.TrimSpace(contentType[:i])
 	}
 	index := len(m.Manifests) > 0 || isIndexMediaType(contentType)
 
@@ -84,34 +96,31 @@ func (h *Handler) PutManifest(w http.ResponseWriter, r *http.Request, reference 
 		return
 	}
 
-	// Verify referenced blobs exist (already pushed) and link them.
+	// Verify every referenced blob/manifest was already pushed and link it to the
+	// project so the pull path (gated on BlobBelongsToProject) will serve it. An
+	// index references child manifests; an image manifest references config+layers.
+	var refs []descriptor
 	if index {
-		for _, child := range m.Manifests {
-			if !validDigest.MatchString(child.Digest) {
-				continue
-			}
-			ok, _ := h.DB.BlobBelongsToProject(ctx, project.ID, child.Digest[7:])
-			if !ok {
-				ociError(w, http.StatusBadRequest, "MANIFEST_BLOB_UNKNOWN", "referenced manifest not found: "+child.Digest)
-				return
-			}
-			h.DB.LinkOCIBlob(ctx, project.ID, child.Digest[7:], child.MediaType, child.Size, true)
-		}
+		refs = m.Manifests
 	} else {
-		refs := append([]descriptor{}, m.Layers...)
+		refs = append(refs, m.Layers...)
 		if m.Config != nil {
 			refs = append(refs, *m.Config)
 		}
-		for _, ref := range refs {
-			if !validDigest.MatchString(ref.Digest) {
-				continue
+	}
+	for _, ref := range refs {
+		known, err := h.linkReferencedBlob(ctx, project.ID, ref, index)
+		if err != nil {
+			ociError(w, http.StatusInternalServerError, "UNKNOWN", "failed to record referenced blob")
+			return
+		}
+		if !known {
+			noun := "blob"
+			if index {
+				noun = "manifest"
 			}
-			ok, _ := h.DB.BlobBelongsToProject(ctx, project.ID, ref.Digest[7:])
-			if !ok {
-				ociError(w, http.StatusBadRequest, "MANIFEST_BLOB_UNKNOWN", "referenced blob not found: "+ref.Digest)
-				return
-			}
-			h.DB.LinkOCIBlob(ctx, project.ID, ref.Digest[7:], ref.MediaType, ref.Size, false)
+			ociError(w, http.StatusBadRequest, "MANIFEST_BLOB_UNKNOWN", "referenced "+noun+" not found: "+ref.Digest)
+			return
 		}
 	}
 
@@ -173,6 +182,28 @@ func (h *Handler) PutManifest(w http.ResponseWriter, r *http.Request, reference 
 		return
 	}
 	writeManifestCreated(w, project.Name, digest)
+}
+
+// linkReferencedBlob verifies a descriptor's blob/manifest is present in the
+// project and links it so the pull path will serve it. A non-digest reference is
+// skipped (treated as known). It returns (known, error): known=false means the
+// blob was never pushed, while a non-nil error signals a DB failure.
+func (h *Handler) linkReferencedBlob(ctx context.Context, projectID int64, d descriptor, isManifest bool) (bool, error) {
+	if !validDigest.MatchString(d.Digest) {
+		return true, nil
+	}
+	key := d.Digest[7:]
+	ok, err := h.DB.BlobBelongsToProject(ctx, projectID, key)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+	if err := h.DB.LinkOCIBlob(ctx, projectID, key, d.MediaType, d.Size, isManifest); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // releaseForDigest returns the release a manifest digest is already tagged

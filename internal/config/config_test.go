@@ -126,6 +126,7 @@ func TestEnvBytes(t *testing.T) {
 		{"-5", 77, 77},        // non-positive -> default
 		{"0", 77, 77},         // zero -> default
 		{"G", 77, 77},         // suffix only -> default
+		{"99999999999T", 77, 77}, // would overflow int64 -> default
 	}
 	for _, c := range cases {
 		t.Setenv("BUILDHOST_TEST_BYTES", c.in)

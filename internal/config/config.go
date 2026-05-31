@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -50,6 +51,9 @@ func envBytes(name string, def int64) int64 {
 	n, err := strconv.ParseInt(v, 10, 64)
 	if err != nil || n <= 0 {
 		return def
+	}
+	if n > math.MaxInt64/mult {
+		return def // would overflow int64; ignore the bogus value
 	}
 	return n * mult
 }
