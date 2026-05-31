@@ -71,7 +71,7 @@ replace modernc.org/gc/v3 v3.1.2 => gitlab.com/cznic/gc/v3 v3.1.2
 
 replace modernc.org/goabi0 v0.2.0 => gitlab.com/cznic/goabi0 v0.2.0
 
-replace modernc.org/libc v1.72.3 => gitlab.com/cznic/libc v1.72.3
+replace modernc.org/libc v1.72.5 => gitlab.com/cznic/libc v1.72.5
 
 replace modernc.org/mathutil v1.7.1 => gitlab.com/cznic/mathutil v1.7.1
 
