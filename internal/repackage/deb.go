@@ -18,7 +18,7 @@ type Deb struct{}
 func (d *Deb) Format() Format { return FormatDeb }
 
 func (d *Deb) Applicable(a db.Artifact) bool {
-	return a.OS == db.OSLinux
+	return a.OS == db.OSLinux && !a.Kind.ServedViaDockerOnly()
 }
 
 func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {

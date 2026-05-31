@@ -20,7 +20,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - `internal/apt/` - APT repository endpoint. Pool downloads redirect to `/static`. Self-registering via init().
 - `internal/brew/` - Homebrew tap endpoint. Formula download URLs point to `/static`. Self-registering via init().
 - `internal/npm/` - npm registry endpoint. Tarball URLs point to `/static`. Self-registering via init().
-- `internal/oci/` - OCI distribution endpoint. Self-registering via init().
+- `internal/oci/` - OCI distribution endpoint (read + write). Self-registering via init(). GET/HEAD pulls; POST/PATCH/PUT pushes (`docker push`). Pull side synthesizes a minimal image from a binary artifact OR serves a real pushed image. Push side (`push.go`, `upload.go`, `putmanifest.go`) accepts blob uploads (monolithic + chunked, streamed to `DataDir/tmp/oci-uploads`) and manifest/index PUTs, recording `kind=docker` artifacts. Route `Access()` is method-aware (write for push verbs).
 - `internal/sites/` - Static site hosting endpoint. Upload tar.gz archives, serve files per branch. Self-registering via init().
 - `internal/llms/` - Public `/llms.txt` endpoint (https://llmstxt.org). Serves a plain-text guide to buildhost for LLMs/agents, rendered once from an embedded `template.md` with the configured base URL substituted in. Public (registered via `HandleRaw`, no auth). Self-registering via init().
 - `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler), RouteInfo interface
@@ -52,7 +52,8 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - Tokens are project-scoped or global; project-scoped tokens cannot escalate privileges
 - Token expiry is enforced at lookup time
 - Default token scope is "read" (least privilege)
-- Upload size capped at 2 GiB; JSON endpoints capped at 1 MiB
+- Upload size capped at 2 GiB (REST artifact PUT, configurable via `BUILDHOST_MAX_UPLOAD_SIZE`); JSON endpoints capped at 1 MiB. OCI `docker push` uploads each layer as a separate blob with its own cap (`BUILDHOST_MAX_BLOB_SIZE`, default 10 GiB), so multi-GB images are not bound by the REST cap
+- Docker push: a release containing pushed `kind=docker` artifacts is a "docker build" -- served only via the OCI endpoint. `kind=docker` is gated out of apt/brew/npm and the raw `/static` (+ `/dl`) paths. Pushed blobs/manifests are linked to the project in `oci_blob_links` (so the existing `BlobBelongsToProject` pull gate serves them); pushed tags live in `oci_tags` as mutable pointers (`latest` is an alias, digests are immutable, identical re-push is a no-op, a changed image creates a new auto-versioned release and repoints the tag). `docker login` uses Basic auth -> the token system; a GHA OIDC JWT works as the password and auto-provisions the project
 - Storage keys validated as hex SHA-256 to prevent path traversal
 - Static sites: uploaded as tar.gz (`Content-Type: application/gzip`) or zip (`Content-Type: application/zip`). Both formats are stored as raw tar internally and served by scanning tar headers per request. Each branch is an independent deployment (one row in `sites` table). Re-deploying a branch replaces the previous site atomically. Upload size capped at 256 MiB, max 10,000 files per site.
 

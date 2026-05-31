@@ -12,7 +12,25 @@ From a single uploaded binary, buildhost serves:
 - **APT repository** (`.deb` packages with repo metadata)
 - **Homebrew tap** (Ruby formula with computed sha256)
 - **npm registry** (platform-specific npm packages)
-- **OCI/Docker registry** (minimal container images)
+- **OCI/Docker registry** (minimal container images synthesized from the binary)
+
+## Publishing real Docker images
+
+Some projects need to ship a real prebuilt image (custom base image, native
+libraries, entrypoint, exposed ports) rather than a binary wrapped in a minimal
+layer. buildhost is a writable OCI registry, so you can `docker push` directly:
+
+```bash
+docker login builds.example.com -u oidc -p "$TOKEN"   # any username; password is a write-scoped token
+docker buildx build --push -t builds.example.com/myproject:v1.2.3 .
+docker pull builds.example.com/myproject:v1.2.3
+```
+
+A release that contains a pushed image is a **docker build**: it is served only
+through the OCI (`/v2`) endpoint. The apt/brew/npm and raw-download endpoints do
+not apply to it -- it is just a container image. Pushed image layers are
+content-addressed and deduplicated, so unchanged layers are not re-uploaded on
+later pushes. Per-blob size is capped by `BUILDHOST_MAX_BLOB_SIZE` (default 10 GiB).
 
 ## Container image
 
