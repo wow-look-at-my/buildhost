@@ -16,7 +16,7 @@ type TarZST struct{}
 
 func (t *TarZST) Format() Format { return FormatTarZST }
 
-func (t *TarZST) Applicable(_ db.Artifact) bool { return true }
+func (t *TarZST) Applicable(a db.Artifact) bool { return !a.Kind.ServedViaDockerOnly() }
 
 func (t *TarZST) Repackage(_ context.Context, input Input) (*Output, error) {
 	var buf bytes.Buffer

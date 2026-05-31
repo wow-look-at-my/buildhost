@@ -84,7 +84,7 @@ func (h *Handler) collectNpmArtifacts(ctx context.Context, releaseID int64) []np
 	}
 	var infos []npmArtifactInfo
 	for _, a := range artifacts {
-		if a.Kind == db.KindLibrary {
+		if a.Kind == db.KindLibrary || a.Kind.ServedViaDockerOnly() {
 			continue
 		}
 		infos = append(infos, npmArtifactInfo{

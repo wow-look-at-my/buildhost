@@ -74,6 +74,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, a := range artifacts {
+		if a.Kind.ServedViaDockerOnly() {
+			continue
+		}
 		out, err := h.Gen.Generate(r.Context(), repackage.FormatBrew, *project, *release, a)
 		if err != nil {
 			continue

@@ -38,4 +38,7 @@ SELECT EXISTS(
     JOIN artifacts a ON pa.artifact_id = a.id
     JOIN releases r ON a.release_id = r.id
     WHERE r.project_id = sqlc.arg(project_id) AND pa.storage_key = sqlc.arg(storage_key)
+    UNION ALL
+    SELECT 1 FROM oci_blob_links obl
+    WHERE obl.project_id = sqlc.arg(project_id) AND obl.storage_key = sqlc.arg(storage_key)
 ) AS blob_exists;
