@@ -601,3 +601,125 @@ copy-btn {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+/* Buttons */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--badge-neutral-bg);
+    color: var(--text);
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1.4;
+}
+
+.btn:hover {
+    background: var(--hover-bg);
+    border-color: var(--text-muted);
+}
+
+.btn-primary {
+    background: var(--blue);
+    color: var(--bg);
+    border-color: var(--blue);
+}
+
+.btn-primary:hover {
+    background: var(--blue-hover);
+    border-color: var(--blue-hover);
+}
+
+.btn-danger {
+    background: var(--badge-danger-bg);
+    color: var(--badge-danger-fg);
+    border-color: var(--red);
+}
+
+.btn-danger:hover {
+    background: var(--red);
+    color: #fff;
+}
+
+.btn-sm {
+    padding: 3px 10px;
+    font-size: 12px;
+}
+
+/* Form controls */
+.form-input,
+.form-select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+    padding: 6px 10px;
+    line-height: 1.4;
+}
+
+.form-input:focus,
+.form-select:focus {
+    outline: none;
+    border-color: var(--blue);
+}
+
+.form-input-sm,
+.form-select-sm {
+    padding: 3px 8px;
+    font-size: 12px;
+    width: 100%;
+}
+
+.inline-form {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.inline-form .form-input {
+    flex: 1;
+    min-width: 160px;
+}
+
+/* New token reveal */
+.token-reveal {
+    background: var(--badge-success-bg);
+    border: 1px solid var(--green);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+}
+
+.token-reveal-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--badge-success-fg);
+    margin-bottom: 10px;
+}
+
+.token-reveal-value {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.token-reveal-value code {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+}
+
+/* Row action buttons */
+.row-actions {
+    white-space: nowrap;
+}
