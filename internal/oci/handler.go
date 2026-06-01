@@ -21,12 +21,13 @@ func init() {
 		handler.Store = auth.Store()
 		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
 		handler.uploads = newUploadStore(auth.DataDir()+"/tmp/oci-uploads", config.MaxBlobSize())
+
+		auth.ServiceHandleRaw("oci", "GET /v2/{$}", handler.V2Root)
+		auth.ServiceHandleRaw("oci", "HEAD /v2/{$}", handler.V2Root)
+		auth.ServiceHandleHandler("oci", "/v2/", parseRoute, &handler)
+
+		auth.ServiceRedirect("docker", "oci", true)
 	})
-	auth.HandleRaw("GET /v2/{$}", handler.V2Root)
-	auth.HandleRaw("HEAD /v2/{$}", handler.V2Root)
-	// The method-less /v2/ subtree handler receives every method (GET/HEAD pulls
-	// and POST/PATCH/PUT pushes); ServeHTTP dispatches on method + action.
-	auth.HandleHandler("/v2/", parseRoute, &handler)
 }
 
 type route struct {
@@ -48,8 +49,6 @@ func (r route) Access() auth.AccessLevel {
 	return auth.ReadAccess
 }
 
-// ociActions are the reserved action keywords from the OCI distribution spec.
-// They sit between the (possibly multi-segment) name and the reference.
 var ociActions = []string{"manifests", "blobs", "tags"}
 
 func parseRoute(r *http.Request) auth.RouteInfo {
@@ -59,9 +58,6 @@ func parseRoute(r *http.Request) auth.RouteInfo {
 }
 
 func parseOCIPath(path string) route {
-	// Blob upload sessions: /v2/{name}/blobs/uploads  and  .../blobs/uploads/{uuid}.
-	// Match only when "/blobs/uploads" is at a segment boundary so it can't be
-	// confused with a name segment.
 	if i := strings.LastIndex(path, "/blobs/uploads"); i > 0 {
 		after := path[i+len("/blobs/uploads"):]
 		if after == "" || strings.HasPrefix(after, "/") {
@@ -69,14 +65,6 @@ func parseOCIPath(path string) route {
 		}
 	}
 
-	// OCI distribution path: /v2/{name}/{action}/{reference}
-	// {name} may contain '/' (e.g. "library/nginx"), so a naive split-by-'/'
-	// can't distinguish "library/nginx" + "manifests" from a 3-segment name.
-	//
-	// References (tags, digests) never contain '/' per spec, so the right
-	// boundary is the RIGHTMOST /<action>/ whose trailing portion has no '/'.
-	// This handles names that themselves contain an action keyword as a segment
-	// (e.g. project "foo/manifests" with action "blobs").
 	bestI := -1
 	var bestAction string
 	for _, action := range ociActions {
@@ -102,7 +90,6 @@ func parseOCIPath(path string) route {
 		}
 	}
 
-	// Action-only URLs: /v2/{name}/{action} with no reference (will 404).
 	for _, action := range ociActions {
 		suffix := "/" + action
 		if strings.HasSuffix(path, suffix) && len(path) > len(suffix) {
@@ -112,7 +99,6 @@ func parseOCIPath(path string) route {
 			}
 		}
 	}
-	// Bare name (or /v2/ root). Auth/handler will 404 -- nothing to serve.
 	return route{project: path}
 }
 

@@ -3,7 +3,6 @@ package llms
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/wow-look-at-my/testify/assert"
@@ -22,18 +21,15 @@ func TestServe_RendersBaseURL(t *testing.T) {
 
 	body := rec.Body.String()
 	assert.Contains(t, body, "# buildhost")
-	// Base URL is substituted into example URLs.
-	assert.Contains(t, body, "https://pazer.build/dl/myapp/latest/linux/amd64")
+	assert.Contains(t, body, "https://pazer.build/dl/myapp")
 	assert.Contains(t, body, "https://pazer.build/llms.txt")
-	// Bare host is substituted for the docker example.
 	assert.Contains(t, body, "docker pull pazer.build/myapp:latest")
-	// No unrendered placeholders remain.
 	assert.NotContains(t, body, "__BASE_URL__")
-	assert.NotContains(t, body, "__HOST__")
+	assert.NotContains(t, body, "__DL_URL__")
+	assert.NotContains(t, body, "__OCI_HOST__")
 }
 
 func TestServe_DefaultsWhenNotReady(t *testing.T) {
-	// A zero-value handler (OnReady never ran) still serves a valid document.
 	h := &Handler{}
 
 	req := httptest.NewRequest("GET", "/llms.txt", nil)
@@ -57,14 +53,21 @@ func TestRender_StripsSchemeForHost(t *testing.T) {
 }
 
 func TestTemplate_NoUnrenderedPlaceholdersAndASCII(t *testing.T) {
-	// The embedded template must only use the placeholders we substitute.
-	for _, ph := range []string{"__BASE_URL__", "__HOST__"} {
-		assert.True(t, strings.Contains(templateMD, ph), "template should use %s", ph)
+	for _, ph := range []string{"__BASE_URL__", "__DL_URL__", "__OCI_HOST__"} {
+		assert.True(t, contains(templateMD, ph), "template should use %s", ph)
 	}
-	// Printable ASCII only (no smart quotes / em-dashes).
 	for i := 0; i < len(templateMD); i++ {
 		c := templateMD[i]
 		assert.Truef(t, c == '\n' || c == '\t' || (c >= 0x20 && c <= 0x7e),
 			"non-ASCII byte 0x%02x at offset %d", c, i)
 	}
+}
+
+func contains(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

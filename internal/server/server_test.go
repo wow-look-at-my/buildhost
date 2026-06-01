@@ -60,6 +60,7 @@ func setup(t *testing.T) *testEnv {
 		DataDir:	dbDir,
 		DBPath:		dbPath,
 		BaseURL:	"http://localhost",
+		Domain:		"test.local",
 	}
 
 	srv := server.New(cfg, database, store)
@@ -115,6 +116,40 @@ func (e *testEnv) doRequest(t *testing.T, method, path, contentType string, body
 	require.Nil(t, err)
 
 	return resp
+}
+
+func (e *testEnv) doSubdomainRequest(t *testing.T, method, subdomain, path, contentType string, body io.Reader, auth bool) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(method, e.ts.URL+path, body)
+	require.Nil(t, err)
+
+	req.Host = subdomain + ".test.local"
+
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	if auth {
+		req.Header.Set("Authorization", "Bearer "+e.token)
+	}
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
+	require.Nil(t, err)
+
+	return resp
+}
+
+func (e *testEnv) authGetSubdomain(t *testing.T, subdomain, path string) *http.Response {
+	t.Helper()
+	return e.doSubdomainRequest(t, "GET", subdomain, path, "", nil, true)
+}
+
+func (e *testEnv) getSubdomain(t *testing.T, subdomain, path string) *http.Response {
+	t.Helper()
+	return e.doSubdomainRequest(t, "GET", subdomain, path, "", nil, false)
 }
 
 func decodeJSON(t *testing.T, resp *http.Response, v any) {
@@ -200,30 +235,30 @@ func TestFullLifecycle(t *testing.T) {
 	decodeJSON(t, resp, &published)
 	require.True(t, published.Published)
 
-	// (f) Download raw binary by exact version -- redirects to /static
-	resp = env.get(t, "/dl/myapp/1/linux/amd64")
-	require.Equal(t, http.StatusFound, resp.StatusCode)
-	require.Contains(t, resp.Header.Get("Location"), "/static?")
+	// (f) Download raw binary by exact version -- redirects to static subdomain
+	resp = env.getSubdomain(t, "dl", "/myapp?v=1&os=linux&arch=amd64")
+	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "static.test.local/file?")
 
 	// (g) Download via "latest" alias -- redirects with resolved version
-	resp = env.get(t, "/dl/myapp/latest/linux/amd64")
+	resp = env.getSubdomain(t, "dl", "/myapp?os=linux&arch=amd64")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
-	require.Contains(t, resp.Header.Get("Location"), "/static?")
-	require.Contains(t, resp.Header.Get("Location"), "id=myapp")
+	require.Contains(t, resp.Header.Get("Location"), "static.test.local/file?")
+	require.Contains(t, resp.Header.Get("Location"), "project=myapp")
 
 	// (h) Download via branch -- redirects with resolved version
-	resp = env.get(t, "/dl/myapp/branch/main/linux/amd64")
+	resp = env.getSubdomain(t, "dl", "/myapp?branch=main&os=linux&arch=amd64")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
-	require.Contains(t, resp.Header.Get("Location"), "/static?")
+	require.Contains(t, resp.Header.Get("Location"), "static.test.local/file?")
 
 	// (i) Download tar.gz -- redirects with fmt=tar.gz
-	resp = env.get(t, "/dl/myapp/1/linux/amd64?format=tar.gz")
-	require.Equal(t, http.StatusFound, resp.StatusCode)
+	resp = env.getSubdomain(t, "dl", "/myapp?v=1&os=linux&arch=amd64&fmt=tar.gz")
+	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
 	require.Contains(t, resp.Header.Get("Location"), "fmt=tar.gz")
 
 	// (j) Download zip -- redirects with fmt=zip
-	resp = env.get(t, "/dl/myapp/1/linux/amd64?format=zip")
-	require.Equal(t, http.StatusFound, resp.StatusCode)
+	resp = env.getSubdomain(t, "dl", "/myapp?v=1&os=linux&arch=amd64&fmt=zip")
+	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
 	require.Contains(t, resp.Header.Get("Location"), "fmt=zip")
 
 }
@@ -308,28 +343,28 @@ func TestPrivateProject_DownloadWithoutAuth_Returns401(t *testing.T) {
 	resp.Body.Close()
 
 	// Attempt unauthenticated download -- expect 401.
-	resp = env.get(t, "/dl/secretapp/1/linux/amd64")
+	resp = env.getSubdomain(t, "dl", "/secretapp?v=1&os=linux&arch=amd64")
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
 	resp.Body.Close()
 
 	// Attempt unauthenticated latest download -- expect 401.
-	resp = env.get(t, "/dl/secretapp/latest/linux/amd64")
+	resp = env.getSubdomain(t, "dl", "/secretapp?os=linux&arch=amd64")
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
 	resp.Body.Close()
 
 	// Attempt unauthenticated branch download -- expect 401.
-	resp = env.get(t, "/dl/secretapp/branch/main/linux/amd64")
+	resp = env.getSubdomain(t, "dl", "/secretapp?branch=main&os=linux&arch=amd64")
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
 	resp.Body.Close()
 
-	// With auth, download should redirect to /static.
-	resp = env.authGet(t, "/dl/secretapp/1/linux/amd64")
-	require.Equal(t, http.StatusFound, resp.StatusCode)
-	require.Contains(t, resp.Header.Get("Location"), "/static?")
-	require.Contains(t, resp.Header.Get("Location"), "id=secretapp")
+	// With auth, download should redirect to static subdomain.
+	resp = env.authGetSubdomain(t, "dl", "/secretapp?v=1&os=linux&arch=amd64")
+	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "static.test.local/file?")
+	require.Contains(t, resp.Header.Get("Location"), "project=secretapp")
 
 }
 
@@ -340,7 +375,7 @@ func TestPrivateProject_DownloadWithoutAuth_Returns401(t *testing.T) {
 func TestDownload_NonexistentProject_Returns404(t *testing.T) {
 	env := setup(t)
 
-	resp := env.get(t, "/dl/nonexistent/1/linux/amd64")
+	resp := env.getSubdomain(t, "dl", "/nonexistent?v=1&os=linux&arch=amd64")
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 
 	resp.Body.Close()
@@ -530,6 +565,7 @@ func TestOIDC_AutoCreateProject(t *testing.T) {
 		DataDir:     dbDir,
 		DBPath:      dbPath,
 		BaseURL:     "http://localhost",
+		Domain:      "test.local",
 		OIDCIssuers: []string{jwksSrv.URL},
 		OIDCOrgs:    []string{"*"},
 		OIDCEvents:  []string{"push"},
