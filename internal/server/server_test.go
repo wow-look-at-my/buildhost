@@ -13,13 +13,15 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	_ "github.com/wow-look-at-my/buildhost/internal/api"
-	_ "github.com/wow-look-at-my/buildhost/internal/apt"
+	"github.com/wow-look-at-my/buildhost/internal/apt"
 	_ "github.com/wow-look-at-my/buildhost/internal/brew"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -41,11 +43,34 @@ type testEnv struct {
 	token		string	// plaintext API token with read,write scopes
 }
 
+// The APT signing key is an RSA-4096 PGP key that NewSigner generates on
+// first server startup. Regenerating it for every setup() dominates the
+// package's runtime and blows the test timeout, so generate it once and
+// pre-seed each test's data dir with the same key (NewSigner then loads it
+// instead of regenerating).
+var (
+	aptKeyOnce sync.Once
+	aptKeyData []byte
+)
+
+func seedAPTSigningKey(t *testing.T, dataDir string) {
+	t.Helper()
+	aptKeyOnce.Do(func() {
+		dir := t.TempDir()
+		apt.NewSigner(dir) // generates dir/apt-signing.key as a side effect
+		data, err := os.ReadFile(filepath.Join(dir, "apt-signing.key"))
+		require.NoError(t, err)
+		aptKeyData = data
+	})
+	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "apt-signing.key"), aptKeyData, 0o600))
+}
+
 func setup(t *testing.T) *testEnv {
 	t.Helper()
 
 	dbDir := t.TempDir()
 	storeDir := t.TempDir()
+	seedAPTSigningKey(t, dbDir)
 
 	dbPath := filepath.Join(dbDir, "test.db")
 	database, err := db.Open(dbPath)
