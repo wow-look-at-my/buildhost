@@ -53,13 +53,15 @@ runs:
               const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
               if (url && bearer) {
                 const r = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
-                token = ((await r.json()) as { value: string }).value || '';
+                token = ((await r.json()) as { value: string }).value ?? '';
               }
             }
             const project: string = "${{ inputs.project }}";
             const version: string = "${{ inputs.version }}";
-            const gitBranch: string = "${{ inputs.git_branch }}" || github.ref_name;
-            const gitCommit: string = "${{ inputs.git_commit }}" || github.sha;
+            const gitBranchInput: string = "${{ inputs.git_branch }}";
+            const gitCommitInput: string = "${{ inputs.git_commit }}";
+            const gitBranch: string = gitBranchInput || github.ref_name;
+            const gitCommit: string = gitCommitInput || github.sha;
 
             const body: Record<string, string> = { git_branch: gitBranch, git_commit: gitCommit, notes: "${{ inputs.notes }}" };
             if (version) body['version'] = version;
