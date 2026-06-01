@@ -224,6 +224,30 @@ func TestRouter_UnpublishedSkipped(t *testing.T) {
 	assert.Empty(t, info["versions"].(map[string]any))
 }
 
+// TestRouter_StaticNPMWrapper exercises the npm-wrapper Fmt (fmt_wrapper.go)
+// through the real static endpoint -- this is the launcher package the npm
+// packument points binary projects at (fmt=npm-wrapper, os=any/arch=any).
+func TestRouter_StaticNPMWrapper(t *testing.T) {
+	d, _ := routerEnv(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "router-wrapper", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	// Canonical (sorted) query, served on the static subdomain.
+	req := httptest.NewRequest("GET", "/file?arch=any&fmt=npm-wrapper&os=any&project=router-wrapper&v=1.0.0", nil)
+	req.Host = "static.localhost"
+	rec := httptest.NewRecorder()
+	routerHandler.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/octet-stream", rec.Header().Get("Content-Type"))
+	assert.NotEmpty(t, rec.Body.Bytes())
+}
+
 func TestRouter_PrivateProject_RequiresAuth(t *testing.T) {
 	d, _ := routerEnv(t)
 	ctx := context.Background()
