@@ -73,15 +73,6 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !db.ValidOS(rt.os) {
-		jsonError(w, http.StatusBadRequest, "invalid os")
-		return
-	}
-	if !db.ValidArch(rt.arch) {
-		jsonError(w, http.StatusBadRequest, "invalid arch")
-		return
-	}
-
 	kind := r.URL.Query().Get("kind")
 	if kind == "" {
 		kind = r.Header.Get("X-Artifact-Kind")
@@ -92,6 +83,22 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 	if !db.ValidKind(kind) {
 		jsonError(w, http.StatusBadRequest, "invalid kind")
 		return
+	}
+
+	if kind == string(db.KindNPMPackage) {
+		if rt.os != "any" || rt.arch != "any" {
+			jsonError(w, http.StatusBadRequest, "npm-package artifacts must use os=any and arch=any")
+			return
+		}
+	} else {
+		if !db.ValidOS(rt.os) {
+			jsonError(w, http.StatusBadRequest, "invalid os")
+			return
+		}
+		if !db.ValidArch(rt.arch) {
+			jsonError(w, http.StatusBadRequest, "invalid arch")
+			return
+		}
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)

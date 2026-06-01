@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/static"
+	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
 var handler Handler
@@ -17,8 +19,11 @@ var handler Handler
 func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
+		handler.BaseURL = auth.BaseURL()
+		handler.Store = auth.Store()
+		auth.ServiceHandleHandler("npm", "GET /@buildhost/{project}", parseRoute, &handler)
+		auth.ServiceHandle("npm", "GET /@buildhost/{project}/-/{filename}", parseTarballRoute, handler.serveTarball)
 	})
-	auth.ServiceHandleHandler("npm", "GET /@buildhost/{project}", parseRoute, &handler)
 }
 
 type route struct {
@@ -28,6 +33,14 @@ type route struct {
 
 func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
+
+type tarballRoute struct {
+	project  string
+	filename string
+}
+
+func (r tarballRoute) ProjectName() string      { return r.project }
+func (r tarballRoute) Access() auth.AccessLevel { return auth.ReadAccess }
 
 var knownPlatforms []string
 
@@ -54,12 +67,25 @@ func parseRoute(r *http.Request) auth.RouteInfo {
 	return route{project: projectName, platform: platform}
 }
 
+func parseTarballRoute(r *http.Request) auth.RouteInfo {
+	return tarballRoute{
+		project:  r.PathValue("project"),
+		filename: r.PathValue("filename"),
+	}
+}
+
 func routeFrom(ctx context.Context) route {
 	return auth.RouteInfoFrom(ctx).(route)
 }
 
+func tarballRouteFrom(ctx context.Context) tarballRoute {
+	return auth.RouteInfoFrom(ctx).(tarballRoute)
+}
+
 type Handler struct {
-	DB *db.DB
+	DB      *db.DB
+	BaseURL string
+	Store   storage.Storage
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +140,24 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 		}
 		version := normalizeVersion(rel.Version)
 
+		// Check for a pre-built npm-package artifact first.
+		if npmPkg, err := h.DB.GetArtifactByKind(r.Context(), rel.ID, db.KindNPMPackage); err == nil && npmPkg != nil {
+			npmBase := auth.DeriveServiceURL(r, "npm")
+			tarballURL := fmt.Sprintf("%s/@buildhost/%s/-/%s-%s.tgz", npmBase, projectName, projectName, version)
+			versions[version] = map[string]any{
+				"name":    "@buildhost/" + projectName,
+				"version": version,
+				"dist": map[string]string{
+					"tarball": tarballURL,
+				},
+			}
+			if _, ok := distTags["latest"]; !ok {
+				distTags["latest"] = version
+			}
+			continue
+		}
+
+		// Fall back to binary repackaging.
 		npmInfos := h.collectNpmArtifacts(r.Context(), rel.ID)
 
 		optDeps := map[string]string{}
@@ -149,6 +193,51 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-cache")
 	json.NewEncoder(w).Encode(info)
+}
+
+func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request) {
+	project := auth.ProjectFrom(r.Context())
+	ri := tarballRouteFrom(r.Context())
+	filename := ri.filename
+	projectName := project.Name
+
+	prefix := projectName + "-"
+	if !strings.HasPrefix(filename, prefix) {
+		http.NotFound(w, r)
+		return
+	}
+	version := strings.TrimSuffix(filename[len(prefix):], ".tgz")
+	if version == "" || version == filename[len(prefix):] {
+		http.NotFound(w, r)
+		return
+	}
+
+	release, err := h.DB.GetRelease(r.Context(), project.ID, version)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	artifact, err := h.DB.GetArtifactByKind(r.Context(), release.ID, db.KindNPMPackage)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	rc, size, err := h.Store.Get(r.Context(), artifact.StorageKey)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	defer rc.Close()
+
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename=%q`, filename))
+	if size > 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(size))
+	}
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	io.Copy(w, rc)
 }
 
 func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Request, project *db.Project, platform string, releases []db.Release) {
