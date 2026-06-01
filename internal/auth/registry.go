@@ -142,6 +142,13 @@ func RequestBaseURL(r *http.Request) string {
 	return RequestScheme(r) + "://" + r.Host
 }
 
+// RequestRootURL returns the root domain URL (scheme + bare domain, no service
+// subdomain). Use this when building cross-service URLs from within a handler
+// that itself runs on a service subdomain (e.g. brew.example.com → https://example.com).
+func RequestRootURL(r *http.Request) string {
+	return RequestScheme(r) + "://" + domainFromRequest(r)
+}
+
 func hostNoPort(host string) string {
 	if i := strings.LastIndex(host, ":"); i >= 0 {
 		return host[:i]
