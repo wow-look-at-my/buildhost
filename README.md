@@ -20,10 +20,13 @@ Some projects need to ship a real prebuilt image (custom base image, native
 libraries, entrypoint, exposed ports) rather than a binary wrapped in a minimal
 layer. buildhost is a writable OCI registry, so you can `docker push` directly:
 
+The OCI registry is served on the `oci.` subdomain (the apex host serves the
+API, not `/v2/`):
+
 ```bash
-docker login builds.example.com -u oidc -p "$TOKEN"   # any username; password is a write-scoped token
-docker buildx build --push -t builds.example.com/myproject:v1.2.3 .
-docker pull builds.example.com/myproject:v1.2.3
+docker login oci.builds.example.com -u oidc -p "$TOKEN"   # any username; password is a write-scoped token
+docker buildx build --push -t oci.builds.example.com/myproject:v1.2.3 .
+docker pull oci.builds.example.com/myproject:v1.2.3
 ```
 
 A release that contains a pushed image is a **docker build**: it is served only
@@ -57,8 +60,9 @@ steps:
 
 For a build you drive yourself (e.g. `docker buildx imagetools` to copy an
 existing multi-arch image), use the lower-level `buildhost-docker-login` action,
-which only performs the OIDC `docker login`, and then run your own docker
-commands.
+which performs the OIDC `docker login` and exposes the registry host
+(`oci.<domain>`) as its `registry` output, so you can push to
+`<registry>/<project>:<tag>` and then run your own docker commands.
 
 ## Container image
 

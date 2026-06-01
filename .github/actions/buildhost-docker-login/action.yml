@@ -4,28 +4,37 @@ description: Log in to a buildhost OCI registry with docker using a GitHub Actio
 
 inputs:
   server:
-    description: 'Buildhost server URL (used as the OIDC audience; its host is the docker registry)'
+    description: 'Buildhost base URL (used as the OIDC audience). The OCI registry is served on its `oci.` subdomain, which is where docker logs in.'
     required: false
     default: 'https://pazer.build'
+
+outputs:
+  registry:
+    description: 'The buildhost OCI registry host that docker logged in to (e.g. oci.pazer.build). Push images to <registry>/<project>:<tag>.'
+    value: ${{ steps.login.outputs.registry }}
 
 runs:
   using: composite
   steps:
-    - uses: wow-look-at-my/actions@typescript#latest
+    - id: login
+      uses: wow-look-at-my/actions@typescript#latest
       with:
         script: |
           await (async () => {
             const server: string = "${{ inputs.server }}";
-            const registry = new URL(server).host;
+            // The OCI registry lives on the `oci.` subdomain of the buildhost
+            // domain (the apex serves the API, not /v2/). The server URL itself
+            // is the OIDC audience.
+            const registry = "oci." + new URL(server).host;
             const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
             const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
             if (!url || !bearer) {
               core.setFailed("OIDC not available. Add 'permissions: { id-token: write }' to the job.");
               return;
             }
-            // Mint a GHA OIDC token with the buildhost URL as the audience and
-            // use it as the docker password; buildhost verifies the JWT and
-            // auto-provisions the project on first push.
+            // Mint a GHA OIDC token (audience = the buildhost URL) and use it as
+            // the docker password; buildhost verifies the JWT and auto-provisions
+            // the project on first push.
             const resp = await fetch(`${url}&audience=${server}`, {
               headers: { Authorization: `Bearer ${bearer}` },
             });
@@ -38,5 +47,6 @@ runs:
             await exec.exec("docker", ["login", registry, "-u", "oidc", "--password-stdin"], {
               input: Buffer.from(token),
             });
+            core.setOutput("registry", registry);
             core.info(`Logged in to buildhost registry ${registry}`);
           })();
