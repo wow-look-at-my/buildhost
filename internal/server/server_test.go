@@ -42,26 +42,31 @@ type testEnv struct {
 	token		string	// plaintext API token with read,write scopes
 }
 
-// The APT signing key is an RSA-4096 PGP key that NewSigner generates on
-// first server startup. Regenerating it for every setup() dominates the
-// package's runtime and blows the test timeout, so generate it once and
-// pre-seed each test's data dir with the same key (NewSigner then loads it
-// instead of regenerating).
+// The apt backend generates a fresh 4096-bit RSA signing key the first time a
+// server starts (apt's OnReady, reached via server.New). Doing that in every
+// setup() makes the many servers in this package's tests run ~1-2s each, and
+// serially they brush up against the 30s package test timeout on shared CI
+// runners. Generate one key for the whole package and seed it into each
+// server's data dir so apt loads it instead of regenerating. This does not
+// touch production keygen, and the apt package's own tests still cover real
+// key generation.
 var (
-	aptKeyOnce sync.Once
-	aptKeyData []byte
+	aptKeyOnce  sync.Once
+	aptKeyBytes []byte
 )
 
-func seedAPTSigningKey(t *testing.T, dataDir string) {
+func aptSigningKey(t *testing.T) []byte {
 	t.Helper()
 	aptKeyOnce.Do(func() {
-		dir := t.TempDir()
-		apt.NewSigner(dir) // generates dir/apt-signing.key as a side effect
-		data, err := os.ReadFile(filepath.Join(dir, "apt-signing.key"))
-		require.NoError(t, err)
-		aptKeyData = data
+		dir, err := os.MkdirTemp("", "apt-test-key-*")
+		require.Nil(t, err)
+		defer os.RemoveAll(dir)
+		apt.NewSigner(dir) // writes dir/apt-signing.key (one keygen for the package)
+		b, err := os.ReadFile(filepath.Join(dir, "apt-signing.key"))
+		require.Nil(t, err)
+		aptKeyBytes = b
 	})
-	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "apt-signing.key"), aptKeyData, 0o600))
+	return aptKeyBytes
 }
 
 func setup(t *testing.T) *testEnv {
@@ -69,7 +74,9 @@ func setup(t *testing.T) *testEnv {
 
 	dbDir := t.TempDir()
 	storeDir := t.TempDir()
-	seedAPTSigningKey(t, dbDir)
+
+	// Reuse a single signing key so apt loads it instead of regenerating (slow).
+	require.Nil(t, os.WriteFile(filepath.Join(dbDir, "apt-signing.key"), aptSigningKey(t), 0o600))
 
 	dbPath := filepath.Join(dbDir, "test.db")
 	database, err := db.Open(dbPath)

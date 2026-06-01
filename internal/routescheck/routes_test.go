@@ -39,14 +39,14 @@ func TestAllRoutesRegisteredWithoutInit(t *testing.T) {
 
 	// One representative route per service-subdomain backend.
 	want := []string{
-		"npm.*/{pkg}",
-		"npm.*/@buildhost/{project}/-/{filename}",
-		"apt.*/{path...}",
-		"brew.*/{project}",
-		"dl.*/{project}",
-		"sites.*/{project}/branch/{branch}",
-		"static.*/file",
-		"oci.*/v2/",
+		"npm.{domain}/{pkg}",
+		"npm.{domain}/@buildhost/{project}/-/{filename}",
+		"apt.{domain}/{path...}",
+		"brew.{domain}/{project}",
+		"dl.{domain}/{project}",
+		"sites.{domain}/{project}/branch/{branch}",
+		"static.{domain}/file",
+		"oci.{domain}/v2/",
 	}
 	for _, w := range want {
 		assert.Contains(t, patterns, w,
