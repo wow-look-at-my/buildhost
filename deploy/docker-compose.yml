@@ -36,6 +36,10 @@ services:
     image: ghcr.io/wow-look-at-my/docker-updater
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    # Share buildhost's network so the updater reaches it by DNS alias
+    # (buildhost-backend) for pre-checks. No host networking required.
+    networks:
+      - internal
     restart: unless-stopped
 
 volumes:

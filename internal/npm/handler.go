@@ -18,7 +18,14 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 	})
-	auth.ServiceHandleHandler("npm", "GET /@buildhost/{project}", parseRoute, &handler)
+	// npm requests a scoped package as `@buildhost/<name>` but URL-encodes the
+	// scope slash, so the path arrives as the single segment
+	// `@buildhost%2f<name>`. Per RFC 3986 a percent-encoded slash is a literal
+	// character, not a path separator, so the router keeps it in one segment
+	// (and percent-decodes the captured value). Match the whole package segment
+	// and strip the `@buildhost/` scope ourselves -- a `/@buildhost/{project}`
+	// pattern would only match the rare unencoded client.
+	auth.ServiceHandleHandler("npm", "GET /{pkg}", parseRoute, &handler)
 }
 
 type route struct {
@@ -50,7 +57,14 @@ func splitPlatform(name string) (project, platform string) {
 }
 
 func parseRoute(r *http.Request) auth.RouteInfo {
-	projectName, platform := splitPlatform(r.PathValue("project"))
+	// The router has already percent-decoded the segment, so both the encoded
+	// (`@buildhost%2ffoo`) and unencoded (`@buildhost/foo`) forms arrive here as
+	// `@buildhost/foo`. Anything without the scope is not a package request.
+	name, ok := strings.CutPrefix(r.PathValue("pkg"), "@buildhost/")
+	if !ok {
+		return route{}
+	}
+	projectName, platform := splitPlatform(name)
 	return route{project: projectName, platform: platform}
 }
 

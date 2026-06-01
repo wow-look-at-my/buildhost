@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -34,6 +35,9 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 					span.SetAttributes(attribute.String("auth.result", "oidc_failed"))
 					span.End()
 					slog.Debug("OIDC verification failed", "err", err)
+					// Remember why, so an eventual 401 can explain it rather than
+					// returning a bare "authentication required".
+					r = r.WithContext(WithOIDCError(r.Context(), err))
 				} else {
 					span.SetAttributes(attribute.String("auth.result", "oidc_ok"))
 					span.End()
@@ -67,7 +71,7 @@ func RequireWrite(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		t := TokenFrom(r.Context())
 		if t == nil || !t.HasScope("write") {
-			http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
+			unauthorizedResponse(w, r)
 			return
 		}
 		next(w, r)
@@ -75,14 +79,27 @@ func RequireWrite(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
+	msg := "authentication required"
+	if err := OIDCErrorFrom(r.Context()); err != nil {
+		// A JWT was presented and rejected -- say why (audience, org allowlist,
+		// event, expiry, signature, ...) instead of a bare message, so a CI
+		// caller can see what to fix.
+		msg += ": OIDC token rejected: " + err.Error()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	if strings.HasPrefix(r.URL.Path, "/v2/") {
 		w.Header().Set("Www-Authenticate", `Basic realm="buildhost"`)
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"errors":[{"code":"UNAUTHORIZED","message":"authentication required"}]}`))
+		body, _ := json.Marshal(map[string]any{
+			"errors": []map[string]string{{"code": "UNAUTHORIZED", "message": msg}},
+		})
+		w.Write(body)
 		return
 	}
-	http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
+	w.WriteHeader(http.StatusUnauthorized)
+	body, _ := json.Marshal(map[string]string{"error": msg})
+	w.Write(body)
 }
 
 // oidcAuthorizesProject reports whether an OIDC identity auto-provisioned for a
