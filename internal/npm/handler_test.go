@@ -277,6 +277,139 @@ func TestServeHTTP_HyphenatedProject_PackageInfo(t *testing.T) {
 	assert.Contains(t, dist["tarball"], "/file?arch=any&fmt=npm-wrapper&os=any&project=go-toolchain&v=1.2.0")
 }
 
+func withTarballRoute(r *http.Request, project *db.Project, rt tarballRoute) *http.Request {
+	ctx := auth.WithProject(r.Context(), project)
+	ctx = auth.WithRouteInfo(ctx, rt)
+	return r.WithContext(ctx)
+}
+
+func TestServeTarball_Success(t *testing.T) {
+	h, d, store := setupTest(t)
+	h.Store = store
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "my-plugin", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	content := "fake npm tarball content"
+	key, size, err := store.Put(ctx, strings.NewReader(content))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: "any", Arch: "any",
+		Kind: db.KindNPMPackage, StorageKey: key, Size: size, SHA256: key,
+	}))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	req := httptest.NewRequest("GET", "/@buildhost/my-plugin/-/my-plugin-1.0.0.tgz", nil)
+	req = withTarballRoute(req, proj, tarballRoute{project: "my-plugin", filename: "my-plugin-1.0.0.tgz"})
+	rec := httptest.NewRecorder()
+	h.serveTarball(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/gzip", rec.Header().Get("Content-Type"))
+	assert.Contains(t, rec.Header().Get("Content-Disposition"), "my-plugin-1.0.0.tgz")
+	assert.Equal(t, content, rec.Body.String())
+}
+
+func TestServeTarball_BadFilename(t *testing.T) {
+	h, d, store := setupTest(t)
+	h.Store = store
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "my-plugin", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	for _, filename := range []string{"other-plugin-1.0.0.tgz", "my-plugin", "my-plugin-.tgz"} {
+		req := httptest.NewRequest("GET", "/@buildhost/my-plugin/-/"+filename, nil)
+		req = withTarballRoute(req, proj, tarballRoute{project: "my-plugin", filename: filename})
+		rec := httptest.NewRecorder()
+		h.serveTarball(rec, req)
+		assert.Equal(t, http.StatusNotFound, rec.Code, "filename=%q", filename)
+	}
+}
+
+func TestServeTarball_ReleaseNotFound(t *testing.T) {
+	h, d, store := setupTest(t)
+	h.Store = store
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "my-plugin", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+
+	req := httptest.NewRequest("GET", "/@buildhost/my-plugin/-/my-plugin-9.9.9.tgz", nil)
+	req = withTarballRoute(req, proj, tarballRoute{project: "my-plugin", filename: "my-plugin-9.9.9.tgz"})
+	rec := httptest.NewRecorder()
+	h.serveTarball(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestServeTarball_ArtifactNotFound(t *testing.T) {
+	h, d, store := setupTest(t)
+	h.Store = store
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "my-plugin", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	req := httptest.NewRequest("GET", "/@buildhost/my-plugin/-/my-plugin-1.0.0.tgz", nil)
+	req = withTarballRoute(req, proj, tarballRoute{project: "my-plugin", filename: "my-plugin-1.0.0.tgz"})
+	rec := httptest.NewRecorder()
+	h.serveTarball(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestServeHTTP_PackageInfo_NPMPackageArtifact(t *testing.T) {
+	h, d, store := setupTest(t)
+	h.Store = store
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "my-plugin", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "5.0.0", VersionNum: 5000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	key, size, err := store.Put(ctx, strings.NewReader("tarball"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: "any", Arch: "any",
+		Kind: db.KindNPMPackage, StorageKey: key, Size: size, SHA256: key,
+	}))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	req := httptest.NewRequest("GET", "/@buildhost/my-plugin", nil)
+	req = withRoute(req, proj, route{project: "my-plugin"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var info map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
+	assert.Equal(t, "@buildhost/my-plugin", info["name"])
+
+	versions := info["versions"].(map[string]any)
+	v := versions["5.0.0"].(map[string]any)
+	dist := v["dist"].(map[string]any)
+	assert.Contains(t, dist["tarball"].(string), "/@buildhost/my-plugin/-/my-plugin-5.0.0.tgz")
+	_, hasBin := v["bin"]
+	assert.False(t, hasBin, "npm-package should not have bin wrapper")
+	_, hasOptDeps := v["optionalDependencies"]
+	assert.False(t, hasOptDeps, "npm-package should not have optionalDependencies")
+}
+
+func TestWrapperRunScript(t *testing.T) {
+	script := wrapperRunScript("mytool")
+	assert.NotEmpty(t, script)
+	assert.Contains(t, script, "mytool")
+	assert.Contains(t, script, "@buildhost/mytool")
+
+	assert.Empty(t, wrapperRunScript("bad name!"))
+	assert.Empty(t, wrapperRunScript("UPPERCASE"))
+}
+
 // Private project auth is tested in the auth package. These tests verify
 // the handler works correctly when auth context is already set up.
 
