@@ -145,8 +145,8 @@ func setupIntegration(t *testing.T) (*staticHandler, *db.DB, *storage.Filesystem
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	staticURL, _ := url.Parse("http://localhost:8080")
-	return &staticHandler{DB: d, Store: store, StaticURL: staticURL, BaseURL: "http://localhost:8080"}, d, store
+	h := &staticHandler{DB: d, Store: store, BaseURL: "http://localhost:8080", TmpDir: t.TempDir()}
+	return h, d, store
 }
 
 func withProject(r *http.Request, p *db.Project) *http.Request {

@@ -41,7 +41,7 @@ func TestLLMsTxt_PublicAndRendersBaseURL(t *testing.T) {
 
 	body := string(readBody(t, resp))
 	require.Contains(t, body, "# buildhost")
-	require.Contains(t, body, "dl.test.local")
+	require.Contains(t, body, "http://localhost/dl")
 	require.NotContains(t, body, "__BASE_URL__")
 	require.NotContains(t, body, "__DL_URL__")
 }
@@ -53,17 +53,19 @@ func TestLLMsTxt_DocumentedRoutesAreRegistered(t *testing.T) {
 	paths := documentedPaths(body, "http://localhost")
 	require.NotEmpty(t, paths, "expected to extract documented endpoints from /llms.txt")
 
-	routes := auth.AllRoutes()
+	allRoutes := auth.AllRoutes()
 	for _, p := range paths {
-		registered := false
-		for _, route := range routes {
-			if routePatternMatches(route.Pattern, p) {
-				registered = true
-				break
+		if strings.HasPrefix(p, "/api/") || p == "/healthz" || p == "/llms.txt" {
+			registered := false
+			for _, route := range allRoutes {
+				if routePatternMatches(route.Pattern, p) {
+					registered = true
+					break
+				}
 			}
+			require.Truef(t, registered,
+				"/llms.txt documents %q but no route is registered for it", p)
 		}
-		require.Truef(t, registered,
-			"/llms.txt documents %q but no route is registered for it", p)
 	}
 }
 

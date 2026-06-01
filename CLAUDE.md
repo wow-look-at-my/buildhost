@@ -73,12 +73,10 @@ buildhost routes   # prints all registered HTTP routes, sorted
 ## Running
 
 ```bash
-BUILDHOST_LISTEN_ADDR=:8080 BUILDHOST_BASE_URL=https://example.com BUILDHOST_DOMAIN=example.com buildhost serve
+BUILDHOST_LISTEN_ADDR=:8080 BUILDHOST_BASE_URL=https://example.com buildhost serve
 ```
 
-`BUILDHOST_DOMAIN` derives subdomain URLs for each service: `apt.example.com`, `brew.example.com`, `npm.example.com`, `oci.example.com` (canonical, `docker.example.com` 301-redirects), `dl.example.com`, `sites.example.com`, `static.example.com`. API routes stay on the main domain.
-
-Individual service URLs can be overridden with `BUILDHOST_<SERVICE>_URL` env vars (e.g., `BUILDHOST_STATIC_URL=https://cdn.example.com`). This allows subdomains, path-based routing, or completely different domains per service. Supported services: `APT`, `BREW`, `DL`, `NPM`, `OCI`, `SITES`, `STATIC`.
+Each service is accessed via a subdomain derived from the incoming request's `Host` header: `apt.example.com`, `brew.example.com`, `npm.example.com`, `oci.example.com` (canonical, `docker.example.com` 301-redirects), `dl.example.com`, `sites.example.com`, `static.example.com`. API routes stay on the main domain. No domain configuration is required -- the server dispatches by matching the first label of the Host header against known service names.
 
 To disable application-level zstd compression (e.g., on ZFS or Btrfs with filesystem-level compression):
 
