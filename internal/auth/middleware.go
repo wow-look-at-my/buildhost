@@ -85,6 +85,37 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
 }
 
+// oidcAuthorizesProject reports whether an OIDC identity auto-provisioned for a
+// repository may act on the given project. oidcProject is the repo's derived
+// single-segment name (see projectFromSubject). A repo owns its own project and
+// the entire slash-namespace beneath it: repo "log-streamer" authorizes
+// "log-streamer" and "log-streamer/client" (any depth), but never an unrelated
+// project like "log-streamer-evil" or "other/thing". The trailing "/" boundary
+// is what prevents a sibling-prefix from leaking access.
+func oidcAuthorizesProject(oidcProject, requested string) bool {
+	if oidcProject == "" {
+		return false
+	}
+	return requested == oidcProject || strings.HasPrefix(requested, oidcProject+"/")
+}
+
+// validNamespacedProjectName reports whether name is a well-formed project name,
+// allowing one or more "/"-separated segments that each satisfy the
+// single-segment rules. It gates OIDC auto-provisioning so a repo cannot create
+// a malformed project (bad characters, empty/leading/trailing/double slash)
+// under its namespace.
+func validNamespacedProjectName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, seg := range strings.Split(name, "/") {
+		if !validOIDCProjectName(seg) {
+			return false
+		}
+	}
+	return true
+}
+
 func requireProjectFunc(parse ParseFunc, next http.HandlerFunc) http.HandlerFunc {
 	return requireProject(parse)(http.HandlerFunc(next)).ServeHTTP
 }
@@ -105,7 +136,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			if errors.Is(err, db.ErrNotFound) {
 				t := TokenFrom(r.Context())
 				oidcProject := OIDCProjectFrom(r.Context())
-				if t == nil || oidcProject == "" || oidcProject != ri.ProjectName() {
+				if t == nil || oidcProject == "" || !oidcAuthorizesProject(oidcProject, ri.ProjectName()) || !validNamespacedProjectName(ri.ProjectName()) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusNotFound)
 					w.Write([]byte(`{"error":"project not found"}`))
@@ -137,7 +168,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 
 			t := TokenFrom(r.Context())
 			oidcProject := OIDCProjectFrom(r.Context())
-			if t != nil && oidcProject != "" && oidcProject == project.Name {
+			if t != nil && oidcProject != "" && oidcAuthorizesProject(oidcProject, project.Name) {
 				oidcPrivate, hasPrivate := OIDCPrivateFrom(r.Context())
 				if hasPrivate && project.IsPrivate != oidcPrivate {
 					if updateErr := mw.DB.SetProjectVisibility(r.Context(), project.ID, oidcPrivate); updateErr == nil {
@@ -159,7 +190,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 					unauthorizedResponse(w, r)
 					return
 				}
-				if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && oidcProject != project.Name) {
+				if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && !oidcAuthorizesProject(oidcProject, project.Name)) {
 					http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
 					return
 				}
@@ -170,7 +201,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						unauthorizedResponse(w, r)
 						return
 					}
-					if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && oidcProject != project.Name) {
+					if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && !oidcAuthorizesProject(oidcProject, project.Name)) {
 						http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
 						return
 					}

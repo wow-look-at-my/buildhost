@@ -267,11 +267,22 @@ Set `BUILDHOST_OIDC_ISSUERS` to a comma-separated list of trusted OIDC issuers (
 
 1. Fetches the issuer's JWKS keys (via OIDC discovery) and verifies the JWT signature
 2. Checks the org (from subject) and event type (from `event_name` claim) against the allowlists
-3. Derives the project name from the subject claim (`repo:org/name:*` -> `name`)
-4. Auto-creates the project if it doesn't exist (with auto-versioning)
-5. Grants `read,write` scope limited to that one project
+3. Derives the repo's project name from the subject claim (`repo:org/name:*` -> `name`)
+4. Auto-creates the project — or any project slash-namespaced beneath it — if it doesn't exist (with auto-versioning)
+5. Grants `read,write` scoped to that repo's namespace: project `name` and any `name/<...>` beneath it, but nothing else
 
 No manual project creation or OIDC policy setup needed.
+
+### Slash-namespaced projects
+
+Project names may contain `/` and nest to any depth (e.g. `log-streamer/client`). A repository's OIDC token owns its whole namespace: repo `R` may create and publish `R` and any `R/<...>`, but never a sibling like `R-evil` or an unrelated project. This is what lets a repo that ships several binaries publish each to its own project — go-toolchain's autorelease maps every built binary to `<repo>/<binary>`, stripping a redundant leading `<repo>-` (a single binary named after the repo stays flat as `<repo>`):
+
+| repo | binary | project |
+|------|--------|---------|
+| `log-streamer` | `log-streamer-client` | `log-streamer/client` |
+| `log-streamer` | `log-streamer-server` | `log-streamer/server` |
+| `foo` | `foo` | `foo` |
+| `foo` | `foo-cli` | `foo/cli` |
 
 ```bash
 BUILDHOST_OIDC_ISSUERS=https://token.actions.githubusercontent.com \
