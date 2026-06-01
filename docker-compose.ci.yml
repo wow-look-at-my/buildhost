@@ -6,9 +6,3 @@ services:
       - BUILDHOST_DOMAIN=localhost
     ports:
       - "8080:8080"
-    healthcheck:
-      test: ["CMD", "buildhost", "healthcheck"]
-      interval: 2s
-      timeout: 5s
-      start_period: 5s
-      retries: 3
