@@ -21,9 +21,9 @@ func init() {
 		handler.DB = auth.DB()
 		handler.BaseURL = auth.BaseURL()
 		handler.Store = auth.Store()
-		auth.ServiceHandleHandler("npm", "GET /@buildhost/{project}", parseRoute, &handler)
-		auth.ServiceHandle("npm", "GET /@buildhost/{project}/-/{filename}", parseTarballRoute, handler.serveTarball)
 	})
+	auth.ServiceHandleHandler("npm", "GET /@buildhost/{project}", parseRoute, &handler)
+	auth.ServiceHandle("npm", "GET /@buildhost/{project}/-/{filename}", parseTarballRoute, handler.serveTarball)
 }
 
 type route struct {
