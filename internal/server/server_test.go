@@ -13,13 +13,15 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	_ "github.com/wow-look-at-my/buildhost/internal/api"
-	_ "github.com/wow-look-at-my/buildhost/internal/apt"
+	"github.com/wow-look-at-my/buildhost/internal/apt"
 	_ "github.com/wow-look-at-my/buildhost/internal/brew"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -40,11 +42,41 @@ type testEnv struct {
 	token		string	// plaintext API token with read,write scopes
 }
 
+// The apt backend generates a fresh 4096-bit RSA signing key the first time a
+// server starts (apt's OnReady, reached via server.New). Doing that in every
+// setup() makes the many servers in this package's tests run ~1-2s each, and
+// serially they brush up against the 30s package test timeout on shared CI
+// runners. Generate one key for the whole package and seed it into each
+// server's data dir so apt loads it instead of regenerating. This does not
+// touch production keygen, and the apt package's own tests still cover real
+// key generation.
+var (
+	aptKeyOnce  sync.Once
+	aptKeyBytes []byte
+)
+
+func aptSigningKey(t *testing.T) []byte {
+	t.Helper()
+	aptKeyOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "apt-test-key-*")
+		require.Nil(t, err)
+		defer os.RemoveAll(dir)
+		apt.NewSigner(dir) // writes dir/apt-signing.key (one keygen for the package)
+		b, err := os.ReadFile(filepath.Join(dir, "apt-signing.key"))
+		require.Nil(t, err)
+		aptKeyBytes = b
+	})
+	return aptKeyBytes
+}
+
 func setup(t *testing.T) *testEnv {
 	t.Helper()
 
 	dbDir := t.TempDir()
 	storeDir := t.TempDir()
+
+	// Reuse a single signing key so apt loads it instead of regenerating (slow).
+	require.Nil(t, os.WriteFile(filepath.Join(dbDir, "apt-signing.key"), aptSigningKey(t), 0o600))
 
 	dbPath := filepath.Join(dbDir, "test.db")
 	database, err := db.Open(dbPath)
