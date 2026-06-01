@@ -33,19 +33,19 @@ func withProject(ctx context.Context, p *db.Project) context.Context {
 	return auth.WithProject(ctx, p)
 }
 
-func TestServeHTTP_NotRB(t *testing.T) {
+func TestServeFormula_NotRB(t *testing.T) {
 	h, _, _ := setupTest(t)
 
 	proj := &db.Project{Name: "myapp"}
 	req := httptest.NewRequest("GET", "/myapp.txt", nil)
 	req = req.WithContext(withProject(req.Context(), proj))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	h.ServeFormula(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-func TestServeHTTP_NoRelease(t *testing.T) {
+func TestServeFormula_NoRelease(t *testing.T) {
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -55,12 +55,12 @@ func TestServeHTTP_NoRelease(t *testing.T) {
 	req := httptest.NewRequest("GET", "/myapp.rb", nil)
 	req = req.WithContext(withProject(req.Context(), proj))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	h.ServeFormula(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-func TestServeHTTP_NoBrewPackage(t *testing.T) {
+func TestServeFormula_NoBrewPackage(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -82,14 +82,14 @@ func TestServeHTTP_NoBrewPackage(t *testing.T) {
 	req := httptest.NewRequest("GET", "/myapp.rb", nil)
 	req = req.WithContext(withProject(req.Context(), proj))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	h.ServeFormula(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/x-ruby", rec.Header().Get("Content-Type"))
 	assert.NotEmpty(t, rec.Body.Bytes())
 }
 
-func TestServeHTTP_Success(t *testing.T) {
+func TestServeFormula_Success(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -111,7 +111,7 @@ func TestServeHTTP_Success(t *testing.T) {
 	req := httptest.NewRequest("GET", "/myapp.rb", nil)
 	req = req.WithContext(withProject(req.Context(), proj))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	h.ServeFormula(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/x-ruby", rec.Header().Get("Content-Type"))
@@ -119,7 +119,8 @@ func TestServeHTTP_Success(t *testing.T) {
 }
 
 func TestParseRoute(t *testing.T) {
-	req := httptest.NewRequest("GET", "/brew/myapp.rb", nil)
+	req := httptest.NewRequest("GET", "/myapp", nil)
+	req.SetPathValue("project", "myapp")
 	ri := parseRoute(req)
 	assert.Equal(t, "myapp", ri.ProjectName())
 	assert.Equal(t, auth.ReadAccess, ri.Access())

@@ -15,9 +15,11 @@ import (
 )
 
 func init() {
-	auth.HandleRaw("POST /api/v1/projects", handler.CreateProject)
-	auth.HandleRaw("GET /api/v1/projects", handler.ListProjects)
-	auth.Handle("GET /api/v1/projects/{project}", parseRoute, handler.GetProject)
+	auth.OnReady(func() {
+		auth.HandleRaw("POST /api/v1/projects", handler.CreateProject)
+		auth.HandleRaw("GET /api/v1/projects", handler.ListProjects)
+		auth.Handle("GET /api/v1/projects/{project}", parseRoute, handler.GetProject)
+	})
 }
 
 type createProjectRequest struct {
