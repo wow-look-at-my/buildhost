@@ -39,7 +39,7 @@ func TestAllRoutesRegisteredWithoutInit(t *testing.T) {
 
 	// One representative route per service-subdomain backend.
 	want := []string{
-		"npm.*/@buildhost/{project}",
+		"npm.*/{pkg}",
 		"npm.*/@buildhost/{project}/-/{filename}",
 		"apt.*/{path...}",
 		"brew.*/{project}",

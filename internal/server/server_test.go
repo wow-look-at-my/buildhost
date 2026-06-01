@@ -84,8 +84,6 @@ func setup(t *testing.T) *testEnv {
 		ListenAddr:	":0",
 		DataDir:	dbDir,
 		DBPath:		dbPath,
-		BaseURL:	"http://localhost",
-
 	}
 
 	srv := server.New(cfg, database, store)
@@ -604,7 +602,6 @@ func TestOIDC_AutoCreateProject(t *testing.T) {
 		ListenAddr:  ":0",
 		DataDir:     dbDir,
 		DBPath:      dbPath,
-		BaseURL:     "http://localhost",
 		OIDCIssuers: []string{jwksSrv.URL},
 		OIDCOrgs:    []string{"*"},
 		OIDCEvents:  []string{"push"},
@@ -618,7 +615,7 @@ func TestOIDC_AutoCreateProject(t *testing.T) {
 		"iss":        jwksSrv.URL,
 		"sub":        "repo:myorg/autoproject:ref:refs/heads/main",
 		"event_name": "push",
-		"aud":        cfg.BaseURL,
+		"aud":        "https://buildhost.example.com",
 		"exp":        time.Now().Add(10 * time.Minute).Unix(),
 		"iat":        time.Now().Unix(),
 	})

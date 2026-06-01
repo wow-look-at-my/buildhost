@@ -19,10 +19,19 @@ var handler Handler
 func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
-		handler.BaseURL = auth.BaseURL()
 		handler.Store = auth.Store()
 	})
-	auth.ServiceHandleHandler("npm", "GET /@buildhost/{project}", parseRoute, &handler)
+	// npm requests a scoped package as `@buildhost/<name>` but URL-encodes the
+	// scope slash, so the path arrives as the single segment
+	// `@buildhost%2f<name>`. Per RFC 3986 a percent-encoded slash is a literal
+	// character, not a path separator, so the router keeps it in one segment
+	// (and percent-decodes the captured value). Match the whole package segment
+	// and strip the `@buildhost/` scope ourselves -- a `/@buildhost/{project}`
+	// pattern would only match the rare unencoded client.
+	auth.ServiceHandleHandler("npm", "GET /{pkg}", parseRoute, &handler)
+	// Tarball URLs are emitted by us in the packument with literal slashes (npm
+	// fetches dist.tarball verbatim, without scope-encoding), so they arrive as
+	// a normal multi-segment path and need their own route.
 	auth.ServiceHandle("npm", "GET /@buildhost/{project}/-/{filename}", parseTarballRoute, handler.serveTarball)
 }
 
@@ -71,7 +80,16 @@ func projectToNPMName(project string) string { return strings.ReplaceAll(project
 func npmNameToProject(name string) string     { return strings.ReplaceAll(name, "__", "/") }
 
 func parseRoute(r *http.Request) auth.RouteInfo {
-	projectName, platform := splitPlatform(npmNameToProject(r.PathValue("project")))
+	// The router has already percent-decoded the segment, so both the encoded
+	// (`@buildhost%2ffoo`) and unencoded (`@buildhost/foo`) forms arrive here as
+	// `@buildhost/foo`. Anything without the scope is not a package request.
+	name, ok := strings.CutPrefix(r.PathValue("pkg"), "@buildhost/")
+	if !ok {
+		return route{}
+	}
+	// Slash-namespaced projects are encoded with "__" in the npm name (see
+	// projectToNPMName); decode before resolving the project.
+	projectName, platform := splitPlatform(npmNameToProject(name))
 	return route{project: projectName, platform: platform}
 }
 
@@ -91,9 +109,8 @@ func tarballRouteFrom(ctx context.Context) tarballRoute {
 }
 
 type Handler struct {
-	DB      *db.DB
-	BaseURL string
-	Store   storage.Storage
+	DB    *db.DB
+	Store storage.Storage
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

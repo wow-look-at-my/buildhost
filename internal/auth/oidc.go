@@ -25,7 +25,6 @@ var ErrOIDCNotMatched = errors.New("no matching OIDC policy")
 type OIDCVerifier struct {
 	mu             sync.RWMutex
 	cache          map[string]*cachedJWKS
-	baseURL        string
 	trustedIssuers []string
 	allowedOrgs    []string
 	allowedEvents  []string
@@ -50,7 +49,6 @@ type oidcClaims struct {
 const oidcLeeway = 60 * time.Second
 
 type OIDCConfig struct {
-	BaseURL        string
 	TrustedIssuers []string
 	AllowedOrgs    []string
 	AllowedEvents  []string
@@ -59,7 +57,6 @@ type OIDCConfig struct {
 func NewOIDCVerifier(cfg OIDCConfig) *OIDCVerifier {
 	return &OIDCVerifier{
 		cache:          make(map[string]*cachedJWKS),
-		baseURL:        cfg.BaseURL,
 		trustedIssuers: cfg.TrustedIssuers,
 		allowedOrgs:    cfg.AllowedOrgs,
 		allowedEvents:  cfg.AllowedEvents,
@@ -165,13 +162,12 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 		return nil, "", fmt.Errorf("event %q not in allowed list", verified.EventName)
 	}
 
-	if v.baseURL == "" {
-		return nil, "", errors.New("BUILDHOST_BASE_URL must be set for OIDC auto-provisioning")
-	}
-	aud, _ := verified.GetAudience()
-	if !slices.Contains(aud, v.baseURL) {
-		return nil, "", fmt.Errorf("token audience %v does not contain expected %q", aud, v.baseURL)
-	}
+	// No audience gate here: auto-provisioning trusts the issuer signature, the
+	// org allowlist, the event allowlist and the subject. Binding to a specific
+	// audience would require the server to know its own URL, which is a config
+	// footgun -- a wrong or missing value silently rejects every publish -- for
+	// little gain on a single-tenant build host. Policy-scoped tokens can still
+	// opt into an explicit audience via OIDCPolicy.Audience above.
 
 	project := projectFromSubject(verified.Subject)
 	if project == "" {

@@ -51,7 +51,7 @@ func routerEnv(t *testing.T) (*db.DB, storage.Storage) {
 		require.NoError(t, err)
 		store, err := storage.NewFilesystem(mustTempDir(), true)
 		require.NoError(t, err)
-		auth.Init(d, store, "http://localhost", mustTempDir(), nil, nil, nil, nil)
+		auth.Init(d, store, mustTempDir(), nil, nil, nil, nil)
 		// Wrap with the same token-authentication middleware the server applies
 		// (server.Handler does auth.GetMiddleware().Authenticate(auth.ServeHTTP)),
 		// so Bearer tokens are resolved before requireProject runs.
@@ -246,6 +246,40 @@ func TestRouter_StaticNPMWrapper(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/octet-stream", rec.Header().Get("Content-Type"))
 	assert.NotEmpty(t, rec.Body.Bytes())
+}
+
+// TestRouter_ScopeEncoding covers how npm addresses a scoped package: it
+// URL-encodes the scope slash, so the real-world request is
+// `/@buildhost%2f<name>` (one segment). The unencoded two-segment form and
+// non-package paths are exercised too.
+func TestRouter_ScopeEncoding(t *testing.T) {
+	d, _ := routerEnv(t)
+	ctx := context.Background()
+	proj := &db.Project{Name: "scope-enc", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	cases := []struct {
+		name, path string
+		wantCode   int
+		wantName   string
+	}{
+		{"encoded scope (real npm)", "/@buildhost%2fscope-enc", http.StatusOK, "@buildhost/scope-enc"},
+		{"unencoded scope", "/@buildhost/scope-enc", http.StatusOK, "@buildhost/scope-enc"},
+		{"unknown project", "/@buildhost%2fnope", http.StatusNotFound, ""},
+		{"missing scope", "/scope-enc", http.StatusNotFound, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := npmGet(t, "", tc.path)
+			require.Equal(t, tc.wantCode, rec.Code, "body: %s", rec.Body.String())
+			if tc.wantName != "" {
+				assert.Equal(t, tc.wantName, decodePackument(t, rec)["name"])
+			}
+		})
+	}
 }
 
 func TestRouter_PrivateProject_RequiresAuth(t *testing.T) {

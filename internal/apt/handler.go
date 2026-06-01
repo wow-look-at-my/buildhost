@@ -18,7 +18,7 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 
-		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.DataDir()+"/tmp")
 		handler.Signer = NewSigner(auth.DataDir())
 	})
 	auth.ServiceHandleHandler("apt", "GET /{path...}", parseRoute, &handler)

@@ -29,7 +29,7 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, "http://localhost:8080", t.TempDir())}
+	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, t.TempDir())}
 	h.uploads = newUploadStore(filepath.Join(t.TempDir(), "oci-uploads"), 10<<30)
 	return h, d, store
 }

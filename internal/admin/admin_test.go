@@ -27,7 +27,6 @@ func newTestServer(t *testing.T) (*Server, *db.DB) {
 		ListenAddr:      ":8080",
 		AdminListenAddr: ":9090",
 		DataDir:         "./data",
-		BaseURL:         "http://localhost:8080",
 	}
 	build := BuildInfo{
 		Version: "v1.2.3",
@@ -181,6 +180,7 @@ func TestAPIRelease(t *testing.T) {
 	seedData(t, database)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/projects/testproject/releases/1.0.0", nil)
+	req.Host = "buildhost.example.com"
 	req.SetPathValue("name", "testproject")
 	req.SetPathValue("version", "1.0.0")
 	w := httptest.NewRecorder()
@@ -205,7 +205,7 @@ func TestAPIRelease(t *testing.T) {
 	assert.Equal(t, float64(2048), a["size"])
 
 	assert.Equal(t, float64(2048), resp["total_size"])
-	assert.Equal(t, "http://localhost:8080", resp["base_url"])
+	assert.Equal(t, "https://buildhost.example.com", resp["base_url"])
 }
 
 func TestAPIRelease_NotFoundProject(t *testing.T) {
@@ -238,6 +238,7 @@ func TestAPIRegistries(t *testing.T) {
 	seedData(t, database)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/registries", nil)
+	req.Host = "buildhost.example.com"
 	w := httptest.NewRecorder()
 	srv.apiRegistries(w, req)
 
@@ -245,7 +246,7 @@ func TestAPIRegistries(t *testing.T) {
 
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, "http://localhost:8080", resp["base_url"])
+	assert.Equal(t, "https://buildhost.example.com", resp["base_url"])
 
 	projects := resp["projects"].([]any)
 	assert.Len(t, projects, 1)

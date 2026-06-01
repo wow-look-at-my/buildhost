@@ -19,7 +19,7 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
-		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.DataDir()+"/tmp")
 	})
 	auth.ServiceHandle("brew", "GET /{project}", parseRoute, handler.ServeFormula)
 }
@@ -68,7 +68,7 @@ func (h *Handler) ServeFormula(w http.ResponseWriter, r *http.Request) {
 		if a.Kind.ServedViaDockerOnly() {
 			continue
 		}
-		out, err := h.Gen.Generate(r.Context(), repackage.FormatBrew, *project, *release, a)
+		out, err := h.Gen.Generate(r.Context(), repackage.FormatBrew, *project, *release, a, auth.RequestBaseURL(r))
 		if err != nil {
 			continue
 		}

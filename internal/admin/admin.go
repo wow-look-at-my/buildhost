@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
@@ -220,7 +221,7 @@ func (s *Server) apiDashboard(w http.ResponseWriter, r *http.Request) {
 		"stats":  stats,
 		"recent": recent,
 		"config": map[string]any{
-			"base_url":           s.cfg.BaseURL,
+			"base_url":           auth.RequestBaseURL(r),
 			"listen_addr":        s.cfg.ListenAddr,
 			"admin_listen_addr":  s.cfg.AdminListenAddr,
 			"data_dir":           s.cfg.DataDir,
@@ -291,7 +292,7 @@ func (s *Server) apiProject(w http.ResponseWriter, r *http.Request) {
 		"project":  project,
 		"releases": releases,
 		"sites":    sites,
-		"base_url": s.cfg.BaseURL,
+		"base_url": auth.RequestBaseURL(r),
 	})
 }
 
@@ -353,7 +354,7 @@ func (s *Server) apiRelease(w http.ResponseWriter, r *http.Request) {
 		"artifacts":       artifacts,
 		"total_downloads": totalDownloads,
 		"total_size":      totalSize,
-		"base_url":        s.cfg.BaseURL,
+		"base_url":        auth.RequestBaseURL(r),
 	})
 }
 
@@ -369,7 +370,7 @@ func (s *Server) apiRegistries(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, map[string]any{
-		"base_url": s.cfg.BaseURL,
+		"base_url": auth.RequestBaseURL(r),
 		"projects": projects,
 	})
 }
@@ -514,7 +515,7 @@ func (s *Server) apiSites(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeJSON(w, map[string]any{
 		"sites":    sites,
-		"base_url": s.cfg.BaseURL,
+		"base_url": auth.RequestBaseURL(r),
 	})
 }
 

@@ -63,7 +63,6 @@ type Config struct {
 	AdminListenAddr  string
 	DataDir          string
 	DBPath           string
-	BaseURL          string
 	StorageCompress  bool
 	OIDCIssuers      []string
 	OIDCOrgs         []string
@@ -78,7 +77,6 @@ func Load() Config {
 		AdminListenAddr: ":9090",
 		DataDir:         "./data",
 		DBPath:          "./data/buildhost.db",
-		BaseURL:         "http://localhost:8080",
 		StorageCompress: true,
 		OIDCIssuers:     []string{"https://token.actions.githubusercontent.com"},
 	}
@@ -93,9 +91,6 @@ func Load() Config {
 	}
 	if v := os.Getenv("BUILDHOST_ADMIN_LISTEN_ADDR"); v != "" {
 		c.AdminListenAddr = v
-	}
-	if v := os.Getenv("BUILDHOST_BASE_URL"); v != "" {
-		c.BaseURL = v
 	}
 	if v := os.Getenv("BUILDHOST_STORAGE_COMPRESS"); v == "false" || v == "0" {
 		c.StorageCompress = false

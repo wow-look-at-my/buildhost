@@ -61,11 +61,12 @@ runs:
               }
             }
 
+            const name: string = "${{ inputs.name }}";
             const resp = await fetch(`${server}/api/v1/projects`, {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                name:        "${{ inputs.name }}",
+                name,
                 description: "${{ inputs.description }}",
                 homepage:    "${{ inputs.homepage }}",
                 license:     "${{ inputs.license }}",
@@ -74,13 +75,25 @@ runs:
               }),
             });
             const text = await resp.text();
-            // Idempotent: a 409 means the project already exists, which is the
-            // normal case for an "ensure exists" step that runs on every push.
+
+            // Idempotent: a 409 means the project already exists, which is success
+            // for "ensure this project exists" callers. Fetch the existing project
+            // so the id/response outputs are still populated.
             if (resp.status === 409) {
-              core.info('Project already exists; treating as success.');
-              core.setOutput('response', text);
+              core.info(`Project "${name}" already exists; treating as success.`);
+              const getResp = await fetch(`${server}/api/v1/projects/${name}`, {
+                headers: { 'Authorization': `Bearer ${token}` },
+              });
+              if (getResp.ok) {
+                const existing = await getResp.text();
+                core.setOutput('response', existing);
+                core.setOutput('id', String(JSON.parse(existing).id));
+              } else {
+                core.warning(`Project exists but could not be read back (HTTP ${getResp.status}); id output left empty.`);
+              }
               return;
             }
+
             if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
 
             const data = JSON.parse(text);
