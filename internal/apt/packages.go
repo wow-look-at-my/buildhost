@@ -125,7 +125,7 @@ func (h *Handler) servePool(w http.ResponseWriter, r *http.Request, subpath stri
 		version = fmt.Sprintf("%d", release.VersionNum)
 	}
 
-	static.Redirect(w, r, h.StaticURL, static.For(project.Name).WithVersion(version).WithOS(db.OSLinux).WithArch(db.Arch(goArch)).WithFmt("deb"), http.StatusFound)
+	static.Redirect(w, r, auth.DeriveServiceURL(r, "static"), static.For(project.Name).WithVersion(version).WithOS(db.OSLinux).WithArch(db.Arch(goArch)).WithFmt("deb"), http.StatusFound)
 }
 
 func extractDebArch(subpath string) string {
