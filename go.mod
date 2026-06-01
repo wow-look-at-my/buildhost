@@ -10,7 +10,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/ulikunitz/xz v0.5.15
 	github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260520105527-317d2038d915
-	github.com/wow-look-at-my/router v0.0.0-20260526055525-bbcdc3a40840
+	github.com/wow-look-at-my/router v0.0.0-20260601062923-6b6e72b98f04
 	github.com/wow-look-at-my/testify v0.0.0-20260217010200-5fd2c08e3abb
 	go.opentelemetry.io/contrib/bridges/otelslog v0.18.0
 	go.opentelemetry.io/otel v1.43.0

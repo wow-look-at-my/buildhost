@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
@@ -12,14 +11,12 @@ import (
 )
 
 var (
-	mux            = router.New()
-	serviceRouters = map[string]*router.Router{}
-	serviceMu      sync.RWMutex
-	mw             *Middleware
-	readyFuncs     []func()
-	sharedDB       *db.DB
-	sharedStore    storage.Storage
-	sharedData     string
+	mux                = router.New()
+	mw                 *Middleware
+	readyFuncs         []func()
+	sharedDB           *db.DB
+	sharedStore        storage.Storage
+	sharedData         string
 	sharedFetchDomains []string
 )
 
@@ -50,23 +47,6 @@ func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers
 	}
 }
 
-func svcRouter(name string) *router.Router {
-	serviceMu.RLock()
-	r, ok := serviceRouters[name]
-	serviceMu.RUnlock()
-	if ok {
-		return r
-	}
-	serviceMu.Lock()
-	defer serviceMu.Unlock()
-	if r, ok = serviceRouters[name]; ok {
-		return r
-	}
-	r = router.New()
-	serviceRouters[name] = r
-	return r
-}
-
 func Handle(pattern string, parse ParseFunc, handler http.HandlerFunc) {
 	mux.HandleFunc(pattern, router.Allow, requireProjectFunc(parse, handler))
 }
@@ -79,16 +59,31 @@ func HandleHandler(pattern string, parse ParseFunc, handler http.Handler) {
 	mux.Handle(pattern, router.Allow, requireProject(parse)(handler))
 }
 
+// servicePattern turns a path-only service pattern into a host+path pattern
+// anchored to the service's subdomain, e.g. ("apt", "GET /{path...}") becomes
+// "GET apt.{domain}/{path...}". The router matches the host's first label
+// against the subdomain and binds {domain} to the rest of the request Host, so
+// the registered pattern is exactly what is matched -- no host dispatch table.
+func servicePattern(subdomain, pattern string) string {
+	method := ""
+	rest := pattern
+	if i := strings.IndexByte(pattern, ' '); i >= 0 {
+		method = pattern[:i+1] // keep the trailing space
+		rest = pattern[i+1:]
+	}
+	return method + subdomain + ".{domain}" + rest
+}
+
 func ServiceHandle(subdomain, pattern string, parse ParseFunc, handler http.HandlerFunc) {
-	svcRouter(subdomain).HandleFunc(pattern, router.Allow, requireProjectFunc(parse, handler))
+	mux.HandleFunc(servicePattern(subdomain, pattern), router.Allow, requireProjectFunc(parse, handler))
 }
 
 func ServiceHandleRaw(subdomain, pattern string, handler http.HandlerFunc) {
-	svcRouter(subdomain).HandleFunc(pattern, router.Allow, handler)
+	mux.HandleFunc(servicePattern(subdomain, pattern), router.Allow, handler)
 }
 
 func ServiceHandleHandler(subdomain, pattern string, parse ParseFunc, handler http.Handler) {
-	svcRouter(subdomain).Handle(pattern, router.Allow, requireProject(parse)(handler))
+	mux.Handle(servicePattern(subdomain, pattern), router.Allow, requireProject(parse)(handler))
 }
 
 func ServiceRedirect(from, to string, permanent bool) {
@@ -96,7 +91,7 @@ func ServiceRedirect(from, to string, permanent bool) {
 	if permanent {
 		code = http.StatusMovedPermanently
 	}
-	svcRouter(from).HandleFunc("/{path...}", router.Allow, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(servicePattern(from, "/{path...}"), router.Allow, func(w http.ResponseWriter, r *http.Request) {
 		target := &url.URL{
 			Scheme:   RequestScheme(r),
 			Host:     to + "." + domainFromRequest(r),
@@ -107,21 +102,10 @@ func ServiceRedirect(from, to string, permanent bool) {
 	})
 }
 
+// ServeHTTP dispatches every request through the single router. Service
+// subdomains are matched by the host portion of their registered patterns;
+// unknown hosts fall through to the host-agnostic (main-domain) routes.
 func ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	host := r.Host
-	if i := strings.LastIndex(host, ":"); i >= 0 {
-		host = host[:i]
-	}
-	if dot := strings.IndexByte(host, '.'); dot > 0 {
-		subdomain := host[:dot]
-		serviceMu.RLock()
-		sr, ok := serviceRouters[subdomain]
-		serviceMu.RUnlock()
-		if ok {
-			sr.ServeHTTP(w, r)
-			return
-		}
-	}
 	mux.ServeHTTP(w, r)
 }
 
@@ -165,16 +149,9 @@ func hostNoPort(host string) string {
 	return host
 }
 
+// AllRoutes returns every registered route exactly as registered. Service
+// routes carry their subdomain and {domain} host token in the real pattern
+// (e.g. "apt.{domain}/{path...}"), so nothing is synthesized here.
 func AllRoutes() []router.Route {
-	var all []router.Route
-	all = append(all, mux.Routes()...)
-	serviceMu.RLock()
-	defer serviceMu.RUnlock()
-	for name, r := range serviceRouters {
-		for _, route := range r.Routes() {
-			route.Pattern = name + ".*/" + strings.TrimPrefix(route.Pattern, "/")
-			all = append(all, route)
-		}
-	}
-	return all
+	return mux.Routes()
 }
