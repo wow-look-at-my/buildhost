@@ -23,7 +23,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - `internal/oci/` - OCI distribution endpoint (read + write) on `oci.{domain}/v2/{project}/...`. `docker.{domain}` permanently redirects to `oci.{domain}`. GET/HEAD pulls; POST/PATCH/PUT pushes (`docker push`). Pull side synthesizes a minimal image from a binary artifact OR serves a real pushed image. Push side (`push.go`, `upload.go`, `putmanifest.go`) accepts blob uploads (monolithic + chunked, streamed to `DataDir/tmp/oci-uploads`) and manifest/index PUTs, recording `kind=docker` artifacts. Route `Access()` is method-aware (write for push verbs). Self-registering via auth.OnReady().
 - `internal/sites/` - Static site hosting endpoint on `sites.{domain}/{project}/...`. Upload tar.gz archives, serve files per branch or version. Self-registering via auth.OnReady().
 - `internal/llms/` - Public `/llms.txt` endpoint (https://llmstxt.org). Serves a plain-text guide to buildhost for LLMs/agents, rendered per request from an embedded `template.md` with the server's own base URL (derived from the request `Host`) substituted in. Public (registered via `HandleRaw`, no auth). Self-registering via init().
-- `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler/ServiceRoute/ServiceRedirect) backed by `github.com/wow-look-at-my/router`, RouteInfo interface
+- `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler for main-domain routes; ServiceHandle/ServiceHandleRaw/ServiceHandleHandler/ServiceRedirect for subdomain routes) backed by `github.com/wow-look-at-my/router`, RouteInfo interface. Service registrations are rewritten to host+path patterns (`<sub>.{domain}/<path>`) on the single router, so dispatch and route listing use the router's own host matching -- there is no per-subdomain dispatch table.
 - `internal/db/` - SQLite database layer (modernc.org/sqlite, no CGo), OIDC policy storage. Types (Project, Release, Artifact, APIToken, OIDCPolicy) and validation functions live here. Uses sqlc for query generation from `internal/db/queries/*.sql` with schema in `internal/db/schema.sql`.
 - `internal/db/queries/` - SQL query files for sqlc code generation
 - `internal/db/schema.sql` - SQLite schema used by sqlc
@@ -50,7 +50,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - Private projects require auth on all endpoints including format-specific ones (APT, Brew, NPM, OCI)
 - Project auth enforced once in centralized requireProject middleware — handlers never check auth
 - Each backend defines a RouteInfo implementation (private route struct) for full URL parsing
-- Backends self-register routes via auth.OnReady() on auth.Router(); adding a backend = adding files, no existing files modified. Each backend uses auth.ServiceRoute(subdomain, pattern) for host-based routing.
+- Backends self-register routes via auth.OnReady() on auth.Router(); adding a backend = adding files, no existing files modified. Each backend uses auth.ServiceHandle/ServiceHandleRaw/ServiceHandleHandler(subdomain, pattern, ...) for host-based routing; the registry prefixes the subdomain and a `{domain}` host token to the pattern so the router matches by Host (e.g. `apt.{domain}/{path...}`).
 - Tokens are project-scoped or global; project-scoped tokens cannot escalate privileges
 - Token expiry is enforced at lookup time
 - Default token scope is "read" (least privilege)
@@ -71,6 +71,12 @@ buildhost bootstrap --name admin-token
 ```bash
 buildhost routes   # prints all registered HTTP routes, sorted
 ```
+
+Routes are printed exactly as registered. Main-domain routes are path-only
+(`/api/v1/projects {GET,POST}`, `/healthz {GET}`); subdomain routes carry their
+service label and the `{domain}` host token (`apt.{domain}/{path...} {GET}`,
+`oci.{domain}/v2/ {*}`, `static.{domain}/file {GET}`). Nothing is synthesized at
+listing time -- the `{domain}` token is the real host wildcard the router matches.
 
 ## Running
 
