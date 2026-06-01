@@ -81,8 +81,6 @@ func TestServeHTTP_FallsThrough(t *testing.T) {
 }
 
 func TestDeriveServiceURL(t *testing.T) {
-	sharedBase = "https://pazer.build"
-
 	req := httptest.NewRequest("GET", "/test", nil)
 	req.Host = "dl.pazer.build"
 
@@ -92,12 +90,51 @@ func TestDeriveServiceURL(t *testing.T) {
 }
 
 func TestDeriveServiceURL_HTTP(t *testing.T) {
-	sharedBase = "http://localhost:8080"
-
 	req := httptest.NewRequest("GET", "/test", nil)
 	req.Host = "dl.localhost:8080"
 
 	u := DeriveServiceURL(req, "static")
 	assert.Equal(t, "http", u.Scheme)
 	assert.Equal(t, "static.localhost", u.Host)
+}
+
+func TestRequestScheme(t *testing.T) {
+	cases := []struct {
+		host string
+		want string
+	}{
+		{"localhost", "http"},
+		{"localhost:8080", "http"},
+		{"dl.localhost:8080", "http"},
+		{"127.0.0.1", "http"},
+		{"127.0.0.1:8080", "http"},
+		{"pazer.build", "https"},
+		{"dl.pazer.build", "https"},
+		{"buildhost.example.com:8443", "https"},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Host = tc.host
+		assert.Equalf(t, tc.want, RequestScheme(req), "host=%q", tc.host)
+	}
+}
+
+func TestRequestBaseURL_PreservesHostAndPort(t *testing.T) {
+	cases := []struct {
+		host string
+		want string
+	}{
+		// Production: no port on the Host header -> clean https URL.
+		{"pazer.build", "https://pazer.build"},
+		{"dl.pazer.build", "https://dl.pazer.build"},
+		// Local/dev and direct access: the port is part of how the client
+		// reached us and must survive into self-referential links.
+		{"localhost:8080", "http://localhost:8080"},
+		{"127.0.0.1:54321", "http://127.0.0.1:54321"},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Host = tc.host
+		assert.Equalf(t, tc.want, RequestBaseURL(req), "host=%q", tc.host)
+	}
 }
