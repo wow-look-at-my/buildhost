@@ -15,7 +15,7 @@ var routesCmd = &cobra.Command{
 	Use:   "routes",
 	Short: "Print all registered HTTP routes",
 	Run: func(_ *cobra.Command, _ []string) {
-		for _, r := range auth.Router().Routes() {
+		for _, r := range auth.AllRoutes() {
 			fmt.Println(r)
 		}
 	},

@@ -3,44 +3,13 @@ package auth
 import (
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 
 	"github.com/wow-look-at-my/testify/assert"
 	"github.com/wow-look-at-my/testify/require"
 )
 
-func TestServiceRoute(t *testing.T) {
-	serviceURLs = map[string]*url.URL{
-		"apt":    {Scheme: "https", Host: "apt.example.com"},
-		"dl":     {Scheme: "https", Host: "dl.example.com"},
-		"static": {Scheme: "https", Host: "cdn.example.com", Path: "/files"},
-	}
-
-	tests := []struct {
-		name      string
-		subdomain string
-		pattern   string
-		wantHost  string
-	}{
-		{"simple", "apt", "/", "apt.example.com"},
-		{"with method", "dl", "GET /{project}", "dl.example.com"},
-		{"with path prefix", "static", "GET /file", "cdn.example.com"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ServiceRoute(tt.subdomain, tt.pattern)
-			assert.Contains(t, got, tt.wantHost)
-		})
-	}
-}
-
 func TestServiceRedirect(t *testing.T) {
-	serviceURLs = map[string]*url.URL{
-		"docker": {Scheme: "https", Host: "docker.example.com"},
-		"oci":    {Scheme: "https", Host: "oci.example.com"},
-	}
-
 	ServiceRedirect("docker", "oci", true)
 
 	ts := httptest.NewServer(http.HandlerFunc(ServeHTTP))
@@ -58,11 +27,6 @@ func TestServiceRedirect(t *testing.T) {
 }
 
 func TestServiceRedirect_Temporary(t *testing.T) {
-	serviceURLs = map[string]*url.URL{
-		"old": {Scheme: "https", Host: "old.example.com"},
-		"new": {Scheme: "https", Host: "new.example.com"},
-	}
-
 	ServiceRedirect("old", "new", false)
 
 	ts := httptest.NewServer(http.HandlerFunc(ServeHTTP))
@@ -79,33 +43,61 @@ func TestServiceRedirect_Temporary(t *testing.T) {
 	assert.Equal(t, "https://new.example.com/path?q=1", resp.Header.Get("Location"))
 }
 
-func TestServiceRedirect_NilURLs(t *testing.T) {
-	serviceURLs = map[string]*url.URL{}
-	ServiceRedirect("missing", "also-missing", true)
+func TestServeHTTP_SubdomainDispatch(t *testing.T) {
+	ServiceHandleRaw("mytest", "GET /hello", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("from mytest service"))
+	})
+
+	ts := httptest.NewServer(http.HandlerFunc(ServeHTTP))
+	defer ts.Close()
+
+	client := &http.Client{}
+	req, _ := http.NewRequest("GET", ts.URL+"/hello", nil)
+	req.Host = "mytest.pazer.build"
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
-func TestStaticURL(t *testing.T) {
-	serviceURLs = map[string]*url.URL{
-		"static": {Scheme: "https", Host: "static.example.com"},
-	}
-	got := StaticURL()
-	require.NotNil(t, got)
-	assert.Equal(t, "static.example.com", got.Host)
+func TestServeHTTP_FallsThrough(t *testing.T) {
+	HandleRaw("GET /api-test", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	ts := httptest.NewServer(http.HandlerFunc(ServeHTTP))
+	defer ts.Close()
+
+	client := &http.Client{}
+	req, _ := http.NewRequest("GET", ts.URL+"/api-test", nil)
+	req.Host = "unknown.whatever.com"
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
-func TestDLBaseURL(t *testing.T) {
-	serviceURLs = map[string]*url.URL{
-		"dl": {Scheme: "https", Host: "dl.example.com"},
-	}
-	got := DLBaseURL()
-	require.NotNil(t, got)
-	assert.Equal(t, "dl.example.com", got.Host)
+func TestDeriveServiceURL(t *testing.T) {
+	sharedBase = "https://pazer.build"
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Host = "dl.pazer.build"
+
+	u := DeriveServiceURL(req, "static")
+	assert.Equal(t, "https", u.Scheme)
+	assert.Equal(t, "static.pazer.build", u.Host)
 }
 
-func TestServiceURL(t *testing.T) {
-	serviceURLs = map[string]*url.URL{
-		"apt": {Scheme: "https", Host: "apt.example.com"},
-	}
-	assert.NotNil(t, ServiceURL("apt"))
-	assert.Nil(t, ServiceURL("nonexistent"))
+func TestDeriveServiceURL_HTTP(t *testing.T) {
+	sharedBase = "http://localhost:8080"
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Host = "dl.localhost:8080"
+
+	u := DeriveServiceURL(req, "static")
+	assert.Equal(t, "http", u.Scheme)
+	assert.Equal(t, "static.localhost", u.Host)
 }
