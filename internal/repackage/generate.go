@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
+	"strings"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -15,6 +17,26 @@ import (
 )
 
 var repackTracer = otel.Tracer("buildhost.repackage")
+
+// dlServiceURL derives the dl subdomain URL from the server's base URL.
+// The base URL may come from any service subdomain (e.g. brew.example.com);
+// we replace the leading label with "dl" to reach the dl download handler.
+func dlServiceURL(baseURL string) string {
+	u, err := url.Parse(baseURL)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	host := u.Hostname()
+	if i := strings.IndexByte(host, '.'); i >= 0 {
+		host = "dl" + host[i:]
+	} else {
+		host = "dl." + host
+	}
+	if port := u.Port(); port != "" {
+		host += ":" + port
+	}
+	return u.Scheme + "://" + host
+}
 
 type Generator struct {
 	store       storage.Storage
@@ -92,12 +114,25 @@ func (g *Generator) Generate(ctx context.Context, format Format, project db.Proj
 		attribute.String("repackage.format", string(format)),
 		attribute.Int("repackage.input_bytes", len(data)),
 	)
+	dlBase := dlServiceURL(baseURL)
 	out, err := rp.Repackage(ctx, Input{
 		Project:  project,
 		Release:  release,
 		Artifact: artifact,
 		Data:     data,
 		BaseURL:  baseURL,
+		DownloadURL: func(name, version string, os db.OS, arch db.Arch, format string) string {
+			q := url.Values{}
+			q.Set("os", string(os))
+			q.Set("arch", string(arch))
+			if version != "" {
+				q.Set("v", version)
+			}
+			if format != "" && format != "raw" {
+				q.Set("fmt", format)
+			}
+			return dlBase + "/" + name + "?" + q.Encode()
+		},
 	})
 	if err != nil {
 		convertSpan.RecordError(err)

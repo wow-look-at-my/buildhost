@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	neturl "net/url"
 	"regexp"
 	"strings"
 	"text/template"
@@ -98,8 +99,13 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 	if input.DownloadURL != nil {
 		url = input.DownloadURL(input.Project.Name, version, input.Artifact.OS, input.Artifact.Arch, "tar.gz")
 	} else {
-		url = fmt.Sprintf("%s/dl/%s/v%s/%s/%s?format=tar.gz",
-			input.BaseURL, input.Project.Name, version, input.Artifact.OS, input.Artifact.Arch)
+		dlBase := dlServiceURL(input.BaseURL)
+		q := neturl.Values{"os": {string(input.Artifact.OS)}, "arch": {string(input.Artifact.Arch)}}
+		if version != "" {
+			q.Set("v", "v"+version)
+		}
+		q.Set("fmt", "tar.gz")
+		url = dlBase + "/" + input.Project.Name + "?" + q.Encode()
 	}
 
 	d := brewData{
