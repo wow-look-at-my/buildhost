@@ -3,7 +3,6 @@ package apt
 import (
 	"context"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -18,7 +17,7 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
-		handler.StaticURL = auth.StaticURL()
+
 		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
 		handler.Signer = NewSigner(auth.DataDir())
 
@@ -58,7 +57,7 @@ func routeFrom(ctx context.Context) route {
 type Handler struct {
 	DB        *db.DB
 	Store     storage.Storage
-	StaticURL *url.URL
+
 	Gen       *repackage.Generator
 	Signer    *Signer
 }

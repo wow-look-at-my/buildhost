@@ -33,20 +33,11 @@ func render(baseURL string) []byte {
 
 	out := strings.ReplaceAll(templateMD, "__BASE_URL__", base)
 
-	svcNames := []string{"apt", "brew", "dl", "npm", "oci", "sites", "static"}
-	for _, svc := range svcNames {
+	for _, svc := range []string{"apt", "brew", "dl", "npm", "oci", "sites", "static"} {
 		placeholder := "__" + strings.ToUpper(svc) + "_URL__"
-		if u := auth.ServiceURL(svc); u != nil {
-			out = strings.ReplaceAll(out, placeholder, u.String())
-		} else {
-			out = strings.ReplaceAll(out, placeholder, base+"/"+svc)
-		}
+		out = strings.ReplaceAll(out, placeholder, base+"/"+svc)
 	}
-	if u := auth.ServiceURL("oci"); u != nil {
-		out = strings.ReplaceAll(out, "__OCI_HOST__", u.Host)
-	} else {
-		out = strings.ReplaceAll(out, "__OCI_HOST__", host)
-	}
+	out = strings.ReplaceAll(out, "__OCI_HOST__", host)
 
 	return []byte(out)
 }

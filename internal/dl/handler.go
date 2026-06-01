@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"go.opentelemetry.io/otel"
@@ -22,7 +21,7 @@ var handler Handler
 func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
-		handler.StaticURL = auth.StaticURL()
+
 
 		auth.ServiceHandle("dl", "GET /{project}", parseRoute, handler.Download)
 	})
@@ -40,8 +39,7 @@ func parseRoute(r *http.Request) auth.RouteInfo {
 }
 
 type Handler struct {
-	DB        *db.DB
-	StaticURL *url.URL
+	DB *db.DB
 }
 
 func handleDBErr(w http.ResponseWriter, r *http.Request, err error) bool {
@@ -114,5 +112,5 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	if immutable {
 		code = http.StatusMovedPermanently
 	}
-	static.Redirect(w, r, h.StaticURL, p, code)
+	static.Redirect(w, r, auth.DeriveServiceURL(r, "static"), p, code)
 }

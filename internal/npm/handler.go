@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -18,7 +17,7 @@ var handler Handler
 func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
-		handler.StaticURL = auth.StaticURL()
+
 
 		auth.ServiceHandleHandler("npm", "/@buildhost/{project}", parseRoute, &handler)
 	})
@@ -62,8 +61,7 @@ func routeFrom(ctx context.Context) route {
 }
 
 type Handler struct {
-	DB        *db.DB
-	StaticURL *url.URL
+	DB *db.DB
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +129,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 			"version": version,
 			"bin":     map[string]string{projectName: "./bin/run.js"},
 			"dist": map[string]string{
-				"tarball": static.URL(h.StaticURL, static.For(projectName).WithVersion(version).WithOS("any").WithArch("any").WithFmt("npm-wrapper")),
+				"tarball": static.URL(auth.DeriveServiceURL(r, "static"), static.For(projectName).WithVersion(version).WithOS("any").WithArch("any").WithFmt("npm-wrapper")),
 			},
 		}
 		if len(optDeps) > 0 {
@@ -192,7 +190,7 @@ func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Reques
 			"os":      []string{platOS},
 			"cpu":     []string{platArch},
 			"dist": map[string]string{
-				"tarball": static.URL(h.StaticURL, static.For(projectName).WithVersion(version).WithOS(db.OS(reverseNpmPlatform(platOS))).WithArch(db.Arch(reverseNpmArch(platArch))).WithFmt("npm")),
+				"tarball": static.URL(auth.DeriveServiceURL(r, "static"), static.For(projectName).WithVersion(version).WithOS(db.OS(reverseNpmPlatform(platOS))).WithArch(db.Arch(reverseNpmArch(platArch))).WithFmt("npm")),
 			},
 		}
 		if _, ok := distTags["latest"]; !ok {

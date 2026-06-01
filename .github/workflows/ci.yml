@@ -102,13 +102,8 @@ jobs:
                   await gh.rest.issues.createComment({ ...repo, issue_number: pr, body });
               }
 
-  publish-ghcr:
-    needs: build
-    uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@master
-
   container-healthcheck:
     needs: build
-    if: always() && needs.build.result != 'cancelled'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -121,8 +116,12 @@ jobs:
       - run: docker compose -f docker-compose.ci.yml logs
         if: failure()
 
+  publish-ghcr:
+    needs: container-healthcheck
+    uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@master
+
   publish-buildhost-test:
-    needs: build
+    needs: container-healthcheck
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
