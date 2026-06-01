@@ -314,3 +314,5 @@ If `BUILDHOST_OIDC_ORGS` is empty, no orgs are allowed. Use `*` to allow all org
 ## License
 
 MIT
+
+<!-- chunked-push validation branch (sharp-cerf): verifying registry PATCH/PUT chunk flow -->
