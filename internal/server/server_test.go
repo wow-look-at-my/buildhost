@@ -39,7 +39,6 @@ import (
 type testEnv struct {
 	ts		*httptest.Server
 	database	*db.DB
-	store		storage.Storage
 	token		string	// plaintext API token with read,write scopes
 }
 
@@ -97,7 +96,7 @@ func setup(t *testing.T) *testEnv {
 	plaintext, _, err := database.CreateToken(context.Background(), "test", nil, "read,write")
 	require.Nil(t, err)
 
-	return &testEnv{ts: ts, database: database, store: store, token: plaintext}
+	return &testEnv{ts: ts, database: database, token: plaintext}
 }
 
 // helpers -------------------------------------------------------------------

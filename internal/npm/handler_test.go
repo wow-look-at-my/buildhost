@@ -3,6 +3,7 @@ package npm
 import (
 	"testing"
 
+	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/testify/assert"
 )
 
@@ -49,4 +50,40 @@ func TestWrapperRunScript(t *testing.T) {
 
 	assert.Empty(t, wrapperRunScript("bad name!"))
 	assert.Empty(t, wrapperRunScript("UPPERCASE"))
+}
+
+func TestProjectNPMNameRoundTrip(t *testing.T) {
+	for _, tt := range []struct{ project, npm string }{
+		{"go-toolchain", "go-toolchain"},
+		{"cc-marketplace/my-plugin", "cc-marketplace__my-plugin"},
+		{"a/b/c", "a__b__c"},
+	} {
+		assert.Equal(t, tt.npm, projectToNPMName(tt.project), "encode %q", tt.project)
+		assert.Equal(t, tt.project, npmNameToProject(tt.npm), "decode %q", tt.npm)
+	}
+}
+
+func TestPlatformHelpers(t *testing.T) {
+	assert.Equal(t, "darwin", npmPlatform(db.OSDarwin))
+	assert.Equal(t, "win32", npmPlatform(db.OSWindows))
+	assert.Equal(t, "linux", npmPlatform(db.OSLinux))
+
+	assert.Equal(t, "x64", npmArch(db.ArchAMD64))
+	assert.Equal(t, "arm64", npmArch(db.ArchARM64))
+	assert.Equal(t, "ia32", npmArch(db.Arch386))
+	assert.Equal(t, "arm", npmArch(db.Arch("arm")))
+
+	assert.Equal(t, "windows", reverseNpmPlatform("win32"))
+	assert.Equal(t, "darwin", reverseNpmPlatform("darwin"))
+
+	assert.Equal(t, "amd64", reverseNpmArch("x64"))
+	assert.Equal(t, "386", reverseNpmArch("ia32"))
+	assert.Equal(t, "arm64", reverseNpmArch("arm64"))
+}
+
+func TestNormalizeVersion(t *testing.T) {
+	assert.Equal(t, "1.2.3", normalizeVersion("1.2.3"))
+	assert.Equal(t, "1.2.3", normalizeVersion("v1.2.3"))
+	assert.Equal(t, "1.0.0", normalizeVersion("1"))
+	assert.Equal(t, "2.0.0", normalizeVersion("v2"))
 }
