@@ -20,9 +20,8 @@ func init() {
 
 		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
 		handler.Signer = NewSigner(auth.DataDir())
-
-		auth.ServiceHandleHandler("apt", "/{path...}", parseRoute, &handler)
 	})
+	auth.ServiceHandleHandler("apt", "/{path...}", parseRoute, &handler)
 }
 
 type route struct {

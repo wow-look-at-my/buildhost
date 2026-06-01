@@ -21,13 +21,12 @@ func init() {
 		handler.Store = auth.Store()
 		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
 		handler.uploads = newUploadStore(auth.DataDir()+"/tmp/oci-uploads", config.MaxBlobSize())
-
-		auth.ServiceHandleRaw("oci", "GET /v2/{$}", handler.V2Root)
-		auth.ServiceHandleRaw("oci", "HEAD /v2/{$}", handler.V2Root)
-		auth.ServiceHandleHandler("oci", "/v2/", parseRoute, &handler)
-
-		auth.ServiceRedirect("docker", "oci", true)
 	})
+	auth.ServiceHandleRaw("oci", "GET /v2/{$}", handler.V2Root)
+	auth.ServiceHandleRaw("oci", "HEAD /v2/{$}", handler.V2Root)
+	auth.ServiceHandleHandler("oci", "/v2/", parseRoute, &handler)
+
+	auth.ServiceRedirect("docker", "oci", true)
 }
 
 type route struct {

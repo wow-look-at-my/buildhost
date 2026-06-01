@@ -37,11 +37,6 @@ func OnReady(fn func()) {
 }
 
 func Init(database *db.DB, store storage.Storage, baseURL, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string) {
-	mux = router.New()
-	serviceMu.Lock()
-	serviceRouters = map[string]*router.Router{}
-	serviceMu.Unlock()
-
 	sharedDB = database
 	sharedStore = store
 	sharedBase = baseURL

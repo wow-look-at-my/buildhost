@@ -29,9 +29,8 @@ func init() {
 		for _, format := range repackage.RegisteredFormats() {
 			RegisterRepackageFmt(format)
 		}
-
-		auth.ServiceHandle("static", "GET /file", parseRoute, handler.Serve)
 	})
+	auth.ServiceHandle("static", "GET /file", parseRoute, handler.Serve)
 }
 
 type route struct {

@@ -21,10 +21,8 @@ var handler Handler
 func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
-
-
-		auth.ServiceHandle("dl", "GET /{project}", parseRoute, handler.Download)
 	})
+	auth.ServiceHandle("dl", "GET /{project}", parseRoute, handler.Download)
 }
 
 type route struct {

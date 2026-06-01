@@ -16,8 +16,8 @@ var handler Handler
 func init() {
 	auth.OnReady(func() {
 		handler.body = render(auth.BaseURL())
-		auth.HandleRaw("GET /llms.txt", handler.Serve)
 	})
+	auth.HandleRaw("GET /llms.txt", handler.Serve)
 }
 
 type Handler struct {
