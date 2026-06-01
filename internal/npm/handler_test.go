@@ -310,7 +310,7 @@ func TestServeHTTP_PrivateProject_PackageInfo_WithValidContext(t *testing.T) {
 // routing -- which is why the %2f mismatch went unnoticed until production.
 func TestServeHTTP_RoutedRealNpmRequest(t *testing.T) {
 	_, d, store := setupTest(t)
-	auth.Init(d, store, "https://npm.example.com", t.TempDir(), nil, nil, nil, nil)
+	auth.Init(d, store, t.TempDir(), nil, nil, nil, nil)
 
 	ctx := context.Background()
 	proj := &db.Project{Name: "go-toolchain", Versioning: db.VersioningSemver}

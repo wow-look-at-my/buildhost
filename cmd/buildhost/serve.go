@@ -85,7 +85,7 @@ var serveCmd = &cobra.Command{
 		}
 
 		srv := server.New(cfg, database, store)
-		slog.Info("starting server", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL)
+		slog.Info("starting server", "addr", cfg.ListenAddr)
 
 		go func() {
 			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

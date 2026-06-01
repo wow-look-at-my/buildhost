@@ -19,7 +19,6 @@ var (
 	readyFuncs     []func()
 	sharedDB       *db.DB
 	sharedStore    storage.Storage
-	sharedBase     string
 	sharedData     string
 	sharedFetchDomains []string
 )
@@ -27,7 +26,6 @@ var (
 func Router() *router.Router     { return mux }
 func DB() *db.DB                 { return sharedDB }
 func Store() storage.Storage     { return sharedStore }
-func BaseURL() string            { return sharedBase }
 func DataDir() string            { return sharedData }
 func GetMiddleware() *Middleware { return mw }
 func SiteFetchDomains() []string { return sharedFetchDomains }
@@ -36,15 +34,13 @@ func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
 }
 
-func Init(database *db.DB, store storage.Storage, baseURL, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string) {
+func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string) {
 	sharedDB = database
 	sharedStore = store
-	sharedBase = baseURL
 	sharedData = dataDir
 	sharedFetchDomains = siteFetchDomains
 
 	mw = &Middleware{DB: database, Verifier: NewOIDCVerifier(OIDCConfig{
-		BaseURL:        baseURL,
 		TrustedIssuers: trustedIssuers,
 		AllowedOrgs:    allowedOrgs,
 		AllowedEvents:  allowedEvents,
@@ -101,14 +97,9 @@ func ServiceRedirect(from, to string, permanent bool) {
 		code = http.StatusMovedPermanently
 	}
 	svcRouter(from).HandleFunc("/{path...}", router.Allow, func(w http.ResponseWriter, r *http.Request) {
-		domain := domainFromRequest(r)
-		scheme := "https"
-		if strings.HasPrefix(sharedBase, "http://") {
-			scheme = "http"
-		}
 		target := &url.URL{
-			Scheme:   scheme,
-			Host:     to + "." + domain,
+			Scheme:   RequestScheme(r),
+			Host:     to + "." + domainFromRequest(r),
 			Path:     r.URL.Path,
 			RawQuery: r.URL.RawQuery,
 		}
@@ -146,12 +137,32 @@ func domainFromRequest(r *http.Request) string {
 }
 
 func DeriveServiceURL(r *http.Request, service string) *url.URL {
-	domain := domainFromRequest(r)
-	scheme := "https"
-	if strings.HasPrefix(sharedBase, "http://") {
-		scheme = "http"
+	return &url.URL{Scheme: RequestScheme(r), Host: service + "." + domainFromRequest(r)}
+}
+
+// RequestScheme returns the scheme the client used to reach this server. We run
+// behind a TLS-terminating Cloudflare Tunnel (and an internal nginx sidecar that
+// rewrites X-Forwarded-Proto), so rather than trust a forwarded header we treat
+// loopback hosts as http and everything else as https.
+func RequestScheme(r *http.Request) string {
+	host := hostNoPort(r.Host)
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") || host == "127.0.0.1" || host == "::1" {
+		return "http"
 	}
-	return &url.URL{Scheme: scheme, Host: service + "." + domain}
+	return "https"
+}
+
+// RequestBaseURL reconstructs this server's own base URL from the request
+// (scheme + Host), so nothing depends on a configured "this is my URL" value.
+func RequestBaseURL(r *http.Request) string {
+	return RequestScheme(r) + "://" + r.Host
+}
+
+func hostNoPort(host string) string {
+	if i := strings.LastIndex(host, ":"); i >= 0 {
+		return host[:i]
+	}
+	return host
 }
 
 func AllRoutes() []router.Route {

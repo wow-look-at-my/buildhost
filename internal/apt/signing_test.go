@@ -31,7 +31,7 @@ func setupSigningTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	h := &Handler{
 		DB:     d,
 		Store:  store,
-		Gen:    repackage.NewGenerator(store, d, "http://localhost:8080", tmpDir),
+		Gen:    repackage.NewGenerator(store, d, tmpDir),
 		Signer: signer,
 	}
 	return h, d, store

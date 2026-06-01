@@ -563,11 +563,11 @@ func TestGenerator_Generate(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	gen := NewGenerator(store, d, "https://example.com", t.TempDir())
+	gen := NewGenerator(store, d, t.TempDir())
 	require.True(t, gen.Supports(FormatTarGZ))
 	require.False(t, gen.Supports(Format("bogus")))
 
-	out, err := gen.Generate(ctx, FormatTarGZ, *proj, *rel, *a)
+	out, err := gen.Generate(ctx, FormatTarGZ, *proj, *rel, *a, "https://example.com")
 	require.NoError(t, err)
 	require.NotNil(t, out)
 	assert.True(t, strings.HasSuffix(out.Filename, ".tar.gz"))
@@ -578,8 +578,8 @@ func TestGenerator_Generate_UnsupportedFormat(t *testing.T) {
 	d := openTestDB(t)
 	store := openTestStore(t)
 
-	gen := NewGenerator(store, d, "https://example.com", t.TempDir())
-	_, err := gen.Generate(context.Background(), Format("bogus"), db.Project{}, db.Release{}, db.Artifact{})
+	gen := NewGenerator(store, d, t.TempDir())
+	_, err := gen.Generate(context.Background(), Format("bogus"), db.Project{}, db.Release{}, db.Artifact{}, "https://example.com")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported format")
 }

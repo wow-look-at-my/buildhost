@@ -22,7 +22,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - `internal/npm/` - npm registry endpoint on `npm.{domain}/@buildhost/{project}`. Tarball URLs point to static. Self-registering via auth.OnReady().
 - `internal/oci/` - OCI distribution endpoint (read + write) on `oci.{domain}/v2/{project}/...`. `docker.{domain}` permanently redirects to `oci.{domain}`. GET/HEAD pulls; POST/PATCH/PUT pushes (`docker push`). Pull side synthesizes a minimal image from a binary artifact OR serves a real pushed image. Push side (`push.go`, `upload.go`, `putmanifest.go`) accepts blob uploads (monolithic + chunked, streamed to `DataDir/tmp/oci-uploads`) and manifest/index PUTs, recording `kind=docker` artifacts. Route `Access()` is method-aware (write for push verbs). Self-registering via auth.OnReady().
 - `internal/sites/` - Static site hosting endpoint on `sites.{domain}/{project}/...`. Upload tar.gz archives, serve files per branch or version. Self-registering via auth.OnReady().
-- `internal/llms/` - Public `/llms.txt` endpoint (https://llmstxt.org). Serves a plain-text guide to buildhost for LLMs/agents, rendered once from an embedded `template.md` with the configured base URL substituted in. Public (registered via `HandleRaw`, no auth). Self-registering via init().
+- `internal/llms/` - Public `/llms.txt` endpoint (https://llmstxt.org). Serves a plain-text guide to buildhost for LLMs/agents, rendered per request from an embedded `template.md` with the server's own base URL (derived from the request `Host`) substituted in. Public (registered via `HandleRaw`, no auth). Self-registering via init().
 - `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler/ServiceRoute/ServiceRedirect) backed by `github.com/wow-look-at-my/router`, RouteInfo interface
 - `internal/db/` - SQLite database layer (modernc.org/sqlite, no CGo), OIDC policy storage. Types (Project, Release, Artifact, APIToken, OIDCPolicy) and validation functions live here. Uses sqlc for query generation from `internal/db/queries/*.sql` with schema in `internal/db/schema.sql`.
 - `internal/db/queries/` - SQL query files for sqlc code generation
@@ -75,7 +75,7 @@ buildhost routes   # prints all registered HTTP routes, sorted
 ## Running
 
 ```bash
-BUILDHOST_LISTEN_ADDR=:8080 BUILDHOST_BASE_URL=https://example.com buildhost serve
+BUILDHOST_LISTEN_ADDR=:8080 buildhost serve
 ```
 
 Each service is accessed via a subdomain derived from the incoming request's `Host` header: `apt.example.com`, `brew.example.com`, `npm.example.com`, `oci.example.com` (canonical, `docker.example.com` 301-redirects), `dl.example.com`, `sites.example.com`, `static.example.com`. API routes stay on the main domain. No domain configuration is required -- the server dispatches by matching the first label of the Host header against known service names.
@@ -221,7 +221,7 @@ The following items have been reviewed and addressed or are intentional design c
 - **Ready-to-update endpoint**: `GET /ready-to-update` on :8080 returns 200/503 with no body content -- reveals only idle/busy state, no sensitive data
 - **Inflight endpoint**: `GET /admin/inflight` on :9090 is unauthenticated -- same trust model as the rest of the admin dashboard (internal-only, behind reverse proxy)
 - **No writes outside data dir**: Temp files use BUILDHOST_DATA_DIR/tmp, not system /tmp
-- **OIDC audience check**: Auto-provisioning requires `BUILDHOST_BASE_URL` to be set and verifies the token's `aud` claim matches it. GHA workflows must request tokens with the buildhost URL as the audience: `core.getIDToken('https://buildhost.example.com')`
+- **OIDC audience check**: The auto-provisioning path does NOT gate on the token's `aud` claim -- trust for a trusted-issuer token comes from the JWKS signature plus the org allowlist (`BUILDHOST_OIDC_ORGS`), the event allowlist (`BUILDHOST_OIDC_EVENTS`), and the subject claim. (Telling the server its own URL was never a meaningful trust boundary, and a stale/missing value caused a production 401 outage, so the gate was removed.) A per-policy `audience` field on an `OIDCPolicy` is still honored as an optional, opt-in restriction for explicitly configured policies. The server is never told its own URL: generated links are derived per request from the `Host` header (`auth.RequestBaseURL`).
 - **OIDC event check**: Tokens without an `event_name` claim are rejected when `BUILDHOST_OIDC_EVENTS` is configured (default: `push,pull_request`). This prevents bypass via providers that omit the claim. Fork PRs in GitHub Actions do not receive OIDC tokens, so `pull_request` is safe to include by default.
 - **OIDC RSA key size**: JWKS keys below 2048 bits are rejected
 - **OIDC visibility sync**: When an OIDC token's `repository_visibility` claim changes project visibility, the change is logged at WARN level with project name, old/new visibility, and OIDC subject
