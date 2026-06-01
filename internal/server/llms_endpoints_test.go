@@ -54,18 +54,21 @@ func TestLLMsTxt_DocumentedRoutesAreRegistered(t *testing.T) {
 	require.NotEmpty(t, paths, "expected to extract documented endpoints from /llms.txt")
 
 	allRoutes := auth.AllRoutes()
+	// Every path-style URL in /llms.txt must resolve to a registered route,
+	// including the service paths (/npm, /apt, /brew, /dl, /static, /sites,
+	// /oci), which the main domain redirects to their subdomains. This check
+	// used to be limited to /api + /healthz + /llms.txt, which is precisely how
+	// the path-based npm 404 slipped through.
 	for _, p := range paths {
-		if strings.HasPrefix(p, "/api/") || p == "/healthz" || p == "/llms.txt" {
-			registered := false
-			for _, route := range allRoutes {
-				if routePatternMatches(route.Pattern, p) {
-					registered = true
-					break
-				}
+		registered := false
+		for _, route := range allRoutes {
+			if routePatternMatches(route.Pattern, p) {
+				registered = true
+				break
 			}
-			require.Truef(t, registered,
-				"/llms.txt documents %q but no route is registered for it", p)
 		}
+		require.Truef(t, registered,
+			"/llms.txt documents %q but no route is registered for it", p)
 	}
 }
 
