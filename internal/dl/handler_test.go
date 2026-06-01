@@ -33,10 +33,9 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	staticURL, err := url.Parse("http://localhost:8080")
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, StaticURL: staticURL}
+	h := &Handler{DB: d}
 	return h, d, store
 }
 

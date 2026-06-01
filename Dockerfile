@@ -1,3 +1,6 @@
+FROM busybox:musl AS dirs
+RUN mkdir -p /data && chown 65532:65532 /data
+
 FROM gcr.io/distroless/static-debian12:nonroot
 
 ARG VERSION=dev
@@ -8,6 +11,7 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.description="Universal package registry server"
 
 COPY --chmod=755 build/buildhost_linux_amd64 /usr/local/bin/buildhost
+COPY --from=dirs --chown=65532:65532 /data /var/lib/buildhost
 
 ENV BUILDHOST_DATA_DIR=/var/lib/buildhost
 ENV BUILDHOST_DB_PATH=/var/lib/buildhost/buildhost.db
