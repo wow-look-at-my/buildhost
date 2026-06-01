@@ -106,3 +106,42 @@ func TestLoad_OIDCEvents_Default(t *testing.T) {
 	c := Load()
 	assert.Equal(t, []string{"push", "pull_request"}, c.OIDCEvents)
 }
+
+func TestEnvBytes(t *testing.T) {
+	cases := []struct {
+		in   string
+		def  int64
+		want int64
+	}{
+		{"", 100, 100},        // unset -> default
+		{"   ", 100, 100},     // blank -> default
+		{"500", 1, 500},       // plain bytes
+		{"8K", 1, 8 << 10},    // upper suffix
+		{"8k", 1, 8 << 10},    // lower suffix
+		{"4M", 1, 4 << 20},    // mega
+		{"2G", 1, 2 << 30},    // giga
+		{"1T", 1, 1 << 40},    // tera
+		{"  3G ", 1, 3 << 30}, // surrounding space
+		{"bogus", 77, 77},     // unparseable -> default
+		{"-5", 77, 77},        // non-positive -> default
+		{"0", 77, 77},         // zero -> default
+		{"G", 77, 77},         // suffix only -> default
+		{"99999999999T", 77, 77}, // would overflow int64 -> default
+	}
+	for _, c := range cases {
+		t.Setenv("BUILDHOST_TEST_BYTES", c.in)
+		assert.Equal(t, c.want, envBytes("BUILDHOST_TEST_BYTES", c.def), "in=%q", c.in)
+	}
+}
+
+func TestMaxSizes(t *testing.T) {
+	t.Setenv("BUILDHOST_MAX_BLOB_SIZE", "")
+	assert.Equal(t, defaultMaxBlobSize, MaxBlobSize())
+	t.Setenv("BUILDHOST_MAX_BLOB_SIZE", "3G")
+	assert.Equal(t, int64(3<<30), MaxBlobSize())
+
+	t.Setenv("BUILDHOST_MAX_UPLOAD_SIZE", "")
+	assert.Equal(t, defaultMaxUploadSize, MaxUploadSize())
+	t.Setenv("BUILDHOST_MAX_UPLOAD_SIZE", "500M")
+	assert.Equal(t, int64(500<<20), MaxUploadSize())
+}

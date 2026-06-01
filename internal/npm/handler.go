@@ -20,7 +20,7 @@ func init() {
 		handler.DB = auth.DB()
 		handler.StaticURL = auth.StaticURL()
 
-		auth.HandleHandler(auth.ServiceRoute("npm", "/@buildhost/{project}"), parseRoute, &handler)
+		auth.ServiceHandleHandler("npm", "/@buildhost/{project}", parseRoute, &handler)
 	})
 }
 
@@ -84,7 +84,7 @@ func (h *Handler) collectNpmArtifacts(ctx context.Context, releaseID int64) []np
 	}
 	var infos []npmArtifactInfo
 	for _, a := range artifacts {
-		if a.Kind == db.KindLibrary {
+		if a.Kind == db.KindLibrary || a.Kind.ServedViaDockerOnly() {
 			continue
 		}
 		infos = append(infos, npmArtifactInfo{

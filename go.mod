@@ -10,6 +10,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/ulikunitz/xz v0.5.15
 	github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260520105527-317d2038d915
+	github.com/wow-look-at-my/router v0.0.0-20260526055525-bbcdc3a40840
 	github.com/wow-look-at-my/testify v0.0.0-20260217010200-5fd2c08e3abb
 	go.opentelemetry.io/contrib/bridges/otelslog v0.18.0
 	go.opentelemetry.io/otel v1.43.0
@@ -70,7 +71,7 @@ replace modernc.org/gc/v3 v3.1.2 => gitlab.com/cznic/gc/v3 v3.1.2
 
 replace modernc.org/goabi0 v0.2.0 => gitlab.com/cznic/goabi0 v0.2.0
 
-replace modernc.org/libc v1.72.3 => gitlab.com/cznic/libc v1.72.3
+replace modernc.org/libc v1.72.5 => gitlab.com/cznic/libc v1.72.5
 
 replace modernc.org/mathutil v1.7.1 => gitlab.com/cznic/mathutil v1.7.1
 

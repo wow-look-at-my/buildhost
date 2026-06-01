@@ -23,8 +23,7 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 	auth.Init(database, store, cfg.BaseURL, cfg.DataDir, cfg.Domain, cfg.ServiceURLs, cfg.OIDCIssuers, cfg.OIDCOrgs, cfg.OIDCEvents, cfg.SiteFetchDomains)
 	healthDB = database
 
-	mux := auth.Mux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+	auth.HandleRaw("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := healthDB.PingContext(r.Context()); err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			w.Write([]byte("database unreachable"))
@@ -33,7 +32,7 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
-	mux.HandleFunc("GET /ready-to-update", func(w http.ResponseWriter, _ *http.Request) {
+	auth.HandleRaw("GET /ready-to-update", func(w http.ResponseWriter, _ *http.Request) {
 		if admin.InflightWrites() > 0 {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
@@ -63,7 +62,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func (s *Server) Handler() http.Handler {
-	var h http.Handler = auth.Mux()
+	var h http.Handler = http.HandlerFunc(auth.ServeHTTP)
 	h = auth.GetMiddleware().Authenticate(h)
 	h = admin.TrackInflight(h)
 	h = securityHeaders(h)

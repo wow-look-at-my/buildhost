@@ -3,10 +3,30 @@ package server_test
 import (
 	"net/http"
 	"regexp"
+	"strings"
 	"testing"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/testify/require"
 )
+
+func routePatternMatches(pattern, path string) bool {
+	patSegs := strings.Split(strings.TrimRight(pattern, "/"), "/")
+	pathSegs := strings.Split(strings.TrimRight(path, "/"), "/")
+	for i, ps := range patSegs {
+		if strings.HasPrefix(ps, "{") {
+			if strings.HasSuffix(ps, "...}") {
+				return true
+			}
+			continue
+		}
+		if i >= len(pathSegs) || ps != pathSegs[i] {
+			return false
+		}
+	}
+	return len(patSegs) == len(pathSegs) ||
+		(strings.HasSuffix(pattern, "/") && len(pathSegs) >= len(patSegs))
+}
 
 var (
 	placeholderRE = regexp.MustCompile(`\{[^}]*\}`)
@@ -24,6 +44,27 @@ func TestLLMsTxt_PublicAndRendersBaseURL(t *testing.T) {
 	require.Contains(t, body, "dl.test.local")
 	require.NotContains(t, body, "__BASE_URL__")
 	require.NotContains(t, body, "__DL_URL__")
+}
+
+func TestLLMsTxt_DocumentedRoutesAreRegistered(t *testing.T) {
+	env := setup(t)
+
+	body := string(readBody(t, env.get(t, "/llms.txt")))
+	paths := documentedPaths(body, "http://localhost")
+	require.NotEmpty(t, paths, "expected to extract documented endpoints from /llms.txt")
+
+	routes := auth.AllRoutes()
+	for _, p := range paths {
+		registered := false
+		for _, route := range routes {
+			if routePatternMatches(route.Pattern, p) {
+				registered = true
+				break
+			}
+		}
+		require.Truef(t, registered,
+			"/llms.txt documents %q but no route is registered for it", p)
+	}
 }
 
 func TestLLMsTxt_DocumentedFlowsWork(t *testing.T) {
@@ -75,4 +116,29 @@ func seedPublishedRelease(t *testing.T, env *testEnv) {
 		env.putBody(t, "/api/v1/projects/myapp/releases/1/artifacts/linux/amd64", []byte("#!/bin/sh\necho hi\n")).StatusCode)
 	require.Equal(t, http.StatusOK,
 		env.postJSON(t, "/api/v1/projects/myapp/releases/1/publish", `{}`).StatusCode)
+}
+
+func documentedPaths(body, baseURL string) []string {
+	absURLRE := regexp.MustCompile(regexp.QuoteMeta(baseURL) + `(/[^\s"'<>)]*)`)
+
+	seen := map[string]bool{}
+	var out []string
+	add := func(p string) {
+		if i := strings.IndexAny(p, "?#"); i >= 0 {
+			p = p[:i]
+		}
+		p = strings.TrimRight(p, ".,`")
+		if !strings.HasPrefix(p, "/") {
+			return
+		}
+		p = placeholderRE.ReplaceAllString(p, "x")
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	for _, m := range absURLRE.FindAllStringSubmatch(body, -1) {
+		add(m[1])
+	}
+	return out
 }

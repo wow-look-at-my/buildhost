@@ -43,6 +43,25 @@ type DownloadCount struct {
 	Count      int64 `json:"count"`
 }
 
+type OciBlobLink struct {
+	ID         int64     `json:"id"`
+	ProjectID  int64     `json:"project_id"`
+	StorageKey string    `json:"storage_key"`
+	MediaType  string    `json:"media_type"`
+	Size       int64     `json:"size"`
+	IsManifest int64     `json:"is_manifest"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type OciTag struct {
+	ID             int64     `json:"id"`
+	ProjectID      int64     `json:"project_id"`
+	Tag            string    `json:"tag"`
+	ManifestDigest string    `json:"manifest_digest"`
+	ReleaseID      int64     `json:"release_id"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
 type OidcPolicy struct {
 	ID             int64     `json:"id"`
 	Issuer         string    `json:"issuer"`

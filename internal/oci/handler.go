@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
@@ -19,10 +20,11 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
+		handler.uploads = newUploadStore(auth.DataDir()+"/tmp/oci-uploads", config.MaxBlobSize())
 
-		auth.HandleRaw(auth.ServiceRoute("oci", "GET /v2/{$}"), handler.V2Root)
-		auth.HandleRaw(auth.ServiceRoute("oci", "HEAD /v2/{$}"), handler.V2Root)
-		auth.HandleHandler(auth.ServiceRoute("oci", "/v2/"), parseRoute, &handler)
+		auth.ServiceHandleRaw("oci", "GET /v2/{$}", handler.V2Root)
+		auth.ServiceHandleRaw("oci", "HEAD /v2/{$}", handler.V2Root)
+		auth.ServiceHandleHandler("oci", "/v2/", parseRoute, &handler)
 
 		auth.ServiceRedirect("docker", "oci", true)
 	})
@@ -32,15 +34,36 @@ type route struct {
 	project   string
 	action    string
 	reference string
+	method    string
 }
 
-func (r route) ProjectName() string      { return r.project }
-func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
+func (r route) ProjectName() string { return r.project }
+
+// Access is write for push verbs (so requireProject enforces a write-scoped
+// token authorized for the project) and read for pulls.
+func (r route) Access() auth.AccessLevel {
+	switch r.method {
+	case http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete:
+		return auth.WriteAccess
+	}
+	return auth.ReadAccess
+}
 
 var ociActions = []string{"manifests", "blobs", "tags"}
 
 func parseRoute(r *http.Request) auth.RouteInfo {
-	path := strings.TrimPrefix(r.URL.Path, "/v2/")
+	rt := parseOCIPath(strings.TrimPrefix(r.URL.Path, "/v2/"))
+	rt.method = r.Method
+	return rt
+}
+
+func parseOCIPath(path string) route {
+	if i := strings.LastIndex(path, "/blobs/uploads"); i > 0 {
+		after := path[i+len("/blobs/uploads"):]
+		if after == "" || strings.HasPrefix(after, "/") {
+			return route{project: path[:i], action: "uploads", reference: strings.TrimPrefix(after, "/")}
+		}
+	}
 
 	bestI := -1
 	var bestAction string
@@ -84,9 +107,10 @@ func routeFrom(ctx context.Context) route {
 }
 
 type Handler struct {
-	DB    *db.DB
-	Store storage.Storage
-	Gen   *repackage.Generator
+	DB      *db.DB
+	Store   storage.Storage
+	Gen     *repackage.Generator
+	uploads *uploadStore
 }
 
 func (h *Handler) V2Root(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +126,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch rt.action {
 	case "manifests":
+		if r.Method == http.MethodPut {
+			h.PutManifest(w, r, rt.reference)
+			return
+		}
 		if rt.reference == "" {
 			ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest reference required")
 			return
@@ -113,6 +141,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.serveBlob(w, r, rt.reference)
+	case "uploads":
+		switch r.Method {
+		case http.MethodPost:
+			h.StartBlobUpload(w, r)
+		case http.MethodPatch:
+			h.PatchBlobUpload(w, r, rt.reference)
+		case http.MethodPut:
+			h.PutBlobUpload(w, r, rt.reference)
+		default:
+			ociError(w, http.StatusMethodNotAllowed, "UNSUPPORTED", "unsupported method")
+		}
 	case "tags":
 		h.serveTags(w, r)
 	default:

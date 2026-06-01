@@ -37,7 +37,16 @@ const (
 	KindLibrary Kind = "library"
 	KindAssets  Kind = "assets"
 	KindArchive Kind = "archive"
+	KindDocker  Kind = "docker"
 )
+
+// ServedViaDockerOnly reports whether artifacts of this kind are exclusively
+// served through the OCI (/v2) endpoint. A "docker build" is just a container
+// image: it has no bare binary to repackage, so apt/brew/npm/raw downloads do
+// not apply to it.
+func (k Kind) ServedViaDockerOnly() bool {
+	return k == KindDocker
+}
 
 func ValidOS(s string) bool {
 	switch OS(s) {
@@ -57,7 +66,7 @@ func ValidArch(s string) bool {
 
 func ValidKind(s string) bool {
 	switch Kind(s) {
-	case KindBinary, KindLibrary, KindAssets, KindArchive:
+	case KindBinary, KindLibrary, KindAssets, KindArchive, KindDocker:
 		return true
 	}
 	return false

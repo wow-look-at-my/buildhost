@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
@@ -44,7 +45,9 @@ func sanitizeFilename(name string) string {
 	return name
 }
 
-const maxUploadSize = 2 << 30 // 2 GiB
+// maxUploadSize caps a single REST artifact upload. It is read once from config
+// (BUILDHOST_MAX_UPLOAD_SIZE) so the limit is tunable rather than hardcoded.
+var maxUploadSize = config.MaxUploadSize()
 
 func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 	ctx, span := apiTracer.Start(r.Context(), "api.upload_artifact")

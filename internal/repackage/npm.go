@@ -19,7 +19,7 @@ type NPM struct{}
 func (n *NPM) Format() Format { return FormatNPM }
 
 func (n *NPM) Applicable(a db.Artifact) bool {
-	return a.Kind != db.KindLibrary
+	return a.Kind != db.KindLibrary && !a.Kind.ServedViaDockerOnly()
 }
 
 func (n *NPM) Repackage(_ context.Context, input Input) (*Output, error) {

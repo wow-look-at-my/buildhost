@@ -24,7 +24,7 @@ func init() {
 		handler.DB = auth.DB()
 		handler.StaticURL = auth.StaticURL()
 
-		auth.Handle(auth.ServiceRoute("dl", "GET /{project}"), parseRoute, handler.Download)
+		auth.ServiceHandle("dl", "GET /{project}", parseRoute, handler.Download)
 	})
 }
 

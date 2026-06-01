@@ -21,6 +21,87 @@ jobs:
         with:
           generate: 52b76a04057b
 
+  route-diff:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: go-build
+          path: build/
+      - run: chmod +x build/buildhost_linux_amd64 && echo "routes=$(./build/buildhost_linux_amd64 routes | base64 -w0)" >> "$GITHUB_OUTPUT"
+        id: routes
+      - uses: wow-look-at-my/actions@typescript#latest
+        with:
+          steps: ${{ toJSON(steps) }}
+          script: |
+              const prRoutes = Buffer.from(steps.routes.outputs.routes, "base64").toString().trimEnd();
+              const gh = octokit("${{ github.token }}");
+              const repo = { owner: context.repo.owner, repo: context.repo.repo };
+
+              const prs = await gh.rest.pulls.list({ ...repo, head: `${repo.owner}:${context.ref.replace("refs/heads/", "")}`, state: "open" });
+              if (prs.data.length === 0) {
+                  core.info("No open PR for this branch");
+                  process.exit(0);
+              }
+              const pr = prs.data[0].number;
+
+              interface CachedData { base: string; pr: string }
+              function parseCache(body: string): CachedData | null {
+                  const m = body.match(/<!-- route-diff:(.+?) -->/);
+                  if (!m) return null;
+                  try { return JSON.parse(Buffer.from(m[1], "base64").toString()); }
+                  catch { return null; }
+              }
+
+              const comments = await gh.paginate(gh.rest.issues.listComments, { ...repo, issue_number: pr });
+              const existing = comments.filter((c: any) => c.body?.includes("<!-- route-diff:")).pop();
+
+              let baseRoutes = "";
+              if (existing) {
+                  const cached = parseCache(existing.body!);
+                  if (cached) {
+                      if (cached.pr === prRoutes) {
+                          core.info("Routes unchanged since last comment");
+                          process.exit(0);
+                      }
+                      baseRoutes = cached.base;
+                  }
+              }
+
+              if (baseRoutes && baseRoutes === prRoutes) {
+                  core.info("Routes match base branch");
+                  if (existing) {
+                      await gh.rest.issues.deleteComment({ ...repo, comment_id: existing.id });
+                  }
+                  process.exit(0);
+              }
+
+              fs.writeFileSync("/tmp/base-routes.txt", baseRoutes + "\n");
+              fs.writeFileSync("/tmp/pr-routes.txt", prRoutes + "\n");
+              const { stdout: diff } = child_process.spawnSync(
+                  "diff", ["-u", "--label", "base", "--label", "pr", "/tmp/base-routes.txt", "/tmp/pr-routes.txt"],
+                  { encoding: "utf8" },
+              );
+
+              const cache = Buffer.from(JSON.stringify({ base: baseRoutes, pr: prRoutes })).toString("base64");
+              const body = [
+                  `<!-- route-diff:${cache} -->`,
+                  "### Route changes",
+                  "",
+                  "```diff",
+                  diff.trimEnd(),
+                  "```",
+              ].join("\n");
+
+              if (existing) {
+                  await gh.rest.issues.updateComment({ ...repo, comment_id: existing.id, body });
+              } else {
+                  await gh.rest.issues.createComment({ ...repo, issue_number: pr, body });
+              }
+
   publish-ghcr:
     needs: build
     uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@master

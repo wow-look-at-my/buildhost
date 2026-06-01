@@ -21,11 +21,11 @@ func init() {
 		handler.Store = auth.Store()
 		handler.FetchDomains = auth.SiteFetchDomains()
 
-		auth.Handle(auth.ServiceRoute("sites", "PUT /{project}/branch/{branch}"), parseRoute, handler.Upload)
-		auth.Handle(auth.ServiceRoute("sites", "DELETE /{project}/branch/{branch}"), parseRoute, handler.Delete)
-		auth.Handle(auth.ServiceRoute("sites", "GET /{project}/branch/{branch}/{path...}"), parseRoute, handler.Serve)
-		auth.Handle(auth.ServiceRoute("sites", "GET /{project}/branch/{branch}"), parseRoute, handler.ServeRedirect)
-		auth.Handle(auth.ServiceRoute("sites", "GET /{project}/branches"), parseRoute, handler.List)
+		auth.ServiceHandle("sites", "PUT /{project}/branch/{branch}", parseRoute, handler.Upload)
+		auth.ServiceHandle("sites", "DELETE /{project}/branch/{branch}", parseRoute, handler.Delete)
+		auth.ServiceHandle("sites", "GET /{project}/branch/{branch}/{path...}", parseRoute, handler.Serve)
+		auth.ServiceHandle("sites", "GET /{project}/branch/{branch}", parseRoute, handler.ServeRedirect)
+		auth.ServiceHandle("sites", "GET /{project}/branches", parseRoute, handler.List)
 	})
 }
 

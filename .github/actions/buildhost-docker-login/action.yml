@@ -1,0 +1,35 @@
+name: Buildhost docker login
+version: 1
+description: Log in to a buildhost OCI registry with docker using a GitHub Actions OIDC token (no static secret).
+
+inputs:
+  server:
+    description: 'Buildhost server URL (used as the OIDC audience; its host is the docker registry)'
+    required: false
+    default: 'https://pazer.build'
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+          echo "::error::OIDC not available. Add 'permissions: { id-token: write }' to the job."
+          exit 1
+        fi
+        server_url='${{ inputs.server }}'
+        # Registry host is the URL authority only (strip scheme and any path).
+        registry="${server_url#*://}"
+        registry="${registry%%/*}"
+        # Mint a GHA OIDC token with the buildhost URL as the audience and use it
+        # as the docker password. buildhost verifies the JWT and auto-provisions
+        # the project on first push.
+        token="$(curl -sSf \
+          -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+          "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${server_url}" | jq -r '.value')"
+        if [ -z "${token}" ] || [ "${token}" = "null" ]; then
+          echo "::error::failed to obtain OIDC token for ${server_url}"
+          exit 1
+        fi
+        printf '%s' "${token}" | docker login "${registry}" -u oidc --password-stdin

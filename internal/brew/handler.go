@@ -21,7 +21,7 @@ func init() {
 		handler.Store = auth.Store()
 		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
 
-		auth.Handle(auth.ServiceRoute("brew", "GET /{project}"), parseRoute, handler.ServeFormula)
+		auth.ServiceHandle("brew", "GET /{project}", parseRoute, handler.ServeFormula)
 	})
 }
 
@@ -66,6 +66,9 @@ func (h *Handler) ServeFormula(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, a := range artifacts {
+		if a.Kind.ServedViaDockerOnly() {
+			continue
+		}
 		out, err := h.Gen.Generate(r.Context(), repackage.FormatBrew, *project, *release, a)
 		if err != nil {
 			continue

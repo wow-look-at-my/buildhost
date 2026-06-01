@@ -20,10 +20,10 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - `internal/apt/` - APT repository endpoint on `apt.{domain}/{project}/...`. Pool downloads redirect to static. Self-registering via auth.OnReady().
 - `internal/brew/` - Homebrew tap endpoint on `brew.{domain}/{project}`. Formula download URLs point to static. Self-registering via auth.OnReady().
 - `internal/npm/` - npm registry endpoint on `npm.{domain}/@buildhost/{project}`. Tarball URLs point to static. Self-registering via auth.OnReady().
-- `internal/oci/` - OCI distribution endpoint on `oci.{domain}/v2/{project}/...`. `docker.{domain}` permanently redirects to `oci.{domain}`. Self-registering via auth.OnReady().
+- `internal/oci/` - OCI distribution endpoint (read + write) on `oci.{domain}/v2/{project}/...`. `docker.{domain}` permanently redirects to `oci.{domain}`. GET/HEAD pulls; POST/PATCH/PUT pushes (`docker push`). Pull side synthesizes a minimal image from a binary artifact OR serves a real pushed image. Push side (`push.go`, `upload.go`, `putmanifest.go`) accepts blob uploads (monolithic + chunked, streamed to `DataDir/tmp/oci-uploads`) and manifest/index PUTs, recording `kind=docker` artifacts. Route `Access()` is method-aware (write for push verbs). Self-registering via auth.OnReady().
 - `internal/sites/` - Static site hosting endpoint on `sites.{domain}/{project}/...`. Upload tar.gz archives, serve files per branch or version. Self-registering via auth.OnReady().
 - `internal/llms/` - Public `/llms.txt` endpoint (https://llmstxt.org). Serves a plain-text guide to buildhost for LLMs/agents, rendered once from an embedded `template.md` with the configured base URL substituted in. Public (registered via `HandleRaw`, no auth). Self-registering via init().
-- `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler/ServiceRoute/ServiceRedirect), RouteInfo interface
+- `internal/auth/` - Token auth, OIDC JWT verification, centralized project-auth middleware (requireProject), route registry (Handle/HandleRaw/HandleHandler/ServiceRoute/ServiceRedirect) backed by `github.com/wow-look-at-my/router`, RouteInfo interface
 - `internal/db/` - SQLite database layer (modernc.org/sqlite, no CGo), OIDC policy storage. Types (Project, Release, Artifact, APIToken, OIDCPolicy) and validation functions live here. Uses sqlc for query generation from `internal/db/queries/*.sql` with schema in `internal/db/schema.sql`.
 - `internal/db/queries/` - SQL query files for sqlc code generation
 - `internal/db/schema.sql` - SQLite schema used by sqlc
@@ -48,11 +48,12 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - Private projects require auth on all endpoints including format-specific ones (APT, Brew, NPM, OCI)
 - Project auth enforced once in centralized requireProject middleware — handlers never check auth
 - Each backend defines a RouteInfo implementation (private route struct) for full URL parsing
-- Backends self-register routes via auth.OnReady() on auth.Mux(); adding a backend = adding files, no existing files modified. Each backend uses auth.ServiceRoute(subdomain, pattern) for host-based routing.
+- Backends self-register routes via auth.OnReady() on auth.Router(); adding a backend = adding files, no existing files modified. Each backend uses auth.ServiceRoute(subdomain, pattern) for host-based routing.
 - Tokens are project-scoped or global; project-scoped tokens cannot escalate privileges
 - Token expiry is enforced at lookup time
 - Default token scope is "read" (least privilege)
-- Upload size capped at 2 GiB; JSON endpoints capped at 1 MiB
+- Upload size capped at 2 GiB (REST artifact PUT, configurable via `BUILDHOST_MAX_UPLOAD_SIZE`); JSON endpoints capped at 1 MiB. OCI `docker push` uploads each layer as a separate blob with its own cap (`BUILDHOST_MAX_BLOB_SIZE`, default 10 GiB), so multi-GB images are not bound by the REST cap
+- Docker push: a release containing pushed `kind=docker` artifacts is a "docker build" -- served only via the OCI endpoint. `kind=docker` is gated out of apt/brew/npm and the raw `/static` (+ `/dl`) paths. Pushed blobs/manifests are linked to the project in `oci_blob_links` (so the existing `BlobBelongsToProject` pull gate serves them); pushed tags live in `oci_tags` as mutable pointers (`latest` is an alias, digests are immutable, identical re-push is a no-op, a changed image creates a new auto-versioned release and repoints the tag). `docker login` uses Basic auth -> the token system; a GHA OIDC JWT works as the password and auto-provisions the project
 - Storage keys validated as hex SHA-256 to prevent path traversal
 - Static sites: uploaded as tar.gz (`Content-Type: application/gzip`) or zip (`Content-Type: application/zip`). Both formats are stored as raw tar internally and served by scanning tar headers per request. Each branch is an independent deployment (one row in `sites` table). Re-deploying a branch replaces the previous site atomically. Upload size capped at 256 MiB, max 10,000 files per site.
 
@@ -61,6 +62,12 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 ```bash
 buildhost bootstrap          # Creates initial admin token (only works when no tokens exist)
 buildhost bootstrap --name admin-token
+```
+
+## Listing routes
+
+```bash
+buildhost routes   # prints all registered HTTP routes, sorted
 ```
 
 ## Running

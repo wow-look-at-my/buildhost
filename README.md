@@ -12,7 +12,25 @@ From a single uploaded binary, buildhost serves:
 - **APT repository** (`.deb` packages with repo metadata)
 - **Homebrew tap** (Ruby formula with computed sha256)
 - **npm registry** (platform-specific npm packages)
-- **OCI/Docker registry** (minimal container images)
+- **OCI/Docker registry** (minimal container images synthesized from the binary)
+
+## Publishing real Docker images
+
+Some projects need to ship a real prebuilt image (custom base image, native
+libraries, entrypoint, exposed ports) rather than a binary wrapped in a minimal
+layer. buildhost is a writable OCI registry, so you can `docker push` directly:
+
+```bash
+docker login builds.example.com -u oidc -p "$TOKEN"   # any username; password is a write-scoped token
+docker buildx build --push -t builds.example.com/myproject:v1.2.3 .
+docker pull builds.example.com/myproject:v1.2.3
+```
+
+A release that contains a pushed image is a **docker build**: it is served only
+through the OCI (`/v2`) endpoint. The apt/brew/npm and raw-download endpoints do
+not apply to it -- it is just a container image. Pushed image layers are
+content-addressed and deduplicated, so unchanged layers are not re-uploaded on
+later pushes. Per-blob size is capped by `BUILDHOST_MAX_BLOB_SIZE` (default 10 GiB).
 
 ## Container image
 
@@ -120,10 +138,96 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/sites/myapp/branch/main
 ```
 
+## Tokens
+
+Tokens authenticate all API requests. There are two kinds:
+
+- **Global tokens** (`project_id` omitted): can access all projects and manage tokens.
+- **Project-scoped tokens** (`project_id` set): limited to one project; cannot list or delete tokens.
+
+Each token has a `scopes` field: `read`, `write`, or `read,write`. The default when omitted is `read`. A token can only grant scopes it already holds — a read-only token cannot mint a write token.
+
+### First-time setup
+
+On a fresh server with no tokens, use `buildhost bootstrap` to create the first admin token. It reads from the database directly and does not require a running server.
+
+```bash
+buildhost bootstrap                    # creates token named "admin"
+buildhost bootstrap --name admin-token # custom name
+```
+
+The plaintext token is printed to stdout. Store it securely — it is not retrievable later.
+
+### Create a token (CLI)
+
+```bash
+buildhost token create \
+  --server https://buildhost.example.com \
+  --token $ADMIN_TOKEN \
+  --name ci \
+  --scopes read,write
+```
+
+To create a project-scoped token, pass `--scopes` and include `project_id` in the request body directly via curl (the CLI does not expose `--project-id` yet — see below).
+
+### Create a token (API)
+
+```bash
+# Global read+write token
+curl -X POST https://buildhost.example.com/api/v1/tokens \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "ci", "scopes": "read,write"}'
+
+# Project-scoped read token (project id 3)
+curl -X POST https://buildhost.example.com/api/v1/tokens \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "deploy-bot", "project_id": 3, "scopes": "read,write"}'
+```
+
+Response:
+
+```json
+{
+  "token": "bh_plaintext_value_shown_once",
+  "details": { "id": 7, "name": "ci", "scopes": "read,write", ... }
+}
+```
+
+### List and delete tokens
+
+```bash
+# List all tokens (global token required)
+buildhost token list --server https://buildhost.example.com --token $ADMIN_TOKEN
+
+# Delete by id (global token required; cannot delete your own token)
+curl -X DELETE https://buildhost.example.com/api/v1/tokens/7 \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+### Using a token
+
+All three forms are equivalent:
+
+```bash
+# Bearer token (preferred)
+curl -H "Authorization: Bearer $TOKEN" https://buildhost.example.com/api/v1/projects
+
+# Basic auth (password field is the token; username is ignored)
+curl -u "token:$TOKEN" https://buildhost.example.com/api/v1/projects
+
+# Query parameter (for clients that cannot set headers, e.g. APT, Brew)
+curl "https://buildhost.example.com/api/v1/projects?token=$TOKEN"
+```
+
 ## API
 
 | Method | Path | Description |
 |--------|------|-------------|
+| POST | `/api/v1/tokens` | Create token |
+| GET | `/api/v1/tokens` | List tokens (global token required) |
+| DELETE | `/api/v1/tokens/{id}` | Delete token (global token required) |
 | POST | `/api/v1/projects` | Create project |
 | GET | `/api/v1/projects` | List projects |
 | POST | `/api/v1/projects/{project}/releases` | Create release |
