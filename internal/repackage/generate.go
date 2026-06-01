@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -15,6 +16,16 @@ import (
 )
 
 var repackTracer = otel.Tracer("buildhost.repackage")
+
+// dlServiceURL constructs the dl subdomain URL from the root domain base URL
+// (e.g. "https://pazer.build" → "https://dl.pazer.build").
+func dlServiceURL(baseURL string) string {
+	u, err := url.Parse(baseURL)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://dl." + u.Host
+}
 
 type Generator struct {
 	store       storage.Storage
@@ -92,12 +103,25 @@ func (g *Generator) Generate(ctx context.Context, format Format, project db.Proj
 		attribute.String("repackage.format", string(format)),
 		attribute.Int("repackage.input_bytes", len(data)),
 	)
+	dlBase := dlServiceURL(baseURL)
 	out, err := rp.Repackage(ctx, Input{
 		Project:  project,
 		Release:  release,
 		Artifact: artifact,
 		Data:     data,
 		BaseURL:  baseURL,
+		DownloadURL: func(name, version string, os db.OS, arch db.Arch, format string) string {
+			q := url.Values{}
+			q.Set("os", string(os))
+			q.Set("arch", string(arch))
+			if version != "" {
+				q.Set("v", version)
+			}
+			if format != "" && format != "raw" {
+				q.Set("fmt", format)
+			}
+			return dlBase + "/" + name + "?" + q.Encode()
+		},
 	})
 	if err != nil {
 		convertSpan.RecordError(err)
