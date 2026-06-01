@@ -1,0 +1,164 @@
+name: Build and publish docker image to Buildhost
+version: 1
+description: >
+  Build a Docker image with buildx and push it to a buildhost OCI registry in a
+  single step, authenticating with a GitHub Actions OIDC token (no static
+  secret). The project auto-provisions on first push.
+
+inputs:
+  server:
+    description: 'Buildhost server URL (used as the OIDC audience; its host is the registry).'
+    required: false
+    default: 'https://pazer.build'
+  project:
+    description: 'Image name on buildhost (defaults to the repository name).'
+    required: false
+    default: ''
+  context:
+    description: 'Docker build context.'
+    required: false
+    default: '.'
+  file:
+    description: 'Path to the Dockerfile (defaults to {context}/Dockerfile).'
+    required: false
+    default: ''
+  tags:
+    description: >
+      Newline-separated image tags. A bare tag (e.g. "latest" or a commit SHA)
+      is expanded to <registry>/<project>:<tag>; a value containing "/" or ":"
+      is used as a full image reference (so you can also push to another
+      registry you have already logged in to). Defaults to the commit SHA and
+      "latest".
+    required: false
+    default: ''
+  platforms:
+    description: 'Comma-separated build platforms (e.g. linux/amd64,linux/arm64).'
+    required: false
+    default: ''
+  build-args:
+    description: 'Newline-separated build args (KEY=value).'
+    required: false
+    default: ''
+  labels:
+    description: 'Newline-separated image labels. OCI revision/source labels are added automatically.'
+    required: false
+    default: ''
+  provenance:
+    description: 'buildx provenance attestations.'
+    required: false
+    default: 'false'
+  cache:
+    description: 'Use the GitHub Actions layer cache (type=gha).'
+    required: false
+    default: 'true'
+  push:
+    description: 'Push to the registry (set false to build only).'
+    required: false
+    default: 'true'
+
+outputs:
+  image:
+    description: 'The primary pushed image reference (the first tag).'
+    value: ${{ steps.refs.outputs.primary }}
+  digest:
+    description: 'The image digest reported by buildx.'
+    value: ${{ steps.build.outputs.digest }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Resolve image references
+      id: refs
+      shell: bash
+      env:
+        SERVER: ${{ inputs.server }}
+        PROJECT: ${{ inputs.project }}
+        TAGS: ${{ inputs.tags }}
+        EXTRA_LABELS: ${{ inputs.labels }}
+        CACHE: ${{ inputs.cache }}
+      run: |
+        set -euo pipefail
+        registry="${SERVER#*://}"; registry="${registry%%/*}"
+        project="${PROJECT:-${GITHUB_REPOSITORY##*/}}"
+
+        if [ -n "${TAGS}" ]; then
+          tags_in="${TAGS}"
+        else
+          printf -v tags_in '%s\n%s' "${GITHUB_SHA}" "latest"
+        fi
+
+        refs=""
+        while IFS= read -r line; do
+          tag="$(printf '%s' "${line}" | tr -d '[:space:]')"
+          [ -z "${tag}" ] && continue
+          case "${tag}" in
+            */*|*:*) ref="${tag}" ;;                       # full reference, used verbatim
+            *)       ref="${registry}/${project}:${tag}" ;; # bare tag -> buildhost ref
+          esac
+          refs="${refs}${ref}"$'\n'
+        done <<< "${tags_in}"
+
+        {
+          echo "registry=${registry}"
+          echo "primary=$(printf '%s' "${refs}" | head -n1)"
+          echo "tags<<__TAGS__"; printf '%s' "${refs}"; echo "__TAGS__"
+          echo "labels<<__LABELS__"
+          printf '%s\n' "org.opencontainers.image.revision=${GITHUB_SHA}" \
+                        "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          [ -n "${EXTRA_LABELS}" ] && printf '%s\n' "${EXTRA_LABELS}"
+          echo "__LABELS__"
+          if [ "${CACHE}" = "true" ]; then
+            echo "cache_from=type=gha"
+            echo "cache_to=type=gha,mode=max"
+          fi
+        } >> "${GITHUB_OUTPUT}"
+
+    - name: Log in to buildhost
+      if: ${{ inputs.push == 'true' }}
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            const server: string = "${{ inputs.server }}";
+            const registry = new URL(server).host;
+            const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+            const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+            if (!url || !bearer) {
+              core.setFailed("OIDC not available. Add 'permissions: { id-token: write }' to the job.");
+              return;
+            }
+            // Mint a GHA OIDC token with the buildhost URL as the audience and
+            // use it as the docker password; buildhost verifies the JWT and
+            // auto-provisions the project on first push.
+            const resp = await fetch(`${url}&audience=${server}`, {
+              headers: { Authorization: `Bearer ${bearer}` },
+            });
+            const token: string = ((await resp.json()) as { value: string }).value;
+            if (!token) {
+              core.setFailed(`Failed to obtain OIDC token for ${server}`);
+              return;
+            }
+            core.setSecret(token);
+            await exec.exec("docker", ["login", registry, "-u", "oidc", "--password-stdin"], {
+              input: Buffer.from(token),
+            });
+            core.info(`Logged in to buildhost registry ${registry}`);
+          })();
+
+    - name: Build and push
+      id: build
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.file }}
+        push: ${{ inputs.push }}
+        platforms: ${{ inputs.platforms }}
+        provenance: ${{ inputs.provenance }}
+        tags: ${{ steps.refs.outputs.tags }}
+        labels: ${{ steps.refs.outputs.labels }}
+        build-args: ${{ inputs.build-args }}
+        cache-from: ${{ steps.refs.outputs.cache_from }}
+        cache-to: ${{ steps.refs.outputs.cache_to }}
