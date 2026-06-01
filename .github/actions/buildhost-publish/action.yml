@@ -125,35 +125,80 @@ runs:
               return { status: resp.status, text: await resp.text() };
             };
 
-            // Publish each project independently: its own release, artifacts, and publish call.
-            for (const [proj, items] of groups) {
-              const releaseBody = JSON.stringify({
-                git_branch: gitBranch, git_commit: gitCommit,
-                ...(version.length > 0 ? { version } : {}),
-              });
-              const createResp = await api("POST", `/api/v1/projects/${proj}/releases`, releaseBody);
+            const releaseBody = () => JSON.stringify({
+              git_branch: gitBranch, git_commit: gitCommit,
+              ...(version.length > 0 ? { version } : {}),
+            });
 
-              let releaseVersion: string;
-              if (createResp.status === 201) {
-                releaseVersion = JSON.parse(createResp.text).version;
-              } else if (createResp.status === 409) {
-                if (version.length === 0) { core.setFailed(`Release exists for ${proj}, no explicit version`); return; }
-                releaseVersion = version;
-              } else {
-                core.setFailed(`Create release for ${proj} failed (${createResp.status}): ${createResp.text}`);
-                return;
+            // Resolve a release version from a create-release response (201 new,
+            // 409 existing). Returns null and fails the action on any other status.
+            const releaseVersionFrom = (proj: string, resp: { status: number; text: string }): string | null => {
+              if (resp.status === 201) return JSON.parse(resp.text).version;
+              if (resp.status === 409) {
+                if (version.length === 0) { core.setFailed(`Release exists for ${proj}, no explicit version`); return null; }
+                return version;
               }
-              core.info(`Release: ${proj}/${releaseVersion}`);
+              core.setFailed(`Create release for ${proj} failed (${resp.status}): ${resp.text}`);
+              return null;
+            };
 
+            // Upload every os/arch artifact for a release, then publish it.
+            const uploadAndPublish = async (proj: string, releaseVersion: string, items: { file: string; os: string; arch: string }[]) => {
               for (const { file, os: fileOs, arch } of items) {
                 const body = fs.readFileSync(path.join(downloadDir, file));
                 const r = await api("PUT", `/api/v1/projects/${proj}/releases/${releaseVersion}/artifacts/${fileOs}/${arch}?kind=binary`, body);
-                if (r.status !== 201) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${r.status}): ${r.text}`); return; }
+                if (r.status !== 201) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${r.status}): ${r.text}`); return false; }
                 core.info(`Uploaded ${proj} ${fileOs}/${arch}`);
               }
-
               const pub = await api("POST", `/api/v1/projects/${proj}/releases/${releaseVersion}/publish`);
-              if (pub.status !== 200) { core.setFailed(`Publish ${proj} failed (${pub.status}): ${pub.text}`); return; }
+              if (pub.status !== 200) { core.setFailed(`Publish ${proj} failed (${pub.status}): ${pub.text}`); return false; }
               core.info(`Published ${proj}/${releaseVersion} (${items.length} artifacts) to ${server}`);
+              return true;
+            };
+
+            const groupList = [...groups.entries()];
+
+            // BACKWARD-COMPAT SHIM (transitional — remove in a few weeks, once every
+            // target buildhost server authorizes slash-namespaced projects): a server
+            // that predates namespace support rejects a namespaced project with
+            // 404/403. Probe the first namespaced group up front; if it is rejected,
+            // publish the old single-project layout instead (all `<repo>_<os>_<arch>`
+            // artifacts flat to `<repo>`), so this action never regresses a repo while
+            // the rollout is in flight. The probe's create-release is reused below, so
+            // an up-to-date server gets no stray release. Single-binary repos publish
+            // flat to `<repo>` either way; up-to-date servers never fall back.
+            const created = new Map<string, { status: number; text: string }>();
+            const firstNs = groupList.find(([p]) => p.includes("/"));
+            if (firstNs) {
+              const [proj] = firstNs;
+              const probe = await api("POST", `/api/v1/projects/${proj}/releases`, releaseBody());
+              if (probe.status === 404 || probe.status === 403) {
+                core.warning(`Server rejected namespaced project '${proj}' (HTTP ${probe.status}); falling back to the legacy flat '${project}' layout. Upgrade buildhost to enable per-binary projects.`);
+                const re = new RegExp(`^${project}_([a-z]+)_([a-z0-9]+)$`);
+                const legacy: { file: string; os: string; arch: string }[] = [];
+                for (const file of files) {
+                  const m = file.replace(/\.exe$/, "").match(re);
+                  if (m) legacy.push({ file, os: m[1], arch: m[2] });
+                }
+                if (legacy.length === 0) {
+                  core.setFailed(`Server does not support namespaced projects, and no artifacts match the legacy '${project}_{os}_{arch}' layout`);
+                  return;
+                }
+                const rv = releaseVersionFrom(project, await api("POST", `/api/v1/projects/${project}/releases`, releaseBody()));
+                if (rv === null) return;
+                core.info(`Release: ${project}/${rv} (legacy flat layout)`);
+                await uploadAndPublish(project, rv, legacy);
+                return;
+              }
+              created.set(proj, probe);
+            }
+
+            // Namespaced path: publish each <repo>/<binary> project independently.
+            for (const [proj, items] of groupList) {
+              const createResp = created.get(proj) ?? await api("POST", `/api/v1/projects/${proj}/releases`, releaseBody());
+              const rv = releaseVersionFrom(proj, createResp);
+              if (rv === null) return;
+              core.info(`Release: ${proj}/${rv}`);
+              if (!(await uploadAndPublish(proj, rv, items))) return;
             }
           })();
