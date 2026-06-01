@@ -117,12 +117,41 @@ runs:
             }
             core.info(`Found ${files.length} artifact(s) across ${groups.size} project(s): ${[...groups.keys()].join(", ")}`);
 
+            const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+            // Buildhost runs behind a CDN/reverse proxy and is redeployed with
+            // rolling updates. During a deploy window the edge can briefly emit a
+            // transient 5xx, a connection error, or an empty-body 404 (an
+            // origin/proxy 404 -- distinct from the app's own 404, which always
+            // carries a JSON body). Retry those with backoff so a buildhost deploy
+            // never hard-fails a publish. Any 4xx that carries a body (including a
+            // genuine "project not found") returns at once for the caller to act on.
+            const isTransient = (status: number, text: string): boolean =>
+              status >= 500 || (status === 404 && text.trim() === "");
+
             const api = async (method: string, urlPath: string, body?: string | Buffer) => {
               const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
               if (typeof body === "string") headers["Content-Type"] = "application/json";
               else if (body) headers["Content-Type"] = "application/octet-stream";
-              const resp = await fetch(`${server}${urlPath}`, { method, headers, body });
-              return { status: resp.status, text: await resp.text() };
+              const maxAttempts = 5;
+              for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                  const resp = await fetch(`${server}${urlPath}`, { method, headers, body });
+                  const text = await resp.text();
+                  if (attempt === maxAttempts || !isTransient(resp.status, text)) {
+                    return { status: resp.status, text };
+                  }
+                  core.warning(`${method} ${urlPath} -> HTTP ${resp.status} (transient; attempt ${attempt}/${maxAttempts}); retrying`);
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : String(e);
+                  if (attempt === maxAttempts) {
+                    return { status: 0, text: `request failed after ${maxAttempts} attempts: ${msg}` };
+                  }
+                  core.warning(`${method} ${urlPath} -> ${msg} (network error; attempt ${attempt}/${maxAttempts}); retrying`);
+                }
+                await sleep(1000 * 2 ** (attempt - 1));
+              }
+              return { status: 0, text: "unreachable" };
             };
 
             const releaseBody = () => JSON.stringify({
