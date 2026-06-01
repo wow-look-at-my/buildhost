@@ -269,10 +269,21 @@ curl "https://buildhost.example.com/api/v1/projects?token=$TOKEN"
 | GET | `/sites/{project}/branch/{branch}/{path}` | Serve static site file |
 | GET | `/api/v1/projects/{project}/sites` | List branch deployments |
 | GET | `/llms.txt` | Plain-text guide to buildhost for LLMs ([llmstxt.org](https://llmstxt.org)) |
+| GET | `/healthz` | Liveness check (database ping); JSON body reports the running build's commit and version |
 
 ## llms.txt
 
 `GET /llms.txt` serves a public, unauthenticated plain-text document that explains what buildhost is and how to use it, aimed at LLMs and automated agents. Example URLs in the document are rendered against the configured `BUILDHOST_BASE_URL`, so they always point at the live deployment.
+
+## Health and version
+
+`GET /healthz` returns `200` when the server is up and its database is reachable, and `503` when the database is unreachable. Either way the JSON body reports the exact build the server is running, so you can check which image a deployment is on:
+
+```json
+{"status":"ok","commit":"<git-sha>","version":"v0.0.<unix>"}
+```
+
+The same build info is printed by `buildhost version`.
 
 ## Configuration
 
