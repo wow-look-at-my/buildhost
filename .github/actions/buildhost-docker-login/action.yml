@@ -11,25 +11,32 @@ inputs:
 runs:
   using: composite
   steps:
-    - shell: bash
-      run: |
-        set -euo pipefail
-        if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
-          echo "::error::OIDC not available. Add 'permissions: { id-token: write }' to the job."
-          exit 1
-        fi
-        server_url='${{ inputs.server }}'
-        # Registry host is the URL authority only (strip scheme and any path).
-        registry="${server_url#*://}"
-        registry="${registry%%/*}"
-        # Mint a GHA OIDC token with the buildhost URL as the audience and use it
-        # as the docker password. buildhost verifies the JWT and auto-provisions
-        # the project on first push.
-        token="$(curl -sSf \
-          -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-          "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${server_url}" | jq -r '.value')"
-        if [ -z "${token}" ] || [ "${token}" = "null" ]; then
-          echo "::error::failed to obtain OIDC token for ${server_url}"
-          exit 1
-        fi
-        printf '%s' "${token}" | docker login "${registry}" -u oidc --password-stdin
+    - uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            const server: string = "${{ inputs.server }}";
+            const registry = new URL(server).host;
+            const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+            const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+            if (!url || !bearer) {
+              core.setFailed("OIDC not available. Add 'permissions: { id-token: write }' to the job.");
+              return;
+            }
+            // Mint a GHA OIDC token with the buildhost URL as the audience and
+            // use it as the docker password; buildhost verifies the JWT and
+            // auto-provisions the project on first push.
+            const resp = await fetch(`${url}&audience=${server}`, {
+              headers: { Authorization: `Bearer ${bearer}` },
+            });
+            const token: string = ((await resp.json()) as { value: string }).value;
+            if (!token) {
+              core.setFailed(`Failed to obtain OIDC token for ${server}`);
+              return;
+            }
+            core.setSecret(token);
+            await exec.exec("docker", ["login", registry, "-u", "oidc", "--password-stdin"], {
+              input: Buffer.from(token),
+            });
+            core.info(`Logged in to buildhost registry ${registry}`);
+          })();

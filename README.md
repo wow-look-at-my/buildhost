@@ -32,6 +32,34 @@ not apply to it -- it is just a container image. Pushed image layers are
 content-addressed and deduplicated, so unchanged layers are not re-uploaded on
 later pushes. Per-blob size is capped by `BUILDHOST_MAX_BLOB_SIZE` (default 10 GiB).
 
+### From GitHub Actions
+
+Use the `buildhost-publish-docker` action to build and push in one step,
+authenticating with a GHA OIDC token (no static secret -- the project
+auto-provisions on first push):
+
+```yaml
+permissions:
+  id-token: write   # required to mint the OIDC token
+  contents: read
+steps:
+  - uses: actions/checkout@v4
+  - uses: wow-look-at-my/buildhost/.github/actions/buildhost-publish-docker@master
+    with:
+      server: https://builds.example.com   # optional, defaults to https://pazer.build
+      context: .                            # optional
+      # tags default to the commit SHA and "latest"; bare tags are expanded to
+      # <registry>/<project>:<tag>, full references (with "/" or ":") are used as-is.
+      tags: |
+        ${{ github.sha }}
+        latest
+```
+
+For a build you drive yourself (e.g. `docker buildx imagetools` to copy an
+existing multi-arch image), use the lower-level `buildhost-docker-login` action,
+which only performs the OIDC `docker login`, and then run your own docker
+commands.
+
 ## Container image
 
 A container image is published to `ghcr.io/wow-look-at-my/buildhost:latest` on every push to master.
