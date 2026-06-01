@@ -20,6 +20,7 @@ jobs:
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           generate: 52b76a04057b
+          autorelease: 'false'
 
   route-diff:
     needs: build
@@ -102,16 +103,21 @@ jobs:
                   await gh.rest.issues.createComment({ ...repo, issue_number: pr, body });
               }
 
-  publish-ghcr:
+  container-healthcheck:
     needs: build
-    uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@master
-
-  publish-buildhost-test:
-    needs: build
+    if: always() && !cancelled()
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          sparse-checkout: .github/actions
-      - uses: ./.github/actions/buildhost-publish
+          name: go-build
+          path: build/
+      - run: chmod +x build/buildhost_linux_amd64
+      - run: docker compose -f docker-compose.ci.yml up -d --wait --wait-timeout 30
+      - run: docker compose -f docker-compose.ci.yml logs
+        if: failure()
+
+  publish-ghcr:
+    needs: container-healthcheck
+    uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@master

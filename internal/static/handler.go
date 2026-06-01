@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -24,16 +23,14 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
-		handler.StaticURL = auth.StaticURL()
 		handler.BaseURL = auth.BaseURL()
 		handler.TmpDir = auth.DataDir() + "/tmp"
 
 		for _, format := range repackage.RegisteredFormats() {
 			RegisterRepackageFmt(format)
 		}
-
-		auth.ServiceHandle("static", "GET /file", parseRoute, handler.Serve)
 	})
+	auth.ServiceHandle("static", "GET /file", parseRoute, handler.Serve)
 }
 
 type route struct {
@@ -48,11 +45,10 @@ func parseRoute(r *http.Request) auth.RouteInfo {
 }
 
 type staticHandler struct {
-	DB        *db.DB
-	Store     storage.Storage
-	StaticURL *url.URL
-	BaseURL   string
-	TmpDir    string
+	DB      *db.DB
+	Store   storage.Storage
+	BaseURL string
+	TmpDir  string
 }
 
 func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +100,7 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 		Project:   *project,
 		Release:   *release,
 		Store:     h.Store,
-		StaticURL: h.StaticURL,
+		StaticURL: auth.DeriveServiceURL(r, "static"),
 		BaseURL:   h.BaseURL,
 		TmpDir:    h.TmpDir,
 	}
