@@ -343,3 +343,30 @@ func TestServeHTTP_RoutedRealNpmRequest(t *testing.T) {
 		})
 	}
 }
+
+// TestPathRedirect_NpmToSubdomain covers the path-based registry URL on the
+// main domain (BASE/npm/...), which our /llms.txt documents and which lets a
+// caller use `npm install --registry BASE/npm` without knowing about subdomain
+// routing. It must 301 to npm.<full host> (not DeriveServiceURL, which would
+// strip a label to npm.build), preserving the scoped-package %2f and the query
+// so npm's redirect-follow lands on the right packument.
+func TestPathRedirect_NpmToSubdomain(t *testing.T) {
+	cases := []struct {
+		name, target, wantLoc string
+	}{
+		{"scoped encoded", "https://pazer.build/npm/@buildhost%2fgo-toolchain", "https://npm.pazer.build/@buildhost%2fgo-toolchain"},
+		{"platform package", "https://pazer.build/npm/@buildhost%2fgo-toolchain-linux-x64", "https://npm.pazer.build/@buildhost%2fgo-toolchain-linux-x64"},
+		{"registry root", "https://pazer.build/npm", "https://npm.pazer.build"},
+		{"query preserved", "https://pazer.build/npm/-/v1/search?text=go", "https://npm.pazer.build/-/v1/search?text=go"},
+		{"loopback stays http with port", "http://localhost:8080/npm/@buildhost%2fgo-toolchain", "http://npm.localhost:8080/@buildhost%2fgo-toolchain"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tc.target, nil)
+			rec := httptest.NewRecorder()
+			auth.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusMovedPermanently, rec.Code, "body: %s", rec.Body.String())
+			assert.Equal(t, tc.wantLoc, rec.Header().Get("Location"))
+		})
+	}
+}
