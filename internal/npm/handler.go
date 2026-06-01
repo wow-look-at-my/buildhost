@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -17,17 +18,18 @@ var handler Handler
 func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
-		handler.BaseURL = auth.BaseURL()
+		handler.StaticURL = auth.StaticURL()
+
+		auth.ServiceHandleHandler("npm", "/@buildhost/{project}", parseRoute, &handler)
 	})
-	auth.HandleHandler("/npm/", parseRoute, http.StripPrefix("/npm", &handler))
 }
 
 type route struct {
 	project  string
-	platform string // e.g. "linux-x64", empty for base package
+	platform string
 }
 
-func (r route) ProjectName() string     { return r.project }
+func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
 var knownPlatforms []string
@@ -51,9 +53,7 @@ func splitPlatform(name string) (project, platform string) {
 }
 
 func parseRoute(r *http.Request) auth.RouteInfo {
-	path := strings.TrimPrefix(r.URL.Path, "/npm/")
-	packageName := strings.TrimPrefix(path, "@buildhost/")
-	projectName, platform := splitPlatform(packageName)
+	projectName, platform := splitPlatform(r.PathValue("project"))
 	return route{project: projectName, platform: platform}
 }
 
@@ -62,8 +62,8 @@ func routeFrom(ctx context.Context) route {
 }
 
 type Handler struct {
-	DB      *db.DB
-	BaseURL string
+	DB        *db.DB
+	StaticURL *url.URL
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +131,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 			"version": version,
 			"bin":     map[string]string{projectName: "./bin/run.js"},
 			"dist": map[string]string{
-				"tarball": static.URL(h.BaseURL, static.For(projectName).WithVersion(version).WithOS("any").WithArch("any").WithFmt("npm-wrapper")),
+				"tarball": static.URL(h.StaticURL, static.For(projectName).WithVersion(version).WithOS("any").WithArch("any").WithFmt("npm-wrapper")),
 			},
 		}
 		if len(optDeps) > 0 {
@@ -192,7 +192,7 @@ func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Reques
 			"os":      []string{platOS},
 			"cpu":     []string{platArch},
 			"dist": map[string]string{
-				"tarball": static.URL(h.BaseURL, static.For(projectName).WithVersion(version).WithOS(db.OS(reverseNpmPlatform(platOS))).WithArch(db.Arch(reverseNpmArch(platArch))).WithFmt("npm")),
+				"tarball": static.URL(h.StaticURL, static.For(projectName).WithVersion(version).WithOS(db.OS(reverseNpmPlatform(platOS))).WithArch(db.Arch(reverseNpmArch(platArch))).WithFmt("npm")),
 			},
 		}
 		if _, ok := distTags["latest"]; !ok {

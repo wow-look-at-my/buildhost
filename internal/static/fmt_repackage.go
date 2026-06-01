@@ -52,9 +52,9 @@ func (f *repackageFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeCo
 		Release:  ctx.Release,
 		Artifact: ctx.Artifact,
 		Data:     data,
-		BaseURL: ctx.BaseURL,
+		BaseURL:  ctx.BaseURL,
 		DownloadURL: func(name, version string, os db.OS, arch db.Arch, format string) string {
-			return URL(ctx.BaseURL, For(name).WithVersion(version).WithOS(os).WithArch(arch).WithFmt(format))
+			return URL(ctx.StaticURL, For(name).WithVersion(version).WithOS(os).WithArch(arch).WithFmt(format))
 		},
 	})
 	if err != nil {

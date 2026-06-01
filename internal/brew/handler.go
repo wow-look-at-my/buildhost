@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -21,21 +20,20 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
+
+		auth.ServiceHandle("brew", "GET /{project}", parseRoute, handler.ServeFormula)
 	})
-	auth.HandleHandler("/brew/", parseRoute, http.StripPrefix("/brew", &handler))
 }
 
 type route struct {
 	project string
 }
 
-func (r route) ProjectName() string     { return r.project }
+func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
 func parseRoute(r *http.Request) auth.RouteInfo {
-	path := strings.TrimPrefix(r.URL.Path, "/brew/")
-	project := strings.TrimSuffix(path, ".rb")
-	return route{project: project}
+	return route{project: r.PathValue("project")}
 }
 
 func routeFrom(ctx context.Context) route {
@@ -48,13 +46,7 @@ type Handler struct {
 	Gen   *repackage.Generator
 }
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/")
-	if !strings.HasSuffix(path, ".rb") {
-		http.NotFound(w, r)
-		return
-	}
-
+func (h *Handler) ServeFormula(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
 
 	release, err := h.DB.GetLatestRelease(r.Context(), project.ID)

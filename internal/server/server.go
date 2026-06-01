@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/admin"
@@ -13,10 +12,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
-var (
-	healthzOnce sync.Once
-	healthDB    *db.DB
-)
+var healthDB *db.DB
 
 type Server struct {
 	cfg config.Config
@@ -24,8 +20,26 @@ type Server struct {
 }
 
 func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
-	auth.Init(database, store, cfg.BaseURL, cfg.DataDir, cfg.OIDCIssuers, cfg.OIDCOrgs, cfg.OIDCEvents, cfg.SiteFetchDomains)
+	auth.Init(database, store, cfg.BaseURL, cfg.DataDir, cfg.Domain, cfg.ServiceURLs, cfg.OIDCIssuers, cfg.OIDCOrgs, cfg.OIDCEvents, cfg.SiteFetchDomains)
 	healthDB = database
+
+	auth.HandleRaw("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		if err := healthDB.PingContext(r.Context()); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("database unreachable"))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+	auth.HandleRaw("GET /ready-to-update", func(w http.ResponseWriter, _ *http.Request) {
+		if admin.InflightWrites() > 0 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
 	s := &Server{cfg: cfg}
 	s.srv = &http.Server{
 		Addr:              s.cfg.ListenAddr,
@@ -48,26 +62,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func (s *Server) Handler() http.Handler {
-	r := auth.Router()
-	healthzOnce.Do(func() {
-		auth.HandleRaw("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-			if err := healthDB.PingContext(r.Context()); err != nil {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				w.Write([]byte("database unreachable"))
-				return
-			}
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("ok"))
-		})
-		auth.HandleRaw("GET /ready-to-update", func(w http.ResponseWriter, _ *http.Request) {
-			if admin.InflightWrites() > 0 {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				return
-			}
-			w.WriteHeader(http.StatusOK)
-		})
-	})
-	var h http.Handler = r
+	var h http.Handler = http.HandlerFunc(auth.ServeHTTP)
 	h = auth.GetMiddleware().Authenticate(h)
 	h = admin.TrackInflight(h)
 	h = securityHeaders(h)
