@@ -9,9 +9,9 @@ import (
 )
 
 func TestServe_RendersBaseURL(t *testing.T) {
-	h := &Handler{body: render("https://pazer.build")}
+	h := &Handler{}
 
-	req := httptest.NewRequest("GET", "/llms.txt", nil)
+	req := httptest.NewRequest("GET", "https://pazer.build/llms.txt", nil)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
 
@@ -29,16 +29,16 @@ func TestServe_RendersBaseURL(t *testing.T) {
 	assert.NotContains(t, body, "__OCI_HOST__")
 }
 
-func TestServe_DefaultsWhenNotReady(t *testing.T) {
+func TestServe_RendersRequestHost(t *testing.T) {
 	h := &Handler{}
 
-	req := httptest.NewRequest("GET", "/llms.txt", nil)
+	req := httptest.NewRequest("GET", "https://builds.example.com/llms.txt", nil)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), "# buildhost")
-	assert.Contains(t, rec.Body.String(), "http://localhost:8080/llms.txt")
+	assert.Contains(t, rec.Body.String(), "https://builds.example.com/llms.txt")
 }
 
 func TestRender_TrimsTrailingSlash(t *testing.T) {

@@ -82,8 +82,6 @@ services:
       - "8080:8080"
     volumes:
       - buildhost-data:/var/lib/buildhost
-    environment:
-      - BUILDHOST_BASE_URL=https://builds.example.com
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -273,7 +271,7 @@ curl "https://buildhost.example.com/api/v1/projects?token=$TOKEN"
 
 ## llms.txt
 
-`GET /llms.txt` serves a public, unauthenticated plain-text document that explains what buildhost is and how to use it, aimed at LLMs and automated agents. Example URLs in the document are rendered against the configured `BUILDHOST_BASE_URL`, so they always point at the live deployment.
+`GET /llms.txt` serves a public, unauthenticated plain-text document that explains what buildhost is and how to use it, aimed at LLMs and automated agents. Example URLs in the document are rendered against the request's `Host`, so they always point at the live deployment.
 
 ## Health and version
 
@@ -295,7 +293,6 @@ Environment variables:
 | `BUILDHOST_ADMIN_LISTEN_ADDR` | `:9090` | Admin dashboard listen address (empty to disable) |
 | `BUILDHOST_DATA_DIR` | `./data` | Data directory |
 | `BUILDHOST_DB_PATH` | `./data/buildhost.db` | SQLite database path |
-| `BUILDHOST_BASE_URL` | `http://localhost:8080` | External URL for generated links |
 | `BUILDHOST_OIDC_ISSUERS` | (none) | Comma-separated trusted OIDC issuers for auto-provisioning |
 | `BUILDHOST_OIDC_ORGS` | (none) | Comma-separated allowed orgs for OIDC auto-provisioning (`*` for all) |
 | `BUILDHOST_OIDC_EVENTS` | `push` | Comma-separated allowed event types for OIDC auto-provisioning (`*` for all) |

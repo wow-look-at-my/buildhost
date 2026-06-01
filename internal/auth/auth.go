@@ -14,6 +14,7 @@ const (
 	routeKey
 	oidcProjectKey
 	oidcPrivateKey
+	oidcErrorKey
 )
 
 func WithToken(ctx context.Context, t *db.APIToken) context.Context {
@@ -59,4 +60,17 @@ func WithOIDCPrivate(ctx context.Context, private bool) context.Context {
 func OIDCPrivateFrom(ctx context.Context) (bool, bool) {
 	v, ok := ctx.Value(oidcPrivateKey).(bool)
 	return v, ok
+}
+
+// WithOIDCError records why OIDC verification failed for a presented JWT, so an
+// eventual 401 can explain the reason instead of a bare "authentication
+// required". It is set only when a JWT was presented and rejected.
+func WithOIDCError(ctx context.Context, err error) context.Context {
+	return context.WithValue(ctx, oidcErrorKey, err)
+}
+
+// OIDCErrorFrom returns the recorded OIDC verification failure, or nil.
+func OIDCErrorFrom(ctx context.Context) error {
+	err, _ := ctx.Value(oidcErrorKey).(error)
+	return err
 }

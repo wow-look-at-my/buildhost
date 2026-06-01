@@ -62,7 +62,9 @@ func TestParseRoute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "/@buildhost/"+tt.pathVal, nil)
-			req.SetPathValue("project", tt.pathVal)
+			// The npm route captures the whole scoped segment; the router has
+			// already percent-decoded it to `@buildhost/<name>`.
+			req.SetPathValue("pkg", "@buildhost/"+tt.pathVal)
 			ri := parseRoute(req).(route)
 			assert.Equal(t, tt.wantProj, ri.project, "project")
 			assert.Equal(t, tt.wantPlat, ri.platform, "platform")
@@ -299,4 +301,45 @@ func TestServeHTTP_PrivateProject_PackageInfo_WithValidContext(t *testing.T) {
 	var info map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
 	assert.Equal(t, "@buildhost/secret", info["name"])
+}
+
+// TestServeHTTP_RoutedRealNpmRequest drives requests through the real subdomain
+// dispatch and router exactly as `npm install` does. npm percent-encodes the
+// scope slash, so the packument path is `/@buildhost%2f<name>`. The other
+// ServeHTTP tests inject the parsed route directly and so never exercise
+// routing -- which is why the %2f mismatch went unnoticed until production.
+func TestServeHTTP_RoutedRealNpmRequest(t *testing.T) {
+	_, d, store := setupTest(t)
+	auth.Init(d, store, t.TempDir(), nil, nil, nil, nil)
+
+	ctx := context.Background()
+	proj := &db.Project{Name: "go-toolchain", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	cases := []struct {
+		name, target string
+		wantCode     int
+		wantName     string
+	}{
+		{"encoded scope (real npm)", "https://npm.example.com/@buildhost%2fgo-toolchain", http.StatusOK, "@buildhost/go-toolchain"},
+		{"unencoded scope", "https://npm.example.com/@buildhost/go-toolchain", http.StatusOK, "@buildhost/go-toolchain"},
+		{"unknown project", "https://npm.example.com/@buildhost%2fnope", http.StatusNotFound, ""},
+		{"missing scope", "https://npm.example.com/go-toolchain", http.StatusNotFound, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tc.target, nil)
+			rec := httptest.NewRecorder()
+			auth.ServeHTTP(rec, req)
+			require.Equal(t, tc.wantCode, rec.Code, "body: %s", rec.Body.String())
+			if tc.wantName != "" {
+				var info map[string]any
+				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
+				assert.Equal(t, tc.wantName, info["name"])
+			}
+		})
+	}
 }

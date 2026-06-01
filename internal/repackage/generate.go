@@ -18,22 +18,24 @@ var repackTracer = otel.Tracer("buildhost.repackage")
 
 type Generator struct {
 	store       storage.Storage
-	baseURL     string
 	tmpDir      string
 	repackagers map[Format]Repackager
 }
 
-func NewGenerator(store storage.Storage, database *db.DB, baseURL, tmpDir string) *Generator {
+func NewGenerator(store storage.Storage, database *db.DB, tmpDir string) *Generator {
 	m := make(map[Format]Repackager, len(registry)+1)
 	for f, rp := range registry {
 		m[f] = rp
 	}
 	oci := &OCI{Store: store, DB: database}
 	m[oci.Format()] = oci
-	return &Generator{store: store, baseURL: baseURL, tmpDir: tmpDir, repackagers: m}
+	return &Generator{store: store, tmpDir: tmpDir, repackagers: m}
 }
 
-func (g *Generator) Generate(ctx context.Context, format Format, project db.Project, release db.Release, artifact db.Artifact) (*Output, error) {
+// Generate repackages an artifact into format. baseURL is this server's own base
+// URL (derived per-request from the Host), used to build absolute download/home
+// URLs in formats like brew.
+func (g *Generator) Generate(ctx context.Context, format Format, project db.Project, release db.Release, artifact db.Artifact, baseURL string) (*Output, error) {
 	ctx, span := repackTracer.Start(ctx, "repackage.generate")
 	defer span.End()
 	span.SetAttributes(
@@ -95,7 +97,7 @@ func (g *Generator) Generate(ctx context.Context, format Format, project db.Proj
 		Release:  release,
 		Artifact: artifact,
 		Data:     data,
-		BaseURL:  g.baseURL,
+		BaseURL:  baseURL,
 	})
 	if err != nil {
 		convertSpan.RecordError(err)
