@@ -20,6 +20,7 @@ jobs:
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           generate: 52b76a04057b
+          autorelease: 'false'
 
   route-diff:
     needs: build
@@ -120,13 +121,3 @@ jobs:
   publish-ghcr:
     needs: container-healthcheck
     uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@master
-
-  publish-buildhost-test:
-    needs: container-healthcheck
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          sparse-checkout: .github/actions
-      - uses: ./.github/actions/buildhost-publish
