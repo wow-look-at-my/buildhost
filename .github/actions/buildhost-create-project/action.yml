@@ -74,6 +74,13 @@ runs:
               }),
             });
             const text = await resp.text();
+            // Idempotent: a 409 means the project already exists, which is the
+            // normal case for an "ensure exists" step that runs on every push.
+            if (resp.status === 409) {
+              core.info('Project already exists; treating as success.');
+              core.setOutput('response', text);
+              return;
+            }
             if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
 
             const data = JSON.parse(text);
