@@ -26,29 +26,9 @@ func init() {
 	// and strip the `@buildhost/` scope ourselves -- a `/@buildhost/{project}`
 	// pattern would only match the rare unencoded client.
 	auth.ServiceHandleHandler("npm", "GET /{pkg}", parseRoute, &handler)
-
-	// Path-based registry redirect: BASE/npm and BASE/npm/... bounce to the
-	// npm.<domain> subdomain that actually serves the registry, so the
-	// documented `npm install --registry BASE/npm` works without the caller
-	// knowing about subdomain routing (npm follows the 301 on packument
-	// requests). This also makes our own /llms.txt npm example resolve.
-	auth.HandleRaw("GET /npm", redirectToSubdomain)
-	auth.HandleRaw("GET /npm/{path...}", redirectToSubdomain)
-}
-
-// redirectToSubdomain bounces a path-based registry request (BASE/npm/...) to
-// the npm.<domain> subdomain. The %2f in a scoped name (@buildhost%2fpkg) must
-// survive into the Location header, so we read the raw escaped path (r.URL.Path
-// would decode it) and build the URL by hand -- http.Redirect passes the ASCII
-// %2f through unchanged. The subdomain is npm.<full host>, not DeriveServiceURL
-// (which strips the first label, correct only from a service subdomain).
-func redirectToSubdomain(w http.ResponseWriter, r *http.Request) {
-	rest := strings.TrimPrefix(r.URL.EscapedPath(), "/npm")
-	loc := strings.Replace(auth.RequestBaseURL(r), "://", "://npm.", 1) + rest
-	if r.URL.RawQuery != "" {
-		loc += "?" + r.URL.RawQuery
-	}
-	http.Redirect(w, r, loc, http.StatusMovedPermanently)
+	// The path-based form `npm install --registry {domain}/npm` works because
+	// registering the npm service wires up a main-domain {domain}/npm/... ->
+	// npm.{domain}/... redirect (see auth.registerServicePathRedirect).
 }
 
 type route struct {

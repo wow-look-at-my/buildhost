@@ -64,7 +64,32 @@ func svcRouter(name string) *router.Router {
 	}
 	r = router.New()
 	serviceRouters[name] = r
+	// Every service that answers on <name>.{domain} also gets a main-domain
+	// path redirect ({domain}/<name>/... -> <name>.{domain}/...), so the
+	// path-style URLs documented in /llms.txt resolve for callers that don't
+	// address the subdomain directly. Registered once, when the service router
+	// is first created.
+	registerServicePathRedirect(name)
 	return r
+}
+
+// registerServicePathRedirect bounces {domain}/<service> and
+// {domain}/<service>/... to the <service>.{domain} subdomain that serves it.
+// It preserves the raw escaped path (so a scoped npm package's %2f survives the
+// hop) and the query string, and targets <service>.<full host> rather than
+// DeriveServiceURL -- the latter strips the first label, which is right only
+// when the request already arrived on a service subdomain, not the main domain.
+func registerServicePathRedirect(service string) {
+	redirect := func(w http.ResponseWriter, r *http.Request) {
+		rest := strings.TrimPrefix(r.URL.EscapedPath(), "/"+service)
+		loc := strings.Replace(RequestBaseURL(r), "://", "://"+service+".", 1) + rest
+		if r.URL.RawQuery != "" {
+			loc += "?" + r.URL.RawQuery
+		}
+		http.Redirect(w, r, loc, http.StatusMovedPermanently)
+	}
+	HandleRaw("/"+service, redirect)
+	HandleRaw("/"+service+"/{path...}", redirect)
 }
 
 func Handle(pattern string, parse ParseFunc, handler http.HandlerFunc) {
