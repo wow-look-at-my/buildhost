@@ -70,7 +70,7 @@ runs:
                 description: "${{ inputs.description }}",
                 homepage:    "${{ inputs.homepage }}",
                 license:     "${{ inputs.license }}",
-                is_private:  "${{ inputs.private }}" === 'true',
+                is_private:  ("${{ inputs.private }}" as string) === 'true',
                 versioning:  "${{ inputs.versioning }}",
               }),
             });
