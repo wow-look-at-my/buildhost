@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"strings"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -18,24 +17,14 @@ import (
 
 var repackTracer = otel.Tracer("buildhost.repackage")
 
-// dlServiceURL derives the dl subdomain URL from the server's base URL.
-// The base URL may come from any service subdomain (e.g. brew.example.com);
-// we replace the leading label with "dl" to reach the dl download handler.
+// dlServiceURL constructs the dl subdomain URL from the root domain base URL
+// (e.g. "https://pazer.build" → "https://dl.pazer.build").
 func dlServiceURL(baseURL string) string {
 	u, err := url.Parse(baseURL)
 	if err != nil || u.Host == "" {
 		return ""
 	}
-	host := u.Hostname()
-	if i := strings.IndexByte(host, '.'); i >= 0 {
-		host = "dl" + host[i:]
-	} else {
-		host = "dl." + host
-	}
-	if port := u.Port(); port != "" {
-		host += ":" + port
-	}
-	return u.Scheme + "://" + host
+	return u.Scheme + "://dl." + u.Host
 }
 
 type Generator struct {

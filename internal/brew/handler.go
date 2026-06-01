@@ -68,7 +68,7 @@ func (h *Handler) ServeFormula(w http.ResponseWriter, r *http.Request) {
 		if a.Kind.ServedViaDockerOnly() {
 			continue
 		}
-		out, err := h.Gen.Generate(r.Context(), repackage.FormatBrew, *project, *release, a, auth.RequestBaseURL(r))
+		out, err := h.Gen.Generate(r.Context(), repackage.FormatBrew, *project, *release, a, auth.RequestRootURL(r))
 		if err != nil {
 			continue
 		}
