@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/static"
+	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
 var handler Handler
@@ -17,6 +19,7 @@ var handler Handler
 func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
+		handler.Store = auth.Store()
 	})
 	// npm requests a scoped package as `@buildhost/<name>` but URL-encodes the
 	// scope slash, so the path arrives as the single segment
@@ -26,6 +29,10 @@ func init() {
 	// and strip the `@buildhost/` scope ourselves -- a `/@buildhost/{project}`
 	// pattern would only match the rare unencoded client.
 	auth.ServiceHandleHandler("npm", "GET /{pkg}", parseRoute, &handler)
+	// Tarball URLs are emitted by us in the packument with literal slashes (npm
+	// fetches dist.tarball verbatim, without scope-encoding), so they arrive as
+	// a normal multi-segment path and need their own route.
+	auth.ServiceHandle("npm", "GET /@buildhost/{project}/-/{filename}", parseTarballRoute, handler.serveTarball)
 }
 
 type route struct {
@@ -35,6 +42,14 @@ type route struct {
 
 func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
+
+type tarballRoute struct {
+	project  string
+	filename string
+}
+
+func (r tarballRoute) ProjectName() string      { return r.project }
+func (r tarballRoute) Access() auth.AccessLevel { return auth.ReadAccess }
 
 var knownPlatforms []string
 
@@ -56,6 +71,14 @@ func splitPlatform(name string) (project, platform string) {
 	return name, ""
 }
 
+// npm package names may contain at most one slash (the "@scope/name"
+// separator), but buildhost projects are slash-namespaced to any depth
+// (e.g. "cc-marketplace/my-plugin"). Encode the namespace separator as "__"
+// so a namespaced project maps to a single valid npm package name and back.
+// Project name segments must not themselves contain "__".
+func projectToNPMName(project string) string { return strings.ReplaceAll(project, "/", "__") }
+func npmNameToProject(name string) string     { return strings.ReplaceAll(name, "__", "/") }
+
 func parseRoute(r *http.Request) auth.RouteInfo {
 	// The router has already percent-decoded the segment, so both the encoded
 	// (`@buildhost%2ffoo`) and unencoded (`@buildhost/foo`) forms arrive here as
@@ -64,16 +87,30 @@ func parseRoute(r *http.Request) auth.RouteInfo {
 	if !ok {
 		return route{}
 	}
-	projectName, platform := splitPlatform(name)
+	// Slash-namespaced projects are encoded with "__" in the npm name (see
+	// projectToNPMName); decode before resolving the project.
+	projectName, platform := splitPlatform(npmNameToProject(name))
 	return route{project: projectName, platform: platform}
+}
+
+func parseTarballRoute(r *http.Request) auth.RouteInfo {
+	return tarballRoute{
+		project:  npmNameToProject(r.PathValue("project")),
+		filename: r.PathValue("filename"),
+	}
 }
 
 func routeFrom(ctx context.Context) route {
 	return auth.RouteInfoFrom(ctx).(route)
 }
 
+func tarballRouteFrom(ctx context.Context) tarballRoute {
+	return auth.RouteInfoFrom(ctx).(tarballRoute)
+}
+
 type Handler struct {
-	DB *db.DB
+	DB    *db.DB
+	Store storage.Storage
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -107,6 +144,7 @@ func (h *Handler) collectNpmArtifacts(ctx context.Context, releaseID int64) []np
 
 func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, project *db.Project, platform string) {
 	projectName := project.Name
+	npmName := projectToNPMName(projectName)
 
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)
 	if err != nil {
@@ -128,16 +166,34 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 		}
 		version := normalizeVersion(rel.Version)
 
+		// Check for a pre-built npm-package artifact first.
+		if npmPkg, err := h.DB.GetArtifactByKind(r.Context(), rel.ID, db.KindNPMPackage); err == nil && npmPkg != nil {
+			npmBase := auth.DeriveServiceURL(r, "npm")
+			tarballURL := fmt.Sprintf("%s/@buildhost/%s/-/%s-%s.tgz", npmBase, npmName, npmName, version)
+			versions[version] = map[string]any{
+				"name":    "@buildhost/" + npmName,
+				"version": version,
+				"dist": map[string]string{
+					"tarball": tarballURL,
+				},
+			}
+			if _, ok := distTags["latest"]; !ok {
+				distTags["latest"] = version
+			}
+			continue
+		}
+
+		// Fall back to binary repackaging.
 		npmInfos := h.collectNpmArtifacts(r.Context(), rel.ID)
 
 		optDeps := map[string]string{}
 		for _, info := range npmInfos {
-			platPkg := fmt.Sprintf("@buildhost/%s-%s-%s", projectName, info.os, info.arch)
+			platPkg := fmt.Sprintf("@buildhost/%s-%s-%s", npmName, info.os, info.arch)
 			optDeps[platPkg] = version
 		}
 
 		versionEntry := map[string]any{
-			"name":    "@buildhost/" + projectName,
+			"name":    "@buildhost/" + npmName,
 			"version": version,
 			"bin":     map[string]string{projectName: "./bin/run.js"},
 			"dist": map[string]string{
@@ -155,7 +211,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 	}
 
 	info := map[string]any{
-		"name":      "@buildhost/" + projectName,
+		"name":      "@buildhost/" + npmName,
 		"versions":  versions,
 		"dist-tags": distTags,
 	}
@@ -163,6 +219,52 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-cache")
 	json.NewEncoder(w).Encode(info)
+}
+
+func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request) {
+	project := auth.ProjectFrom(r.Context())
+	ri := tarballRouteFrom(r.Context())
+	filename := ri.filename
+
+	// The tarball filename embeds the npm-encoded project name (see
+	// projectToNPMName); decode happens at route parse, encode here to match.
+	prefix := projectToNPMName(project.Name) + "-"
+	if !strings.HasPrefix(filename, prefix) {
+		http.NotFound(w, r)
+		return
+	}
+	version := strings.TrimSuffix(filename[len(prefix):], ".tgz")
+	if version == "" || version == filename[len(prefix):] {
+		http.NotFound(w, r)
+		return
+	}
+
+	release, err := h.DB.GetRelease(r.Context(), project.ID, version)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	artifact, err := h.DB.GetArtifactByKind(r.Context(), release.ID, db.KindNPMPackage)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	rc, size, err := h.Store.Get(r.Context(), artifact.StorageKey)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	defer rc.Close()
+
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename=%q`, filename))
+	if size > 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(size))
+	}
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	io.Copy(w, rc)
 }
 
 func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Request, project *db.Project, platform string, releases []db.Release) {
@@ -173,7 +275,7 @@ func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	platOS, platArch := platParts[0], platParts[1]
-	packageName := projectName + "-" + platform
+	packageName := projectToNPMName(projectName) + "-" + platform
 
 	versions := map[string]any{}
 	distTags := map[string]string{}
