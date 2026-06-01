@@ -2,17 +2,31 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/admin"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/buildinfo"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
 var healthDB *db.DB
+
+// healthResponse is the JSON body of GET /healthz. It always reports the build
+// the server is running (commit and version) so a deploy can be verified
+// without a dedicated version endpoint; status is "ok" only when the database
+// is reachable.
+type healthResponse struct {
+	Status   string `json:"status"`             // "ok" when healthy, "unhealthy" otherwise
+	Commit   string `json:"commit"`             // git SHA the binary was built from, or "unknown"
+	Version  string `json:"version"`            // synthetic build version (v0.0.<unix> or "dev")
+	Modified bool   `json:"modified,omitempty"` // built from a dirty working tree
+	Error    string `json:"error,omitempty"`    // failure detail when unhealthy
+}
 
 type Server struct {
 	cfg config.Config
@@ -24,13 +38,21 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 	healthDB = database
 
 	auth.HandleRaw("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		if err := healthDB.PingContext(r.Context()); err != nil {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte("database unreachable"))
-			return
+		resp := healthResponse{
+			Status:   "ok",
+			Commit:   buildinfo.Commit(),
+			Version:  buildinfo.Version(),
+			Modified: buildinfo.Get().Modified,
 		}
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
+		code := http.StatusOK
+		if err := healthDB.PingContext(r.Context()); err != nil {
+			resp.Status = "unhealthy"
+			resp.Error = "database unreachable"
+			code = http.StatusServiceUnavailable
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(code)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 	auth.HandleRaw("GET /ready-to-update", func(w http.ResponseWriter, _ *http.Request) {
 		if admin.InflightWrites() > 0 {

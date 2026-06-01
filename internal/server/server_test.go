@@ -271,9 +271,17 @@ func TestHealthz(t *testing.T) {
 	env := setup(t)
 	resp := env.get(t, "/healthz")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
 
-	body := readBody(t, resp)
-	require.Equal(t, "ok", string(body))
+	var body struct {
+		Status  string `json:"status"`
+		Commit  string `json:"commit"`
+		Version string `json:"version"`
+	}
+	require.NoError(t, json.Unmarshal(readBody(t, resp), &body))
+	require.Equal(t, "ok", body.Status)
+	require.NotEmpty(t, body.Commit)  // "unknown" in tests, but never empty
+	require.NotEmpty(t, body.Version) // "dev" in tests, but never empty
 }
 
 func TestHealthz_DBClosed(t *testing.T) {
@@ -285,8 +293,15 @@ func TestHealthz_DBClosed(t *testing.T) {
 	resp := env.get(t, "/healthz")
 	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 
-	body := readBody(t, resp)
-	require.Equal(t, "database unreachable", string(body))
+	var body struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+		Commit string `json:"commit"`
+	}
+	require.NoError(t, json.Unmarshal(readBody(t, resp), &body))
+	require.Equal(t, "unhealthy", body.Status)
+	require.Equal(t, "database unreachable", body.Error)
+	require.NotEmpty(t, body.Commit)
 }
 
 // ---------------------------------------------------------------------------
