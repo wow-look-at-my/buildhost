@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,7 +26,8 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, BaseURL: "http://localhost:8080"}
+	staticURL, _ := url.Parse("http://localhost:8080")
+	h := &Handler{DB: d, StaticURL: staticURL}
 	return h, d, store
 }
 
@@ -40,34 +42,29 @@ func withRoute(r *http.Request, project *db.Project, rt route) *http.Request {
 func TestParseRoute(t *testing.T) {
 	tests := []struct {
 		name     string
-		url      string
+		pathVal  string
 		wantProj string
 		wantPlat string
 	}{
-		{"simple", "/npm/@buildhost/myapp", "myapp", ""},
-		{"numeric", "/npm/@buildhost/app123", "app123", ""},
-		{"dotted", "/npm/@buildhost/my.app", "my.app", ""},
-		{"hyphenated", "/npm/@buildhost/go-toolchain", "go-toolchain", ""},
-		{"multi-hyphen", "/npm/@buildhost/my-cool-app", "my-cool-app", ""},
-		{"many-hyphens", "/npm/@buildhost/a-b-c-d-e", "a-b-c-d-e", ""},
-		{"platform linux-x64", "/npm/@buildhost/go-toolchain-linux-x64", "go-toolchain", "linux-x64"},
-		{"platform darwin-arm64", "/npm/@buildhost/go-toolchain-darwin-arm64", "go-toolchain", "darwin-arm64"},
-		{"platform win32-x64", "/npm/@buildhost/myapp-win32-x64", "myapp", "win32-x64"},
-		{"platform linux-arm64", "/npm/@buildhost/myapp-linux-arm64", "myapp", "linux-arm64"},
-		{"platform linux-ia32", "/npm/@buildhost/myapp-linux-ia32", "myapp", "linux-ia32"},
-		{"platform darwin-x64", "/npm/@buildhost/myapp-darwin-x64", "myapp", "darwin-x64"},
-		{"platform win32-arm64", "/npm/@buildhost/myapp-win32-arm64", "myapp", "win32-arm64"},
-		{"hyphenated scope", "/npm/@build-host/gotoolchain", "@build-host/gotoolchain", ""},
-		{"unscoped simple", "/npm/myapp", "myapp", ""},
-		{"unscoped hyphenated", "/npm/build-host", "build-host", ""},
-		{"multi-segment name", "/npm/@buildhost/library/foo", "library/foo", ""},
-		{"deeply nested multi-segment", "/npm/@buildhost/team/group/proj-name", "team/group/proj-name", ""},
-		{"extra slash in scope", "/npm/@build/host/myapp", "@build/host/myapp", ""},
-		{"bare scope", "/npm/@buildhost/", "", ""},
+		{"simple", "myapp", "myapp", ""},
+		{"numeric", "app123", "app123", ""},
+		{"dotted", "my.app", "my.app", ""},
+		{"hyphenated", "go-toolchain", "go-toolchain", ""},
+		{"multi-hyphen", "my-cool-app", "my-cool-app", ""},
+		{"many-hyphens", "a-b-c-d-e", "a-b-c-d-e", ""},
+		{"platform linux-x64", "go-toolchain-linux-x64", "go-toolchain", "linux-x64"},
+		{"platform darwin-arm64", "go-toolchain-darwin-arm64", "go-toolchain", "darwin-arm64"},
+		{"platform win32-x64", "myapp-win32-x64", "myapp", "win32-x64"},
+		{"platform linux-arm64", "myapp-linux-arm64", "myapp", "linux-arm64"},
+		{"platform linux-ia32", "myapp-linux-ia32", "myapp", "linux-ia32"},
+		{"platform darwin-x64", "myapp-darwin-x64", "myapp", "darwin-x64"},
+		{"platform win32-arm64", "myapp-win32-arm64", "myapp", "win32-arm64"},
+		{"empty", "", "", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", tt.url, nil)
+			req := httptest.NewRequest("GET", "/@buildhost/"+tt.pathVal, nil)
+			req.SetPathValue("project", tt.pathVal)
 			ri := parseRoute(req).(route)
 			assert.Equal(t, tt.wantProj, ri.project, "project")
 			assert.Equal(t, tt.wantPlat, ri.platform, "platform")
@@ -198,7 +195,7 @@ func TestServeHTTP_PackageInfo_OptionalDependencies(t *testing.T) {
 	assert.Equal(t, "./bin/run.js", bin["go-toolchain"])
 
 	dist := v["dist"].(map[string]any)
-	assert.Contains(t, dist["tarball"], "/static?arch=any&fmt=npm-wrapper&id=go-toolchain&os=any&v=6.0.0")
+	assert.Contains(t, dist["tarball"], "/file?arch=any&fmt=npm-wrapper&os=any&project=go-toolchain&v=6.0.0")
 }
 
 func TestServeHTTP_PlatformPackageInfo(t *testing.T) {
@@ -234,7 +231,7 @@ func TestServeHTTP_PlatformPackageInfo(t *testing.T) {
 	assert.Equal(t, []any{"linux"}, v["os"])
 	assert.Equal(t, []any{"x64"}, v["cpu"])
 	dist := v["dist"].(map[string]any)
-	assert.Contains(t, dist["tarball"], "/static?arch=amd64&fmt=npm&id=go-toolchain&os=linux&v=6.0.0")
+	assert.Contains(t, dist["tarball"], "/file?arch=amd64&fmt=npm&os=linux&project=go-toolchain&v=6.0.0")
 }
 
 func TestServeHTTP_PlatformPackageInfo_NotFound(t *testing.T) {
@@ -279,7 +276,7 @@ func TestServeHTTP_HyphenatedProject_PackageInfo(t *testing.T) {
 	assert.Contains(t, versions, "1.2.0")
 	v := versions["1.2.0"].(map[string]any)
 	dist := v["dist"].(map[string]any)
-	assert.Contains(t, dist["tarball"], "/static?arch=any&fmt=npm-wrapper&id=go-toolchain&os=any&v=1.2.0")
+	assert.Contains(t, dist["tarball"], "/file?arch=any&fmt=npm-wrapper&os=any&project=go-toolchain&v=1.2.0")
 }
 
 // Private project auth is tested in the auth package. These tests verify
