@@ -89,7 +89,7 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 
 	var manifests []indexEntry
 	for _, a := range artifacts {
-		out, err := h.Gen.Generate(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestBaseURL(r))
+		out, err := h.Gen.Generate(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestRootURL(r))
 		if err != nil {
 			continue
 		}
@@ -156,7 +156,7 @@ func (h *Handler) serveSingleManifest(w http.ResponseWriter, r *http.Request, pr
 	}
 
 	for _, a := range artifacts {
-		out, err := h.Gen.Generate(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestBaseURL(r))
+		out, err := h.Gen.Generate(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestRootURL(r))
 		if err != nil {
 			continue
 		}
