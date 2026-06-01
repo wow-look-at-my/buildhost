@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/buildhost/internal/admin"
+	"github.com/wow-look-at-my/buildhost/internal/buildinfo"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/server"
@@ -30,7 +31,7 @@ var serveCmd = &cobra.Command{
 		cfg := config.Load()
 
 		if cfg.OTELEndpoint != "" {
-			shutdown, err := telemetry.Init(context.Background(), cfg.OTELEndpoint, resolvedVersion())
+			shutdown, err := telemetry.Init(context.Background(), cfg.OTELEndpoint, buildinfo.Version())
 			if err != nil {
 				return fmt.Errorf("init telemetry: %w", err)
 			}
@@ -69,9 +70,9 @@ var serveCmd = &cobra.Command{
 		var adminHTTP *http.Server
 		if cfg.AdminListenAddr != "" {
 			adminDash := admin.New(cfg, database, admin.BuildInfo{
-				Version: resolvedVersion(),
-				Commit:  resolvedCommit(),
-				Date:    resolvedDate(),
+				Version: buildinfo.Version(),
+				Commit:  buildinfo.Commit(),
+				Date:    buildinfo.Date(),
 				RepoURL: "https://github.com/wow-look-at-my/buildhost",
 			})
 			adminHTTP = adminDash.NewHTTPServer()

@@ -30,7 +30,8 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 - `internal/storage/` - Content-addressed blob storage (filesystem backend, zstd-compressed, key validation)
 - `internal/repackage/` - On-demand repackaging and stripping (tar.gz, tar.xz, tar.zst, zip, deb, brew, npm, oci). Self-registering via init(); Generator uses registry. Orchestrator just publishes releases.
 - `internal/strip/` - Binary debug info stripping (shells out to strip/objcopy)
-- `internal/version/` - Version resolution logic
+- `internal/version/` - Release version resolution logic (resolves a version spec like `latest`/`v1`/semver to a `db.Release`)
+- `internal/buildinfo/` - Build-time VCS stamps (commit, time, dirty flag) read once from `runtime/debug.ReadBuildInfo()`; reported by `buildhost version` and the `GET /healthz` JSON body
 - `internal/admin/` - Admin dashboard (separate HTTP server, JSON API + static SPA frontend), inflight write counter for update coordination
 - `internal/config/` - Server configuration from env vars
 - `migrations/` - SQLite schema (embedded via go:embed)
