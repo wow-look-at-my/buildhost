@@ -53,7 +53,7 @@ runs:
               const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
               if (url && bearer) {
                 const r = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
-                token = ((await r.json()) as { value: string }).value || '';
+                token = ((await r.json()) as { value: string }).value ?? '';
               }
             }
             const project: string = "${{ inputs.project }}";
