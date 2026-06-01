@@ -116,7 +116,16 @@ For zero-downtime updates, use docker-updater's rolling update mode (`docker-upd
 
 ### Ready-to-update endpoint
 
-`GET /ready-to-update` on the main server (`:8080`) returns HTTP 200 when the server is idle, or HTTP 503 when there are in-flight write requests. This is designed for docker-updater's HTTP pre-update checks -- docker-updater can query this endpoint directly (via the container's IP from the host network) without joining the container's network or exec'ing a process.
+`GET /ready-to-update` on the main server (`:8080`) returns HTTP 200 when the server is idle, or HTTP 503 when there are in-flight write requests. It is designed for docker-updater's HTTP pre-update checks -- no exec into the container (the distroless image has no shell).
+
+docker-updater reaches it over the **shared `internal` Docker network** via buildhost's DNS alias, configured as a full URL:
+
+```yaml
+labels:
+  docker-updater.pre-check.url: "http://buildhost-backend:8080/ready-to-update"
+```
+
+Do **not** use docker-updater's `:8080/...` (port-only) pre-check form: that one resolves the container's bridge IP and therefore requires running docker-updater with `--network host`. The full-URL form only needs docker-updater to share a network with buildhost (it joins `internal` in `deploy/docker-compose.yml`), which keeps the updater off host networking. Note that rolling updates (below) **skip** pre-checks entirely -- the old container drains via graceful shutdown -- so the pre-check endpoint matters only for non-rolling setups and the `try-update` CLI.
 
 The `try-update` CLI subcommand wraps this endpoint for manual use or other pre-update hooks:
 
