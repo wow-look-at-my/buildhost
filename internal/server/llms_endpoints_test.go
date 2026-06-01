@@ -41,7 +41,7 @@ func TestLLMsTxt_PublicAndRendersBaseURL(t *testing.T) {
 
 	body := string(readBody(t, resp))
 	require.Contains(t, body, "# buildhost")
-	require.Contains(t, body, "http://localhost/dl")
+	require.Contains(t, body, env.ts.URL+"/dl")
 	require.NotContains(t, body, "__BASE_URL__")
 	require.NotContains(t, body, "__DL_URL__")
 }
@@ -50,7 +50,7 @@ func TestLLMsTxt_DocumentedRoutesAreRegistered(t *testing.T) {
 	env := setup(t)
 
 	body := string(readBody(t, env.get(t, "/llms.txt")))
-	paths := documentedPaths(body, "http://localhost")
+	paths := documentedPaths(body, env.ts.URL)
 	require.NotEmpty(t, paths, "expected to extract documented endpoints from /llms.txt")
 
 	allRoutes := auth.AllRoutes()

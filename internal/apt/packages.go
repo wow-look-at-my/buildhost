@@ -62,7 +62,7 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 
 	debSize := artifact.Size
 	debSHA := artifact.SHA256
-	out, err := h.Gen.Generate(r.Context(), repackage.FormatDeb, *project, *release, *artifact)
+	out, err := h.Gen.Generate(r.Context(), repackage.FormatDeb, *project, *release, *artifact, auth.RequestBaseURL(r))
 	if err == nil {
 		data, rerr := io.ReadAll(out.Reader)
 		if rerr == nil {

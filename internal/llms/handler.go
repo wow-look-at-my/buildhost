@@ -14,21 +14,13 @@ var templateMD string
 var handler Handler
 
 func init() {
-	auth.OnReady(func() {
-		handler.body = render(auth.BaseURL())
-	})
 	auth.HandleRaw("GET /llms.txt", handler.Serve)
 }
 
-type Handler struct {
-	body []byte
-}
+type Handler struct{}
 
 func render(baseURL string) []byte {
 	base := strings.TrimRight(baseURL, "/")
-	if base == "" {
-		base = "http://localhost:8080"
-	}
 	host := strings.TrimPrefix(strings.TrimPrefix(base, "https://"), "http://")
 
 	out := strings.ReplaceAll(templateMD, "__BASE_URL__", base)
@@ -42,12 +34,10 @@ func render(baseURL string) []byte {
 	return []byte(out)
 }
 
+// Serve renders the guide against this server's own base URL, derived from the
+// request rather than a configured value.
 func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
-	body := h.body
-	if body == nil {
-		body = render("")
-	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.Write(body)
+	w.Write(render(auth.RequestBaseURL(r)))
 }
