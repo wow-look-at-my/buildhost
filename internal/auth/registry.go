@@ -44,7 +44,6 @@ func Init(database *db.DB, store storage.Storage, baseURL, dataDir string, trust
 	sharedFetchDomains = siteFetchDomains
 
 	mw = &Middleware{DB: database, Verifier: NewOIDCVerifier(OIDCConfig{
-		BaseURL:        baseURL,
 		TrustedIssuers: trustedIssuers,
 		AllowedOrgs:    allowedOrgs,
 		AllowedEvents:  allowedEvents,

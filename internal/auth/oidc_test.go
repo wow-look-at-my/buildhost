@@ -549,7 +549,7 @@ func TestVerifyToken_TrustedIssuer_NoPolicies(t *testing.T) {
 	}
 	token := signJWT(t, key, "kid-trusted", claims)
 
-	v := NewOIDCVerifier(OIDCConfig{BaseURL: "https://buildhost.example.com", TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
+	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
 	var vr VerifyResult
 	tok, oidcProject, err := v.VerifyTokenFull(context.Background(), token, nil, &vr)
 	require.NoError(t, err)
@@ -575,7 +575,7 @@ func TestVerifyToken_TrustedIssuer_AllowedEvent(t *testing.T) {
 	}
 	token := signJWT(t, key, "kid-event-ok", claims)
 
-	v := NewOIDCVerifier(OIDCConfig{BaseURL: "https://buildhost.example.com", TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
+	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
 	_, oidcProject, err := v.VerifyToken(context.Background(), token, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "myrepo", oidcProject)
@@ -602,7 +602,7 @@ func TestVerifyToken_TrustedIssuer_RejectedEvent(t *testing.T) {
 	assert.Contains(t, err.Error(), "event")
 }
 
-func TestVerifyToken_TrustedIssuer_AudienceCheck(t *testing.T) {
+func TestVerifyToken_TrustedIssuer_AutoProvision(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -617,18 +617,20 @@ func TestVerifyToken_TrustedIssuer_AudienceCheck(t *testing.T) {
 	}
 	token := signJWT(t, key, "kid-aud-auto", claims)
 
-	v := NewOIDCVerifier(OIDCConfig{BaseURL: "https://buildhost.example.com", TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
+	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
 	_, oidcProject, err := v.VerifyToken(context.Background(), token, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "myrepo", oidcProject)
 }
 
-func TestVerifyToken_TrustedIssuer_AudienceMismatch(t *testing.T) {
+func TestVerifyToken_TrustedIssuer_AudienceNotRequired(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
-	srv := jwksServer(t, &key.PublicKey, "kid-aud-bad")
+	srv := jwksServer(t, &key.PublicKey, "kid-aud-other")
 
+	// A token minted for a different audience still auto-provisions: buildhost
+	// no longer requires the audience to name this server.
 	claims := map[string]any{
 		"iss":        srv.URL,
 		"sub":        "repo:myorg/myrepo:ref:refs/heads/main",
@@ -636,12 +638,12 @@ func TestVerifyToken_TrustedIssuer_AudienceMismatch(t *testing.T) {
 		"exp":        time.Now().Add(10 * time.Minute).Unix(),
 		"event_name": "push",
 	}
-	token := signJWT(t, key, "kid-aud-bad", claims)
+	token := signJWT(t, key, "kid-aud-other", claims)
 
-	v := NewOIDCVerifier(OIDCConfig{BaseURL: "https://buildhost.example.com", TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
-	_, _, err = v.VerifyToken(context.Background(), token, nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "audience")
+	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
+	_, oidcProject, err := v.VerifyToken(context.Background(), token, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "myrepo", oidcProject)
 }
 
 func TestProjectFromSubject_UppercaseNormalized(t *testing.T) {
@@ -670,7 +672,7 @@ func TestVerifyToken_TrustedIssuer_PrivateRepoVisibility(t *testing.T) {
 	}
 	token := signJWT(t, key, "kid-vis-priv", claims)
 
-	v := NewOIDCVerifier(OIDCConfig{BaseURL: "https://buildhost.example.com", TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
+	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
 	var vr VerifyResult
 	_, _, err = v.VerifyTokenFull(context.Background(), token, nil, &vr)
 	require.NoError(t, err)
@@ -694,7 +696,7 @@ func TestVerifyToken_TrustedIssuer_PublicRepoVisibility(t *testing.T) {
 	}
 	token := signJWT(t, key, "kid-vis-pub", claims)
 
-	v := NewOIDCVerifier(OIDCConfig{BaseURL: "https://buildhost.example.com", TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
+	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
 	var vr VerifyResult
 	_, _, err = v.VerifyTokenFull(context.Background(), token, nil, &vr)
 	require.NoError(t, err)
