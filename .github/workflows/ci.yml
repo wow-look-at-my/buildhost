@@ -160,6 +160,10 @@ jobs:
           name: go-build
           path: build/
       - run: chmod +x build/buildhost_linux_amd64
+      # Build the image (and pull its base layers) in a separate, untimed step
+      # so the --wait-timeout below budgets only container startup, not the
+      # image build/pull. up then reuses this image instead of rebuilding.
+      - run: docker compose -f docker-compose.ci.yml build
       - run: docker compose -f docker-compose.ci.yml up -d --wait --wait-timeout 30
       - run: docker compose -f docker-compose.ci.yml logs
         if: failure()
