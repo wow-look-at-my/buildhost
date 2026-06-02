@@ -25,6 +25,18 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(ctx)
 	rt := routeFrom(ctx)
 
+	// Redirect a branch root with no trailing slash (e.g. /p/branch/main) to the
+	// slashed form so relative links in index.html resolve under the branch, not
+	// its parent. This redirect used to live on its own GET /{project}/branch/{branch}
+	// route, but that route's {branch} param greedily matched any sub-path and,
+	// scoring higher than this {path...} route, shadowed it -- so every file
+	// request hit the redirect and looped (/x -> /x/ -> /x/ ...). Folding it in
+	// here keeps a single GET route, so file requests reach Serve directly.
+	if rt.path == "" && !strings.HasSuffix(r.URL.Path, "/") {
+		http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
+		return
+	}
+
 	isDir := rt.path == "" || strings.HasSuffix(rt.path, "/")
 	filePath := path.Clean(rt.path)
 	if isDir || filePath == "." {
@@ -77,10 +89,6 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.NotFound(w, r)
-}
-
-func (h *Handler) ServeRedirect(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {

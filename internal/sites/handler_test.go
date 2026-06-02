@@ -193,11 +193,16 @@ func TestServe_NotFound_NoFile(t *testing.T) {
 func TestServeRedirect(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
+	uploadSite(t, h, proj, "main", map[string]string{"index.html": "<h1>hello</h1>"})
 
+	// A branch root requested without a trailing slash redirects to the slashed
+	// form (so index.html's relative links resolve under the branch). Serve --
+	// the single GET route -- handles this; there is no separate redirect route
+	// that could shadow file serving.
 	req := httptest.NewRequest("GET", "/sites/mysite/branch/main", nil)
-	req = withRoute(req, proj, route{project: "mysite", branch: "main"})
+	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: ""})
 	rec := httptest.NewRecorder()
-	h.ServeRedirect(rec, req)
+	h.Serve(rec, req)
 
 	assert.Equal(t, http.StatusMovedPermanently, rec.Code)
 	assert.Equal(t, "/sites/mysite/branch/main/", rec.Header().Get("Location"))
