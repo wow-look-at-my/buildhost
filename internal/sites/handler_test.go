@@ -222,6 +222,24 @@ func TestServe_File(t *testing.T) {
 	assert.Contains(t, rec.Header().Get("Content-Type"), "css")
 }
 
+// A served site asset must carry a CSP that lets the site load its own
+// resources. The server-wide middleware sets "default-src 'none'" (right for the
+// JSON/binary API); Serve overrides it so hosted pages are not blanked by it.
+func TestServe_CSPAllowsOwnAssets(t *testing.T) {
+	env := setupTest(t)
+	seedProject(t, env.db, "mysite")
+	env.uploadSite(t, "mysite", "main", map[string]string{
+		"index.html": "<script src=app.js></script>",
+		"app.js":     "console.log(1)",
+	})
+
+	for _, path := range []string{"/mysite/branch/main/", "/mysite/branch/main/app.js"} {
+		rec := env.do(t, "GET", path, "", nil, false)
+		require.Equal(t, http.StatusOK, rec.Code, path)
+		assert.Equal(t, "default-src 'self' data:", rec.Header().Get("Content-Security-Policy"), path)
+	}
+}
+
 func TestServe_IndexFallback(t *testing.T) {
 	env := setupTest(t)
 	seedProject(t, env.db, "mysite")

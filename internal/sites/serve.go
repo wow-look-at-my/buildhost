@@ -90,6 +90,13 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", ct)
 			w.Header().Set("Content-Length", fmt.Sprintf("%d", hdr.Size))
 			w.Header().Set("Cache-Control", "no-cache")
+			// A hosted site is a real web page that must load its own
+			// scripts/styles/images. Override the server-wide API CSP
+			// ("default-src 'none'"), which would otherwise block every asset
+			// and render the site blank, with one that permits the site's own
+			// same-origin resources and data: URIs -- the same policy the admin
+			// server uses to serve this kind of SPA.
+			w.Header().Set("Content-Security-Policy", "default-src 'self' data:")
 			io.Copy(w, tr)
 			return
 		}
