@@ -28,16 +28,24 @@ jobs:
       # On the default branch, cache this commit's route list keyed by its SHA.
       # Caches created on the default branch are restorable from every branch,
       # so feature-branch route-diff runs reuse this instead of rebuilding base.
+      # The path MUST match route-diff's restore path: actions/cache derives the
+      # cache version from the path, so a mismatched path is a guaranteed miss
+      # even for an identical key.
       - if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        run: chmod +x build/buildhost_linux_amd64 && ./build/buildhost_linux_amd64 routes > routes.txt
+        run: chmod +x build/buildhost_linux_amd64 && ./build/buildhost_linux_amd64 routes > base-routes.txt
       - if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         uses: actions/cache/save@v4
         with:
-          path: routes.txt
+          path: base-routes.txt
           key: route-list-${{ github.sha }}
 
   route-diff:
     needs: build
+    # Only meaningful on a branch that has an open PR to comment on. The default
+    # branch has no PR to diff against, and its own route list is already cached
+    # by the build job above -- running here would just rebuild the base from
+    # source and throw the result away. Skip it.
+    if: github.ref != format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     permissions:
       # id-token: write is needed by go-toolchain's secret-server step (used by
