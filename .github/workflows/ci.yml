@@ -11,6 +11,10 @@ permissions:
   id-token: write
   contents: read
   packages: write
+  # Required by the publish-ghcr reusable workflow (it verifies actions:read to
+  # download build artifacts). A reusable workflow cannot be granted more than
+  # the caller declares, so omitting this makes the whole run a startup_failure.
+  actions: read
 
 jobs:
   build:
