@@ -11,6 +11,10 @@ permissions:
   id-token: write
   contents: read
   packages: write
+  # Required by the publish-ghcr reusable workflow (it verifies actions:read to
+  # download build artifacts). A reusable workflow cannot be granted more than
+  # the caller declares, so omitting this makes the whole run a startup_failure.
+  actions: read
 
 jobs:
   build:
@@ -21,24 +25,78 @@ jobs:
         with:
           generate: 52b76a04057b
           autorelease: 'false'
+      # On the default branch, cache this commit's route list keyed by its SHA.
+      # Caches created on the default branch are restorable from every branch,
+      # so feature-branch route-diff runs reuse this instead of rebuilding base.
+      - if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        run: chmod +x build/buildhost_linux_amd64 && ./build/buildhost_linux_amd64 routes > routes.txt
+      - if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: actions/cache/save@v4
+        with:
+          path: routes.txt
+          key: route-list-${{ github.sha }}
 
   route-diff:
     needs: build
     runs-on: ubuntu-latest
     permissions:
+      # id-token: write is needed by go-toolchain's secret-server step (used by
+      # the cold-cache base build below); job-level permissions replace the
+      # workflow-level block, so it must be repeated here.
+      id-token: write
+      contents: read
       pull-requests: write
     steps:
+      # PR routes: from the artifact the build job already produced for this ref.
       - uses: actions/download-artifact@v4
         with:
           name: go-build
           path: build/
       - run: chmod +x build/buildhost_linux_amd64 && echo "routes=$(./build/buildhost_linux_amd64 routes | base64 -w0)" >> "$GITHUB_OUTPUT"
         id: routes
+      # Base routes: prefer the route list the default-branch build cached
+      # (keyed by the base commit SHA). Build base from source only on a cold
+      # cache -- without a real baseline the diff reports every route as added.
+      - id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "sha=$(gh api repos/${{ github.repository }}/commits/${{ github.event.repository.default_branch }} --jq .sha)" >> "$GITHUB_OUTPUT"
+      - id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: base-routes.txt
+          key: route-list-${{ steps.base.outputs.sha }}
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.base.outputs.sha }}
+          path: base
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: wow-look-at-my/go-toolchain@v1
+        with:
+          working-directory: base
+          # Same go:generate approval hash as the build job -- go-toolchain
+          # refuses to run generate directives without it.
+          generate: 52b76a04057b
+          os: linux
+          arch: amd64
+          autorelease: 'false'
+          upload-artifacts: 'false'
+      - if: steps.cache.outputs.cache-hit != 'true'
+        run: chmod +x base/build/buildhost_linux_amd64 && ./base/build/buildhost_linux_amd64 routes > base-routes.txt
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: base-routes.txt
+          key: route-list-${{ steps.base.outputs.sha }}
+      - id: baseroutes
+        run: echo "routes=$(base64 -w0 base-routes.txt)" >> "$GITHUB_OUTPUT"
       - uses: wow-look-at-my/actions@typescript#latest
         with:
           steps: ${{ toJSON(steps) }}
           script: |
               const prRoutes = Buffer.from(steps.routes.outputs.routes, "base64").toString().trimEnd();
+              const baseRoutes = Buffer.from(steps.baseroutes.outputs.routes, "base64").toString().trimEnd();
               const gh = octokit("${{ github.token }}");
               const repo = { owner: context.repo.owner, repo: context.repo.repo };
 
@@ -49,30 +107,11 @@ jobs:
               }
               const pr = prs.data[0].number;
 
-              interface CachedData { base: string; pr: string }
-              function parseCache(body: string): CachedData | null {
-                  const m = body.match(/<!-- route-diff:(.+?) -->/);
-                  if (!m) return null;
-                  try { return JSON.parse(Buffer.from(m[1], "base64").toString()); }
-                  catch { return null; }
-              }
-
+              const marker = "<!-- route-diff -->";
               const comments = await gh.paginate(gh.rest.issues.listComments, { ...repo, issue_number: pr });
-              const existing = comments.filter((c: any) => c.body?.includes("<!-- route-diff:")).pop();
+              const existing = comments.filter((c: any) => c.body?.includes("<!-- route-diff")).pop();
 
-              let baseRoutes = "";
-              if (existing) {
-                  const cached = parseCache(existing.body!);
-                  if (cached) {
-                      if (cached.pr === prRoutes) {
-                          core.info("Routes unchanged since last comment");
-                          process.exit(0);
-                      }
-                      baseRoutes = cached.base;
-                  }
-              }
-
-              if (baseRoutes && baseRoutes === prRoutes) {
+              if (baseRoutes === prRoutes) {
                   core.info("Routes match base branch");
                   if (existing) {
                       await gh.rest.issues.deleteComment({ ...repo, comment_id: existing.id });
@@ -87,9 +126,8 @@ jobs:
                   { encoding: "utf8" },
               );
 
-              const cache = Buffer.from(JSON.stringify({ base: baseRoutes, pr: prRoutes })).toString("base64");
               const body = [
-                  `<!-- route-diff:${cache} -->`,
+                  marker,
                   "### Route changes",
                   "",
                   "```diff",
