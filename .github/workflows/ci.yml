@@ -21,6 +21,16 @@ jobs:
         with:
           generate: 52b76a04057b
           autorelease: 'false'
+      # On the default branch, cache this commit's route list keyed by its SHA.
+      # Caches created on the default branch are restorable from every branch,
+      # so feature-branch route-diff runs reuse this instead of rebuilding base.
+      - if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        run: chmod +x build/buildhost_linux_amd64 && ./build/buildhost_linux_amd64 routes > routes.txt
+      - if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: actions/cache/save@v4
+        with:
+          path: routes.txt
+          key: route-list-${{ github.sha }}
 
   route-diff:
     needs: build
@@ -36,22 +46,40 @@ jobs:
           path: build/
       - run: chmod +x build/buildhost_linux_amd64 && echo "routes=$(./build/buildhost_linux_amd64 routes | base64 -w0)" >> "$GITHUB_OUTPUT"
         id: routes
-      # Base routes: build the base branch from source and run `routes` on it.
-      # This is the real baseline -- without it the diff has nothing to compare
-      # against and reports every route as an addition.
-      - uses: actions/checkout@v4
+      # Base routes: prefer the route list the default-branch build cached
+      # (keyed by the base commit SHA). Build base from source only on a cold
+      # cache -- without a real baseline the diff reports every route as added.
+      - id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "sha=$(gh api repos/${{ github.repository }}/commits/${{ github.event.repository.default_branch }} --jq .sha)" >> "$GITHUB_OUTPUT"
+      - id: cache
+        uses: actions/cache/restore@v4
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          path: base-routes.txt
+          key: route-list-${{ steps.base.outputs.sha }}
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.base.outputs.sha }}
           path: base
-      - uses: wow-look-at-my/go-toolchain@v1
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: wow-look-at-my/go-toolchain@v1
         with:
           working-directory: base
           os: linux
           arch: amd64
           autorelease: 'false'
           upload-artifacts: 'false'
-      - run: chmod +x base/build/buildhost_linux_amd64 && echo "routes=$(./base/build/buildhost_linux_amd64 routes | base64 -w0)" >> "$GITHUB_OUTPUT"
-        id: baseroutes
+      - if: steps.cache.outputs.cache-hit != 'true'
+        run: chmod +x base/build/buildhost_linux_amd64 && ./base/build/buildhost_linux_amd64 routes > base-routes.txt
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: base-routes.txt
+          key: route-list-${{ steps.base.outputs.sha }}
+      - id: baseroutes
+        run: echo "routes=$(base64 -w0 base-routes.txt)" >> "$GITHUB_OUTPUT"
       - uses: wow-look-at-my/actions@typescript#latest
         with:
           steps: ${{ toJSON(steps) }}
