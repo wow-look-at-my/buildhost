@@ -293,6 +293,7 @@ func (s *Server) apiProject(w http.ResponseWriter, r *http.Request) {
 		"releases": releases,
 		"sites":    sites,
 		"base_url": auth.RequestBaseURL(r),
+		"apt_url":  auth.DeriveServiceURL(r, "apt").String(),
 	})
 }
 
@@ -371,6 +372,7 @@ func (s *Server) apiRegistries(w http.ResponseWriter, r *http.Request) {
 
 	s.writeJSON(w, map[string]any{
 		"base_url": auth.RequestBaseURL(r),
+		"apt_url":  auth.DeriveServiceURL(r, "apt").String(),
 		"projects": projects,
 	})
 }

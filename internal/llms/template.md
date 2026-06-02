@@ -95,14 +95,23 @@ version first (use a download URL without `v=`, or the API).
 
 ## Package managers
 
-APT (Debian / Ubuntu). The repository is GPG-signed; see the README for the
-exact signing-key setup, then add the repo and install:
+APT (Debian / Ubuntu). Each project is its own GPG-signed repository. The
+generated installer adds the signing key and source, then refreshes the index:
 
 ```
-echo "deb [signed-by=/etc/apt/keyrings/myapp.gpg] __APT_URL__/myapp stable main" \
-  | sudo tee /etc/apt/sources.list.d/myapp.list
-sudo apt update && sudo apt install myapp
+curl -fsSL __APT_URL__/myapp/install.sh | sudo sh
+sudo apt-get install myapp
 ```
+
+For a private project, pass a read token:
+
+```
+curl -fsSL -H "Authorization: Bearer $TOKEN" __APT_URL__/myapp/install.sh \
+  | sudo BUILDHOST_TOKEN=$TOKEN sh
+```
+
+To set it up by hand instead, see the README. APT reads the armored key at
+__APT_URL__/myapp/key.asc directly via signed-by, so no gpg step is needed.
 
 Homebrew (install the generated formula directly from its URL):
 

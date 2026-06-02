@@ -91,6 +91,7 @@ func TestLLMsTxt_DocumentedFlowsWork(t *testing.T) {
 		{"static rejects latest", "GET", "static", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=latest", false, http.StatusBadRequest},
 		{"brew formula", "GET", "brew", "/myapp", false, http.StatusOK},
 		{"apt Release", "GET", "apt", "/myapp/dists/stable/Release", false, http.StatusOK},
+		{"apt install script", "GET", "apt", "/myapp/install.sh", false, http.StatusOK},
 		{"npm metadata", "GET", "npm", "/@buildhost/myapp", false, http.StatusOK},
 		{"oci v2 root", "GET", "oci", "/v2/", false, http.StatusOK},
 	}
