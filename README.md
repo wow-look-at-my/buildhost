@@ -146,6 +146,9 @@ GET /dl/myapp/branch/main/linux/amd64
 
 Host small, self-contained static sites with independent per-branch deployments. Each branch gets its own site that exists from first deploy until explicitly deleted.
 
+Sites are served on the `sites.` subdomain (like every other service); pass the
+apex `--server` and the CLI derives it.
+
 ```bash
 # Deploy a site from a directory
 buildhost publish-site \
@@ -156,12 +159,12 @@ buildhost publish-site \
   --dir ./dist
 
 # The site is available at:
-# http://localhost:8080/sites/myapp/branch/main/
+# http://sites.localhost:8080/myapp/branch/main/
 
 # Re-deploying the same branch replaces the previous site atomically.
 # Deleting a branch deployment:
 curl -X DELETE -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/sites/myapp/branch/main
+  http://sites.localhost:8080/myapp/branch/main
 ```
 
 ## Tokens
@@ -265,7 +268,7 @@ curl "https://buildhost.example.com/api/v1/projects?token=$TOKEN"
 | PUT | `/sites/{project}/branch/{branch}` | Deploy static site (tar.gz body) |
 | DELETE | `/sites/{project}/branch/{branch}` | Remove static site |
 | GET | `/sites/{project}/branch/{branch}/{path}` | Serve static site file |
-| GET | `/api/v1/projects/{project}/sites` | List branch deployments |
+| GET | `/sites/{project}/branches` | List branch deployments |
 | GET | `/llms.txt` | Plain-text guide to buildhost for LLMs ([llmstxt.org](https://llmstxt.org)) |
 | GET | `/healthz` | Liveness check (database ping); JSON body reports the running build's commit and version |
 
