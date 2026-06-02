@@ -40,6 +40,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
+      # id-token: write is needed by go-toolchain's secret-server step (used by
+      # the cold-cache base build below); job-level permissions replace the
+      # workflow-level block, so it must be repeated here.
+      id-token: write
       contents: read
       pull-requests: write
     steps:
