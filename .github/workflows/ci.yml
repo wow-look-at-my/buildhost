@@ -75,6 +75,9 @@ jobs:
         uses: wow-look-at-my/go-toolchain@v1
         with:
           working-directory: base
+          # Same go:generate approval hash as the build job -- go-toolchain
+          # refuses to run generate directives without it.
+          generate: 52b76a04057b
           os: linux
           arch: amd64
           autorelease: 'false'
