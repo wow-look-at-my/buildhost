@@ -13,9 +13,7 @@ permissions:
 
 jobs:
     deploy-preview:
-        # Pin to a released tag once pr-preview-action's buildhost workflow ships;
-        # tracks the development branch for now.
-        uses: PazerOP/pr-preview-action/.github/workflows/preview.yml@claude/hopeful-meitner-SUp2h
+        uses: PazerOP/pr-preview-action/.github/workflows/preview.yml@master
         with:
             source-dir: ./internal/admin/static/
         secrets: inherit
