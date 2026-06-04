@@ -14,6 +14,16 @@ From a single uploaded binary, buildhost serves:
 - **npm registry** (platform-specific npm packages)
 - **OCI/Docker registry** (minimal container images synthesized from the binary)
 
+## Web frontend
+
+buildhost serves a public, read-only browse UI on the main domain (no subdomain). It is plain server-rendered HTML with **no JavaScript**, so it is consumable and indexable by crawlers and agents without evaluating a single-page app.
+
+- `GET /` &mdash; index of every public project
+- `GET /projects/{project}` &mdash; a project's metadata, published releases, deployed static sites, and copy-paste install/download commands
+- `GET /projects/{project}/releases/{version}` &mdash; a release's artifacts with per-format download links (`raw`, `tar.gz`, `tar.xz`, `tar.zst`, `zip`), or a `docker pull` for image releases
+
+Private projects are hidden: they are never listed for anonymous visitors, and visiting one's page directly returns a `404` &mdash; identical to a project that does not exist, so the frontend never reveals that a private project exists (the same way GitHub treats private repositories). A read-scoped token authorized for the project reveals it. Download links point at the `dl` subdomain; the single stylesheet is served from `/_ui/style.css` and no other assets are loaded. The authenticated admin dashboard remains a separate app on its own port (see [Container image](#container-image)).
+
 ## Publishing real Docker images
 
 Some projects need to ship a real prebuilt image (custom base image, native
@@ -271,6 +281,9 @@ curl "https://buildhost.example.com/api/v1/projects?token=$TOKEN"
 | GET | `/sites/{project}/branches` | List branch deployments |
 | GET | `/llms.txt` | Plain-text guide to buildhost for LLMs ([llmstxt.org](https://llmstxt.org)) |
 | GET | `/healthz` | Liveness check (database ping); JSON body reports the running build's commit and version |
+| GET | `/` | Public read-only web frontend: index of public projects |
+| GET | `/projects/{project}` | Web frontend: project page (releases, install commands) |
+| GET | `/projects/{project}/releases/{version}` | Web frontend: release page (artifacts + download links) |
 
 ## llms.txt
 
