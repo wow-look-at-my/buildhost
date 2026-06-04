@@ -168,6 +168,28 @@ func (s *Server) writeJSON(w http.ResponseWriter, v any) {
 	}
 }
 
+// serviceURLs returns the public base URL of every registry service, each on
+// its own subdomain, derived from the incoming request Host.
+//
+// The registry serves each format from a dedicated subdomain (dl., apt., brew.,
+// npm., oci., sites., static.) -- never from a path prefix on the main host.
+// The admin dashboard itself runs on a subdomain (e.g. admin.example.com), so
+// auth.DeriveServiceURL strips that first label and rebuilds the real service
+// host (dl.example.com, ...). These are exactly the hosts the router matches,
+// because they are produced by the same helpers the main server uses when it
+// emits cross-service links, so the dashboard can never drift from reality.
+func serviceURLs(r *http.Request) map[string]string {
+	return map[string]string{
+		"dl":     auth.DeriveServiceURL(r, "dl").String(),
+		"apt":    auth.DeriveServiceURL(r, "apt").String(),
+		"brew":   auth.DeriveServiceURL(r, "brew").String(),
+		"npm":    auth.DeriveServiceURL(r, "npm").String(),
+		"oci":    auth.DeriveServiceURL(r, "oci").String(),
+		"sites":  auth.DeriveServiceURL(r, "sites").String(),
+		"static": auth.DeriveServiceURL(r, "static").String(),
+	}
+}
+
 func (s *Server) apiSidebar(w http.ResponseWriter, r *http.Request) {
 	s.cpuMu.Lock()
 	cpuPct := s.cpuPercent
@@ -222,7 +244,7 @@ func (s *Server) apiDashboard(w http.ResponseWriter, r *http.Request) {
 		"stats":  stats,
 		"recent": recent,
 		"config": map[string]any{
-			"base_url":           auth.RequestBaseURL(r),
+			"base_url":           auth.RequestRootURL(r),
 			"listen_addr":        s.cfg.ListenAddr,
 			"admin_listen_addr":  s.cfg.AdminListenAddr,
 			"data_dir":           s.cfg.DataDir,
@@ -230,6 +252,7 @@ func (s *Server) apiDashboard(w http.ResponseWriter, r *http.Request) {
 			"oidc_orgs":          s.cfg.OIDCOrgs,
 			"oidc_events":        s.cfg.OIDCEvents,
 		},
+		"services": serviceURLs(r),
 		"build": map[string]any{
 			"version":      s.build.Version,
 			"commit":       s.build.Commit,
@@ -293,7 +316,8 @@ func (s *Server) apiProject(w http.ResponseWriter, r *http.Request) {
 		"project":  project,
 		"releases": releases,
 		"sites":    sites,
-		"base_url": auth.RequestBaseURL(r),
+		"base_url": auth.RequestRootURL(r),
+		"services": serviceURLs(r),
 	})
 }
 
@@ -355,7 +379,8 @@ func (s *Server) apiRelease(w http.ResponseWriter, r *http.Request) {
 		"artifacts":       artifacts,
 		"total_downloads": totalDownloads,
 		"total_size":      totalSize,
-		"base_url":        auth.RequestBaseURL(r),
+		"base_url":        auth.RequestRootURL(r),
+		"services":        serviceURLs(r),
 	})
 }
 
@@ -371,7 +396,8 @@ func (s *Server) apiRegistries(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, map[string]any{
-		"base_url": auth.RequestBaseURL(r),
+		"base_url": auth.RequestRootURL(r),
+		"services": serviceURLs(r),
 		"projects": projects,
 	})
 }
@@ -516,7 +542,8 @@ func (s *Server) apiSites(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeJSON(w, map[string]any{
 		"sites":    sites,
-		"base_url": auth.RequestBaseURL(r),
+		"base_url": auth.RequestRootURL(r),
+		"services": serviceURLs(r),
 	})
 }
 

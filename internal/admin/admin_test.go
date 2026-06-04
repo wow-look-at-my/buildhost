@@ -211,7 +211,22 @@ func TestAPIRelease(t *testing.T) {
 	assert.Equal(t, float64(2048), a["size"])
 
 	assert.Equal(t, float64(2048), resp["total_size"])
-	assert.Equal(t, "https://buildhost.example.com", resp["base_url"])
+	// The admin dashboard runs on its own subdomain (buildhost.example.com here);
+	// base_url is the registry root and service URLs are real per-service hosts.
+	assert.Equal(t, "https://example.com", resp["base_url"])
+	assertServiceURLs(t, resp)
+}
+
+// assertServiceURLs checks the "services" map carries the real per-service
+// subdomain hosts the router serves, derived from the request Host
+// (buildhost.example.com -> example.com) with the admin label stripped.
+func assertServiceURLs(t *testing.T, resp map[string]any) {
+	t.Helper()
+	services, ok := resp["services"].(map[string]any)
+	require.True(t, ok, "response is missing a services map")
+	for _, svc := range []string{"dl", "apt", "brew", "npm", "oci", "sites", "static"} {
+		assert.Equal(t, "https://"+svc+".example.com", services[svc])
+	}
 }
 
 func TestAPIRelease_SlashNamespaced(t *testing.T) {
@@ -261,7 +276,8 @@ func TestAPIRegistries(t *testing.T) {
 
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, "https://buildhost.example.com", resp["base_url"])
+	assert.Equal(t, "https://example.com", resp["base_url"])
+	assertServiceURLs(t, resp)
 
 	projects := resp["projects"].([]any)
 	assert.Len(t, projects, 1)
