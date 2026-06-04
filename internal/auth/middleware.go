@@ -78,6 +78,16 @@ func RequireWrite(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// projectNotFound writes the canonical 404 for a project that does not exist or
+// that the caller may not see. Both cases share this exact response so a hidden
+// (HiddenReadAccess) read cannot be used to probe for the existence of private
+// projects.
+func projectNotFound(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	w.Write([]byte(`{"error":"project not found"}`))
+}
+
 func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 	msg := "authentication required"
 	if err := OIDCErrorFrom(r.Context()); err != nil {
@@ -154,10 +164,14 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			if errors.Is(err, db.ErrNotFound) {
 				t := TokenFrom(r.Context())
 				oidcProject := OIDCProjectFrom(r.Context())
-				if t == nil || oidcProject == "" || !oidcAuthorizesProject(oidcProject, ri.ProjectName()) || !validNamespacedProjectName(ri.ProjectName()) {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusNotFound)
-					w.Write([]byte(`{"error":"project not found"}`))
+				// Auto-provisioning is a write-only action: only a write request
+				// (the publish POST/PUT flow, a docker push, a site deploy) may
+				// create a missing project. A read never provisions -- it just
+				// 404s -- so a GET can never materialize a project as a side
+				// effect. (A hidden read uses this same 404 for private projects
+				// it may not see, so existence never leaks either.)
+				if ri.Access() != WriteAccess || t == nil || oidcProject == "" || !oidcAuthorizesProject(oidcProject, ri.ProjectName()) || !validNamespacedProjectName(ri.ProjectName()) {
+					projectNotFound(w)
 					return
 				}
 				oidcPrivate, _ := OIDCPrivateFrom(r.Context())
@@ -221,6 +235,20 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 					}
 					if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && !oidcAuthorizesProject(oidcProject, project.Name)) {
 						http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
+						return
+					}
+				}
+			case HiddenReadAccess:
+				parentSpan.SetAttributes(attribute.String("project.access", "read"))
+				// Same authorization as ReadAccess, but an unauthorized caller
+				// gets a 404 (not 401/403) so a private project never reveals it
+				// exists -- indistinguishable from a project that does not exist.
+				if project.IsPrivate {
+					authorized := t != nil && t.HasScope("read") &&
+						t.AuthorizedForProject(project.ID) &&
+						(oidcProject == "" || oidcAuthorizesProject(oidcProject, project.Name))
+					if !authorized {
+						projectNotFound(w)
 						return
 					}
 				}
