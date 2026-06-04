@@ -147,6 +147,27 @@ func TestServe_File(t *testing.T) {
 	assert.Contains(t, rec.Header().Get("Content-Type"), "css")
 }
 
+func TestServe_RelaxesSecurityHeaders(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "mysite")
+	uploadSite(t, h, proj, "main", map[string]string{
+		"index.html": "<h1>hi</h1>",
+	})
+
+	req := httptest.NewRequest("GET", "/sites/mysite/branch/main/index.html", nil)
+	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: "index.html"})
+	rec := httptest.NewRecorder()
+	// The global security middleware sets these strict app headers before the
+	// handler runs; serving a site must drop them so its assets can load.
+	rec.Header().Set("Content-Security-Policy", "default-src 'none'")
+	rec.Header().Set("X-Frame-Options", "DENY")
+	h.Serve(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Empty(t, rec.Header().Get("Content-Security-Policy"))
+	assert.Empty(t, rec.Header().Get("X-Frame-Options"))
+}
+
 func TestServe_IndexFallback(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
