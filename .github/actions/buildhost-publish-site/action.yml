@@ -60,9 +60,15 @@ runs:
               core.setFailed('Either source_dir or artifact_name is required'); return;
             }
 
-            const project: string = "${{ inputs.project }}" || github.repository.split('/').pop()!;
+            // Assign the templated inputs to string-typed locals before applying
+            // a fallback. A literal `"" || x` (an omitted input) is flagged by the
+            // strict TS validator as TS2873 "always falsy"; a length check on a
+            // widened string is not. Mirrors the buildhost-publish action.
+            const inputProject: string = "${{ inputs.project }}";
+            const project: string = inputProject.length > 0 ? inputProject : github.repository.split('/').pop()!;
             const branch: string = "${{ inputs.branch }}";
-            const gitCommit: string = "${{ inputs.git_commit }}" || github.sha;
+            const inputCommit: string = "${{ inputs.git_commit }}";
+            const gitCommit: string = inputCommit.length > 0 ? inputCommit : github.sha;
 
             let token: string = "${{ inputs.token }}";
             if (!token) {
@@ -99,7 +105,14 @@ runs:
             fs.unlinkSync(tarPath);
             core.info(`Archive size: ${body.length} bytes`);
 
-            const resp = await fetch(`${server}/sites/${project}/branch/${branch}`, {
+            // Sites are served on the sites.<domain> subdomain (e.g.
+            // https://pazer.build -> https://sites.pazer.build), not an apex
+            // /sites path, so derive that base for the upload URL.
+            const sitesURL = new URL(server);
+            sitesURL.host = `sites.${sitesURL.host}`;
+            const sitesBase = sitesURL.origin;
+
+            const resp = await fetch(`${sitesBase}/${project}/branch/${branch}`, {
               method: 'PUT',
               headers: {
                 Authorization: `Bearer ${token}`,
@@ -111,7 +124,7 @@ runs:
             const text = await resp.text();
             if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
 
-            const siteURL = `${server}/sites/${project}/branch/${branch}/`;
+            const siteURL = `${sitesBase}/${project}/branch/${branch}/`;
             core.info(`Published site to ${siteURL}`);
             core.info(JSON.stringify(JSON.parse(text), null, 2));
             core.setOutput('response', text);
