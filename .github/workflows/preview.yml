@@ -2,25 +2,20 @@ name: Deploy PR previews
 
 on:
     pull_request:
-        types: [opened, reopened, synchronize, closed]
+        types: [opened, reopened, synchronize]
 
-# id-token: write lets the preview authenticate to buildhost via OIDC (no static
-# secret); pull-requests + statuses are for the sticky comment and commit status.
+# id-token: write lets buildhost-publish-site authenticate to buildhost via OIDC
+# (no static secret); pull-requests is for the sticky preview comment.
 permissions:
     contents: read
     pull-requests: write
-    statuses: write
     id-token: write
 
 jobs:
     deploy-preview:
-        # Pin to v1 once the buildhost-sites rewrite is released; tracks the
-        # development branch for now.
+        # Pin to a released tag once pr-preview-action's buildhost workflow ships;
+        # tracks the development branch for now.
         uses: PazerOP/pr-preview-action/.github/workflows/preview.yml@claude/hopeful-meitner-SUp2h
         with:
             source-dir: ./internal/admin/static/
-            # github.job_workflow_sha resolves empty for this cross-repo branch
-            # invocation, so pin the action scripts to the same dev branch.
-            # Drop both this and the @ref above once pr-preview-action is tagged.
-            action-ref: claude/hopeful-meitner-SUp2h
         secrets: inherit
