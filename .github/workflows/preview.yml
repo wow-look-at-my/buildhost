@@ -2,14 +2,14 @@ name: Deploy PR previews
 
 on:
     pull_request:
-        types: [opened, reopened, synchronize, closed]
+        types: [opened, reopened, synchronize]
 
+# id-token: write lets buildhost-publish-site authenticate to buildhost via OIDC
+# (no static secret); pull-requests is for the sticky preview comment.
 permissions:
-    contents: write
+    contents: read
     pull-requests: write
-    pages: write
     id-token: write
-    statuses: write
 
 jobs:
     deploy-preview:

@@ -21,15 +21,26 @@ type Handler struct{}
 
 func render(baseURL string) []byte {
 	base := strings.TrimRight(baseURL, "/")
-	host := strings.TrimPrefix(strings.TrimPrefix(base, "https://"), "http://")
+
+	// Split scheme from host so service URLs can be built as subdomains. Each
+	// service is dispatched by the first Host label (sites.{domain}, dl.{domain},
+	// ...), so the public URL for a service is scheme://<svc>.<host>, matching
+	// the server's own auth.DeriveServiceURL. Only the API stays on the main
+	// domain.
+	scheme := "https://"
+	host := base
+	if i := strings.Index(base, "://"); i >= 0 {
+		scheme = base[:i+3]
+		host = base[i+3:]
+	}
 
 	out := strings.ReplaceAll(templateMD, "__BASE_URL__", base)
 
 	for _, svc := range []string{"apt", "brew", "dl", "npm", "oci", "sites", "static"} {
 		placeholder := "__" + strings.ToUpper(svc) + "_URL__"
-		out = strings.ReplaceAll(out, placeholder, base+"/"+svc)
+		out = strings.ReplaceAll(out, placeholder, scheme+svc+"."+host)
 	}
-	out = strings.ReplaceAll(out, "__OCI_HOST__", host)
+	out = strings.ReplaceAll(out, "__OCI_HOST__", "oci."+host)
 
 	return []byte(out)
 }
