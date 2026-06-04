@@ -164,10 +164,13 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			if errors.Is(err, db.ErrNotFound) {
 				t := TokenFrom(r.Context())
 				oidcProject := OIDCProjectFrom(r.Context())
-				// A hidden read never auto-provisions on a miss; it just 404s,
-				// identically to a private project it may not see, so existence
-				// never leaks.
-				if ri.Access() == HiddenReadAccess || t == nil || oidcProject == "" || !oidcAuthorizesProject(oidcProject, ri.ProjectName()) || !validNamespacedProjectName(ri.ProjectName()) {
+				// Auto-provisioning is a write-only action: only a write request
+				// (the publish POST/PUT flow, a docker push, a site deploy) may
+				// create a missing project. A read never provisions -- it just
+				// 404s -- so a GET can never materialize a project as a side
+				// effect. (A hidden read uses this same 404 for private projects
+				// it may not see, so existence never leaks either.)
+				if ri.Access() != WriteAccess || t == nil || oidcProject == "" || !oidcAuthorizesProject(oidcProject, ri.ProjectName()) || !validNamespacedProjectName(ri.ProjectName()) {
 					projectNotFound(w)
 					return
 				}
