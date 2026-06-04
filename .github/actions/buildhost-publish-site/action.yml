@@ -60,8 +60,8 @@ runs:
               core.setFailed('Either source_dir or artifact_name is required'); return;
             }
 
-            // Route inputs through string-typed locals before `||`: a literal
-            // "${{ ... }}" substituted directly into `x || y` is statically
+            // Route inputs through string-typed locals before `||`. A bare
+            // input literal substituted directly into `x || y` is statically
             // empty-or-not, which the typescript action rejects (TS2872/TS2873).
             const projectInput: string = "${{ inputs.project }}";
             const project: string = projectInput || github.repository.split('/').pop()!;
