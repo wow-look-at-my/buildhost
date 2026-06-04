@@ -105,6 +105,35 @@ App.codeBlock = function (label, code) {
         '<copy-btn class="code-copy-btn" data-src="pre"></copy-btn></div><pre>' + App.h(code) + "</pre></div>";
 };
 
+// aptInstall renders a one-click APT setup card for a single project. The
+// one-liner runs the server-generated install.sh, which installs the signing
+// key, writes the signed-by source, and refreshes the index. A manual block is
+// included for users who would rather not pipe curl into a shell.
+App.aptInstall = function (aptUrl, name, isPrivate) {
+    var base = aptUrl + "/" + name;
+    var slug = "buildhost-" + String(name).replace(/\//g, "-");
+    var html = '<div class="card"><h2>Install via APT</h2>';
+    html += '<p class="section-desc">Debian / Ubuntu. Adds the GPG-signed repository for <code>' + App.h(name) + '</code>.</p>';
+
+    if (isPrivate) {
+        html += App.codeBlock("One-line install (private — needs a read token)",
+            'curl -fsSL -H "Authorization: Bearer $TOKEN" ' + base + "/install.sh \\\n  | sudo BUILDHOST_TOKEN=$TOKEN sh");
+    } else {
+        html += App.codeBlock("One-line install", "curl -fsSL " + base + "/install.sh | sudo sh");
+    }
+
+    var keyFetch = isPrivate
+        ? 'curl -fsSL -H "Authorization: Bearer $TOKEN" ' + base + "/key.asc"
+        : "curl -fsSL " + base + "/key.asc";
+    var manual = "sudo mkdir -p /etc/apt/keyrings\n" +
+        keyFetch + " \\\n  | sudo tee /etc/apt/keyrings/" + slug + ".asc >/dev/null\n" +
+        'echo "deb [signed-by=/etc/apt/keyrings/' + slug + ".asc] " + base + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + slug + ".list\n" +
+        "sudo apt-get update\nsudo apt-get install " + name;
+    html += App.codeBlock("Manual setup", manual);
+    html += "</div>";
+    return html;
+};
+
 // --- Pages ---
 
 App.pages = {};
@@ -209,6 +238,8 @@ App.pages.project = function (name) {
         html += '<tr><td class="info-label">Created</td><td title="' + App.h(App.formatTime(p.created_at)) + '">' + App.h(App.timeAgo(p.created_at)) + "</td></tr>";
         html += '<tr><td class="info-label">Updated</td><td title="' + App.h(App.formatTime(p.updated_at)) + '">' + App.h(App.timeAgo(p.updated_at)) + "</td></tr>";
         html += "</table></div>";
+
+        if (d.apt_url) html += App.aptInstall(d.apt_url, p.name, p.is_private);
 
         html += '<div class="card"><h2>Releases</h2><table class="data-table"><thead><tr><th>Version</th><th>Branch</th><th>Commit</th><th>Status</th><th>Artifacts</th><th>Published</th><th>Created</th></tr></thead><tbody>';
         var rels = d.releases || [];
@@ -326,15 +357,17 @@ App.pages.registries = function () {
         html += App.codeBlock("Query parameters", "?format=raw       # Default binary (stripped if available)\n?format=deb       # Debian package\n?format=brew      # Homebrew bottle\n?format=npm       # npm tarball\n?debug=1          # Debug symbols");
         html += "</div>";
 
-        html += '<div class="card"><h2>APT Repository</h2><p class="section-desc">Debian/Ubuntu package repository. Packages are generated at publish time.</p>';
+        var au = d.apt_url || (bu + "/apt");
+        html += '<div class="card"><h2>APT Repository</h2><p class="section-desc">Debian/Ubuntu package repository. Each project is its own GPG-signed repo; <code>.deb</code> packages are generated on demand. The one-liner installs the signing key and source for you.</p>';
         html += '<table class="info-table">';
-        html += "<tr><td class='info-label'>Release</td><td class='endpoint-cell'><code>" + App.h(bu) + "/apt/{project}/dists/stable/Release</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>InRelease</td><td class='endpoint-cell'><code>" + App.h(bu) + "/apt/{project}/dists/stable/InRelease</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Packages</td><td class='endpoint-cell'><code>" + App.h(bu) + "/apt/{project}/dists/stable/main/binary-{arch}/Packages</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Pool</td><td class='endpoint-cell'><code>" + App.h(bu) + "/apt/{project}/pool/{filename}</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Repository</td><td class='endpoint-cell'><code>" + App.h(au) + "/{project}</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Signing key</td><td class='endpoint-cell'><code>" + App.h(au) + "/{project}/key.asc</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Installer</td><td class='endpoint-cell'><code>" + App.h(au) + "/{project}/install.sh</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Packages</td><td class='endpoint-cell'><code>" + App.h(au) + "/{project}/dists/stable/main/binary-{arch}/Packages</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "</table>";
-        html += App.codeBlock("Setup (public project)", 'echo "deb [trusted=yes] ' + bu + '/apt/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\nsudo apt update && sudo apt install {project}');
-        html += App.codeBlock("Setup (private project)", 'echo "deb [trusted=yes] ' + bu + '/apt/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/{project}.conf\nmachine ' + bu + "/apt/{project}\n  login token\n  password $TOKEN\nEOF\nsudo apt update && sudo apt install {project}");
+        html += App.codeBlock("One-line install (public project)", "curl -fsSL " + au + "/{project}/install.sh | sudo sh");
+        html += App.codeBlock("One-line install (private project)", 'curl -fsSL -H "Authorization: Bearer $TOKEN" ' + au + "/{project}/install.sh \\\n  | sudo BUILDHOST_TOKEN=$TOKEN sh");
+        html += App.codeBlock("Manual setup", "sudo mkdir -p /etc/apt/keyrings\ncurl -fsSL " + au + "/{project}/key.asc \\\n  | sudo tee /etc/apt/keyrings/buildhost-{project}.asc >/dev/null\necho \"deb [signed-by=/etc/apt/keyrings/buildhost-{project}.asc] " + au + "/{project} stable main\" \\\n  | sudo tee /etc/apt/sources.list.d/buildhost-{project}.list\nsudo apt-get update && sudo apt-get install {project}");
         html += "</div>";
 
         html += '<div class="card"><h2>Homebrew Tap</h2><p class="section-desc">Homebrew formula served as a single .rb file. Auto-detects macOS and Linux bottles.</p>';
@@ -390,7 +423,10 @@ App.pages.registries = function () {
                 html += "<tr><td><a href='#/projects/" + App.h(pr.name) + "'>" + App.h(pr.name) + "</a></td>";
                 html += "<td>" + (pr.is_private ? App.badge("warning", "Private") : App.badge("success", "Public")) + "</td>";
                 html += "<td class='endpoint-cell'><span class='url-tpl' data-tpl='" + App.h(bu) + "/dl/" + App.h(pr.name) + "/latest/{os}/{arch}'><code class='truncate'>" + App.h(bu) + "/dl/" + App.h(pr.name) + "/latest/</code><select class='tpl-select tpl-select-sm' data-var='os'><option value='linux'>linux</option><option value='darwin'>darwin</option><option value='windows'>windows</option><option value='freebsd'>freebsd</option></select><code>/</code><select class='tpl-select tpl-select-sm' data-var='arch'><option value='amd64'>amd64</option><option value='arm64'>arm64</option><option value='386'>386</option><option value='arm'>arm</option></select></span><copy-btn></copy-btn></td>";
-                html += "<td class='endpoint-cell'><a href='" + App.h(bu) + "/apt/" + App.h(pr.name) + "/dists/stable/Release' data-copy='" + App.h(bu) + "/apt/" + App.h(pr.name) + "'>" + App.h(bu) + "/apt/" + App.h(pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
+                var aptOneLiner = pr.is_private
+                    ? 'curl -fsSL -H "Authorization: Bearer $TOKEN" ' + au + "/" + pr.name + "/install.sh | sudo BUILDHOST_TOKEN=$TOKEN sh"
+                    : "curl -fsSL " + au + "/" + pr.name + "/install.sh | sudo sh";
+                html += "<td class='endpoint-cell'><a href='" + App.h(au) + "/" + App.h(pr.name) + "/install.sh' data-copy='" + App.h(aptOneLiner) + "' title='Copies the one-line install command'>" + App.h(au) + "/" + App.h(pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
                 html += "<td class='endpoint-cell'><a href='" + App.h(bu) + "/brew/" + App.h(pr.name) + ".rb'>" + App.h(bu) + "/brew/" + App.h(pr.name) + ".rb</a><copy-btn data-src='a'></copy-btn></td>";
                 html += "<td class='endpoint-cell'><a href='" + App.h(bu) + "/npm/@buildhost/" + App.h(pr.name) + "'>" + App.h(bu) + "/npm/@buildhost/" + App.h(pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
                 html += "</tr>";
@@ -745,9 +781,10 @@ App.demoData = {
         project: { id: 1, name: "myapp", description: "Main application", versioning: "auto", is_private: false, created_at: new Date(Date.now() - 864e5 * 30).toISOString(), updated_at: new Date(Date.now() - 3600000).toISOString() },
         releases: [{ version: "3", git_branch: "main", git_commit: "abc123", published: true, artifact_count: 4, published_at: new Date(Date.now() - 3600000).toISOString(), created_at: new Date(Date.now() - 3600000).toISOString() }],
         sites: [{ branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }],
-        base_url: "https://builds.example.com"
+        base_url: "https://builds.example.com",
+        apt_url: "https://apt.builds.example.com"
     },
-    "/registries": { base_url: "https://builds.example.com", projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
+    "/registries": { base_url: "https://builds.example.com", apt_url: "https://apt.builds.example.com", projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
     "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com" },
     "/tokens": [{ id: 1, name: "deploy", token_prefix: "bh_abc", is_global: false, project_id: 1, project_name: "myapp", scopes: "read,write", is_expired: false, created_at: new Date(Date.now() - 864e5 * 7).toISOString(), last_used_at: new Date(Date.now() - 3600000).toISOString() }],
     "/oidc": [{ issuer: "https://token.actions.githubusercontent.com", subject_pattern: "repo:myorg/myapp:*", audience: "", project_name: "myapp", scopes: "read,write", created_at: new Date(Date.now() - 864e5 * 14).toISOString() }],

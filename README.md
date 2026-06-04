@@ -174,6 +174,46 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/sites/myapp/branch/main
 ```
 
+## Package managers
+
+### APT (Debian / Ubuntu)
+
+Every project is its own GPG-signed APT repository, served at
+`apt.<your-host>/<project>` (each repo exposes a single package: the project
+itself, at its latest version). The repository is signed with an RSA 4096 key
+generated on first server start; the public key is served at
+`apt.<your-host>/<project>/key.asc`.
+
+The fastest way to add it is the generated installer. It installs the signing
+key, writes a `signed-by` source, and refreshes the package index:
+
+```bash
+# Public project
+curl -fsSL https://apt.example.com/myapp/install.sh | sudo sh
+
+# Private project (needs a read token)
+curl -fsSL -H "Authorization: Bearer $TOKEN" https://apt.example.com/myapp/install.sh \
+  | sudo BUILDHOST_TOKEN=$TOKEN sh
+
+sudo apt-get install myapp
+```
+
+Prefer to set it up by hand? APT reads the ASCII-armored key directly when it is
+referenced via `signed-by`, so no `gpg --dearmor` step (and no `gpg` binary) is
+needed:
+
+```bash
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://apt.example.com/myapp/key.asc \
+  | sudo tee /etc/apt/keyrings/buildhost-myapp.asc >/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/buildhost-myapp.asc] https://apt.example.com/myapp stable main" \
+  | sudo tee /etc/apt/sources.list.d/buildhost-myapp.list
+sudo apt-get update && sudo apt-get install myapp
+```
+
+One-line install commands (and per-project copy buttons) are also available on
+the admin dashboard: see each project's page or the **Registries** tab.
+
 ## Tokens
 
 Tokens authenticate all API requests. There are two kinds:

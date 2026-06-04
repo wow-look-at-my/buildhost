@@ -42,9 +42,10 @@ func parseRoute(r *http.Request) auth.RouteInfo {
 			}
 		}
 	}
-	if strings.HasSuffix(path, "/key.asc") {
-		i := strings.LastIndex(path, "/key.asc")
-		return route{project: path[:i], subPath: "key.asc"}
+	for _, suffix := range []string{"/key.asc", "/install.sh"} {
+		if strings.HasSuffix(path, suffix) {
+			return route{project: strings.TrimSuffix(path, suffix), subPath: suffix[1:]}
+		}
 	}
 	return route{project: path}
 }
@@ -73,6 +74,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveReleaseGPG(w, r)
 	case subpath == "key.asc":
 		h.serveKey(w, r)
+	case subpath == "install.sh":
+		h.serveInstallScript(w, r)
 	case strings.HasPrefix(subpath, "dists/stable/main/binary-"):
 		h.servePackages(w, r, subpath)
 	case strings.HasPrefix(subpath, "pool/"):
