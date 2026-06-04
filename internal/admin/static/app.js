@@ -225,7 +225,7 @@ App.pages.projects = function () {
 App.pages.project = function (name) {
     App.setTitle(name);
     App.renderSidebar("projects");
-    App.fetch("/projects/" + encodeURIComponent(name)).then(function (d) {
+    App.fetch("/projects/" + name).then(function (d) {
         var p = d.project;
         var html = "<h1>" + App.h(p.name) + "</h1>";
         html += '<div class="card"><h2>Project Info</h2><table class="info-table">';
@@ -282,7 +282,7 @@ App.pages.project = function (name) {
 App.pages.release = function (name, version) {
     App.setTitle(name + " " + version);
     App.renderSidebar("projects");
-    App.fetch("/projects/" + encodeURIComponent(name) + "/releases/" + encodeURIComponent(version)).then(function (d) {
+    App.fetch("/projects/" + name + "/releases/" + version).then(function (d) {
         var p = d.project, r = d.release, bu = d.base_url;
         var html = "<h1><a href='#/projects/" + App.h(p.name) + "'>" + App.h(p.name) + "</a> / " + App.h(r.version) + "</h1>";
 
@@ -622,7 +622,7 @@ App.pages.sites = function () {
 App.pages.site = function (name) {
     App.setTitle(name + " - Sites");
     App.renderSidebar("sites");
-    App.fetch("/projects/" + encodeURIComponent(name)).then(function (d) {
+    App.fetch("/projects/" + name).then(function (d) {
         var p = d.project;
         var bu = d.base_url || "";
         var sites = d.sites || [];
@@ -738,31 +738,25 @@ App.pages.storage = function () {
 
 App.route = function () {
     var hash = window.location.hash.replace(/^#\/?/, "") || "";
-    var parts = hash.split("/").map(decodeURIComponent);
 
-    if (parts[0] === "projects" && parts.length === 4 && parts[2] === "releases") {
-        App.pages.release(parts[1], parts[3]);
-    } else if (parts[0] === "projects" && parts.length === 2) {
-        App.pages.project(parts[1]);
-    } else if (parts[0] === "projects") {
-        App.pages.projects();
-    } else if (parts[0] === "registries") {
-        App.pages.registries();
-    } else if (parts[0] === "sites" && parts.length === 2) {
-        App.pages.site(parts[1]);
-    } else if (parts[0] === "sites") {
-        App.pages.sites();
-    } else if (parts[0] === "tokens") {
-        App.pages.tokens();
-    } else if (parts[0] === "oidc") {
-        App.pages.oidc();
-    } else if (parts[0] === "artifacts") {
-        App.pages.artifacts();
-    } else if (parts[0] === "storage") {
-        App.pages.storage();
-    } else {
-        App.pages.dashboard();
-    }
+    var releaseM = hash.match(/^projects\/(.+)\/releases\/([^\/]+)$/);
+    if (releaseM) { App.pages.release(releaseM[1], releaseM[2]); return; }
+
+    var projectM = hash.match(/^projects\/(.+)$/);
+    if (projectM) { App.pages.project(projectM[1]); return; }
+
+    var siteM = hash.match(/^sites\/(.+)$/);
+    if (siteM) { App.pages.site(siteM[1]); return; }
+
+    var first = hash.split("/")[0];
+    if (first === "projects") { App.pages.projects(); }
+    else if (first === "registries") { App.pages.registries(); }
+    else if (first === "sites") { App.pages.sites(); }
+    else if (first === "tokens") { App.pages.tokens(); }
+    else if (first === "oidc") { App.pages.oidc(); }
+    else if (first === "artifacts") { App.pages.artifacts(); }
+    else if (first === "storage") { App.pages.storage(); }
+    else { App.pages.dashboard(); }
 };
 
 // --- Demo data ---
