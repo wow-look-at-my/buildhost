@@ -19,4 +19,8 @@ jobs:
         uses: PazerOP/pr-preview-action/.github/workflows/preview.yml@claude/hopeful-meitner-SUp2h
         with:
             source-dir: ./internal/admin/static/
+            # github.job_workflow_sha resolves empty for this cross-repo branch
+            # invocation, so pin the action scripts to the same dev branch.
+            # Drop both this and the @ref above once pr-preview-action is tagged.
+            action-ref: claude/hopeful-meitner-SUp2h
         secrets: inherit
