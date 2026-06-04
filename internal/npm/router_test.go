@@ -282,6 +282,66 @@ func TestRouter_ScopeEncoding(t *testing.T) {
 	}
 }
 
+// apexReq drives a request through the real dispatch on the apex (main) host,
+// where the `/npm/* -> npm.{domain}/*` redirect lives, rather than the npm
+// subdomain that npmGet targets. req.Host="localhost" so RequestScheme yields
+// http and the npm subdomain is "npm.localhost".
+func apexReq(t *testing.T, method, target string) *httptest.ResponseRecorder {
+	t.Helper()
+	routerEnv(t) // ensure routerHandler is wired
+	req := httptest.NewRequest(method, target, nil)
+	req.Host = "localhost"
+	rec := httptest.NewRecorder()
+	routerHandler.ServeHTTP(rec, req)
+	return rec
+}
+
+// The apex `/npm/*` registry base (used by the go-toolchain action's
+// `npm install --registry=https://pazer.build/npm/`) 301-redirects to the npm
+// subdomain with the `/npm` prefix stripped. The redirect MUST preserve the
+// percent-encoded scope slash (`%2f`): the npm `GET /{pkg}` route keeps a scoped
+// package in a single segment only while that slash stays encoded.
+func TestRouter_NPMRedirect_EncodedScopePreservesPercent2f(t *testing.T) {
+	rec := apexReq(t, "GET", "/npm/@buildhost%2fgo-toolchain")
+	require.Equal(t, http.StatusMovedPermanently, rec.Code)
+	loc := rec.Header().Get("Location")
+	assert.Equal(t, "http://npm.localhost/@buildhost%2fgo-toolchain", loc)
+	// Key regression guard: the slash must NOT be decoded back to a literal '/'.
+	assert.Contains(t, loc, "%2f")
+}
+
+func TestRouter_NPMRedirect_TarballPath(t *testing.T) {
+	rec := apexReq(t, "GET", "/npm/@buildhost/foo/-/foo-1.0.0.tgz")
+	require.Equal(t, http.StatusMovedPermanently, rec.Code)
+	assert.Equal(t, "http://npm.localhost/@buildhost/foo/-/foo-1.0.0.tgz", rec.Header().Get("Location"))
+}
+
+func TestRouter_NPMRedirect_QueryPreserved(t *testing.T) {
+	rec := apexReq(t, "GET", "/npm/whatever?write=true")
+	require.Equal(t, http.StatusMovedPermanently, rec.Code)
+	assert.Equal(t, "http://npm.localhost/whatever?write=true", rec.Header().Get("Location"))
+}
+
+func TestRouter_NPMRedirect_HEAD(t *testing.T) {
+	rec := apexReq(t, "HEAD", "/npm/@buildhost%2fgo-toolchain")
+	require.Equal(t, http.StatusMovedPermanently, rec.Code)
+	assert.Equal(t, "http://npm.localhost/@buildhost%2fgo-toolchain", rec.Header().Get("Location"))
+}
+
+// TestRouter_NPMRedirect_DoesNotShadowOtherPaths proves /npm/{path...} claims
+// only the /npm/ prefix and does not hijack sibling main-domain paths.
+// (server.go's /healthz is not linked into this npm unit-test binary, so it
+// 404s here; the assertion that matters is that none of these are 301-redirected
+// to the npm subdomain.)
+func TestRouter_NPMRedirect_DoesNotShadowOtherPaths(t *testing.T) {
+	routerEnv(t)
+	for _, p := range []string{"/healthz", "/npmfoo", "/api/v1/projects"} {
+		rec := apexReq(t, "GET", p)
+		assert.NotEqual(t, http.StatusMovedPermanently, rec.Code, "path %q must not redirect", p)
+		assert.Empty(t, rec.Header().Get("Location"), "path %q must not set a Location", p)
+	}
+}
+
 func TestRouter_PrivateProject_RequiresAuth(t *testing.T) {
 	d, _ := routerEnv(t)
 	ctx := context.Background()
