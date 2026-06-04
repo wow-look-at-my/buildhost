@@ -205,7 +205,26 @@ func TestAPIRelease(t *testing.T) {
 	assert.Equal(t, float64(2048), a["size"])
 
 	assert.Equal(t, float64(2048), resp["total_size"])
-	assert.Equal(t, "https://buildhost.example.com", resp["base_url"])
+	// The admin dashboard runs on its own subdomain (buildhost.example.com here);
+	// base_url is the registry root and service URLs are real per-service hosts.
+	assert.Equal(t, "https://example.com", resp["base_url"])
+	assertServiceURLs(t, resp)
+}
+
+// assertServiceURLs checks the "services" map carries the real per-service
+// subdomain hosts the router actually serves, derived from the request Host
+// (buildhost.example.com -> example.com) by stripping the admin subdomain.
+func assertServiceURLs(t *testing.T, resp map[string]any) {
+	t.Helper()
+	services, ok := resp["services"].(map[string]any)
+	require.True(t, ok, "response is missing a services map")
+	assert.Equal(t, "https://dl.example.com", services["dl"])
+	assert.Equal(t, "https://apt.example.com", services["apt"])
+	assert.Equal(t, "https://brew.example.com", services["brew"])
+	assert.Equal(t, "https://npm.example.com", services["npm"])
+	assert.Equal(t, "https://oci.example.com", services["oci"])
+	assert.Equal(t, "https://sites.example.com", services["sites"])
+	assert.Equal(t, "https://static.example.com", services["static"])
 }
 
 func TestAPIRelease_NotFoundProject(t *testing.T) {
@@ -246,7 +265,8 @@ func TestAPIRegistries(t *testing.T) {
 
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, "https://buildhost.example.com", resp["base_url"])
+	assert.Equal(t, "https://example.com", resp["base_url"])
+	assertServiceURLs(t, resp)
 
 	projects := resp["projects"].([]any)
 	assert.Len(t, projects, 1)
