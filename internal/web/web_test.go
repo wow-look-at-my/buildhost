@@ -149,9 +149,17 @@ func TestFrontend(t *testing.T) {
 		require.Contains(t, body, "amd64")
 	})
 
-	t.Run("private project requires auth", func(t *testing.T) {
-		resp, _ := e.get(t, "/projects/secret", false)
-		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	t.Run("private project 404s for anonymous, no existence leak", func(t *testing.T) {
+		resp, body := e.get(t, "/projects/secret", false)
+		// 404 (not 401/403), and identical to an unknown project, so the
+		// response never reveals that "secret" exists -- like GitHub.
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+		require.NotContains(t, body, "secret")
+	})
+
+	t.Run("private project release page 404s for anonymous", func(t *testing.T) {
+		resp, _ := e.get(t, "/projects/secret/releases/1", false)
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
 	})
 
 	t.Run("private project visible with authorized token", func(t *testing.T) {

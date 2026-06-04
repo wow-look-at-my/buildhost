@@ -22,7 +22,7 @@ buildhost serves a public, read-only browse UI on the main domain (no subdomain)
 - `GET /projects/{project}` &mdash; a project's metadata, published releases, deployed static sites, and copy-paste install/download commands
 - `GET /projects/{project}/releases/{version}` &mdash; a release's artifacts with per-format download links (`raw`, `tar.gz`, `tar.xz`, `tar.zst`, `zip`), or a `docker pull` for image releases
 
-Visibility is enforced by the same middleware as every other read endpoint: a private project is never listed for anonymous visitors, and visiting its page directly returns `401`. Download links point at the `dl` subdomain; the single stylesheet is served from `/_ui/style.css` and no other assets are loaded. The authenticated admin dashboard remains a separate app on its own port (see [Container image](#container-image)).
+Private projects are hidden: they are never listed for anonymous visitors, and visiting one's page directly returns a plain `404` &mdash; identical to a project that does not exist, so the frontend never reveals that a private project exists (the same way GitHub treats private repositories). A read-scoped token authorized for the project reveals it. Download links point at the `dl` subdomain; the single stylesheet is served from `/_ui/style.css` and no other assets are loaded. The authenticated admin dashboard remains a separate app on its own port (see [Container image](#container-image)).
 
 ## Publishing real Docker images
 

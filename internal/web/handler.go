@@ -31,30 +31,41 @@ func init() {
 	})
 
 	// Home and the stylesheet are public (no project context). Project and
-	// release pages go through auth.Handle so requireProject applies the exact
-	// same visibility gate as every other read endpoint: a private project is
-	// 404/401 for an anonymous visitor, never rendered.
+	// release pages do their own visibility check (loadVisibleProject) rather
+	// than going through auth.Handle/requireProject: a GET must never 401 (which
+	// would leak a private project's existence) or auto-provision a project.
+	// Anything the viewer may not see is a 404, like GitHub.
 	auth.HandleRaw("GET /", handler.Index)
 	auth.HandleRaw("GET /_ui/style.css", handler.Stylesheet)
-	auth.Handle("GET /projects/{project}", parseProjectRoute, handler.Project)
-	auth.Handle("GET /projects/{project}/releases/{version}", parseProjectRoute, handler.Release)
+	auth.HandleRaw("GET /projects/{project}", handler.Project)
+	auth.HandleRaw("GET /projects/{project}/releases/{version}", handler.Release)
 }
 
 type Handler struct {
 	DB *db.DB
 }
 
-// route carries the project name parsed from the path for requireProject. Both
-// project and release pages are read-only.
-type route struct {
-	project string
-}
-
-func (r route) ProjectName() string      { return r.project }
-func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
-
-func parseProjectRoute(r *http.Request) auth.RouteInfo {
-	return route{project: r.PathValue("project")}
+// loadVisibleProject looks up a project and applies the read-visibility rule,
+// returning nil when the project does not exist OR the viewer is not allowed to
+// see it. The two cases are deliberately indistinguishable, so a private
+// project is a 404 for an unauthorized visitor and never leaks its existence
+// (matching GitHub's behavior for private repositories). A read-scoped token
+// authorized for the project -- global or project-scoped -- reveals it.
+func (h *Handler) loadVisibleProject(r *http.Request, name string) *db.Project {
+	if name == "" {
+		return nil
+	}
+	project, err := h.DB.GetProject(r.Context(), name)
+	if err != nil {
+		return nil
+	}
+	if project.IsPrivate {
+		t := auth.TokenFrom(r.Context())
+		if t == nil || !t.HasScope("read") || !t.AuthorizedForProject(project.ID) {
+			return nil
+		}
+	}
+	return project
 }
 
 // Index renders the home page: every public project, plus any private project
@@ -85,11 +96,15 @@ func (h *Handler) Index(w http.ResponseWriter, r *http.Request) {
 }
 
 // Project renders a single project's metadata, published releases, deployed
-// sites, and install/download commands. requireProject has already enforced
-// visibility and put the project in the context.
+// sites, and install/download commands. A project the viewer may not see is a
+// 404, never a 401.
 func (h *Handler) Project(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	project := auth.ProjectFrom(ctx)
+	project := h.loadVisibleProject(r, r.PathValue("project"))
+	if project == nil {
+		http.NotFound(w, r)
+		return
+	}
 
 	rels, err := h.DB.ListReleaseSummaries(ctx, project.ID)
 	if err != nil {
@@ -123,10 +138,15 @@ func (h *Handler) Project(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, "project", buildProjectView(r, project, rels, sites, hasBinary, latestVersion))
 }
 
-// Release renders one release's artifacts with per-format download links.
+// Release renders one release's artifacts with per-format download links. A
+// release of a project the viewer may not see is a 404, never a 401.
 func (h *Handler) Release(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	project := auth.ProjectFrom(ctx)
+	project := h.loadVisibleProject(r, r.PathValue("project"))
+	if project == nil {
+		http.NotFound(w, r)
+		return
+	}
 
 	rel := h.resolveRelease(ctx, project, r.PathValue("version"))
 	if rel == nil {
