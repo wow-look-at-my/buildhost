@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{block "title" .}}buildhost{{end}}</title>
+<meta name="description" content="{{block "description" .}}A self-hosted universal package registry. Browse projects, releases, and downloadable artifacts.{{end}}">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Crect%20width='16'%20height='16'%20rx='3'%20fill='%232f81f7'/%3E%3Cpath%20d='M4.5%204.5h4a2.5%202.5%200%200%201%200%205h-4z'%20fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/_ui/style.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="container header-row">
+    <a class="brand" href="/" aria-label="buildhost home">
+      <svg class="brand-mark" width="22" height="22" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <rect width="16" height="16" rx="3" fill="currentColor"></rect>
+        <path d="M4.5 4.5h4a2.5 2.5 0 0 1 0 5h-4z" fill="#fff"></path>
+      </svg>
+      <span class="brand-name">buildhost</span>
+    </a>
+    <nav class="site-nav">
+      <a href="/">Projects</a>
+      <a href="/llms.txt">llms.txt</a>
+    </nav>
+  </div>
+</header>
+<main class="container">
+{{block "content" .}}{{end}}
+</main>
+<footer class="site-footer">
+  <div class="container">
+    <span>buildhost &mdash; upload once, download in any format.</span>
+  </div>
+</footer>
+</body>
+</html>
