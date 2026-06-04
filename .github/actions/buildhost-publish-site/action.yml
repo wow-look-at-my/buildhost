@@ -1,10 +1,10 @@
 name: Buildhost - Publish Site
 version: 1
-description: Publish a static site to a Buildhost registry branch.
+description: Publish a static site to a Buildhost registry branch and (optionally) register a matching GitHub deployment.
 
 inputs:
   server:
-    description: 'Buildhost server URL'
+    description: 'Buildhost server URL (apex; the sites subdomain is derived from it)'
     required: false
     default: 'https://pazer.build'
   token:
@@ -30,6 +30,14 @@ inputs:
     description: 'Git commit SHA (defaults to github.sha)'
     required: false
     default: ''
+  register_deployment:
+    description: 'Register a GitHub deployment + status pointing at the served site URL so the PR Deployments widget and Environments tab populate. Requires deployments:write on the calling job. Set to "false" to skip.'
+    required: false
+    default: 'true'
+  environment:
+    description: 'GitHub deployment environment name. Defaults to the branch; the repo default branch is marked production, other branches transient previews.'
+    required: false
+    default: ''
 
 outputs:
   response:
@@ -49,9 +57,15 @@ runs:
       with:
         script: |
           await (async () => {
-            const server: string = "${{ inputs.server }}";
+            const server: string = ("${{ inputs.server }}").replace(/\/+$/, "");
             const sourceDir: string = "${{ inputs.source_dir }}";
             const artifactName: string = "${{ inputs.artifact_name }}";
+            const projectInput: string = "${{ inputs.project }}";
+            const branch: string = "${{ inputs.branch }}";
+            const gitCommitInput: string = "${{ inputs.git_commit }}";
+            const tokenInput: string = "${{ inputs.token }}";
+            const registerInput: string = "${{ inputs.register_deployment }}";
+            const environmentInput: string = "${{ inputs.environment }}";
 
             if (sourceDir && artifactName) {
               core.setFailed('Specify source_dir or artifact_name, not both'); return;
@@ -60,11 +74,12 @@ runs:
               core.setFailed('Either source_dir or artifact_name is required'); return;
             }
 
-            const project: string = "${{ inputs.project }}" || github.repository.split('/').pop()!;
-            const branch: string = "${{ inputs.branch }}";
-            const gitCommit: string = "${{ inputs.git_commit }}" || github.sha;
+            // Intermediate string-typed locals so the `|| fallback` below stays a
+            // string operand (a substituted literal here trips tsc TS2872/TS2873).
+            const project: string = projectInput || github.repository.split('/').pop();
+            const gitCommit: string = gitCommitInput || github.sha;
 
-            let token: string = "${{ inputs.token }}";
+            let token: string = tokenInput;
             if (!token) {
               const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
               const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
@@ -78,12 +93,11 @@ runs:
             if (artifactName) {
               const downloadDir = path.join(os.tmpdir(), 'buildhost-site');
               fs.mkdirSync(downloadDir, { recursive: true });
-              const oct = octokit(process.env.GITHUB_TOKEN!);
               const [owner, repo] = github.repository.split('/');
-              const { data: { artifacts } } = await oct.rest.actions.listWorkflowRunArtifacts({ owner, repo, run_id: github.run_id });
+              const { data: { artifacts } } = await octokit.rest.actions.listWorkflowRunArtifacts({ owner, repo, run_id: github.run_id });
               const artifact = artifacts.find((a: any) => a.name === artifactName);
               if (!artifact) { core.setFailed(`Artifact '${artifactName}' not found in run`); return; }
-              const { data: zip } = await oct.rest.actions.downloadArtifact({ owner, repo, artifact_id: artifact.id, archive_format: 'zip' });
+              const { data: zip } = await octokit.rest.actions.downloadArtifact({ owner, repo, artifact_id: artifact.id, archive_format: 'zip' });
               const zipPath = path.join(downloadDir, 'site.zip');
               fs.writeFileSync(zipPath, Buffer.from(zip as ArrayBuffer));
               siteDir = path.join(downloadDir, 'extracted');
@@ -99,7 +113,14 @@ runs:
             fs.unlinkSync(tarPath);
             core.info(`Archive size: ${body.length} bytes`);
 
-            const resp = await fetch(`${server}/sites/${project}/branch/${branch}`, {
+            // buildhost dispatches each service by Host subdomain, so static sites
+            // live at sites.<host>/<project>/branch/<branch> -- not a /sites/ path
+            // on the apex (that path 404s in production).
+            const sitesBase: string = server.replace('://', '://sites.');
+            const putURL: string = `${sitesBase}/${project}/branch/${branch}`;
+            const siteURL: string = `${putURL}/`;
+
+            const resp = await fetch(putURL, {
               method: 'PUT',
               headers: {
                 Authorization: `Bearer ${token}`,
@@ -111,9 +132,52 @@ runs:
             const text = await resp.text();
             if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
 
-            const siteURL = `${server}/sites/${project}/branch/${branch}/`;
             core.info(`Published site to ${siteURL}`);
             core.info(JSON.stringify(JSON.parse(text), null, 2));
             core.setOutput('response', text);
             core.setOutput('site_url', siteURL);
+
+            // Register a GitHub deployment so the PR's Deployments widget and the
+            // Environments tab show this buildhost URL -- the same surface GitHub
+            // Pages populates automatically. Needs deployments:write on the caller;
+            // any failure here is a warning and never fails the publish.
+            const registerDeployment: boolean = registerInput !== 'false';
+            if (registerDeployment) {
+              try {
+                const [owner, repo] = github.repository.split('/');
+                let defaultBranch: string = '';
+                try { defaultBranch = (context.payload as any)?.repository?.default_branch || ''; } catch { /* not present on this event */ }
+                const isProduction: boolean = defaultBranch !== '' && branch === defaultBranch;
+                const environment: string = environmentInput || branch;
+                const logURL: string = `${github.server_url}/${owner}/${repo}/actions/runs/${github.run_id}`;
+
+                const dep = await octokit.rest.repos.createDeployment({
+                  owner, repo,
+                  ref: gitCommit,
+                  environment,
+                  required_contexts: [],
+                  auto_merge: false,
+                  transient_environment: !isProduction,
+                  production_environment: isProduction,
+                  description: `buildhost site for ${project} (${branch})`,
+                });
+
+                if (dep && dep.data && typeof dep.data.id === 'number') {
+                  await octokit.rest.repos.createDeploymentStatus({
+                    owner, repo,
+                    deployment_id: dep.data.id,
+                    state: 'success',
+                    environment,
+                    environment_url: siteURL,
+                    log_url: logURL,
+                    description: 'Published to buildhost',
+                  });
+                  core.info(`Registered GitHub deployment '${environment}' -> ${siteURL}`);
+                } else {
+                  core.warning(`Deployment API returned no id: ${JSON.stringify(dep && dep.data)}`);
+                }
+              } catch (e: any) {
+                core.warning(`Could not register GitHub deployment (does the calling job grant 'deployments: write'?): ${e && e.message ? e.message : e}`);
+              }
+            }
           })();
