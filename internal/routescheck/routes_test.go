@@ -18,6 +18,7 @@ import (
 	_ "github.com/wow-look-at-my/buildhost/internal/oci"
 	_ "github.com/wow-look-at-my/buildhost/internal/sites"
 	_ "github.com/wow-look-at-my/buildhost/internal/static"
+	_ "github.com/wow-look-at-my/buildhost/internal/web"
 )
 
 // TestAllRoutesRegisteredWithoutInit guards against a backend registering its
