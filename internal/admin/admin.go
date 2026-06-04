@@ -16,6 +16,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/router"
 )
 
 //go:embed static/*
@@ -96,25 +97,25 @@ func (s *Server) startCPUTracker() {
 }
 
 func (s *Server) NewHTTPServer() *http.Server {
-	mux := http.NewServeMux()
+	mux := router.New()
 
-	mux.HandleFunc("GET /api/sidebar", s.apiSidebar)
-	mux.HandleFunc("GET /api/dashboard", s.apiDashboard)
-	mux.HandleFunc("GET /api/projects/{name}/releases/{version}", s.apiRelease)
-	mux.HandleFunc("GET /api/projects/{name}", s.apiProject)
-	mux.HandleFunc("GET /api/projects", s.apiProjects)
-	mux.HandleFunc("GET /api/registries", s.apiRegistries)
-	mux.HandleFunc("GET /api/tokens", s.apiTokens)
-	mux.HandleFunc("POST /api/tokens", s.apiCreateToken)
-	mux.HandleFunc("PATCH /api/tokens/{id}", s.apiUpdateToken)
-	mux.HandleFunc("DELETE /api/tokens/{id}", s.apiDeleteToken)
-	mux.HandleFunc("GET /api/oidc", s.apiOIDC)
-	mux.HandleFunc("GET /api/sites", s.apiSites)
-	mux.HandleFunc("GET /api/artifacts", s.apiArtifacts)
-	mux.HandleFunc("GET /api/storage", s.apiStorage)
-	mux.HandleFunc("GET /admin/inflight", InflightHandler)
+	mux.HandleFunc("GET /api/sidebar", router.Allow, s.apiSidebar)
+	mux.HandleFunc("GET /api/dashboard", router.Allow, s.apiDashboard)
+	mux.HandleFunc("GET /api/projects/{name}/releases/{version}", router.Allow, s.apiRelease)
+	mux.HandleFunc("GET /api/projects/{name}", router.Allow, s.apiProject)
+	mux.HandleFunc("GET /api/projects", router.Allow, s.apiProjects)
+	mux.HandleFunc("GET /api/registries", router.Allow, s.apiRegistries)
+	mux.HandleFunc("GET /api/tokens", router.Allow, s.apiTokens)
+	mux.HandleFunc("POST /api/tokens", router.Allow, s.apiCreateToken)
+	mux.HandleFunc("PATCH /api/tokens/{id}", router.Allow, s.apiUpdateToken)
+	mux.HandleFunc("DELETE /api/tokens/{id}", router.Allow, s.apiDeleteToken)
+	mux.HandleFunc("GET /api/oidc", router.Allow, s.apiOIDC)
+	mux.HandleFunc("GET /api/sites", router.Allow, s.apiSites)
+	mux.HandleFunc("GET /api/artifacts", router.Allow, s.apiArtifacts)
+	mux.HandleFunc("GET /api/storage", router.Allow, s.apiStorage)
+	mux.HandleFunc("GET /admin/inflight", router.Allow, InflightHandler)
 
-	mux.HandleFunc("GET /", s.serveSPA)
+	mux.HandleFunc("GET /{path...}", router.Allow, s.serveSPA)
 
 	s.startCPUTracker()
 
