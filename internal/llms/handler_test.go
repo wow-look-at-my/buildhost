@@ -21,9 +21,9 @@ func TestServe_RendersBaseURL(t *testing.T) {
 
 	body := rec.Body.String()
 	assert.Contains(t, body, "# buildhost")
-	assert.Contains(t, body, "https://pazer.build/dl/myapp")
+	assert.Contains(t, body, "https://dl.pazer.build/myapp")
 	assert.Contains(t, body, "https://pazer.build/llms.txt")
-	assert.Contains(t, body, "docker pull pazer.build/myapp:latest")
+	assert.Contains(t, body, "docker pull oci.pazer.build/myapp:latest")
 	assert.NotContains(t, body, "__BASE_URL__")
 	assert.NotContains(t, body, "__DL_URL__")
 	assert.NotContains(t, body, "__OCI_HOST__")
@@ -47,9 +47,19 @@ func TestRender_TrimsTrailingSlash(t *testing.T) {
 	assert.NotContains(t, body, "https://pazer.build//llms.txt")
 }
 
-func TestRender_StripsSchemeForHost(t *testing.T) {
-	assert.Contains(t, string(render("http://localhost:8080")), "docker pull localhost:8080/myapp")
-	assert.Contains(t, string(render("https://example.com")), "docker pull example.com/myapp")
+func TestRender_OCIHostSubdomain(t *testing.T) {
+	// __OCI_HOST__ is the oci.<host> registry subdomain (scheme stripped).
+	assert.Contains(t, string(render("http://localhost:8080")), "docker pull oci.localhost:8080/myapp")
+	assert.Contains(t, string(render("https://example.com")), "docker pull oci.example.com/myapp")
+}
+
+func TestRender_ServiceSubdomains(t *testing.T) {
+	// Service URLs are subdomains of the base host, not paths.
+	body := string(render("https://pazer.build"))
+	assert.Contains(t, body, "https://dl.pazer.build/myapp")
+	assert.Contains(t, body, "https://sites.pazer.build/myapp/branch/main/")
+	assert.NotContains(t, body, "https://pazer.build/dl/")
+	assert.NotContains(t, body, "https://pazer.build/sites/")
 }
 
 func TestTemplate_NoUnrenderedPlaceholdersAndASCII(t *testing.T) {
