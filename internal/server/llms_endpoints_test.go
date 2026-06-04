@@ -41,7 +41,8 @@ func TestLLMsTxt_PublicAndRendersBaseURL(t *testing.T) {
 
 	body := string(readBody(t, resp))
 	require.Contains(t, body, "# buildhost")
-	require.Contains(t, body, env.ts.URL+"/dl")
+	// Service URLs are subdomains of the base host (dl.{host}), not paths.
+	require.Contains(t, body, strings.Replace(env.ts.URL, "://", "://dl.", 1))
 	require.NotContains(t, body, "__BASE_URL__")
 	require.NotContains(t, body, "__DL_URL__")
 }

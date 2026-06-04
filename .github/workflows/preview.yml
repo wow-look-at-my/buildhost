@@ -4,16 +4,19 @@ on:
     pull_request:
         types: [opened, reopened, synchronize, closed]
 
+# id-token: write lets the preview authenticate to buildhost via OIDC (no static
+# secret); pull-requests + statuses are for the sticky comment and commit status.
 permissions:
-    contents: write
+    contents: read
     pull-requests: write
-    pages: write
-    id-token: write
     statuses: write
+    id-token: write
 
 jobs:
     deploy-preview:
-        uses: PazerOP/pr-preview-action/.github/workflows/preview.yml@master
+        # Pin to v1 once the buildhost-sites rewrite is released; tracks the
+        # development branch for now.
+        uses: PazerOP/pr-preview-action/.github/workflows/preview.yml@claude/hopeful-meitner-SUp2h
         with:
             source-dir: ./internal/admin/static/
         secrets: inherit

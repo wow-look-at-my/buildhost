@@ -58,11 +58,14 @@ runs:
                 if (!id) { core.setFailed('id is required for resource=oidc-policy'); return; }
                 url = `${server}/api/v1/oidc/policies/${id}`;
                 break;
-              case 'site':
+              case 'site': {
                 if (!project) { core.setFailed('project is required for resource=site'); return; }
                 if (!branch)  { core.setFailed('branch is required for resource=site'); return; }
-                url = `${server}/sites/${project}/branch/${branch}`;
+                // Sites are served on the sites.<domain> subdomain.
+                const su = new URL(server);
+                url = `${su.protocol}//sites.${su.host}/${project}/branch/${branch}`;
                 break;
+              }
               default:
                 core.setFailed(`Unknown resource '${resource}'. Valid: token, oidc-policy, site`);
                 return;

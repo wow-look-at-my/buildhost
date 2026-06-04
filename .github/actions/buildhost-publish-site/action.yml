@@ -64,6 +64,11 @@ runs:
             const branch: string = "${{ inputs.branch }}";
             const gitCommit: string = "${{ inputs.git_commit }}" || github.sha;
 
+            // buildhost serves each service on its own subdomain and dispatches
+            // by the first Host label, so the sites endpoint is sites.<domain>.
+            const su = new URL(server);
+            const sitesBase = `${su.protocol}//sites.${su.host}`;
+
             let token: string = "${{ inputs.token }}";
             if (!token) {
               const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
@@ -99,7 +104,7 @@ runs:
             fs.unlinkSync(tarPath);
             core.info(`Archive size: ${body.length} bytes`);
 
-            const resp = await fetch(`${server}/sites/${project}/branch/${branch}`, {
+            const resp = await fetch(`${sitesBase}/${project}/branch/${branch}`, {
               method: 'PUT',
               headers: {
                 Authorization: `Bearer ${token}`,
@@ -111,7 +116,7 @@ runs:
             const text = await resp.text();
             if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
 
-            const siteURL = `${server}/sites/${project}/branch/${branch}/`;
+            const siteURL = `${sitesBase}/${project}/branch/${branch}/`;
             core.info(`Published site to ${siteURL}`);
             core.info(JSON.stringify(JSON.parse(text), null, 2));
             core.setOutput('response', text);
