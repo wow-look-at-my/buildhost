@@ -60,9 +60,14 @@ runs:
               core.setFailed('Either source_dir or artifact_name is required'); return;
             }
 
-            const project: string = "${{ inputs.project }}" || github.repository.split('/').pop()!;
+            // Route inputs through string-typed locals before `||`: a literal
+            // "${{ ... }}" substituted directly into `x || y` is statically
+            // empty-or-not, which the typescript action rejects (TS2872/TS2873).
+            const projectInput: string = "${{ inputs.project }}";
+            const project: string = projectInput || github.repository.split('/').pop()!;
             const branch: string = "${{ inputs.branch }}";
-            const gitCommit: string = "${{ inputs.git_commit }}" || github.sha;
+            const gitCommitInput: string = "${{ inputs.git_commit }}";
+            const gitCommit: string = gitCommitInput || github.sha;
 
             // buildhost serves each service on its own subdomain and dispatches
             // by the first Host label, so the sites endpoint is sites.<domain>.
