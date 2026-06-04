@@ -212,19 +212,15 @@ func TestAPIRelease(t *testing.T) {
 }
 
 // assertServiceURLs checks the "services" map carries the real per-service
-// subdomain hosts the router actually serves, derived from the request Host
-// (buildhost.example.com -> example.com) by stripping the admin subdomain.
+// subdomain hosts the router serves, derived from the request Host
+// (buildhost.example.com -> example.com) with the admin label stripped.
 func assertServiceURLs(t *testing.T, resp map[string]any) {
 	t.Helper()
 	services, ok := resp["services"].(map[string]any)
 	require.True(t, ok, "response is missing a services map")
-	assert.Equal(t, "https://dl.example.com", services["dl"])
-	assert.Equal(t, "https://apt.example.com", services["apt"])
-	assert.Equal(t, "https://brew.example.com", services["brew"])
-	assert.Equal(t, "https://npm.example.com", services["npm"])
-	assert.Equal(t, "https://oci.example.com", services["oci"])
-	assert.Equal(t, "https://sites.example.com", services["sites"])
-	assert.Equal(t, "https://static.example.com", services["static"])
+	for _, svc := range []string{"dl", "apt", "brew", "npm", "oci", "sites", "static"} {
+		assert.Equal(t, "https://"+svc+".example.com", services[svc])
+	}
 }
 
 func TestAPIRelease_NotFoundProject(t *testing.T) {
