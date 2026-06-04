@@ -81,7 +81,8 @@ runs:
         CACHE: ${{ inputs.cache }}
       run: |
         set -euo pipefail
-        registry="${SERVER#*://}"; registry="${registry%%/*}"
+        # The OCI registry is served on the oci.<domain> subdomain.
+        registry="${SERVER#*://}"; registry="${registry%%/*}"; registry="oci.${registry}"
         project="${PROJECT:-${GITHUB_REPOSITORY##*/}}"
 
         if [ -n "${TAGS}" ]; then
@@ -123,7 +124,8 @@ runs:
         script: |
           await (async () => {
             const server: string = "${{ inputs.server }}";
-            const registry = new URL(server).host;
+            // The OCI registry is served on the oci.<domain> subdomain.
+            const registry = `oci.${new URL(server).host}`;
             const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
             const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
             if (!url || !bearer) {
