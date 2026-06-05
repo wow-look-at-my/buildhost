@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -36,6 +38,40 @@ func TestRequireProject_ReadAccess_NeverAutoProvisions(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 	_, err := d.GetProject(context.Background(), "log-streamer")
 	assert.ErrorIs(t, err, db.ErrNotFound, "read must not have created the project")
+}
+
+// TestRequireProject_WriteMissingProject_RejectedOIDC_ExplainsReason proves a
+// write to a not-yet-existing project whose JWT was rejected (e.g. org not in
+// the allowlist) returns a 401 that names the reason -- not a bare "project not
+// found" 404. The 404 masked an OIDC org-allowlist rejection as a missing
+// project, which is what made the PazerOP/scratch preview failure so opaque. The
+// project must not be created.
+func TestRequireProject_WriteMissingProject_RejectedOIDC_ExplainsReason(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "scratch", access: WriteAccess}
+	}
+	handler := requireProjectFunc(parse, func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler must not run when the JWT was rejected")
+	})
+
+	// Authenticate records why a presented JWT was rejected; no token is set.
+	ctx := WithOIDCError(context.Background(), errors.New(`org "PazerOP" not in allowed list`))
+	req := httptest.NewRequest("PUT", "/", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	var resp struct {
+		Error string `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Contains(t, resp.Error, `org "PazerOP" not in allowed list`,
+		"401 body should name the OIDC rejection reason")
+	_, err := d.GetProject(context.Background(), "scratch")
+	assert.ErrorIs(t, err, db.ErrNotFound, "a rejected write must not create the project")
 }
 
 // TestRequireProject_HiddenReadAccess_PrivateProject_Returns404 proves

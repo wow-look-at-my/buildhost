@@ -171,6 +171,21 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				// effect. (A hidden read uses this same 404 for private projects
 				// it may not see, so existence never leaks either.)
 				if ri.Access() != WriteAccess || t == nil || oidcProject == "" || !oidcAuthorizesProject(oidcProject, ri.ProjectName()) || !validNamespacedProjectName(ri.ProjectName()) {
+					// A write that presented a JWT which was rejected (bad org,
+					// event, expiry, signature, ...) reaches here with no token.
+					// Surface the rejection reason as a 401 instead of a bare
+					// "project not found" 404 -- otherwise an auth failure on a
+					// not-yet-existing project is indistinguishable from a missing
+					// one, which is exactly what made an OIDC org-allowlist
+					// rejection look like the project simply did not exist. Writes
+					// to existing projects already explain themselves this way (see
+					// the WriteAccess switch below); this closes the same gap for
+					// the auto-provision path. Reads keep the 404 so a private
+					// project's existence never leaks.
+					if ri.Access() == WriteAccess && OIDCErrorFrom(r.Context()) != nil {
+						unauthorizedResponse(w, r)
+						return
+					}
 					projectNotFound(w)
 					return
 				}
