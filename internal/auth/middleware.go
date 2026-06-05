@@ -244,6 +244,14 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			case ReadAccess:
 				parentSpan.SetAttributes(attribute.String("project.access", "read"))
 				if project.IsPrivate {
+					// A specific resource the route declares public (e.g. a
+					// static site published with X-Public-Site: true) is served
+					// without auth even under a private project -- the rest of
+					// the project (release artifacts, other branches) stays gated.
+					if pra, ok := ri.(PublicReadAuthorizer); ok && pra.AllowsPublicRead(r.Context(), mw.DB, project) {
+						parentSpan.SetAttributes(attribute.Bool("project.public_read", true))
+						break
+					}
 					if t == nil || !t.HasScope("read") {
 						unauthorizedResponse(w, r)
 						return

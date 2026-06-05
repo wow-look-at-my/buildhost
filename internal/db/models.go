@@ -118,6 +118,7 @@ type Site struct {
 	SHA256     string    `json:"sha256"`
 	FileCount  int64     `json:"file_count"`
 	GitCommit  string    `json:"git_commit"`
+	IsPublic   bool      `json:"is_public"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }

@@ -74,6 +74,45 @@ func TestRequireProject_WriteMissingProject_RejectedOIDC_ExplainsReason(t *testi
 	assert.ErrorIs(t, err, db.ErrNotFound, "a rejected write must not create the project")
 }
 
+// publicReadRouteInfo is a RouteInfo that also opts a read into the public path.
+type publicReadRouteInfo struct {
+	project    string
+	access     AccessLevel
+	allowsRead bool
+}
+
+func (r publicReadRouteInfo) ProjectName() string { return r.project }
+func (r publicReadRouteInfo) Access() AccessLevel { return r.access }
+func (r publicReadRouteInfo) AllowsPublicRead(context.Context, *db.DB, *db.Project) bool {
+	return r.allowsRead
+}
+
+// TestRequireProject_PublicRead_ServesPrivateProjectWithoutToken proves a route
+// that implements PublicReadAuthorizer (e.g. a static site published public) is
+// served without a token even under a private project, while a non-public read
+// of the same project still requires auth.
+func TestRequireProject_PublicRead_ServesPrivateProjectWithoutToken(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+	require.NoError(t, d.CreateProject(context.Background(),
+		&db.Project{Name: "priv", IsPrivate: true, Versioning: "auto"}))
+
+	serve := func(allows bool) int {
+		parse := func(r *http.Request) RouteInfo {
+			return publicReadRouteInfo{project: "priv", access: ReadAccess, allowsRead: allows}
+		}
+		handler := requireProjectFunc(parse, func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+		return rec.Code
+	}
+
+	assert.Equal(t, http.StatusOK, serve(true), "a public resource serves without a token under a private project")
+	assert.Equal(t, http.StatusUnauthorized, serve(false), "a non-public read still requires auth")
+}
+
 // TestRequireProject_HiddenReadAccess_PrivateProject_Returns404 proves
 // HiddenReadAccess hides a private project from an unauthorized caller behind a
 // 404 (not the 401 ReadAccess returns), so its existence never leaks.

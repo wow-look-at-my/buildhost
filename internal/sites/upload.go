@@ -123,6 +123,11 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	gitCommit := r.Header.Get("X-Git-Commit")
+	// Opt-in: a site published with X-Public-Site: true is served without a
+	// token even when its project is private (e.g. a PR preview of a private
+	// repo). The project's own visibility -- and thus its release artifacts --
+	// is unaffected; only this site's read path is opened.
+	isPublic := r.Header.Get("X-Public-Site") == "true"
 
 	site := &db.Site{
 		ProjectID:  project.ID,
@@ -132,7 +137,10 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		SHA256:     sha256hex,
 		FileCount:  int64(fileCount),
 		GitCommit:  gitCommit,
+		IsPublic:   isPublic,
 	}
+
+	span.SetAttributes(attribute.Bool("sites.public", isPublic))
 
 	oldKey, err := h.DB.UpsertSite(ctx, site)
 	if err != nil {
