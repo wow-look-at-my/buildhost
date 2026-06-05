@@ -154,7 +154,13 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 	}
 
 	org := orgFromSubject(verified.Subject)
-	if !slices.Contains(v.allowedOrgs, "*") && !slices.Contains(v.allowedOrgs, org) {
+	// GitHub org/user logins are case-insensitive (github.com treats "PazerOP"
+	// and "pazerop" as the same account), and the OIDC subject preserves the
+	// canonical casing the org was created with. Compare case-insensitively so an
+	// allowlist entry like "pazerop" still matches a "repo:PazerOP/..." subject --
+	// otherwise auto-provisioning silently fails on a pure casing mismatch. This
+	// mirrors projectFromSubject, which already lowercases the derived name.
+	if !slices.Contains(v.allowedOrgs, "*") && !slices.ContainsFunc(v.allowedOrgs, func(o string) bool { return strings.EqualFold(o, org) }) {
 		return nil, "", fmt.Errorf("org %q not in allowed list", org)
 	}
 

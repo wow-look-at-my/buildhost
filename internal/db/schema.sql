@@ -93,6 +93,7 @@ CREATE TABLE sites (
     sha256      TEXT NOT NULL,
     file_count  INTEGER NOT NULL DEFAULT 0,
     git_commit  TEXT NOT NULL DEFAULT '',
+    is_public   INTEGER NOT NULL DEFAULT 0,
     created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at  DATETIME NOT NULL DEFAULT (datetime('now')),
     UNIQUE(project_id, branch)

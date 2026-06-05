@@ -78,6 +78,37 @@ func uploadSite(t *testing.T, h *Handler, proj *db.Project, branch string, files
 	require.Equal(t, http.StatusCreated, rec.Code)
 }
 
+func TestUpload_PublicSiteFlag(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "priv")
+
+	// X-Public-Site: true marks the site public.
+	body := makeTarGz(t, map[string]string{"index.html": "<h1>hi</h1>"})
+	req := httptest.NewRequest("PUT", "/sites/priv/branch/pr-1", bytes.NewReader(body))
+	req.Header.Set("X-Public-Site", "true")
+	req = withRoute(req, proj, route{project: "priv", branch: "pr-1", write: true})
+	rec := httptest.NewRecorder()
+	h.Upload(rec, req)
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	site, err := d.GetSite(context.Background(), proj.ID, "pr-1")
+	require.NoError(t, err)
+	assert.True(t, site.IsPublic, "X-Public-Site: true should persist as public")
+
+	// The Serve route reports this branch as publicly readable; write and the
+	// branch listing never do.
+	assert.True(t, route{project: "priv", branch: "pr-1"}.AllowsPublicRead(context.Background(), d, proj))
+	assert.False(t, route{project: "priv", branch: "pr-1", write: true}.AllowsPublicRead(context.Background(), d, proj))
+	assert.False(t, route{project: "priv", branch: ""}.AllowsPublicRead(context.Background(), d, proj))
+
+	// Without the header a site stays private (gated).
+	uploadSite(t, h, proj, "pr-2", map[string]string{"index.html": "x"})
+	gated, err := d.GetSite(context.Background(), proj.ID, "pr-2")
+	require.NoError(t, err)
+	assert.False(t, gated.IsPublic)
+	assert.False(t, route{project: "priv", branch: "pr-2"}.AllowsPublicRead(context.Background(), d, proj))
+}
+
 func TestUpload(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")

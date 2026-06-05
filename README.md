@@ -307,8 +307,8 @@ Environment variables:
 | `BUILDHOST_DATA_DIR` | `./data` | Data directory |
 | `BUILDHOST_DB_PATH` | `./data/buildhost.db` | SQLite database path |
 | `BUILDHOST_OIDC_ISSUERS` | (none) | Comma-separated trusted OIDC issuers for auto-provisioning |
-| `BUILDHOST_OIDC_ORGS` | (none) | Comma-separated allowed orgs for OIDC auto-provisioning (`*` for all) |
-| `BUILDHOST_OIDC_EVENTS` | `push` | Comma-separated allowed event types for OIDC auto-provisioning (`*` for all) |
+| `BUILDHOST_OIDC_ORGS` | (none) | Comma-separated allowed orgs for OIDC auto-provisioning, matched case-insensitively (`*` for all) |
+| `BUILDHOST_OIDC_EVENTS` | `push,pull_request` | Comma-separated allowed event types for OIDC auto-provisioning (`*` for all) |
 
 ## OIDC auto-provisioning
 
@@ -339,9 +339,9 @@ BUILDHOST_OIDC_ISSUERS=https://token.actions.githubusercontent.com \
   buildhost serve
 ```
 
-By default, only `push` events are allowed, which limits auto-provisioning to users with write access to the repository (org members/collaborators). Set `BUILDHOST_OIDC_EVENTS=*` to allow all event types.
+By default, `push` and `pull_request` events are allowed. Both limit auto-provisioning to users with write access to the repository: a `push` comes from a member/collaborator, and a `pull_request` from a fork does not receive an OIDC token at all (so only same-repo PRs, i.e. members, can authenticate). `pull_request` is included by default so PR-preview deploys work out of the box. Set `BUILDHOST_OIDC_EVENTS=*` to allow all event types.
 
-If `BUILDHOST_OIDC_ORGS` is empty, no orgs are allowed. Use `*` to allow all orgs.
+If `BUILDHOST_OIDC_ORGS` is empty, no orgs are allowed. Use `*` to allow all orgs. Org names are matched case-insensitively (GitHub logins are), so `pazerop` and `PazerOP` are equivalent.
 
 ## License
 

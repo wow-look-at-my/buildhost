@@ -30,6 +30,10 @@ inputs:
     description: 'Git commit SHA (defaults to github.sha)'
     required: false
     default: ''
+  public:
+    description: 'Serve the site publicly even when the source repo/project is private. The project itself (and any release artifacts) stays private; only this site branch is opened.'
+    required: false
+    default: 'false'
 
 outputs:
   response:
@@ -68,6 +72,10 @@ runs:
             const branch: string = "${{ inputs.branch }}";
             const gitCommitInput: string = "${{ inputs.git_commit }}";
             const gitCommit: string = gitCommitInput || github.sha;
+            // Opt-in public flag. buildhost serves a site published with
+            // X-Public-Site: true without a token even under a private project.
+            const publicInput: string = "${{ inputs.public }}";
+            const isPublic: string = publicInput === 'true' ? 'true' : 'false';
 
             // buildhost serves each service on its own subdomain and dispatches
             // by the first Host label, so the sites endpoint is sites.<domain>.
@@ -115,6 +123,7 @@ runs:
                 Authorization: `Bearer ${token}`,
                 'Content-Type': 'application/gzip',
                 'X-Git-Commit': gitCommit,
+                'X-Public-Site': isPublic,
               },
               body,
             });

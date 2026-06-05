@@ -20,6 +20,8 @@ sql:
             go_type: "bool"
           - column: "releases.published"
             go_type: "bool"
+          - column: "sites.is_public"
+            go_type: "bool"
           - column: "projects.versioning"
             go_type:
               type: "Versioning"

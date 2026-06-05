@@ -35,6 +35,7 @@ func (d *DB) UpsertSite(ctx context.Context, s *Site) (oldStorageKey string, err
 		SHA256:     s.SHA256,
 		FileCount:  int64(s.FileCount),
 		GitCommit:  s.GitCommit,
+		IsPublic:   s.IsPublic,
 	})
 	if err != nil {
 		return "", fmt.Errorf("upsert site: %w", err)

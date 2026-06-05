@@ -8,6 +8,7 @@ on:
 # (no static secret); pull-requests is for the sticky preview comment.
 permissions:
     contents: read
+    actions: read
     pull-requests: write
     id-token: write
 
