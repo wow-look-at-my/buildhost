@@ -34,6 +34,7 @@ func init() {
 	publishCmd.Flags().String("artifact", "", "Path to artifact file")
 	publishCmd.Flags().String("git-branch", "", "Git branch")
 	publishCmd.Flags().String("git-commit", "", "Git commit")
+	publishCmd.Flags().String("oci-user", "", "Run-as user for synthesized OCI images (uid[:gid] or name[:group]); default is root")
 	publishCmd.Flags().String("manifest", "", "Path to release manifest (TOML)")
 }
 
@@ -45,6 +46,7 @@ type manifest struct {
 	GitBranch string             `toml:"git_branch"`
 	GitCommit string             `toml:"git_commit"`
 	Notes     string             `toml:"notes"`
+	OciUser   string             `toml:"oci_user"`
 	Artifacts []manifestArtifact `toml:"artifact"`
 }
 
@@ -75,6 +77,7 @@ func publishSingle(cmd *cobra.Command) error {
 	artifactPath, _ := cmd.Flags().GetString("artifact")
 	gitBranch, _ := cmd.Flags().GetString("git-branch")
 	gitCommit, _ := cmd.Flags().GetString("git-commit")
+	ociUser, _ := cmd.Flags().GetString("oci-user")
 
 	if serverURL == "" || token == "" || project == "" || artifactPath == "" || osStr == "" || archStr == "" {
 		return fmt.Errorf("--server, --token, --project, --artifact, --os, and --arch are required")
@@ -84,6 +87,7 @@ func publishSingle(cmd *cobra.Command) error {
 		"version":    version,
 		"git_branch": gitBranch,
 		"git_commit": gitCommit,
+		"oci_user":   ociUser,
 	})
 	resp, err := doRequest("POST", serverURL+"/api/v1/projects/"+project+"/releases", token, bytes.NewReader(releaseBody))
 	if err != nil {
@@ -137,6 +141,7 @@ func publishFromManifest(path string) error {
 		"git_branch": m.GitBranch,
 		"git_commit": m.GitCommit,
 		"notes":      m.Notes,
+		"oci_user":   m.OciUser,
 	})
 	resp, err := doRequest("POST", m.Server+"/api/v1/projects/"+m.Project+"/releases", m.Token, bytes.NewReader(releaseBody))
 	if err != nil {

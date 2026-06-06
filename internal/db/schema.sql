@@ -18,6 +18,7 @@ CREATE TABLE releases (
     git_branch   TEXT NOT NULL DEFAULT '',
     git_commit   TEXT NOT NULL DEFAULT '',
     notes        TEXT NOT NULL DEFAULT '',
+    oci_user     TEXT NOT NULL DEFAULT '',
     published    INTEGER NOT NULL DEFAULT 0,
     created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
     published_at DATETIME,

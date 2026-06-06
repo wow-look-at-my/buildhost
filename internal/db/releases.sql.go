@@ -11,7 +11,7 @@ import (
 )
 
 const getLatestPublishedRelease = `-- name: GetLatestPublishedRelease :one
-SELECT id, project_id, version, version_num, git_branch, git_commit, notes, published, created_at, published_at
+SELECT id, project_id, version, version_num, git_branch, git_commit, notes, oci_user, published, created_at, published_at
 FROM releases WHERE project_id = ? AND published = 1
 ORDER BY version_num DESC LIMIT 1
 `
@@ -27,6 +27,7 @@ func (q *Queries) GetLatestPublishedRelease(ctx context.Context, projectID int64
 		&i.GitBranch,
 		&i.GitCommit,
 		&i.Notes,
+		&i.OciUser,
 		&i.Published,
 		&i.CreatedAt,
 		&i.PublishedAt,
@@ -35,7 +36,7 @@ func (q *Queries) GetLatestPublishedRelease(ctx context.Context, projectID int64
 }
 
 const getLatestPublishedReleaseByBranch = `-- name: GetLatestPublishedReleaseByBranch :one
-SELECT id, project_id, version, version_num, git_branch, git_commit, notes, published, created_at, published_at
+SELECT id, project_id, version, version_num, git_branch, git_commit, notes, oci_user, published, created_at, published_at
 FROM releases WHERE project_id = ? AND git_branch = ? AND published = 1
 ORDER BY version_num DESC LIMIT 1
 `
@@ -56,6 +57,7 @@ func (q *Queries) GetLatestPublishedReleaseByBranch(ctx context.Context, arg Get
 		&i.GitBranch,
 		&i.GitCommit,
 		&i.Notes,
+		&i.OciUser,
 		&i.Published,
 		&i.CreatedAt,
 		&i.PublishedAt,
@@ -75,7 +77,7 @@ func (q *Queries) GetMaxVersionNum(ctx context.Context, projectID int64) (int64,
 }
 
 const getReleaseByProjectAndVersion = `-- name: GetReleaseByProjectAndVersion :one
-SELECT id, project_id, version, version_num, git_branch, git_commit, notes, published, created_at, published_at
+SELECT id, project_id, version, version_num, git_branch, git_commit, notes, oci_user, published, created_at, published_at
 FROM releases WHERE project_id = ? AND version = ?
 `
 
@@ -95,6 +97,7 @@ func (q *Queries) GetReleaseByProjectAndVersion(ctx context.Context, arg GetRele
 		&i.GitBranch,
 		&i.GitCommit,
 		&i.Notes,
+		&i.OciUser,
 		&i.Published,
 		&i.CreatedAt,
 		&i.PublishedAt,
@@ -103,8 +106,8 @@ func (q *Queries) GetReleaseByProjectAndVersion(ctx context.Context, arg GetRele
 }
 
 const insertRelease = `-- name: InsertRelease :execresult
-INSERT INTO releases (project_id, version, version_num, git_branch, git_commit, notes)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO releases (project_id, version, version_num, git_branch, git_commit, notes, oci_user)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertReleaseParams struct {
@@ -114,6 +117,7 @@ type InsertReleaseParams struct {
 	GitBranch  string `json:"git_branch"`
 	GitCommit  string `json:"git_commit"`
 	Notes      string `json:"notes"`
+	OciUser    string `json:"oci_user"`
 }
 
 func (q *Queries) InsertRelease(ctx context.Context, arg InsertReleaseParams) (sql.Result, error) {
@@ -124,11 +128,12 @@ func (q *Queries) InsertRelease(ctx context.Context, arg InsertReleaseParams) (s
 		arg.GitBranch,
 		arg.GitCommit,
 		arg.Notes,
+		arg.OciUser,
 	)
 }
 
 const listReleasesByProject = `-- name: ListReleasesByProject :many
-SELECT id, project_id, version, version_num, git_branch, git_commit, notes, published, created_at, published_at
+SELECT id, project_id, version, version_num, git_branch, git_commit, notes, oci_user, published, created_at, published_at
 FROM releases WHERE project_id = ? ORDER BY version_num DESC
 `
 
@@ -149,6 +154,7 @@ func (q *Queries) ListReleasesByProject(ctx context.Context, projectID int64) ([
 			&i.GitBranch,
 			&i.GitCommit,
 			&i.Notes,
+			&i.OciUser,
 			&i.Published,
 			&i.CreatedAt,
 			&i.PublishedAt,
