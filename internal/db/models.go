@@ -104,6 +104,7 @@ type Release struct {
 	GitBranch   string     `json:"git_branch"`
 	GitCommit   string     `json:"git_commit"`
 	Notes       string     `json:"notes"`
+	OciUser     string     `json:"oci_user"`
 	Published   bool       `json:"published"`
 	CreatedAt   time.Time  `json:"created_at"`
 	PublishedAt *time.Time `json:"published_at"`
