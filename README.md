@@ -12,7 +12,7 @@ From a single uploaded binary, buildhost serves:
 - **APT repository** (`.deb` packages with repo metadata)
 - **Homebrew tap** (Ruby formula with computed sha256)
 - **npm registry** (platform-specific npm packages)
-- **OCI/Docker registry** (minimal container images synthesized from the binary)
+- **OCI/Docker registry** (minimal container images synthesized from the binary, with CA certificates and a minimal rootfs so networked services run out of the box)
 
 ## Web frontend
 
@@ -23,6 +23,32 @@ buildhost serves a public, read-only browse UI on the main domain (no subdomain)
 - `GET /projects/{project}/releases/{version}` &mdash; a release's artifacts with per-format download links (`raw`, `tar.gz`, `tar.xz`, `tar.zst`, `zip`), or a `docker pull` for image releases
 
 Private projects are hidden: they are never listed for anonymous visitors, and visiting one's page directly returns a `404` &mdash; identical to a project that does not exist, so the frontend never reveals that a private project exists (the same way GitHub treats private repositories). A read-scoped token authorized for the project reveals it. Download links point at the `dl` subdomain; the single stylesheet is served from `/_ui/style.css` and no other assets are loaded. The authenticated admin dashboard remains a separate app on its own port (see [Container image](#container-image)).
+
+## Synthesized container images
+
+When a project has only a plain binary (no pushed image), buildhost synthesizes an OCI
+image from it on demand -- `docker pull` / `crane pull` just works. The image is
+deliberately minimal but ships the runtime essentials of `gcr.io/distroless/static`, so a
+networked service works without pushing a real image:
+
+- A real public **CA certificate bundle** at `/etc/ssl/certs/ca-certificates.crt` (and
+  `SSL_CERT_FILE` pointing at it), so outbound HTTPS works -- no more
+  `x509: certificate signed by unknown authority`.
+- `/etc/passwd` and `/etc/group` with `root`, `nobody` and `nonroot` (UID 65532), an
+  `/etc/nsswitch.conf` (`hosts: files dns`) and a sticky `/tmp`.
+- The binary at `/<project>` as the entrypoint, a sane `PATH`, and `WorkingDir=/`.
+
+The image runs as **root** by default. To run as another user, set `oci_user` on the
+release (`uid[:gid]` or `name[:group]`, e.g. `65532:65532` for the bundled nonroot user);
+it is emitted as the image's `config.User`:
+
+```bash
+buildhost publish --oci-user 65532:65532 ...   # or oci_user in a release manifest / the
+                                               # oci_user field of the create-release JSON
+```
+
+The synthesized image is regenerated on demand (not stored), so its digest is not pinned
+and may change between buildhost versions.
 
 ## Publishing real Docker images
 
