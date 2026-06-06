@@ -300,11 +300,15 @@ func TestServeHTTP_Manifests_Success(t *testing.T) {
 	assert.Equal(t, "application/vnd.oci.image.config.v1+json", config["mediaType"])
 	assert.Contains(t, config["digest"], "sha256:")
 
+	// Two layers: the shared essentials base layer (CA certs + minimal rootfs)
+	// followed by the per-binary layer.
 	layers := manifest["layers"].([]any)
-	require.Len(t, layers, 1)
-	layer := layers[0].(map[string]any)
-	assert.Equal(t, "application/vnd.oci.image.layer.v1.tar+zstd", layer["mediaType"])
-	assert.Contains(t, layer["digest"], "sha256:")
+	require.Len(t, layers, 2)
+	for _, l := range layers {
+		layer := l.(map[string]any)
+		assert.Equal(t, "application/vnd.oci.image.layer.v1.tar+zstd", layer["mediaType"])
+		assert.Contains(t, layer["digest"], "sha256:")
+	}
 }
 
 func TestServeHTTP_Manifests_ByVersion(t *testing.T) {
@@ -568,6 +572,8 @@ func TestBlobsReachableFromManifest(t *testing.T) {
 		} `json:"layers"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &manifest))
+	// Base (essentials) layer + per-binary layer; both must be reachable below.
+	require.Len(t, manifest.Layers, 2)
 
 	// Fetch config blob
 	req = httptest.NewRequest("GET", "/v2/myapp/blobs/"+manifest.Config.Digest, nil)

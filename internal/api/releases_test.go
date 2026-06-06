@@ -205,6 +205,62 @@ func TestListReleases_Success(t *testing.T) {
 // Note: ListReleases auth (private project, project not found) is tested via
 // requireProject middleware in the auth package.
 
+func TestCreateRelease_OciUser(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "ociuserproj", Versioning: db.VersioningSemver}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	body := `{"version":"1.0.0","oci_user":"65532:65532"}`
+	req := httptest.NewRequest("POST", "/api/projects/ociuserproj/releases", strings.NewReader(body))
+	req.SetPathValue("project", "ociuserproj")
+	req = withProjectRoute(req, proj)
+	req = req.WithContext(writeToken(req.Context(), "read,write"))
+	rec := httptest.NewRecorder()
+	h.CreateRelease(rec, req)
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+	var rel db.Release
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
+	assert.Equal(t, "65532:65532", rel.OciUser)
+
+	// And it is persisted.
+	got, err := h.DB.GetRelease(ctx, proj.ID, "1.0.0")
+	require.NoError(t, err)
+	assert.Equal(t, "65532:65532", got.OciUser)
+}
+
+func TestCreateRelease_InvalidOciUser(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "badociuser", Versioning: db.VersioningSemver}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	body := `{"version":"1.0.0","oci_user":"root; rm -rf /"}`
+	req := httptest.NewRequest("POST", "/api/projects/badociuser/releases", strings.NewReader(body))
+	req.SetPathValue("project", "badociuser")
+	req = withProjectRoute(req, proj)
+	req = req.WithContext(writeToken(req.Context(), "read,write"))
+	rec := httptest.NewRecorder()
+	h.CreateRelease(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "invalid oci_user")
+}
+
+func TestValidOCIUser(t *testing.T) {
+	valid := []string{"root", "nonroot", "65532", "65532:65532", "nonroot:nonroot", "1000:1000", "app", "_svc", "a-b:c-d"}
+	for _, s := range valid {
+		assert.True(t, validOCIUser(s), "expected %q to be valid", s)
+	}
+	invalid := []string{"", ":", "65532:", ":65532", "root:", "-bad", "9bad", "root group", "root;rm", "u@h", "12345678901", strings.Repeat("a", 33)}
+	for _, s := range invalid {
+		assert.False(t, validOCIUser(s), "expected %q to be invalid", s)
+	}
+}
+
 func TestSemverToNum(t *testing.T) {
 	tests := []struct {
 		input    string
