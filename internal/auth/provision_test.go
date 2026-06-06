@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestRequireProject_ReadAccess_NeverAutoProvisions proves a read request does
@@ -76,13 +76,13 @@ func TestRequireProject_WriteMissingProject_RejectedOIDC_ExplainsReason(t *testi
 
 // publicReadRouteInfo is a RouteInfo that also opts a read into the public path.
 type publicReadRouteInfo struct {
-	project    string
-	access     AccessLevel
-	allowsRead bool
+	project		string
+	access		AccessLevel
+	allowsRead	bool
 }
 
-func (r publicReadRouteInfo) ProjectName() string { return r.project }
-func (r publicReadRouteInfo) Access() AccessLevel { return r.access }
+func (r publicReadRouteInfo) ProjectName() string	{ return r.project }
+func (r publicReadRouteInfo) Access() AccessLevel	{ return r.access }
 func (r publicReadRouteInfo) AllowsPublicRead(context.Context, *db.DB, *db.Project) bool {
 	return r.allowsRead
 }

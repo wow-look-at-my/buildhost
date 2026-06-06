@@ -16,8 +16,8 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
@@ -53,8 +53,8 @@ func publishWithOCI(t *testing.T, ctx context.Context, d *db.DB, store *storage.
 	require.NoError(t, err)
 
 	a := &db.Artifact{
-		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -63,10 +63,10 @@ func publishWithOCI(t *testing.T, ctx context.Context, d *db.DB, store *storage.
 	require.NoError(t, err)
 
 	out, err := oci.Repackage(ctx, repackage.Input{
-		Project:  *proj,
-		Release:  *rel,
-		Artifact: *a,
-		Data:     data,
+		Project:	*proj,
+		Release:	*rel,
+		Artifact:	*a,
+		Data:		data,
 	})
 	require.NoError(t, err)
 
@@ -90,79 +90,79 @@ func readAll(store *storage.Filesystem, ctx context.Context, key string) ([]byte
 
 func TestParseRoute(t *testing.T) {
 	tests := []struct {
-		name string
-		path string
-		want route
+		name	string
+		path	string
+		want	route
 	}{
 		{
-			name: "manifest, single-segment name",
-			path: "/v2/buildhost/manifests/latest",
-			want: route{project: "buildhost", action: "manifests", reference: "latest"},
+			name:	"manifest, single-segment name",
+			path:	"/v2/buildhost/manifests/latest",
+			want:	route{project: "buildhost", action: "manifests", reference: "latest"},
 		},
 		{
-			name: "manifest, dashed name",
-			path: "/v2/go-toolchain/manifests/latest",
-			want: route{project: "go-toolchain", action: "manifests", reference: "latest"},
+			name:	"manifest, dashed name",
+			path:	"/v2/go-toolchain/manifests/latest",
+			want:	route{project: "go-toolchain", action: "manifests", reference: "latest"},
 		},
 		{
-			name: "blob, single-segment name",
-			path: "/v2/buildhost/blobs/sha256:abc",
-			want: route{project: "buildhost", action: "blobs", reference: "sha256:abc"},
+			name:	"blob, single-segment name",
+			path:	"/v2/buildhost/blobs/sha256:abc",
+			want:	route{project: "buildhost", action: "blobs", reference: "sha256:abc"},
 		},
 		{
-			name: "manifest, multi-segment name (decoded path with literal '/')",
-			path: "/v2/library/foo/manifests/latest",
-			want: route{project: "library/foo", action: "manifests", reference: "latest"},
+			name:	"manifest, multi-segment name (decoded path with literal '/')",
+			path:	"/v2/library/foo/manifests/latest",
+			want:	route{project: "library/foo", action: "manifests", reference: "latest"},
 		},
 		{
-			name: "manifest, deeply nested multi-segment name",
-			path: "/v2/team/group/proj-name/manifests/v1",
-			want: route{project: "team/group/proj-name", action: "manifests", reference: "v1"},
+			name:	"manifest, deeply nested multi-segment name",
+			path:	"/v2/team/group/proj-name/manifests/v1",
+			want:	route{project: "team/group/proj-name", action: "manifests", reference: "v1"},
 		},
 		{
-			name: "blob, multi-segment name",
-			path: "/v2/library/foo/blobs/sha256:def",
-			want: route{project: "library/foo", action: "blobs", reference: "sha256:def"},
+			name:	"blob, multi-segment name",
+			path:	"/v2/library/foo/blobs/sha256:def",
+			want:	route{project: "library/foo", action: "blobs", reference: "sha256:def"},
 		},
 		{
-			name: "name itself contains literal 'manifests' segment, distinguished by LastIndex",
-			path: "/v2/foo/manifests/bar/manifests/latest",
-			want: route{project: "foo/manifests/bar", action: "manifests", reference: "latest"},
+			name:	"name itself contains literal 'manifests' segment, distinguished by LastIndex",
+			path:	"/v2/foo/manifests/bar/manifests/latest",
+			want:	route{project: "foo/manifests/bar", action: "manifests", reference: "latest"},
 		},
 		{
-			name: "tags listing, multi-segment name",
-			path: "/v2/library/foo/tags/list",
-			want: route{project: "library/foo", action: "tags", reference: "list"},
+			name:	"tags listing, multi-segment name",
+			path:	"/v2/library/foo/tags/list",
+			want:	route{project: "library/foo", action: "tags", reference: "list"},
 		},
 		{
-			name: "bare project, single-segment",
-			path: "/v2/myapp",
-			want: route{project: "myapp"},
+			name:	"bare project, single-segment",
+			path:	"/v2/myapp",
+			want:	route{project: "myapp"},
 		},
 		{
-			name: "action only, no reference, single-segment",
-			path: "/v2/myapp/manifests",
-			want: route{project: "myapp", action: "manifests"},
+			name:	"action only, no reference, single-segment",
+			path:	"/v2/myapp/manifests",
+			want:	route{project: "myapp", action: "manifests"},
 		},
 		{
-			name: "action only, no reference, multi-segment name",
-			path: "/v2/library/foo/manifests",
-			want: route{project: "library/foo", action: "manifests"},
+			name:	"action only, no reference, multi-segment name",
+			path:	"/v2/library/foo/manifests",
+			want:	route{project: "library/foo", action: "manifests"},
 		},
 		{
-			name: "name itself contains an action keyword as final segment",
-			path: "/v2/foo/manifests/blobs/sha256:abc",
-			want: route{project: "foo/manifests", action: "blobs", reference: "sha256:abc"},
+			name:	"name itself contains an action keyword as final segment",
+			path:	"/v2/foo/manifests/blobs/sha256:abc",
+			want:	route{project: "foo/manifests", action: "blobs", reference: "sha256:abc"},
 		},
 		{
-			name: "blob upload start (no uuid)",
-			path: "/v2/myapp/blobs/uploads/",
-			want: route{project: "myapp", action: "uploads"},
+			name:	"blob upload start (no uuid)",
+			path:	"/v2/myapp/blobs/uploads/",
+			want:	route{project: "myapp", action: "uploads"},
 		},
 		{
-			name: "blob upload chunk by uuid, multi-segment name",
-			path: "/v2/library/foo/blobs/uploads/upload-123",
-			want: route{project: "library/foo", action: "uploads", reference: "upload-123"},
+			name:	"blob upload chunk by uuid, multi-segment name",
+			path:	"/v2/library/foo/blobs/uploads/upload-123",
+			want:	route{project: "library/foo", action: "uploads", reference: "upload-123"},
 		},
 	}
 	for _, tt := range tests {
@@ -259,8 +259,8 @@ func TestServeHTTP_Manifests_NoOCIPackage(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	// On-demand generation means a manifest is generated from the binary
@@ -433,8 +433,8 @@ func TestServeHTTP_Blobs_Success(t *testing.T) {
 	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	digest := "sha256:" + key
@@ -463,8 +463,8 @@ func TestServeHTTP_Blobs_HEAD(t *testing.T) {
 	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	digest := "sha256:" + key
@@ -496,8 +496,8 @@ func TestServeHTTP_Tags(t *testing.T) {
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 
 	var resp struct {
-		Name string   `json:"name"`
-		Tags []string `json:"tags"`
+		Name	string		`json:"name"`
+		Tags	[]string	`json:"tags"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, "myapp", resp.Name)
@@ -564,12 +564,12 @@ func TestBlobsReachableFromManifest(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var manifest struct {
-		Config struct {
+		Config	struct {
 			Digest string `json:"digest"`
-		} `json:"config"`
-		Layers []struct {
+		}	`json:"config"`
+		Layers	[]struct {
 			Digest string `json:"digest"`
-		} `json:"layers"`
+		}	`json:"layers"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &manifest))
 	// Base (essentials) layer + per-binary layer; both must be reachable below.

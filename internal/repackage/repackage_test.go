@@ -13,8 +13,8 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var testBinary = []byte("#!/bin/sh\necho hello\n")
@@ -362,8 +362,8 @@ func TestOCIRepackage(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader(string(testBinary)))
 	require.NoError(t, err)
 	a := &db.Artifact{
-		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -475,13 +475,13 @@ func TestOrchestrator_PublishRelease_WithArtifact(t *testing.T) {
 	require.NoError(t, err)
 
 	a := &db.Artifact{
-		ReleaseID:  rel.ID,
-		OS:         db.OSLinux,
-		Arch:       db.ArchAMD64,
-		Kind:       db.KindAssets, // Use Assets to skip strip attempt.
-		StorageKey: key,
-		Size:       size,
-		SHA256:     key,
+		ReleaseID:	rel.ID,
+		OS:		db.OSLinux,
+		Arch:		db.ArchAMD64,
+		Kind:		db.KindAssets,	// Use Assets to skip strip attempt.
+		StorageKey:	key,
+		Size:		size,
+		SHA256:		key,
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -512,13 +512,13 @@ func TestOrchestrator_PublishRelease_BinaryKind_AttemptsStrip(t *testing.T) {
 	require.NoError(t, err)
 
 	a := &db.Artifact{
-		ReleaseID:  rel.ID,
-		OS:         db.OSLinux,
-		Arch:       db.ArchAMD64,
-		Kind:       db.KindBinary,
-		StorageKey: key,
-		Size:       size,
-		SHA256:     key,
+		ReleaseID:	rel.ID,
+		OS:		db.OSLinux,
+		Arch:		db.ArchAMD64,
+		Kind:		db.KindBinary,
+		StorageKey:	key,
+		Size:		size,
+		SHA256:		key,
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -558,8 +558,8 @@ func TestGenerator_Generate(t *testing.T) {
 	require.NoError(t, err)
 
 	a := &db.Artifact{
-		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind: db.KindAssets, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind:	db.KindAssets, StorageKey: key, Size: size, SHA256: key,
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 

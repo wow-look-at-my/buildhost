@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetDashboardStats_Empty(t *testing.T) {
@@ -36,13 +36,13 @@ func TestGetDashboardStats_WithData(t *testing.T) {
 	require.NoError(t, d.CreateRelease(ctx, r))
 
 	a := &Artifact{
-		ReleaseID:  r.ID,
-		OS:         OSLinux,
-		Arch:       ArchAMD64,
-		Kind:       KindBinary,
-		StorageKey: "abc",
-		Size:       4096,
-		SHA256:     "deadbeef",
+		ReleaseID:	r.ID,
+		OS:		OSLinux,
+		Arch:		ArchAMD64,
+		Kind:		KindBinary,
+		StorageKey:	"abc",
+		Size:		4096,
+		SHA256:		"deadbeef",
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -50,9 +50,9 @@ func TestGetDashboardStats_WithData(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, d.CreateOIDCPolicy(ctx, &OIDCPolicy{
-		Issuer:         "https://token.actions.githubusercontent.com",
-		SubjectPattern: "repo:org/repo:*",
-		Scopes:         "read",
+		Issuer:		"https://token.actions.githubusercontent.com",
+		SubjectPattern:	"repo:org/repo:*",
+		Scopes:		"read",
 	}))
 
 	stats, err := d.GetDashboardStats(ctx)
@@ -80,14 +80,14 @@ func TestGetDashboardStats_DedupRatio(t *testing.T) {
 
 	// Two artifacts sharing the same storage_key (deduplication).
 	a1 := &Artifact{
-		ReleaseID: r.ID, OS: OSLinux, Arch: ArchAMD64,
-		Kind: KindBinary, StorageKey: "aaa", Size: 1000, SHA256: "aaa",
+		ReleaseID:	r.ID, OS: OSLinux, Arch: ArchAMD64,
+		Kind:	KindBinary, StorageKey: "aaa", Size: 1000, SHA256: "aaa",
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a1))
 
 	a2 := &Artifact{
-		ReleaseID: r.ID, OS: OSDarwin, Arch: ArchAMD64,
-		Kind: KindBinary, StorageKey: "aaa", Size: 1000, SHA256: "aaa",
+		ReleaseID:	r.ID, OS: OSDarwin, Arch: ArchAMD64,
+		Kind:	KindBinary, StorageKey: "aaa", Size: 1000, SHA256: "aaa",
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a2))
 
@@ -143,8 +143,8 @@ func TestListProjectSummaries(t *testing.T) {
 	require.NoError(t, d.CreateRelease(ctx, r))
 
 	a := &Artifact{
-		ReleaseID: r.ID, OS: OSLinux, Arch: ArchAMD64,
-		Kind: KindBinary, StorageKey: "k", Size: 100, SHA256: "h",
+		ReleaseID:	r.ID, OS: OSLinux, Arch: ArchAMD64,
+		Kind:	KindBinary, StorageKey: "k", Size: 100, SHA256: "h",
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -175,8 +175,8 @@ func TestListReleaseSummaries(t *testing.T) {
 	require.NoError(t, d.CreateRelease(ctx, r))
 
 	a := &Artifact{
-		ReleaseID: r.ID, OS: OSLinux, Arch: ArchAMD64,
-		Kind: KindBinary, StorageKey: "k", Size: 50, SHA256: "h",
+		ReleaseID:	r.ID, OS: OSLinux, Arch: ArchAMD64,
+		Kind:	KindBinary, StorageKey: "k", Size: 50, SHA256: "h",
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -227,16 +227,16 @@ func TestListOIDCPolicyDetails(t *testing.T) {
 
 	pid := p.ID
 	require.NoError(t, d.CreateOIDCPolicy(ctx, &OIDCPolicy{
-		Issuer:         "https://token.actions.githubusercontent.com",
-		SubjectPattern: "repo:org/repo:*",
-		ProjectID:      &pid,
-		Scopes:         "read,write",
+		Issuer:		"https://token.actions.githubusercontent.com",
+		SubjectPattern:	"repo:org/repo:*",
+		ProjectID:	&pid,
+		Scopes:		"read,write",
 	}))
 
 	require.NoError(t, d.CreateOIDCPolicy(ctx, &OIDCPolicy{
-		Issuer:         "https://accounts.google.com",
-		SubjectPattern: "*",
-		Scopes:         "read",
+		Issuer:		"https://accounts.google.com",
+		SubjectPattern:	"*",
+		Scopes:		"read",
 	}))
 
 	policies, err := d.ListOIDCPolicyDetails(ctx)

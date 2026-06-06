@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/require"
 )
 
 func routePatternMatches(pattern, path string) bool {
@@ -75,12 +75,12 @@ func TestLLMsTxt_DocumentedFlowsWork(t *testing.T) {
 	seedPublishedRelease(t, env)
 
 	cases := []struct {
-		name      string
-		method    string
-		subdomain string
-		path      string
-		auth      bool
-		want      int
+		name		string
+		method		string
+		subdomain	string
+		path		string
+		auth		bool
+		want		int
 	}{
 		{"llms.txt", "GET", "", "/llms.txt", false, http.StatusOK},
 		{"healthz", "GET", "", "/healthz", false, http.StatusOK},
