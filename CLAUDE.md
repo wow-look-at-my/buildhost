@@ -199,6 +199,8 @@ OIDC tests generate ephemeral RSA keys and run a local JWKS server.
 
 `internal/server/llms_endpoints_test.go` guards the `/llms.txt` document against drift: it parses the *served* document and asserts every URL it references resolves to a registered route, then exercises the documented flows (downloads, APT/Brew/npm/OCI, the `/static` latest-rejection) end to end against a seeded server. Editing `internal/llms/template.md` to reference a nonexistent endpoint fails CI.
 
+`test/e2e/` is a synthesized-OCI-image end-to-end test (CI job `synthesized-image-e2e` in `ci.yml`, not part of `go-toolchain`). It publishes a tiny static binary (`test/e2e/netcheck/`, a nested module so it stays out of the buildhost module's build/coverage) to a real `buildhost serve`, then uses **crane** (go-containerregistry) to pull the image buildhost synthesizes, assert its config (entrypoint, `SSL_CERT_FILE`, two ordered `diff_ids`) and flattened rootfs (CA bundle, `nonroot` in `/etc/passwd`, sticky `/tmp`), and run the entrypoint -- which does an outbound HTTPS request validated **only** against the image's baked-in CA bundle, proving a networked service works in the synthesized image. crane (not docker) because buildhost's layers are `tar+zstd`, which go-containerregistry pulls but the default GitHub Docker may not.
+
 ## Docker image
 
 The image is built from `gcr.io/distroless/static-debian12:nonroot`. It runs as UID 65532 (nonroot) with no shell, no package manager, and no writable paths except the data volume. The server handles SIGTERM for graceful shutdown.

@@ -168,6 +168,30 @@ jobs:
       - run: docker compose -f docker-compose.ci.yml logs
         if: failure()
 
+  # Prove an image buildhost SYNTHESIZES from a plain binary is a valid, loadable
+  # container image whose baked-in CA bundle works for real outbound HTTPS. Uses crane
+  # (go-containerregistry): it pulls/decompresses buildhost's zstd layers, which the
+  # default GitHub Docker (no containerd image store) may not.
+  synthesized-image-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: go-build
+          path: build/
+      - run: chmod +x build/buildhost_linux_amd64
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install crane (zstd-capable OCI client)
+        run: go install github.com/google/go-containerregistry/cmd/crane@latest
+      - name: Build netcheck entrypoint (static linux/amd64)
+        run: cd test/e2e/netcheck && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/netcheck" .
+      - name: Pull and run the synthesized OCI image
+        run: PATH="$(go env GOPATH)/bin:$PATH" bash test/e2e/run.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/netcheck"
+
   publish-ghcr:
     needs: container-healthcheck
     uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@master
