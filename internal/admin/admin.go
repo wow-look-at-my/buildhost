@@ -140,7 +140,14 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
-		w.Header().Set("Content-Security-Policy", "default-src 'self' data:")
+		// The admin SPA is entirely first-party: it ships inline event handlers
+		// (onclick) and inline styles in the markup it builds. 'unsafe-inline'
+		// permits that own code to run -- without it the page's edit/delete
+		// buttons (script-src-attr) silently do nothing. It does NOT relax the
+		// origin allowlist: cross-origin scripts/styles/connections are still
+		// confined to 'self' and data:, so injected third-party scripts (e.g. a
+		// Cloudflare analytics beacon) remain blocked.
+		w.Header().Set("Content-Security-Policy", "default-src 'self' data: 'unsafe-inline'")
 		w.Header().Set("X-Permitted-Cross-Domain-Policies", "none")
 		w.Header().Set("Permissions-Policy", "interest-cohort=()")
 		next.ServeHTTP(w, r)
