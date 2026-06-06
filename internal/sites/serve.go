@@ -37,7 +37,11 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isDir := rt.path == "" || strings.HasSuffix(rt.path, "/")
+	// The {path...} router value has its trailing slash stripped, so detect a
+	// directory request from the real request path -- otherwise a nested dir URL
+	// like /scratchpads/foo/ is treated as a file, never gets index.html
+	// appended, and matches the 0-byte directory entry in the tar below.
+	isDir := rt.path == "" || strings.HasSuffix(r.URL.Path, "/")
 	filePath := path.Clean(rt.path)
 	if isDir || filePath == "." {
 		filePath = path.Join(filePath, "index.html")
@@ -77,6 +81,9 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if hdr.Typeflag != tar.TypeReg {
+			continue // never serve a directory entry as a file (0-byte body)
+		}
 		name := path.Clean(hdr.Name)
 		if name == filePath {
 			ct := contentType(name)
