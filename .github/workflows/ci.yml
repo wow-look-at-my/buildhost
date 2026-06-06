@@ -21,6 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # The CA bundle baked into the binary is fetched here, not committed (so the repo
+      # carries no unreviewable cert blob). Must run before go-toolchain builds/embeds.
+      - run: ./scripts/fetch-cacerts.sh
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           generate: 52b76a04057b
@@ -79,6 +82,12 @@ jobs:
         with:
           ref: ${{ steps.base.outputs.sha }}
           path: base
+      # Base may post-date the CA-bundle change and embed it; fetch before building it.
+      # Inlined (not the script) so it works even on base commits that predate the script.
+      - if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p base/internal/repackage/cacerts
+          curl -fsSL --retry 3 --proto '=https' --tlsv1.2 -o base/internal/repackage/cacerts/ca-certificates.crt https://curl.se/ca/cacert.pem
       - if: steps.cache.outputs.cache-hit != 'true'
         uses: wow-look-at-my/go-toolchain@v1
         with:
@@ -150,8 +159,10 @@ jobs:
               }
 
   container-healthcheck:
+    # Only meaningful if the build succeeded and uploaded the go-build artifact. Without
+    # this, an always()-style condition makes it run on build failure and then fail on the
+    # missing artifact (a misleading second red X for one real failure).
     needs: build
-    if: always() && !cancelled()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -188,7 +199,7 @@ jobs:
       - name: Install crane (zstd-capable OCI client)
         run: go install github.com/google/go-containerregistry/cmd/crane@latest
       - name: Build netcheck entrypoint (static linux/amd64)
-        run: cd test/e2e/netcheck && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/netcheck" .
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/netcheck" ./test/e2e/testdata/netcheck
       - name: Pull and run the synthesized OCI image
         run: PATH="$(go env GOPATH)/bin:$PATH" bash test/e2e/run.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/netcheck"
 
