@@ -18,8 +18,8 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func withRoute(r *http.Request, project *db.Project, rt route) *http.Request {
@@ -55,10 +55,10 @@ func makeTarGz(t *testing.T, files map[string]string) []byte {
 	tw := tar.NewWriter(gw)
 	for name, content := range files {
 		require.NoError(t, tw.WriteHeader(&tar.Header{
-			Name:     name,
-			Size:     int64(len(content)),
-			Mode:     0644,
-			Typeflag: tar.TypeReg,
+			Name:		name,
+			Size:		int64(len(content)),
+			Mode:		0644,
+			Typeflag:	tar.TypeReg,
 		}))
 		_, err := tw.Write([]byte(content))
 		require.NoError(t, err)
@@ -164,8 +164,8 @@ func TestServe_File(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
-		"index.html": "<h1>hello</h1>",
-		"style.css":  "body{}",
+		"index.html":	"<h1>hello</h1>",
+		"style.css":	"body{}",
 	})
 
 	req := httptest.NewRequest("GET", "/sites/mysite/branch/main/style.css", nil)
@@ -331,8 +331,8 @@ func TestServe_SubdirIndex(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
-		"index.html":     "<h1>root</h1>",
-		"docs/index.html": "<h1>docs</h1>",
+		"index.html":		"<h1>root</h1>",
+		"docs/index.html":	"<h1>docs</h1>",
 	})
 
 	req := httptest.NewRequest("GET", "/sites/mysite/branch/main/docs/", nil)
@@ -382,7 +382,7 @@ func TestValidateTar_PathTraversal(t *testing.T) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	require.NoError(t, tw.WriteHeader(&tar.Header{
-		Name: "../etc/passwd", Size: 4, Mode: 0644, Typeflag: tar.TypeReg,
+		Name:	"../etc/passwd", Size: 4, Mode: 0644, Typeflag: tar.TypeReg,
 	}))
 	tw.Write([]byte("evil"))
 	tw.Close()
@@ -396,7 +396,7 @@ func TestValidateTar_AbsolutePath(t *testing.T) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	require.NoError(t, tw.WriteHeader(&tar.Header{
-		Name: "/etc/passwd", Size: 4, Mode: 0644, Typeflag: tar.TypeReg,
+		Name:	"/etc/passwd", Size: 4, Mode: 0644, Typeflag: tar.TypeReg,
 	}))
 	tw.Write([]byte("evil"))
 	tw.Close()
@@ -410,7 +410,7 @@ func TestValidateTar_Symlink(t *testing.T) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	require.NoError(t, tw.WriteHeader(&tar.Header{
-		Name: "link", Typeflag: tar.TypeSymlink, Linkname: "/etc/passwd",
+		Name:	"link", Typeflag: tar.TypeSymlink, Linkname: "/etc/passwd",
 	}))
 	tw.Close()
 
@@ -421,8 +421,8 @@ func TestValidateTar_Symlink(t *testing.T) {
 
 func TestContentType(t *testing.T) {
 	tests := []struct {
-		name string
-		want string
+		name	string
+		want	string
 	}{
 		{"index.html", "text/html"},
 		{"style.css", "text/css"},
@@ -514,8 +514,8 @@ func TestUpload_Zip(t *testing.T) {
 	proj := seedProject(t, d, "mysite")
 
 	body := makeZip(t, map[string]string{
-		"index.html": "<h1>hello</h1>",
-		"style.css":  "body{}",
+		"index.html":	"<h1>hello</h1>",
+		"style.css":	"body{}",
 	})
 
 	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", bytes.NewReader(body))

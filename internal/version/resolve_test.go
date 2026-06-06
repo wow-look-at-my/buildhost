@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/require"
 )
 
 func TestResolve_AutoVersioned_ExactMatch(t *testing.T) {

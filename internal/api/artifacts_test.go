@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUploadArtifact_Success(t *testing.T) {
@@ -195,8 +195,8 @@ func TestUploadArtifact_DuplicateOSArch(t *testing.T) {
 	key, size, err := h.Store.Put(ctx, strings.NewReader("first"))
 	require.NoError(t, err)
 	require.NoError(t, h.DB.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("POST", "/api/projects/duptest/releases/1.0.0/artifacts/linux/amd64", strings.NewReader("second"))
@@ -227,8 +227,8 @@ func TestPublishRelease_Success(t *testing.T) {
 	key, size, err := h.Store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
 	require.NoError(t, h.DB.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind: db.KindAssets, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind:	db.KindAssets, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("POST", "/api/projects/pubrel/releases/1.0.0/publish", nil)
@@ -316,9 +316,9 @@ func TestPublishRelease_AlreadyPublished(t *testing.T) {
 
 func TestSanitizeFilename_PathTraversal(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		expected string
+		name		string
+		input		string
+		expected	string
 	}{
 		{"unix path traversal", "../../../etc/passwd", "passwd"},
 		{"windows path traversal", `..\..\windows\system32\config`, "config"},

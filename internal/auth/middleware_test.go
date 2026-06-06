@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func openTestDB(t *testing.T) *db.DB {
@@ -149,12 +149,12 @@ func TestRequireWrite_TokenWithWriteScope_PassesThrough(t *testing.T) {
 
 // testRouteInfo implements RouteInfo for test purposes.
 type testRouteInfo struct {
-	project string
-	access  AccessLevel
+	project	string
+	access	AccessLevel
 }
 
-func (r testRouteInfo) ProjectName() string { return r.project }
-func (r testRouteInfo) Access() AccessLevel { return r.access }
+func (r testRouteInfo) ProjectName() string	{ return r.project }
+func (r testRouteInfo) Access() AccessLevel	{ return r.access }
 
 // initTestMiddleware sets up the package-level mw variable for tests.
 func initTestMiddleware(t *testing.T, d *db.DB) {

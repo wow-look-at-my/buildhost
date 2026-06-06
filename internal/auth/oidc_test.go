@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // --- LooksLikeJWT tests ---
@@ -144,15 +144,15 @@ func TestVerifyToken_RejectsExpiredToken(t *testing.T) {
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
 		map[string]any{
-			"iss": "https://token.actions.githubusercontent.com",
-			"sub": "repo:org/repo:ref:refs/heads/main",
-			"exp": time.Now().Add(-1 * time.Hour).Unix(),
+			"iss":	"https://token.actions.githubusercontent.com",
+			"sub":	"repo:org/repo:ref:refs/heads/main",
+			"exp":	time.Now().Add(-1 * time.Hour).Unix(),
 		},
 	)
 	policies := []db.OIDCPolicy{{
-		Issuer:         "https://token.actions.githubusercontent.com",
-		SubjectPattern: "*",
-		Scopes:         "read,write",
+		Issuer:		"https://token.actions.githubusercontent.com",
+		SubjectPattern:	"*",
+		Scopes:		"read,write",
 	}}
 	_, _, err := v.VerifyToken(context.Background(), token, policies)
 	require.Error(t, err)
@@ -164,16 +164,16 @@ func TestVerifyToken_RejectsNotYetValidToken(t *testing.T) {
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
 		map[string]any{
-			"iss": "https://token.actions.githubusercontent.com",
-			"sub": "repo:org/repo:ref:refs/heads/main",
-			"exp": time.Now().Add(1 * time.Hour).Unix(),
-			"nbf": time.Now().Add(1 * time.Hour).Unix(),
+			"iss":	"https://token.actions.githubusercontent.com",
+			"sub":	"repo:org/repo:ref:refs/heads/main",
+			"exp":	time.Now().Add(1 * time.Hour).Unix(),
+			"nbf":	time.Now().Add(1 * time.Hour).Unix(),
 		},
 	)
 	policies := []db.OIDCPolicy{{
-		Issuer:         "https://token.actions.githubusercontent.com",
-		SubjectPattern: "*",
-		Scopes:         "read,write",
+		Issuer:		"https://token.actions.githubusercontent.com",
+		SubjectPattern:	"*",
+		Scopes:		"read,write",
 	}}
 	_, _, err := v.VerifyToken(context.Background(), token, policies)
 	require.Error(t, err)
@@ -185,15 +185,15 @@ func TestVerifyToken_RejectsUnsupportedAlgorithm(t *testing.T) {
 	token := fakeJWT(
 		map[string]any{"alg": "HS256", "kid": "key1"},
 		map[string]any{
-			"iss": "https://token.actions.githubusercontent.com",
-			"sub": "repo:org/repo:ref:refs/heads/main",
-			"exp": time.Now().Add(1 * time.Hour).Unix(),
+			"iss":	"https://token.actions.githubusercontent.com",
+			"sub":	"repo:org/repo:ref:refs/heads/main",
+			"exp":	time.Now().Add(1 * time.Hour).Unix(),
 		},
 	)
 	policies := []db.OIDCPolicy{{
-		Issuer:         "https://token.actions.githubusercontent.com",
-		SubjectPattern: "*",
-		Scopes:         "read,write",
+		Issuer:		"https://token.actions.githubusercontent.com",
+		SubjectPattern:	"*",
+		Scopes:		"read,write",
 	}}
 	// HS256 doesn't produce valid JWTs that ParseUnverified can handle the
 	// same way, but the keyfunc will reject the algorithm during verified parse.
@@ -204,9 +204,9 @@ func TestVerifyToken_RejectsUnsupportedAlgorithm(t *testing.T) {
 func TestVerifyToken_RejectsNonJWT(t *testing.T) {
 	v := NewOIDCVerifier(OIDCConfig{})
 	policies := []db.OIDCPolicy{{
-		Issuer:         "https://example.com",
-		SubjectPattern: "*",
-		Scopes:         "read",
+		Issuer:		"https://example.com",
+		SubjectPattern:	"*",
+		Scopes:		"read",
 	}}
 	_, _, err := v.VerifyToken(context.Background(), "not-a-jwt", policies)
 	require.Error(t, err)
@@ -217,15 +217,15 @@ func TestVerifyToken_RejectsNoMatchingPolicy(t *testing.T) {
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
 		map[string]any{
-			"iss": "https://token.actions.githubusercontent.com",
-			"sub": "repo:org/repo:ref:refs/heads/main",
-			"exp": time.Now().Add(1 * time.Hour).Unix(),
+			"iss":	"https://token.actions.githubusercontent.com",
+			"sub":	"repo:org/repo:ref:refs/heads/main",
+			"exp":	time.Now().Add(1 * time.Hour).Unix(),
 		},
 	)
 	policies := []db.OIDCPolicy{{
-		Issuer:         "https://other-issuer.example.com",
-		SubjectPattern: "*",
-		Scopes:         "read,write",
+		Issuer:		"https://other-issuer.example.com",
+		SubjectPattern:	"*",
+		Scopes:		"read,write",
 	}}
 	_, _, err := v.VerifyToken(context.Background(), token, policies)
 	require.Error(t, err)
@@ -237,15 +237,15 @@ func TestVerifyToken_RejectsNonMatchingSubject(t *testing.T) {
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
 		map[string]any{
-			"iss": "https://token.actions.githubusercontent.com",
-			"sub": "repo:org/other-repo:ref:refs/heads/main",
-			"exp": time.Now().Add(1 * time.Hour).Unix(),
+			"iss":	"https://token.actions.githubusercontent.com",
+			"sub":	"repo:org/other-repo:ref:refs/heads/main",
+			"exp":	time.Now().Add(1 * time.Hour).Unix(),
 		},
 	)
 	policies := []db.OIDCPolicy{{
-		Issuer:         "https://token.actions.githubusercontent.com",
-		SubjectPattern: "repo:org/specific-repo:*",
-		Scopes:         "read,write",
+		Issuer:		"https://token.actions.githubusercontent.com",
+		SubjectPattern:	"repo:org/specific-repo:*",
+		Scopes:		"read,write",
 	}}
 	_, _, err := v.VerifyToken(context.Background(), token, policies)
 	require.Error(t, err)
@@ -309,19 +309,19 @@ func TestVerifyToken_FullPipeline_ValidJWT(t *testing.T) {
 	srv := jwksServer(t, &key.PublicKey, "kid-1")
 
 	claims := map[string]any{
-		"iss": srv.URL,
-		"sub": "repo:myorg/myrepo:ref:refs/heads/main",
-		"exp": time.Now().Add(10 * time.Minute).Unix(),
-		"iat": time.Now().Unix(),
+		"iss":	srv.URL,
+		"sub":	"repo:myorg/myrepo:ref:refs/heads/main",
+		"exp":	time.Now().Add(10 * time.Minute).Unix(),
+		"iat":	time.Now().Unix(),
 	}
 	token := signJWT(t, key, "kid-1", claims)
 
 	projID := int64(42)
 	policies := []db.OIDCPolicy{{
-		Issuer:         srv.URL,
-		SubjectPattern: "repo:myorg/myrepo:*",
-		ProjectID:      &projID,
-		Scopes:         "read,write",
+		Issuer:		srv.URL,
+		SubjectPattern:	"repo:myorg/myrepo:*",
+		ProjectID:	&projID,
+		Scopes:		"read,write",
 	}}
 
 	v := NewOIDCVerifier(OIDCConfig{})
@@ -339,16 +339,16 @@ func TestVerifyToken_FullPipeline_ExpiredJWT(t *testing.T) {
 	srv := jwksServer(t, &key.PublicKey, "kid-2")
 
 	claims := map[string]any{
-		"iss": srv.URL,
-		"sub": "repo:myorg/myrepo:ref:refs/heads/main",
-		"exp": time.Now().Add(-10 * time.Minute).Unix(),
+		"iss":	srv.URL,
+		"sub":	"repo:myorg/myrepo:ref:refs/heads/main",
+		"exp":	time.Now().Add(-10 * time.Minute).Unix(),
 	}
 	token := signJWT(t, key, "kid-2", claims)
 
 	policies := []db.OIDCPolicy{{
-		Issuer:         srv.URL,
-		SubjectPattern: "repo:myorg/myrepo:*",
-		Scopes:         "read",
+		Issuer:		srv.URL,
+		SubjectPattern:	"repo:myorg/myrepo:*",
+		Scopes:		"read",
 	}}
 
 	v := NewOIDCVerifier(OIDCConfig{})
@@ -366,16 +366,16 @@ func TestVerifyToken_FullPipeline_WrongSignature(t *testing.T) {
 	srv := jwksServer(t, &key1.PublicKey, "kid-3")
 
 	claims := map[string]any{
-		"iss": srv.URL,
-		"sub": "repo:myorg/myrepo:ref:refs/heads/main",
-		"exp": time.Now().Add(10 * time.Minute).Unix(),
+		"iss":	srv.URL,
+		"sub":	"repo:myorg/myrepo:ref:refs/heads/main",
+		"exp":	time.Now().Add(10 * time.Minute).Unix(),
 	}
 	token := signJWT(t, key2, "kid-3", claims)
 
 	policies := []db.OIDCPolicy{{
-		Issuer:         srv.URL,
-		SubjectPattern: "repo:myorg/myrepo:*",
-		Scopes:         "read",
+		Issuer:		srv.URL,
+		SubjectPattern:	"repo:myorg/myrepo:*",
+		Scopes:		"read",
 	}}
 
 	v := NewOIDCVerifier(OIDCConfig{})
@@ -391,16 +391,16 @@ func TestVerifyToken_FullPipeline_GlobalPolicy(t *testing.T) {
 	srv := jwksServer(t, &key.PublicKey, "kid-4")
 
 	claims := map[string]any{
-		"iss": srv.URL,
-		"sub": "repo:myorg/myrepo:ref:refs/heads/main",
-		"exp": time.Now().Add(10 * time.Minute).Unix(),
+		"iss":	srv.URL,
+		"sub":	"repo:myorg/myrepo:ref:refs/heads/main",
+		"exp":	time.Now().Add(10 * time.Minute).Unix(),
 	}
 	token := signJWT(t, key, "kid-4", claims)
 
 	policies := []db.OIDCPolicy{{
-		Issuer:         srv.URL,
-		SubjectPattern: "*",
-		Scopes:         "read",
+		Issuer:		srv.URL,
+		SubjectPattern:	"*",
+		Scopes:		"read",
 	}}
 
 	v := NewOIDCVerifier(OIDCConfig{})
@@ -444,14 +444,14 @@ func TestVerifyToken_RejectsTokenWithNoExpiry(t *testing.T) {
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
 		map[string]any{
-			"iss": "https://token.actions.githubusercontent.com",
-			"sub": "repo:org/repo:ref:refs/heads/main",
+			"iss":	"https://token.actions.githubusercontent.com",
+			"sub":	"repo:org/repo:ref:refs/heads/main",
 		},
 	)
 	policies := []db.OIDCPolicy{{
-		Issuer:         "https://token.actions.githubusercontent.com",
-		SubjectPattern: "*",
-		Scopes:         "read,write",
+		Issuer:		"https://token.actions.githubusercontent.com",
+		SubjectPattern:	"*",
+		Scopes:		"read,write",
 	}}
 	_, _, err := v.VerifyToken(context.Background(), token, policies)
 	require.Error(t, err)
@@ -465,18 +465,18 @@ func TestVerifyToken_FullPipeline_AudienceMatch(t *testing.T) {
 	srv := jwksServer(t, &key.PublicKey, "kid-aud-ok")
 
 	claims := map[string]any{
-		"iss": srv.URL,
-		"sub": "repo:myorg/myrepo:ref:refs/heads/main",
-		"aud": "https://buildhost.example.com",
-		"exp": time.Now().Add(10 * time.Minute).Unix(),
+		"iss":	srv.URL,
+		"sub":	"repo:myorg/myrepo:ref:refs/heads/main",
+		"aud":	"https://buildhost.example.com",
+		"exp":	time.Now().Add(10 * time.Minute).Unix(),
 	}
 	token := signJWT(t, key, "kid-aud-ok", claims)
 
 	policies := []db.OIDCPolicy{{
-		Issuer:         srv.URL,
-		SubjectPattern: "repo:myorg/myrepo:*",
-		Audience:       "https://buildhost.example.com",
-		Scopes:         "read",
+		Issuer:		srv.URL,
+		SubjectPattern:	"repo:myorg/myrepo:*",
+		Audience:	"https://buildhost.example.com",
+		Scopes:		"read",
 	}}
 
 	v := NewOIDCVerifier(OIDCConfig{})
@@ -490,17 +490,17 @@ func TestVerifyToken_FullPipeline_AudienceMismatch(t *testing.T) {
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
 		map[string]any{
-			"iss": "https://token.actions.githubusercontent.com",
-			"sub": "repo:org/repo:ref:refs/heads/main",
-			"aud": "https://other-service.example.com",
-			"exp": time.Now().Add(1 * time.Hour).Unix(),
+			"iss":	"https://token.actions.githubusercontent.com",
+			"sub":	"repo:org/repo:ref:refs/heads/main",
+			"aud":	"https://other-service.example.com",
+			"exp":	time.Now().Add(1 * time.Hour).Unix(),
 		},
 	)
 	policies := []db.OIDCPolicy{{
-		Issuer:         "https://token.actions.githubusercontent.com",
-		SubjectPattern: "*",
-		Audience:       "https://buildhost.example.com",
-		Scopes:         "read",
+		Issuer:		"https://token.actions.githubusercontent.com",
+		SubjectPattern:	"*",
+		Audience:	"https://buildhost.example.com",
+		Scopes:		"read",
 	}}
 	_, _, err := v.VerifyToken(context.Background(), token, policies)
 	require.Error(t, err)
@@ -514,17 +514,17 @@ func TestVerifyToken_FullPipeline_NoAudienceInPolicy_AnyAudienceAccepted(t *test
 	srv := jwksServer(t, &key.PublicKey, "kid-noaud")
 
 	claims := map[string]any{
-		"iss": srv.URL,
-		"sub": "repo:myorg/myrepo:ref:refs/heads/main",
-		"aud": "https://some-other-service.example.com",
-		"exp": time.Now().Add(10 * time.Minute).Unix(),
+		"iss":	srv.URL,
+		"sub":	"repo:myorg/myrepo:ref:refs/heads/main",
+		"aud":	"https://some-other-service.example.com",
+		"exp":	time.Now().Add(10 * time.Minute).Unix(),
 	}
 	token := signJWT(t, key, "kid-noaud", claims)
 
 	policies := []db.OIDCPolicy{{
-		Issuer:         srv.URL,
-		SubjectPattern: "repo:myorg/myrepo:*",
-		Scopes:         "read",
+		Issuer:		srv.URL,
+		SubjectPattern:	"repo:myorg/myrepo:*",
+		Scopes:		"read",
 	}}
 
 	v := NewOIDCVerifier(OIDCConfig{})
@@ -540,12 +540,12 @@ func TestVerifyToken_TrustedIssuer_NoPolicies(t *testing.T) {
 	srv := jwksServer(t, &key.PublicKey, "kid-trusted")
 
 	claims := map[string]any{
-		"iss":        srv.URL,
-		"sub":        "repo:myorg/myrepo:ref:refs/heads/main",
-		"aud":        "https://buildhost.example.com",
-		"exp":        time.Now().Add(10 * time.Minute).Unix(),
-		"iat":        time.Now().Unix(),
-		"event_name": "push",
+		"iss":		srv.URL,
+		"sub":		"repo:myorg/myrepo:ref:refs/heads/main",
+		"aud":		"https://buildhost.example.com",
+		"exp":		time.Now().Add(10 * time.Minute).Unix(),
+		"iat":		time.Now().Unix(),
+		"event_name":	"push",
 	}
 	token := signJWT(t, key, "kid-trusted", claims)
 
@@ -566,12 +566,12 @@ func TestVerifyToken_TrustedIssuer_AllowedEvent(t *testing.T) {
 	srv := jwksServer(t, &key.PublicKey, "kid-event-ok")
 
 	claims := map[string]any{
-		"iss":        srv.URL,
-		"sub":        "repo:myorg/myrepo:ref:refs/heads/main",
-		"aud":        "https://buildhost.example.com",
-		"exp":        time.Now().Add(10 * time.Minute).Unix(),
-		"iat":        time.Now().Unix(),
-		"event_name": "push",
+		"iss":		srv.URL,
+		"sub":		"repo:myorg/myrepo:ref:refs/heads/main",
+		"aud":		"https://buildhost.example.com",
+		"exp":		time.Now().Add(10 * time.Minute).Unix(),
+		"iat":		time.Now().Unix(),
+		"event_name":	"push",
 	}
 	token := signJWT(t, key, "kid-event-ok", claims)
 
@@ -593,11 +593,11 @@ func TestVerifyToken_TrustedIssuer_OrgCaseInsensitive(t *testing.T) {
 	srv := jwksServer(t, &key.PublicKey, "kid-org-case")
 
 	claims := map[string]any{
-		"iss":        srv.URL,
-		"sub":        "repo:PazerOP/scratch:pull_request",
-		"exp":        time.Now().Add(10 * time.Minute).Unix(),
-		"iat":        time.Now().Unix(),
-		"event_name": "pull_request",
+		"iss":		srv.URL,
+		"sub":		"repo:PazerOP/scratch:pull_request",
+		"exp":		time.Now().Add(10 * time.Minute).Unix(),
+		"iat":		time.Now().Unix(),
+		"event_name":	"pull_request",
 	}
 	token := signJWT(t, key, "kid-org-case", claims)
 
@@ -614,11 +614,11 @@ func TestVerifyToken_TrustedIssuer_RejectedEvent(t *testing.T) {
 	srv := jwksServer(t, &key.PublicKey, "kid-event-bad")
 
 	claims := map[string]any{
-		"iss":        srv.URL,
-		"sub":        "repo:myorg/myrepo:ref:refs/heads/main",
-		"exp":        time.Now().Add(10 * time.Minute).Unix(),
-		"iat":        time.Now().Unix(),
-		"event_name": "pull_request",
+		"iss":		srv.URL,
+		"sub":		"repo:myorg/myrepo:ref:refs/heads/main",
+		"exp":		time.Now().Add(10 * time.Minute).Unix(),
+		"iat":		time.Now().Unix(),
+		"event_name":	"pull_request",
 	}
 	token := signJWT(t, key, "kid-event-bad", claims)
 
@@ -635,11 +635,11 @@ func TestVerifyToken_TrustedIssuer_AudienceCheck(t *testing.T) {
 	srv := jwksServer(t, &key.PublicKey, "kid-aud-auto")
 
 	claims := map[string]any{
-		"iss":        srv.URL,
-		"sub":        "repo:myorg/myrepo:ref:refs/heads/main",
-		"aud":        "https://buildhost.example.com",
-		"exp":        time.Now().Add(10 * time.Minute).Unix(),
-		"event_name": "push",
+		"iss":		srv.URL,
+		"sub":		"repo:myorg/myrepo:ref:refs/heads/main",
+		"aud":		"https://buildhost.example.com",
+		"exp":		time.Now().Add(10 * time.Minute).Unix(),
+		"event_name":	"push",
 	}
 	token := signJWT(t, key, "kid-aud-auto", claims)
 
@@ -658,11 +658,11 @@ func TestVerifyToken_TrustedIssuer_AudienceIgnored(t *testing.T) {
 	// A token minted for a different service still auto-provisions: the audience
 	// is no longer gated (trust = issuer signature + org + event + subject).
 	claims := map[string]any{
-		"iss":        srv.URL,
-		"sub":        "repo:myorg/myrepo:ref:refs/heads/main",
-		"aud":        "https://other-service.example.com",
-		"exp":        time.Now().Add(10 * time.Minute).Unix(),
-		"event_name": "push",
+		"iss":		srv.URL,
+		"sub":		"repo:myorg/myrepo:ref:refs/heads/main",
+		"aud":		"https://other-service.example.com",
+		"exp":		time.Now().Add(10 * time.Minute).Unix(),
+		"event_name":	"push",
 	}
 	token := signJWT(t, key, "kid-aud-bad", claims)
 
@@ -688,13 +688,13 @@ func TestVerifyToken_TrustedIssuer_PrivateRepoVisibility(t *testing.T) {
 	srv := jwksServer(t, &key.PublicKey, "kid-vis-priv")
 
 	claims := map[string]any{
-		"iss":                   srv.URL,
-		"sub":                   "repo:myorg/myrepo:ref:refs/heads/main",
-		"aud":                   "https://buildhost.example.com",
-		"exp":                   time.Now().Add(10 * time.Minute).Unix(),
-		"iat":                   time.Now().Unix(),
-		"event_name":            "push",
-		"repository_visibility": "private",
+		"iss":				srv.URL,
+		"sub":				"repo:myorg/myrepo:ref:refs/heads/main",
+		"aud":				"https://buildhost.example.com",
+		"exp":				time.Now().Add(10 * time.Minute).Unix(),
+		"iat":				time.Now().Unix(),
+		"event_name":			"push",
+		"repository_visibility":	"private",
 	}
 	token := signJWT(t, key, "kid-vis-priv", claims)
 
@@ -712,13 +712,13 @@ func TestVerifyToken_TrustedIssuer_PublicRepoVisibility(t *testing.T) {
 	srv := jwksServer(t, &key.PublicKey, "kid-vis-pub")
 
 	claims := map[string]any{
-		"iss":                   srv.URL,
-		"sub":                   "repo:myorg/myrepo:ref:refs/heads/main",
-		"aud":                   "https://buildhost.example.com",
-		"exp":                   time.Now().Add(10 * time.Minute).Unix(),
-		"iat":                   time.Now().Unix(),
-		"event_name":            "push",
-		"repository_visibility": "public",
+		"iss":				srv.URL,
+		"sub":				"repo:myorg/myrepo:ref:refs/heads/main",
+		"aud":				"https://buildhost.example.com",
+		"exp":				time.Now().Add(10 * time.Minute).Unix(),
+		"iat":				time.Now().Unix(),
+		"event_name":			"push",
+		"repository_visibility":	"public",
 	}
 	token := signJWT(t, key, "kid-vis-pub", claims)
 
@@ -734,9 +734,9 @@ func TestVerifyToken_UntrustedIssuer_NoPolicies(t *testing.T) {
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
 		map[string]any{
-			"iss": "https://untrusted.example.com",
-			"sub": "repo:myorg/myrepo:ref:refs/heads/main",
-			"exp": time.Now().Add(1 * time.Hour).Unix(),
+			"iss":	"https://untrusted.example.com",
+			"sub":	"repo:myorg/myrepo:ref:refs/heads/main",
+			"exp":	time.Now().Add(1 * time.Hour).Unix(),
 		},
 	)
 	_, _, err := v.VerifyToken(context.Background(), token, nil)

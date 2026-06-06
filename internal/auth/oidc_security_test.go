@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestVerifyToken_TrustedIssuer_EmptyEventRejected(t *testing.T) {
@@ -20,10 +20,10 @@ func TestVerifyToken_TrustedIssuer_EmptyEventRejected(t *testing.T) {
 	srv := jwksServer(t, &key.PublicKey, "kid-no-event")
 
 	claims := map[string]any{
-		"iss": srv.URL,
-		"sub": "repo:myorg/myrepo:ref:refs/heads/main",
-		"aud": "https://buildhost.example.com",
-		"exp": time.Now().Add(10 * time.Minute).Unix(),
+		"iss":	srv.URL,
+		"sub":	"repo:myorg/myrepo:ref:refs/heads/main",
+		"aud":	"https://buildhost.example.com",
+		"exp":	time.Now().Add(10 * time.Minute).Unix(),
 	}
 	token := signJWT(t, key, "kid-no-event", claims)
 
