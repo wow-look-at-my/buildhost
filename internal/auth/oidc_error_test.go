@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestRequireProject_WriteUnauthorized_ExplainsOIDCReason proves that when a

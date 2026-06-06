@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCreateRelease_Semver(t *testing.T) {
@@ -207,8 +207,8 @@ func TestListReleases_Success(t *testing.T) {
 
 func TestSemverToNum(t *testing.T) {
 	tests := []struct {
-		input    string
-		expected int64
+		input		string
+		expected	int64
 	}{
 		{"1.0.0", 1_000_000},
 		{"1.2.3", 1_002_003},

@@ -7,9 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func openTestDB(t *testing.T) *DB {
@@ -594,13 +593,13 @@ func TestIncrementDownloadCount(t *testing.T) {
 	_, r := createTestRelease(t, d)
 
 	a := &Artifact{
-		ReleaseID:  r.ID,
-		OS:         OSLinux,
-		Arch:       ArchAMD64,
-		Kind:       KindBinary,
-		StorageKey: "key1",
-		Size:       100,
-		SHA256:     "hash1",
+		ReleaseID:	r.ID,
+		OS:		OSLinux,
+		Arch:		ArchAMD64,
+		Kind:		KindBinary,
+		StorageKey:	"key1",
+		Size:		100,
+		SHA256:		"hash1",
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -629,14 +628,14 @@ func TestListArtifactDetails(t *testing.T) {
 	_, r := createTestRelease(t, d)
 
 	a := &Artifact{
-		ReleaseID:  r.ID,
-		OS:         OSLinux,
-		Arch:       ArchAMD64,
-		Kind:       KindBinary,
-		StorageKey: "binkey",
-		Size:       500,
-		SHA256:     "binhash",
-		Filename:   "mybin",
+		ReleaseID:	r.ID,
+		OS:		OSLinux,
+		Arch:		ArchAMD64,
+		Kind:		KindBinary,
+		StorageKey:	"binkey",
+		Size:		500,
+		SHA256:		"binhash",
+		Filename:	"mybin",
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "deb", "debkey", 600, "debhash", "pkg.deb", "{}"))

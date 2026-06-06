@@ -3,7 +3,7 @@ package buildinfo
 import (
 	"testing"
 
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/require"
 )
 
 // A test binary is not stamped with VCS settings by the toolchain, so Commit

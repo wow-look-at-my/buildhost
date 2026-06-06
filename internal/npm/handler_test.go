@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/testify/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 // HTTP-level behaviour (packuments, tarball downloads, platform packages,
@@ -16,10 +16,10 @@ import (
 
 func TestParseRoute(t *testing.T) {
 	tests := []struct {
-		name     string
-		pathVal  string
-		wantProj string
-		wantPlat string
+		name		string
+		pathVal		string
+		wantProj	string
+		wantPlat	string
 	}{
 		{"simple", "myapp", "myapp", ""},
 		{"numeric", "app123", "app123", ""},
@@ -57,9 +57,9 @@ func TestParseRoute(t *testing.T) {
 
 func TestSplitPlatform(t *testing.T) {
 	tests := []struct {
-		input    string
-		wantProj string
-		wantPlat string
+		input		string
+		wantProj	string
+		wantPlat	string
 	}{
 		{"myapp", "myapp", ""},
 		{"go-toolchain", "go-toolchain", ""},

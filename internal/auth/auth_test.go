@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/require"
 )
 
 func TestExtractToken_Bearer(t *testing.T) {
@@ -112,12 +112,12 @@ func TestWithProject_ProjectFrom_RoundTrip(t *testing.T) {
 }
 
 type testRoute struct {
-	project string
-	access  AccessLevel
+	project	string
+	access	AccessLevel
 }
 
-func (r testRoute) ProjectName() string  { return r.project }
-func (r testRoute) Access() AccessLevel  { return r.access }
+func (r testRoute) ProjectName() string	{ return r.project }
+func (r testRoute) Access() AccessLevel	{ return r.access }
 
 func TestWithRouteInfo_RouteInfoFrom_RoundTrip(t *testing.T) {
 	ctx := context.Background()
