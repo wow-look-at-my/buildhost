@@ -47,6 +47,46 @@ func TestLLMsTxt_PublicAndRendersBaseURL(t *testing.T) {
 	require.NotContains(t, body, "__DL_URL__")
 }
 
+// llmsTxtSubdomains are every service subdomain that must serve /llms.txt
+// directly (in addition to the apex). The router's strict host partitioning
+// means a known subdomain never falls through to the host-agnostic apex route,
+// so /llms.txt has to be registered on each subdomain too.
+var llmsTxtSubdomains = []string{"apt", "brew", "dl", "npm", "oci", "sites", "static"}
+
+func TestLLMsTxt_ServedOnEverySubdomain(t *testing.T) {
+	env := setup(t)
+
+	for _, sub := range llmsTxtSubdomains {
+		t.Run(sub, func(t *testing.T) {
+			resp := env.getSubdomain(t, sub, "/llms.txt")
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.Equal(t, "text/plain; charset=utf-8", resp.Header.Get("Content-Type"))
+
+			body := string(readBody(t, resp))
+			require.Contains(t, body, "# buildhost")
+			// The guide's service URLs always anchor to the apex (test.local),
+			// regardless of which subdomain served it -- never a double-prefixed
+			// host such as dl.oci.test.local.
+			require.Contains(t, body, "https://dl.test.local/myapp")
+			require.Contains(t, body, "docker pull oci.test.local/myapp:latest")
+			require.NotContainsf(t, body, "."+sub+".test.local",
+				"service URLs leaked the %q request subdomain (double-prefixed host)", sub)
+			require.NotContains(t, body, "__BASE_URL__")
+		})
+	}
+}
+
+// docker.{domain} is the registry's legacy alias and 301-redirects everything,
+// including /llms.txt, to the canonical oci.{domain}.
+func TestLLMsTxt_DockerSubdomainRedirectsToOCI(t *testing.T) {
+	env := setup(t)
+
+	resp := env.getSubdomain(t, "docker", "/llms.txt")
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
+	require.Equal(t, "https://oci.test.local/llms.txt", resp.Header.Get("Location"))
+}
+
 func TestLLMsTxt_DocumentedRoutesAreRegistered(t *testing.T) {
 	env := setup(t)
 
