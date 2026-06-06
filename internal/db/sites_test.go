@@ -68,7 +68,7 @@ func TestUpsertSite_ReplaceExisting(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "key2", got.StorageKey)
 	assert.Equal(t, int64(200), got.Size)
-	assert.Equal(t, 7, got.FileCount)
+	assert.Equal(t, int64(7), got.FileCount)
 }
 
 func TestGetSite_NotFound(t *testing.T) {
