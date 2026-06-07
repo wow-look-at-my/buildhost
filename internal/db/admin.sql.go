@@ -35,7 +35,10 @@ SELECT
             UNION ALL
             SELECT storage_key, size FROM packaged_artifacts
         ) GROUP BY k
-    )) AS INTEGER) AS physical_bytes
+    )) AS INTEGER) AS physical_bytes,
+    CAST((SELECT COALESCE(SUM(CASE WHEN stripped_storage_key != '' THEN stripped_size ELSE 0 END), 0) FROM artifacts) AS INTEGER) AS stripped_bytes,
+    CAST((SELECT COALESCE(SUM(CASE WHEN debug_storage_key != '' THEN debug_size ELSE 0 END), 0) FROM artifacts) AS INTEGER) AS debug_bytes,
+    CAST((SELECT COALESCE(SUM(size), 0) FROM packaged_artifacts) AS INTEGER) AS packaged_bytes
 `
 
 type GetDashboardStatsRow struct {
@@ -48,6 +51,9 @@ type GetDashboardStatsRow struct {
 	SiteCount         int64 `json:"site_count"`
 	LogicalBytes      int64 `json:"logical_bytes"`
 	PhysicalBytes     int64 `json:"physical_bytes"`
+	StrippedBytes     int64 `json:"stripped_bytes"`
+	DebugBytes        int64 `json:"debug_bytes"`
+	PackagedBytes     int64 `json:"packaged_bytes"`
 }
 
 func (q *Queries) GetDashboardStats(ctx context.Context) (GetDashboardStatsRow, error) {
@@ -63,6 +69,9 @@ func (q *Queries) GetDashboardStats(ctx context.Context) (GetDashboardStatsRow, 
 		&i.SiteCount,
 		&i.LogicalBytes,
 		&i.PhysicalBytes,
+		&i.StrippedBytes,
+		&i.DebugBytes,
+		&i.PackagedBytes,
 	)
 	return i, err
 }
