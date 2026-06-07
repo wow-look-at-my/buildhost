@@ -691,6 +691,7 @@ App.pages.storage = function () {
         html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(d.logical_bytes || 0)) + '</div><div class="stat-label">Logical Size</div></div>';
         html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(d.physical_bytes || 0)) + '</div><div class="stat-label">Physical Size (dedup)</div></div>';
         html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(d.disk_bytes || 0)) + '</div><div class="stat-label">Blobs on Disk</div></div>';
+        html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(d.reclaimable_bytes || 0)) + '</div><div class="stat-label">Reclaimable (est.)</div></div>';
         if (d.disk_total) {
             html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(d.disk_used || 0)) + " / " + App.h(App.humanSize(d.disk_total || 0)) + '</div><div class="stat-label">Filesystem Usage</div></div>';
         }

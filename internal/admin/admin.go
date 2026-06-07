@@ -606,6 +606,15 @@ func (s *Server) apiStorage(w http.ResponseWriter, r *http.Request) {
 		"disk_bytes":     blobsDiskUsage(s.cfg.DataDir + "/blobs"),
 	}
 
+	// Upper-bound estimate of what keep-N eviction would free (does not subtract
+	// dedup-shared blobs). Omitted on error so the endpoint still returns.
+	cutoff := time.Now().Add(-s.cfg.RetentionRecencyGuard)
+	if reclaimable, err := s.db.SumReclaimableBytes(r.Context(), int64(s.cfg.RetentionKeepN), cutoff); err == nil {
+		resp["reclaimable_bytes"] = reclaimable
+	} else {
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+	}
+
 	if du, err := getDiskUsage(s.cfg.DataDir); err == nil && du.Total > 0 {
 		resp["disk_used"] = du.Used
 		resp["disk_total"] = du.Total

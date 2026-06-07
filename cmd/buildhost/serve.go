@@ -15,6 +15,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/buildinfo"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/retention"
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/buildhost/internal/telemetry"
@@ -93,6 +94,8 @@ var serveCmd = &cobra.Command{
 			}
 		}()
 
+		startRetentionSweeper(ctx, cfg, database, store)
+
 		select {
 		case err := <-errc:
 			return err
@@ -122,4 +125,61 @@ var serveCmd = &cobra.Command{
 		slog.Info("shutdown complete")
 		return nil
 	},
+}
+
+// startRetentionSweeper launches the background GC sweeper when a positive
+// interval is configured. It is report-only unless BUILDHOST_RETENTION_ENFORCE is
+// set, defers a tick while writes are in flight (the same counter /ready-to-update
+// uses), and exits when ctx is cancelled at shutdown.
+func startRetentionSweeper(ctx context.Context, cfg config.Config, database *db.DB, store storage.Storage) {
+	if cfg.RetentionInterval <= 0 {
+		return
+	}
+	ret := retention.New(database, store, retention.Config{
+		KeepN:        cfg.RetentionKeepN,
+		RecencyGuard: cfg.RetentionRecencyGuard,
+		Enforce:      cfg.RetentionEnforce,
+	})
+	slog.Info("retention sweeper enabled",
+		"interval", cfg.RetentionInterval, "keep_n", cfg.RetentionKeepN, "enforce", cfg.RetentionEnforce)
+	go func() {
+		t := time.NewTicker(cfg.RetentionInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if n := admin.InflightWrites(); n > 0 {
+					slog.Info("retention: deferring sweep, writes in flight", "inflight", n)
+					continue
+				}
+				rep, err := ret.Run(ctx)
+				if err != nil {
+					slog.Error("retention sweep failed", "err", err)
+					continue
+				}
+				logRetentionReport(rep)
+			}
+		}
+	}()
+}
+
+func logRetentionReport(rep retention.Report) {
+	if rep.Enforced {
+		for _, r := range rep.EvictedReleases {
+			slog.Warn("retention evicted release", "reason", "keep-n",
+				"project_id", r.ProjectID, "branch", r.Branch, "version", r.Version, "release_id", r.ID)
+		}
+		for _, r := range rep.AbandonedReleases {
+			slog.Warn("retention evicted release", "reason", "abandoned",
+				"project_id", r.ProjectID, "branch", r.Branch, "version", r.Version, "release_id", r.ID)
+		}
+	}
+	if rep.Releases() == 0 {
+		return // nothing to report this cycle
+	}
+	slog.Info("retention sweep complete",
+		"enforced", rep.Enforced, "releases", rep.Releases(),
+		"blobs_freed", rep.BlobsDeleted, "blobs_kept", rep.BlobsRetained, "bytes_freed", rep.ReclaimableBytes)
 }

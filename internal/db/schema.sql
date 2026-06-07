@@ -120,3 +120,11 @@ CREATE TABLE oci_tags (
     updated_at      DATETIME NOT NULL DEFAULT (datetime('now')),
     UNIQUE(project_id, tag)
 );
+
+-- Retention/GC indexes (mirrored from migrations/009_retention_indexes.sql).
+CREATE INDEX IF NOT EXISTS idx_releases_project_branch_version ON releases(project_id, git_branch, version_num DESC);
+CREATE INDEX IF NOT EXISTS idx_artifacts_storage_key  ON artifacts(storage_key);
+CREATE INDEX IF NOT EXISTS idx_artifacts_stripped_key ON artifacts(stripped_storage_key);
+CREATE INDEX IF NOT EXISTS idx_artifacts_debug_key    ON artifacts(debug_storage_key);
+CREATE INDEX IF NOT EXISTS idx_packaged_storage_key   ON packaged_artifacts(storage_key);
+CREATE INDEX IF NOT EXISTS idx_oci_blob_links_skey    ON oci_blob_links(storage_key);
