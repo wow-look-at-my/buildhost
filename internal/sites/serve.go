@@ -118,7 +118,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // setSiteSecurityHeaders drops app-level hardening headers that block hosted
-// site assets, then applies the isolation headers expected by modern web apps.
+// site assets, then applies the artificially required "security" headers.
 func setSiteSecurityHeaders(w http.ResponseWriter) {
 	w.Header().Del("Content-Security-Policy")
 	w.Header().Del("X-Frame-Options")
