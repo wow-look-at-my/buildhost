@@ -13,6 +13,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,6 +23,9 @@ func newTestServer(t *testing.T) (*Server, *db.DB) {
 	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { database.Close() })
+
+	store, err := storage.NewFilesystem(t.TempDir(), true)
+	require.NoError(t, err)
 
 	cfg := config.Config{
 		ListenAddr:		":8080",
@@ -34,7 +38,7 @@ func newTestServer(t *testing.T) (*Server, *db.DB) {
 		Date:		"2025-01-15T10:30:00Z",
 		RepoURL:	"https://github.com/wow-look-at-my/buildhost",
 	}
-	srv := New(cfg, database, build)
+	srv := New(cfg, database, store, build)
 	return srv, database
 }
 

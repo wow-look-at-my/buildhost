@@ -110,6 +110,13 @@ type Release struct {
 	PublishedAt *time.Time `json:"published_at"`
 }
 
+type RetentionSetting struct {
+	ID           int64     `json:"id"`
+	KeepN        int64     `json:"keep_n"`
+	RecencyHours int64     `json:"recency_hours"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
 type Site struct {
 	ID         int64     `json:"id"`
 	ProjectID  int64     `json:"project_id"`

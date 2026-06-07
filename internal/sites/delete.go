@@ -8,6 +8,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/retention"
 )
 
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -32,8 +33,11 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Delete the blob only if no other row (another branch, an artifact, an OCI
+	// image) still references that content-addressed key. A naive unconditional
+	// delete would break a dedup-shared blob.
 	if storageKey != "" {
-		_ = h.Store.Delete(ctx, storageKey)
+		_, _ = retention.DeleteBlobIfUnreferenced(ctx, h.DB, h.Store, storageKey, true)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
