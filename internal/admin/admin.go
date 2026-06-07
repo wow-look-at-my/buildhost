@@ -603,6 +603,9 @@ func (s *Server) apiStorage(w http.ResponseWriter, r *http.Request) {
 		"logical_bytes":  stats.LogicalBytes,
 		"physical_bytes": stats.PhysicalBytes,
 		"total_bytes":    stats.TotalStorageBytes,
+		"stripped_bytes": stats.StrippedBytes,
+		"debug_bytes":    stats.DebugBytes,
+		"packaged_bytes": stats.PackagedBytes,
 		"disk_bytes":     blobsDiskUsage(s.cfg.DataDir + "/blobs"),
 	}
 

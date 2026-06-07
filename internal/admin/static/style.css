@@ -311,6 +311,70 @@ a.stat-card-link:hover .stat-label {
     border-bottom: none;
 }
 
+.breakdown-table {
+    width: 100%;
+    max-width: 480px;
+    border-collapse: collapse;
+}
+
+.breakdown-table td {
+    padding: 8px 12px;
+    font-size: 14px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.breakdown-table tr:last-child td {
+    border-bottom: none;
+}
+
+.bd-op {
+    width: 28px;
+    text-align: center;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+.bd-name {
+    color: var(--text-muted);
+}
+
+.bd-val {
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.bd-saving .bd-name {
+    font-style: italic;
+}
+
+.bd-saving .bd-op,
+.bd-saving .bd-val {
+    color: var(--green);
+}
+
+.bd-subtotal td,
+.bd-total td {
+    border-top: 1px solid var(--border);
+    font-weight: 600;
+}
+
+.bd-subtotal .bd-name,
+.bd-total .bd-name {
+    color: var(--text-bright);
+}
+
+.bd-total td {
+    border-top-width: 2px;
+}
+
+.breakdown-note {
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--text-dim);
+    max-width: 560px;
+}
+
 .badge {
     display: inline-block;
     padding: 2px 8px;
