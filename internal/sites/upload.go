@@ -22,6 +22,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/retention"
 )
 
 const (
@@ -150,8 +151,10 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Delete the replaced site's blob only if no other row (another branch, an
+	// artifact, an OCI image) still references that content-addressed key.
 	if oldKey != "" && oldKey != storageKey {
-		_ = h.Store.Delete(ctx, oldKey)
+		_, _ = retention.DeleteBlobIfUnreferenced(ctx, h.DB, h.Store, oldKey, true)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

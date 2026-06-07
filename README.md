@@ -335,6 +335,40 @@ Environment variables:
 | `BUILDHOST_OIDC_ISSUERS` | (none) | Comma-separated trusted OIDC issuers for auto-provisioning |
 | `BUILDHOST_OIDC_ORGS` | (none) | Comma-separated allowed orgs for OIDC auto-provisioning, matched case-insensitively (`*` for all) |
 | `BUILDHOST_OIDC_EVENTS` | `push,pull_request` | Comma-separated allowed event types for OIDC auto-provisioning (`*` for all) |
+| `BUILDHOST_RETENTION_INTERVAL` | (off) | Background GC sweep cadence (e.g. `1h`); empty/`0` disables the sweeper |
+| `BUILDHOST_RETENTION_KEEP_N` | `10` | Initial published releases kept per `(project, git branch)` -- seeds the dashboard policy on first start, then managed in the UI |
+| `BUILDHOST_RETENTION_RECENCY_GUARD` | `24h` | Initial recency guard (never evict releases newer than this) -- seeds the dashboard policy, then managed in the UI |
+| `BUILDHOST_RETENTION_ENFORCE` | `false` | Whether the background sweeper actually deletes; default is report-only. Manual runs from the dashboard/CLI delete when you confirm regardless |
+
+## Retention / garbage collection
+
+buildhost can reclaim storage by evicting old releases. Eviction keeps the latest
+`BUILDHOST_RETENTION_KEEP_N` published releases on each `(project, git branch)` and
+sweeps abandoned (never-published) uploads, then deletes any content-addressed blob
+no longer referenced by anything. **Pins that are never evicted:** each branch's
+latest published release, any release a `docker`/OCI tag points at, pushed-docker
+builds, and anything newer than `BUILDHOST_RETENTION_RECENCY_GUARD`.
+
+It is **report-only by default** -- nothing is deleted automatically. Manage it
+from the **admin dashboard's Retention page**: edit the policy (keep-N and recency
+guard), see a live preview of exactly which releases would be evicted and how much
+storage that frees, and click to run garbage collection on demand (with a
+confirmation). The policy is stored in the database; the `BUILDHOST_RETENTION_KEEP_N`
+/ `_RECENCY_GUARD` env vars only seed its initial values.
+
+For headless/automated use there is also a CLI and an opt-in background sweeper:
+
+```bash
+buildhost gc              # report what would be evicted (dry run)
+buildhost gc --enforce    # actually evict and reclaim
+```
+
+Set `BUILDHOST_RETENTION_INTERVAL` (e.g. `1h`) to run the sweep periodically; it
+only deletes if `BUILDHOST_RETENTION_ENFORCE=true` (otherwise it just logs what it
+would do). The background sweeper reads the live policy from the dashboard each run.
+
+Blob deletion is reference-counted: because storage is deduplicated, a blob is
+removed only once no release, site, or image references it.
 
 ## OIDC auto-provisioning
 
