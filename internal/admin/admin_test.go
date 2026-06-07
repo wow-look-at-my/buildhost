@@ -523,6 +523,12 @@ func TestAPIStorage(t *testing.T) {
 	assert.Equal(t, "testproject", projects[0].(map[string]any)["name"])
 	assert.Equal(t, float64(2048), projects[0].(map[string]any)["total_bytes"])
 	assert.Equal(t, float64(2048), resp["total_bytes"])
+
+	// Component breakdown fields are exposed for the reconciliation view.
+	assert.Equal(t, float64(2048), resp["logical_bytes"])
+	assert.Equal(t, float64(0), resp["stripped_bytes"])
+	assert.Equal(t, float64(0), resp["debug_bytes"])
+	assert.Equal(t, float64(0), resp["packaged_bytes"])
 }
 
 func TestAPIStorage_Empty(t *testing.T) {

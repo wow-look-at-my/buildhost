@@ -695,6 +695,30 @@ App.pages.storage = function () {
             html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(d.disk_used || 0)) + " / " + App.h(App.humanSize(d.disk_total || 0)) + '</div><div class="stat-label">Filesystem Usage</div></div>';
         }
         html += "</div>";
+
+        var logical = d.logical_bytes || 0;
+        var physical = d.physical_bytes || 0;
+        var disk = d.disk_bytes || 0;
+        var bdRow = function (op, name, bytes, cls) {
+            return "<tr" + (cls ? ' class="' + cls + '"' : "") +
+                '><td class="bd-op">' + op + '</td><td class="bd-name">' + name +
+                '</td><td class="bd-val">' + App.h(App.humanSize(bytes)) + "</td></tr>";
+        };
+        html += '<div class="card"><h2>How these reconcile</h2>';
+        html += '<table class="breakdown-table"><tbody>';
+        html += bdRow("", "Original uploads", d.total_bytes || 0, "");
+        html += bdRow("+", "Packaged artifacts", d.packaged_bytes || 0, "");
+        html += bdRow("+", "Stripped binaries", d.stripped_bytes || 0, "");
+        html += bdRow("+", "Debug symbols", d.debug_bytes || 0, "");
+        html += bdRow("=", "Logical (all references)", logical, "bd-subtotal");
+        html += bdRow("−", "Deduplication", Math.max(0, logical - physical), "bd-saving");
+        html += bdRow("=", "Physical (unique blobs)", physical, "bd-subtotal");
+        html += bdRow("−", "Compression (zstd)", Math.max(0, physical - disk), "bd-saving");
+        html += bdRow("=", "Blobs on disk", disk, "bd-total");
+        html += "</tbody></table>";
+        html += '<p class="breakdown-note">Original uploads counts only the binaries you pushed. Packaged, stripped, and debug blobs are produced on demand but still stored, so they occupy disk yet are excluded from "Artifact Storage" above. Deduplication and zstd compression then reduce the unique set to what the blob store actually holds.</p>';
+        html += "</div>";
+
         html += '<div class="card"><h2>Per-Project Breakdown</h2><table class="data-table"><thead><tr><th>Project</th><th>Releases</th><th>Artifacts</th><th>Total Size</th></tr></thead><tbody>';
         if (projects.length === 0) {
             html += '<tr><td colspan="4" class="empty">No projects yet</td></tr>';
