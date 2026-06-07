@@ -67,6 +67,27 @@ func TestListEvictableReleases_KeepNPerBranch(t *testing.T) {
 	assert.Empty(t, got)
 }
 
+func TestListEvictableReleases_KeepZeroStillKeepsTip(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+	p := retProject(t, d, "proj")
+	retRelease(t, d, p.ID, "v1", 1, "main")
+	retRelease(t, d, p.ID, "v2", 2, "main")
+	retRelease(t, d, p.ID, "v3", 3, "main")
+	future := time.Now().Add(48 * time.Hour)
+
+	// keep_n = 0 must STILL keep each branch's tip (v3): only v1,v2 are evictable.
+	// This guarantees eviction can never remove a branch's latest published build.
+	got, err := d.ListEvictableReleases(ctx, 0, future)
+	require.NoError(t, err)
+	var versions []string
+	for _, r := range got {
+		versions = append(versions, r.Version)
+	}
+	assert.ElementsMatch(t, []string{"v1", "v2"}, versions)
+	assert.NotContains(t, versions, "v3")
+}
+
 func TestListEvictableReleases_Pins(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()

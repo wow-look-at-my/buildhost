@@ -129,13 +129,13 @@ WHERE r.published = 1
         AND r2.git_branch = r.git_branch
         AND r2.published = 1
         AND r2.version_num > r.version_num
-  ) >= ?2
+  ) >= max(?2, 1)
 ORDER BY r.project_id, r.git_branch, r.version_num DESC
 `
 
 type ListEvictableReleasesParams struct {
 	RecencyCutoff interface{} `json:"recency_cutoff"`
-	KeepN         int64       `json:"keep_n"`
+	KeepN         interface{} `json:"keep_n"`
 }
 
 type ListEvictableReleasesRow struct {
@@ -147,13 +147,14 @@ type ListEvictableReleasesRow struct {
 }
 
 // Published releases past keep-N on each (project, git_branch). A release is
-// evictable when keep_n or more NEWER published releases exist on the same branch
-// (i.e. its newest-first rank is > keep_n). Excludes anything newer than the
-// recency cutoff, tagged releases, and pushed-docker releases (their blobs live
-// in project-scoped oci_blob_links, not release-cascade-able). The per-branch tip
-// has zero newer releases, so it is inherently kept for any keep_n >= 0.
-// Correlated-subquery form (sqlc's SQLite analyzer does not support window-fn
-// aliases in WHERE).
+// evictable when at least max(keep_n, 1) NEWER published releases exist on the
+// same branch. The max(..., 1) floor means the per-branch tip (zero newer) is
+// ALWAYS kept, even if keep_n is set to 0 -- so eviction can never remove a
+// branch's latest published build (which /dl/.../branch/... resolves). Also
+// excludes anything newer than the recency cutoff, tagged releases, and
+// pushed-docker releases (their blobs live in project-scoped oci_blob_links, not
+// release-cascade-able). Correlated-subquery form (sqlc's SQLite analyzer does
+// not support window-fn aliases in WHERE).
 func (q *Queries) ListEvictableReleases(ctx context.Context, arg ListEvictableReleasesParams) ([]ListEvictableReleasesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listEvictableReleases, arg.RecencyCutoff, arg.KeepN)
 	if err != nil {
@@ -238,7 +239,7 @@ WITH evictable AS (
             AND r2.git_branch = r.git_branch
             AND r2.published = 1
             AND r2.version_num > r.version_num
-      ) >= ?2
+      ) >= max(?2, 1)
 )
 SELECT CAST(
     COALESCE((SELECT SUM(a.size + a.stripped_size + a.debug_size)
@@ -251,7 +252,7 @@ AS INTEGER) AS reclaimable_bytes
 
 type SumReclaimableBytesParams struct {
 	RecencyCutoff interface{} `json:"recency_cutoff"`
-	KeepN         int64       `json:"keep_n"`
+	KeepN         interface{} `json:"keep_n"`
 }
 
 // UPPER BOUND on bytes keep-N would free: the logical sizes of evictable releases'
