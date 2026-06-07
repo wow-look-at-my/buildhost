@@ -97,10 +97,23 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 		if err != nil {
 			continue
 		}
-		digest := sha256.Sum256(manifestData)
+		sum := sha256.Sum256(manifestData)
+		digest := "sha256:" + hex.EncodeToString(sum[:])
+
+		// Integrity check: only advertise a child the pull path can actually
+		// resolve. Generate() persisted+linked this manifest (with its config and
+		// layers), so a by-digest GET /v2/{name}/manifests/<digest> now serves it.
+		// Skip any entry that does not resolve rather than emit a dangling index
+		// -- an index that references content the registry cannot serve is an
+		// unpullable image for every client.
+		belongs, err := h.DB.BlobBelongsToProject(r.Context(), project.ID, digest[7:])
+		if err != nil || !belongs {
+			continue
+		}
+
 		entry := indexEntry{
 			MediaType: "application/vnd.oci.image.manifest.v1+json",
-			Digest:    "sha256:" + hex.EncodeToString(digest[:]),
+			Digest:    digest,
 			Size:      int64(len(manifestData)),
 		}
 		entry.Platform.Architecture = string(a.Arch)

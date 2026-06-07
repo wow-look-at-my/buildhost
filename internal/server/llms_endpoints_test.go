@@ -133,7 +133,11 @@ func TestLLMsTxt_DocumentedFlowsWork(t *testing.T) {
 		{"brew formula", "GET", "brew", "/myapp", false, http.StatusOK},
 		{"apt Release", "GET", "apt", "/myapp/dists/stable/Release", false, http.StatusOK},
 		{"npm metadata", "GET", "npm", "/@buildhost/myapp", false, http.StatusOK},
-		{"oci v2 root", "GET", "oci", "/v2/", false, http.StatusOK},
+		// /v2/ is the OCI auth-discovery endpoint: anonymous -> 401 + challenge,
+		// authenticated -> 200. The documented "docker login then pull" flow
+		// reaches it with credentials. (The anonymous 401 challenge is covered by
+		// the oci package's V2Root unit tests.)
+		{"oci v2 root", "GET", "oci", "/v2/", true, http.StatusOK},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

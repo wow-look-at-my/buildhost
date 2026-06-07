@@ -78,6 +78,31 @@ func publishWithOCI(t *testing.T, ctx context.Context, d *db.DB, store *storage.
 	return rel
 }
 
+// publishMultiArch publishes a release with two binary artifacts (amd64, arm64)
+// and -- deliberately -- does NOT pre-store any OCI manifest. This is the
+// production shape for a synthesized multi-arch image: the OCI serve path must
+// generate, persist and link each platform's child manifest itself. (Contrast
+// publishWithOCI, which pre-persists the manifest and would mask the
+// dangling-index bug.)
+func publishMultiArch(t *testing.T, ctx context.Context, d *db.DB, store *storage.Filesystem, proj *db.Project, version string, versionNum int64) *db.Release {
+	t.Helper()
+
+	rel := &db.Release{ProjectID: proj.ID, Version: version, VersionNum: versionNum}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	for _, arch := range []db.Arch{db.ArchAMD64, db.ArchARM64} {
+		key, size, err := store.Put(ctx, strings.NewReader("#!/bin/sh\necho hello "+string(arch)))
+		require.NoError(t, err)
+		require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+			ReleaseID: rel.ID, OS: db.OSLinux, Arch: arch,
+			Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		}))
+	}
+
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+	return rel
+}
+
 func readAll(store *storage.Filesystem, ctx context.Context, key string) ([]byte, error) {
 	rc, _, err := store.Get(ctx, key)
 	if err != nil {
@@ -175,10 +200,42 @@ func TestParseRoute(t *testing.T) {
 	}
 }
 
-func TestV2Root(t *testing.T) {
+// An unauthenticated GET /v2/ must 401 with a Basic challenge so the Docker/OCI
+// client knows credentials are required (the auth-discovery handshake). A 200
+// here makes clients conclude no auth is needed and the subsequent manifest pull
+// 401s, killing the pull.
+func TestV2Root_Unauthenticated(t *testing.T) {
 	h, _, _ := setupTest(t)
 
 	req := httptest.NewRequest("GET", "/v2/", nil)
+	rec := httptest.NewRecorder()
+	h.V2Root(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Equal(t, `Basic realm="buildhost"`, rec.Header().Get("Www-Authenticate"))
+	assert.Equal(t, "registry/2.0", rec.Header().Get("Docker-Distribution-API-Version"))
+	assert.Contains(t, rec.Body.String(), `"code":"UNAUTHORIZED"`)
+}
+
+func TestV2Root_HEAD_Unauthenticated(t *testing.T) {
+	h, _, _ := setupTest(t)
+
+	req := httptest.NewRequest("HEAD", "/v2/", nil)
+	rec := httptest.NewRecorder()
+	h.V2Root(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Equal(t, `Basic realm="buildhost"`, rec.Header().Get("Www-Authenticate"))
+	assert.Equal(t, "registry/2.0", rec.Header().Get("Docker-Distribution-API-Version"))
+}
+
+// Once a valid credential is presented (the auth middleware puts the token in
+// the context), /v2/ returns the 200 base response.
+func TestV2Root_Authenticated(t *testing.T) {
+	h, _, _ := setupTest(t)
+
+	req := httptest.NewRequest("GET", "/v2/", nil)
+	req = req.WithContext(auth.WithToken(req.Context(), &db.APIToken{}))
 	rec := httptest.NewRecorder()
 	h.V2Root(rec, req)
 
@@ -186,12 +243,14 @@ func TestV2Root(t *testing.T) {
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 	assert.Equal(t, "registry/2.0", rec.Header().Get("Docker-Distribution-API-Version"))
 	assert.Equal(t, "{}\n", rec.Body.String())
+	assert.Empty(t, rec.Header().Get("Www-Authenticate"))
 }
 
-func TestV2Root_HEAD(t *testing.T) {
+func TestV2Root_HEAD_Authenticated(t *testing.T) {
 	h, _, _ := setupTest(t)
 
 	req := httptest.NewRequest("HEAD", "/v2/", nil)
+	req = req.WithContext(auth.WithToken(req.Context(), &db.APIToken{}))
 	rec := httptest.NewRecorder()
 	h.V2Root(rec, req)
 
@@ -546,6 +605,88 @@ func TestManifestDigestMatchesContent(t *testing.T) {
 	computed := sha256.Sum256(body)
 	expected := "sha256:" + hex.EncodeToString(computed[:])
 	assert.Equal(t, expected, rec.Header().Get("Docker-Content-Digest"))
+}
+
+// TestServeHTTP_MultiArchIndex_ChildrenResolveByDigest is the regression test
+// for the dangling-index bug: a synthesized multi-arch image serves an image
+// index that lists per-platform child manifests by digest, and every one of
+// those digests MUST be retrievable -- both as a manifest and (its config +
+// layers) as blobs. Before the fix the children were generated only to compute
+// the index and never stored, so fetching a child digest 404'd and no client
+// could pull a platform image.
+func TestServeHTTP_MultiArchIndex_ChildrenResolveByDigest(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	publishMultiArch(t, ctx, d, store, proj, "1.0.0", 1000000)
+
+	// Fetch the index by tag.
+	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
+	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "application/vnd.oci.image.index.v1+json", rec.Header().Get("Content-Type"))
+
+	var index struct {
+		MediaType string `json:"mediaType"`
+		Manifests []struct {
+			MediaType string `json:"mediaType"`
+			Digest    string `json:"digest"`
+			Size      int64  `json:"size"`
+			Platform  struct {
+				Architecture string `json:"architecture"`
+				OS           string `json:"os"`
+			} `json:"platform"`
+		} `json:"manifests"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &index))
+	require.Len(t, index.Manifests, 2, "index must list both platform manifests")
+
+	for _, child := range index.Manifests {
+		require.True(t, validDigest.MatchString(child.Digest), "child digest %q malformed", child.Digest)
+		assert.NotEmpty(t, child.Platform.Architecture)
+		assert.Equal(t, "linux", child.Platform.OS)
+
+		// The child manifest must resolve by digest.
+		mreq := httptest.NewRequest("GET", "/v2/myapp/manifests/"+child.Digest, nil)
+		mreq = withRoute(mreq, proj, route{project: "myapp", action: "manifests", reference: child.Digest})
+		mrec := httptest.NewRecorder()
+		h.ServeHTTP(mrec, mreq)
+		require.Equal(t, http.StatusOK, mrec.Code, "child manifest %s must resolve by digest", child.Digest)
+		assert.Equal(t, "application/vnd.oci.image.manifest.v1+json", mrec.Header().Get("Content-Type"))
+		assert.Equal(t, child.Digest, mrec.Header().Get("Docker-Content-Digest"))
+
+		// The bytes served must hash to exactly the advertised digest and size.
+		sum := sha256.Sum256(mrec.Body.Bytes())
+		assert.Equal(t, child.Digest, "sha256:"+hex.EncodeToString(sum[:]), "served child must match its index digest")
+		assert.Equal(t, child.Size, int64(mrec.Body.Len()), "served child size must match the index")
+
+		// Its config + layer blobs must also resolve by digest.
+		var cm struct {
+			Config struct {
+				Digest string `json:"digest"`
+			} `json:"config"`
+			Layers []struct {
+				Digest string `json:"digest"`
+			} `json:"layers"`
+		}
+		require.NoError(t, json.Unmarshal(mrec.Body.Bytes(), &cm))
+		blobDigests := []string{cm.Config.Digest}
+		for _, l := range cm.Layers {
+			blobDigests = append(blobDigests, l.Digest)
+		}
+		require.Len(t, blobDigests, 3, "config + two layers")
+		for _, dg := range blobDigests {
+			breq := httptest.NewRequest("GET", "/v2/myapp/blobs/"+dg, nil)
+			breq = withRoute(breq, proj, route{project: "myapp", action: "blobs", reference: dg})
+			brec := httptest.NewRecorder()
+			h.ServeHTTP(brec, breq)
+			assert.Equal(t, http.StatusOK, brec.Code, "blob %s referenced by child manifest must resolve", dg)
+		}
+	}
 }
 
 func TestBlobsReachableFromManifest(t *testing.T) {

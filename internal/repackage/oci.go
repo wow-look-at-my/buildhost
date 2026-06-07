@@ -95,6 +95,27 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		[]ociDescriptor{{baseKey, baseSize}, {binKey, binSize}},
 	)
 
+	// Persist the manifest document itself (alongside its config + layers above)
+	// and link it to the project, so the pull path can serve it by its content
+	// digest. A multi-arch index lists each platform's image manifest by digest,
+	// and the client resolves it via GET /v2/{name}/manifests/<digest>, which is
+	// gated on BlobBelongsToProject and served straight from storage. Without
+	// this the index would reference manifests the registry never stored -- a
+	// dangling index that no client can pull. (Single-arch pulls serve the
+	// manifest inline, but storing it also lets a by-digest fetch of that single
+	// manifest resolve.) The digest is content-addressed, so this matches the
+	// digest serveIndex/serveSingleManifest compute from the same bytes. Needs a
+	// real project + DB to link against; tests without one just skip it.
+	if input.Project.ID > 0 && o.DB != nil {
+		manifestKey, manifestSize, err := o.Store.Put(ctx, bytes.NewReader(manifestData))
+		if err != nil {
+			return nil, fmt.Errorf("store manifest: %w", err)
+		}
+		if err := o.DB.LinkOCIBlob(ctx, input.Project.ID, manifestKey, "application/vnd.oci.image.manifest.v1+json", manifestSize, true); err != nil {
+			return nil, fmt.Errorf("link manifest: %w", err)
+		}
+	}
+
 	filename := fmt.Sprintf("%s-%s-%s-%s-oci-manifest.json", input.Project.Name, input.Release.Version, input.Artifact.OS, input.Artifact.Arch)
 	return &Output{
 		Reader:   bytes.NewReader(manifestData),
