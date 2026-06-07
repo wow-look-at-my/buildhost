@@ -1,9 +1,23 @@
 # Eviction / Retention Policy Design
 
-Status: **Draft for discussion** (no code yet)
-Author: design notes
-Scope: how buildhost should reclaim storage by evicting old releases, artifacts,
-and regenerable cache -- safely, given content-addressed deduplication.
+Status: **Implemented** -- keep-N per `(project, git branch)` + abandoned-upload
+sweep + reference-counted blob GC, report-only by default. Background sweeper,
+`buildhost gc` CLI, and an admin "Reclaimable" estimate. Size-watermark / LRU
+(needs a `last_accessed_at` signal) and dedicated docker/OCI GC remain deferred.
+Scope: how buildhost reclaims storage by evicting old releases safely, given
+content-addressed deduplication.
+
+> **Correction from the original draft (Phase 1 "cache eviction" was dropped).**
+> The draft assumed the on-demand repackage formats (tar.gz/xz/zst, zip, deb,
+> brew, npm) were cached in `packaged_artifacts` and grew per download. They are
+> not: `internal/static/fmt_repackage.go` re-derives them from the original
+> artifact on every request and never stores them. In production
+> `packaged_artifacts` holds only the synthesized-OCI blobs (`oci-base-layer`,
+> `oci-layer`, `oci-config`), which do not grow per download and are entangled
+> with by-digest OCI pulls. So there is no standalone "regenerable cache" to TTL.
+> Those OCI blobs are instead reclaimed naturally when their owning release is
+> evicted by keep-N (the cascade drops their rows and the refcount sweep frees
+> any now-unreferenced blob). The real reclaim is keep-N + the abandoned sweep.
 
 ---
 

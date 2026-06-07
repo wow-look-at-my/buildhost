@@ -335,6 +335,32 @@ Environment variables:
 | `BUILDHOST_OIDC_ISSUERS` | (none) | Comma-separated trusted OIDC issuers for auto-provisioning |
 | `BUILDHOST_OIDC_ORGS` | (none) | Comma-separated allowed orgs for OIDC auto-provisioning, matched case-insensitively (`*` for all) |
 | `BUILDHOST_OIDC_EVENTS` | `push,pull_request` | Comma-separated allowed event types for OIDC auto-provisioning (`*` for all) |
+| `BUILDHOST_RETENTION_INTERVAL` | (off) | Background GC sweep cadence (e.g. `1h`); empty/`0` disables the sweeper |
+| `BUILDHOST_RETENTION_KEEP_N` | `10` | Published releases kept per `(project, git branch)` |
+| `BUILDHOST_RETENTION_RECENCY_GUARD` | `24h` | Never evict releases newer than this |
+| `BUILDHOST_RETENTION_ENFORCE` | `false` | Actually delete; default is report-only (logs/reports only) |
+
+## Retention / garbage collection
+
+buildhost can reclaim storage by evicting old releases. Eviction keeps the latest
+`BUILDHOST_RETENTION_KEEP_N` published releases on each `(project, git branch)` and
+sweeps abandoned (never-published) uploads, then deletes any content-addressed blob
+no longer referenced by anything. **Pins that are never evicted:** each branch's
+latest published release, any release a `docker`/OCI tag points at, pushed-docker
+builds, and anything newer than `BUILDHOST_RETENTION_RECENCY_GUARD`.
+
+It is **report-only by default** -- nothing is deleted until you set
+`BUILDHOST_RETENTION_ENFORCE=true`. Run it on demand with the CLI (dry-run unless
+`--enforce`), or set `BUILDHOST_RETENTION_INTERVAL` to run it in the background:
+
+```bash
+buildhost gc              # report what would be evicted (dry run)
+buildhost gc --enforce    # actually evict and reclaim
+```
+
+Blob deletion is reference-counted: because storage is deduplicated, a blob is
+removed only once no release, site, or image references it. The admin dashboard's
+Storage page shows an estimated "Reclaimable" figure.
 
 ## OIDC auto-provisioning
 
