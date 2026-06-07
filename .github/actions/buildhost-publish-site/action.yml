@@ -92,36 +92,31 @@ runs:
               }
             }
 
-            let siteDir: string;
+            let body: Buffer;
+            let contentType: string;
             if (artifactName) {
-              const downloadDir = path.join(os.tmpdir(), 'buildhost-site');
-              fs.mkdirSync(downloadDir, { recursive: true });
               const oct = octokit(process.env.GITHUB_TOKEN!);
               const [owner, repo] = github.repository.split('/');
               const { data: { artifacts } } = await oct.rest.actions.listWorkflowRunArtifacts({ owner, repo, run_id: github.run_id });
               const artifact = artifacts.find((a: any) => a.name === artifactName);
               if (!artifact) { core.setFailed(`Artifact '${artifactName}' not found in run`); return; }
               const { data: zip } = await oct.rest.actions.downloadArtifact({ owner, repo, artifact_id: artifact.id, archive_format: 'zip' });
-              const zipPath = path.join(downloadDir, 'site.zip');
-              fs.writeFileSync(zipPath, Buffer.from(zip as ArrayBuffer));
-              siteDir = path.join(downloadDir, 'extracted');
-              fs.mkdirSync(siteDir, { recursive: true });
-              await exec.exec('unzip', ['-o', zipPath, '-d', siteDir]);
+              body = Buffer.from(zip as ArrayBuffer);
+              contentType = 'application/zip';
             } else {
-              siteDir = sourceDir;
+              const tarPath = path.join(os.tmpdir(), 'site.tar.gz');
+              await exec.exec('tar', ['-czf', tarPath, '-C', sourceDir, '.']);
+              body = fs.readFileSync(tarPath);
+              fs.unlinkSync(tarPath);
+              contentType = 'application/gzip';
             }
-
-            const tarPath = path.join(os.tmpdir(), 'site.tar.gz');
-            await exec.exec('tar', ['-czf', tarPath, '-C', siteDir, '.']);
-            const body = fs.readFileSync(tarPath);
-            fs.unlinkSync(tarPath);
             core.info(`Archive size: ${body.length} bytes`);
 
             const resp = await fetch(`${sitesBase}/${project}/branch/${branch}`, {
               method: 'PUT',
               headers: {
                 Authorization: `Bearer ${token}`,
-                'Content-Type': 'application/gzip',
+                'Content-Type': contentType,
                 'X-Git-Commit': gitCommit,
                 'X-Public-Site': isPublic,
               },
