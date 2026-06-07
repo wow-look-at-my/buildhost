@@ -116,7 +116,9 @@ npm (packages are published under the `@buildhost` scope):
 npm install @buildhost/myapp --registry __NPM_URL__
 ```
 
-OCI / Docker (the registry is served at `__OCI_URL__/v2/`):
+OCI / Docker (the registry is served at `__OCI_URL__/v2/`). Public images pull
+anonymously; for a private project, run `docker login __OCI_HOST__` first (any
+valid token works as the password):
 
 ```
 docker pull __OCI_HOST__/myapp:latest
