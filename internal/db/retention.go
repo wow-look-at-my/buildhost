@@ -2,10 +2,50 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
 )
+
+// RetentionSettings is the UI-editable retention policy (stored as a single row).
+type RetentionSettings struct {
+	KeepN        int
+	RecencyHours int
+}
+
+// GetRetentionSettings returns the current policy, falling back to built-in
+// defaults if the row has not been seeded yet (e.g. the CLI running before any
+// server start).
+func (d *DB) GetRetentionSettings(ctx context.Context) (RetentionSettings, error) {
+	row, err := d.q.GetRetentionSettings(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return RetentionSettings{KeepN: 10, RecencyHours: 24}, nil
+	}
+	if err != nil {
+		return RetentionSettings{}, fmt.Errorf("get retention settings: %w", err)
+	}
+	return RetentionSettings{KeepN: int(row.KeepN), RecencyHours: int(row.RecencyHours)}, nil
+}
+
+// SeedRetentionSettings inserts the initial policy row if absent (INSERT OR
+// IGNORE), so env-configured defaults populate the DB on first start without
+// overwriting later UI edits.
+func (d *DB) SeedRetentionSettings(ctx context.Context, keepN, recencyHours int) error {
+	return d.q.SeedRetentionSettings(ctx, SeedRetentionSettingsParams{
+		KeepN:        int64(keepN),
+		RecencyHours: int64(recencyHours),
+	})
+}
+
+// UpdateRetentionSettings persists a new policy (from the admin dashboard).
+func (d *DB) UpdateRetentionSettings(ctx context.Context, keepN, recencyHours int) error {
+	return d.q.UpdateRetentionSettings(ctx, UpdateRetentionSettingsParams{
+		KeepN:        int64(keepN),
+		RecencyHours: int64(recencyHours),
+	})
+}
 
 // sqliteDatetime formats t to match SQLite's datetime('now') text format
 // (UTC, second precision) so a string comparison against a stored DATETIME

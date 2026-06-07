@@ -121,6 +121,13 @@ CREATE TABLE oci_tags (
     UNIQUE(project_id, tag)
 );
 
+CREATE TABLE retention_settings (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    keep_n        INTEGER NOT NULL DEFAULT 10,
+    recency_hours INTEGER NOT NULL DEFAULT 24,
+    updated_at    DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Retention/GC indexes (mirrored from migrations/009_retention_indexes.sql).
 CREATE INDEX IF NOT EXISTS idx_releases_project_branch_version ON releases(project_id, git_branch, version_num DESC);
 CREATE INDEX IF NOT EXISTS idx_artifacts_storage_key  ON artifacts(storage_key);

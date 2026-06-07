@@ -38,28 +38,28 @@ var gcCmd = &cobra.Command{
 		store := storage.NewTraced(fsStore)
 
 		enforce, _ := cmd.Flags().GetBool("enforce")
-		ret := retention.New(database, store, retention.Config{
-			KeepN:        cfg.RetentionKeepN,
-			RecencyGuard: cfg.RetentionRecencyGuard,
-			Enforce:      enforce || cfg.RetentionEnforce,
-		})
+		settings, err := database.GetRetentionSettings(cmd.Context())
+		if err != nil {
+			return fmt.Errorf("load retention settings: %w", err)
+		}
+		ret := retention.New(database, store, retention.ConfigFromSettings(settings, enforce || cfg.RetentionEnforce))
 
 		rep, err := ret.Run(cmd.Context())
 		if err != nil {
 			return fmt.Errorf("gc: %w", err)
 		}
-		printGCReport(rep, cfg)
+		printGCReport(rep, settings)
 		return nil
 	},
 }
 
-func printGCReport(rep retention.Report, cfg config.Config) {
+func printGCReport(rep retention.Report, settings db.RetentionSettings) {
 	if rep.Enforced {
 		fmt.Println("buildhost gc -- ENFORCING (deletions applied)")
 	} else {
 		fmt.Println("buildhost gc -- DRY RUN (nothing deleted; pass --enforce to apply)")
 	}
-	fmt.Printf("  keep-N per (project, branch): %d   recency guard: %s\n", cfg.RetentionKeepN, cfg.RetentionRecencyGuard)
+	fmt.Printf("  keep-N per (project, branch): %d   recency guard: %dh\n", settings.KeepN, settings.RecencyHours)
 	fmt.Printf("  releases: %d (%d past keep-N, %d abandoned)\n", rep.Releases(), len(rep.EvictedReleases), len(rep.AbandonedReleases))
 
 	for _, r := range rep.EvictedReleases {

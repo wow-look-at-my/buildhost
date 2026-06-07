@@ -32,12 +32,25 @@ func New(database *db.DB, store storage.Storage, cfg Config) *Retention {
 	return &Retention{db: database, store: store, cfg: cfg, clock: time.Now}
 }
 
+// ConfigFromSettings builds an engine Config from the stored (UI-editable) policy
+// plus a runtime enforce decision -- the policy lives in the DB, while whether a
+// given run actually deletes is decided by the caller (env for the background
+// sweeper, the request for a manual dashboard/CLI run).
+func ConfigFromSettings(s db.RetentionSettings, enforce bool) Config {
+	return Config{
+		KeepN:        s.KeepN,
+		RecencyGuard: time.Duration(s.RecencyHours) * time.Hour,
+		Enforce:      enforce,
+	}
+}
+
 // ReleaseRef identifies a release in a Report.
 type ReleaseRef struct {
-	ID        int64
-	ProjectID int64
-	Branch    string
-	Version   string
+	ID          int64
+	ProjectID   int64
+	ProjectName string
+	Branch      string
+	Version     string
 }
 
 // Report describes what a retention pass did (Enforced) or would do.
@@ -76,12 +89,12 @@ func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
 	ids := make([]int64, 0, len(abandoned)+len(evictable))
 	for _, a := range abandoned {
 		rep.AbandonedReleases = append(rep.AbandonedReleases,
-			ReleaseRef{ID: a.ID, ProjectID: a.ProjectID, Branch: a.GitBranch, Version: a.Version})
+			ReleaseRef{ID: a.ID, ProjectID: a.ProjectID, ProjectName: a.ProjectName, Branch: a.GitBranch, Version: a.Version})
 		ids = append(ids, a.ID)
 	}
 	for _, e := range evictable {
 		rep.EvictedReleases = append(rep.EvictedReleases,
-			ReleaseRef{ID: e.ID, ProjectID: e.ProjectID, Branch: e.GitBranch, Version: e.Version})
+			ReleaseRef{ID: e.ID, ProjectID: e.ProjectID, ProjectName: e.ProjectName, Branch: e.GitBranch, Version: e.Version})
 		ids = append(ids, e.ID)
 	}
 

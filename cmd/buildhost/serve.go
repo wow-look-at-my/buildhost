@@ -57,6 +57,12 @@ var serveCmd = &cobra.Command{
 		}
 		defer database.Close()
 
+		// Seed the UI-editable retention policy from env defaults on first start
+		// (INSERT OR IGNORE -- never clobbers later dashboard edits).
+		if err := database.SeedRetentionSettings(context.Background(), cfg.RetentionKeepN, int(cfg.RetentionRecencyGuard.Hours())); err != nil {
+			return fmt.Errorf("seed retention settings: %w", err)
+		}
+
 		fsStore, err := storage.NewFilesystem(cfg.DataDir+"/blobs", cfg.StorageCompress)
 		if err != nil {
 			return fmt.Errorf("init storage: %w", err)
@@ -70,7 +76,7 @@ var serveCmd = &cobra.Command{
 
 		var adminHTTP *http.Server
 		if cfg.AdminListenAddr != "" {
-			adminDash := admin.New(cfg, database, admin.BuildInfo{
+			adminDash := admin.New(cfg, database, store, admin.BuildInfo{
 				Version: buildinfo.Version(),
 				Commit:  buildinfo.Commit(),
 				Date:    buildinfo.Date(),
@@ -135,13 +141,8 @@ func startRetentionSweeper(ctx context.Context, cfg config.Config, database *db.
 	if cfg.RetentionInterval <= 0 {
 		return
 	}
-	ret := retention.New(database, store, retention.Config{
-		KeepN:        cfg.RetentionKeepN,
-		RecencyGuard: cfg.RetentionRecencyGuard,
-		Enforce:      cfg.RetentionEnforce,
-	})
 	slog.Info("retention sweeper enabled",
-		"interval", cfg.RetentionInterval, "keep_n", cfg.RetentionKeepN, "enforce", cfg.RetentionEnforce)
+		"interval", cfg.RetentionInterval, "enforce", cfg.RetentionEnforce)
 	go func() {
 		t := time.NewTicker(cfg.RetentionInterval)
 		defer t.Stop()
@@ -154,6 +155,14 @@ func startRetentionSweeper(ctx context.Context, cfg config.Config, database *db.
 					slog.Info("retention: deferring sweep, writes in flight", "inflight", n)
 					continue
 				}
+				// Read the live (dashboard-editable) policy each cycle so edits
+				// apply without a restart. enforce stays env-gated.
+				settings, err := database.GetRetentionSettings(ctx)
+				if err != nil {
+					slog.Error("retention sweep: load settings failed", "err", err)
+					continue
+				}
+				ret := retention.New(database, store, retention.ConfigFromSettings(settings, cfg.RetentionEnforce))
 				rep, err := ret.Run(ctx)
 				if err != nil {
 					slog.Error("retention sweep failed", "err", err)

@@ -16,6 +16,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/router"
 )
 
@@ -46,6 +47,7 @@ func (b BuildInfo) ShortCommit() string {
 type Server struct {
 	cfg       config.Config
 	db        *db.DB
+	store     storage.Storage
 	build     BuildInfo
 	startTime time.Time
 
@@ -57,17 +59,18 @@ type Server struct {
 	indexHTML []byte
 }
 
-func New(cfg config.Config, database *db.DB, build BuildInfo) *Server {
+func New(cfg config.Config, database *db.DB, store storage.Storage, build BuildInfo) *Server {
 	staticFS, _ := fs.Sub(content, "static")
 	indexHTML, _ := fs.ReadFile(staticFS, "index.html")
 
 	s := &Server{
 		cfg:       cfg,
 		db:        database,
+		store:     store,
 		build:     build,
 		startTime: time.Now(),
 		staticFS:  staticFS,
-		indexHTML:  indexHTML,
+		indexHTML: indexHTML,
 	}
 	s.cpuTotal = getCPUTime()
 	return s
@@ -113,6 +116,9 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/sites", router.Allow, s.apiSites)
 	mux.HandleFunc("GET /api/artifacts", router.Allow, s.apiArtifacts)
 	mux.HandleFunc("GET /api/storage", router.Allow, s.apiStorage)
+	mux.HandleFunc("GET /api/retention", router.Allow, s.apiRetention)
+	mux.HandleFunc("PUT /api/retention", router.Allow, s.apiUpdateRetention)
+	mux.HandleFunc("POST /api/retention/run", router.Allow, s.apiRunRetention)
 	mux.HandleFunc("GET /admin/inflight", router.Allow, InflightHandler)
 
 	mux.HandleFunc("GET /{path...}", router.Allow, s.serveSPA)

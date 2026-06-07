@@ -54,6 +54,22 @@ func (q *Queries) DeleteReleaseRow(ctx context.Context, id int64) error {
 	return err
 }
 
+const getRetentionSettings = `-- name: GetRetentionSettings :one
+SELECT keep_n, recency_hours FROM retention_settings WHERE id = 1
+`
+
+type GetRetentionSettingsRow struct {
+	KeepN        int64 `json:"keep_n"`
+	RecencyHours int64 `json:"recency_hours"`
+}
+
+func (q *Queries) GetRetentionSettings(ctx context.Context) (GetRetentionSettingsRow, error) {
+	row := q.db.QueryRowContext(ctx, getRetentionSettings)
+	var i GetRetentionSettingsRow
+	err := row.Scan(&i.KeepN, &i.RecencyHours)
+	return i, err
+}
+
 const isBlobReferenced = `-- name: IsBlobReferenced :one
 SELECT EXISTS(
     SELECT 1 FROM artifacts a
@@ -75,16 +91,18 @@ func (q *Queries) IsBlobReferenced(ctx context.Context, key string) (int64, erro
 }
 
 const listAbandonedReleases = `-- name: ListAbandonedReleases :many
-SELECT r.id, r.project_id, r.git_branch, r.version
+SELECT r.id, r.project_id, p.name AS project_name, r.git_branch, r.version
 FROM releases r
+JOIN projects p ON p.id = r.project_id
 WHERE r.published = 0 AND r.created_at < datetime(?1)
 `
 
 type ListAbandonedReleasesRow struct {
-	ID        int64  `json:"id"`
-	ProjectID int64  `json:"project_id"`
-	GitBranch string `json:"git_branch"`
-	Version   string `json:"version"`
+	ID          int64  `json:"id"`
+	ProjectID   int64  `json:"project_id"`
+	ProjectName string `json:"project_name"`
+	GitBranch   string `json:"git_branch"`
+	Version     string `json:"version"`
 }
 
 // Unpublished (partial/failed upload) releases older than the cutoff.
@@ -100,6 +118,7 @@ func (q *Queries) ListAbandonedReleases(ctx context.Context, cutoff interface{})
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProjectID,
+			&i.ProjectName,
 			&i.GitBranch,
 			&i.Version,
 		); err != nil {
@@ -117,8 +136,9 @@ func (q *Queries) ListAbandonedReleases(ctx context.Context, cutoff interface{})
 }
 
 const listEvictableReleases = `-- name: ListEvictableReleases :many
-SELECT r.id, r.project_id, r.git_branch, r.version, r.version_num
+SELECT r.id, r.project_id, p.name AS project_name, r.git_branch, r.version, r.version_num
 FROM releases r
+JOIN projects p ON p.id = r.project_id
 WHERE r.published = 1
   AND r.created_at < datetime(?1)
   AND r.id NOT IN (SELECT release_id FROM oci_tags)
@@ -139,11 +159,12 @@ type ListEvictableReleasesParams struct {
 }
 
 type ListEvictableReleasesRow struct {
-	ID         int64  `json:"id"`
-	ProjectID  int64  `json:"project_id"`
-	GitBranch  string `json:"git_branch"`
-	Version    string `json:"version"`
-	VersionNum int64  `json:"version_num"`
+	ID          int64  `json:"id"`
+	ProjectID   int64  `json:"project_id"`
+	ProjectName string `json:"project_name"`
+	GitBranch   string `json:"git_branch"`
+	Version     string `json:"version"`
+	VersionNum  int64  `json:"version_num"`
 }
 
 // Published releases past keep-N on each (project, git_branch). A release is
@@ -167,6 +188,7 @@ func (q *Queries) ListEvictableReleases(ctx context.Context, arg ListEvictableRe
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProjectID,
+			&i.ProjectName,
 			&i.GitBranch,
 			&i.Version,
 			&i.VersionNum,
@@ -226,6 +248,20 @@ func (q *Queries) ListReleaseBlobKeys(ctx context.Context, releaseID int64) ([]L
 	return items, nil
 }
 
+const seedRetentionSettings = `-- name: SeedRetentionSettings :exec
+INSERT OR IGNORE INTO retention_settings (id, keep_n, recency_hours) VALUES (1, ?, ?)
+`
+
+type SeedRetentionSettingsParams struct {
+	KeepN        int64 `json:"keep_n"`
+	RecencyHours int64 `json:"recency_hours"`
+}
+
+func (q *Queries) SeedRetentionSettings(ctx context.Context, arg SeedRetentionSettingsParams) error {
+	_, err := q.db.ExecContext(ctx, seedRetentionSettings, arg.KeepN, arg.RecencyHours)
+	return err
+}
+
 const sumReclaimableBytes = `-- name: SumReclaimableBytes :one
 WITH evictable AS (
     SELECT r.id FROM releases r
@@ -264,4 +300,23 @@ func (q *Queries) SumReclaimableBytes(ctx context.Context, arg SumReclaimableByt
 	var reclaimable_bytes int64
 	err := row.Scan(&reclaimable_bytes)
 	return reclaimable_bytes, err
+}
+
+const updateRetentionSettings = `-- name: UpdateRetentionSettings :exec
+INSERT INTO retention_settings (id, keep_n, recency_hours, updated_at)
+VALUES (1, ?, ?, datetime('now'))
+ON CONFLICT(id) DO UPDATE SET
+    keep_n = excluded.keep_n,
+    recency_hours = excluded.recency_hours,
+    updated_at = datetime('now')
+`
+
+type UpdateRetentionSettingsParams struct {
+	KeepN        int64 `json:"keep_n"`
+	RecencyHours int64 `json:"recency_hours"`
+}
+
+func (q *Queries) UpdateRetentionSettings(ctx context.Context, arg UpdateRetentionSettingsParams) error {
+	_, err := q.db.ExecContext(ctx, updateRetentionSettings, arg.KeepN, arg.RecencyHours)
+	return err
 }

@@ -61,7 +61,8 @@ var NAV_ITEMS = [
     { id: "registries", href: "#/registries", label: "Registries", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 0h8v3H6V4zm0 5h8v2H6V9zm0 4h5v2H6v-2z" clip-rule="evenodd"/></svg>' },
     { id: "tokens", href: "#/tokens", label: "Tokens", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/></svg>' },
     { id: "sites", href: "#/sites", label: "Sites", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4.083 9h1.946c.089-1.546.383-2.97.837-4.118A6.004 6.004 0 004.083 9zM10 2a8 8 0 100 16 8 8 0 000-16zm0 2c-.076 0-.232.032-.465.262-.238.234-.497.623-.737 1.182-.389.907-.673 2.142-.766 3.556h3.936c-.093-1.414-.377-2.649-.766-3.556-.24-.56-.5-.948-.737-1.182C10.232 4.032 10.076 4 10 4zm3.971 5c-.089-1.546-.383-2.97-.837-4.118A6.004 6.004 0 0115.917 9h-1.946zm-2.003 2H8.032c.093 1.414.377 2.649.766 3.556.24.56.5.948.737 1.182.233.23.389.262.465.262.076 0 .232-.032.465-.262.238-.234.497-.623.737-1.182.389-.907.673-2.142.766-3.556zm1.166 4.118c.454-1.147.748-2.572.837-4.118h1.946a6.004 6.004 0 01-2.783 4.118zm-6.268 0C6.412 13.97 6.118 12.546 6.029 11H4.083a6.004 6.004 0 002.783 4.118z" clip-rule="evenodd"/></svg>' },
-    { id: "oidc", href: "#/oidc", label: "OIDC Policies", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' }
+    { id: "oidc", href: "#/oidc", label: "OIDC Policies", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' },
+    { id: "retention", href: "#/retention", label: "Retention", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>' }
 ];
 
 App.renderSidebar = function (nav) {
@@ -737,6 +738,98 @@ App.pages.storage = function () {
     });
 };
 
+App.pages.retention = function () {
+    App.setTitle("Retention");
+    App.renderSidebar("retention");
+    App.fetch("/retention").then(App.renderRetention);
+};
+
+App.renderRetention = function (d) {
+    var p = d.preview || {};
+    var rels = p.releases || [];
+
+    var sweeper;
+    if (!d.sweeper_enabled) {
+        sweeper = App.badge("neutral", "Background sweeper: off");
+    } else if (d.sweeper_enforce) {
+        sweeper = App.badge("danger", "Background sweeper: ON — deleting automatically");
+    } else {
+        sweeper = App.badge("warning", "Background sweeper: ON — report-only");
+    }
+
+    var html = "<h1>Retention &amp; Garbage Collection</h1>";
+    html += '<div class="card"><p class="muted">Eviction keeps the newest <strong>keep-N</strong> published releases on each <code>(project, branch)</code> and sweeps abandoned uploads, then deletes any blob nothing else references. Each branch&#39;s latest published build, tagged images, pushed-docker builds, and anything inside the recency guard are <strong>never</strong> deleted. Nothing happens until you run it below (or enable the background sweeper via env).</p><p>' + sweeper + "</p></div>";
+
+    html += '<div class="card"><h2>Policy</h2><form id="retention-form">';
+    html += '<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end">';
+    html += '<label>Keep per branch<br><input class="form-input form-input-sm" type="number" id="ret-keepn" min="0" max="100000" value="' + App.h(d.keep_n) + '"></label>';
+    html += '<label>Recency guard (hours)<br><input class="form-input form-input-sm" type="number" id="ret-recency" min="0" max="87600" value="' + App.h(d.recency_hours) + '"></label>';
+    html += '<button class="btn btn-primary" type="submit">Save policy</button>';
+    html += "</div></form></div>";
+
+    html += '<div class="card"><h2>Preview <span class="muted" style="font-weight:400">— what enforcing now would delete</span></h2>';
+    html += '<div class="stat-grid">';
+    html += '<div class="stat-card"><div class="stat-value">' + App.h(p.release_count || 0) + '</div><div class="stat-label">Releases evicted</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(p.reclaimable_bytes || 0)) + '</div><div class="stat-label">Reclaimable</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + App.h(p.blobs || 0) + '</div><div class="stat-label">Blobs freed</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + App.h(p.blobs_retained || 0) + '</div><div class="stat-label">Shared blobs kept</div></div>';
+    html += "</div>";
+
+    html += '<table class="data-table"><thead><tr><th>Project</th><th>Branch</th><th>Version</th><th>Reason</th></tr></thead><tbody>';
+    if (rels.length === 0) {
+        html += '<tr><td colspan="4" class="empty">Nothing to evict under the current policy</td></tr>';
+    } else {
+        for (var i = 0; i < rels.length; i++) {
+            var r = rels[i];
+            var proj = r.project_name ? "<a href='#/projects/" + App.h(r.project_name) + "'>" + App.h(r.project_name) + "</a>" : App.h("project " + r.project_id);
+            html += "<tr><td>" + proj + "</td>";
+            html += "<td>" + (r.branch ? App.h(r.branch) : '<span class="muted">(none)</span>') + "</td>";
+            html += "<td>" + App.h(r.version) + "</td>";
+            html += "<td>" + App.badge(r.reason === "abandoned" ? "neutral" : "info", r.reason) + "</td></tr>";
+        }
+    }
+    html += "</tbody></table>";
+    html += '<div class="row-actions" style="margin-top:16px">';
+    html += '<button class="btn" onclick="App.pages.retention()">Refresh preview</button> ';
+    html += '<button class="btn btn-danger" onclick="App.runRetention()">Run garbage collection now</button>';
+    html += "</div></div>";
+
+    document.getElementById("content").innerHTML = html;
+
+    var form = document.getElementById("retention-form");
+    if (form) {
+        form.addEventListener("submit", function (e) {
+            e.preventDefault();
+            var keepN = parseInt(document.getElementById("ret-keepn").value, 10);
+            var recency = parseInt(document.getElementById("ret-recency").value, 10);
+            fetch("/api/retention", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ keep_n: keepN, recency_hours: recency })
+            }).then(function (res) {
+                if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); });
+                return res.json().then(App.renderRetention);
+            }).catch(function () { alert("Could not save policy (preview/demo mode has no backend)."); });
+        });
+    }
+};
+
+App.runRetention = function () {
+    if (!confirm("Permanently delete the releases shown in the preview and reclaim their storage? This cannot be undone.")) return;
+    fetch("/api/retention/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enforce: true })
+    }).then(function (res) {
+        if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); });
+        return res.json().then(function (rep) {
+            alert("Garbage collection complete: evicted " + (rep.release_count || 0) + " releases, freed " +
+                App.humanSize(rep.reclaimable_bytes || 0) + " across " + (rep.blobs || 0) + " blobs.");
+            App.pages.retention();
+        });
+    }).catch(function () { alert("Could not run GC (preview/demo mode has no backend)."); });
+};
+
 // --- Router ---
 
 App.route = function () {
@@ -759,6 +852,7 @@ App.route = function () {
     else if (first === "oidc") { App.pages.oidc(); }
     else if (first === "artifacts") { App.pages.artifacts(); }
     else if (first === "storage") { App.pages.storage(); }
+    else if (first === "retention") { App.pages.retention(); }
     else { App.pages.dashboard(); }
 };
 
@@ -814,6 +908,18 @@ App.demoData = {
         ],
         total_bytes: 52428800, logical_bytes: 58000000, physical_bytes: 48000000, disk_bytes: 50000000,
         disk_used: 120000000, disk_total: 500000000
+    },
+    "/retention": {
+        keep_n: 10, recency_hours: 24, sweeper_enabled: false, sweeper_enforce: false,
+        preview: {
+            enforced: false, release_count: 3, keep_n_count: 2, abandoned_count: 1,
+            blobs: 4, blobs_retained: 1, reclaimable_bytes: 18874368,
+            releases: [
+                { project_name: "myapp", project_id: 1, branch: "main", version: "7", reason: "keep-n" },
+                { project_name: "myapp", project_id: 1, branch: "main", version: "8", reason: "keep-n" },
+                { project_name: "cli-tool", project_id: 2, branch: "feature-x", version: "3", reason: "abandoned" }
+            ]
+        }
     }
 };
 

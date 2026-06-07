@@ -1,3 +1,17 @@
+-- name: GetRetentionSettings :one
+SELECT keep_n, recency_hours FROM retention_settings WHERE id = 1;
+
+-- name: SeedRetentionSettings :exec
+INSERT OR IGNORE INTO retention_settings (id, keep_n, recency_hours) VALUES (1, ?, ?);
+
+-- name: UpdateRetentionSettings :exec
+INSERT INTO retention_settings (id, keep_n, recency_hours, updated_at)
+VALUES (1, ?, ?, datetime('now'))
+ON CONFLICT(id) DO UPDATE SET
+    keep_n = excluded.keep_n,
+    recency_hours = excluded.recency_hours,
+    updated_at = datetime('now');
+
 -- name: IsBlobReferenced :one
 -- Global (un-scoped) generalization of BlobBelongsToProject: is this content
 -- blob referenced by ANY row, in ANY project? Used by the GC sweep to decide
@@ -48,8 +62,9 @@ DELETE FROM releases WHERE id = ?;
 -- pushed-docker releases (their blobs live in project-scoped oci_blob_links, not
 -- release-cascade-able). Correlated-subquery form (sqlc's SQLite analyzer does
 -- not support window-fn aliases in WHERE).
-SELECT r.id, r.project_id, r.git_branch, r.version, r.version_num
+SELECT r.id, r.project_id, p.name AS project_name, r.git_branch, r.version, r.version_num
 FROM releases r
+JOIN projects p ON p.id = r.project_id
 WHERE r.published = 1
   AND r.created_at < datetime(sqlc.arg(recency_cutoff))
   AND r.id NOT IN (SELECT release_id FROM oci_tags)
@@ -65,8 +80,9 @@ ORDER BY r.project_id, r.git_branch, r.version_num DESC;
 
 -- name: ListAbandonedReleases :many
 -- Unpublished (partial/failed upload) releases older than the cutoff.
-SELECT r.id, r.project_id, r.git_branch, r.version
+SELECT r.id, r.project_id, p.name AS project_name, r.git_branch, r.version
 FROM releases r
+JOIN projects p ON p.id = r.project_id
 WHERE r.published = 0 AND r.created_at < datetime(sqlc.arg(cutoff));
 
 -- name: SumReclaimableBytes :one

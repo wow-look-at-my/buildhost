@@ -216,6 +216,43 @@ func TestSumReclaimableBytes(t *testing.T) {
 	assert.Equal(t, int64(405), sum)
 }
 
+func TestRetentionSettings(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	// Defaults when unseeded.
+	s, err := d.GetRetentionSettings(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 10, s.KeepN)
+	assert.Equal(t, 24, s.RecencyHours)
+
+	// Seed is INSERT OR IGNORE: the first seed wins, later ones are ignored.
+	require.NoError(t, d.SeedRetentionSettings(ctx, 5, 12))
+	require.NoError(t, d.SeedRetentionSettings(ctx, 99, 99))
+	s, err = d.GetRetentionSettings(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 5, s.KeepN)
+	assert.Equal(t, 12, s.RecencyHours)
+
+	// Update overwrites.
+	require.NoError(t, d.UpdateRetentionSettings(ctx, 20, 48))
+	s, err = d.GetRetentionSettings(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 20, s.KeepN)
+	assert.Equal(t, 48, s.RecencyHours)
+}
+
+func TestUpdateRetentionSettings_UpsertsWhenUnseeded(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+	// No prior seed: the update must insert the row (upsert), not no-op.
+	require.NoError(t, d.UpdateRetentionSettings(ctx, 3, 6))
+	s, err := d.GetRetentionSettings(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 3, s.KeepN)
+	assert.Equal(t, 6, s.RecencyHours)
+}
+
 func TestListAbandonedReleases(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
