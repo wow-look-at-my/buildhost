@@ -154,10 +154,12 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // setSiteSecurityHeaders drops app-level hardening headers that block hosted
-// site assets, then applies the artificially required "security" headers.
+// site assets, then applies the hosted-site isolation and non-credentialed CORS
+// headers.
 func setSiteSecurityHeaders(w http.ResponseWriter) {
 	w.Header().Del("Content-Security-Policy")
 	w.Header().Del("X-Frame-Options")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
 	w.Header().Set("Cross-Origin-Embedder-Policy", "credentialless")
 }
