@@ -182,11 +182,12 @@ func TestServe_SetsSiteSecurityHeaders(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
-		"index.html": "<h1>hi</h1>",
+		"index.html":     "<h1>hi</h1>",
+		"assets/app.mjs": "export default 1;",
 	})
 
-	req := httptest.NewRequest("GET", "/sites/mysite/branch/main/index.html", nil)
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: "index.html"})
+	req := httptest.NewRequest("GET", "/sites/mysite/branch/main/assets/app.mjs", nil)
+	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: "assets/app.mjs"})
 	rec := httptest.NewRecorder()
 	// The global security middleware sets these strict app headers before the
 	// handler runs; serving a site must drop them so its assets can load.
@@ -197,6 +198,8 @@ func TestServe_SetsSiteSecurityHeaders(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Empty(t, rec.Header().Get("Content-Security-Policy"))
 	assert.Empty(t, rec.Header().Get("X-Frame-Options"))
+	assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"))
+	assert.Empty(t, rec.Header().Get("Access-Control-Allow-Credentials"))
 	assert.Equal(t, "same-origin", rec.Header().Get("Cross-Origin-Opener-Policy"))
 	assert.Equal(t, "credentialless", rec.Header().Get("Cross-Origin-Embedder-Policy"))
 }
