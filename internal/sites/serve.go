@@ -18,6 +18,8 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
+const siteNotFoundPage = "404.html"
+
 func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	ctx, span := sitesTracer.Start(r.Context(), "sites.serve")
 	defer span.End()
@@ -88,16 +90,50 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 		}
 		name := path.Clean(hdr.Name)
 		if name == filePath {
-			ct := contentType(name)
-			w.Header().Set("Content-Type", ct)
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", hdr.Size))
-			w.Header().Set("Cache-Control", "no-cache")
-			io.Copy(w, tr)
+			serveTarFile(w, tr, name, hdr, http.StatusOK)
+			return
+		}
+	}
+
+	rc, _, err = h.Store.Get(ctx, site.StorageKey)
+	if err != nil {
+		http.Error(w, "site data not found", http.StatusInternalServerError)
+		return
+	}
+	defer rc.Close()
+
+	tr = tar.NewReader(rc)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			http.Error(w, "corrupt site archive", http.StatusInternalServerError)
+			return
+		}
+
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		name := path.Clean(hdr.Name)
+		if name == siteNotFoundPage {
+			serveTarFile(w, tr, name, hdr, http.StatusNotFound)
 			return
 		}
 	}
 
 	http.NotFound(w, r)
+}
+
+func serveTarFile(w http.ResponseWriter, tr *tar.Reader, name string, hdr *tar.Header, status int) {
+	w.Header().Set("Content-Type", contentType(name))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", hdr.Size))
+	w.Header().Set("Cache-Control", "no-cache")
+	if status != http.StatusOK {
+		w.WriteHeader(status)
+	}
+	io.Copy(w, tr)
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
