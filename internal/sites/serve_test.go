@@ -51,3 +51,41 @@ func TestServe_NestedDirServesIndexNotDirEntry(t *testing.T) {
 	assert.Equal(t, body, grec.Body.String())
 	assert.Contains(t, grec.Header().Get("Content-Type"), "html")
 }
+
+func TestServe_NotFound_Custom404(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "mysite")
+	body := "<h1>missing</h1>"
+	uploadSite(t, h, proj, "main", map[string]string{
+		"index.html": "<h1>hello</h1>",
+		"404.html":   body,
+	})
+
+	req := httptest.NewRequest("GET", "/sites/mysite/branch/main/missing.html", nil)
+	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: "missing.html"})
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Equal(t, body, rec.Body.String())
+	assert.Contains(t, rec.Header().Get("Content-Type"), "html")
+	assert.Equal(t, "16", rec.Header().Get("Content-Length"))
+}
+
+func TestServe_DirectCustom404File(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "mysite")
+	body := "<h1>missing</h1>"
+	uploadSite(t, h, proj, "main", map[string]string{
+		"index.html": "<h1>hello</h1>",
+		"404.html":   body,
+	})
+
+	req := httptest.NewRequest("GET", "/sites/mysite/branch/main/404.html", nil)
+	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: "404.html"})
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, body, rec.Body.String())
+}
