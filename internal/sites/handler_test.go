@@ -178,7 +178,7 @@ func TestServe_File(t *testing.T) {
 	assert.Contains(t, rec.Header().Get("Content-Type"), "css")
 }
 
-func TestServe_RelaxesSecurityHeaders(t *testing.T) {
+func TestServe_SetsSiteSecurityHeaders(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
@@ -200,6 +200,8 @@ func TestServe_RelaxesSecurityHeaders(t *testing.T) {
 	assert.Empty(t, rec.Header().Get("X-Frame-Options"))
 	assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"))
 	assert.Empty(t, rec.Header().Get("Access-Control-Allow-Credentials"))
+	assert.Equal(t, "same-origin", rec.Header().Get("Cross-Origin-Opener-Policy"))
+	assert.Equal(t, "credentialless", rec.Header().Get("Cross-Origin-Embedder-Policy"))
 }
 
 func TestServe_IndexFallback(t *testing.T) {
@@ -257,10 +259,16 @@ func TestServeRedirect(t *testing.T) {
 	req := httptest.NewRequest("GET", "/sites/mysite/branch/main", nil)
 	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: ""})
 	rec := httptest.NewRecorder()
+	rec.Header().Set("Content-Security-Policy", "default-src 'none'")
+	rec.Header().Set("X-Frame-Options", "DENY")
 	h.Serve(rec, req)
 
 	assert.Equal(t, http.StatusMovedPermanently, rec.Code)
 	assert.Equal(t, "/sites/mysite/branch/main/", rec.Header().Get("Location"))
+	assert.Empty(t, rec.Header().Get("Content-Security-Policy"))
+	assert.Empty(t, rec.Header().Get("X-Frame-Options"))
+	assert.Equal(t, "same-origin", rec.Header().Get("Cross-Origin-Opener-Policy"))
+	assert.Equal(t, "credentialless", rec.Header().Get("Cross-Origin-Embedder-Policy"))
 }
 
 func TestDelete(t *testing.T) {

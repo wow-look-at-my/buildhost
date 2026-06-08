@@ -22,6 +22,8 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	ctx, span := sitesTracer.Start(r.Context(), "sites.serve")
 	defer span.End()
 
+	setSiteSecurityHeaders(w)
+
 	project := auth.ProjectFrom(ctx)
 	rt := routeFrom(ctx)
 
@@ -87,7 +89,6 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 		name := path.Clean(hdr.Name)
 		if name == filePath {
 			ct := contentType(name)
-			relaxSiteSecurityHeaders(w)
 			w.Header().Set("Content-Type", ct)
 			w.Header().Set("Content-Length", fmt.Sprintf("%d", hdr.Size))
 			w.Header().Set("Cache-Control", "no-cache")
@@ -116,17 +117,15 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(sites)
 }
 
-// relaxSiteSecurityHeaders drops the app-level hardening headers that the
-// global security middleware sets (CSP default-src 'none', X-Frame-Options:
-// DENY). Hosted sites are third-party static content on a dedicated subdomain;
-// those headers would block a site's own CSS/JS/images and prevent embedding a
-// preview, so sites are served without them like any static host. Site files
-// also allow cross-origin reads without credentials so preview frames can load
-// module assets from the static site origin.
-func relaxSiteSecurityHeaders(w http.ResponseWriter) {
+// setSiteSecurityHeaders drops app-level hardening headers that block hosted
+// site assets, then applies the hosted-site isolation and non-credentialed CORS
+// headers.
+func setSiteSecurityHeaders(w http.ResponseWriter) {
 	w.Header().Del("Content-Security-Policy")
 	w.Header().Del("X-Frame-Options")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+	w.Header().Set("Cross-Origin-Embedder-Policy", "credentialless")
 }
 
 func contentType(name string) string {
