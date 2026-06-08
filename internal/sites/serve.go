@@ -120,10 +120,13 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 // global security middleware sets (CSP default-src 'none', X-Frame-Options:
 // DENY). Hosted sites are third-party static content on a dedicated subdomain;
 // those headers would block a site's own CSS/JS/images and prevent embedding a
-// preview, so sites are served without them like any static host.
+// preview, so sites are served without them like any static host. Site files
+// also allow cross-origin reads without credentials so preview frames can load
+// module assets from the static site origin.
 func relaxSiteSecurityHeaders(w http.ResponseWriter) {
 	w.Header().Del("Content-Security-Policy")
 	w.Header().Del("X-Frame-Options")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 }
 
 func contentType(name string) string {
