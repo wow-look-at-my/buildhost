@@ -74,16 +74,17 @@ func envBytes(name string, def int64) int64 {
 }
 
 type Config struct {
-	ListenAddr       string
-	AdminListenAddr  string
-	DataDir          string
-	DBPath           string
-	StorageCompress  bool
-	OIDCIssuers      []string
-	OIDCOrgs         []string
-	OIDCEvents       []string
-	OTELEndpoint     string
-	SiteFetchDomains []string
+	ListenAddr          string
+	AdminListenAddr     string
+	DataDir             string
+	DBPath              string
+	StorageCompress     bool
+	OIDCIssuers         []string
+	OIDCOrgs            []string
+	OIDCEvents          []string
+	GitHubWebhookSecret string
+	OTELEndpoint        string
+	SiteFetchDomains    []string
 
 	// Retention / garbage collection. Report-only by default: nothing is deleted
 	// unless RetentionEnforce is true. RetentionInterval == 0 disables the
@@ -147,6 +148,9 @@ func Load() Config {
 	}
 	if len(c.OIDCEvents) == 0 {
 		c.OIDCEvents = []string{"push", "pull_request"}
+	}
+	if v := os.Getenv("BUILDHOST_GITHUB_WEBHOOK_SECRET"); v != "" {
+		c.GitHubWebhookSecret = v
 	}
 	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
 		c.OTELEndpoint = v

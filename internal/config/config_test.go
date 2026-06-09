@@ -90,6 +90,13 @@ func TestLoad_OIDCEvents_Default(t *testing.T) {
 	assert.Equal(t, []string{"push", "pull_request"}, c.OIDCEvents)
 }
 
+func TestLoad_GitHubWebhookSecret(t *testing.T) {
+	t.Setenv("BUILDHOST_GITHUB_WEBHOOK_SECRET", "secret")
+
+	c := Load()
+	assert.Equal(t, "secret", c.GitHubWebhookSecret)
+}
+
 func TestEnvBytes(t *testing.T) {
 	cases := []struct {
 		in   string
