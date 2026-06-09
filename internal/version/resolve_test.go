@@ -3,8 +3,8 @@ package version
 import (
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 func TestResolve_AutoVersioned_ExactMatch(t *testing.T) {

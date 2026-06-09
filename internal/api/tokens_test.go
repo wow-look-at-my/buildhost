@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 func TestCreateToken_Success(t *testing.T) {
@@ -251,8 +251,8 @@ func TestCreateToken_InvalidScopeRejected(t *testing.T) {
 	h := setupTestHandler(t)
 
 	tests := []struct {
-		name	string
-		scopes	string
+		name   string
+		scopes string
 	}{
 		{"unknown scope", `{"name":"bad","scopes":"admin"}`},
 		{"partial invalid", `{"name":"bad","scopes":"read,admin"}`},
