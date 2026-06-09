@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // withRoute adds project and route info to the request context, simulating
@@ -51,10 +51,10 @@ func seedRelease(t *testing.T, d *db.DB, projectID int64, version, branch string
 	num, err := d.NextVersionNum(context.Background(), projectID)
 	require.NoError(t, err)
 	r := &db.Release{
-		ProjectID:	projectID,
-		Version:	version,
-		VersionNum:	num,
-		GitBranch:	branch,
+		ProjectID:  projectID,
+		Version:    version,
+		VersionNum: num,
+		GitBranch:  branch,
 	}
 	require.NoError(t, d.CreateRelease(context.Background(), r))
 	if published {
@@ -70,13 +70,13 @@ func seedArtifact(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID i
 	require.NoError(t, err)
 
 	a := &db.Artifact{
-		ReleaseID:	releaseID,
-		OS:		db.OS(os),
-		Arch:		db.Arch(arch),
-		Kind:		db.KindBinary,
-		StorageKey:	key,
-		Size:		size,
-		SHA256:		key,
+		ReleaseID:  releaseID,
+		OS:         db.OS(os),
+		Arch:       db.Arch(arch),
+		Kind:       db.KindBinary,
+		StorageKey: key,
+		Size:       size,
+		SHA256:     key,
 	}
 	require.NoError(t, d.CreateArtifact(context.Background(), a))
 	return a

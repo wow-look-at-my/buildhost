@@ -100,8 +100,8 @@ func TestDeriveServiceURL_HTTP(t *testing.T) {
 
 func TestRequestScheme(t *testing.T) {
 	cases := []struct {
-		host	string
-		want	string
+		host string
+		want string
 	}{
 		{"localhost", "http"},
 		{"localhost:8080", "http"},
@@ -121,8 +121,8 @@ func TestRequestScheme(t *testing.T) {
 
 func TestRequestBaseURL_PreservesHostAndPort(t *testing.T) {
 	cases := []struct {
-		host	string
-		want	string
+		host string
+		want string
 	}{
 		// Production: no port on the Host header -> clean https URL.
 		{"pazer.build", "https://pazer.build"},

@@ -156,4 +156,3 @@ func (s *Signer) Fingerprint() string {
 	}
 	return fmt.Sprintf("%X", s.entity.PrimaryKey.Fingerprint)
 }
-

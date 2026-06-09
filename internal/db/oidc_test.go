@@ -15,9 +15,9 @@ func TestOIDCPolicy_CRUD(t *testing.T) {
 
 	// Create a policy.
 	p := &OIDCPolicy{
-		Issuer:		"https://token.actions.githubusercontent.com",
-		SubjectPattern:	"repo:myorg/myrepo:*",
-		Scopes:		"read,write",
+		Issuer:         "https://token.actions.githubusercontent.com",
+		SubjectPattern: "repo:myorg/myrepo:*",
+		Scopes:         "read,write",
 	}
 	require.NoError(t, d.CreateOIDCPolicy(ctx, p))
 	assert.NotEqual(t, int64(0), p.ID)
@@ -46,17 +46,17 @@ func TestOIDCPolicy_CreateDuplicateReturnsErrConflict(t *testing.T) {
 	ctx := context.Background()
 
 	p1 := &OIDCPolicy{
-		Issuer:		"https://token.actions.githubusercontent.com",
-		SubjectPattern:	"repo:myorg/myrepo:*",
-		Scopes:		"read",
+		Issuer:         "https://token.actions.githubusercontent.com",
+		SubjectPattern: "repo:myorg/myrepo:*",
+		Scopes:         "read",
 	}
 	require.NoError(t, d.CreateOIDCPolicy(ctx, p1))
 
 	// Duplicate issuer+subject_pattern should return ErrConflict.
 	p2 := &OIDCPolicy{
-		Issuer:		"https://token.actions.githubusercontent.com",
-		SubjectPattern:	"repo:myorg/myrepo:*",
-		Scopes:		"write",
+		Issuer:         "https://token.actions.githubusercontent.com",
+		SubjectPattern: "repo:myorg/myrepo:*",
+		Scopes:         "write",
 	}
 	err := d.CreateOIDCPolicy(ctx, p2)
 	assert.True(t, errors.Is(err, ErrConflict))
@@ -80,10 +80,10 @@ func TestOIDCPolicy_WithProjectScope(t *testing.T) {
 
 	pid := proj.ID
 	p := &OIDCPolicy{
-		Issuer:		"https://token.actions.githubusercontent.com",
-		SubjectPattern:	"repo:myorg/scoped:*",
-		ProjectID:	&pid,
-		Scopes:		"read",
+		Issuer:         "https://token.actions.githubusercontent.com",
+		SubjectPattern: "repo:myorg/scoped:*",
+		ProjectID:      &pid,
+		Scopes:         "read",
 	}
 	require.NoError(t, d.CreateOIDCPolicy(ctx, p))
 
@@ -108,9 +108,9 @@ func TestOIDCPolicy_ListByIssuer(t *testing.T) {
 	}
 	for _, entry := range policies {
 		p := &OIDCPolicy{
-			Issuer:		entry.issuer,
-			SubjectPattern:	entry.sub,
-			Scopes:		"read",
+			Issuer:         entry.issuer,
+			SubjectPattern: entry.sub,
+			Scopes:         "read",
 		}
 		require.NoError(t, d.CreateOIDCPolicy(ctx, p))
 	}
@@ -145,16 +145,16 @@ func TestOIDCPolicy_DifferentSubjectPatternAllowed(t *testing.T) {
 
 	// Same issuer but different subject_pattern should succeed.
 	p1 := &OIDCPolicy{
-		Issuer:		"https://token.actions.githubusercontent.com",
-		SubjectPattern:	"repo:myorg/repo-a:*",
-		Scopes:		"read",
+		Issuer:         "https://token.actions.githubusercontent.com",
+		SubjectPattern: "repo:myorg/repo-a:*",
+		Scopes:         "read",
 	}
 	require.NoError(t, d.CreateOIDCPolicy(ctx, p1))
 
 	p2 := &OIDCPolicy{
-		Issuer:		"https://token.actions.githubusercontent.com",
-		SubjectPattern:	"repo:myorg/repo-b:*",
-		Scopes:		"read,write",
+		Issuer:         "https://token.actions.githubusercontent.com",
+		SubjectPattern: "repo:myorg/repo-b:*",
+		Scopes:         "read,write",
 	}
 	require.NoError(t, d.CreateOIDCPolicy(ctx, p2))
 
