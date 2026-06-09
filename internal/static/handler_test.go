@@ -10,18 +10,18 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCanonicalQuery(t *testing.T) {
 	tests := []struct {
-		name	string
-		input	string
-		want	string
+		name  string
+		input string
+		want  string
 	}{
 		{"already sorted", "arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", "arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0"},
 		{"unsorted", "v=1.0.0&project=myapp&os=linux&arch=amd64&fmt=raw", "arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0"},
@@ -166,8 +166,8 @@ func TestServe_RawFormat_Success(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("hello-binary"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
@@ -194,8 +194,8 @@ func TestServe_DockerArtifact_NotServed(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("oci-manifest-json"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindDocker, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindDocker, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	// A docker image is OCI-only; /static must not serve it as a raw download.
@@ -219,8 +219,8 @@ func TestServe_ETag_NotModified(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
@@ -282,8 +282,8 @@ func TestServe_VersionResolution_StripV(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("bin"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=v2.0.0", nil)
@@ -306,8 +306,8 @@ func TestServe_VersionResolution_StripDotZeroZero(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("bin"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=5.0.0", nil)
@@ -347,8 +347,8 @@ func TestServe_DebugSymbolsHeader(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("not-an-elf"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
@@ -398,8 +398,8 @@ func TestServe_SymbolsFormat_NoStrip(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("not-elf"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=symbols&os=linux&project=myapp&v=1.0.0", nil)
@@ -422,8 +422,8 @@ func TestServe_RepackageFormat(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("binary-data"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	RegisterRepackageFmt("tar.gz")

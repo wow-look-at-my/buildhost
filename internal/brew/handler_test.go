@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
@@ -75,8 +75,8 @@ func TestServeFormula_NoBrewPackage(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/myapp.rb", nil)
@@ -102,8 +102,8 @@ func TestServeFormula_Success(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
 	a := &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 

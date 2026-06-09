@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/stretchr/testify/require"
 )
 
 // withRoute adds project and route info to the request context, simulating
@@ -24,11 +24,11 @@ func withRoute(r *http.Request, project *db.Project, rt route) *http.Request {
 // withProjectRoute adds project and route info derived from the request's path values.
 func withProjectRoute(r *http.Request, project *db.Project) *http.Request {
 	rt := route{
-		project:	r.PathValue("project"),
-		version:	r.PathValue("version"),
-		os:		r.PathValue("os"),
-		arch:		r.PathValue("arch"),
-		write:		r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE",
+		project: r.PathValue("project"),
+		version: r.PathValue("version"),
+		os:      r.PathValue("os"),
+		arch:    r.PathValue("arch"),
+		write:   r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE",
 	}
 	return withRoute(r, project, rt)
 }

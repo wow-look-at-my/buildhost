@@ -8,54 +8,54 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestParseRoute(t *testing.T) {
 	tests := []struct {
-		name	string
-		path	string
-		want	route
+		name string
+		path string
+		want route
 	}{
 		{
-			name:	"release, single-segment name",
-			path:	"/buildhost/dists/stable/Release",
-			want:	route{project: "buildhost", subPath: "dists/stable/Release"},
+			name: "release, single-segment name",
+			path: "/buildhost/dists/stable/Release",
+			want: route{project: "buildhost", subPath: "dists/stable/Release"},
 		},
 		{
-			name:	"release, dashed name",
-			path:	"/go-toolchain/dists/stable/Release",
-			want:	route{project: "go-toolchain", subPath: "dists/stable/Release"},
+			name: "release, dashed name",
+			path: "/go-toolchain/dists/stable/Release",
+			want: route{project: "go-toolchain", subPath: "dists/stable/Release"},
 		},
 		{
-			name:	"release, multi-segment name (decoded path with literal '/')",
-			path:	"/library/foo/dists/stable/Release",
-			want:	route{project: "library/foo", subPath: "dists/stable/Release"},
+			name: "release, multi-segment name (decoded path with literal '/')",
+			path: "/library/foo/dists/stable/Release",
+			want: route{project: "library/foo", subPath: "dists/stable/Release"},
 		},
 		{
-			name:	"release, deeply nested multi-segment name",
-			path:	"/team/group/proj-name/dists/stable/InRelease",
-			want:	route{project: "team/group/proj-name", subPath: "dists/stable/InRelease"},
+			name: "release, deeply nested multi-segment name",
+			path: "/team/group/proj-name/dists/stable/InRelease",
+			want: route{project: "team/group/proj-name", subPath: "dists/stable/InRelease"},
 		},
 		{
-			name:	"binary-amd64 packages, multi-segment name",
-			path:	"/library/foo/dists/stable/main/binary-amd64/Packages",
-			want:	route{project: "library/foo", subPath: "dists/stable/main/binary-amd64/Packages"},
+			name: "binary-amd64 packages, multi-segment name",
+			path: "/library/foo/dists/stable/main/binary-amd64/Packages",
+			want: route{project: "library/foo", subPath: "dists/stable/main/binary-amd64/Packages"},
 		},
 		{
-			name:	"pool, multi-segment name",
-			path:	"/library/foo/pool/foo_1.0.0_amd64.deb",
-			want:	route{project: "library/foo", subPath: "pool/foo_1.0.0_amd64.deb"},
+			name: "pool, multi-segment name",
+			path: "/library/foo/pool/foo_1.0.0_amd64.deb",
+			want: route{project: "library/foo", subPath: "pool/foo_1.0.0_amd64.deb"},
 		},
 		{
-			name:	"name itself contains literal 'dists' segment, distinguished by LastIndex",
-			path:	"/foo/dists/bar/dists/stable/Release",
-			want:	route{project: "foo/dists/bar", subPath: "dists/stable/Release"},
+			name: "name itself contains literal 'dists' segment, distinguished by LastIndex",
+			path: "/foo/dists/bar/dists/stable/Release",
+			want: route{project: "foo/dists/bar", subPath: "dists/stable/Release"},
 		},
 	}
 	for _, tt := range tests {
@@ -183,8 +183,8 @@ func TestServePackages_Success(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/myapp/dists/stable/main/binary-amd64/Packages", nil)
@@ -212,8 +212,8 @@ func TestServePackages_DockerArtifact_Empty(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("oci-manifest"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindDocker, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindDocker, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	// A docker-only release exposes no apt package.
@@ -240,8 +240,8 @@ func TestServePackages_NoArtifactForArch(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	// Request arm64 which doesn't exist.
@@ -283,8 +283,8 @@ func TestServePool_Success(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/myapp/pool/myapp_1.0.0_amd64.deb", nil)
@@ -317,8 +317,8 @@ func TestServePool_EmptyFilename(t *testing.T) {
 
 func TestExtractDebArch(t *testing.T) {
 	tests := []struct {
-		input		string
-		expected	string
+		input    string
+		expected string
 	}{
 		{"dists/stable/main/binary-amd64/Packages", "amd64"},
 		{"dists/stable/main/binary-arm64/Packages", "arm64"},
@@ -335,8 +335,8 @@ func TestExtractDebArch(t *testing.T) {
 
 func TestExtractPoolArch(t *testing.T) {
 	tests := []struct {
-		input		string
-		expected	string
+		input    string
+		expected string
 	}{
 		{"myapp_1.0.0_amd64.deb", "amd64"},
 		{"myapp_1.0.0_arm64.deb", "arm64"},
@@ -363,8 +363,8 @@ func TestValidDebVersion(t *testing.T) {
 
 func TestGoArchFromDeb(t *testing.T) {
 	tests := []struct {
-		debArch	string
-		goArch	string
+		debArch string
+		goArch  string
 	}{
 		{"amd64", "amd64"},
 		{"arm64", "arm64"},
@@ -429,8 +429,8 @@ func TestServeHTTP_PrivateProject_Pool_WithValidContext(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/secret/pool/secret_1.0.0_amd64.deb", nil)

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/stretchr/testify/assert"
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 
 	// Import every backend so its init() registers routes. The guard below
 	// then sees the full route table. auth.Init is deliberately NOT called.

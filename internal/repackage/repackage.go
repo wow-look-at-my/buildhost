@@ -11,14 +11,14 @@ import (
 type Format string
 
 const (
-	FormatTarGZ Format = "tar.gz"
-	FormatTarXZ Format = "tar.xz"
+	FormatTarGZ  Format = "tar.gz"
+	FormatTarXZ  Format = "tar.xz"
 	FormatTarZST Format = "tar.zst"
-	FormatZip   Format = "zip"
-	FormatDeb   Format = "deb"
-	FormatBrew  Format = "brew"
-	FormatNPM   Format = "npm"
-	FormatOCI   Format = "oci"
+	FormatZip    Format = "zip"
+	FormatDeb    Format = "deb"
+	FormatBrew   Format = "brew"
+	FormatNPM    Format = "npm"
+	FormatOCI    Format = "oci"
 )
 
 type Input struct {

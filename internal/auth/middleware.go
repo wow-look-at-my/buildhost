@@ -147,7 +147,6 @@ func requireProjectFunc(parse ParseFunc, next http.HandlerFunc) http.HandlerFunc
 	return requireProject(parse)(http.HandlerFunc(next)).ServeHTTP
 }
 
-
 func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
