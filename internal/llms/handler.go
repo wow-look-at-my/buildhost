@@ -19,7 +19,7 @@ var handler Handler
 // strict host partitioning means a known subdomain never falls through to the
 // host-agnostic apex route, so a bare `GET /llms.txt` registration alone 404s on
 // every subdomain. render() uses this same list to build the per-service URLs.
-var serviceSubdomains = []string{"apt", "brew", "dl", "npm", "oci", "sites", "static"}
+var serviceSubdomains = []string{"apt", "brew", "dl", "git", "npm", "oci", "sites", "static"}
 
 func init() {
 	auth.HandleRaw("GET /llms.txt", handler.Serve)

@@ -304,7 +304,7 @@ App.pages.release = function (name, version) {
         html += "</tbody></table></div>";
 
         var aptU = (svc.apt || "") + "/" + p.name;
-        var brewU = (svc.brew || "") + "/" + p.name;
+        var brewU = (svc.brew || "") + "/Formula/" + p.name + ".rb";
         var npmU = (svc.npm || "") + "/@buildhost/" + p.name;
         var ociU = (svc.oci || "") + "/v2/" + p.name + "/manifests/" + r.version;
         html += '<div class="card"><h2>Download Endpoints</h2><table class="info-table">';
@@ -351,10 +351,10 @@ App.pages.registries = function () {
         html += App.codeBlock("Setup (private project)", 'echo "deb [trusted=yes] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/{project}.conf\nmachine ' + apt + "/{project}\n  login token\n  password $TOKEN\nEOF\nsudo apt update && sudo apt install {project}");
         html += "</div>";
 
-        html += '<div class="card"><h2>Homebrew Tap</h2><p class="section-desc">Homebrew formula served as a single Ruby file. Auto-detects macOS and Linux bottles.</p>';
-        html += '<table class="info-table"><tr><td class="info-label">Formula</td><td class="endpoint-cell"><code>' + App.h(brew + "/{project}") + "</code><copy-btn data-src='code'></copy-btn></td></tr></table>";
-        html += App.codeBlock("Install (public project)", "brew install " + brew + "/{project}");
-        html += App.codeBlock("Install (private project)", "HOMEBREW_BUILDHOST_TOKEN=$TOKEN brew install " + brew + "/{project}");
+        html += '<div class="card"><h2>Homebrew Tap</h2><p class="section-desc">Homebrew formulas are served through a generated Git tap. Formula files auto-detect macOS and Linux artifacts.</p>';
+        html += '<table class="info-table"><tr><td class="info-label">Tap Git URL</td><td class="endpoint-cell"><code>' + App.h(brew + "/tap.git") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += '<tr><td class="info-label">Formula</td><td class="endpoint-cell"><code>' + App.h(brew + "/Formula/{project}.rb") + "</code><copy-btn data-src='code'></copy-btn></td></tr></table>";
+        html += App.codeBlock("Install", "brew tap pazer/build " + brew + "/tap.git\nbrew install pazer/build/{project}");
         html += "</div>";
 
         html += '<div class="card"><h2>npm Registry</h2><p class="section-desc">npm-compatible registry. Packages are scoped under <code>@buildhost</code>.</p>';

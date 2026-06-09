@@ -44,6 +44,7 @@ func TestAllRoutesRegisteredWithoutInit(t *testing.T) {
 		"npm.{domain}/@buildhost/{project}/-/{filename}",
 		"apt.{domain}/{path...}",
 		"brew.{domain}/{project}",
+		"git.{domain}/brew/tap.git/{path...}",
 		"dl.{domain}/{project}",
 		"sites.{domain}/{project}/branch/{branch}",
 		"static.{domain}/file",

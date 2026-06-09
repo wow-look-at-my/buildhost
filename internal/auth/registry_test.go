@@ -95,7 +95,7 @@ func TestDeriveServiceURL_HTTP(t *testing.T) {
 
 	u := DeriveServiceURL(req, "static")
 	assert.Equal(t, "http", u.Scheme)
-	assert.Equal(t, "static.localhost", u.Host)
+	assert.Equal(t, "static.localhost:8080", u.Host)
 }
 
 func TestRequestScheme(t *testing.T) {

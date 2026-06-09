@@ -14,6 +14,20 @@ From a single uploaded binary, buildhost serves:
 - **npm registry** (platform-specific npm packages)
 - **OCI/Docker registry** (minimal container images synthesized from the binary, with CA certificates and a minimal rootfs so networked services run out of the box)
 
+## Homebrew
+
+buildhost exposes a generated Homebrew tap as a Git repository. Add the tap once,
+then install formulas through the tap name:
+
+```bash
+brew tap pazer/build https://brew.pazer.build/tap.git
+brew install pazer/build/go-toolchain
+```
+
+Do not install formulas with a naked remote URL such as
+`brew install https://brew.pazer.build/go-toolchain`; modern Homebrew treats that
+as a formula or tap name instead of cloning it as a formula URL.
+
 ## Web frontend
 
 buildhost serves a public, read-only browse UI on the main domain (no subdomain). It is plain server-rendered HTML with **no JavaScript**, so it is consumable and indexable by crawlers and agents without evaluating a single-page app.

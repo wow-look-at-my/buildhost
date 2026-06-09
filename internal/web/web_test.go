@@ -128,7 +128,8 @@ func TestFrontend(t *testing.T) {
 		require.Contains(t, body, "Releases")
 		require.Contains(t, body, "main") // git branch
 		require.Contains(t, body, "/projects/myapp/releases/1")
-		require.Contains(t, body, "brew install") // install command present
+		require.Contains(t, body, "brew tap pazer/build")
+		require.Contains(t, body, "brew install pazer/build/myapp")
 		require.Contains(t, body, "docker pull oci.")
 	})
 
