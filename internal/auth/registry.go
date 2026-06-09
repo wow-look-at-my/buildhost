@@ -11,31 +11,34 @@ import (
 )
 
 var (
-	mux                = router.New()
-	mw                 *Middleware
-	readyFuncs         []func()
-	sharedDB           *db.DB
-	sharedStore        storage.Storage
-	sharedData         string
-	sharedFetchDomains []string
+	mux                       = router.New()
+	mw                        *Middleware
+	readyFuncs                []func()
+	sharedDB                  *db.DB
+	sharedStore               storage.Storage
+	sharedData                string
+	sharedFetchDomains        []string
+	sharedGitHubWebhookSecret string
 )
 
-func Router() *router.Router     { return mux }
-func DB() *db.DB                 { return sharedDB }
-func Store() storage.Storage     { return sharedStore }
-func DataDir() string            { return sharedData }
-func GetMiddleware() *Middleware { return mw }
-func SiteFetchDomains() []string { return sharedFetchDomains }
+func Router() *router.Router      { return mux }
+func DB() *db.DB                  { return sharedDB }
+func Store() storage.Storage      { return sharedStore }
+func DataDir() string             { return sharedData }
+func GetMiddleware() *Middleware  { return mw }
+func SiteFetchDomains() []string  { return sharedFetchDomains }
+func GitHubWebhookSecret() string { return sharedGitHubWebhookSecret }
 
 func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
 }
 
-func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string) {
+func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string, githubWebhookSecret string) {
 	sharedDB = database
 	sharedStore = store
 	sharedData = dataDir
 	sharedFetchDomains = siteFetchDomains
+	sharedGitHubWebhookSecret = githubWebhookSecret
 
 	mw = &Middleware{DB: database, Verifier: NewOIDCVerifier(OIDCConfig{
 		TrustedIssuers: trustedIssuers,
