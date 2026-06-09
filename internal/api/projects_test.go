@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 func TestCreateProject_Success(t *testing.T) {

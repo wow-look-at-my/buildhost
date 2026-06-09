@@ -19,6 +19,7 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 		handler.Orchestrator = repackage.NewOrchestrator(auth.Store(), auth.DB())
+		handler.GitHubWebhookSecret = auth.GitHubWebhookSecret()
 	})
 }
 
@@ -53,9 +54,10 @@ func routeFrom(ctx context.Context) route {
 }
 
 type Handler struct {
-	DB           *db.DB
-	Store        storage.Storage
-	Orchestrator *repackage.Orchestrator
+	DB                  *db.DB
+	Store               storage.Storage
+	Orchestrator        *repackage.Orchestrator
+	GitHubWebhookSecret string
 }
 
 const maxJSONBody = 1 << 20 // 1 MiB

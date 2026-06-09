@@ -29,13 +29,13 @@ type indexView struct {
 }
 
 type projectCard struct {
-	Name         string
-	URL          string
-	Description  string
-	ReleaseCount int64
+	Name          string
+	URL           string
+	Description   string
+	ReleaseCount  int64
 	ArtifactCount int64
-	Updated      string
-	Private      bool
+	Updated       string
+	Private       bool
 }
 
 func buildIndexView(rows []db.ProjectSummary) indexView {

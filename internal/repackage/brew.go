@@ -71,9 +71,9 @@ type brewData struct {
 }
 
 type brewResource struct {
-	OS   string
-	Arch string
-	URL  string
+	OS     string
+	Arch   string
+	URL    string
 	SHA256 string
 }
 

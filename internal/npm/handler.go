@@ -77,7 +77,7 @@ func splitPlatform(name string) (project, platform string) {
 // so a namespaced project maps to a single valid npm package name and back.
 // Project name segments must not themselves contain "__".
 func projectToNPMName(project string) string { return strings.ReplaceAll(project, "/", "__") }
-func npmNameToProject(name string) string     { return strings.ReplaceAll(name, "__", "/") }
+func npmNameToProject(name string) string    { return strings.ReplaceAll(name, "__", "/") }
 
 func parseRoute(r *http.Request) auth.RouteInfo {
 	// The router has already percent-decoded the segment, so both the encoded

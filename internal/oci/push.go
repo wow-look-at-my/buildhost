@@ -129,5 +129,5 @@ func (h *Handler) uploadError(w http.ResponseWriter, err error) {
 	ociError(w, http.StatusBadRequest, "BLOB_UPLOAD_INVALID", err.Error())
 }
 
-func blobPath(name, digest string) string   { return "/v2/" + name + "/blobs/" + digest }
-func uploadPath(name, uuid string) string    { return "/v2/" + name + "/blobs/uploads/" + uuid }
+func blobPath(name, digest string) string { return "/v2/" + name + "/blobs/" + digest }
+func uploadPath(name, uuid string) string { return "/v2/" + name + "/blobs/uploads/" + uuid }
