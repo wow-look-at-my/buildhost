@@ -8,16 +8,17 @@ set -euo pipefail
 BUILDHOST_BIN="${1:-${BUILDHOST_BIN:-}}"
 ARTIFACT_BIN="${2:-${ARTIFACT_BIN:-}}"
 PROJECT="buildhost-apt-e2e"
-PORT="${PORT:-8089}"
-APTHOST="apt.buildhost.test"
-STATICHOST="static.buildhost.test"
-APT_BASE="http://${APTHOST}:${PORT}/${PROJECT}"
-BASE="http://127.0.0.1:${PORT}"
+PORT="${PORT:-80}"
+APTHOST="apt.localhost"
+STATICHOST="static.localhost"
+APT_BASE="http://${APTHOST}/${PROJECT}"
+BASE="http://127.0.0.1"
 
 [ -x "$BUILDHOST_BIN" ] || { echo "buildhost binary not found/executable: '$BUILDHOST_BIN'" >&2; exit 2; }
 [ -x "$ARTIFACT_BIN" ] || { echo "artifact binary not found/executable: '$ARTIFACT_BIN'" >&2; exit 2; }
 command -v apt-get >/dev/null 2>&1 || { echo "apt-get not found" >&2; exit 2; }
 command -v gpg >/dev/null 2>&1 || { echo "gpg not found" >&2; exit 2; }
+[ "$PORT" = "80" ] || { echo "apt install e2e requires PORT=80 because buildhost derives sibling service URLs without ports" >&2; exit 2; }
 
 WORK="$(mktemp -d)"
 KEYRING="/etc/apt/keyrings/${PROJECT}.gpg"
@@ -28,10 +29,10 @@ export BUILDHOST_LISTEN_ADDR=":${PORT}"
 export BUILDHOST_ADMIN_LISTEN_ADDR=""
 SERVER_PID=""
 cleanup() {
-	[ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
+	[ -n "$SERVER_PID" ] && sudo kill "$SERVER_PID" 2>/dev/null || true
 	sudo rm -f "$SOURCE_LIST" "$KEYRING"
 	sudo apt-get remove -y "$PROJECT" >/dev/null 2>&1 || true
-	rm -rf "$WORK"
+	sudo rm -rf "$WORK"
 }
 trap cleanup EXIT
 
@@ -40,7 +41,12 @@ TOKEN="$("$BUILDHOST_BIN" bootstrap --name apt-e2e | tail -n1)"
 [ -n "$TOKEN" ] || { echo "no token from bootstrap" >&2; exit 1; }
 
 echo "== start buildhost serve =="
-"$BUILDHOST_BIN" serve >"$WORK/server.log" 2>&1 &
+sudo env \
+	BUILDHOST_DATA_DIR="$BUILDHOST_DATA_DIR" \
+	BUILDHOST_DB_PATH="$BUILDHOST_DB_PATH" \
+	BUILDHOST_LISTEN_ADDR="$BUILDHOST_LISTEN_ADDR" \
+	BUILDHOST_ADMIN_LISTEN_ADDR="$BUILDHOST_ADMIN_LISTEN_ADDR" \
+	"$BUILDHOST_BIN" serve >"$WORK/server.log" 2>&1 &
 SERVER_PID=$!
 for i in $(seq 1 50); do
 	curl -fsS "$BASE/healthz" >/dev/null 2>&1 && break
