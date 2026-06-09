@@ -26,7 +26,7 @@ jobs:
       - run: ./scripts/fetch-cacerts.sh
       - uses: wow-look-at-my/go-toolchain@v1
         with:
-          generate: 27b32ea6cc9c
+          generate: acf27fe87179
           autorelease: 'false'
       # On the default branch, cache this commit's route list keyed by its SHA.
       # Caches created on the default branch are restorable from every branch,
@@ -94,7 +94,7 @@ jobs:
           working-directory: base
           # Same go:generate approval hash as the build job -- go-toolchain
           # refuses to run generate directives without it.
-          generate: 27b32ea6cc9c
+          generate: acf27fe87179
           os: linux
           arch: amd64
           autorelease: 'false'
