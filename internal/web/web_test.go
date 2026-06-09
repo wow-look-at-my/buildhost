@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/stretchr/testify/require"
 
 	// Blank-importing the frontend is not needed (the package under test links
 	// it), but no service backends are imported here on purpose: that keeps the
@@ -22,8 +22,8 @@ import (
 )
 
 type env struct {
-	ts	*httptest.Server
-	token	string
+	ts    *httptest.Server
+	token string
 }
 
 func setup(t *testing.T) *env {
@@ -62,8 +62,8 @@ func seed(t *testing.T, database *db.DB) {
 	rel := &db.Release{ProjectID: pub.ID, Version: "1", VersionNum: 1, GitBranch: "main", GitCommit: "abcdef1234567890"}
 	require.Nil(t, database.CreateRelease(ctx, rel))
 	require.Nil(t, database.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64, Kind: db.KindBinary,
-		StorageKey:	strings.Repeat("a", 64), Size: 1048576, SHA256: strings.Repeat("b", 64), Filename: "myapp",
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64, Kind: db.KindBinary,
+		StorageKey: strings.Repeat("a", 64), Size: 1048576, SHA256: strings.Repeat("b", 64), Filename: "myapp",
 	}))
 	require.Nil(t, database.PublishRelease(ctx, rel.ID))
 
@@ -126,9 +126,10 @@ func TestFrontend(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		require.Contains(t, body, "A demo app")
 		require.Contains(t, body, "Releases")
-		require.Contains(t, body, "main")	// git branch
+		require.Contains(t, body, "main") // git branch
 		require.Contains(t, body, "/projects/myapp/releases/1")
-		require.Contains(t, body, "brew install")	// install command present
+		require.Contains(t, body, "brew tap pazer/build")
+		require.Contains(t, body, "brew install pazer/build/myapp")
 		require.Contains(t, body, "docker pull oci.")
 	})
 

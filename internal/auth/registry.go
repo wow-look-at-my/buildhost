@@ -111,13 +111,15 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func domainFromRequest(r *http.Request) string {
 	host := r.Host
+	port := ""
 	if i := strings.LastIndex(host, ":"); i >= 0 {
+		port = host[i:]
 		host = host[:i]
 	}
 	if dot := strings.IndexByte(host, '.'); dot > 0 {
-		return host[dot+1:]
+		host = host[dot+1:]
 	}
-	return host
+	return host + port
 }
 
 func DeriveServiceURL(r *http.Request, service string) *url.URL {

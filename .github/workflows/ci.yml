@@ -179,6 +179,101 @@ jobs:
       - run: docker compose -f docker-compose.ci.yml logs
         if: failure()
 
+  homebrew-tap-e2e:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
+      BUILDHOST_BASE_URL: http://localhost:18080
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - if: runner.os == 'Linux'
+        uses: Homebrew/actions/setup-homebrew@master
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: ./scripts/fetch-cacerts.sh
+      - run: go build -o buildhost ./cmd/buildhost
+      - name: Start local buildhost
+        shell: bash
+        run: |
+          set -euo pipefail
+          export BUILDHOST_DATA_DIR="$RUNNER_TEMP/buildhost-data"
+          export BUILDHOST_DB_PATH="$BUILDHOST_DATA_DIR/buildhost.db"
+          export BUILDHOST_ADMIN_LISTEN_ADDR=
+          TOKEN="$(./buildhost bootstrap --name ci)"
+          echo "::add-mask::$TOKEN"
+          echo "BUILDHOST_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          ./buildhost serve > "$RUNNER_TEMP/buildhost.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/buildhost.pid"
+          for _ in {1..60}; do
+            if curl -fsS "$BUILDHOST_BASE_URL/healthz" >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/buildhost.log"
+          exit 1
+      - name: Publish go-toolchain artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)" in
+            Darwin) os=darwin ;;
+            Linux) os=linux ;;
+            *) echo "unsupported OS"; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64) arch=amd64 ;;
+            arm64|aarch64) arch=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          printf '%s\n' '#!/bin/sh' 'echo buildhost-homebrew-ok' > "$RUNNER_TEMP/go-toolchain"
+          chmod +x "$RUNNER_TEMP/go-toolchain"
+          ./buildhost project create \
+            --server "$BUILDHOST_BASE_URL" \
+            --token "$BUILDHOST_TOKEN" \
+            --name go-toolchain \
+            --versioning semver
+          printf '%s\n' \
+            "server = \"$BUILDHOST_BASE_URL\"" \
+            "token = \"$BUILDHOST_TOKEN\"" \
+            'project = "go-toolchain"' \
+            'version = "1.0.0"' \
+            "" \
+            "[[artifact]]" \
+            "path = \"$RUNNER_TEMP/go-toolchain\"" \
+            "os = \"$os\"" \
+            "arch = \"$arch\"" \
+            'kind = "binary"' \
+            > "$RUNNER_TEMP/buildhost-release.toml"
+          ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release.toml"
+      - name: Install from generated Homebrew tap
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew untap pazer/build >/dev/null 2>&1 || true
+          brew uninstall go-toolchain >/dev/null 2>&1 || true
+          brew tap pazer/build http://brew.localhost:18080/tap.git
+          brew install pazer/build/go-toolchain
+          test "$(go-toolchain)" = "buildhost-homebrew-ok"
+      - name: Dump buildhost log
+        if: failure()
+        shell: bash
+        run: cat "$RUNNER_TEMP/buildhost.log"
+      - name: Stop local buildhost
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/buildhost.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/buildhost.pid")" || true
+          fi
+
   # Prove an image buildhost SYNTHESIZES from a plain binary is a valid, loadable
   # container image whose baked-in CA bundle works for real outbound HTTPS. Uses crane
   # (go-containerregistry): it pulls/decompresses buildhost's zstd layers, which the

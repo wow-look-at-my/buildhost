@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 )
 
 func routePatternMatches(pattern, path string) bool {
@@ -51,7 +51,7 @@ func TestLLMsTxt_PublicAndRendersBaseURL(t *testing.T) {
 // directly (in addition to the apex). The router's strict host partitioning
 // means a known subdomain never falls through to the host-agnostic apex route,
 // so /llms.txt has to be registered on each subdomain too.
-var llmsTxtSubdomains = []string{"apt", "brew", "dl", "npm", "oci", "sites", "static"}
+var llmsTxtSubdomains = []string{"apt", "brew", "dl", "git", "npm", "oci", "sites", "static"}
 
 func TestLLMsTxt_ServedOnEverySubdomain(t *testing.T) {
 	env := setup(t)
@@ -115,12 +115,12 @@ func TestLLMsTxt_DocumentedFlowsWork(t *testing.T) {
 	seedPublishedRelease(t, env)
 
 	cases := []struct {
-		name		string
-		method		string
-		subdomain	string
-		path		string
-		auth		bool
-		want		int
+		name      string
+		method    string
+		subdomain string
+		path      string
+		auth      bool
+		want      int
 	}{
 		{"llms.txt", "GET", "", "/llms.txt", false, http.StatusOK},
 		{"healthz", "GET", "", "/healthz", false, http.StatusOK},

@@ -23,6 +23,9 @@ func TestServe_RendersBaseURL(t *testing.T) {
 	assert.Contains(t, body, "# buildhost")
 	assert.Contains(t, body, "https://dl.pazer.build/myapp")
 	assert.Contains(t, body, "https://pazer.build/llms.txt")
+	assert.Contains(t, body, "brew tap pazer/build https://brew.pazer.build/tap.git")
+	assert.Contains(t, body, "brew install pazer/build/myapp")
+	assert.NotContains(t, body, "brew install https://brew.pazer.build/myapp")
 	assert.Contains(t, body, "docker pull oci.pazer.build/myapp:latest")
 	assert.NotContains(t, body, "__BASE_URL__")
 	assert.NotContains(t, body, "__DL_URL__")
@@ -50,14 +53,14 @@ func TestApexBaseURL_StripsServiceSubdomain(t *testing.T) {
 		host string
 		want string
 	}{
-		{"pazer.build", "https://pazer.build"},                // apex: unchanged
-		{"oci.pazer.build", "https://pazer.build"},            // service label stripped
-		{"npm.pazer.build", "https://pazer.build"},            // ditto
-		{"static.pazer.build", "https://pazer.build"},         // ditto
-		{"builds.example.com", "https://builds.example.com"},  // non-service first label kept
-		{"127.0.0.1:8080", "http://127.0.0.1:8080"},           // bare IP, loopback scheme, port kept
-		{"oci.localhost:8080", "http://localhost:8080"},       // strip + .localhost scheme + port
-		{"localhost:9000", "http://localhost:9000"},           // single-label host: nothing to strip
+		{"pazer.build", "https://pazer.build"},               // apex: unchanged
+		{"oci.pazer.build", "https://pazer.build"},           // service label stripped
+		{"npm.pazer.build", "https://pazer.build"},           // ditto
+		{"static.pazer.build", "https://pazer.build"},        // ditto
+		{"builds.example.com", "https://builds.example.com"}, // non-service first label kept
+		{"127.0.0.1:8080", "http://127.0.0.1:8080"},          // bare IP, loopback scheme, port kept
+		{"oci.localhost:8080", "http://localhost:8080"},      // strip + .localhost scheme + port
+		{"localhost:9000", "http://localhost:9000"},          // single-label host: nothing to strip
 	}
 	for _, tc := range cases {
 		t.Run(tc.host, func(t *testing.T) {
