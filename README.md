@@ -181,6 +181,7 @@ GET /dl/myapp/branch/main/linux/amd64
 ## Static sites
 
 Host small, self-contained static sites with independent per-branch deployments. Each branch gets its own site that exists from first deploy until explicitly deleted.
+Directory requests serve `index.html`. If a requested file is missing and the uploaded site contains a root `404.html`, buildhost serves that page with HTTP 404.
 
 ```bash
 # Deploy a site from a directory
