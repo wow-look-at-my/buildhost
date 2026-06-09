@@ -201,11 +201,12 @@ jobs:
       - run: go build -o buildhost ./cmd/buildhost
       - name: Start local buildhost
         shell: bash
+        env:
+          BUILDHOST_DATA_DIR: ${{ runner.temp }}/buildhost-data
+          BUILDHOST_DB_PATH: ${{ runner.temp }}/buildhost-data/buildhost.db
+          BUILDHOST_ADMIN_LISTEN_ADDR: ""
         run: |
           set -euo pipefail
-          export BUILDHOST_DATA_DIR="$RUNNER_TEMP/buildhost-data"
-          export BUILDHOST_DB_PATH="$BUILDHOST_DATA_DIR/buildhost.db"
-          export BUILDHOST_ADMIN_LISTEN_ADDR=
           TOKEN="$(./buildhost bootstrap --name ci)"
           echo "::add-mask::$TOKEN"
           echo "BUILDHOST_TOKEN=$TOKEN" >> "$GITHUB_ENV"
