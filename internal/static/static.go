@@ -51,12 +51,12 @@ type Params struct {
 	Debug   bool
 }
 
-func For(project string) Params                   { return Params{Project: project} }
-func (p Params) WithVersion(v string) Params      { p.Version = v; return p }
-func (p Params) WithOS(os db.OS) Params           { p.OS = os; return p }
-func (p Params) WithArch(a db.Arch) Params        { p.Arch = a; return p }
-func (p Params) WithFmt(f string) Params          { p.Fmt = f; return p }
-func (p Params) WithDebug(d bool) Params          { p.Debug = d; return p }
+func For(project string) Params              { return Params{Project: project} }
+func (p Params) WithVersion(v string) Params { p.Version = v; return p }
+func (p Params) WithOS(os db.OS) Params      { p.OS = os; return p }
+func (p Params) WithArch(a db.Arch) Params   { p.Arch = a; return p }
+func (p Params) WithFmt(f string) Params     { p.Fmt = f; return p }
+func (p Params) WithDebug(d bool) Params     { p.Debug = d; return p }
 
 func URL(staticBase *url.URL, p Params) string {
 	u := *staticBase

@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func newTestServer(t *testing.T) (*Server, *db.DB) {
@@ -28,15 +28,15 @@ func newTestServer(t *testing.T) (*Server, *db.DB) {
 	require.NoError(t, err)
 
 	cfg := config.Config{
-		ListenAddr:		":8080",
-		AdminListenAddr:	":9090",
-		DataDir:		"./data",
+		ListenAddr:      ":8080",
+		AdminListenAddr: ":9090",
+		DataDir:         "./data",
 	}
 	build := BuildInfo{
-		Version:	"v1.2.3",
-		Commit:		"abc123def456789000aabbccdd",
-		Date:		"2025-01-15T10:30:00Z",
-		RepoURL:	"https://github.com/wow-look-at-my/buildhost",
+		Version: "v1.2.3",
+		Commit:  "abc123def456789000aabbccdd",
+		Date:    "2025-01-15T10:30:00Z",
+		RepoURL: "https://github.com/wow-look-at-my/buildhost",
 	}
 	srv := New(cfg, database, store, build)
 	return srv, database
@@ -67,8 +67,8 @@ func seedData(t *testing.T, database *db.DB) {
 	require.NoError(t, database.PublishRelease(ctx, r.ID))
 
 	a := &db.Artifact{
-		ReleaseID:	r.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindBinary, StorageKey: "abc123", Size: 2048, SHA256: "deadbeef",
+		ReleaseID: r.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: "abc123", Size: 2048, SHA256: "deadbeef",
 	}
 	require.NoError(t, database.CreateArtifact(ctx, a))
 
@@ -77,8 +77,8 @@ func seedData(t *testing.T, database *db.DB) {
 
 	pid := p.ID
 	require.NoError(t, database.CreateOIDCPolicy(ctx, &db.OIDCPolicy{
-		Issuer:	"https://token.actions.githubusercontent.com", SubjectPattern: "repo:org/repo:*",
-		ProjectID:	&pid, Scopes: "read,write",
+		Issuer: "https://token.actions.githubusercontent.com", SubjectPattern: "repo:org/repo:*",
+		ProjectID: &pid, Scopes: "read,write",
 	}))
 }
 
@@ -435,8 +435,8 @@ func TestAPISites(t *testing.T) {
 	ctx := context.Background()
 	p, _ := database.GetProject(ctx, "testproject")
 	_, err := database.UpsertSite(ctx, &db.Site{
-		ProjectID:	p.ID, Branch: "main", StorageKey: "sitekey1",
-		Size:	4096, SHA256: "sitehash", FileCount: 10, GitCommit: "abc123",
+		ProjectID: p.ID, Branch: "main", StorageKey: "sitekey1",
+		Size: 4096, SHA256: "sitehash", FileCount: 10, GitCommit: "abc123",
 	})
 	require.NoError(t, err)
 
@@ -470,8 +470,8 @@ func TestAPIProject_IncludesSites(t *testing.T) {
 	ctx := context.Background()
 	p, _ := database.GetProject(ctx, "testproject")
 	_, err := database.UpsertSite(ctx, &db.Site{
-		ProjectID:	p.ID, Branch: "dev", StorageKey: "sitekey2",
-		Size:	2048, SHA256: "sitehash2", FileCount: 5,
+		ProjectID: p.ID, Branch: "dev", StorageKey: "sitekey2",
+		Size: 2048, SHA256: "sitehash2", FileCount: 5,
 	})
 	require.NoError(t, err)
 
@@ -616,8 +616,8 @@ func TestServeSPA_Fallback(t *testing.T) {
 
 func TestHumanSize(t *testing.T) {
 	tests := []struct {
-		input	int64
-		want	string
+		input int64
+		want  string
 	}{
 		{0, "0 B"},
 		{512, "512 B"},
@@ -651,8 +651,8 @@ func TestBuildInfo_ShortCommit(t *testing.T) {
 
 func TestFormatDuration(t *testing.T) {
 	tests := []struct {
-		input	time.Duration
-		want	string
+		input time.Duration
+		want  string
 	}{
 		{0, "0s"},
 		{500 * time.Millisecond, "0s"},
@@ -668,8 +668,8 @@ func TestFormatDuration(t *testing.T) {
 
 func TestTimeAgo(t *testing.T) {
 	tests := []struct {
-		ago	time.Duration
-		want	string
+		ago  time.Duration
+		want string
 	}{
 		{0, "just now"},
 		{30 * time.Second, "just now"},

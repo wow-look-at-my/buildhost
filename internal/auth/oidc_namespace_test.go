@@ -6,10 +6,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/router"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/router"
 )
 
 // These tests cover slash-namespaced ("<repo>/<binary>") projects: the OIDC
@@ -18,8 +18,8 @@ import (
 
 func TestOIDCAuthorizesProject(t *testing.T) {
 	tests := []struct {
-		oidc, requested	string
-		want		bool
+		oidc, requested string
+		want            bool
 	}{
 		// A repo authorizes itself and any slash-namespaced project beneath it.
 		{"log-streamer", "log-streamer", true},

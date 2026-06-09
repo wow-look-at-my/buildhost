@@ -603,6 +603,7 @@ App.pages.site = function (name) {
     App.renderSidebar("sites");
     App.fetch("/projects/" + name).then(function (d) {
         var p = d.project;
+        var bu = d.base_url || "";
         var sitesBase = (d.services || {}).sites || "";
         var sites = d.sites || [];
 

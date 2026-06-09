@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	_ "github.com/wow-look-at-my/buildhost/internal/api"
 	"github.com/wow-look-at-my/buildhost/internal/apt"
 	_ "github.com/wow-look-at-my/buildhost/internal/brew"
@@ -32,14 +33,13 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	_ "github.com/wow-look-at-my/buildhost/internal/sites"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/stretchr/testify/require"
 )
 
 // testEnv bundles the objects needed by every integration test.
 type testEnv struct {
-	ts		*httptest.Server
-	database	*db.DB
-	token		string	// plaintext API token with read,write scopes
+	ts       *httptest.Server
+	database *db.DB
+	token    string // plaintext API token with read,write scopes
 }
 
 // The apt backend generates a fresh 4096-bit RSA signing key the first time a
@@ -51,8 +51,8 @@ type testEnv struct {
 // touch production keygen, and the apt package's own tests still cover real
 // key generation.
 var (
-	aptKeyOnce	sync.Once
-	aptKeyBytes	[]byte
+	aptKeyOnce  sync.Once
+	aptKeyBytes []byte
 )
 
 func aptSigningKey(t *testing.T) []byte {
@@ -61,7 +61,7 @@ func aptSigningKey(t *testing.T) []byte {
 		dir, err := os.MkdirTemp("", "apt-test-key-*")
 		require.Nil(t, err)
 		defer os.RemoveAll(dir)
-		apt.NewSigner(dir)	// writes dir/apt-signing.key (one keygen for the package)
+		apt.NewSigner(dir) // writes dir/apt-signing.key (one keygen for the package)
 		b, err := os.ReadFile(filepath.Join(dir, "apt-signing.key"))
 		require.Nil(t, err)
 		aptKeyBytes = b
@@ -88,9 +88,9 @@ func setup(t *testing.T) *testEnv {
 	require.Nil(t, err)
 
 	cfg := config.Config{
-		ListenAddr:	":0",
-		DataDir:	dbDir,
-		DBPath:		dbPath,
+		ListenAddr: ":0",
+		DataDir:    dbDir,
+		DBPath:     dbPath,
 	}
 
 	srv := server.New(cfg, database, store)
@@ -304,14 +304,14 @@ func TestHealthz(t *testing.T) {
 	require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
 
 	var body struct {
-		Status	string	`json:"status"`
-		Commit	string	`json:"commit"`
-		Version	string	`json:"version"`
+		Status  string `json:"status"`
+		Commit  string `json:"commit"`
+		Version string `json:"version"`
 	}
 	require.NoError(t, json.Unmarshal(readBody(t, resp), &body))
 	require.Equal(t, "ok", body.Status)
-	require.NotEmpty(t, body.Commit)	// "unknown" in tests, but never empty
-	require.NotEmpty(t, body.Version)	// "dev" in tests, but never empty
+	require.NotEmpty(t, body.Commit)  // "unknown" in tests, but never empty
+	require.NotEmpty(t, body.Version) // "dev" in tests, but never empty
 }
 
 func TestHealthz_DBClosed(t *testing.T) {
@@ -324,9 +324,9 @@ func TestHealthz_DBClosed(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 
 	var body struct {
-		Status	string	`json:"status"`
-		Error	string	`json:"error"`
-		Commit	string	`json:"commit"`
+		Status string `json:"status"`
+		Error  string `json:"error"`
+		Commit string `json:"commit"`
 	}
 	require.NoError(t, json.Unmarshal(readBody(t, resp), &body))
 	require.Equal(t, "unhealthy", body.Status)
@@ -606,12 +606,12 @@ func TestOIDC_AutoCreateProject(t *testing.T) {
 	jwksSrv := jwksServer(t, &key.PublicKey, "kid-auto")
 
 	cfg := config.Config{
-		ListenAddr:	":0",
-		DataDir:	dbDir,
-		DBPath:		dbPath,
-		OIDCIssuers:	[]string{jwksSrv.URL},
-		OIDCOrgs:	[]string{"*"},
-		OIDCEvents:	[]string{"push"},
+		ListenAddr:  ":0",
+		DataDir:     dbDir,
+		DBPath:      dbPath,
+		OIDCIssuers: []string{jwksSrv.URL},
+		OIDCOrgs:    []string{"*"},
+		OIDCEvents:  []string{"push"},
 	}
 
 	srv := server.New(cfg, database, store)
@@ -619,12 +619,12 @@ func TestOIDC_AutoCreateProject(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	token := signJWT(t, key, "kid-auto", map[string]any{
-		"iss":		jwksSrv.URL,
-		"sub":		"repo:myorg/autoproject:ref:refs/heads/main",
-		"event_name":	"push",
-		"aud":		"https://buildhost.example.com",
-		"exp":		time.Now().Add(10 * time.Minute).Unix(),
-		"iat":		time.Now().Unix(),
+		"iss":        jwksSrv.URL,
+		"sub":        "repo:myorg/autoproject:ref:refs/heads/main",
+		"event_name": "push",
+		"aud":        "https://buildhost.example.com",
+		"exp":        time.Now().Add(10 * time.Minute).Unix(),
+		"iat":        time.Now().Unix(),
 	})
 
 	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/projects/autoproject/releases", strings.NewReader(`{}`))

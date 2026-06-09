@@ -1,8 +1,11 @@
 package api
 
 //go:generate go run github.com/wow-look-at-my/go-regex-compiler/cmd/go-regex-compiler@latest --regex "^[a-zA-Z0-9][a-zA-Z0-9._+-]{0,127}$" --func validVersion --package api --output gen_version.go --match full
+//go:generate gofmt -w gen_version.go
 //go:generate go run github.com/wow-look-at-my/go-regex-compiler/cmd/go-regex-compiler@latest --regex "^[a-zA-Z0-9._/-]{1,256}$" --func validGitBranch --package api --output gen_git_branch.go --match full
+//go:generate gofmt -w gen_git_branch.go
 //go:generate go run github.com/wow-look-at-my/go-regex-compiler/cmd/go-regex-compiler@latest --regex "^[a-fA-F0-9]{1,64}$" --func validGitCommit --package api --output gen_git_commit.go --match full
+//go:generate gofmt -w gen_git_commit.go
 
 import (
 	"encoding/json"

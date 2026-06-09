@@ -44,10 +44,10 @@ func TestValidKind(t *testing.T) {
 
 func TestAPITokenHasScope(t *testing.T) {
 	tests := []struct {
-		name	string
-		scopes	string
-		scope	string
-		want	bool
+		name   string
+		scopes string
+		scope  string
+		want   bool
 	}{
 		{"single scope match", "read", "read", true},
 		{"single scope no match", "read", "write", false},
@@ -70,8 +70,8 @@ func TestAPITokenHasScope(t *testing.T) {
 
 func TestReleaseIsPrerelease(t *testing.T) {
 	tests := []struct {
-		version	string
-		want	bool
+		version string
+		want    bool
 	}{
 		{"v1.0.0", false},
 		{"v1.0.0-beta.1", true},

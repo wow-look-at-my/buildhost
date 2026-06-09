@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/auth"
-	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 func globalWriteCtx() context.Context {
@@ -108,7 +108,7 @@ func TestListOIDCPolicies_Success(t *testing.T) {
 	ctx := context.Background()
 
 	require.NoError(t, h.DB.CreateOIDCPolicy(ctx, &db.OIDCPolicy{
-		Issuer:	"https://example.com", SubjectPattern: "sub:1", Scopes: "read",
+		Issuer: "https://example.com", SubjectPattern: "sub:1", Scopes: "read",
 	}))
 
 	req := httptest.NewRequest("GET", "/api/v1/oidc/policies", nil)

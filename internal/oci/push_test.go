@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 func digestOf(b []byte) string {
@@ -54,10 +54,10 @@ func getManifest(t *testing.T, h *Handler, proj *db.Project, reference string) *
 }
 
 const (
-	mediaImageManifest	= "application/vnd.oci.image.manifest.v1+json"
-	mediaImageConfig	= "application/vnd.oci.image.config.v1+json"
-	mediaImageLayer		= "application/vnd.oci.image.layer.v1.tar+gzip"
-	mediaImageIndex		= "application/vnd.oci.image.index.v1+json"
+	mediaImageManifest = "application/vnd.oci.image.manifest.v1+json"
+	mediaImageConfig   = "application/vnd.oci.image.config.v1+json"
+	mediaImageLayer    = "application/vnd.oci.image.layer.v1.tar+gzip"
+	mediaImageIndex    = "application/vnd.oci.image.index.v1+json"
 )
 
 // pushImage pushes a config blob, one layer, and a single-platform image
@@ -65,10 +65,10 @@ const (
 func pushImage(t *testing.T, h *Handler, proj *db.Project, osName, arch string) ([]byte, string) {
 	t.Helper()
 	config := map[string]any{
-		"architecture":	arch,
-		"os":		osName,
-		"rootfs":	map[string]any{"type": "layers", "diff_ids": []string{digestOf([]byte("diff-" + arch))}},
-		"config":	map[string]any{"Entrypoint": []string{"/usr/bin/ollama"}, "Cmd": []string{"serve"}},
+		"architecture": arch,
+		"os":           osName,
+		"rootfs":       map[string]any{"type": "layers", "diff_ids": []string{digestOf([]byte("diff-" + arch))}},
+		"config":       map[string]any{"Entrypoint": []string{"/usr/bin/ollama"}, "Cmd": []string{"serve"}},
 	}
 	configBytes, _ := json.Marshal(config)
 	configDigest := pushBlobMonolithic(t, h, proj, configBytes)
@@ -77,10 +77,10 @@ func pushImage(t *testing.T, h *Handler, proj *db.Project, osName, arch string) 
 	layerDigest := pushBlobMonolithic(t, h, proj, layer)
 
 	manifest := map[string]any{
-		"schemaVersion":	2,
-		"mediaType":		mediaImageManifest,
-		"config":		map[string]any{"mediaType": mediaImageConfig, "digest": configDigest, "size": len(configBytes)},
-		"layers":		[]map[string]any{{"mediaType": mediaImageLayer, "digest": layerDigest, "size": len(layer)}},
+		"schemaVersion": 2,
+		"mediaType":     mediaImageManifest,
+		"config":        map[string]any{"mediaType": mediaImageConfig, "digest": configDigest, "size": len(configBytes)},
+		"layers":        []map[string]any{{"mediaType": mediaImageLayer, "digest": layerDigest, "size": len(layer)}},
 	}
 	manifestBytes, _ := json.Marshal(manifest)
 	return manifestBytes, digestOf(manifestBytes)
@@ -210,8 +210,8 @@ func TestPush_MultiArchIndex(t *testing.T) {
 	require.Equal(t, http.StatusCreated, putManifest(t, h, proj, armDigest, mediaImageManifest, armManifest).Code)
 
 	index := map[string]any{
-		"schemaVersion":	2,
-		"mediaType":		mediaImageIndex,
+		"schemaVersion": 2,
+		"mediaType":     mediaImageIndex,
 		"manifests": []map[string]any{
 			{"mediaType": mediaImageManifest, "digest": amdDigest, "size": len(amdManifest), "platform": map[string]any{"os": "linux", "architecture": "amd64"}},
 			{"mediaType": mediaImageManifest, "digest": armDigest, "size": len(armManifest), "platform": map[string]any{"os": "linux", "architecture": "arm64"}},
@@ -394,10 +394,10 @@ func TestPush_ManifestMissingBlob(t *testing.T) {
 
 	// Reference a config/layer that were never pushed.
 	manifest := map[string]any{
-		"schemaVersion":	2,
-		"mediaType":		mediaImageManifest,
-		"config":		map[string]any{"mediaType": mediaImageConfig, "digest": digestOf([]byte("missing-config")), "size": 10},
-		"layers":		[]map[string]any{{"mediaType": mediaImageLayer, "digest": digestOf([]byte("missing-layer")), "size": 10}},
+		"schemaVersion": 2,
+		"mediaType":     mediaImageManifest,
+		"config":        map[string]any{"mediaType": mediaImageConfig, "digest": digestOf([]byte("missing-config")), "size": 10},
+		"layers":        []map[string]any{{"mediaType": mediaImageLayer, "digest": digestOf([]byte("missing-layer")), "size": 10}},
 	}
 	manifestBytes, _ := json.Marshal(manifest)
 	rec := putManifest(t, h, proj, "v1.0.0", mediaImageManifest, manifestBytes)
@@ -461,7 +461,7 @@ func TestPush_ManifestDBError(t *testing.T) {
 	require.NoError(t, d.CreateProject(t.Context(), proj))
 
 	manifestBytes, _ := pushImage(t, h, proj, "linux", "amd64")
-	d.Close()	// break the DB before the manifest is recorded
+	d.Close() // break the DB before the manifest is recorded
 
 	rec := putManifest(t, h, proj, "v1", mediaImageManifest, manifestBytes)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
@@ -471,7 +471,7 @@ func TestServeManifest_TagDBError(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
-	d.Close()	// a tag lookup now fails with a real error, not "not found"
+	d.Close() // a tag lookup now fails with a real error, not "not found"
 
 	got := getManifest(t, h, proj, "sometag")
 	assert.Equal(t, http.StatusInternalServerError, got.Code)

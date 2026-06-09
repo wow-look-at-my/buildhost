@@ -22,13 +22,13 @@ func TestUpsertSite_CreateNew(t *testing.T) {
 	p := createSiteTestProject(t, d)
 
 	s := &Site{
-		ProjectID:	p.ID,
-		Branch:		"main",
-		StorageKey:	"abc123",
-		Size:		1024,
-		SHA256:		"deadbeef",
-		FileCount:	5,
-		GitCommit:	"aaa111",
+		ProjectID:  p.ID,
+		Branch:     "main",
+		StorageKey: "abc123",
+		Size:       1024,
+		SHA256:     "deadbeef",
+		FileCount:  5,
+		GitCommit:  "aaa111",
 	}
 	oldKey, err := d.UpsertSite(ctx, s)
 	require.NoError(t, err)
@@ -42,23 +42,23 @@ func TestUpsertSite_ReplaceExisting(t *testing.T) {
 	p := createSiteTestProject(t, d)
 
 	s1 := &Site{
-		ProjectID:	p.ID,
-		Branch:		"main",
-		StorageKey:	"key1",
-		Size:		100,
-		SHA256:		"sha1",
-		FileCount:	3,
+		ProjectID:  p.ID,
+		Branch:     "main",
+		StorageKey: "key1",
+		Size:       100,
+		SHA256:     "sha1",
+		FileCount:  3,
 	}
 	_, err := d.UpsertSite(ctx, s1)
 	require.NoError(t, err)
 
 	s2 := &Site{
-		ProjectID:	p.ID,
-		Branch:		"main",
-		StorageKey:	"key2",
-		Size:		200,
-		SHA256:		"sha2",
-		FileCount:	7,
+		ProjectID:  p.ID,
+		Branch:     "main",
+		StorageKey: "key2",
+		Size:       200,
+		SHA256:     "sha2",
+		FileCount:  7,
 	}
 	oldKey, err := d.UpsertSite(ctx, s2)
 	require.NoError(t, err)
@@ -94,12 +94,12 @@ func TestListSites_MultipleBranches(t *testing.T) {
 
 	for _, branch := range []string{"main", "dev", "feature"} {
 		s := &Site{
-			ProjectID:	p.ID,
-			Branch:		branch,
-			StorageKey:	"key-" + branch,
-			Size:		100,
-			SHA256:		"sha-" + branch,
-			FileCount:	1,
+			ProjectID:  p.ID,
+			Branch:     branch,
+			StorageKey: "key-" + branch,
+			Size:       100,
+			SHA256:     "sha-" + branch,
+			FileCount:  1,
 		}
 		_, err := d.UpsertSite(ctx, s)
 		require.NoError(t, err)
@@ -116,12 +116,12 @@ func TestDeleteSite(t *testing.T) {
 	p := createSiteTestProject(t, d)
 
 	s := &Site{
-		ProjectID:	p.ID,
-		Branch:		"main",
-		StorageKey:	"delkey",
-		Size:		100,
-		SHA256:		"sha",
-		FileCount:	1,
+		ProjectID:  p.ID,
+		Branch:     "main",
+		StorageKey: "delkey",
+		Size:       100,
+		SHA256:     "sha",
+		FileCount:  1,
 	}
 	_, err := d.UpsertSite(ctx, s)
 	require.NoError(t, err)
@@ -138,4 +138,49 @@ func TestDeleteSite_NotFound(t *testing.T) {
 	d := openTestDB(t)
 	_, err := d.DeleteSite(context.Background(), 999, "nope")
 	assert.True(t, errors.Is(err, ErrNotFound))
+}
+
+func TestDeleteSitesByRepositoryBranch(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	for _, name := range []string{"my_repo", "my_repo/cli", "myXrepo"} {
+		p := &Project{Name: name, Versioning: VersioningAuto}
+		require.NoError(t, d.CreateProject(ctx, p))
+		_, err := d.UpsertSite(ctx, &Site{
+			ProjectID:  p.ID,
+			Branch:     "feature",
+			StorageKey: "key-" + name,
+			Size:       100,
+			SHA256:     "sha-" + name,
+			FileCount:  1,
+		})
+		require.NoError(t, err)
+	}
+
+	root, err := d.GetProject(ctx, "my_repo")
+	require.NoError(t, err)
+	_, err = d.UpsertSite(ctx, &Site{
+		ProjectID:  root.ID,
+		Branch:     "main",
+		StorageKey: "key-main",
+		Size:       100,
+		SHA256:     "sha-main",
+		FileCount:  1,
+	})
+	require.NoError(t, err)
+
+	deleted, err := d.DeleteSitesByRepositoryBranch(ctx, "my_repo", "feature")
+	require.NoError(t, err)
+	require.Len(t, deleted, 2)
+
+	_, err = d.GetSite(ctx, root.ID, "feature")
+	assert.True(t, errors.Is(err, ErrNotFound))
+	_, err = d.GetSite(ctx, root.ID, "main")
+	assert.NoError(t, err)
+
+	other, err := d.GetProject(ctx, "myXrepo")
+	require.NoError(t, err)
+	_, err = d.GetSite(ctx, other.ID, "feature")
+	assert.NoError(t, err)
 }
