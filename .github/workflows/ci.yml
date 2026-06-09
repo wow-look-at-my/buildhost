@@ -203,6 +203,24 @@ jobs:
       - name: Pull and run the synthesized OCI image
         run: PATH="$(go env GOPATH)/bin:$PATH" bash test/e2e/run.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/netcheck"
 
+  apt-install-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: go-build
+          path: build/
+      - run: chmod +x build/buildhost_linux_amd64
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build apt test package payload (static linux/amd64)
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/buildhost-apt-e2e" ./test/e2e/testdata/netcheck
+      - name: Install from the generated APT repository
+        run: bash test/e2e/apt-install.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/buildhost-apt-e2e"
+
   publish-ghcr:
     needs: container-healthcheck
     uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@master
