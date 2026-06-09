@@ -193,11 +193,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - if: runner.os == 'Linux'
-        uses: Homebrew/actions/setup-homebrew@master
+        uses: Homebrew/actions/setup-homebrew@main
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - run: ./scripts/fetch-cacerts.sh
+      - run: go generate ./internal/api
       - run: go build -o buildhost ./cmd/buildhost
       - name: Start local buildhost
         shell: bash
@@ -266,7 +267,12 @@ jobs:
       - name: Dump buildhost log
         if: failure()
         shell: bash
-        run: cat "$RUNNER_TEMP/buildhost.log"
+        run: |
+          if [ -f "$RUNNER_TEMP/buildhost.log" ]; then
+            cat "$RUNNER_TEMP/buildhost.log"
+          else
+            echo "buildhost log was not created"
+          fi
       - name: Stop local buildhost
         if: always()
         shell: bash
