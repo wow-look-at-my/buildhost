@@ -11,11 +11,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // The npm endpoint is always exercised through the real router
@@ -30,10 +30,10 @@ import (
 // seeds uniquely named projects into that shared DB.
 
 var (
-	routerOnce	sync.Once
-	routerDB	*db.DB
-	routerStore	storage.Storage
-	routerHandler	http.Handler
+	routerOnce    sync.Once
+	routerDB      *db.DB
+	routerStore   storage.Storage
+	routerHandler http.Handler
 )
 
 func mustTempDir() string {
@@ -63,7 +63,7 @@ func routerEnv(t *testing.T) (*db.DB, storage.Storage) {
 
 func npmGet(t *testing.T, token, path string) *httptest.ResponseRecorder {
 	t.Helper()
-	routerEnv(t)	// ensure routerHandler is wired
+	routerEnv(t) // ensure routerHandler is wired
 	req := httptest.NewRequest("GET", path, nil)
 	req.Host = "npm.localhost"
 	if token != "" {
@@ -87,8 +87,8 @@ func seedNPMPackage(t *testing.T, project, version, content string) {
 	key, size, err := store.Put(ctx, strings.NewReader(content))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: "any", Arch: "any",
-		Kind:	db.KindNPMPackage, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: "any", Arch: "any",
+		Kind: db.KindNPMPackage, StorageKey: key, Size: size, SHA256: key,
 	}))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 }
@@ -175,14 +175,14 @@ func TestRouter_Packument_BinaryRepackage(t *testing.T) {
 	rel := &db.Release{ProjectID: proj.ID, Version: "6.0.0", VersionNum: 6000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	for _, plat := range []struct {
-		os	db.OS
-		arch	db.Arch
+		os   db.OS
+		arch db.Arch
 	}{{db.OSLinux, db.ArchAMD64}, {db.OSDarwin, db.ArchARM64}} {
 		key, size, err := store.Put(ctx, strings.NewReader("bin-"+string(plat.os)))
 		require.NoError(t, err)
 		require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-			ReleaseID:	rel.ID, OS: plat.os, Arch: plat.arch,
-			Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+			ReleaseID: rel.ID, OS: plat.os, Arch: plat.arch,
+			Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 		}))
 	}
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
@@ -262,9 +262,9 @@ func TestRouter_ScopeEncoding(t *testing.T) {
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	cases := []struct {
-		name, path	string
-		wantCode	int
-		wantName	string
+		name, path string
+		wantCode   int
+		wantName   string
 	}{
 		{"encoded scope (real npm)", "/@buildhost%2fscope-enc", http.StatusOK, "@buildhost/scope-enc"},
 		{"unencoded scope", "/@buildhost/scope-enc", http.StatusOK, "@buildhost/scope-enc"},
@@ -288,7 +288,7 @@ func TestRouter_ScopeEncoding(t *testing.T) {
 // http and the npm subdomain is "npm.localhost".
 func apexReq(t *testing.T, method, target string) *httptest.ResponseRecorder {
 	t.Helper()
-	routerEnv(t)	// ensure routerHandler is wired
+	routerEnv(t) // ensure routerHandler is wired
 	req := httptest.NewRequest(method, target, nil)
 	req.Host = "localhost"
 	rec := httptest.NewRecorder()

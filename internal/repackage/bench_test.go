@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 func BenchmarkRepackage(b *testing.B) {
@@ -17,11 +17,11 @@ func BenchmarkRepackage(b *testing.B) {
 	}
 
 	input := Input{
-		Project:	db.Project{Name: "go-toolchain", Description: "Go build toolchain"},
-		Release:	db.Release{Version: "1.0.0", VersionNum: 1},
-		Artifact:	db.Artifact{OS: db.OSLinux, Arch: db.ArchAMD64, Kind: db.KindBinary},
-		Data:		bin,
-		BaseURL:	"https://example.com",
+		Project:  db.Project{Name: "go-toolchain", Description: "Go build toolchain"},
+		Release:  db.Release{Version: "1.0.0", VersionNum: 1},
+		Artifact: db.Artifact{OS: db.OSLinux, Arch: db.ArchAMD64, Kind: db.KindBinary},
+		Data:     bin,
+		BaseURL:  "https://example.com",
 	}
 
 	repackagers := []Repackager{

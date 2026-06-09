@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func setupSigningTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
@@ -29,10 +29,10 @@ func setupSigningTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	require.True(t, signer.Available())
 
 	h := &Handler{
-		DB:	d,
-		Store:	store,
-		Gen:	repackage.NewGenerator(store, d, tmpDir),
-		Signer:	signer,
+		DB:     d,
+		Store:  store,
+		Gen:    repackage.NewGenerator(store, d, tmpDir),
+		Signer: signer,
 	}
 	return h, d, store
 }
@@ -148,8 +148,8 @@ func TestServeRelease_WithHashes(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
 	req := httptest.NewRequest("GET", "/myapp/dists/stable/Release", nil)

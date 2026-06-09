@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
 var testBinary = []byte("#!/bin/sh\necho hello\n")
@@ -22,22 +22,22 @@ var testBinary = []byte("#!/bin/sh\necho hello\n")
 func makeInput() Input {
 	return Input{
 		Project: db.Project{
-			Name:		"testapp",
-			Description:	"A test application",
-			Homepage:	"https://example.com",
-			License:	"MIT",
+			Name:        "testapp",
+			Description: "A test application",
+			Homepage:    "https://example.com",
+			License:     "MIT",
 		},
 		Release: db.Release{
-			Version:	"v1.2.3",
-			VersionNum:	1,
+			Version:    "v1.2.3",
+			VersionNum: 1,
 		},
 		Artifact: db.Artifact{
-			OS:	db.OSLinux,
-			Arch:	db.ArchAMD64,
-			Kind:	db.KindBinary,
+			OS:   db.OSLinux,
+			Arch: db.ArchAMD64,
+			Kind: db.KindBinary,
 		},
-		Data:		testBinary,
-		BaseURL:	"https://builds.example.com",
+		Data:    testBinary,
+		BaseURL: "https://builds.example.com",
 	}
 }
 
@@ -362,8 +362,8 @@ func TestOCIRepackage(t *testing.T) {
 	key, size, err := store.Put(ctx, strings.NewReader(string(testBinary)))
 	require.NoError(t, err)
 	a := &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -399,8 +399,8 @@ func TestOCIRepackage(t *testing.T) {
 
 func TestFormats(t *testing.T) {
 	tests := []struct {
-		rp	Repackager
-		format	Format
+		rp     Repackager
+		format Format
 	}{
 		{&TarGZ{}, FormatTarGZ},
 		{&TarXZ{}, FormatTarXZ},
@@ -475,13 +475,13 @@ func TestOrchestrator_PublishRelease_WithArtifact(t *testing.T) {
 	require.NoError(t, err)
 
 	a := &db.Artifact{
-		ReleaseID:	rel.ID,
-		OS:		db.OSLinux,
-		Arch:		db.ArchAMD64,
-		Kind:		db.KindAssets,	// Use Assets to skip strip attempt.
-		StorageKey:	key,
-		Size:		size,
-		SHA256:		key,
+		ReleaseID:  rel.ID,
+		OS:         db.OSLinux,
+		Arch:       db.ArchAMD64,
+		Kind:       db.KindAssets, // Use Assets to skip strip attempt.
+		StorageKey: key,
+		Size:       size,
+		SHA256:     key,
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -512,13 +512,13 @@ func TestOrchestrator_PublishRelease_BinaryKind_AttemptsStrip(t *testing.T) {
 	require.NoError(t, err)
 
 	a := &db.Artifact{
-		ReleaseID:	rel.ID,
-		OS:		db.OSLinux,
-		Arch:		db.ArchAMD64,
-		Kind:		db.KindBinary,
-		StorageKey:	key,
-		Size:		size,
-		SHA256:		key,
+		ReleaseID:  rel.ID,
+		OS:         db.OSLinux,
+		Arch:       db.ArchAMD64,
+		Kind:       db.KindBinary,
+		StorageKey: key,
+		Size:       size,
+		SHA256:     key,
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -558,8 +558,8 @@ func TestGenerator_Generate(t *testing.T) {
 	require.NoError(t, err)
 
 	a := &db.Artifact{
-		ReleaseID:	rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind:	db.KindAssets, StorageKey: key, Size: size, SHA256: key,
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindAssets, StorageKey: key, Size: size, SHA256: key,
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
