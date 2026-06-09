@@ -295,6 +295,7 @@ curl "https://buildhost.example.com/api/v1/projects?token=$TOKEN"
 | POST | `/api/v1/projects/{project}/releases` | Create release |
 | PUT | `/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}` | Upload artifact |
 | POST | `/api/v1/projects/{project}/releases/{version}/publish` | Publish release |
+| POST | `/api/v1/webhooks/github` | GitHub org webhook receiver for branch deletion cleanup |
 | GET | `/dl/{project}/{version}/{os}/{arch}` | Download |
 | GET | `/dl/{project}/latest/{os}/{arch}` | Download latest |
 | GET | `/dl/{project}/branch/{branch}/{os}/{arch}` | Download latest for branch |
@@ -335,10 +336,27 @@ Environment variables:
 | `BUILDHOST_OIDC_ISSUERS` | (none) | Comma-separated trusted OIDC issuers for auto-provisioning |
 | `BUILDHOST_OIDC_ORGS` | (none) | Comma-separated allowed orgs for OIDC auto-provisioning, matched case-insensitively (`*` for all) |
 | `BUILDHOST_OIDC_EVENTS` | `push,pull_request` | Comma-separated allowed event types for OIDC auto-provisioning (`*` for all) |
+| `BUILDHOST_GITHUB_WEBHOOK_SECRET` | (off) | Enables `POST /api/v1/webhooks/github`; used to verify GitHub webhook HMAC signatures |
 | `BUILDHOST_RETENTION_INTERVAL` | (off) | Background GC sweep cadence (e.g. `1h`); empty/`0` disables the sweeper |
 | `BUILDHOST_RETENTION_KEEP_N` | `10` | Initial published releases kept per `(project, git branch)` -- seeds the dashboard policy on first start, then managed in the UI |
 | `BUILDHOST_RETENTION_RECENCY_GUARD` | `24h` | Initial recency guard (never evict releases newer than this) -- seeds the dashboard policy, then managed in the UI |
 | `BUILDHOST_RETENTION_ENFORCE` | `false` | Whether the background sweeper actually deletes; default is report-only. Manual runs from the dashboard/CLI delete when you confirm regardless |
+
+## GitHub organization webhook
+
+Set `BUILDHOST_GITHUB_WEBHOOK_SECRET`, then create a GitHub organization webhook
+with:
+
+- Payload URL: `https://buildhost.example.com/api/v1/webhooks/github`
+- Content type: `application/json`
+- Secret: the same value as `BUILDHOST_GITHUB_WEBHOOK_SECRET`
+- Events: select **Delete** events
+
+When GitHub sends a branch deletion (`delete` event with `ref_type: "branch"`),
+buildhost deletes static site deployments for that branch in the repository's
+project namespace. For a repository named `myrepo`, branch `feature-x` cleanup
+applies to `myrepo` and slash-namespaced projects below it such as `myrepo/docs`.
+Tag delete events and unrelated webhook events are acknowledged and ignored.
 
 ## Retention / garbage collection
 
