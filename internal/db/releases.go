@@ -53,7 +53,31 @@ func (d *DB) GetRelease(ctx context.Context, projectID int64, version string) (*
 	return &row, nil
 }
 
+// GetLatestRelease resolves the apex "latest" release (no version, no explicit
+// branch). When the project records a default branch, "latest" tracks the newest
+// published release on that branch, so a push to a feature branch cannot hijack
+// it. If the default branch is unset (legacy projects, non-GHA publishers) or has
+// no published release yet, it falls back to the newest release across all
+// branches -- the historical behavior.
 func (d *DB) GetLatestRelease(ctx context.Context, projectID int64) (*Release, error) {
+	branch, err := d.q.GetProjectDefaultBranch(ctx, projectID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("get project default branch: %w", err)
+	}
+	if branch != "" {
+		row, err := d.q.GetLatestPublishedReleaseByBranch(ctx, GetLatestPublishedReleaseByBranchParams{
+			ProjectID: projectID,
+			GitBranch: branch,
+		})
+		if err == nil {
+			return &row, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("get latest release on default branch: %w", err)
+		}
+		// No published release on the default branch yet -> fall back below.
+	}
+
 	row, err := d.q.GetLatestPublishedRelease(ctx, projectID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound

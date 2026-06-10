@@ -139,6 +139,46 @@ func TestCreateRelease_Duplicate(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, rec.Code)
 }
 
+func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "dbproj", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	// Publish from a feature branch but declare main as the default branch.
+	body := `{"git_branch":"feature","default_branch":"main"}`
+	req := httptest.NewRequest("POST", "/api/projects/dbproj/releases", strings.NewReader(body))
+	req.SetPathValue("project", "dbproj")
+	req = withProjectRoute(req, proj)
+	req = req.WithContext(writeToken(req.Context(), "read,write"))
+	rec := httptest.NewRecorder()
+	h.CreateRelease(rec, req)
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	got, err := h.DB.GetProject(ctx, "dbproj")
+	require.NoError(t, err)
+	assert.Equal(t, "main", got.DefaultBranch, "create-release records the project's default branch")
+}
+
+func TestCreateRelease_RejectsInvalidDefaultBranch(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "baddbproj", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	body := `{"default_branch":"bad branch!"}`
+	req := httptest.NewRequest("POST", "/api/projects/baddbproj/releases", strings.NewReader(body))
+	req.SetPathValue("project", "baddbproj")
+	req = withProjectRoute(req, proj)
+	req = req.WithContext(writeToken(req.Context(), "read,write"))
+	rec := httptest.NewRecorder()
+	h.CreateRelease(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
 func TestGetRelease_Success(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()

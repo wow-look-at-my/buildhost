@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -33,6 +34,10 @@ type createReleaseRequest struct {
 	GitCommit string `json:"git_commit"`
 	Notes     string `json:"notes"`
 	OciUser   string `json:"oci_user"`
+	// DefaultBranch records the repo's default branch on the project so the apex
+	// "latest" download tracks it instead of whichever branch published most
+	// recently. Optional; empty leaves the project's existing value untouched.
+	DefaultBranch string `json:"default_branch"`
 }
 
 func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +85,10 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "invalid git_branch")
 		return
 	}
+	if req.DefaultBranch != "" && !validGitBranch(req.DefaultBranch) {
+		jsonError(w, http.StatusBadRequest, "invalid default_branch")
+		return
+	}
 	if req.GitCommit != "" && !validGitCommit(req.GitCommit) {
 		jsonError(w, http.StatusBadRequest, "invalid git_commit")
 		return
@@ -91,6 +100,15 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 	if req.OciUser != "" && !validOCIUser(req.OciUser) {
 		jsonError(w, http.StatusBadRequest, "invalid oci_user")
 		return
+	}
+
+	// Record the repo's default branch on the project so apex "latest" tracks it.
+	// Best-effort project metadata: a failure here must not fail the publish.
+	if req.DefaultBranch != "" {
+		if err := h.DB.SetProjectDefaultBranch(r.Context(), project.ID, req.DefaultBranch); err != nil {
+			slog.WarnContext(r.Context(), "failed to set project default branch",
+				"project", project.Name, "default_branch", req.DefaultBranch, "err", err)
+		}
 	}
 
 	rel := &db.Release{

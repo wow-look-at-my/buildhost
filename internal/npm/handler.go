@@ -210,6 +210,14 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 		}
 	}
 
+	// Point "latest" at the default-branch (apex) release, not merely the highest
+	// version number, so a feature-branch publish cannot hijack the npm latest.
+	if v := h.latestVersion(r.Context(), project); v != "" {
+		if _, ok := versions[v]; ok {
+			distTags["latest"] = v
+		}
+	}
+
 	info := map[string]any{
 		"name":      "@buildhost/" + npmName,
 		"versions":  versions,
@@ -267,6 +275,17 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, rc)
 }
 
+// latestVersion returns the version the npm "latest" dist-tag should point at:
+// the apex (default-branch-aware) latest published release. Returns "" when none
+// resolves, so callers keep their highest-version fallback.
+func (h *Handler) latestVersion(ctx context.Context, project *db.Project) string {
+	rel, err := h.DB.GetLatestRelease(ctx, project.ID)
+	if err != nil || rel == nil {
+		return ""
+	}
+	return normalizeVersion(rel.Version)
+}
+
 func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Request, project *db.Project, platform string, releases []db.Release) {
 	projectName := project.Name
 	platParts := strings.SplitN(platform, "-", 2)
@@ -315,6 +334,12 @@ func (h *Handler) servePlatformPackageInfo(w http.ResponseWriter, r *http.Reques
 	if len(versions) == 0 {
 		http.NotFound(w, r)
 		return
+	}
+
+	if v := h.latestVersion(r.Context(), project); v != "" {
+		if _, ok := versions[v]; ok {
+			distTags["latest"] = v
+		}
 	}
 
 	info := map[string]any{
