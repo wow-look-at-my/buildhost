@@ -192,6 +192,8 @@ Git branch and commit are tracked on every release. Download the latest build of
 GET /dl/myapp/branch/main/linux/amd64
 ```
 
+`latest` (no branch) resolves to the newest published release on **master** (the assumed default branch), so a push to a feature branch never hijacks `latest`. When master has no published release yet, `latest` falls back to the newest release across all branches.
+
 ## Static sites
 
 Host small, self-contained static sites with independent per-branch deployments. Each branch gets its own site that exists from first deploy until explicitly deleted.

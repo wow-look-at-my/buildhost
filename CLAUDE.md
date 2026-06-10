@@ -42,6 +42,7 @@ This runs mod tidy, vet, tests with coverage, and builds the binary. Do not use 
 
 - Versioning: auto-increment (default) or semver (opt-in per project)
 - Git branch is a first-class field on releases, not just metadata
+- Apex `latest` (a download with no `?v=` and no `?branch=` -- e.g. `dl/{project}/latest/{os}/{arch}`) resolves to the newest published release on **master**, the assumed default branch (`defaultBranch` in `internal/db/releases.go`), so a push to a feature branch never hijacks `latest`. When master has no published release yet, it falls back to the newest release across all branches. Centralized in `db.GetLatestRelease`, so dl/brew/apt/web, the OCI `latest` tag, and the npm `latest` dist-tag stay consistent. Per-branch downloads (`?branch=`) are unaffected.
 - Repackaging and stripping happen on-demand at download time, not at publish time. Only the original upload is stored.
 - All artifact downloads go through `static.{domain}/file?project=&v=&os=&arch=&fmt=` -- a single CDN-cacheable endpoint with sorted query params, strong ETags, and immutable cache headers. Format handlers (dl, apt, brew, npm) redirect to static after resolving version/branch. `v=latest` returns 400 (callers must resolve first). Repackage formats self-register via `Fmt` interface.
 - Storage is content-addressed (SHA-256) with zstd compression and deduplication

@@ -53,8 +53,28 @@ func (d *DB) GetRelease(ctx context.Context, projectID int64, version string) (*
 	return &row, nil
 }
 
+// defaultBranch is the branch the apex "latest" download tracks. buildhost
+// assumes every project's default branch is "master".
+const defaultBranch = "master"
+
+// GetLatestRelease resolves the apex "latest" release (no version, no explicit
+// branch): the newest published release on the default branch (master), so a
+// push to a feature branch cannot hijack "latest". When master has no published
+// release yet, it falls back to the newest release across all branches, so
+// "latest" is never empty while releases exist.
 func (d *DB) GetLatestRelease(ctx context.Context, projectID int64) (*Release, error) {
-	row, err := d.q.GetLatestPublishedRelease(ctx, projectID)
+	row, err := d.q.GetLatestPublishedReleaseByBranch(ctx, GetLatestPublishedReleaseByBranchParams{
+		ProjectID: projectID,
+		GitBranch: defaultBranch,
+	})
+	if err == nil {
+		return &row, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("get latest release on %s: %w", defaultBranch, err)
+	}
+
+	row, err = d.q.GetLatestPublishedRelease(ctx, projectID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
