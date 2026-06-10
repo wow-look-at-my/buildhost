@@ -1,6 +1,9 @@
 package npm
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -93,6 +96,38 @@ func seedNPMPackage(t *testing.T, project, version, content string) {
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 }
 
+// seedNPMPackageTarball creates a published release whose npm-package artifact is
+// a real gzipped tar containing package/package.json with the given fields -- so
+// the packument's manifest-reflection path has a real manifest to read.
+func seedNPMPackageTarball(t *testing.T, project, version string, pkgJSON map[string]any) {
+	t.Helper()
+	d, store := routerEnv(t)
+	ctx := context.Background()
+	proj := &db.Project{Name: project, Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: version, VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	body, err := json.Marshal(pkgJSON)
+	require.NoError(t, err)
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "package/package.json", Mode: 0o644, Size: int64(len(body))}))
+	_, err = tw.Write(body)
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+	require.NoError(t, gz.Close())
+
+	key, size, err := store.Put(ctx, bytes.NewReader(buf.Bytes()))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: "any", Arch: "any",
+		Kind: db.KindNPMPackage, StorageKey: key, Size: size, SHA256: key,
+	}))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+}
+
 func decodePackument(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	var info map[string]any
@@ -100,6 +135,9 @@ func decodePackument(t *testing.T, rec *httptest.ResponseRecorder) map[string]an
 	return info
 }
 
+// TestRouter_Packument_NPMPackageArtifact covers the fallback path: the stored
+// blob is not a readable npm tarball, so no manifest fields can be reflected and
+// the version entry is the minimal-but-valid {name, version, dist}.
 func TestRouter_Packument_NPMPackageArtifact(t *testing.T) {
 	seedNPMPackage(t, "router-pkg", "5.0.0", "tarball")
 
@@ -112,9 +150,48 @@ func TestRouter_Packument_NPMPackageArtifact(t *testing.T) {
 	dist := v["dist"].(map[string]any)
 	assert.Contains(t, dist["tarball"].(string), "/@buildhost/router-pkg/-/router-pkg-5.0.0.tgz")
 	_, hasBin := v["bin"]
-	assert.False(t, hasBin, "npm-package should not carry a bin wrapper")
+	assert.False(t, hasBin, "unreadable blob yields a minimal entry, no bin")
 	_, hasOptDeps := v["optionalDependencies"]
-	assert.False(t, hasOptDeps)
+	assert.False(t, hasOptDeps, "unreadable blob yields a minimal entry, no optionalDependencies")
+}
+
+// TestRouter_Packument_NPMPackageReflectsManifest proves the registry surfaces a
+// pre-built package's own dependency graph and platform/engine gating from the
+// uploaded tarball's package.json -- the fix for "zombie" packages whose
+// optionalDependencies were silently dropped -- while keeping name/version/dist
+// authoritative and never echoing lifecycle scripts.
+func TestRouter_Packument_NPMPackageReflectsManifest(t *testing.T) {
+	seedNPMPackageTarball(t, "router-manifest", "7.0.0", map[string]any{
+		"name":                 "@buildhost/router-manifest",
+		"version":              "7.0.0",
+		"optionalDependencies": map[string]any{"@buildhost/router-manifest-linux-x64": "7.0.0"},
+		"dependencies":         map[string]any{"left-pad": "^1.0.0"},
+		"bin":                  map[string]any{"router-manifest": "build/router-manifest"},
+		"os":                   []any{"linux", "darwin"},
+		"cpu":                  []any{"x64", "arm64"},
+		"scripts":              map[string]any{"postinstall": "echo nope"},
+	})
+
+	rec := npmGet(t, "", "/@buildhost/router-manifest")
+	require.Equal(t, http.StatusOK, rec.Code)
+	info := decodePackument(t, rec)
+	v := info["versions"].(map[string]any)["7.0.0"].(map[string]any)
+
+	// Dependency graph, platform gating, and bin are surfaced.
+	optDeps := v["optionalDependencies"].(map[string]any)
+	assert.Equal(t, "7.0.0", optDeps["@buildhost/router-manifest-linux-x64"])
+	assert.Equal(t, map[string]any{"left-pad": "^1.0.0"}, v["dependencies"])
+	assert.Equal(t, map[string]any{"router-manifest": "build/router-manifest"}, v["bin"])
+	assert.Equal(t, []any{"linux", "darwin"}, v["os"])
+	assert.Equal(t, []any{"x64", "arm64"}, v["cpu"])
+
+	// name/version/dist stay buildhost-authoritative; scripts are never surfaced.
+	assert.Equal(t, "@buildhost/router-manifest", v["name"])
+	assert.Equal(t, "7.0.0", v["version"])
+	assert.Contains(t, v["dist"].(map[string]any)["tarball"].(string),
+		"/@buildhost/router-manifest/-/router-manifest-7.0.0.tgz")
+	_, hasScripts := v["scripts"]
+	assert.False(t, hasScripts, "scripts must not be surfaced into the packument")
 }
 
 func TestRouter_Tarball_Success(t *testing.T) {
