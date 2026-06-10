@@ -23,9 +23,6 @@ inputs:
   git_commit:
     description: 'Git commit SHA (defaults to GITHUB_SHA)'
     required: false
-  default_branch:
-    description: "The repo's default branch; apex `latest` tracks it. Defaults to the triggering repo's default branch."
-    required: false
 
 runs:
   using: composite
@@ -33,7 +30,6 @@ runs:
     - uses: wow-look-at-my/actions@typescript#latest
       env:
         GITHUB_TOKEN: ${{ github.token }}
-        DEFAULT_BRANCH_FALLBACK: ${{ github.event.repository.default_branch }}
       with:
         script: |
           await (async () => {
@@ -41,7 +37,6 @@ runs:
             const inputVersion: string = "${{ inputs.version }}";
             const inputBranch: string = "${{ inputs.git_branch }}";
             const inputCommit: string = "${{ inputs.git_commit }}";
-            const inputDefaultBranch: string = "${{ inputs.default_branch }}";
             const artifactName: string = "${{ inputs.artifact_name }}";
 
             const server = "${{ inputs.server }}";
@@ -49,7 +44,6 @@ runs:
             const version = inputVersion;
             const gitBranch = inputBranch.length > 0 ? inputBranch : github.ref_name;
             const gitCommit = inputCommit.length > 0 ? inputCommit : github.sha;
-            const defaultBranch = inputDefaultBranch.length > 0 ? inputDefaultBranch : (env.DEFAULT_BRANCH_FALLBACK || "");
             const downloadDir = path.join(os.tmpdir(), "buildhost-publish");
             fs.mkdirSync(downloadDir, { recursive: true });
 
@@ -163,7 +157,6 @@ runs:
             const releaseBody = () => JSON.stringify({
               git_branch: gitBranch, git_commit: gitCommit,
               ...(version.length > 0 ? { version } : {}),
-              ...(defaultBranch.length > 0 ? { default_branch: defaultBranch } : {}),
             });
 
             // Resolve a release version from a create-release response (201 new,

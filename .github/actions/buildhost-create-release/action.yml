@@ -29,10 +29,6 @@ inputs:
     description: 'Release notes'
     required: false
     default: ''
-  default_branch:
-    description: "The repo's default branch; apex `latest` tracks it. Defaults to the triggering repo's default branch."
-    required: false
-    default: ''
 
 outputs:
   response:
@@ -47,11 +43,6 @@ runs:
   steps:
     - id: create
       uses: wow-look-at-my/actions@typescript#latest
-      env:
-        # github.event.repository.default_branch is present on push/pull_request/
-        # workflow_dispatch payloads; empty otherwise (server then leaves the
-        # project's existing default_branch untouched).
-        DEFAULT_BRANCH_FALLBACK: ${{ github.event.repository.default_branch }}
       with:
         script: |
           await (async () => {
@@ -69,14 +60,11 @@ runs:
             const version: string = "${{ inputs.version }}";
             const gitBranchInput: string = "${{ inputs.git_branch }}";
             const gitCommitInput: string = "${{ inputs.git_commit }}";
-            const defaultBranchInput: string = "${{ inputs.default_branch }}";
             const gitBranch: string = gitBranchInput || github.ref_name;
             const gitCommit: string = gitCommitInput || github.sha;
-            const defaultBranch: string = defaultBranchInput || env.DEFAULT_BRANCH_FALLBACK || "";
 
             const body: Record<string, string> = { git_branch: gitBranch, git_commit: gitCommit, notes: "${{ inputs.notes }}" };
             if (version) body['version'] = version;
-            if (defaultBranch) body['default_branch'] = defaultBranch;
 
             const resp = await fetch(`${server}/api/v1/projects/${project}/releases`, {
               method: 'POST',

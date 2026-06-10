@@ -6,7 +6,6 @@ CREATE TABLE projects (
     license     TEXT NOT NULL DEFAULT '',
     is_private  INTEGER NOT NULL DEFAULT 0,
     versioning  TEXT NOT NULL DEFAULT 'auto',
-    default_branch TEXT NOT NULL DEFAULT '',
     created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );

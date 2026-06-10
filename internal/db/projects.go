@@ -48,13 +48,6 @@ func (d *DB) SetProjectVisibility(ctx context.Context, id int64, isPrivate bool)
 	})
 }
 
-func (d *DB) SetProjectDefaultBranch(ctx context.Context, id int64, branch string) error {
-	return d.q.SetProjectDefaultBranch(ctx, SetProjectDefaultBranchParams{
-		DefaultBranch: branch,
-		ID:            id,
-	})
-}
-
 func (d *DB) ListProjects(ctx context.Context) ([]Project, error) {
 	return d.q.ListAllProjects(ctx)
 }
