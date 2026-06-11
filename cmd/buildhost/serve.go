@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/buildhost/internal/admin"
 	"github.com/wow-look-at-my/buildhost/internal/buildinfo"
@@ -30,6 +31,20 @@ var serveCmd = &cobra.Command{
 	Short: "Start the registry server",
 	RunE: func(_ *cobra.Command, _ []string) error {
 		cfg := config.Load()
+
+		// Make the Go runtime aware of the container's memory cgroup so the GC
+		// runs harder as we approach the limit instead of letting the heap grow
+		// until the kernel OOM-kills us. No-ops if GOMEMLIMIT is already set or
+		// AUTOMEMLIMIT=off, so an operator can still override it.
+		if limit, err := memlimit.SetGoMemLimitWithOpts(
+			memlimit.WithRatio(0.9),
+			memlimit.WithProvider(memlimit.FromCgroup),
+			memlimit.WithLogger(slog.Default()),
+		); err != nil {
+			slog.Warn("could not set GOMEMLIMIT from cgroup", "err", err)
+		} else if limit > 0 {
+			slog.Info("set GOMEMLIMIT from cgroup", "bytes", limit)
+		}
 
 		if cfg.OTELEndpoint != "" {
 			shutdown, err := telemetry.Init(context.Background(), cfg.OTELEndpoint, buildinfo.Version())
