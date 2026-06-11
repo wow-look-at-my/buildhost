@@ -298,6 +298,7 @@ App.pages.release = function (name, version) {
                 for (var j = 0; j < pkgs.length; j++) {
                     html += ' <a href="' + App.h(dlBase + dlQ + "&fmt=" + pkgs[j].format) + '" title="' + App.h(pkgs[j].filename) + " (" + App.h(App.humanSize(pkgs[j].size)) + ')">' + App.h(pkgs[j].format) + "</a>";
                 }
+                html += ' <button type="button" class="dl-share" onclick="App.copyTempLink(this,\'' + App.h(p.name) + '\',\'' + App.h(r.version) + '\',\'' + App.h(a.os) + '\',\'' + App.h(a.arch) + '\',\'raw\')" title="Copy a temporary 1-hour download link (works for private projects)">temp link</button>';
                 html += "</td></tr>";
             }
         }
@@ -438,7 +439,7 @@ App.pages.tokens = function () {
         html += '<div class="card"><h2>Create Token</h2>';
         html += '<form id="create-token-form" class="inline-form">';
         html += '<input class="form-input" type="text" id="tok-name" placeholder="Name" required>';
-        html += '<select class="form-select" id="tok-scopes"><option value="read,write">read+write</option><option value="read">read</option><option value="write">write</option></select>';
+        html += '<select class="form-select" id="tok-scopes"><option value="read,write">read+write</option><option value="read">read</option><option value="write">write</option><option value="share">share</option><option value="read,write,share">read+write+share</option></select>';
         html += '<select class="form-select" id="tok-project">' + projectOpts + '</select>';
         html += '<button class="btn btn-primary" type="submit">Create</button>';
         html += '</form></div>';
@@ -511,6 +512,39 @@ App.copyText = function (elemId) {
     navigator.clipboard.writeText(el.textContent || el.innerText);
 };
 
+// copyTempLink mints a temporary, artifact-bound download link via the admin API
+// and copies it to the clipboard. The link carries a signed &token= that works
+// even for a private project (unlike the plain dl links above), expiring in 1h.
+App.copyTempLink = function (btn, project, version, os, arch, fmt) {
+    if (App.demo) return;
+    var orig = btn.textContent;
+    var restore = function (msg) {
+        btn.textContent = msg;
+        setTimeout(function () {
+            btn.textContent = orig;
+            btn.classList.remove("copied");
+            btn.disabled = false;
+        }, 2000);
+    };
+    btn.disabled = true;
+    btn.textContent = "...";
+    fetch("/api/projects/" + project + "/download-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ os: os, arch: arch, version: version, fmt: fmt })
+    }).then(function (r) {
+        if (!r.ok) return r.text().then(function (t) { throw new Error(t || r.status); });
+        return r.json();
+    }).then(function (d) {
+        return navigator.clipboard.writeText(d.url).then(function () {
+            btn.classList.add("copied");
+            restore("copied 1h link");
+        });
+    }).catch(function () {
+        restore("failed");
+    });
+};
+
 App.editToken = function (id, name, scopes) {
     var nameCell = document.getElementById("tok-row-name-" + id);
     var scopesCell = document.getElementById("tok-row-scopes-" + id);
@@ -522,6 +556,8 @@ App.editToken = function (id, name, scopes) {
         '<option value="read,write"' + (scopes === "read,write" ? " selected" : "") + '>read+write</option>' +
         '<option value="read"' + (scopes === "read" ? " selected" : "") + '>read</option>' +
         '<option value="write"' + (scopes === "write" ? " selected" : "") + '>write</option>' +
+        '<option value="share"' + (scopes === "share" ? " selected" : "") + '>share</option>' +
+        '<option value="read,write,share"' + (scopes === "read,write,share" ? " selected" : "") + '>read+write+share</option>' +
         '</select>';
     var actionsCell = row.querySelector(".row-actions");
     if (actionsCell) {
