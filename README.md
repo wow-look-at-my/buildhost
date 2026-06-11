@@ -156,6 +156,8 @@ volumes:
   buildhost-data:
 ```
 
+**Note:** The server reads the container's memory cgroup at startup and sets `GOMEMLIMIT` to ~90% of it (via [automemlimit](https://github.com/KimMachineGun/automemlimit)), and all download/repackage paths stream (blob reads are mmap-backed, nothing buffers a whole artifact), so buildhost serves artifacts far larger than `mem_limit` without OOM-ing. Set `GOMEMLIMIT` yourself (or `AUTOMEMLIMIT=off`) to override.
+
 **Note:** Binary stripping (`strip`/`objcopy`) is not available in the hardened image. Uploaded binaries are served as-is. If you need debug info stripping, run it in your CI pipeline before uploading.
 
 ## Quick start
