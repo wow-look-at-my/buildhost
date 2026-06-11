@@ -260,6 +260,7 @@ App.pages.release = function (name, version) {
     App.fetch("/projects/" + name + "/releases/" + version).then(function (d) {
         var p = d.project, r = d.release, bu = d.base_url, svc = d.services || {};
         var dlBase = (svc.dl || "") + "/" + p.name;
+        var priv = !!p.is_private;
         var html = "<h1><a href='#/projects/" + App.h(p.name) + "'>" + App.h(p.name) + "</a> / " + App.h(r.version) + "</h1>";
 
         html += '<div class="stat-grid">';
@@ -291,14 +292,24 @@ App.pages.release = function (name, version) {
                 html += "<td>" + App.h(App.humanSize(a.size)) + "</td>";
                 html += "<td>" + a.download_count + "</td>";
                 html += '<td class="dl-links">';
-                var dlQ = "?v=" + r.version + "&os=" + a.os + "&arch=" + a.arch;
-                html += '<a href="' + App.h(dlBase + dlQ) + '" title="Direct download">raw</a>';
-                if (a.debug_storage_key) html += ' <a href="' + App.h(dlBase + dlQ + "&debug=1") + '" title="Debug symbols">debug</a>';
                 var pkgs = a.packages || [];
-                for (var j = 0; j < pkgs.length; j++) {
-                    html += ' <a href="' + App.h(dlBase + dlQ + "&fmt=" + pkgs[j].format) + '" title="' + App.h(pkgs[j].filename) + " (" + App.h(App.humanSize(pkgs[j].size)) + ')">' + App.h(pkgs[j].format) + "</a>";
+                if (priv) {
+                    // Private project: a plain dl link would 401. Each link mints a
+                    // signed, single-artifact link on click, then downloads it.
+                    html += App.dlMintLink(p.name, r.version, a.os, a.arch, "raw", false, "raw", "Download (mints a temporary signed link)");
+                    if (a.debug_storage_key) html += " " + App.dlMintLink(p.name, r.version, a.os, a.arch, "raw", true, "debug", "Debug symbols");
+                    for (var j = 0; j < pkgs.length; j++) {
+                        html += " " + App.dlMintLink(p.name, r.version, a.os, a.arch, pkgs[j].format, false, pkgs[j].format, pkgs[j].filename + " (" + App.humanSize(pkgs[j].size) + ")");
+                    }
+                    html += ' <button type="button" class="dl-share" onclick="App.copyTempLink(this,\'' + App.h(p.name) + '\',\'' + App.h(r.version) + '\',\'' + App.h(a.os) + '\',\'' + App.h(a.arch) + '\',\'raw\')" title="Copy a temporary 1-hour shareable link">temp link</button>';
+                } else {
+                    var dlQ = "?v=" + r.version + "&os=" + a.os + "&arch=" + a.arch;
+                    html += '<a href="' + App.h(dlBase + dlQ) + '" title="Direct download">raw</a>';
+                    if (a.debug_storage_key) html += ' <a href="' + App.h(dlBase + dlQ + "&debug=1") + '" title="Debug symbols">debug</a>';
+                    for (var j = 0; j < pkgs.length; j++) {
+                        html += ' <a href="' + App.h(dlBase + dlQ + "&fmt=" + pkgs[j].format) + '" title="' + App.h(pkgs[j].filename) + " (" + App.h(App.humanSize(pkgs[j].size)) + ')">' + App.h(pkgs[j].format) + "</a>";
+                    }
                 }
-                html += ' <button type="button" class="dl-share" onclick="App.copyTempLink(this,\'' + App.h(p.name) + '\',\'' + App.h(r.version) + '\',\'' + App.h(a.os) + '\',\'' + App.h(a.arch) + '\',\'raw\')" title="Copy a temporary 1-hour download link (works for private projects)">temp link</button>';
                 html += "</td></tr>";
             }
         }
@@ -543,6 +554,44 @@ App.copyTempLink = function (btn, project, version, os, arch, fmt) {
     }).catch(function () {
         restore("failed");
     });
+};
+
+// dlMintLink renders a download link for a private project's artifact. A plain dl
+// link would 401, so this one mints a signed single-artifact link on click and
+// downloads it. Values are safe charsets (project/version/os/arch/fmt), so they
+// embed directly in the inline handler.
+App.dlMintLink = function (project, version, os, arch, fmt, debug, label, title) {
+    var call = "App.downloadArtifact(this,'" + project + "','" + version + "','" + os + "','" + arch + "','" + fmt + "'," + (debug ? "true" : "false") + ")";
+    return '<a href="#" class="dl-mint" onclick="return ' + App.h(call) + '" title="' + App.h(title) + '">' + App.h(label) + "</a>";
+};
+
+// downloadArtifact mints a temporary signed link for exactly this artifact, then
+// triggers the download by clicking a synthetic anchor (same effect as following a
+// normal download link). Returns false so the placeholder href="#" is not used.
+App.downloadArtifact = function (el, project, version, os, arch, fmt, debug) {
+    if (App.demo) return false;
+    var orig = el ? el.textContent : "";
+    fetch("/api/projects/" + project + "/download-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ os: os, arch: arch, version: version, fmt: fmt, debug: !!debug })
+    }).then(function (r) {
+        if (!r.ok) return r.text().then(function (t) { throw new Error(t || r.status); });
+        return r.json();
+    }).then(function (d) {
+        var a = document.createElement("a");
+        a.href = d.url;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    }).catch(function () {
+        if (el) {
+            el.textContent = "failed";
+            setTimeout(function () { el.textContent = orig; }, 2000);
+        }
+    });
+    return false;
 };
 
 App.editToken = function (id, name, scopes) {
