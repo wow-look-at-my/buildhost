@@ -2,6 +2,7 @@ package strip
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,6 +50,76 @@ func StripBytes(data []byte, tmpDir ...string) (*ByteResult, error) {
 		return nil, err
 	}
 	return &ByteResult{Stripped: stripped, Debug: debug}, nil
+}
+
+// StripReader spools r to a temp file under tmpDir, runs the file-based Strip, and
+// returns a reader over the stripped binary plus its exact size. The returned ReadCloser
+// owns the stripped temp file and removes it (and the discarded debug file) on Close, so
+// the caller MUST Close it. Bounded memory: the artifact is streamed to disk, never held
+// in a []byte.
+func StripReader(r io.Reader, tmpDir string) (io.ReadCloser, int64, error) {
+	return stripStream(r, tmpDir, false)
+}
+
+// StripReaderDebug is like StripReader but streams the extracted debug-symbols file
+// instead of the stripped binary.
+func StripReaderDebug(r io.Reader, tmpDir string) (io.ReadCloser, int64, error) {
+	return stripStream(r, tmpDir, true)
+}
+
+func stripStream(r io.Reader, tmpDir string, debug bool) (io.ReadCloser, int64, error) {
+	in, err := os.CreateTemp(tmpDir, "strip-input-*")
+	if err != nil {
+		return nil, 0, err
+	}
+	if _, err := io.Copy(in, r); err != nil {
+		in.Close()
+		os.Remove(in.Name())
+		return nil, 0, err
+	}
+	if err := in.Close(); err != nil {
+		os.Remove(in.Name())
+		return nil, 0, err
+	}
+
+	res, err := Strip(in.Name())
+	os.Remove(in.Name())
+	if err != nil {
+		return nil, 0, err
+	}
+
+	keep, drop := res.StrippedPath, res.DebugPath
+	if debug {
+		keep, drop = res.DebugPath, res.StrippedPath
+	}
+	os.Remove(drop)
+
+	f, err := os.Open(keep)
+	if err != nil {
+		os.Remove(keep)
+		return nil, 0, err
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		f.Close()
+		os.Remove(keep)
+		return nil, 0, err
+	}
+	return &tempFileReadCloser{f: f, path: keep}, fi.Size(), nil
+}
+
+// tempFileReadCloser streams a temp file and removes it on Close.
+type tempFileReadCloser struct {
+	f    *os.File
+	path string
+}
+
+func (t *tempFileReadCloser) Read(p []byte) (int, error) { return t.f.Read(p) }
+
+func (t *tempFileReadCloser) Close() error {
+	err := t.f.Close()
+	os.Remove(t.path)
+	return err
 }
 
 func Strip(inputPath string) (*Result, error) {
