@@ -1,14 +1,14 @@
 package server
 
 import (
+	"github.com/stretchr/testify/assert"
 	"testing"
-	"github.com/wow-look-at-my/testify/assert"
 )
 
 func TestRedactQuery(t *testing.T) {
 	tests := []struct {
-		input	string
-		want	string
+		input string
+		want  string
 	}{
 		{"", ""},
 		{"id=foo&v=1", "id=foo&v=1"},

@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestCanonicalQuery(t *testing.T) {
@@ -108,7 +108,6 @@ func TestServe_StripsUnknownParams(t *testing.T) {
 	loc := rec.Header().Get("Location")
 	assert.NotContains(t, loc, "garbage")
 }
-
 
 func TestFmtRegistry(t *testing.T) {
 	_, ok := LookupFmt("raw")

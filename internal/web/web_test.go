@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/require"
 
 	// Blank-importing the frontend is not needed (the package under test links
 	// it), but no service backends are imported here on purpose: that keeps the
@@ -126,9 +126,10 @@ func TestFrontend(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		require.Contains(t, body, "A demo app")
 		require.Contains(t, body, "Releases")
-		require.Contains(t, body, "main")            // git branch
+		require.Contains(t, body, "main") // git branch
 		require.Contains(t, body, "/projects/myapp/releases/1")
-		require.Contains(t, body, "brew install")    // install command present
+		require.Contains(t, body, "brew tap pazer/build")
+		require.Contains(t, body, "brew install pazer/build/myapp")
 		require.Contains(t, body, "docker pull oci.")
 	})
 

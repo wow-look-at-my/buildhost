@@ -3,7 +3,7 @@ package config
 import (
 	"testing"
 
-	"github.com/wow-look-at-my/testify/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLoad_Defaults(t *testing.T) {
@@ -90,25 +90,32 @@ func TestLoad_OIDCEvents_Default(t *testing.T) {
 	assert.Equal(t, []string{"push", "pull_request"}, c.OIDCEvents)
 }
 
+func TestLoad_GitHubWebhookSecret(t *testing.T) {
+	t.Setenv("BUILDHOST_GITHUB_WEBHOOK_SECRET", "secret")
+
+	c := Load()
+	assert.Equal(t, "secret", c.GitHubWebhookSecret)
+}
+
 func TestEnvBytes(t *testing.T) {
 	cases := []struct {
 		in   string
 		def  int64
 		want int64
 	}{
-		{"", 100, 100},        // unset -> default
-		{"   ", 100, 100},     // blank -> default
-		{"500", 1, 500},       // plain bytes
-		{"8K", 1, 8 << 10},    // upper suffix
-		{"8k", 1, 8 << 10},    // lower suffix
-		{"4M", 1, 4 << 20},    // mega
-		{"2G", 1, 2 << 30},    // giga
-		{"1T", 1, 1 << 40},    // tera
-		{"  3G ", 1, 3 << 30}, // surrounding space
-		{"bogus", 77, 77},     // unparseable -> default
-		{"-5", 77, 77},        // non-positive -> default
-		{"0", 77, 77},         // zero -> default
-		{"G", 77, 77},         // suffix only -> default
+		{"", 100, 100},           // unset -> default
+		{"   ", 100, 100},        // blank -> default
+		{"500", 1, 500},          // plain bytes
+		{"8K", 1, 8 << 10},       // upper suffix
+		{"8k", 1, 8 << 10},       // lower suffix
+		{"4M", 1, 4 << 20},       // mega
+		{"2G", 1, 2 << 30},       // giga
+		{"1T", 1, 1 << 40},       // tera
+		{"  3G ", 1, 3 << 30},    // surrounding space
+		{"bogus", 77, 77},        // unparseable -> default
+		{"-5", 77, 77},           // non-positive -> default
+		{"0", 77, 77},            // zero -> default
+		{"G", 77, 77},            // suffix only -> default
 		{"99999999999T", 77, 77}, // would overflow int64 -> default
 	}
 	for _, c := range cases {

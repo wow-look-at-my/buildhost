@@ -18,9 +18,13 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
+const siteNotFoundPage = "404.html"
+
 func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	ctx, span := sitesTracer.Start(r.Context(), "sites.serve")
 	defer span.End()
+
+	setSiteSecurityHeaders(w)
 
 	project := auth.ProjectFrom(ctx)
 	rt := routeFrom(ctx)
@@ -37,13 +41,10 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decide "is this a directory request?" from the original request path, not
-	// rt.path: the router strips the trailing slash from the {path...} capture,
-	// so a request for /p/branch/main/docs/ arrives here as rt.path="docs". Only
-	// r.URL.Path preserves the trailing slash that distinguishes a directory
-	// (serve its index.html) from a file. Reading it off rt.path silently broke
-	// subdirectory index serving -- the bug the bypassing unit tests masked by
-	// hand-feeding route{path:"docs/"} the real router never produces.
+	// The {path...} router value has its trailing slash stripped, so detect a
+	// directory request from the real request path -- otherwise a nested dir URL
+	// like /scratchpads/foo/ is treated as a file, never gets index.html
+	// appended, and matches the 0-byte directory entry in the tar below.
 	isDir := rt.path == "" || strings.HasSuffix(r.URL.Path, "/")
 	filePath := path.Clean(rt.path)
 	if isDir || filePath == "." {
@@ -84,25 +85,55 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if hdr.Typeflag != tar.TypeReg {
+			continue // never serve a directory entry as a file (0-byte body)
+		}
 		name := path.Clean(hdr.Name)
 		if name == filePath {
-			ct := contentType(name)
-			w.Header().Set("Content-Type", ct)
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", hdr.Size))
-			w.Header().Set("Cache-Control", "no-cache")
-			// A hosted site is a real web page that must load its own
-			// scripts/styles/images. Override the server-wide API CSP
-			// ("default-src 'none'"), which would otherwise block every asset
-			// and render the site blank, with one that permits the site's own
-			// same-origin resources and data: URIs -- the same policy the admin
-			// server uses to serve this kind of SPA.
-			w.Header().Set("Content-Security-Policy", "default-src 'self' data:")
-			io.Copy(w, tr)
+			serveTarFile(w, tr, name, hdr, http.StatusOK)
+			return
+		}
+	}
+
+	rc, _, err = h.Store.Get(ctx, site.StorageKey)
+	if err != nil {
+		http.Error(w, "site data not found", http.StatusInternalServerError)
+		return
+	}
+	defer rc.Close()
+
+	tr = tar.NewReader(rc)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			http.Error(w, "corrupt site archive", http.StatusInternalServerError)
+			return
+		}
+
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		name := path.Clean(hdr.Name)
+		if name == siteNotFoundPage {
+			serveTarFile(w, tr, name, hdr, http.StatusNotFound)
 			return
 		}
 	}
 
 	http.NotFound(w, r)
+}
+
+func serveTarFile(w http.ResponseWriter, tr *tar.Reader, name string, hdr *tar.Header, status int) {
+	w.Header().Set("Content-Type", contentType(name))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", hdr.Size))
+	w.Header().Set("Cache-Control", "no-cache")
+	if status != http.StatusOK {
+		w.WriteHeader(status)
+	}
+	io.Copy(w, tr)
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -120,6 +151,17 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(sites)
+}
+
+// setSiteSecurityHeaders drops app-level hardening headers that block hosted
+// site assets, then applies the hosted-site isolation and non-credentialed CORS
+// headers.
+func setSiteSecurityHeaders(w http.ResponseWriter) {
+	w.Header().Del("Content-Security-Policy")
+	w.Header().Del("X-Frame-Options")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+	w.Header().Set("Cross-Origin-Embedder-Policy", "credentialless")
 }
 
 func contentType(name string) string {

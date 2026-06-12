@@ -16,6 +16,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/router"
 )
 
@@ -46,6 +47,7 @@ func (b BuildInfo) ShortCommit() string {
 type Server struct {
 	cfg       config.Config
 	db        *db.DB
+	store     storage.Storage
 	build     BuildInfo
 	startTime time.Time
 
@@ -57,17 +59,18 @@ type Server struct {
 	indexHTML []byte
 }
 
-func New(cfg config.Config, database *db.DB, build BuildInfo) *Server {
+func New(cfg config.Config, database *db.DB, store storage.Storage, build BuildInfo) *Server {
 	staticFS, _ := fs.Sub(content, "static")
 	indexHTML, _ := fs.ReadFile(staticFS, "index.html")
 
 	s := &Server{
 		cfg:       cfg,
 		db:        database,
+		store:     store,
 		build:     build,
 		startTime: time.Now(),
 		staticFS:  staticFS,
-		indexHTML:  indexHTML,
+		indexHTML: indexHTML,
 	}
 	s.cpuTotal = getCPUTime()
 	return s
@@ -113,6 +116,9 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/sites", router.Allow, s.apiSites)
 	mux.HandleFunc("GET /api/artifacts", router.Allow, s.apiArtifacts)
 	mux.HandleFunc("GET /api/storage", router.Allow, s.apiStorage)
+	mux.HandleFunc("GET /api/retention", router.Allow, s.apiRetention)
+	mux.HandleFunc("PUT /api/retention", router.Allow, s.apiUpdateRetention)
+	mux.HandleFunc("POST /api/retention/run", router.Allow, s.apiRunRetention)
 	mux.HandleFunc("GET /admin/inflight", router.Allow, InflightHandler)
 
 	mux.HandleFunc("GET /{path...}", router.Allow, s.serveSPA)
@@ -140,7 +146,14 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
-		w.Header().Set("Content-Security-Policy", "default-src 'self' data:")
+		// The admin SPA is entirely first-party: it ships inline event handlers
+		// (onclick) and inline styles in the markup it builds. 'unsafe-inline'
+		// permits that own code to run -- without it the page's edit/delete
+		// buttons (script-src-attr) silently do nothing. It does NOT relax the
+		// origin allowlist: cross-origin scripts/styles/connections are still
+		// confined to 'self' and data:, so injected third-party scripts (e.g. a
+		// Cloudflare analytics beacon) remain blocked.
+		w.Header().Set("Content-Security-Policy", "default-src 'self' data: 'unsafe-inline'")
 		w.Header().Set("X-Permitted-Cross-Domain-Policies", "none")
 		w.Header().Set("Permissions-Policy", "interest-cohort=()")
 		next.ServeHTTP(w, r)
@@ -165,6 +178,28 @@ func (s *Server) writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Error("encode json", "err", err)
+	}
+}
+
+// serviceURLs returns the public base URL of every registry service, each on
+// its own subdomain, derived from the incoming request Host.
+//
+// The registry serves each format from a dedicated subdomain (dl., apt., brew.,
+// npm., oci., sites., static.) -- never from a path prefix on the main host.
+// The admin dashboard itself runs on a subdomain (e.g. admin.example.com), so
+// auth.DeriveServiceURL strips that first label and rebuilds the real service
+// host (dl.example.com, ...). These are exactly the hosts the router matches,
+// because they are produced by the same helpers the main server uses when it
+// emits cross-service links, so the dashboard can never drift from reality.
+func serviceURLs(r *http.Request) map[string]string {
+	return map[string]string{
+		"dl":     auth.DeriveServiceURL(r, "dl").String(),
+		"apt":    auth.DeriveServiceURL(r, "apt").String(),
+		"brew":   auth.DeriveServiceURL(r, "brew").String(),
+		"npm":    auth.DeriveServiceURL(r, "npm").String(),
+		"oci":    auth.DeriveServiceURL(r, "oci").String(),
+		"sites":  auth.DeriveServiceURL(r, "sites").String(),
+		"static": auth.DeriveServiceURL(r, "static").String(),
 	}
 }
 
@@ -222,14 +257,15 @@ func (s *Server) apiDashboard(w http.ResponseWriter, r *http.Request) {
 		"stats":  stats,
 		"recent": recent,
 		"config": map[string]any{
-			"base_url":           auth.RequestBaseURL(r),
-			"listen_addr":        s.cfg.ListenAddr,
-			"admin_listen_addr":  s.cfg.AdminListenAddr,
-			"data_dir":           s.cfg.DataDir,
-			"oidc_issuers":       s.cfg.OIDCIssuers,
-			"oidc_orgs":          s.cfg.OIDCOrgs,
-			"oidc_events":        s.cfg.OIDCEvents,
+			"base_url":          auth.RequestRootURL(r),
+			"listen_addr":       s.cfg.ListenAddr,
+			"admin_listen_addr": s.cfg.AdminListenAddr,
+			"data_dir":          s.cfg.DataDir,
+			"oidc_issuers":      s.cfg.OIDCIssuers,
+			"oidc_orgs":         s.cfg.OIDCOrgs,
+			"oidc_events":       s.cfg.OIDCEvents,
 		},
+		"services": serviceURLs(r),
 		"build": map[string]any{
 			"version":      s.build.Version,
 			"commit":       s.build.Commit,
@@ -293,7 +329,8 @@ func (s *Server) apiProject(w http.ResponseWriter, r *http.Request) {
 		"project":  project,
 		"releases": releases,
 		"sites":    sites,
-		"base_url": auth.RequestBaseURL(r),
+		"base_url": auth.RequestRootURL(r),
+		"services": serviceURLs(r),
 	})
 }
 
@@ -355,7 +392,8 @@ func (s *Server) apiRelease(w http.ResponseWriter, r *http.Request) {
 		"artifacts":       artifacts,
 		"total_downloads": totalDownloads,
 		"total_size":      totalSize,
-		"base_url":        auth.RequestBaseURL(r),
+		"base_url":        auth.RequestRootURL(r),
+		"services":        serviceURLs(r),
 	})
 }
 
@@ -371,7 +409,8 @@ func (s *Server) apiRegistries(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, map[string]any{
-		"base_url": auth.RequestBaseURL(r),
+		"base_url": auth.RequestRootURL(r),
+		"services": serviceURLs(r),
 		"projects": projects,
 	})
 }
@@ -516,7 +555,8 @@ func (s *Server) apiSites(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeJSON(w, map[string]any{
 		"sites":    sites,
-		"base_url": auth.RequestBaseURL(r),
+		"base_url": auth.RequestRootURL(r),
+		"services": serviceURLs(r),
 	})
 }
 
@@ -569,7 +609,19 @@ func (s *Server) apiStorage(w http.ResponseWriter, r *http.Request) {
 		"logical_bytes":  stats.LogicalBytes,
 		"physical_bytes": stats.PhysicalBytes,
 		"total_bytes":    stats.TotalStorageBytes,
+		"stripped_bytes": stats.StrippedBytes,
+		"debug_bytes":    stats.DebugBytes,
+		"packaged_bytes": stats.PackagedBytes,
 		"disk_bytes":     blobsDiskUsage(s.cfg.DataDir + "/blobs"),
+	}
+
+	// Upper-bound estimate of what keep-N eviction would free (does not subtract
+	// dedup-shared blobs). Omitted on error so the endpoint still returns.
+	cutoff := time.Now().Add(-s.cfg.RetentionRecencyGuard)
+	if reclaimable, err := s.db.SumReclaimableBytes(r.Context(), int64(s.cfg.RetentionKeepN), cutoff); err == nil {
+		resp["reclaimable_bytes"] = reclaimable
+	} else {
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
 	}
 
 	if du, err := getDiskUsage(s.cfg.DataDir); err == nil && du.Total > 0 {

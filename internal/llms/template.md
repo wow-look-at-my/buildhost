@@ -104,10 +104,11 @@ echo "deb [signed-by=/etc/apt/keyrings/myapp.gpg] __APT_URL__/myapp stable main"
 sudo apt update && sudo apt install myapp
 ```
 
-Homebrew (install the generated formula directly from its URL):
+Homebrew (tap the generated Git repository, then install the formula):
 
 ```
-brew install __BREW_URL__/myapp
+brew tap pazer/build __BREW_URL__/tap.git
+brew install pazer/build/myapp
 ```
 
 npm (packages are published under the `@buildhost` scope):
@@ -116,7 +117,9 @@ npm (packages are published under the `@buildhost` scope):
 npm install @buildhost/myapp --registry __NPM_URL__
 ```
 
-OCI / Docker (the registry is served at `__OCI_URL__/v2/`):
+OCI / Docker (the registry is served at `__OCI_URL__/v2/`). Public images pull
+anonymously; for a private project, run `docker login __OCI_HOST__` first (any
+valid token works as the password):
 
 ```
 docker pull __OCI_HOST__/myapp:latest

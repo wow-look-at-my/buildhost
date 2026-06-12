@@ -61,7 +61,8 @@ var NAV_ITEMS = [
     { id: "registries", href: "#/registries", label: "Registries", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 0h8v3H6V4zm0 5h8v2H6V9zm0 4h5v2H6v-2z" clip-rule="evenodd"/></svg>' },
     { id: "tokens", href: "#/tokens", label: "Tokens", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/></svg>' },
     { id: "sites", href: "#/sites", label: "Sites", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4.083 9h1.946c.089-1.546.383-2.97.837-4.118A6.004 6.004 0 004.083 9zM10 2a8 8 0 100 16 8 8 0 000-16zm0 2c-.076 0-.232.032-.465.262-.238.234-.497.623-.737 1.182-.389.907-.673 2.142-.766 3.556h3.936c-.093-1.414-.377-2.649-.766-3.556-.24-.56-.5-.948-.737-1.182C10.232 4.032 10.076 4 10 4zm3.971 5c-.089-1.546-.383-2.97-.837-4.118A6.004 6.004 0 0115.917 9h-1.946zm-2.003 2H8.032c.093 1.414.377 2.649.766 3.556.24.56.5.948.737 1.182.233.23.389.262.465.262.076 0 .232-.032.465-.262.238-.234.497-.623.737-1.182.389-.907.673-2.142.766-3.556zm1.166 4.118c.454-1.147.748-2.572.837-4.118h1.946a6.004 6.004 0 01-2.783 4.118zm-6.268 0C6.412 13.97 6.118 12.546 6.029 11H4.083a6.004 6.004 0 002.783 4.118z" clip-rule="evenodd"/></svg>' },
-    { id: "oidc", href: "#/oidc", label: "OIDC Policies", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' }
+    { id: "oidc", href: "#/oidc", label: "OIDC Policies", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' },
+    { id: "retention", href: "#/retention", label: "Retention", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>' }
 ];
 
 App.renderSidebar = function (nav) {
@@ -90,11 +91,16 @@ App.renderSidebar = function (nav) {
 
 App.badge = function (type, text) { return '<span class="badge badge-' + type + '">' + App.h(text) + "</span>"; };
 
-App.urlTpl = function (tpl, base, suffix) {
+// urlTpl renders a copyable URL with inline os/arch dropdowns. `base` is the
+// text before the os dropdown, `mid` the text between the os and arch dropdowns
+// (e.g. "&arch=" for the query-param download URLs), and `suffix` optional text
+// after. `tpl` is the full template string with {os}/{arch} placeholders that
+// the copy button substitutes the selected values into.
+App.urlTpl = function (tpl, base, mid, suffix) {
     return '<span class="url-tpl" data-tpl="' + App.h(tpl) + '">' +
         "<code>" + App.h(base) + "</code>" +
         '<select class="tpl-select" data-var="os"><option value="linux">linux</option><option value="darwin">darwin</option><option value="windows">windows</option><option value="freebsd">freebsd</option></select>' +
-        "<code>/</code>" +
+        "<code>" + App.h(mid) + "</code>" +
         '<select class="tpl-select" data-var="arch"><option value="amd64">amd64</option><option value="arm64">arm64</option><option value="386">386</option><option value="arm">arm</option></select>' +
         (suffix ? "<code>" + App.h(suffix) + "</code>" : "") +
         "</span><copy-btn></copy-btn>";
@@ -230,7 +236,7 @@ App.pages.project = function (name) {
 
         var sites = d.sites || [];
         if (sites.length > 0) {
-            var bu = d.base_url || "";
+            var sitesBase = (d.services || {}).sites || "";
             html += '<div class="card"><h2>Sites</h2><table class="data-table"><thead><tr><th>Branch</th><th>Files</th><th>Size</th><th>Commit</th><th>Updated</th><th>Link</th></tr></thead><tbody>';
             for (var k = 0; k < sites.length; k++) {
                 var si = sites[k];
@@ -239,7 +245,7 @@ App.pages.project = function (name) {
                 html += "<td>" + App.h(App.humanSize(si.size)) + "</td>";
                 html += "<td>" + (si.git_commit ? '<code class="commit">' + App.h(si.git_commit.substring(0, 12)) + "</code>" : "-") + "</td>";
                 html += '<td title="' + App.h(App.formatTime(si.updated_at)) + '">' + App.h(App.timeAgo(si.updated_at)) + "</td>";
-                html += '<td><a href="' + App.h(bu) + "/sites/" + App.h(p.name) + "/branch/" + App.h(si.branch) + '/" target="_blank">Open</a></td></tr>';
+                html += '<td><a href="' + App.h(sitesBase + "/" + p.name + "/branch/" + si.branch + "/") + '" target="_blank">Open</a></td></tr>';
             }
             html += "</tbody></table></div>";
         }
@@ -252,7 +258,8 @@ App.pages.release = function (name, version) {
     App.setTitle(name + " " + version);
     App.renderSidebar("projects");
     App.fetch("/projects/" + name + "/releases/" + version).then(function (d) {
-        var p = d.project, r = d.release, bu = d.base_url;
+        var p = d.project, r = d.release, bu = d.base_url, svc = d.services || {};
+        var dlBase = (svc.dl || "") + "/" + p.name;
         var html = "<h1><a href='#/projects/" + App.h(p.name) + "'>" + App.h(p.name) + "</a> / " + App.h(r.version) + "</h1>";
 
         html += '<div class="stat-grid">';
@@ -284,25 +291,30 @@ App.pages.release = function (name, version) {
                 html += "<td>" + App.h(App.humanSize(a.size)) + "</td>";
                 html += "<td>" + a.download_count + "</td>";
                 html += '<td class="dl-links">';
-                html += '<a href="' + App.h(bu) + "/dl/" + App.h(p.name) + "/" + App.h(r.version) + "/" + App.h(a.os) + "/" + App.h(a.arch) + '" title="Direct download">raw</a>';
-                if (a.debug_storage_key) html += ' <a href="' + App.h(bu) + "/dl/" + App.h(p.name) + "/" + App.h(r.version) + "/" + App.h(a.os) + "/" + App.h(a.arch) + '?debug=1" title="Debug symbols">debug</a>';
+                var dlQ = "?v=" + r.version + "&os=" + a.os + "&arch=" + a.arch;
+                html += '<a href="' + App.h(dlBase + dlQ) + '" title="Direct download">raw</a>';
+                if (a.debug_storage_key) html += ' <a href="' + App.h(dlBase + dlQ + "&debug=1") + '" title="Debug symbols">debug</a>';
                 var pkgs = a.packages || [];
                 for (var j = 0; j < pkgs.length; j++) {
-                    html += ' <a href="' + App.h(bu) + "/dl/" + App.h(p.name) + "/" + App.h(r.version) + "/" + App.h(a.os) + "/" + App.h(a.arch) + "?format=" + App.h(pkgs[j].format) + '" title="' + App.h(pkgs[j].filename) + " (" + App.h(App.humanSize(pkgs[j].size)) + ')">' + App.h(pkgs[j].format) + "</a>";
+                    html += ' <a href="' + App.h(dlBase + dlQ + "&fmt=" + pkgs[j].format) + '" title="' + App.h(pkgs[j].filename) + " (" + App.h(App.humanSize(pkgs[j].size)) + ')">' + App.h(pkgs[j].format) + "</a>";
                 }
                 html += "</td></tr>";
             }
         }
         html += "</tbody></table></div>";
 
+        var aptU = (svc.apt || "") + "/" + p.name;
+        var brewU = (svc.brew || "") + "/Formula/" + p.name + ".rb";
+        var npmU = (svc.npm || "") + "/@buildhost/" + p.name;
+        var ociU = (svc.oci || "") + "/v2/" + p.name + "/manifests/" + r.version;
         html += '<div class="card"><h2>Download Endpoints</h2><table class="info-table">';
-        html += "<tr><td class='info-label'>Direct (latest)</td><td class='endpoint-cell'>" + App.urlTpl(bu + "/dl/" + p.name + "/latest/{os}/{arch}", bu + "/dl/" + p.name + "/latest/") + "</td></tr>";
-        html += "<tr><td class='info-label'>Direct (version)</td><td class='endpoint-cell'>" + App.urlTpl(bu + "/dl/" + p.name + "/" + r.version + "/{os}/{arch}", bu + "/dl/" + p.name + "/" + r.version + "/") + "</td></tr>";
-        if (r.git_branch) html += "<tr><td class='info-label'>Direct (branch)</td><td class='endpoint-cell'>" + App.urlTpl(bu + "/dl/" + p.name + "/branch/" + r.git_branch + "/{os}/{arch}", bu + "/dl/" + p.name + "/branch/" + r.git_branch + "/") + "</td></tr>";
-        html += "<tr><td class='info-label'>APT</td><td class='endpoint-cell'><a href='" + App.h(bu) + "/apt/" + App.h(p.name) + "/dists/stable/Release' data-copy='" + App.h(bu) + "/apt/" + App.h(p.name) + "'>" + App.h(bu) + "/apt/" + App.h(p.name) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Homebrew</td><td class='endpoint-cell'><a href='" + App.h(bu) + "/brew/" + App.h(p.name) + ".rb'>" + App.h(bu) + "/brew/" + App.h(p.name) + ".rb</a><copy-btn data-src='a'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>npm</td><td class='endpoint-cell'><a href='" + App.h(bu) + "/npm/@buildhost/" + App.h(p.name) + "'>" + App.h(bu) + "/npm/@buildhost/" + App.h(p.name) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>OCI</td><td class='endpoint-cell'><a href='" + App.h(bu) + "/v2/" + App.h(p.name) + "/manifests/" + App.h(r.version) + "'>" + App.h(bu) + "/v2/" + App.h(p.name) + "/manifests/" + App.h(r.version) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Direct (latest)</td><td class='endpoint-cell'>" + App.urlTpl(dlBase + "?os={os}&arch={arch}", dlBase + "?os=", "&arch=") + "</td></tr>";
+        html += "<tr><td class='info-label'>Direct (version)</td><td class='endpoint-cell'>" + App.urlTpl(dlBase + "?v=" + r.version + "&os={os}&arch={arch}", dlBase + "?v=" + r.version + "&os=", "&arch=") + "</td></tr>";
+        if (r.git_branch) html += "<tr><td class='info-label'>Direct (branch)</td><td class='endpoint-cell'>" + App.urlTpl(dlBase + "?branch=" + r.git_branch + "&os={os}&arch={arch}", dlBase + "?branch=" + r.git_branch + "&os=", "&arch=") + "</td></tr>";
+        html += "<tr><td class='info-label'>APT</td><td class='endpoint-cell'><a href='" + App.h(aptU + "/dists/stable/Release") + "' data-copy='" + App.h(aptU) + "'>" + App.h(aptU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Homebrew</td><td class='endpoint-cell'><a href='" + App.h(brewU) + "'>" + App.h(brewU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>npm</td><td class='endpoint-cell'><a href='" + App.h(npmU) + "'>" + App.h(npmU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>OCI</td><td class='endpoint-cell'><a href='" + App.h(ociU) + "'>" + App.h(ociU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
         html += "</table></div>";
 
         document.getElementById("content").innerHTML = html;
@@ -313,70 +325,72 @@ App.pages.registries = function () {
     App.setTitle("Registries");
     App.renderSidebar("registries");
     App.fetch("/registries").then(function (d) {
-        var bu = d.base_url;
+        var bu = d.base_url, svc = d.services || {};
+        var dl = svc.dl || "", apt = svc.apt || "", brew = svc.brew || "", npm = svc.npm || "", oci = svc.oci || "", sites = svc.sites || "";
+        var npmHost = npm.replace(/^https?:\/\//, ""), ociHost = oci.replace(/^https?:\/\//, "");
         var html = "<h1>Registry Endpoints</h1>";
 
-        html += '<div class="card"><h2>Direct Downloads</h2><p class="section-desc">Download artifacts directly by platform. Supports version pinning, latest, and branch-based resolution.</p>';
+        html += '<div class="card"><h2>Direct Downloads</h2><p class="section-desc">Download artifacts directly by platform. OS and architecture are query parameters; version, latest, and branch resolution too.</p>';
         html += '<table class="info-table">';
-        html += "<tr><td class='info-label'>Latest</td><td class='endpoint-cell'>" + App.urlTpl(bu + "/dl/{project}/latest/{os}/{arch}", bu + "/dl/{project}/latest/") + "</td></tr>";
-        html += "<tr><td class='info-label'>Version</td><td class='endpoint-cell'><code>" + App.h(bu) + "/dl/{project}/{version}/{os}/{arch}</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Branch</td><td class='endpoint-cell'><code>" + App.h(bu) + "/dl/{project}/branch/{branch}/{os}/{arch}</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Latest</td><td class='endpoint-cell'>" + App.urlTpl(dl + "/{project}?os={os}&arch={arch}", dl + "/{project}?os=", "&arch=") + "</td></tr>";
+        html += "<tr><td class='info-label'>Version</td><td class='endpoint-cell'><code>" + App.h(dl + "/{project}?v={version}&os={os}&arch={arch}") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Branch</td><td class='endpoint-cell'><code>" + App.h(dl + "/{project}?branch={branch}&os={os}&arch={arch}") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "</table>";
-        html += App.codeBlock("curl", 'curl -fsSL -H "Authorization: Bearer $TOKEN" \\\n  ' + bu + "/dl/{project}/latest/linux/amd64 -o {project}");
-        html += App.codeBlock("Query parameters", "?format=raw       # Default binary (stripped if available)\n?format=deb       # Debian package\n?format=brew      # Homebrew bottle\n?format=npm       # npm tarball\n?debug=1          # Debug symbols");
+        html += App.codeBlock("curl", 'curl -fsSL -H "Authorization: Bearer $TOKEN" \\\n  "' + dl + '/{project}?os=linux&arch=amd64" -o {project}');
+        html += App.codeBlock("Query parameters", "?os=linux         # Required: target OS\n?arch=amd64       # Required: target architecture\n?v={version}      # Pin to a version (default: latest)\n?branch={branch}  # Latest build on a git branch\n?fmt=tar.gz       # Repackage: raw, tar.gz, tar.xz, tar.zst, zip\n?debug=1          # Debug symbols");
         html += "</div>";
 
-        html += '<div class="card"><h2>APT Repository</h2><p class="section-desc">Debian/Ubuntu package repository. Packages are generated at publish time.</p>';
+        html += '<div class="card"><h2>APT Repository</h2><p class="section-desc">Debian/Ubuntu package repository. Packages are generated on demand at download time.</p>';
         html += '<table class="info-table">';
-        html += "<tr><td class='info-label'>Release</td><td class='endpoint-cell'><code>" + App.h(bu) + "/apt/{project}/dists/stable/Release</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>InRelease</td><td class='endpoint-cell'><code>" + App.h(bu) + "/apt/{project}/dists/stable/InRelease</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Packages</td><td class='endpoint-cell'><code>" + App.h(bu) + "/apt/{project}/dists/stable/main/binary-{arch}/Packages</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Pool</td><td class='endpoint-cell'><code>" + App.h(bu) + "/apt/{project}/pool/{filename}</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Release</td><td class='endpoint-cell'><code>" + App.h(apt + "/{project}/dists/stable/Release") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>InRelease</td><td class='endpoint-cell'><code>" + App.h(apt + "/{project}/dists/stable/InRelease") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Packages</td><td class='endpoint-cell'><code>" + App.h(apt + "/{project}/dists/stable/main/binary-{arch}/Packages") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Pool</td><td class='endpoint-cell'><code>" + App.h(apt + "/{project}/pool/{filename}") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "</table>";
-        html += App.codeBlock("Setup (public project)", 'echo "deb [trusted=yes] ' + bu + '/apt/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\nsudo apt update && sudo apt install {project}');
-        html += App.codeBlock("Setup (private project)", 'echo "deb [trusted=yes] ' + bu + '/apt/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/{project}.conf\nmachine ' + bu + "/apt/{project}\n  login token\n  password $TOKEN\nEOF\nsudo apt update && sudo apt install {project}");
+        html += App.codeBlock("Setup (public project)", 'echo "deb [trusted=yes] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\nsudo apt update && sudo apt install {project}');
+        html += App.codeBlock("Setup (private project)", 'echo "deb [trusted=yes] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/{project}.conf\nmachine ' + apt + "/{project}\n  login token\n  password $TOKEN\nEOF\nsudo apt update && sudo apt install {project}");
         html += "</div>";
 
-        html += '<div class="card"><h2>Homebrew Tap</h2><p class="section-desc">Homebrew formula served as a single .rb file. Auto-detects macOS and Linux bottles.</p>';
-        html += '<table class="info-table"><tr><td class="info-label">Formula</td><td class="endpoint-cell"><code>' + App.h(bu) + "/brew/{project}.rb</code><copy-btn data-src='code'></copy-btn></td></tr></table>";
-        html += App.codeBlock("Install (public project)", "brew install " + bu + "/brew/{project}.rb");
-        html += App.codeBlock("Install (private project)", "HOMEBREW_BUILDHOST_TOKEN=$TOKEN brew install " + bu + "/brew/{project}.rb");
+        html += '<div class="card"><h2>Homebrew Tap</h2><p class="section-desc">Homebrew formulas are served through a generated Git tap. Formula files auto-detect macOS and Linux artifacts.</p>';
+        html += '<table class="info-table"><tr><td class="info-label">Tap Git URL</td><td class="endpoint-cell"><code>' + App.h(brew + "/tap.git") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += '<tr><td class="info-label">Formula</td><td class="endpoint-cell"><code>' + App.h(brew + "/Formula/{project}.rb") + "</code><copy-btn data-src='code'></copy-btn></td></tr></table>";
+        html += App.codeBlock("Install", "brew tap pazer/build " + brew + "/tap.git\nbrew install pazer/build/{project}");
         html += "</div>";
 
         html += '<div class="card"><h2>npm Registry</h2><p class="section-desc">npm-compatible registry. Packages are scoped under <code>@buildhost</code>.</p>';
         html += '<table class="info-table">';
-        html += "<tr><td class='info-label'>Package metadata</td><td class='endpoint-cell'><code>" + App.h(bu) + "/npm/@buildhost/{project}</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Tarball</td><td class='endpoint-cell'><code>" + App.h(bu) + "/npm/@buildhost/{project}/-/{project}-{version}.tgz</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Package metadata</td><td class='endpoint-cell'><code>" + App.h(npm + "/@buildhost/{project}") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Tarball</td><td class='endpoint-cell'><code>" + App.h(npm + "/@buildhost/{project}/-/{project}-{version}.tgz") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "</table>";
-        html += App.codeBlock("Setup", "npm config set @buildhost:registry " + bu + "/npm/\nnpm config set //" + bu + "/npm/:_authToken $TOKEN   # if private\nnpm install @buildhost/{project}");
+        html += App.codeBlock("Setup", "npm config set @buildhost:registry " + npm + "/\nnpm config set //" + npmHost + "/:_authToken $TOKEN   # if private\nnpm install @buildhost/{project}");
         html += "</div>";
 
         html += '<div class="card"><h2>OCI Distribution (Docker)</h2><p class="section-desc">OCI-compatible registry for pulling artifacts as container images.</p>';
         html += '<table class="info-table">';
-        html += "<tr><td class='info-label'>API check</td><td class='endpoint-cell'><a href='" + App.h(bu) + "/v2/' data-copy='" + App.h(bu) + "/v2/'>" + App.h(bu) + "/v2/</a><copy-btn data-src='a'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Manifest</td><td class='endpoint-cell'><code>" + App.h(bu) + "/v2/{project}/manifests/{reference}</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Blob</td><td class='endpoint-cell'><code>" + App.h(bu) + "/v2/{project}/blobs/{digest}</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>API check</td><td class='endpoint-cell'><a href='" + App.h(oci + "/v2/") + "' data-copy='" + App.h(oci + "/v2/") + "'>" + App.h(oci + "/v2/") + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Manifest</td><td class='endpoint-cell'><code>" + App.h(oci + "/v2/{project}/manifests/{reference}") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Blob</td><td class='endpoint-cell'><code>" + App.h(oci + "/v2/{project}/blobs/{digest}") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "</table>";
-        html += App.codeBlock("Docker pull", "docker pull " + bu + "/{project}:{version}");
-        html += App.codeBlock("Private project", "echo $TOKEN | docker login " + bu + " -u token --password-stdin\ndocker pull " + bu + "/{project}:{version}");
+        html += App.codeBlock("Docker pull", "docker pull " + ociHost + "/{project}:{version}");
+        html += App.codeBlock("Private project", "echo $TOKEN | docker login " + ociHost + " -u token --password-stdin\ndocker pull " + ociHost + "/{project}:{version}");
         html += "</div>";
 
         html += '<div class="card"><h2>Static Sites</h2><p class="section-desc">Host small, self-contained static sites with independent per-branch deployments.</p>';
         html += '<table class="info-table">';
-        html += "<tr><td class='info-label'>Deploy</td><td class='endpoint-cell'><code>PUT " + App.h(bu) + "/sites/{project}/branch/{branch}</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Serve</td><td class='endpoint-cell'><code>" + App.h(bu) + "/sites/{project}/branch/{branch}/{path}</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Delete</td><td class='endpoint-cell'><code>DELETE " + App.h(bu) + "/sites/{project}/branch/{branch}</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>List</td><td class='endpoint-cell'><code>GET " + App.h(bu) + "/api/v1/projects/{project}/sites</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Deploy</td><td class='endpoint-cell'><code>PUT " + App.h(sites + "/{project}/branch/{branch}") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Serve</td><td class='endpoint-cell'><code>" + App.h(sites + "/{project}/branch/{branch}/{path}") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Delete</td><td class='endpoint-cell'><code>DELETE " + App.h(sites + "/{project}/branch/{branch}") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>List branches</td><td class='endpoint-cell'><code>GET " + App.h(sites + "/{project}/branches") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "</table>";
-        html += App.codeBlock("Deploy", "buildhost publish-site \\\n  --server " + bu + " \\\n  --token $TOKEN \\\n  --project {project} \\\n  --branch {branch} \\\n  --dir ./dist");
+        html += App.codeBlock("Deploy (curl)", 'tar czf - -C ./dist . | curl -X PUT \\\n  -H "Authorization: Bearer $TOKEN" \\\n  -H "Content-Type: application/gzip" \\\n  --data-binary @- \\\n  ' + sites + "/{project}/branch/{branch}");
         html += "</div>";
 
-        html += '<div class="card"><h2>REST API</h2><p class="section-desc">JSON API for managing projects, releases, and artifacts programmatically.</p>';
+        html += '<div class="card"><h2>REST API</h2><p class="section-desc">JSON API for managing projects, releases, and artifacts programmatically. Served on the main domain.</p>';
         html += '<table class="info-table">';
-        html += "<tr><td class='info-label'>List projects</td><td class='endpoint-cell'><a href='" + App.h(bu) + "/api/v1/projects'>GET " + App.h(bu) + "/api/v1/projects</a><copy-btn data-src='a'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Get project</td><td class='endpoint-cell'><code>GET " + App.h(bu) + "/api/v1/projects/{project}</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>List releases</td><td class='endpoint-cell'><code>GET " + App.h(bu) + "/api/v1/projects/{project}/releases</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Publish</td><td class='endpoint-cell'><code>POST " + App.h(bu) + "/api/v1/projects/{project}/publish</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>List projects</td><td class='endpoint-cell'><a href='" + App.h(bu + "/api/v1/projects") + "'>GET " + App.h(bu + "/api/v1/projects") + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Get project</td><td class='endpoint-cell'><code>GET " + App.h(bu + "/api/v1/projects/{project}") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>List releases</td><td class='endpoint-cell'><code>GET " + App.h(bu + "/api/v1/projects/{project}/releases") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Publish</td><td class='endpoint-cell'><code>POST " + App.h(bu + "/api/v1/projects/{project}/releases/{version}/publish") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "</table>";
         html += App.codeBlock("Authentication", "# Bearer token\ncurl -H \"Authorization: Bearer $TOKEN\" " + bu + "/api/v1/projects\n\n# Basic auth\ncurl -u \"token:$TOKEN\" " + bu + "/api/v1/projects\n\n# Query parameter (for clients that can't set headers)\ncurl \"" + bu + '/api/v1/projects?token=$TOKEN"');
         html += "</div>";
@@ -387,12 +401,13 @@ App.pages.registries = function () {
             html += '<table class="data-table"><thead><tr><th>Project</th><th>Visibility</th><th>Direct Download</th><th>APT</th><th>Brew</th><th>npm</th></tr></thead><tbody>';
             for (var k = 0; k < projects.length; k++) {
                 var pr = projects[k];
+                var prDl = dl + "/" + pr.name;
                 html += "<tr><td><a href='#/projects/" + App.h(pr.name) + "'>" + App.h(pr.name) + "</a></td>";
                 html += "<td>" + (pr.is_private ? App.badge("warning", "Private") : App.badge("success", "Public")) + "</td>";
-                html += "<td class='endpoint-cell'><span class='url-tpl' data-tpl='" + App.h(bu) + "/dl/" + App.h(pr.name) + "/latest/{os}/{arch}'><code class='truncate'>" + App.h(bu) + "/dl/" + App.h(pr.name) + "/latest/</code><select class='tpl-select tpl-select-sm' data-var='os'><option value='linux'>linux</option><option value='darwin'>darwin</option><option value='windows'>windows</option><option value='freebsd'>freebsd</option></select><code>/</code><select class='tpl-select tpl-select-sm' data-var='arch'><option value='amd64'>amd64</option><option value='arm64'>arm64</option><option value='386'>386</option><option value='arm'>arm</option></select></span><copy-btn></copy-btn></td>";
-                html += "<td class='endpoint-cell'><a href='" + App.h(bu) + "/apt/" + App.h(pr.name) + "/dists/stable/Release' data-copy='" + App.h(bu) + "/apt/" + App.h(pr.name) + "'>" + App.h(bu) + "/apt/" + App.h(pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
-                html += "<td class='endpoint-cell'><a href='" + App.h(bu) + "/brew/" + App.h(pr.name) + ".rb'>" + App.h(bu) + "/brew/" + App.h(pr.name) + ".rb</a><copy-btn data-src='a'></copy-btn></td>";
-                html += "<td class='endpoint-cell'><a href='" + App.h(bu) + "/npm/@buildhost/" + App.h(pr.name) + "'>" + App.h(bu) + "/npm/@buildhost/" + App.h(pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
+                html += "<td class='endpoint-cell'><span class='url-tpl' data-tpl='" + App.h(prDl + "?os={os}&arch={arch}") + "'><code class='truncate'>" + App.h(prDl + "?os=") + "</code><select class='tpl-select tpl-select-sm' data-var='os'><option value='linux'>linux</option><option value='darwin'>darwin</option><option value='windows'>windows</option><option value='freebsd'>freebsd</option></select><code>&arch=</code><select class='tpl-select tpl-select-sm' data-var='arch'><option value='amd64'>amd64</option><option value='arm64'>arm64</option><option value='386'>386</option><option value='arm'>arm</option></select></span><copy-btn></copy-btn></td>";
+                html += "<td class='endpoint-cell'><a href='" + App.h(apt + "/" + pr.name + "/dists/stable/Release") + "' data-copy='" + App.h(apt + "/" + pr.name) + "'>" + App.h(apt + "/" + pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
+                html += "<td class='endpoint-cell'><a href='" + App.h(brew + "/" + pr.name) + "'>" + App.h(brew + "/" + pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
+                html += "<td class='endpoint-cell'><a href='" + App.h(npm + "/@buildhost/" + pr.name) + "'>" + App.h(npm + "/@buildhost/" + pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
                 html += "</tr>";
             }
             html += "</tbody></table></div>";
@@ -541,7 +556,7 @@ App.pages.sites = function () {
     App.setTitle("Sites");
     App.renderSidebar("sites");
     App.fetch("/sites").then(function (d) {
-        var bu = d.base_url || "";
+        var bu = d.base_url || "", sitesBase = (d.services || {}).sites || "";
         var sites = d.sites || [];
 
         var byProject = {};
@@ -576,7 +591,7 @@ App.pages.sites = function () {
 
         html += '<div class="card"><h2>Deploy a Site</h2>';
         html += App.codeBlock("CLI", "buildhost publish-site \\\n  --server " + bu + " \\\n  --token $TOKEN \\\n  --project {project} \\\n  --branch {branch} \\\n  --dir ./dist");
-        html += App.codeBlock("curl", 'tar czf - -C ./dist . | curl -X PUT \\\n  -H "Authorization: Bearer $TOKEN" \\\n  -H "Content-Type: application/gzip" \\\n  --data-binary @- \\\n  ' + bu + "/sites/{project}/branch/{branch}");
+        html += App.codeBlock("curl", 'tar czf - -C ./dist . | curl -X PUT \\\n  -H "Authorization: Bearer $TOKEN" \\\n  -H "Content-Type: application/gzip" \\\n  --data-binary @- \\\n  ' + sitesBase + "/{project}/branch/{branch}");
         html += "</div>";
 
         document.getElementById("content").innerHTML = html;
@@ -589,6 +604,7 @@ App.pages.site = function (name) {
     App.fetch("/projects/" + name).then(function (d) {
         var p = d.project;
         var bu = d.base_url || "";
+        var sitesBase = (d.services || {}).sites || "";
         var sites = d.sites || [];
 
         var html = '<h1><a href="#/sites">Sites</a> / ' + App.h(p.name) + "</h1>";
@@ -604,7 +620,7 @@ App.pages.site = function (name) {
                 html += "<td>" + App.h(App.humanSize(s.size)) + "</td>";
                 html += "<td>" + (s.git_commit ? '<code class="commit">' + App.h(s.git_commit.substring(0, 12)) + "</code>" : "-") + "</td>";
                 html += '<td title="' + App.h(App.formatTime(s.updated_at)) + '">' + App.h(App.timeAgo(s.updated_at)) + "</td>";
-                html += '<td><a href="' + App.h(bu) + "/sites/" + App.h(p.name) + "/branch/" + App.h(s.branch) + '/" target="_blank">Open</a></td></tr>';
+                html += '<td><a href="' + App.h(sitesBase + "/" + p.name + "/branch/" + s.branch + "/") + '" target="_blank">Open</a></td></tr>';
             }
         }
         html += "</tbody></table></div>";
@@ -677,10 +693,35 @@ App.pages.storage = function () {
         html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(d.logical_bytes || 0)) + '</div><div class="stat-label">Logical Size</div></div>';
         html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(d.physical_bytes || 0)) + '</div><div class="stat-label">Physical Size (dedup)</div></div>';
         html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(d.disk_bytes || 0)) + '</div><div class="stat-label">Blobs on Disk</div></div>';
+        html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(d.reclaimable_bytes || 0)) + '</div><div class="stat-label">Reclaimable (est.)</div></div>';
         if (d.disk_total) {
             html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(d.disk_used || 0)) + " / " + App.h(App.humanSize(d.disk_total || 0)) + '</div><div class="stat-label">Filesystem Usage</div></div>';
         }
         html += "</div>";
+
+        var logical = d.logical_bytes || 0;
+        var physical = d.physical_bytes || 0;
+        var disk = d.disk_bytes || 0;
+        var bdRow = function (op, name, bytes, cls) {
+            return "<tr" + (cls ? ' class="' + cls + '"' : "") +
+                '><td class="bd-op">' + op + '</td><td class="bd-name">' + name +
+                '</td><td class="bd-val">' + App.h(App.humanSize(bytes)) + "</td></tr>";
+        };
+        html += '<div class="card"><h2>How these reconcile</h2>';
+        html += '<table class="breakdown-table"><tbody>';
+        html += bdRow("", "Original uploads", d.total_bytes || 0, "");
+        html += bdRow("+", "Packaged artifacts", d.packaged_bytes || 0, "");
+        html += bdRow("+", "Stripped binaries", d.stripped_bytes || 0, "");
+        html += bdRow("+", "Debug symbols", d.debug_bytes || 0, "");
+        html += bdRow("=", "Logical (all references)", logical, "bd-subtotal");
+        html += bdRow("−", "Deduplication", Math.max(0, logical - physical), "bd-saving");
+        html += bdRow("=", "Physical (unique blobs)", physical, "bd-subtotal");
+        html += bdRow("−", "Compression (zstd)", Math.max(0, physical - disk), "bd-saving");
+        html += bdRow("=", "Blobs on disk", disk, "bd-total");
+        html += "</tbody></table>";
+        html += '<p class="breakdown-note">Original uploads counts only the binaries you pushed. Packaged, stripped, and debug blobs are produced on demand but still stored, so they occupy disk yet are excluded from "Artifact Storage" above. Deduplication and zstd compression then reduce the unique set to what the blob store actually holds.</p>';
+        html += "</div>";
+
         html += '<div class="card"><h2>Per-Project Breakdown</h2><table class="data-table"><thead><tr><th>Project</th><th>Releases</th><th>Artifacts</th><th>Total Size</th></tr></thead><tbody>';
         if (projects.length === 0) {
             html += '<tr><td colspan="4" class="empty">No projects yet</td></tr>';
@@ -696,6 +737,98 @@ App.pages.storage = function () {
         html += "</tbody></table></div>";
         document.getElementById("content").innerHTML = html;
     });
+};
+
+App.pages.retention = function () {
+    App.setTitle("Retention");
+    App.renderSidebar("retention");
+    App.fetch("/retention").then(App.renderRetention);
+};
+
+App.renderRetention = function (d) {
+    var p = d.preview || {};
+    var rels = p.releases || [];
+
+    var sweeper;
+    if (!d.sweeper_enabled) {
+        sweeper = App.badge("neutral", "Background sweeper: off");
+    } else if (d.sweeper_enforce) {
+        sweeper = App.badge("danger", "Background sweeper: ON — deleting automatically");
+    } else {
+        sweeper = App.badge("warning", "Background sweeper: ON — report-only");
+    }
+
+    var html = "<h1>Retention &amp; Garbage Collection</h1>";
+    html += '<div class="card"><p class="muted">Eviction keeps the newest <strong>keep-N</strong> published releases on each <code>(project, branch)</code> and sweeps abandoned uploads, then deletes any blob nothing else references. Each branch&#39;s latest published build, tagged images, pushed-docker builds, and anything inside the recency guard are <strong>never</strong> deleted. Nothing happens until you run it below (or enable the background sweeper via env).</p><p>' + sweeper + "</p></div>";
+
+    html += '<div class="card"><h2>Policy</h2><form id="retention-form">';
+    html += '<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end">';
+    html += '<label>Keep per branch<br><input class="form-input form-input-sm" type="number" id="ret-keepn" min="0" max="100000" value="' + App.h(d.keep_n) + '"></label>';
+    html += '<label>Recency guard (hours)<br><input class="form-input form-input-sm" type="number" id="ret-recency" min="0" max="87600" value="' + App.h(d.recency_hours) + '"></label>';
+    html += '<button class="btn btn-primary" type="submit">Save policy</button>';
+    html += "</div></form></div>";
+
+    html += '<div class="card"><h2>Preview <span class="muted" style="font-weight:400">— what enforcing now would delete</span></h2>';
+    html += '<div class="stat-grid">';
+    html += '<div class="stat-card"><div class="stat-value">' + App.h(p.release_count || 0) + '</div><div class="stat-label">Releases evicted</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + App.h(App.humanSize(p.reclaimable_bytes || 0)) + '</div><div class="stat-label">Reclaimable</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + App.h(p.blobs || 0) + '</div><div class="stat-label">Blobs freed</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + App.h(p.blobs_retained || 0) + '</div><div class="stat-label">Shared blobs kept</div></div>';
+    html += "</div>";
+
+    html += '<table class="data-table"><thead><tr><th>Project</th><th>Branch</th><th>Version</th><th>Reason</th></tr></thead><tbody>';
+    if (rels.length === 0) {
+        html += '<tr><td colspan="4" class="empty">Nothing to evict under the current policy</td></tr>';
+    } else {
+        for (var i = 0; i < rels.length; i++) {
+            var r = rels[i];
+            var proj = r.project_name ? "<a href='#/projects/" + App.h(r.project_name) + "'>" + App.h(r.project_name) + "</a>" : App.h("project " + r.project_id);
+            html += "<tr><td>" + proj + "</td>";
+            html += "<td>" + (r.branch ? App.h(r.branch) : '<span class="muted">(none)</span>') + "</td>";
+            html += "<td>" + App.h(r.version) + "</td>";
+            html += "<td>" + App.badge(r.reason === "abandoned" ? "neutral" : "info", r.reason) + "</td></tr>";
+        }
+    }
+    html += "</tbody></table>";
+    html += '<div class="row-actions" style="margin-top:16px">';
+    html += '<button class="btn" onclick="App.pages.retention()">Refresh preview</button> ';
+    html += '<button class="btn btn-danger" onclick="App.runRetention()">Run garbage collection now</button>';
+    html += "</div></div>";
+
+    document.getElementById("content").innerHTML = html;
+
+    var form = document.getElementById("retention-form");
+    if (form) {
+        form.addEventListener("submit", function (e) {
+            e.preventDefault();
+            var keepN = parseInt(document.getElementById("ret-keepn").value, 10);
+            var recency = parseInt(document.getElementById("ret-recency").value, 10);
+            fetch("/api/retention", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ keep_n: keepN, recency_hours: recency })
+            }).then(function (res) {
+                if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); });
+                return res.json().then(App.renderRetention);
+            }).catch(function () { alert("Could not save policy (preview/demo mode has no backend)."); });
+        });
+    }
+};
+
+App.runRetention = function () {
+    if (!confirm("Permanently delete the releases shown in the preview and reclaim their storage? This cannot be undone.")) return;
+    fetch("/api/retention/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enforce: true })
+    }).then(function (res) {
+        if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); });
+        return res.json().then(function (rep) {
+            alert("Garbage collection complete: evicted " + (rep.release_count || 0) + " releases, freed " +
+                App.humanSize(rep.reclaimable_bytes || 0) + " across " + (rep.blobs || 0) + " blobs.");
+            App.pages.retention();
+        });
+    }).catch(function () { alert("Could not run GC (preview/demo mode has no backend)."); });
 };
 
 // --- Router ---
@@ -720,10 +853,21 @@ App.route = function () {
     else if (first === "oidc") { App.pages.oidc(); }
     else if (first === "artifacts") { App.pages.artifacts(); }
     else if (first === "storage") { App.pages.storage(); }
+    else if (first === "retention") { App.pages.retention(); }
     else { App.pages.dashboard(); }
 };
 
 // --- Demo data ---
+
+App.demoServices = {
+    dl: "https://dl.builds.example.com",
+    apt: "https://apt.builds.example.com",
+    brew: "https://brew.builds.example.com",
+    npm: "https://npm.builds.example.com",
+    oci: "https://oci.builds.example.com",
+    sites: "https://sites.builds.example.com",
+    static: "https://static.builds.example.com"
+};
 
 App.demoData = {
     "/sidebar": { build: { version: "v0.0.0-demo", commit: "demo", commit_url: "", short_commit: "demo", date: "" }, build_age: "", cpu_percent: "0.0%", disk_used: "0 B", disk_total: "0 B" },
@@ -734,6 +878,7 @@ App.demoData = {
             { project_name: "cli-tool", version: "1.2.0", git_branch: "release", published: true, created_at: new Date(Date.now() - 86400000).toISOString() }
         ],
         config: { base_url: "https://builds.example.com", listen_addr: ":8080", admin_listen_addr: ":9090", data_dir: "./data", oidc_issuers: ["https://token.actions.githubusercontent.com"], oidc_orgs: ["myorg"], oidc_events: ["push"] },
+        services: App.demoServices,
         build: { version: "v0.0.0-demo", commit: "demo", commit_url: "", short_commit: "demo", date: "" },
         uptime: "0m 0s", cpu_percent: "0.0%", cpu_total: "0m 0s"
     },
@@ -745,10 +890,11 @@ App.demoData = {
         project: { id: 1, name: "myapp", description: "Main application", versioning: "auto", is_private: false, created_at: new Date(Date.now() - 864e5 * 30).toISOString(), updated_at: new Date(Date.now() - 3600000).toISOString() },
         releases: [{ version: "3", git_branch: "main", git_commit: "abc123", published: true, artifact_count: 4, published_at: new Date(Date.now() - 3600000).toISOString(), created_at: new Date(Date.now() - 3600000).toISOString() }],
         sites: [{ branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }],
-        base_url: "https://builds.example.com"
+        base_url: "https://builds.example.com",
+        services: App.demoServices
     },
-    "/registries": { base_url: "https://builds.example.com", projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
-    "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com" },
+    "/registries": { base_url: "https://builds.example.com", services: App.demoServices, projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
+    "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com", services: App.demoServices },
     "/tokens": [{ id: 1, name: "deploy", token_prefix: "bh_abc", is_global: false, project_id: 1, project_name: "myapp", scopes: "read,write", is_expired: false, created_at: new Date(Date.now() - 864e5 * 7).toISOString(), last_used_at: new Date(Date.now() - 3600000).toISOString() }],
     "/oidc": [{ issuer: "https://token.actions.githubusercontent.com", subject_pattern: "repo:myorg/myapp:*", audience: "", project_name: "myapp", scopes: "read,write", created_at: new Date(Date.now() - 864e5 * 14).toISOString() }],
     "/artifacts": [
@@ -763,6 +909,18 @@ App.demoData = {
         ],
         total_bytes: 52428800, logical_bytes: 58000000, physical_bytes: 48000000, disk_bytes: 50000000,
         disk_used: 120000000, disk_total: 500000000
+    },
+    "/retention": {
+        keep_n: 10, recency_hours: 24, sweeper_enabled: false, sweeper_enforce: false,
+        preview: {
+            enforced: false, release_count: 3, keep_n_count: 2, abandoned_count: 1,
+            blobs: 4, blobs_retained: 1, reclaimable_bytes: 18874368,
+            releases: [
+                { project_name: "myapp", project_id: 1, branch: "main", version: "7", reason: "keep-n" },
+                { project_name: "myapp", project_id: 1, branch: "main", version: "8", reason: "keep-n" },
+                { project_name: "cli-tool", project_id: 2, branch: "feature-x", version: "3", reason: "abandoned" }
+            ]
+        }
     }
 };
 

@@ -20,6 +20,7 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 		handler.FetchDomains = auth.SiteFetchDomains()
+		handler.TmpDir = auth.DataDir() + "/tmp"
 	})
 	auth.ServiceHandle("sites", "PUT /{project}/branch/{branch}", parseRoute, handler.Upload)
 	auth.ServiceHandle("sites", "DELETE /{project}/branch/{branch}", parseRoute, handler.Delete)
@@ -42,6 +43,20 @@ func (r route) Access() auth.AccessLevel {
 	return auth.ReadAccess
 }
 
+// AllowsPublicRead lets requireProject serve a public site branch without a
+// token even when the project is private. Only a single-branch read (Serve)
+// qualifies; the /branches listing (branch == "") stays gated, as do writes.
+func (r route) AllowsPublicRead(ctx context.Context, database *db.DB, project *db.Project) bool {
+	if r.write || r.branch == "" {
+		return false
+	}
+	site, err := database.GetSite(ctx, project.ID, r.branch)
+	if err != nil {
+		return false
+	}
+	return site.IsPublic
+}
+
 func parseRoute(r *http.Request) auth.RouteInfo {
 	return route{
 		project: r.PathValue("project"),
@@ -59,4 +74,5 @@ type Handler struct {
 	DB           *db.DB
 	Store        storage.Storage
 	FetchDomains []string
+	TmpDir       string
 }

@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetDashboardStats_Empty(t *testing.T) {
@@ -104,6 +104,15 @@ func TestGetDashboardStats_DedupRatio(t *testing.T) {
 	assert.Equal(t, int64(3800), stats.LogicalBytes)
 	// Physical: unique keys: "aaa"(1000) + "bbb"(800) + "ccc"(200) = 2000
 	assert.Equal(t, int64(2000), stats.PhysicalBytes)
+
+	// Components broken out individually (UI shows each as its own line).
+	assert.Equal(t, int64(2000), stats.TotalStorageBytes) // originals: a1 + a2
+	assert.Equal(t, int64(800), stats.StrippedBytes)
+	assert.Equal(t, int64(200), stats.DebugBytes)
+	assert.Equal(t, int64(800), stats.PackagedBytes)
+	// The four components must sum to the logical total.
+	assert.Equal(t, stats.LogicalBytes,
+		stats.TotalStorageBytes+stats.StrippedBytes+stats.DebugBytes+stats.PackagedBytes)
 }
 
 func TestListRecentReleases(t *testing.T) {

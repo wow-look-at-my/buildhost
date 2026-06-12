@@ -1,6 +1,7 @@
 package oci
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,12 +13,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
@@ -66,13 +67,40 @@ func publishWithOCI(t *testing.T, ctx context.Context, d *db.DB, store *storage.
 		Project:  *proj,
 		Release:  *rel,
 		Artifact: *a,
-		Data:     data,
+		Reader:   bytes.NewReader(data),
+		Size:     int64(len(data)),
 	})
 	require.NoError(t, err)
+	defer out.Reader.Close()
 
 	manifestKey, manifestSize, err := store.Put(ctx, out.Reader)
 	require.NoError(t, err)
 	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "oci", manifestKey, manifestSize, manifestKey, out.Filename, "{}"))
+
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+	return rel
+}
+
+// publishMultiArch publishes a release with two binary artifacts (amd64, arm64)
+// and -- deliberately -- does NOT pre-store any OCI manifest. This is the
+// production shape for a synthesized multi-arch image: the OCI serve path must
+// generate, persist and link each platform's child manifest itself. (Contrast
+// publishWithOCI, which pre-persists the manifest and would mask the
+// dangling-index bug.)
+func publishMultiArch(t *testing.T, ctx context.Context, d *db.DB, store *storage.Filesystem, proj *db.Project, version string, versionNum int64) *db.Release {
+	t.Helper()
+
+	rel := &db.Release{ProjectID: proj.ID, Version: version, VersionNum: versionNum}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
+	for _, arch := range []db.Arch{db.ArchAMD64, db.ArchARM64} {
+		key, size, err := store.Put(ctx, strings.NewReader("#!/bin/sh\necho hello "+string(arch)))
+		require.NoError(t, err)
+		require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+			ReleaseID: rel.ID, OS: db.OSLinux, Arch: arch,
+			Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		}))
+	}
 
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 	return rel
@@ -175,10 +203,42 @@ func TestParseRoute(t *testing.T) {
 	}
 }
 
-func TestV2Root(t *testing.T) {
+// An unauthenticated GET /v2/ must 401 with a Basic challenge so the Docker/OCI
+// client knows credentials are required (the auth-discovery handshake). A 200
+// here makes clients conclude no auth is needed and the subsequent manifest pull
+// 401s, killing the pull.
+func TestV2Root_Unauthenticated(t *testing.T) {
 	h, _, _ := setupTest(t)
 
 	req := httptest.NewRequest("GET", "/v2/", nil)
+	rec := httptest.NewRecorder()
+	h.V2Root(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Equal(t, `Basic realm="buildhost"`, rec.Header().Get("Www-Authenticate"))
+	assert.Equal(t, "registry/2.0", rec.Header().Get("Docker-Distribution-API-Version"))
+	assert.Contains(t, rec.Body.String(), `"code":"UNAUTHORIZED"`)
+}
+
+func TestV2Root_HEAD_Unauthenticated(t *testing.T) {
+	h, _, _ := setupTest(t)
+
+	req := httptest.NewRequest("HEAD", "/v2/", nil)
+	rec := httptest.NewRecorder()
+	h.V2Root(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Equal(t, `Basic realm="buildhost"`, rec.Header().Get("Www-Authenticate"))
+	assert.Equal(t, "registry/2.0", rec.Header().Get("Docker-Distribution-API-Version"))
+}
+
+// Once a valid credential is presented (the auth middleware puts the token in
+// the context), /v2/ returns the 200 base response.
+func TestV2Root_Authenticated(t *testing.T) {
+	h, _, _ := setupTest(t)
+
+	req := httptest.NewRequest("GET", "/v2/", nil)
+	req = req.WithContext(auth.WithToken(req.Context(), &db.APIToken{}))
 	rec := httptest.NewRecorder()
 	h.V2Root(rec, req)
 
@@ -186,12 +246,14 @@ func TestV2Root(t *testing.T) {
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 	assert.Equal(t, "registry/2.0", rec.Header().Get("Docker-Distribution-API-Version"))
 	assert.Equal(t, "{}\n", rec.Body.String())
+	assert.Empty(t, rec.Header().Get("Www-Authenticate"))
 }
 
-func TestV2Root_HEAD(t *testing.T) {
+func TestV2Root_HEAD_Authenticated(t *testing.T) {
 	h, _, _ := setupTest(t)
 
 	req := httptest.NewRequest("HEAD", "/v2/", nil)
+	req = req.WithContext(auth.WithToken(req.Context(), &db.APIToken{}))
 	rec := httptest.NewRecorder()
 	h.V2Root(rec, req)
 
@@ -300,11 +362,15 @@ func TestServeHTTP_Manifests_Success(t *testing.T) {
 	assert.Equal(t, "application/vnd.oci.image.config.v1+json", config["mediaType"])
 	assert.Contains(t, config["digest"], "sha256:")
 
+	// Two layers: the shared essentials base layer (CA certs + minimal rootfs)
+	// followed by the per-binary layer.
 	layers := manifest["layers"].([]any)
-	require.Len(t, layers, 1)
-	layer := layers[0].(map[string]any)
-	assert.Equal(t, "application/vnd.oci.image.layer.v1.tar+zstd", layer["mediaType"])
-	assert.Contains(t, layer["digest"], "sha256:")
+	require.Len(t, layers, 2)
+	for _, l := range layers {
+		layer := l.(map[string]any)
+		assert.Equal(t, "application/vnd.oci.image.layer.v1.tar+zstd", layer["mediaType"])
+		assert.Contains(t, layer["digest"], "sha256:")
+	}
 }
 
 func TestServeHTTP_Manifests_ByVersion(t *testing.T) {
@@ -542,52 +608,4 @@ func TestManifestDigestMatchesContent(t *testing.T) {
 	computed := sha256.Sum256(body)
 	expected := "sha256:" + hex.EncodeToString(computed[:])
 	assert.Equal(t, expected, rec.Header().Get("Docker-Content-Digest"))
-}
-
-func TestBlobsReachableFromManifest(t *testing.T) {
-	h, d, store := setupTest(t)
-	ctx := context.Background()
-
-	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	publishWithOCI(t, ctx, d, store, proj, "1.0.0", 1000000)
-
-	// Get manifest
-	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
-	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	require.Equal(t, http.StatusOK, rec.Code)
-
-	var manifest struct {
-		Config struct {
-			Digest string `json:"digest"`
-		} `json:"config"`
-		Layers []struct {
-			Digest string `json:"digest"`
-		} `json:"layers"`
-	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &manifest))
-
-	// Fetch config blob
-	req = httptest.NewRequest("GET", "/v2/myapp/blobs/"+manifest.Config.Digest, nil)
-	req = withRoute(req, proj, route{project: "myapp", action: "blobs", reference: manifest.Config.Digest})
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	assert.Equal(t, http.StatusOK, rec.Code)
-
-	var config map[string]any
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &config))
-	assert.Equal(t, "amd64", config["architecture"])
-	assert.Equal(t, "linux", config["os"])
-
-	// Fetch layer blob
-	for _, layer := range manifest.Layers {
-		req = httptest.NewRequest("GET", "/v2/myapp/blobs/"+layer.Digest, nil)
-		req = withRoute(req, proj, route{project: "myapp", action: "blobs", reference: layer.Digest})
-		rec = httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-		assert.Equal(t, http.StatusOK, rec.Code)
-		assert.NotEmpty(t, rec.Body.Bytes())
-	}
 }

@@ -3,7 +3,7 @@ package db
 import (
 	"testing"
 
-	"github.com/wow-look-at-my/testify/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestValidOS(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestExtractToken_Bearer(t *testing.T) {
@@ -75,9 +75,9 @@ func TestExtractToken_InvalidBasicEncoding(t *testing.T) {
 
 func TestWithToken_TokenFrom_RoundTrip(t *testing.T) {
 	tok := &db.APIToken{
-		ID:	42,
-		Name:	"test-token",
-		Scopes:	"read,write",
+		ID:     42,
+		Name:   "test-token",
+		Scopes: "read,write",
 	}
 
 	ctx := context.Background()
@@ -116,8 +116,8 @@ type testRoute struct {
 	access  AccessLevel
 }
 
-func (r testRoute) ProjectName() string  { return r.project }
-func (r testRoute) Access() AccessLevel  { return r.access }
+func (r testRoute) ProjectName() string { return r.project }
+func (r testRoute) Access() AccessLevel { return r.access }
 
 func TestWithRouteInfo_RouteInfoFrom_RoundTrip(t *testing.T) {
 	ctx := context.Background()
