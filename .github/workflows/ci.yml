@@ -190,6 +190,13 @@ jobs:
       BUILDHOST_BASE_URL: http://localhost:18080
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      # Homebrew 6.0.0 (2026-06-11) requires explicit trust for third-party
+      # taps and runs a Linux Bubblewrap sandbox by default. This job installs
+      # from buildhost's own freshly generated local tap, so opt out of the
+      # tap-trust gate, and disable the Linux sandbox (the runner has no bwrap
+      # and the formula only drops a tiny test script).
+      HOMEBREW_NO_REQUIRE_TAP_TRUST: "1"
+      HOMEBREW_NO_SANDBOX_LINUX: "1"
     steps:
       - uses: actions/checkout@v4
       - if: runner.os == 'Linux'
