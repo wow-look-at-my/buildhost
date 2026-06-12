@@ -335,3 +335,26 @@ jobs:
   publish-ghcr:
     needs: container-healthcheck
     uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@master
+
+  # Publish the admin dashboard's static frontend to the production buildhost as
+  # a per-branch site (sites.<domain>/buildhost/branch/<slug>/). This replaces
+  # the old GitHub Pages PR preview: each branch is an independent, atomically
+  # replaced deployment, so there is no shared gh-pages branch to serialize on --
+  # the concurrency contention that made "Deploy PR previews" flaky. Runs on
+  # every push (no needs:), so a preview is published even if tests fail.
+  # Authenticates with GitHub Actions OIDC (no static token); the workflow-level
+  # id-token: write + contents: read are inherited here.
+  publish-site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The sites serve route is /{project}/branch/{branch}/{path...}. With a
+      # trailing wildcard the router gives {branch} a single path segment, so a
+      # '/' in the branch name (e.g. claude/foo) would mis-route to branch
+      # "claude". Slugify '/' -> '-' to keep the branch a single segment.
+      - id: slug
+        run: echo "branch=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/buildhost-publish-site
+        with:
+          branch: ${{ steps.slug.outputs.branch }}
+          source_dir: ./internal/admin/static/

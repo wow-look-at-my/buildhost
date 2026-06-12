@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/wow-look-at-my/buildhost/internal/serviceurl"
 )
 
 func init() {
@@ -41,6 +43,11 @@ func runPublishSite(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("--server, --token, --project, --branch, and --dir are required")
 	}
 
+	sitesBase, err := serviceurl.Base(serverURL, "sites")
+	if err != nil {
+		return err
+	}
+
 	pr, pw := io.Pipe()
 	errCh := make(chan error, 1)
 	go func() {
@@ -48,8 +55,8 @@ func runPublishSite(cmd *cobra.Command, _ []string) error {
 		pw.Close()
 	}()
 
-	url := fmt.Sprintf("%s/sites/%s/branch/%s", serverURL, project, branch)
-	req, err := http.NewRequest("PUT", url, pr)
+	endpoint := fmt.Sprintf("%s/%s/branch/%s", sitesBase, project, branch)
+	req, err := http.NewRequest("PUT", endpoint, pr)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
@@ -75,7 +82,7 @@ func runPublishSite(cmd *cobra.Command, _ []string) error {
 	}
 
 	fmt.Printf("published site %s branch %s\n", project, branch)
-	fmt.Printf("  %s/sites/%s/branch/%s/\n", serverURL, project, branch)
+	fmt.Printf("  %s/%s/branch/%s/\n", sitesBase, project, branch)
 	return nil
 }
 
