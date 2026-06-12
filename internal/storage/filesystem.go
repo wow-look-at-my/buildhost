@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -13,6 +14,7 @@ import (
 	"regexp"
 
 	"github.com/klauspost/compress/zstd"
+	mmap "github.com/wow-look-at-my/go-mmap"
 )
 
 var (
@@ -126,59 +128,59 @@ func (fs *Filesystem) Get(_ context.Context, key string) (io.ReadCloser, int64, 
 		}
 		return nil, 0, fmt.Errorf("open blob: %w", err)
 	}
-
-	var magic [4]byte
-	if _, err := io.ReadFull(f, magic[:]); err != nil {
-		if _, serr := f.Seek(0, io.SeekStart); serr != nil {
-			f.Close()
-			return nil, 0, fmt.Errorf("seek: %w", serr)
-		}
-		info, serr := f.Stat()
-		if serr != nil {
-			f.Close()
-			return nil, 0, fmt.Errorf("stat blob: %w", serr)
-		}
-		return f, info.Size(), nil
-	}
-
-	if magic == compressedMagic {
-		var origSize int64
-		if err := binary.Read(f, binary.LittleEndian, &origSize); err != nil {
-			f.Close()
-			return nil, 0, fmt.Errorf("read size header: %w", err)
-		}
-		zr, err := zstd.NewReader(f)
-		if err != nil {
-			f.Close()
-			return nil, 0, fmt.Errorf("create decompressor: %w", err)
-		}
-		return &zstdReadCloser{dec: zr, f: f}, origSize, nil
-	}
-
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		f.Close()
-		return nil, 0, fmt.Errorf("seek: %w", err)
-	}
 	info, err := f.Stat()
 	if err != nil {
 		f.Close()
 		return nil, 0, fmt.Errorf("stat blob: %w", err)
 	}
-	return f, info.Size(), nil
+	size := info.Size()
+
+	// An empty blob has nothing to map (mmap rejects a zero-length region).
+	if size == 0 {
+		f.Close()
+		return io.NopCloser(bytes.NewReader(nil)), 0, nil
+	}
+
+	// Memory-map the (compressed) blob and read through the mapping. The fd may be
+	// closed once mapped -- the mapping keeps the file alive until Unmap. Sequential
+	// advice lets the kernel read ahead and drop pages behind the cursor, so even a
+	// huge blob streams from a reclaimable mapping instead of being read into the heap.
+	m, err := mmap.MapRegion(int(f.Fd()), size, mmap.ProtRead, mmap.MapShared, 0)
+	f.Close()
+	if err != nil {
+		return nil, 0, fmt.Errorf("mmap blob: %w", err)
+	}
+	_ = m.Advise(mmap.AdvSequential)
+
+	// Compressed blobs carry a 4-byte magic + 8-byte little-endian original-size
+	// header, then a zstd stream. Decode straight off the mapping: the decoder pulls
+	// compressed pages on demand and emits decompressed chunks as the caller reads.
+	if len(m) >= 12 && bytes.Equal(m[:4], compressedMagic[:]) {
+		origSize := int64(binary.LittleEndian.Uint64(m[4:12]))
+		zr, err := zstd.NewReader(bytes.NewReader(m[12:]))
+		if err != nil {
+			_ = m.Unmap()
+			return nil, 0, fmt.Errorf("create decompressor: %w", err)
+		}
+		return &mmapZstdReadCloser{dec: zr, m: m}, origSize, nil
+	}
+
+	// Uncompressed blob: the mapping is the artifact. NewReader.Close unmaps it.
+	return mmap.NewReader(m), size, nil
 }
 
-type zstdReadCloser struct {
+// mmapZstdReadCloser streams a zstd-compressed blob straight off its memory mapping.
+// Close releases the decoder and unmaps the original region.
+type mmapZstdReadCloser struct {
 	dec *zstd.Decoder
-	f   *os.File
+	m   mmap.MMap
 }
 
-func (z *zstdReadCloser) Read(p []byte) (int, error) {
-	return z.dec.Read(p)
-}
+func (z *mmapZstdReadCloser) Read(p []byte) (int, error) { return z.dec.Read(p) }
 
-func (z *zstdReadCloser) Close() error {
+func (z *mmapZstdReadCloser) Close() error {
 	z.dec.Close()
-	return z.f.Close()
+	return z.m.Unmap()
 }
 
 func (fs *Filesystem) Delete(_ context.Context, key string) error {

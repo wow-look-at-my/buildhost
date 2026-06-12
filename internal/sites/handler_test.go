@@ -586,7 +586,9 @@ func TestZipToTar_PathTraversal(t *testing.T) {
 	zw.Close()
 
 	var out bytes.Buffer
-	_, err = zipToTar(buf.Bytes(), &out)
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	require.NoError(t, err)
+	_, err = zipToTar(zr, &out)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "path traversal")
 }
@@ -723,7 +725,9 @@ func TestZipToTar_AbsolutePath(t *testing.T) {
 	zw.Close()
 
 	var out bytes.Buffer
-	_, err = zipToTar(buf.Bytes(), &out)
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	require.NoError(t, err)
+	_, err = zipToTar(zr, &out)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "absolute path")
 }

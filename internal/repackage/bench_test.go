@@ -1,6 +1,7 @@
 package repackage
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"os"
@@ -20,7 +21,7 @@ func BenchmarkRepackage(b *testing.B) {
 		Project:  db.Project{Name: "go-toolchain", Description: "Go build toolchain"},
 		Release:  db.Release{Version: "1.0.0", VersionNum: 1},
 		Artifact: db.Artifact{OS: db.OSLinux, Arch: db.ArchAMD64, Kind: db.KindBinary},
-		Data:     bin,
+		Size:     int64(len(bin)),
 		BaseURL:  "https://example.com",
 	}
 
@@ -38,10 +39,12 @@ func BenchmarkRepackage(b *testing.B) {
 			b.SetBytes(int64(len(bin)))
 			b.ReportAllocs()
 			for b.Loop() {
+				input.Reader = bytes.NewReader(bin)
 				out, err := rp.Repackage(context.Background(), input)
 				require.Nil(b, err)
 
 				io.Copy(io.Discard, out.Reader)
+				out.Reader.Close()
 			}
 		})
 	}

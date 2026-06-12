@@ -1,6 +1,7 @@
 package oci
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -66,9 +67,11 @@ func publishWithOCI(t *testing.T, ctx context.Context, d *db.DB, store *storage.
 		Project:  *proj,
 		Release:  *rel,
 		Artifact: *a,
-		Data:     data,
+		Reader:   bytes.NewReader(data),
+		Size:     int64(len(data)),
 	})
 	require.NoError(t, err)
+	defer out.Reader.Close()
 
 	manifestKey, manifestSize, err := store.Put(ctx, out.Reader)
 	require.NoError(t, err)

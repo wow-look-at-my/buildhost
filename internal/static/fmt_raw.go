@@ -20,40 +20,41 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 	debug := r.URL.Query().Get("debug") == "1"
 	shouldStrip := strip.Available() && !debug
 
-	rc, size, err := ctx.Store.Get(r.Context(), ctx.Artifact.StorageKey)
-	if err != nil {
-		return fmt.Errorf("artifact not found")
-	}
-	defer rc.Close()
-
 	if strip.Available() {
 		w.Header().Set("X-Debug-Symbols", "available")
 	} else {
 		w.Header().Set("X-Debug-Symbols", "unavailable")
 	}
 
-	if !shouldStrip {
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", ctx.Project.Name))
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
-		io.Copy(w, rc)
-		return nil
-	}
-
-	data, err := io.ReadAll(rc)
+	rc, size, err := ctx.Store.Get(r.Context(), ctx.Artifact.StorageKey)
 	if err != nil {
-		return fmt.Errorf("read artifact: %w", err)
+		return fmt.Errorf("artifact not found")
 	}
 
-	result, serr := strip.StripBytes(data, ctx.TmpDir)
-	if serr == nil {
-		data = result.Stripped
+	if shouldStrip {
+		if sr, ssize, serr := strip.StripReader(rc, ctx.TmpDir); serr == nil {
+			rc.Close()
+			defer sr.Close()
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", ctx.Project.Name))
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", ssize))
+			io.Copy(w, sr)
+			return nil
+		}
+		// strip failed (e.g. not an ELF): the reader was consumed, so re-open and serve
+		// the artifact unstripped.
+		rc.Close()
+		rc, size, err = ctx.Store.Get(r.Context(), ctx.Artifact.StorageKey)
+		if err != nil {
+			return fmt.Errorf("artifact not found")
+		}
 	}
 
+	defer rc.Close()
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", ctx.Project.Name))
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
-	w.Write(data)
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
+	io.Copy(w, rc)
 	return nil
 }
 
@@ -74,22 +75,17 @@ func (f *symbolsFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeCont
 	if err != nil {
 		return fmt.Errorf("artifact not found")
 	}
-	defer rc.Close()
 
-	// Must buffer: stripping requires full binary in memory.
-	data, err := io.ReadAll(rc)
-	if err != nil {
-		return fmt.Errorf("read artifact: %w", err)
-	}
-
-	result, err := strip.StripBytes(data, ctx.TmpDir)
+	dr, dsize, err := strip.StripReaderDebug(rc, ctx.TmpDir)
+	rc.Close()
 	if err != nil {
 		return fmt.Errorf("no debug symbols")
 	}
+	defer dr.Close()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", ctx.Project.Name+".debug"))
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(result.Debug)))
-	w.Write(result.Debug)
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", dsize))
+	io.Copy(w, dr)
 	return nil
 }

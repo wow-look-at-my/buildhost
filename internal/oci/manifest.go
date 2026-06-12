@@ -95,6 +95,7 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 			continue
 		}
 		manifestData, err := io.ReadAll(out.Reader)
+		out.Reader.Close()
 		if err != nil {
 			continue
 		}
@@ -189,6 +190,7 @@ func (h *Handler) serveSingleManifest(w http.ResponseWriter, r *http.Request, pr
 			continue
 		}
 		manifestData, err := io.ReadAll(out.Reader)
+		out.Reader.Close()
 		if err != nil {
 			continue
 		}
