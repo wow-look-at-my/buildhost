@@ -230,7 +230,7 @@ Tokens authenticate all API requests. There are two kinds:
 - **Global tokens** (`project_id` omitted): can access all projects and manage tokens.
 - **Project-scoped tokens** (`project_id` set): limited to one project; cannot list or delete tokens.
 
-Each token has a `scopes` field: `read`, `write`, or `read,write`. The default when omitted is `read`. A token can only grant scopes it already holds — a read-only token cannot mint a write token.
+Each token has a `scopes` field, a comma-separated subset of `read`, `write`, and `share`. The default when omitted is `read`. A token can only grant scopes it already holds — a read-only token cannot mint a write token. `share` is a distinct permission to mint [temporary download links](#temporary-download-links); it is not implied by `write`, so a CI/deploy token cannot hand out shareable links to private artifacts. The bootstrap admin token holds `read,write,share`.
 
 ### First-time setup
 
@@ -306,6 +306,29 @@ curl -u "token:$TOKEN" https://buildhost.example.com/api/v1/projects
 curl "https://buildhost.example.com/api/v1/projects?token=$TOKEN"
 ```
 
+## Temporary download links
+
+To share a single artifact from a **private** project without handing out a token, mint a temporary, signed download link. The link works for exactly one artifact (`os`/`arch`/`fmt`/`version`) and expires (default 1 hour, max 24 hours).
+
+```bash
+curl -X POST https://buildhost.example.com/api/v1/projects/myapp/download-links \
+  -H "Authorization: Bearer $SHARE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"os": "linux", "arch": "amd64", "version": "3", "fmt": "raw", "ttl_seconds": 3600}'
+```
+
+```json
+{
+  "url": "https://static.example.com/file?arch=amd64&fmt=raw&os=linux&project=myapp&token=bhdl_...&v=3",
+  "token": "bhdl_...",
+  "expires_at": "2026-06-11T12:00:00Z"
+}
+```
+
+Anyone with the `url` can download that one artifact until it expires — no account or token needed. Minting requires a token with the `share` scope, authorized for the project. The admin dashboard exposes the same thing as a **"temp link"** button on each release's artifact list.
+
+The link is a stateless HMAC signature (keyed by a server-side key generated on first start), bound to the exact artifact and expiry, so a leaked link cannot reach anything else in the project or outlive its expiry. Links are not individually revocable before expiry; rotate the signing key to invalidate all outstanding links.
+
 ## API
 
 | Method | Path | Description |
@@ -313,6 +336,7 @@ curl "https://buildhost.example.com/api/v1/projects?token=$TOKEN"
 | POST | `/api/v1/tokens` | Create token |
 | GET | `/api/v1/tokens` | List tokens (global token required) |
 | DELETE | `/api/v1/tokens/{id}` | Delete token (global token required) |
+| POST | `/api/v1/projects/{project}/download-links` | Mint a temporary signed download link (`share` scope) |
 | POST | `/api/v1/projects` | Create project |
 | GET | `/api/v1/projects` | List projects |
 | POST | `/api/v1/projects/{project}/releases` | Create release |

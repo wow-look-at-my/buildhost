@@ -89,6 +89,11 @@ type StorageBreakdown = GetStorageBreakdownRow
 var ValidScopes = map[string]bool{
 	"read":  true,
 	"write": true,
+	// share authorizes minting temporary, artifact-bound download links
+	// (POST /api/v1/projects/{project}/download-links). It is deliberately
+	// separate from write so a CI/deploy token cannot also hand out shareable
+	// links to private artifacts.
+	"share": true,
 }
 
 func (r Release) IsPrerelease() bool {
