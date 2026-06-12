@@ -1,41 +1,18 @@
 package npm
 
 import (
-	"context"
-	"encoding/json"
-	"net/http"
 	"net/http/httptest"
-	"path/filepath"
-	"strings"
 	"testing"
 
-	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/stretchr/testify/assert"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
-func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
-	t.Helper()
-	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { d.Close() })
-
-	store, err := storage.NewFilesystem(t.TempDir(), true)
-	require.NoError(t, err)
-
-	h := &Handler{DB: d}
-	return h, d, store
-}
-
-// withRoute adds project and route info to the request context, simulating
-// what the auth middleware does in production.
-func withRoute(r *http.Request, project *db.Project, rt route) *http.Request {
-	ctx := auth.WithProject(r.Context(), project)
-	ctx = auth.WithRouteInfo(ctx, rt)
-	return r.WithContext(ctx)
-}
+// HTTP-level behaviour (packuments, tarball downloads, platform packages,
+// private-project auth) is tested through the real router in router_test.go.
+// Handlers are never invoked directly with a hand-built request context, so
+// route registration, path parsing and the auth middleware are all exercised
+// end to end. The tests here cover the pure parsing/helper functions.
 
 func TestParseRoute(t *testing.T) {
 	tests := []struct {
@@ -50,6 +27,7 @@ func TestParseRoute(t *testing.T) {
 		{"hyphenated", "go-toolchain", "go-toolchain", ""},
 		{"multi-hyphen", "my-cool-app", "my-cool-app", ""},
 		{"many-hyphens", "a-b-c-d-e", "a-b-c-d-e", ""},
+		{"namespaced", "cc-marketplace__my-plugin", "cc-marketplace/my-plugin", ""},
 		{"platform linux-x64", "go-toolchain-linux-x64", "go-toolchain", "linux-x64"},
 		{"platform darwin-arm64", "go-toolchain-darwin-arm64", "go-toolchain", "darwin-arm64"},
 		{"platform win32-x64", "myapp-win32-x64", "myapp", "win32-x64"},
@@ -62,12 +40,19 @@ func TestParseRoute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "/@buildhost/"+tt.pathVal, nil)
-			req.SetPathValue("project", tt.pathVal)
+			// The npm route captures the whole scoped segment; the router has
+			// already percent-decoded it to `@buildhost/<name>`.
+			req.SetPathValue("pkg", "@buildhost/"+tt.pathVal)
 			ri := parseRoute(req).(route)
 			assert.Equal(t, tt.wantProj, ri.project, "project")
 			assert.Equal(t, tt.wantPlat, ri.platform, "platform")
 		})
 	}
+
+	// A path without the @buildhost scope is not a package request.
+	req := httptest.NewRequest("GET", "/favicon.ico", nil)
+	req.SetPathValue("pkg", "favicon.ico")
+	assert.Equal(t, "", parseRoute(req).(route).project)
 }
 
 func TestSplitPlatform(t *testing.T) {
@@ -98,205 +83,54 @@ func TestSplitPlatform(t *testing.T) {
 	}
 }
 
-func TestServeHTTP_PackageInfo_Success(t *testing.T) {
-	h, d, _ := setupTest(t)
-	ctx := context.Background()
+func TestWrapperRunScript(t *testing.T) {
+	script := wrapperRunScript("mytool")
+	assert.NotEmpty(t, script)
+	assert.Contains(t, script, "mytool")
+	assert.Contains(t, script, "@buildhost/mytool")
 
-	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	req := httptest.NewRequest("GET", "/@buildhost/myapp", nil)
-	req = withRoute(req, proj, route{project: "myapp"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
-
-	var info map[string]any
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
-	assert.Equal(t, "@buildhost/myapp", info["name"])
-	assert.NotNil(t, info["versions"])
-	assert.NotNil(t, info["dist-tags"])
+	assert.Empty(t, wrapperRunScript("bad name!"))
+	assert.Empty(t, wrapperRunScript("UPPERCASE"))
 }
 
-func TestServeHTTP_PackageInfo_UnpublishedSkipped(t *testing.T) {
-	h, d, _ := setupTest(t)
-	ctx := context.Background()
-
-	proj := &db.Project{Name: "myapp2", Versioning: db.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	// Create unpublished release.
-	require.NoError(t, d.CreateRelease(ctx, &db.Release{ProjectID: proj.ID, Version: "1.0.0-rc1", VersionNum: 1}))
-
-	req := httptest.NewRequest("GET", "/@buildhost/myapp2", nil)
-	req = withRoute(req, proj, route{project: "myapp2"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	var info map[string]any
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
-	versions := info["versions"].(map[string]any)
-	assert.Equal(t, 0, len(versions))
-}
-
-func TestServeHTTP_PackageInfo_OptionalDependencies(t *testing.T) {
-	h, d, store := setupTest(t)
-	ctx := context.Background()
-
-	proj := &db.Project{Name: "go-toolchain", Versioning: db.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "6.0.0", VersionNum: 6000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-
-	for _, plat := range []struct {
-		os   db.OS
-		arch db.Arch
-	}{
-		{db.OSLinux, db.ArchAMD64},
-		{db.OSDarwin, db.ArchARM64},
+func TestProjectNPMNameRoundTrip(t *testing.T) {
+	for _, tt := range []struct{ project, npm string }{
+		{"go-toolchain", "go-toolchain"},
+		{"cc-marketplace/my-plugin", "cc-marketplace__my-plugin"},
+		{"a/b/c", "a__b__c"},
 	} {
-		bk, bs, err := store.Put(ctx, strings.NewReader("bin-"+string(plat.os)))
-		require.NoError(t, err)
-		require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-			ReleaseID: rel.ID, OS: plat.os, Arch: plat.arch,
-			Kind: db.KindBinary, StorageKey: bk, Size: bs, SHA256: bk,
-		}))
+		assert.Equal(t, tt.npm, projectToNPMName(tt.project), "encode %q", tt.project)
+		assert.Equal(t, tt.project, npmNameToProject(tt.npm), "decode %q", tt.npm)
 	}
-
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	req := httptest.NewRequest("GET", "/@buildhost/go-toolchain", nil)
-	req = withRoute(req, proj, route{project: "go-toolchain"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	var info map[string]any
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
-
-	versions := info["versions"].(map[string]any)
-	v := versions["6.0.0"].(map[string]any)
-
-	optDeps, ok := v["optionalDependencies"].(map[string]any)
-	require.True(t, ok, "expected optionalDependencies")
-	assert.Contains(t, optDeps, "@buildhost/go-toolchain-linux-x64")
-	assert.Contains(t, optDeps, "@buildhost/go-toolchain-darwin-arm64")
-	assert.Equal(t, "6.0.0", optDeps["@buildhost/go-toolchain-linux-x64"])
-
-	bin, ok := v["bin"].(map[string]any)
-	require.True(t, ok, "expected bin")
-	assert.Equal(t, "./bin/run.js", bin["go-toolchain"])
-
-	dist := v["dist"].(map[string]any)
-	assert.Contains(t, dist["tarball"], "/file?arch=any&fmt=npm-wrapper&os=any&project=go-toolchain&v=6.0.0")
 }
 
-func TestServeHTTP_PlatformPackageInfo(t *testing.T) {
-	h, d, store := setupTest(t)
-	ctx := context.Background()
+func TestPlatformHelpers(t *testing.T) {
+	assert.Equal(t, "darwin", npmPlatform(db.OSDarwin))
+	assert.Equal(t, "win32", npmPlatform(db.OSWindows))
+	assert.Equal(t, "linux", npmPlatform(db.OSLinux))
 
-	proj := &db.Project{Name: "go-toolchain", Versioning: db.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "6.0.0", VersionNum: 6000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
+	assert.Equal(t, "x64", npmArch(db.ArchAMD64))
+	assert.Equal(t, "arm64", npmArch(db.ArchARM64))
+	assert.Equal(t, "ia32", npmArch(db.Arch386))
+	assert.Equal(t, "arm", npmArch(db.Arch("arm")))
 
-	bk, bs, err := store.Put(ctx, strings.NewReader("bin"))
-	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
-		Kind: db.KindBinary, StorageKey: bk, Size: bs, SHA256: bk,
-	}))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+	assert.Equal(t, "windows", reverseNpmPlatform("win32"))
+	assert.Equal(t, "darwin", reverseNpmPlatform("darwin"))
 
-	req := httptest.NewRequest("GET", "/@buildhost/go-toolchain-linux-x64", nil)
-	req = withRoute(req, proj, route{project: "go-toolchain", platform: "linux-x64"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	var info map[string]any
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
-
-	assert.Equal(t, "@buildhost/go-toolchain-linux-x64", info["name"])
-	versions := info["versions"].(map[string]any)
-	v := versions["6.0.0"].(map[string]any)
-
-	assert.Equal(t, []any{"linux"}, v["os"])
-	assert.Equal(t, []any{"x64"}, v["cpu"])
-	dist := v["dist"].(map[string]any)
-	assert.Contains(t, dist["tarball"], "/file?arch=amd64&fmt=npm&os=linux&project=go-toolchain&v=6.0.0")
+	assert.Equal(t, "amd64", reverseNpmArch("x64"))
+	assert.Equal(t, "386", reverseNpmArch("ia32"))
+	assert.Equal(t, "arm64", reverseNpmArch("arm64"))
 }
 
-func TestServeHTTP_PlatformPackageInfo_NotFound(t *testing.T) {
-	h, d, _ := setupTest(t)
-	ctx := context.Background()
-
-	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	req := httptest.NewRequest("GET", "/@buildhost/myapp-win32-ia32", nil)
-	req = withRoute(req, proj, route{project: "myapp", platform: "win32-ia32"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
+func TestNormalizeVersion(t *testing.T) {
+	assert.Equal(t, "1.2.3", normalizeVersion("1.2.3"))
+	assert.Equal(t, "1.2.3", normalizeVersion("v1.2.3"))
+	assert.Equal(t, "1.0.0", normalizeVersion("1"))
+	assert.Equal(t, "2.0.0", normalizeVersion("v2"))
 }
 
-func TestServeHTTP_HyphenatedProject_PackageInfo(t *testing.T) {
-	h, d, _ := setupTest(t)
-	ctx := context.Background()
-
-	proj := &db.Project{Name: "go-toolchain", Versioning: db.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.2.0", VersionNum: 1002000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	req := httptest.NewRequest("GET", "/@buildhost/go-toolchain", nil)
-	req = withRoute(req, proj, route{project: "go-toolchain"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	var info map[string]any
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
-	assert.Equal(t, "@buildhost/go-toolchain", info["name"])
-
-	versions := info["versions"].(map[string]any)
-	assert.Contains(t, versions, "1.2.0")
-	v := versions["1.2.0"].(map[string]any)
-	dist := v["dist"].(map[string]any)
-	assert.Contains(t, dist["tarball"], "/file?arch=any&fmt=npm-wrapper&os=any&project=go-toolchain&v=1.2.0")
-}
-
-// Private project auth is tested in the auth package. These tests verify
-// the handler works correctly when auth context is already set up.
-
-func TestServeHTTP_PrivateProject_PackageInfo_WithValidContext(t *testing.T) {
-	h, d, _ := setupTest(t)
-	ctx := context.Background()
-
-	proj := &db.Project{Name: "secret", IsPrivate: true, Versioning: db.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-
-	req := httptest.NewRequest("GET", "/@buildhost/secret", nil)
-	req = withRoute(req, proj, route{project: "secret"})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	var info map[string]any
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
-	assert.Equal(t, "@buildhost/secret", info["name"])
-}
+// TestServeHTTP_RoutedRealNpmRequest drives requests through the real subdomain
+// dispatch and router exactly as `npm install` does. npm percent-encodes the
+// scope slash, so the packument path is `/@buildhost%2f<name>`. The other
+// ServeHTTP tests inject the parsed route directly and so never exercise
+// routing -- which is why the %2f mismatch went unnoticed until production.

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -34,6 +35,9 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 					span.SetAttributes(attribute.String("auth.result", "oidc_failed"))
 					span.End()
 					slog.Debug("OIDC verification failed", "err", err)
+					// Remember why, so an eventual 401 can explain it rather than
+					// returning a bare "authentication required".
+					r = r.WithContext(WithOIDCError(r.Context(), err))
 				} else {
 					span.SetAttributes(attribute.String("auth.result", "oidc_ok"))
 					span.End()
@@ -67,22 +71,45 @@ func RequireWrite(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		t := TokenFrom(r.Context())
 		if t == nil || !t.HasScope("write") {
-			http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
+			unauthorizedResponse(w, r)
 			return
 		}
 		next(w, r)
 	}
 }
 
+// projectNotFound writes the canonical 404 for a project that does not exist or
+// that the caller may not see. Both cases share this exact response so a hidden
+// (HiddenReadAccess) read cannot be used to probe for the existence of private
+// projects.
+func projectNotFound(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	w.Write([]byte(`{"error":"project not found"}`))
+}
+
 func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
+	msg := "authentication required"
+	if err := OIDCErrorFrom(r.Context()); err != nil {
+		// A JWT was presented and rejected -- say why (audience, org allowlist,
+		// event, expiry, signature, ...) instead of a bare message, so a CI
+		// caller can see what to fix.
+		msg += ": OIDC token rejected: " + err.Error()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	if strings.HasPrefix(r.URL.Path, "/v2/") {
 		w.Header().Set("Www-Authenticate", `Basic realm="buildhost"`)
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"errors":[{"code":"UNAUTHORIZED","message":"authentication required"}]}`))
+		body, _ := json.Marshal(map[string]any{
+			"errors": []map[string]string{{"code": "UNAUTHORIZED", "message": msg}},
+		})
+		w.Write(body)
 		return
 	}
-	http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
+	w.WriteHeader(http.StatusUnauthorized)
+	body, _ := json.Marshal(map[string]string{"error": msg})
+	w.Write(body)
 }
 
 // oidcAuthorizesProject reports whether an OIDC identity auto-provisioned for a
@@ -136,10 +163,29 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			if errors.Is(err, db.ErrNotFound) {
 				t := TokenFrom(r.Context())
 				oidcProject := OIDCProjectFrom(r.Context())
-				if t == nil || oidcProject == "" || !oidcAuthorizesProject(oidcProject, ri.ProjectName()) || !validNamespacedProjectName(ri.ProjectName()) {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusNotFound)
-					w.Write([]byte(`{"error":"project not found"}`))
+				// Auto-provisioning is a write-only action: only a write request
+				// (the publish POST/PUT flow, a docker push, a site deploy) may
+				// create a missing project. A read never provisions -- it just
+				// 404s -- so a GET can never materialize a project as a side
+				// effect. (A hidden read uses this same 404 for private projects
+				// it may not see, so existence never leaks either.)
+				if ri.Access() != WriteAccess || t == nil || oidcProject == "" || !oidcAuthorizesProject(oidcProject, ri.ProjectName()) || !validNamespacedProjectName(ri.ProjectName()) {
+					// A write that presented a JWT which was rejected (bad org,
+					// event, expiry, signature, ...) reaches here with no token.
+					// Surface the rejection reason as a 401 instead of a bare
+					// "project not found" 404 -- otherwise an auth failure on a
+					// not-yet-existing project is indistinguishable from a missing
+					// one, which is exactly what made an OIDC org-allowlist
+					// rejection look like the project simply did not exist. Writes
+					// to existing projects already explain themselves this way (see
+					// the WriteAccess switch below); this closes the same gap for
+					// the auto-provision path. Reads keep the 404 so a private
+					// project's existence never leaks.
+					if ri.Access() == WriteAccess && OIDCErrorFrom(r.Context()) != nil {
+						unauthorizedResponse(w, r)
+						return
+					}
+					projectNotFound(w)
 					return
 				}
 				oidcPrivate, _ := OIDCPrivateFrom(r.Context())
@@ -197,12 +243,34 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			case ReadAccess:
 				parentSpan.SetAttributes(attribute.String("project.access", "read"))
 				if project.IsPrivate {
+					// A specific resource the route declares public (e.g. a
+					// static site published with X-Public-Site: true) is served
+					// without auth even under a private project -- the rest of
+					// the project (release artifacts, other branches) stays gated.
+					if pra, ok := ri.(PublicReadAuthorizer); ok && pra.AllowsPublicRead(r.Context(), mw.DB, project) {
+						parentSpan.SetAttributes(attribute.Bool("project.public_read", true))
+						break
+					}
 					if t == nil || !t.HasScope("read") {
 						unauthorizedResponse(w, r)
 						return
 					}
 					if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && !oidcAuthorizesProject(oidcProject, project.Name)) {
 						http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
+						return
+					}
+				}
+			case HiddenReadAccess:
+				parentSpan.SetAttributes(attribute.String("project.access", "read"))
+				// Same authorization as ReadAccess, but an unauthorized caller
+				// gets a 404 (not 401/403) so a private project never reveals it
+				// exists -- indistinguishable from a project that does not exist.
+				if project.IsPrivate {
+					authorized := t != nil && t.HasScope("read") &&
+						t.AuthorizedForProject(project.ID) &&
+						(oidcProject == "" || oidcAuthorizesProject(oidcProject, project.Name))
+					if !authorized {
+						projectNotFound(w)
 						return
 					}
 				}

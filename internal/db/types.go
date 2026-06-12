@@ -33,11 +33,12 @@ const (
 type Kind string
 
 const (
-	KindBinary  Kind = "binary"
-	KindLibrary Kind = "library"
-	KindAssets  Kind = "assets"
-	KindArchive Kind = "archive"
-	KindDocker  Kind = "docker"
+	KindBinary     Kind = "binary"
+	KindLibrary    Kind = "library"
+	KindAssets     Kind = "assets"
+	KindArchive    Kind = "archive"
+	KindDocker     Kind = "docker"
+	KindNPMPackage Kind = "npm-package"
 )
 
 // ServedViaDockerOnly reports whether artifacts of this kind are exclusively
@@ -66,7 +67,7 @@ func ValidArch(s string) bool {
 
 func ValidKind(s string) bool {
 	switch Kind(s) {
-	case KindBinary, KindLibrary, KindAssets, KindArchive, KindDocker:
+	case KindBinary, KindLibrary, KindAssets, KindArchive, KindDocker, KindNPMPackage:
 		return true
 	}
 	return false

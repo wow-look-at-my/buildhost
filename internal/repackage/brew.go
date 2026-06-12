@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io"
+	neturl "net/url"
 	"regexp"
 	"strings"
 	"text/template"
@@ -66,19 +68,58 @@ type brewData struct {
 	Version     string
 	License     string
 	Kind        string
-	Resources   []brewResource
+	Resources   []BrewResource
 }
 
-type brewResource struct {
-	OS   string
-	Arch string
-	URL  string
+type BrewResource struct {
+	OS     string
+	Arch   string
+	URL    string
 	SHA256 string
 }
 
+type BrewFormula struct {
+	ClassName   string
+	Name        string
+	Description string
+	Homepage    string
+	Version     string
+	License     string
+	Kind        string
+	Resources   []BrewResource
+}
+
+func RenderBrewFormula(f BrewFormula) (*Output, error) {
+	d := brewData{
+		ClassName:   f.ClassName,
+		Name:        sanitizeBrewString(f.Name),
+		Description: sanitizeBrewString(f.Description),
+		Homepage:    sanitizeBrewString(f.Homepage),
+		Version:     sanitizeBrewString(f.Version),
+		License:     sanitizeBrewString(f.License),
+		Kind:        f.Kind,
+		Resources:   f.Resources,
+	}
+
+	var buf bytes.Buffer
+	if err := brewTemplate.Execute(&buf, d); err != nil {
+		return nil, fmt.Errorf("execute template: %w", err)
+	}
+
+	filename := f.Name + ".rb"
+	return &Output{
+		Reader:   io.NopCloser(&buf),
+		Filename: filename,
+		Size:     int64(buf.Len()),
+	}, nil
+}
+
 func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
-	h := sha256.Sum256(input.Data)
-	sha := fmt.Sprintf("%x", h)
+	h := sha256.New()
+	if _, err := io.Copy(h, input.Reader); err != nil {
+		return nil, fmt.Errorf("hash artifact: %w", err)
+	}
+	sha := fmt.Sprintf("%x", h.Sum(nil))
 
 	version := strings.TrimPrefix(input.Release.Version, "v")
 	if version == "" {
@@ -98,42 +139,35 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 	if input.DownloadURL != nil {
 		url = input.DownloadURL(input.Project.Name, version, input.Artifact.OS, input.Artifact.Arch, "tar.gz")
 	} else {
-		url = fmt.Sprintf("%s/dl/%s/v%s/%s/%s?format=tar.gz",
-			input.BaseURL, input.Project.Name, version, input.Artifact.OS, input.Artifact.Arch)
+		dlBase := dlServiceURL(input.BaseURL)
+		q := neturl.Values{"os": {string(input.Artifact.OS)}, "arch": {string(input.Artifact.Arch)}}
+		if version != "" {
+			q.Set("v", "v"+version)
+		}
+		q.Set("fmt", "tar.gz")
+		url = dlBase + "/" + input.Project.Name + "?" + q.Encode()
 	}
 
-	d := brewData{
-		ClassName:   brewClassName(input.Project.Name),
+	return RenderBrewFormula(BrewFormula{
+		ClassName:   BrewClassName(input.Project.Name),
 		Name:        sanitizeBrewString(input.Project.Name),
 		Description: sanitizeBrewString(firstNonEmpty(input.Project.Description, input.Project.Name)),
 		Homepage:    sanitizeBrewString(firstNonEmpty(input.Project.Homepage, input.BaseURL)),
 		Version:     sanitizeBrewString(version),
 		License:     sanitizeBrewString(firstNonEmpty(input.Project.License, "MIT")),
 		Kind:        string(input.Artifact.Kind),
-		Resources: []brewResource{{
+		Resources: []BrewResource{{
 			OS:     brewOS,
 			Arch:   brewArch,
 			URL:    url,
 			SHA256: sha,
 		}},
-	}
-
-	var buf bytes.Buffer
-	if err := brewTemplate.Execute(&buf, d); err != nil {
-		return nil, fmt.Errorf("execute template: %w", err)
-	}
-
-	filename := input.Project.Name + ".rb"
-	return &Output{
-		Reader:   &buf,
-		Filename: filename,
-		Size:     int64(buf.Len()),
-	}, nil
+	})
 }
 
-func brewClassName(name string) string {
+func BrewClassName(name string) string {
 	parts := strings.FieldsFunc(name, func(r rune) bool {
-		return r == '-' || r == '_'
+		return r == '-' || r == '_' || r == '/'
 	})
 	var b strings.Builder
 	for _, p := range parts {

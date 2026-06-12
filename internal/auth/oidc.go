@@ -154,7 +154,13 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 	}
 
 	org := orgFromSubject(verified.Subject)
-	if !slices.Contains(v.allowedOrgs, "*") && !slices.Contains(v.allowedOrgs, org) {
+	// GitHub org/user logins are case-insensitive (github.com treats "PazerOP"
+	// and "pazerop" as the same account), and the OIDC subject preserves the
+	// canonical casing the org was created with. Compare case-insensitively so an
+	// allowlist entry like "pazerop" still matches a "repo:PazerOP/..." subject --
+	// otherwise auto-provisioning silently fails on a pure casing mismatch. This
+	// mirrors projectFromSubject, which already lowercases the derived name.
+	if !slices.Contains(v.allowedOrgs, "*") && !slices.ContainsFunc(v.allowedOrgs, func(o string) bool { return strings.EqualFold(o, org) }) {
 		return nil, "", fmt.Errorf("org %q not in allowed list", org)
 	}
 
@@ -162,11 +168,13 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 		return nil, "", fmt.Errorf("event %q not in allowed list", verified.EventName)
 	}
 
-	// Auto-provisioning trusts the signed issuer (GitHub), the org allowlist,
-	// the event allowlist, and the subject->project mapping. The token's
-	// audience is not required to name this server: a repo's OIDC token only
-	// ever authorizes that repo's own project namespace, so there is nothing
-	// to gain by replaying a token minted for a different audience.
+	// No audience gate here: auto-provisioning trusts the issuer signature, the
+	// org allowlist, the event allowlist and the subject. Binding to a specific
+	// audience would require the server to know its own URL, which is a config
+	// footgun -- a wrong or missing value silently rejects every publish -- for
+	// little gain on a single-tenant build host. Policy-scoped tokens can still
+	// opt into an explicit audience via OIDCPolicy.Audience above.
+
 	project := projectFromSubject(verified.Subject)
 	if project == "" {
 		return nil, "", errors.New("cannot derive project name from OIDC subject")

@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 // --- LooksLikeJWT tests ---
@@ -581,6 +581,32 @@ func TestVerifyToken_TrustedIssuer_AllowedEvent(t *testing.T) {
 	assert.Equal(t, "myrepo", oidcProject)
 }
 
+// TestVerifyToken_TrustedIssuer_OrgCaseInsensitive proves the org allowlist
+// matches case-insensitively: a lowercase allowlist entry ("pazerop") still
+// authorizes a subject carrying GitHub's canonical mixed-case org ("PazerOP").
+// This is the exact PazerOP/scratch PR-preview scenario -- a pure casing
+// mismatch must not silently block auto-provisioning.
+func TestVerifyToken_TrustedIssuer_OrgCaseInsensitive(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	srv := jwksServer(t, &key.PublicKey, "kid-org-case")
+
+	claims := map[string]any{
+		"iss":        srv.URL,
+		"sub":        "repo:PazerOP/scratch:pull_request",
+		"exp":        time.Now().Add(10 * time.Minute).Unix(),
+		"iat":        time.Now().Unix(),
+		"event_name": "pull_request",
+	}
+	token := signJWT(t, key, "kid-org-case", claims)
+
+	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"pazerop"}, AllowedEvents: []string{"pull_request"}})
+	_, oidcProject, err := v.VerifyToken(context.Background(), token, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "scratch", oidcProject)
+}
+
 func TestVerifyToken_TrustedIssuer_RejectedEvent(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
@@ -623,14 +649,14 @@ func TestVerifyToken_TrustedIssuer_AutoProvision(t *testing.T) {
 	assert.Equal(t, "myrepo", oidcProject)
 }
 
-func TestVerifyToken_TrustedIssuer_AudienceNotRequired(t *testing.T) {
+func TestVerifyToken_TrustedIssuer_AudienceIgnored(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
 	srv := jwksServer(t, &key.PublicKey, "kid-aud-other")
 
-	// A token minted for a different audience still auto-provisions: buildhost
-	// no longer requires the audience to name this server.
+	// A token minted for a different service still auto-provisions: the audience
+	// is no longer gated (trust = issuer signature + org + event + subject).
 	claims := map[string]any{
 		"iss":        srv.URL,
 		"sub":        "repo:myorg/myrepo:ref:refs/heads/main",

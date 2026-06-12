@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestCanonicalQuery(t *testing.T) {
@@ -109,7 +109,6 @@ func TestServe_StripsUnknownParams(t *testing.T) {
 	assert.NotContains(t, loc, "garbage")
 }
 
-
 func TestFmtRegistry(t *testing.T) {
 	_, ok := LookupFmt("raw")
 	assert.True(t, ok)
@@ -145,7 +144,7 @@ func setupIntegration(t *testing.T) (*staticHandler, *db.DB, *storage.Filesystem
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &staticHandler{DB: d, Store: store, BaseURL: "http://localhost:8080", TmpDir: t.TempDir()}
+	h := &staticHandler{DB: d, Store: store, TmpDir: t.TempDir()}
 	return h, d, store
 }
 

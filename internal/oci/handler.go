@@ -19,7 +19,7 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
-		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.BaseURL(), auth.DataDir()+"/tmp")
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.DataDir()+"/tmp")
 		handler.uploads = newUploadStore(auth.DataDir()+"/tmp/oci-uploads", config.MaxBlobSize())
 	})
 	auth.ServiceHandleRaw("oci", "GET /v2/{$}", handler.V2Root)
@@ -112,9 +112,23 @@ type Handler struct {
 	uploads *uploadStore
 }
 
+// V2Root answers the OCI base endpoint GET/HEAD /v2/. The Docker/OCI client
+// begins every auth handshake with an unauthenticated request here to discover
+// the scheme: a registry that requires credentials MUST reply 401 with a
+// WWW-Authenticate challenge so the client knows to send them. Replying 200
+// anonymously makes the client conclude no auth is needed -- it never sends
+// credentials, the first real (manifest) request then 401s, and the pull dies.
+// Mirror the manifest/blob endpoints: challenge when unauthenticated, 200 once a
+// valid credential is presented (the global auth middleware has, by this point,
+// placed the verified token in the request context).
 func (h *Handler) V2Root(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
+	if auth.TokenFrom(r.Context()) == nil {
+		w.Header().Set("Www-Authenticate", `Basic realm="buildhost"`)
+		ociError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{})
 }
 

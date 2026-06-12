@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -16,24 +17,36 @@ import (
 
 var repackTracer = otel.Tracer("buildhost.repackage")
 
+// dlServiceURL constructs the dl subdomain URL from the root domain base URL
+// (e.g. "https://pazer.build" → "https://dl.pazer.build").
+func dlServiceURL(baseURL string) string {
+	u, err := url.Parse(baseURL)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://dl." + u.Host
+}
+
 type Generator struct {
 	store       storage.Storage
-	baseURL     string
 	tmpDir      string
 	repackagers map[Format]Repackager
 }
 
-func NewGenerator(store storage.Storage, database *db.DB, baseURL, tmpDir string) *Generator {
+func NewGenerator(store storage.Storage, database *db.DB, tmpDir string) *Generator {
 	m := make(map[Format]Repackager, len(registry)+1)
 	for f, rp := range registry {
 		m[f] = rp
 	}
 	oci := &OCI{Store: store, DB: database}
 	m[oci.Format()] = oci
-	return &Generator{store: store, baseURL: baseURL, tmpDir: tmpDir, repackagers: m}
+	return &Generator{store: store, tmpDir: tmpDir, repackagers: m}
 }
 
-func (g *Generator) Generate(ctx context.Context, format Format, project db.Project, release db.Release, artifact db.Artifact) (*Output, error) {
+// Generate repackages an artifact into format. baseURL is this server's own base
+// URL (derived per-request from the Host), used to build absolute download/home
+// URLs in formats like brew.
+func (g *Generator) Generate(ctx context.Context, format Format, project db.Project, release db.Release, artifact db.Artifact, baseURL string) (*Output, error) {
 	ctx, span := repackTracer.Start(ctx, "repackage.generate")
 	defer span.End()
 	span.SetAttributes(
@@ -52,52 +65,42 @@ func (g *Generator) Generate(ctx context.Context, format Format, project db.Proj
 		return nil, err
 	}
 
-	rc, _, err := g.store.Get(ctx, artifact.StorageKey)
+	reader, size, err := OpenArtifactStream(ctx, g.store, artifact, g.tmpDir)
 	if err != nil {
 		span.RecordError(err)
-		span.SetStatus(codes.Error, "get artifact failed")
-		return nil, fmt.Errorf("get artifact: %w", err)
-	}
-	defer rc.Close()
-
-	_, readSpan := repackTracer.Start(ctx, "repackage.read_blob")
-	data, err := io.ReadAll(rc)
-	readSpan.SetAttributes(attribute.Int("repackage.blob_bytes", len(data)))
-	if err != nil {
-		readSpan.RecordError(err)
-		readSpan.SetStatus(codes.Error, "read artifact failed")
-		readSpan.End()
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "read artifact failed")
-		return nil, fmt.Errorf("read artifact: %w", err)
-	}
-	readSpan.End()
-
-	if (artifact.Kind == db.KindBinary || artifact.Kind == db.KindLibrary) && strip.Available() {
-		_, stripSpan := repackTracer.Start(ctx, "repackage.strip")
-		stripSpan.SetAttributes(attribute.Int("strip.input_bytes", len(data)))
-		if result, err := strip.StripBytes(data, g.tmpDir); err == nil {
-			stripSpan.SetAttributes(attribute.Int("strip.output_bytes", len(result.Stripped)))
-			data = result.Stripped
-		} else {
-			stripSpan.SetAttributes(attribute.String("strip.skip_reason", err.Error()))
-		}
-		stripSpan.End()
+		span.SetStatus(codes.Error, "open artifact failed")
+		return nil, fmt.Errorf("open artifact: %w", err)
 	}
 
 	_, convertSpan := repackTracer.Start(ctx, "repackage.convert")
 	convertSpan.SetAttributes(
 		attribute.String("repackage.format", string(format)),
-		attribute.Int("repackage.input_bytes", len(data)),
+		attribute.Int64("repackage.input_bytes", size),
 	)
+	dlBase := dlServiceURL(baseURL)
 	out, err := rp.Repackage(ctx, Input{
 		Project:  project,
 		Release:  release,
 		Artifact: artifact,
-		Data:     data,
-		BaseURL:  g.baseURL,
+		Reader:   reader,
+		Size:     size,
+		TmpDir:   g.tmpDir,
+		BaseURL:  baseURL,
+		DownloadURL: func(name, version string, os db.OS, arch db.Arch, format string) string {
+			q := url.Values{}
+			q.Set("os", string(os))
+			q.Set("arch", string(arch))
+			if version != "" {
+				q.Set("v", version)
+			}
+			if format != "" && format != "raw" {
+				q.Set("fmt", format)
+			}
+			return dlBase + "/" + name + "?" + q.Encode()
+		},
 	})
 	if err != nil {
+		reader.Close()
 		convertSpan.RecordError(err)
 		convertSpan.SetStatus(codes.Error, "repackage failed")
 		convertSpan.End()
@@ -105,9 +108,41 @@ func (g *Generator) Generate(ctx context.Context, format Format, project db.Proj
 		span.SetStatus(codes.Error, "repackage failed")
 		return nil, err
 	}
-	convertSpan.SetAttributes(attribute.Int64("repackage.output_bytes", out.Size))
+	// The repackager reads the input stream lazily (its output is a pipe), so the input
+	// must stay open until the caller finishes reading the output. Tie its Close to the
+	// output's Close.
+	out.Reader = ChainClose(out.Reader, reader)
+	if out.Size >= 0 {
+		convertSpan.SetAttributes(attribute.Int64("repackage.output_bytes", out.Size))
+	}
 	convertSpan.End()
 	return out, nil
+}
+
+// OpenArtifactStream opens an artifact's bytes as a stream for repackaging. When
+// stripping is available and the artifact is a binary/library it returns the stripped
+// stream and the stripped size; otherwise the raw stored stream and its size. Reader and
+// size always agree, so a tar/ar/npm header written from the size matches the body. The
+// caller MUST Close the returned reader.
+func OpenArtifactStream(ctx context.Context, store storage.Storage, artifact db.Artifact, tmpDir string) (io.ReadCloser, int64, error) {
+	rc, size, err := store.Get(ctx, artifact.StorageKey)
+	if err != nil {
+		return nil, 0, err
+	}
+	if (artifact.Kind == db.KindBinary || artifact.Kind == db.KindLibrary) && strip.Available() {
+		sr, ssize, serr := strip.StripReader(rc, tmpDir)
+		rc.Close()
+		if serr == nil {
+			return sr, ssize, nil
+		}
+		// Strip failed (e.g. not an ELF): the first reader was consumed, so re-open the
+		// raw artifact and serve it unstripped.
+		rc, size, err = store.Get(ctx, artifact.StorageKey)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+	return rc, size, nil
 }
 
 func (g *Generator) Supports(format Format) bool {

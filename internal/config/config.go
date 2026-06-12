@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -25,6 +26,20 @@ func MaxUploadSize() int64 { return envBytes("BUILDHOST_MAX_UPLOAD_SIZE", defaul
 // MaxBlobSize is the cap for a single OCI blob pushed to the registry endpoint,
 // overridable via BUILDHOST_MAX_BLOB_SIZE (plain bytes, or with a K/M/G suffix).
 func MaxBlobSize() int64 { return envBytes("BUILDHOST_MAX_BLOB_SIZE", defaultMaxBlobSize) }
+
+// envDuration parses a Go duration (e.g. "1h", "30m", "720h") from an env var,
+// falling back to def on empty or invalid input.
+func envDuration(name string, def time.Duration) time.Duration {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return def
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return def
+	}
+	return d
+}
 
 // envBytes parses a byte size from an env var, accepting a plain integer or an
 // integer with a single-letter binary suffix (K, M, G, T). Invalid values fall
@@ -59,17 +74,25 @@ func envBytes(name string, def int64) int64 {
 }
 
 type Config struct {
-	ListenAddr       string
-	AdminListenAddr  string
-	DataDir          string
-	DBPath           string
-	BaseURL          string
-	StorageCompress  bool
-	OIDCIssuers      []string
-	OIDCOrgs         []string
-	OIDCEvents       []string
-	OTELEndpoint     string
-	SiteFetchDomains []string
+	ListenAddr          string
+	AdminListenAddr     string
+	DataDir             string
+	DBPath              string
+	StorageCompress     bool
+	OIDCIssuers         []string
+	OIDCOrgs            []string
+	OIDCEvents          []string
+	GitHubWebhookSecret string
+	OTELEndpoint        string
+	SiteFetchDomains    []string
+
+	// Retention / garbage collection. Report-only by default: nothing is deleted
+	// unless RetentionEnforce is true. RetentionInterval == 0 disables the
+	// background sweeper (the gc CLI still works on demand).
+	RetentionKeepN        int           // published releases kept per (project, branch)
+	RetentionInterval     time.Duration // background sweep cadence; 0 = disabled
+	RetentionRecencyGuard time.Duration // never evict releases newer than this
+	RetentionEnforce      bool          // actually delete; false = report-only
 }
 
 func Load() Config {
@@ -78,9 +101,13 @@ func Load() Config {
 		AdminListenAddr: ":9090",
 		DataDir:         "./data",
 		DBPath:          "./data/buildhost.db",
-		BaseURL:         "http://localhost:8080",
 		StorageCompress: true,
 		OIDCIssuers:     []string{"https://token.actions.githubusercontent.com"},
+
+		RetentionKeepN:        10,
+		RetentionInterval:     0,
+		RetentionRecencyGuard: 24 * time.Hour,
+		RetentionEnforce:      false,
 	}
 	if v := os.Getenv("BUILDHOST_LISTEN_ADDR"); v != "" {
 		c.ListenAddr = v
@@ -93,9 +120,6 @@ func Load() Config {
 	}
 	if v := os.Getenv("BUILDHOST_ADMIN_LISTEN_ADDR"); v != "" {
 		c.AdminListenAddr = v
-	}
-	if v := os.Getenv("BUILDHOST_BASE_URL"); v != "" {
-		c.BaseURL = v
 	}
 	if v := os.Getenv("BUILDHOST_STORAGE_COMPRESS"); v == "false" || v == "0" {
 		c.StorageCompress = false
@@ -125,6 +149,9 @@ func Load() Config {
 	if len(c.OIDCEvents) == 0 {
 		c.OIDCEvents = []string{"push", "pull_request"}
 	}
+	if v := os.Getenv("BUILDHOST_GITHUB_WEBHOOK_SECRET"); v != "" {
+		c.GitHubWebhookSecret = v
+	}
 	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
 		c.OTELEndpoint = v
 	}
@@ -134,6 +161,16 @@ func Load() Config {
 				c.SiteFetchDomains = append(c.SiteFetchDomains, d)
 			}
 		}
+	}
+	if v := os.Getenv("BUILDHOST_RETENTION_KEEP_N"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			c.RetentionKeepN = n
+		}
+	}
+	c.RetentionInterval = envDuration("BUILDHOST_RETENTION_INTERVAL", c.RetentionInterval)
+	c.RetentionRecencyGuard = envDuration("BUILDHOST_RETENTION_RECENCY_GUARD", c.RetentionRecencyGuard)
+	if v := os.Getenv("BUILDHOST_RETENTION_ENFORCE"); v == "true" || v == "1" {
+		c.RetentionEnforce = true
 	}
 	return c
 }

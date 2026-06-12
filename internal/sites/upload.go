@@ -3,15 +3,16 @@ package sites
 import (
 	"archive/tar"
 	"archive/zip"
-	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path"
 	"slices"
 	"strings"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/retention"
 )
 
 const (
@@ -67,62 +69,81 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		bodyContentType = fetchedCT
 	}
 
-	var buf bytes.Buffer
-	var fileCount int
+	var (
+		storageKey         string
+		size               int64
+		sha256hex          string
+		fileCount          int
+		validErr, storeErr error
+	)
 
 	if bodyContentType == "application/zip" {
-		zipData, err := io.ReadAll(bodyReader)
-		if err != nil {
+		// ZIP needs random access (its central directory is at the end), so it can't be
+		// read from a forward-only stream. Spool the upload to a temp file under the data
+		// volume (/tmp is read-only in the hardened image) and read it via ReaderAt --
+		// never the whole zip in memory.
+		tmp, terr := os.CreateTemp(h.TmpDir, "site-zip-*")
+		if terr != nil {
+			http.Error(w, `{"error":"failed to buffer upload"}`, http.StatusInternalServerError)
+			return
+		}
+		defer func() {
+			tmp.Close()
+			os.Remove(tmp.Name())
+		}()
+		zipSize, rerr := io.Copy(tmp, bodyReader)
+		if rerr != nil {
 			http.Error(w, `{"error":"failed to read request body"}`, http.StatusBadRequest)
 			return
 		}
-		fileCount, err = zipToTar(zipData, &buf)
-		if err != nil {
-			span.RecordError(err)
+		zr, zerr := zip.NewReader(tmp, zipSize)
+		if zerr != nil {
+			span.RecordError(zerr)
 			http.Error(w, `{"error":"invalid archive"}`, http.StatusBadRequest)
 			return
 		}
+		storageKey, size, sha256hex, fileCount, validErr, storeErr = h.storeTar(ctx, func(out io.Writer) (int, error) {
+			return zipToTar(zr, out)
+		})
 	} else {
-		gz, err := gzip.NewReader(bodyReader)
-		if err != nil {
+		gz, gerr := gzip.NewReader(bodyReader)
+		if gerr != nil {
 			http.Error(w, `{"error":"invalid gzip data"}`, http.StatusBadRequest)
 			return
 		}
 		defer gz.Close()
-
-		limited := io.LimitReader(gz, maxSiteDecompressedSize+1)
-		var err2 error
-		fileCount, err2 = validateTar(io.TeeReader(limited, &buf))
-		if err2 != nil {
-			span.RecordError(err2)
-			http.Error(w, `{"error":"invalid archive"}`, http.StatusBadRequest)
-			return
-		}
+		storageKey, size, sha256hex, fileCount, validErr, storeErr = h.storeTar(ctx, func(out io.Writer) (int, error) {
+			return validateTar(io.TeeReader(gz, out))
+		})
 	}
 
-	if int64(buf.Len()) > maxSiteDecompressedSize {
-		http.Error(w, `{"error":"decompressed archive too large"}`, http.StatusRequestEntityTooLarge)
+	if validErr != nil {
+		span.RecordError(validErr)
+		if errors.Is(validErr, errSiteTooLarge) {
+			http.Error(w, `{"error":"decompressed archive too large"}`, http.StatusRequestEntityTooLarge)
+		} else {
+			http.Error(w, `{"error":"invalid archive"}`, http.StatusBadRequest)
+		}
 		return
 	}
-
-	hasher := sha256.New()
-	hasher.Write(buf.Bytes())
-	sha256hex := hex.EncodeToString(hasher.Sum(nil))
-
-	span.SetAttributes(
-		attribute.Int("sites.file_count", fileCount),
-		attribute.Int("sites.size", buf.Len()),
-	)
-
-	storageKey, size, err := h.Store.Put(ctx, bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		span.RecordError(err)
+	if storeErr != nil {
+		span.RecordError(storeErr)
 		span.SetStatus(codes.Error, "store failed")
 		http.Error(w, `{"error":"failed to store site"}`, http.StatusInternalServerError)
 		return
 	}
 
+	span.SetAttributes(
+		attribute.Int("sites.file_count", fileCount),
+		attribute.Int64("sites.size", size),
+	)
+
 	gitCommit := r.Header.Get("X-Git-Commit")
+	// Opt-in: a site published with X-Public-Site: true is served without a
+	// token even when its project is private (e.g. a PR preview of a private
+	// repo). The project's own visibility -- and thus its release artifacts --
+	// is unaffected; only this site's read path is opened.
+	isPublic := r.Header.Get("X-Public-Site") == "true"
 
 	site := &db.Site{
 		ProjectID:  project.ID,
@@ -132,7 +153,10 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		SHA256:     sha256hex,
 		FileCount:  int64(fileCount),
 		GitCommit:  gitCommit,
+		IsPublic:   isPublic,
 	}
+
+	span.SetAttributes(attribute.Bool("sites.public", isPublic))
 
 	oldKey, err := h.DB.UpsertSite(ctx, site)
 	if err != nil {
@@ -142,13 +166,65 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Delete the replaced site's blob only if no other row (another branch, an
+	// artifact, an OCI image) still references that content-addressed key.
 	if oldKey != "" && oldKey != storageKey {
-		_ = h.Store.Delete(ctx, oldKey)
+		_, _ = retention.DeleteBlobIfUnreferenced(ctx, h.DB, h.Store, oldKey, true)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(site)
+}
+
+var errSiteTooLarge = errors.New("decompressed archive too large")
+
+// storeTar streams the tar produced by writeTar into the store while validating,
+// hashing and enforcing the decompressed-size cap -- without ever buffering the whole
+// archive. writeTar writes the tar to the provided writer and returns the file count.
+// validErr is a client error (invalid archive or over the cap); storeErr is a server
+// error from the storage backend.
+func (h *Handler) storeTar(ctx context.Context, writeTar func(io.Writer) (int, error)) (key string, size int64, sha string, fileCount int, validErr, storeErr error) {
+	hasher := sha256.New()
+	pr, pw := io.Pipe()
+	type result struct {
+		n   int
+		err error
+	}
+	rc := make(chan result, 1)
+	go func() {
+		capped := &cappedWriter{w: io.MultiWriter(pw, hasher), max: maxSiteDecompressedSize}
+		n, werr := writeTar(capped)
+		pw.CloseWithError(werr)
+		rc <- result{n, werr}
+	}()
+
+	key, size, perr := h.Store.Put(ctx, pr)
+	res := <-rc
+	if res.err != nil {
+		return "", 0, "", 0, res.err, nil
+	}
+	if perr != nil {
+		return "", 0, "", 0, nil, perr
+	}
+	return key, size, hex.EncodeToString(hasher.Sum(nil)), res.n, nil, nil
+}
+
+// cappedWriter forwards writes to w until more than max bytes have been written, then
+// fails with errSiteTooLarge so a gzip/zip bomb can't be expanded without bound.
+type cappedWriter struct {
+	w   io.Writer
+	n   int64
+	max int64
+}
+
+func (c *cappedWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	if err == nil && c.n > c.max {
+		return n, errSiteTooLarge
+	}
+	return n, err
 }
 
 func validateTar(r io.Reader) (int, error) {
@@ -249,14 +325,9 @@ func fetchFromURL(ctx context.Context, rawURL string, headers map[string]string,
 	return resp.Body, ct, nil
 }
 
-// zipToTar converts a ZIP archive to tar format, applying the same safety
-// checks as validateTar (path traversal, file count, entry type restrictions).
-func zipToTar(data []byte, out *bytes.Buffer) (int, error) {
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		return 0, fmt.Errorf("invalid zip archive: %w", err)
-	}
-
+// zipToTar streams a ZIP archive out as a tar, applying the same safety checks as
+// validateTar (path traversal, file count, entry type restrictions).
+func zipToTar(zr *zip.Reader, out io.Writer) (int, error) {
 	tw := tar.NewWriter(out)
 	count := 0
 

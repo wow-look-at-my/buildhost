@@ -4,14 +4,16 @@ go 1.25.0
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	github.com/KimMachineGun/automemlimit v0.7.5
 	github.com/ProtonMail/go-crypto v1.4.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/klauspost/compress v1.18.6
 	github.com/spf13/cobra v1.10.2
+	github.com/stretchr/testify v1.11.1
 	github.com/ulikunitz/xz v0.5.15
+	github.com/wow-look-at-my/go-mmap v0.0.0-20260524160502-7c9fb35436a9
 	github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260520105527-317d2038d915
-	github.com/wow-look-at-my/router v0.0.0-20260526055525-bbcdc3a40840
-	github.com/wow-look-at-my/testify v0.0.0-20260217010200-5fd2c08e3abb
+	github.com/wow-look-at-my/router v0.0.0-20260609085900-fcf2d9b53cf1
 	go.opentelemetry.io/contrib/bridges/otelslog v0.18.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.19.0
@@ -26,6 +28,7 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -34,6 +37,8 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

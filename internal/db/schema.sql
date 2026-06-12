@@ -18,6 +18,7 @@ CREATE TABLE releases (
     git_branch   TEXT NOT NULL DEFAULT '',
     git_commit   TEXT NOT NULL DEFAULT '',
     notes        TEXT NOT NULL DEFAULT '',
+    oci_user     TEXT NOT NULL DEFAULT '',
     published    INTEGER NOT NULL DEFAULT 0,
     created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
     published_at DATETIME,
@@ -93,6 +94,7 @@ CREATE TABLE sites (
     sha256      TEXT NOT NULL,
     file_count  INTEGER NOT NULL DEFAULT 0,
     git_commit  TEXT NOT NULL DEFAULT '',
+    is_public   INTEGER NOT NULL DEFAULT 0,
     created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at  DATETIME NOT NULL DEFAULT (datetime('now')),
     UNIQUE(project_id, branch)
@@ -118,3 +120,18 @@ CREATE TABLE oci_tags (
     updated_at      DATETIME NOT NULL DEFAULT (datetime('now')),
     UNIQUE(project_id, tag)
 );
+
+CREATE TABLE retention_settings (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    keep_n        INTEGER NOT NULL DEFAULT 10,
+    recency_hours INTEGER NOT NULL DEFAULT 24,
+    updated_at    DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Retention/GC indexes (mirrored from migrations/009_retention_indexes.sql).
+CREATE INDEX IF NOT EXISTS idx_releases_project_branch_version ON releases(project_id, git_branch, version_num DESC);
+CREATE INDEX IF NOT EXISTS idx_artifacts_storage_key  ON artifacts(storage_key);
+CREATE INDEX IF NOT EXISTS idx_artifacts_stripped_key ON artifacts(stripped_storage_key);
+CREATE INDEX IF NOT EXISTS idx_artifacts_debug_key    ON artifacts(debug_storage_key);
+CREATE INDEX IF NOT EXISTS idx_packaged_storage_key   ON packaged_artifacts(storage_key);
+CREATE INDEX IF NOT EXISTS idx_oci_blob_links_skey    ON oci_blob_links(storage_key);

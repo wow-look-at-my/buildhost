@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func setupSigningTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
@@ -31,7 +31,7 @@ func setupSigningTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	h := &Handler{
 		DB:     d,
 		Store:  store,
-		Gen:    repackage.NewGenerator(store, d, "http://localhost:8080", tmpDir),
+		Gen:    repackage.NewGenerator(store, d, tmpDir),
 		Signer: signer,
 	}
 	return h, d, store

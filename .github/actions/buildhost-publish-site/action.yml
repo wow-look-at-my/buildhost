@@ -30,6 +30,10 @@ inputs:
     description: 'Git commit SHA (defaults to github.sha)'
     required: false
     default: ''
+  public:
+    description: 'Serve the site publicly even when the source repo/project is private. The project itself (and any release artifacts) stays private; only this site branch is opened.'
+    required: false
+    default: 'false'
 
 outputs:
   response:
@@ -60,9 +64,23 @@ runs:
               core.setFailed('Either source_dir or artifact_name is required'); return;
             }
 
-            const project: string = "${{ inputs.project }}" || github.repository.split('/').pop()!;
+            // Route inputs through string-typed locals before `||`. A bare
+            // input literal substituted directly into `x || y` is statically
+            // empty-or-not, which the typescript action rejects (TS2872/TS2873).
+            const projectInput: string = "${{ inputs.project }}";
+            const project: string = projectInput || github.repository.split('/').pop()!;
             const branch: string = "${{ inputs.branch }}";
-            const gitCommit: string = "${{ inputs.git_commit }}" || github.sha;
+            const gitCommitInput: string = "${{ inputs.git_commit }}";
+            const gitCommit: string = gitCommitInput || github.sha;
+            // Opt-in public flag. buildhost serves a site published with
+            // X-Public-Site: true without a token even under a private project.
+            const publicInput: string = "${{ inputs.public }}";
+            const isPublic: string = publicInput === 'true' ? 'true' : 'false';
+
+            // buildhost serves each service on its own subdomain and dispatches
+            // by the first Host label, so the sites endpoint is sites.<domain>.
+            const su = new URL(server);
+            const sitesBase = `${su.protocol}//sites.${su.host}`;
 
             let token: string = "${{ inputs.token }}";
             if (!token) {
@@ -74,44 +92,40 @@ runs:
               }
             }
 
-            let siteDir: string;
+            let body: Buffer;
+            let contentType: string;
             if (artifactName) {
-              const downloadDir = path.join(os.tmpdir(), 'buildhost-site');
-              fs.mkdirSync(downloadDir, { recursive: true });
               const oct = octokit(process.env.GITHUB_TOKEN!);
               const [owner, repo] = github.repository.split('/');
               const { data: { artifacts } } = await oct.rest.actions.listWorkflowRunArtifacts({ owner, repo, run_id: github.run_id });
               const artifact = artifacts.find((a: any) => a.name === artifactName);
               if (!artifact) { core.setFailed(`Artifact '${artifactName}' not found in run`); return; }
               const { data: zip } = await oct.rest.actions.downloadArtifact({ owner, repo, artifact_id: artifact.id, archive_format: 'zip' });
-              const zipPath = path.join(downloadDir, 'site.zip');
-              fs.writeFileSync(zipPath, Buffer.from(zip as ArrayBuffer));
-              siteDir = path.join(downloadDir, 'extracted');
-              fs.mkdirSync(siteDir, { recursive: true });
-              await exec.exec('unzip', ['-o', zipPath, '-d', siteDir]);
+              body = Buffer.from(zip as ArrayBuffer);
+              contentType = 'application/zip';
             } else {
-              siteDir = sourceDir;
+              const tarPath = path.join(os.tmpdir(), 'site.tar.gz');
+              await exec.exec('tar', ['-czf', tarPath, '-C', sourceDir, '.']);
+              body = fs.readFileSync(tarPath);
+              fs.unlinkSync(tarPath);
+              contentType = 'application/gzip';
             }
-
-            const tarPath = path.join(os.tmpdir(), 'site.tar.gz');
-            await exec.exec('tar', ['-czf', tarPath, '-C', siteDir, '.']);
-            const body = fs.readFileSync(tarPath);
-            fs.unlinkSync(tarPath);
             core.info(`Archive size: ${body.length} bytes`);
 
-            const resp = await fetch(`${server}/sites/${project}/branch/${branch}`, {
+            const resp = await fetch(`${sitesBase}/${project}/branch/${branch}`, {
               method: 'PUT',
               headers: {
                 Authorization: `Bearer ${token}`,
-                'Content-Type': 'application/gzip',
+                'Content-Type': contentType,
                 'X-Git-Commit': gitCommit,
+                'X-Public-Site': isPublic,
               },
               body,
             });
             const text = await resp.text();
             if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
 
-            const siteURL = `${server}/sites/${project}/branch/${branch}/`;
+            const siteURL = `${sitesBase}/${project}/branch/${branch}/`;
             core.info(`Published site to ${siteURL}`);
             core.info(JSON.stringify(JSON.parse(text), null, 2));
             core.setOutput('response', text);

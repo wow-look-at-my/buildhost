@@ -1,0 +1,44 @@
+{{define "title"}}{{.ProjectName}} {{.Version}} &mdash; buildhost{{end}}
+{{define "description"}}Downloadable artifacts for {{.ProjectName}} version {{.Version}} on buildhost.{{end}}
+{{define "content"}}
+<nav class="breadcrumb"><a href="/">Projects</a> <span>/</span> <a href="{{.ProjectURL}}">{{.ProjectName}}</a> <span>/</span> <span>{{.Version}}</span></nav>
+
+<section class="release-header">
+  <h1>{{.ProjectName}} <span class="version">{{.Version}}</span></h1>
+  <dl class="facts">
+    {{if nonEmpty .Branch}}<div><dt>Branch</dt><dd><code>{{.Branch}}</code></dd></div>{{end}}
+    {{if nonEmpty .Commit}}<div><dt>Commit</dt><dd><code>{{.Commit}}</code></dd></div>{{end}}
+    {{if nonEmpty .Published}}<div><dt>Published</dt><dd>{{.Published}}</dd></div>{{end}}
+  </dl>
+  {{if nonEmpty .Notes}}<div class="notes"><h2>Release notes</h2><pre>{{.Notes}}</pre></div>{{end}}
+</section>
+
+<section class="artifacts">
+  <h2>Artifacts</h2>
+  {{if .Artifacts}}
+  <table class="grid">
+    <thead><tr><th>OS</th><th>Arch</th><th>Kind</th><th>Size</th><th>SHA-256</th><th>Download</th></tr></thead>
+    <tbody>
+    {{range .Artifacts}}
+      <tr>
+        <td><code>{{.OS}}</code></td>
+        <td><code>{{.Arch}}</code></td>
+        <td>{{.Kind}}</td>
+        <td>{{.Size}}</td>
+        <td>{{if nonEmpty .SHA256}}<code class="hash" title="{{.SHA256}}">{{.SHA256}}</code>{{else}}<span class="muted">&mdash;</span>{{end}}</td>
+        <td class="downloads">
+          {{if .Docker}}
+            <code class="cmd-inline">{{.DockerPull}}</code>
+          {{else}}
+            {{range .Downloads}}<a class="dl" href="{{.URL}}" rel="nofollow">{{.Label}}</a> {{end}}
+          {{end}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="empty">This release has no artifacts.</p>
+  {{end}}
+</section>
+{{end}}

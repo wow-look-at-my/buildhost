@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
 func newTestServer(t *testing.T) (*Server, *db.DB) {
@@ -23,11 +24,13 @@ func newTestServer(t *testing.T) (*Server, *db.DB) {
 	require.NoError(t, err)
 	t.Cleanup(func() { database.Close() })
 
+	store, err := storage.NewFilesystem(t.TempDir(), true)
+	require.NoError(t, err)
+
 	cfg := config.Config{
 		ListenAddr:      ":8080",
 		AdminListenAddr: ":9090",
 		DataDir:         "./data",
-		BaseURL:         "http://localhost:8080",
 	}
 	build := BuildInfo{
 		Version: "v1.2.3",
@@ -35,8 +38,21 @@ func newTestServer(t *testing.T) (*Server, *db.DB) {
 		Date:    "2025-01-15T10:30:00Z",
 		RepoURL: "https://github.com/wow-look-at-my/buildhost",
 	}
-	srv := New(cfg, database, build)
+	srv := New(cfg, database, store, build)
 	return srv, database
+}
+
+func serve(srv *Server, method, path string, body *bytes.Buffer) *httptest.ResponseRecorder {
+	var req *http.Request
+	if body != nil {
+		req = httptest.NewRequest(method, path, body)
+		req.Header.Set("Content-Type", "application/json")
+	} else {
+		req = httptest.NewRequest(method, path, nil)
+	}
+	w := httptest.NewRecorder()
+	srv.NewHTTPServer().Handler.ServeHTTP(w, req)
+	return w
 }
 
 func seedData(t *testing.T, database *db.DB) {
@@ -70,10 +86,7 @@ func TestAPIDashboard(t *testing.T) {
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
-	w := httptest.NewRecorder()
-	srv.apiDashboard(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/dashboard", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]any
@@ -101,10 +114,7 @@ func TestAPIDashboard(t *testing.T) {
 func TestAPIDashboard_Empty(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
-	w := httptest.NewRecorder()
-	srv.apiDashboard(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/dashboard", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]any
@@ -117,10 +127,7 @@ func TestAPIProjects(t *testing.T) {
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
-	w := httptest.NewRecorder()
-	srv.apiProjects(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/projects", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp []map[string]any
@@ -133,10 +140,7 @@ func TestAPIProjects(t *testing.T) {
 func TestAPIProjects_Empty(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
-	w := httptest.NewRecorder()
-	srv.apiProjects(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/projects", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp []map[string]any
@@ -148,11 +152,7 @@ func TestAPIProject(t *testing.T) {
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/projects/testproject", nil)
-	req.SetPathValue("name", "testproject")
-	w := httptest.NewRecorder()
-	srv.apiProject(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/projects/testproject", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]any
@@ -165,14 +165,25 @@ func TestAPIProject(t *testing.T) {
 	assert.Equal(t, "1.0.0", releases[0].(map[string]any)["version"])
 }
 
+func TestAPIProject_SlashNamespaced(t *testing.T) {
+	srv, database := newTestServer(t)
+	ctx := context.Background()
+	p := &db.Project{Name: "cc-marketplace/recommend-go-toolchain", Versioning: db.VersioningAuto}
+	require.NoError(t, database.CreateProject(ctx, p))
+
+	w := serve(srv, http.MethodGet, "/api/projects/cc-marketplace/recommend-go-toolchain", nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	project := resp["project"].(map[string]any)
+	assert.Equal(t, "cc-marketplace/recommend-go-toolchain", project["name"])
+}
+
 func TestAPIProject_NotFound(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/projects/nonexistent", nil)
-	req.SetPathValue("name", "nonexistent")
-	w := httptest.NewRecorder()
-	srv.apiProject(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/projects/nonexistent", nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
@@ -181,10 +192,9 @@ func TestAPIRelease(t *testing.T) {
 	seedData(t, database)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/projects/testproject/releases/1.0.0", nil)
-	req.SetPathValue("name", "testproject")
-	req.SetPathValue("version", "1.0.0")
+	req.Host = "buildhost.example.com"
 	w := httptest.NewRecorder()
-	srv.apiRelease(w, req)
+	srv.NewHTTPServer().Handler.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
@@ -205,18 +215,47 @@ func TestAPIRelease(t *testing.T) {
 	assert.Equal(t, float64(2048), a["size"])
 
 	assert.Equal(t, float64(2048), resp["total_size"])
-	assert.Equal(t, "http://localhost:8080", resp["base_url"])
+	// The admin dashboard runs on its own subdomain (buildhost.example.com here);
+	// base_url is the registry root and service URLs are real per-service hosts.
+	assert.Equal(t, "https://example.com", resp["base_url"])
+	assertServiceURLs(t, resp)
+}
+
+// assertServiceURLs checks the "services" map carries the real per-service
+// subdomain hosts the router serves, derived from the request Host
+// (buildhost.example.com -> example.com) with the admin label stripped.
+func assertServiceURLs(t *testing.T, resp map[string]any) {
+	t.Helper()
+	services, ok := resp["services"].(map[string]any)
+	require.True(t, ok, "response is missing a services map")
+	for _, svc := range []string{"dl", "apt", "brew", "npm", "oci", "sites", "static"} {
+		assert.Equal(t, "https://"+svc+".example.com", services[svc])
+	}
+}
+
+func TestAPIRelease_SlashNamespaced(t *testing.T) {
+	srv, database := newTestServer(t)
+	ctx := context.Background()
+	p := &db.Project{Name: "cc-marketplace/recommend-go-toolchain", Versioning: db.VersioningAuto}
+	require.NoError(t, database.CreateProject(ctx, p))
+	r := &db.Release{ProjectID: p.ID, Version: "v1", VersionNum: 1}
+	require.NoError(t, database.CreateRelease(ctx, r))
+
+	w := serve(srv, http.MethodGet, "/api/projects/cc-marketplace/recommend-go-toolchain/releases/v1", nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	project := resp["project"].(map[string]any)
+	assert.Equal(t, "cc-marketplace/recommend-go-toolchain", project["name"])
+	release := resp["release"].(map[string]any)
+	assert.Equal(t, "v1", release["version"])
 }
 
 func TestAPIRelease_NotFoundProject(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/projects/nope/releases/1.0.0", nil)
-	req.SetPathValue("name", "nope")
-	req.SetPathValue("version", "1.0.0")
-	w := httptest.NewRecorder()
-	srv.apiRelease(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/projects/nope/releases/1.0.0", nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
@@ -224,12 +263,7 @@ func TestAPIRelease_NotFoundVersion(t *testing.T) {
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/projects/testproject/releases/9.9.9", nil)
-	req.SetPathValue("name", "testproject")
-	req.SetPathValue("version", "9.9.9")
-	w := httptest.NewRecorder()
-	srv.apiRelease(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/projects/testproject/releases/9.9.9", nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
@@ -238,14 +272,16 @@ func TestAPIRegistries(t *testing.T) {
 	seedData(t, database)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/registries", nil)
+	req.Host = "buildhost.example.com"
 	w := httptest.NewRecorder()
-	srv.apiRegistries(w, req)
+	srv.NewHTTPServer().Handler.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, "http://localhost:8080", resp["base_url"])
+	assert.Equal(t, "https://example.com", resp["base_url"])
+	assertServiceURLs(t, resp)
 
 	projects := resp["projects"].([]any)
 	assert.Len(t, projects, 1)
@@ -255,12 +291,7 @@ func TestAPIRegistries(t *testing.T) {
 func TestAPICreateToken(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	body := bytes.NewBufferString(`{"name":"mytoken","scopes":"read,write"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/tokens", body)
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	srv.apiCreateToken(w, req)
-
+	w := serve(srv, http.MethodPost, "/api/tokens", bytes.NewBufferString(`{"name":"mytoken","scopes":"read,write"}`))
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]any
@@ -281,11 +312,7 @@ func TestAPICreateToken_ProjectScoped(t *testing.T) {
 	require.NoError(t, err)
 
 	body := bytes.NewBufferString(fmt.Sprintf(`{"name":"proj-token","scopes":"read","project_id":%d}`, p.ID))
-	req := httptest.NewRequest(http.MethodPost, "/api/tokens", body)
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	srv.apiCreateToken(w, req)
-
+	w := serve(srv, http.MethodPost, "/api/tokens", body)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]any
@@ -298,12 +325,7 @@ func TestAPICreateToken_ProjectScoped(t *testing.T) {
 func TestAPICreateToken_MissingName(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	body := bytes.NewBufferString(`{"scopes":"read"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/tokens", body)
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	srv.apiCreateToken(w, req)
-
+	w := serve(srv, http.MethodPost, "/api/tokens", bytes.NewBufferString(`{"scopes":"read"}`))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
@@ -316,25 +338,14 @@ func TestAPIUpdateToken(t *testing.T) {
 	require.Len(t, tokens, 1)
 	id := tokens[0].ID
 
-	body := bytes.NewBufferString(`{"name":"renamed","scopes":"read"}`)
-	req := httptest.NewRequest(http.MethodPatch, "/api/tokens/"+fmt.Sprint(id), body)
-	req.SetPathValue("id", fmt.Sprint(id))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	srv.apiUpdateToken(w, req)
-
+	w := serve(srv, http.MethodPatch, "/api/tokens/"+fmt.Sprint(id), bytes.NewBufferString(`{"name":"renamed","scopes":"read"}`))
 	assert.Equal(t, http.StatusNoContent, w.Code)
 }
 
 func TestAPIUpdateToken_InvalidID(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	body := bytes.NewBufferString(`{"name":"x","scopes":"read"}`)
-	req := httptest.NewRequest(http.MethodPatch, "/api/tokens/abc", body)
-	req.SetPathValue("id", "abc")
-	w := httptest.NewRecorder()
-	srv.apiUpdateToken(w, req)
-
+	w := serve(srv, http.MethodPatch, "/api/tokens/abc", bytes.NewBufferString(`{"name":"x","scopes":"read"}`))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
@@ -347,33 +358,21 @@ func TestAPIDeleteToken(t *testing.T) {
 	require.Len(t, tokens, 1)
 	id := tokens[0].ID
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/tokens/"+fmt.Sprint(id), nil)
-	req.SetPathValue("id", fmt.Sprint(id))
-	w := httptest.NewRecorder()
-	srv.apiDeleteToken(w, req)
-
+	w := serve(srv, http.MethodDelete, "/api/tokens/"+fmt.Sprint(id), nil)
 	assert.Equal(t, http.StatusNoContent, w.Code)
 }
 
 func TestAPIDeleteToken_NotFound(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/tokens/9999", nil)
-	req.SetPathValue("id", "9999")
-	w := httptest.NewRecorder()
-	srv.apiDeleteToken(w, req)
-
+	w := serve(srv, http.MethodDelete, "/api/tokens/9999", nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestAPIDeleteToken_InvalidID(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/tokens/abc", nil)
-	req.SetPathValue("id", "abc")
-	w := httptest.NewRecorder()
-	srv.apiDeleteToken(w, req)
-
+	w := serve(srv, http.MethodDelete, "/api/tokens/abc", nil)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
@@ -381,10 +380,7 @@ func TestAPITokens(t *testing.T) {
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/tokens", nil)
-	w := httptest.NewRecorder()
-	srv.apiTokens(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/tokens", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp []map[string]any
@@ -399,10 +395,7 @@ func TestAPITokens(t *testing.T) {
 func TestAPITokens_Empty(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/tokens", nil)
-	w := httptest.NewRecorder()
-	srv.apiTokens(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/tokens", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp []map[string]any
@@ -414,10 +407,7 @@ func TestAPIOIDC(t *testing.T) {
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/oidc", nil)
-	w := httptest.NewRecorder()
-	srv.apiOIDC(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/oidc", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp []map[string]any
@@ -430,10 +420,7 @@ func TestAPIOIDC(t *testing.T) {
 func TestAPIOIDC_Empty(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/oidc", nil)
-	w := httptest.NewRecorder()
-	srv.apiOIDC(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/oidc", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp []map[string]any
@@ -453,10 +440,7 @@ func TestAPISites(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/sites", nil)
-	w := httptest.NewRecorder()
-	srv.apiSites(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/sites", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]any
@@ -470,10 +454,7 @@ func TestAPISites(t *testing.T) {
 func TestAPISites_Empty(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/sites", nil)
-	w := httptest.NewRecorder()
-	srv.apiSites(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/sites", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]any
@@ -494,11 +475,7 @@ func TestAPIProject_IncludesSites(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/projects/testproject", nil)
-	req.SetPathValue("name", "testproject")
-	w := httptest.NewRecorder()
-	srv.apiProject(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/projects/testproject", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]any
@@ -512,10 +489,7 @@ func TestAPIArtifacts(t *testing.T) {
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/artifacts", nil)
-	w := httptest.NewRecorder()
-	srv.apiArtifacts(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/artifacts", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp []map[string]any
@@ -530,10 +504,7 @@ func TestAPIArtifacts(t *testing.T) {
 func TestAPIArtifacts_Empty(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/artifacts", nil)
-	w := httptest.NewRecorder()
-	srv.apiArtifacts(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/artifacts", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp []map[string]any
@@ -545,10 +516,7 @@ func TestAPIStorage(t *testing.T) {
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/storage", nil)
-	w := httptest.NewRecorder()
-	srv.apiStorage(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/storage", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]any
@@ -559,15 +527,18 @@ func TestAPIStorage(t *testing.T) {
 	assert.Equal(t, "testproject", projects[0].(map[string]any)["name"])
 	assert.Equal(t, float64(2048), projects[0].(map[string]any)["total_bytes"])
 	assert.Equal(t, float64(2048), resp["total_bytes"])
+
+	// Component breakdown fields are exposed for the reconciliation view.
+	assert.Equal(t, float64(2048), resp["logical_bytes"])
+	assert.Equal(t, float64(0), resp["stripped_bytes"])
+	assert.Equal(t, float64(0), resp["debug_bytes"])
+	assert.Equal(t, float64(0), resp["packaged_bytes"])
 }
 
 func TestAPIStorage_Empty(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/storage", nil)
-	w := httptest.NewRecorder()
-	srv.apiStorage(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/storage", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]any
@@ -580,10 +551,7 @@ func TestAPIStorage_Empty(t *testing.T) {
 func TestAPISidebar(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/sidebar", nil)
-	w := httptest.NewRecorder()
-	srv.apiSidebar(w, req)
-
+	w := serve(srv, http.MethodGet, "/api/sidebar", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]any
@@ -624,7 +592,7 @@ func TestSecurityHeaders(t *testing.T) {
 	assert.Equal(t, "DENY", w.Header().Get("X-Frame-Options"))
 	assert.Equal(t, "no-referrer", w.Header().Get("Referrer-Policy"))
 	assert.Equal(t, "max-age=63072000; includeSubDomains", w.Header().Get("Strict-Transport-Security"))
-	assert.Equal(t, "default-src 'self' data:", w.Header().Get("Content-Security-Policy"))
+	assert.Equal(t, "default-src 'self' data: 'unsafe-inline'", w.Header().Get("Content-Security-Policy"))
 	assert.Equal(t, "none", w.Header().Get("X-Permitted-Cross-Domain-Policies"))
 	assert.Equal(t, "interest-cohort=()", w.Header().Get("Permissions-Policy"))
 }
@@ -632,10 +600,7 @@ func TestSecurityHeaders(t *testing.T) {
 func TestServeSPA_StaticFile(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/style.css", nil)
-	w := httptest.NewRecorder()
-	srv.serveSPA(w, req)
-
+	w := serve(srv, http.MethodGet, "/style.css", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "--sidebar-bg")
 }
@@ -643,10 +608,7 @@ func TestServeSPA_StaticFile(t *testing.T) {
 func TestServeSPA_Fallback(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/projects/anything", nil)
-	w := httptest.NewRecorder()
-	srv.serveSPA(w, req)
-
+	w := serve(srv, http.MethodGet, "/projects/anything", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
 	assert.Contains(t, w.Body.String(), "Buildhost Admin")

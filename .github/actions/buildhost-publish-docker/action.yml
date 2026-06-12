@@ -7,7 +7,7 @@ description: >
 
 inputs:
   server:
-    description: 'Buildhost base URL (used as the OIDC audience). The OCI registry is its `oci.` subdomain, which is where images are pushed.'
+    description: 'Buildhost server URL (used as the OIDC audience; its host is the registry).'
     required: false
     default: 'https://pazer.build'
   project:
@@ -81,8 +81,7 @@ runs:
         CACHE: ${{ inputs.cache }}
       run: |
         set -euo pipefail
-        # The OCI registry is served on the `oci.` subdomain of the buildhost
-        # domain (the apex serves the API, not /v2/).
+        # The OCI registry is served on the oci.<domain> subdomain.
         registry="${SERVER#*://}"; registry="${registry%%/*}"; registry="oci.${registry}"
         project="${PROJECT:-${GITHUB_REPOSITORY##*/}}"
 
@@ -125,7 +124,8 @@ runs:
         script: |
           await (async () => {
             const server: string = "${{ inputs.server }}";
-            const registry = "oci." + new URL(server).host;
+            // The OCI registry is served on the oci.<domain> subdomain.
+            const registry = `oci.${new URL(server).host}`;
             const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
             const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
             if (!url || !bearer) {

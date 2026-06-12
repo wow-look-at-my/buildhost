@@ -3,7 +3,7 @@ package config
 import (
 	"testing"
 
-	"github.com/wow-look-at-my/testify/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLoad_Defaults(t *testing.T) {
@@ -12,7 +12,6 @@ func TestLoad_Defaults(t *testing.T) {
 		"BUILDHOST_LISTEN_ADDR",
 		"BUILDHOST_DATA_DIR",
 		"BUILDHOST_DB_PATH",
-		"BUILDHOST_BASE_URL",
 	} {
 		t.Setenv(key, "")
 	}
@@ -21,14 +20,12 @@ func TestLoad_Defaults(t *testing.T) {
 	assert.Equal(t, ":8080", c.ListenAddr)
 	assert.Equal(t, "./data", c.DataDir)
 	assert.Equal(t, "./data/buildhost.db", c.DBPath)
-	assert.Equal(t, "http://localhost:8080", c.BaseURL)
 }
 
 func TestLoad_ListenAddrOverride(t *testing.T) {
 	t.Setenv("BUILDHOST_LISTEN_ADDR", ":9090")
 	t.Setenv("BUILDHOST_DATA_DIR", "")
 	t.Setenv("BUILDHOST_DB_PATH", "")
-	t.Setenv("BUILDHOST_BASE_URL", "")
 
 	c := Load()
 	assert.Equal(t, ":9090", c.ListenAddr)
@@ -39,7 +36,6 @@ func TestLoad_DataDirOverride(t *testing.T) {
 	t.Setenv("BUILDHOST_LISTEN_ADDR", "")
 	t.Setenv("BUILDHOST_DATA_DIR", "/tmp/mydata")
 	t.Setenv("BUILDHOST_DB_PATH", "")
-	t.Setenv("BUILDHOST_BASE_URL", "")
 
 	c := Load()
 	assert.Equal(t, "/tmp/mydata", c.DataDir)
@@ -50,33 +46,20 @@ func TestLoad_DBPathOverride(t *testing.T) {
 	t.Setenv("BUILDHOST_LISTEN_ADDR", "")
 	t.Setenv("BUILDHOST_DATA_DIR", "")
 	t.Setenv("BUILDHOST_DB_PATH", "/var/lib/buildhost.db")
-	t.Setenv("BUILDHOST_BASE_URL", "")
 
 	c := Load()
 	assert.Equal(t, "/var/lib/buildhost.db", c.DBPath)
-}
-
-func TestLoad_BaseURLOverride(t *testing.T) {
-	t.Setenv("BUILDHOST_LISTEN_ADDR", "")
-	t.Setenv("BUILDHOST_DATA_DIR", "")
-	t.Setenv("BUILDHOST_DB_PATH", "")
-	t.Setenv("BUILDHOST_BASE_URL", "https://builds.example.com")
-
-	c := Load()
-	assert.Equal(t, "https://builds.example.com", c.BaseURL)
 }
 
 func TestLoad_AllOverrides(t *testing.T) {
 	t.Setenv("BUILDHOST_LISTEN_ADDR", "0.0.0.0:443")
 	t.Setenv("BUILDHOST_DATA_DIR", "/opt/data")
 	t.Setenv("BUILDHOST_DB_PATH", "/opt/data/prod.db")
-	t.Setenv("BUILDHOST_BASE_URL", "https://prod.example.com")
 
 	c := Load()
 	assert.Equal(t, "0.0.0.0:443", c.ListenAddr)
 	assert.Equal(t, "/opt/data", c.DataDir)
 	assert.Equal(t, "/opt/data/prod.db", c.DBPath)
-	assert.Equal(t, "https://prod.example.com", c.BaseURL)
 }
 
 func TestLoad_OIDCIssuers(t *testing.T) {
@@ -107,25 +90,32 @@ func TestLoad_OIDCEvents_Default(t *testing.T) {
 	assert.Equal(t, []string{"push", "pull_request"}, c.OIDCEvents)
 }
 
+func TestLoad_GitHubWebhookSecret(t *testing.T) {
+	t.Setenv("BUILDHOST_GITHUB_WEBHOOK_SECRET", "secret")
+
+	c := Load()
+	assert.Equal(t, "secret", c.GitHubWebhookSecret)
+}
+
 func TestEnvBytes(t *testing.T) {
 	cases := []struct {
 		in   string
 		def  int64
 		want int64
 	}{
-		{"", 100, 100},        // unset -> default
-		{"   ", 100, 100},     // blank -> default
-		{"500", 1, 500},       // plain bytes
-		{"8K", 1, 8 << 10},    // upper suffix
-		{"8k", 1, 8 << 10},    // lower suffix
-		{"4M", 1, 4 << 20},    // mega
-		{"2G", 1, 2 << 30},    // giga
-		{"1T", 1, 1 << 40},    // tera
-		{"  3G ", 1, 3 << 30}, // surrounding space
-		{"bogus", 77, 77},     // unparseable -> default
-		{"-5", 77, 77},        // non-positive -> default
-		{"0", 77, 77},         // zero -> default
-		{"G", 77, 77},         // suffix only -> default
+		{"", 100, 100},           // unset -> default
+		{"   ", 100, 100},        // blank -> default
+		{"500", 1, 500},          // plain bytes
+		{"8K", 1, 8 << 10},       // upper suffix
+		{"8k", 1, 8 << 10},       // lower suffix
+		{"4M", 1, 4 << 20},       // mega
+		{"2G", 1, 2 << 30},       // giga
+		{"1T", 1, 1 << 40},       // tera
+		{"  3G ", 1, 3 << 30},    // surrounding space
+		{"bogus", 77, 77},        // unparseable -> default
+		{"-5", 77, 77},           // non-positive -> default
+		{"0", 77, 77},            // zero -> default
+		{"G", 77, 77},            // suffix only -> default
 		{"99999999999T", 77, 77}, // would overflow int64 -> default
 	}
 	for _, c := range cases {

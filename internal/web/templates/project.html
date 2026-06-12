@@ -1,0 +1,77 @@
+{{define "title"}}{{.Name}} &mdash; buildhost{{end}}
+{{define "description"}}{{if nonEmpty .Description}}{{.Description}}{{else}}Releases and downloads for {{.Name}} on buildhost.{{end}}{{end}}
+{{define "content"}}
+<nav class="breadcrumb"><a href="/">Projects</a> <span>/</span> <span>{{.Name}}</span></nav>
+
+<section class="project-header">
+  <h1>{{.Name}}{{if .Private}} <span class="badge badge-private">private</span>{{end}}</h1>
+  {{if nonEmpty .Description}}<p class="lede">{{.Description}}</p>{{end}}
+  <dl class="facts">
+    {{if nonEmpty .Homepage}}<div><dt>Homepage</dt><dd><a href="{{.Homepage}}" rel="nofollow noopener">{{.Homepage}}</a></dd></div>{{end}}
+    {{if nonEmpty .License}}<div><dt>License</dt><dd>{{.License}}</dd></div>{{end}}
+    <div><dt>Versioning</dt><dd>{{.Versioning}}</dd></div>
+    {{if nonEmpty .Created}}<div><dt>Created</dt><dd>{{.Created}}</dd></div>{{end}}
+  </dl>
+</section>
+
+{{if .Install}}
+<section class="install">
+  <h2>Install &amp; download</h2>
+  {{with .Install}}
+  {{if .HasBinary}}
+  <h3>Download the latest binary</h3>
+  <pre class="cmd"><code>{{.Curl}}</code></pre>
+  <h3>Homebrew</h3>
+  <pre class="cmd"><code>{{.Brew}}</code></pre>
+  <h3>npm</h3>
+  <pre class="cmd"><code>{{.Npm}}</code></pre>
+  <h3>APT (Debian/Ubuntu)</h3>
+  <pre class="cmd"><code>{{.Apt}}</code></pre>
+  {{end}}
+  <h3>Docker / OCI</h3>
+  <pre class="cmd"><code>{{.Docker}}</code></pre>
+  {{end}}
+</section>
+{{end}}
+
+<section class="releases">
+  <h2>Releases</h2>
+  {{if .Releases}}
+  <table class="grid">
+    <thead><tr><th>Version</th><th>Branch</th><th>Commit</th><th>Artifacts</th><th>Published</th></tr></thead>
+    <tbody>
+    {{range .Releases}}
+      <tr>
+        <td><a href="{{.URL}}">{{.Version}}</a>{{if .Latest}} <span class="badge badge-latest">latest</span>{{end}}</td>
+        <td>{{if nonEmpty .Branch}}<code>{{.Branch}}</code>{{else}}<span class="muted">&mdash;</span>{{end}}</td>
+        <td>{{if nonEmpty .Commit}}<code>{{.Commit}}</code>{{else}}<span class="muted">&mdash;</span>{{end}}</td>
+        <td>{{.ArtifactCount}}</td>
+        <td>{{.Published}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="empty">No published releases yet.</p>
+  {{end}}
+</section>
+
+{{if .Sites}}
+<section class="sites">
+  <h2>Static sites</h2>
+  <table class="grid">
+    <thead><tr><th>Branch</th><th>Files</th><th>Updated</th><th></th></tr></thead>
+    <tbody>
+    {{range .Sites}}
+      <tr>
+        <td><code>{{.Branch}}</code></td>
+        <td>{{.Files}}</td>
+        <td>{{.Updated}}</td>
+        <td><a href="{{.URL}}" rel="nofollow">visit &rarr;</a></td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}
+{{end}}

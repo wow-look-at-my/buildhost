@@ -15,11 +15,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func withRoute(r *http.Request, project *db.Project, rt route) *http.Request {
@@ -76,6 +76,37 @@ func uploadSite(t *testing.T, h *Handler, proj *db.Project, branch string, files
 	rec := httptest.NewRecorder()
 	h.Upload(rec, req)
 	require.Equal(t, http.StatusCreated, rec.Code)
+}
+
+func TestUpload_PublicSiteFlag(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "priv")
+
+	// X-Public-Site: true marks the site public.
+	body := makeTarGz(t, map[string]string{"index.html": "<h1>hi</h1>"})
+	req := httptest.NewRequest("PUT", "/sites/priv/branch/pr-1", bytes.NewReader(body))
+	req.Header.Set("X-Public-Site", "true")
+	req = withRoute(req, proj, route{project: "priv", branch: "pr-1", write: true})
+	rec := httptest.NewRecorder()
+	h.Upload(rec, req)
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	site, err := d.GetSite(context.Background(), proj.ID, "pr-1")
+	require.NoError(t, err)
+	assert.True(t, site.IsPublic, "X-Public-Site: true should persist as public")
+
+	// The Serve route reports this branch as publicly readable; write and the
+	// branch listing never do.
+	assert.True(t, route{project: "priv", branch: "pr-1"}.AllowsPublicRead(context.Background(), d, proj))
+	assert.False(t, route{project: "priv", branch: "pr-1", write: true}.AllowsPublicRead(context.Background(), d, proj))
+	assert.False(t, route{project: "priv", branch: ""}.AllowsPublicRead(context.Background(), d, proj))
+
+	// Without the header a site stays private (gated).
+	uploadSite(t, h, proj, "pr-2", map[string]string{"index.html": "x"})
+	gated, err := d.GetSite(context.Background(), proj.ID, "pr-2")
+	require.NoError(t, err)
+	assert.False(t, gated.IsPublic)
+	assert.False(t, route{project: "priv", branch: "pr-2"}.AllowsPublicRead(context.Background(), d, proj))
 }
 
 func TestUpload(t *testing.T) {
@@ -147,6 +178,32 @@ func TestServe_File(t *testing.T) {
 	assert.Contains(t, rec.Header().Get("Content-Type"), "css")
 }
 
+func TestServe_SetsSiteSecurityHeaders(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "mysite")
+	uploadSite(t, h, proj, "main", map[string]string{
+		"index.html":     "<h1>hi</h1>",
+		"assets/app.mjs": "export default 1;",
+	})
+
+	req := httptest.NewRequest("GET", "/sites/mysite/branch/main/assets/app.mjs", nil)
+	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: "assets/app.mjs"})
+	rec := httptest.NewRecorder()
+	// The global security middleware sets these strict app headers before the
+	// handler runs; serving a site must drop them so its assets can load.
+	rec.Header().Set("Content-Security-Policy", "default-src 'none'")
+	rec.Header().Set("X-Frame-Options", "DENY")
+	h.Serve(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Empty(t, rec.Header().Get("Content-Security-Policy"))
+	assert.Empty(t, rec.Header().Get("X-Frame-Options"))
+	assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"))
+	assert.Empty(t, rec.Header().Get("Access-Control-Allow-Credentials"))
+	assert.Equal(t, "same-origin", rec.Header().Get("Cross-Origin-Opener-Policy"))
+	assert.Equal(t, "credentialless", rec.Header().Get("Cross-Origin-Embedder-Policy"))
+}
+
 func TestServe_IndexFallback(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
@@ -193,14 +250,25 @@ func TestServe_NotFound_NoFile(t *testing.T) {
 func TestServeRedirect(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
+	uploadSite(t, h, proj, "main", map[string]string{"index.html": "<h1>hello</h1>"})
 
+	// A branch root requested without a trailing slash redirects to the slashed
+	// form (so index.html's relative links resolve under the branch). Serve --
+	// the single GET route -- handles this; there is no separate redirect route
+	// that could shadow file serving.
 	req := httptest.NewRequest("GET", "/sites/mysite/branch/main", nil)
-	req = withRoute(req, proj, route{project: "mysite", branch: "main"})
+	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: ""})
 	rec := httptest.NewRecorder()
-	h.ServeRedirect(rec, req)
+	rec.Header().Set("Content-Security-Policy", "default-src 'none'")
+	rec.Header().Set("X-Frame-Options", "DENY")
+	h.Serve(rec, req)
 
 	assert.Equal(t, http.StatusMovedPermanently, rec.Code)
 	assert.Equal(t, "/sites/mysite/branch/main/", rec.Header().Get("Location"))
+	assert.Empty(t, rec.Header().Get("Content-Security-Policy"))
+	assert.Empty(t, rec.Header().Get("X-Frame-Options"))
+	assert.Equal(t, "same-origin", rec.Header().Get("Cross-Origin-Opener-Policy"))
+	assert.Equal(t, "credentialless", rec.Header().Get("Cross-Origin-Embedder-Policy"))
 }
 
 func TestDelete(t *testing.T) {
@@ -274,7 +342,7 @@ func TestServe_SubdirIndex(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
-		"index.html":     "<h1>root</h1>",
+		"index.html":      "<h1>root</h1>",
 		"docs/index.html": "<h1>docs</h1>",
 	})
 
@@ -518,7 +586,9 @@ func TestZipToTar_PathTraversal(t *testing.T) {
 	zw.Close()
 
 	var out bytes.Buffer
-	_, err = zipToTar(buf.Bytes(), &out)
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	require.NoError(t, err)
+	_, err = zipToTar(zr, &out)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "path traversal")
 }
@@ -655,7 +725,9 @@ func TestZipToTar_AbsolutePath(t *testing.T) {
 	zw.Close()
 
 	var out bytes.Buffer
-	_, err = zipToTar(buf.Bytes(), &out)
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	require.NoError(t, err)
+	_, err = zipToTar(zr, &out)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "absolute path")
 }

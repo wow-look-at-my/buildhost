@@ -7,9 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func openTestDB(t *testing.T) *DB {
@@ -28,12 +27,12 @@ func TestCreateAndGetProject(t *testing.T) {
 	ctx := context.Background()
 
 	p := &Project{
-		Name:		"myproject",
-		Description:	"A test project",
-		Homepage:	"https://example.com",
-		License:	"MIT",
-		IsPrivate:	false,
-		Versioning:	VersioningAuto,
+		Name:        "myproject",
+		Description: "A test project",
+		Homepage:    "https://example.com",
+		License:     "MIT",
+		IsPrivate:   false,
+		Versioning:  VersioningAuto,
 	}
 	require.NoError(t, d.CreateProject(ctx, p))
 
@@ -108,12 +107,12 @@ func TestCreateAndGetRelease(t *testing.T) {
 	p := createTestProject(t, d)
 
 	r := &Release{
-		ProjectID:	p.ID,
-		Version:	"1.0.0",
-		VersionNum:	1,
-		GitBranch:	"main",
-		GitCommit:	"abc123",
-		Notes:		"first release",
+		ProjectID:  p.ID,
+		Version:    "1.0.0",
+		VersionNum: 1,
+		GitBranch:  "main",
+		GitCommit:  "abc123",
+		Notes:      "first release",
 	}
 	require.NoError(t, d.CreateRelease(ctx, r))
 
@@ -145,9 +144,9 @@ func TestListReleases(t *testing.T) {
 
 	for i, v := range []string{"1.0.0", "2.0.0", "3.0.0"} {
 		r := &Release{
-			ProjectID:	p.ID,
-			Version:	v,
-			VersionNum:	int64(i + 1),
+			ProjectID:  p.ID,
+			Version:    v,
+			VersionNum: int64(i + 1),
 		}
 		require.NoError(t, d.CreateRelease(ctx, r))
 
@@ -234,9 +233,9 @@ func TestGetLatestReleaseByBranch(t *testing.T) {
 	p := createTestProject(t, d)
 
 	releases := []struct {
-		version	string
-		num	int64
-		branch	string
+		version string
+		num     int64
+		branch  string
 	}{
 		{"1.0.0", 1, "main"},
 		{"2.0.0", 2, "main"},
@@ -244,10 +243,10 @@ func TestGetLatestReleaseByBranch(t *testing.T) {
 	}
 	for _, rl := range releases {
 		r := &Release{
-			ProjectID:	p.ID,
-			Version:	rl.version,
-			VersionNum:	rl.num,
-			GitBranch:	rl.branch,
+			ProjectID:  p.ID,
+			Version:    rl.version,
+			VersionNum: rl.num,
+			GitBranch:  rl.branch,
 		}
 		require.NoError(t, d.CreateRelease(ctx, r))
 
@@ -287,14 +286,14 @@ func TestCreateAndGetArtifact(t *testing.T) {
 	_, r := createTestRelease(t, d)
 
 	a := &Artifact{
-		ReleaseID:	r.ID,
-		OS:		OSLinux,
-		Arch:		ArchAMD64,
-		Kind:		KindBinary,
-		StorageKey:	"deadbeef",
-		Size:		1024,
-		SHA256:		"aabbccdd",
-		Filename:	"mybin",
+		ReleaseID:  r.ID,
+		OS:         OSLinux,
+		Arch:       ArchAMD64,
+		Kind:       KindBinary,
+		StorageKey: "deadbeef",
+		Size:       1024,
+		SHA256:     "aabbccdd",
+		Filename:   "mybin",
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -325,8 +324,8 @@ func TestListArtifacts(t *testing.T) {
 	_, r := createTestRelease(t, d)
 
 	artifacts := []struct {
-		os	OS
-		arch	Arch
+		os   OS
+		arch Arch
 	}{
 		{OSLinux, ArchAMD64},
 		{OSLinux, ArchARM64},
@@ -334,13 +333,13 @@ func TestListArtifacts(t *testing.T) {
 	}
 	for _, art := range artifacts {
 		a := &Artifact{
-			ReleaseID:	r.ID,
-			OS:		art.os,
-			Arch:		art.arch,
-			Kind:		KindBinary,
-			StorageKey:	"key",
-			Size:		100,
-			SHA256:		"hash",
+			ReleaseID:  r.ID,
+			OS:         art.os,
+			Arch:       art.arch,
+			Kind:       KindBinary,
+			StorageKey: "key",
+			Size:       100,
+			SHA256:     "hash",
 		}
 		require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -359,13 +358,13 @@ func TestUpdateArtifactStripped(t *testing.T) {
 	_, r := createTestRelease(t, d)
 
 	a := &Artifact{
-		ReleaseID:	r.ID,
-		OS:		OSLinux,
-		Arch:		ArchAMD64,
-		Kind:		KindBinary,
-		StorageKey:	"orig-key",
-		Size:		2048,
-		SHA256:		"origsha",
+		ReleaseID:  r.ID,
+		OS:         OSLinux,
+		Arch:       ArchAMD64,
+		Kind:       KindBinary,
+		StorageKey: "orig-key",
+		Size:       2048,
+		SHA256:     "origsha",
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -394,13 +393,13 @@ func TestCreateAndGetPackagedArtifact(t *testing.T) {
 	_, r := createTestRelease(t, d)
 
 	a := &Artifact{
-		ReleaseID:	r.ID,
-		OS:		OSLinux,
-		Arch:		ArchAMD64,
-		Kind:		KindBinary,
-		StorageKey:	"binkey",
-		Size:		500,
-		SHA256:		"binhash",
+		ReleaseID:  r.ID,
+		OS:         OSLinux,
+		Arch:       ArchAMD64,
+		Kind:       KindBinary,
+		StorageKey: "binkey",
+		Size:       500,
+		SHA256:     "binhash",
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -425,13 +424,13 @@ func TestGetPackagedArtifactNotFound(t *testing.T) {
 	_, r := createTestRelease(t, d)
 
 	a := &Artifact{
-		ReleaseID:	r.ID,
-		OS:		OSLinux,
-		Arch:		ArchAMD64,
-		Kind:		KindBinary,
-		StorageKey:	"k",
-		Size:		1,
-		SHA256:		"h",
+		ReleaseID:  r.ID,
+		OS:         OSLinux,
+		Arch:       ArchAMD64,
+		Kind:       KindBinary,
+		StorageKey: "k",
+		Size:       1,
+		SHA256:     "h",
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
@@ -446,13 +445,13 @@ func TestCreatePackagedArtifactUpserts(t *testing.T) {
 	_, r := createTestRelease(t, d)
 
 	a := &Artifact{
-		ReleaseID:	r.ID,
-		OS:		OSLinux,
-		Arch:		ArchAMD64,
-		Kind:		KindBinary,
-		StorageKey:	"k",
-		Size:		1,
-		SHA256:		"h",
+		ReleaseID:  r.ID,
+		OS:         OSLinux,
+		Arch:       ArchAMD64,
+		Kind:       KindBinary,
+		StorageKey: "k",
+		Size:       1,
+		SHA256:     "h",
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 

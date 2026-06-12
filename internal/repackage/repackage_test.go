@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 var testBinary = []byte("#!/bin/sh\necho hello\n")
@@ -22,22 +22,23 @@ var testBinary = []byte("#!/bin/sh\necho hello\n")
 func makeInput() Input {
 	return Input{
 		Project: db.Project{
-			Name:		"testapp",
-			Description:	"A test application",
-			Homepage:	"https://example.com",
-			License:	"MIT",
+			Name:        "testapp",
+			Description: "A test application",
+			Homepage:    "https://example.com",
+			License:     "MIT",
 		},
 		Release: db.Release{
-			Version:	"v1.2.3",
-			VersionNum:	1,
+			Version:    "v1.2.3",
+			VersionNum: 1,
 		},
 		Artifact: db.Artifact{
-			OS:	db.OSLinux,
-			Arch:	db.ArchAMD64,
-			Kind:	db.KindBinary,
+			OS:   db.OSLinux,
+			Arch: db.ArchAMD64,
+			Kind: db.KindBinary,
 		},
-		Data:		testBinary,
-		BaseURL:	"https://builds.example.com",
+		Reader:  bytes.NewReader(testBinary),
+		Size:    int64(len(testBinary)),
+		BaseURL: "https://builds.example.com",
 	}
 }
 
@@ -399,8 +400,8 @@ func TestOCIRepackage(t *testing.T) {
 
 func TestFormats(t *testing.T) {
 	tests := []struct {
-		rp	Repackager
-		format	Format
+		rp     Repackager
+		format Format
 	}{
 		{&TarGZ{}, FormatTarGZ},
 		{&TarXZ{}, FormatTarXZ},
@@ -563,23 +564,29 @@ func TestGenerator_Generate(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	gen := NewGenerator(store, d, "https://example.com", t.TempDir())
+	gen := NewGenerator(store, d, t.TempDir())
 	require.True(t, gen.Supports(FormatTarGZ))
 	require.False(t, gen.Supports(Format("bogus")))
 
-	out, err := gen.Generate(ctx, FormatTarGZ, *proj, *rel, *a)
+	out, err := gen.Generate(ctx, FormatTarGZ, *proj, *rel, *a, "https://example.com")
 	require.NoError(t, err)
 	require.NotNil(t, out)
 	assert.True(t, strings.HasSuffix(out.Filename, ".tar.gz"))
-	assert.Greater(t, out.Size, int64(0))
+	// tar.gz streams, so its length isn't known up front (SizeUnknown); verify it
+	// produced a non-empty archive by reading it.
+	assert.Equal(t, SizeUnknown, out.Size)
+	data, err := io.ReadAll(out.Reader)
+	out.Reader.Close()
+	require.NoError(t, err)
+	assert.Greater(t, len(data), 0)
 }
 
 func TestGenerator_Generate_UnsupportedFormat(t *testing.T) {
 	d := openTestDB(t)
 	store := openTestStore(t)
 
-	gen := NewGenerator(store, d, "https://example.com", t.TempDir())
-	_, err := gen.Generate(context.Background(), Format("bogus"), db.Project{}, db.Release{}, db.Artifact{})
+	gen := NewGenerator(store, d, t.TempDir())
+	_, err := gen.Generate(context.Background(), Format("bogus"), db.Project{}, db.Release{}, db.Artifact{}, "https://example.com")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported format")
 }

@@ -18,14 +18,34 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
+const siteNotFoundPage = "404.html"
+
 func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	ctx, span := sitesTracer.Start(r.Context(), "sites.serve")
 	defer span.End()
 
+	setSiteSecurityHeaders(w)
+
 	project := auth.ProjectFrom(ctx)
 	rt := routeFrom(ctx)
 
-	isDir := rt.path == "" || strings.HasSuffix(rt.path, "/")
+	// Redirect a branch root with no trailing slash (e.g. /p/branch/main) to the
+	// slashed form so relative links in index.html resolve under the branch, not
+	// its parent. This redirect used to live on its own GET /{project}/branch/{branch}
+	// route, but that route's {branch} param greedily matched any sub-path and,
+	// scoring higher than this {path...} route, shadowed it -- so every file
+	// request hit the redirect and looped (/x -> /x/ -> /x/ ...). Folding it in
+	// here keeps a single GET route, so file requests reach Serve directly.
+	if rt.path == "" && !strings.HasSuffix(r.URL.Path, "/") {
+		http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
+		return
+	}
+
+	// The {path...} router value has its trailing slash stripped, so detect a
+	// directory request from the real request path -- otherwise a nested dir URL
+	// like /scratchpads/foo/ is treated as a file, never gets index.html
+	// appended, and matches the 0-byte directory entry in the tar below.
+	isDir := rt.path == "" || strings.HasSuffix(r.URL.Path, "/")
 	filePath := path.Clean(rt.path)
 	if isDir || filePath == "." {
 		filePath = path.Join(filePath, "index.html")
@@ -65,13 +85,40 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if hdr.Typeflag != tar.TypeReg {
+			continue // never serve a directory entry as a file (0-byte body)
+		}
 		name := path.Clean(hdr.Name)
 		if name == filePath {
-			ct := contentType(name)
-			w.Header().Set("Content-Type", ct)
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", hdr.Size))
-			w.Header().Set("Cache-Control", "no-cache")
-			io.Copy(w, tr)
+			serveTarFile(w, tr, name, hdr, http.StatusOK)
+			return
+		}
+	}
+
+	rc, _, err = h.Store.Get(ctx, site.StorageKey)
+	if err != nil {
+		http.Error(w, "site data not found", http.StatusInternalServerError)
+		return
+	}
+	defer rc.Close()
+
+	tr = tar.NewReader(rc)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			http.Error(w, "corrupt site archive", http.StatusInternalServerError)
+			return
+		}
+
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		name := path.Clean(hdr.Name)
+		if name == siteNotFoundPage {
+			serveTarFile(w, tr, name, hdr, http.StatusNotFound)
 			return
 		}
 	}
@@ -79,8 +126,14 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-func (h *Handler) ServeRedirect(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
+func serveTarFile(w http.ResponseWriter, tr *tar.Reader, name string, hdr *tar.Header, status int) {
+	w.Header().Set("Content-Type", contentType(name))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", hdr.Size))
+	w.Header().Set("Cache-Control", "no-cache")
+	if status != http.StatusOK {
+		w.WriteHeader(status)
+	}
+	io.Copy(w, tr)
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -98,6 +151,17 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(sites)
+}
+
+// setSiteSecurityHeaders drops app-level hardening headers that block hosted
+// site assets, then applies the hosted-site isolation and non-credentialed CORS
+// headers.
+func setSiteSecurityHeaders(w http.ResponseWriter) {
+	w.Header().Del("Content-Security-Policy")
+	w.Header().Del("X-Frame-Options")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+	w.Header().Set("Cross-Origin-Embedder-Policy", "credentialless")
 }
 
 func contentType(name string) string {

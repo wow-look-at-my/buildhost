@@ -12,7 +12,57 @@ From a single uploaded binary, buildhost serves:
 - **APT repository** (`.deb` packages with repo metadata)
 - **Homebrew tap** (Ruby formula with computed sha256)
 - **npm registry** (platform-specific npm packages)
-- **OCI/Docker registry** (minimal container images synthesized from the binary)
+- **OCI/Docker registry** (minimal container images synthesized from the binary, with CA certificates and a minimal rootfs so networked services run out of the box)
+
+## Homebrew
+
+buildhost exposes a generated Homebrew tap as a Git repository. Add the tap once,
+then install formulas through the tap name:
+
+```bash
+brew tap pazer/build https://brew.pazer.build/tap.git
+brew install pazer/build/go-toolchain
+```
+
+Do not install formulas with a naked remote URL such as
+`brew install https://brew.pazer.build/go-toolchain`; modern Homebrew treats that
+as a formula or tap name instead of cloning it as a formula URL.
+
+## Web frontend
+
+buildhost serves a public, read-only browse UI on the main domain (no subdomain). It is plain server-rendered HTML with **no JavaScript**, so it is consumable and indexable by crawlers and agents without evaluating a single-page app.
+
+- `GET /` &mdash; index of every public project
+- `GET /projects/{project}` &mdash; a project's metadata, published releases, deployed static sites, and copy-paste install/download commands
+- `GET /projects/{project}/releases/{version}` &mdash; a release's artifacts with per-format download links (`raw`, `tar.gz`, `tar.xz`, `tar.zst`, `zip`), or a `docker pull` for image releases
+
+Private projects are hidden: they are never listed for anonymous visitors, and visiting one's page directly returns a `404` &mdash; identical to a project that does not exist, so the frontend never reveals that a private project exists (the same way GitHub treats private repositories). A read-scoped token authorized for the project reveals it. Download links point at the `dl` subdomain; the single stylesheet is served from `/_ui/style.css` and no other assets are loaded. The authenticated admin dashboard remains a separate app on its own port (see [Container image](#container-image)).
+
+## Synthesized container images
+
+When a project has only a plain binary (no pushed image), buildhost synthesizes an OCI
+image from it on demand -- `docker pull` / `crane pull` just works. The image is
+deliberately minimal but ships the runtime essentials of `gcr.io/distroless/static`, so a
+networked service works without pushing a real image:
+
+- A real public **CA certificate bundle** at `/etc/ssl/certs/ca-certificates.crt` (and
+  `SSL_CERT_FILE` pointing at it), so outbound HTTPS works -- no more
+  `x509: certificate signed by unknown authority`.
+- `/etc/passwd` and `/etc/group` with `root`, `nobody` and `nonroot` (UID 65532), an
+  `/etc/nsswitch.conf` (`hosts: files dns`) and a sticky `/tmp`.
+- The binary at `/<project>` as the entrypoint, a sane `PATH`, and `WorkingDir=/`.
+
+The image runs as **root** by default. To run as another user, set `oci_user` on the
+release (`uid[:gid]` or `name[:group]`, e.g. `65532:65532` for the bundled nonroot user);
+it is emitted as the image's `config.User`:
+
+```bash
+buildhost publish --oci-user 65532:65532 ...   # or oci_user in a release manifest / the
+                                               # oci_user field of the create-release JSON
+```
+
+The synthesized image is regenerated on demand (not stored), so its digest is not pinned
+and may change between buildhost versions.
 
 ## Publishing real Docker images
 
@@ -86,8 +136,6 @@ services:
       - "8080:8080"
     volumes:
       - buildhost-data:/var/lib/buildhost
-    environment:
-      - BUILDHOST_BASE_URL=https://builds.example.com
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -111,6 +159,8 @@ networks:
 volumes:
   buildhost-data:
 ```
+
+**Note:** The server reads the container's memory cgroup at startup and sets `GOMEMLIMIT` to ~90% of it (via [automemlimit](https://github.com/KimMachineGun/automemlimit)), and all download/repackage paths stream (blob reads are mmap-backed, nothing buffers a whole artifact), so buildhost serves artifacts far larger than `mem_limit` without OOM-ing. Set `GOMEMLIMIT` yourself (or `AUTOMEMLIMIT=off`) to override.
 
 **Note:** Binary stripping (`strip`/`objcopy`) is not available in the hardened image. Uploaded binaries are served as-is. If you need debug info stripping, run it in your CI pipeline before uploading.
 
@@ -148,9 +198,12 @@ Git branch and commit are tracked on every release. Download the latest build of
 GET /dl/myapp/branch/main/linux/amd64
 ```
 
+`latest` (no branch) resolves to the newest published release on **master** (the assumed default branch), so a push to a feature branch never hijacks `latest`. When master has no published release yet, `latest` falls back to the newest release across all branches.
+
 ## Static sites
 
 Host small, self-contained static sites with independent per-branch deployments. Each branch gets its own site that exists from first deploy until explicitly deleted.
+Directory requests serve `index.html`. If a requested file is missing and the uploaded site contains a root `404.html`, buildhost serves that page with HTTP 404.
 
 ```bash
 # Deploy a site from a directory
@@ -265,6 +318,7 @@ curl "https://buildhost.example.com/api/v1/projects?token=$TOKEN"
 | POST | `/api/v1/projects/{project}/releases` | Create release |
 | PUT | `/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}` | Upload artifact |
 | POST | `/api/v1/projects/{project}/releases/{version}/publish` | Publish release |
+| POST | `/api/v1/webhooks/github` | GitHub org webhook receiver for branch deletion cleanup |
 | GET | `/dl/{project}/{version}/{os}/{arch}` | Download |
 | GET | `/dl/{project}/latest/{os}/{arch}` | Download latest |
 | GET | `/dl/{project}/branch/{branch}/{os}/{arch}` | Download latest for branch |
@@ -274,10 +328,13 @@ curl "https://buildhost.example.com/api/v1/projects?token=$TOKEN"
 | GET | `/api/v1/projects/{project}/sites` | List branch deployments |
 | GET | `/llms.txt` | Plain-text guide to buildhost for LLMs ([llmstxt.org](https://llmstxt.org)) |
 | GET | `/healthz` | Liveness check (database ping); JSON body reports the running build's commit and version |
+| GET | `/` | Public read-only web frontend: index of public projects |
+| GET | `/projects/{project}` | Web frontend: project page (releases, install commands) |
+| GET | `/projects/{project}/releases/{version}` | Web frontend: release page (artifacts + download links) |
 
 ## llms.txt
 
-`GET /llms.txt` serves a public, unauthenticated plain-text document that explains what buildhost is and how to use it, aimed at LLMs and automated agents. Example URLs in the document are rendered against the configured `BUILDHOST_BASE_URL`, so they always point at the live deployment.
+`GET /llms.txt` serves a public, unauthenticated plain-text document that explains what buildhost is and how to use it, aimed at LLMs and automated agents. Example URLs in the document are rendered against the request's `Host`, so they always point at the live deployment.
 
 ## Health and version
 
@@ -299,10 +356,60 @@ Environment variables:
 | `BUILDHOST_ADMIN_LISTEN_ADDR` | `:9090` | Admin dashboard listen address (empty to disable) |
 | `BUILDHOST_DATA_DIR` | `./data` | Data directory |
 | `BUILDHOST_DB_PATH` | `./data/buildhost.db` | SQLite database path |
-| `BUILDHOST_BASE_URL` | `http://localhost:8080` | External URL for generated links |
 | `BUILDHOST_OIDC_ISSUERS` | (none) | Comma-separated trusted OIDC issuers for auto-provisioning |
-| `BUILDHOST_OIDC_ORGS` | (none) | Comma-separated allowed orgs for OIDC auto-provisioning (`*` for all) |
-| `BUILDHOST_OIDC_EVENTS` | `push` | Comma-separated allowed event types for OIDC auto-provisioning (`*` for all) |
+| `BUILDHOST_OIDC_ORGS` | (none) | Comma-separated allowed orgs for OIDC auto-provisioning, matched case-insensitively (`*` for all) |
+| `BUILDHOST_OIDC_EVENTS` | `push,pull_request` | Comma-separated allowed event types for OIDC auto-provisioning (`*` for all) |
+| `BUILDHOST_GITHUB_WEBHOOK_SECRET` | (off) | Enables `POST /api/v1/webhooks/github`; used to verify GitHub webhook HMAC signatures |
+| `BUILDHOST_RETENTION_INTERVAL` | (off) | Background GC sweep cadence (e.g. `1h`); empty/`0` disables the sweeper |
+| `BUILDHOST_RETENTION_KEEP_N` | `10` | Initial published releases kept per `(project, git branch)` -- seeds the dashboard policy on first start, then managed in the UI |
+| `BUILDHOST_RETENTION_RECENCY_GUARD` | `24h` | Initial recency guard (never evict releases newer than this) -- seeds the dashboard policy, then managed in the UI |
+| `BUILDHOST_RETENTION_ENFORCE` | `false` | Whether the background sweeper actually deletes; default is report-only. Manual runs from the dashboard/CLI delete when you confirm regardless |
+
+## GitHub organization webhook
+
+Set `BUILDHOST_GITHUB_WEBHOOK_SECRET`, then create a GitHub organization webhook
+with:
+
+- Payload URL: `https://buildhost.example.com/api/v1/webhooks/github`
+- Content type: `application/json`
+- Secret: the same value as `BUILDHOST_GITHUB_WEBHOOK_SECRET`
+- Events: select **Delete** events
+
+When GitHub sends a branch deletion (`delete` event with `ref_type: "branch"`),
+buildhost deletes static site deployments for that branch in the repository's
+project namespace. For a repository named `myrepo`, branch `feature-x` cleanup
+applies to `myrepo` and slash-namespaced projects below it such as `myrepo/docs`.
+Tag delete events and unrelated webhook events are acknowledged and ignored.
+
+## Retention / garbage collection
+
+buildhost can reclaim storage by evicting old releases. Eviction keeps the latest
+`BUILDHOST_RETENTION_KEEP_N` published releases on each `(project, git branch)` and
+sweeps abandoned (never-published) uploads, then deletes any content-addressed blob
+no longer referenced by anything. **Pins that are never evicted:** each branch's
+latest published release, any release a `docker`/OCI tag points at, pushed-docker
+builds, and anything newer than `BUILDHOST_RETENTION_RECENCY_GUARD`.
+
+It is **report-only by default** -- nothing is deleted automatically. Manage it
+from the **admin dashboard's Retention page**: edit the policy (keep-N and recency
+guard), see a live preview of exactly which releases would be evicted and how much
+storage that frees, and click to run garbage collection on demand (with a
+confirmation). The policy is stored in the database; the `BUILDHOST_RETENTION_KEEP_N`
+/ `_RECENCY_GUARD` env vars only seed its initial values.
+
+For headless/automated use there is also a CLI and an opt-in background sweeper:
+
+```bash
+buildhost gc              # report what would be evicted (dry run)
+buildhost gc --enforce    # actually evict and reclaim
+```
+
+Set `BUILDHOST_RETENTION_INTERVAL` (e.g. `1h`) to run the sweep periodically; it
+only deletes if `BUILDHOST_RETENTION_ENFORCE=true` (otherwise it just logs what it
+would do). The background sweeper reads the live policy from the dashboard each run.
+
+Blob deletion is reference-counted: because storage is deduplicated, a blob is
+removed only once no release, site, or image references it.
 
 ## OIDC auto-provisioning
 
@@ -333,9 +440,9 @@ BUILDHOST_OIDC_ISSUERS=https://token.actions.githubusercontent.com \
   buildhost serve
 ```
 
-By default, only `push` events are allowed, which limits auto-provisioning to users with write access to the repository (org members/collaborators). Set `BUILDHOST_OIDC_EVENTS=*` to allow all event types.
+By default, `push` and `pull_request` events are allowed. Both limit auto-provisioning to users with write access to the repository: a `push` comes from a member/collaborator, and a `pull_request` from a fork does not receive an OIDC token at all (so only same-repo PRs, i.e. members, can authenticate). `pull_request` is included by default so PR-preview deploys work out of the box. Set `BUILDHOST_OIDC_EVENTS=*` to allow all event types.
 
-If `BUILDHOST_OIDC_ORGS` is empty, no orgs are allowed. Use `*` to allow all orgs.
+If `BUILDHOST_OIDC_ORGS` is empty, no orgs are allowed. Use `*` to allow all orgs. Org names are matched case-insensitively (GitHub logins are), so `pazerop` and `PazerOP` are equivalent.
 
 ## License
 
