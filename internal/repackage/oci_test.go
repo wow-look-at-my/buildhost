@@ -167,11 +167,13 @@ func TestOCIRepackageDeterministic(t *testing.T) {
 	rp := &OCI{Store: store}
 	input := makeInput()
 
+	input.Reader = bytes.NewReader(testBinary)
 	out1, err := rp.Repackage(ctx, input)
 	require.NoError(t, err)
 	m1, err := io.ReadAll(out1.Reader)
 	require.NoError(t, err)
 
+	input.Reader = bytes.NewReader(testBinary)
 	out2, err := rp.Repackage(ctx, input)
 	require.NoError(t, err)
 	m2, err := io.ReadAll(out2.Reader)

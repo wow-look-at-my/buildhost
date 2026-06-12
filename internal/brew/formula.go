@@ -37,11 +37,13 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 		if err != nil {
 			return nil, err
 		}
-		data, err := io.ReadAll(tgz.Reader)
+		hsh := sha256.New()
+		_, err = io.Copy(hsh, tgz.Reader)
+		tgz.Reader.Close()
 		if err != nil {
 			return nil, err
 		}
-		sum := sha256.Sum256(data)
+		sum := hsh.Sum(nil)
 
 		resources = append(resources, repackage.BrewResource{
 			OS:     osName,
