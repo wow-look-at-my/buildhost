@@ -190,6 +190,13 @@ jobs:
       BUILDHOST_BASE_URL: http://localhost:18080
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      # ubuntu-latest (24.04) lacks a usable rootless bwrap for Homebrew's Linux
+      # build sandbox (AppArmor restricts unprivileged user namespaces), so
+      # `brew install` aborts with "Bubblewrap is required ... but was not found".
+      # This e2e validates buildhost's generated tap, not Homebrew's sandbox, so
+      # disable the Linux sandbox exactly as Homebrew's own error recommends.
+      # No-op on macOS (which uses sandbox-exec and already passes).
+      HOMEBREW_NO_SANDBOX_LINUX: "1"
     steps:
       - uses: actions/checkout@v4
       - if: runner.os == 'Linux'
