@@ -4,13 +4,109 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
+
+// sitesHost is the Host header used by integration tests that go through the
+// real router. The sites service is registered as a subdomain route on
+// sites.{domain}, so requests must carry this host.
+const sitesHost = "sites.test.local"
+
+// testEnv wires the real auth stack: requests are dispatched through the
+// router (host + path matching) and the auth middleware, exactly as in
+// production. Used by TestRouting to catch routing-level bugs that unit tests
+// using direct handler calls cannot detect.
+type testEnv struct {
+	handler http.Handler
+	db      *db.DB
+	store   *storage.Filesystem
+	token   string
+}
+
+func setupEnv(t *testing.T) *testEnv {
+	t.Helper()
+	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { d.Close() })
+
+	store, err := storage.NewFilesystem(t.TempDir(), true)
+	require.NoError(t, err)
+
+	auth.Init(d, store, t.TempDir(), nil, nil, nil, nil, "")
+
+	plaintext, _, err := d.CreateToken(context.Background(), "test", nil, "read,write")
+	require.NoError(t, err)
+
+	h := auth.GetMiddleware().Authenticate(http.HandlerFunc(auth.ServeHTTP))
+	return &testEnv{handler: h, db: d, store: store, token: plaintext}
+}
+
+func (e *testEnv) do(t *testing.T, method, path, contentType string, body []byte, authed bool) *httptest.ResponseRecorder {
+	t.Helper()
+	return e.doHost(t, sitesHost, method, path, contentType, body, authed)
+}
+
+func (e *testEnv) doHost(t *testing.T, host, method, path, contentType string, body []byte, authed bool) *httptest.ResponseRecorder {
+	t.Helper()
+	var r io.Reader
+	if body != nil {
+		r = bytes.NewReader(body)
+	}
+	req := httptest.NewRequest(method, path, r)
+	req.Host = host
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	if authed {
+		req.Header.Set("Authorization", "Bearer "+e.token)
+	}
+	rec := httptest.NewRecorder()
+	e.handler.ServeHTTP(rec, req)
+	return rec
+}
+
+func (e *testEnv) uploadSite(t *testing.T, project, branch string, files map[string]string) {
+	t.Helper()
+	rec := e.do(t, "PUT", "/"+project+"/branch/"+branch, "application/gzip", makeTarGz(t, files), true)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+}
+
+// TestRouting pins the real routing the rest of the suite relies on. It is the
+// regression test for the redirect loop fixed by folding the branch-root
+// redirect into Serve: a single GET route means a file request reaches Serve
+// directly instead of being shadowed by a greedier redirect route.
+// This test MUST use setupEnv (real router) -- direct handler calls cannot
+// catch routing-level bugs.
+func TestRouting(t *testing.T) {
+	env := setupEnv(t)
+	seedProject(t, env.db, "mysite")
+	env.uploadSite(t, "mysite", "main", map[string]string{
+		"index.html": "<h1>hi</h1>",
+		"style.css":  "body{}",
+	})
+
+	// A file under a branch reaches Serve and is served -- not 301-redirected
+	// into a loop (the bug). This only passes via the real router.
+	rec := env.do(t, "GET", "/mysite/branch/main/style.css", "", nil, false)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "body{}", rec.Body.String())
+
+	// The service answers on the sites subdomain, not on the apex with a
+	// "/sites/..." path prefix. An apex request never reaches the handler.
+	apex := env.doHost(t, "test.local", "GET", "/sites/mysite/branch/main/style.css", "", nil, false)
+	assert.Equal(t, http.StatusNotFound, apex.Code, "apex /sites path must not reach the sites handler")
+}
 
 // TestServe_NestedDirServesIndexNotDirEntry reproduces the bug where a nested
 // directory URL (e.g. /scratchpads/foo/) served the 0-byte tar directory entry
