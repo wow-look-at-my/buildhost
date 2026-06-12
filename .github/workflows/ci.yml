@@ -190,15 +190,21 @@ jobs:
       BUILDHOST_BASE_URL: http://localhost:18080
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
-      # Recent Homebrew requires a rootless `bwrap` for its Linux install sandbox,
-      # which the GitHub ubuntu runners do not provide -- without this, `brew
-      # install` aborts with "Bubblewrap is required to use the Linux sandbox".
-      # This is the Homebrew-recommended workaround; ignored on macOS.
-      HOMEBREW_NO_SANDBOX_LINUX: "1"
     steps:
       - uses: actions/checkout@v4
       - if: runner.os == 'Linux'
         uses: Homebrew/actions/setup-homebrew@main
+      - name: Provide Bubblewrap for Homebrew's Linux install sandbox
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          # Recent Homebrew requires a rootless `bwrap` for its Linux install
+          # sandbox; the GitHub ubuntu runners ship neither bwrap nor (on 24.04)
+          # the unprivileged user namespaces it needs. Provide both so `brew
+          # install` runs inside the sandbox instead of aborting.
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -267,7 +273,7 @@ jobs:
           brew untap pazer/build >/dev/null 2>&1 || true
           brew uninstall go-toolchain >/dev/null 2>&1 || true
           brew tap pazer/build http://brew.localhost:18080/tap.git
-          brew install pazer/build/go-toolchain
+          brew install --verbose pazer/build/go-toolchain
           test "$(go-toolchain)" = "buildhost-homebrew-ok"
       - name: Dump buildhost log
         if: failure()
