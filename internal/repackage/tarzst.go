@@ -2,9 +2,9 @@ package repackage
 
 import (
 	"archive/tar"
-	"bytes"
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -19,35 +19,33 @@ func (t *TarZST) Format() Format { return FormatTarZST }
 func (t *TarZST) Applicable(a db.Artifact) bool { return !a.Kind.ServedViaDockerOnly() }
 
 func (t *TarZST) Repackage(_ context.Context, input Input) (*Output, error) {
-	var buf bytes.Buffer
-	zw, err := zstd.NewWriter(&buf)
-	if err != nil {
-		return nil, fmt.Errorf("create zstd writer: %w", err)
-	}
-	tw := tar.NewWriter(zw)
-
 	mode := int64(0o644)
 	if input.Artifact.Kind == db.KindBinary {
 		mode = 0o755
 	}
 
-	if err := tw.WriteHeader(&tar.Header{
-		Name: input.Project.Name,
-		Size: int64(len(input.Data)),
-		Mode: mode,
-	}); err != nil {
-		return nil, err
-	}
-	if _, err := tw.Write(input.Data); err != nil {
-		return nil, err
-	}
-	tw.Close()
-	zw.Close()
+	r := streamPipe(func(w io.Writer) error {
+		zw, err := zstd.NewWriter(w)
+		if err != nil {
+			return fmt.Errorf("create zstd writer: %w", err)
+		}
+		tw := tar.NewWriter(zw)
+		if err := tw.WriteHeader(&tar.Header{Name: input.Project.Name, Size: input.Size, Mode: mode}); err != nil {
+			return err
+		}
+		if _, err := io.Copy(tw, input.Reader); err != nil {
+			return err
+		}
+		if err := tw.Close(); err != nil {
+			return err
+		}
+		return zw.Close()
+	})
 
 	filename := fmt.Sprintf("%s-%s-%s-%s.tar.zst", input.Project.Name, input.Release.Version, input.Artifact.OS, input.Artifact.Arch)
 	return &Output{
-		Reader:   &buf,
+		Reader:   r,
 		Filename: filename,
-		Size:     int64(buf.Len()),
+		Size:     SizeUnknown,
 	}, nil
 }

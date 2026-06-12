@@ -64,11 +64,12 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 	debSHA := artifact.SHA256
 	out, err := h.Gen.Generate(r.Context(), repackage.FormatDeb, *project, *release, *artifact, auth.RequestRootURL(r))
 	if err == nil {
-		data, rerr := io.ReadAll(out.Reader)
+		hsh := sha256.New()
+		n, rerr := io.Copy(hsh, out.Reader)
+		out.Reader.Close()
 		if rerr == nil {
-			debSize = int64(len(data))
-			h := sha256.Sum256(data)
-			debSHA = fmt.Sprintf("%x", h)
+			debSize = n
+			debSHA = fmt.Sprintf("%x", hsh.Sum(nil))
 		}
 	}
 

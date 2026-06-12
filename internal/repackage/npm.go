@@ -2,11 +2,11 @@ package repackage
 
 import (
 	"archive/tar"
-	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -44,48 +44,37 @@ func (n *NPM) Repackage(_ context.Context, input Input) (*Output, error) {
 	}, "", "  ")
 	packageJSON := string(pkgJSON) + "\n"
 
-	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gw)
-
-	if err := tw.WriteHeader(&tar.Header{
-		Name: "package/package.json",
-		Size: int64(len(packageJSON)),
-		Mode: 0o644,
-	}); err != nil {
-		return nil, fmt.Errorf("write tar header: %w", err)
-	}
-	if _, err := tw.Write([]byte(packageJSON)); err != nil {
-		return nil, fmt.Errorf("write package.json: %w", err)
-	}
-
 	binMode := int64(0o644)
 	if input.Artifact.Kind == db.KindBinary {
 		binMode = 0o755
 	}
-	if err := tw.WriteHeader(&tar.Header{
-		Name: "package/bin/" + input.Project.Name,
-		Size: int64(len(input.Data)),
-		Mode: binMode,
-	}); err != nil {
-		return nil, fmt.Errorf("write tar header: %w", err)
-	}
-	if _, err := tw.Write(input.Data); err != nil {
-		return nil, fmt.Errorf("write binary: %w", err)
-	}
 
-	if err := tw.Close(); err != nil {
-		return nil, fmt.Errorf("close tar: %w", err)
-	}
-	if err := gw.Close(); err != nil {
-		return nil, fmt.Errorf("close gzip: %w", err)
-	}
+	r := streamPipe(func(w io.Writer) error {
+		gw := gzip.NewWriter(w)
+		tw := tar.NewWriter(gw)
+		if err := tw.WriteHeader(&tar.Header{Name: "package/package.json", Size: int64(len(packageJSON)), Mode: 0o644}); err != nil {
+			return fmt.Errorf("write tar header: %w", err)
+		}
+		if _, err := tw.Write([]byte(packageJSON)); err != nil {
+			return fmt.Errorf("write package.json: %w", err)
+		}
+		if err := tw.WriteHeader(&tar.Header{Name: "package/bin/" + input.Project.Name, Size: input.Size, Mode: binMode}); err != nil {
+			return fmt.Errorf("write tar header: %w", err)
+		}
+		if _, err := io.Copy(tw, input.Reader); err != nil {
+			return fmt.Errorf("write binary: %w", err)
+		}
+		if err := tw.Close(); err != nil {
+			return fmt.Errorf("close tar: %w", err)
+		}
+		return gw.Close()
+	})
 
 	filename := fmt.Sprintf("%s-%s-%s-%s.tgz", input.Project.Name, version, npmOS, npmArch)
 	return &Output{
-		Reader:   &buf,
+		Reader:   r,
 		Filename: filename,
-		Size:     int64(buf.Len()),
+		Size:     SizeUnknown,
 	}, nil
 }
 

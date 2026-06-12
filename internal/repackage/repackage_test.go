@@ -36,7 +36,8 @@ func makeInput() Input {
 			Arch: db.ArchAMD64,
 			Kind: db.KindBinary,
 		},
-		Data:    testBinary,
+		Reader:  bytes.NewReader(testBinary),
+		Size:    int64(len(testBinary)),
 		BaseURL: "https://builds.example.com",
 	}
 }
@@ -571,7 +572,13 @@ func TestGenerator_Generate(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, out)
 	assert.True(t, strings.HasSuffix(out.Filename, ".tar.gz"))
-	assert.Greater(t, out.Size, int64(0))
+	// tar.gz streams, so its length isn't known up front (SizeUnknown); verify it
+	// produced a non-empty archive by reading it.
+	assert.Equal(t, SizeUnknown, out.Size)
+	data, err := io.ReadAll(out.Reader)
+	out.Reader.Close()
+	require.NoError(t, err)
+	assert.Greater(t, len(data), 0)
 }
 
 func TestGenerator_Generate_UnsupportedFormat(t *testing.T) {

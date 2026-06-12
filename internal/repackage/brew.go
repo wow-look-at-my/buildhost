@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	neturl "net/url"
 	"regexp"
 	"strings"
@@ -107,15 +108,18 @@ func RenderBrewFormula(f BrewFormula) (*Output, error) {
 
 	filename := f.Name + ".rb"
 	return &Output{
-		Reader:   &buf,
+		Reader:   io.NopCloser(&buf),
 		Filename: filename,
 		Size:     int64(buf.Len()),
 	}, nil
 }
 
 func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
-	h := sha256.Sum256(input.Data)
-	sha := fmt.Sprintf("%x", h)
+	h := sha256.New()
+	if _, err := io.Copy(h, input.Reader); err != nil {
+		return nil, fmt.Errorf("hash artifact: %w", err)
+	}
+	sha := fmt.Sprintf("%x", h.Sum(nil))
 
 	version := strings.TrimPrefix(input.Release.Version, "v")
 	if version == "" {

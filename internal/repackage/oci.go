@@ -64,13 +64,9 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-base-layer", baseKey, baseSize, baseKey, "base-layer.tar.zst", "{}")
 	}
 
-	binData, binDiffID, err := ociCreateLayer(input.Data, input.Project.Name)
+	binKey, binSize, binDiffID, err := ociWriteLayer(ctx, o.Store, input.Reader, input.Size, input.Project.Name)
 	if err != nil {
 		return nil, fmt.Errorf("create layer: %w", err)
-	}
-	binKey, binSize, err := o.Store.Put(ctx, bytes.NewReader(binData))
-	if err != nil {
-		return nil, fmt.Errorf("store layer: %w", err)
 	}
 	if input.Artifact.ID > 0 && o.DB != nil {
 		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-layer", binKey, binSize, binKey, "layer.tar.zst", "{}")
@@ -118,7 +114,7 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 
 	filename := fmt.Sprintf("%s-%s-%s-%s-oci-manifest.json", input.Project.Name, input.Release.Version, input.Artifact.OS, input.Artifact.Arch)
 	return &Output{
-		Reader:   bytes.NewReader(manifestData),
+		Reader:   io.NopCloser(bytes.NewReader(manifestData)),
 		Filename: filename,
 		Size:     int64(len(manifestData)),
 		Metadata: map[string]string{
@@ -128,35 +124,47 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 	}, nil
 }
 
-func ociCreateLayer(data []byte, name string) (compressed []byte, diffID string, err error) {
-	var buf bytes.Buffer
-	zw, err := zstd.NewWriter(&buf)
+// ociWriteLayer streams r -> tar -> zstd straight into store.Put while teeing the
+// uncompressed tar bytes through a sha256 for the layer's diffID. One pass, bounded
+// memory: the compressed layer is spooled+content-addressed by Put (to disk), and the
+// only RAM is the zstd window plus the hash state. The diffID is read after Put returns,
+// by which point Put has drained the pipe and the hasher has seen every uncompressed byte.
+func ociWriteLayer(ctx context.Context, store storage.Storage, r io.Reader, size int64, name string) (key string, compressedSize int64, diffID string, err error) {
+	diffHasher := sha256.New()
+	pr, pw := io.Pipe()
+	go func() {
+		zw, zerr := zstd.NewWriter(pw)
+		if zerr != nil {
+			pw.CloseWithError(fmt.Errorf("create zstd writer: %w", zerr))
+			return
+		}
+		tw := tar.NewWriter(io.MultiWriter(diffHasher, zw))
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     name,
+			Size:     size,
+			Mode:     0o755,
+			Typeflag: tar.TypeReg,
+		}); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		if _, err := io.Copy(tw, r); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		if err := tw.Close(); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		pw.CloseWithError(zw.Close())
+	}()
+
+	key, compressedSize, err = store.Put(ctx, pr)
 	if err != nil {
-		return nil, "", fmt.Errorf("create zstd writer: %w", err)
+		pr.CloseWithError(err)
+		return "", 0, "", err
 	}
-	tarHasher := sha256.New()
-
-	tw := tar.NewWriter(io.MultiWriter(tarHasher, zw))
-	if err := tw.WriteHeader(&tar.Header{
-		Name:     name,
-		Size:     int64(len(data)),
-		Mode:     0o755,
-		Typeflag: tar.TypeReg,
-	}); err != nil {
-		return nil, "", err
-	}
-	if _, err := tw.Write(data); err != nil {
-		return nil, "", err
-	}
-	if err := tw.Close(); err != nil {
-		return nil, "", err
-	}
-	if err := zw.Close(); err != nil {
-		return nil, "", err
-	}
-
-	diffID = hex.EncodeToString(tarHasher.Sum(nil))
-	return buf.Bytes(), diffID, nil
+	return key, compressedSize, hex.EncodeToString(diffHasher.Sum(nil)), nil
 }
 
 // /etc/passwd and /etc/group: root, nobody and nonroot (matching gcr.io/distroless).
