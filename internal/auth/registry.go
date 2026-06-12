@@ -40,6 +40,8 @@ func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers
 	sharedFetchDomains = siteFetchDomains
 	sharedGitHubWebhookSecret = githubWebhookSecret
 
+	initDownloadSecret(dataDir)
+
 	mw = &Middleware{DB: database, Verifier: NewOIDCVerifier(OIDCConfig{
 		TrustedIssuers: trustedIssuers,
 		AllowedOrgs:    allowedOrgs,

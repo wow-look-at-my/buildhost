@@ -190,19 +190,14 @@ jobs:
       BUILDHOST_BASE_URL: http://localhost:18080
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
-      # ubuntu-latest (24.04) lacks a usable rootless bwrap for Homebrew's Linux
-      # build sandbox (AppArmor restricts unprivileged user namespaces), so
-      # `brew install` aborts with "Bubblewrap is required ... but was not found".
-      # This e2e validates buildhost's generated tap, not Homebrew's sandbox, so
-      # disable the Linux sandbox exactly as Homebrew's own error recommends.
-      # No-op on macOS (which uses sandbox-exec and already passes).
+      # Homebrew 6.0 added two Linux defaults the GitHub runners can't satisfy:
+      # (1) a Bubblewrap install sandbox -- bwrap fails to set up on the runner
+      # (it dies before the build even runs); and (2) mandatory third-party "tap
+      # trust" -- which otherwise fails the install with "Forked child process
+      # failed". Opt out of both for this e2e: it installs our own freshly built
+      # formula on a throwaway runner, so neither protection is meaningful here.
+      # Both are Homebrew-documented opt-outs and ignored on macOS.
       HOMEBREW_NO_SANDBOX_LINUX: "1"
-      # Recent Homebrew refuses to run formulae from an "untrusted" third-party
-      # tap (it would otherwise ignore buildhost's generated pazer/build tap and
-      # the install child exits 1). This e2e validates that buildhost's tap
-      # serves an installable formula, not Homebrew's trust UX, so opt out via
-      # Homebrew's own documented escape hatch. Harmless on brew versions that
-      # don't enforce trust yet, so it also preempts the macOS leg.
       HOMEBREW_NO_REQUIRE_TAP_TRUST: "1"
     steps:
       - uses: actions/checkout@v4
@@ -276,7 +271,7 @@ jobs:
           brew untap pazer/build >/dev/null 2>&1 || true
           brew uninstall go-toolchain >/dev/null 2>&1 || true
           brew tap pazer/build http://brew.localhost:18080/tap.git
-          brew install pazer/build/go-toolchain
+          brew install --verbose pazer/build/go-toolchain
           test "$(go-toolchain)" = "buildhost-homebrew-ok"
       - name: Dump buildhost log
         if: failure()
