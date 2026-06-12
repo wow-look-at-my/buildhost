@@ -197,6 +197,13 @@ jobs:
       # disable the Linux sandbox exactly as Homebrew's own error recommends.
       # No-op on macOS (which uses sandbox-exec and already passes).
       HOMEBREW_NO_SANDBOX_LINUX: "1"
+      # Recent Homebrew refuses to run formulae from an "untrusted" third-party
+      # tap (it would otherwise ignore buildhost's generated pazer/build tap and
+      # the install child exits 1). This e2e validates that buildhost's tap
+      # serves an installable formula, not Homebrew's trust UX, so opt out via
+      # Homebrew's own documented escape hatch. Harmless on brew versions that
+      # don't enforce trust yet, so it also preempts the macOS leg.
+      HOMEBREW_NO_REQUIRE_TAP_TRUST: "1"
     steps:
       - uses: actions/checkout@v4
       - if: runner.os == 'Linux'
