@@ -70,10 +70,13 @@ Some projects need to ship a real prebuilt image (custom base image, native
 libraries, entrypoint, exposed ports) rather than a binary wrapped in a minimal
 layer. buildhost is a writable OCI registry, so you can `docker push` directly:
 
+The OCI registry is served on the `oci.` subdomain (the apex host serves the
+API, not `/v2/`):
+
 ```bash
-docker login builds.example.com -u oidc -p "$TOKEN"   # any username; password is a write-scoped token
-docker buildx build --push -t builds.example.com/myproject:v1.2.3 .
-docker pull builds.example.com/myproject:v1.2.3
+docker login oci.builds.example.com -u oidc -p "$TOKEN"   # any username; password is a write-scoped token
+docker buildx build --push -t oci.builds.example.com/myproject:v1.2.3 .
+docker pull oci.builds.example.com/myproject:v1.2.3
 ```
 
 A release that contains a pushed image is a **docker build**: it is served only
@@ -107,8 +110,9 @@ steps:
 
 For a build you drive yourself (e.g. `docker buildx imagetools` to copy an
 existing multi-arch image), use the lower-level `buildhost-docker-login` action,
-which only performs the OIDC `docker login`, and then run your own docker
-commands.
+which performs the OIDC `docker login` and exposes the registry host
+(`oci.<domain>`) as its `registry` output, so you can push to
+`<registry>/<project>:<tag>` and then run your own docker commands.
 
 ## Container image
 
@@ -201,6 +205,9 @@ GET /dl/myapp/branch/main/linux/amd64
 Host small, self-contained static sites with independent per-branch deployments. Each branch gets its own site that exists from first deploy until explicitly deleted.
 Directory requests serve `index.html`. If a requested file is missing and the uploaded site contains a root `404.html`, buildhost serves that page with HTTP 404.
 
+Sites are served on the `sites.` subdomain (like every other service); pass the
+apex `--server` and the CLI derives it.
+
 ```bash
 # Deploy a site from a directory
 buildhost publish-site \
@@ -211,12 +218,12 @@ buildhost publish-site \
   --dir ./dist
 
 # The site is available at:
-# http://localhost:8080/sites/myapp/branch/main/
+# http://sites.localhost:8080/myapp/branch/main/
 
 # Re-deploying the same branch replaces the previous site atomically.
 # Deleting a branch deployment:
 curl -X DELETE -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/sites/myapp/branch/main
+  http://sites.localhost:8080/myapp/branch/main
 ```
 
 ## Tokens
@@ -226,7 +233,7 @@ Tokens authenticate all API requests. There are two kinds:
 - **Global tokens** (`project_id` omitted): can access all projects and manage tokens.
 - **Project-scoped tokens** (`project_id` set): limited to one project; cannot list or delete tokens.
 
-Each token has a `scopes` field: `read`, `write`, or `read,write`. The default when omitted is `read`. A token can only grant scopes it already holds — a read-only token cannot mint a write token.
+Each token has a `scopes` field, a comma-separated subset of `read`, `write`, and `share`. The default when omitted is `read`. A token can only grant scopes it already holds — a read-only token cannot mint a write token. `share` is a distinct permission to mint [temporary download links](#temporary-download-links); it is not implied by `write`, so a CI/deploy token cannot hand out shareable links to private artifacts. The bootstrap admin token holds `read,write,share`.
 
 ### First-time setup
 
@@ -302,6 +309,29 @@ curl -u "token:$TOKEN" https://buildhost.example.com/api/v1/projects
 curl "https://buildhost.example.com/api/v1/projects?token=$TOKEN"
 ```
 
+## Temporary download links
+
+To share a single artifact from a **private** project without handing out a token, mint a temporary, signed download link. The link works for exactly one artifact (`os`/`arch`/`fmt`/`version`) and expires (default 1 hour, max 24 hours).
+
+```bash
+curl -X POST https://buildhost.example.com/api/v1/projects/myapp/download-links \
+  -H "Authorization: Bearer $SHARE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"os": "linux", "arch": "amd64", "version": "3", "fmt": "raw", "ttl_seconds": 3600}'
+```
+
+```json
+{
+  "url": "https://static.example.com/file?arch=amd64&fmt=raw&os=linux&project=myapp&token=bhdl_...&v=3",
+  "token": "bhdl_...",
+  "expires_at": "2026-06-11T12:00:00Z"
+}
+```
+
+Anyone with the `url` can download that one artifact until it expires — no account or token needed. Minting requires a token with the `share` scope, authorized for the project. The admin dashboard exposes the same thing as a **"temp link"** button on each release's artifact list.
+
+The link is a stateless HMAC signature (keyed by a server-side key generated on first start), bound to the exact artifact and expiry, so a leaked link cannot reach anything else in the project or outlive its expiry. Links are not individually revocable before expiry; rotate the signing key to invalidate all outstanding links.
+
 ## API
 
 | Method | Path | Description |
@@ -309,6 +339,7 @@ curl "https://buildhost.example.com/api/v1/projects?token=$TOKEN"
 | POST | `/api/v1/tokens` | Create token |
 | GET | `/api/v1/tokens` | List tokens (global token required) |
 | DELETE | `/api/v1/tokens/{id}` | Delete token (global token required) |
+| POST | `/api/v1/projects/{project}/download-links` | Mint a temporary signed download link (`share` scope) |
 | POST | `/api/v1/projects` | Create project |
 | GET | `/api/v1/projects` | List projects |
 | POST | `/api/v1/projects/{project}/releases` | Create release |
@@ -321,7 +352,7 @@ curl "https://buildhost.example.com/api/v1/projects?token=$TOKEN"
 | PUT | `/sites/{project}/branch/{branch}` | Deploy static site (tar.gz body) |
 | DELETE | `/sites/{project}/branch/{branch}` | Remove static site |
 | GET | `/sites/{project}/branch/{branch}/{path}` | Serve static site file |
-| GET | `/api/v1/projects/{project}/sites` | List branch deployments |
+| GET | `/sites/{project}/branches` | List branch deployments |
 | GET | `/llms.txt` | Plain-text guide to buildhost for LLMs ([llmstxt.org](https://llmstxt.org)) |
 | GET | `/healthz` | Liveness check (database ping); JSON body reports the running build's commit and version |
 | GET | `/` | Public read-only web frontend: index of public projects |

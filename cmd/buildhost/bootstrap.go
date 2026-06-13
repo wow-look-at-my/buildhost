@@ -39,7 +39,10 @@ var bootstrapCmd = &cobra.Command{
 		}
 
 		name, _ := cmd.Flags().GetString("name")
-		plaintext, token, err := database.CreateToken(cmd.Context(), name, nil, "read,write")
+		// The bootstrap admin token holds every scope, including "share", so it can
+		// both mint download links and delegate the share scope to other tokens
+		// (token creation may only grant scopes the caller already holds).
+		plaintext, token, err := database.CreateToken(cmd.Context(), name, nil, "read,write,share")
 		if err != nil {
 			return fmt.Errorf("create token: %w", err)
 		}

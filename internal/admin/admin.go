@@ -105,6 +105,7 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/sidebar", router.Allow, s.apiSidebar)
 	mux.HandleFunc("GET /api/dashboard", router.Allow, s.apiDashboard)
 	mux.HandleFunc("GET /api/projects/{name}/releases/{version}", router.Allow, s.apiRelease)
+	mux.HandleFunc("POST /api/projects/{name}/download-links", router.Allow, s.apiCreateDownloadLink)
 	mux.HandleFunc("GET /api/projects/{name}", router.Allow, s.apiProject)
 	mux.HandleFunc("GET /api/projects", router.Allow, s.apiProjects)
 	mux.HandleFunc("GET /api/registries", router.Allow, s.apiRegistries)
