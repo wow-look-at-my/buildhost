@@ -1,8 +1,10 @@
 package static
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -27,6 +30,8 @@ func TestCanonicalQuery(t *testing.T) {
 		{"unsorted", "v=1.0.0&project=myapp&os=linux&arch=amd64&fmt=raw", "arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0"},
 		{"strips unknown", "arch=amd64&foo=bar&project=myapp&os=linux&v=1", "arch=amd64&os=linux&project=myapp&v=1"},
 		{"keeps debug", "debug=1&project=myapp&v=1&os=linux&arch=amd64", "arch=amd64&debug=1&os=linux&project=myapp&v=1"},
+		{"normalizes os/arch aliases", "arch=X64&os=Linux&project=myapp&v=1", "arch=amd64&os=linux&project=myapp&v=1"},
+		{"keeps any sentinel", "arch=any&fmt=npm-wrapper&os=any&project=myapp&v=1", "arch=any&fmt=npm-wrapper&os=any&project=myapp&v=1"},
 		{"empty", "", ""},
 		{"only unknown", "foo=bar&baz=qux", ""},
 	}
@@ -179,6 +184,84 @@ func TestServe_RawFormat_Success(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "hello-binary")
 	assert.NotEmpty(t, rec.Header().Get("ETag"))
 	assert.Equal(t, "public, max-age=31536000, immutable", rec.Header().Get("Cache-Control"))
+}
+
+func TestServe_RawFormat_ZstdPassthrough(t *testing.T) {
+	h, d, store := setupIntegration(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	content := "hello-binary-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	key, size, err := store.Put(ctx, strings.NewReader(content))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	// A client that accepts zstd gets the stored blob passed through untouched.
+	// debug=1 disables stripping (shouldStrip=false) so the passthrough path is
+	// exercised deterministically even where the strip tool is installed; in the
+	// distroless production image strip is unavailable, so plain raw downloads take
+	// this same path. Query is in canonical order to avoid a 301 normalization hop.
+	req := httptest.NewRequest("GET", "/file?arch=amd64&debug=1&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
+	req.Header.Set("Accept-Encoding", "zstd")
+	req = withProject(req, proj)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "zstd", rec.Header().Get("Content-Encoding"))
+	assert.Equal(t, "Accept-Encoding", rec.Header().Get("Vary"))
+
+	body := rec.Body.Bytes()
+	assert.Equal(t, fmt.Sprintf("%d", len(body)), rec.Header().Get("Content-Length"))
+	// The body is a real zstd stream that decodes to the artifact: the server
+	// shipped compressed bytes without decompressing them.
+	zr, err := zstd.NewReader(bytes.NewReader(body))
+	require.NoError(t, err)
+	defer zr.Close()
+	got, err := io.ReadAll(zr)
+	require.NoError(t, err)
+	assert.Equal(t, content, string(got))
+}
+
+func TestServe_RawFormat_IdentityWhenZstdNotAccepted(t *testing.T) {
+	h, d, store := setupIntegration(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	content := "plain-identity-binary"
+	key, size, err := store.Put(ctx, strings.NewReader(content))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	// A client that does not list zstd gets the decompressed bytes; Vary is still
+	// set so a shared cache keys the two representations separately. debug=1 keeps
+	// the path deterministic where strip is installed (canonical query order).
+	req := httptest.NewRequest("GET", "/file?arch=amd64&debug=1&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
+	req.Header.Set("Accept-Encoding", "gzip, deflate")
+	req = withProject(req, proj)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Empty(t, rec.Header().Get("Content-Encoding"))
+	assert.Equal(t, "Accept-Encoding", rec.Header().Get("Vary"))
+	assert.Equal(t, content, rec.Body.String())
 }
 
 func TestServe_DockerArtifact_NotServed(t *testing.T) {
@@ -482,4 +565,29 @@ func TestResolveVersion_AutoVersioning(t *testing.T) {
 	r, err = resolveVersion(ctx, d, proj.ID, "7.0.0")
 	require.NoError(t, err)
 	assert.Equal(t, "7", r.Version)
+}
+
+func TestAcceptsZstd(t *testing.T) {
+	tests := []struct {
+		accept string
+		want   bool
+	}{
+		{"zstd", true},
+		{"gzip, deflate, br, zstd", true},
+		{"zstd;q=0.5", true},
+		{"ZSTD", true},
+		{" zstd ", true},
+		{"", false},
+		{"gzip, deflate", false},
+		{"gzip", false},
+		{"zstd;q=0", false},
+		{"zstd;q=0.0", false},
+		{"*", false}, // a bare "*" must not earn zstd; the client must name it
+		{"identity", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.accept, func(t *testing.T) {
+			assert.Equal(t, tt.want, acceptsZstd(tt.accept))
+		})
+	}
 }
