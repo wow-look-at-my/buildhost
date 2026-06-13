@@ -70,10 +70,13 @@ Some projects need to ship a real prebuilt image (custom base image, native
 libraries, entrypoint, exposed ports) rather than a binary wrapped in a minimal
 layer. buildhost is a writable OCI registry, so you can `docker push` directly:
 
+The OCI registry is served on the `oci.` subdomain (the apex host serves the
+API, not `/v2/`):
+
 ```bash
-docker login builds.example.com -u oidc -p "$TOKEN"   # any username; password is a write-scoped token
-docker buildx build --push -t builds.example.com/myproject:v1.2.3 .
-docker pull builds.example.com/myproject:v1.2.3
+docker login oci.builds.example.com -u oidc -p "$TOKEN"   # any username; password is a write-scoped token
+docker buildx build --push -t oci.builds.example.com/myproject:v1.2.3 .
+docker pull oci.builds.example.com/myproject:v1.2.3
 ```
 
 A release that contains a pushed image is a **docker build**: it is served only
@@ -107,8 +110,9 @@ steps:
 
 For a build you drive yourself (e.g. `docker buildx imagetools` to copy an
 existing multi-arch image), use the lower-level `buildhost-docker-login` action,
-which only performs the OIDC `docker login`, and then run your own docker
-commands.
+which performs the OIDC `docker login` and exposes the registry host
+(`oci.<domain>`) as its `registry` output, so you can push to
+`<registry>/<project>:<tag>` and then run your own docker commands.
 
 ## Container image
 
@@ -201,6 +205,9 @@ GET /dl/myapp/branch/main/linux/amd64
 Host small, self-contained static sites with independent per-branch deployments. Each branch gets its own site that exists from first deploy until explicitly deleted.
 Directory requests serve `index.html`. If a requested file is missing and the uploaded site contains a root `404.html`, buildhost serves that page with HTTP 404.
 
+Sites are served on the `sites.` subdomain (like every other service); pass the
+apex `--server` and the CLI derives it.
+
 ```bash
 # Deploy a site from a directory
 buildhost publish-site \
@@ -211,12 +218,12 @@ buildhost publish-site \
   --dir ./dist
 
 # The site is available at:
-# http://localhost:8080/sites/myapp/branch/main/
+# http://sites.localhost:8080/myapp/branch/main/
 
 # Re-deploying the same branch replaces the previous site atomically.
 # Deleting a branch deployment:
 curl -X DELETE -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/sites/myapp/branch/main
+  http://sites.localhost:8080/myapp/branch/main
 ```
 
 ## Tokens
@@ -345,7 +352,7 @@ The link is a stateless HMAC signature (keyed by a server-side key generated on 
 | PUT | `/sites/{project}/branch/{branch}` | Deploy static site (tar.gz body) |
 | DELETE | `/sites/{project}/branch/{branch}` | Remove static site |
 | GET | `/sites/{project}/branch/{branch}/{path}` | Serve static site file |
-| GET | `/api/v1/projects/{project}/sites` | List branch deployments |
+| GET | `/sites/{project}/branches` | List branch deployments |
 | GET | `/llms.txt` | Plain-text guide to buildhost for LLMs ([llmstxt.org](https://llmstxt.org)) |
 | GET | `/healthz` | Liveness check (database ping); JSON body reports the running build's commit and version |
 | GET | `/` | Public read-only web frontend: index of public projects |

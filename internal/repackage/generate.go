@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/serviceurl"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/buildhost/internal/strip"
 )
@@ -18,13 +19,14 @@ import (
 var repackTracer = otel.Tracer("buildhost.repackage")
 
 // dlServiceURL constructs the dl subdomain URL from the root domain base URL
-// (e.g. "https://pazer.build" → "https://dl.pazer.build").
+// (e.g. "https://pazer.build" → "https://dl.pazer.build"), or "" if baseURL is
+// not a usable scheme://host.
 func dlServiceURL(baseURL string) string {
-	u, err := url.Parse(baseURL)
-	if err != nil || u.Host == "" {
+	u, err := serviceurl.Base(baseURL, "dl")
+	if err != nil {
 		return ""
 	}
-	return u.Scheme + "://dl." + u.Host
+	return u
 }
 
 type Generator struct {
