@@ -62,6 +62,16 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "os and arch are required", http.StatusBadRequest)
 		return
 	}
+	// Accept platform-name aliases natively (RUNNER_OS "Linux"/"macOS"/"Windows",
+	// RUNNER_ARCH "X64"/"ARM64", uname's "x86_64"/"aarch64", ...) so callers can
+	// pass them through verbatim; fold them to the canonical spelling the static
+	// endpoint and stored artifacts use. Unrecognized values pass through unchanged.
+	if c, ok := db.NormalizeOS(osStr); ok {
+		osStr = string(c)
+	}
+	if c, ok := db.NormalizeArch(archStr); ok {
+		archStr = string(c)
+	}
 
 	_, span := dlTracer.Start(r.Context(), "dl.resolve_version")
 	var (
@@ -108,7 +118,15 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 
 	code := http.StatusFound
 	if immutable {
+		// An exact version is an immutable mapping -- safe to cache the redirect
+		// itself forever, just like the artifact it points at.
 		code = http.StatusMovedPermanently
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		// "latest" and branch tips are MUTABLE pointers: a new publish repoints
+		// them. Never let a CDN or browser cache this redirect, or clients would
+		// stay pinned to a stale release until the cached pointer expires.
+		w.Header().Set("Cache-Control", "no-store")
 	}
 	static.Redirect(w, r, auth.DeriveServiceURL(r, "static"), p, code)
 }
