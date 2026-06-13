@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -228,4 +229,78 @@ func TestExistsReturnsCorrectBoolean(t *testing.T) {
 
 	assert.False(t, exists)
 
+}
+
+func TestGetCompressedReturnsRawZstdStream(t *testing.T) {
+	fs, err := NewFilesystem(t.TempDir(), true)
+	require.Nil(t, err)
+
+	content := []byte("the quick brown fox jumps over the lazy dog, repeatedly and compressibly")
+	key, _, err := fs.Put(context.Background(), bytes.NewReader(content))
+	require.Nil(t, err)
+
+	blob, err := fs.GetCompressed(context.Background(), key)
+	require.Nil(t, err)
+	defer blob.Close()
+
+	assert.Equal(t, "zstd", blob.Encoding)
+	assert.Equal(t, int64(len(content)), blob.OrigSize)
+	assert.Positive(t, blob.Size)
+
+	raw, err := io.ReadAll(blob)
+	require.Nil(t, err)
+	assert.Equal(t, blob.Size, int64(len(raw)), "Size must equal the bytes streamed")
+
+	// The passthrough bytes are a real zstd stream that decodes to the artifact --
+	// proving the server hands over compressed bytes without decompressing them.
+	zr, err := zstd.NewReader(bytes.NewReader(raw))
+	require.Nil(t, err)
+	defer zr.Close()
+	got, err := io.ReadAll(zr)
+	require.Nil(t, err)
+	assert.Equal(t, content, got)
+}
+
+func TestGetCompressedUncompressedStorePassesIdentity(t *testing.T) {
+	fs, err := NewFilesystem(t.TempDir(), false)
+	require.Nil(t, err)
+
+	content := []byte("stored raw, no zstd to pass through")
+	key, _, err := fs.Put(context.Background(), bytes.NewReader(content))
+	require.Nil(t, err)
+
+	blob, err := fs.GetCompressed(context.Background(), key)
+	require.Nil(t, err)
+	defer blob.Close()
+
+	assert.Equal(t, "", blob.Encoding)
+	assert.Equal(t, int64(len(content)), blob.Size)
+	got, err := io.ReadAll(blob)
+	require.Nil(t, err)
+	assert.Equal(t, content, got)
+}
+
+func TestGetCompressedEmptyBlob(t *testing.T) {
+	fs, err := NewFilesystem(t.TempDir(), false)
+	require.Nil(t, err)
+
+	key, _, err := fs.Put(context.Background(), bytes.NewReader(nil))
+	require.Nil(t, err)
+
+	blob, err := fs.GetCompressed(context.Background(), key)
+	require.Nil(t, err)
+	defer blob.Close()
+
+	assert.Equal(t, "", blob.Encoding)
+	got, err := io.ReadAll(blob)
+	require.Nil(t, err)
+	assert.Empty(t, got)
+}
+
+func TestGetCompressedMissingKey(t *testing.T) {
+	fs, err := NewFilesystem(t.TempDir(), true)
+	require.Nil(t, err)
+
+	_, err = fs.GetCompressed(context.Background(), "not-a-valid-key")
+	assert.ErrorIs(t, err, os.ErrNotExist)
 }

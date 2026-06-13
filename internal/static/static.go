@@ -122,9 +122,25 @@ var knownParams = map[string]bool{
 func canonicalQuery(raw url.Values) string {
 	clean := url.Values{}
 	for k, vs := range raw {
-		if knownParams[k] && len(vs) > 0 {
-			clean.Set(k, vs[0])
+		if !knownParams[k] || len(vs) == 0 {
+			continue
 		}
+		v := vs[0]
+		// Fold platform-name aliases (e.g. RUNNER_OS "Linux", RUNNER_ARCH "X64",
+		// uname's "x86_64"/"aarch64") to their canonical spelling so every variant
+		// resolves to one canonical, cacheable URL via the canonicalization
+		// redirect. Unrecognized values (including the "any" sentinel) pass through.
+		switch k {
+		case "os":
+			if c, ok := db.NormalizeOS(v); ok {
+				v = string(c)
+			}
+		case "arch":
+			if c, ok := db.NormalizeArch(v); ok {
+				v = string(c)
+			}
+		}
+		clean.Set(k, v)
 	}
 	return clean.Encode()
 }
