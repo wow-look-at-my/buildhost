@@ -255,6 +255,7 @@ jobs:
             "token = \"$BUILDHOST_TOKEN\"" \
             'project = "go-toolchain"' \
             'version = "1.0.0"' \
+            'git_branch = "master"' \
             "" \
             "[[artifact]]" \
             "path = \"$RUNNER_TEMP/go-toolchain\"" \
