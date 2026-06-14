@@ -33,7 +33,7 @@ func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
 }
 
-func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string, githubWebhookSecret string) {
+func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string, githubWebhookSecret, cfAccessTeamDomain, cfAccessAUD string) {
 	sharedDB = database
 	sharedStore = store
 	sharedData = dataDir
@@ -42,11 +42,15 @@ func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers
 
 	initDownloadSecret(dataDir)
 
-	mw = &Middleware{DB: database, Verifier: NewOIDCVerifier(OIDCConfig{
-		TrustedIssuers: trustedIssuers,
-		AllowedOrgs:    allowedOrgs,
-		AllowedEvents:  allowedEvents,
-	})}
+	mw = &Middleware{
+		DB: database,
+		Verifier: NewOIDCVerifier(OIDCConfig{
+			TrustedIssuers: trustedIssuers,
+			AllowedOrgs:    allowedOrgs,
+			AllowedEvents:  allowedEvents,
+		}),
+		CFAccess: NewCFAccessVerifier(cfAccessTeamDomain, cfAccessAUD),
+	}
 	for _, fn := range readyFuncs {
 		fn()
 	}

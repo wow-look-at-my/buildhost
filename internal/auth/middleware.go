@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"go.opentelemetry.io/otel"
@@ -21,6 +20,7 @@ var authTracer = otel.Tracer("buildhost.auth")
 type Middleware struct {
 	DB       *db.DB
 	Verifier *OIDCVerifier
+	CFAccess *CFAccessVerifier
 }
 
 func (m *Middleware) Authenticate(next http.Handler) http.Handler {
@@ -62,6 +62,15 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 					attribute.String("auth.token_prefix", token.TokenPrefix),
 				)
 				r = r.WithContext(WithToken(r.Context(), token))
+			}
+		}
+		// Cloudflare Access browser session: a verified bh_cfaccess cookie (minted
+		// at the /__access callback after Cloudflare authenticated the human) marks
+		// the request as Access-authenticated, which requireProject treats as read
+		// authorization for private resources.
+		if m.CFAccess != nil {
+			if email, ok := verifyCFSessionCookie(r); ok {
+				r = r.WithContext(WithCFAccess(r.Context(), email))
 			}
 		}
 		next.ServeHTTP(w, r)
@@ -111,19 +120,15 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if prefersHTML(r) {
-		// A browser navigated to a private resource (e.g. a private static-site
-		// PR preview). If it has no token at all, send it to buildhost's own
-		// sign-in page and bring it back here afterward -- a real login page
-		// instead of a raw JSON 401 with no way in. If it DOES carry a token but
-		// is still unauthorized (e.g. the cookie token lacks read scope), show an
-		// error page rather than redirecting again, which would loop.
-		if TokenFrom(r.Context()) == nil {
-			http.Redirect(w, r, loginPath+"?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
+	// A browser navigating to a private resource with no credentials is sent off
+	// to Cloudflare Access to authenticate (when configured), returning to the
+	// resource afterward. Programmatic clients -- and deployments without Access
+	// configured -- get the plain JSON 401 below, unchanged.
+	if prefersHTML(r) && cfAccessEnabled() && TokenFrom(r.Context()) == nil {
+		if _, ok := CFAccessFrom(r.Context()); !ok {
+			http.Redirect(w, r, loginRedirectURL(r), http.StatusSeeOther)
 			return
 		}
-		writeAccessDeniedPage(w, r, http.StatusUnauthorized, msg)
-		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -132,21 +137,10 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 	w.Write(body)
 }
 
-// forbiddenResponse writes a 403 for a caller authenticated but not authorized
-// for the target project. A browser gets the readable access-denied page (with a
-// link to sign in as a different token); programmatic clients get the JSON shape
-// they already expect.
-func forbiddenResponse(w http.ResponseWriter, r *http.Request) {
-	if prefersHTML(r) {
-		writeAccessDeniedPage(w, r, http.StatusForbidden, "This token is not authorized for this project.")
-		return
-	}
-	http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
-}
-
 // prefersHTML reports whether the request came from a browser navigation (its
 // Accept header lists text/html). Used to decide whether an auth failure should
-// drive the browser sign-in flow versus the raw JSON programmatic clients expect.
+// drive the Cloudflare Access sign-in redirect versus the raw JSON that
+// programmatic clients expect.
 func prefersHTML(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
@@ -276,7 +270,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 					return
 				}
 				if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && !oidcAuthorizesProject(oidcProject, project.Name)) {
-					forbiddenResponse(w, r)
+					http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
 					return
 				}
 			case ReadAccess:
@@ -290,12 +284,19 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						parentSpan.SetAttributes(attribute.Bool("project.public_read", true))
 						break
 					}
+					// A human who authenticated through Cloudflare Access may read
+					// private resources (the Access policy is the authorization
+					// gate). This is what the browser sign-in redirect leads to.
+					if _, ok := CFAccessFrom(r.Context()); ok {
+						parentSpan.SetAttributes(attribute.Bool("project.cf_access", true))
+						break
+					}
 					if t == nil || !t.HasScope("read") {
 						unauthorizedResponse(w, r)
 						return
 					}
 					if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && !oidcAuthorizesProject(oidcProject, project.Name)) {
-						forbiddenResponse(w, r)
+						http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
 						return
 					}
 				}
@@ -305,9 +306,10 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				// gets a 404 (not 401/403) so a private project never reveals it
 				// exists -- indistinguishable from a project that does not exist.
 				if project.IsPrivate {
-					authorized := t != nil && t.HasScope("read") &&
+					_, cfOK := CFAccessFrom(r.Context())
+					authorized := cfOK || (t != nil && t.HasScope("read") &&
 						t.AuthorizedForProject(project.ID) &&
-						(oidcProject == "" || oidcAuthorizesProject(oidcProject, project.Name))
+						(oidcProject == "" || oidcAuthorizesProject(oidcProject, project.Name)))
 					if !authorized {
 						projectNotFound(w)
 						return

@@ -86,6 +86,13 @@ type Config struct {
 	OTELEndpoint        string
 	SiteFetchDomains    []string
 
+	// Cloudflare Access browser sign-in. When both are set, a browser hitting a
+	// private resource is redirected to /__access (which the operator protects
+	// with a Cloudflare Access self-hosted application) to authenticate, and the
+	// forwarded Access JWT is validated against this team domain + AUD tag.
+	CFAccessTeamDomain string // e.g. https://<team>.cloudflareaccess.com
+	CFAccessAUD        string // the Access application's AUD tag
+
 	// Retention / garbage collection. Report-only by default: nothing is deleted
 	// unless RetentionEnforce is true. RetentionInterval == 0 disables the
 	// background sweeper (the gc CLI still works on demand).
@@ -151,6 +158,12 @@ func Load() Config {
 	}
 	if v := os.Getenv("BUILDHOST_GITHUB_WEBHOOK_SECRET"); v != "" {
 		c.GitHubWebhookSecret = v
+	}
+	if v := os.Getenv("BUILDHOST_CF_ACCESS_TEAM_DOMAIN"); v != "" {
+		c.CFAccessTeamDomain = v
+	}
+	if v := os.Getenv("BUILDHOST_CF_ACCESS_AUD"); v != "" {
+		c.CFAccessAUD = v
 	}
 	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
 		c.OTELEndpoint = v

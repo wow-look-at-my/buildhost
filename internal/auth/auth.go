@@ -15,7 +15,24 @@ const (
 	oidcProjectKey
 	oidcPrivateKey
 	oidcErrorKey
+	cfAccessKey
 )
+
+// WithCFAccess marks the request as authenticated by a human who passed
+// Cloudflare Access (identity is their email). It is set from a verified
+// bh_cfaccess session cookie minted at the /__access callback. A request
+// carrying it is allowed to read private resources (the Cloudflare Access policy
+// is the authorization gate); it never grants write.
+func WithCFAccess(ctx context.Context, email string) context.Context {
+	return context.WithValue(ctx, cfAccessKey, email)
+}
+
+// CFAccessFrom returns the Cloudflare-Access identity (email) and whether the
+// request is Cloudflare-Access authenticated.
+func CFAccessFrom(ctx context.Context) (string, bool) {
+	s, ok := ctx.Value(cfAccessKey).(string)
+	return s, ok && s != ""
+}
 
 func WithToken(ctx context.Context, t *db.APIToken) context.Context {
 	return context.WithValue(ctx, tokenKey, t)

@@ -16,12 +16,6 @@ func ExtractToken(r *http.Request) string {
 	if t := r.URL.Query().Get("token"); t != "" {
 		return t
 	}
-	// Lowest priority: the browser sign-in session cookie. An explicit
-	// Authorization header, Basic credential, or ?token= always overrides the
-	// ambient cookie.
-	if t := sessionCookieFrom(r); t != "" {
-		return t
-	}
 	return ""
 }
 
