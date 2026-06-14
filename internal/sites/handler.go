@@ -20,6 +20,7 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 		handler.FetchDomains = auth.SiteFetchDomains()
+		handler.TmpDir = auth.DataDir() + "/tmp"
 	})
 	auth.ServiceHandle("sites", "PUT /{project}/branch/{branch}", parseRoute, handler.Upload)
 	auth.ServiceHandle("sites", "DELETE /{project}/branch/{branch}", parseRoute, handler.Delete)
@@ -73,4 +74,5 @@ type Handler struct {
 	DB           *db.DB
 	Store        storage.Storage
 	FetchDomains []string
+	TmpDir       string
 }

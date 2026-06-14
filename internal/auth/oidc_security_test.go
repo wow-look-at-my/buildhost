@@ -33,6 +33,28 @@ func TestVerifyToken_TrustedIssuer_EmptyEventRejected(t *testing.T) {
 	assert.Contains(t, err.Error(), "not in allowed list")
 }
 
+func TestVerifyToken_TrustedIssuer_NoBaseURLStillProvisions(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	srv := jwksServer(t, &key.PublicKey, "kid-no-base")
+
+	// No aud claim and no configured base URL: auto-provisioning no longer
+	// depends on the audience, so a trusted/allowed token still provisions.
+	claims := map[string]any{
+		"iss":        srv.URL,
+		"sub":        "repo:myorg/myrepo:ref:refs/heads/main",
+		"exp":        time.Now().Add(10 * time.Minute).Unix(),
+		"event_name": "push",
+	}
+	token := signJWT(t, key, "kid-no-base", claims)
+
+	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
+	_, oidcProject, err := v.VerifyToken(context.Background(), token, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "myrepo", oidcProject)
+}
+
 func TestParseRSAPublicKey_TooSmall(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 1024)
 	require.NoError(t, err)

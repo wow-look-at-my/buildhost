@@ -135,7 +135,7 @@ func requireRedirect(t *testing.T, rec *httptest.ResponseRecorder) url.Values {
 func TestDownload_Success_RawBinary(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
-	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
+	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
 	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "binary-content-here")
 
 	req := makeRequest("myapp", url.Values{"v": {"1.0.0"}, "os": {"linux"}, "arch": {"amd64"}})
@@ -396,4 +396,53 @@ func TestDownload_MissingOSAndArch(t *testing.T) {
 	h.Download(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestDownload_Latest_NoStore(t *testing.T) {
+	h, d, store := setupTest(t)
+	proj := seedProject(t, d, "myapp", false)
+	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
+	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "bin")
+
+	// "latest" is a mutable pointer: the redirect must not be cached.
+	req := makeRequest("myapp", url.Values{"os": {"linux"}, "arch": {"amd64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
+	rec := httptest.NewRecorder()
+	h.Download(rec, req)
+
+	assert.Equal(t, http.StatusFound, rec.Code)
+	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+}
+
+func TestDownload_ExactVersion_Immutable(t *testing.T) {
+	h, d, store := setupTest(t)
+	proj := seedProject(t, d, "myapp", false)
+	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
+	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "bin")
+
+	// An exact version is immutable: the redirect itself is safe to cache forever.
+	req := makeRequest("myapp", url.Values{"v": {"1.0.0"}, "os": {"linux"}, "arch": {"amd64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
+	rec := httptest.NewRecorder()
+	h.Download(rec, req)
+
+	assert.Equal(t, http.StatusMovedPermanently, rec.Code)
+	assert.Contains(t, rec.Header().Get("Cache-Control"), "immutable")
+}
+
+func TestDownload_NormalizesPlatformAliases(t *testing.T) {
+	h, d, store := setupTest(t)
+	proj := seedProject(t, d, "myapp", false)
+	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
+	seedArtifact(t, d, store, rel.ID, "darwin", "amd64", "bin")
+
+	// GitHub Actions' RUNNER_OS / RUNNER_ARCH spellings must resolve natively.
+	req := makeRequest("myapp", url.Values{"v": {"1.0.0"}, "os": {"macOS"}, "arch": {"X64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
+	rec := httptest.NewRecorder()
+	h.Download(rec, req)
+
+	q := requireRedirect(t, rec)
+	assert.Equal(t, "darwin", q.Get("os"))
+	assert.Equal(t, "amd64", q.Get("arch"))
 }

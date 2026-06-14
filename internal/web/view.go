@@ -161,7 +161,7 @@ func buildInstallInfo(r *http.Request, project, version string, hasBinary bool) 
 	}
 	if hasBinary {
 		info.Curl = fmt.Sprintf("curl -LO %q", dlURL(r, project, "", "linux", "amd64", "raw"))
-		info.Brew = "brew install " + serviceURL(r, "brew", project)
+		info.Brew = "brew tap pazer/build " + serviceURL(r, "brew", "tap.git") + "\nbrew install pazer/build/" + project
 		info.Npm = "npm install @buildhost/" + project + " --registry " + serviceBase(r, "npm")
 		info.Apt = fmt.Sprintf("echo \"deb [signed-by=/etc/apt/keyrings/%s.gpg] %s stable main\" | sudo tee /etc/apt/sources.list.d/%s.list",
 			lastSegment(project), serviceURL(r, "apt", project), lastSegment(project))

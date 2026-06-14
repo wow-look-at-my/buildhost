@@ -134,7 +134,8 @@ func TestFrontend(t *testing.T) {
 		require.Contains(t, body, "/projects/myapp/releases/1")
 		require.Contains(t, body, `/projects/myapp/releases/1">1</a> <span class="badge badge-latest">latest</span>`)
 		require.NotContains(t, body, `/projects/myapp/releases/2">2</a> <span class="badge badge-latest">latest</span>`)
-		require.Contains(t, body, "brew install") // install command present
+		require.Contains(t, body, "brew tap pazer/build")
+		require.Contains(t, body, "brew install pazer/build/myapp")
 		require.Contains(t, body, "docker pull oci.")
 		require.Contains(t, body, "docker pull oci."+strings.TrimPrefix(e.ts.URL, "http://")+"/myapp:1")
 	})
