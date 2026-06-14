@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -46,18 +47,17 @@ func TestGetLatestRelease_PrefersMaster(t *testing.T) {
 	assert.Equal(t, "4", got.Version)
 }
 
-// Until master has published anything, fall back to the global newest so
-// "latest" is never empty when releases exist.
-func TestGetLatestRelease_FallsBackWhenNoMaster(t *testing.T) {
+// Until master has published anything, "latest" is empty even if other
+// branches have published releases.
+func TestGetLatestRelease_NoLatestWhenNoMaster(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createTestProject(t, d)
 
 	mustPublishRelease(t, d, p.ID, "1", 1, "feature")
 
-	got, err := d.GetLatestRelease(ctx, p.ID)
-	require.NoError(t, err)
-	assert.Equal(t, "1", got.Version, "no master release yet -> global latest")
+	_, err := d.GetLatestRelease(ctx, p.ID)
+	assert.True(t, errors.Is(err, ErrNotFound), "feature-only releases must not become latest")
 }
 
 // Latest considers only published releases, even on master.

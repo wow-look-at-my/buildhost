@@ -175,8 +175,9 @@ func TestPush_SingleImageByTag(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, manifestDigest, tag.ManifestDigest)
 
-	rel, err := d.GetLatestRelease(ctx, proj.ID)
+	rel, err := d.GetRelease(ctx, proj.ID, "1")
 	require.NoError(t, err)
+	require.Equal(t, tag.ReleaseID, rel.ID)
 	arts, err := d.ListArtifacts(ctx, rel.ID)
 	require.NoError(t, err)
 	require.Len(t, arts, 1)
@@ -225,8 +226,11 @@ func TestPush_MultiArchIndex(t *testing.T) {
 	rec := putManifest(t, h, proj, "latest", mediaImageIndex, indexBytes)
 	require.Equal(t, http.StatusCreated, rec.Code)
 
-	rel, err := d.GetLatestRelease(ctx, proj.ID)
+	tag, err := d.GetOCITag(ctx, proj.ID, "latest")
 	require.NoError(t, err)
+	rel, err := d.GetRelease(ctx, proj.ID, "1")
+	require.NoError(t, err)
+	require.Equal(t, tag.ReleaseID, rel.ID)
 	arts, err := d.ListArtifacts(ctx, rel.ID)
 	require.NoError(t, err)
 	require.Len(t, arts, 2, "unknown-platform attestation entry should be skipped")
