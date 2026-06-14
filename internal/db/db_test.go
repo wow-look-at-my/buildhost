@@ -211,9 +211,21 @@ func TestGetLatestRelease(t *testing.T) {
 	_, err := d.GetLatestRelease(ctx, p.ID)
 	assert.True(t, errors.Is(err, ErrNotFound))
 
-	// Create and publish two releases.
-	for i, v := range []string{"1.0.0", "2.0.0"} {
-		r := &Release{ProjectID: p.ID, Version: v, VersionNum: int64(i + 1)}
+	releases := []struct {
+		version string
+		num     int64
+		branch  string
+	}{
+		{"1.0.0", 1, "master"},
+		{"2.0.0", 2, "feature-x"},
+	}
+	for _, rl := range releases {
+		r := &Release{
+			ProjectID:  p.ID,
+			Version:    rl.version,
+			VersionNum: rl.num,
+			GitBranch:  rl.branch,
+		}
 		require.NoError(t, d.CreateRelease(ctx, r))
 
 		require.NoError(t, d.PublishRelease(ctx, r.ID))
@@ -223,7 +235,7 @@ func TestGetLatestRelease(t *testing.T) {
 	got, err := d.GetLatestRelease(ctx, p.ID)
 	require.Nil(t, err)
 
-	assert.Equal(t, "2.0.0", got.Version)
+	assert.Equal(t, "1.0.0", got.Version)
 
 }
 
