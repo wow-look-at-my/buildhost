@@ -45,7 +45,7 @@ func withRoute(r *http.Request, project *db.Project, rt route) *http.Request {
 func publishWithOCI(t *testing.T, ctx context.Context, d *db.DB, store *storage.Filesystem, proj *db.Project, version string, versionNum int64) *db.Release {
 	t.Helper()
 
-	rel := &db.Release{ProjectID: proj.ID, Version: version, VersionNum: versionNum}
+	rel := &db.Release{ProjectID: proj.ID, Version: version, VersionNum: versionNum, GitBranch: db.LatestBranch}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 
 	binaryData := "#!/bin/sh\necho hello"
@@ -87,7 +87,7 @@ func publishWithOCI(t *testing.T, ctx context.Context, d *db.DB, store *storage.
 func publishMultiArch(t *testing.T, ctx context.Context, d *db.DB, store *storage.Filesystem, proj *db.Project, version string, versionNum int64) *db.Release {
 	t.Helper()
 
-	rel := &db.Release{ProjectID: proj.ID, Version: version, VersionNum: versionNum}
+	rel := &db.Release{ProjectID: proj.ID, Version: version, VersionNum: versionNum, GitBranch: db.LatestBranch}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 
 	for _, arch := range []db.Arch{db.ArchAMD64, db.ArchARM64} {
@@ -311,7 +311,7 @@ func TestServeHTTP_Manifests_NoOCIPackage(t *testing.T) {
 
 	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000, GitBranch: db.LatestBranch}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 

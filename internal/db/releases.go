@@ -7,6 +7,8 @@ import (
 	"fmt"
 )
 
+const LatestBranch = "master"
+
 func (d *DB) CreateRelease(ctx context.Context, r *Release) error {
 	res, err := d.q.InsertRelease(ctx, InsertReleaseParams{
 		ProjectID:  r.ProjectID,
@@ -54,14 +56,7 @@ func (d *DB) GetRelease(ctx context.Context, projectID int64, version string) (*
 }
 
 func (d *DB) GetLatestRelease(ctx context.Context, projectID int64) (*Release, error) {
-	row, err := d.q.GetLatestPublishedRelease(ctx, projectID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get latest release: %w", err)
-	}
-	return &row, nil
+	return d.GetLatestReleaseByBranch(ctx, projectID, LatestBranch)
 }
 
 func (d *DB) GetLatestReleaseByBranch(ctx context.Context, projectID int64, branch string) (*Release, error) {

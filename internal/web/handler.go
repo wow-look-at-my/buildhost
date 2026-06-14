@@ -106,19 +106,15 @@ func (h *Handler) Project(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Determine install commands from the latest published release's contents.
+	// Unqualified "latest" is the latest published release on the default
+	// release branch; feature branches are available only via explicit branch
+	// resolution.
 	var latestVersion string
 	var hasBinary bool
-	for _, rel := range rels {
-		if rel.Published {
-			latestVersion = rel.Version
-			break
-		}
-	}
-	if latestVersion != "" {
-		if latestRel, err := h.DB.GetRelease(ctx, project.ID, latestVersion); err == nil {
-			if arts, err := h.DB.ListArtifacts(ctx, latestRel.ID); err == nil {
-				hasBinary = hasNonDockerArtifact(arts)
-			}
+	if latestRel, err := h.DB.GetLatestRelease(ctx, project.ID); err == nil {
+		latestVersion = latestRel.Version
+		if arts, err := h.DB.ListArtifacts(ctx, latestRel.ID); err == nil {
+			hasBinary = hasNonDockerArtifact(arts)
 		}
 	}
 

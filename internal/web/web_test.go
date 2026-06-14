@@ -59,13 +59,17 @@ func seed(t *testing.T, database *db.DB) {
 	pub := &db.Project{Name: "myapp", Description: "A demo app", Versioning: db.VersioningAuto}
 	require.Nil(t, database.CreateProject(ctx, pub))
 
-	rel := &db.Release{ProjectID: pub.ID, Version: "1", VersionNum: 1, GitBranch: "main", GitCommit: "abcdef1234567890"}
+	rel := &db.Release{ProjectID: pub.ID, Version: "1", VersionNum: 1, GitBranch: "master", GitCommit: "abcdef1234567890"}
 	require.Nil(t, database.CreateRelease(ctx, rel))
 	require.Nil(t, database.CreateArtifact(ctx, &db.Artifact{
 		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64, Kind: db.KindBinary,
 		StorageKey: strings.Repeat("a", 64), Size: 1048576, SHA256: strings.Repeat("b", 64), Filename: "myapp",
 	}))
 	require.Nil(t, database.PublishRelease(ctx, rel.ID))
+
+	branchRel := &db.Release{ProjectID: pub.ID, Version: "2", VersionNum: 2, GitBranch: "feature-x", GitCommit: "feedface12345678"}
+	require.Nil(t, database.CreateRelease(ctx, branchRel))
+	require.Nil(t, database.PublishRelease(ctx, branchRel.ID))
 
 	priv := &db.Project{Name: "secret", IsPrivate: true, Versioning: db.VersioningAuto}
 	require.Nil(t, database.CreateProject(ctx, priv))
@@ -126,10 +130,13 @@ func TestFrontend(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		require.Contains(t, body, "A demo app")
 		require.Contains(t, body, "Releases")
-		require.Contains(t, body, "main") // git branch
+		require.Contains(t, body, "master") // git branch
 		require.Contains(t, body, "/projects/myapp/releases/1")
+		require.Contains(t, body, `/projects/myapp/releases/1">1</a> <span class="badge badge-latest">latest</span>`)
+		require.NotContains(t, body, `/projects/myapp/releases/2">2</a> <span class="badge badge-latest">latest</span>`)
 		require.Contains(t, body, "brew install") // install command present
 		require.Contains(t, body, "docker pull oci.")
+		require.Contains(t, body, "docker pull oci."+strings.TrimPrefix(e.ts.URL, "http://")+"/myapp:1")
 	})
 
 	t.Run("release page lists artifacts with download links", func(t *testing.T) {

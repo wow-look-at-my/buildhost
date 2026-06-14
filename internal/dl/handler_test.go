@@ -241,11 +241,12 @@ func TestDownload_FormatNotAvailable(t *testing.T) {
 func TestDownload_LatestVersion(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
-	seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	rel2 := seedRelease(t, d, proj.ID, "2.0.0", "main", true)
-	seedArtifact(t, d, store, rel2.ID, "linux", "amd64", "v2-binary")
+	rel1 := seedRelease(t, d, proj.ID, "1.0.0", "master", true)
+	seedRelease(t, d, proj.ID, "2.0.0", "feature-x", true)
+	seedArtifact(t, d, store, rel1.ID, "linux", "amd64", "v1-binary")
 
-	// No ?v= and no ?branch= -> resolves latest
+	// No ?v= and no ?branch= -> resolves latest on master, not the newest
+	// feature-branch version.
 	req := makeRequest("myapp", url.Values{"os": {"linux"}, "arch": {"amd64"}})
 	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
@@ -253,7 +254,7 @@ func TestDownload_LatestVersion(t *testing.T) {
 
 	q := requireRedirect(t, rec)
 	assert.Equal(t, "myapp", q.Get("project"))
-	assert.Equal(t, "2.0.0", q.Get("v"))
+	assert.Equal(t, "1.0.0", q.Get("v"))
 	assert.Equal(t, "linux", q.Get("os"))
 	assert.Equal(t, "amd64", q.Get("arch"))
 	assert.Equal(t, "raw", q.Get("fmt"))
@@ -297,8 +298,8 @@ func TestDownload_ArtifactNotFound(t *testing.T) {
 func TestDownload_Latest_Success(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
-	seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	rel2 := seedRelease(t, d, proj.ID, "2.0.0", "main", true)
+	seedRelease(t, d, proj.ID, "1.0.0", "master", true)
+	rel2 := seedRelease(t, d, proj.ID, "2.0.0", "master", true)
 	seedArtifact(t, d, store, rel2.ID, "darwin", "arm64", "latest-darwin-binary")
 
 	// No ?v= and no ?branch= -> resolves latest
@@ -319,7 +320,7 @@ func TestDownload_Latest_NoPublishedReleases(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	// Create an unpublished release.
-	seedRelease(t, d, proj.ID, "1.0.0-rc1", "main", false)
+	seedRelease(t, d, proj.ID, "1.0.0-rc1", "master", false)
 
 	// No ?v= and no ?branch= -> resolves latest
 	req := makeRequest("myapp", url.Values{"os": {"linux"}, "arch": {"amd64"}})
