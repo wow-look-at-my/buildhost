@@ -103,6 +103,22 @@ func (h *Handler) getRelease(w http.ResponseWriter, r *http.Request, projectID i
 	return rel
 }
 
+// getLatestRelease resolves the apex "latest" release (newest published release
+// on the default branch, falling back to newest published overall) the same way
+// dl/static/web do. It writes the error response and returns nil on failure.
+func (h *Handler) getLatestRelease(w http.ResponseWriter, r *http.Request, projectID int64) *db.Release {
+	rel, err := h.DB.GetLatestRelease(r.Context(), projectID)
+	if err != nil {
+		if err == db.ErrNotFound {
+			jsonError(w, http.StatusNotFound, "release not found")
+		} else {
+			jsonError(w, http.StatusInternalServerError, "failed to get release")
+		}
+		return nil
+	}
+	return rel
+}
+
 func validateScopes(w http.ResponseWriter, scopes string) string {
 	if scopes == "" {
 		return "read"
