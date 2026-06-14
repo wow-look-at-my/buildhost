@@ -3,9 +3,9 @@ package auth
 import (
 	"encoding/json"
 	"errors"
-	"html"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"go.opentelemetry.io/otel"
@@ -112,22 +112,17 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if prefersHTML(r) {
-		// A browser navigated here (e.g. a private static site / PR preview).
-		// Emit a Basic challenge so the browser shows its native sign-in dialog
-		// -- leave the username blank and paste a buildhost token as the
-		// password (extractBasicAuth resolves the password to the token system).
-		// Without the challenge a browser just renders a raw JSON 401 with no
-		// way to authenticate. Serve a readable HTML page (shown if the user
-		// dismisses the dialog) instead of raw JSON. Programmatic clients (no
-		// text/html in Accept) fall through to the plain JSON 401 below with no
-		// challenge, exactly as before.
-		w.Header().Set("Www-Authenticate", `Basic realm="buildhost"`)
-		// Relax the global default-src 'none' just enough to style this one page
-		// (inline <style> only -- still no scripts, no external resources).
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(unauthorizedHTML(msg)))
+		// A browser navigated to a private resource (e.g. a private static-site
+		// PR preview). If it has no token at all, send it to buildhost's own
+		// sign-in page and bring it back here afterward -- a real login page
+		// instead of a raw JSON 401 with no way in. If it DOES carry a token but
+		// is still unauthorized (e.g. the cookie token lacks read scope), show an
+		// error page rather than redirecting again, which would loop.
+		if TokenFrom(r.Context()) == nil {
+			http.Redirect(w, r, loginPath+"?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
+			return
+		}
+		writeAccessDeniedPage(w, r, http.StatusUnauthorized, msg)
 		return
 	}
 
@@ -137,42 +132,23 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 	w.Write(body)
 }
 
-// prefersHTML reports whether the request came from a browser navigation (its
-// Accept header lists text/html). Used to decide whether a 401 should offer a
-// browser-friendly sign-in (Basic challenge + HTML page) versus the raw JSON
-// that programmatic clients expect.
-func prefersHTML(r *http.Request) bool {
-	return strings.Contains(r.Header.Get("Accept"), "text/html")
+// forbiddenResponse writes a 403 for a caller authenticated but not authorized
+// for the target project. A browser gets the readable access-denied page (with a
+// link to sign in as a different token); programmatic clients get the JSON shape
+// they already expect.
+func forbiddenResponse(w http.ResponseWriter, r *http.Request) {
+	if prefersHTML(r) {
+		writeAccessDeniedPage(w, r, http.StatusForbidden, "This token is not authorized for this project.")
+		return
+	}
+	http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
 }
 
-// unauthorizedHTML renders the browser-facing 401 page. detail (which may carry
-// an OIDC rejection reason) is HTML-escaped before interpolation.
-func unauthorizedHTML(detail string) string {
-	return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Authentication required</title>
-<style>
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-  main { max-width: 34rem; padding: 2rem; }
-  h1 { font-size: 1.5rem; margin: 0 0 0.75rem; }
-  p { line-height: 1.55; margin: 0 0 0.75rem; }
-  code { background: #161b22; padding: 0.15rem 0.4rem; border-radius: 0.25rem; }
-  .muted { color: #8b949e; font-size: 0.9rem; }
-</style>
-</head>
-<body>
-<main>
-<h1>Authentication required</h1>
-<p>This resource is private. Sign in with a buildhost token to view it.</p>
-<p>Your browser should prompt for a username and password. Leave the username blank (or type anything) and paste a buildhost token with <code>read</code> access as the <strong>password</strong>.</p>
-<p class="muted">` + html.EscapeString(detail) + `</p>
-</main>
-</body>
-</html>
-`
+// prefersHTML reports whether the request came from a browser navigation (its
+// Accept header lists text/html). Used to decide whether an auth failure should
+// drive the browser sign-in flow versus the raw JSON programmatic clients expect.
+func prefersHTML(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
 // oidcAuthorizesProject reports whether an OIDC identity auto-provisioned for a
@@ -300,7 +276,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 					return
 				}
 				if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && !oidcAuthorizesProject(oidcProject, project.Name)) {
-					http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
+					forbiddenResponse(w, r)
 					return
 				}
 			case ReadAccess:
@@ -319,7 +295,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						return
 					}
 					if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && !oidcAuthorizesProject(oidcProject, project.Name)) {
-						http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
+						forbiddenResponse(w, r)
 						return
 					}
 				}
