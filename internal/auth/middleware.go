@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"errors"
+	"html"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -97,9 +98,11 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 		msg += ": OIDC token rejected: " + err.Error()
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	if strings.HasPrefix(r.URL.Path, "/v2/") {
+		// OCI clients (docker pull/push) require the registry error envelope and
+		// a Basic challenge on /v2/ so they retry with credentials.
 		w.Header().Set("Www-Authenticate", `Basic realm="buildhost"`)
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		body, _ := json.Marshal(map[string]any{
 			"errors": []map[string]string{{"code": "UNAUTHORIZED", "message": msg}},
@@ -107,9 +110,69 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 		w.Write(body)
 		return
 	}
+
+	if prefersHTML(r) {
+		// A browser navigated here (e.g. a private static site / PR preview).
+		// Emit a Basic challenge so the browser shows its native sign-in dialog
+		// -- leave the username blank and paste a buildhost token as the
+		// password (extractBasicAuth resolves the password to the token system).
+		// Without the challenge a browser just renders a raw JSON 401 with no
+		// way to authenticate. Serve a readable HTML page (shown if the user
+		// dismisses the dialog) instead of raw JSON. Programmatic clients (no
+		// text/html in Accept) fall through to the plain JSON 401 below with no
+		// challenge, exactly as before.
+		w.Header().Set("Www-Authenticate", `Basic realm="buildhost"`)
+		// Relax the global default-src 'none' just enough to style this one page
+		// (inline <style> only -- still no scripts, no external resources).
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(unauthorizedHTML(msg)))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	body, _ := json.Marshal(map[string]string{"error": msg})
 	w.Write(body)
+}
+
+// prefersHTML reports whether the request came from a browser navigation (its
+// Accept header lists text/html). Used to decide whether a 401 should offer a
+// browser-friendly sign-in (Basic challenge + HTML page) versus the raw JSON
+// that programmatic clients expect.
+func prefersHTML(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "text/html")
+}
+
+// unauthorizedHTML renders the browser-facing 401 page. detail (which may carry
+// an OIDC rejection reason) is HTML-escaped before interpolation.
+func unauthorizedHTML(detail string) string {
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Authentication required</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  main { max-width: 34rem; padding: 2rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 0.75rem; }
+  p { line-height: 1.55; margin: 0 0 0.75rem; }
+  code { background: #161b22; padding: 0.15rem 0.4rem; border-radius: 0.25rem; }
+  .muted { color: #8b949e; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>Authentication required</h1>
+<p>This resource is private. Sign in with a buildhost token to view it.</p>
+<p>Your browser should prompt for a username and password. Leave the username blank (or type anything) and paste a buildhost token with <code>read</code> access as the <strong>password</strong>.</p>
+<p class="muted">` + html.EscapeString(detail) + `</p>
+</main>
+</body>
+</html>
+`
 }
 
 // oidcAuthorizesProject reports whether an OIDC identity auto-provisioned for a
