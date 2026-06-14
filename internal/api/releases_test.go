@@ -178,6 +178,57 @@ func TestGetRelease_ReleaseNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
+func TestGetRelease_Latest(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "latestproj", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	// Two published releases; "latest" must resolve to the highest version.
+	older := &db.Release{ProjectID: proj.ID, Version: "1", VersionNum: 1, GitBranch: "master", GitCommit: "aaa111"}
+	require.NoError(t, h.DB.CreateRelease(ctx, older))
+	require.NoError(t, h.DB.PublishRelease(ctx, older.ID))
+	newer := &db.Release{ProjectID: proj.ID, Version: "2", VersionNum: 2, GitBranch: "master", GitCommit: "bbb222"}
+	require.NoError(t, h.DB.CreateRelease(ctx, newer))
+	require.NoError(t, h.DB.PublishRelease(ctx, newer.ID))
+
+	req := httptest.NewRequest("GET", "/api/projects/latestproj/releases/latest", nil)
+	req.SetPathValue("project", "latestproj")
+	req.SetPathValue("version", "latest")
+	req = withProjectRoute(req, proj)
+	rec := httptest.NewRecorder()
+	h.GetRelease(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var got db.Release
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.Equal(t, "2", got.Version)
+	assert.Equal(t, "bbb222", got.GitCommit)
+	assert.True(t, got.Published)
+}
+
+func TestGetRelease_LatestNoPublishedReleases(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "latestempty", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	// An unpublished release does not count as "latest".
+	unpub := &db.Release{ProjectID: proj.ID, Version: "1", VersionNum: 1, GitBranch: "master"}
+	require.NoError(t, h.DB.CreateRelease(ctx, unpub))
+
+	req := httptest.NewRequest("GET", "/api/projects/latestempty/releases/latest", nil)
+	req.SetPathValue("project", "latestempty")
+	req.SetPathValue("version", "latest")
+	req = withProjectRoute(req, proj)
+	rec := httptest.NewRecorder()
+	h.GetRelease(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
 // Note: GetRelease auth (private project, project not found) is tested via
 // requireProject middleware in the auth package.
 
