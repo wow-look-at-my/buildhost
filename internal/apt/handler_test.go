@@ -176,7 +176,7 @@ func TestServePackages_Success(t *testing.T) {
 
 	proj := &db.Project{Name: "myapp", Description: "A test app", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.2.3", VersionNum: 1002003}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.2.3", VersionNum: 1002003, GitBranch: db.LatestBranch}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -205,7 +205,7 @@ func TestServePackages_DockerArtifact_Empty(t *testing.T) {
 
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1", VersionNum: 1}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1", VersionNum: 1, GitBranch: db.LatestBranch}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -232,7 +232,7 @@ func TestServePackages_NoArtifactForArch(t *testing.T) {
 
 	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000, GitBranch: db.LatestBranch}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -276,7 +276,7 @@ func TestServePool_Success(t *testing.T) {
 
 	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000, GitBranch: db.LatestBranch}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -422,7 +422,7 @@ func TestServeHTTP_PrivateProject_Pool_WithValidContext(t *testing.T) {
 
 	proj := &db.Project{Name: "secret", IsPrivate: true, Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000, GitBranch: db.LatestBranch}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
