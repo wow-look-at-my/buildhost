@@ -20,7 +20,7 @@ var authTracer = otel.Tracer("buildhost.auth")
 type Middleware struct {
 	DB       *db.DB
 	Verifier *OIDCVerifier
-	CFAccess *CFAccessVerifier
+	GitHub   *GitHubAuth
 }
 
 func (m *Middleware) Authenticate(next http.Handler) http.Handler {
@@ -64,13 +64,13 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 				r = r.WithContext(WithToken(r.Context(), token))
 			}
 		}
-		// Cloudflare Access browser session: a verified bh_cfaccess cookie (minted
-		// at the /__access callback after Cloudflare authenticated the human) marks
-		// the request as Access-authenticated, which requireProject treats as read
-		// authorization for private resources.
-		if m.CFAccess != nil {
-			if email, ok := verifyCFSessionCookie(r); ok {
-				r = r.WithContext(WithCFAccess(r.Context(), email))
+		// Sign in with GitHub browser session: a verified bh_session cookie
+		// (minted at the OAuth callback after the user logged in with GitHub and
+		// passed the org allowlist) marks the request as an authenticated human,
+		// which requireProject treats as read authorization for private resources.
+		if m.GitHub != nil {
+			if login, ok := sessionFromRequest(r); ok {
+				r = r.WithContext(WithUser(r.Context(), login))
 			}
 		}
 		next.ServeHTTP(w, r)
@@ -120,12 +120,12 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A browser navigating to a private resource with no credentials is sent off
-	// to Cloudflare Access to authenticate (when configured), returning to the
-	// resource afterward. Programmatic clients -- and deployments without Access
-	// configured -- get the plain JSON 401 below, unchanged.
-	if prefersHTML(r) && cfAccessEnabled() && TokenFrom(r.Context()) == nil {
-		if _, ok := CFAccessFrom(r.Context()); !ok {
+	// A browser navigating to a private resource with no credentials is sent to
+	// "Sign in with GitHub" (when configured), returning to the resource
+	// afterward. Programmatic clients -- and deployments without it configured --
+	// get the plain JSON 401 below, unchanged.
+	if prefersHTML(r) && githubAuthEnabled() && TokenFrom(r.Context()) == nil {
+		if _, ok := UserFrom(r.Context()); !ok {
 			http.Redirect(w, r, loginRedirectURL(r), http.StatusSeeOther)
 			return
 		}
@@ -284,11 +284,11 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						parentSpan.SetAttributes(attribute.Bool("project.public_read", true))
 						break
 					}
-					// A human who authenticated through Cloudflare Access may read
-					// private resources (the Access policy is the authorization
-					// gate). This is what the browser sign-in redirect leads to.
-					if _, ok := CFAccessFrom(r.Context()); ok {
-						parentSpan.SetAttributes(attribute.Bool("project.cf_access", true))
+					// A human who signed in with GitHub (and passed the org
+					// allowlist) may read private resources. This is what the
+					// browser sign-in redirect leads to.
+					if _, ok := UserFrom(r.Context()); ok {
+						parentSpan.SetAttributes(attribute.Bool("project.user_read", true))
 						break
 					}
 					if t == nil || !t.HasScope("read") {
@@ -306,8 +306,8 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				// gets a 404 (not 401/403) so a private project never reveals it
 				// exists -- indistinguishable from a project that does not exist.
 				if project.IsPrivate {
-					_, cfOK := CFAccessFrom(r.Context())
-					authorized := cfOK || (t != nil && t.HasScope("read") &&
+					_, userOK := UserFrom(r.Context())
+					authorized := userOK || (t != nil && t.HasScope("read") &&
 						t.AuthorizedForProject(project.ID) &&
 						(oidcProject == "" || oidcAuthorizesProject(oidcProject, project.Name)))
 					if !authorized {

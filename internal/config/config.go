@@ -86,12 +86,13 @@ type Config struct {
 	OTELEndpoint        string
 	SiteFetchDomains    []string
 
-	// Cloudflare Access browser sign-in. When both are set, a browser hitting a
-	// private resource is redirected to /__access (which the operator protects
-	// with a Cloudflare Access self-hosted application) to authenticate, and the
-	// forwarded Access JWT is validated against this team domain + AUD tag.
-	CFAccessTeamDomain string // e.g. https://<team>.cloudflareaccess.com
-	CFAccessAUD        string // the Access application's AUD tag
+	// Sign in with GitHub (browser login for private resources). When the client
+	// id + secret + at least one allowed org are set, a browser hitting a private
+	// resource is redirected to GitHub to log in; a signed-in member of an
+	// allowed org may then read private sites/downloads.
+	GitHubClientID     string
+	GitHubClientSecret string
+	GitHubLoginOrgs    []string // orgs whose members may view private resources
 
 	// Retention / garbage collection. Report-only by default: nothing is deleted
 	// unless RetentionEnforce is true. RetentionInterval == 0 disables the
@@ -159,11 +160,18 @@ func Load() Config {
 	if v := os.Getenv("BUILDHOST_GITHUB_WEBHOOK_SECRET"); v != "" {
 		c.GitHubWebhookSecret = v
 	}
-	if v := os.Getenv("BUILDHOST_CF_ACCESS_TEAM_DOMAIN"); v != "" {
-		c.CFAccessTeamDomain = v
+	if v := os.Getenv("BUILDHOST_GITHUB_CLIENT_ID"); v != "" {
+		c.GitHubClientID = v
 	}
-	if v := os.Getenv("BUILDHOST_CF_ACCESS_AUD"); v != "" {
-		c.CFAccessAUD = v
+	if v := os.Getenv("BUILDHOST_GITHUB_CLIENT_SECRET"); v != "" {
+		c.GitHubClientSecret = v
+	}
+	if v := os.Getenv("BUILDHOST_GITHUB_LOGIN_ORGS"); v != "" {
+		for _, o := range strings.Split(v, ",") {
+			if o = strings.TrimSpace(o); o != "" {
+				c.GitHubLoginOrgs = append(c.GitHubLoginOrgs, o)
+			}
+		}
 	}
 	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
 		c.OTELEndpoint = v

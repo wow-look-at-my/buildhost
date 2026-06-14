@@ -54,7 +54,7 @@ func routerEnv(t *testing.T) (*db.DB, storage.Storage) {
 		require.NoError(t, err)
 		store, err := storage.NewFilesystem(mustTempDir(), true)
 		require.NoError(t, err)
-		auth.Init(d, store, mustTempDir(), nil, nil, nil, nil, "", "", "")
+		auth.Init(d, store, mustTempDir(), nil, nil, nil, nil, "", "", "", nil)
 		// Wrap with the same token-authentication middleware the server applies
 		// (server.Handler does auth.GetMiddleware().Authenticate(auth.ServeHTTP)),
 		// so Bearer tokens are resolved before requireProject runs.

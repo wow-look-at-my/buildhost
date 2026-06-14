@@ -15,22 +15,21 @@ const (
 	oidcProjectKey
 	oidcPrivateKey
 	oidcErrorKey
-	cfAccessKey
+	userKey
 )
 
-// WithCFAccess marks the request as authenticated by a human who passed
-// Cloudflare Access (identity is their email). It is set from a verified
-// bh_cfaccess session cookie minted at the /__access callback. A request
-// carrying it is allowed to read private resources (the Cloudflare Access policy
-// is the authorization gate); it never grants write.
-func WithCFAccess(ctx context.Context, email string) context.Context {
-	return context.WithValue(ctx, cfAccessKey, email)
+// WithUser marks the request as a signed-in human (identity is their GitHub
+// login), set from a verified bh_session cookie after a Sign in with GitHub
+// flow. A request carrying it is allowed to read private resources -- membership
+// of an allowed org was checked at login. It never grants write.
+func WithUser(ctx context.Context, login string) context.Context {
+	return context.WithValue(ctx, userKey, login)
 }
 
-// CFAccessFrom returns the Cloudflare-Access identity (email) and whether the
-// request is Cloudflare-Access authenticated.
-func CFAccessFrom(ctx context.Context) (string, bool) {
-	s, ok := ctx.Value(cfAccessKey).(string)
+// UserFrom returns the signed-in GitHub login and whether the request is
+// authenticated as a human.
+func UserFrom(ctx context.Context) (string, bool) {
+	s, ok := ctx.Value(userKey).(string)
 	return s, ok && s != ""
 }
 

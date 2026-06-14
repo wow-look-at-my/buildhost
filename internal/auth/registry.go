@@ -33,7 +33,7 @@ func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
 }
 
-func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string, githubWebhookSecret, cfAccessTeamDomain, cfAccessAUD string) {
+func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string, githubWebhookSecret, githubClientID, githubClientSecret string, githubLoginOrgs []string) {
 	sharedDB = database
 	sharedStore = store
 	sharedData = dataDir
@@ -49,7 +49,7 @@ func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers
 			AllowedOrgs:    allowedOrgs,
 			AllowedEvents:  allowedEvents,
 		}),
-		CFAccess: NewCFAccessVerifier(cfAccessTeamDomain, cfAccessAUD),
+		GitHub: NewGitHubAuth(githubClientID, githubClientSecret, githubLoginOrgs),
 	}
 	for _, fn := range readyFuncs {
 		fn()
