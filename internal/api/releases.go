@@ -119,7 +119,16 @@ func (h *Handler) GetRelease(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
 	rt := routeFrom(r.Context())
 
-	rel := h.getRelease(w, r, project.ID, rt.version)
+	// "latest" (and the empty spec) resolve to the apex latest release, mirroring
+	// how dl/static/web already treat "latest". Exposing it here gives clients a
+	// single, bounded request for the newest published release's metadata
+	// (version, git_commit, published_at) instead of listing every release.
+	var rel *db.Release
+	if rt.version == "" || rt.version == "latest" {
+		rel = h.getLatestRelease(w, r, project.ID)
+	} else {
+		rel = h.getRelease(w, r, project.ID, rt.version)
+	}
 	if rel == nil {
 		return
 	}
