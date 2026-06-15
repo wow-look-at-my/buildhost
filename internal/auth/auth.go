@@ -15,7 +15,15 @@ const (
 	oidcProjectKey
 	oidcPrivateKey
 	oidcErrorKey
+	oidcRepoKey
 )
+
+// oidcRepo carries the GitHub repo identity from a verified OIDC token, so the
+// project-auth middleware can resolve the repo's default branch from GitHub.
+type oidcRepo struct {
+	repoPath string // "owner/repo"
+	issuer   string
+}
 
 func WithToken(ctx context.Context, t *db.APIToken) context.Context {
 	return context.WithValue(ctx, tokenKey, t)
@@ -60,6 +68,20 @@ func WithOIDCPrivate(ctx context.Context, private bool) context.Context {
 func OIDCPrivateFrom(ctx context.Context) (bool, bool) {
 	v, ok := ctx.Value(oidcPrivateKey).(bool)
 	return v, ok
+}
+
+// WithOIDCRepo records the GitHub repo identity (owner/repo) and issuer from a
+// verified OIDC token, so the project-auth middleware can resolve the repo's
+// default branch from GitHub.
+func WithOIDCRepo(ctx context.Context, repoPath, issuer string) context.Context {
+	return context.WithValue(ctx, oidcRepoKey, oidcRepo{repoPath: repoPath, issuer: issuer})
+}
+
+// OIDCRepoFrom returns the OIDC repo path ("owner/repo") and issuer, or empty
+// strings if none was recorded.
+func OIDCRepoFrom(ctx context.Context) (repoPath, issuer string) {
+	v, _ := ctx.Value(oidcRepoKey).(oidcRepo)
+	return v.repoPath, v.issuer
 }
 
 // WithOIDCError records why OIDC verification failed for a presented JWT, so an
