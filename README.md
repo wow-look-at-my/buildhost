@@ -198,7 +198,7 @@ Git branch and commit are tracked on every release. Download the latest build of
 GET /dl/myapp/branch/main/linux/amd64
 ```
 
-`latest` (no branch) resolves to the newest published release on **master** (the assumed default branch), so a push to a feature branch never hijacks `latest`. When master has no published release yet, `latest` falls back to the newest release across all branches.
+`latest` (no branch) resolves to the newest published release on the project's **default branch** -- `master` by default, but recorded per-project from the publisher's `repository.default_branch`, so a repo that releases off another branch (e.g. `v1`) still gets a `latest`. A push to a feature branch never hijacks `latest`. When the default branch has no published release yet, `latest` is not available.
 
 ## Static sites
 

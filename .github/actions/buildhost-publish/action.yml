@@ -44,6 +44,11 @@ runs:
             const version = inputVersion;
             const gitBranch = inputBranch.length > 0 ? inputBranch : github.ref_name;
             const gitCommit = inputCommit.length > 0 ? inputCommit : github.sha;
+            // The repo's default branch tells buildhost which branch the apex
+            // "latest" tracks for this project. Without it buildhost assumes
+            // "master", so a repo that releases off another branch (e.g.
+            // go-toolchain on "v1") would have no build tagged "latest".
+            const defaultBranch: string = context.payload.repository?.default_branch ?? "";
             const downloadDir = path.join(os.tmpdir(), "buildhost-publish");
             fs.mkdirSync(downloadDir, { recursive: true });
 
@@ -156,6 +161,7 @@ runs:
 
             const releaseBody = () => JSON.stringify({
               git_branch: gitBranch, git_commit: gitCommit,
+              ...(defaultBranch.length > 0 ? { default_branch: defaultBranch } : {}),
               ...(version.length > 0 ? { version } : {}),
             });
 
