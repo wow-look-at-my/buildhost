@@ -16,13 +16,42 @@ const (
 	oidcPrivateKey
 	oidcErrorKey
 	oidcRepoKey
+	userKey
+	githubTokenKey
 )
 
 // oidcRepo carries the GitHub repo identity from a verified OIDC token, so the
-// project-auth middleware can resolve the repo's default branch from GitHub.
+// project-auth middleware can resolve the repo's default branch from GitHub and
+// persist the repo on the project for GitHub-login authorization.
 type oidcRepo struct {
 	repoPath string // "owner/repo"
 	issuer   string
+}
+
+// WithGitHubToken stashes the signed-in user's GitHub OAuth token (from the
+// session) so requireProject can check their access to a project's repo.
+func WithGitHubToken(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, githubTokenKey, token)
+}
+
+func GitHubTokenFrom(ctx context.Context) string {
+	s, _ := ctx.Value(githubTokenKey).(string)
+	return s
+}
+
+// WithUser marks the request as a signed-in human (identity is their GitHub
+// login), set from a verified bh_session cookie after a Sign in with GitHub
+// flow. A request carrying it may read a private project when the user can
+// access that project's repo. It never grants write.
+func WithUser(ctx context.Context, login string) context.Context {
+	return context.WithValue(ctx, userKey, login)
+}
+
+// UserFrom returns the signed-in GitHub login and whether the request is
+// authenticated as a human.
+func UserFrom(ctx context.Context) (string, bool) {
+	s, ok := ctx.Value(userKey).(string)
+	return s, ok && s != ""
 }
 
 func WithToken(ctx context.Context, t *db.APIToken) context.Context {
