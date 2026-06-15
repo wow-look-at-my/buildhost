@@ -232,7 +232,7 @@ func TestFullLifecycle(t *testing.T) {
 	require.True(t, found)
 
 	// (c) Create release
-	resp = env.postJSON(t, "/api/v1/projects/myapp/releases", `{"git_branch":"main","git_commit":"abc123"}`)
+	resp = env.postJSON(t, "/api/v1/projects/myapp/releases", `{"git_branch":"master","git_commit":"abc123"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 	var release db.Release
@@ -241,7 +241,7 @@ func TestFullLifecycle(t *testing.T) {
 
 	require.Equal(t, int64(1), release.VersionNum)
 
-	require.Equal(t, "main", release.GitBranch)
+	require.Equal(t, "master", release.GitBranch)
 
 	require.Equal(t, "abc123", release.GitCommit)
 
@@ -277,7 +277,7 @@ func TestFullLifecycle(t *testing.T) {
 	require.Contains(t, resp.Header.Get("Location"), "project=myapp")
 
 	// (h) Download via branch -- redirects with resolved version
-	resp = env.getSubdomain(t, "dl", "/myapp?branch=main&os=linux&arch=amd64")
+	resp = env.getSubdomain(t, "dl", "/myapp?branch=master&os=linux&arch=amd64")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
 	require.Contains(t, resp.Header.Get("Location"), "static.test.local/file?")
 

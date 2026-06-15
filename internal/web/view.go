@@ -115,8 +115,8 @@ func buildProjectView(r *http.Request, p *db.Project, rels []db.ReleaseSummary, 
 	}
 
 	// Only published releases are downloadable, so only those are shown. The
-	// first published row (the list is ordered newest-first) is the latest.
-	latestShown := false
+	// "latest" badge is tied to the already-resolved latest version rather than
+	// whichever branch happens to have the highest version number.
 	for _, rel := range rels {
 		if !rel.Published {
 			continue
@@ -129,9 +129,8 @@ func buildProjectView(r *http.Request, p *db.Project, rels []db.ReleaseSummary, 
 			Published:     publishedWhen(rel.PublishedAt, rel.CreatedAt),
 			ArtifactCount: rel.ArtifactCount,
 		}
-		if !latestShown {
+		if latestVersion != "" && rel.Version == latestVersion {
 			row.Latest = true
-			latestShown = true
 		}
 		v.Releases = append(v.Releases, row)
 	}
