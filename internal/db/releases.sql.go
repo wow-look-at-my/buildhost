@@ -65,6 +65,33 @@ func (q *Queries) GetLatestPublishedReleaseByBranch(ctx context.Context, arg Get
 	return i, err
 }
 
+const getLatestPublishedReleaseOnDefaultBranch = `-- name: GetLatestPublishedReleaseOnDefaultBranch :one
+SELECT r.id, r.project_id, r.version, r.version_num, r.git_branch, r.git_commit, r.notes, r.oci_user, r.published, r.created_at, r.published_at
+FROM releases r
+JOIN projects p ON p.id = r.project_id
+WHERE r.project_id = ? AND r.git_branch = p.default_branch AND r.published = 1
+ORDER BY r.version_num DESC LIMIT 1
+`
+
+func (q *Queries) GetLatestPublishedReleaseOnDefaultBranch(ctx context.Context, projectID int64) (Release, error) {
+	row := q.db.QueryRowContext(ctx, getLatestPublishedReleaseOnDefaultBranch, projectID)
+	var i Release
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.Version,
+		&i.VersionNum,
+		&i.GitBranch,
+		&i.GitCommit,
+		&i.Notes,
+		&i.OciUser,
+		&i.Published,
+		&i.CreatedAt,
+		&i.PublishedAt,
+	)
+	return i, err
+}
+
 const getMaxVersionNum = `-- name: GetMaxVersionNum :one
 SELECT CAST(COALESCE(MAX(version_num), 0) AS INTEGER) AS max_version_num FROM releases WHERE project_id = ?
 `
