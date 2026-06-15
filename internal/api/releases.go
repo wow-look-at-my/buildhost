@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,8 +32,13 @@ type createReleaseRequest struct {
 	Version   string `json:"version"`
 	GitBranch string `json:"git_branch"`
 	GitCommit string `json:"git_commit"`
-	Notes     string `json:"notes"`
-	OciUser   string `json:"oci_user"`
+	// DefaultBranch is the repo's default branch (e.g. GitHub's
+	// repository.default_branch). When set, it becomes the branch the apex
+	// "latest" tracks for this project, so a project that releases off a
+	// non-master branch (e.g. go-toolchain on "v1") resolves "latest" correctly.
+	DefaultBranch string `json:"default_branch"`
+	Notes         string `json:"notes"`
+	OciUser       string `json:"oci_user"`
 }
 
 func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +86,10 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "invalid git_branch")
 		return
 	}
+	if req.DefaultBranch != "" && !validGitBranch(req.DefaultBranch) {
+		jsonError(w, http.StatusBadRequest, "invalid default_branch")
+		return
+	}
 	if req.GitCommit != "" && !validGitCommit(req.GitCommit) {
 		jsonError(w, http.StatusBadRequest, "invalid git_commit")
 		return
@@ -110,6 +120,17 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 		}
 		jsonError(w, http.StatusInternalServerError, "failed to create release")
 		return
+	}
+
+	// Record the repo's default branch so the apex "latest" tracks it. The
+	// publisher (already write-authorized for this project) is authoritative;
+	// every publish reasserts it, so it self-corrects. Best-effort: a failure
+	// here must not fail an already-created release.
+	if req.DefaultBranch != "" && req.DefaultBranch != project.DefaultBranch {
+		if err := h.DB.SetProjectDefaultBranch(r.Context(), project.ID, req.DefaultBranch); err != nil {
+			slog.WarnContext(r.Context(), "failed to update project default branch",
+				"project", project.Name, "default_branch", req.DefaultBranch, "err", err)
+		}
 	}
 
 	jsonResponse(w, http.StatusCreated, rel)
