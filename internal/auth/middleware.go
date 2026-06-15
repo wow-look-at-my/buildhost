@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -20,6 +21,7 @@ var authTracer = otel.Tracer("buildhost.auth")
 type Middleware struct {
 	DB       *db.DB
 	Verifier *OIDCVerifier
+	GitHub   *GitHubAuth
 }
 
 func (m *Middleware) Authenticate(next http.Handler) http.Handler {
@@ -64,6 +66,17 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 				r = r.WithContext(WithToken(r.Context(), token))
 			}
 		}
+		// Sign in with GitHub browser session: a verified bh_session cookie
+		// (minted at the OAuth callback after the user logged in with GitHub and
+		// passed the org allowlist) marks the request as an authenticated human,
+		// which requireProject treats as read authorization for private resources.
+		if m.GitHub != nil {
+			if login, ghToken, ok := sessionFromRequest(r); ok {
+				ctx := WithUser(r.Context(), login)
+				ctx = WithGitHubToken(ctx, ghToken)
+				r = r.WithContext(ctx)
+			}
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -98,9 +111,11 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 		msg += ": OIDC token rejected: " + err.Error()
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	if strings.HasPrefix(r.URL.Path, "/v2/") {
+		// OCI clients (docker pull/push) require the registry error envelope and
+		// a Basic challenge on /v2/ so they retry with credentials.
 		w.Header().Set("Www-Authenticate", `Basic realm="buildhost"`)
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		body, _ := json.Marshal(map[string]any{
 			"errors": []map[string]string{{"code": "UNAUTHORIZED", "message": msg}},
@@ -108,9 +123,45 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 		w.Write(body)
 		return
 	}
+
+	// A browser navigating to a private resource with no credentials is sent to
+	// "Sign in with GitHub" (when configured), returning to the resource
+	// afterward. Programmatic clients -- and deployments without it configured --
+	// get the plain JSON 401 below, unchanged.
+	if prefersHTML(r) && githubAuthEnabled() && TokenFrom(r.Context()) == nil {
+		if _, ok := UserFrom(r.Context()); !ok {
+			http.Redirect(w, r, loginRedirectURL(r), http.StatusSeeOther)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	body, _ := json.Marshal(map[string]string{"error": msg})
 	w.Write(body)
+}
+
+// prefersHTML reports whether the request came from a browser navigation (its
+// Accept header lists text/html). Used to decide whether an auth failure should
+// drive the Cloudflare Access sign-in redirect versus the raw JSON that
+// programmatic clients expect.
+func prefersHTML(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "text/html")
+}
+
+// userCanReadProject reports whether the request's signed-in GitHub user (if
+// any) may read this private project -- i.e. they can access the project's
+// GitHub repo. False if not signed in, the project has no known repo, or GitHub
+// login is not configured.
+func userCanReadProject(ctx context.Context, project *db.Project) bool {
+	if mw == nil || mw.GitHub == nil || project.GithubRepo == "" {
+		return false
+	}
+	login, ok := UserFrom(ctx)
+	if !ok {
+		return false
+	}
+	return mw.GitHub.canAccessRepo(ctx, login, GitHubTokenFrom(ctx), project.GithubRepo)
 }
 
 // oidcAuthorizesProject reports whether an OIDC identity auto-provisioned for a
@@ -190,7 +241,8 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 					return
 				}
 				oidcPrivate, _ := OIDCPrivateFrom(r.Context())
-				project = &db.Project{Name: ri.ProjectName(), Versioning: db.VersioningAuto, IsPrivate: oidcPrivate}
+				oidcRepoPath, _ := OIDCRepoFrom(r.Context())
+				project = &db.Project{Name: ri.ProjectName(), Versioning: db.VersioningAuto, IsPrivate: oidcPrivate, GithubRepo: oidcRepoPath}
 				createErr := mw.DB.CreateProject(r.Context(), project)
 				if createErr != nil && !errors.Is(createErr, db.ErrConflict) {
 					http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
@@ -229,22 +281,30 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						parentSpan.SetAttributes(attribute.Bool("project.visibility_synced", true))
 					}
 				}
-				// Resolve the repo's default branch from GitHub (best-effort,
-				// cached) so the apex "latest" tracks it. buildhost learns it from
-				// the repo identity already in the OIDC token -- nothing is sent in
-				// the publish request. Gated on the GitHub Actions issuer; a failed
-				// lookup leaves the existing default branch untouched.
-				if repoPath, issuer := OIDCRepoFrom(r.Context()); issuer == GitHubActionsIssuer && repoPath != "" {
-					if branch := GitHubDefaultBranch(r.Context(), repoPath); branch != "" && branch != project.DefaultBranch {
-						if updateErr := mw.DB.SetProjectDefaultBranch(r.Context(), project.ID, branch); updateErr == nil {
-							slog.WarnContext(r.Context(), "OIDC default-branch sync",
-								"project", project.Name,
-								"repo", repoPath,
-								"was", project.DefaultBranch,
-								"now", branch,
-							)
-							project.DefaultBranch = branch
-							parentSpan.SetAttributes(attribute.Bool("project.default_branch_synced", true))
+				// The OIDC publish subject carries the repo identity; use it for two
+				// things, both derived from the token (nothing sent in the request):
+				// (1) record owner/repo on the project so GitHub-login authz can check
+				// the user's access to it; (2) resolve the repo's default branch from
+				// GitHub (best-effort, cached, GitHub Actions issuer only) so the apex
+				// "latest" tracks it.
+				if repoPath, issuer := OIDCRepoFrom(r.Context()); repoPath != "" {
+					if project.GithubRepo != repoPath {
+						if updateErr := mw.DB.SetProjectGitHubRepo(r.Context(), project.ID, repoPath); updateErr == nil {
+							project.GithubRepo = repoPath
+						}
+					}
+					if issuer == GitHubActionsIssuer {
+						if branch := GitHubDefaultBranch(r.Context(), repoPath); branch != "" && branch != project.DefaultBranch {
+							if updateErr := mw.DB.SetProjectDefaultBranch(r.Context(), project.ID, branch); updateErr == nil {
+								slog.WarnContext(r.Context(), "OIDC default-branch sync",
+									"project", project.Name,
+									"repo", repoPath,
+									"was", project.DefaultBranch,
+									"now", branch,
+								)
+								project.DefaultBranch = branch
+								parentSpan.SetAttributes(attribute.Bool("project.default_branch_synced", true))
+							}
 						}
 					}
 				}
@@ -271,6 +331,13 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						parentSpan.SetAttributes(attribute.Bool("project.public_read", true))
 						break
 					}
+					// A human who signed in with GitHub and has access to this
+					// project's repo may read it. This is what the browser sign-in
+					// redirect leads to.
+					if userCanReadProject(r.Context(), project) {
+						parentSpan.SetAttributes(attribute.Bool("project.user_read", true))
+						break
+					}
 					if t == nil || !t.HasScope("read") {
 						unauthorizedResponse(w, r)
 						return
@@ -286,9 +353,9 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				// gets a 404 (not 401/403) so a private project never reveals it
 				// exists -- indistinguishable from a project that does not exist.
 				if project.IsPrivate {
-					authorized := t != nil && t.HasScope("read") &&
+					authorized := userCanReadProject(r.Context(), project) || (t != nil && t.HasScope("read") &&
 						t.AuthorizedForProject(project.ID) &&
-						(oidcProject == "" || oidcAuthorizesProject(oidcProject, project.Name))
+						(oidcProject == "" || oidcAuthorizesProject(oidcProject, project.Name)))
 					if !authorized {
 						projectNotFound(w)
 						return
