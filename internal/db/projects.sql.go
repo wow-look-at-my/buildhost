@@ -11,7 +11,7 @@ import (
 )
 
 const getProjectByName = `-- name: GetProjectByName :one
-SELECT id, name, description, homepage, license, is_private, versioning, default_branch, created_at, updated_at
+SELECT id, name, description, homepage, license, is_private, versioning, github_repo, default_branch, created_at, updated_at
 FROM projects WHERE name = ?
 `
 
@@ -26,6 +26,7 @@ func (q *Queries) GetProjectByName(ctx context.Context, name string) (Project, e
 		&i.License,
 		&i.IsPrivate,
 		&i.Versioning,
+		&i.GithubRepo,
 		&i.DefaultBranch,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -34,8 +35,8 @@ func (q *Queries) GetProjectByName(ctx context.Context, name string) (Project, e
 }
 
 const insertProject = `-- name: InsertProject :execresult
-INSERT INTO projects (name, description, homepage, license, is_private, versioning)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO projects (name, description, homepage, license, is_private, versioning, github_repo)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertProjectParams struct {
@@ -45,6 +46,7 @@ type InsertProjectParams struct {
 	License     string     `json:"license"`
 	IsPrivate   bool       `json:"is_private"`
 	Versioning  Versioning `json:"versioning"`
+	GithubRepo  string     `json:"github_repo"`
 }
 
 func (q *Queries) InsertProject(ctx context.Context, arg InsertProjectParams) (sql.Result, error) {
@@ -55,11 +57,12 @@ func (q *Queries) InsertProject(ctx context.Context, arg InsertProjectParams) (s
 		arg.License,
 		arg.IsPrivate,
 		arg.Versioning,
+		arg.GithubRepo,
 	)
 }
 
 const listAllProjects = `-- name: ListAllProjects :many
-SELECT id, name, description, homepage, license, is_private, versioning, default_branch, created_at, updated_at
+SELECT id, name, description, homepage, license, is_private, versioning, github_repo, default_branch, created_at, updated_at
 FROM projects ORDER BY name
 `
 
@@ -80,6 +83,7 @@ func (q *Queries) ListAllProjects(ctx context.Context) ([]Project, error) {
 			&i.License,
 			&i.IsPrivate,
 			&i.Versioning,
+			&i.GithubRepo,
 			&i.DefaultBranch,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -108,6 +112,20 @@ type SetProjectDefaultBranchParams struct {
 
 func (q *Queries) SetProjectDefaultBranch(ctx context.Context, arg SetProjectDefaultBranchParams) error {
 	_, err := q.db.ExecContext(ctx, setProjectDefaultBranch, arg.DefaultBranch, arg.ID)
+	return err
+}
+
+const setProjectGitHubRepo = `-- name: SetProjectGitHubRepo :exec
+UPDATE projects SET github_repo = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type SetProjectGitHubRepoParams struct {
+	GithubRepo string `json:"github_repo"`
+	ID         int64  `json:"id"`
+}
+
+func (q *Queries) SetProjectGitHubRepo(ctx context.Context, arg SetProjectGitHubRepoParams) error {
+	_, err := q.db.ExecContext(ctx, setProjectGitHubRepo, arg.GithubRepo, arg.ID)
 	return err
 }
 

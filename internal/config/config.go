@@ -97,6 +97,13 @@ type Config struct {
 	OTELEndpoint     string
 	SiteFetchDomains []string
 
+	// Sign in with GitHub (browser login for private resources). When the client
+	// id + secret are set, a browser hitting a private resource is redirected to
+	// GitHub to log in; a signed-in user may then read a private project if they
+	// have access to that project's GitHub repo.
+	GitHubClientID     string
+	GitHubClientSecret string
+
 	// Retention / garbage collection. Report-only by default: nothing is deleted
 	// unless RetentionEnforce is true. RetentionInterval == 0 disables the
 	// background sweeper (the gc CLI still works on demand).
@@ -176,6 +183,12 @@ func Load() Config {
 	}
 	if v := os.Getenv("BUILDHOST_GITHUB_WEBHOOK_SECRET"); v != "" {
 		c.GitHubWebhookSecret = v
+	}
+	if v := os.Getenv("BUILDHOST_GITHUB_CLIENT_ID"); v != "" {
+		c.GitHubClientID = v
+	}
+	if v := os.Getenv("BUILDHOST_GITHUB_CLIENT_SECRET"); v != "" {
+		c.GitHubClientSecret = v
 	}
 	if v := strings.TrimSpace(os.Getenv("BUILDHOST_GITHUB_TOKEN")); v != "" {
 		c.GitHubToken = v
