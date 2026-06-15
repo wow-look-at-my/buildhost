@@ -94,6 +94,12 @@ func GitHubDefaultBranch(ctx context.Context, repoPath string) string {
 }
 
 func fetchGitHubDefaultBranch(ctx context.Context, repoPath string) string {
+	// Obtain the bearer first (a GitHub App installation token, a static PAT, or
+	// none) -- its own lookups are separately bounded, so they don't eat into the
+	// repos call's budget below.
+	owner, repo, _ := strings.Cut(repoPath, "/")
+	bearer := bearerForRepo(ctx, owner, repo)
+
 	// Bound the lookup so a slow github.com never stalls a publish for the full
 	// client timeout, and never outlives the request.
 	ctx, cancel := context.WithTimeout(ctx, branchLookupBudget)
@@ -105,8 +111,8 @@ func fetchGitHubDefaultBranch(ctx context.Context, repoPath string) string {
 	}
 	req.Header.Set("User-Agent", "buildhost")
 	req.Header.Set("Accept", "application/vnd.github+json")
-	if tok := currentGitHubToken(); tok != "" {
-		req.Header.Set("Authorization", "Bearer "+tok)
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
 
 	resp, err := githubBranchHTTPClient.Do(req)

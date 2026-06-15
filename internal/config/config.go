@@ -83,9 +83,16 @@ type Config struct {
 	OIDCOrgs            []string
 	OIDCEvents          []string
 	GitHubWebhookSecret string
-	// GitHubToken authenticates buildhost's own GitHub REST lookups (resolving a
-	// repo's default branch for the apex "latest"). Optional: lookups fall back
-	// to anonymous (60 req/hr/IP) when unset. From BUILDHOST_GITHUB_TOKEN.
+	// GitHub App credentials for buildhost's own REST lookups (resolving a repo's
+	// default branch for the apex "latest"). Preferred over GitHubToken: short-
+	// lived installation tokens, least-privilege (metadata:read), higher rate
+	// limits. From BUILDHOST_GITHUB_APP_ID and BUILDHOST_GITHUB_APP_PRIVATE_KEY
+	// (PEM contents, or a path to a PEM file). Optional.
+	GitHubAppID         string
+	GitHubAppPrivateKey string
+	// GitHubToken is a static-PAT fallback for the same lookups when no App is
+	// configured. Optional: lookups fall back to anonymous (60 req/hr/IP) when
+	// both are unset. From BUILDHOST_GITHUB_TOKEN.
 	GitHubToken      string
 	OTELEndpoint     string
 	SiteFetchDomains []string
@@ -97,6 +104,20 @@ type Config struct {
 	RetentionInterval     time.Duration // background sweep cadence; 0 = disabled
 	RetentionRecencyGuard time.Duration // never evict releases newer than this
 	RetentionEnforce      bool          // actually delete; false = report-only
+}
+
+// resolvePEM returns PEM contents from a config value that is either the PEM
+// itself (contains a BEGIN marker) or a path to a PEM file. A path that cannot
+// be read falls through unchanged, so the downstream key parser reports the
+// malformed key rather than this swallowing it.
+func resolvePEM(v string) string {
+	if strings.Contains(v, "-----BEGIN") {
+		return v
+	}
+	if b, err := os.ReadFile(v); err == nil {
+		return string(b)
+	}
+	return v
 }
 
 func Load() Config {
@@ -158,6 +179,12 @@ func Load() Config {
 	}
 	if v := strings.TrimSpace(os.Getenv("BUILDHOST_GITHUB_TOKEN")); v != "" {
 		c.GitHubToken = v
+	}
+	if v := strings.TrimSpace(os.Getenv("BUILDHOST_GITHUB_APP_ID")); v != "" {
+		c.GitHubAppID = v
+	}
+	if v := strings.TrimSpace(os.Getenv("BUILDHOST_GITHUB_APP_PRIVATE_KEY")); v != "" {
+		c.GitHubAppPrivateKey = resolvePEM(v)
 	}
 	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
 		c.OTELEndpoint = v
