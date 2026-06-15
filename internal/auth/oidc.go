@@ -72,8 +72,10 @@ func LooksLikeJWT(token string) bool {
 type VerifyResult struct {
 	OIDCPrivate bool
 	// RepoPath is the "owner/repo" parsed from a GitHub Actions OIDC subject
-	// (`repo:OWNER/REPO:...`), used to resolve the repo's default branch from
-	// GitHub. Empty for subjects not in that form.
+	// (`repo:OWNER/REPO:...`). Used to resolve the repo's default branch from
+	// GitHub AND recorded on the project so a browser "Sign in with GitHub" can
+	// authorize by the user's access to that exact repo. Empty for subjects not
+	// in that form.
 	RepoPath string
 	// Issuer is the verified token issuer, so the caller can gate
 	// GitHub-specific behavior (default-branch lookup) on GitHubActionsIssuer.
@@ -152,8 +154,8 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 	verified := token.Claims.(*oidcClaims)
 
 	// Surface the repo identity and issuer for both verification paths, so the
-	// caller can resolve the repo's default branch from GitHub without anything
-	// being sent in the publish request.
+	// caller can resolve the repo's default branch from GitHub and record the
+	// repo on the project, without anything being sent in the publish request.
 	if result != nil {
 		result.Issuer = verified.Issuer
 		result.RepoPath = repoPathFromSubject(verified.Subject)
