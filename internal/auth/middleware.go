@@ -49,7 +49,7 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 					if oidcProject != "" {
 						rctx = WithOIDCProject(rctx, oidcProject)
 						rctx = WithOIDCPrivate(rctx, vr.OIDCPrivate)
-						rctx = WithOIDCRepo(rctx, vr.OIDCRepo)
+						rctx = WithOIDCRepo(rctx, vr.RepoPath, vr.Issuer)
 					}
 					r = r.WithContext(rctx)
 					next.ServeHTTP(w, r)
@@ -241,7 +241,8 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 					return
 				}
 				oidcPrivate, _ := OIDCPrivateFrom(r.Context())
-				project = &db.Project{Name: ri.ProjectName(), Versioning: db.VersioningAuto, IsPrivate: oidcPrivate, GithubRepo: OIDCRepoFrom(r.Context())}
+				oidcRepoPath, _ := OIDCRepoFrom(r.Context())
+				project = &db.Project{Name: ri.ProjectName(), Versioning: db.VersioningAuto, IsPrivate: oidcPrivate, GithubRepo: oidcRepoPath}
 				createErr := mw.DB.CreateProject(r.Context(), project)
 				if createErr != nil && !errors.Is(createErr, db.ErrConflict) {
 					http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
@@ -280,12 +281,31 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						parentSpan.SetAttributes(attribute.Bool("project.visibility_synced", true))
 					}
 				}
-				// Record (or correct) the project's GitHub repo from the OIDC
-				// publish subject, so GitHub-login authz can check the user's
-				// access to the right repo.
-				if repo := OIDCRepoFrom(r.Context()); repo != "" && project.GithubRepo != repo {
-					if updateErr := mw.DB.SetProjectGitHubRepo(r.Context(), project.ID, repo); updateErr == nil {
-						project.GithubRepo = repo
+				// The OIDC publish subject carries the repo identity; use it for two
+				// things, both derived from the token (nothing sent in the request):
+				// (1) record owner/repo on the project so GitHub-login authz can check
+				// the user's access to it; (2) resolve the repo's default branch from
+				// GitHub (best-effort, cached, GitHub Actions issuer only) so the apex
+				// "latest" tracks it.
+				if repoPath, issuer := OIDCRepoFrom(r.Context()); repoPath != "" {
+					if project.GithubRepo != repoPath {
+						if updateErr := mw.DB.SetProjectGitHubRepo(r.Context(), project.ID, repoPath); updateErr == nil {
+							project.GithubRepo = repoPath
+						}
+					}
+					if issuer == GitHubActionsIssuer {
+						if branch := GitHubDefaultBranch(r.Context(), repoPath); branch != "" && branch != project.DefaultBranch {
+							if updateErr := mw.DB.SetProjectDefaultBranch(r.Context(), project.ID, branch); updateErr == nil {
+								slog.WarnContext(r.Context(), "OIDC default-branch sync",
+									"project", project.Name,
+									"repo", repoPath,
+									"was", project.DefaultBranch,
+									"now", branch,
+								)
+								project.DefaultBranch = branch
+								parentSpan.SetAttributes(attribute.Bool("project.default_branch_synced", true))
+							}
+						}
 					}
 				}
 			}

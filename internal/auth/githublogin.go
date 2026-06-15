@@ -274,7 +274,7 @@ func (g *GitHubAuth) fetchLogin(ctx context.Context, token string) (string, erro
 // 200. Results are cached per (login, repo) for a short TTL so the GitHub call
 // does not run on every asset request.
 func (g *GitHubAuth) canAccessRepo(ctx context.Context, login, token, ownerRepo string) bool {
-	if login == "" || token == "" || ownerRepo == "" {
+	if login == "" || token == "" || !validRepoPath(ownerRepo) {
 		return false
 	}
 	key := login + "\x00" + ownerRepo

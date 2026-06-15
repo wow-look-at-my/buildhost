@@ -56,6 +56,17 @@ func (d *DB) SetProjectGitHubRepo(ctx context.Context, id int64, repo string) er
 	})
 }
 
+// SetProjectDefaultBranch records the branch the apex "latest" tracks for a
+// project. Publishers supply their repo's real default branch on release-create
+// (GitHub's repository.default_branch), so a project that releases off a branch
+// other than "master" still resolves "latest".
+func (d *DB) SetProjectDefaultBranch(ctx context.Context, id int64, branch string) error {
+	return d.q.SetProjectDefaultBranch(ctx, SetProjectDefaultBranchParams{
+		DefaultBranch: branch,
+		ID:            id,
+	})
+}
+
 func (d *DB) ListProjects(ctx context.Context) ([]Project, error) {
 	return d.q.ListAllProjects(ctx)
 }

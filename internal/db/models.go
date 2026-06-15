@@ -85,16 +85,17 @@ type PackagedArtifact struct {
 }
 
 type Project struct {
-	ID          int64      `json:"id"`
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	Homepage    string     `json:"homepage"`
-	License     string     `json:"license"`
-	IsPrivate   bool       `json:"is_private"`
-	Versioning  Versioning `json:"versioning"`
-	GithubRepo  string     `json:"github_repo"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID            int64      `json:"id"`
+	Name          string     `json:"name"`
+	Description   string     `json:"description"`
+	Homepage      string     `json:"homepage"`
+	License       string     `json:"license"`
+	IsPrivate     bool       `json:"is_private"`
+	Versioning    Versioning `json:"versioning"`
+	GithubRepo    string     `json:"github_repo"`
+	DefaultBranch string     `json:"default_branch"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type Release struct {

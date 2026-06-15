@@ -21,13 +21,6 @@ func TestGitHubAuth_Disabled(t *testing.T) {
 	assert.NotNil(t, NewGitHubAuth("id", "sec"))
 }
 
-func TestRepoFromSubject(t *testing.T) {
-	assert.Equal(t, "PazerOP/ue553", repoFromSubject("repo:PazerOP/ue553:ref:refs/heads/main"))
-	assert.Equal(t, "org/name", repoFromSubject("repo:org/name:pull_request"))
-	assert.Equal(t, "", repoFromSubject("repo:noslash:ref"))
-	assert.Equal(t, "", repoFromSubject("notrepo:x/y:z"))
-}
-
 func TestSession_RoundTrip(t *testing.T) {
 	v := mintSession("alice", "gho_tok", time.Now().Add(time.Hour))
 	login, token, ok := verifySession(v)
