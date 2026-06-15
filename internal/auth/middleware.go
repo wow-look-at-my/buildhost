@@ -47,6 +47,7 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 					if oidcProject != "" {
 						rctx = WithOIDCProject(rctx, oidcProject)
 						rctx = WithOIDCPrivate(rctx, vr.OIDCPrivate)
+						rctx = WithOIDCRepo(rctx, vr.RepoPath, vr.Issuer)
 					}
 					r = r.WithContext(rctx)
 					next.ServeHTTP(w, r)
@@ -226,6 +227,25 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						)
 						project.IsPrivate = oidcPrivate
 						parentSpan.SetAttributes(attribute.Bool("project.visibility_synced", true))
+					}
+				}
+				// Resolve the repo's default branch from GitHub (best-effort,
+				// cached) so the apex "latest" tracks it. buildhost learns it from
+				// the repo identity already in the OIDC token -- nothing is sent in
+				// the publish request. Gated on the GitHub Actions issuer; a failed
+				// lookup leaves the existing default branch untouched.
+				if repoPath, issuer := OIDCRepoFrom(r.Context()); issuer == GitHubActionsIssuer && repoPath != "" {
+					if branch := GitHubDefaultBranch(r.Context(), repoPath); branch != "" && branch != project.DefaultBranch {
+						if updateErr := mw.DB.SetProjectDefaultBranch(r.Context(), project.ID, branch); updateErr == nil {
+							slog.WarnContext(r.Context(), "OIDC default-branch sync",
+								"project", project.Name,
+								"repo", repoPath,
+								"was", project.DefaultBranch,
+								"now", branch,
+							)
+							project.DefaultBranch = branch
+							parentSpan.SetAttributes(attribute.Bool("project.default_branch_synced", true))
+						}
 					}
 				}
 			}
