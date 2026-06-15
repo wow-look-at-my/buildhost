@@ -98,8 +98,41 @@ h3 { font-size: .92rem; margin: 1.1em 0 .35em; color: var(--muted); font-weight:
 .badge-private { background: #3d2206; color: #e3a008; border: 1px solid #5a3a0a; }
 .badge-latest { background: #0b2a14; color: #3fb950; border: 1px solid #14431f; }
 
-/* Project list (home) */
-.project-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+/* Project tree (home) */
+.project-tree { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.project-folder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: .86rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.folder-icon {
+  position: relative;
+  display: inline-block;
+  width: 18px;
+  height: 13px;
+  flex: 0 0 auto;
+  border: 1px solid #55606d;
+  border-radius: 3px;
+  background: var(--bg-elev-2);
+}
+.folder-icon::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: -5px;
+  width: 8px;
+  height: 5px;
+  border: 1px solid #55606d;
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  background: var(--bg-elev-2);
+}
 .project-card {
   border: 1px solid var(--border);
   background: var(--bg-elev);
@@ -107,10 +140,16 @@ h3 { font-size: .92rem; margin: 1.1em 0 .35em; color: var(--muted); font-weight:
   padding: 16px 18px;
 }
 .project-card:hover { border-color: #3d4754; }
-.project-card-head { display: flex; align-items: center; gap: 10px; }
+.project-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; }
 .project-name { font-size: 1.12rem; font-weight: 600; }
+.project-path { color: var(--muted); font-size: .8rem; }
 .project-desc { margin: .4em 0 .2em; color: var(--text); }
 .project-meta { color: var(--muted); font-size: .85rem; display: flex; flex-wrap: wrap; gap: 16px; margin-top: 6px; }
+.project-depth-1 { margin-left: 26px; }
+.project-depth-2 { margin-left: 52px; }
+.project-depth-3 { margin-left: 78px; }
+.project-depth-4 { margin-left: 104px; }
+.project-depth-5 { margin-left: 130px; }
 
 /* Facts list */
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 24px; margin: 16px 0 0; }
@@ -181,4 +220,9 @@ a.dl:hover { border-color: var(--accent); text-decoration: none; background: var
 @media (max-width: 640px) {
   .hash { max-width: 10ch; }
   h1 { font-size: 1.4rem; }
+  .project-depth-1 { margin-left: 14px; }
+  .project-depth-2 { margin-left: 28px; }
+  .project-depth-3 { margin-left: 42px; }
+  .project-depth-4 { margin-left: 56px; }
+  .project-depth-5 { margin-left: 70px; }
 }

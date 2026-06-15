@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,11 +26,12 @@ var templateFuncs = template.FuncMap{
 
 type indexView struct {
 	SiteName string
-	Projects []projectCard
+	Rows     []projectListRow
 }
 
 type projectCard struct {
 	Name          string
+	Label         string
 	URL           string
 	Description   string
 	ReleaseCount  int64
@@ -38,11 +40,19 @@ type projectCard struct {
 	Private       bool
 }
 
+type projectListRow struct {
+	Kind    string
+	Depth   int
+	Folder  string
+	Project projectCard
+}
+
 func buildIndexView(rows []db.ProjectSummary) indexView {
-	cards := make([]projectCard, 0, len(rows))
+	root := newProjectNode("")
 	for _, p := range rows {
-		cards = append(cards, projectCard{
+		root.add(projectCard{
 			Name:          p.Name,
+			Label:         lastSegment(p.Name),
 			URL:           projectPath(p.Name),
 			Description:   p.Description,
 			ReleaseCount:  p.ReleaseCount,
@@ -51,7 +61,52 @@ func buildIndexView(rows []db.ProjectSummary) indexView {
 			Private:       p.IsPrivate,
 		})
 	}
-	return indexView{SiteName: siteName, Projects: cards}
+	return indexView{SiteName: siteName, Rows: root.rows(0)}
+}
+
+type projectNode struct {
+	name     string
+	project  *projectCard
+	children map[string]*projectNode
+}
+
+func newProjectNode(name string) *projectNode {
+	return &projectNode{name: name, children: map[string]*projectNode{}}
+}
+
+func (n *projectNode) add(card projectCard) {
+	cur := n
+	for _, part := range strings.Split(card.Name, "/") {
+		child := cur.children[part]
+		if child == nil {
+			child = newProjectNode(part)
+			cur.children[part] = child
+		}
+		cur = child
+	}
+	cur.project = &card
+}
+
+func (n *projectNode) rows(depth int) []projectListRow {
+	names := make([]string, 0, len(n.children))
+	for name := range n.children {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	out := make([]projectListRow, 0, len(names))
+	for _, name := range names {
+		child := n.children[name]
+		hasChildren := len(child.children) > 0
+		if hasChildren {
+			out = append(out, projectListRow{Kind: "folder", Depth: depth, Folder: name})
+		}
+		if child.project != nil {
+			out = append(out, projectListRow{Kind: "project", Depth: depth, Project: *child.project})
+		}
+		out = append(out, child.rows(depth+1)...)
+	}
+	return out
 }
 
 // ----- project -------------------------------------------------------------

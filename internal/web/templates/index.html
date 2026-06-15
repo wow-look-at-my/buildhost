@@ -5,21 +5,29 @@
   <p class="muted">Public projects hosted on this buildhost registry. Each project serves its releases in every packaging format &mdash; raw binary, tarballs, zip, APT, Homebrew, npm, and OCI.</p>
 </section>
 
-{{if .Projects}}
-<ul class="project-list">
-  {{range .Projects}}
-  <li class="project-card">
+{{if .Rows}}
+<ul class="project-tree">
+  {{range .Rows}}
+  {{if eq .Kind "folder"}}
+  <li class="project-folder project-depth-{{.Depth}}">
+    <span class="folder-icon" aria-hidden="true"></span>
+    <span>{{.Folder}}</span>
+  </li>
+  {{else}}
+  <li class="project-card project-depth-{{.Depth}}">
     <div class="project-card-head">
-      <a class="project-name" href="{{.URL}}">{{.Name}}</a>
-      {{if .Private}}<span class="badge badge-private">private</span>{{end}}
+      <a class="project-name" href="{{.Project.URL}}">{{.Project.Label}}</a>
+      {{if ne .Project.Label .Project.Name}}<span class="project-path">{{.Project.Name}}</span>{{end}}
+      {{if .Project.Private}}<span class="badge badge-private">private</span>{{end}}
     </div>
-    {{if nonEmpty .Description}}<p class="project-desc">{{.Description}}</p>{{end}}
+    {{if nonEmpty .Project.Description}}<p class="project-desc">{{.Project.Description}}</p>{{end}}
     <div class="project-meta">
-      <span>{{.ReleaseCount}} release{{if ne .ReleaseCount 1}}s{{end}}</span>
-      <span>{{.ArtifactCount}} artifact{{if ne .ArtifactCount 1}}s{{end}}</span>
-      {{if nonEmpty .Updated}}<span>updated {{.Updated}}</span>{{end}}
+      <span>{{.Project.ReleaseCount}} release{{if ne .Project.ReleaseCount 1}}s{{end}}</span>
+      <span>{{.Project.ArtifactCount}} artifact{{if ne .Project.ArtifactCount 1}}s{{end}}</span>
+      {{if nonEmpty .Project.Updated}}<span>updated {{.Project.Updated}}</span>{{end}}
     </div>
   </li>
+  {{end}}
   {{end}}
 </ul>
 {{else}}

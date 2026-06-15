@@ -67,6 +67,9 @@ func seed(t *testing.T, database *db.DB) {
 	}))
 	require.Nil(t, database.PublishRelease(ctx, rel.ID))
 
+	namespaced := &db.Project{Name: "cc-marketplace/haiku-compact", Versioning: db.VersioningAuto}
+	require.Nil(t, database.CreateProject(ctx, namespaced))
+
 	priv := &db.Project{Name: "secret", IsPrivate: true, Versioning: db.VersioningAuto}
 	require.Nil(t, database.CreateProject(ctx, priv))
 }
@@ -95,7 +98,17 @@ func TestFrontend(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		require.Equal(t, "text/html; charset=utf-8", resp.Header.Get("Content-Type"))
 		require.Contains(t, body, "myapp")
+		require.Contains(t, body, "haiku-compact")
 		require.NotContains(t, body, "secret")
+	})
+
+	t.Run("home groups slash names like folders", func(t *testing.T) {
+		_, body := e.get(t, "/", false)
+		require.Contains(t, body, `class="project-folder project-depth-0"`)
+		require.Contains(t, body, "cc-marketplace")
+		require.Contains(t, body, `href="/projects/cc-marketplace/haiku-compact"`)
+		require.Contains(t, body, "haiku-compact")
+		require.Contains(t, body, "cc-marketplace/haiku-compact")
 	})
 
 	t.Run("home is server-rendered with no script tags", func(t *testing.T) {
