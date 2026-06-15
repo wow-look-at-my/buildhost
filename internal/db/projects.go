@@ -18,6 +18,7 @@ func (d *DB) CreateProject(ctx context.Context, p *Project) error {
 		License:     p.License,
 		IsPrivate:   p.IsPrivate,
 		Versioning:  p.Versioning,
+		GithubRepo:  p.GithubRepo,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -45,6 +46,13 @@ func (d *DB) SetProjectVisibility(ctx context.Context, id int64, isPrivate bool)
 	return d.q.SetProjectVisibility(ctx, SetProjectVisibilityParams{
 		IsPrivate: isPrivate,
 		ID:        id,
+	})
+}
+
+func (d *DB) SetProjectGitHubRepo(ctx context.Context, id int64, repo string) error {
+	return d.q.SetProjectGitHubRepo(ctx, SetProjectGitHubRepoParams{
+		GithubRepo: repo,
+		ID:         id,
 	})
 }
 

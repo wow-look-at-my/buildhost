@@ -71,6 +71,10 @@ func LooksLikeJWT(token string) bool {
 // VerifyResult holds the result of OIDC verification beyond the token itself.
 type VerifyResult struct {
 	OIDCPrivate bool
+	// OIDCRepo is the full GitHub owner/repo from the token subject
+	// (repo:OWNER/NAME:...), recorded on the project so a browser "Sign in with
+	// GitHub" can authorize by the user's access to that exact repo.
+	OIDCRepo string
 }
 
 func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []db.OIDCPolicy) (*db.APIToken, string, error) {
@@ -143,6 +147,10 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 	}
 
 	verified := token.Claims.(*oidcClaims)
+
+	if result != nil {
+		result.OIDCRepo = repoFromSubject(verified.Subject)
+	}
 
 	if matchedPolicy != nil {
 		return &db.APIToken{
@@ -396,6 +404,24 @@ func validOIDCProjectName(name string) bool {
 		return false
 	}
 	return true
+}
+
+// repoFromSubject returns the full "owner/name" from a GitHub Actions OIDC
+// subject (repo:owner/name:ref:...), or "" if not present.
+func repoFromSubject(subject string) string {
+	if !strings.HasPrefix(subject, "repo:") {
+		return ""
+	}
+	rest := subject[len("repo:"):]
+	colon := strings.Index(rest, ":")
+	if colon < 0 {
+		return ""
+	}
+	repoPath := rest[:colon]
+	if strings.Index(repoPath, "/") <= 0 {
+		return ""
+	}
+	return repoPath
 }
 
 func orgFromSubject(subject string) string {

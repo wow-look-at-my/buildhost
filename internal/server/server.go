@@ -34,7 +34,7 @@ type Server struct {
 }
 
 func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
-	auth.Init(database, store, cfg.DataDir, cfg.OIDCIssuers, cfg.OIDCOrgs, cfg.OIDCEvents, cfg.SiteFetchDomains, cfg.GitHubWebhookSecret, cfg.GitHubClientID, cfg.GitHubClientSecret, cfg.GitHubLoginOrgs)
+	auth.Init(database, store, cfg.DataDir, cfg.OIDCIssuers, cfg.OIDCOrgs, cfg.OIDCEvents, cfg.SiteFetchDomains, cfg.GitHubWebhookSecret, cfg.GitHubClientID, cfg.GitHubClientSecret)
 	healthDB = database
 
 	auth.HandleRaw("GET /healthz", func(w http.ResponseWriter, r *http.Request) {

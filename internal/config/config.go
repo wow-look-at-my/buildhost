@@ -87,12 +87,11 @@ type Config struct {
 	SiteFetchDomains    []string
 
 	// Sign in with GitHub (browser login for private resources). When the client
-	// id + secret + at least one allowed org are set, a browser hitting a private
-	// resource is redirected to GitHub to log in; a signed-in member of an
-	// allowed org may then read private sites/downloads.
+	// id + secret are set, a browser hitting a private resource is redirected to
+	// GitHub to log in; a signed-in user may then read a private project if they
+	// have access to that project's GitHub repo.
 	GitHubClientID     string
 	GitHubClientSecret string
-	GitHubLoginOrgs    []string // orgs whose members may view private resources
 
 	// Retention / garbage collection. Report-only by default: nothing is deleted
 	// unless RetentionEnforce is true. RetentionInterval == 0 disables the
@@ -165,13 +164,6 @@ func Load() Config {
 	}
 	if v := os.Getenv("BUILDHOST_GITHUB_CLIENT_SECRET"); v != "" {
 		c.GitHubClientSecret = v
-	}
-	if v := os.Getenv("BUILDHOST_GITHUB_LOGIN_ORGS"); v != "" {
-		for _, o := range strings.Split(v, ",") {
-			if o = strings.TrimSpace(o); o != "" {
-				c.GitHubLoginOrgs = append(c.GitHubLoginOrgs, o)
-			}
-		}
 	}
 	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
 		c.OTELEndpoint = v

@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -56,36 +57,40 @@ func init() {
 	HandleRaw("GET "+signoutPath, handleSignout)
 }
 
-// GitHubAuth performs the OAuth Authorization Code flow against GitHub and gates
-// access on membership of an allowed org. It is nil (disabled) unless a client
-// id, secret, and at least one org are configured.
+// GitHubAuth performs the OAuth Authorization Code flow against GitHub. A
+// signed-in user is authorized for a private project by their access to that
+// project's GitHub repo (no org allowlist). It is nil (disabled) unless a client
+// id and secret are configured.
 type GitHubAuth struct {
 	clientID     string
 	clientSecret string
-	allowedOrgs  []string
 	http         *http.Client
+
+	mu        sync.Mutex
+	repoCache map[string]repoAccess // key: login\x00owner/repo
 }
 
-// NewGitHubAuth returns a configured GitHubAuth, or nil if any of client id,
-// secret, or the org allowlist is empty (the feature is then disabled and
-// browsers fall back to the plain JSON 401).
-func NewGitHubAuth(clientID, clientSecret string, allowedOrgs []string) *GitHubAuth {
+type repoAccess struct {
+	allowed bool
+	exp     time.Time
+}
+
+const repoAccessTTL = 5 * time.Minute
+
+// NewGitHubAuth returns a configured GitHubAuth, or nil if either the client id
+// or secret is empty (the feature is then disabled and browsers fall back to the
+// plain JSON 401).
+func NewGitHubAuth(clientID, clientSecret string) *GitHubAuth {
 	clientID = strings.TrimSpace(clientID)
 	clientSecret = strings.TrimSpace(clientSecret)
-	var orgs []string
-	for _, o := range allowedOrgs {
-		if o = strings.TrimSpace(o); o != "" {
-			orgs = append(orgs, o)
-		}
-	}
-	if clientID == "" || clientSecret == "" || len(orgs) == 0 {
+	if clientID == "" || clientSecret == "" {
 		return nil
 	}
 	return &GitHubAuth{
 		clientID:     clientID,
 		clientSecret: clientSecret,
-		allowedOrgs:  orgs,
 		http:         &http.Client{Timeout: 15 * time.Second},
+		repoCache:    make(map[string]repoAccess),
 	}
 }
 
@@ -150,7 +155,9 @@ func handleSigninStart(w http.ResponseWriter, r *http.Request) {
 	q := url.Values{
 		"client_id":    {g.clientID},
 		"redirect_uri": {callbackURL(r)},
-		"scope":        {"read:org"},
+		// "repo" so GET /repos/{owner}/{repo} can see the user's PRIVATE repos
+		// (the only classic OAuth scope that grants private-repo visibility).
+		"scope":        {"repo"},
 		"state":        {state},
 		"allow_signup": {"false"},
 	}
@@ -185,13 +192,14 @@ func handleSigninCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Could not complete GitHub sign-in.", http.StatusBadGateway)
 		return
 	}
-	login, err := g.authorizedLogin(r.Context(), token)
+	login, err := g.fetchLogin(r.Context(), token)
 	if err != nil {
-		// Authenticated with GitHub but not a member of an allowed org.
-		http.Error(w, "Your GitHub account is not authorized to view private resources here.", http.StatusForbidden)
+		http.Error(w, "Could not read your GitHub identity.", http.StatusBadGateway)
 		return
 	}
-	setSessionCookie(w, r, mintSession(login, time.Now().Add(sessionMaxAge*time.Second)))
+	// The session carries the user's login and token; per-resource authorization
+	// is the user's access to that project's repo, checked at request time.
+	setSessionCookie(w, r, mintSession(login, token, time.Now().Add(sessionMaxAge*time.Second)))
 	http.Redirect(w, r, safeNextURL(r, next), http.StatusSeeOther)
 }
 
@@ -237,51 +245,96 @@ func (g *GitHubAuth) exchangeCode(ctx context.Context, code, redirectURI string)
 	return body.AccessToken, nil
 }
 
-// authorizedLogin returns the user's login if they are a member of any allowed
-// org, else an error. Identity comes from GET /user; membership from
-// GET /user/memberships/orgs/{org} (requires the read:org scope).
-func (g *GitHubAuth) authorizedLogin(ctx context.Context, token string) (string, error) {
-	var user struct {
-		Login string `json:"login"`
-	}
-	if err := g.apiGet(ctx, token, "/user", &user); err != nil || user.Login == "" {
-		return "", fmt.Errorf("identify user: %w", err)
-	}
-	for _, org := range g.allowedOrgs {
-		var m struct {
-			State string `json:"state"`
-		}
-		if err := g.apiGet(ctx, token, "/user/memberships/orgs/"+url.PathEscape(org), &m); err == nil && m.State == "active" {
-			return user.Login, nil
-		}
-	}
-	return "", fmt.Errorf("user %q not in an allowed org", user.Login)
-}
-
-func (g *GitHubAuth) apiGet(ctx context.Context, token, path string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", githubAPIBase+path, nil)
+// fetchLogin returns the authenticated user's GitHub login (GET /user).
+func (g *GitHubAuth) fetchLogin(ctx context.Context, token string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", githubAPIBase+"/user", nil)
 	if err != nil {
-		return err
+		return "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "buildhost")
+	setGitHubHeaders(req, token)
 	resp, err := g.http.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GitHub %s -> %d", path, resp.StatusCode)
+		return "", fmt.Errorf("GET /user -> %d", resp.StatusCode)
 	}
-	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out)
+	var user struct {
+		Login string `json:"login"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&user); err != nil || user.Login == "" {
+		return "", fmt.Errorf("no login in /user response")
+	}
+	return user.Login, nil
+}
+
+// canAccessRepo reports whether the signed-in user (identified by login, using
+// their token) can access ownerRepo -- i.e. GET /repos/{owner}/{repo} returns
+// 200. Results are cached per (login, repo) for a short TTL so the GitHub call
+// does not run on every asset request.
+func (g *GitHubAuth) canAccessRepo(ctx context.Context, login, token, ownerRepo string) bool {
+	if login == "" || token == "" || ownerRepo == "" {
+		return false
+	}
+	key := login + "\x00" + ownerRepo
+	now := time.Now()
+	g.mu.Lock()
+	if e, ok := g.repoCache[key]; ok && now.Before(e.exp) {
+		g.mu.Unlock()
+		return e.allowed
+	}
+	g.mu.Unlock()
+
+	allowed := g.checkRepoAccess(ctx, token, ownerRepo)
+
+	g.mu.Lock()
+	g.repoCache[key] = repoAccess{allowed: allowed, exp: now.Add(repoAccessTTL)}
+	g.mu.Unlock()
+	return allowed
+}
+
+func (g *GitHubAuth) checkRepoAccess(ctx context.Context, token, ownerRepo string) bool {
+	req, err := http.NewRequestWithContext(ctx, "GET", githubAPIBase+"/repos/"+ownerRepo, nil)
+	if err != nil {
+		return false
+	}
+	setGitHubHeaders(req, token)
+	resp, err := g.http.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+	// 200 => the user can see the repo (read access). 404 => no access / no repo.
+	return resp.StatusCode == http.StatusOK
+}
+
+func setGitHubHeaders(req *http.Request, token string) {
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "buildhost")
 }
 
 // --- signed session + state (HMAC over the shared signing key) ---
 
-func mintSession(login string, exp time.Time) string { return signValue("session", login, exp) }
+// mintSession signs the user's login + GitHub token into the session value. The
+// token is needed at request time to check the user's access to a project's repo.
+func mintSession(login, token string, exp time.Time) string {
+	return signValue("session", login+"\x00"+token, exp)
+}
 
-func verifySession(value string) (string, bool) { return verifySignedValue("session", value) }
+func verifySession(value string) (login, token string, ok bool) {
+	payload, valid := verifySignedValue("session", value)
+	if !valid {
+		return "", "", false
+	}
+	l, t, found := strings.Cut(payload, "\x00")
+	if !found {
+		return "", "", false
+	}
+	return l, t, true
+}
 
 func signState(nonce, next string, exp time.Time) string {
 	return signValue("state", nonce+"\x00"+next, exp)
@@ -357,10 +410,10 @@ func randToken() string {
 
 // --- cookies ---
 
-func sessionFromRequest(r *http.Request) (string, bool) {
+func sessionFromRequest(r *http.Request) (login, token string, ok bool) {
 	c, err := r.Cookie(sessionCookieName)
 	if err != nil {
-		return "", false
+		return "", "", false
 	}
 	return verifySession(c.Value)
 }

@@ -43,7 +43,7 @@ func setupEnv(t *testing.T) *testEnv {
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	auth.Init(d, store, t.TempDir(), nil, nil, nil, nil, "", "", "", nil)
+	auth.Init(d, store, t.TempDir(), nil, nil, nil, nil, "", "", "")
 
 	plaintext, _, err := d.CreateToken(context.Background(), "test", nil, "read,write")
 	require.NoError(t, err)

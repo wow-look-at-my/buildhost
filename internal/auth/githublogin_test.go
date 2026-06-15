@@ -16,30 +16,34 @@ import (
 )
 
 func TestGitHubAuth_Disabled(t *testing.T) {
-	assert.Nil(t, NewGitHubAuth("", "sec", []string{"org"}))
-	assert.Nil(t, NewGitHubAuth("id", "", []string{"org"}))
-	assert.Nil(t, NewGitHubAuth("id", "sec", nil))
-	assert.Nil(t, NewGitHubAuth("id", "sec", []string{"  "})) // blank-only orgs
-	assert.NotNil(t, NewGitHubAuth("id", "sec", []string{"org"}))
+	assert.Nil(t, NewGitHubAuth("", "sec"))
+	assert.Nil(t, NewGitHubAuth("id", ""))
+	assert.NotNil(t, NewGitHubAuth("id", "sec"))
+}
+
+func TestRepoFromSubject(t *testing.T) {
+	assert.Equal(t, "PazerOP/ue553", repoFromSubject("repo:PazerOP/ue553:ref:refs/heads/main"))
+	assert.Equal(t, "org/name", repoFromSubject("repo:org/name:pull_request"))
+	assert.Equal(t, "", repoFromSubject("repo:noslash:ref"))
+	assert.Equal(t, "", repoFromSubject("notrepo:x/y:z"))
 }
 
 func TestSession_RoundTrip(t *testing.T) {
-	v := mintSession("alice", time.Now().Add(time.Hour))
-	login, ok := verifySession(v)
+	v := mintSession("alice", "gho_tok", time.Now().Add(time.Hour))
+	login, token, ok := verifySession(v)
 	assert.True(t, ok)
 	assert.Equal(t, "alice", login)
+	assert.Equal(t, "gho_tok", token)
 
-	_, ok = verifySession(v + "x")
+	_, _, ok = verifySession(v + "x")
 	assert.False(t, ok)
-	_, ok = verifySession("nope")
+	_, _, ok = verifySession("nope")
 	assert.False(t, ok)
-	_, ok = verifySession(mintSession("alice", time.Now().Add(-time.Minute)))
+	_, _, ok = verifySession(mintSession("alice", "tok", time.Now().Add(-time.Minute)))
 	assert.False(t, ok)
 }
 
 func TestState_RoundTrip(t *testing.T) {
-	// next deliberately contains a NUL-free URL with query; the nonce/next split
-	// must survive and the exp suffix must not be confused with next.
 	st := signState("nonce123", "https://sites.x.com/p/branch/b/?a=1", time.Now().Add(time.Minute))
 	nonce, next, ok := verifyState(st)
 	assert.True(t, ok)
@@ -54,19 +58,19 @@ func TestState_RoundTrip(t *testing.T) {
 
 func TestSafeNextURL(t *testing.T) {
 	r := httptest.NewRequest("GET", "/__signin", nil)
-	r.Host = "pazer.build" // apex
+	r.Host = "pazer.build"
 	assert.Equal(t, "/p/branch/b/", safeNextURL(r, "/p/branch/b/"))
 	assert.Equal(t, "https://sites.pazer.build/x", safeNextURL(r, "https://sites.pazer.build/x"))
-	assert.Equal(t, "https://pazer.build/", safeNextURL(r, "https://evil.com/x")) // foreign host
-	assert.Equal(t, "https://pazer.build/", safeNextURL(r, "//evil.com"))         // scheme-relative
-	assert.Equal(t, "https://pazer.build/", safeNextURL(r, ""))                   // empty
+	assert.Equal(t, "https://pazer.build/", safeNextURL(r, "https://evil.com/x"))
+	assert.Equal(t, "https://pazer.build/", safeNextURL(r, "//evil.com"))
+	assert.Equal(t, "https://pazer.build/", safeNextURL(r, ""))
 	assert.Equal(t, "https://dl.pazer.build/x", safeNextURL(r, "https://dl.pazer.build/x"))
 }
 
 func TestSigninStart_RedirectsToGitHub(t *testing.T) {
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
-	mw.GitHub = NewGitHubAuth("client-abc", "secret", []string{"PazerOP"})
+	mw.GitHub = NewGitHubAuth("client-abc", "secret")
 
 	req := httptest.NewRequest("GET", signinStartPath+"?next=%2Fsecret%2Fbranch%2Fpr-190%2F", nil)
 	req.Host = "pazer.build"
@@ -74,12 +78,11 @@ func TestSigninStart_RedirectsToGitHub(t *testing.T) {
 	handleSigninStart(rec, req)
 
 	require.Equal(t, http.StatusSeeOther, rec.Code)
-	loc := rec.Header().Get("Location")
-	assert.True(t, strings.HasPrefix(loc, githubAuthorizeURL+"?"), "got %q", loc)
-	u, err := url.Parse(loc)
+	u, err := url.Parse(rec.Header().Get("Location"))
 	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(u.String(), githubAuthorizeURL+"?"))
 	assert.Equal(t, "client-abc", u.Query().Get("client_id"))
-	assert.Equal(t, "read:org", u.Query().Get("scope"))
+	assert.Equal(t, "repo", u.Query().Get("scope"))
 	assert.Equal(t, "https://pazer.build/__signin/callback", u.Query().Get("redirect_uri"))
 	assert.NotEmpty(t, u.Query().Get("state"))
 	assert.Contains(t, rec.Header().Get("Set-Cookie"), stateCookieName+"=")
@@ -87,24 +90,20 @@ func TestSigninStart_RedirectsToGitHub(t *testing.T) {
 
 func TestSigninStart_NotConfigured_501(t *testing.T) {
 	d := openTestDB(t)
-	initTestMiddleware(t, d) // mw.GitHub nil
+	initTestMiddleware(t, d)
 	req := httptest.NewRequest("GET", signinStartPath, nil)
 	rec := httptest.NewRecorder()
 	handleSigninStart(rec, req)
 	assert.Equal(t, http.StatusNotImplemented, rec.Code)
 }
 
-// Full callback against a mocked GitHub (token exchange + user + org membership).
-func TestSigninCallback_AuthorizedMember_SetsSessionRedirects(t *testing.T) {
+func TestSigninCallback_ValidLogin_SetsSession(t *testing.T) {
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == "POST": // token exchange
-			w.Header().Set("Content-Type", "application/json")
+		case r.Method == "POST":
 			w.Write([]byte(`{"access_token":"gho_test"}`))
 		case r.URL.Path == "/user":
 			w.Write([]byte(`{"login":"alice"}`))
-		case r.URL.Path == "/user/memberships/orgs/PazerOP":
-			w.Write([]byte(`{"state":"active"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -116,7 +115,7 @@ func TestSigninCallback_AuthorizedMember_SetsSessionRedirects(t *testing.T) {
 
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
-	mw.GitHub = NewGitHubAuth("cid", "secret", []string{"PazerOP"})
+	mw.GitHub = NewGitHubAuth("cid", "secret")
 
 	nonce := "nonce-xyz"
 	next := "https://sites.pazer.build/secret/branch/pr-190/"
@@ -137,67 +136,61 @@ func TestSigninCallback_AuthorizedMember_SetsSessionRedirects(t *testing.T) {
 		}
 	}
 	require.NotNil(t, sc, "session cookie must be set")
-	assert.Equal(t, "pazer.build", sc.Domain) // domain-wide so subdomains see it
-	login, ok := verifySession(sc.Value)
+	assert.Equal(t, "pazer.build", sc.Domain)
+	login, token, ok := verifySession(sc.Value)
 	assert.True(t, ok)
 	assert.Equal(t, "alice", login)
-}
-
-func TestSigninCallback_NotAMember_Forbidden(t *testing.T) {
-	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == "POST":
-			w.Write([]byte(`{"access_token":"gho_test"}`))
-		case r.URL.Path == "/user":
-			w.Write([]byte(`{"login":"mallory"}`))
-		default:
-			w.WriteHeader(http.StatusNotFound) // not a member of any org
-		}
-	}))
-	defer gh.Close()
-	origToken, origAPI := githubTokenURL, githubAPIBase
-	githubTokenURL, githubAPIBase = gh.URL, gh.URL
-	defer func() { githubTokenURL, githubAPIBase = origToken, origAPI }()
-
-	d := openTestDB(t)
-	initTestMiddleware(t, d)
-	mw.GitHub = NewGitHubAuth("cid", "secret", []string{"PazerOP"})
-
-	nonce := "n2"
-	state := signState(nonce, "/secret/branch/pr-190/", time.Now().Add(time.Minute))
-	req := httptest.NewRequest("GET", signinCallbackPath+"?code=abc&state="+url.QueryEscape(state), nil)
-	req.Host = "pazer.build"
-	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: nonce})
-	rec := httptest.NewRecorder()
-	handleSigninCallback(rec, req)
-
-	assert.Equal(t, http.StatusForbidden, rec.Code)
-	for _, c := range rec.Result().Cookies() {
-		assert.NotEqual(t, sessionCookieName, c.Name, "no session cookie when unauthorized")
-	}
+	assert.Equal(t, "gho_test", token)
 }
 
 func TestSigninCallback_StateMismatch_Rejected(t *testing.T) {
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
-	mw.GitHub = NewGitHubAuth("cid", "secret", []string{"PazerOP"})
+	mw.GitHub = NewGitHubAuth("cid", "secret")
 
 	state := signState("real-nonce", "/x", time.Now().Add(time.Minute))
 	req := httptest.NewRequest("GET", signinCallbackPath+"?code=abc&state="+url.QueryEscape(state), nil)
 	req.Host = "pazer.build"
-	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: "different-nonce"}) // CSRF: cookie != state
+	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: "different-nonce"})
 	rec := httptest.NewRecorder()
 	handleSigninCallback(rec, req)
-
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestCanAccessRepo(t *testing.T) {
+	var calls int
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Path == "/repos/PazerOP/allowed" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer gh.Close()
+	orig := githubAPIBase
+	githubAPIBase = gh.URL
+	defer func() { githubAPIBase = orig }()
+
+	g := NewGitHubAuth("cid", "secret")
+	ctx := context.Background()
+	assert.True(t, g.canAccessRepo(ctx, "alice", "tok", "PazerOP/allowed"))
+	assert.False(t, g.canAccessRepo(ctx, "alice", "tok", "PazerOP/denied"))
+	// Cached: a repeat does not hit GitHub again.
+	before := calls
+	assert.True(t, g.canAccessRepo(ctx, "alice", "tok", "PazerOP/allowed"))
+	assert.Equal(t, before, calls, "second check should be served from cache")
+	// Missing inputs => false, no call.
+	assert.False(t, g.canAccessRepo(ctx, "", "tok", "PazerOP/allowed"))
+	assert.False(t, g.canAccessRepo(ctx, "alice", "", "PazerOP/allowed"))
 }
 
 // A browser hitting a private resource with no session, when GitHub login is
 // configured, is redirected to /__signin (off to GitHub) on the apex.
-func TestRequireProject_PrivateProject_Browser_GitHubEnabled_RedirectsToSignin(t *testing.T) {
+func TestRequireProject_Browser_GitHubEnabled_RedirectsToSignin(t *testing.T) {
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
-	mw.GitHub = NewGitHubAuth("cid", "secret", []string{"PazerOP"})
+	mw.GitHub = NewGitHubAuth("cid", "secret")
 
 	proj := &db.Project{Name: "secret", IsPrivate: true, Versioning: "auto"}
 	require.NoError(t, d.CreateProject(context.Background(), proj))
@@ -217,43 +210,59 @@ func TestRequireProject_PrivateProject_Browser_GitHubEnabled_RedirectsToSignin(t
 
 	assert.Equal(t, http.StatusSeeOther, rec.Code)
 	loc := rec.Header().Get("Location")
-	// Redirect to the apex sign-in entrypoint, carrying the full original URL.
 	assert.True(t, strings.HasPrefix(loc, "https://pazer.build"+signinStartPath+"?next="), "got %q", loc)
 	assert.Contains(t, loc, url.QueryEscape("https://sites.pazer.build/secret/branch/pr-190/"))
 }
 
-// A request carrying a verified GitHub session may read a private resource with
-// no project token; exercised through the real Authenticate->requireProject chain.
-func TestSessionCookie_AuthenticatesThroughMiddleware(t *testing.T) {
+// End-to-end through the middleware: a signed-in user WITH access to the
+// project's repo is allowed; one WITHOUT access is denied -- repo access is the
+// gate, no org allowlist.
+func TestSessionCookie_RepoAccessGatesPrivateProject(t *testing.T) {
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/PazerOP/allowed" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer gh.Close()
+	orig := githubAPIBase
+	githubAPIBase = gh.URL
+	defer func() { githubAPIBase = orig }()
+
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
-	mw.GitHub = NewGitHubAuth("cid", "secret", []string{"PazerOP"})
+	mw.GitHub = NewGitHubAuth("cid", "secret")
 
-	proj := &db.Project{Name: "secret", IsPrivate: true, Versioning: "auto"}
-	require.NoError(t, d.CreateProject(context.Background(), proj))
-	parse := func(r *http.Request) RouteInfo {
-		return testRouteInfo{project: "secret", access: ReadAccess}
+	allowed := &db.Project{Name: "allowed", IsPrivate: true, Versioning: "auto", GithubRepo: "PazerOP/allowed"}
+	denied := &db.Project{Name: "denied", IsPrivate: true, Versioning: "auto", GithubRepo: "PazerOP/denied"}
+	require.NoError(t, d.CreateProject(context.Background(), allowed))
+	require.NoError(t, d.CreateProject(context.Background(), denied))
+
+	run := func(projName string) int {
+		parse := func(r *http.Request) RouteInfo {
+			return testRouteInfo{project: projName, access: ReadAccess}
+		}
+		inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+		handler := mw.Authenticate(requireProjectFunc(parse, inner))
+		req := httptest.NewRequest("GET", "/"+projName+"/branch/pr-1/", nil)
+		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: mintSession("alice", "tok", time.Now().Add(time.Hour))})
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec.Code
 	}
-	var called bool
-	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called = true
-		w.WriteHeader(http.StatusOK)
-	})
-	handler := mw.Authenticate(requireProjectFunc(parse, inner))
 
-	req := httptest.NewRequest("GET", "/secret/branch/pr-190/", nil)
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: mintSession("alice", time.Now().Add(time.Hour))})
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	assert.True(t, called, "valid session should authenticate through the middleware")
-	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, http.StatusOK, run("allowed"), "user with repo access is allowed")
+	assert.Equal(t, http.StatusUnauthorized, run("denied"), "user without repo access is denied")
+}
 
-	// Tampered session does not authenticate.
-	called = false
-	req2 := httptest.NewRequest("GET", "/secret/branch/pr-190/", nil)
-	req2.AddCookie(&http.Cookie{Name: sessionCookieName, Value: mintSession("alice", time.Now().Add(time.Hour)) + "x"})
-	rec2 := httptest.NewRecorder()
-	handler.ServeHTTP(rec2, req2)
-	assert.False(t, called)
-	assert.Equal(t, http.StatusUnauthorized, rec2.Code)
+// A project with no recorded GitHub repo cannot be opened via GitHub login.
+func TestUserCanReadProject_NoRepo_Denied(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+	mw.GitHub = NewGitHubAuth("cid", "secret")
+
+	proj := &db.Project{Name: "norepo", IsPrivate: true, Versioning: "auto"} // GithubRepo == ""
+	ctx := WithGitHubToken(WithUser(context.Background(), "alice"), "tok")
+	assert.False(t, userCanReadProject(ctx, proj))
 }

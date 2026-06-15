@@ -15,8 +15,32 @@ const (
 	oidcProjectKey
 	oidcPrivateKey
 	oidcErrorKey
+	oidcRepoKey
 	userKey
+	githubTokenKey
 )
+
+// WithOIDCRepo records the full GitHub owner/repo from an OIDC publish subject,
+// so requireProject can persist it on the project (for later GitHub-login authz).
+func WithOIDCRepo(ctx context.Context, repo string) context.Context {
+	return context.WithValue(ctx, oidcRepoKey, repo)
+}
+
+func OIDCRepoFrom(ctx context.Context) string {
+	s, _ := ctx.Value(oidcRepoKey).(string)
+	return s
+}
+
+// WithGitHubToken stashes the signed-in user's GitHub OAuth token (from the
+// session) so requireProject can check their access to a project's repo.
+func WithGitHubToken(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, githubTokenKey, token)
+}
+
+func GitHubTokenFrom(ctx context.Context) string {
+	s, _ := ctx.Value(githubTokenKey).(string)
+	return s
+}
 
 // WithUser marks the request as a signed-in human (identity is their GitHub
 // login), set from a verified bh_session cookie after a Sign in with GitHub

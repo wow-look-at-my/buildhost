@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -48,6 +49,7 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 					if oidcProject != "" {
 						rctx = WithOIDCProject(rctx, oidcProject)
 						rctx = WithOIDCPrivate(rctx, vr.OIDCPrivate)
+						rctx = WithOIDCRepo(rctx, vr.OIDCRepo)
 					}
 					r = r.WithContext(rctx)
 					next.ServeHTTP(w, r)
@@ -69,8 +71,10 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 		// passed the org allowlist) marks the request as an authenticated human,
 		// which requireProject treats as read authorization for private resources.
 		if m.GitHub != nil {
-			if login, ok := sessionFromRequest(r); ok {
-				r = r.WithContext(WithUser(r.Context(), login))
+			if login, ghToken, ok := sessionFromRequest(r); ok {
+				ctx := WithUser(r.Context(), login)
+				ctx = WithGitHubToken(ctx, ghToken)
+				r = r.WithContext(ctx)
 			}
 		}
 		next.ServeHTTP(w, r)
@@ -143,6 +147,21 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 // programmatic clients expect.
 func prefersHTML(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "text/html")
+}
+
+// userCanReadProject reports whether the request's signed-in GitHub user (if
+// any) may read this private project -- i.e. they can access the project's
+// GitHub repo. False if not signed in, the project has no known repo, or GitHub
+// login is not configured.
+func userCanReadProject(ctx context.Context, project *db.Project) bool {
+	if mw == nil || mw.GitHub == nil || project.GithubRepo == "" {
+		return false
+	}
+	login, ok := UserFrom(ctx)
+	if !ok {
+		return false
+	}
+	return mw.GitHub.canAccessRepo(ctx, login, GitHubTokenFrom(ctx), project.GithubRepo)
 }
 
 // oidcAuthorizesProject reports whether an OIDC identity auto-provisioned for a
@@ -222,7 +241,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 					return
 				}
 				oidcPrivate, _ := OIDCPrivateFrom(r.Context())
-				project = &db.Project{Name: ri.ProjectName(), Versioning: db.VersioningAuto, IsPrivate: oidcPrivate}
+				project = &db.Project{Name: ri.ProjectName(), Versioning: db.VersioningAuto, IsPrivate: oidcPrivate, GithubRepo: OIDCRepoFrom(r.Context())}
 				createErr := mw.DB.CreateProject(r.Context(), project)
 				if createErr != nil && !errors.Is(createErr, db.ErrConflict) {
 					http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
@@ -261,6 +280,14 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						parentSpan.SetAttributes(attribute.Bool("project.visibility_synced", true))
 					}
 				}
+				// Record (or correct) the project's GitHub repo from the OIDC
+				// publish subject, so GitHub-login authz can check the user's
+				// access to the right repo.
+				if repo := OIDCRepoFrom(r.Context()); repo != "" && project.GithubRepo != repo {
+					if updateErr := mw.DB.SetProjectGitHubRepo(r.Context(), project.ID, repo); updateErr == nil {
+						project.GithubRepo = repo
+					}
+				}
 			}
 			switch ri.Access() {
 			case WriteAccess:
@@ -284,10 +311,10 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						parentSpan.SetAttributes(attribute.Bool("project.public_read", true))
 						break
 					}
-					// A human who signed in with GitHub (and passed the org
-					// allowlist) may read private resources. This is what the
-					// browser sign-in redirect leads to.
-					if _, ok := UserFrom(r.Context()); ok {
+					// A human who signed in with GitHub and has access to this
+					// project's repo may read it. This is what the browser sign-in
+					// redirect leads to.
+					if userCanReadProject(r.Context(), project) {
 						parentSpan.SetAttributes(attribute.Bool("project.user_read", true))
 						break
 					}
@@ -306,8 +333,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				// gets a 404 (not 401/403) so a private project never reveals it
 				// exists -- indistinguishable from a project that does not exist.
 				if project.IsPrivate {
-					_, userOK := UserFrom(r.Context())
-					authorized := userOK || (t != nil && t.HasScope("read") &&
+					authorized := userCanReadProject(r.Context(), project) || (t != nil && t.HasScope("read") &&
 						t.AuthorizedForProject(project.ID) &&
 						(oidcProject == "" || oidcAuthorizesProject(oidcProject, project.Name)))
 					if !authorized {

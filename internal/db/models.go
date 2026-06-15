@@ -92,6 +92,7 @@ type Project struct {
 	License     string     `json:"license"`
 	IsPrivate   bool       `json:"is_private"`
 	Versioning  Versioning `json:"versioning"`
+	GithubRepo  string     `json:"github_repo"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
