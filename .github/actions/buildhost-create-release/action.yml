@@ -25,10 +25,6 @@ inputs:
     description: 'Git commit SHA (defaults to github.sha)'
     required: false
     default: ''
-  default_branch:
-    description: "Repo's default branch; the branch the apex \"latest\" tracks for this project (defaults to github.event.repository.default_branch)"
-    required: false
-    default: ''
   notes:
     description: 'Release notes'
     required: false
@@ -64,16 +60,11 @@ runs:
             const version: string = "${{ inputs.version }}";
             const gitBranchInput: string = "${{ inputs.git_branch }}";
             const gitCommitInput: string = "${{ inputs.git_commit }}";
-            const defaultBranchInput: string = "${{ inputs.default_branch }}";
             const gitBranch: string = gitBranchInput || github.ref_name;
             const gitCommit: string = gitCommitInput || github.sha;
-            // The repo's default branch is the branch the apex "latest" tracks
-            // for this project; without it buildhost assumes "master".
-            const defaultBranch: string = defaultBranchInput || (context.payload.repository?.default_branch ?? "");
 
             const body: Record<string, string> = { git_branch: gitBranch, git_commit: gitCommit, notes: "${{ inputs.notes }}" };
             if (version) body['version'] = version;
-            if (defaultBranch) body['default_branch'] = defaultBranch;
 
             const resp = await fetch(`${server}/api/v1/projects/${project}/releases`, {
               method: 'POST',

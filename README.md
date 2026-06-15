@@ -198,7 +198,7 @@ Git branch and commit are tracked on every release. Download the latest build of
 GET /dl/myapp/branch/main/linux/amd64
 ```
 
-`latest` (no branch) resolves to the newest published release on the project's **default branch** -- `master` by default, but recorded per-project from the publisher's `repository.default_branch`, so a repo that releases off another branch (e.g. `v1`) still gets a `latest`. A push to a feature branch never hijacks `latest`. When the default branch has no published release yet, `latest` is not available.
+`latest` (no branch) resolves to the newest published release on the project's **default branch** -- `master` by default, but buildhost detects each repo's real default branch automatically: on a GitHub Actions OIDC publish it reads the `owner/repo` from the token and asks GitHub for that repo's default branch, so a repo that releases off another branch (e.g. `v1`) gets a correct `latest` with nothing sent in the publish. A push to a feature branch never hijacks `latest`. When the default branch has no published release yet, `latest` is not available. Set `BUILDHOST_GITHUB_TOKEN` to raise GitHub's anonymous rate limit (60/hr/IP) and to resolve private repos.
 
 ## Static sites
 

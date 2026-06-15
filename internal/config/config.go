@@ -83,8 +83,12 @@ type Config struct {
 	OIDCOrgs            []string
 	OIDCEvents          []string
 	GitHubWebhookSecret string
-	OTELEndpoint        string
-	SiteFetchDomains    []string
+	// GitHubToken authenticates buildhost's own GitHub REST lookups (resolving a
+	// repo's default branch for the apex "latest"). Optional: lookups fall back
+	// to anonymous (60 req/hr/IP) when unset. From BUILDHOST_GITHUB_TOKEN.
+	GitHubToken      string
+	OTELEndpoint     string
+	SiteFetchDomains []string
 
 	// Retention / garbage collection. Report-only by default: nothing is deleted
 	// unless RetentionEnforce is true. RetentionInterval == 0 disables the
@@ -151,6 +155,9 @@ func Load() Config {
 	}
 	if v := os.Getenv("BUILDHOST_GITHUB_WEBHOOK_SECRET"); v != "" {
 		c.GitHubWebhookSecret = v
+	}
+	if v := strings.TrimSpace(os.Getenv("BUILDHOST_GITHUB_TOKEN")); v != "" {
+		c.GitHubToken = v
 	}
 	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
 		c.OTELEndpoint = v
