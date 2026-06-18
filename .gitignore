@@ -20,6 +20,3 @@ cmd/buildhost/gomemlimit_gen.go
 
 # CA bundle is fetched at build time (scripts/fetch-cacerts.sh), never committed.
 internal/repackage/cacerts/ca-certificates.crt
-
-# go-toolchain injects this GOMEMLIMIT guard into every main package it builds.
-gomemlimit_gen.go

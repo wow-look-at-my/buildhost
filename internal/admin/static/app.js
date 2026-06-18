@@ -233,8 +233,12 @@ App.pages.project = function (name) {
             var ociU = (svc.oci || "") + "/v2/" + p.name + "/manifests/latest";
             var npmHost = (svc.npm || "").replace(/^https?:\/\//, "");
             var ociHost = (svc.oci || "").replace(/^https?:\/\//, "");
-            var bin = p.name.split("/").pop();               // basename for local filenames
-            var brewFormula = p.name.replace(/\//g, "-");     // tap formula name (no slashes)
+            var aptHost = (svc.apt || "").replace(/^https?:\/\//, "");
+            var staticHost = (svc.static || "").replace(/^https?:\/\//, "");
+            // Slash-namespaced names keep their slash in the repo URL but install
+            // under a folded Debian package name (repackage.DebPackageName folds
+            // '/' and '_' to '-'), so apt and dpkg agree.
+            var aptPkg = p.name.replace(/[/_]/g, "-");
             var priv = !!p.is_private;
 
             html += '<div class="card"><h2>Download &amp; Install <span class="muted" style="font-weight:400">— latest</span></h2>';
@@ -247,21 +251,29 @@ App.pages.project = function (name) {
             html += "<tr><td class='info-label'>OCI</td><td class='endpoint-cell'><a href='" + App.h(ociU) + "'>" + App.h(ociU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
             html += "</table>";
 
-            var authHdr = priv ? '-H "Authorization: Bearer $TOKEN" ' : "";
-            html += App.codeBlock("Direct download (curl)", 'curl -fsSL ' + authHdr + '\\\n  "' + dlBase + '?os=linux&arch=amd64" -o ' + bin);
-
+            // Direct download. A private project's dl link redirects to the
+            // static host, and curl only re-sends credentials across that hop
+            // with --location-trusted; the token is the HTTP Basic password.
             if (priv) {
-                html += App.codeBlock("APT", 'echo "deb [trusted=yes] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + bin + '.list\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/' + bin + '.conf\nmachine ' + aptBase + '\n  login token\n  password $TOKEN\nEOF\nsudo apt update && sudo apt install ' + bin);
+                html += App.codeBlock("Direct download (curl)", 'curl -fsSL --location-trusted -u "token:$TOKEN" -O \\\n  "' + dlBase + '?os=linux&arch=amd64"');
             } else {
-                html += App.codeBlock("APT", 'echo "deb [trusted=yes] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + bin + '.list\nsudo apt update && sudo apt install ' + bin);
+                html += App.codeBlock("Direct download (curl)", 'curl -fsSL -O "' + dlBase + '?os=linux&arch=amd64"');
             }
 
-            html += App.codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "/tap.git\nbrew install pazer/build/" + brewFormula);
+            // APT: signed-by key-import flow + folded Debian package name, matching
+            // the Registries page and the web frontend.
+            if (priv) {
+                html += App.codeBlock("APT", 'sudo install -d -m 0755 /etc/apt/keyrings\n# the token is the HTTP Basic password (username is ignored)\ncurl -fsSL -u "token:$TOKEN" ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + aptPkg + '.list\n# both apt (metadata) and static (the .deb download redirect) need the token\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf\nmachine ' + aptHost + ' login token password $TOKEN\nmachine ' + staticHost + ' login token password $TOKEN\nEOF\nsudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf\nsudo apt update && sudo apt install ' + aptPkg);
+            } else {
+                html += App.codeBlock("APT", 'sudo install -d -m 0755 /etc/apt/keyrings\ncurl -fsSL ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + aptPkg + '.list\nsudo apt update && sudo apt install ' + aptPkg);
+            }
+
+            html += App.codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "/tap.git\nbrew install pazer/build/" + p.name);
 
             if (priv) {
-                html += App.codeBlock("npm", "npm config set @buildhost:registry " + (svc.npm || "") + "/\nnpm config set //" + npmHost + "/:_authToken $TOKEN\nnpm install @buildhost/" + p.name);
+                html += App.codeBlock("npm", "npm config set //" + npmHost + "/:_authToken $TOKEN\nnpm install @buildhost/" + p.name + " --registry " + (svc.npm || ""));
             } else {
-                html += App.codeBlock("npm", "npm config set @buildhost:registry " + (svc.npm || "") + "/\nnpm install @buildhost/" + p.name);
+                html += App.codeBlock("npm", "npm install @buildhost/" + p.name + " --registry " + (svc.npm || ""));
             }
 
             if (priv) {
