@@ -33,7 +33,7 @@ automated agents. Every example below uses this server's configured base URL,
 buildhost uses bearer tokens. Provide one in whichever way your client allows:
 
 - HTTP header: `Authorization: Bearer <token>`
-- HTTP Basic auth: use the token as the username
+- HTTP Basic auth: send the token as the password (the username is ignored)
 - Query parameter: `?token=<token>` (for clients that cannot set headers, such
   as some APT and Homebrew flows)
 
@@ -103,6 +103,10 @@ echo "deb [signed-by=/etc/apt/keyrings/myapp.gpg] __APT_URL__/myapp stable main"
   | sudo tee /etc/apt/sources.list.d/myapp.list
 sudo apt update && sudo apt install myapp
 ```
+
+For a slash-namespaced project the repository URL keeps the slash, but the
+Debian package name folds `/` and `_` to `-` (for example, `myrepo/server` is
+served at `__APT_URL__/myrepo/server` and installs as `myrepo-server`).
 
 Homebrew (tap the generated Git repository, then install the formula):
 

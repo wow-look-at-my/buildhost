@@ -8,6 +8,7 @@ import (
 	"context"
 	"io"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -289,6 +290,102 @@ func TestDebRepackage(t *testing.T) {
 
 	assert.Equal(t, arMagic, string(data[:len(arMagic)]))
 
+}
+
+func TestDebPackageName(t *testing.T) {
+	tests := []struct {
+		project string
+		want    string
+	}{
+		{"myapp", "myapp"},
+		{"go-toolchain", "go-toolchain"},
+		{"pr-reviewer-agent/server", "pr-reviewer-agent-server"},
+		{"team/group/proj", "team-group-proj"},
+		{"my_app", "my-app"},
+		{"a/b_c", "a-b-c"},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, DebPackageName(tt.project), "DebPackageName(%q)", tt.project)
+	}
+}
+
+// TestDebRepackage_NamespacedName proves a slash-namespaced project produces a
+// valid Debian package: the control Package field, the .deb filename, and the
+// installed binary path all use the folded name (slash -> dash). dpkg rejects a
+// Package name containing '/', so this is what makes apt usable for namespaced
+// projects.
+func TestDebRepackage_NamespacedName(t *testing.T) {
+	rp := &Deb{}
+	input := makeInput()
+	input.Project.Name = "pr-reviewer-agent/server"
+	ctx := context.Background()
+
+	output, err := rp.Repackage(ctx, input)
+	require.NoError(t, err)
+	assert.Equal(t, "pr-reviewer-agent-server_1.2.3_amd64.deb", output.Filename)
+
+	data, err := io.ReadAll(output.Reader)
+	require.NoError(t, err)
+	require.NoError(t, output.Reader.Close())
+
+	members := readArMembers(t, data)
+	require.Contains(t, members, "control.tar.gz")
+	require.Contains(t, members, "data.tar.gz")
+
+	control := tarGzEntries(t, members["control.tar.gz"])
+	require.Contains(t, control, "./control")
+	assert.Contains(t, control["./control"], "Package: pr-reviewer-agent-server\n")
+	assert.NotContains(t, control["./control"], "Package: pr-reviewer-agent/server")
+
+	dataEntries := tarGzEntries(t, members["data.tar.gz"])
+	_, ok := dataEntries["./usr/bin/pr-reviewer-agent-server"]
+	assert.True(t, ok, "expected binary at ./usr/bin/pr-reviewer-agent-server, got entries: %v", dataEntries)
+}
+
+// readArMembers parses a Unix `ar` archive (the .deb container) into a map of
+// member name -> body. Each member has a fixed 60-byte header; the body is
+// followed by a single '\n' pad byte when its length is odd.
+func readArMembers(t *testing.T, data []byte) map[string][]byte {
+	t.Helper()
+	const magic = "!<arch>\n"
+	require.True(t, bytes.HasPrefix(data, []byte(magic)), "missing ar magic")
+	out := map[string][]byte{}
+	for p := len(magic); p+60 <= len(data); {
+		hdr := data[p : p+60]
+		p += 60
+		name := strings.TrimRight(string(hdr[0:16]), " ")
+		name = strings.TrimSuffix(name, "/") // GNU ar may suffix names with '/'
+		size, err := strconv.Atoi(strings.TrimSpace(string(hdr[48:58])))
+		require.NoError(t, err)
+		require.LessOrEqual(t, p+size, len(data), "ar member %q overruns archive", name)
+		out[name] = data[p : p+size]
+		p += size
+		if size%2 == 1 {
+			p++
+		}
+	}
+	return out
+}
+
+// tarGzEntries gunzips and untars data into a map of entry name -> contents.
+func tarGzEntries(t *testing.T, gzData []byte) map[string]string {
+	t.Helper()
+	gr, err := gzip.NewReader(bytes.NewReader(gzData))
+	require.NoError(t, err)
+	defer gr.Close()
+	tr := tar.NewReader(gr)
+	out := map[string]string{}
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		b, err := io.ReadAll(tr)
+		require.NoError(t, err)
+		out[hdr.Name] = string(b)
+	}
+	return out
 }
 
 func TestBrewRepackage(t *testing.T) {

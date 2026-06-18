@@ -28,6 +28,62 @@ Do not install formulas with a naked remote URL such as
 `brew install https://brew.pazer.build/go-toolchain`; modern Homebrew treats that
 as a formula or tap name instead of cloning it as a formula URL.
 
+## APT (Debian / Ubuntu)
+
+buildhost serves each project as its own GPG-signed APT repository at
+`apt.<domain>/<project>` (suite `stable`, component `main`). Packages are
+generated on demand from the uploaded binary -- nothing is pre-built.
+
+Import the repository signing key once, add the source, then install. The key is
+served per project path but is the same server-wide key:
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://apt.pazer.build/myapp/key.asc \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg
+echo "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] https://apt.pazer.build/myapp stable main" \
+  | sudo tee /etc/apt/sources.list.d/myapp.list
+sudo apt update && sudo apt install myapp
+```
+
+### Private projects
+
+A private project requires a token on every APT request. Put it in an
+`apt.conf.d`-style auth file so both `apt update` and the package download
+(which redirects to the `static` subdomain) authenticate. buildhost reads the
+token from the HTTP Basic **password** field (the username is ignored, so any
+value works -- `token` is used here by convention):
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+# key.asc is itself gated for a private project, so authenticate the key fetch too
+curl -fsSL -u "token:$TOKEN" https://apt.pazer.build/myapp/key.asc \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg
+echo "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] https://apt.pazer.build/myapp stable main" \
+  | sudo tee /etc/apt/sources.list.d/myapp.list
+cat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf >/dev/null
+machine apt.pazer.build login token password $TOKEN
+machine static.pazer.build login token password $TOKEN
+EOF
+sudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf
+sudo apt update && sudo apt install myapp
+```
+
+### Slash-namespaced projects
+
+A Debian package name cannot contain `/` (or `_`), so for a slash-namespaced
+project the package name folds those characters to `-`. Project
+`pr-reviewer-agent/server` is served at `apt.pazer.build/pr-reviewer-agent/server`
+(the slash stays in the repository URL) but installs as the package
+**`pr-reviewer-agent-server`**, and the binary lands at
+`/usr/bin/pr-reviewer-agent-server`:
+
+```bash
+echo "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] https://apt.pazer.build/pr-reviewer-agent/server stable main" \
+  | sudo tee /etc/apt/sources.list.d/pr-reviewer-agent-server.list
+sudo apt update && sudo apt install pr-reviewer-agent-server
+```
+
 ## Web frontend
 
 buildhost serves a public, read-only browse UI on the main domain (no subdomain). It is plain server-rendered HTML with **no JavaScript**, so it is consumable and indexable by crawlers and agents without evaluating a single-page app.
