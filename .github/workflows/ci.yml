@@ -345,15 +345,22 @@ jobs:
     uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@master
 
   # Publish the admin dashboard's static frontend to the production buildhost as
-  # a per-branch site (sites.<domain>/buildhost/branch/<slug>/). This replaces
-  # the old GitHub Pages PR preview: each branch is an independent, atomically
-  # replaced deployment, so there is no shared gh-pages branch to serialize on --
-  # the concurrency contention that made "Deploy PR previews" flaky. Runs on
-  # every push (no needs:), so a preview is published even if tests fail.
-  # Authenticates with GitHub Actions OIDC (no static token); the workflow-level
-  # id-token: write + contents: read are inherited here.
+  # a per-branch site (sites.<domain>/buildhost/branch/<slug>/), then post a
+  # sticky comment on the branch's open PR linking the live preview. This
+  # replaces the old GitHub Pages PR preview: each branch is an independent,
+  # atomically replaced deployment, so there is no shared gh-pages branch to
+  # serialize on -- the concurrency contention that made "Deploy PR previews"
+  # flaky. Runs on every push (no needs:), so a preview is published even if
+  # tests fail. Authenticates with GitHub Actions OIDC (no static token).
   publish-site:
     runs-on: ubuntu-latest
+    # Job-level permissions REPLACE the workflow-level block, so re-declare the
+    # ones this job needs: id-token (OIDC publish), contents (checkout), and
+    # pull-requests (the preview-link PR comment below).
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       # The sites serve route is /{project}/branch/{branch}/{path...}. With a
@@ -362,7 +369,44 @@ jobs:
       # "claude". Slugify '/' -> '-' to keep the branch a single segment.
       - id: slug
         run: echo "branch=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
-      - uses: ./.github/actions/buildhost-publish-site
+      - id: publish
+        uses: ./.github/actions/buildhost-publish-site
         with:
           branch: ${{ steps.slug.outputs.branch }}
           source_dir: ./internal/admin/static/
+      # Upsert a sticky comment on the branch's open PR with the live preview
+      # URL. No-ops on the default branch / any push without an open PR. Same
+      # marker-based create-or-update pattern as the route-diff job above.
+      - uses: wow-look-at-my/actions@typescript#latest
+        with:
+          script: |
+            const siteURL = "${{ steps.publish.outputs.site_url }}";
+            const gh = octokit("${{ github.token }}");
+            const repo = { owner: context.repo.owner, repo: context.repo.repo };
+            const branch = context.ref.replace("refs/heads/", "");
+
+            const prs = await gh.rest.pulls.list({ ...repo, head: `${repo.owner}:${branch}`, state: "open" });
+            if (prs.data.length === 0) {
+                core.info("No open PR for this branch");
+                process.exit(0);
+            }
+            const pr = prs.data[0].number;
+
+            const marker = "<!-- buildhost-preview -->";
+            const comments = await gh.paginate(gh.rest.issues.listComments, { ...repo, issue_number: pr });
+            const existing = comments.filter((c: any) => c.body?.includes(marker)).pop();
+
+            const body = [
+                marker,
+                "### Admin dashboard preview",
+                "",
+                `:rocket: This branch is deployed at ${siteURL}`,
+                "",
+                `<sub>Updated for ${context.sha.slice(0, 7)}.</sub>`,
+            ].join("\n");
+
+            if (existing) {
+                await gh.rest.issues.updateComment({ ...repo, comment_id: existing.id, body });
+            } else {
+                await gh.rest.issues.createComment({ ...repo, issue_number: pr, body });
+            }
