@@ -199,6 +199,38 @@ func TestServePackages_Success(t *testing.T) {
 	assert.Contains(t, body, "Architecture: amd64")
 }
 
+// TestServePackages_NamespacedName proves the Packages index for a
+// slash-namespaced project advertises a valid Debian package name (slash folded
+// to dash) in both the Package and Filename fields, so apt/dpkg accept it.
+func TestServePackages_NamespacedName(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "pr-reviewer-agent/server", Description: "namespaced", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.2.3", VersionNum: 1002003, GitBranch: db.LatestBranch}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, strings.NewReader("binary"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	req := httptest.NewRequest("GET", "/pr-reviewer-agent/server/dists/stable/main/binary-amd64/Packages", nil)
+	req = withRoute(req, proj, route{project: "pr-reviewer-agent/server", subPath: "dists/stable/main/binary-amd64/Packages"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "Package: pr-reviewer-agent-server\n")
+	assert.Contains(t, body, "Filename: pool/pr-reviewer-agent-server_1.2.3_amd64.deb")
+	assert.NotContains(t, body, "pr-reviewer-agent/server_1.2.3") // no slash in the deb name
+}
+
 func TestServePackages_DockerArtifact_Empty(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()

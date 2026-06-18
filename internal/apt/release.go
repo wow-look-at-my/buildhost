@@ -154,6 +154,7 @@ func (h *Handler) renderPackagesEntry(r *http.Request, project *db.Project, rele
 		}
 	}
 
+	pkgName := repackage.DebPackageName(project.Name)
 	desc := strings.NewReplacer("\n", " ", "\r", " ").Replace(project.Description)
 	return fmt.Sprintf(`Package: %s
 Version: %s
@@ -163,7 +164,7 @@ Size: %d
 SHA256: %s
 Description: %s
 
-`, project.Name, version, debArch, project.Name, version, debArch,
+`, pkgName, version, debArch, pkgName, version, debArch,
 		debSize, debSHA, desc)
 }
 
