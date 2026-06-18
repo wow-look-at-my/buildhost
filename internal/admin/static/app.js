@@ -204,6 +204,8 @@ App.pages.project = function (name) {
     App.renderSidebar("projects");
     App.fetch("/projects/" + name).then(function (d) {
         var p = d.project;
+        var svc = d.services || {};
+        var rels = d.releases || [];
         var html = "<h1>" + App.h(p.name) + "</h1>";
         html += '<div class="card"><h2>Project Info</h2><table class="info-table">';
         html += "<tr><td class='info-label'>ID</td><td>" + p.id + "</td></tr>";
@@ -216,8 +218,85 @@ App.pages.project = function (name) {
         html += '<tr><td class="info-label">Updated</td><td title="' + App.h(App.formatTime(p.updated_at)) + '">' + App.h(App.timeAgo(p.updated_at)) + "</td></tr>";
         html += "</table></div>";
 
+        // Download & Install (latest): non-versioned endpoints and commands so
+        // the newest build can be fetched without first opening a specific
+        // release. Mirrors the release page's endpoint card, version-free, plus
+        // the package-manager one-liners from the Registries page. Only shown
+        // once the project has a published release ("latest" 404s otherwise).
+        var hasPublished = false;
+        for (var ri = 0; ri < rels.length; ri++) { if (rels[ri].published) { hasPublished = true; break; } }
+        if (hasPublished) {
+            var dlBase = (svc.dl || "") + "/" + p.name;
+            var aptBase = (svc.apt || "") + "/" + p.name;
+            var brewU = (svc.brew || "") + "/Formula/" + p.name + ".rb";
+            var npmU = (svc.npm || "") + "/@buildhost/" + p.name;
+            var ociU = (svc.oci || "") + "/v2/" + p.name + "/manifests/latest";
+            var npmHost = (svc.npm || "").replace(/^https?:\/\//, "");
+            var ociHost = (svc.oci || "").replace(/^https?:\/\//, "");
+            var aptHost = (svc.apt || "").replace(/^https?:\/\//, "");
+            var staticHost = (svc.static || "").replace(/^https?:\/\//, "");
+            // Slash-namespaced names keep their slash in the repo URL but install
+            // under a folded Debian package name (repackage.DebPackageName folds
+            // '/' and '_' to '-'), so apt and dpkg agree.
+            var aptPkg = p.name.replace(/[/_]/g, "-");
+            var priv = !!p.is_private;
+
+            // endpointRow: an <a> + copy-button cell for a fixed (latest)
+            // service endpoint. dataCopy, when set, is what the copy button
+            // yields (APT links to the Release file but copies the repo base);
+            // otherwise the link text is copied.
+            var endpointRow = function (label, text, href, dataCopy) {
+                var link = Html.a(text).attr("href", href);
+                if (dataCopy) link.attr("data-copy", dataCopy);
+                return Html.tr(
+                    Html.td(label).cls("info-label"),
+                    Html.td(link, Html.el("copy-btn").attr("data-src", "a")).cls("endpoint-cell")
+                );
+            };
+
+            // curl direct download. A private project's dl link redirects to the
+            // static host, and curl only re-sends credentials across that hop
+            // with --location-trusted; the token is the HTTP Basic password.
+            var curlCmd = priv
+                ? 'curl -fsSL --location-trusted -u "token:$TOKEN" -O \\\n  "' + dlBase + '?os=linux&arch=amd64"'
+                : 'curl -fsSL -O "' + dlBase + '?os=linux&arch=amd64"';
+
+            // APT: signed-by key-import flow + folded Debian package name,
+            // matching the Registries page and the web frontend.
+            var aptCmd = priv
+                ? 'sudo install -d -m 0755 /etc/apt/keyrings\n# the token is the HTTP Basic password (username is ignored)\ncurl -fsSL -u "token:$TOKEN" ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + aptPkg + '.list\n# both apt (metadata) and static (the .deb download redirect) need the token\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf\nmachine ' + aptHost + ' login token password $TOKEN\nmachine ' + staticHost + ' login token password $TOKEN\nEOF\nsudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf\nsudo apt update && sudo apt install ' + aptPkg
+                : 'sudo install -d -m 0755 /etc/apt/keyrings\ncurl -fsSL ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + aptPkg + '.list\nsudo apt update && sudo apt install ' + aptPkg;
+
+            var npmCmd = priv
+                ? "npm config set //" + npmHost + "/:_authToken $TOKEN\nnpm install @buildhost/" + p.name + " --registry " + (svc.npm || "")
+                : "npm install @buildhost/" + p.name + " --registry " + (svc.npm || "");
+
+            var dockerCmd = priv
+                ? "echo $TOKEN | docker login " + ociHost + " -u token --password-stdin\ndocker pull " + ociHost + "/" + p.name + ":latest"
+                : "docker pull " + ociHost + "/" + p.name + ":latest";
+
+            html += Html.div(
+                Html.h2("Download & Install ", Html.span("— latest").cls("muted").style("font-weight:400")),
+                Html.p("Always resolves to the newest published release. To pin a specific version, open a release below.").cls("section-desc"),
+                Html.table(
+                    Html.tr(
+                        Html.td("Direct download").cls("info-label"),
+                        Html.td(Html.raw(App.urlTpl(dlBase + "?os={os}&arch={arch}", dlBase + "?os=", "&arch="))).cls("endpoint-cell")
+                    ),
+                    endpointRow("APT", aptBase, aptBase + "/dists/stable/Release", aptBase),
+                    endpointRow("Homebrew", brewU, brewU, null),
+                    endpointRow("npm", npmU, npmU, null),
+                    endpointRow("OCI", ociU, ociU, null)
+                ).cls("info-table"),
+                Html.raw(App.codeBlock("Direct download (curl)", curlCmd)),
+                Html.raw(App.codeBlock("APT", aptCmd)),
+                Html.raw(App.codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "/tap.git\nbrew install pazer/build/" + p.name)),
+                Html.raw(App.codeBlock("npm", npmCmd)),
+                Html.raw(App.codeBlock("Docker", dockerCmd))
+            ).cls("card");
+        }
+
         html += '<div class="card"><h2>Releases</h2><table class="data-table"><thead><tr><th>Version</th><th>Branch</th><th>Commit</th><th>Status</th><th>Artifacts</th><th>Published</th><th>Created</th></tr></thead><tbody>';
-        var rels = d.releases || [];
         if (rels.length === 0) {
             html += '<tr><td colspan="7" class="empty">No releases yet</td></tr>';
         } else {
@@ -236,7 +315,7 @@ App.pages.project = function (name) {
 
         var sites = d.sites || [];
         if (sites.length > 0) {
-            var sitesBase = (d.services || {}).sites || "";
+            var sitesBase = svc.sites || "";
             html += '<div class="card"><h2>Sites</h2><table class="data-table"><thead><tr><th>Branch</th><th>Files</th><th>Size</th><th>Commit</th><th>Updated</th><th>Link</th></tr></thead><tbody>';
             for (var k = 0; k < sites.length; k++) {
                 var si = sites[k];
