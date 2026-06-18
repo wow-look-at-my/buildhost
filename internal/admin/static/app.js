@@ -204,6 +204,8 @@ App.pages.project = function (name) {
     App.renderSidebar("projects");
     App.fetch("/projects/" + name).then(function (d) {
         var p = d.project;
+        var svc = d.services || {};
+        var rels = d.releases || [];
         var html = "<h1>" + App.h(p.name) + "</h1>";
         html += '<div class="card"><h2>Project Info</h2><table class="info-table">';
         html += "<tr><td class='info-label'>ID</td><td>" + p.id + "</td></tr>";
@@ -216,8 +218,62 @@ App.pages.project = function (name) {
         html += '<tr><td class="info-label">Updated</td><td title="' + App.h(App.formatTime(p.updated_at)) + '">' + App.h(App.timeAgo(p.updated_at)) + "</td></tr>";
         html += "</table></div>";
 
+        // Download & Install (latest): non-versioned endpoints and commands so
+        // the newest build can be fetched without first opening a specific
+        // release. Mirrors the release page's endpoint card, version-free, plus
+        // the package-manager one-liners from the Registries page. Only shown
+        // once the project has a published release ("latest" 404s otherwise).
+        var hasPublished = false;
+        for (var ri = 0; ri < rels.length; ri++) { if (rels[ri].published) { hasPublished = true; break; } }
+        if (hasPublished) {
+            var dlBase = (svc.dl || "") + "/" + p.name;
+            var aptBase = (svc.apt || "") + "/" + p.name;
+            var brewU = (svc.brew || "") + "/Formula/" + p.name + ".rb";
+            var npmU = (svc.npm || "") + "/@buildhost/" + p.name;
+            var ociU = (svc.oci || "") + "/v2/" + p.name + "/manifests/latest";
+            var npmHost = (svc.npm || "").replace(/^https?:\/\//, "");
+            var ociHost = (svc.oci || "").replace(/^https?:\/\//, "");
+            var bin = p.name.split("/").pop();               // basename for local filenames
+            var brewFormula = p.name.replace(/\//g, "-");     // tap formula name (no slashes)
+            var priv = !!p.is_private;
+
+            html += '<div class="card"><h2>Download &amp; Install <span class="muted" style="font-weight:400">— latest</span></h2>';
+            html += '<p class="section-desc">Always resolves to the newest published release. To pin a specific version, open a release below.</p>';
+            html += '<table class="info-table">';
+            html += "<tr><td class='info-label'>Direct download</td><td class='endpoint-cell'>" + App.urlTpl(dlBase + "?os={os}&arch={arch}", dlBase + "?os=", "&arch=") + "</td></tr>";
+            html += "<tr><td class='info-label'>APT</td><td class='endpoint-cell'><a href='" + App.h(aptBase + "/dists/stable/Release") + "' data-copy='" + App.h(aptBase) + "'>" + App.h(aptBase) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
+            html += "<tr><td class='info-label'>Homebrew</td><td class='endpoint-cell'><a href='" + App.h(brewU) + "'>" + App.h(brewU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
+            html += "<tr><td class='info-label'>npm</td><td class='endpoint-cell'><a href='" + App.h(npmU) + "'>" + App.h(npmU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
+            html += "<tr><td class='info-label'>OCI</td><td class='endpoint-cell'><a href='" + App.h(ociU) + "'>" + App.h(ociU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
+            html += "</table>";
+
+            var authHdr = priv ? '-H "Authorization: Bearer $TOKEN" ' : "";
+            html += App.codeBlock("Direct download (curl)", 'curl -fsSL ' + authHdr + '\\\n  "' + dlBase + '?os=linux&arch=amd64" -o ' + bin);
+
+            if (priv) {
+                html += App.codeBlock("APT", 'echo "deb [trusted=yes] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + bin + '.list\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/' + bin + '.conf\nmachine ' + aptBase + '\n  login token\n  password $TOKEN\nEOF\nsudo apt update && sudo apt install ' + bin);
+            } else {
+                html += App.codeBlock("APT", 'echo "deb [trusted=yes] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + bin + '.list\nsudo apt update && sudo apt install ' + bin);
+            }
+
+            html += App.codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "/tap.git\nbrew install pazer/build/" + brewFormula);
+
+            if (priv) {
+                html += App.codeBlock("npm", "npm config set @buildhost:registry " + (svc.npm || "") + "/\nnpm config set //" + npmHost + "/:_authToken $TOKEN\nnpm install @buildhost/" + p.name);
+            } else {
+                html += App.codeBlock("npm", "npm config set @buildhost:registry " + (svc.npm || "") + "/\nnpm install @buildhost/" + p.name);
+            }
+
+            if (priv) {
+                html += App.codeBlock("Docker", "echo $TOKEN | docker login " + ociHost + " -u token --password-stdin\ndocker pull " + ociHost + "/" + p.name + ":latest");
+            } else {
+                html += App.codeBlock("Docker", "docker pull " + ociHost + "/" + p.name + ":latest");
+            }
+
+            html += "</div>";
+        }
+
         html += '<div class="card"><h2>Releases</h2><table class="data-table"><thead><tr><th>Version</th><th>Branch</th><th>Commit</th><th>Status</th><th>Artifacts</th><th>Published</th><th>Created</th></tr></thead><tbody>';
-        var rels = d.releases || [];
         if (rels.length === 0) {
             html += '<tr><td colspan="7" class="empty">No releases yet</td></tr>';
         } else {
@@ -236,7 +292,7 @@ App.pages.project = function (name) {
 
         var sites = d.sites || [];
         if (sites.length > 0) {
-            var sitesBase = (d.services || {}).sites || "";
+            var sitesBase = svc.sites || "";
             html += '<div class="card"><h2>Sites</h2><table class="data-table"><thead><tr><th>Branch</th><th>Files</th><th>Size</th><th>Commit</th><th>Updated</th><th>Link</th></tr></thead><tbody>';
             for (var k = 0; k < sites.length; k++) {
                 var si = sites[k];
