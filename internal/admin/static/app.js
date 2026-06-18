@@ -10,61 +10,6 @@ App.h = function (s) {
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 };
 
-// --- tiny HTML builder ---------------------------------------------------
-// Build markup as nested calls instead of string concatenation:
-//   App.div(App.h2("Title", App.span("note").cls("muted"))).cls("card")
-// Text children are HTML-escaped by default (so a forgotten App.h() can't turn
-// into an injection); element children and App.raw(...) render as-is; arrays
-// flatten; null/undefined/false/"" are skipped (so `cond && node` works).
-// Elements stringify via toString(), so `html += App.div(...)` and string
-// concatenation keep working alongside the older string-built code.
-App.Raw = function (html) { this.html = html == null ? "" : String(html); };
-App.Raw.prototype.toString = function () { return this.html; };
-// raw marks an already-built HTML string as trusted (e.g. the output of
-// App.urlTpl / App.codeBlock), so the builder emits it verbatim.
-App.raw = function (html) { return new App.Raw(html); };
-
-App._VOID = { area: 1, base: 1, br: 1, col: 1, embed: 1, hr: 1, img: 1, input: 1, link: 1, meta: 1, param: 1, source: 1, track: 1, wbr: 1 };
-
-App.El = function (tag, kids) { this.tag = tag; this.a = {}; this.kids = kids || []; };
-App.El.prototype.attr = function (k, v) { this.a[k] = v; return this; };
-App.El.prototype.cls = function (v) { this.a["class"] = v; return this; };
-App.El.prototype.style = function (v) { this.a.style = v; return this; };
-App.El.prototype.add = function () { for (var i = 0; i < arguments.length; i++) this.kids.push(arguments[i]); return this; };
-App.El.prototype.toString = function () {
-    var attrs = "";
-    for (var k in this.a) {
-        if (!Object.prototype.hasOwnProperty.call(this.a, k)) continue;
-        var v = this.a[k];
-        if (v == null || v === false) continue;
-        if (v === true) { attrs += " " + k; continue; }
-        attrs += " " + k + '="' + App.h(v) + '"';
-    }
-    if (App._VOID[this.tag]) return "<" + this.tag + attrs + ">";
-    return "<" + this.tag + attrs + ">" + App.render(this.kids) + "</" + this.tag + ">";
-};
-
-// render stringifies any child node: element/raw verbatim, array flattened,
-// anything else escaped as text.
-App.render = function (node) {
-    if (node == null || node === false || node === true) return "";
-    if (node instanceof App.El || node instanceof App.Raw) return node.toString();
-    if (Array.isArray(node)) {
-        var out = "";
-        for (var i = 0; i < node.length; i++) out += App.render(node[i]);
-        return out;
-    }
-    return App.h(node);
-};
-
-// App.el(tag, ...children) for arbitrary/custom tags (e.g. "copy-btn"); common
-// tags also get a shorthand App.<tag>(...children).
-App.el = function (tag) { return new App.El(tag, Array.prototype.slice.call(arguments, 1)); };
-["div", "span", "p", "a", "h1", "h2", "h3", "code", "pre", "strong", "sub", "ul", "li",
-    "table", "thead", "tbody", "tr", "th", "td", "form", "label", "button"].forEach(function (tag) {
-        App[tag] = function () { return new App.El(tag, Array.prototype.slice.call(arguments)); };
-    });
-
 App.humanSize = function (b) {
     if (b < 1024) return b + " B";
     var units = ["KiB", "MiB", "GiB", "TiB", "PiB"];
@@ -301,11 +246,11 @@ App.pages.project = function (name) {
             // yields (APT links to the Release file but copies the repo base);
             // otherwise the link text is copied.
             var endpointRow = function (label, text, href, dataCopy) {
-                var link = App.a(text).attr("href", href);
+                var link = Html.a(text).attr("href", href);
                 if (dataCopy) link.attr("data-copy", dataCopy);
-                return App.tr(
-                    App.td(label).cls("info-label"),
-                    App.td(link, App.el("copy-btn").attr("data-src", "a")).cls("endpoint-cell")
+                return Html.tr(
+                    Html.td(label).cls("info-label"),
+                    Html.td(link, Html.el("copy-btn").attr("data-src", "a")).cls("endpoint-cell")
                 );
             };
 
@@ -330,24 +275,24 @@ App.pages.project = function (name) {
                 ? "echo $TOKEN | docker login " + ociHost + " -u token --password-stdin\ndocker pull " + ociHost + "/" + p.name + ":latest"
                 : "docker pull " + ociHost + "/" + p.name + ":latest";
 
-            html += App.div(
-                App.h2("Download & Install ", App.span("— latest").cls("muted").style("font-weight:400")),
-                App.p("Always resolves to the newest published release. To pin a specific version, open a release below.").cls("section-desc"),
-                App.table(
-                    App.tr(
-                        App.td("Direct download").cls("info-label"),
-                        App.td(App.raw(App.urlTpl(dlBase + "?os={os}&arch={arch}", dlBase + "?os=", "&arch="))).cls("endpoint-cell")
+            html += Html.div(
+                Html.h2("Download & Install ", Html.span("— latest").cls("muted").style("font-weight:400")),
+                Html.p("Always resolves to the newest published release. To pin a specific version, open a release below.").cls("section-desc"),
+                Html.table(
+                    Html.tr(
+                        Html.td("Direct download").cls("info-label"),
+                        Html.td(Html.raw(App.urlTpl(dlBase + "?os={os}&arch={arch}", dlBase + "?os=", "&arch="))).cls("endpoint-cell")
                     ),
                     endpointRow("APT", aptBase, aptBase + "/dists/stable/Release", aptBase),
                     endpointRow("Homebrew", brewU, brewU, null),
                     endpointRow("npm", npmU, npmU, null),
                     endpointRow("OCI", ociU, ociU, null)
                 ).cls("info-table"),
-                App.raw(App.codeBlock("Direct download (curl)", curlCmd)),
-                App.raw(App.codeBlock("APT", aptCmd)),
-                App.raw(App.codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "/tap.git\nbrew install pazer/build/" + p.name)),
-                App.raw(App.codeBlock("npm", npmCmd)),
-                App.raw(App.codeBlock("Docker", dockerCmd))
+                Html.raw(App.codeBlock("Direct download (curl)", curlCmd)),
+                Html.raw(App.codeBlock("APT", aptCmd)),
+                Html.raw(App.codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "/tap.git\nbrew install pazer/build/" + p.name)),
+                Html.raw(App.codeBlock("npm", npmCmd)),
+                Html.raw(App.codeBlock("Docker", dockerCmd))
             ).cls("card");
         }
 
