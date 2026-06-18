@@ -10,6 +10,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 )
 
 // siteName is the product name shown in the header and titles.
@@ -163,8 +164,16 @@ func buildInstallInfo(r *http.Request, project, version string, hasBinary bool) 
 		info.Curl = fmt.Sprintf("curl -LO %q", dlURL(r, project, "", "linux", "amd64", "raw"))
 		info.Brew = "brew tap pazer/build " + serviceURL(r, "brew", "tap.git") + "\nbrew install pazer/build/" + project
 		info.Npm = "npm install @buildhost/" + project + " --registry " + serviceBase(r, "npm")
-		info.Apt = fmt.Sprintf("echo \"deb [signed-by=/etc/apt/keyrings/%s.gpg] %s stable main\" | sudo tee /etc/apt/sources.list.d/%s.list",
-			lastSegment(project), serviceURL(r, "apt", project), lastSegment(project))
+		aptURL := serviceURL(r, "apt", project)
+		// A slash-namespaced project keeps its slash in the repo URL but installs
+		// under a folded Debian package name (see repackage.DebPackageName).
+		pkg := repackage.DebPackageName(project)
+		info.Apt = fmt.Sprintf(
+			"sudo install -d -m 0755 /etc/apt/keyrings\n"+
+				"curl -fsSL %s/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\n"+
+				"echo \"deb [signed-by=/etc/apt/keyrings/buildhost.gpg] %s stable main\" | sudo tee /etc/apt/sources.list.d/%s.list\n"+
+				"sudo apt update && sudo apt install %s",
+			aptURL, aptURL, pkg, pkg)
 	}
 	return info
 }
@@ -299,13 +308,6 @@ func releasePath(project, version string) string {
 }
 
 // ----- formatting helpers --------------------------------------------------
-
-func lastSegment(name string) string {
-	if i := strings.LastIndexByte(name, '/'); i >= 0 {
-		return name[i+1:]
-	}
-	return name
-}
 
 func shortCommit(c string) string {
 	if len(c) > 12 {

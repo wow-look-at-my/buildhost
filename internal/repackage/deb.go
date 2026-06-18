@@ -30,19 +30,24 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 		version = fmt.Sprintf("%d", input.Release.VersionNum)
 	}
 
+	// A buildhost project name may be slash-namespaced (e.g. "myrepo/server"),
+	// which is not a legal Debian package name. Fold it to a valid one (see
+	// DebPackageName); this is also the installed binary's name on $PATH.
+	pkgName := DebPackageName(input.Project.Name)
+
 	installDir := "/usr/bin/"
 	switch input.Artifact.Kind {
 	case db.KindLibrary:
-		installDir = fmt.Sprintf("/usr/lib/%s/", input.Project.Name)
+		installDir = fmt.Sprintf("/usr/lib/%s/", pkgName)
 	case db.KindAssets:
-		installDir = fmt.Sprintf("/usr/share/%s/", input.Project.Name)
+		installDir = fmt.Sprintf("/usr/share/%s/", pkgName)
 	case db.KindArchive:
-		installDir = fmt.Sprintf("/usr/share/%s/", input.Project.Name)
+		installDir = fmt.Sprintf("/usr/share/%s/", pkgName)
 	}
 
 	controlContent := fmt.Sprintf(
 		"Package: %s\nVersion: %s\nArchitecture: %s\nMaintainer: %s\nDescription: %s\nSection: utils\nPriority: optional\n",
-		sanitizeControlField(input.Project.Name), version, arch,
+		pkgName, version, arch,
 		sanitizeControlField(firstNonEmpty(input.Project.Homepage, "unknown")),
 		sanitizeControlField(firstNonEmpty(input.Project.Description, input.Project.Name)))
 
@@ -55,11 +60,11 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 		return nil, fmt.Errorf("build control.tar.gz: %w", err)
 	}
 
-	fileName := input.Project.Name
+	fileName := pkgName
 	if input.Artifact.Kind == db.KindLibrary {
 		fileName = input.Artifact.Filename
 		if fileName == "" {
-			fileName = "lib" + input.Project.Name + ".so"
+			fileName = "lib" + pkgName + ".so"
 		}
 	}
 
@@ -85,7 +90,7 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 	}
 
 	debBinary := []byte("2.0\n")
-	filename := fmt.Sprintf("%s_%s_%s.deb", input.Project.Name, version, arch)
+	filename := fmt.Sprintf("%s_%s_%s.deb", pkgName, version, arch)
 
 	r := streamPipe(func(w io.Writer) error {
 		defer func() {
@@ -199,6 +204,20 @@ func debArch(a db.Arch) string {
 	default:
 		return string(a)
 	}
+}
+
+// DebPackageName converts a buildhost project name into a valid Debian package
+// name. Project names may be slash-namespaced (e.g. "myrepo/server") and may
+// contain underscores; neither '/' nor '_' is permitted in a Debian package
+// name (Policy 5.6.7 allows only lower-case letters, digits, '+', '-' and '.'),
+// so both are folded to '-'. buildhost project names are already validated to be
+// lower-case and to start with an alphanumeric, so the result always satisfies
+// the package-name grammar. A plain single-segment name (no '/' or '_') is
+// returned unchanged, so existing packages keep their names. The same value is
+// used for the Packages index, the deb's control Package field, the pool
+// filename, and the installed binary, so apt and dpkg always agree.
+func DebPackageName(project string) string {
+	return strings.NewReplacer("/", "-", "_", "-").Replace(project)
 }
 
 func sanitizeControlField(s string) string {

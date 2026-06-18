@@ -14,5 +14,9 @@ internal/api/gen_git_branch.go
 internal/api/gen_git_commit.go
 .claude/
 
+# go-toolchain injects this GOMEMLIMIT guard into every main package it builds
+# (regenerated each build, "DO NOT EDIT"); it is not source.
+cmd/buildhost/gomemlimit_gen.go
+
 # CA bundle is fetched at build time (scripts/fetch-cacerts.sh), never committed.
 internal/repackage/cacerts/ca-certificates.crt
