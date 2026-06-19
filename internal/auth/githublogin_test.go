@@ -249,6 +249,51 @@ func TestSessionCookie_RepoAccessGatesPrivateProject(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, run("denied"), "user without repo access is denied")
 }
 
+// A signed-in browser that lacks access to the project's repo gets an actionable
+// HTML page (403) -- NOT a redirect (which would loop) and NOT the dead-end JSON
+// 401 a browser cannot act on. The page names the repo and offers a sign-out.
+func TestRequireProject_Browser_SignedInButForbidden_HTMLPage(t *testing.T) {
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound) // user can't see any repo
+	}))
+	defer gh.Close()
+	orig := githubAPIBase
+	githubAPIBase = gh.URL
+	defer func() { githubAPIBase = orig }()
+
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+	mw.GitHub = NewGitHubAuth("cid", "secret")
+
+	proj := &db.Project{Name: "secret", IsPrivate: true, Versioning: "auto", GithubRepo: "PazerOP/secret"}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+	parse := func(r *http.Request) RouteInfo {
+		return testRouteInfo{project: "secret", access: ReadAccess}
+	}
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	})
+	handler := mw.Authenticate(requireProjectFunc(parse, inner))
+
+	req := httptest.NewRequest("GET", "/secret/branch/pr-1/", nil)
+	req.Host = "sites.pazer.build"
+	req.Header.Set("Accept", "text/html")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: mintSession("bob", "tok", time.Now().Add(time.Hour))})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Empty(t, rec.Header().Get("Location"), "must not redirect a signed-in user (would loop)")
+	body := rec.Body.String()
+	assert.Contains(t, body, "Access denied")
+	assert.Contains(t, body, "bob")            // who you're signed in as
+	assert.Contains(t, body, "PazerOP/secret") // the repo you need
+	// Sign-out link points at the apex __signout with a next= back to the resource.
+	assert.Contains(t, body, signoutPath)
+	assert.Contains(t, body, url.QueryEscape("https://sites.pazer.build/secret/branch/pr-1/"))
+	assert.NotContains(t, body, "authentication required")
+}
+
 // A project with no recorded GitHub repo cannot be opened via GitHub login.
 func TestUserCanReadProject_NoRepo_Denied(t *testing.T) {
 	d := openTestDB(t)

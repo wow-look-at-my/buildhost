@@ -111,6 +111,15 @@ func loginRedirectURL(r *http.Request) string {
 	return apexRootURL(r) + signinStartPath + "?next=" + url.QueryEscape(next)
 }
 
+// signoutURL is the apex sign-out entrypoint, carrying a next= back to the full
+// original URL. After clearing the session the browser returns to the resource,
+// which (now anonymous) sends it to GitHub sign-in -- so a forbidden user can
+// re-authenticate as a different account.
+func signoutURL(r *http.Request) string {
+	next := RequestBaseURL(r) + r.URL.RequestURI()
+	return apexRootURL(r) + signoutPath + "?next=" + url.QueryEscape(next)
+}
+
 // apexRootURL returns scheme://<apex>, deriving the apex from the request Host by
 // stripping a known leading service label (apt/dl/sites/...). Correct whether
 // called from a service subdomain (strips it) or the apex itself (nothing to
