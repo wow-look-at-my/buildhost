@@ -126,6 +126,31 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
+// defaultBranch is the branch a project's bare root resolves to: its
+// projects.default_branch (learned from GitHub on publish, e.g. "main"),
+// falling back to the schema/seed default ("master") when unset. This is the
+// same branch the apex "latest" download tracks, so the root site URL and
+// "latest" stay consistent.
+func defaultBranch(project *db.Project) string {
+	if project != nil && project.DefaultBranch != "" {
+		return project.DefaultBranch
+	}
+	return db.LatestBranch
+}
+
+// RedirectToDefaultBranch sends the bare site root (/{project} or /{project}/)
+// to /{project}/branch/{default}/, so a project's root URL resolves to its
+// canonical site without the caller having to know which branch it lives on.
+// The target is a mutable pointer -- the default branch can change and its site
+// updates in place -- so it is a 302 marked no-store, never cached like the
+// permanent trailing-slash canonicalization in Serve.
+func (h *Handler) RedirectToDefaultBranch(w http.ResponseWriter, r *http.Request) {
+	project := auth.ProjectFrom(r.Context())
+	target := "/" + project.Name + "/branch/" + defaultBranch(project) + "/"
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, target, http.StatusFound)
+}
+
 func serveTarFile(w http.ResponseWriter, tr *tar.Reader, name string, hdr *tar.Header, status int) {
 	w.Header().Set("Content-Type", contentType(name))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", hdr.Size))
