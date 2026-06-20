@@ -114,16 +114,37 @@ type Config struct {
 }
 
 // resolvePEM returns PEM contents from a config value that is either the PEM
-// itself (contains a BEGIN marker) or a path to a PEM file. A path that cannot
-// be read falls through unchanged, so the downstream key parser reports the
+// itself (contains a BEGIN marker) or a path to a PEM file. Inline PEM passed
+// through an environment variable (Docker, docker-compose, .env) commonly
+// arrives with its newlines escaped as the two-character sequence "\n" -- a
+// multi-line value cannot survive a single-line env var otherwise -- which the
+// downstream key parser then rejects, silently disabling GitHub App auth. So an
+// escaped inline PEM is un-escaped back to real newlines. A path that cannot be
+// read falls through unchanged, so the downstream key parser reports the
 // malformed key rather than this swallowing it.
 func resolvePEM(v string) string {
 	if strings.Contains(v, "-----BEGIN") {
-		return v
+		return unescapePEMNewlines(v)
 	}
 	if b, err := os.ReadFile(v); err == nil {
 		return string(b)
 	}
+	return v
+}
+
+// unescapePEMNewlines turns the literal "\n" / "\r\n" escape sequences a
+// multi-line secret picks up when squeezed through an environment variable back
+// into real newlines. It only acts when the value has no real newline yet, so a
+// PEM read from a file (or supplied via a YAML block scalar / heredoc with
+// genuine newlines) is returned untouched. PEM bodies are base64, dashes and
+// newlines and never legitimately contain a backslash, so this cannot corrupt a
+// real key.
+func unescapePEMNewlines(v string) string {
+	if strings.Contains(v, "\n") {
+		return v
+	}
+	v = strings.ReplaceAll(v, `\r\n`, "\n")
+	v = strings.ReplaceAll(v, `\n`, "\n")
 	return v
 }
 
