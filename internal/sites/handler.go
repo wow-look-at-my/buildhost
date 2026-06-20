@@ -63,7 +63,9 @@ func (r route) AllowsPublicRead(ctx context.Context, database *db.DB, project *d
 	}
 	branch := r.branch
 	if r.root {
-		branch = defaultBranch(project)
+		// Resolve the same branch the root redirect targets, so the public-read
+		// gate and the redirect agree on which site the bare root serves.
+		branch = resolveRootBranch(ctx, database, project)
 	}
 	if branch == "" {
 		return false

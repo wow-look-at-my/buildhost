@@ -2,6 +2,7 @@ package sites
 
 import (
 	"archive/tar"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -138,6 +139,44 @@ func defaultBranch(project *db.Project) string {
 	return db.LatestBranch
 }
 
+// resolveRootBranch returns the branch the bare site root should resolve to. It
+// prefers the project's default branch (defaultBranch), but only when a site has
+// actually been published there. projects.default_branch is a best-effort hint
+// learned from GitHub on publish; it can lag at the seed "master" -- e.g. until a
+// GitHub-OIDC publish corrects it, or when buildhost can't reach a private repo
+// to learn its real default -- in which case the sites may all live on a branch
+// (commonly "main") the hint doesn't name. Blindly trusting it then bounces the
+// root to /{project}/branch/{default}/ where no site exists, a guaranteed 404.
+//
+// So when the default branch has no site, fall back to one that does: prefer the
+// conventional "main"/"master" names (so the root lands on the canonical site,
+// not a more-recently-updated ephemeral PR-preview branch), then the most
+// recently updated site as a last resort. With no DB (unit tests) or no sites at
+// all, the default branch is returned unchanged, preserving the prior behavior.
+func resolveRootBranch(ctx context.Context, database *db.DB, project *db.Project) string {
+	preferred := defaultBranch(project)
+	if database == nil || siteExists(ctx, database, project.ID, preferred) {
+		return preferred
+	}
+	for _, b := range [...]string{"main", db.LatestBranch} {
+		if b != preferred && siteExists(ctx, database, project.ID, b) {
+			return b
+		}
+	}
+	if sites, err := database.ListSites(ctx, project.ID); err == nil && len(sites) > 0 {
+		return sites[0].Branch // ListSites is ordered updated_at DESC
+	}
+	return preferred // no sites at all -- keep the default (Serve 404s as before)
+}
+
+func siteExists(ctx context.Context, database *db.DB, projectID int64, branch string) bool {
+	if branch == "" {
+		return false
+	}
+	_, err := database.GetSite(ctx, projectID, branch)
+	return err == nil
+}
+
 // RedirectToDefaultBranch sends the bare site root (/{project} or /{project}/)
 // to /{project}/branch/{default}/, so a project's root URL resolves to its
 // canonical site without the caller having to know which branch it lives on.
@@ -146,7 +185,7 @@ func defaultBranch(project *db.Project) string {
 // permanent trailing-slash canonicalization in Serve.
 func (h *Handler) RedirectToDefaultBranch(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
-	target := "/" + project.Name + "/branch/" + defaultBranch(project) + "/"
+	target := "/" + project.Name + "/branch/" + resolveRootBranch(r.Context(), h.DB, project) + "/"
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, target, http.StatusFound)
 }
