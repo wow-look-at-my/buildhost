@@ -441,7 +441,7 @@ Environment variables:
 | `BUILDHOST_DB_PATH` | `./data/buildhost.db` | SQLite database path |
 | `BUILDHOST_OIDC_ISSUERS` | (none) | Comma-separated trusted OIDC issuers for auto-provisioning |
 | `BUILDHOST_OIDC_ORGS` | (none) | Comma-separated allowed orgs for OIDC auto-provisioning, matched case-insensitively (`*` for all) |
-| `BUILDHOST_OIDC_EVENTS` | `push,pull_request` | Comma-separated allowed event types for OIDC auto-provisioning (`*` for all) |
+| `BUILDHOST_OIDC_EVENTS` | `push,pull_request,workflow_dispatch` | Comma-separated allowed event types for OIDC auto-provisioning (`*` for all) |
 | `BUILDHOST_GITHUB_WEBHOOK_SECRET` | (off) | Enables `POST /api/v1/webhooks/github`; used to verify GitHub webhook HMAC signatures |
 | `BUILDHOST_RETENTION_INTERVAL` | (off) | Background GC sweep cadence (e.g. `1h`); empty/`0` disables the sweeper |
 | `BUILDHOST_RETENTION_KEEP_N` | `10` | Initial published releases kept per `(project, git branch)` -- seeds the dashboard policy on first start, then managed in the UI |
@@ -523,7 +523,7 @@ BUILDHOST_OIDC_ISSUERS=https://token.actions.githubusercontent.com \
   buildhost serve
 ```
 
-By default, `push` and `pull_request` events are allowed. Both limit auto-provisioning to users with write access to the repository: a `push` comes from a member/collaborator, and a `pull_request` from a fork does not receive an OIDC token at all (so only same-repo PRs, i.e. members, can authenticate). `pull_request` is included by default so PR-preview deploys work out of the box. Set `BUILDHOST_OIDC_EVENTS=*` to allow all event types.
+By default, `push`, `pull_request`, and `workflow_dispatch` events are allowed. All three limit auto-provisioning to users with write access to the repository: a `push` comes from a member/collaborator, a `pull_request` from a fork does not receive an OIDC token at all (so only same-repo PRs, i.e. members, can authenticate), and a `workflow_dispatch` (a manual run) can only be triggered by a user with write access to the repo -- so it carries the same write-access guarantee as `push`. `pull_request` is included by default so PR-preview deploys work out of the box, and `workflow_dispatch` so manual release/publish dispatches work out of the box. Set `BUILDHOST_OIDC_EVENTS=*` to allow all event types.
 
 If `BUILDHOST_OIDC_ORGS` is empty, no orgs are allowed. Use `*` to allow all orgs. Org names are matched case-insensitively (GitHub logins are), so `pazerop` and `PazerOP` are equivalent.
 
