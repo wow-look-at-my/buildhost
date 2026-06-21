@@ -218,6 +218,62 @@ func TestServeTap_GeneratesSmartGitRepo(t *testing.T) {
 	assert.NotContains(t, fmt.Sprint(repo.Loose), "secret-tool")
 }
 
+func TestServeTap_LegacyLooseObjectEndpoints(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "go-toolchain", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000, GitBranch: db.LatestBranch}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+	key, size, err := store.Put(ctx, strings.NewReader("binary"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSDarwin, Arch: db.ArchARM64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	req := httptest.NewRequest("GET", "/brew/tap.git", nil)
+	rec := httptest.NewRecorder()
+	h.ServeTap(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "text/plain; charset=utf-8", rec.Header().Get("Content-Type"))
+	assert.Equal(t, "ref: refs/heads/main\n", rec.Body.String())
+
+	req = httptest.NewRequest("GET", "/brew/tap.git/info/refs", nil)
+	req.SetPathValue("path", "info/refs")
+	rec = httptest.NewRecorder()
+	h.ServeTap(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "refs/heads/main")
+
+	repo, err := h.buildTapRepo(req)
+	require.NoError(t, err)
+	var objectPath string
+	for path := range repo.Loose {
+		if strings.HasPrefix(path, "objects/") && path != "objects/info/packs" {
+			objectPath = path
+			break
+		}
+	}
+	require.NotEmpty(t, objectPath)
+
+	req = httptest.NewRequest("GET", "/brew/tap.git/"+objectPath, nil)
+	req.SetPathValue("path", objectPath)
+	rec = httptest.NewRecorder()
+	h.ServeTap(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/x-git-loose-object", rec.Header().Get("Content-Type"))
+	assert.NotEmpty(t, rec.Body.Bytes())
+
+	req = httptest.NewRequest("GET", "/brew/tap.git/missing", nil)
+	req.SetPathValue("path", "missing")
+	rec = httptest.NewRecorder()
+	h.ServeTap(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
 func TestServeUploadPack_AllowsShallowGitClone(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git binary not available")
