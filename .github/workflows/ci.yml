@@ -270,7 +270,7 @@ jobs:
           set -euo pipefail
           brew untap pazer/build >/dev/null 2>&1 || true
           brew uninstall go-toolchain >/dev/null 2>&1 || true
-          brew tap pazer/build http://brew.localhost:18080/tap.git
+          brew tap pazer/build http://brew.localhost:18080
           # Homebrew 6 refuses to evaluate a third-party tap until it is trusted
           # (https://docs.brew.sh/Tap-Trust). pazer/build is buildhost's own
           # dynamically generated, locally served tap, so trusting it is correct

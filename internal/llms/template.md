@@ -111,7 +111,7 @@ served at `__APT_URL__/myrepo/server` and installs as `myrepo-server`).
 Homebrew (tap the generated Git repository, then install the formula):
 
 ```
-brew tap pazer/build __BREW_URL__/tap.git
+brew tap pazer/build __BREW_URL__
 brew install pazer/build/myapp
 ```
 

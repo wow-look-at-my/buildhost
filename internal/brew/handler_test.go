@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -176,7 +178,7 @@ func TestServeFormula_EmitsAllSupportedPlatforms(t *testing.T) {
 	assert.Contains(t, body, fmt.Sprintf(`sha256 "%x"`, sum))
 }
 
-func TestServeTap_GeneratesDumbGitRepo(t *testing.T) {
+func TestServeTap_GeneratesSmartGitRepo(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -195,21 +197,61 @@ func TestServeTap_GeneratesDumbGitRepo(t *testing.T) {
 	private := &db.Project{Name: "secret-tool", IsPrivate: true, Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, private))
 
-	req := httptest.NewRequest("GET", "/brew/tap.git/info/refs?service=git-upload-pack", nil)
-	req.Host = "git.example.com"
-	req.SetPathValue("path", "info/refs")
+	req := httptest.NewRequest("GET", "/info/refs?service=git-upload-pack", nil)
+	req.Host = "brew.example.com"
 	rec := httptest.NewRecorder()
-	h.ServeTap(rec, req)
+	h.ServeUploadPackInfoRefs(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/x-git-upload-pack-advertisement", rec.Header().Get("Content-Type"))
 	infoRefs := rec.Body.String()
+	assert.Contains(t, infoRefs, "# service=git-upload-pack")
+	assert.Contains(t, infoRefs, "HEAD\x00")
+	assert.Contains(t, infoRefs, "symref=HEAD:refs/heads/main")
 	assert.Contains(t, infoRefs, "refs/heads/main")
 
 	repo, err := h.buildTapRepo(req)
 	require.NoError(t, err)
-	assert.Equal(t, []byte("ref: refs/heads/main\n"), repo["HEAD"])
-	assert.Contains(t, string(repo["info/refs"]), "refs/heads/main")
-	assert.NotContains(t, fmt.Sprint(repo), "secret-tool")
+	assert.Equal(t, []byte("ref: refs/heads/main\n"), repo.Loose["HEAD"])
+	assert.Contains(t, string(repo.Loose["info/refs"]), "refs/heads/main")
+	assert.True(t, strings.HasPrefix(string(repo.Pack), "PACK"))
+	assert.NotContains(t, fmt.Sprint(repo.Loose), "secret-tool")
+}
+
+func TestServeUploadPack_AllowsShallowGitClone(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not available")
+	}
+
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "go-toolchain", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000, GitBranch: db.LatestBranch}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+	key, size, err := store.Put(ctx, strings.NewReader("binary"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSDarwin, Arch: db.ArchARM64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /info/refs", h.ServeUploadPackInfoRefs)
+	mux.HandleFunc("POST /git-upload-pack", h.ServeUploadPack)
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+
+	dir := filepath.Join(t.TempDir(), "tap")
+	cmd := exec.Command("git", "clone", "--depth", "1", ts.URL, dir)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	data, err := os.ReadFile(filepath.Join(dir, "Formula", "go-toolchain.rb"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "class GoToolchain < Formula")
 }
 
 func TestRedirectTap_ToGitService(t *testing.T) {

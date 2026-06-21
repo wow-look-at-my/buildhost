@@ -20,7 +20,7 @@ buildhost exposes a generated Homebrew tap as a Git repository. Add the tap once
 then install formulas through the tap name:
 
 ```bash
-brew tap pazer/build https://brew.pazer.build/tap.git
+brew tap pazer/build https://brew.pazer.build
 brew install pazer/build/go-toolchain
 ```
 

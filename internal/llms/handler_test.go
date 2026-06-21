@@ -23,7 +23,7 @@ func TestServe_RendersBaseURL(t *testing.T) {
 	assert.Contains(t, body, "# buildhost")
 	assert.Contains(t, body, "https://dl.pazer.build/myapp")
 	assert.Contains(t, body, "https://pazer.build/llms.txt")
-	assert.Contains(t, body, "brew tap pazer/build https://brew.pazer.build/tap.git")
+	assert.Contains(t, body, "brew tap pazer/build https://brew.pazer.build")
 	assert.Contains(t, body, "brew install pazer/build/myapp")
 	assert.NotContains(t, body, "brew install https://brew.pazer.build/myapp")
 	assert.Contains(t, body, "docker pull oci.pazer.build/myapp:latest")
