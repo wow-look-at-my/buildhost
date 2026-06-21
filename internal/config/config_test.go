@@ -87,7 +87,7 @@ func TestLoad_OIDCEvents_Default(t *testing.T) {
 	t.Setenv("BUILDHOST_OIDC_EVENTS", "")
 
 	c := Load()
-	assert.Equal(t, []string{"push", "pull_request"}, c.OIDCEvents)
+	assert.Equal(t, []string{"push", "pull_request", "workflow_dispatch"}, c.OIDCEvents)
 }
 
 func TestLoad_GitHubWebhookSecret(t *testing.T) {

@@ -200,7 +200,12 @@ func Load() Config {
 		}
 	}
 	if len(c.OIDCEvents) == 0 {
-		c.OIDCEvents = []string{"push", "pull_request"}
+		// workflow_dispatch is in the default set because GitHub only lets users
+		// with write access to a repo trigger a manual run, and fork actors never
+		// receive an OIDC token -- so it carries the same write-access guarantee as
+		// push/pull_request, letting manual release dispatches auto-provision out
+		// of the box. The BUILDHOST_OIDC_EVENTS override above still wins.
+		c.OIDCEvents = []string{"push", "pull_request", "workflow_dispatch"}
 	}
 	if v := os.Getenv("BUILDHOST_GITHUB_WEBHOOK_SECRET"); v != "" {
 		c.GitHubWebhookSecret = v
