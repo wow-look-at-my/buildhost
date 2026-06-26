@@ -22,8 +22,12 @@ func init() {
 	})
 	auth.ServiceHandle("brew", "GET /{project}", parseRoute, handler.ServeFormula)
 	auth.ServiceHandle("brew", "GET /Formula/{project}.rb", parseRoute, handler.ServeFormula)
+	auth.ServiceHandleRaw("brew", "GET /info/refs", handler.ServeUploadPackInfoRefs)
+	auth.ServiceHandleRaw("brew", "POST /git-upload-pack", handler.ServeUploadPack)
 	auth.ServiceHandleRaw("brew", "GET /tap.git", handler.RedirectTap)
 	auth.ServiceHandleRaw("brew", "GET /tap.git/{path...}", handler.RedirectTap)
+	auth.ServiceHandleRaw("git", "GET /brew/tap.git/info/refs", handler.ServeUploadPackInfoRefs)
+	auth.ServiceHandleRaw("git", "POST /brew/tap.git/git-upload-pack", handler.ServeUploadPack)
 	auth.ServiceHandleRaw("git", "GET /brew/tap.git", handler.ServeTap)
 	auth.ServiceHandleRaw("git", "GET /brew/tap.git/{path...}", handler.ServeTap)
 }
