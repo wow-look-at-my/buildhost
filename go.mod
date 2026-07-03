@@ -12,7 +12,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/ulikunitz/xz v0.5.15
 	github.com/wow-look-at-my/go-mmap v0.0.0-20260524160502-7c9fb35436a9
-	github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260520105527-317d2038d915
+	github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260630175754-ae84ebec934c
 	github.com/wow-look-at-my/router v0.0.0-20260609085900-fcf2d9b53cf1
 	go.opentelemetry.io/contrib/bridges/otelslog v0.18.0
 	go.opentelemetry.io/otel v1.43.0
