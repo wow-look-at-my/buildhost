@@ -12,9 +12,13 @@ content-addressed deduplication.
 > brew, npm) were cached in `packaged_artifacts` and grew per download. They are
 > not: `internal/static/fmt_repackage.go` re-derives them from the original
 > artifact on every request and never stores them. In production
-> `packaged_artifacts` holds only the synthesized-OCI blobs (`oci-base-layer`,
+> `packaged_artifacts` holds the synthesized-OCI blobs (`oci-base-layer`,
 > `oci-layer`, `oci-config`), which do not grow per download and are entangled
-> with by-digest OCI pulls. So there is no standalone "regenerable cache" to TTL.
+> with by-digest OCI pulls, plus per-artifact `format="tar.gz"` **digest** rows
+> written lazily by the brew formula path (a sha256 cache only: `storage_key`
+> records the source artifact blob, no tar.gz blob is stored, and the rows are
+> bounded at one per artifact and dropped by the same release cascade). So
+> there is no standalone "regenerable cache" to TTL.
 > Those OCI blobs are instead reclaimed naturally when their owning release is
 > evicted by keep-N (the cascade drops their rows and the refcount sweep frees
 > any now-unreferenced blob). The real reclaim is keep-N + the abandoned sweep.

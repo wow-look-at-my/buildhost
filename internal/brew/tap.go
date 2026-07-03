@@ -11,7 +11,10 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
+
+	mmap "github.com/wow-look-at-my/go-mmap"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -27,19 +30,32 @@ func (h *Handler) RedirectTap(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target.String(), http.StatusMovedPermanently)
 }
 
+// ServeTap serves one file of the dumb-HTTP git tap from the current on-disk
+// snapshot (built at most once per tapCacheTTL per base URL, see tapcache.go)
+// by memory-mapping it -- never buffering the file on the heap and never
+// rebuilding the whole tap per object request. Serving every request of one
+// `brew update` from a single immutable snapshot also keeps refs and loose
+// objects mutually consistent when a publish lands mid-update.
 func (h *Handler) ServeTap(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.buildTapRepo(r)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
 	path := strings.TrimPrefix(tapSuffix(r), "/")
 	if path == "" {
 		path = "HEAD"
 	}
-	data, ok := repo[path]
-	if !ok {
+
+	f, err := h.openTapFile(r, path)
+	if errors.Is(err, errTapBuild) {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if err != nil {
+		// Not in the snapshot (or an escaping path the os.Root refused).
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
 		http.NotFound(w, r)
 		return
 	}
@@ -50,7 +66,24 @@ func (h *Handler) ServeTap(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	}
-	w.Write(data)
+
+	// A zero-length file (objects/info/packs) has nothing to map -- mmap
+	// rejects an empty region, same as the storage layer's empty-blob case.
+	if info.Size() == 0 {
+		w.Header().Set("Content-Length", "0")
+		return
+	}
+
+	m, err := mmap.MapRegion(int(f.Fd()), info.Size(), mmap.ProtRead, mmap.MapShared, 0)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	_ = m.Advise(mmap.AdvSequential)
+	rc := mmap.NewReader(m) // Close unmaps
+	defer rc.Close()
+	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	io.Copy(w, rc)
 }
 
 func (h *Handler) buildTapRepo(r *http.Request) (map[string][]byte, error) {
