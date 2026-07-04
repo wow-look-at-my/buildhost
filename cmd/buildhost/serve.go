@@ -20,6 +20,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/buildhost/internal/telemetry"
+	"github.com/wow-look-at-my/buildhost/internal/uploads"
 )
 
 func init() {
@@ -116,6 +117,8 @@ var serveCmd = &cobra.Command{
 		}()
 
 		startRetentionSweeper(ctx, cfg, database, store)
+		// Sweep expired chunked-upload sessions (abandoned spool files).
+		uploads.StartJanitor(ctx)
 
 		select {
 		case err := <-errc:
