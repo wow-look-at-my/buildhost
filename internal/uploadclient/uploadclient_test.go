@@ -40,6 +40,10 @@ type mockServer struct {
 	// chunk -- the lost-response case a resuming client must survive.
 	failAppends int
 
+	// brokenAppends fails appends with a 500 WITHOUT committing anything --
+	// a server that cannot make progress at all.
+	brokenAppends bool
+
 	// disableSessions makes POST /api/v1/uploads 404 (an old server).
 	disableSessions bool
 
@@ -96,6 +100,10 @@ func (m *mockServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			delete(m.sessions, id)
 			w.WriteHeader(http.StatusNoContent)
 		case "PATCH":
+			if m.brokenAppends {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
 			offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 			if offset != len(buf) {
 				w.WriteHeader(http.StatusConflict)
@@ -244,12 +252,11 @@ func TestOldServerFallsBackToDirect(t *testing.T) {
 func TestNoProgressGivesUpAndAborts(t *testing.T) {
 	m, ts := newMockServer(t)
 	path, _ := tempFile(t, 50)
-	m.failAppends = 1 << 30 // every append response is lost forever
+	m.brokenAppends = true // every append 500s without committing anything
 
 	u := &Uploader{Server: ts.URL, Token: "tok", ChunkSize: 8}
 	_, err := u.Upload("PUT", ts.URL+"/target", nil, path)
 	require.Error(t, err)
-	// hmm: with commit-then-fail semantics the client always progresses; this
-	// asserts the bounded-retry path via the mock never returning success.
+	assert.Contains(t, err.Error(), "no progress")
 	assert.Empty(t, m.sessions, "session aborted after the hard failure")
 }
