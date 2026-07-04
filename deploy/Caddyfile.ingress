@@ -1,0 +1,54 @@
+# Direct TLS ingress for buildhost -- bypasses the Cloudflare proxy (and its
+# 100 MB request-body cap on the Free plan) so artifact uploads of any size
+# work as one plain HTTP request. See DIRECT-INGRESS.md for the operator
+# setup (DNS record, router port-forward, Cloudflare API token).
+#
+# Requires a caddy binary with the caddy-dns/cloudflare module (built by
+# Dockerfile.ingress) and CLOUDFLARE_DNS_API_TOKEN in the environment
+# (a token scoped to Zone / DNS / Edit for the ingress hostname's zone).
+{
+	# Certificate automation only: no admin API, no port-80 redirect
+	# listener (port 80 on the WAN IP belongs to a different stack anyway).
+	admin off
+	auto_https disable_redirects
+	# ACME account email (expiry notices). Compose supplies/overrides this
+	# via INGRESS_ACME_EMAIL; the default here only matters outside compose.
+	email {$INGRESS_ACME_EMAIL:hostmaster@pazer.build}
+}
+
+# The site address pins TLS + SNI to the ingress hostname; a handshake for
+# any other name is refused. Container port 8443 is fixed -- remap the
+# *published* host port in docker-compose.yml (INGRESS_PORT) if needed.
+https://{$INGRESS_HOST:api.pazer.build}:8443 {
+	# DNS-01 challenge: ports 80/443 on the WAN IP are owned by another
+	# stack, so HTTP-01 / TLS-ALPN-01 can never work here. The ACME TXT
+	# record is created through the Cloudflare API; propagation is checked
+	# against public resolvers in case the LAN resolver has a split-horizon
+	# view of the zone. Issued certs persist in /data (named volume), so
+	# container restarts do not re-issue.
+	tls {
+		dns cloudflare {env.CLOUDFLARE_DNS_API_TOKEN}
+		resolvers 1.1.1.1 8.8.8.8
+	}
+
+	# Streamed, unbuffered proxying in both directions:
+	#   - Caddy never buffers request bodies and imposes NO body-size limit
+	#     by default -- the only upload cap left is the app's own
+	#     BUILDHOST_MAX_UPLOAD_SIZE (default 2 GiB).
+	#   - flush_interval -1 flushes response bytes immediately (streaming
+	#     downloads, no response buffering).
+	#   - No read/write timeouts are configured: Caddy's defaults impose
+	#     none on the request body, so multi-hour uploads survive.
+	#   - The Host header is passed through unchanged (Caddy default), and
+	#     the upstream hostname is re-resolved per dial, so docker-updater's
+	#     rolling container replacement works just like the nginx sidecar's
+	#     resolver trick; lb_try_* retries dial failures during the brief
+	#     swap window.
+	reverse_proxy {$INGRESS_UPSTREAM:buildhost-backend:8080} {
+		flush_interval -1
+		lb_try_duration 15s
+		lb_try_interval 500ms
+	}
+
+	log
+}

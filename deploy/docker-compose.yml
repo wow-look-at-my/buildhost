@@ -16,6 +16,37 @@ services:
       - internal
     restart: unless-stopped
 
+  # Direct TLS ingress (no Cloudflare) so artifact uploads of any size work:
+  # the Cloudflare proxy caps request bodies at 100 MB on the Free plan, so
+  # large uploads must skip the tunnel entirely. Opt-in via the
+  # "direct-ingress" profile -- the default stack is unchanged without it:
+  #
+  #   docker compose --profile direct-ingress up -d
+  #
+  # Requires CLOUDFLARE_DNS_API_TOKEN in the deploy .env (ACME DNS-01) plus a
+  # DNS-only A record and a router port-forward -- see DIRECT-INGRESS.md.
+  ingress:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingress
+    profiles:
+      - direct-ingress
+    ports:
+      - "${INGRESS_PORT:-8443}:8443"
+    environment:
+      - INGRESS_HOST=${INGRESS_HOST:-api.pazer.build}
+      - INGRESS_UPSTREAM=${INGRESS_UPSTREAM:-buildhost-backend:8080}
+      - INGRESS_ACME_EMAIL=${INGRESS_ACME_EMAIL:-hostmaster@pazer.build}
+      - CLOUDFLARE_DNS_API_TOKEN=${CLOUDFLARE_DNS_API_TOKEN}
+    volumes:
+      - ./Caddyfile.ingress:/etc/caddy/Caddyfile:ro
+      # ACME account + issued certs live in /data so restarts never re-issue.
+      - ingress-data:/data
+      - ingress-config:/config
+    networks:
+      - internal
+    restart: unless-stopped
+
   buildhost:
     image: ghcr.io/wow-look-at-my/buildhost:latest
     labels:
@@ -44,6 +75,8 @@ services:
 
 volumes:
   buildhost-data:
+  ingress-data:
+  ingress-config:
 
 networks:
   internal:
