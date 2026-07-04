@@ -24,7 +24,7 @@ services:
   #   docker compose --profile direct-ingress up -d
   #
   # Requires CLOUDFLARE_DNS_API_TOKEN in the deploy .env (ACME DNS-01) plus a
-  # DNS-only A record and a router port-forward -- see DIRECT-INGRESS.md.
+  # DNS-only A record and an external port-forward -- see DIRECT-INGRESS.md.
   ingress:
     build:
       context: .

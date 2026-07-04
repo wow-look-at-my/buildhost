@@ -1,14 +1,15 @@
 # Direct TLS ingress for buildhost -- bypasses the Cloudflare proxy (and its
 # 100 MB request-body cap on the Free plan) so artifact uploads of any size
 # work as one plain HTTP request. See DIRECT-INGRESS.md for the operator
-# setup (DNS record, router port-forward, Cloudflare API token).
+# setup (DNS record, port-forward, Cloudflare API token).
 #
 # Requires a caddy binary with the caddy-dns/cloudflare module (built by
 # Dockerfile.ingress) and CLOUDFLARE_DNS_API_TOKEN in the environment
 # (a token scoped to Zone / DNS / Edit for the ingress hostname's zone).
 {
 	# Certificate automation only: no admin API, no port-80 redirect
-	# listener (port 80 on the WAN IP belongs to a different stack anyway).
+	# listener (this ingress binds only 8443; port 80 may not be
+	# available to this stack at all).
 	admin off
 	auto_https disable_redirects
 	# ACME account email (expiry notices). Compose supplies/overrides this
@@ -20,12 +21,12 @@
 # any other name is refused. Container port 8443 is fixed -- remap the
 # *published* host port in docker-compose.yml (INGRESS_PORT) if needed.
 https://{$INGRESS_HOST:api.pazer.build}:8443 {
-	# DNS-01 challenge: ports 80/443 on the WAN IP are owned by another
-	# stack, so HTTP-01 / TLS-ALPN-01 can never work here. The ACME TXT
-	# record is created through the Cloudflare API; propagation is checked
-	# against public resolvers in case the LAN resolver has a split-horizon
-	# view of the zone. Issued certs persist in /data (named volume), so
-	# container restarts do not re-issue.
+	# DNS-01 challenge: works even when ports 80/443 aren't available to
+	# this stack for ACME challenges (HTTP-01 / TLS-ALPN-01 need one of
+	# them). The ACME TXT record is created through the Cloudflare API;
+	# propagation is checked against public resolvers in case the local
+	# resolver has a split-horizon view of the zone. Issued certs persist
+	# in /data (named volume), so container restarts do not re-issue.
 	tls {
 		dns cloudflare {env.CLOUDFLARE_DNS_API_TOKEN}
 		resolvers 1.1.1.1 8.8.8.8
