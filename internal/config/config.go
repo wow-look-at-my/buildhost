@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"strconv"
@@ -17,6 +18,20 @@ const (
 	// disk-fill guard; it is far larger than the REST cap because container
 	// image layers (e.g. CUDA runtimes) routinely exceed 2 GiB.
 	defaultMaxBlobSize int64 = 10 << 30 // 10 GiB
+	// defaultMaxDirectUploadSize is the size the server ADVERTISES (via
+	// GET /api/v1/server-info) as safe for a single direct upload request.
+	// buildhost itself accepts up to MaxUploadSize in one request; this smaller
+	// value exists because the server typically sits behind a proxy that
+	// rejects large request bodies outright -- Cloudflare's edge caps request
+	// bodies at 100 MB (Free and Pro plans) with a 413 that never reaches the
+	// origin. 95 MiB (99,614,720 bytes) stays just under that cap. Clients
+	// read this value and switch to a chunked upload session for anything
+	// larger, so the first attempt always succeeds instead of discovering the
+	// cap by failing.
+	defaultMaxDirectUploadSize int64 = 95 << 20 // 95 MiB
+	// defaultUploadSessionTTL is how long an in-progress chunked upload session
+	// may sit idle before its spool file is garbage-collected.
+	defaultUploadSessionTTL = 24 * time.Hour
 )
 
 // MaxUploadSize is the cap for a single REST artifact upload, overridable via
@@ -26,6 +41,20 @@ func MaxUploadSize() int64 { return envBytes("BUILDHOST_MAX_UPLOAD_SIZE", defaul
 // MaxBlobSize is the cap for a single OCI blob pushed to the registry endpoint,
 // overridable via BUILDHOST_MAX_BLOB_SIZE (plain bytes, or with a K/M/G suffix).
 func MaxBlobSize() int64 { return envBytes("BUILDHOST_MAX_BLOB_SIZE", defaultMaxBlobSize) }
+
+// MaxDirectUploadSize is the advertised safe size for a single direct upload
+// request body, overridable via BUILDHOST_MAX_DIRECT_UPLOAD_SIZE (plain bytes,
+// or with a K/M/G suffix). Advisory only: the server does not reject bodies
+// above it (the proxy in front of it does).
+func MaxDirectUploadSize() int64 {
+	return envBytes("BUILDHOST_MAX_DIRECT_UPLOAD_SIZE", defaultMaxDirectUploadSize)
+}
+
+// UploadSessionTTL is how long an idle chunked upload session lives before it
+// is swept, overridable via BUILDHOST_UPLOAD_SESSION_TTL (a Go duration).
+func UploadSessionTTL() time.Duration {
+	return envDuration("BUILDHOST_UPLOAD_SESSION_TTL", defaultUploadSessionTTL)
+}
 
 // envDuration parses a Go duration (e.g. "1h", "30m", "720h") from an env var,
 // falling back to def on empty or invalid input.
@@ -42,12 +71,27 @@ func envDuration(name string, def time.Duration) time.Duration {
 }
 
 // envBytes parses a byte size from an env var, accepting a plain integer or an
-// integer with a single-letter binary suffix (K, M, G, T). Invalid values fall
-// back to def.
+// integer with a single-letter binary suffix (K, M, G, T). Invalid or
+// non-positive values fall back to def.
 func envBytes(name string, def int64) int64 {
 	v := strings.TrimSpace(os.Getenv(name))
 	if v == "" {
 		return def
+	}
+	n, err := ParseByteSize(v)
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
+}
+
+// ParseByteSize parses a byte size: a plain non-negative integer, or an
+// integer with a single-letter binary suffix (K, M, G, T), e.g. "64M".
+// Shared by the env-var config above and the CLI's --chunk-size flag.
+func ParseByteSize(s string) (int64, error) {
+	v := strings.TrimSpace(s)
+	if v == "" {
+		return 0, fmt.Errorf("empty size")
 	}
 	mult := int64(1)
 	switch v[len(v)-1] {
@@ -64,13 +108,13 @@ func envBytes(name string, def int64) int64 {
 		v = strings.TrimSpace(v[:len(v)-1])
 	}
 	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil || n <= 0 {
-		return def
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("invalid size %q", s)
 	}
 	if n > math.MaxInt64/mult {
-		return def // would overflow int64; ignore the bogus value
+		return 0, fmt.Errorf("size %q overflows", s)
 	}
-	return n * mult
+	return n * mult, nil
 }
 
 type Config struct {
