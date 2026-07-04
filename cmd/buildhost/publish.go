@@ -36,6 +36,7 @@ func init() {
 	publishCmd.Flags().String("git-commit", "", "Git commit")
 	publishCmd.Flags().String("oci-user", "", "Run-as user for synthesized OCI images (uid[:gid] or name[:group]); default is root")
 	publishCmd.Flags().String("manifest", "", "Path to release manifest (TOML)")
+	addChunkSizeFlag(publishCmd)
 }
 
 type manifest struct {
@@ -61,7 +62,7 @@ type manifestArtifact struct {
 func runPublish(cmd *cobra.Command, _ []string) error {
 	manifestPath, _ := cmd.Flags().GetString("manifest")
 	if manifestPath != "" {
-		return publishFromManifest(manifestPath)
+		return publishFromManifest(cmd, manifestPath)
 	}
 	return publishSingle(cmd)
 }
@@ -104,15 +105,14 @@ func publishSingle(cmd *cobra.Command) error {
 		rel.Version = version
 	}
 
-	f, err := os.Open(artifactPath)
+	up, err := newUploader(cmd, serverURL, token)
 	if err != nil {
-		return fmt.Errorf("open artifact: %w", err)
+		return err
 	}
-	defer f.Close()
 
 	url := fmt.Sprintf("%s/api/v1/projects/%s/releases/%s/artifacts/%s/%s?kind=%s",
 		serverURL, project, rel.Version, osStr, archStr, kind)
-	resp, err = doRequest("PUT", url, token, f)
+	resp, err = up.Upload("PUT", url, nil, artifactPath)
 	if err != nil {
 		return fmt.Errorf("upload artifact: %w", err)
 	}
@@ -125,7 +125,7 @@ func publishSingle(cmd *cobra.Command) error {
 	return nil
 }
 
-func publishFromManifest(path string) error {
+func publishFromManifest(cmd *cobra.Command, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read manifest: %w", err)
@@ -154,16 +154,16 @@ func publishFromManifest(path string) error {
 		rel.Version = m.Version
 	}
 
+	up, err := newUploader(cmd, m.Server, m.Token)
+	if err != nil {
+		return err
+	}
+
 	baseDir := filepath.Dir(path)
 	for _, a := range m.Artifacts {
 		artifactPath := a.Path
 		if !filepath.IsAbs(artifactPath) {
 			artifactPath = filepath.Join(baseDir, artifactPath)
-		}
-
-		f, err := os.Open(artifactPath)
-		if err != nil {
-			return fmt.Errorf("open %s: %w", a.Path, err)
 		}
 
 		kind := a.Kind
@@ -174,18 +174,12 @@ func publishFromManifest(path string) error {
 		url := fmt.Sprintf("%s/api/v1/projects/%s/releases/%s/artifacts/%s/%s?kind=%s",
 			m.Server, m.Project, rel.Version, a.OS, a.Arch, kind)
 
-		req, err := http.NewRequest("PUT", url, f)
-		if err != nil {
-			f.Close()
-			return err
-		}
-		req.Header.Set("Authorization", "Bearer "+m.Token)
+		var header map[string]string
 		if a.Filename != "" {
-			req.Header.Set("X-Artifact-Filename", a.Filename)
+			header = map[string]string{"X-Artifact-Filename": a.Filename}
 		}
 
-		resp, err := http.DefaultClient.Do(req)
-		f.Close()
+		resp, err := up.Upload("PUT", url, header, artifactPath)
 		if err != nil {
 			return fmt.Errorf("upload %s/%s: %w", a.OS, a.Arch, err)
 		}
