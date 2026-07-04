@@ -220,6 +220,8 @@ volumes:
 
 **Note:** Binary stripping (`strip`/`objcopy`) is not available in the hardened image. Uploaded binaries are served as-is. If you need debug info stripping, run it in your CI pipeline before uploading.
 
+**Note:** Serving through Cloudflare's proxy caps request bodies at the edge (100 MB on the Free plan); [`deploy/DIRECT-INGRESS.md`](deploy/DIRECT-INGRESS.md) adds an opt-in direct TLS ingress so uploads of any size work in a single request.
+
 ## Quick start
 
 ```bash
