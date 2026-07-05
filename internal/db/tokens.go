@@ -69,6 +69,10 @@ func (d *DB) ListTokens(ctx context.Context) ([]ListAllTokensRow, error) {
 	return d.q.ListAllTokens(ctx)
 }
 
+func (d *DB) UpdateToken(ctx context.Context, id int64, name, scopes string) error {
+	return d.q.UpdateTokenByID(ctx, UpdateTokenByIDParams{Name: name, Scopes: scopes, ID: id})
+}
+
 func (d *DB) DeleteToken(ctx context.Context, id int64) error {
 	res, err := d.q.DeleteTokenByID(ctx, id)
 	if err != nil {

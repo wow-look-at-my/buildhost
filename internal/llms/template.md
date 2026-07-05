@@ -33,7 +33,7 @@ automated agents. Every example below uses this server's configured base URL,
 buildhost uses bearer tokens. Provide one in whichever way your client allows:
 
 - HTTP header: `Authorization: Bearer <token>`
-- HTTP Basic auth: use the token as the username
+- HTTP Basic auth: send the token as the password (the username is ignored)
 - Query parameter: `?token=<token>` (for clients that cannot set headers, such
   as some APT and Homebrew flows)
 
@@ -65,30 +65,50 @@ PUT  __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{a
 POST __BASE_URL__/api/v1/projects/{project}/releases/{version}/publish
 ```
 
+Large uploads: a proxy in front of the server may cap single request bodies
+(Cloudflare's edge rejects bodies over 100 MB). Check
+`GET __BASE_URL__/api/v1/server-info` for `max_direct_upload_bytes`; anything
+larger must go through a chunked upload session instead of one request:
+
+```
+POST   __BASE_URL__/api/v1/uploads                 -> {"id": ...}
+PATCH  __BASE_URL__/api/v1/uploads/{id}?offset=N   append chunk at offset (repeat)
+PUT    __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}?upload_session={id}&upload_sha256={hex}
+```
+
+The finalize step is the ORIGINAL upload endpoint with an empty body; the
+assembled bytes are used as the request body. Works on the site-deploy PUT
+too. Offsets must equal the committed size (a 409 returns the actual size to
+resume from); `GET __BASE_URL__/api/v1/uploads/{id}` reads it and DELETE
+aborts. The `buildhost publish` CLI does all of this automatically.
+
 ## Downloading
 
-```
-# A specific version
-curl -O __BASE_URL__/dl/myapp/1/linux/amd64
+Each service has its own subdomain. The download service resolves versions and
+redirects to the static endpoint:
 
-# The latest version
-curl -O __BASE_URL__/dl/myapp/latest/linux/amd64
+```
+# The latest version (version defaults to latest when omitted)
+curl -LO __DL_URL__/myapp?os=linux&arch=amd64
+
+# A specific version
+curl -LO "__DL_URL__/myapp?v=1&os=linux&arch=amd64"
 
 # The latest build of a git branch
-curl -O __BASE_URL__/dl/myapp/branch/main/linux/amd64
+curl -LO "__DL_URL__/myapp?branch=main&os=linux&arch=amd64"
 ```
 
-By default `/dl/...` serves the raw binary. Add `?format=` to repackage it on
-the fly. Supported values: `raw`, `tar.gz`, `tar.xz`, `tar.zst`, `zip`.
+Add `&fmt=` to repackage on the fly. Supported values: `raw`, `tar.gz`,
+`tar.xz`, `tar.zst`, `zip`.
 
 ```
-curl -O "__BASE_URL__/dl/myapp/latest/linux/amd64?format=tar.gz"
+curl -LO "__DL_URL__/myapp?os=linux&arch=amd64&fmt=tar.gz"
 ```
 
-Every `/dl/...` request redirects to the unified, cacheable endpoint
-`__BASE_URL__/static?id=&v=&os=&arch=&fmt=`. The `/static` endpoint requires a
-concrete version: a request with `v=latest` returns HTTP 400, so resolve the
-version first (use a `/dl/.../latest` or `/dl/.../branch/...` URL, or the API).
+Every download request redirects to the unified, cacheable static endpoint
+`__STATIC_URL__/file?project=&v=&os=&arch=&fmt=`. The static endpoint requires
+a concrete version: a request with `v=latest` returns HTTP 400, so resolve the
+version first (use a download URL without `v=`, or the API).
 
 ## Package managers
 
@@ -96,27 +116,34 @@ APT (Debian / Ubuntu). The repository is GPG-signed; see the README for the
 exact signing-key setup, then add the repo and install:
 
 ```
-echo "deb [signed-by=/etc/apt/keyrings/myapp.gpg] __BASE_URL__/apt/myapp stable main" \
+echo "deb [signed-by=/etc/apt/keyrings/myapp.gpg] __APT_URL__/myapp stable main" \
   | sudo tee /etc/apt/sources.list.d/myapp.list
 sudo apt update && sudo apt install myapp
 ```
 
-Homebrew (install the generated formula directly from its URL):
+For a slash-namespaced project the repository URL keeps the slash, but the
+Debian package name folds `/` and `_` to `-` (for example, `myrepo/server` is
+served at `__APT_URL__/myrepo/server` and installs as `myrepo-server`).
+
+Homebrew (tap the generated Git repository, then install the formula):
 
 ```
-brew install __BASE_URL__/brew/myapp.rb
+brew tap pazer/build __BREW_URL__/tap.git
+brew install pazer/build/myapp
 ```
 
 npm (packages are published under the `@buildhost` scope):
 
 ```
-npm install @buildhost/myapp --registry __BASE_URL__/npm/
+npm install @buildhost/myapp --registry __NPM_URL__
 ```
 
-OCI / Docker (the registry is served at `__BASE_URL__/v2/`):
+OCI / Docker (the registry is served at `__OCI_URL__/v2/`). Public images pull
+anonymously; for a private project, run `docker login __OCI_HOST__` first (any
+valid token works as the password):
 
 ```
-docker pull __HOST__/myapp:latest
+docker pull __OCI_HOST__/myapp:latest
 ```
 
 ## Static sites
@@ -127,10 +154,12 @@ git branch:
 ```
 buildhost publish-site --server __BASE_URL__ --token $TOKEN \
   --project myapp --branch main --dir ./dist
-# served at __BASE_URL__/sites/myapp/branch/main/
+# served at __SITES_URL__/myapp/branch/main/
 ```
 
 ## REST API reference
+
+API routes are on the main domain. Service-specific routes use subdomains.
 
 ```
 POST   /api/v1/projects                                                      create project
@@ -141,19 +170,22 @@ GET    /api/v1/projects/{project}/releases                                   lis
 GET    /api/v1/projects/{project}/releases/{version}                         get release
 PUT    /api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}   upload artifact
 POST   /api/v1/projects/{project}/releases/{version}/publish                 publish release
-GET    /dl/{project}/{version}/{os}/{arch}                                   download
-GET    /dl/{project}/latest/{os}/{arch}                                      download latest
-GET    /dl/{project}/branch/{branch}/{os}/{arch}                             download branch latest
-GET    /static?id=&v=&os=&arch=&fmt=                                         unified cached download
-PUT    /sites/{project}/branch/{branch}                                      deploy static site
-GET    /sites/{project}/branch/{branch}/{path}                              serve static site file
+GET    /api/v1/server-info                                                   upload limits (public)
+POST   /api/v1/uploads                                                       create chunked upload session
+GET    /api/v1/uploads/{id}                                                  session committed size
+PATCH  /api/v1/uploads/{id}                                                  append chunk (?offset=N)
+DELETE /api/v1/uploads/{id}                                                  abort session
 GET    /healthz                                                              health check
 ```
 
 ## Notes for automated agents
 
-- Resolve `latest` to a concrete version before calling `/static`; that
-  endpoint rejects `v=latest` with HTTP 400.
+- Resolve to a concrete version before calling the static endpoint; it
+  rejects `v=latest` with HTTP 400.
+- Uploads larger than server-info's `max_direct_upload_bytes` must use a
+  chunked upload session (see "Publishing with the REST API"); a single
+  request that big is rejected by the proxy in front of the server before it
+  reaches buildhost.
 - For private projects, send the auth token on every request, including the
   APT, Homebrew, npm, and OCI endpoints.
 - `GET __BASE_URL__/healthz` returns 200 when the server and its database are

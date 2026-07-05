@@ -14,14 +14,17 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 var apiTracer = otel.Tracer("buildhost.api")
 
 func init() {
-	auth.Handle("PUT /api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}",
-		parseRoute, handler.UploadArtifact)
+	auth.OnReady(func() {
+		auth.Handle("PUT /api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}",
+			parseRoute, handler.UploadArtifact)
+	})
 }
 
 func sanitizeFilename(name string) string {
@@ -42,7 +45,9 @@ func sanitizeFilename(name string) string {
 	return name
 }
 
-const maxUploadSize = 2 << 30 // 2 GiB
+// maxUploadSize caps a single REST artifact upload. It is read once from config
+// (BUILDHOST_MAX_UPLOAD_SIZE) so the limit is tunable rather than hardcoded.
+var maxUploadSize = config.MaxUploadSize()
 
 func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 	ctx, span := apiTracer.Start(r.Context(), "api.upload_artifact")
@@ -68,15 +73,6 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !db.ValidOS(rt.os) {
-		jsonError(w, http.StatusBadRequest, "invalid os")
-		return
-	}
-	if !db.ValidArch(rt.arch) {
-		jsonError(w, http.StatusBadRequest, "invalid arch")
-		return
-	}
-
 	kind := r.URL.Query().Get("kind")
 	if kind == "" {
 		kind = r.Header.Get("X-Artifact-Kind")
@@ -87,6 +83,22 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 	if !db.ValidKind(kind) {
 		jsonError(w, http.StatusBadRequest, "invalid kind")
 		return
+	}
+
+	if kind == string(db.KindNPMPackage) {
+		if rt.os != "any" || rt.arch != "any" {
+			jsonError(w, http.StatusBadRequest, "npm-package artifacts must use os=any and arch=any")
+			return
+		}
+	} else {
+		if !db.ValidOS(rt.os) {
+			jsonError(w, http.StatusBadRequest, "invalid os")
+			return
+		}
+		if !db.ValidArch(rt.arch) {
+			jsonError(w, http.StatusBadRequest, "invalid arch")
+			return
+		}
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)

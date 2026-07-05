@@ -11,9 +11,11 @@ import (
 )
 
 func init() {
-	auth.HandleRaw("POST /api/v1/oidc/policies", handler.CreateOIDCPolicy)
-	auth.HandleRaw("GET /api/v1/oidc/policies", handler.ListOIDCPolicies)
-	auth.HandleRaw("DELETE /api/v1/oidc/policies/{id}", handler.DeleteOIDCPolicy)
+	auth.OnReady(func() {
+		auth.HandleRaw("POST /api/v1/oidc/policies", handler.CreateOIDCPolicy)
+		auth.HandleRaw("GET /api/v1/oidc/policies", handler.ListOIDCPolicies)
+		auth.HandleRaw("DELETE /api/v1/oidc/policies/{id}", handler.DeleteOIDCPolicy)
+	})
 }
 
 type createOIDCPolicyRequest struct {

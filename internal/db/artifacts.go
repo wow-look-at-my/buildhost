@@ -40,6 +40,20 @@ func (d *DB) UpdateArtifactStripped(ctx context.Context, id int64, strippedKey s
 	})
 }
 
+func (d *DB) GetArtifactByKind(ctx context.Context, releaseID int64, kind Kind) (*Artifact, error) {
+	row, err := d.q.GetArtifactByReleaseAndKind(ctx, GetArtifactByReleaseAndKindParams{
+		ReleaseID: releaseID,
+		Kind:      kind,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get artifact by kind: %w", err)
+	}
+	return &row, nil
+}
+
 func (d *DB) GetArtifact(ctx context.Context, releaseID int64, os, arch string) (*Artifact, error) {
 	row, err := d.q.GetArtifactByReleaseOSArch(ctx, GetArtifactByReleaseOSArchParams{
 		ReleaseID: releaseID,

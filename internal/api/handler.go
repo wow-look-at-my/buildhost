@@ -19,6 +19,7 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 		handler.Orchestrator = repackage.NewOrchestrator(auth.Store(), auth.DB())
+		handler.GitHubWebhookSecret = auth.GitHubWebhookSecret()
 	})
 }
 
@@ -53,9 +54,10 @@ func routeFrom(ctx context.Context) route {
 }
 
 type Handler struct {
-	DB           *db.DB
-	Store        storage.Storage
-	Orchestrator *repackage.Orchestrator
+	DB                  *db.DB
+	Store               storage.Storage
+	Orchestrator        *repackage.Orchestrator
+	GitHubWebhookSecret string
 }
 
 const maxJSONBody = 1 << 20 // 1 MiB
@@ -90,6 +92,22 @@ func (h *Handler) requireGlobalWrite(w http.ResponseWriter, r *http.Request) *db
 
 func (h *Handler) getRelease(w http.ResponseWriter, r *http.Request, projectID int64, version string) *db.Release {
 	rel, err := h.DB.GetRelease(r.Context(), projectID, version)
+	if err != nil {
+		if err == db.ErrNotFound {
+			jsonError(w, http.StatusNotFound, "release not found")
+		} else {
+			jsonError(w, http.StatusInternalServerError, "failed to get release")
+		}
+		return nil
+	}
+	return rel
+}
+
+// getLatestRelease resolves the apex "latest" release (newest published release
+// on the default branch, falling back to newest published overall) the same way
+// dl/static/web do. It writes the error response and returns nil on failure.
+func (h *Handler) getLatestRelease(w http.ResponseWriter, r *http.Request, projectID int64) *db.Release {
+	rel, err := h.DB.GetLatestRelease(r.Context(), projectID)
 	if err != nil {
 		if err == db.ErrNotFound {
 			jsonError(w, http.StatusNotFound, "release not found")

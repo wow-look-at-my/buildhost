@@ -33,11 +33,21 @@ const (
 type Kind string
 
 const (
-	KindBinary  Kind = "binary"
-	KindLibrary Kind = "library"
-	KindAssets  Kind = "assets"
-	KindArchive Kind = "archive"
+	KindBinary     Kind = "binary"
+	KindLibrary    Kind = "library"
+	KindAssets     Kind = "assets"
+	KindArchive    Kind = "archive"
+	KindDocker     Kind = "docker"
+	KindNPMPackage Kind = "npm-package"
 )
+
+// ServedViaDockerOnly reports whether artifacts of this kind are exclusively
+// served through the OCI (/v2) endpoint. A "docker build" is just a container
+// image: it has no bare binary to repackage, so apt/brew/npm/raw downloads do
+// not apply to it.
+func (k Kind) ServedViaDockerOnly() bool {
+	return k == KindDocker
+}
 
 func ValidOS(s string) bool {
 	switch OS(s) {
@@ -55,9 +65,47 @@ func ValidArch(s string) bool {
 	return false
 }
 
+// NormalizeOS maps an operating-system name to its canonical db.OS, accepting the
+// spellings GitHub Actions' RUNNER_OS uses ("Linux", "macOS", "Windows") and
+// other common aliases so clients can pass platform names through verbatim. It
+// returns ("", false) for an unrecognized name; callers should leave such a value
+// untouched (e.g. the "any" sentinel) rather than rejecting it.
+func NormalizeOS(s string) (OS, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "linux":
+		return OSLinux, true
+	case "darwin", "macos", "mac", "osx", "os x", "apple-darwin":
+		return OSDarwin, true
+	case "windows", "win", "win32", "win64":
+		return OSWindows, true
+	case "freebsd":
+		return OSFreeBSD, true
+	}
+	return "", false
+}
+
+// NormalizeArch maps a CPU-architecture name to its canonical db.Arch, accepting
+// GitHub Actions' RUNNER_ARCH spellings ("X64", "ARM64", "X86", "ARM"), uname's
+// ("x86_64", "aarch64", "i686", ...), and other common aliases. It returns
+// ("", false) for an unrecognized name; callers should leave such a value
+// untouched (e.g. the "any" sentinel) rather than rejecting it.
+func NormalizeArch(s string) (Arch, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "amd64", "x64", "x86_64", "x86-64", "x8664":
+		return ArchAMD64, true
+	case "arm64", "aarch64", "armv8", "arm64e":
+		return ArchARM64, true
+	case "386", "x86", "i386", "i686":
+		return Arch386, true
+	case "arm", "armv7", "armv7l", "armv6", "armv6l", "armhf":
+		return ArchARM, true
+	}
+	return "", false
+}
+
 func ValidKind(s string) bool {
 	switch Kind(s) {
-	case KindBinary, KindLibrary, KindAssets, KindArchive:
+	case KindBinary, KindLibrary, KindAssets, KindArchive, KindDocker, KindNPMPackage:
 		return true
 	}
 	return false
@@ -79,6 +127,11 @@ type StorageBreakdown = GetStorageBreakdownRow
 var ValidScopes = map[string]bool{
 	"read":  true,
 	"write": true,
+	// share authorizes minting temporary, artifact-bound download links
+	// (POST /api/v1/projects/{project}/download-links). It is deliberately
+	// separate from write so a CI/deploy token cannot also hand out shareable
+	// links to private artifacts.
+	"share": true,
 }
 
 func (r Release) IsPrerelease() bool {

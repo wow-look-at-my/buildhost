@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestCreateProject_Success(t *testing.T) {
@@ -166,4 +166,28 @@ func TestListProjects_AuthSeesPrivate(t *testing.T) {
 	var projects []db.Project
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &projects))
 	assert.Equal(t, 2, len(projects))
+}
+
+func TestValidProjectName_SlashNamespaced(t *testing.T) {
+	for _, name := range []string{"log-streamer", "log-streamer/client", "log-streamer/server", "foo/cli", "a/b/c", "x"} {
+		assert.True(t, validProjectName(name), "expected valid: %q", name)
+	}
+	for _, name := range []string{"", "/foo", "foo/", "foo//bar", "Foo", "foo/Bar", "-foo", "/", "foo bar"} {
+		assert.False(t, validProjectName(name), "expected invalid: %q", name)
+	}
+}
+
+func TestCreateProject_SlashNamespaced(t *testing.T) {
+	h := setupTestHandler(t)
+
+	body := `{"name":"log-streamer/client","versioning":"auto"}`
+	req := httptest.NewRequest("POST", "/api/projects", strings.NewReader(body))
+	req = req.WithContext(writeToken(req.Context(), "read,write"))
+	rec := httptest.NewRecorder()
+	h.CreateProject(rec, req)
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var p db.Project
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
+	assert.Equal(t, "log-streamer/client", p.Name)
 }

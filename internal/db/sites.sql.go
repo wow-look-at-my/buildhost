@@ -25,7 +25,7 @@ func (q *Queries) DeleteSiteByProjectAndBranch(ctx context.Context, arg DeleteSi
 }
 
 const getSiteByProjectAndBranch = `-- name: GetSiteByProjectAndBranch :one
-SELECT id, project_id, branch, storage_key, size, sha256, file_count, git_commit, created_at, updated_at
+SELECT id, project_id, branch, storage_key, size, sha256, file_count, git_commit, is_public, created_at, updated_at
 FROM sites WHERE project_id = ? AND branch = ?
 `
 
@@ -46,6 +46,7 @@ func (q *Queries) GetSiteByProjectAndBranch(ctx context.Context, arg GetSiteByPr
 		&i.SHA256,
 		&i.FileCount,
 		&i.GitCommit,
+		&i.IsPublic,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -69,7 +70,7 @@ func (q *Queries) GetSiteStorageKey(ctx context.Context, arg GetSiteStorageKeyPa
 }
 
 const listSitesByProject = `-- name: ListSitesByProject :many
-SELECT id, project_id, branch, storage_key, size, sha256, file_count, git_commit, created_at, updated_at
+SELECT id, project_id, branch, storage_key, size, sha256, file_count, git_commit, is_public, created_at, updated_at
 FROM sites WHERE project_id = ? ORDER BY updated_at DESC
 `
 
@@ -91,6 +92,7 @@ func (q *Queries) ListSitesByProject(ctx context.Context, projectID int64) ([]Si
 			&i.SHA256,
 			&i.FileCount,
 			&i.GitCommit,
+			&i.IsPublic,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -108,14 +110,15 @@ func (q *Queries) ListSitesByProject(ctx context.Context, projectID int64) ([]Si
 }
 
 const upsertSite = `-- name: UpsertSite :execresult
-INSERT INTO sites (project_id, branch, storage_key, size, sha256, file_count, git_commit, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+INSERT INTO sites (project_id, branch, storage_key, size, sha256, file_count, git_commit, is_public, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
 ON CONFLICT(project_id, branch) DO UPDATE SET
   storage_key = excluded.storage_key,
   size = excluded.size,
   sha256 = excluded.sha256,
   file_count = excluded.file_count,
   git_commit = excluded.git_commit,
+  is_public = excluded.is_public,
   updated_at = datetime('now')
 `
 
@@ -127,6 +130,7 @@ type UpsertSiteParams struct {
 	SHA256     string `json:"sha256"`
 	FileCount  int64  `json:"file_count"`
 	GitCommit  string `json:"git_commit"`
+	IsPublic   bool   `json:"is_public"`
 }
 
 func (q *Queries) UpsertSite(ctx context.Context, arg UpsertSiteParams) (sql.Result, error) {
@@ -138,5 +142,6 @@ func (q *Queries) UpsertSite(ctx context.Context, arg UpsertSiteParams) (sql.Res
 		arg.SHA256,
 		arg.FileCount,
 		arg.GitCommit,
+		arg.IsPublic,
 	)
 }

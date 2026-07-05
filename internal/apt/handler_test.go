@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestParseRoute(t *testing.T) {
@@ -24,37 +24,37 @@ func TestParseRoute(t *testing.T) {
 	}{
 		{
 			name: "release, single-segment name",
-			path: "/apt/buildhost/dists/stable/Release",
+			path: "/buildhost/dists/stable/Release",
 			want: route{project: "buildhost", subPath: "dists/stable/Release"},
 		},
 		{
 			name: "release, dashed name",
-			path: "/apt/go-toolchain/dists/stable/Release",
+			path: "/go-toolchain/dists/stable/Release",
 			want: route{project: "go-toolchain", subPath: "dists/stable/Release"},
 		},
 		{
 			name: "release, multi-segment name (decoded path with literal '/')",
-			path: "/apt/library/foo/dists/stable/Release",
+			path: "/library/foo/dists/stable/Release",
 			want: route{project: "library/foo", subPath: "dists/stable/Release"},
 		},
 		{
 			name: "release, deeply nested multi-segment name",
-			path: "/apt/team/group/proj-name/dists/stable/InRelease",
+			path: "/team/group/proj-name/dists/stable/InRelease",
 			want: route{project: "team/group/proj-name", subPath: "dists/stable/InRelease"},
 		},
 		{
 			name: "binary-amd64 packages, multi-segment name",
-			path: "/apt/library/foo/dists/stable/main/binary-amd64/Packages",
+			path: "/library/foo/dists/stable/main/binary-amd64/Packages",
 			want: route{project: "library/foo", subPath: "dists/stable/main/binary-amd64/Packages"},
 		},
 		{
 			name: "pool, multi-segment name",
-			path: "/apt/library/foo/pool/foo_1.0.0_amd64.deb",
+			path: "/library/foo/pool/foo_1.0.0_amd64.deb",
 			want: route{project: "library/foo", subPath: "pool/foo_1.0.0_amd64.deb"},
 		},
 		{
 			name: "name itself contains literal 'dists' segment, distinguished by LastIndex",
-			path: "/apt/foo/dists/bar/dists/stable/Release",
+			path: "/foo/dists/bar/dists/stable/Release",
 			want: route{project: "foo/dists/bar", subPath: "dists/stable/Release"},
 		},
 	}
@@ -76,7 +76,7 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, "http://localhost:8080", t.TempDir())}
+	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, t.TempDir())}
 	return h, d, store
 }
 
@@ -176,7 +176,7 @@ func TestServePackages_Success(t *testing.T) {
 
 	proj := &db.Project{Name: "myapp", Description: "A test app", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.2.3", VersionNum: 1002003}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.2.3", VersionNum: 1002003, GitBranch: db.LatestBranch}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -199,13 +199,72 @@ func TestServePackages_Success(t *testing.T) {
 	assert.Contains(t, body, "Architecture: amd64")
 }
 
+// TestServePackages_NamespacedName proves the Packages index for a
+// slash-namespaced project advertises a valid Debian package name (slash folded
+// to dash) in both the Package and Filename fields, so apt/dpkg accept it.
+func TestServePackages_NamespacedName(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "pr-reviewer-agent/server", Description: "namespaced", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.2.3", VersionNum: 1002003, GitBranch: db.LatestBranch}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, strings.NewReader("binary"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	req := httptest.NewRequest("GET", "/pr-reviewer-agent/server/dists/stable/main/binary-amd64/Packages", nil)
+	req = withRoute(req, proj, route{project: "pr-reviewer-agent/server", subPath: "dists/stable/main/binary-amd64/Packages"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "Package: pr-reviewer-agent-server\n")
+	assert.Contains(t, body, "Filename: pool/pr-reviewer-agent-server_1.2.3_amd64.deb")
+	assert.NotContains(t, body, "pr-reviewer-agent/server_1.2.3") // no slash in the deb name
+}
+
+func TestServePackages_DockerArtifact_Empty(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1", VersionNum: 1, GitBranch: db.LatestBranch}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, strings.NewReader("oci-manifest"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindDocker, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	// A docker-only release exposes no apt package.
+	req := httptest.NewRequest("GET", "/ollama/dists/stable/main/binary-amd64/Packages", nil)
+	req = withRoute(req, proj, route{project: "ollama", subPath: "dists/stable/main/binary-amd64/Packages"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Empty(t, rec.Body.String())
+}
+
 func TestServePackages_NoArtifactForArch(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
 	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000, GitBranch: db.LatestBranch}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -249,7 +308,7 @@ func TestServePool_Success(t *testing.T) {
 
 	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000, GitBranch: db.LatestBranch}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -267,8 +326,8 @@ func TestServePool_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusFound, rec.Code)
 	loc := rec.Header().Get("Location")
-	assert.Contains(t, loc, "/static?")
-	assert.Contains(t, loc, "id=myapp")
+	assert.Contains(t, loc, "/file?")
+	assert.Contains(t, loc, "project=myapp")
 	assert.Contains(t, loc, "fmt=deb")
 	assert.Contains(t, loc, "v=1.0.0")
 }
@@ -395,7 +454,7 @@ func TestServeHTTP_PrivateProject_Pool_WithValidContext(t *testing.T) {
 
 	proj := &db.Project{Name: "secret", IsPrivate: true, Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000, GitBranch: db.LatestBranch}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -413,7 +472,7 @@ func TestServeHTTP_PrivateProject_Pool_WithValidContext(t *testing.T) {
 
 	assert.Equal(t, http.StatusFound, rec.Code)
 	loc := rec.Header().Get("Location")
-	assert.Contains(t, loc, "/static?")
-	assert.Contains(t, loc, "id=secret")
+	assert.Contains(t, loc, "/file?")
+	assert.Contains(t, loc, "project=secret")
 	assert.Contains(t, loc, "fmt=deb")
 }
