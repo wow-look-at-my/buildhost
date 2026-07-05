@@ -6,9 +6,9 @@ import (
 	"io"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 type memStorage struct {

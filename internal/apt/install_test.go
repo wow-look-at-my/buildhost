@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestParseRoute_InstallScript(t *testing.T) {
@@ -62,14 +62,18 @@ func TestServeInstallScript(t *testing.T) {
 	// Self-referential, subdomain-correct URL derived from the request Host.
 	assert.Contains(t, body, "APT_URL='https://apt.pazer.build/myapp'")
 	assert.Contains(t, body, "PROJECT='myapp'")
+	assert.Contains(t, body, "PKG='myapp'")
 	// Signed-by setup using the armored key served at key.asc (no gpg needed).
 	assert.Contains(t, body, "$APT_URL/key.asc")
 	assert.Contains(t, body, "deb [signed-by=$KEYRING] $APT_URL stable main")
 	assert.Contains(t, body, "/etc/apt/keyrings/buildhost-myapp.asc")
 	assert.Contains(t, body, "/etc/apt/sources.list.d/buildhost-myapp.list")
-	assert.Contains(t, body, "sudo apt-get install $PROJECT")
-	// Private-repo token support is wired in.
+	assert.Contains(t, body, "sudo apt-get install $PKG")
+	// Private-repo token support is wired in, and the auth entry also covers
+	// the static host (the .deb pool download redirects there).
 	assert.Contains(t, body, "BUILDHOST_TOKEN")
+	assert.Contains(t, body, "STATIC_HOST='static.pazer.build'")
+	assert.Contains(t, body, "machine $STATIC_HOST")
 }
 
 func TestServeInstallScript_NamespacedSlug(t *testing.T) {
@@ -92,4 +96,7 @@ func TestServeInstallScript_NamespacedSlug(t *testing.T) {
 	assert.Contains(t, body, "/etc/apt/keyrings/buildhost-team-tool.asc")
 	assert.Contains(t, body, "/etc/apt/sources.list.d/buildhost-team-tool.list")
 	assert.Contains(t, body, "/etc/apt/auth.conf.d/buildhost-team-tool.conf")
+	// The install hint uses the folded Debian package name
+	// (repackage.DebPackageName), never the raw slash-namespaced name.
+	assert.Contains(t, body, "PKG='team-tool'")
 }

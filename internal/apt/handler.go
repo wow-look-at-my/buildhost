@@ -55,11 +55,11 @@ func routeFrom(ctx context.Context) route {
 }
 
 type Handler struct {
-	DB        *db.DB
-	Store     storage.Storage
+	DB    *db.DB
+	Store storage.Storage
 
-	Gen       *repackage.Generator
-	Signer    *Signer
+	Gen    *repackage.Generator
+	Signer *Signer
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

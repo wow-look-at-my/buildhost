@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	_ "github.com/wow-look-at-my/buildhost/internal/api"
 	"github.com/wow-look-at-my/buildhost/internal/apt"
 	_ "github.com/wow-look-at-my/buildhost/internal/brew"
@@ -32,14 +33,13 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	_ "github.com/wow-look-at-my/buildhost/internal/sites"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 // testEnv bundles the objects needed by every integration test.
 type testEnv struct {
-	ts		*httptest.Server
-	database	*db.DB
-	token		string	// plaintext API token with read,write scopes
+	ts       *httptest.Server
+	database *db.DB
+	token    string // plaintext API token with read,write scopes
 }
 
 // The apt backend generates a fresh 4096-bit RSA signing key the first time a
@@ -88,9 +88,9 @@ func setup(t *testing.T) *testEnv {
 	require.Nil(t, err)
 
 	cfg := config.Config{
-		ListenAddr:	":0",
-		DataDir:	dbDir,
-		DBPath:		dbPath,
+		ListenAddr: ":0",
+		DataDir:    dbDir,
+		DBPath:     dbPath,
 	}
 
 	srv := server.New(cfg, database, store)
@@ -232,7 +232,7 @@ func TestFullLifecycle(t *testing.T) {
 	require.True(t, found)
 
 	// (c) Create release
-	resp = env.postJSON(t, "/api/v1/projects/myapp/releases", `{"git_branch":"main","git_commit":"abc123"}`)
+	resp = env.postJSON(t, "/api/v1/projects/myapp/releases", `{"git_branch":"master","git_commit":"abc123"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 	var release db.Release
@@ -241,7 +241,7 @@ func TestFullLifecycle(t *testing.T) {
 
 	require.Equal(t, int64(1), release.VersionNum)
 
-	require.Equal(t, "main", release.GitBranch)
+	require.Equal(t, "master", release.GitBranch)
 
 	require.Equal(t, "abc123", release.GitCommit)
 
@@ -277,7 +277,7 @@ func TestFullLifecycle(t *testing.T) {
 	require.Contains(t, resp.Header.Get("Location"), "project=myapp")
 
 	// (h) Download via branch -- redirects with resolved version
-	resp = env.getSubdomain(t, "dl", "/myapp?branch=main&os=linux&arch=amd64")
+	resp = env.getSubdomain(t, "dl", "/myapp?branch=master&os=linux&arch=amd64")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
 	require.Contains(t, resp.Header.Get("Location"), "static.test.local/file?")
 

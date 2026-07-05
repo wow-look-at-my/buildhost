@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 )
 
 // installScriptTemplate is a POSIX sh installer that adds this project's signed
@@ -33,7 +34,9 @@ const installScriptTemplate = `#!/bin/sh
 set -eu
 
 PROJECT='__PROJECT__'
+PKG='__PKG__'
 APT_URL='__APT_URL__'
+STATIC_HOST='__STATIC_HOST__'
 KEYRING='/etc/apt/keyrings/__SLUG__.asc'
 LIST='/etc/apt/sources.list.d/__SLUG__.list'
 AUTH='/etc/apt/auth.conf.d/__SLUG__.conf'
@@ -61,12 +64,16 @@ chmod 0644 "$KEYRING"
 echo "deb [signed-by=$KEYRING] $APT_URL stable main" > "$LIST"
 
 # Private repositories: persist the token so apt-get can authenticate. The
-# machine line is scoped to this project's path so the token is never sent
-# to other repositories on the same host.
+# first machine line is scoped to this project's path so the token is never
+# sent to other repositories on the same host; the second covers the static
+# host, because the .deb pool download redirects there.
 if [ -n "$TOKEN" ]; then
     mkdir -p /etc/apt/auth.conf.d
     {
         echo "machine ${APT_URL#*://}"
+        echo "login token"
+        echo "password $TOKEN"
+        echo "machine $STATIC_HOST"
         echo "login token"
         echo "password $TOKEN"
     } > "$AUTH"
@@ -77,7 +84,7 @@ apt-get update
 
 echo ""
 echo "buildhost: repository for '$PROJECT' added."
-echo "Install it with:  sudo apt-get install $PROJECT"
+echo "Install it with:  sudo apt-get install $PKG"
 `
 
 // serveInstallScript renders the per-project apt installer. Auth (for private
@@ -91,7 +98,9 @@ func (h *Handler) serveInstallScript(w http.ResponseWriter, r *http.Request) {
 
 	script := strings.NewReplacer(
 		"__PROJECT__", project.Name,
+		"__PKG__", repackage.DebPackageName(project.Name),
 		"__APT_URL__", aptURL,
+		"__STATIC_HOST__", auth.DeriveServiceURL(r, "static").Host,
 		"__SLUG__", slug,
 	).Replace(installScriptTemplate)
 

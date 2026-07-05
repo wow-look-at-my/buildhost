@@ -1,13 +1,17 @@
 package api
 
 //go:generate go run github.com/wow-look-at-my/go-regex-compiler/cmd/go-regex-compiler@latest --regex "^[a-zA-Z0-9][a-zA-Z0-9._+-]{0,127}$" --func validVersion --package api --output gen_version.go --match full
+//go:generate gofmt -w gen_version.go
 //go:generate go run github.com/wow-look-at-my/go-regex-compiler/cmd/go-regex-compiler@latest --regex "^[a-zA-Z0-9._/-]{1,256}$" --func validGitBranch --package api --output gen_git_branch.go --match full
+//go:generate gofmt -w gen_git_branch.go
 //go:generate go run github.com/wow-look-at-my/go-regex-compiler/cmd/go-regex-compiler@latest --regex "^[a-fA-F0-9]{1,64}$" --func validGitCommit --package api --output gen_git_commit.go --match full
+//go:generate gofmt -w gen_git_commit.go
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,7 +32,13 @@ type createReleaseRequest struct {
 	Version   string `json:"version"`
 	GitBranch string `json:"git_branch"`
 	GitCommit string `json:"git_commit"`
-	Notes     string `json:"notes"`
+	// DefaultBranch is the repo's default branch (e.g. GitHub's
+	// repository.default_branch). When set, it becomes the branch the apex
+	// "latest" tracks for this project, so a project that releases off a
+	// non-master branch (e.g. go-toolchain on "v1") resolves "latest" correctly.
+	DefaultBranch string `json:"default_branch"`
+	Notes         string `json:"notes"`
+	OciUser       string `json:"oci_user"`
 }
 
 func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
@@ -76,12 +86,20 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "invalid git_branch")
 		return
 	}
+	if req.DefaultBranch != "" && !validGitBranch(req.DefaultBranch) {
+		jsonError(w, http.StatusBadRequest, "invalid default_branch")
+		return
+	}
 	if req.GitCommit != "" && !validGitCommit(req.GitCommit) {
 		jsonError(w, http.StatusBadRequest, "invalid git_commit")
 		return
 	}
 	if len(req.Notes) > 65536 {
 		jsonError(w, http.StatusBadRequest, "notes too long")
+		return
+	}
+	if req.OciUser != "" && !validOCIUser(req.OciUser) {
+		jsonError(w, http.StatusBadRequest, "invalid oci_user")
 		return
 	}
 
@@ -92,6 +110,7 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 		GitBranch:  req.GitBranch,
 		GitCommit:  req.GitCommit,
 		Notes:      req.Notes,
+		OciUser:    req.OciUser,
 	}
 
 	if err := h.DB.CreateRelease(r.Context(), rel); err != nil {
@@ -103,6 +122,17 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Record the repo's default branch so the apex "latest" tracks it. The
+	// publisher (already write-authorized for this project) is authoritative;
+	// every publish reasserts it, so it self-corrects. Best-effort: a failure
+	// here must not fail an already-created release.
+	if req.DefaultBranch != "" && req.DefaultBranch != project.DefaultBranch {
+		if err := h.DB.SetProjectDefaultBranch(r.Context(), project.ID, req.DefaultBranch); err != nil {
+			slog.WarnContext(r.Context(), "failed to update project default branch",
+				"project", project.Name, "default_branch", req.DefaultBranch, "err", err)
+		}
+	}
+
 	jsonResponse(w, http.StatusCreated, rel)
 }
 
@@ -110,7 +140,16 @@ func (h *Handler) GetRelease(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
 	rt := routeFrom(r.Context())
 
-	rel := h.getRelease(w, r, project.ID, rt.version)
+	// "latest" (and the empty spec) resolve to the apex latest release, mirroring
+	// how dl/static/web already treat "latest". Exposing it here gives clients a
+	// single, bounded request for the newest published release's metadata
+	// (version, git_commit, published_at) instead of listing every release.
+	var rel *db.Release
+	if rt.version == "" || rt.version == "latest" {
+		rel = h.getLatestRelease(w, r, project.ID)
+	} else {
+		rel = h.getRelease(w, r, project.ID, rt.version)
+	}
 	if rel == nil {
 		return
 	}
@@ -157,4 +196,47 @@ func semverToNum(v string) int64 {
 		}
 	}
 	return num
+}
+
+// validOCIUser reports whether s is a valid run-as user for a synthesized OCI image:
+// "uid", "uid:gid", "user", or "user:group". Each component is either a numeric id
+// (1-10 digits) or a name ([a-zA-Z_][a-zA-Z0-9_-]{0,31}), matching the OCI/Docker User
+// field. The empty string ("use the image default", i.e. root) is handled by the caller.
+// A plain function (not a go-regex-compiler validator) since this is a cold publish-time
+// path and adding a //go:generate directive would invalidate the CI generate approval.
+func validOCIUser(s string) bool {
+	user, group, hasGroup := strings.Cut(s, ":")
+	if !validUserComponent(user) {
+		return false
+	}
+	return !hasGroup || validUserComponent(group)
+}
+
+func validUserComponent(s string) bool {
+	if s == "" || len(s) > 32 {
+		return false
+	}
+	allDigits := true
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			allDigits = false
+			break
+		}
+	}
+	if allDigits {
+		return len(s) <= 10
+	}
+	for i, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r == '_':
+			// allowed in any position
+		case (r >= '0' && r <= '9') || r == '-':
+			if i == 0 {
+				return false // a name may not start with a digit or hyphen
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }

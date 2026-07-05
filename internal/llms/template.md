@@ -33,7 +33,7 @@ automated agents. Every example below uses this server's configured base URL,
 buildhost uses bearer tokens. Provide one in whichever way your client allows:
 
 - HTTP header: `Authorization: Bearer <token>`
-- HTTP Basic auth: use the token as the username
+- HTTP Basic auth: send the token as the password (the username is ignored)
 - Query parameter: `?token=<token>` (for clients that cannot set headers, such
   as some APT and Homebrew flows)
 
@@ -64,6 +64,23 @@ POST __BASE_URL__/api/v1/projects/{project}/releases
 PUT  __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}
 POST __BASE_URL__/api/v1/projects/{project}/releases/{version}/publish
 ```
+
+Large uploads: a proxy in front of the server may cap single request bodies
+(Cloudflare's edge rejects bodies over 100 MB). Check
+`GET __BASE_URL__/api/v1/server-info` for `max_direct_upload_bytes`; anything
+larger must go through a chunked upload session instead of one request:
+
+```
+POST   __BASE_URL__/api/v1/uploads                 -> {"id": ...}
+PATCH  __BASE_URL__/api/v1/uploads/{id}?offset=N   append chunk at offset (repeat)
+PUT    __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}?upload_session={id}&upload_sha256={hex}
+```
+
+The finalize step is the ORIGINAL upload endpoint with an empty body; the
+assembled bytes are used as the request body. Works on the site-deploy PUT
+too. Offsets must equal the committed size (a 409 returns the actual size to
+resume from); `GET __BASE_URL__/api/v1/uploads/{id}` reads it and DELETE
+aborts. The `buildhost publish` CLI does all of this automatically.
 
 ## Downloading
 
@@ -113,10 +130,15 @@ curl -fsSL -H "Authorization: Bearer $TOKEN" __APT_URL__/myapp/install.sh \
 To set it up by hand instead, see the README. APT reads the armored key at
 __APT_URL__/myapp/key.asc directly via signed-by, so no gpg step is needed.
 
-Homebrew (install the generated formula directly from its URL):
+For a slash-namespaced project the repository URL keeps the slash, but the
+Debian package name folds `/` and `_` to `-` (for example, `myrepo/server` is
+served at `__APT_URL__/myrepo/server` and installs as `myrepo-server`).
+
+Homebrew (tap the generated Git repository, then install the formula):
 
 ```
-brew install __BREW_URL__/myapp
+brew tap pazer/build __BREW_URL__/tap.git
+brew install pazer/build/myapp
 ```
 
 npm (packages are published under the `@buildhost` scope):
@@ -125,7 +147,9 @@ npm (packages are published under the `@buildhost` scope):
 npm install @buildhost/myapp --registry __NPM_URL__
 ```
 
-OCI / Docker (the registry is served at `__OCI_URL__/v2/`):
+OCI / Docker (the registry is served at `__OCI_URL__/v2/`). Public images pull
+anonymously; for a private project, run `docker login __OCI_HOST__` first (any
+valid token works as the password):
 
 ```
 docker pull __OCI_HOST__/myapp:latest
@@ -155,6 +179,11 @@ GET    /api/v1/projects/{project}/releases                                   lis
 GET    /api/v1/projects/{project}/releases/{version}                         get release
 PUT    /api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}   upload artifact
 POST   /api/v1/projects/{project}/releases/{version}/publish                 publish release
+GET    /api/v1/server-info                                                   upload limits (public)
+POST   /api/v1/uploads                                                       create chunked upload session
+GET    /api/v1/uploads/{id}                                                  session committed size
+PATCH  /api/v1/uploads/{id}                                                  append chunk (?offset=N)
+DELETE /api/v1/uploads/{id}                                                  abort session
 GET    /healthz                                                              health check
 ```
 
@@ -162,6 +191,10 @@ GET    /healthz                                                              hea
 
 - Resolve to a concrete version before calling the static endpoint; it
   rejects `v=latest` with HTTP 400.
+- Uploads larger than server-info's `max_direct_upload_bytes` must use a
+  chunked upload session (see "Publishing with the REST API"); a single
+  request that big is rejected by the proxy in front of the server before it
+  reaches buildhost.
 - For private projects, send the auth token on every request, including the
   APT, Homebrew, npm, and OCI endpoints.
 - `GET __BASE_URL__/healthz` returns 200 when the server and its database are
