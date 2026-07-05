@@ -78,6 +78,10 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 		return
 	}
 
+	// The project name may be slash-namespaced; fold it to a valid Debian
+	// package name (and matching pool filename). servePool resolves the project
+	// from the request path, not this filename, so the rename is safe.
+	pkgName := repackage.DebPackageName(project.Name)
 	desc := strings.NewReplacer("\n", " ", "\r", " ").Replace(project.Description)
 	entry := fmt.Sprintf(`Package: %s
 Version: %s
@@ -87,7 +91,7 @@ Size: %d
 SHA256: %s
 Description: %s
 
-`, project.Name, version, arch, project.Name, version, arch,
+`, pkgName, version, arch, pkgName, version, arch,
 		debSize, debSHA, desc)
 
 	w.Header().Set("Content-Type", "text/plain")

@@ -11,6 +11,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 )
 
 // siteName is the product name shown in the header and titles.
@@ -170,8 +171,8 @@ func buildProjectView(r *http.Request, p *db.Project, rels []db.ReleaseSummary, 
 	}
 
 	// Only published releases are downloadable, so only those are shown. The
-	// first published row (the list is ordered newest-first) is the latest.
-	latestShown := false
+	// "latest" badge is tied to the already-resolved latest version rather than
+	// whichever branch happens to have the highest version number.
 	for _, rel := range rels {
 		if !rel.Published {
 			continue
@@ -184,9 +185,8 @@ func buildProjectView(r *http.Request, p *db.Project, rels []db.ReleaseSummary, 
 			Published:     publishedWhen(rel.PublishedAt, rel.CreatedAt),
 			ArtifactCount: rel.ArtifactCount,
 		}
-		if !latestShown {
+		if latestVersion != "" && rel.Version == latestVersion {
 			row.Latest = true
-			latestShown = true
 		}
 		v.Releases = append(v.Releases, row)
 	}
@@ -219,8 +219,16 @@ func buildInstallInfo(r *http.Request, project, version string, hasBinary bool) 
 		info.Curl = fmt.Sprintf("curl -LO %q", dlURL(r, project, "", "linux", "amd64", "raw"))
 		info.Brew = "brew tap pazer/build " + serviceURL(r, "brew", "tap.git") + "\nbrew install pazer/build/" + project
 		info.Npm = "npm install @buildhost/" + project + " --registry " + serviceBase(r, "npm")
-		info.Apt = fmt.Sprintf("echo \"deb [signed-by=/etc/apt/keyrings/%s.gpg] %s stable main\" | sudo tee /etc/apt/sources.list.d/%s.list",
-			lastSegment(project), serviceURL(r, "apt", project), lastSegment(project))
+		aptURL := serviceURL(r, "apt", project)
+		// A slash-namespaced project keeps its slash in the repo URL but installs
+		// under a folded Debian package name (see repackage.DebPackageName).
+		pkg := repackage.DebPackageName(project)
+		info.Apt = fmt.Sprintf(
+			"sudo install -d -m 0755 /etc/apt/keyrings\n"+
+				"curl -fsSL %s/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\n"+
+				"echo \"deb [signed-by=/etc/apt/keyrings/buildhost.gpg] %s stable main\" | sudo tee /etc/apt/sources.list.d/%s.list\n"+
+				"sudo apt update && sudo apt install %s",
+			aptURL, aptURL, pkg, pkg)
 	}
 	return info
 }
@@ -356,6 +364,8 @@ func releasePath(project, version string) string {
 
 // ----- formatting helpers --------------------------------------------------
 
+// lastSegment returns the final /-separated segment of a slash-namespaced
+// project name -- the tree label shown next to the full name on the index.
 func lastSegment(name string) string {
 	if i := strings.LastIndexByte(name, '/'); i >= 0 {
 		return name[i+1:]

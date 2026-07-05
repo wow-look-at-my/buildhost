@@ -158,11 +158,17 @@ func seedPublishedRelease(t *testing.T, env *testEnv) {
 	require.Equal(t, http.StatusCreated,
 		env.postJSON(t, "/api/v1/projects", `{"name":"myapp","versioning":"auto"}`).StatusCode)
 	require.Equal(t, http.StatusCreated,
-		env.postJSON(t, "/api/v1/projects/myapp/releases", `{"git_branch":"main","git_commit":"abc123"}`).StatusCode)
+		env.postJSON(t, "/api/v1/projects/myapp/releases", `{"git_branch":"master","git_commit":"abc123"}`).StatusCode)
 	require.Equal(t, http.StatusCreated,
 		env.putBody(t, "/api/v1/projects/myapp/releases/1/artifacts/linux/amd64", []byte("#!/bin/sh\necho hi\n")).StatusCode)
 	require.Equal(t, http.StatusOK,
 		env.postJSON(t, "/api/v1/projects/myapp/releases/1/publish", `{}`).StatusCode)
+	require.Equal(t, http.StatusCreated,
+		env.postJSON(t, "/api/v1/projects/myapp/releases", `{"git_branch":"main","git_commit":"def456"}`).StatusCode)
+	require.Equal(t, http.StatusCreated,
+		env.putBody(t, "/api/v1/projects/myapp/releases/2/artifacts/linux/amd64", []byte("#!/bin/sh\necho branch\n")).StatusCode)
+	require.Equal(t, http.StatusOK,
+		env.postJSON(t, "/api/v1/projects/myapp/releases/2/publish", `{}`).StatusCode)
 }
 
 func documentedPaths(body, baseURL string) []string {

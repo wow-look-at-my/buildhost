@@ -79,6 +79,58 @@ func TestCreateRelease_AutoWithExplicitVersion(t *testing.T) {
 	assert.Equal(t, int64(5), rel.VersionNum)
 }
 
+// A publish that carries the repo's default branch records it on the project,
+// so the apex "latest" tracks that branch -- the go-toolchain ("v1") fix.
+func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "gotool", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	body := `{"git_branch":"v1","git_commit":"abc123","default_branch":"v1"}`
+	req := httptest.NewRequest("POST", "/api/projects/gotool/releases", strings.NewReader(body))
+	req.SetPathValue("project", "gotool")
+	req = withProjectRoute(req, proj)
+	req = req.WithContext(writeToken(req.Context(), "read,write"))
+	rec := httptest.NewRecorder()
+	h.CreateRelease(rec, req)
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+	var rel db.Release
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
+	require.NoError(t, h.DB.PublishRelease(ctx, rel.ID))
+
+	updated, err := h.DB.GetProject(ctx, "gotool")
+	require.NoError(t, err)
+	assert.Equal(t, "v1", updated.DefaultBranch, "publish must record the repo's default branch")
+
+	// "latest" now resolves to the v1 release; under the old hardcoded "master"
+	// it would have been nothing.
+	latest, err := h.DB.GetLatestRelease(ctx, proj.ID)
+	require.NoError(t, err)
+	assert.Equal(t, rel.Version, latest.Version)
+	assert.Equal(t, "v1", latest.GitBranch)
+}
+
+func TestCreateRelease_InvalidDefaultBranch(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "baddef", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	body := `{"default_branch":"bad branch!"}`
+	req := httptest.NewRequest("POST", "/api/projects/baddef/releases", strings.NewReader(body))
+	req.SetPathValue("project", "baddef")
+	req = withProjectRoute(req, proj)
+	req = req.WithContext(writeToken(req.Context(), "read,write"))
+	rec := httptest.NewRecorder()
+	h.CreateRelease(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
 // Note: TestCreateRelease_NoAuth removed -- auth is now enforced by the
 // requireProject middleware (tested in the auth package).
 
