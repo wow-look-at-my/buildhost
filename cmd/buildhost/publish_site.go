@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/wow-look-at-my/buildhost/internal/serviceurl"
 )
 
 func init() {
@@ -21,6 +23,7 @@ func init() {
 	publishSiteCmd.Flags().String("branch", "", "Branch name")
 	publishSiteCmd.Flags().String("dir", "", "Directory containing site files")
 	publishSiteCmd.Flags().String("git-commit", "", "Git commit SHA")
+	addChunkSizeFlag(publishSiteCmd)
 }
 
 var publishSiteCmd = &cobra.Command{
@@ -41,33 +44,43 @@ func runPublishSite(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("--server, --token, --project, --branch, and --dir are required")
 	}
 
-	pr, pw := io.Pipe()
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- createTarGz(pw, dir)
-		pw.Close()
-	}()
-
-	url := fmt.Sprintf("%s/sites/%s/branch/%s", serverURL, project, branch)
-	req, err := http.NewRequest("PUT", url, pr)
+	sitesBase, err := serviceurl.Base(serverURL, "sites")
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/gzip")
-	if gitCommit != "" {
-		req.Header.Set("X-Git-Commit", gitCommit)
+		return err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	// Archive to a temp file (not a streaming pipe) so the upload knows the
+	// size up front -- that is what lets it choose a chunked upload session
+	// for archives too large for a single request to pass the proxy in front
+	// of the server.
+	tmp, err := os.CreateTemp("", "buildhost-site-*.tar.gz")
+	if err != nil {
+		return fmt.Errorf("create archive temp file: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+	if err := createTarGz(tmp, dir); err != nil {
+		tmp.Close()
+		return fmt.Errorf("create archive: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("create archive: %w", err)
+	}
+
+	up, err := newUploader(cmd, serverURL, token)
+	if err != nil {
+		return err
+	}
+	header := map[string]string{"Content-Type": "application/gzip"}
+	if gitCommit != "" {
+		header["X-Git-Commit"] = gitCommit
+	}
+
+	endpoint := fmt.Sprintf("%s/%s/branch/%s", sitesBase, project, branch)
+	resp, err := up.Upload("PUT", endpoint, header, tmp.Name())
 	if err != nil {
 		return fmt.Errorf("upload site: %w", err)
 	}
 	defer resp.Body.Close()
-
-	if tarErr := <-errCh; tarErr != nil {
-		return fmt.Errorf("create archive: %w", tarErr)
-	}
 
 	if resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
@@ -75,7 +88,7 @@ func runPublishSite(cmd *cobra.Command, _ []string) error {
 	}
 
 	fmt.Printf("published site %s branch %s\n", project, branch)
-	fmt.Printf("  %s/sites/%s/branch/%s/\n", serverURL, project, branch)
+	fmt.Printf("  %s/%s/branch/%s/\n", sitesBase, project, branch)
 	return nil
 }
 

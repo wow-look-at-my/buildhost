@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 func (d *DB) UpsertSite(ctx context.Context, s *Site) (oldStorageKey string, err error) {
@@ -35,6 +36,7 @@ func (d *DB) UpsertSite(ctx context.Context, s *Site) (oldStorageKey string, err
 		SHA256:     s.SHA256,
 		FileCount:  int64(s.FileCount),
 		GitCommit:  s.GitCommit,
+		IsPublic:   s.IsPublic,
 	})
 	if err != nil {
 		return "", fmt.Errorf("upsert site: %w", err)
@@ -99,4 +101,75 @@ func (d *DB) DeleteSite(ctx context.Context, projectID int64, branch string) (st
 		return "", fmt.Errorf("commit: %w", err)
 	}
 	return row, nil
+}
+
+type DeletedSite struct {
+	ProjectID   int64
+	ProjectName string
+	Branch      string
+	StorageKey  string
+}
+
+func (d *DB) DeleteSitesByRepositoryBranch(ctx context.Context, repositoryName, branch string) ([]DeletedSite, error) {
+	tx, err := d.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	prefixLike := escapeLike(repositoryName) + "/%"
+	rows, err := tx.QueryContext(ctx, `
+SELECT sites.project_id, projects.name, sites.branch, sites.storage_key
+FROM sites
+JOIN projects ON projects.id = sites.project_id
+WHERE sites.branch = ?
+  AND (projects.name = ? OR projects.name LIKE ? ESCAPE '\')
+ORDER BY projects.name`, branch, repositoryName, prefixLike)
+	if err != nil {
+		return nil, fmt.Errorf("list repository branch sites: %w", err)
+	}
+
+	var deleted []DeletedSite
+	for rows.Next() {
+		var s DeletedSite
+		if err := rows.Scan(&s.ProjectID, &s.ProjectName, &s.Branch, &s.StorageKey); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan repository branch site: %w", err)
+		}
+		deleted = append(deleted, s)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close repository branch sites: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate repository branch sites: %w", err)
+	}
+	if len(deleted) == 0 {
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("commit: %w", err)
+		}
+		return nil, nil
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+DELETE FROM sites
+WHERE branch = ?
+  AND project_id IN (
+    SELECT id FROM projects
+    WHERE name = ? OR name LIKE ? ESCAPE '\'
+  )`, branch, repositoryName, prefixLike); err != nil {
+		return nil, fmt.Errorf("delete repository branch sites: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+	return deleted, nil
+}
+
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
 }

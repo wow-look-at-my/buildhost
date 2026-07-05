@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
 func newTestServer(t *testing.T) (*Server, *db.DB) {
@@ -22,6 +23,9 @@ func newTestServer(t *testing.T) (*Server, *db.DB) {
 	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { database.Close() })
+
+	store, err := storage.NewFilesystem(t.TempDir(), true)
+	require.NoError(t, err)
 
 	cfg := config.Config{
 		ListenAddr:      ":8080",
@@ -34,7 +38,7 @@ func newTestServer(t *testing.T) (*Server, *db.DB) {
 		Date:    "2025-01-15T10:30:00Z",
 		RepoURL: "https://github.com/wow-look-at-my/buildhost",
 	}
-	srv := New(cfg, database, build)
+	srv := New(cfg, database, store, build)
 	return srv, database
 }
 
@@ -211,7 +215,22 @@ func TestAPIRelease(t *testing.T) {
 	assert.Equal(t, float64(2048), a["size"])
 
 	assert.Equal(t, float64(2048), resp["total_size"])
-	assert.Equal(t, "https://buildhost.example.com", resp["base_url"])
+	// The admin dashboard runs on its own subdomain (buildhost.example.com here);
+	// base_url is the registry root and service URLs are real per-service hosts.
+	assert.Equal(t, "https://example.com", resp["base_url"])
+	assertServiceURLs(t, resp)
+}
+
+// assertServiceURLs checks the "services" map carries the real per-service
+// subdomain hosts the router serves, derived from the request Host
+// (buildhost.example.com -> example.com) with the admin label stripped.
+func assertServiceURLs(t *testing.T, resp map[string]any) {
+	t.Helper()
+	services, ok := resp["services"].(map[string]any)
+	require.True(t, ok, "response is missing a services map")
+	for _, svc := range []string{"dl", "apt", "brew", "npm", "oci", "sites", "static"} {
+		assert.Equal(t, "https://"+svc+".example.com", services[svc])
+	}
 }
 
 func TestAPIRelease_SlashNamespaced(t *testing.T) {
@@ -261,7 +280,8 @@ func TestAPIRegistries(t *testing.T) {
 
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, "https://buildhost.example.com", resp["base_url"])
+	assert.Equal(t, "https://example.com", resp["base_url"])
+	assertServiceURLs(t, resp)
 
 	projects := resp["projects"].([]any)
 	assert.Len(t, projects, 1)
@@ -507,6 +527,12 @@ func TestAPIStorage(t *testing.T) {
 	assert.Equal(t, "testproject", projects[0].(map[string]any)["name"])
 	assert.Equal(t, float64(2048), projects[0].(map[string]any)["total_bytes"])
 	assert.Equal(t, float64(2048), resp["total_bytes"])
+
+	// Component breakdown fields are exposed for the reconciliation view.
+	assert.Equal(t, float64(2048), resp["logical_bytes"])
+	assert.Equal(t, float64(0), resp["stripped_bytes"])
+	assert.Equal(t, float64(0), resp["debug_bytes"])
+	assert.Equal(t, float64(0), resp["packaged_bytes"])
 }
 
 func TestAPIStorage_Empty(t *testing.T) {
@@ -566,7 +592,7 @@ func TestSecurityHeaders(t *testing.T) {
 	assert.Equal(t, "DENY", w.Header().Get("X-Frame-Options"))
 	assert.Equal(t, "no-referrer", w.Header().Get("Referrer-Policy"))
 	assert.Equal(t, "max-age=63072000; includeSubDomains", w.Header().Get("Strict-Transport-Security"))
-	assert.Equal(t, "default-src 'self' data:", w.Header().Get("Content-Security-Policy"))
+	assert.Equal(t, "default-src 'self' data: 'unsafe-inline'", w.Header().Get("Content-Security-Policy"))
 	assert.Equal(t, "none", w.Header().Get("X-Permitted-Cross-Domain-Policies"))
 	assert.Equal(t, "interest-cohort=()", w.Header().Get("Permissions-Policy"))
 }
