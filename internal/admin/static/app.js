@@ -204,6 +204,8 @@ App.pages.project = function (name) {
     App.renderSidebar("projects");
     App.fetch("/projects/" + name).then(function (d) {
         var p = d.project;
+        var svc = d.services || {};
+        var rels = d.releases || [];
         var html = "<h1>" + App.h(p.name) + "</h1>";
         html += '<div class="card"><h2>Project Info</h2><table class="info-table">';
         html += "<tr><td class='info-label'>ID</td><td>" + p.id + "</td></tr>";
@@ -216,8 +218,85 @@ App.pages.project = function (name) {
         html += '<tr><td class="info-label">Updated</td><td title="' + App.h(App.formatTime(p.updated_at)) + '">' + App.h(App.timeAgo(p.updated_at)) + "</td></tr>";
         html += "</table></div>";
 
+        // Download & Install (latest): non-versioned endpoints and commands so
+        // the newest build can be fetched without first opening a specific
+        // release. Mirrors the release page's endpoint card, version-free, plus
+        // the package-manager one-liners from the Registries page. Only shown
+        // once the project has a published release ("latest" 404s otherwise).
+        var hasPublished = false;
+        for (var ri = 0; ri < rels.length; ri++) { if (rels[ri].published) { hasPublished = true; break; } }
+        if (hasPublished) {
+            var dlBase = (svc.dl || "") + "/" + p.name;
+            var aptBase = (svc.apt || "") + "/" + p.name;
+            var brewU = (svc.brew || "") + "/Formula/" + p.name + ".rb";
+            var npmU = (svc.npm || "") + "/@buildhost/" + p.name;
+            var ociU = (svc.oci || "") + "/v2/" + p.name + "/manifests/latest";
+            var npmHost = (svc.npm || "").replace(/^https?:\/\//, "");
+            var ociHost = (svc.oci || "").replace(/^https?:\/\//, "");
+            var aptHost = (svc.apt || "").replace(/^https?:\/\//, "");
+            var staticHost = (svc.static || "").replace(/^https?:\/\//, "");
+            // Slash-namespaced names keep their slash in the repo URL but install
+            // under a folded Debian package name (repackage.DebPackageName folds
+            // '/' and '_' to '-'), so apt and dpkg agree.
+            var aptPkg = p.name.replace(/[/_]/g, "-");
+            var priv = !!p.is_private;
+
+            // endpointRow: an <a> + copy-button cell for a fixed (latest)
+            // service endpoint. dataCopy, when set, is what the copy button
+            // yields (APT links to the Release file but copies the repo base);
+            // otherwise the link text is copied.
+            var endpointRow = function (label, text, href, dataCopy) {
+                var link = Html.a(text).attr("href", href);
+                if (dataCopy) link.attr("data-copy", dataCopy);
+                return Html.tr(
+                    Html.td(label).cls("info-label"),
+                    Html.td(link, Html.el("copy-btn").attr("data-src", "a")).cls("endpoint-cell")
+                );
+            };
+
+            // curl direct download. A private project's dl link redirects to the
+            // static host, and curl only re-sends credentials across that hop
+            // with --location-trusted; the token is the HTTP Basic password.
+            var curlCmd = priv
+                ? 'curl -fsSL --location-trusted -u "token:$TOKEN" -O \\\n  "' + dlBase + '?os=linux&arch=amd64"'
+                : 'curl -fsSL -O "' + dlBase + '?os=linux&arch=amd64"';
+
+            // APT: signed-by key-import flow + folded Debian package name,
+            // matching the Registries page and the web frontend.
+            var aptCmd = priv
+                ? 'sudo install -d -m 0755 /etc/apt/keyrings\n# the token is the HTTP Basic password (username is ignored)\ncurl -fsSL -u "token:$TOKEN" ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + aptPkg + '.list\n# both apt (metadata) and static (the .deb download redirect) need the token\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf\nmachine ' + aptHost + ' login token password $TOKEN\nmachine ' + staticHost + ' login token password $TOKEN\nEOF\nsudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf\nsudo apt update && sudo apt install ' + aptPkg
+                : 'sudo install -d -m 0755 /etc/apt/keyrings\ncurl -fsSL ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + aptPkg + '.list\nsudo apt update && sudo apt install ' + aptPkg;
+
+            var npmCmd = priv
+                ? "npm config set //" + npmHost + "/:_authToken $TOKEN\nnpm install @buildhost/" + p.name + " --registry " + (svc.npm || "")
+                : "npm install @buildhost/" + p.name + " --registry " + (svc.npm || "");
+
+            var dockerCmd = priv
+                ? "echo $TOKEN | docker login " + ociHost + " -u token --password-stdin\ndocker pull " + ociHost + "/" + p.name + ":latest"
+                : "docker pull " + ociHost + "/" + p.name + ":latest";
+
+            html += Html.div(
+                Html.h2("Download & Install ", Html.span("— latest").cls("muted").style("font-weight:400")),
+                Html.p("Always resolves to the newest published release. To pin a specific version, open a release below.").cls("section-desc"),
+                Html.table(
+                    Html.tr(
+                        Html.td("Direct download").cls("info-label"),
+                        Html.td(Html.raw(App.urlTpl(dlBase + "?os={os}&arch={arch}", dlBase + "?os=", "&arch="))).cls("endpoint-cell")
+                    ),
+                    endpointRow("APT", aptBase, aptBase + "/dists/stable/Release", aptBase),
+                    endpointRow("Homebrew", brewU, brewU, null),
+                    endpointRow("npm", npmU, npmU, null),
+                    endpointRow("OCI", ociU, ociU, null)
+                ).cls("info-table"),
+                Html.raw(App.codeBlock("Direct download (curl)", curlCmd)),
+                Html.raw(App.codeBlock("APT", aptCmd)),
+                Html.raw(App.codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "/tap.git\nbrew install pazer/build/" + p.name)),
+                Html.raw(App.codeBlock("npm", npmCmd)),
+                Html.raw(App.codeBlock("Docker", dockerCmd))
+            ).cls("card");
+        }
+
         html += '<div class="card"><h2>Releases</h2><table class="data-table"><thead><tr><th>Version</th><th>Branch</th><th>Commit</th><th>Status</th><th>Artifacts</th><th>Published</th><th>Created</th></tr></thead><tbody>';
-        var rels = d.releases || [];
         if (rels.length === 0) {
             html += '<tr><td colspan="7" class="empty">No releases yet</td></tr>';
         } else {
@@ -236,7 +315,7 @@ App.pages.project = function (name) {
 
         var sites = d.sites || [];
         if (sites.length > 0) {
-            var sitesBase = (d.services || {}).sites || "";
+            var sitesBase = svc.sites || "";
             html += '<div class="card"><h2>Sites</h2><table class="data-table"><thead><tr><th>Branch</th><th>Files</th><th>Size</th><th>Commit</th><th>Updated</th><th>Link</th></tr></thead><tbody>';
             for (var k = 0; k < sites.length; k++) {
                 var si = sites[k];
@@ -260,6 +339,7 @@ App.pages.release = function (name, version) {
     App.fetch("/projects/" + name + "/releases/" + version).then(function (d) {
         var p = d.project, r = d.release, bu = d.base_url, svc = d.services || {};
         var dlBase = (svc.dl || "") + "/" + p.name;
+        var priv = !!p.is_private;
         var html = "<h1><a href='#/projects/" + App.h(p.name) + "'>" + App.h(p.name) + "</a> / " + App.h(r.version) + "</h1>";
 
         html += '<div class="stat-grid">';
@@ -291,12 +371,23 @@ App.pages.release = function (name, version) {
                 html += "<td>" + App.h(App.humanSize(a.size)) + "</td>";
                 html += "<td>" + a.download_count + "</td>";
                 html += '<td class="dl-links">';
-                var dlQ = "?v=" + r.version + "&os=" + a.os + "&arch=" + a.arch;
-                html += '<a href="' + App.h(dlBase + dlQ) + '" title="Direct download">raw</a>';
-                if (a.debug_storage_key) html += ' <a href="' + App.h(dlBase + dlQ + "&debug=1") + '" title="Debug symbols">debug</a>';
                 var pkgs = a.packages || [];
-                for (var j = 0; j < pkgs.length; j++) {
-                    html += ' <a href="' + App.h(dlBase + dlQ + "&fmt=" + pkgs[j].format) + '" title="' + App.h(pkgs[j].filename) + " (" + App.h(App.humanSize(pkgs[j].size)) + ')">' + App.h(pkgs[j].format) + "</a>";
+                if (priv) {
+                    // Private project: a plain dl link would 401. Each link mints a
+                    // signed, single-artifact link on click, then downloads it.
+                    html += App.dlMintLink(p.name, r.version, a.os, a.arch, "raw", false, "raw", "Download (mints a temporary signed link)");
+                    if (a.debug_storage_key) html += " " + App.dlMintLink(p.name, r.version, a.os, a.arch, "raw", true, "debug", "Debug symbols");
+                    for (var j = 0; j < pkgs.length; j++) {
+                        html += " " + App.dlMintLink(p.name, r.version, a.os, a.arch, pkgs[j].format, false, pkgs[j].format, pkgs[j].filename + " (" + App.humanSize(pkgs[j].size) + ")");
+                    }
+                    html += ' <button type="button" class="dl-share" onclick="App.copyTempLink(this,\'' + App.h(p.name) + '\',\'' + App.h(r.version) + '\',\'' + App.h(a.os) + '\',\'' + App.h(a.arch) + '\',\'raw\')" title="Copy a temporary 1-hour shareable link">temp link</button>';
+                } else {
+                    var dlQ = "?v=" + r.version + "&os=" + a.os + "&arch=" + a.arch;
+                    html += '<a href="' + App.h(dlBase + dlQ) + '" title="Direct download">raw</a>';
+                    if (a.debug_storage_key) html += ' <a href="' + App.h(dlBase + dlQ + "&debug=1") + '" title="Debug symbols">debug</a>';
+                    for (var j = 0; j < pkgs.length; j++) {
+                        html += ' <a href="' + App.h(dlBase + dlQ + "&fmt=" + pkgs[j].format) + '" title="' + App.h(pkgs[j].filename) + " (" + App.h(App.humanSize(pkgs[j].size)) + ')">' + App.h(pkgs[j].format) + "</a>";
+                    }
                 }
                 html += "</td></tr>";
             }
@@ -326,8 +417,9 @@ App.pages.registries = function () {
     App.renderSidebar("registries");
     App.fetch("/registries").then(function (d) {
         var bu = d.base_url, svc = d.services || {};
-        var dl = svc.dl || "", apt = svc.apt || "", brew = svc.brew || "", npm = svc.npm || "", oci = svc.oci || "", sites = svc.sites || "";
+        var dl = svc.dl || "", apt = svc.apt || "", brew = svc.brew || "", npm = svc.npm || "", oci = svc.oci || "", sites = svc.sites || "", staticUrl = svc.static || "";
         var npmHost = npm.replace(/^https?:\/\//, ""), ociHost = oci.replace(/^https?:\/\//, "");
+        var aptHost = apt.replace(/^https?:\/\//, ""), staticHost = staticUrl.replace(/^https?:\/\//, "");
         var html = "<h1>Registry Endpoints</h1>";
 
         html += '<div class="card"><h2>Direct Downloads</h2><p class="section-desc">Download artifacts directly by platform. OS and architecture are query parameters; version, latest, and branch resolution too.</p>';
@@ -340,15 +432,15 @@ App.pages.registries = function () {
         html += App.codeBlock("Query parameters", "?os=linux         # Required: target OS\n?arch=amd64       # Required: target architecture\n?v={version}      # Pin to a version (default: latest)\n?branch={branch}  # Latest build on a git branch\n?fmt=tar.gz       # Repackage: raw, tar.gz, tar.xz, tar.zst, zip\n?debug=1          # Debug symbols");
         html += "</div>";
 
-        html += '<div class="card"><h2>APT Repository</h2><p class="section-desc">Debian/Ubuntu package repository. Packages are generated on demand at download time.</p>';
+        html += '<div class="card"><h2>APT Repository</h2><p class="section-desc">Debian/Ubuntu package repository. Packages are generated on demand at download time. The repository URL keeps a slash-namespaced project name, but the Debian package name folds <code>/</code> and <code>_</code> to <code>-</code> &mdash; e.g. <code>myrepo/server</code> installs as <code>myrepo-server</code>.</p>';
         html += '<table class="info-table">';
         html += "<tr><td class='info-label'>Release</td><td class='endpoint-cell'><code>" + App.h(apt + "/{project}/dists/stable/Release") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "<tr><td class='info-label'>InRelease</td><td class='endpoint-cell'><code>" + App.h(apt + "/{project}/dists/stable/InRelease") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "<tr><td class='info-label'>Packages</td><td class='endpoint-cell'><code>" + App.h(apt + "/{project}/dists/stable/main/binary-{arch}/Packages") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "<tr><td class='info-label'>Pool</td><td class='endpoint-cell'><code>" + App.h(apt + "/{project}/pool/{filename}") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "</table>";
-        html += App.codeBlock("Setup (public project)", 'echo "deb [trusted=yes] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\nsudo apt update && sudo apt install {project}');
-        html += App.codeBlock("Setup (private project)", 'echo "deb [trusted=yes] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/{project}.conf\nmachine ' + apt + "/{project}\n  login token\n  password $TOKEN\nEOF\nsudo apt update && sudo apt install {project}");
+        html += App.codeBlock("Setup (public project)", 'sudo install -d -m 0755 /etc/apt/keyrings\ncurl -fsSL ' + apt + '/{project}/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\nsudo apt update && sudo apt install {project}');
+        html += App.codeBlock("Setup (private project)", 'sudo install -d -m 0755 /etc/apt/keyrings\n# the token is the HTTP Basic password (username is ignored)\ncurl -fsSL -u "token:$TOKEN" ' + apt + '/{project}/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\n# both apt (metadata) and static (the .deb download redirect) need the token\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf\nmachine ' + aptHost + ' login token password $TOKEN\nmachine ' + staticHost + ' login token password $TOKEN\nEOF\nsudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf\nsudo apt update && sudo apt install {project}');
         html += "</div>";
 
         html += '<div class="card"><h2>Homebrew Tap</h2><p class="section-desc">Homebrew formulas are served through a generated Git tap. Formula files auto-detect macOS and Linux artifacts.</p>';
@@ -438,7 +530,7 @@ App.pages.tokens = function () {
         html += '<div class="card"><h2>Create Token</h2>';
         html += '<form id="create-token-form" class="inline-form">';
         html += '<input class="form-input" type="text" id="tok-name" placeholder="Name" required>';
-        html += '<select class="form-select" id="tok-scopes"><option value="read,write">read+write</option><option value="read">read</option><option value="write">write</option></select>';
+        html += '<select class="form-select" id="tok-scopes"><option value="read,write">read+write</option><option value="read">read</option><option value="write">write</option><option value="share">share</option><option value="read,write,share">read+write+share</option></select>';
         html += '<select class="form-select" id="tok-project">' + projectOpts + '</select>';
         html += '<button class="btn btn-primary" type="submit">Create</button>';
         html += '</form></div>';
@@ -511,6 +603,77 @@ App.copyText = function (elemId) {
     navigator.clipboard.writeText(el.textContent || el.innerText);
 };
 
+// copyTempLink mints a temporary, artifact-bound download link via the admin API
+// and copies it to the clipboard. The link carries a signed &token= that works
+// even for a private project (unlike the plain dl links above), expiring in 1h.
+App.copyTempLink = function (btn, project, version, os, arch, fmt) {
+    if (App.demo) return;
+    var orig = btn.textContent;
+    var restore = function (msg) {
+        btn.textContent = msg;
+        setTimeout(function () {
+            btn.textContent = orig;
+            btn.classList.remove("copied");
+            btn.disabled = false;
+        }, 2000);
+    };
+    btn.disabled = true;
+    btn.textContent = "...";
+    fetch("/api/projects/" + project + "/download-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ os: os, arch: arch, version: version, fmt: fmt })
+    }).then(function (r) {
+        if (!r.ok) return r.text().then(function (t) { throw new Error(t || r.status); });
+        return r.json();
+    }).then(function (d) {
+        return navigator.clipboard.writeText(d.url).then(function () {
+            btn.classList.add("copied");
+            restore("copied 1h link");
+        });
+    }).catch(function () {
+        restore("failed");
+    });
+};
+
+// dlMintLink renders a download link for a private project's artifact. A plain dl
+// link would 401, so this one mints a signed single-artifact link on click and
+// downloads it. Values are safe charsets (project/version/os/arch/fmt), so they
+// embed directly in the inline handler.
+App.dlMintLink = function (project, version, os, arch, fmt, debug, label, title) {
+    var call = "App.downloadArtifact(this,'" + project + "','" + version + "','" + os + "','" + arch + "','" + fmt + "'," + (debug ? "true" : "false") + ")";
+    return '<a href="#" class="dl-mint" onclick="return ' + App.h(call) + '" title="' + App.h(title) + '">' + App.h(label) + "</a>";
+};
+
+// downloadArtifact mints a temporary signed link for exactly this artifact, then
+// triggers the download by clicking a synthetic anchor (same effect as following a
+// normal download link). Returns false so the placeholder href="#" is not used.
+App.downloadArtifact = function (el, project, version, os, arch, fmt, debug) {
+    if (App.demo) return false;
+    var orig = el ? el.textContent : "";
+    fetch("/api/projects/" + project + "/download-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ os: os, arch: arch, version: version, fmt: fmt, debug: !!debug })
+    }).then(function (r) {
+        if (!r.ok) return r.text().then(function (t) { throw new Error(t || r.status); });
+        return r.json();
+    }).then(function (d) {
+        var a = document.createElement("a");
+        a.href = d.url;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    }).catch(function () {
+        if (el) {
+            el.textContent = "failed";
+            setTimeout(function () { el.textContent = orig; }, 2000);
+        }
+    });
+    return false;
+};
+
 App.editToken = function (id, name, scopes) {
     var nameCell = document.getElementById("tok-row-name-" + id);
     var scopesCell = document.getElementById("tok-row-scopes-" + id);
@@ -522,6 +685,8 @@ App.editToken = function (id, name, scopes) {
         '<option value="read,write"' + (scopes === "read,write" ? " selected" : "") + '>read+write</option>' +
         '<option value="read"' + (scopes === "read" ? " selected" : "") + '>read</option>' +
         '<option value="write"' + (scopes === "write" ? " selected" : "") + '>write</option>' +
+        '<option value="share"' + (scopes === "share" ? " selected" : "") + '>share</option>' +
+        '<option value="read,write,share"' + (scopes === "read,write,share" ? " selected" : "") + '>read+write+share</option>' +
         '</select>';
     var actionsCell = row.querySelector(".row-actions");
     if (actionsCell) {

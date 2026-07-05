@@ -33,18 +33,24 @@ func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
 }
 
-func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string, githubWebhookSecret string) {
+func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string, githubWebhookSecret, githubClientID, githubClientSecret string) {
 	sharedDB = database
 	sharedStore = store
 	sharedData = dataDir
 	sharedFetchDomains = siteFetchDomains
 	sharedGitHubWebhookSecret = githubWebhookSecret
 
-	mw = &Middleware{DB: database, Verifier: NewOIDCVerifier(OIDCConfig{
-		TrustedIssuers: trustedIssuers,
-		AllowedOrgs:    allowedOrgs,
-		AllowedEvents:  allowedEvents,
-	})}
+	initDownloadSecret(dataDir)
+
+	mw = &Middleware{
+		DB: database,
+		Verifier: NewOIDCVerifier(OIDCConfig{
+			TrustedIssuers: trustedIssuers,
+			AllowedOrgs:    allowedOrgs,
+			AllowedEvents:  allowedEvents,
+		}),
+		GitHub: NewGitHubAuth(githubClientID, githubClientSecret),
+	}
 	for _, fn := range readyFuncs {
 		fn()
 	}

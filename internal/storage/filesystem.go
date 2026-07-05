@@ -183,6 +183,76 @@ func (z *mmapZstdReadCloser) Close() error {
 	return z.m.Unmap()
 }
 
+// GetCompressed returns a blob's stored bytes WITHOUT decompressing them, so a
+// caller can pass a zstd-compressed blob straight through to a client that
+// accepts zstd (Content-Encoding: zstd) instead of decompressing it server-side.
+// A blob stored compressed yields the raw zstd stream (Encoding "zstd", Size =
+// the compressed length); one stored uncompressed yields its raw bytes (Encoding
+// "", Size = the identity length). The caller inspects Encoding to decide whether
+// passthrough applies.
+func (fs *Filesystem) GetCompressed(_ context.Context, key string) (*CompressedBlob, error) {
+	if !validStorageKey.MatchString(key) {
+		return nil, os.ErrNotExist
+	}
+	f, err := fs.root.Open(fs.rel(key))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, os.ErrNotExist
+		}
+		return nil, fmt.Errorf("open blob: %w", err)
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("stat blob: %w", err)
+	}
+	size := info.Size()
+
+	// An empty blob has nothing to map; serve it as empty identity bytes.
+	if size == 0 {
+		f.Close()
+		return &CompressedBlob{ReadCloser: io.NopCloser(bytes.NewReader(nil))}, nil
+	}
+
+	m, err := mmap.MapRegion(int(f.Fd()), size, mmap.ProtRead, mmap.MapShared, 0)
+	f.Close()
+	if err != nil {
+		return nil, fmt.Errorf("mmap blob: %w", err)
+	}
+	_ = m.Advise(mmap.AdvSequential)
+
+	// Compressed blob: hand back the raw zstd stream (skip the 4-byte magic +
+	// 8-byte original-size header). Close unmaps the original region -- not the
+	// m[12:] sub-slice, whose base would not be page-aligned for munmap.
+	if len(m) >= 12 && bytes.Equal(m[:4], compressedMagic[:]) {
+		origSize := int64(binary.LittleEndian.Uint64(m[4:12]))
+		return &CompressedBlob{
+			ReadCloser: &mmapByteReadCloser{Reader: bytes.NewReader(m[12:]), m: m},
+			Encoding:   "zstd",
+			Size:       size - 12,
+			OrigSize:   origSize,
+		}, nil
+	}
+
+	// Uncompressed blob: the mapping is the artifact. NewReader.Close unmaps it.
+	return &CompressedBlob{
+		ReadCloser: mmap.NewReader(m),
+		Encoding:   "",
+		Size:       size,
+		OrigSize:   size,
+	}, nil
+}
+
+// mmapByteReadCloser serves a byte slice that lives inside a memory mapping and
+// unmaps the (whole) mapping on Close. Used to stream a still-compressed blob's
+// raw bytes for Content-Encoding passthrough.
+type mmapByteReadCloser struct {
+	*bytes.Reader
+	m mmap.MMap
+}
+
+func (r *mmapByteReadCloser) Close() error { return r.m.Unmap() }
+
 func (fs *Filesystem) Delete(_ context.Context, key string) error {
 	if !validStorageKey.MatchString(key) {
 		return nil

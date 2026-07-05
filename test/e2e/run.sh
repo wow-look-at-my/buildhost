@@ -56,7 +56,7 @@ curl -fsS "${auth[@]}" -H "Content-Type: application/json" \
 	"$BASE/api/v1/projects" >/dev/null
 
 echo "== create release =="
-VERSION="$(curl -fsS "${auth[@]}" -H "Content-Type: application/json" -d '{}' \
+VERSION="$(curl -fsS "${auth[@]}" -H "Content-Type: application/json" -d '{"git_branch":"master"}' \
 	"$BASE/api/v1/projects/$PROJECT/releases" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
 [ -n "$VERSION" ] || { echo "could not determine release version" >&2; exit 1; }
 echo "   version=$VERSION"

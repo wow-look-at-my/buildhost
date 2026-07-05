@@ -501,6 +501,35 @@ a.stat-card-link:hover .stat-label {
     border-color: var(--blue);
 }
 
+.dl-share {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 8px;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    white-space: nowrap;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.dl-share:hover {
+    color: var(--blue);
+    border-color: var(--blue);
+}
+
+.dl-share:disabled {
+    cursor: default;
+    opacity: 0.7;
+}
+
+.dl-share.copied {
+    color: var(--green, var(--blue));
+    border-color: var(--green, var(--blue));
+    border-style: solid;
+}
+
 h1 a {
     color: var(--text-muted);
 }

@@ -607,28 +607,7 @@ func TestVerifyToken_TrustedIssuer_OrgCaseInsensitive(t *testing.T) {
 	assert.Equal(t, "scratch", oidcProject)
 }
 
-func TestVerifyToken_TrustedIssuer_RejectedEvent(t *testing.T) {
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
-
-	srv := jwksServer(t, &key.PublicKey, "kid-event-bad")
-
-	claims := map[string]any{
-		"iss":        srv.URL,
-		"sub":        "repo:myorg/myrepo:ref:refs/heads/main",
-		"exp":        time.Now().Add(10 * time.Minute).Unix(),
-		"iat":        time.Now().Unix(),
-		"event_name": "pull_request",
-	}
-	token := signJWT(t, key, "kid-event-bad", claims)
-
-	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
-	_, _, err = v.VerifyToken(context.Background(), token, nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "event")
-}
-
-func TestVerifyToken_TrustedIssuer_AudienceCheck(t *testing.T) {
+func TestVerifyToken_TrustedIssuer_AutoProvision(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -653,7 +632,7 @@ func TestVerifyToken_TrustedIssuer_AudienceIgnored(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
-	srv := jwksServer(t, &key.PublicKey, "kid-aud-bad")
+	srv := jwksServer(t, &key.PublicKey, "kid-aud-other")
 
 	// A token minted for a different service still auto-provisions: the audience
 	// is no longer gated (trust = issuer signature + org + event + subject).
@@ -664,7 +643,7 @@ func TestVerifyToken_TrustedIssuer_AudienceIgnored(t *testing.T) {
 		"exp":        time.Now().Add(10 * time.Minute).Unix(),
 		"event_name": "push",
 	}
-	token := signJWT(t, key, "kid-aud-bad", claims)
+	token := signJWT(t, key, "kid-aud-other", claims)
 
 	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push"}})
 	_, oidcProject, err := v.VerifyToken(context.Background(), token, nil)

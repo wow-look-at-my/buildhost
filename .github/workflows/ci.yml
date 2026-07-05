@@ -190,12 +190,13 @@ jobs:
       BUILDHOST_BASE_URL: http://localhost:18080
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
-      # Homebrew 6.0.0 (2026-06-11) requires explicit trust for third-party
-      # taps and runs a Linux Bubblewrap sandbox by default. This job installs
-      # from buildhost's own freshly generated local tap, so opt out of the
-      # tap-trust gate, and disable the Linux sandbox (the runner has no bwrap
-      # and the formula only drops a tiny test script).
-      HOMEBREW_NO_REQUIRE_TAP_TRUST: "1"
+      # Homebrew 6.0's Linux build sandbox uses Bubblewrap, which can't set up on
+      # the GitHub runner (AppArmor blocks unprivileged user namespaces, so bwrap
+      # dies before the build runs). Opt out: this e2e installs our own freshly
+      # built formula on a throwaway runner, so the sandbox buys nothing here.
+      # Homebrew-documented; no-op on macOS (sandbox-exec). Homebrew 6's other new
+      # default -- third-party tap trust -- is handled properly in the install
+      # step below (`brew trust`), not opted out.
       HOMEBREW_NO_SANDBOX_LINUX: "1"
     steps:
       - uses: actions/checkout@v4
@@ -254,6 +255,7 @@ jobs:
             "token = \"$BUILDHOST_TOKEN\"" \
             'project = "go-toolchain"' \
             'version = "1.0.0"' \
+            'git_branch = "master"' \
             "" \
             "[[artifact]]" \
             "path = \"$RUNNER_TEMP/go-toolchain\"" \
@@ -269,7 +271,15 @@ jobs:
           brew untap pazer/build >/dev/null 2>&1 || true
           brew uninstall go-toolchain >/dev/null 2>&1 || true
           brew tap pazer/build http://brew.localhost:18080/tap.git
-          brew install pazer/build/go-toolchain
+          # Homebrew 6 refuses to evaluate a third-party tap until it is trusted
+          # (https://docs.brew.sh/Tap-Trust). pazer/build is buildhost's own
+          # dynamically generated, locally served tap, so trusting it is correct
+          # and safe. Guard for older brew, which has no `brew trust` subcommand
+          # and enforces no trust.
+          if brew trust --help >/dev/null 2>&1; then
+            brew trust pazer/build
+          fi
+          brew install --verbose pazer/build/go-toolchain
           test "$(go-toolchain)" = "buildhost-homebrew-ok"
       - name: Dump buildhost log
         if: failure()

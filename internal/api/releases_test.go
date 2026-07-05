@@ -79,6 +79,58 @@ func TestCreateRelease_AutoWithExplicitVersion(t *testing.T) {
 	assert.Equal(t, int64(5), rel.VersionNum)
 }
 
+// A publish that carries the repo's default branch records it on the project,
+// so the apex "latest" tracks that branch -- the go-toolchain ("v1") fix.
+func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "gotool", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	body := `{"git_branch":"v1","git_commit":"abc123","default_branch":"v1"}`
+	req := httptest.NewRequest("POST", "/api/projects/gotool/releases", strings.NewReader(body))
+	req.SetPathValue("project", "gotool")
+	req = withProjectRoute(req, proj)
+	req = req.WithContext(writeToken(req.Context(), "read,write"))
+	rec := httptest.NewRecorder()
+	h.CreateRelease(rec, req)
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+	var rel db.Release
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
+	require.NoError(t, h.DB.PublishRelease(ctx, rel.ID))
+
+	updated, err := h.DB.GetProject(ctx, "gotool")
+	require.NoError(t, err)
+	assert.Equal(t, "v1", updated.DefaultBranch, "publish must record the repo's default branch")
+
+	// "latest" now resolves to the v1 release; under the old hardcoded "master"
+	// it would have been nothing.
+	latest, err := h.DB.GetLatestRelease(ctx, proj.ID)
+	require.NoError(t, err)
+	assert.Equal(t, rel.Version, latest.Version)
+	assert.Equal(t, "v1", latest.GitBranch)
+}
+
+func TestCreateRelease_InvalidDefaultBranch(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "baddef", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	body := `{"default_branch":"bad branch!"}`
+	req := httptest.NewRequest("POST", "/api/projects/baddef/releases", strings.NewReader(body))
+	req.SetPathValue("project", "baddef")
+	req = withProjectRoute(req, proj)
+	req = req.WithContext(writeToken(req.Context(), "read,write"))
+	rec := httptest.NewRecorder()
+	h.CreateRelease(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
 // Note: TestCreateRelease_NoAuth removed -- auth is now enforced by the
 // requireProject middleware (tested in the auth package).
 
@@ -171,6 +223,57 @@ func TestGetRelease_ReleaseNotFound(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/projects/relproj2/releases/9.9.9", nil)
 	req.SetPathValue("project", "relproj2")
 	req.SetPathValue("version", "9.9.9")
+	req = withProjectRoute(req, proj)
+	rec := httptest.NewRecorder()
+	h.GetRelease(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestGetRelease_Latest(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "latestproj", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	// Two published releases; "latest" must resolve to the highest version.
+	older := &db.Release{ProjectID: proj.ID, Version: "1", VersionNum: 1, GitBranch: "master", GitCommit: "aaa111"}
+	require.NoError(t, h.DB.CreateRelease(ctx, older))
+	require.NoError(t, h.DB.PublishRelease(ctx, older.ID))
+	newer := &db.Release{ProjectID: proj.ID, Version: "2", VersionNum: 2, GitBranch: "master", GitCommit: "bbb222"}
+	require.NoError(t, h.DB.CreateRelease(ctx, newer))
+	require.NoError(t, h.DB.PublishRelease(ctx, newer.ID))
+
+	req := httptest.NewRequest("GET", "/api/projects/latestproj/releases/latest", nil)
+	req.SetPathValue("project", "latestproj")
+	req.SetPathValue("version", "latest")
+	req = withProjectRoute(req, proj)
+	rec := httptest.NewRecorder()
+	h.GetRelease(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var got db.Release
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.Equal(t, "2", got.Version)
+	assert.Equal(t, "bbb222", got.GitCommit)
+	assert.True(t, got.Published)
+}
+
+func TestGetRelease_LatestNoPublishedReleases(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "latestempty", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	// An unpublished release does not count as "latest".
+	unpub := &db.Release{ProjectID: proj.ID, Version: "1", VersionNum: 1, GitBranch: "master"}
+	require.NoError(t, h.DB.CreateRelease(ctx, unpub))
+
+	req := httptest.NewRequest("GET", "/api/projects/latestempty/releases/latest", nil)
+	req.SetPathValue("project", "latestempty")
+	req.SetPathValue("version", "latest")
 	req = withProjectRoute(req, proj)
 	rec := httptest.NewRecorder()
 	h.GetRelease(rec, req)
