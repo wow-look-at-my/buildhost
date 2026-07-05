@@ -178,6 +178,64 @@ func TestCanAccessRepo(t *testing.T) {
 	assert.False(t, g.canAccessRepo(ctx, "alice", "", "PazerOP/allowed"))
 }
 
+// A transient GitHub failure (5xx/429/network/rate-limit 403) must NOT be cached
+// as a hard denial. Regression: a momentary blip on the first check after
+// sign-in pinned an authorized repo owner to "Access denied" for the whole cache
+// TTL, even though GitHub would have returned 200 on the very next call.
+func TestCanAccessRepo_TransientFailureNotCached(t *testing.T) {
+	status := http.StatusInternalServerError
+	var calls int
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(status)
+	}))
+	defer gh.Close()
+	orig := githubAPIBase
+	githubAPIBase = gh.URL
+	defer func() { githubAPIBase = orig }()
+
+	g := NewGitHubAuth("cid", "secret")
+	ctx := context.Background()
+
+	// First check hits a transient 500 -> denied, but the non-answer is not cached.
+	assert.False(t, g.canAccessRepo(ctx, "matt", "tok", "PazerOP/UE553"))
+	// GitHub recovers; the next check must re-hit GitHub (not the cache) and now
+	// succeed -- the owner is not locked out by the earlier blip.
+	status = http.StatusOK
+	before := calls
+	assert.True(t, g.canAccessRepo(ctx, "matt", "tok", "PazerOP/UE553"),
+		"a transient failure must not be cached as a hard denial")
+	assert.Greater(t, calls, before, "recovery check must reach GitHub, not a cached deny")
+}
+
+// A user who re-signs-in with a fresh, broader-scoped token is not shadowed by a
+// negative result cached against their previous token: the cache key includes a
+// token fingerprint, so the new token is re-checked rather than inheriting the
+// old token's authoritative 404.
+func TestCanAccessRepo_NewTokenNotShadowedByStaleNegative(t *testing.T) {
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "Bearer good" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound) // authoritative "no access" for the old token
+	}))
+	defer gh.Close()
+	orig := githubAPIBase
+	githubAPIBase = gh.URL
+	defer func() { githubAPIBase = orig }()
+
+	g := NewGitHubAuth("cid", "secret")
+	ctx := context.Background()
+
+	// Old, insufficient token: authoritative 404 -> denied (and cached for it).
+	assert.False(t, g.canAccessRepo(ctx, "matt", "scopeless", "PazerOP/UE553"))
+	// Re-auth yields a new token with access; it must be re-checked, not shadowed
+	// by the cached deny keyed to the previous token.
+	assert.True(t, g.canAccessRepo(ctx, "matt", "good", "PazerOP/UE553"),
+		"a new token must be re-checked, not shadowed by the previous token's cached deny")
+}
+
 // A browser hitting a private resource with no session, when GitHub login is
 // configured, is redirected to /__signin (off to GitHub) on the apex.
 func TestRequireProject_Browser_GitHubEnabled_RedirectsToSignin(t *testing.T) {

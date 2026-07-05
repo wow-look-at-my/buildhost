@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -19,6 +20,10 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.DataDir()+"/tmp")
+		handler.TmpDir = auth.DataDir() + "/tmp"
+		// Drop any cached tap snapshot from a previous wiring and sweep
+		// snapshot dirs a crashed previous process left under the data dir.
+		handler.resetTapCache()
 	})
 	auth.ServiceHandle("brew", "GET /{project}", parseRoute, handler.ServeFormula)
 	auth.ServiceHandle("brew", "GET /Formula/{project}.rb", parseRoute, handler.ServeFormula)
@@ -47,6 +52,16 @@ type Handler struct {
 	DB    *db.DB
 	Store storage.Storage
 	Gen   *repackage.Generator
+	// TmpDir is the scratch root ({DataDir}/tmp in production -- the data
+	// volume is the only writable path in the hardened image, never /tmp).
+	// Tap snapshots are materialized under TmpDir/brew-tap.
+	TmpDir string
+
+	// tapMu guards tapSnap: the single cached on-disk tap snapshot (see
+	// tapcache.go). Rebuilds and file opens happen under the mutex, so a
+	// snapshot dir is never removed between pointer resolution and open.
+	tapMu   sync.Mutex
+	tapSnap *tapSnapshot
 }
 
 func (h *Handler) ServeFormula(w http.ResponseWriter, r *http.Request) {

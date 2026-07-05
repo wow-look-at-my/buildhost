@@ -280,13 +280,26 @@ func (g *GitHubAuth) fetchLogin(ctx context.Context, token string) (string, erro
 
 // canAccessRepo reports whether the signed-in user (identified by login, using
 // their token) can access ownerRepo -- i.e. GET /repos/{owner}/{repo} returns
-// 200. Results are cached per (login, repo) for a short TTL so the GitHub call
-// does not run on every asset request.
+// 200. Results are cached per (login, repo, token) for a short TTL so the GitHub
+// call does not run on every asset request.
+//
+// Two properties keep the cache from ever locking out a user who DOES have
+// access (the failure that made an authorized repo owner see "Access denied"):
+//
+//   - Only an *authoritative* answer is cached -- a definite 200 (access) or 404
+//     (no access / not visible to this token). A transient failure (network
+//     error, 5xx, 429, or a 401/403 that is typically a rate limit or a token
+//     still propagating) denies only the current request and is NOT cached, so a
+//     refresh re-checks immediately instead of being pinned for the whole TTL on
+//     one momentary GitHub hiccup.
+//   - The cache key includes a fingerprint of the token, so a user who re-signs
+//     in with a fresh, broader-scoped token is never shadowed by a negative
+//     cached against their previous token.
 func (g *GitHubAuth) canAccessRepo(ctx context.Context, login, token, ownerRepo string) bool {
 	if login == "" || token == "" || !validRepoPath(ownerRepo) {
 		return false
 	}
-	key := login + "\x00" + ownerRepo
+	key := login + "\x00" + ownerRepo + "\x00" + tokenFingerprint(token)
 	now := time.Now()
 	g.mu.Lock()
 	if e, ok := g.repoCache[key]; ok && now.Before(e.exp) {
@@ -295,7 +308,13 @@ func (g *GitHubAuth) canAccessRepo(ctx context.Context, login, token, ownerRepo 
 	}
 	g.mu.Unlock()
 
-	allowed := g.checkRepoAccess(ctx, token, ownerRepo)
+	allowed, authoritative := g.checkRepoAccess(ctx, token, ownerRepo)
+	if !authoritative {
+		// Non-answer (transient error / rate limit): fail closed for this request
+		// but do not cache, so the next request re-checks rather than inheriting a
+		// stale denial.
+		return allowed
+	}
 
 	g.mu.Lock()
 	g.repoCache[key] = repoAccess{allowed: allowed, exp: now.Add(repoAccessTTL)}
@@ -303,20 +322,41 @@ func (g *GitHubAuth) canAccessRepo(ctx context.Context, login, token, ownerRepo 
 	return allowed
 }
 
-func (g *GitHubAuth) checkRepoAccess(ctx context.Context, token, ownerRepo string) bool {
+// checkRepoAccess performs GET /repos/{owner}/{repo} and classifies the result.
+// allowed is true only on 200. authoritative is true only when GitHub gave a
+// definite answer -- a 200 (access) or a 404 (no access; GitHub 404s a repo the
+// token cannot see, rather than 403, so existence never leaks). Anything else
+// (network error, 5xx, 429, or a 401/403 that is usually a rate limit or a
+// freshly minted token still propagating) is treated as non-authoritative so the
+// caller never caches a non-answer as a hard denial.
+func (g *GitHubAuth) checkRepoAccess(ctx context.Context, token, ownerRepo string) (allowed, authoritative bool) {
 	req, err := http.NewRequestWithContext(ctx, "GET", githubAPIBase+"/repos/"+ownerRepo, nil)
 	if err != nil {
-		return false
+		return false, false
 	}
 	setGitHubHeaders(req, token)
 	resp, err := g.http.Do(req)
 	if err != nil {
-		return false
+		return false, false
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
-	// 200 => the user can see the repo (read access). 404 => no access / no repo.
-	return resp.StatusCode == http.StatusOK
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return true, true
+	case http.StatusNotFound:
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+// tokenFingerprint returns a short, non-reversible fingerprint of a token, used
+// only as part of the in-memory repo-access cache key so the raw token is never
+// held as a map key while two distinct tokens still hash to distinct keys.
+func tokenFingerprint(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return base64.RawURLEncoding.EncodeToString(sum[:8])
 }
 
 func setGitHubHeaders(req *http.Request, token string) {

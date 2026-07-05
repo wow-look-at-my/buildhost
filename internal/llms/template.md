@@ -65,6 +65,23 @@ PUT  __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{a
 POST __BASE_URL__/api/v1/projects/{project}/releases/{version}/publish
 ```
 
+Large uploads: a proxy in front of the server may cap single request bodies
+(Cloudflare's edge rejects bodies over 100 MB). Check
+`GET __BASE_URL__/api/v1/server-info` for `max_direct_upload_bytes`; anything
+larger must go through a chunked upload session instead of one request:
+
+```
+POST   __BASE_URL__/api/v1/uploads                 -> {"id": ...}
+PATCH  __BASE_URL__/api/v1/uploads/{id}?offset=N   append chunk at offset (repeat)
+PUT    __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}?upload_session={id}&upload_sha256={hex}
+```
+
+The finalize step is the ORIGINAL upload endpoint with an empty body; the
+assembled bytes are used as the request body. Works on the site-deploy PUT
+too. Offsets must equal the committed size (a 409 returns the actual size to
+resume from); `GET __BASE_URL__/api/v1/uploads/{id}` reads it and DELETE
+aborts. The `buildhost publish` CLI does all of this automatically.
+
 ## Downloading
 
 Each service has its own subdomain. The download service resolves versions and
@@ -153,6 +170,11 @@ GET    /api/v1/projects/{project}/releases                                   lis
 GET    /api/v1/projects/{project}/releases/{version}                         get release
 PUT    /api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}   upload artifact
 POST   /api/v1/projects/{project}/releases/{version}/publish                 publish release
+GET    /api/v1/server-info                                                   upload limits (public)
+POST   /api/v1/uploads                                                       create chunked upload session
+GET    /api/v1/uploads/{id}                                                  session committed size
+PATCH  /api/v1/uploads/{id}                                                  append chunk (?offset=N)
+DELETE /api/v1/uploads/{id}                                                  abort session
 GET    /healthz                                                              health check
 ```
 
@@ -160,6 +182,10 @@ GET    /healthz                                                              hea
 
 - Resolve to a concrete version before calling the static endpoint; it
   rejects `v=latest` with HTTP 400.
+- Uploads larger than server-info's `max_direct_upload_bytes` must use a
+  chunked upload session (see "Publishing with the REST API"); a single
+  request that big is rejected by the proxy in front of the server before it
+  reaches buildhost.
 - For private projects, send the auth token on every request, including the
   APT, Homebrew, npm, and OCI endpoints.
 - `GET __BASE_URL__/healthz` returns 200 when the server and its database are

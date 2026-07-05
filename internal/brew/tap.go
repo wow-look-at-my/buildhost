@@ -12,8 +12,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
+
+	mmap "github.com/wow-look-at-my/go-mmap"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -29,19 +33,32 @@ func (h *Handler) RedirectTap(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target.String(), http.StatusMovedPermanently)
 }
 
+// ServeTap serves one file of the dumb-HTTP git tap from the current on-disk
+// snapshot (built at most once per tapCacheTTL per base URL, see tapcache.go)
+// by memory-mapping it -- never buffering the file on the heap and never
+// rebuilding the whole tap per object request. Serving every request of one
+// `brew update` from a single immutable snapshot also keeps refs and loose
+// objects mutually consistent when a publish lands mid-update.
 func (h *Handler) ServeTap(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.buildTapRepo(r)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
 	path := strings.TrimPrefix(tapSuffix(r), "/")
 	if path == "" {
 		path = "HEAD"
 	}
-	data, ok := repo.Loose[path]
-	if !ok {
+
+	f, err := h.openTapFile(r, path)
+	if errors.Is(err, errTapBuild) {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if err != nil {
+		// Not in the snapshot (or an escaping path the os.Root refused).
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
 		http.NotFound(w, r)
 		return
 	}
@@ -52,16 +69,52 @@ func (h *Handler) ServeTap(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	}
-	w.Write(data)
+	serveSnapshotFile(w, f, info.Size())
 }
 
+// serveSnapshotFile streams one opened snapshot file by memory-mapping it --
+// the tap serving rule: cached content is disk files served via mmap, never
+// heap-buffered. Content-Length is set from the file size; any other headers
+// (Content-Type, Cache-Control) must be set by the caller first.
+func serveSnapshotFile(w http.ResponseWriter, f *os.File, size int64) {
+	// A zero-length file (objects/info/packs) has nothing to map -- mmap
+	// rejects an empty region, same as the storage layer's empty-blob case.
+	if size == 0 {
+		w.Header().Set("Content-Length", "0")
+		return
+	}
+
+	m, err := mmap.MapRegion(int(f.Fd()), size, mmap.ProtRead, mmap.MapShared, 0)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	_ = m.Advise(mmap.AdvSequential)
+	rc := mmap.NewReader(m) // Close unmaps
+	defer rc.Close()
+	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	io.Copy(w, rc)
+}
+
+// ServeUploadPackInfoRefs answers the smart-HTTP ref advertisement
+// (GET /info/refs?service=git-upload-pack) so `brew tap` / `git clone` can
+// talk to the tap URL directly. The advertisement bytes are materialized in
+// the same on-disk snapshot ServeTap serves (see tapcache.go) and
+// mmap-streamed from it, so the smart and dumb paths always describe one
+// consistent build and nothing is rebuilt (or held on the heap) per request.
 func (h *Handler) ServeUploadPackInfoRefs(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("service") != "git-upload-pack" {
 		http.Error(w, "unsupported service", http.StatusForbidden)
 		return
 	}
 
-	repo, err := h.buildTapRepo(r)
+	f, _, err := h.openTapSnapshotFile(r, tapAdvertisementFile)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -69,19 +122,32 @@ func (h *Handler) ServeUploadPackInfoRefs(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Write(repo.Advertisement)
+	serveSnapshotFile(w, f, info.Size())
 }
 
+// ServeUploadPack answers the smart-HTTP fetch (POST /git-upload-pack) with
+// the snapshot's pre-built whole-tap packfile. There is no real negotiation:
+// the tap is a single synthetic commit, so every fetch gets the full pack
+// (NAK, no common objects); only the shallow handshake (`--depth`, which git
+// completes before sending "done") is answered explicitly. The pack is
+// mmap-streamed from the snapshot -- raw, or framed into side-band-64k data
+// packets -- never heap-buffered.
 func (h *Handler) ServeUploadPack(w http.ResponseWriter, r *http.Request) {
-	repo, err := h.buildTapRepo(r)
+	body, err := readUploadPackRequest(r)
+	if err != nil {
+		http.Error(w, "bad upload-pack request", http.StatusBadRequest)
+		return
+	}
+
+	f, commitSHA, err := h.openTapSnapshotFile(r, tapPackFile)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-
-	body, err := readUploadPackRequest(r)
+	defer f.Close()
+	info, err := f.Stat()
 	if err != nil {
-		http.Error(w, "bad upload-pack request", http.StatusBadRequest)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -89,10 +155,48 @@ func (h *Handler) ServeUploadPack(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	shallow := wantsShallow(body)
 	if shallow && !uploadPackDone(body) {
-		w.Write(uploadPackShallowResult(repo.CommitSHA))
+		w.Write(uploadPackShallowResult(commitSHA))
 		return
 	}
-	w.Write(uploadPackResult(repo.CommitSHA, repo.Pack, wantsSideBand(body), shallow))
+	if shallow {
+		w.Write(uploadPackShallowResult(commitSHA))
+	}
+	w.Write(pktLineString("NAK\n"))
+	streamPack(w, f, info.Size(), wantsSideBand(body))
+}
+
+// streamPack writes the packfile to w from the mmap'd snapshot file: raw
+// bytes when the client didn't ask for side-band, else framed into
+// side-band-64k data packets (band 1, max 65515 payload bytes per packet)
+// terminated by a flush-pkt -- the same bytes the pre-cache implementation
+// assembled in memory, emitted incrementally.
+func streamPack(w http.ResponseWriter, f *os.File, size int64, sideBand bool) {
+	if size == 0 {
+		return // cannot happen: a pack always carries its header and trailer
+	}
+	m, err := mmap.MapRegion(int(f.Fd()), size, mmap.ProtRead, mmap.MapShared, 0)
+	if err != nil {
+		return // headers already sent; a truncated body fails the client's pack checksum
+	}
+	_ = m.Advise(mmap.AdvSequential)
+	rc := mmap.NewReader(m) // Close unmaps
+	defer rc.Close()
+
+	if !sideBand {
+		io.Copy(w, rc)
+		return
+	}
+	buf := make([]byte, 65515)
+	for {
+		n, rerr := rc.Read(buf)
+		if n > 0 {
+			w.Write(pktLineBytes(append([]byte{1}, buf[:n]...)))
+		}
+		if rerr != nil {
+			break
+		}
+	}
+	io.WriteString(w, "0000")
 }
 
 func (h *Handler) buildTapRepo(r *http.Request) (*tapRepo, error) {
@@ -315,29 +419,6 @@ func uploadPackDone(body []byte) bool {
 func uploadPackShallowResult(commitSHA string) []byte {
 	var buf bytes.Buffer
 	buf.Write(pktLineString("shallow " + commitSHA + "\n"))
-	buf.WriteString("0000")
-	return buf.Bytes()
-}
-
-func uploadPackResult(commitSHA string, pack []byte, sideBand bool, shallow bool) []byte {
-	var buf bytes.Buffer
-	if shallow {
-		buf.Write(uploadPackShallowResult(commitSHA))
-	}
-	buf.Write(pktLineString("NAK\n"))
-	if !sideBand {
-		buf.Write(pack)
-		return buf.Bytes()
-	}
-	for len(pack) > 0 {
-		n := len(pack)
-		if n > 65515 {
-			n = 65515
-		}
-		payload := append([]byte{1}, pack[:n]...)
-		buf.Write(pktLineBytes(payload))
-		pack = pack[n:]
-	}
 	buf.WriteString("0000")
 	return buf.Bytes()
 }
