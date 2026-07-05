@@ -1,6 +1,7 @@
 package brew
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -309,6 +310,64 @@ func TestServeUploadPack_AllowsShallowGitClone(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(dir, "Formula", "go-toolchain.rb"))
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "class GoToolchain < Formula")
+}
+
+// A plain (non-shallow) clone -- what `brew tap` runs -- sends no deepen
+// request, so the server must answer ACK/NAK immediately. A client echoing
+// the advertised deepen-since/deepen-not capabilities must not be mistaken
+// for a shallow request (fatal: expected ACK/NAK, got 'shallow <sha>').
+func TestServeUploadPack_AllowsFullGitClone(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not available")
+	}
+
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "go-toolchain", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000, GitBranch: db.LatestBranch}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+	key, size, err := store.Put(ctx, strings.NewReader("binary"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSDarwin, Arch: db.ArchARM64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /info/refs", h.ServeUploadPackInfoRefs)
+	mux.HandleFunc("POST /git-upload-pack", h.ServeUploadPack)
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+
+	dir := filepath.Join(t.TempDir(), "tap")
+	cmd := exec.Command("git", "clone", ts.URL, dir)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	data, err := os.ReadFile(filepath.Join(dir, "Formula", "go-toolchain.rb"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "class GoToolchain < Formula")
+}
+
+func TestWantsShallow(t *testing.T) {
+	// A full clone's want line echoes the advertised deepen-since/deepen-not
+	// capabilities; that must NOT read as a depth request.
+	want := pktLineString("want 9f9969e4d487c9a700c13b5a2119a09de9262f31 multi_ack_detailed side-band-64k thin-pack ofs-delta deepen-since deepen-not agent=git/2.43.0\n")
+
+	var full bytes.Buffer
+	full.Write(want)
+	full.WriteString("0000")
+	full.Write(pktLineString("done\n"))
+	assert.False(t, wantsShallow(full.Bytes()), "capability echo must not be mistaken for a deepen request")
+
+	var shallow bytes.Buffer
+	shallow.Write(want)
+	shallow.Write(pktLineString("deepen 1\n"))
+	shallow.WriteString("0000")
+	assert.True(t, wantsShallow(shallow.Bytes()), "a deepen pkt-line is a depth request")
 }
 
 func TestRedirectTap_ToGitService(t *testing.T) {

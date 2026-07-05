@@ -408,8 +408,46 @@ func wantsSideBand(body []byte) bool {
 	return bytes.Contains(body, []byte("side-band"))
 }
 
+// wantsShallow reports whether the request carries an actual depth request --
+// a "deepen <n>", "deepen-since <timestamp>", or "deepen-not <ref>" pkt-line.
+// Per the pack protocol the shallow section is sent ONLY in answer to such a
+// request; a client that sent none expects ACK/NAK immediately. This must
+// inspect whole pkt-lines: a plain (full) clone's want line ECHOES the
+// advertised "deepen-since deepen-not" capability tokens, so a raw substring
+// match mistook every full clone for a shallow one and git died with
+// "fatal: git fetch-pack: expected ACK/NAK, got 'shallow <sha>'".
 func wantsShallow(body []byte) bool {
-	return bytes.Contains(body, []byte("deepen"))
+	for _, line := range pktLines(body) {
+		if bytes.HasPrefix(line, []byte("deepen")) {
+			return true
+		}
+	}
+	return false
+}
+
+// pktLines splits a pkt-line stream into its payload lines, skipping
+// flush-pkts (0000) and the other zero-payload special packets; parsing
+// stops at the first malformed length. Trailing newlines are kept --
+// callers prefix-match.
+func pktLines(body []byte) [][]byte {
+	var lines [][]byte
+	for len(body) >= 4 {
+		n, err := strconv.ParseUint(string(body[:4]), 16, 32)
+		if err != nil {
+			break
+		}
+		if n < 4 {
+			// flush-pkt (0000), delim-pkt (0001), response-end (0002).
+			body = body[4:]
+			continue
+		}
+		if uint64(len(body)) < n {
+			break
+		}
+		lines = append(lines, body[4:n])
+		body = body[n:]
+	}
+	return lines
 }
 
 func uploadPackDone(body []byte) bool {
