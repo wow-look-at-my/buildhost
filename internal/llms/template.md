@@ -53,6 +53,15 @@ buildhost publish \
   --server __BASE_URL__ --token $TOKEN \
   --project myapp --os linux --arch amd64 \
   --artifact ./myapp-linux-amd64
+
+# Publish ONE binary for several platforms in one request (e.g. a
+# Cosmopolitan/APE binary that runs everywhere): --os takes a comma list
+# or the alias cosmo/any (= linux,darwin,windows); --arch takes a comma
+# list or any (= amd64,arm64)
+buildhost publish \
+  --server __BASE_URL__ --token $TOKEN \
+  --project myapp --os cosmo --arch amd64 \
+  --artifact ./myapp.com
 ```
 
 ## Publishing with the REST API
@@ -64,6 +73,15 @@ POST __BASE_URL__/api/v1/projects/{project}/releases
 PUT  __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}
 POST __BASE_URL__/api/v1/projects/{project}/releases/{version}/publish
 ```
+
+The upload's `{os}` segment accepts one OS, a comma-separated list
+(`linux,darwin,windows`), or `cosmo` (aliases `any`/`all`/`universal`) for
+linux+darwin+windows; `{arch}` accepts a list or `any`/`all` for amd64+arm64.
+The body is stored once and one ordinary artifact row is created per os/arch
+combination (all-or-nothing; a conflicting combination returns 409), so
+downloads are unchanged -- always request a concrete os/arch. A single os/arch
+returns one artifact JSON object; a multi-platform upload returns a JSON array
+of them.
 
 Large uploads: a proxy in front of the server may cap single request bodies
 (Cloudflare's edge rejects bodies over 100 MB). Check
