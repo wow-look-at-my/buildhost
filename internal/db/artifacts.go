@@ -29,6 +29,48 @@ func (d *DB) CreateArtifact(ctx context.Context, a *Artifact) error {
 	return nil
 }
 
+// CreateArtifacts inserts several artifact rows in one transaction: either
+// every row is created or none is. It backs the multi-platform upload fan-out
+// (one uploaded blob published for several os/arch combinations), where a
+// conflict on any single combination must leave the release unchanged so the
+// client can resolve it and retry the identical request. A unique violation is
+// reported as ErrConflict naming the conflicting combination, exactly like
+// CreateArtifact. On success each artifact's ID is filled in.
+func (d *DB) CreateArtifacts(ctx context.Context, artifacts []*Artifact) error {
+	tx, err := d.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	q := New(tx)
+	for _, a := range artifacts {
+		res, err := q.InsertArtifact(ctx, InsertArtifactParams{
+			ReleaseID:  a.ReleaseID,
+			OS:         a.OS,
+			Arch:       a.Arch,
+			Kind:       a.Kind,
+			StorageKey: a.StorageKey,
+			Size:       a.Size,
+			SHA256:     a.SHA256,
+			Filename:   a.Filename,
+		})
+		if err != nil {
+			if isUniqueViolation(err) {
+				return fmt.Errorf("artifact %s/%s: %w", a.OS, a.Arch, ErrConflict)
+			}
+			return fmt.Errorf("insert artifact: %w", err)
+		}
+		id, _ := res.LastInsertId()
+		a.ID = id
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
+}
+
 func (d *DB) UpdateArtifactStripped(ctx context.Context, id int64, strippedKey string, strippedSize int64, strippedSHA256 string, debugKey string, debugSize int64) error {
 	return d.q.UpdateArtifactStripped(ctx, UpdateArtifactStrippedParams{
 		ID:                 id,

@@ -131,6 +131,67 @@ func TestChunkedUploadMatchesDirectUpload(t *testing.T) {
 	assert.Equal(t, payload, readBody(t, resp))
 }
 
+// TestChunkedUploadMultiPlatformFanOut proves a chunked upload session
+// finalizes through the multi-platform fan-out unchanged: one session, one
+// assembled body, N artifact rows sharing one content-addressed blob. The
+// comma-separated {os} segment also exercises the real router (a comma is an
+// ordinary path-segment byte).
+func TestChunkedUploadMultiPlatformFanOut(t *testing.T) {
+	env := setup(t)
+
+	payload := make([]byte, 200)
+	_, err := rand.Read(payload)
+	require.NoError(t, err)
+	wantSHA := sha256.Sum256(payload)
+
+	resp := env.postJSON(t, "/api/v1/projects", `{"name":"fanout","versioning":"auto"}`)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	resp.Body.Close()
+	resp = env.postJSON(t, "/api/v1/projects/fanout/releases", `{"git_branch":"master"}`)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	resp.Body.Close()
+
+	sess := env.createUploadSession(t)
+	offset := 0
+	for _, n := range []int{120, 80} {
+		resp = env.appendChunk(t, sess.ID, offset, payload[offset:offset+n])
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		resp.Body.Close()
+		offset += n
+	}
+
+	finalizeURL := fmt.Sprintf("/api/v1/projects/fanout/releases/1/artifacts/linux,darwin,windows/amd64?upload_session=%s&upload_sha256=%s",
+		sess.ID, hex.EncodeToString(wantSHA[:]))
+	resp = env.doRequest(t, "PUT", finalizeURL, "application/octet-stream", nil, true)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	var artifacts []db.Artifact
+	decodeJSON(t, resp, &artifacts)
+	require.Len(t, artifacts, 3)
+	for _, a := range artifacts {
+		assert.Equal(t, hex.EncodeToString(wantSHA[:]), a.SHA256)
+		assert.Equal(t, artifacts[0].StorageKey, a.StorageKey, "all rows must share one blob")
+	}
+	assert.Equal(t, db.OSLinux, artifacts[0].OS)
+	assert.Equal(t, db.OSDarwin, artifacts[1].OS)
+	assert.Equal(t, db.OSWindows, artifacts[2].OS)
+
+	// The one session was consumed by the successful fan-out finalize.
+	resp = env.doRequest(t, "GET", "/api/v1/uploads/"+sess.ID, "", nil, true)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	resp.Body.Close()
+
+	// Every fanned-out platform serves the same bytes through the normal
+	// download path -- the read side sees ordinary per-platform artifacts.
+	resp = env.postJSON(t, "/api/v1/projects/fanout/releases/1/publish", `{}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+	for _, osName := range []string{"linux", "darwin", "windows"} {
+		resp = env.doSubdomainRequest(t, "GET", "static", "/file?arch=amd64&os="+osName+"&project=fanout&v=1", "", nil, true)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, payload, readBody(t, resp))
+	}
+}
+
 func TestUploadSessionResume(t *testing.T) {
 	env := setup(t)
 
