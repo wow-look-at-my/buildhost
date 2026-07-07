@@ -246,6 +246,45 @@ buildhost publish \
 curl -O http://localhost:8080/dl/myapp/latest/linux/amd64
 ```
 
+## Multi-platform binaries (Cosmopolitan / APE)
+
+A single uploaded binary can be published for several OSes/architectures in one
+request -- built for [Cosmopolitan/APE](https://justine.lol/ape.html) binaries
+that run everywhere, but usable for any platform-independent artifact. The
+upload endpoint's `{os}` path segment accepts a single OS (unchanged), a
+comma-separated list (`linux,darwin,windows`), or the alias `cosmo` (synonyms:
+`any`, `all`, `universal`) which expands to `linux`+`darwin`+`windows`. `{arch}`
+likewise accepts a list or `any`/`all` for `amd64`+`arm64`:
+
+```bash
+# One APE binary, published for linux, darwin, and windows in one request
+buildhost publish \
+  --server http://localhost:8080 --token $TOKEN \
+  --project myapp --os cosmo --arch amd64 \
+  --artifact ./myapp.com
+
+# Explicit list, full arch matrix (os x arch combinations)
+buildhost publish ... --os linux,windows --arch any --artifact ./myapp
+```
+
+The body is streamed to content-addressed storage once; each os/arch
+combination becomes an ordinary per-platform artifact row referencing the same
+blob, so the fan-out costs database rows, not bytes. Downloads, `latest`
+resolution, the APT/Brew/npm/OCI format handlers, and retention are untouched
+-- there is no stored `os=any` value and no download-time fallback; clients
+still download a concrete `os`/`arch`.
+
+Details: each list element is normalized like download parameters
+(`macOS` -> `darwin`, `x86_64` -> `amd64`, ...); invalid, empty, or duplicate
+elements are rejected with a 400. Row creation is all-or-nothing: if any
+combination already exists the whole request returns 409 naming it, and
+nothing is created. A single-combination upload returns the artifact JSON
+object exactly as before; a multi-combination upload returns a JSON array of
+those artifact objects, in `os` list x `arch` list order. Works identically
+when finalizing a [chunked upload session](#large-uploads) (one session, one
+body, N rows). `kind=npm-package` keeps its literal `os=any`/`arch=any`
+sentinel row and never fans out.
+
 ## Versioning
 
 Projects use auto-incrementing versions by default (v1, v2, v3...). Opt into semver with `--versioning semver` at project creation.
@@ -481,7 +520,7 @@ The link is a stateless HMAC signature (keyed by a server-side key generated on 
 | POST | `/api/v1/projects` | Create project |
 | GET | `/api/v1/projects` | List projects |
 | POST | `/api/v1/projects/{project}/releases` | Create release |
-| PUT | `/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}` | Upload artifact (accepts `?upload_session=` -- see [Large uploads](#large-uploads)) |
+| PUT | `/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}` | Upload artifact (accepts `?upload_session=` -- see [Large uploads](#large-uploads); `{os}`/`{arch}` may be a comma list or `cosmo`/`any` -- see [Multi-platform binaries](#multi-platform-binaries-cosmopolitan--ape)) |
 | POST | `/api/v1/projects/{project}/releases/{version}/publish` | Publish release |
 | GET | `/api/v1/server-info` | Advertised upload limits (public) |
 | POST | `/api/v1/uploads` | Create a chunked upload session |
