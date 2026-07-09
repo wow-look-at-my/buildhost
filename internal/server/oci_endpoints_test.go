@@ -51,7 +51,7 @@ func TestOCI_MultiArchPull_FullStack(t *testing.T) {
 	require.Equal(t, http.StatusCreated,
 		env.postJSON(t, "/api/v1/projects", `{"name":"multi","versioning":"auto","is_private":false}`).StatusCode)
 	require.Equal(t, http.StatusCreated,
-		env.postJSON(t, "/api/v1/projects/multi/releases", `{"git_branch":"main"}`).StatusCode)
+		env.postJSON(t, "/api/v1/projects/multi/releases", `{"git_branch":"master"}`).StatusCode)
 	require.Equal(t, http.StatusCreated,
 		env.putBody(t, "/api/v1/projects/multi/releases/1/artifacts/linux/amd64?kind=binary", []byte("#!/bin/sh\necho amd64\n")).StatusCode)
 	require.Equal(t, http.StatusCreated,

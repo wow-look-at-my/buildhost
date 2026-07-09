@@ -33,7 +33,7 @@ automated agents. Every example below uses this server's configured base URL,
 buildhost uses bearer tokens. Provide one in whichever way your client allows:
 
 - HTTP header: `Authorization: Bearer <token>`
-- HTTP Basic auth: use the token as the username
+- HTTP Basic auth: send the token as the password (the username is ignored)
 - Query parameter: `?token=<token>` (for clients that cannot set headers, such
   as some APT and Homebrew flows)
 
@@ -53,6 +53,15 @@ buildhost publish \
   --server __BASE_URL__ --token $TOKEN \
   --project myapp --os linux --arch amd64 \
   --artifact ./myapp-linux-amd64
+
+# Publish ONE binary for several platforms in one request (e.g. a
+# Cosmopolitan/APE binary that runs everywhere): --os takes a comma list
+# or the alias cosmo/any (= linux,darwin,windows); --arch takes a comma
+# list or any (= amd64,arm64)
+buildhost publish \
+  --server __BASE_URL__ --token $TOKEN \
+  --project myapp --os cosmo --arch amd64 \
+  --artifact ./myapp.com
 ```
 
 ## Publishing with the REST API
@@ -64,6 +73,32 @@ POST __BASE_URL__/api/v1/projects/{project}/releases
 PUT  __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}
 POST __BASE_URL__/api/v1/projects/{project}/releases/{version}/publish
 ```
+
+The upload's `{os}` segment accepts one OS, a comma-separated list
+(`linux,darwin,windows`), or `cosmo` (aliases `any`/`all`/`universal`) for
+linux+darwin+windows; `{arch}` accepts a list or `any`/`all` for amd64+arm64.
+The body is stored once and one ordinary artifact row is created per os/arch
+combination (all-or-nothing; a conflicting combination returns 409), so
+downloads are unchanged -- always request a concrete os/arch. A single os/arch
+returns one artifact JSON object; a multi-platform upload returns a JSON array
+of them.
+
+Large uploads: a proxy in front of the server may cap single request bodies
+(Cloudflare's edge rejects bodies over 100 MB). Check
+`GET __BASE_URL__/api/v1/server-info` for `max_direct_upload_bytes`; anything
+larger must go through a chunked upload session instead of one request:
+
+```
+POST   __BASE_URL__/api/v1/uploads                 -> {"id": ...}
+PATCH  __BASE_URL__/api/v1/uploads/{id}?offset=N   append chunk at offset (repeat)
+PUT    __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}?upload_session={id}&upload_sha256={hex}
+```
+
+The finalize step is the ORIGINAL upload endpoint with an empty body; the
+assembled bytes are used as the request body. Works on the site-deploy PUT
+too. Offsets must equal the committed size (a 409 returns the actual size to
+resume from); `GET __BASE_URL__/api/v1/uploads/{id}` reads it and DELETE
+aborts. The `buildhost publish` CLI does all of this automatically.
 
 ## Downloading
 
@@ -103,6 +138,10 @@ echo "deb [signed-by=/etc/apt/keyrings/myapp.gpg] __APT_URL__/myapp stable main"
   | sudo tee /etc/apt/sources.list.d/myapp.list
 sudo apt update && sudo apt install myapp
 ```
+
+For a slash-namespaced project the repository URL keeps the slash, but the
+Debian package name folds `/` and `_` to `-` (for example, `myrepo/server` is
+served at `__APT_URL__/myrepo/server` and installs as `myrepo-server`).
 
 Homebrew (tap the generated Git repository, then install the formula):
 
@@ -149,6 +188,11 @@ GET    /api/v1/projects/{project}/releases                                   lis
 GET    /api/v1/projects/{project}/releases/{version}                         get release
 PUT    /api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}   upload artifact
 POST   /api/v1/projects/{project}/releases/{version}/publish                 publish release
+GET    /api/v1/server-info                                                   upload limits (public)
+POST   /api/v1/uploads                                                       create chunked upload session
+GET    /api/v1/uploads/{id}                                                  session committed size
+PATCH  /api/v1/uploads/{id}                                                  append chunk (?offset=N)
+DELETE /api/v1/uploads/{id}                                                  abort session
 GET    /healthz                                                              health check
 ```
 
@@ -156,6 +200,10 @@ GET    /healthz                                                              hea
 
 - Resolve to a concrete version before calling the static endpoint; it
   rejects `v=latest` with HTTP 400.
+- Uploads larger than server-info's `max_direct_upload_bytes` must use a
+  chunked upload session (see "Publishing with the REST API"); a single
+  request that big is rejected by the proxy in front of the server before it
+  reaches buildhost.
 - For private projects, send the auth token on every request, including the
   APT, Homebrew, npm, and OCI endpoints.
 - `GET __BASE_URL__/healthz` returns 200 when the server and its database are
