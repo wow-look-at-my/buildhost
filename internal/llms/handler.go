@@ -52,6 +52,11 @@ func render(baseURL string) []byte {
 		out = strings.ReplaceAll(out, placeholder, scheme+svc+"."+host)
 	}
 	out = strings.ReplaceAll(out, "__OCI_HOST__", "oci."+host)
+	// The authenticated Homebrew tap URL carries the token as the HTTP Basic
+	// password inside the URL (git only transmits credentials after a
+	// challenge, and brew stores the remote verbatim). "$TOKEN" is a literal
+	// shell placeholder for the reader, not a server-side substitution.
+	out = strings.ReplaceAll(out, "__BREW_TOKEN_URL__", scheme+"x:$TOKEN@brew."+host)
 
 	return []byte(out)
 }

@@ -179,6 +179,14 @@ jobs:
       - run: docker compose -f docker-compose.ci.yml logs
         if: failure()
 
+  # Proves the DOCUMENTED Homebrew flows -- public and private -- work against a
+  # real spawned buildhost with the real brew executable. The brew commands are
+  # not written here: .github/scripts/brew-tap-e2e.ts extracts them verbatim
+  # from README.md (and asserts the served llms.txt agrees), substituting only
+  # the server host. Changing what CI runs therefore REQUIRES changing the
+  # user-facing docs -- a "fix CI only" change goes red. (That drift already
+  # happened once: Homebrew 6.0 broke `brew install` and the fix landed in CI
+  # only, while README/llms.txt kept documenting a flow that failed for users.)
   homebrew-tap-e2e:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -188,20 +196,24 @@ jobs:
     env:
       BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
       BUILDHOST_BASE_URL: http://localhost:18080
+      # CI-speed hygiene only -- these do not alter whether the documented flow
+      # works (they skip brew's self-update and post-install cleanup). Every
+      # flow-affecting knob (trust, the Linux sandbox) must come from the docs.
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
-      # Homebrew 6.0's Linux build sandbox uses Bubblewrap, which can't set up on
-      # the GitHub runner (AppArmor blocks unprivileged user namespaces, so bwrap
-      # dies before the build runs). Opt out: this e2e installs our own freshly
-      # built formula on a throwaway runner, so the sandbox buys nothing here.
-      # Homebrew-documented; no-op on macOS (sandbox-exec). Homebrew 6's other new
-      # default -- third-party tap trust -- is handled properly in the install
-      # step below (`brew trust`), not opted out.
-      HOMEBREW_NO_SANDBOX_LINUX: "1"
     steps:
       - uses: actions/checkout@v4
       - if: runner.os == 'Linux'
         uses: Homebrew/actions/setup-homebrew@main
+      # Homebrew 6's Linux build sandbox (bubblewrap) needs unprivileged user
+      # namespaces, which Ubuntu 24.04 runners restrict via AppArmor. Lift the
+      # restriction so CI runs the sandbox the way a real Linux user machine
+      # does -- the docs document this exact sysctl for hardened hosts. The
+      # HOMEBREW_NO_SANDBOX_LINUX opt-out the docs reserve for containers
+      # without user namespaces is deliberately NOT set here.
+      - if: runner.os == 'Linux'
+        name: Allow unprivileged user namespaces (Homebrew build sandbox)
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -229,7 +241,7 @@ jobs:
           done
           cat "$RUNNER_TEMP/buildhost.log"
           exit 1
-      - name: Publish go-toolchain artifact
+      - name: Publish go-toolchain artifact (public)
         shell: bash
         run: |
           set -euo pipefail
@@ -264,23 +276,68 @@ jobs:
             'kind = "binary"' \
             > "$RUNNER_TEMP/buildhost-release.toml"
           ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release.toml"
-      - name: Install from generated Homebrew tap
+      - name: Publish myapp artifact (private)
         shell: bash
         run: |
           set -euo pipefail
-          brew untap pazer/build >/dev/null 2>&1 || true
-          brew uninstall go-toolchain >/dev/null 2>&1 || true
-          brew tap pazer/build http://brew.localhost:18080/tap.git
-          # Homebrew 6 refuses to evaluate a third-party tap until it is trusted
-          # (https://docs.brew.sh/Tap-Trust). pazer/build is buildhost's own
-          # dynamically generated, locally served tap, so trusting it is correct
-          # and safe. Guard for older brew, which has no `brew trust` subcommand
-          # and enforces no trust.
-          if brew trust --help >/dev/null 2>&1; then
-            brew trust pazer/build
-          fi
-          brew install --verbose pazer/build/go-toolchain
-          test "$(go-toolchain)" = "buildhost-homebrew-ok"
+          case "$(uname -s)" in
+            Darwin) os=darwin ;;
+            Linux) os=linux ;;
+            *) echo "unsupported OS"; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64) arch=amd64 ;;
+            arm64|aarch64) arch=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          printf '%s\n' '#!/bin/sh' 'echo buildhost-homebrew-private-ok' > "$RUNNER_TEMP/myapp"
+          chmod +x "$RUNNER_TEMP/myapp"
+          ./buildhost project create \
+            --server "$BUILDHOST_BASE_URL" \
+            --token "$BUILDHOST_TOKEN" \
+            --name myapp \
+            --versioning semver \
+            --private
+          printf '%s\n' \
+            "server = \"$BUILDHOST_BASE_URL\"" \
+            "token = \"$BUILDHOST_TOKEN\"" \
+            'project = "myapp"' \
+            'version = "1.0.0"' \
+            'git_branch = "master"' \
+            "" \
+            "[[artifact]]" \
+            "path = \"$RUNNER_TEMP/myapp\"" \
+            "os = \"$os\"" \
+            "arch = \"$arch\"" \
+            'kind = "binary"' \
+            > "$RUNNER_TEMP/buildhost-release-private.toml"
+          ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-private.toml"
+      - name: Public install flow (brew commands extracted from the docs)
+        uses: wow-look-at-my/actions@typescript#latest
+        env:
+          LEG: public
+        with:
+          file: .github/scripts/brew-tap-e2e.ts
+      - name: Execute the publicly installed binary
+        run: test "$(go-toolchain)" = "buildhost-homebrew-ok"
+      # Docs: the authenticated tap replaces the public tap under the same name
+      # ("untap the public one first if you already added it").
+      - name: Untap the public tap before the private flow (per docs)
+        run: brew untap pazer/build
+      - name: Private install flow (brew commands extracted from the docs)
+        uses: wow-look-at-my/actions@typescript#latest
+        env:
+          LEG: private
+        with:
+          file: .github/scripts/brew-tap-e2e.ts
+      - name: Execute the privately installed binary
+        run: test "$(myapp)" = "buildhost-homebrew-private-ok"
+      - name: Anonymous tap must not leak the private project
+        uses: wow-look-at-my/actions@typescript#latest
+        env:
+          LEG: anon-leak
+        with:
+          file: .github/scripts/brew-tap-e2e.ts
       - name: Dump buildhost log
         if: failure()
         shell: bash
