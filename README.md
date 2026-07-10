@@ -40,7 +40,10 @@ In containers or CI where user namespaces are unavailable, set
 
 A slash-namespaced project folds `/` to `-` in its formula name (the same rule
 APT applies to package names): project `log-streamer/client` installs as
-`brew install pazer/build/log-streamer-client`.
+`brew install pazer/build/log-streamer-client`. A project whose name starts
+with a digit cannot be served as a formula at all -- Homebrew derives the
+Ruby class from the formula name and a Ruby class cannot start with a digit --
+so such projects are omitted from the tap.
 
 ### Private projects
 

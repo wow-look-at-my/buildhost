@@ -16,6 +16,15 @@ import (
 )
 
 func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, release db.Release, artifacts []db.Artifact, baseURL string) (*repackage.Output, error) {
+	// A digit-leading project name can never be a loadable Homebrew formula
+	// (see repackage.BrewEligibleProjectName); emitting one would put
+	// syntactically invalid Ruby in the tap and break evaluation of every
+	// formula in it. Treat it as not found: the formula endpoints 404 and the
+	// tap build skips it.
+	if !repackage.BrewEligibleProjectName(project.Name) {
+		return nil, db.ErrNotFound
+	}
+
 	resources := make([]repackage.BrewResource, 0, len(artifacts))
 	var kind string
 

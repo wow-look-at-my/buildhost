@@ -144,6 +144,29 @@ function legPrivate(): void {
 		throw new Error("git fetch of the authenticated tap (the brew update mechanism) failed");
 	}
 	core.info("authenticated tap refetch (brew update mechanism) OK");
+
+	// Every formula the (authenticated, superset) tap serves must be valid
+	// Ruby. A single syntactically broken formula -- e.g. `class 7zip <
+	// Formula` or `class Go1.2 < Formula` from a hostile project name --
+	// surfaces to users as an ".rb: syntax error" and can break evaluation of
+	// the whole tap. Parse-check every one with brew's own ruby.
+	const formulaDir = path.join(tapDir, "Formula");
+	const formulaFiles = fs.readdirSync(formulaDir).filter((f) => f.endsWith(".rb"));
+	if (formulaFiles.includes("7zip.rb")) {
+		throw new Error("digit-leading project 7zip must be excluded from the tap (structurally unloadable by brew)");
+	}
+	if (!formulaFiles.includes("dotted.app.rb")) {
+		throw new Error(`dotted public project must be present in the tap (found: ${formulaFiles.join(", ")})`);
+	}
+	for (const f of formulaFiles) {
+		const check = child_process.spawnSync("brew", ["ruby", "--", "-c", path.join(formulaDir, f)], {
+			encoding: "utf8",
+		});
+		if (check.status !== 0 || !(check.stdout + check.stderr).includes("Syntax OK")) {
+			throw new Error(`formula ${f} is not valid Ruby:\n${check.stdout}\n${check.stderr}`);
+		}
+	}
+	core.info(`all ${formulaFiles.length} formulas in the authenticated tap parse as valid Ruby`);
 }
 
 function legAnonLeak(): void {
@@ -179,6 +202,41 @@ function legAnonLeak(): void {
 		throw new Error(`anonymous tap leaks the private project name in: ${leaks.join(", ")}`);
 	}
 	core.info(`anonymous tap contains ${formulas.length} formula(s), none referencing the private project`);
+
+	// A request that isn't authorized to see a formula must get a clean HTTP
+	// error -- NEVER a 200 with a non-Ruby body. A 200 JSON body saved as
+	// formula.rb is exactly the ".rb: syntax error" failure class users hit.
+	const errorPaths: Array<[string, number]> = [
+		["/myrepo/myapp", 401], // legacy formula path, private project, anonymous
+		// The /Formula/{project}.rb route matches a single path segment, so a
+		// slash-namespaced project is not addressable there (404 regardless of
+		// auth); the folded filename is not a project either -- both are
+		// indistinguishable from nonexistent, so nothing leaks.
+		["/Formula/myrepo/myapp.rb", 404],
+		["/Formula/myrepo-myapp.rb", 404],
+		["/Formula/7zip.rb", 404], // digit-leading project: excluded from brew
+	];
+	for (const [p, want] of errorPaths) {
+		const out = child_process
+			.execFileSync(
+				"curl",
+				["-s", "-o", "/dev/null", "-w", "%{http_code} %{content_type}", `http://${LOCAL_HOST}${p}`],
+				{ encoding: "utf8" },
+			)
+			.trim();
+		const [code, ...typeParts] = out.split(" ");
+		const cType = typeParts.join(" ");
+		if (Number(code) !== want) {
+			throw new Error(`GET brew${p}: want HTTP ${want}, got ${code}`);
+		}
+		// The invariant: never a 200, and never a body a client could mistake
+		// for a formula (x-ruby). 401s are JSON; the handler-level 404 is a
+		// plain-text "404 page not found" -- both are clean HTTP errors.
+		if (cType.includes("ruby")) {
+			throw new Error(`GET brew${p}: error response served as ruby (${cType})`);
+		}
+		core.info(`GET brew${p} -> ${code} ${cType} (clean error, no fake formula body)`);
+	}
 }
 
 const leg = process.env.LEG ?? "";

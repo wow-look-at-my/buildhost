@@ -406,6 +406,19 @@ func TestPrivateProject_DownloadWithoutAuth_Returns401(t *testing.T) {
 
 	resp.Body.Close()
 
+	// Unauthenticated fetches where a FORMULA belongs must be clean HTTP
+	// errors -- never a 200 whose body is not Ruby. (A 200 JSON body saved as
+	// formula.rb is exactly the ".rb: syntax error" failure class a user hit.)
+	for _, p := range []string{"/secretapp", "/Formula/secretapp.rb"} {
+		resp = env.getSubdomain(t, "brew", p)
+		require.Equalf(t, http.StatusUnauthorized, resp.StatusCode, "GET brew%s", p)
+		require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+		errBody, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Truef(t, strings.HasPrefix(string(errBody), "{"), "error body must be JSON, got %q", errBody)
+		resp.Body.Close()
+	}
+
 	// With auth, download redirects to the static subdomain. For a PRIVATE
 	// project the redirect is a 302 whose Location carries a short-lived
 	// signed token (clients drop the Authorization header on the cross-host

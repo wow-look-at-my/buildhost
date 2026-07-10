@@ -184,6 +184,9 @@ func RenderBrewFormula(f BrewFormula) (*Output, error) {
 }
 
 func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
+	if !BrewEligibleProjectName(input.Project.Name) {
+		return nil, fmt.Errorf("project name %q cannot be a Homebrew formula (Ruby class names cannot start with a digit)", input.Project.Name)
+	}
 	h := sha256.New()
 	if _, err := io.Copy(h, input.Reader); err != nil {
 		return nil, fmt.Errorf("hash artifact: %w", err)
@@ -235,9 +238,19 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 	})
 }
 
+// BrewClassName derives the formula's Ruby class name from the project name.
+// It MUST match what Homebrew derives from the formula FILENAME
+// (Formulary.class_s of the folded name), or the tap's formulas fail to load
+// with "expected to find class" -- and it must always be a valid Ruby
+// constant, or brew dies with a ".rb: syntax error" while parsing the file.
+// Brew's derivation treats '-', '_', and '.' as separators: it drops them and
+// upcases the following character ("a.b-c_d" -> "ABCD", "go1.2.3" -> "Go123";
+// measured against Formulary.class_s on Homebrew 6.0.9). '/' is buildhost's
+// namespace fold (tapFormulaName turns it into '-'), so it separates the same
+// way. Callers must gate on BrewEligibleProjectName first.
 func BrewClassName(name string) string {
 	parts := strings.FieldsFunc(name, func(r rune) bool {
-		return r == '-' || r == '_' || r == '/'
+		return r == '-' || r == '_' || r == '/' || r == '.'
 	})
 	var b strings.Builder
 	for _, p := range parts {
@@ -247,4 +260,19 @@ func BrewClassName(name string) string {
 		}
 	}
 	return b.String()
+}
+
+// BrewEligibleProjectName reports whether a project name can be served as a
+// Homebrew formula AT ALL. A name starting with a digit cannot: brew derives
+// the expected class from the formula filename (Formulary.class_s("7zip") ==
+// "7zip"), and a Ruby constant cannot start with a digit, so NO declaration
+// satisfies the loader -- emitting `class 7zip < Formula` is a guaranteed
+// ".rb:1: syntax errors found" that also breaks whole-tap evaluation, and any
+// valid substitute class fails with TapFormulaClassUnavailableError (both
+// measured against Homebrew 6.0.9). Such projects are excluded from the tap
+// and 404 on the formula endpoints instead of poisoning the tap with
+// unparseable Ruby. Project names are validator-constrained to lowercase
+// [a-z0-9] starts, so checking the first byte suffices.
+func BrewEligibleProjectName(name string) bool {
+	return name != "" && name[0] >= 'a' && name[0] <= 'z'
 }

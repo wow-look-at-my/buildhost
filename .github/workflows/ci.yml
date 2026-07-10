@@ -317,6 +317,47 @@ jobs:
             'kind = "binary"' \
             > "$RUNNER_TEMP/buildhost-release-private.toml"
           ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-private.toml"
+      # Hostile-name fixtures for the formula-codegen guarantees the e2e
+      # asserts: a digit-leading name must be EXCLUDED from brew entirely
+      # (`class 7zip < Formula` is invalid Ruby and unloadable by design), and
+      # a dotted name must fold into a valid, loadable class (DottedApp).
+      - name: Publish hostile-name fixtures (public)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)" in
+            Darwin) os=darwin ;;
+            Linux) os=linux ;;
+            *) echo "unsupported OS"; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64) arch=amd64 ;;
+            arm64|aarch64) arch=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          printf '%s\n' '#!/bin/sh' 'echo hostile-name-fixture' > "$RUNNER_TEMP/hostile-bin"
+          chmod +x "$RUNNER_TEMP/hostile-bin"
+          for name in 7zip dotted.app; do
+            ./buildhost project create \
+              --server "$BUILDHOST_BASE_URL" \
+              --token "$BUILDHOST_TOKEN" \
+              --name "$name" \
+              --versioning semver
+            printf '%s\n' \
+              "server = \"$BUILDHOST_BASE_URL\"" \
+              "token = \"$BUILDHOST_TOKEN\"" \
+              "project = \"$name\"" \
+              'version = "1.0.0"' \
+              'git_branch = "master"' \
+              "" \
+              "[[artifact]]" \
+              "path = \"$RUNNER_TEMP/hostile-bin\"" \
+              "os = \"$os\"" \
+              "arch = \"$arch\"" \
+              'kind = "binary"' \
+              > "$RUNNER_TEMP/buildhost-release-hostile.toml"
+            ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-hostile.toml"
+          done
       - name: Public install flow (brew commands extracted from the docs)
         uses: wow-look-at-my/actions@typescript#latest
         env:

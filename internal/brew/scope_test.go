@@ -266,3 +266,32 @@ func TestPrivateStrategySource(t *testing.T) {
 	assert.Contains(t, repackage.BrewPrivateStrategy, "Authorization: Bearer ")
 	assert.Equal(t, "lib/buildhost_private_download.rb", repackage.BrewPrivateStrategyPath)
 }
+
+// A digit-leading project name is structurally unloadable by Homebrew, and
+// emitting `class 7zip < Formula` is a guaranteed ".rb: syntax error" that
+// breaks evaluation of the whole tap (reproduced against Homebrew 6.0.9). It
+// must 404 on the formula endpoint and never appear in the tap; names with
+// dots must fold into a valid class exactly like brew's own derivation.
+func TestHostileProjectNames_NeverEmitInvalidRuby(t *testing.T) {
+	h, d, store := setupTest(t)
+	proj, _, _ := seedBrewProject(t, d, store, "7zip", "digit-binary")
+	seedBrewProject(t, d, store, "dotted.app", "dotted-binary")
+
+	req := httptest.NewRequest("GET", "/Formula/7zip.rb", nil)
+	req.Host = "brew.example.com"
+	req = req.WithContext(auth.WithProject(req.Context(), proj))
+	rec := httptest.NewRecorder()
+	h.ServeFormula(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	tapReq := httptest.NewRequest("GET", "/brew/tap.git", nil)
+	tapReq.Host = "git.example.com"
+	repo, err := h.buildTapRepo(tapReq)
+	require.NoError(t, err)
+	all := tapRepoText(repo)
+	assert.NotContains(t, all, "7zip", "digit-leading project must be excluded from the tap")
+	// The dotted project stays, with a class name brew both parses and loads.
+	assert.Contains(t, all, "dotted.app.rb")
+	assert.Contains(t, all, "class DottedApp < Formula")
+	assert.NotContains(t, all, "class Dotted.app")
+}
