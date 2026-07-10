@@ -147,8 +147,9 @@ function legPrivate(): void {
 }
 
 function legAnonLeak(): void {
-	// The anonymous public tap must not know the private project exists --
-	// not as a formula file, not as a name anywhere in any object.
+	// The anonymous public tap must not know the private project
+	// (myrepo/myapp, folded formula name myrepo-myapp) exists -- not as a
+	// formula file, not as a name anywhere in any file.
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "anon-tap-"));
 	const clone = child_process.spawnSync("git", ["clone", `http://${LOCAL_HOST}/tap.git`, dir], { stdio: "inherit" });
 	if (clone.status !== 0) throw new Error("anonymous tap clone failed");
@@ -158,8 +159,8 @@ function legAnonLeak(): void {
 	if (!formulas.includes("go-toolchain.rb")) {
 		throw new Error(`anonymous tap is missing the public formula (found: ${formulas.join(", ")})`);
 	}
-	if (formulas.includes("myapp.rb")) {
-		throw new Error("anonymous tap LEAKS the private formula file myapp.rb");
+	if (formulas.includes("myrepo-myapp.rb")) {
+		throw new Error("anonymous tap LEAKS the private formula file myrepo-myapp.rb");
 	}
 	const leaks: string[] = [];
 	const walk = (p: string): void => {
@@ -168,7 +169,7 @@ function legAnonLeak(): void {
 			const full = path.join(p, entry.name);
 			if (entry.isDirectory()) {
 				walk(full);
-			} else if (fs.readFileSync(full, "utf8").includes("myapp")) {
+			} else if (fs.readFileSync(full, "utf8").includes("myrepo")) {
 				leaks.push(path.relative(dir, full));
 			}
 		}

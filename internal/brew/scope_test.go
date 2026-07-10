@@ -97,6 +97,12 @@ func TestServePrivateTap_TokenScopedTapIncludesPrivateFormula(t *testing.T) {
 	assert.Contains(t, all, `require_relative "../lib/buildhost_private_download"`)
 	assert.Contains(t, all, "using: BuildhostCurlDownloadStrategy")
 	assert.Contains(t, all, "class NsSecretapp < Formula")
+	// Slash-named projects install by BASENAME: the tar.gz's only top-level
+	// entry is the namespace directory, and brew strips a lone top-level dir
+	// when unpacking, so the staged file is just the basename. Installing the
+	// slashed path ENOENTs (reproduced against real brew 6.0.9).
+	assert.Contains(t, all, `bin.install "secretapp"`)
+	assert.NotContains(t, all, `bin.install "ns/secretapp"`)
 	// The strategy library rides along and never embeds a token.
 	assert.Contains(t, all, "buildhost_private_download.rb")
 	assert.Contains(t, all, `ENV["HOMEBREW_BUILDHOST_TOKEN"]`)

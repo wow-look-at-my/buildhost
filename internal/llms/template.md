@@ -158,21 +158,24 @@ brew install pazer/build/go-toolchain
 For a private project, tap the authenticated tap instead: it contains every
 public formula plus the private projects the token can read (git transmits
 credentials only after a challenge, so they ride the tap URL as the HTTP
-Basic password), and export `HOMEBREW_BUILDHOST_TOKEN` so the formula's
-download strategy can authenticate the artifact fetch. The `?token=` query
-parameter cannot be used with `brew tap` -- git appends its own path segments
-after the query string:
+Basic password; it replaces the public tap -- `brew untap --force pazer/build`
+first if that was added), and export `HOMEBREW_BUILDHOST_TOKEN` so the
+formula's download strategy can authenticate the artifact fetch. The
+`?token=` query parameter cannot be used with `brew tap` -- git appends its
+own path segments after the query string. Example for a private project
+named `myrepo/myapp`:
 
 ```
 brew tap pazer/build "__BREW_TOKEN_URL__/private/tap.git"
 brew trust pazer/build
 export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
-brew install pazer/build/myapp
+brew install pazer/build/myrepo-myapp
 ```
 
 A slash-namespaced project folds `/` to `-` in its formula name (the same
-rule as APT package names): `myrepo/server` installs as
-`brew install pazer/build/myrepo-server`.
+rule as APT package names), and the installed command keeps the binary's own
+name: `myrepo/myapp` installs as `brew install pazer/build/myrepo-myapp` and
+puts `myapp` on PATH.
 
 npm (packages are published under the `@buildhost` scope):
 

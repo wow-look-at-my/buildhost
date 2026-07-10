@@ -46,18 +46,22 @@ APT applies to package names): project `log-streamer/client` installs as
 
 A private project never appears in the public tap. Tap the **authenticated
 tap** instead: it serves every public formula plus the private projects your
-token can read, so it replaces the public tap under the same name (untap the
-public one first if you already added it). Git only transmits credentials
-after a 401 challenge, so the token goes in the tap URL as the HTTP Basic
-password (the username is ignored; `x` by convention). Artifact downloads
-authenticate separately through `HOMEBREW_BUILDHOST_TOKEN`, which private
-formulas read at install time -- the token is never written into the tap:
+token can read, so it replaces the public tap under the same name (if you
+already added the public tap, remove it first with
+`brew untap --force pazer/build`). Git only transmits credentials after a 401
+challenge, so the token goes in the tap URL as the HTTP Basic password (the
+username is ignored; `x` by convention). Artifact downloads authenticate
+separately through `HOMEBREW_BUILDHOST_TOKEN`, which private formulas read at
+install time -- the token is never written into the tap. The example below is
+a private project named `myrepo/myapp`; per the folding rule above it
+installs as `myrepo-myapp`, and the installed command keeps the binary's own
+name (`myapp`):
 
 ```bash
 brew tap pazer/build "https://x:$TOKEN@brew.pazer.build/private/tap.git"
 brew trust pazer/build
 export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
-brew install pazer/build/myapp
+brew install pazer/build/myrepo-myapp
 ```
 
 `brew update` refreshes the tap with the credentials stored in the tap's git

@@ -52,15 +52,31 @@ var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }
 
   def install
     {{- if eq .Kind "binary" }}
-    bin.install "{{ .Name }}"
+    bin.install "{{ .InstallName }}"
     {{- else if eq .Kind "library" }}
-    lib.install "{{ .Name }}"
+    lib.install "{{ .InstallName }}"
     {{- else }}
     prefix.install Dir["*"]
     {{- end }}
   end
 end
 `))
+
+// brewInstallName returns the path the staged download exposes for install.
+// The tar.gz artifact contains exactly one entry named after the project, so
+// for a slash-namespaced project ("myrepo/myapp") the archive's only
+// top-level entry is the "myrepo" directory -- and Homebrew's unpack step
+// strips a lone top-level directory (the same normalization it applies to
+// GitHub tarballs), leaving just "myapp" in the stage. Installing the full
+// slashed path therefore ENOENTs; the basename is what actually exists. For
+// single-segment projects the entry is a top-level file and the basename is
+// the name itself, so this is universally correct.
+func brewInstallName(project string) string {
+	if i := strings.LastIndexByte(project, '/'); i >= 0 {
+		return project[i+1:]
+	}
+	return project
+}
 
 // BrewPrivateStrategyPath is the path inside the generated tap repository that
 // carries the download strategy for private-project formulas. Those formulas
@@ -107,6 +123,7 @@ end
 type brewData struct {
 	ClassName   string
 	Name        string
+	InstallName string
 	Description string
 	Homepage    string
 	Version     string
@@ -143,6 +160,7 @@ func RenderBrewFormula(f BrewFormula) (*Output, error) {
 	d := brewData{
 		ClassName:   f.ClassName,
 		Name:        sanitizeBrewString(f.Name),
+		InstallName: sanitizeBrewString(brewInstallName(f.Name)),
 		Description: sanitizeBrewString(f.Description),
 		Homepage:    sanitizeBrewString(f.Homepage),
 		Version:     sanitizeBrewString(f.Version),

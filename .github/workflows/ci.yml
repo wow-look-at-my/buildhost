@@ -212,8 +212,10 @@ jobs:
       # HOMEBREW_NO_SANDBOX_LINUX opt-out the docs reserve for containers
       # without user namespaces is deliberately NOT set here.
       - if: runner.os == 'Linux'
-        name: Allow unprivileged user namespaces (Homebrew build sandbox)
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        name: Host prep for Homebrew's build sandbox (bubblewrap + user namespaces)
+        run: |
+          sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -276,7 +278,10 @@ jobs:
             'kind = "binary"' \
             > "$RUNNER_TEMP/buildhost-release.toml"
           ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release.toml"
-      - name: Publish myapp artifact (private)
+      # Slash-namespaced AND private -- the exact shape of the live project this
+      # e2e exists for. The folded formula name (myrepo-myapp) and the
+      # basename-install rule are covered end to end.
+      - name: Publish myrepo/myapp artifact (private, slash-namespaced)
         shell: bash
         run: |
           set -euo pipefail
@@ -295,13 +300,13 @@ jobs:
           ./buildhost project create \
             --server "$BUILDHOST_BASE_URL" \
             --token "$BUILDHOST_TOKEN" \
-            --name myapp \
+            --name myrepo/myapp \
             --versioning semver \
             --private
           printf '%s\n' \
             "server = \"$BUILDHOST_BASE_URL\"" \
             "token = \"$BUILDHOST_TOKEN\"" \
-            'project = "myapp"' \
+            'project = "myrepo/myapp"' \
             'version = "1.0.0"' \
             'git_branch = "master"' \
             "" \
@@ -321,9 +326,10 @@ jobs:
       - name: Execute the publicly installed binary
         run: test "$(go-toolchain)" = "buildhost-homebrew-ok"
       # Docs: the authenticated tap replaces the public tap under the same name
-      # ("untap the public one first if you already added it").
+      # ("remove it first with brew untap --force" -- plain untap refuses while
+      # formulae installed from the tap exist).
       - name: Untap the public tap before the private flow (per docs)
-        run: brew untap pazer/build
+        run: brew untap --force pazer/build
       - name: Private install flow (brew commands extracted from the docs)
         uses: wow-look-at-my/actions@typescript#latest
         env:
