@@ -65,7 +65,10 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 		Version:     version,
 		License:     firstNonEmpty(project.License, "MIT"),
 		Kind:        kind,
-		Resources:   resources,
+		// A private project's formula downloads through the tap's token-aware
+		// strategy (the artifact endpoints reject anonymous requests).
+		Private:   project.IsPrivate,
+		Resources: resources,
 	})
 }
 

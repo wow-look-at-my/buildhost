@@ -23,6 +23,14 @@ const tapSnapshotDirName = "brew-tap"
 // var so tests can shorten it.
 var tapCacheTTL = 30 * time.Second
 
+// tapCacheMaxEntries caps how many scoped snapshots are kept at once. Distinct
+// entries come from distinct (request base URL, credential scope) pairs, so
+// legitimate deployments need a handful; the cap keeps a client spraying
+// made-up Host headers (each one is a new base URL) from growing the cache
+// without bound inside one TTL window. Evicting the oldest is always safe --
+// open fds survive the unlink, and the next request just rebuilds.
+const tapCacheMaxEntries = 32
+
 // errTapBuild marks a snapshot BUILD failure (500), as opposed to a requested
 // path simply not existing in a healthy snapshot (404).
 var errTapBuild = errors.New("build tap snapshot")
@@ -36,48 +44,75 @@ var errTapBuild = errors.New("build tap snapshot")
 type tapSnapshot struct {
 	dir     string
 	root    *os.Root
-	key     string // base URL the build derived its formulas from
+	key     string // (base URL, credential scope) the build derived its contents from
 	builtAt time.Time
 }
 
-// openTapFile resolves the current snapshot for the request -- rebuilding it
-// under the mutex when there is none, it expired, or it was built for a
-// different base URL (the host is baked into formula download URLs, so a
-// cached tap must never be served with the wrong host) -- and opens the
-// requested file inside it.
+// openTapFile resolves the snapshot for the request's (base URL, credential
+// scope) cache key -- building it under the mutex when there is none or it
+// expired -- and opens the requested file inside it. The base URL is part of
+// the key because the host is baked into formula download URLs; the credential
+// scope (tapScopeKey) is part of the key because tap contents depend on which
+// projects the credential may read, so a cached tap can never be served across
+// scopes. A cache hit does no DB work at all.
 //
 // Race handling: the open happens while tapMu is still held, and snapshot
-// removal only ever happens under the same mutex (in the swap below), so a
-// reader can never resolve a pointer and then find the directory deleted. Once
-// the fd is returned, POSIX unlink-while-open semantics keep the file (and any
-// mapping of it) readable even after a later rebuild swaps the snapshot out
-// and removes its directory. This is why the swap can delete the old snapshot
-// immediately instead of keeping previous generations around.
+// removal only ever happens under the same mutex, so a reader can never
+// resolve a snapshot and then find the directory deleted. Once the fd is
+// returned, POSIX unlink-while-open semantics keep the file (and any mapping
+// of it) readable even after a later sweep/eviction removes its directory.
 //
 // A build failure is reported wrapped in errTapBuild; any other error means
 // the requested path does not exist in the (healthy) snapshot.
 func (h *Handler) openTapFile(r *http.Request, path string) (*os.File, error) {
-	key := auth.RequestRootURL(r)
+	key := auth.RequestRootURL(r) + "\x00" + tapScopeKey(r.Context())
 
 	h.tapMu.Lock()
 	defer h.tapMu.Unlock()
 
-	snap := h.tapSnap
-	if snap == nil || snap.key != key || time.Since(snap.builtAt) >= tapCacheTTL {
+	h.sweepTapSnapshotsLocked()
+
+	snap := h.tapSnaps[key]
+	if snap == nil {
 		fresh, err := h.buildTapSnapshot(r, key)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %w", errTapBuild, err)
 		}
-		h.dropTapSnapshotLocked()
-		h.tapSnap = fresh
+		if h.tapSnaps == nil {
+			h.tapSnaps = map[string]*tapSnapshot{}
+		}
+		h.tapSnaps[key] = fresh
 		snap = fresh
 	}
 	return snap.root.Open(path)
 }
 
-// buildTapSnapshot materializes one full tap build as real files under
-// {TmpDir}/brew-tap/<random>/ and returns it with an opened os.Root for
-// sandboxed serving. The caller publishes it by swapping the handler's pointer
+// sweepTapSnapshotsLocked drops every expired snapshot, then -- should the map
+// still exceed the cap -- evicts the oldest builds. Must be called with tapMu
+// held. Deleting while requests still hold open fds or mappings into a
+// directory is safe on the platforms buildhost targets: the inodes stay alive
+// until the last close/unmap.
+func (h *Handler) sweepTapSnapshotsLocked() {
+	for key, snap := range h.tapSnaps {
+		if time.Since(snap.builtAt) >= tapCacheTTL {
+			h.dropTapSnapshotLocked(key)
+		}
+	}
+	for len(h.tapSnaps) >= tapCacheMaxEntries {
+		oldestKey := ""
+		var oldest time.Time
+		for key, snap := range h.tapSnaps {
+			if oldestKey == "" || snap.builtAt.Before(oldest) {
+				oldestKey, oldest = key, snap.builtAt
+			}
+		}
+		h.dropTapSnapshotLocked(oldestKey)
+	}
+}
+
+// buildTapSnapshot materializes one full tap build for the request's scope as
+// real files under {TmpDir}/brew-tap/<random>/ and returns it with an opened
+// os.Root for sandboxed serving. The caller publishes it into the cache map
 // under tapMu once the build has fully completed, so a half-written directory
 // is never visible to requests; a directory orphaned by a crash mid-build is
 // swept by the next process's resetTapCache.
@@ -114,7 +149,7 @@ func (h *Handler) buildTapSnapshot(r *http.Request, key string) (*tapSnapshot, e
 	return &tapSnapshot{dir: dir, root: root, key: key, builtAt: time.Now()}, nil
 }
 
-// resetTapCache drops the cached snapshot and removes the whole snapshot root
+// resetTapCache drops every cached snapshot and removes the whole snapshot root
 // on disk. Called whenever the handler is (re)wired to a data dir -- at process
 // start that doubles as the sweep of snapshot directories a previous process
 // left behind (nothing can hold them open across a restart; snapshots are pure
@@ -122,21 +157,22 @@ func (h *Handler) buildTapSnapshot(r *http.Request, key string) (*tapSnapshot, e
 func (h *Handler) resetTapCache() {
 	h.tapMu.Lock()
 	defer h.tapMu.Unlock()
-	h.dropTapSnapshotLocked()
+	for key := range h.tapSnaps {
+		h.dropTapSnapshotLocked(key)
+	}
 	os.RemoveAll(h.tapRoot())
 }
 
-// dropTapSnapshotLocked closes and deletes the current snapshot, if any. Must
-// be called with tapMu held. Deleting while requests still hold open fds or
-// mappings into the directory is safe on the platforms buildhost targets: the
-// inodes stay alive until the last close/unmap.
-func (h *Handler) dropTapSnapshotLocked() {
-	if h.tapSnap == nil {
+// dropTapSnapshotLocked closes and deletes one cached snapshot. Must be called
+// with tapMu held.
+func (h *Handler) dropTapSnapshotLocked(key string) {
+	snap := h.tapSnaps[key]
+	if snap == nil {
 		return
 	}
-	h.tapSnap.root.Close()
-	os.RemoveAll(h.tapSnap.dir)
-	h.tapSnap = nil
+	snap.root.Close()
+	os.RemoveAll(snap.dir)
+	delete(h.tapSnaps, key)
 }
 
 // tapRoot returns the directory snapshots live under. TmpDir is always set in

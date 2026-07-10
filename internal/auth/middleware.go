@@ -225,6 +225,32 @@ func userCanReadProject(ctx context.Context, project *db.Project) bool {
 	return mw.GitHub.canAccessRepo(ctx, login, GitHubTokenFrom(ctx), project.GithubRepo)
 }
 
+// TokenCanReadProject reports whether the request context carries a credential
+// that authorizes READING the given project, applying exactly the token rules
+// requireProject's ReadAccess branch applies to a private project: a token with
+// the read scope, authorized for the project, and -- for OIDC identities -- inside
+// the repo's slash-namespace. Public projects are readable by definition.
+//
+// This exists for handlers that assemble a MULTI-project response (e.g. the
+// generated Homebrew tap) and therefore cannot ride the per-project
+// requireProject middleware; using this predicate keeps their visibility
+// decisions byte-identical to the centralized single-project rule. It
+// deliberately considers only tokens (not browser GitHub sessions): the
+// consumers are package-manager clients, which never carry a session cookie.
+func TokenCanReadProject(ctx context.Context, project *db.Project) bool {
+	if !project.IsPrivate {
+		return true
+	}
+	t := TokenFrom(ctx)
+	if t == nil || !t.HasScope("read") || !t.AuthorizedForProject(project.ID) {
+		return false
+	}
+	if oidcProject := OIDCProjectFrom(ctx); oidcProject != "" && !oidcAuthorizesProject(oidcProject, project.Name) {
+		return false
+	}
+	return true
+}
+
 // oidcAuthorizesProject reports whether an OIDC identity auto-provisioned for a
 // repository may act on the given project. oidcProject is the repo's derived
 // single-segment name (see projectFromSubject). A repo owns its own project and

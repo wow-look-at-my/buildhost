@@ -33,7 +33,9 @@ func (b *Brew) Applicable(a db.Artifact) bool {
 	return a.OS == db.OSLinux || a.OS == db.OSDarwin
 }
 
-var brewTemplate = template.Must(template.New("formula").Parse(`class {{ .ClassName }} < Formula
+var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }}require_relative "../lib/buildhost_private_download"
+
+{{ end }}class {{ .ClassName }} < Formula
   desc "{{ .Description }}"
   homepage "{{ .Homepage }}"
   version "{{ .Version }}"
@@ -42,7 +44,7 @@ var brewTemplate = template.Must(template.New("formula").Parse(`class {{ .ClassN
   {{- range .Resources }}
   on_{{ .OS }} do
     on_{{ .Arch }} do
-      url "{{ .URL }}"
+      url "{{ .URL }}"{{ if $.Private }}, using: BuildhostCurlDownloadStrategy{{ end }}
       sha256 "{{ .SHA256 }}"
     end
   end
@@ -60,6 +62,48 @@ var brewTemplate = template.Must(template.New("formula").Parse(`class {{ .ClassN
 end
 `))
 
+// BrewPrivateStrategyPath is the path inside the generated tap repository that
+// carries the download strategy for private-project formulas. Those formulas
+// require_relative it (the "lib/" companion-file layout is Homebrew's standard
+// private-tap pattern).
+const BrewPrivateStrategyPath = "lib/buildhost_private_download.rb"
+
+// BrewPrivateStrategy is the Ruby download strategy shipped in the generated
+// tap. It never contains a token: the token comes from the user's environment
+// at install time. The variable MUST be HOMEBREW_-prefixed -- Homebrew scrubs
+// every other variable from the environment before formula code runs.
+//
+// The strategy only authenticates the INITIAL download request. buildhost's dl
+// endpoint answers an authenticated private download with a redirect whose
+// Location carries a short-lived signed token bound to that one artifact, so
+// the followed cross-host redirect needs no Authorization header (curl drops
+// the header on cross-host redirects by design, and brew inherits curl
+// semantics).
+const BrewPrivateStrategy = `# frozen_string_literal: true
+
+# Download strategy for private buildhost projects: sends the token from
+# HOMEBREW_BUILDHOST_TOKEN as a Bearer Authorization header on the download
+# request. buildhost redirects private downloads with a short-lived signed
+# token in the Location, so the followed redirect needs no header.
+class BuildhostCurlDownloadStrategy < CurlDownloadStrategy
+  def initialize(url, name, version, **meta)
+    token = ENV["HOMEBREW_BUILDHOST_TOKEN"].to_s
+    unless token.empty?
+      meta = meta.merge(headers: Array(meta[:headers]) + ["Authorization: Bearer #{token}"])
+    end
+    super(url, name, version, **meta)
+  end
+
+  def fetch(timeout: nil)
+    if ENV["HOMEBREW_BUILDHOST_TOKEN"].to_s.empty?
+      raise "HOMEBREW_BUILDHOST_TOKEN is not set; export a buildhost token " \
+            "with read access to this project, then retry."
+    end
+    super
+  end
+end
+`
+
 type brewData struct {
 	ClassName   string
 	Name        string
@@ -68,6 +112,7 @@ type brewData struct {
 	Version     string
 	License     string
 	Kind        string
+	Private     bool
 	Resources   []BrewResource
 }
 
@@ -86,7 +131,12 @@ type BrewFormula struct {
 	Version     string
 	License     string
 	Kind        string
-	Resources   []BrewResource
+	// Private marks a formula for a private project: it requires the tap's
+	// BuildhostCurlDownloadStrategy (BrewPrivateStrategyPath) and downloads
+	// with `using:` it, so the artifact fetch carries the user's token from
+	// HOMEBREW_BUILDHOST_TOKEN. The formula itself never embeds a token.
+	Private   bool
+	Resources []BrewResource
 }
 
 func RenderBrewFormula(f BrewFormula) (*Output, error) {
@@ -98,6 +148,7 @@ func RenderBrewFormula(f BrewFormula) (*Output, error) {
 		Version:     sanitizeBrewString(f.Version),
 		License:     sanitizeBrewString(f.License),
 		Kind:        f.Kind,
+		Private:     f.Private,
 		Resources:   f.Resources,
 	}
 
@@ -156,6 +207,7 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 		Version:     sanitizeBrewString(version),
 		License:     sanitizeBrewString(firstNonEmpty(input.Project.License, "MIT")),
 		Kind:        string(input.Artifact.Kind),
+		Private:     input.Project.IsPrivate,
 		Resources: []BrewResource{{
 			OS:     brewOS,
 			Arch:   brewArch,
