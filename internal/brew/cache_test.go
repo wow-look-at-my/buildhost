@@ -231,8 +231,8 @@ func TestServeTap_SnapshotKeyedByHost(t *testing.T) {
 	}
 	require.True(t, served, "no loose object found to fetch")
 
-	// Flipping back to alpha within the TTL rebuilds for alpha (single-entry
-	// cache) and reproduces alpha's original build exactly.
+	// Flipping back to alpha within the TTL serves alpha's own cached snapshot
+	// (per-key entries; beta's build never evicted it) byte-for-byte.
 	recAlpha2 := getTap(t, h, "git.alpha.test", "info/refs")
 	require.Equal(t, http.StatusOK, recAlpha2.Code)
 	assert.Equal(t, recAlpha.Body.String(), recAlpha2.Body.String())
