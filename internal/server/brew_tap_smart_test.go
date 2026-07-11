@@ -31,9 +31,14 @@ func gitRunEnv(t *testing.T, dir string, extraEnv []string, args ...string) stri
 // gitTapServer serves the real router under the git service host so a real
 // git client can reach git.{domain} through a plain URL.
 func gitTapServer(t *testing.T, env *testEnv) *httptest.Server {
+	return hostTapServer(t, env, "git.test.local")
+}
+
+// hostTapServer serves the real router under an arbitrary service host.
+func hostTapServer(t *testing.T, env *testEnv, host string) *httptest.Server {
 	t.Helper()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Host = "git.test.local"
+		r.Host = host
 		env.handler.ServeHTTP(w, r)
 	}))
 	t.Cleanup(ts.Close)
@@ -136,6 +141,41 @@ func TestBrewTapSmart_DepthOneCloneThroughRouter(t *testing.T) {
 	require.Equal(t, "1", strings.TrimSpace(gitRun(t, clone, "rev-list", "--count", "origin/main")))
 	_, err = os.Stat(filepath.Join(clone, "Formula", "apptwo.rb"))
 	require.NoError(t, err)
+}
+
+// brew.{domain}/tap.git is a first-class clone URL: the smart pair under the
+// tap path is served DIRECTLY on the brew host. The clone succeeding at all
+// proves no redirect fired -- the router rewrites every request's Host to the
+// brew service host, so a 301 toward git.{domain} would point the git client
+// at an unresolvable address. The bare /tap.git path itself keeps its
+// anonymous redirect for anything that hits exactly that path.
+func TestBrewTapSmart_BrewHostTapURLClonesDirectly(t *testing.T) {
+	gitOrSkip(t)
+	env := setup(t)
+	publishBrewProject(t, env, "appone", "appone-binary")
+	brewTS := hostTapServer(t, env, "brew.test.local")
+
+	resp, err := http.Get(brewTS.URL + "/tap.git/info/refs?service=git-upload-pack")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, "application/x-git-upload-pack-advertisement", resp.Header.Get("Content-Type"))
+	resp.Body.Close()
+
+	clone := filepath.Join(t.TempDir(), "tap")
+	gitRun(t, t.TempDir(), "clone", "-c", "fetch.unpackLimit=1", brewTS.URL+"/tap.git", clone)
+	require.True(t, hasPackFiles(t, clone), "the brew-host clone must transfer via the smart pack")
+	_, err = os.Stat(filepath.Join(clone, ".git", "shallow"))
+	require.True(t, os.IsNotExist(err))
+	_, err = os.Stat(filepath.Join(clone, "Formula", "appone.rb"))
+	require.NoError(t, err)
+
+	// Exactly /tap.git (no suffix) still answers the anonymous 301.
+	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err = noRedirect.Get(brewTS.URL + "/tap.git")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "git.test.local/brew/tap.git")
+	resp.Body.Close()
 }
 
 // The dumb-HTTP path must keep working exactly as #159 shipped it even with

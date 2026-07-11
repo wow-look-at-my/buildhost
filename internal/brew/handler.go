@@ -41,14 +41,19 @@ func init() {
 	auth.ServiceHandleRaw("brew", "GET /private/tap.git/{path...}", handler.ServePrivateTap)
 	auth.ServiceHandleRaw("git", "GET /brew/tap.git", handler.ServeTap)
 	auth.ServiceHandleRaw("git", "GET /brew/tap.git/{path...}", handler.ServeTap)
-	// Smart-HTTP git endpoints (see smart.go) on every tap root, with each
-	// root's exact credential semantics (redirect / 401 challenge / public).
-	// The literal info/refs routes outscore the {path...} file routes and
-	// dispatch on ?service=: absent means the dumb-HTTP file serving above,
-	// verbatim; git-upload-pack means the smart ref advertisement. The POST
-	// routes are the smart fetch; the dumb protocol never POSTs.
-	auth.ServiceHandleRaw("brew", "GET /tap.git/info/refs", handler.RedirectTapInfoRefs)
-	auth.ServiceHandleRaw("brew", "POST /tap.git/git-upload-pack", handler.RedirectTapUploadPack)
+	// Smart-HTTP git endpoints (see smart.go), always the same pair UNDER a
+	// tap path -- never at a host root, whose namespace belongs to formula and
+	// project routes ("info/refs" is even a valid slash-namespaced project
+	// name). The literal info/refs routes outscore the {path...} file routes
+	// and dispatch on ?service=: absent means the dumb-HTTP file serving
+	// above, verbatim; git-upload-pack means the smart ref advertisement. The
+	// POST routes are the smart fetch; the dumb protocol never POSTs. Both
+	// brew.{domain}/tap.git and git.{domain}/brew/tap.git are first-class,
+	// directly served clone URLs (the smart pair never redirects; only the
+	// bare /tap.git path and the dumb file paths keep the anonymous 301);
+	// /private/tap.git keeps its 401 Basic challenge for anonymous requests.
+	auth.ServiceHandleRaw("brew", "GET /tap.git/info/refs", handler.ServeTapInfoRefs)
+	auth.ServiceHandleRaw("brew", "POST /tap.git/git-upload-pack", handler.ServeTapUploadPack)
 	auth.ServiceHandleRaw("brew", "GET /private/tap.git/info/refs", handler.ServePrivateTapInfoRefs)
 	auth.ServiceHandleRaw("brew", "POST /private/tap.git/git-upload-pack", handler.ServePrivateTapUploadPack)
 	auth.ServiceHandleRaw("git", "GET /brew/tap.git/info/refs", handler.ServeTapInfoRefs)

@@ -255,9 +255,10 @@ func TestWantsShallow(t *testing.T) {
 }
 
 // The smart endpoints carry each tap root's exact credential semantics: the
-// private root challenges anonymous requests, the plain brew root redirects
-// them to the public git subdomain (query preserved, so the handshake
-// continues there), and a credentialed response is never shared-cacheable.
+// private root challenges anonymous requests, brew.{domain}/tap.git serves
+// the smart pair DIRECTLY even anonymously (it is a first-class clone URL --
+// only the bare /tap.git path and dumb file paths keep the anonymous 301),
+// and a credentialed response is never shared-cacheable.
 func TestSmartTap_CredentialGates(t *testing.T) {
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "appone", "appone-binary")
@@ -270,21 +271,37 @@ func TestSmartTap_CredentialGates(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
 	assert.Contains(t, rec.Header().Get("Www-Authenticate"), "Basic")
 
-	// Anonymous /tap.git smart handshake: redirected to the git subdomain
-	// with the service parameter intact.
+	// Anonymous /tap.git smart handshake on the brew host: served in place,
+	// never a redirect -- the brew-host tap URL is first-class.
 	req = httptest.NewRequest("GET", "/tap.git/info/refs?service=git-upload-pack", nil)
 	req.Host = "brew.example.com:18080"
 	rec = httptest.NewRecorder()
-	h.RedirectTapInfoRefs(rec, req)
-	require.Equal(t, http.StatusMovedPermanently, rec.Code)
-	assert.Equal(t, "https://git.example.com:18080/brew/tap.git/info/refs?service=git-upload-pack", rec.Header().Get("Location"))
+	h.ServeTapInfoRefs(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/x-git-upload-pack-advertisement", rec.Header().Get("Content-Type"))
+	assert.Equal(t, "no-cache", rec.Header().Get("Cache-Control"))
+	assert.Contains(t, rec.Body.String(), "refs/heads/main")
 
-	req = httptest.NewRequest("POST", "/tap.git/git-upload-pack", nil)
+	// ... and without a service parameter, the dumb info/refs file, in place.
+	req = httptest.NewRequest("GET", "/tap.git/info/refs", nil)
 	req.Host = "brew.example.com:18080"
 	rec = httptest.NewRecorder()
-	h.RedirectTapUploadPack(rec, req)
-	require.Equal(t, http.StatusMovedPermanently, rec.Code)
-	assert.Equal(t, "https://git.example.com:18080/brew/tap.git/git-upload-pack", rec.Header().Get("Location"))
+	h.ServeTapInfoRefs(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "text/plain; charset=utf-8", rec.Header().Get("Content-Type"))
+	assert.Contains(t, rec.Body.String(), "refs/heads/main")
+
+	// The anonymous smart fetch is served in place on the brew host too.
+	var anonBody bytes.Buffer
+	anonBody.Write(pktLineString("want " + strings.Repeat("0", 40) + "\n"))
+	anonBody.WriteString("0000")
+	anonBody.Write(pktLineString("done\n"))
+	req = httptest.NewRequest("POST", "/tap.git/git-upload-pack", &anonBody)
+	req.Host = "brew.example.com:18080"
+	rec = httptest.NewRecorder()
+	h.ServeTapUploadPack(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.True(t, bytes.HasPrefix(rec.Body.Bytes(), []byte("0008NAK\nPACK")), "NAK + raw pack expected: %q", rec.Body.Bytes()[:min(rec.Body.Len(), 16)])
 
 	// A credentialed advertisement is served in place, scoped by the lineage
 	// key, and marked uncacheable for shared caches.

@@ -42,40 +42,24 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 )
 
-// ServeTapInfoRefs handles GET git.{domain}/brew/tap.git/info/refs -- the
-// literal route that outscores the {path...} dumb file route. With
+// ServeTapInfoRefs handles GET .../info/refs on both cloneable tap URLs --
+// git.{domain}/brew/tap.git AND brew.{domain}/tap.git -- as the literal route
+// that outscores each host's {path...} dumb file route. With
 // ?service=git-upload-pack it answers the smart ref advertisement; without a
 // service parameter it falls through to the exact dumb-HTTP file serving
 // (#159's deployed behavior, byte-for-byte), so dumb clients are untouched.
+// On the brew host the smart pair is served DIRECTLY (no anonymous redirect):
+// brew.{domain}/tap.git is a first-class clone URL, and the lineage key's
+// (base URL, credential scope) already gives each host and each credential
+// its own consistent tap -- only the bare /tap.git path and the dumb file
+// paths keep RedirectTap's anonymous 301.
 func (h *Handler) ServeTapInfoRefs(w http.ResponseWriter, r *http.Request) {
 	h.serveTapInfoRefs(w, r)
 }
 
-// ServeTapUploadPack handles POST git.{domain}/brew/tap.git/git-upload-pack --
-// the smart fetch on the public tap.
+// ServeTapUploadPack handles POST .../git-upload-pack -- the smart fetch --
+// on the same two tap roots ServeTapInfoRefs advertises for.
 func (h *Handler) ServeTapUploadPack(w http.ResponseWriter, r *http.Request) {
-	h.serveTapUploadPack(w, r)
-}
-
-// RedirectTapInfoRefs / RedirectTapUploadPack are the smart endpoints under
-// brew.{domain}/tap.git, with RedirectTap's exact credential semantics: an
-// anonymous request is redirected to the public tap on the git subdomain
-// (query string preserved, so the smart handshake continues there), while a
-// credentialed one is served in place -- clients drop credentials across a
-// cross-host redirect, so redirecting would silently downgrade to public.
-func (h *Handler) RedirectTapInfoRefs(w http.ResponseWriter, r *http.Request) {
-	if auth.TokenFrom(r.Context()) == nil {
-		h.RedirectTap(w, r) // anonymous: the same 301 every /tap.git path gets
-		return
-	}
-	h.serveTapInfoRefs(w, r)
-}
-
-func (h *Handler) RedirectTapUploadPack(w http.ResponseWriter, r *http.Request) {
-	if auth.TokenFrom(r.Context()) == nil {
-		h.RedirectTap(w, r)
-		return
-	}
 	h.serveTapUploadPack(w, r)
 }
 
