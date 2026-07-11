@@ -41,6 +41,23 @@ func init() {
 	auth.ServiceHandleRaw("brew", "GET /private/tap.git/{path...}", handler.ServePrivateTap)
 	auth.ServiceHandleRaw("git", "GET /brew/tap.git", handler.ServeTap)
 	auth.ServiceHandleRaw("git", "GET /brew/tap.git/{path...}", handler.ServeTap)
+	// Smart-HTTP git endpoints (see smart.go), always the same pair UNDER a
+	// tap path -- never at a host root, whose namespace belongs to formula and
+	// project routes ("info/refs" is even a valid slash-namespaced project
+	// name). The literal info/refs routes outscore the {path...} file routes
+	// and dispatch on ?service=: absent means the dumb-HTTP file serving
+	// above, verbatim; git-upload-pack means the smart ref advertisement. The
+	// POST routes are the smart fetch; the dumb protocol never POSTs. Both
+	// brew.{domain}/tap.git and git.{domain}/brew/tap.git are first-class,
+	// directly served clone URLs (the smart pair never redirects; only the
+	// bare /tap.git path and the dumb file paths keep the anonymous 301);
+	// /private/tap.git keeps its 401 Basic challenge for anonymous requests.
+	auth.ServiceHandleRaw("brew", "GET /tap.git/info/refs", handler.ServeTapInfoRefs)
+	auth.ServiceHandleRaw("brew", "POST /tap.git/git-upload-pack", handler.ServeTapUploadPack)
+	auth.ServiceHandleRaw("brew", "GET /private/tap.git/info/refs", handler.ServePrivateTapInfoRefs)
+	auth.ServiceHandleRaw("brew", "POST /private/tap.git/git-upload-pack", handler.ServePrivateTapUploadPack)
+	auth.ServiceHandleRaw("git", "GET /brew/tap.git/info/refs", handler.ServeTapInfoRefs)
+	auth.ServiceHandleRaw("git", "POST /brew/tap.git/git-upload-pack", handler.ServeTapUploadPack)
 }
 
 type route struct {
@@ -102,12 +119,16 @@ type Handler struct {
 	// keep `brew update` clients fast-forwarding.
 	DataDir string
 
-	// tapMu guards tapSnaps: the live tap lineages (an open os.Root over each
-	// persistent history dir), keyed by (request base URL, credential scope)
-	// -- see tapcache.go. Refreshes and file opens happen under the mutex, so
-	// a lineage dir is never removed between map resolution and open.
+	// tapMu guards tapSnaps and tapPins: the live tap lineages (an open
+	// os.Root over each persistent history dir), keyed by (request base URL,
+	// credential scope) -- see tapcache.go. Refreshes and file opens happen
+	// under the mutex, so a lineage dir is never removed between map
+	// resolution and open. tapPins counts in-flight smart-HTTP requests per
+	// lineage DIRECTORY; a pinned directory is skipped by the disk-cap
+	// eviction so a streaming pack can never lose its objects mid-walk.
 	tapMu    sync.Mutex
 	tapSnaps map[string]*tapLineage
+	tapPins  map[string]int
 }
 
 func (h *Handler) ServeFormula(w http.ResponseWriter, r *http.Request) {
