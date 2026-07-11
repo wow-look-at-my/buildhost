@@ -60,11 +60,11 @@ func (h *Handler) ServePrivateTap(w http.ResponseWriter, r *http.Request) {
 }
 
 // ServeTap serves one file of the dumb-HTTP git tap on the git subdomain from
-// the current on-disk snapshot (built at most once per tapCacheTTL per scope,
-// see tapcache.go) by memory-mapping it -- never buffering the file on the heap
-// and never rebuilding the whole tap per object request. Serving every request
-// of one `brew update` from a single immutable snapshot also keeps refs and
-// loose objects mutually consistent when a publish lands mid-update.
+// the scope's persistent lineage store (refreshed at most once per tapCacheTTL,
+// see tapcache.go/taphistory.go) by memory-mapping it -- never buffering the
+// file on the heap and never rebuilding the whole tap per object request. The
+// store is append-only with fast-forward-only refs, so a publish landing
+// mid-`brew update` can never orphan the refs a client already fetched.
 func (h *Handler) ServeTap(w http.ResponseWriter, r *http.Request) {
 	h.serveTapFile(w, r)
 }
@@ -171,7 +171,10 @@ func (h *Handler) tapVisibleProjects(r *http.Request) ([]db.Project, error) {
 	return visible, nil
 }
 
-func (h *Handler) buildTapRepo(r *http.Request) (map[string][]byte, error) {
+// buildTapFiles assembles the tap's working-tree contents for the request's
+// scope: one formula per visible project (folded filename) plus the private
+// download strategy library.
+func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 	visible, err := h.tapVisibleProjects(r)
 	if err != nil {
 		return nil, err
@@ -208,15 +211,20 @@ func (h *Handler) buildTapRepo(r *http.Request) (map[string][]byte, error) {
 		files["Formula/"+tapFormulaName(project.Name)+".rb"] = data
 	}
 
-	return buildGitRepo(files), nil
+	return files, nil
 }
 
-// buildGitRepo materializes files (keyed by repo-relative path, at most one
-// directory deep, e.g. "Formula/x.rb" or "lib/y.rb") as a dumb-HTTP git repo:
-// loose objects plus HEAD/refs/info files. Object contents are deterministic
-// (zero timestamps), so identical inputs produce identical SHAs across builds.
-func buildGitRepo(files map[string][]byte) map[string][]byte {
-	objects := map[string][]byte{}
+// buildGitObjects materializes files (keyed by repo-relative path, at most one
+// directory deep, e.g. "Formula/x.rb" or "lib/y.rb") as loose git objects:
+// blobs, trees, and one commit. When parent is non-empty it is recorded as the
+// commit's parent, so a lineage's history only ever grows forward -- the
+// fast-forward guarantee `brew update` depends on (its updater rebases the
+// client's clone onto origin/main; an unrelated new root commit wedges every
+// client in add/add conflicts). Object contents are deterministic (zero
+// timestamps, fixed identity), so identical (files, parent) inputs produce
+// identical SHAs across builds, restarts, and redeploys.
+func buildGitObjects(files map[string][]byte, parent string) (objects map[string][]byte, commitSHA, rootTreeSHA string) {
+	objects = map[string][]byte{}
 	byDir := map[string][]gitTreeEntry{}
 	var rootFiles []gitTreeEntry
 
@@ -241,21 +249,17 @@ func buildGitRepo(files map[string][]byte) map[string][]byte {
 		treeSHA := addGitObject(objects, "tree", gitTree(byDir[dir]))
 		rootEntries = append(rootEntries, gitTreeEntry{Mode: "40000", Name: dir, SHA: treeSHA})
 	}
-	rootTreeSHA := addGitObject(objects, "tree", gitTree(rootEntries))
+	rootTreeSHA = addGitObject(objects, "tree", gitTree(rootEntries))
 
-	commit := []byte(fmt.Sprintf("tree %s\nauthor buildhost <buildhost@localhost> 0 +0000\ncommitter buildhost <buildhost@localhost> 0 +0000\n\nUpdate Homebrew tap\n", rootTreeSHA))
-	commitSHA := addGitObject(objects, "commit", commit)
+	var commit bytes.Buffer
+	fmt.Fprintf(&commit, "tree %s\n", rootTreeSHA)
+	if parent != "" {
+		fmt.Fprintf(&commit, "parent %s\n", parent)
+	}
+	commit.WriteString("author buildhost <buildhost@localhost> 0 +0000\ncommitter buildhost <buildhost@localhost> 0 +0000\n\nUpdate Homebrew tap\n")
+	commitSHA = addGitObject(objects, "commit", commit.Bytes())
 
-	repo := map[string][]byte{
-		"HEAD":               []byte("ref: refs/heads/main\n"),
-		"refs/heads/main":    []byte(commitSHA + "\n"),
-		"info/refs":          []byte(commitSHA + "\trefs/heads/main\n"),
-		"objects/info/packs": []byte(""),
-	}
-	for sha, data := range objects {
-		repo["objects/"+sha[:2]+"/"+sha[2:]] = data
-	}
-	return repo
+	return objects, commitSHA, rootTreeSHA
 }
 
 func sortedKeys(m map[string][]gitTreeEntry) []string {

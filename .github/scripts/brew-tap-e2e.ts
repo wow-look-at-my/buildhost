@@ -210,8 +210,10 @@ function legAnonLeak(): void {
 		["/myrepo/myapp", 401], // legacy formula path, private project, anonymous
 		// The /Formula/{project}.rb route matches a single path segment, so a
 		// slash-namespaced project is not addressable there (404 regardless of
-		// auth); the folded filename is not a project either -- both are
-		// indistinguishable from nonexistent, so nothing leaks.
+		// auth). The FOLDED filename resolves back to its project, but only to
+		// projects the request may read (the tap-membership rule) -- so an
+		// anonymous probe of a private project's folded name stays
+		// indistinguishable from nonexistent, never a 401 existence leak.
 		["/Formula/myrepo/myapp.rb", 404],
 		["/Formula/myrepo-myapp.rb", 404],
 		["/Formula/7zip.rb", 404], // digit-leading project: excluded from brew
