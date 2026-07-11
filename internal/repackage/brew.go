@@ -8,6 +8,7 @@ import (
 	"io"
 	neturl "net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -33,6 +34,20 @@ func (b *Brew) Applicable(a db.Artifact) bool {
 	return a.OS == db.OSLinux || a.OS == db.OSDarwin
 }
 
+// brewTemplate always emits a TOP-LEVEL url/sha256 (the canonical resource,
+// see brewCanonicalResource) in addition to the per-platform on_<os>/on_<arch>
+// blocks. Homebrew's loader must find a stable URL on EVERY platform to import
+// a formula at all (determine_active_spec raises "formula requires at least a
+// URL" otherwise) -- and a formula that fails import poisons evaluation of the
+// whole tap for that platform. With only on_* stanzas, a linux-only project's
+// formula had no URL visible on macOS and broke the tap for every mac user
+// (and vice versa). The on_* blocks still override url/sha256 on platforms
+// they match, so multi-platform resolution is unchanged; on a platform with
+// no matching block the canonical resource is what a (single-OS gated, see
+// DependsOnOS) install would report. DependsOnOS is homebrew-core's
+// single-platform pattern: `depends_on :linux` makes a foreign-platform
+// install fail cleanly ("Linux is required...") instead of fetching a binary
+// that cannot run.
 var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }}require_relative "../lib/buildhost_private_download"
 
 {{ end }}class {{ .ClassName }} < Formula
@@ -40,6 +55,12 @@ var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }
   homepage "{{ .Homepage }}"
   version "{{ .Version }}"
   license "{{ .License }}"
+
+  url "{{ .Canonical.URL }}"{{ if .Private }}, using: BuildhostCurlDownloadStrategy{{ end }}
+  sha256 "{{ .Canonical.SHA256 }}"
+  {{- if .DependsOnOS }}
+  depends_on :{{ .DependsOnOS }}
+  {{- end }}
 
   {{- range .Resources }}
   on_{{ .OS }} do
@@ -130,7 +151,46 @@ type brewData struct {
 	License     string
 	Kind        string
 	Private     bool
+	Canonical   BrewResource
+	DependsOnOS string
 	Resources   []BrewResource
+}
+
+// brewCanonicalResource picks the deterministic resource emitted as the
+// formula's top-level url/sha256: linux/intel when present (the org's default
+// platform), else the first in stable (OS, Arch) order. Deterministic choice
+// matters -- the formula bytes feed the tap's content-addressed git objects, so
+// an unstable pick would mint spurious tap commits.
+func brewCanonicalResource(resources []BrewResource) BrewResource {
+	sorted := make([]BrewResource, len(resources))
+	copy(sorted, resources)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].OS != sorted[j].OS {
+			return sorted[i].OS < sorted[j].OS
+		}
+		return sorted[i].Arch < sorted[j].Arch
+	})
+	for _, r := range sorted {
+		if r.OS == "linux" && r.Arch == "intel" {
+			return r
+		}
+	}
+	return sorted[0]
+}
+
+// brewDependsOnOS returns "linux" or "macos" when every resource targets that
+// one OS -- the formula then declares `depends_on :<os>` so installing on the
+// other platform fails with a clean requirement error instead of downloading a
+// foreign binary. Formulas spanning both OSes return "" (no gate).
+func brewDependsOnOS(resources []BrewResource) string {
+	osName := ""
+	for _, r := range resources {
+		if osName != "" && r.OS != osName {
+			return ""
+		}
+		osName = r.OS
+	}
+	return osName
 }
 
 type BrewResource struct {
@@ -157,6 +217,9 @@ type BrewFormula struct {
 }
 
 func RenderBrewFormula(f BrewFormula) (*Output, error) {
+	if len(f.Resources) == 0 {
+		return nil, fmt.Errorf("formula %q has no resources", f.Name)
+	}
 	d := brewData{
 		ClassName:   f.ClassName,
 		Name:        sanitizeBrewString(f.Name),
@@ -167,6 +230,8 @@ func RenderBrewFormula(f BrewFormula) (*Output, error) {
 		License:     sanitizeBrewString(f.License),
 		Kind:        f.Kind,
 		Private:     f.Private,
+		Canonical:   brewCanonicalResource(f.Resources),
+		DependsOnOS: brewDependsOnOS(f.Resources),
 		Resources:   f.Resources,
 	}
 
