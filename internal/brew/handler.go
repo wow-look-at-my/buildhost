@@ -29,6 +29,12 @@ func init() {
 	auth.ServiceHandle("brew", "GET /Formula/{project}.rb", parseRoute, handler.ServeFormula)
 	auth.ServiceHandleRaw("brew", "GET /tap.git", handler.RedirectTap)
 	auth.ServiceHandleRaw("brew", "GET /tap.git/{path...}", handler.RedirectTap)
+	// The authenticated tap: challenges anonymous requests (401 + Basic) so
+	// creds-in-URL git clients actually transmit their credential, then serves
+	// a tap scoped to it (all public projects plus the private ones it can
+	// read). See ServePrivateTap for why this is a separate path from /tap.git.
+	auth.ServiceHandleRaw("brew", "GET /private/tap.git", handler.ServePrivateTap)
+	auth.ServiceHandleRaw("brew", "GET /private/tap.git/{path...}", handler.ServePrivateTap)
 	auth.ServiceHandleRaw("git", "GET /brew/tap.git", handler.ServeTap)
 	auth.ServiceHandleRaw("git", "GET /brew/tap.git/{path...}", handler.ServeTap)
 }
@@ -53,11 +59,12 @@ type Handler struct {
 	// Tap snapshots are materialized under TmpDir/brew-tap.
 	TmpDir string
 
-	// tapMu guards tapSnap: the single cached on-disk tap snapshot (see
-	// tapcache.go). Rebuilds and file opens happen under the mutex, so a
-	// snapshot dir is never removed between pointer resolution and open.
-	tapMu   sync.Mutex
-	tapSnap *tapSnapshot
+	// tapMu guards tapSnaps: the cached on-disk tap snapshots, keyed by
+	// (request base URL, credential scope) -- see tapcache.go. Rebuilds and
+	// file opens happen under the mutex, so a snapshot dir is never removed
+	// between map resolution and open.
+	tapMu    sync.Mutex
+	tapSnaps map[string]*tapSnapshot
 }
 
 func (h *Handler) ServeFormula(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +97,12 @@ func (h *Handler) ServeFormula(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/x-ruby")
-	w.Header().Set("Cache-Control", "no-cache")
+	if project.IsPrivate {
+		// Only reachable with a credential; never let a shared cache keep it.
+		w.Header().Set("Cache-Control", "private, no-store")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
 	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", project.Name+".rb"))
 	io.Copy(w, out.Reader)
 }
