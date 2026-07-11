@@ -37,16 +37,39 @@ func TestSession_RoundTrip(t *testing.T) {
 }
 
 func TestState_RoundTrip(t *testing.T) {
-	st := signState("nonce123", "https://sites.x.com/p/branch/b/?a=1", time.Now().Add(time.Minute))
-	nonce, next, ok := verifyState(st)
+	v := signState(signinState{nonce: "nonce123", next: "https://sites.x.com/p/branch/b/?a=1"}, time.Now().Add(time.Minute))
+	st, expired, ok := parseState(v)
 	assert.True(t, ok)
-	assert.Equal(t, "nonce123", nonce)
-	assert.Equal(t, "https://sites.x.com/p/branch/b/?a=1", next)
+	assert.False(t, expired)
+	assert.Equal(t, "nonce123", st.nonce)
+	assert.Equal(t, "https://sites.x.com/p/branch/b/?a=1", st.next)
+	assert.False(t, st.retried)
 
-	_, _, ok = verifyState(st + "x")
+	// The retried marker survives the round trip.
+	st, expired, ok = parseState(signState(signinState{nonce: "n", next: "/x", retried: true}, time.Now().Add(time.Minute)))
+	assert.True(t, ok)
+	assert.False(t, expired)
+	assert.True(t, st.retried)
+
+	// Tampered: nothing is trusted.
+	_, _, ok = parseState(v + "x")
 	assert.False(t, ok)
-	_, _, ok = verifyState(signState("n", "/x", time.Now().Add(-time.Minute)))
-	assert.False(t, ok)
+
+	// Expired: authentic (payload still trusted) but flagged, so the callback
+	// can restart the flow to the state's own next URL.
+	st, expired, ok = parseState(signState(signinState{nonce: "n", next: "/x"}, time.Now().Add(-time.Minute)))
+	assert.True(t, ok)
+	assert.True(t, expired)
+	assert.Equal(t, "/x", st.next)
+
+	// A state minted before the retried flag existed (nonce\x00next) still
+	// parses, as a first attempt.
+	st, expired, ok = parseState(signValue("state", "old-nonce\x00/legacy", time.Now().Add(time.Minute)))
+	assert.True(t, ok)
+	assert.False(t, expired)
+	assert.Equal(t, "old-nonce", st.nonce)
+	assert.Equal(t, "/legacy", st.next)
+	assert.False(t, st.retried)
 }
 
 func TestSafeNextURL(t *testing.T) {
@@ -112,7 +135,7 @@ func TestSigninCallback_ValidLogin_SetsSession(t *testing.T) {
 
 	nonce := "nonce-xyz"
 	next := "https://sites.pazer.build/secret/branch/pr-190/"
-	state := signState(nonce, next, time.Now().Add(time.Minute))
+	state := signState(signinState{nonce: nonce, next: next}, time.Now().Add(time.Minute))
 	req := httptest.NewRequest("GET", signinCallbackPath+"?code=abc&state="+url.QueryEscape(state), nil)
 	req.Host = "pazer.build"
 	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: nonce})
@@ -136,18 +159,310 @@ func TestSigninCallback_ValidLogin_SetsSession(t *testing.T) {
 	assert.Equal(t, "gho_test", token)
 }
 
-func TestSigninCallback_StateMismatch_Rejected(t *testing.T) {
+// The token exchange must speak GitHub's actual contract: Accept:
+// application/json (without it GitHub answers form-encoded) and the four form
+// fields of the web flow. Pinned against the fake so a regression cannot hide
+// behind a lenient test double.
+func TestSigninCallback_ExchangeRequestContract(t *testing.T) {
+	var accept, contentType string
+	var form url.Values
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST":
+			accept = r.Header.Get("Accept")
+			contentType = r.Header.Get("Content-Type")
+			_ = r.ParseForm()
+			form = r.PostForm
+			w.Write([]byte(`{"access_token":"gho_test"}`))
+		case r.URL.Path == "/user":
+			w.Write([]byte(`{"login":"alice"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer gh.Close()
+	origToken, origAPI := githubTokenURL, githubAPIBase
+	githubTokenURL, githubAPIBase = gh.URL, gh.URL
+	defer func() { githubTokenURL, githubAPIBase = origToken, origAPI }()
+
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	mw.GitHub = NewGitHubAuth("cid", "secret")
 
-	state := signState("real-nonce", "/x", time.Now().Add(time.Minute))
+	state := signState(signinState{nonce: "n1", next: "/x"}, time.Now().Add(time.Minute))
+	req := httptest.NewRequest("GET", signinCallbackPath+"?code=abc&state="+url.QueryEscape(state), nil)
+	req.Host = "pazer.build"
+	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: "n1"})
+	rec := httptest.NewRecorder()
+	handleSigninCallback(rec, req)
+
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, "application/json", accept)
+	assert.Equal(t, "application/x-www-form-urlencoded", contentType)
+	assert.Equal(t, "cid", form.Get("client_id"))
+	assert.Equal(t, "secret", form.Get("client_secret"))
+	assert.Equal(t, "abc", form.Get("code"))
+	assert.Equal(t, "https://pazer.build/__signin/callback", form.Get("redirect_uri"))
+}
+
+// A nonce mismatch (cookie expired, or a second sign-in tab overwrote it) is
+// recoverable: the callback restarts the flow through /__signin -- once. The
+// restarted state carries the retried marker; if that flow mismatches again the
+// user gets a terminal page with a retry link, never a redirect loop.
+func TestSigninCallback_NonceMismatch_RestartsOnce(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+	mw.GitHub = NewGitHubAuth("cid", "secret")
+
+	next := "https://sites.pazer.build/secret/branch/pr-190/"
+	state := signState(signinState{nonce: "real-nonce", next: next}, time.Now().Add(time.Minute))
 	req := httptest.NewRequest("GET", signinCallbackPath+"?code=abc&state="+url.QueryEscape(state), nil)
 	req.Host = "pazer.build"
 	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: "different-nonce"})
 	rec := httptest.NewRecorder()
 	handleSigninCallback(rec, req)
+
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, "https://pazer.build"+signinStartPath+"?retry=1&next="+url.QueryEscape(next), rec.Header().Get("Location"))
+
+	// Same failure on an already-retried state: terminal page, no redirect.
+	state = signState(signinState{nonce: "real-nonce", next: next, retried: true}, time.Now().Add(time.Minute))
+	req = httptest.NewRequest("GET", signinCallbackPath+"?code=abc&state="+url.QueryEscape(state), nil)
+	req.Host = "pazer.build"
+	rec = httptest.NewRecorder()
+	handleSigninCallback(rec, req)
+
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Empty(t, rec.Header().Get("Location"), "a retried flow must not restart again")
+	body := rec.Body.String()
+	assert.Contains(t, body, "Try signing in again")
+	assert.Contains(t, body, signinStartPath+"?next="+url.QueryEscape(next))
+}
+
+// An expired state (user parked on GitHub's consent screen past the 10-minute
+// window, or reloaded a stale callback URL) restarts the flow once, then turns
+// terminal -- same loop protection as the nonce mismatch.
+func TestSigninCallback_ExpiredState_RestartsOnce(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+	mw.GitHub = NewGitHubAuth("cid", "secret")
+
+	next := "https://sites.pazer.build/secret/branch/pr-190/"
+	state := signState(signinState{nonce: "n1", next: next}, time.Now().Add(-time.Minute))
+	req := httptest.NewRequest("GET", signinCallbackPath+"?code=abc&state="+url.QueryEscape(state), nil)
+	req.Host = "pazer.build"
+	rec := httptest.NewRecorder()
+	handleSigninCallback(rec, req)
+
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, "https://pazer.build"+signinStartPath+"?retry=1&next="+url.QueryEscape(next), rec.Header().Get("Location"))
+
+	state = signState(signinState{nonce: "n1", next: next, retried: true}, time.Now().Add(-time.Minute))
+	req = httptest.NewRequest("GET", signinCallbackPath+"?code=abc&state="+url.QueryEscape(state), nil)
+	req.Host = "pazer.build"
+	rec = httptest.NewRecorder()
+	handleSigninCallback(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Empty(t, rec.Header().Get("Location"), "a retried flow must not restart again")
+	assert.Contains(t, rec.Body.String(), signinStartPath+"?next="+url.QueryEscape(next))
+}
+
+// A state that fails signature verification carries nothing trustworthy, so
+// there is no automatic redirect -- but the page still offers a fresh sign-in
+// (to the apex root), not a bare dead end.
+func TestSigninCallback_ForgedState_TerminalPage(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+	mw.GitHub = NewGitHubAuth("cid", "secret")
+
+	req := httptest.NewRequest("GET", signinCallbackPath+"?code=abc&state=totally-garbage", nil)
+	req.Host = "pazer.build"
+	rec := httptest.NewRecorder()
+	handleSigninCallback(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Empty(t, rec.Header().Get("Location"))
+	assert.Contains(t, rec.Header().Get("Content-Type"), "text/html")
+	body := rec.Body.String()
+	assert.Contains(t, body, "Try signing in again")
+	assert.Contains(t, body, `href="https://pazer.build`+signinStartPath+`"`, "no trusted next: link to a bare sign-in")
+}
+
+// GitHub reporting an exchange failure (wrong client secret, consumed or
+// expired code) must NOT surface as a 5xx: Cloudflare replaces origin 5xx
+// bodies with its own bare error page, which used to strand the user at the
+// callback URL with no way forward. Instead: a 4xx page with a retry link.
+func TestSigninCallback_ExchangeFailure_RecoverablePage(t *testing.T) {
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// GitHub's real shape: HTTP 200 with an error JSON body.
+		w.Write([]byte(`{"error":"incorrect_client_credentials","error_description":"The client_id and/or client_secret passed are incorrect."}`))
+	}))
+	defer gh.Close()
+	origToken := githubTokenURL
+	githubTokenURL = gh.URL
+	defer func() { githubTokenURL = origToken }()
+
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+	mw.GitHub = NewGitHubAuth("cid", "secret")
+
+	next := "https://sites.pazer.build/secret/branch/pr-190/"
+	state := signState(signinState{nonce: "n1", next: next}, time.Now().Add(time.Minute))
+	req := httptest.NewRequest("GET", signinCallbackPath+"?code=abc&state="+url.QueryEscape(state), nil)
+	req.Host = "pazer.build"
+	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: "n1"})
+	rec := httptest.NewRecorder()
+	handleSigninCallback(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Less(t, rec.Code, 500, "5xx bodies are replaced by Cloudflare -- never use them here")
+	assert.Contains(t, rec.Header().Get("Content-Type"), "text/html")
+	body := rec.Body.String()
+	assert.Contains(t, body, "Try signing in again")
+	assert.Contains(t, body, signinStartPath+"?next="+url.QueryEscape(next))
+	for _, c := range rec.Result().Cookies() {
+		assert.NotEqual(t, sessionCookieName, c.Name, "no session on a failed exchange")
+	}
+}
+
+// Same recoverable treatment when the code exchange succeeds but reading the
+// user's identity (GET /user) fails.
+func TestSigninCallback_UserFetchFailure_RecoverablePage(t *testing.T) {
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			w.Write([]byte(`{"access_token":"gho_test"}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer gh.Close()
+	origToken, origAPI := githubTokenURL, githubAPIBase
+	githubTokenURL, githubAPIBase = gh.URL, gh.URL
+	defer func() { githubTokenURL, githubAPIBase = origToken, origAPI }()
+
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+	mw.GitHub = NewGitHubAuth("cid", "secret")
+
+	next := "https://sites.pazer.build/secret/branch/pr-190/"
+	state := signState(signinState{nonce: "n1", next: next}, time.Now().Add(time.Minute))
+	req := httptest.NewRequest("GET", signinCallbackPath+"?code=abc&state="+url.QueryEscape(state), nil)
+	req.Host = "pazer.build"
+	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: "n1"})
+	rec := httptest.NewRecorder()
+	handleSigninCallback(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Contains(t, rec.Body.String(), signinStartPath+"?next="+url.QueryEscape(next))
+}
+
+// The user cancelling on GitHub (?error=access_denied) gets the same actionable
+// page -- the state is signature-verified, so the retry link keeps their next.
+func TestSigninCallback_GitHubErrorParam_Page(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+	mw.GitHub = NewGitHubAuth("cid", "secret")
+
+	next := "https://sites.pazer.build/secret/branch/pr-190/"
+	state := signState(signinState{nonce: "n1", next: next}, time.Now().Add(time.Minute))
+	req := httptest.NewRequest("GET", signinCallbackPath+"?error=access_denied&state="+url.QueryEscape(state), nil)
+	req.Host = "pazer.build"
+	rec := httptest.NewRecorder()
+	handleSigninCallback(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Contains(t, rec.Header().Get("Content-Type"), "text/html")
+	assert.Contains(t, rec.Body.String(), signinStartPath+"?next="+url.QueryEscape(next))
+}
+
+// Every failure path answers with something a browser (behind Cloudflare) can
+// act on: a redirect or a 4xx page. Never a 5xx.
+func TestSigninCallback_NoFailurePathReturns5xx(t *testing.T) {
+	// The fake GitHub accepts only code=good (whose /user then fails); any other
+	// code gets GitHub's real failure shape, HTTP 200 with an error JSON body.
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			if r.ParseForm() == nil && r.PostForm.Get("code") == "good" {
+				w.Write([]byte(`{"access_token":"gho_test"}`))
+				return
+			}
+			w.Write([]byte(`{"error":"bad_verification_code","error_description":"The code passed is incorrect or expired."}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError) // /user always fails
+	}))
+	defer gh.Close()
+	origToken, origAPI := githubTokenURL, githubAPIBase
+	githubTokenURL, githubAPIBase = gh.URL, gh.URL
+	defer func() { githubTokenURL, githubAPIBase = origToken, origAPI }()
+
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+	mw.GitHub = NewGitHubAuth("cid", "secret")
+
+	fresh := func(retried bool, exp time.Time) string {
+		return url.QueryEscape(signState(signinState{nonce: "n1", next: "/x", retried: retried}, exp))
+	}
+	future, past := time.Now().Add(time.Minute), time.Now().Add(-time.Minute)
+	scenarios := []struct {
+		name, query, cookie string
+	}{
+		{"forged state", "?code=abc&state=garbage", ""},
+		{"expired", "?code=abc&state=" + fresh(false, past), ""},
+		{"expired retried", "?code=abc&state=" + fresh(true, past), ""},
+		{"nonce mismatch", "?code=abc&state=" + fresh(false, future), "other"},
+		{"nonce mismatch retried", "?code=abc&state=" + fresh(true, future), "other"},
+		{"github error param", "?error=access_denied&state=" + fresh(false, future), ""},
+		{"exchange failure", "?code=abc&state=" + fresh(false, future), "n1"},
+		{"missing code", "?state=" + fresh(false, future), "n1"},
+		{"user fetch failure", "?code=good&state=" + fresh(false, future), "n1"},
+	}
+	for _, sc := range scenarios {
+		req := httptest.NewRequest("GET", signinCallbackPath+sc.query, nil)
+		req.Host = "pazer.build"
+		if sc.cookie != "" {
+			req.AddCookie(&http.Cookie{Name: stateCookieName, Value: sc.cookie})
+		}
+		rec := httptest.NewRecorder()
+		handleSigninCallback(rec, req)
+		assert.Less(t, rec.Code, 500, "%s must not 5xx (Cloudflare would mask the body)", sc.name)
+		assert.GreaterOrEqual(t, rec.Code, 303, "%s must not succeed", sc.name)
+	}
+}
+
+// /__signin?retry=1 (the callback's restart redirect) mints a state carrying
+// the retried marker, closing the restart loop after one automatic attempt.
+func TestSigninStart_RetryMarkerRidesState(t *testing.T) {
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+	mw.GitHub = NewGitHubAuth("cid", "secret")
+
+	req := httptest.NewRequest("GET", signinStartPath+"?retry=1&next=%2Fp%2Fbranch%2Fb%2F", nil)
+	req.Host = "pazer.build"
+	rec := httptest.NewRecorder()
+	handleSigninStart(rec, req)
+
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	u, err := url.Parse(rec.Header().Get("Location"))
+	require.NoError(t, err)
+	st, expired, ok := parseState(u.Query().Get("state"))
+	require.True(t, ok)
+	assert.False(t, expired)
+	assert.True(t, st.retried)
+	assert.Equal(t, "/p/branch/b/", st.next)
+
+	// Without retry=1 the marker stays off.
+	req = httptest.NewRequest("GET", signinStartPath+"?next=%2Fp%2Fbranch%2Fb%2F", nil)
+	req.Host = "pazer.build"
+	rec = httptest.NewRecorder()
+	handleSigninStart(rec, req)
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	u, err = url.Parse(rec.Header().Get("Location"))
+	require.NoError(t, err)
+	st, _, ok = parseState(u.Query().Get("state"))
+	require.True(t, ok)
+	assert.False(t, st.retried)
 }
 
 func TestCanAccessRepo(t *testing.T) {
