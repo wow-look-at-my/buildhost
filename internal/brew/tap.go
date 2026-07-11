@@ -2,17 +2,15 @@ package brew
 
 import (
 	"bytes"
-	"compress/gzip"
 	"compress/zlib"
+	"context"
 	"crypto/sha1"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,9 +19,20 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 )
 
+// RedirectTap handles brew.{domain}/tap.git. An anonymous request is
+// permanently redirected to the public tap on the git subdomain, exactly as
+// before. A request that carries a valid credential is served IN PLACE
+// instead: clients drop credentials when following a cross-host redirect (git
+// re-roots all subsequent requests on the redirect target), so redirecting an
+// authenticated tap request would silently downgrade it to the public tap.
 func (h *Handler) RedirectTap(w http.ResponseWriter, r *http.Request) {
+	if auth.TokenFrom(r.Context()) != nil {
+		h.serveTapFile(w, r)
+		return
+	}
 	target := &url.URL{
 		Scheme:   auth.RequestScheme(r),
 		Host:     "git." + domainFromRequest(r),
@@ -33,13 +42,39 @@ func (h *Handler) RedirectTap(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target.String(), http.StatusMovedPermanently)
 }
 
-// ServeTap serves one file of the dumb-HTTP git tap from the current on-disk
-// snapshot (built at most once per tapCacheTTL per base URL, see tapcache.go)
-// by memory-mapping it -- never buffering the file on the heap and never
-// rebuilding the whole tap per object request. Serving every request of one
-// `brew update` from a single immutable snapshot also keeps refs and loose
-// objects mutually consistent when a publish lands mid-update.
+// ServePrivateTap handles brew.{domain}/private/tap.git -- the authenticated
+// tap. An anonymous request gets a 401 Basic challenge rather than public
+// content: git does NOT send URL-embedded credentials preemptively (it waits
+// for a challenge), so answering 200 here would make a credentialed
+// `brew tap x:TOKEN@.../private/tap.git` silently ingest the public-only tap
+// and the user would never learn their token was dropped. The challenge is
+// what makes the standard creds-in-URL private-tap pattern work at all.
+func (h *Handler) ServePrivateTap(w http.ResponseWriter, r *http.Request) {
+	if auth.TokenFrom(r.Context()) == nil {
+		w.Header().Set("Www-Authenticate", `Basic realm="buildhost"`)
+		w.Header().Set("Cache-Control", "private, no-store")
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+		return
+	}
+	h.serveTapFile(w, r)
+}
+
+// ServeTap serves one file of the dumb-HTTP git tap on the git subdomain from
+// the scope's persistent lineage store (refreshed at most once per tapCacheTTL,
+// see tapcache.go/taphistory.go) by memory-mapping it -- never buffering the
+// file on the heap and never rebuilding the whole tap per object request. The
+// store is append-only with fast-forward-only refs, so a publish landing
+// mid-`brew update` can never orphan the refs a client already fetched.
 func (h *Handler) ServeTap(w http.ResponseWriter, r *http.Request) {
+	h.serveTapFile(w, r)
+}
+
+// serveTapFile is the shared tap file server. The tap contents are scoped to
+// the request's credential (public projects only when anonymous; plus the
+// private projects the credential can read otherwise), and a credentialed
+// response is marked uncacheable for shared caches -- its body depends on the
+// Authorization header, and the live deployment sits behind a CDN.
+func (h *Handler) serveTapFile(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(tapSuffix(r), "/")
 	if path == "" {
 		path = "HEAD"
@@ -63,28 +98,26 @@ func (h *Handler) ServeTap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Cache-Control", "no-cache")
+	if auth.TokenFrom(r.Context()) != nil {
+		w.Header().Set("Cache-Control", "private, no-store")
+		w.Header().Set("Vary", "Authorization")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
 	if strings.HasPrefix(path, "objects/") {
 		w.Header().Set("Content-Type", "application/x-git-loose-object")
 	} else {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	}
-	serveSnapshotFile(w, f, info.Size())
-}
 
-// serveSnapshotFile streams one opened snapshot file by memory-mapping it --
-// the tap serving rule: cached content is disk files served via mmap, never
-// heap-buffered. Content-Length is set from the file size; any other headers
-// (Content-Type, Cache-Control) must be set by the caller first.
-func serveSnapshotFile(w http.ResponseWriter, f *os.File, size int64) {
 	// A zero-length file (objects/info/packs) has nothing to map -- mmap
 	// rejects an empty region, same as the storage layer's empty-blob case.
-	if size == 0 {
+	if info.Size() == 0 {
 		w.Header().Set("Content-Length", "0")
 		return
 	}
 
-	m, err := mmap.MapRegion(int(f.Fd()), size, mmap.ProtRead, mmap.MapShared, 0)
+	m, err := mmap.MapRegion(int(f.Fd()), info.Size(), mmap.ProtRead, mmap.MapShared, 0)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -92,124 +125,67 @@ func serveSnapshotFile(w http.ResponseWriter, f *os.File, size int64) {
 	_ = m.Advise(mmap.AdvSequential)
 	rc := mmap.NewReader(m) // Close unmaps
 	defer rc.Close()
-	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 	io.Copy(w, rc)
 }
 
-// ServeUploadPackInfoRefs answers the smart-HTTP ref advertisement
-// (GET /info/refs?service=git-upload-pack) so `brew tap` / `git clone` can
-// talk to the tap URL directly. The advertisement bytes are materialized in
-// the same on-disk snapshot ServeTap serves (see tapcache.go) and
-// mmap-streamed from it, so the smart and dumb paths always describe one
-// consistent build and nothing is rebuilt (or held on the heap) per request.
-func (h *Handler) ServeUploadPackInfoRefs(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Query().Get("service") != "git-upload-pack" {
-		http.Error(w, "unsupported service", http.StatusForbidden)
-		return
+// tapScopeKey returns the snapshot-cache key component identifying the
+// request's credential. Every anonymous request shares one scope; a DB token
+// keys by its unique ID; an OIDC synthetic token (always ID -1) keys by its
+// subject-derived name plus its policy project and namespace restriction, so
+// two distinct OIDC identities can never collide onto one cached tap. Keying
+// by credential -- not by the resulting project set -- means a cache hit costs
+// no DB work and each scope keeps the "one consistent snapshot per TTL"
+// property the cache exists for (a publish mid-`brew update` must not swap
+// refs/objects out from under the client).
+func tapScopeKey(ctx context.Context) string {
+	t := auth.TokenFrom(ctx)
+	if t == nil {
+		return "anon"
 	}
-
-	f, _, err := h.openTapSnapshotFile(r, tapAdvertisementFile)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+	pid := int64(0)
+	if t.ProjectID != nil {
+		pid = *t.ProjectID
 	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
-	w.Header().Set("Cache-Control", "no-cache")
-	serveSnapshotFile(w, f, info.Size())
+	return fmt.Sprintf("tok\x00%d\x00%s\x00%d\x00%s", t.ID, t.Name, pid, auth.OIDCProjectFrom(ctx))
 }
 
-// ServeUploadPack answers the smart-HTTP fetch (POST /git-upload-pack) with
-// the snapshot's pre-built whole-tap packfile. There is no real negotiation:
-// the tap is a single synthetic commit, so every fetch gets the full pack
-// (NAK, no common objects); only the shallow handshake (`--depth`, which git
-// completes before sending "done") is answered explicitly. The pack is
-// mmap-streamed from the snapshot -- raw, or framed into side-band-64k data
-// packets -- never heap-buffered.
-func (h *Handler) ServeUploadPack(w http.ResponseWriter, r *http.Request) {
-	body, err := readUploadPackRequest(r)
-	if err != nil {
-		http.Error(w, "bad upload-pack request", http.StatusBadRequest)
-		return
-	}
-
-	f, commitSHA, err := h.openTapSnapshotFile(r, tapPackFile)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
-	w.Header().Set("Cache-Control", "no-cache")
-	shallow := wantsShallow(body)
-	if shallow && !uploadPackDone(body) {
-		w.Write(uploadPackShallowResult(commitSHA))
-		return
-	}
-	if shallow {
-		w.Write(uploadPackShallowResult(commitSHA))
-	}
-	w.Write(pktLineString("NAK\n"))
-	streamPack(w, f, info.Size(), wantsSideBand(body))
-}
-
-// streamPack writes the packfile to w from the mmap'd snapshot file: raw
-// bytes when the client didn't ask for side-band, else framed into
-// side-band-64k data packets (band 1, max 65515 payload bytes per packet)
-// terminated by a flush-pkt -- the same bytes the pre-cache implementation
-// assembled in memory, emitted incrementally.
-func streamPack(w http.ResponseWriter, f *os.File, size int64, sideBand bool) {
-	if size == 0 {
-		return // cannot happen: a pack always carries its header and trailer
-	}
-	m, err := mmap.MapRegion(int(f.Fd()), size, mmap.ProtRead, mmap.MapShared, 0)
-	if err != nil {
-		return // headers already sent; a truncated body fails the client's pack checksum
-	}
-	_ = m.Advise(mmap.AdvSequential)
-	rc := mmap.NewReader(m) // Close unmaps
-	defer rc.Close()
-
-	if !sideBand {
-		io.Copy(w, rc)
-		return
-	}
-	buf := make([]byte, 65515)
-	for {
-		n, rerr := rc.Read(buf)
-		if n > 0 {
-			w.Write(pktLineBytes(append([]byte{1}, buf[:n]...)))
-		}
-		if rerr != nil {
-			break
-		}
-	}
-	io.WriteString(w, "0000")
-}
-
-func (h *Handler) buildTapRepo(r *http.Request) (*tapRepo, error) {
+// tapVisibleProjects computes the projects the request may see in a tap: every
+// public project, plus -- when the request carries a credential -- the private
+// projects that credential can read. The visibility rule is
+// auth.TokenCanReadProject, the same one requireProject applies to
+// single-project reads, so a private project name can never leak into a tap
+// its token could not read directly. Evaluated once per snapshot BUILD; cached
+// snapshots are keyed by credential (tapScopeKey), never shared across scopes.
+func (h *Handler) tapVisibleProjects(r *http.Request) ([]db.Project, error) {
 	projects, err := h.DB.ListProjects(r.Context())
 	if err != nil {
 		return nil, err
 	}
-
-	formulas := map[string][]byte{}
-	for _, project := range projects {
-		if project.IsPrivate {
-			continue
+	visible := make([]db.Project, 0, len(projects))
+	for _, p := range projects {
+		if auth.TokenCanReadProject(r.Context(), &p) {
+			visible = append(visible, p)
 		}
+	}
+	return visible, nil
+}
+
+// buildTapFiles assembles the tap's working-tree contents for the request's
+// scope: one formula per visible project (folded filename) plus the private
+// download strategy library.
+func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
+	visible, err := h.tapVisibleProjects(r)
+	if err != nil {
+		return nil, err
+	}
+	files := map[string][]byte{
+		// Always ship the private-download strategy so the tap layout is
+		// uniform across scopes; it contains no secrets and public-only taps
+		// simply never reference it.
+		repackage.BrewPrivateStrategyPath: []byte(repackage.BrewPrivateStrategy),
+	}
+	for _, project := range visible {
 		release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
 		if err != nil {
 			if errors.Is(err, db.ErrNotFound) {
@@ -232,31 +208,25 @@ func (h *Handler) buildTapRepo(r *http.Request) (*tapRepo, error) {
 		if err != nil {
 			return nil, err
 		}
-		formulas["Formula/"+tapFormulaName(project.Name)+".rb"] = data
+		files["Formula/"+tapFormulaName(project.Name)+".rb"] = data
 	}
 
-	return buildGitRepo(formulas), nil
+	return files, nil
 }
 
-type tapRepo struct {
-	CommitSHA     string
-	Advertisement []byte
-	Pack          []byte
-	Loose         map[string][]byte
-}
-
-type gitObject struct {
-	Kind string
-	Type byte
-	Body []byte
-	SHA  string
-}
-
-func buildGitRepo(files map[string][]byte) *tapRepo {
-	looseObjects := map[string][]byte{}
-	var packObjects []gitObject
-	rootEntries := []gitTreeEntry{}
-	formulaEntries := []gitTreeEntry{}
+// buildGitObjects materializes files (keyed by repo-relative path, at most one
+// directory deep, e.g. "Formula/x.rb" or "lib/y.rb") as loose git objects:
+// blobs, trees, and one commit. When parent is non-empty it is recorded as the
+// commit's parent, so a lineage's history only ever grows forward -- the
+// fast-forward guarantee `brew update` depends on (its updater rebases the
+// client's clone onto origin/main; an unrelated new root commit wedges every
+// client in add/add conflicts). Object contents are deterministic (zero
+// timestamps, fixed identity), so identical (files, parent) inputs produce
+// identical SHAs across builds, restarts, and redeploys.
+func buildGitObjects(files map[string][]byte, parent string) (objects map[string][]byte, commitSHA, rootTreeSHA string) {
+	objects = map[string][]byte{}
+	byDir := map[string][]gitTreeEntry{}
+	var rootFiles []gitTreeEntry
 
 	names := make([]string, 0, len(files))
 	for name := range files {
@@ -265,37 +235,40 @@ func buildGitRepo(files map[string][]byte) *tapRepo {
 	sort.Strings(names)
 
 	for _, name := range names {
-		blob := addGitObject(looseObjects, "blob", files[name])
-		packObjects = append(packObjects, blob)
-		formulaName := strings.TrimPrefix(name, "Formula/")
-		formulaEntries = append(formulaEntries, gitTreeEntry{Mode: "100644", Name: formulaName, SHA: blob.SHA})
+		blobSHA := addGitObject(objects, "blob", files[name])
+		dir, base, nested := strings.Cut(name, "/")
+		if nested {
+			byDir[dir] = append(byDir[dir], gitTreeEntry{Mode: "100644", Name: base, SHA: blobSHA})
+		} else {
+			rootFiles = append(rootFiles, gitTreeEntry{Mode: "100644", Name: name, SHA: blobSHA})
+		}
 	}
 
-	formulaTree := addGitObject(looseObjects, "tree", gitTree(formulaEntries))
-	packObjects = append(packObjects, formulaTree)
-	rootEntries = append(rootEntries, gitTreeEntry{Mode: "40000", Name: "Formula", SHA: formulaTree.SHA})
-	rootTree := addGitObject(looseObjects, "tree", gitTree(rootEntries))
-	packObjects = append(packObjects, rootTree)
+	rootEntries := rootFiles
+	for _, dir := range sortedKeys(byDir) {
+		treeSHA := addGitObject(objects, "tree", gitTree(byDir[dir]))
+		rootEntries = append(rootEntries, gitTreeEntry{Mode: "40000", Name: dir, SHA: treeSHA})
+	}
+	rootTreeSHA = addGitObject(objects, "tree", gitTree(rootEntries))
 
-	commitBody := []byte(fmt.Sprintf("tree %s\nauthor buildhost <buildhost@localhost> 0 +0000\ncommitter buildhost <buildhost@localhost> 0 +0000\n\nUpdate Homebrew tap\n", rootTree.SHA))
-	commit := addGitObject(looseObjects, "commit", commitBody)
-	packObjects = append([]gitObject{commit}, packObjects...)
+	var commit bytes.Buffer
+	fmt.Fprintf(&commit, "tree %s\n", rootTreeSHA)
+	if parent != "" {
+		fmt.Fprintf(&commit, "parent %s\n", parent)
+	}
+	commit.WriteString("author buildhost <buildhost@localhost> 0 +0000\ncommitter buildhost <buildhost@localhost> 0 +0000\n\nUpdate Homebrew tap\n")
+	commitSHA = addGitObject(objects, "commit", commit.Bytes())
 
-	repo := map[string][]byte{
-		"HEAD":               []byte("ref: refs/heads/main\n"),
-		"refs/heads/main":    []byte(commit.SHA + "\n"),
-		"info/refs":          []byte(commit.SHA + "\trefs/heads/main\n"),
-		"objects/info/packs": []byte(""),
+	return objects, commitSHA, rootTreeSHA
+}
+
+func sortedKeys(m map[string][]gitTreeEntry) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
 	}
-	for sha, data := range looseObjects {
-		repo["objects/"+sha[:2]+"/"+sha[2:]] = data
-	}
-	return &tapRepo{
-		CommitSHA:     commit.SHA,
-		Advertisement: uploadPackAdvertisement(commit.SHA),
-		Pack:          buildPackfile(packObjects),
-		Loose:         repo,
-	}
+	sort.Strings(keys)
+	return keys
 }
 
 type gitTreeEntry struct {
@@ -304,8 +277,17 @@ type gitTreeEntry struct {
 	SHA  string
 }
 
+// gitTree serializes tree entries in git's canonical order: byte-wise by name,
+// with a directory sorting as if its name carried a trailing "/" (git's tree
+// comparison rule; a wrongly ordered tree fails fsck and confuses clients).
 func gitTree(entries []gitTreeEntry) []byte {
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+	sortKey := func(e gitTreeEntry) string {
+		if e.Mode == "40000" {
+			return e.Name + "/"
+		}
+		return e.Name
+	}
+	sort.Slice(entries, func(i, j int) bool { return sortKey(entries[i]) < sortKey(entries[j]) })
 	var buf bytes.Buffer
 	for _, entry := range entries {
 		buf.WriteString(entry.Mode)
@@ -318,7 +300,7 @@ func gitTree(entries []gitTreeEntry) []byte {
 	return buf.Bytes()
 }
 
-func addGitObject(objects map[string][]byte, kind string, body []byte) gitObject {
+func addGitObject(objects map[string][]byte, kind string, body []byte) string {
 	raw := append([]byte(fmt.Sprintf("%s %d\x00", kind, len(body))), body...)
 	sum := sha1.Sum(raw)
 	sha := hex.EncodeToString(sum[:])
@@ -328,159 +310,17 @@ func addGitObject(objects map[string][]byte, kind string, body []byte) gitObject
 	zw.Write(raw)
 	zw.Close()
 	objects[sha] = compressed.Bytes()
-	return gitObject{Kind: kind, Type: gitObjectType(kind), Body: body, SHA: sha}
-}
-
-func gitObjectType(kind string) byte {
-	switch kind {
-	case "commit":
-		return 1
-	case "tree":
-		return 2
-	case "blob":
-		return 3
-	default:
-		panic("unsupported git object type: " + kind)
-	}
-}
-
-func buildPackfile(objects []gitObject) []byte {
-	var buf bytes.Buffer
-	buf.WriteString("PACK")
-	binary.Write(&buf, binary.BigEndian, uint32(2))
-	binary.Write(&buf, binary.BigEndian, uint32(len(objects)))
-	for _, obj := range objects {
-		buf.Write(packObjectHeader(obj.Type, len(obj.Body)))
-		var compressed bytes.Buffer
-		zw := zlib.NewWriter(&compressed)
-		zw.Write(obj.Body)
-		zw.Close()
-		buf.Write(compressed.Bytes())
-	}
-	sum := sha1.Sum(buf.Bytes())
-	buf.Write(sum[:])
-	return buf.Bytes()
-}
-
-func packObjectHeader(typeCode byte, size int) []byte {
-	first := byte(size&0x0f) | typeCode<<4
-	size >>= 4
-	if size != 0 {
-		first |= 0x80
-	}
-	out := []byte{first}
-	for size != 0 {
-		b := byte(size & 0x7f)
-		size >>= 7
-		if size != 0 {
-			b |= 0x80
-		}
-		out = append(out, b)
-	}
-	return out
-}
-
-func uploadPackAdvertisement(commitSHA string) []byte {
-	var buf bytes.Buffer
-	buf.Write(pktLineString("# service=git-upload-pack\n"))
-	buf.WriteString("0000")
-	buf.Write(pktLineString(commitSHA + " HEAD\x00multi_ack multi_ack_detailed thin-pack side-band side-band-64k ofs-delta shallow deepen-since deepen-not symref=HEAD:refs/heads/main agent=buildhost\n"))
-	buf.Write(pktLineString(commitSHA + " refs/heads/main\n"))
-	buf.WriteString("0000")
-	return buf.Bytes()
-}
-
-func readUploadPackRequest(r *http.Request) ([]byte, error) {
-	reader := r.Body
-	if strings.EqualFold(r.Header.Get("Content-Encoding"), "gzip") {
-		gr, err := gzip.NewReader(r.Body)
-		if err != nil {
-			return nil, err
-		}
-		defer gr.Close()
-		reader = gr
-	}
-	defer r.Body.Close()
-	return io.ReadAll(io.LimitReader(reader, 10<<20))
-}
-
-func wantsSideBand(body []byte) bool {
-	return bytes.Contains(body, []byte("side-band"))
-}
-
-// wantsShallow reports whether the request carries an actual depth request --
-// a "deepen <n>", "deepen-since <timestamp>", or "deepen-not <ref>" pkt-line.
-// Per the pack protocol the shallow section is sent ONLY in answer to such a
-// request; a client that sent none expects ACK/NAK immediately. This must
-// inspect whole pkt-lines: a plain (full) clone's want line ECHOES the
-// advertised "deepen-since deepen-not" capability tokens, so a raw substring
-// match mistook every full clone for a shallow one and git died with
-// "fatal: git fetch-pack: expected ACK/NAK, got 'shallow <sha>'".
-func wantsShallow(body []byte) bool {
-	for _, line := range pktLines(body) {
-		if bytes.HasPrefix(line, []byte("deepen")) {
-			return true
-		}
-	}
-	return false
-}
-
-// pktLines splits a pkt-line stream into its payload lines, skipping
-// flush-pkts (0000) and the other zero-payload special packets; parsing
-// stops at the first malformed length. Trailing newlines are kept --
-// callers prefix-match.
-func pktLines(body []byte) [][]byte {
-	var lines [][]byte
-	for len(body) >= 4 {
-		n, err := strconv.ParseUint(string(body[:4]), 16, 32)
-		if err != nil {
-			break
-		}
-		if n < 4 {
-			// flush-pkt (0000), delim-pkt (0001), response-end (0002).
-			body = body[4:]
-			continue
-		}
-		if uint64(len(body)) < n {
-			break
-		}
-		lines = append(lines, body[4:n])
-		body = body[n:]
-	}
-	return lines
-}
-
-func uploadPackDone(body []byte) bool {
-	return bytes.Contains(body, []byte("done"))
-}
-
-func uploadPackShallowResult(commitSHA string) []byte {
-	var buf bytes.Buffer
-	buf.Write(pktLineString("shallow " + commitSHA + "\n"))
-	buf.WriteString("0000")
-	return buf.Bytes()
-}
-
-func pktLineString(s string) []byte {
-	return pktLineBytes([]byte(s))
-}
-
-func pktLineBytes(payload []byte) []byte {
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "%04x", len(payload)+4)
-	buf.Write(payload)
-	return buf.Bytes()
+	return sha
 }
 
 func tapSuffix(r *http.Request) string {
 	if path := r.PathValue("path"); path != "" {
 		return "/" + path
 	}
-	if strings.HasPrefix(r.URL.Path, "/tap.git") {
-		return strings.TrimPrefix(r.URL.Path, "/tap.git")
-	}
-	if strings.HasPrefix(r.URL.Path, "/brew/tap.git") {
-		return strings.TrimPrefix(r.URL.Path, "/brew/tap.git")
+	for _, prefix := range []string{"/private/tap.git", "/tap.git", "/brew/tap.git"} {
+		if strings.HasPrefix(r.URL.Path, prefix) {
+			return strings.TrimPrefix(r.URL.Path, prefix)
+		}
 	}
 	return ""
 }

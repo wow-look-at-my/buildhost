@@ -16,17 +16,61 @@ From a single uploaded binary, buildhost serves:
 
 ## Homebrew
 
-buildhost exposes a generated Homebrew tap as a Git repository. Add the tap once,
-then install formulas through the tap name:
+buildhost exposes a generated Homebrew tap as a Git repository. Add the tap
+once, trust it, then install formulas through the tap name. `brew trust` is
+required since Homebrew 6.0, which refuses to evaluate third-party taps until
+they are trusted (older brews have no `trust` command and enforce nothing):
 
 ```bash
-brew tap pazer/build https://brew.pazer.build
+brew tap pazer/build https://brew.pazer.build/tap.git
+brew trust pazer/build
 brew install pazer/build/go-toolchain
 ```
 
 Do not install formulas with a naked remote URL such as
 `brew install https://brew.pazer.build/go-toolchain`; modern Homebrew treats that
 as a formula or tap name instead of cloning it as a formula URL.
+
+On Linux, these formulas have no bottles, so `brew install` runs Homebrew's
+build sandbox: it needs bubblewrap (`apt install bubblewrap`; Homebrew also
+installs its own) and unprivileged user namespaces -- hardened hosts such as
+Ubuntu 24.04 may need `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`.
+In containers or CI where user namespaces are unavailable, set
+`HOMEBREW_NO_SANDBOX_LINUX=1` instead. macOS needs neither.
+
+A slash-namespaced project folds `/` to `-` in its formula name (the same rule
+APT applies to package names): project `log-streamer/client` installs as
+`brew install pazer/build/log-streamer-client`. A project whose name starts
+with a digit cannot be served as a formula at all -- Homebrew derives the
+Ruby class from the formula name and a Ruby class cannot start with a digit --
+so such projects are omitted from the tap.
+
+### Private projects
+
+A private project never appears in the public tap. Tap the **authenticated
+tap** instead: it serves every public formula plus the private projects your
+token can read, so it replaces the public tap under the same name (if you
+already added the public tap, remove it first with
+`brew untap --force pazer/build`). Git only transmits credentials after a 401
+challenge, so the token goes in the tap URL as the HTTP Basic password (the
+username is ignored; `x` by convention). Artifact downloads authenticate
+separately through `HOMEBREW_BUILDHOST_TOKEN`, which private formulas read at
+install time -- the token is never written into the tap. The example below is
+a private project named `myrepo/myapp`; per the folding rule above it
+installs as `myrepo-myapp`, and the installed command keeps the binary's own
+name (`myapp`):
+
+```bash
+brew tap pazer/build "https://x:$TOKEN@brew.pazer.build/private/tap.git"
+brew trust pazer/build
+export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
+brew install pazer/build/myrepo-myapp
+```
+
+`brew update` refreshes the tap with the credentials stored in the tap's git
+remote. The `?token=` query parameter cannot be used with `brew tap`: git
+appends its own path segments (`/info/refs`, ...) after the query string, so
+the URL stops resolving as a git repository.
 
 ## APT (Debian / Ubuntu)
 
