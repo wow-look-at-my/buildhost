@@ -55,9 +55,14 @@ func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 // (tapFormulaName: "gcc/pgo" -> gcc-pgo.rb), so the per-formula URL a user
 // copies out of the tap carries the folded name and used to 404. When no
 // project matches the literal name, fall back to the project whose folded tap
-// name matches exactly (a literally named project always wins). requireProject
-// applies its normal read auth to whatever this resolves, so a private
-// project's formula stays exactly as gated as under its unfolded name.
+// name matches exactly (a literally named project always wins). The fold
+// candidates are restricted to projects the REQUEST may read
+// (auth.TokenCanReadProject -- exactly the rule that decides tap membership),
+// so the fallback can only ever name a project whose formula the same request
+// already sees in its tap: an anonymous probe of a private project's folded
+// name stays indistinguishable from a nonexistent project (404), never a
+// 401 existence leak. requireProject still applies its normal auth to
+// whatever this resolves -- resolution routes, it never grants.
 func (h *Handler) parseRoute(r *http.Request) auth.RouteInfo {
 	return route{project: h.resolveFormulaProject(r)}
 }
@@ -75,9 +80,9 @@ func (h *Handler) resolveFormulaProject(r *http.Request) string {
 		return name
 	}
 	// ListProjects is name-ordered, so a (pathological) fold collision
-	// resolves deterministically to the first folded match.
+	// resolves deterministically to the first visible folded match.
 	for _, p := range projects {
-		if strings.Contains(p.Name, "/") && tapFormulaName(p.Name) == name {
+		if strings.Contains(p.Name, "/") && tapFormulaName(p.Name) == name && auth.TokenCanReadProject(r.Context(), &p) {
 			return p.Name
 		}
 	}

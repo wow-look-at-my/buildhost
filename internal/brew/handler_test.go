@@ -265,6 +265,18 @@ func TestParseRoute_FoldedTapNameResolvesToProject(t *testing.T) {
 	req.SetPathValue("project", "no-such")
 	assert.Equal(t, "no-such", h.parseRoute(req).ProjectName())
 
+	// A PRIVATE project's folded name resolves only for a request that could
+	// read it anyway (the tap-membership rule): anonymously it stays
+	// indistinguishable from a nonexistent project -- requireProject then 404s
+	// on the literal name instead of revealing existence with a 401.
+	secret := seedPrivateBrewProject(t, d, store, "ns/hidden", "hidden-binary")
+	req = httptest.NewRequest("GET", "/Formula/ns-hidden.rb", nil)
+	req.SetPathValue("project", "ns-hidden")
+	assert.Equal(t, "ns-hidden", h.parseRoute(req).ProjectName())
+	authed := withReadToken(httptest.NewRequest("GET", "/Formula/ns-hidden.rb", nil), &secret.ID)
+	authed.SetPathValue("project", "ns-hidden")
+	assert.Equal(t, "ns/hidden", h.parseRoute(authed).ProjectName())
+
 	// A project literally named like the folded form wins over the fold.
 	literal := &db.Project{Name: "gcc-pgo", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, literal))
