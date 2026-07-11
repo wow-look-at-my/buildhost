@@ -1,10 +1,7 @@
 package brew
 
 import (
-	"bytes"
-	"compress/zlib"
 	"context"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -88,10 +85,10 @@ func TestServePrivateTap_TokenScopedTapIncludesPrivateFormula(t *testing.T) {
 
 	req := withReadToken(httptest.NewRequest("GET", "/private/tap.git", nil), nil)
 	req.Host = "brew.example.com"
-	repo, err := h.buildTapRepo(req)
+	files, err := h.buildTapFiles(req)
 	require.NoError(t, err)
 
-	all := tapRepoText(repo)
+	all := tapFilesText(files)
 	// Private formula present under its folded name, using the token strategy.
 	assert.Contains(t, all, "ns-secretapp.rb")
 	assert.Contains(t, all, `require_relative "../lib/buildhost_private_download"`)
@@ -117,10 +114,10 @@ func TestScopedTap_PublicFormulaStaysPlain(t *testing.T) {
 	// plain anonymous-download shape (no strategy, no require).
 	req := withReadToken(httptest.NewRequest("GET", "/private/tap.git", nil), nil)
 	req.Host = "brew.example.com"
-	repo, err := h.buildTapRepo(req)
+	files, err := h.buildTapFiles(req)
 	require.NoError(t, err)
 
-	all := tapRepoText(repo)
+	all := tapFilesText(files)
 	assert.Contains(t, all, "class Pubapp < Formula")
 	assert.NotContains(t, all, "using: BuildhostCurlDownloadStrategy\n      sha256")
 	// The only require_relative in the tap text is inside no formula -- the
@@ -136,10 +133,10 @@ func TestScopedTap_ProjectScopedTokenCannotSeeOtherPrivateProjects(t *testing.T)
 
 	req := withReadToken(httptest.NewRequest("GET", "/private/tap.git", nil), &mine.ID)
 	req.Host = "brew.example.com"
-	repo, err := h.buildTapRepo(req)
+	files, err := h.buildTapFiles(req)
 	require.NoError(t, err)
 
-	all := tapRepoText(repo)
+	all := tapFilesText(files)
 	assert.Contains(t, all, "mine.rb")
 	assert.Contains(t, all, "pubapp.rb")
 	assert.NotContains(t, all, "other-secret")
@@ -152,10 +149,10 @@ func TestAnonymousTap_NeverContainsPrivateNames(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/brew/tap.git", nil)
 	req.Host = "git.example.com"
-	repo, err := h.buildTapRepo(req)
+	files, err := h.buildTapFiles(req)
 	require.NoError(t, err)
 
-	all := tapRepoText(repo)
+	all := tapFilesText(files)
 	assert.Contains(t, all, "pubapp.rb")
 	assert.NotContains(t, all, "secretapp")
 	// The strategy library is part of the uniform tap layout even when nothing
@@ -230,28 +227,14 @@ func TestServeFormula_PrivateProjectUsesTokenStrategyAndNoStore(t *testing.T) {
 	assert.NotContains(t, body, "token=")
 }
 
-// tapRepoText concatenates every decompressed loose object plus the plain-text
-// repo files, so tests can assert on tap contents regardless of which object a
-// string lives in. Loose objects are zlib-compressed; a name only ever appears
-// inside tree objects and a file's content inside its blob, so asserting on
-// the concatenation covers both.
-func tapRepoText(repo map[string][]byte) string {
+// tapFilesText concatenates every tap file path and its content, so tests can
+// assert on tap contents (formula filenames live in the paths, formula text in
+// the values) in one string.
+func tapFilesText(files map[string][]byte) string {
 	var b strings.Builder
-	for path, data := range repo {
+	for path, data := range files {
 		b.WriteString(path)
 		b.WriteByte('\n')
-		if strings.HasPrefix(path, "objects/") && len(data) > 0 {
-			zr, err := zlib.NewReader(bytes.NewReader(data))
-			if err == nil {
-				raw, err := io.ReadAll(zr)
-				zr.Close()
-				if err == nil {
-					b.Write(raw)
-					b.WriteByte('\n')
-					continue
-				}
-			}
-		}
 		b.Write(data)
 		b.WriteByte('\n')
 	}
@@ -286,9 +269,9 @@ func TestHostileProjectNames_NeverEmitInvalidRuby(t *testing.T) {
 
 	tapReq := httptest.NewRequest("GET", "/brew/tap.git", nil)
 	tapReq.Host = "git.example.com"
-	repo, err := h.buildTapRepo(tapReq)
+	files, err := h.buildTapFiles(tapReq)
 	require.NoError(t, err)
-	all := tapRepoText(repo)
+	all := tapFilesText(files)
 	assert.NotContains(t, all, "7zip", "digit-leading project must be excluded from the tap")
 	// The dotted project stays, with a class name brew both parses and loads.
 	assert.Contains(t, all, "dotted.app.rb")

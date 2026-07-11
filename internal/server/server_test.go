@@ -36,11 +36,16 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
-// testEnv bundles the objects needed by every integration test.
+// testEnv bundles the objects needed by every integration test. cfg, store,
+// and handler are kept so a test can simulate a redeploy (server.New over the
+// same data dir) or serve the same router under a rewritten Host.
 type testEnv struct {
 	ts       *httptest.Server
 	database *db.DB
 	token    string // plaintext API token with read,write scopes
+	cfg      config.Config
+	store    storage.Storage
+	handler  http.Handler
 }
 
 // The apt backend generates a fresh 4096-bit RSA signing key the first time a
@@ -95,14 +100,15 @@ func setup(t *testing.T) *testEnv {
 	}
 
 	srv := server.New(cfg, database, store)
-	ts := httptest.NewServer(srv.Handler())
+	handler := srv.Handler()
+	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
 
 	// Create an API token directly in the DB.
 	plaintext, _, err := database.CreateToken(context.Background(), "test", nil, "read,write")
 	require.Nil(t, err)
 
-	return &testEnv{ts: ts, database: database, token: plaintext}
+	return &testEnv{ts: ts, database: database, token: plaintext, cfg: cfg, store: store, handler: handler}
 }
 
 // helpers -------------------------------------------------------------------
