@@ -247,7 +247,10 @@ func touchTapLineage(dir string) {
 // directory is created: while at or over the cap, the least-recently-built
 // lineage (dir mtime) is dropped whole -- from the in-memory cache too, so its
 // os.Root closes -- and its history restarts from a fresh root if it is ever
-// requested again. Must be called with tapMu held.
+// requested again. A lineage pinned by an in-flight smart request
+// (acquireTapLineage) is never a victim -- a streaming pack walk must not have
+// its objects deleted underneath it -- so the cap can be transiently exceeded
+// by exactly the number of active requests. Must be called with tapMu held.
 func (h *Handler) evictTapLineagesLocked() {
 	root := h.tapHistoryRoot()
 	for {
@@ -273,13 +276,20 @@ func (h *Handler) evictTapLineagesLocked() {
 		if len(dirs) < tapHistoryMaxLineages {
 			return
 		}
-		oldest := dirs[0]
-		for _, d := range dirs[1:] {
-			if d.mod.Before(oldest.mod) {
-				oldest = d
+		oldest := ""
+		var oldestMod time.Time
+		for _, d := range dirs {
+			if h.tapPins[filepath.Join(root, d.name)] > 0 {
+				continue
+			}
+			if oldest == "" || d.mod.Before(oldestMod) {
+				oldest, oldestMod = d.name, d.mod
 			}
 		}
-		victim := filepath.Join(root, oldest.name)
+		if oldest == "" {
+			return // every candidate is pinned by an in-flight request
+		}
+		victim := filepath.Join(root, oldest)
 		for key, lin := range h.tapSnaps {
 			if lin.dir == victim {
 				h.dropTapLineageLocked(key)

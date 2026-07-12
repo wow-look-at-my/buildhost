@@ -68,10 +68,22 @@ type tapLineage struct {
 // A build failure is reported wrapped in errTapBuild; any other error means
 // the requested path does not exist in the (healthy) lineage.
 func (h *Handler) openTapFile(r *http.Request, path string) (*os.File, error) {
-	key := auth.RequestRootURL(r) + "\x00" + tapScopeKey(r.Context())
-
 	h.tapMu.Lock()
 	defer h.tapMu.Unlock()
+
+	lin, err := h.resolveTapLineageLocked(r)
+	if err != nil {
+		return nil, err
+	}
+	return lin.root.Open(path)
+}
+
+// resolveTapLineageLocked is the shared lineage resolution: sweep expired
+// entries, then return the live entry for the request's (base URL, credential
+// scope) key, refreshing/building it when there is none. Must be called with
+// tapMu held. Build failures are wrapped in errTapBuild.
+func (h *Handler) resolveTapLineageLocked(r *http.Request) (*tapLineage, error) {
+	key := auth.RequestRootURL(r) + "\x00" + tapScopeKey(r.Context())
 
 	h.sweepTapLineagesLocked()
 
@@ -87,7 +99,46 @@ func (h *Handler) openTapFile(r *http.Request, path string) (*os.File, error) {
 		h.tapSnaps[key] = fresh
 		lin = fresh
 	}
-	return lin.root.Open(path)
+	return lin, nil
+}
+
+// acquireTapLineage resolves the request's lineage exactly like openTapFile
+// and hands back an INDEPENDENT os.Root over its directory plus a release
+// func. The smart-HTTP handlers use it because they read MANY files over one
+// request (the tip, then every object of a pack walk): a private root is
+// immune to the TTL sweep closing the cached entry's root mid-request, and
+// while held the lineage's directory is pinned so the disk-cap eviction can
+// never RemoveAll history out from under a streaming pack -- the same
+// open-under-the-mutex consistency rule openTapFile applies per file,
+// stretched over a whole request.
+func (h *Handler) acquireTapLineage(r *http.Request) (*os.Root, func(), error) {
+	h.tapMu.Lock()
+	defer h.tapMu.Unlock()
+
+	lin, err := h.resolveTapLineageLocked(r)
+	if err != nil {
+		return nil, nil, err
+	}
+	root, err := os.OpenRoot(lin.dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	if h.tapPins == nil {
+		h.tapPins = map[string]int{}
+	}
+	dir := lin.dir
+	h.tapPins[dir]++
+	release := func() {
+		h.tapMu.Lock()
+		if h.tapPins[dir] <= 1 {
+			delete(h.tapPins, dir)
+		} else {
+			h.tapPins[dir]--
+		}
+		h.tapMu.Unlock()
+		root.Close()
+	}
+	return root, release, nil
 }
 
 // sweepTapLineagesLocked drops every expired live entry (closing its os.Root;
