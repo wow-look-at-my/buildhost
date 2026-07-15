@@ -1,0 +1,13 @@
+# Caddy with the Cloudflare DNS module (github.com/caddy-dns/cloudflare),
+# required for ACME DNS-01 -- the stock caddy image cannot solve DNS-01
+# against Cloudflare. Two-stage: xcaddy compiles the module in, the runtime
+# stage is the ordinary caddy image with just the binary swapped.
+#
+# Used by the opt-in "ingress" service in docker-compose.yml.
+# See DIRECT-INGRESS.md for why this exists and how to enable it.
+
+FROM caddy:2-builder AS builder
+RUN xcaddy build --with github.com/caddy-dns/cloudflare
+
+FROM caddy:2
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy

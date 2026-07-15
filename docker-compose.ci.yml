@@ -1,0 +1,7 @@
+services:
+  buildhost:
+    build: .
+    environment:
+      - BUILDHOST_BASE_URL=http://localhost:8080
+    ports:
+      - "8080:8080"

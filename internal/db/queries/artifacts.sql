@@ -13,6 +13,12 @@ SELECT id, release_id, os, arch, kind, storage_key, size, sha256,
        debug_storage_key, debug_size, filename, created_at
 FROM artifacts WHERE release_id = ? AND os = ? AND arch = ?;
 
+-- name: GetArtifactByReleaseAndKind :one
+SELECT id, release_id, os, arch, kind, storage_key, size, sha256,
+       stripped_storage_key, stripped_size, stripped_sha256,
+       debug_storage_key, debug_size, filename, created_at
+FROM artifacts WHERE release_id = ? AND kind = ?;
+
 -- name: ListArtifactsByRelease :many
 SELECT id, release_id, os, arch, kind, storage_key, size, sha256,
        stripped_storage_key, stripped_size, stripped_sha256,
@@ -38,4 +44,7 @@ SELECT EXISTS(
     JOIN artifacts a ON pa.artifact_id = a.id
     JOIN releases r ON a.release_id = r.id
     WHERE r.project_id = sqlc.arg(project_id) AND pa.storage_key = sqlc.arg(storage_key)
+    UNION ALL
+    SELECT 1 FROM oci_blob_links obl
+    WHERE obl.project_id = sqlc.arg(project_id) AND obl.storage_key = sqlc.arg(storage_key)
 ) AS blob_exists;

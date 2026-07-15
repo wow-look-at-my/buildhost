@@ -23,7 +23,10 @@ SELECT
             UNION ALL
             SELECT storage_key, size FROM packaged_artifacts
         ) GROUP BY k
-    )) AS INTEGER) AS physical_bytes;
+    )) AS INTEGER) AS physical_bytes,
+    CAST((SELECT COALESCE(SUM(CASE WHEN stripped_storage_key != '' THEN stripped_size ELSE 0 END), 0) FROM artifacts) AS INTEGER) AS stripped_bytes,
+    CAST((SELECT COALESCE(SUM(CASE WHEN debug_storage_key != '' THEN debug_size ELSE 0 END), 0) FROM artifacts) AS INTEGER) AS debug_bytes,
+    CAST((SELECT COALESCE(SUM(size), 0) FROM packaged_artifacts) AS INTEGER) AS packaged_bytes;
 
 -- name: ListRecentReleases :many
 SELECT r.id, r.project_id, r.version, r.version_num, r.git_branch, r.git_commit,

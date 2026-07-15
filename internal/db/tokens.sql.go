@@ -112,6 +112,21 @@ func (q *Queries) ListAllTokens(ctx context.Context) ([]ListAllTokensRow, error)
 	return items, nil
 }
 
+const updateTokenByID = `-- name: UpdateTokenByID :exec
+UPDATE api_tokens SET name = ?, scopes = ? WHERE id = ?
+`
+
+type UpdateTokenByIDParams struct {
+	Name   string `json:"name"`
+	Scopes string `json:"scopes"`
+	ID     int64  `json:"id"`
+}
+
+func (q *Queries) UpdateTokenByID(ctx context.Context, arg UpdateTokenByIDParams) error {
+	_, err := q.db.ExecContext(ctx, updateTokenByID, arg.Name, arg.Scopes, arg.ID)
+	return err
+}
+
 const updateTokenLastUsed = `-- name: UpdateTokenLastUsed :exec
 UPDATE api_tokens SET last_used_at = datetime('now') WHERE id = ?
 `
