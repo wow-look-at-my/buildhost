@@ -1,19 +1,28 @@
-name: Deploy PR previews
+name: PR preview
+
+# Deploy a PR preview of the admin dashboard (internal/admin/static) to buildhost
+# itself via the org's buildhost-flavour PR-preview reusable workflow. PRs deploy
+# to a pr-<number> branch; pushes to master deploy to branch/master. The project
+# defaults to the (lowercase) repo name -> "buildhost".
+#
+# NOTE: the reusable workflow lives in wow-look-at-my/actions and is referenced at
+# @master, so this requires that workflow to be on actions' master branch first.
 
 on:
-    pull_request:
-        types: [opened, reopened, synchronize]
+  push:
+    branches: [master]
+  pull_request:
+    types: [opened, reopened, synchronize]
 
-# id-token: write lets buildhost-publish-site authenticate to buildhost via OIDC
-# (no static secret); pull-requests is for the sticky preview comment.
 permissions:
-    contents: read
-    pull-requests: write
-    id-token: write
+  contents: read
+  actions: read
+  pull-requests: write
+  id-token: write
 
 jobs:
-    deploy-preview:
-        uses: PazerOP/pr-preview-action/.github/workflows/preview.yml@master
-        with:
-            source-dir: ./internal/admin/static/
-        secrets: inherit
+  preview:
+    uses: wow-look-at-my/actions/.github/workflows/buildhost-preview.yml@master
+    with:
+      source-dir: internal/admin/static
+    secrets: inherit

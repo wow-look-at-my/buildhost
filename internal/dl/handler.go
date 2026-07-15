@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -13,6 +14,12 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/static"
 )
+
+// privateRedirectTTL bounds the signed token embedded in a private project's
+// redirect Location. It only needs to outlive the client's redirect follow
+// (immediate in practice); verification happens when the static request
+// starts, so a long transfer is unaffected by expiry.
+const privateRedirectTTL = 15 * time.Minute
 
 var dlTracer = otel.Tracer("buildhost.dl")
 
@@ -62,6 +69,16 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "os and arch are required", http.StatusBadRequest)
 		return
 	}
+	// Accept platform-name aliases natively (RUNNER_OS "Linux"/"macOS"/"Windows",
+	// RUNNER_ARCH "X64"/"ARM64", uname's "x86_64"/"aarch64", ...) so callers can
+	// pass them through verbatim; fold them to the canonical spelling the static
+	// endpoint and stored artifacts use. Unrecognized values pass through unchanged.
+	if c, ok := db.NormalizeOS(osStr); ok {
+		osStr = string(c)
+	}
+	if c, ok := db.NormalizeArch(archStr); ok {
+		archStr = string(c)
+	}
 
 	_, span := dlTracer.Start(r.Context(), "dl.resolve_version")
 	var (
@@ -106,9 +123,32 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		p = p.WithDebug(true)
 	}
 
+	if project.IsPrivate {
+		// The caller authenticated to reach this handler (the route is
+		// ReadAccess-gated), but clients drop the Authorization header when
+		// following a cross-host redirect -- curl does so by design, and
+		// Homebrew inherits curl semantics -- so a bare Location would 401 at
+		// the static host. Carry the authorization in the Location itself: a
+		// short-lived signed token bound to exactly this artifact tuple (the
+		// same mechanism as temporary download links). The response embeds a
+		// live credential, so it is never cacheable and never permanent.
+		w.Header().Set("Cache-Control", "private, no-store")
+		signed, _ := static.SignedURL(auth.DeriveServiceURL(r, "static"), p, time.Now().Add(privateRedirectTTL))
+		http.Redirect(w, r, signed, http.StatusFound)
+		return
+	}
+
 	code := http.StatusFound
 	if immutable {
+		// An exact version is an immutable mapping -- safe to cache the redirect
+		// itself forever, just like the artifact it points at.
 		code = http.StatusMovedPermanently
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		// "latest" and branch tips are MUTABLE pointers: a new publish repoints
+		// them. Never let a CDN or browser cache this redirect, or clients would
+		// stay pinned to a stale release until the cached pointer expires.
+		w.Header().Set("Cache-Control", "no-store")
 	}
 	static.Redirect(w, r, auth.DeriveServiceURL(r, "static"), p, code)
 }

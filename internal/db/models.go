@@ -85,15 +85,17 @@ type PackagedArtifact struct {
 }
 
 type Project struct {
-	ID          int64      `json:"id"`
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	Homepage    string     `json:"homepage"`
-	License     string     `json:"license"`
-	IsPrivate   bool       `json:"is_private"`
-	Versioning  Versioning `json:"versioning"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID            int64      `json:"id"`
+	Name          string     `json:"name"`
+	Description   string     `json:"description"`
+	Homepage      string     `json:"homepage"`
+	License       string     `json:"license"`
+	IsPrivate     bool       `json:"is_private"`
+	Versioning    Versioning `json:"versioning"`
+	GithubRepo    string     `json:"github_repo"`
+	DefaultBranch string     `json:"default_branch"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type Release struct {
@@ -104,9 +106,17 @@ type Release struct {
 	GitBranch   string     `json:"git_branch"`
 	GitCommit   string     `json:"git_commit"`
 	Notes       string     `json:"notes"`
+	OciUser     string     `json:"oci_user"`
 	Published   bool       `json:"published"`
 	CreatedAt   time.Time  `json:"created_at"`
 	PublishedAt *time.Time `json:"published_at"`
+}
+
+type RetentionSetting struct {
+	ID           int64     `json:"id"`
+	KeepN        int64     `json:"keep_n"`
+	RecencyHours int64     `json:"recency_hours"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type Site struct {
@@ -118,6 +128,7 @@ type Site struct {
 	SHA256     string    `json:"sha256"`
 	FileCount  int64     `json:"file_count"`
 	GitCommit  string    `json:"git_commit"`
+	IsPublic   bool      `json:"is_public"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }

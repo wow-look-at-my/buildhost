@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
-	"github.com/wow-look-at-my/testify/assert"
 
 	// Import every backend so its init() registers routes. The guard below
 	// then sees the full route table. auth.Init is deliberately NOT called.
@@ -44,6 +44,12 @@ func TestAllRoutesRegisteredWithoutInit(t *testing.T) {
 		"npm.{domain}/@buildhost/{project}/-/{filename}",
 		"apt.{domain}/{path...}",
 		"brew.{domain}/{project}",
+		"brew.{domain}/tap.git/info/refs",
+		"brew.{domain}/tap.git/git-upload-pack",
+		"brew.{domain}/private/tap.git/git-upload-pack",
+		"git.{domain}/brew/tap.git/{path...}",
+		"git.{domain}/brew/tap.git/info/refs",
+		"git.{domain}/brew/tap.git/git-upload-pack",
 		"dl.{domain}/{project}",
 		"sites.{domain}/{project}/branch/{branch}",
 		"static.{domain}/file",

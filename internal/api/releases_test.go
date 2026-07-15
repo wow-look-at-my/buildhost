@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestCreateRelease_Semver(t *testing.T) {
@@ -77,6 +77,58 @@ func TestCreateRelease_AutoWithExplicitVersion(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
 	assert.Equal(t, "5", rel.Version)
 	assert.Equal(t, int64(5), rel.VersionNum)
+}
+
+// A publish that carries the repo's default branch records it on the project,
+// so the apex "latest" tracks that branch -- the go-toolchain ("v1") fix.
+func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "gotool", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	body := `{"git_branch":"v1","git_commit":"abc123","default_branch":"v1"}`
+	req := httptest.NewRequest("POST", "/api/projects/gotool/releases", strings.NewReader(body))
+	req.SetPathValue("project", "gotool")
+	req = withProjectRoute(req, proj)
+	req = req.WithContext(writeToken(req.Context(), "read,write"))
+	rec := httptest.NewRecorder()
+	h.CreateRelease(rec, req)
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+	var rel db.Release
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
+	require.NoError(t, h.DB.PublishRelease(ctx, rel.ID))
+
+	updated, err := h.DB.GetProject(ctx, "gotool")
+	require.NoError(t, err)
+	assert.Equal(t, "v1", updated.DefaultBranch, "publish must record the repo's default branch")
+
+	// "latest" now resolves to the v1 release; under the old hardcoded "master"
+	// it would have been nothing.
+	latest, err := h.DB.GetLatestRelease(ctx, proj.ID)
+	require.NoError(t, err)
+	assert.Equal(t, rel.Version, latest.Version)
+	assert.Equal(t, "v1", latest.GitBranch)
+}
+
+func TestCreateRelease_InvalidDefaultBranch(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "baddef", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	body := `{"default_branch":"bad branch!"}`
+	req := httptest.NewRequest("POST", "/api/projects/baddef/releases", strings.NewReader(body))
+	req.SetPathValue("project", "baddef")
+	req = withProjectRoute(req, proj)
+	req = req.WithContext(writeToken(req.Context(), "read,write"))
+	rec := httptest.NewRecorder()
+	h.CreateRelease(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
 // Note: TestCreateRelease_NoAuth removed -- auth is now enforced by the
@@ -178,6 +230,57 @@ func TestGetRelease_ReleaseNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
+func TestGetRelease_Latest(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "latestproj", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	// Two published releases; "latest" must resolve to the highest version.
+	older := &db.Release{ProjectID: proj.ID, Version: "1", VersionNum: 1, GitBranch: "master", GitCommit: "aaa111"}
+	require.NoError(t, h.DB.CreateRelease(ctx, older))
+	require.NoError(t, h.DB.PublishRelease(ctx, older.ID))
+	newer := &db.Release{ProjectID: proj.ID, Version: "2", VersionNum: 2, GitBranch: "master", GitCommit: "bbb222"}
+	require.NoError(t, h.DB.CreateRelease(ctx, newer))
+	require.NoError(t, h.DB.PublishRelease(ctx, newer.ID))
+
+	req := httptest.NewRequest("GET", "/api/projects/latestproj/releases/latest", nil)
+	req.SetPathValue("project", "latestproj")
+	req.SetPathValue("version", "latest")
+	req = withProjectRoute(req, proj)
+	rec := httptest.NewRecorder()
+	h.GetRelease(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var got db.Release
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.Equal(t, "2", got.Version)
+	assert.Equal(t, "bbb222", got.GitCommit)
+	assert.True(t, got.Published)
+}
+
+func TestGetRelease_LatestNoPublishedReleases(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "latestempty", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	// An unpublished release does not count as "latest".
+	unpub := &db.Release{ProjectID: proj.ID, Version: "1", VersionNum: 1, GitBranch: "master"}
+	require.NoError(t, h.DB.CreateRelease(ctx, unpub))
+
+	req := httptest.NewRequest("GET", "/api/projects/latestempty/releases/latest", nil)
+	req.SetPathValue("project", "latestempty")
+	req.SetPathValue("version", "latest")
+	req = withProjectRoute(req, proj)
+	rec := httptest.NewRecorder()
+	h.GetRelease(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
 // Note: GetRelease auth (private project, project not found) is tested via
 // requireProject middleware in the auth package.
 
@@ -204,6 +307,62 @@ func TestListReleases_Success(t *testing.T) {
 
 // Note: ListReleases auth (private project, project not found) is tested via
 // requireProject middleware in the auth package.
+
+func TestCreateRelease_OciUser(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "ociuserproj", Versioning: db.VersioningSemver}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	body := `{"version":"1.0.0","oci_user":"65532:65532"}`
+	req := httptest.NewRequest("POST", "/api/projects/ociuserproj/releases", strings.NewReader(body))
+	req.SetPathValue("project", "ociuserproj")
+	req = withProjectRoute(req, proj)
+	req = req.WithContext(writeToken(req.Context(), "read,write"))
+	rec := httptest.NewRecorder()
+	h.CreateRelease(rec, req)
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+	var rel db.Release
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
+	assert.Equal(t, "65532:65532", rel.OciUser)
+
+	// And it is persisted.
+	got, err := h.DB.GetRelease(ctx, proj.ID, "1.0.0")
+	require.NoError(t, err)
+	assert.Equal(t, "65532:65532", got.OciUser)
+}
+
+func TestCreateRelease_InvalidOciUser(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "badociuser", Versioning: db.VersioningSemver}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	body := `{"version":"1.0.0","oci_user":"root; rm -rf /"}`
+	req := httptest.NewRequest("POST", "/api/projects/badociuser/releases", strings.NewReader(body))
+	req.SetPathValue("project", "badociuser")
+	req = withProjectRoute(req, proj)
+	req = req.WithContext(writeToken(req.Context(), "read,write"))
+	rec := httptest.NewRecorder()
+	h.CreateRelease(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "invalid oci_user")
+}
+
+func TestValidOCIUser(t *testing.T) {
+	valid := []string{"root", "nonroot", "65532", "65532:65532", "nonroot:nonroot", "1000:1000", "app", "_svc", "a-b:c-d"}
+	for _, s := range valid {
+		assert.True(t, validOCIUser(s), "expected %q to be valid", s)
+	}
+	invalid := []string{"", ":", "65532:", ":65532", "root:", "-bad", "9bad", "root group", "root;rm", "u@h", "12345678901", strings.Repeat("a", 33)}
+	for _, s := range invalid {
+		assert.False(t, validOCIUser(s), "expected %q to be invalid", s)
+	}
+}
 
 func TestSemverToNum(t *testing.T) {
 	tests := []struct {
