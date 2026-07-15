@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func setupSigningTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
@@ -31,7 +31,7 @@ func setupSigningTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	h := &Handler{
 		DB:     d,
 		Store:  store,
-		Gen:    repackage.NewGenerator(store, d, "http://localhost:8080", tmpDir),
+		Gen:    repackage.NewGenerator(store, d, tmpDir),
 		Signer: signer,
 	}
 	return h, d, store
@@ -141,7 +141,7 @@ func TestServeRelease_WithHashes(t *testing.T) {
 
 	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000, GitBranch: db.LatestBranch}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 

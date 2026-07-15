@@ -18,6 +18,7 @@ func (d *DB) CreateProject(ctx context.Context, p *Project) error {
 		License:     p.License,
 		IsPrivate:   p.IsPrivate,
 		Versioning:  p.Versioning,
+		GithubRepo:  p.GithubRepo,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -45,6 +46,24 @@ func (d *DB) SetProjectVisibility(ctx context.Context, id int64, isPrivate bool)
 	return d.q.SetProjectVisibility(ctx, SetProjectVisibilityParams{
 		IsPrivate: isPrivate,
 		ID:        id,
+	})
+}
+
+func (d *DB) SetProjectGitHubRepo(ctx context.Context, id int64, repo string) error {
+	return d.q.SetProjectGitHubRepo(ctx, SetProjectGitHubRepoParams{
+		GithubRepo: repo,
+		ID:         id,
+	})
+}
+
+// SetProjectDefaultBranch records the branch the apex "latest" tracks for a
+// project. Publishers supply their repo's real default branch on release-create
+// (GitHub's repository.default_branch), so a project that releases off a branch
+// other than "master" still resolves "latest".
+func (d *DB) SetProjectDefaultBranch(ctx context.Context, id int64, branch string) error {
+	return d.q.SetProjectDefaultBranch(ctx, SetProjectDefaultBranchParams{
+		DefaultBranch: branch,
+		ID:            id,
 	})
 }
 

@@ -1,11 +1,11 @@
 package dl
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -15,6 +15,12 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/static"
 )
 
+// privateRedirectTTL bounds the signed token embedded in a private project's
+// redirect Location. It only needs to outlive the client's redirect follow
+// (immediate in practice); verification happens when the static request
+// starts, so a long transfer is unaffected by expiry.
+const privateRedirectTTL = 15 * time.Minute
+
 var dlTracer = otel.Tracer("buildhost.dl")
 
 var handler Handler
@@ -22,44 +28,23 @@ var handler Handler
 func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
-		handler.BaseURL = auth.BaseURL()
 	})
-	// {project} matches one URL segment. For multi-segment project names the
-	// client URL-encodes the slash as %2F: Go's ServeMux matches on the raw
-	// path (so %2F is not split) and r.PathValue returns the decoded value.
-	auth.Handle("GET /dl/{project}/latest/{os}/{arch}", parseRoute, handler.DownloadLatest)
-	auth.Handle("GET /dl/{project}/branch/{branch}/{os}/{arch}", parseRoute, handler.DownloadBranch)
-	auth.Handle("GET /dl/{project}/{version}/{os}/{arch}", parseRoute, handler.Download)
+	auth.ServiceHandle("dl", "GET /{project}", parseRoute, handler.Download)
 }
 
 type route struct {
 	project string
-	version string
-	branch  string
-	os      string
-	arch    string
 }
 
 func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
 func parseRoute(r *http.Request) auth.RouteInfo {
-	return route{
-		project: r.PathValue("project"),
-		version: r.PathValue("version"),
-		branch:  r.PathValue("branch"),
-		os:      r.PathValue("os"),
-		arch:    r.PathValue("arch"),
-	}
-}
-
-func routeFrom(ctx context.Context) route {
-	return auth.RouteInfoFrom(ctx).(route)
+	return route{project: r.PathValue("project")}
 }
 
 type Handler struct {
-	DB      *db.DB
-	BaseURL string
+	DB *db.DB
 }
 
 func handleDBErr(w http.ResponseWriter, r *http.Request, err error) bool {
@@ -74,72 +59,96 @@ func handleDBErr(w http.ResponseWriter, r *http.Request, err error) bool {
 	return false
 }
 
-const cacheImmutable = "public, max-age=31536000, immutable"
-
 func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
-	rt := routeFrom(r.Context())
+	q := r.URL.Query()
+
+	osStr := q.Get("os")
+	archStr := q.Get("arch")
+	if osStr == "" || archStr == "" {
+		http.Error(w, "os and arch are required", http.StatusBadRequest)
+		return
+	}
+	// Accept platform-name aliases natively (RUNNER_OS "Linux"/"macOS"/"Windows",
+	// RUNNER_ARCH "X64"/"ARM64", uname's "x86_64"/"aarch64", ...) so callers can
+	// pass them through verbatim; fold them to the canonical spelling the static
+	// endpoint and stored artifacts use. Unrecognized values pass through unchanged.
+	if c, ok := db.NormalizeOS(osStr); ok {
+		osStr = string(c)
+	}
+	if c, ok := db.NormalizeArch(archStr); ok {
+		archStr = string(c)
+	}
 
 	_, span := dlTracer.Start(r.Context(), "dl.resolve_version")
 	var (
-		release *db.Release
-		err     error
+		release   *db.Release
+		err       error
+		immutable bool
 	)
-	if rt.version == "latest" {
-		w.Header().Set("Cache-Control", "no-cache")
+
+	version := q.Get("v")
+	branch := q.Get("branch")
+
+	switch {
+	case version != "":
+		release, err = h.DB.GetRelease(r.Context(), project.ID, version)
+		span.SetAttributes(attribute.String("dl.resolution", "exact"))
+		immutable = true
+	case branch != "":
+		release, err = h.DB.GetLatestReleaseByBranch(r.Context(), project.ID, branch)
+		span.SetAttributes(attribute.String("dl.resolution", "branch"))
+	default:
 		release, err = h.DB.GetLatestRelease(r.Context(), project.ID)
 		span.SetAttributes(attribute.String("dl.resolution", "latest"))
-	} else {
-		w.Header().Set("Cache-Control", cacheImmutable)
-		release, err = h.DB.GetRelease(r.Context(), project.ID, rt.version)
-		span.SetAttributes(attribute.String("dl.resolution", "exact"))
 	}
 	span.End()
+
 	if handleDBErr(w, r, err) {
 		return
 	}
 
-	h.redirectToStatic(w, r, project, release, rt)
-}
-
-func (h *Handler) DownloadLatest(w http.ResponseWriter, r *http.Request) {
-	project := auth.ProjectFrom(r.Context())
-	rt := routeFrom(r.Context())
-
-	release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
-	if handleDBErr(w, r, err) {
-		return
+	fmtStr := q.Get("fmt")
+	if fmtStr == "" {
+		fmtStr = "raw"
 	}
 
-	h.redirectToStatic(w, r, project, release, rt)
-}
-
-func (h *Handler) DownloadBranch(w http.ResponseWriter, r *http.Request) {
-	project := auth.ProjectFrom(r.Context())
-	rt := routeFrom(r.Context())
-
-	release, err := h.DB.GetLatestReleaseByBranch(r.Context(), project.ID, rt.branch)
-	if handleDBErr(w, r, err) {
-		return
+	resolvedVersion := strings.TrimPrefix(release.Version, "v")
+	if resolvedVersion == "" {
+		resolvedVersion = fmt.Sprintf("%d", release.VersionNum)
 	}
 
-	h.redirectToStatic(w, r, project, release, rt)
-}
-
-func (h *Handler) redirectToStatic(w http.ResponseWriter, r *http.Request, project *db.Project, release *db.Release, rt route) {
-	format := r.URL.Query().Get("format")
-	if format == "" {
-		format = "raw"
-	}
-
-	version := strings.TrimPrefix(release.Version, "v")
-	if version == "" {
-		version = fmt.Sprintf("%d", release.VersionNum)
-	}
-
-	p := static.For(project.Name).WithVersion(version).WithOS(db.OS(rt.os)).WithArch(db.Arch(rt.arch)).WithFmt(format)
-	if r.URL.Query().Get("debug") == "1" {
+	p := static.For(project.Name).WithVersion(resolvedVersion).WithOS(db.OS(osStr)).WithArch(db.Arch(archStr)).WithFmt(fmtStr)
+	if q.Get("debug") == "1" {
 		p = p.WithDebug(true)
 	}
-	static.Redirect(w, r, h.BaseURL, p)
+
+	if project.IsPrivate {
+		// The caller authenticated to reach this handler (the route is
+		// ReadAccess-gated), but clients drop the Authorization header when
+		// following a cross-host redirect -- curl does so by design, and
+		// Homebrew inherits curl semantics -- so a bare Location would 401 at
+		// the static host. Carry the authorization in the Location itself: a
+		// short-lived signed token bound to exactly this artifact tuple (the
+		// same mechanism as temporary download links). The response embeds a
+		// live credential, so it is never cacheable and never permanent.
+		w.Header().Set("Cache-Control", "private, no-store")
+		signed, _ := static.SignedURL(auth.DeriveServiceURL(r, "static"), p, time.Now().Add(privateRedirectTTL))
+		http.Redirect(w, r, signed, http.StatusFound)
+		return
+	}
+
+	code := http.StatusFound
+	if immutable {
+		// An exact version is an immutable mapping -- safe to cache the redirect
+		// itself forever, just like the artifact it points at.
+		code = http.StatusMovedPermanently
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		// "latest" and branch tips are MUTABLE pointers: a new publish repoints
+		// them. Never let a CDN or browser cache this redirect, or clients would
+		// stay pinned to a stale release until the cached pointer expires.
+		w.Header().Set("Cache-Control", "no-store")
+	}
+	static.Redirect(w, r, auth.DeriveServiceURL(r, "static"), p, code)
 }

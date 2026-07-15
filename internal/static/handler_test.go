@@ -1,8 +1,10 @@
 package static
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,11 +12,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/klauspost/compress/zstd"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestCanonicalQuery(t *testing.T) {
@@ -23,10 +26,12 @@ func TestCanonicalQuery(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"already sorted", "arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", "arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0"},
-		{"unsorted", "v=1.0.0&id=myapp&os=linux&arch=amd64&fmt=raw", "arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0"},
-		{"strips unknown", "arch=amd64&foo=bar&id=myapp&os=linux&v=1", "arch=amd64&id=myapp&os=linux&v=1"},
-		{"keeps debug", "debug=1&id=myapp&v=1&os=linux&arch=amd64", "arch=amd64&debug=1&id=myapp&os=linux&v=1"},
+		{"already sorted", "arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", "arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0"},
+		{"unsorted", "v=1.0.0&project=myapp&os=linux&arch=amd64&fmt=raw", "arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0"},
+		{"strips unknown", "arch=amd64&foo=bar&project=myapp&os=linux&v=1", "arch=amd64&os=linux&project=myapp&v=1"},
+		{"keeps debug", "debug=1&project=myapp&v=1&os=linux&arch=amd64", "arch=amd64&debug=1&os=linux&project=myapp&v=1"},
+		{"normalizes os/arch aliases", "arch=X64&os=Linux&project=myapp&v=1", "arch=amd64&os=linux&project=myapp&v=1"},
+		{"keeps any sentinel", "arch=any&fmt=npm-wrapper&os=any&project=myapp&v=1", "arch=any&fmt=npm-wrapper&os=any&project=myapp&v=1"},
 		{"empty", "", ""},
 		{"only unknown", "foo=bar&baz=qux", ""},
 	}
@@ -40,22 +45,25 @@ func TestCanonicalQuery(t *testing.T) {
 }
 
 func TestURL(t *testing.T) {
-	u := URL("https://example.com", For("myapp").WithVersion("1.0.0").WithOS("linux").WithArch("amd64").WithFmt("raw"))
-	assert.Equal(t, "https://example.com/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", u)
+	base, _ := url.Parse("https://example.com")
+	u := URL(base, For("myapp").WithVersion("1.0.0").WithOS("linux").WithArch("amd64").WithFmt("raw"))
+	assert.Equal(t, "https://example.com/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", u)
 }
 
 func TestURL_WithDebug(t *testing.T) {
-	u := URL("https://example.com", For("myapp").WithVersion("1").WithOS("linux").WithArch("amd64").WithFmt("raw").WithDebug(true))
-	assert.Equal(t, "https://example.com/static?arch=amd64&debug=1&fmt=raw&id=myapp&os=linux&v=1", u)
+	base, _ := url.Parse("https://example.com")
+	u := URL(base, For("myapp").WithVersion("1").WithOS("linux").WithArch("amd64").WithFmt("raw").WithDebug(true))
+	assert.Equal(t, "https://example.com/file?arch=amd64&debug=1&fmt=raw&os=linux&project=myapp&v=1", u)
 }
 
 func TestURL_ParamsSorted(t *testing.T) {
-	u := URL("", For("z-project").WithVersion("9").WithOS("darwin").WithArch("arm64").WithFmt("npm"))
-	assert.Equal(t, "/static?arch=arm64&fmt=npm&id=z-project&os=darwin&v=9", u)
+	base, _ := url.Parse("")
+	u := URL(base, For("z-project").WithVersion("9").WithOS("darwin").WithArch("arm64").WithFmt("npm"))
+	assert.Equal(t, "/file?arch=arm64&fmt=npm&os=darwin&project=z-project&v=9", u)
 }
 
 func TestServe_MissingVersion(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?arch=amd64&id=myapp&os=linux", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&os=linux&project=myapp", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
@@ -63,7 +71,7 @@ func TestServe_MissingVersion(t *testing.T) {
 }
 
 func TestServe_LatestVersion(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?arch=amd64&id=myapp&os=linux&v=latest", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&os=linux&project=myapp&v=latest", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
@@ -71,7 +79,7 @@ func TestServe_LatestVersion(t *testing.T) {
 }
 
 func TestServe_MissingOSArch(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?id=myapp&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?project=myapp&v=1.0.0", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
@@ -79,7 +87,7 @@ func TestServe_MissingOSArch(t *testing.T) {
 }
 
 func TestServe_UnsupportedFormat(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=nonexistent&id=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=nonexistent&os=linux&project=myapp&v=1.0.0", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
@@ -87,17 +95,17 @@ func TestServe_UnsupportedFormat(t *testing.T) {
 }
 
 func TestServe_CanonicalRedirect(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?v=1&id=myapp&os=linux&arch=amd64&fmt=raw", nil)
+	req := httptest.NewRequest("GET", "/file?v=1&project=myapp&os=linux&arch=amd64&fmt=raw", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
 	assert.Equal(t, http.StatusMovedPermanently, rec.Code)
 	loc := rec.Header().Get("Location")
-	assert.Contains(t, loc, "arch=amd64&fmt=raw&id=myapp&os=linux&v=1")
+	assert.Contains(t, loc, "arch=amd64&fmt=raw&os=linux&project=myapp&v=1")
 }
 
 func TestServe_StripsUnknownParams(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&garbage=yes&id=myapp&os=linux&v=1", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&garbage=yes&os=linux&project=myapp&v=1", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
 	h.Serve(rec, req)
@@ -105,7 +113,6 @@ func TestServe_StripsUnknownParams(t *testing.T) {
 	loc := rec.Header().Get("Location")
 	assert.NotContains(t, loc, "garbage")
 }
-
 
 func TestFmtRegistry(t *testing.T) {
 	_, ok := LookupFmt("raw")
@@ -142,7 +149,8 @@ func setupIntegration(t *testing.T) (*staticHandler, *db.DB, *storage.Filesystem
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	return &staticHandler{DB: d, Store: store, BaseURL: "http://localhost:8080"}, d, store
+	h := &staticHandler{DB: d, Store: store, TmpDir: t.TempDir()}
+	return h, d, store
 }
 
 func withProject(r *http.Request, p *db.Project) *http.Request {
@@ -167,7 +175,7 @@ func TestServe_RawFormat_Success(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -176,6 +184,109 @@ func TestServe_RawFormat_Success(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "hello-binary")
 	assert.NotEmpty(t, rec.Header().Get("ETag"))
 	assert.Equal(t, "public, max-age=31536000, immutable", rec.Header().Get("Cache-Control"))
+}
+
+func TestServe_RawFormat_ZstdPassthrough(t *testing.T) {
+	h, d, store := setupIntegration(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	content := "hello-binary-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	key, size, err := store.Put(ctx, strings.NewReader(content))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	// A client that accepts zstd gets the stored blob passed through untouched.
+	// debug=1 disables stripping (shouldStrip=false) so the passthrough path is
+	// exercised deterministically even where the strip tool is installed; in the
+	// distroless production image strip is unavailable, so plain raw downloads take
+	// this same path. Query is in canonical order to avoid a 301 normalization hop.
+	req := httptest.NewRequest("GET", "/file?arch=amd64&debug=1&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
+	req.Header.Set("Accept-Encoding", "zstd")
+	req = withProject(req, proj)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "zstd", rec.Header().Get("Content-Encoding"))
+	assert.Equal(t, "Accept-Encoding", rec.Header().Get("Vary"))
+
+	body := rec.Body.Bytes()
+	assert.Equal(t, fmt.Sprintf("%d", len(body)), rec.Header().Get("Content-Length"))
+	// The body is a real zstd stream that decodes to the artifact: the server
+	// shipped compressed bytes without decompressing them.
+	zr, err := zstd.NewReader(bytes.NewReader(body))
+	require.NoError(t, err)
+	defer zr.Close()
+	got, err := io.ReadAll(zr)
+	require.NoError(t, err)
+	assert.Equal(t, content, string(got))
+}
+
+func TestServe_RawFormat_IdentityWhenZstdNotAccepted(t *testing.T) {
+	h, d, store := setupIntegration(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	content := "plain-identity-binary"
+	key, size, err := store.Put(ctx, strings.NewReader(content))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	// A client that does not list zstd gets the decompressed bytes; Vary is still
+	// set so a shared cache keys the two representations separately. debug=1 keeps
+	// the path deterministic where strip is installed (canonical query order).
+	req := httptest.NewRequest("GET", "/file?arch=amd64&debug=1&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
+	req.Header.Set("Accept-Encoding", "gzip, deflate")
+	req = withProject(req, proj)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Empty(t, rec.Header().Get("Content-Encoding"))
+	assert.Equal(t, "Accept-Encoding", rec.Header().Get("Vary"))
+	assert.Equal(t, content, rec.Body.String())
+}
+
+func TestServe_DockerArtifact_NotServed(t *testing.T) {
+	h, d, store := setupIntegration(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1", VersionNum: 1}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, strings.NewReader("oci-manifest-json"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindDocker, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	// A docker image is OCI-only; /static must not serve it as a raw download.
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=ollama&v=1", nil)
+	req = withProject(req, proj)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
 func TestServe_ETag_NotModified(t *testing.T) {
@@ -195,14 +306,14 @@ func TestServe_ETag_NotModified(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
 	etag := rec.Header().Get("ETag")
 	require.NotEmpty(t, etag)
 
-	req2 := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
+	req2 := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req2 = withProject(req2, proj)
 	req2.Header.Set("If-None-Match", etag)
 	rec2 := httptest.NewRecorder()
@@ -217,7 +328,7 @@ func TestServe_VersionNotFound(t *testing.T) {
 	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=9.9.9", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=9.9.9", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -234,7 +345,7 @@ func TestServe_ArtifactNotFound(t *testing.T) {
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -258,7 +369,7 @@ func TestServe_VersionResolution_StripV(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=v2.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=v2.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -282,7 +393,7 @@ func TestServe_VersionResolution_StripDotZeroZero(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=5.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=5.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -299,7 +410,7 @@ func TestServe_AnyOSArch(t *testing.T) {
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
-	req := httptest.NewRequest("GET", "/static?arch=any&fmt=raw&id=myapp&os=any&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=any&fmt=raw&os=any&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -323,7 +434,7 @@ func TestServe_DebugSymbolsHeader(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -335,20 +446,21 @@ func TestServe_DebugSymbolsHeader(t *testing.T) {
 func TestRedirect(t *testing.T) {
 	req := httptest.NewRequest("GET", "/dl/myapp/1.0.0/linux/amd64", nil)
 	rec := httptest.NewRecorder()
-	Redirect(rec, req, "https://example.com", For("myapp").WithVersion("1.0.0").WithOS("linux").WithArch("amd64").WithFmt("raw"))
+	base, _ := url.Parse("https://example.com")
+	Redirect(rec, req, base, For("myapp").WithVersion("1.0.0").WithOS("linux").WithArch("amd64").WithFmt("raw"), http.StatusFound)
 	assert.Equal(t, http.StatusFound, rec.Code)
 	loc := rec.Header().Get("Location")
-	assert.Equal(t, "https://example.com/static?arch=amd64&fmt=raw&id=myapp&os=linux&v=1.0.0", loc)
+	assert.Equal(t, "https://example.com/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", loc)
 }
 
 func TestParseRoute_ExtractsID(t *testing.T) {
-	req := httptest.NewRequest("GET", "/static?id=myapp&v=1", nil)
+	req := httptest.NewRequest("GET", "/file?project=myapp&v=1", nil)
 	ri := parseRoute(req)
 	assert.Equal(t, "myapp", ri.ProjectName())
 
-	req2 := httptest.NewRequest("GET", "/static?id=@buildhost/myapp&v=1", nil)
+	req2 := httptest.NewRequest("GET", "/file?project=other-app&v=1", nil)
 	ri2 := parseRoute(req2)
-	assert.Equal(t, "myapp", ri2.ProjectName(), "strips @buildhost/ prefix")
+	assert.Equal(t, "other-app", ri2.ProjectName())
 }
 
 func TestRoute_Access(t *testing.T) {
@@ -373,7 +485,7 @@ func TestServe_SymbolsFormat_NoStrip(t *testing.T) {
 		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
 	}))
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=symbols&id=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=symbols&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -399,7 +511,7 @@ func TestServe_RepackageFormat(t *testing.T) {
 
 	RegisterRepackageFmt("tar.gz")
 
-	req := httptest.NewRequest("GET", "/static?arch=amd64&fmt=tar.gz&id=myapp&os=linux&v=1.0.0", nil)
+	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=tar.gz&os=linux&project=myapp&v=1.0.0", nil)
 	req = withProject(req, proj)
 	rec := httptest.NewRecorder()
 	h.Serve(rec, req)
@@ -453,4 +565,29 @@ func TestResolveVersion_AutoVersioning(t *testing.T) {
 	r, err = resolveVersion(ctx, d, proj.ID, "7.0.0")
 	require.NoError(t, err)
 	assert.Equal(t, "7", r.Version)
+}
+
+func TestAcceptsZstd(t *testing.T) {
+	tests := []struct {
+		accept string
+		want   bool
+	}{
+		{"zstd", true},
+		{"gzip, deflate, br, zstd", true},
+		{"zstd;q=0.5", true},
+		{"ZSTD", true},
+		{" zstd ", true},
+		{"", false},
+		{"gzip, deflate", false},
+		{"gzip", false},
+		{"zstd;q=0", false},
+		{"zstd;q=0.0", false},
+		{"*", false}, // a bare "*" must not earn zstd; the client must name it
+		{"identity", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.accept, func(t *testing.T) {
+			assert.Equal(t, tt.want, acceptsZstd(tt.accept))
+		})
+	}
 }

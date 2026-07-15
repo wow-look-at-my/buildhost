@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 // withRoute adds project and route info to the request context, simulating
@@ -33,7 +33,9 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, BaseURL: "http://localhost:8080"}
+	require.NoError(t, err)
+
+	h := &Handler{DB: d}
 	return h, d, store
 }
 
@@ -106,41 +108,25 @@ func seedArtifactWithStripped(t *testing.T, d *db.DB, store *storage.Filesystem,
 	return a
 }
 
-// makeRequest creates a request with path values set using the Go 1.22+ mux pattern.
-func makeDownloadRequest(project, version, os, arch string) *http.Request {
-	req := httptest.NewRequest("GET", "/dl/"+project+"/"+version+"/"+os+"/"+arch, nil)
+// makeRequest creates a GET request for the single Download handler using
+// query params (?v=, ?branch=, ?os=, ?arch=, ?fmt=).
+func makeRequest(project string, params url.Values) *http.Request {
+	req := httptest.NewRequest("GET", "/dl/"+project, nil)
 	req.SetPathValue("project", project)
-	req.SetPathValue("version", version)
-	req.SetPathValue("os", os)
-	req.SetPathValue("arch", arch)
+	req.URL.RawQuery = params.Encode()
 	return req
 }
 
-func makeLatestRequest(project, os, arch string) *http.Request {
-	req := httptest.NewRequest("GET", "/dl/"+project+"/latest/"+os+"/"+arch, nil)
-	req.SetPathValue("project", project)
-	req.SetPathValue("os", os)
-	req.SetPathValue("arch", arch)
-	return req
-}
-
-func makeBranchRequest(project, branch, os, arch string) *http.Request {
-	req := httptest.NewRequest("GET", "/dl/"+project+"/branch/"+branch+"/"+os+"/"+arch, nil)
-	req.SetPathValue("project", project)
-	req.SetPathValue("branch", branch)
-	req.SetPathValue("os", os)
-	req.SetPathValue("arch", arch)
-	return req
-}
-
-// requireRedirect asserts 302 with a Location containing "/static?" and returns
+// requireRedirect asserts 302 or 301 with a Location containing "/file?" and returns
 // the parsed query params from the redirect URL for further assertions.
 func requireRedirect(t *testing.T, rec *httptest.ResponseRecorder) url.Values {
 	t.Helper()
-	assert.Equal(t, http.StatusFound, rec.Code)
+	code := rec.Code
+	assert.True(t, code == http.StatusFound || code == http.StatusMovedPermanently,
+		"expected 302 or 301, got %d", code)
 	loc := rec.Header().Get("Location")
 	require.NotEmpty(t, loc, "expected Location header on redirect")
-	assert.Contains(t, loc, "/static?")
+	assert.Contains(t, loc, "/file?")
 	u, err := url.Parse(loc)
 	require.NoError(t, err)
 	return u.Query()
@@ -149,16 +135,16 @@ func requireRedirect(t *testing.T, rec *httptest.ResponseRecorder) url.Values {
 func TestDownload_Success_RawBinary(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
-	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
+	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
 	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "binary-content-here")
 
-	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
-	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
+	req := makeRequest("myapp", url.Values{"v": {"1.0.0"}, "os": {"linux"}, "arch": {"amd64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
 	q := requireRedirect(t, rec)
-	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "myapp", q.Get("project"))
 	assert.Equal(t, "1.0.0", q.Get("v"))
 	assert.Equal(t, "linux", q.Get("os"))
 	assert.Equal(t, "amd64", q.Get("arch"))
@@ -171,13 +157,13 @@ func TestDownload_Success_RawFallsBackWhenStripFails(t *testing.T) {
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
 	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "not-an-elf")
 
-	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
-	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
+	req := makeRequest("myapp", url.Values{"v": {"1.0.0"}, "os": {"linux"}, "arch": {"amd64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
 	q := requireRedirect(t, rec)
-	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "myapp", q.Get("project"))
 	assert.Equal(t, "1.0.0", q.Get("v"))
 	assert.Equal(t, "raw", q.Get("fmt"))
 }
@@ -188,14 +174,13 @@ func TestDownload_DebugReturns404WhenStripFails(t *testing.T) {
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
 	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "not-an-elf")
 
-	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
-	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
-	req.URL.RawQuery = "debug=1"
+	req := makeRequest("myapp", url.Values{"v": {"1.0.0"}, "os": {"linux"}, "arch": {"amd64"}, "debug": {"1"}})
+	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
 	q := requireRedirect(t, rec)
-	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "myapp", q.Get("project"))
 	assert.Equal(t, "1.0.0", q.Get("v"))
 	assert.Equal(t, "1", q.Get("debug"))
 }
@@ -206,14 +191,13 @@ func TestDownload_DebugFlag_NoDebugAvailable(t *testing.T) {
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
 	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "binary-content")
 
-	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
-	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
-	req.URL.RawQuery = "debug=1"
+	req := makeRequest("myapp", url.Values{"v": {"1.0.0"}, "os": {"linux"}, "arch": {"amd64"}, "debug": {"1"}})
+	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
 	q := requireRedirect(t, rec)
-	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "myapp", q.Get("project"))
 	assert.Equal(t, "1.0.0", q.Get("v"))
 	assert.Equal(t, "1", q.Get("debug"))
 }
@@ -224,14 +208,13 @@ func TestDownload_Success_TarGzFormat(t *testing.T) {
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
 	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "binary-content")
 
-	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
-	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
-	req.URL.RawQuery = "format=tar.gz"
+	req := makeRequest("myapp", url.Values{"v": {"1.0.0"}, "os": {"linux"}, "arch": {"amd64"}, "fmt": {"tar.gz"}})
+	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
 	q := requireRedirect(t, rec)
-	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "myapp", q.Get("project"))
 	assert.Equal(t, "1.0.0", q.Get("v"))
 	assert.Equal(t, "linux", q.Get("os"))
 	assert.Equal(t, "amd64", q.Get("arch"))
@@ -244,14 +227,13 @@ func TestDownload_FormatNotAvailable(t *testing.T) {
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
 	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "binary-content")
 
-	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
-	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
-	req.URL.RawQuery = "format=nonexistent"
+	req := makeRequest("myapp", url.Values{"v": {"1.0.0"}, "os": {"linux"}, "arch": {"amd64"}, "fmt": {"nonexistent"}})
+	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
 	q := requireRedirect(t, rec)
-	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "myapp", q.Get("project"))
 	assert.Equal(t, "1.0.0", q.Get("v"))
 	assert.Equal(t, "nonexistent", q.Get("fmt"))
 }
@@ -259,18 +241,20 @@ func TestDownload_FormatNotAvailable(t *testing.T) {
 func TestDownload_LatestVersion(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
-	seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	rel2 := seedRelease(t, d, proj.ID, "2.0.0", "main", true)
-	seedArtifact(t, d, store, rel2.ID, "linux", "amd64", "v2-binary")
+	rel1 := seedRelease(t, d, proj.ID, "1.0.0", "master", true)
+	seedRelease(t, d, proj.ID, "2.0.0", "feature-x", true)
+	seedArtifact(t, d, store, rel1.ID, "linux", "amd64", "v1-binary")
 
-	req := makeDownloadRequest("myapp", "latest", "linux", "amd64")
-	req = withRoute(req, proj, route{project: "myapp", version: "latest", os: "linux", arch: "amd64"})
+	// No ?v= and no ?branch= -> resolves latest on master, not the newest
+	// feature-branch version.
+	req := makeRequest("myapp", url.Values{"os": {"linux"}, "arch": {"amd64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
 	q := requireRedirect(t, rec)
-	assert.Equal(t, "myapp", q.Get("id"))
-	assert.Equal(t, "2.0.0", q.Get("v"))
+	assert.Equal(t, "myapp", q.Get("project"))
+	assert.Equal(t, "1.0.0", q.Get("v"))
 	assert.Equal(t, "linux", q.Get("os"))
 	assert.Equal(t, "amd64", q.Get("arch"))
 	assert.Equal(t, "raw", q.Get("fmt"))
@@ -280,8 +264,8 @@ func TestDownload_ReleaseNotFound(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 
-	req := makeDownloadRequest("myapp", "9.9.9", "linux", "amd64")
-	req = withRoute(req, proj, route{project: "myapp", version: "9.9.9", os: "linux", arch: "amd64"})
+	req := makeRequest("myapp", url.Values{"v": {"9.9.9"}, "os": {"linux"}, "arch": {"amd64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
@@ -293,15 +277,15 @@ func TestDownload_ArtifactNotFound(t *testing.T) {
 	proj := seedProject(t, d, "myapp", false)
 	seedRelease(t, d, proj.ID, "1.0.0", "main", true)
 
-	req := makeDownloadRequest("myapp", "1.0.0", "linux", "amd64")
-	req = withRoute(req, proj, route{project: "myapp", version: "1.0.0", os: "linux", arch: "amd64"})
+	req := makeRequest("myapp", url.Values{"v": {"1.0.0"}, "os": {"linux"}, "arch": {"amd64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
 	// dl handler only resolves release/version, then redirects; artifact
 	// resolution now happens at /static.
 	q := requireRedirect(t, rec)
-	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "myapp", q.Get("project"))
 	assert.Equal(t, "1.0.0", q.Get("v"))
 	assert.Equal(t, "linux", q.Get("os"))
 	assert.Equal(t, "amd64", q.Get("arch"))
@@ -311,74 +295,76 @@ func TestDownload_ArtifactNotFound(t *testing.T) {
 // Note: Private project auth (unauthorized, wrong token, etc.) is tested via
 // requireProject middleware in the auth package.
 
-func TestDownloadLatest_Success(t *testing.T) {
+func TestDownload_Latest_Success(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
-	seedRelease(t, d, proj.ID, "1.0.0", "main", true)
-	rel2 := seedRelease(t, d, proj.ID, "2.0.0", "main", true)
+	seedRelease(t, d, proj.ID, "1.0.0", "master", true)
+	rel2 := seedRelease(t, d, proj.ID, "2.0.0", "master", true)
 	seedArtifact(t, d, store, rel2.ID, "darwin", "arm64", "latest-darwin-binary")
 
-	req := makeLatestRequest("myapp", "darwin", "arm64")
-	req = withRoute(req, proj, route{project: "myapp", os: "darwin", arch: "arm64"})
+	// No ?v= and no ?branch= -> resolves latest
+	req := makeRequest("myapp", url.Values{"os": {"darwin"}, "arch": {"arm64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
-	h.DownloadLatest(rec, req)
+	h.Download(rec, req)
 
 	q := requireRedirect(t, rec)
-	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "myapp", q.Get("project"))
 	assert.Equal(t, "2.0.0", q.Get("v"))
 	assert.Equal(t, "darwin", q.Get("os"))
 	assert.Equal(t, "arm64", q.Get("arch"))
 	assert.Equal(t, "raw", q.Get("fmt"))
 }
 
-func TestDownloadLatest_NoPublishedReleases(t *testing.T) {
+func TestDownload_Latest_NoPublishedReleases(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	// Create an unpublished release.
-	seedRelease(t, d, proj.ID, "1.0.0-rc1", "main", false)
+	seedRelease(t, d, proj.ID, "1.0.0-rc1", "master", false)
 
-	req := makeLatestRequest("myapp", "linux", "amd64")
-	req = withRoute(req, proj, route{project: "myapp", os: "linux", arch: "amd64"})
+	// No ?v= and no ?branch= -> resolves latest
+	req := makeRequest("myapp", url.Values{"os": {"linux"}, "arch": {"amd64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
-	h.DownloadLatest(rec, req)
+	h.Download(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-func TestDownloadBranch_Success(t *testing.T) {
+func TestDownload_Branch_Success(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	seedRelease(t, d, proj.ID, "1.0.0", "main", true)
 	rel := seedRelease(t, d, proj.ID, "1.1.0-dev", "feature-x", true)
 	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "feature-branch-binary")
 
-	req := makeBranchRequest("myapp", "feature-x", "linux", "amd64")
-	req = withRoute(req, proj, route{project: "myapp", branch: "feature-x", os: "linux", arch: "amd64"})
+	req := makeRequest("myapp", url.Values{"branch": {"feature-x"}, "os": {"linux"}, "arch": {"amd64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
-	h.DownloadBranch(rec, req)
+	h.Download(rec, req)
 
 	q := requireRedirect(t, rec)
-	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "myapp", q.Get("project"))
 	assert.Equal(t, "1.1.0-dev", q.Get("v"))
 	assert.Equal(t, "linux", q.Get("os"))
 	assert.Equal(t, "amd64", q.Get("arch"))
 	assert.Equal(t, "raw", q.Get("fmt"))
 }
 
-func TestDownloadBranch_BranchNotFound(t *testing.T) {
+func TestDownload_Branch_BranchNotFound(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	seedRelease(t, d, proj.ID, "1.0.0", "main", true)
 
-	req := makeBranchRequest("myapp", "nonexistent-branch", "linux", "amd64")
-	req = withRoute(req, proj, route{project: "myapp", branch: "nonexistent-branch", os: "linux", arch: "amd64"})
+	req := makeRequest("myapp", url.Values{"branch": {"nonexistent-branch"}, "os": {"linux"}, "arch": {"amd64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
-	h.DownloadBranch(rec, req)
+	h.Download(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-func TestDownloadBranch_ResolvesLatestOnBranch(t *testing.T) {
+func TestDownload_Branch_ResolvesLatestOnBranch(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -386,15 +372,141 @@ func TestDownloadBranch_ResolvesLatestOnBranch(t *testing.T) {
 	rel3 := seedRelease(t, d, proj.ID, "1.2.0", "main", true)
 	seedArtifact(t, d, store, rel3.ID, "linux", "amd64", "latest-main-binary")
 
-	req := makeBranchRequest("myapp", "main", "linux", "amd64")
-	req = withRoute(req, proj, route{project: "myapp", branch: "main", os: "linux", arch: "amd64"})
+	req := makeRequest("myapp", url.Values{"branch": {"main"}, "os": {"linux"}, "arch": {"amd64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
-	h.DownloadBranch(rec, req)
+	h.Download(rec, req)
 
 	q := requireRedirect(t, rec)
-	assert.Equal(t, "myapp", q.Get("id"))
+	assert.Equal(t, "myapp", q.Get("project"))
 	assert.Equal(t, "1.2.0", q.Get("v"))
 	assert.Equal(t, "linux", q.Get("os"))
 	assert.Equal(t, "amd64", q.Get("arch"))
 	assert.Equal(t, "raw", q.Get("fmt"))
+}
+
+func TestDownload_MissingOSAndArch(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "myapp", false)
+	seedRelease(t, d, proj.ID, "1.0.0", "main", true)
+
+	req := makeRequest("myapp", url.Values{"v": {"1.0.0"}})
+	req = withRoute(req, proj, route{project: "myapp"})
+	rec := httptest.NewRecorder()
+	h.Download(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestDownload_Latest_NoStore(t *testing.T) {
+	h, d, store := setupTest(t)
+	proj := seedProject(t, d, "myapp", false)
+	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
+	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "bin")
+
+	// "latest" is a mutable pointer: the redirect must not be cached.
+	req := makeRequest("myapp", url.Values{"os": {"linux"}, "arch": {"amd64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
+	rec := httptest.NewRecorder()
+	h.Download(rec, req)
+
+	assert.Equal(t, http.StatusFound, rec.Code)
+	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+}
+
+func TestDownload_ExactVersion_Immutable(t *testing.T) {
+	h, d, store := setupTest(t)
+	proj := seedProject(t, d, "myapp", false)
+	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
+	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "bin")
+
+	// An exact version is immutable: the redirect itself is safe to cache forever.
+	req := makeRequest("myapp", url.Values{"v": {"1.0.0"}, "os": {"linux"}, "arch": {"amd64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
+	rec := httptest.NewRecorder()
+	h.Download(rec, req)
+
+	assert.Equal(t, http.StatusMovedPermanently, rec.Code)
+	assert.Contains(t, rec.Header().Get("Cache-Control"), "immutable")
+}
+
+func TestDownload_PrivateProjectRedirectCarriesSignedToken(t *testing.T) {
+	h, d, store := setupTest(t)
+	proj := seedProject(t, d, "secretapp", true)
+	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
+	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "bin")
+
+	// The route is ReadAccess-gated, so reaching the handler means the caller
+	// authenticated. Clients drop the Authorization header on the cross-host
+	// redirect to static, so the Location must authorize itself: a signed
+	// token bound to exactly this artifact tuple.
+	req := makeRequest("secretapp", url.Values{
+		"v": {"1.0.0"}, "os": {"linux"}, "arch": {"amd64"}, "fmt": {"tar.gz"},
+	})
+	req = withRoute(req, proj, route{project: "secretapp"})
+	rec := httptest.NewRecorder()
+	h.Download(rec, req)
+
+	// Never a permanent, never a cacheable redirect: the Location embeds a
+	// live short-lived credential.
+	assert.Equal(t, http.StatusFound, rec.Code)
+	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+
+	q := requireRedirect(t, rec)
+	tok := q.Get("token")
+	require.NotEmpty(t, tok, "private redirect must carry a signed download token")
+	assert.True(t, strings.HasPrefix(tok, "bhdl_"), "token %q must be a signed download token", tok)
+	assert.True(t, auth.VerifyDownloadToken(tok, "secretapp", "1.0.0", "linux", "amd64", "tar.gz", false),
+		"token must verify for the exact redirected artifact tuple")
+	assert.False(t, auth.VerifyDownloadToken(tok, "secretapp", "1.0.0", "linux", "arm64", "tar.gz", false),
+		"token must not verify for any other tuple")
+}
+
+func TestDownload_PrivateLatestRedirectAlsoSigned(t *testing.T) {
+	h, d, store := setupTest(t)
+	proj := seedProject(t, d, "secretapp", true)
+	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
+	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "bin")
+
+	req := makeRequest("secretapp", url.Values{"os": {"linux"}, "arch": {"amd64"}})
+	req = withRoute(req, proj, route{project: "secretapp"})
+	rec := httptest.NewRecorder()
+	h.Download(rec, req)
+
+	assert.Equal(t, http.StatusFound, rec.Code)
+	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+	q := requireRedirect(t, rec)
+	assert.True(t, auth.VerifyDownloadToken(q.Get("token"), "secretapp", "1.0.0", "linux", "amd64", "raw", false))
+}
+
+func TestDownload_PublicProjectRedirectStaysTokenFree(t *testing.T) {
+	h, d, store := setupTest(t)
+	proj := seedProject(t, d, "myapp", false)
+	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
+	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "bin")
+
+	req := makeRequest("myapp", url.Values{"v": {"1.0.0"}, "os": {"linux"}, "arch": {"amd64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
+	rec := httptest.NewRecorder()
+	h.Download(rec, req)
+
+	q := requireRedirect(t, rec)
+	assert.Empty(t, q.Get("token"), "public redirects must stay cacheable and token-free")
+}
+
+func TestDownload_NormalizesPlatformAliases(t *testing.T) {
+	h, d, store := setupTest(t)
+	proj := seedProject(t, d, "myapp", false)
+	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
+	seedArtifact(t, d, store, rel.ID, "darwin", "amd64", "bin")
+
+	// GitHub Actions' RUNNER_OS / RUNNER_ARCH spellings must resolve natively.
+	req := makeRequest("myapp", url.Values{"v": {"1.0.0"}, "os": {"macOS"}, "arch": {"X64"}})
+	req = withRoute(req, proj, route{project: "myapp"})
+	rec := httptest.NewRecorder()
+	h.Download(rec, req)
+
+	q := requireRedirect(t, rec)
+	assert.Equal(t, "darwin", q.Get("os"))
+	assert.Equal(t, "amd64", q.Get("arch"))
 }
