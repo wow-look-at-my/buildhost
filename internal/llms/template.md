@@ -34,8 +34,9 @@ buildhost uses bearer tokens. Provide one in whichever way your client allows:
 
 - HTTP header: `Authorization: Bearer <token>`
 - HTTP Basic auth: send the token as the password (the username is ignored)
-- Query parameter: `?token=<token>` (for clients that cannot set headers, such
-  as some APT and Homebrew flows)
+- Query parameter: `?token=<token>` (for clients that cannot set headers,
+  such as some APT flows; git -- and therefore `brew tap` -- cannot use it,
+  see the Homebrew section for the private-tap mechanism)
 
 Tokens are global or scoped to a single project, and carry `read` and/or
 `write` scopes. The default scope is `read` (least privilege). GitHub Actions
@@ -152,12 +153,38 @@ For a slash-namespaced project the repository URL keeps the slash, but the
 Debian package name folds `/` and `_` to `-` (for example, `myrepo/server` is
 served at `__APT_URL__/myrepo/server` and installs as `myrepo-server`).
 
-Homebrew (tap the generated Git repository, then install the formula):
+Homebrew (tap the generated Git repository, trust it -- required since
+Homebrew 6.0 -- then install; on Linux the bottle-less install runs Homebrew's
+build sandbox, which needs bubblewrap and unprivileged user namespaces, or
+`HOMEBREW_NO_SANDBOX_LINUX=1` in containers/CI without them):
 
 ```
 brew tap pazer/build __BREW_URL__/tap.git
-brew install pazer/build/myapp
+brew trust pazer/build
+brew install pazer/build/go-toolchain
 ```
+
+For a private project, tap the authenticated tap instead: it contains every
+public formula plus the private projects the token can read (git transmits
+credentials only after a challenge, so they ride the tap URL as the HTTP
+Basic password; it replaces the public tap -- `brew untap --force pazer/build`
+first if that was added), and export `HOMEBREW_BUILDHOST_TOKEN` so the
+formula's download strategy can authenticate the artifact fetch. The
+`?token=` query parameter cannot be used with `brew tap` -- git appends its
+own path segments after the query string. Example for a private project
+named `myrepo/myapp`:
+
+```
+brew tap pazer/build "__BREW_TOKEN_URL__/private/tap.git"
+brew trust pazer/build
+export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
+brew install pazer/build/myrepo-myapp
+```
+
+A slash-namespaced project folds `/` to `-` in its formula name (the same
+rule as APT package names), and the installed command keeps the binary's own
+name: `myrepo/myapp` installs as `brew install pazer/build/myrepo-myapp` and
+puts `myapp` on PATH.
 
 npm (packages are published under the `@buildhost` scope):
 
@@ -213,8 +240,9 @@ GET    /healthz                                                              hea
   chunked upload session (see "Publishing with the REST API"); a single
   request that big is rejected by the proxy in front of the server before it
   reaches buildhost.
-- For private projects, send the auth token on every request, including the
-  APT, Homebrew, npm, and OCI endpoints.
+- For private projects, send the auth token on every request. The APT, npm,
+  and OCI endpoints accept it directly; Homebrew needs the authenticated tap
+  plus `HOMEBREW_BUILDHOST_TOKEN` (see "Package managers").
 - `GET __BASE_URL__/healthz` returns 200 when the server and its database are
   reachable.
 - The human-readable README is the authoritative reference for configuration,

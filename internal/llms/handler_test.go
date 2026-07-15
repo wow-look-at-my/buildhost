@@ -24,7 +24,13 @@ func TestServe_RendersBaseURL(t *testing.T) {
 	assert.Contains(t, body, "https://dl.pazer.build/myapp")
 	assert.Contains(t, body, "https://pazer.build/llms.txt")
 	assert.Contains(t, body, "brew tap pazer/build https://brew.pazer.build/tap.git")
-	assert.Contains(t, body, "brew install pazer/build/myapp")
+	assert.Contains(t, body, "brew trust pazer/build")
+	assert.Contains(t, body, "brew install pazer/build/go-toolchain")
+	// The authenticated-tap URL macro renders scheme + creds placeholder +
+	// brew host; "$TOKEN" stays a literal shell placeholder for the reader.
+	assert.Contains(t, body, `brew tap pazer/build "https://x:$TOKEN@brew.pazer.build/private/tap.git"`)
+	assert.Contains(t, body, "brew install pazer/build/myrepo-myapp")
+	assert.NotContains(t, body, "__BREW_TOKEN_URL__")
 	assert.NotContains(t, body, "brew install https://brew.pazer.build/myapp")
 	assert.Contains(t, body, "docker pull oci.pazer.build/myapp:latest")
 	assert.NotContains(t, body, "__BASE_URL__")
