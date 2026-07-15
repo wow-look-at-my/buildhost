@@ -13,6 +13,12 @@ SELECT id, release_id, os, arch, kind, storage_key, size, sha256,
        debug_storage_key, debug_size, filename, created_at
 FROM artifacts WHERE release_id = ? AND os = ? AND arch = ?;
 
+-- name: GetArtifactByReleaseAndKind :one
+SELECT id, release_id, os, arch, kind, storage_key, size, sha256,
+       stripped_storage_key, stripped_size, stripped_sha256,
+       debug_storage_key, debug_size, filename, created_at
+FROM artifacts WHERE release_id = ? AND kind = ?;
+
 -- name: ListArtifactsByRelease :many
 SELECT id, release_id, os, arch, kind, storage_key, size, sha256,
        stripped_storage_key, stripped_size, stripped_sha256,

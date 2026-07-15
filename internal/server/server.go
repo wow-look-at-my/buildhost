@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/buildhost/internal/uploads"
 )
 
 var healthDB *db.DB
@@ -34,7 +36,12 @@ type Server struct {
 }
 
 func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
-	auth.Init(database, store, cfg.DataDir, cfg.OIDCIssuers, cfg.OIDCOrgs, cfg.OIDCEvents, cfg.SiteFetchDomains)
+	auth.Init(database, store, cfg.DataDir, cfg.OIDCIssuers, cfg.OIDCOrgs, cfg.OIDCEvents, cfg.SiteFetchDomains, cfg.GitHubWebhookSecret, cfg.GitHubClientID, cfg.GitHubClientSecret)
+	auth.SetGitHubToken(cfg.GitHubToken)
+	if err := auth.SetGitHubApp(cfg.GitHubAppID, cfg.GitHubAppPrivateKey); err != nil {
+		// Non-fatal: default-branch lookups fall back to the PAT/anonymous path.
+		slog.Error("GitHub App auth disabled (default-branch lookups degrade to PAT/anonymous)", "err", err)
+	}
 	healthDB = database
 
 	auth.HandleRaw("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +92,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) Handler() http.Handler {
 	var h http.Handler = http.HandlerFunc(auth.ServeHTTP)
+	// Between Authenticate (needs the token in context to bind sessions to
+	// their creator) and routing (so every upload endpoint gets the swapped
+	// body transparently): finalize chunked upload sessions by reference.
+	h = uploads.ResolveSessionBody(h)
 	h = auth.GetMiddleware().Authenticate(h)
 	h = admin.TrackInflight(h)
 	h = securityHeaders(h)

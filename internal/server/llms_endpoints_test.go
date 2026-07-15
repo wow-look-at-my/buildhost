@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func routePatternMatches(pattern, path string) bool {
@@ -41,9 +41,50 @@ func TestLLMsTxt_PublicAndRendersBaseURL(t *testing.T) {
 
 	body := string(readBody(t, resp))
 	require.Contains(t, body, "# buildhost")
-	require.Contains(t, body, env.ts.URL+"/dl")
+	// Service URLs are subdomains of the base host (dl.{host}), not paths.
+	require.Contains(t, body, strings.Replace(env.ts.URL, "://", "://dl.", 1))
 	require.NotContains(t, body, "__BASE_URL__")
 	require.NotContains(t, body, "__DL_URL__")
+}
+
+// llmsTxtSubdomains are every service subdomain that must serve /llms.txt
+// directly (in addition to the apex). The router's strict host partitioning
+// means a known subdomain never falls through to the host-agnostic apex route,
+// so /llms.txt has to be registered on each subdomain too.
+var llmsTxtSubdomains = []string{"apt", "brew", "dl", "git", "npm", "oci", "sites", "static"}
+
+func TestLLMsTxt_ServedOnEverySubdomain(t *testing.T) {
+	env := setup(t)
+
+	for _, sub := range llmsTxtSubdomains {
+		t.Run(sub, func(t *testing.T) {
+			resp := env.getSubdomain(t, sub, "/llms.txt")
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.Equal(t, "text/plain; charset=utf-8", resp.Header.Get("Content-Type"))
+
+			body := string(readBody(t, resp))
+			require.Contains(t, body, "# buildhost")
+			// The guide's service URLs always anchor to the apex (test.local),
+			// regardless of which subdomain served it -- never a double-prefixed
+			// host such as dl.oci.test.local.
+			require.Contains(t, body, "https://dl.test.local/myapp")
+			require.Contains(t, body, "docker pull oci.test.local/myapp:latest")
+			require.NotContainsf(t, body, "."+sub+".test.local",
+				"service URLs leaked the %q request subdomain (double-prefixed host)", sub)
+			require.NotContains(t, body, "__BASE_URL__")
+		})
+	}
+}
+
+// docker.{domain} is the registry's legacy alias and 301-redirects everything,
+// including /llms.txt, to the canonical oci.{domain}.
+func TestLLMsTxt_DockerSubdomainRedirectsToOCI(t *testing.T) {
+	env := setup(t)
+
+	resp := env.getSubdomain(t, "docker", "/llms.txt")
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
+	require.Equal(t, "https://oci.test.local/llms.txt", resp.Header.Get("Location"))
 }
 
 func TestLLMsTxt_DocumentedRoutesAreRegistered(t *testing.T) {
@@ -54,21 +95,18 @@ func TestLLMsTxt_DocumentedRoutesAreRegistered(t *testing.T) {
 	require.NotEmpty(t, paths, "expected to extract documented endpoints from /llms.txt")
 
 	allRoutes := auth.AllRoutes()
-	// Every path-style URL in /llms.txt must resolve to a registered route,
-	// including the service paths (/npm, /apt, /brew, /dl, /static, /sites,
-	// /oci), which the main domain redirects to their subdomains. This check
-	// used to be limited to /api + /healthz + /llms.txt, which is precisely how
-	// the path-based npm 404 slipped through.
 	for _, p := range paths {
-		registered := false
-		for _, route := range allRoutes {
-			if routePatternMatches(route.Pattern, p) {
-				registered = true
-				break
+		if strings.HasPrefix(p, "/api/") || p == "/healthz" || p == "/llms.txt" {
+			registered := false
+			for _, route := range allRoutes {
+				if routePatternMatches(route.Pattern, p) {
+					registered = true
+					break
+				}
 			}
+			require.Truef(t, registered,
+				"/llms.txt documents %q but no route is registered for it", p)
 		}
-		require.Truef(t, registered,
-			"/llms.txt documents %q but no route is registered for it", p)
 	}
 }
 
@@ -95,7 +133,11 @@ func TestLLMsTxt_DocumentedFlowsWork(t *testing.T) {
 		{"brew formula", "GET", "brew", "/myapp", false, http.StatusOK},
 		{"apt Release", "GET", "apt", "/myapp/dists/stable/Release", false, http.StatusOK},
 		{"npm metadata", "GET", "npm", "/@buildhost/myapp", false, http.StatusOK},
-		{"oci v2 root", "GET", "oci", "/v2/", false, http.StatusOK},
+		// /v2/ is the OCI auth-discovery endpoint: anonymous -> 401 + challenge,
+		// authenticated -> 200. The documented "docker login then pull" flow
+		// reaches it with credentials. (The anonymous 401 challenge is covered by
+		// the oci package's V2Root unit tests.)
+		{"oci v2 root", "GET", "oci", "/v2/", true, http.StatusOK},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -116,11 +158,17 @@ func seedPublishedRelease(t *testing.T, env *testEnv) {
 	require.Equal(t, http.StatusCreated,
 		env.postJSON(t, "/api/v1/projects", `{"name":"myapp","versioning":"auto"}`).StatusCode)
 	require.Equal(t, http.StatusCreated,
-		env.postJSON(t, "/api/v1/projects/myapp/releases", `{"git_branch":"main","git_commit":"abc123"}`).StatusCode)
+		env.postJSON(t, "/api/v1/projects/myapp/releases", `{"git_branch":"master","git_commit":"abc123"}`).StatusCode)
 	require.Equal(t, http.StatusCreated,
 		env.putBody(t, "/api/v1/projects/myapp/releases/1/artifacts/linux/amd64", []byte("#!/bin/sh\necho hi\n")).StatusCode)
 	require.Equal(t, http.StatusOK,
 		env.postJSON(t, "/api/v1/projects/myapp/releases/1/publish", `{}`).StatusCode)
+	require.Equal(t, http.StatusCreated,
+		env.postJSON(t, "/api/v1/projects/myapp/releases", `{"git_branch":"main","git_commit":"def456"}`).StatusCode)
+	require.Equal(t, http.StatusCreated,
+		env.putBody(t, "/api/v1/projects/myapp/releases/2/artifacts/linux/amd64", []byte("#!/bin/sh\necho branch\n")).StatusCode)
+	require.Equal(t, http.StatusOK,
+		env.postJSON(t, "/api/v1/projects/myapp/releases/2/publish", `{}`).StatusCode)
 }
 
 func documentedPaths(body, baseURL string) []string {

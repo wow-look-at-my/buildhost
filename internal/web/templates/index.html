@@ -1,0 +1,28 @@
+{{define "title"}}buildhost &mdash; projects{{end}}
+{{define "content"}}
+<section class="page-intro">
+  <h1>Projects</h1>
+  <p class="muted">Public projects hosted on this buildhost registry. Each project serves its releases in every packaging format &mdash; raw binary, tarballs, zip, APT, Homebrew, npm, and OCI.</p>
+</section>
+
+{{if .Projects}}
+<ul class="project-list">
+  {{range .Projects}}
+  <li class="project-card">
+    <div class="project-card-head">
+      <a class="project-name" href="{{.URL}}">{{.Name}}</a>
+      {{if .Private}}<span class="badge badge-private">private</span>{{end}}
+    </div>
+    {{if nonEmpty .Description}}<p class="project-desc">{{.Description}}</p>{{end}}
+    <div class="project-meta">
+      <span>{{.ReleaseCount}} release{{if ne .ReleaseCount 1}}s{{end}}</span>
+      <span>{{.ArtifactCount}} artifact{{if ne .ArtifactCount 1}}s{{end}}</span>
+      {{if nonEmpty .Updated}}<span>updated {{.Updated}}</span>{{end}}
+    </div>
+  </li>
+  {{end}}
+</ul>
+{{else}}
+<p class="empty">No public projects yet.</p>
+{{end}}
+{{end}}

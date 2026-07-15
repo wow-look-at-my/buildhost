@@ -143,16 +143,18 @@ func (h *Handler) renderPackagesEntry(r *http.Request, project *db.Project, rele
 
 	debSize := artifact.Size
 	debSHA := artifact.SHA256
-	out, err := h.Gen.Generate(r.Context(), repackage.FormatDeb, *project, *release, *artifact, auth.RequestBaseURL(r))
+	out, err := h.Gen.Generate(r.Context(), repackage.FormatDeb, *project, *release, *artifact, auth.RequestRootURL(r))
 	if err == nil {
-		data, rerr := io.ReadAll(out.Reader)
+		hsh := sha256.New()
+		n, rerr := io.Copy(hsh, out.Reader)
+		out.Reader.Close()
 		if rerr == nil {
-			debSize = int64(len(data))
-			h := sha256.Sum256(data)
-			debSHA = fmt.Sprintf("%x", h)
+			debSize = n
+			debSHA = fmt.Sprintf("%x", hsh.Sum(nil))
 		}
 	}
 
+	pkgName := repackage.DebPackageName(project.Name)
 	desc := strings.NewReplacer("\n", " ", "\r", " ").Replace(project.Description)
 	return fmt.Sprintf(`Package: %s
 Version: %s
@@ -162,7 +164,7 @@ Size: %d
 SHA256: %s
 Description: %s
 
-`, project.Name, version, debArch, project.Name, version, debArch,
+`, pkgName, version, debArch, pkgName, version, debArch,
 		debSize, debSHA, desc)
 }
 
