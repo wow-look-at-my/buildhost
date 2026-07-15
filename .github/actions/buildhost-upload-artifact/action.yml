@@ -17,10 +17,10 @@ inputs:
     description: 'Release version'
     required: true
   os:
-    description: 'Target OS (linux, darwin, windows, freebsd)'
+    description: 'Target OS (linux, darwin, windows, freebsd, wasm)'
     required: true
   arch:
-    description: 'Target arch (amd64, arm64, 386, arm)'
+    description: 'Target arch (amd64, arm64, 386, arm; js/wasip1 with os=wasm)'
     required: true
   path:
     description: 'Path to the artifact file to upload'

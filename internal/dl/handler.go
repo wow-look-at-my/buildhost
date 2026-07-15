@@ -73,6 +73,11 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	// RUNNER_ARCH "X64"/"ARM64", uname's "x86_64"/"aarch64", ...) so callers can
 	// pass them through verbatim; fold them to the canonical spelling the static
 	// endpoint and stored artifacts use. Unrecognized values pass through unchanged.
+	// The deprecated GOOS/GOARCH-ordered wasm pair (os=js|wasip1, arch=wasm) is
+	// likewise folded to the canonical os=wasm form for symmetry with upload.
+	if o, a, ok := db.NormalizeLegacyWasmPair(osStr, archStr); ok {
+		osStr, archStr = string(o), string(a)
+	}
 	if c, ok := db.NormalizeOS(osStr); ok {
 		osStr = string(c)
 	}

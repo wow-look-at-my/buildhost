@@ -329,6 +329,46 @@ when finalizing a [chunked upload session](#large-uploads) (one session, one
 body, N rows). `kind=npm-package` keeps its literal `os=any`/`arch=any`
 sentinel row and never fans out.
 
+## WebAssembly artifacts
+
+WebAssembly modules publish under the platform identifier `os=wasm`, with
+`arch` naming the flavor: `js` for Go's browser/Node port (`GOOS=js GOARCH=wasm`)
+and `wasip1` for the WASI port (`GOOS=wasip1 GOARCH=wasm`).
+
+```bash
+# Upload both Go wasm ports (one request each, or a comma list)
+curl -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @app.js.wasm \
+  http://localhost:8080/api/v1/projects/myapp/releases/1/artifacts/wasm/js
+curl -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @app.wasip1.wasm \
+  http://localhost:8080/api/v1/projects/myapp/releases/1/artifacts/wasm/wasip1
+
+# Download
+curl -LO "https://dl.example.com/myapp?os=wasm&arch=js"
+```
+
+For filename-derived uploads (`name_os_arch`), name the files
+`myapp_wasm_js` / `myapp_wasm_wasip1`.
+
+`os=wasm` pairs only with the `js`/`wasip1` arches and vice versa -- any other
+combination (e.g. `wasm/amd64` or `linux/js`) is rejected with a 400. The
+multi-platform aliases deliberately exclude wasm: `cosmo`/`any`/`all` mean
+"runs on every native desktop platform", and a wasm module instead needs a JS
+host or WASI runtime. Publish wasm explicitly. Wasm artifacts are served raw
+and via the archive formats (`tar.gz`, `zip`, ...); they never appear in the
+APT index or Homebrew tap (linux/darwin-only by construction).
+
+**Deprecated legacy compatibility shim**: currently-released go-toolchain
+autoreleases derive upload parameters from GOOS_GOARCH-ordered filenames
+(`name_js_wasm` / `name_wasip1_wasm`) and therefore upload with
+`os=js`/`arch=wasm` (or `os=wasip1`/`arch=wasm`). That exact pair is folded to
+the canonical form at parse time -- on upload, on `dl` queries, and in the
+static endpoint's canonicalization redirect -- so such uploads succeed and are
+stored, listed, and served as `os=wasm`/`arch=js|wasip1`; `js` is never stored
+or surfaced as an os anywhere. The shim is pair-level only (`os=js` with any
+other arch, or `arch=wasm` with any other os, stays invalid) and exists for
+pre-#305 go-toolchain releases; new publishers should use the canonical
+`os=wasm` form.
+
 ## Versioning
 
 Projects use auto-incrementing versions by default (v1, v2, v3...). Opt into semver with `--versioning semver` at project creation.
