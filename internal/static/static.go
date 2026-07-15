@@ -142,5 +142,13 @@ func canonicalQuery(raw url.Values) string {
 		}
 		clean.Set(k, v)
 	}
+	// The deprecated GOOS/GOARCH-ordered wasm pair (os=js|wasip1, arch=wasm)
+	// folds to the canonical os=wasm form. Pair-level, so it runs after the
+	// per-key folds above; the canonicalization redirect then ensures the CDN
+	// only ever sees one URL for the artifact ("js" is never a canonical os).
+	if o, a, ok := db.NormalizeLegacyWasmPair(clean.Get("os"), clean.Get("arch")); ok {
+		clean.Set("os", string(o))
+		clean.Set("arch", string(a))
+	}
 	return clean.Encode()
 }
