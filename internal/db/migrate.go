@@ -38,16 +38,33 @@ func (d *DB) migrate() error {
 			continue
 		}
 
-		sql, err := migrations.FS.ReadFile(name)
-		if err != nil {
-			return fmt.Errorf("read migration %s: %w", name, err)
+		if err := d.applyMigration(name); err != nil {
+			return err
 		}
-		if _, err := d.Exec(string(sql)); err != nil {
-			return fmt.Errorf("apply migration %s: %w", name, err)
-		}
-		if _, err := d.Exec("INSERT INTO schema_migrations (version) VALUES (?)", name); err != nil {
-			return fmt.Errorf("record migration %s: %w", name, err)
-		}
+	}
+	return nil
+}
+
+func (d *DB) applyMigration(name string) error {
+	sql, err := migrations.FS.ReadFile(name)
+	if err != nil {
+		return fmt.Errorf("read migration %s: %w", name, err)
+	}
+
+	tx, err := d.DB.Begin()
+	if err != nil {
+		return fmt.Errorf("begin migration %s: %w", name, err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(string(sql)); err != nil {
+		return fmt.Errorf("apply migration %s: %w", name, err)
+	}
+	if _, err := tx.Exec("INSERT INTO schema_migrations (version) VALUES (?)", name); err != nil {
+		return fmt.Errorf("record migration %s: %w", name, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migration %s: %w", name, err)
 	}
 	return nil
 }

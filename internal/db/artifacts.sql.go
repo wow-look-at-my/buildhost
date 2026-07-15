@@ -21,6 +21,9 @@ SELECT EXISTS(
     JOIN artifacts a ON pa.artifact_id = a.id
     JOIN releases r ON a.release_id = r.id
     WHERE r.project_id = ?1 AND pa.storage_key = ?2
+    UNION ALL
+    SELECT 1 FROM oci_blob_links obl
+    WHERE obl.project_id = ?1 AND obl.storage_key = ?2
 ) AS blob_exists
 `
 
@@ -34,6 +37,41 @@ func (q *Queries) BlobBelongsToProject(ctx context.Context, arg BlobBelongsToPro
 	var blob_exists int64
 	err := row.Scan(&blob_exists)
 	return blob_exists, err
+}
+
+const getArtifactByReleaseAndKind = `-- name: GetArtifactByReleaseAndKind :one
+SELECT id, release_id, os, arch, kind, storage_key, size, sha256,
+       stripped_storage_key, stripped_size, stripped_sha256,
+       debug_storage_key, debug_size, filename, created_at
+FROM artifacts WHERE release_id = ? AND kind = ?
+`
+
+type GetArtifactByReleaseAndKindParams struct {
+	ReleaseID int64 `json:"release_id"`
+	Kind      Kind  `json:"kind"`
+}
+
+func (q *Queries) GetArtifactByReleaseAndKind(ctx context.Context, arg GetArtifactByReleaseAndKindParams) (Artifact, error) {
+	row := q.db.QueryRowContext(ctx, getArtifactByReleaseAndKind, arg.ReleaseID, arg.Kind)
+	var i Artifact
+	err := row.Scan(
+		&i.ID,
+		&i.ReleaseID,
+		&i.OS,
+		&i.Arch,
+		&i.Kind,
+		&i.StorageKey,
+		&i.Size,
+		&i.SHA256,
+		&i.StrippedStorageKey,
+		&i.StrippedSize,
+		&i.StrippedSHA256,
+		&i.DebugStorageKey,
+		&i.DebugSize,
+		&i.Filename,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getArtifactByReleaseOSArch = `-- name: GetArtifactByReleaseOSArch :one

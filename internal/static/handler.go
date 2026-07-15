@@ -23,34 +23,62 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
-		handler.BaseURL = auth.BaseURL()
 		handler.TmpDir = auth.DataDir() + "/tmp"
 
 		for _, format := range repackage.RegisteredFormats() {
 			RegisterRepackageFmt(format)
 		}
 	})
-	auth.Handle("GET /static", parseRoute, handler.Serve)
+	auth.ServiceHandle("static", "GET /file", parseRoute, handler.Serve)
 }
 
 type route struct {
 	project string
+	version string
+	os      string
+	arch    string
+	fmtStr  string
+	debug   bool
+	token   string
 }
 
 func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
+// AllowsPublicRead lets a valid signed download token (&token=) authorize this
+// one artifact even under a private project, the same way a public site bypasses
+// the private gate. The signature binds the exact (project, version, os, arch,
+// fmt, debug) tuple, so the bypass is scoped to precisely the linked file -- the
+// rest of the project stays gated. Consulted by requireProject only for a
+// private-project read.
+func (r route) AllowsPublicRead(_ context.Context, _ *db.DB, project *db.Project) bool {
+	if r.token == "" {
+		return false
+	}
+	return auth.VerifyDownloadToken(r.token, project.Name, r.version, r.os, r.arch, r.fmtStr, r.debug)
+}
+
 func parseRoute(r *http.Request) auth.RouteInfo {
-	id := r.URL.Query().Get("id")
-	id = strings.TrimPrefix(id, "@buildhost/")
-	return route{project: id}
+	q := r.URL.Query()
+	fmtStr := q.Get("fmt")
+	if fmtStr == "" {
+		fmtStr = "raw"
+	}
+	return route{
+		project: q.Get("project"),
+		version: q.Get("v"),
+		os:      q.Get("os"),
+		arch:    q.Get("arch"),
+		fmtStr:  fmtStr,
+		debug:   q.Get("debug") == "1",
+		token:   q.Get("token"),
+	}
 }
 
 type staticHandler struct {
-	DB      *db.DB
-	Store   storage.Storage
-	BaseURL string
-	TmpDir  string
+	DB     *db.DB
+	Store  storage.Storage
+	TmpDir string
 }
 
 func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
@@ -99,11 +127,12 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sctx := ServeContext{
-		Project: *project,
-		Release: *release,
-		Store:   h.Store,
-		BaseURL: h.BaseURL,
-		TmpDir:  h.TmpDir,
+		Project:   *project,
+		Release:   *release,
+		Store:     h.Store,
+		StaticURL: auth.DeriveServiceURL(r, "static"),
+		BaseURL:   auth.RequestBaseURL(r),
+		TmpDir:    h.TmpDir,
 	}
 
 	if osStr != "any" && archStr != "any" {
@@ -116,6 +145,12 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
+		// Docker images are served only via the OCI endpoint; they have no bare
+		// binary to download or repackage.
+		if artifact.Kind.ServedViaDockerOnly() {
+			http.NotFound(w, r)
+			return
+		}
 		sctx.Artifact = *artifact
 	}
 
@@ -126,11 +161,17 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("ETag", etag)
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	if r.URL.Query().Get("token") != "" {
+		// A token-gated (signed-link) fetch is private content: never let a shared
+		// CDN cache it, regardless of the project's visibility.
+		w.Header().Set("Cache-Control", "private, no-store")
+	} else {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
 
 	if err := f.Serve(w, r, sctx); err != nil {
 		if w.Header().Get("Content-Length") == "" {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			http.Error(w, "not found", http.StatusNotFound)
 		}
 	}
 }

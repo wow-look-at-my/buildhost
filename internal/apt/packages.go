@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -13,6 +14,8 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/static"
 )
+
+var validDebVersion = regexp.MustCompile(`^[a-zA-Z0-9.+~:-]+$`)
 
 func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath string) {
 	arch := extractDebArch(subpath)
@@ -45,6 +48,12 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	// Docker images aren't debs: a docker-only release exposes no apt package.
+	if artifact.Kind.ServedViaDockerOnly() {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte(""))
+		return
+	}
 
 	version := strings.TrimPrefix(release.Version, "v")
 	if version == "" {
@@ -53,16 +62,26 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 
 	debSize := artifact.Size
 	debSHA := artifact.SHA256
-	out, err := h.Gen.Generate(r.Context(), repackage.FormatDeb, *project, *release, *artifact)
+	out, err := h.Gen.Generate(r.Context(), repackage.FormatDeb, *project, *release, *artifact, auth.RequestRootURL(r))
 	if err == nil {
-		data, rerr := io.ReadAll(out.Reader)
+		hsh := sha256.New()
+		n, rerr := io.Copy(hsh, out.Reader)
+		out.Reader.Close()
 		if rerr == nil {
-			debSize = int64(len(data))
-			h := sha256.Sum256(data)
-			debSHA = fmt.Sprintf("%x", h)
+			debSize = n
+			debSHA = fmt.Sprintf("%x", hsh.Sum(nil))
 		}
 	}
 
+	if !validDebVersion.MatchString(version) {
+		http.Error(w, "invalid version for deb format", http.StatusInternalServerError)
+		return
+	}
+
+	// The project name may be slash-namespaced; fold it to a valid Debian
+	// package name (and matching pool filename). servePool resolves the project
+	// from the request path, not this filename, so the rename is safe.
+	pkgName := repackage.DebPackageName(project.Name)
 	desc := strings.NewReplacer("\n", " ", "\r", " ").Replace(project.Description)
 	entry := fmt.Sprintf(`Package: %s
 Version: %s
@@ -72,7 +91,7 @@ Size: %d
 SHA256: %s
 Description: %s
 
-`, project.Name, version, arch, project.Name, version, arch,
+`, pkgName, version, arch, pkgName, version, arch,
 		debSize, debSHA, desc)
 
 	w.Header().Set("Content-Type", "text/plain")
@@ -99,7 +118,11 @@ func (h *Handler) servePool(w http.ResponseWriter, r *http.Request, subpath stri
 		return
 	}
 
-	debArch := extractDebArch(subpath)
+	debArch := extractPoolArch(filename)
+	if debArch == "" {
+		http.NotFound(w, r)
+		return
+	}
 	goArch := goArchFromDeb(debArch)
 
 	version := strings.TrimPrefix(release.Version, "v")
@@ -107,7 +130,7 @@ func (h *Handler) servePool(w http.ResponseWriter, r *http.Request, subpath stri
 		version = fmt.Sprintf("%d", release.VersionNum)
 	}
 
-	static.Redirect(w, r, h.BaseURL, static.For(project.Name).WithVersion(version).WithOS(db.OSLinux).WithArch(db.Arch(goArch)).WithFmt("deb"))
+	static.Redirect(w, r, auth.DeriveServiceURL(r, "static"), static.For(project.Name).WithVersion(version).WithOS(db.OSLinux).WithArch(db.Arch(goArch)).WithFmt("deb"), http.StatusFound)
 }
 
 func extractDebArch(subpath string) string {
@@ -118,6 +141,18 @@ func extractDebArch(subpath string) string {
 		}
 	}
 	return ""
+}
+
+func extractPoolArch(filename string) string {
+	name := strings.TrimSuffix(filename, ".deb")
+	if name == filename {
+		return ""
+	}
+	i := strings.LastIndex(name, "_")
+	if i < 0 {
+		return ""
+	}
+	return name[i+1:]
 }
 
 func goArchFromDeb(debArch string) string {

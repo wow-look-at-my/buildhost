@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -27,7 +28,7 @@ func tracingMiddleware(next http.Handler) http.Handler {
 		span.SetAttributes(
 			attribute.String("http.method", r.Method),
 			attribute.String("url.path", r.URL.Path),
-			attribute.String("url.query", r.URL.RawQuery),
+			attribute.String("url.query", redactQuery(r.URL.RawQuery)),
 			attribute.Int("http.status_code", rw.status),
 			attribute.String("http.user_agent", r.UserAgent()),
 			attribute.String("net.peer.ip", r.RemoteAddr),
@@ -87,4 +88,21 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.status = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
+}
+
+func redactQuery(raw string) string {
+	if !strings.Contains(raw, "token=") {
+		return raw
+	}
+	parts := strings.Split(raw, "&")
+	for i, p := range parts {
+		if strings.HasPrefix(p, "token=") {
+			parts[i] = "token=REDACTED"
+		}
+	}
+	return strings.Join(parts, "&")
 }

@@ -1,10 +1,12 @@
 package oci
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +28,19 @@ func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, referenc
 		return
 	}
 
+	// Real docker images pushed to the registry: the tag points at a stored
+	// manifest or image index, which is served verbatim.
+	tag, err := h.DB.GetOCITag(r.Context(), project.ID, reference)
+	if err == nil {
+		h.serveManifestByDigest(w, r, project, tag.ManifestDigest)
+		return
+	}
+	if !errors.Is(err, db.ErrNotFound) {
+		ociError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+		return
+	}
+
+	// Binary projects: synthesize a minimal OCI image from the uploaded binary.
 	release, err := h.resolveTag(r.Context(), project, reference)
 	if err != nil {
 		ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest unknown")
@@ -75,18 +90,32 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 
 	var manifests []indexEntry
 	for _, a := range artifacts {
-		out, err := h.Gen.Generate(r.Context(), repackage.FormatOCI, *project, *release, a)
+		out, err := h.Gen.Generate(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestRootURL(r))
 		if err != nil {
 			continue
 		}
 		manifestData, err := io.ReadAll(out.Reader)
+		out.Reader.Close()
 		if err != nil {
 			continue
 		}
-		digest := sha256.Sum256(manifestData)
+		sum := sha256.Sum256(manifestData)
+		digest := "sha256:" + hex.EncodeToString(sum[:])
+
+		// Integrity check: only advertise a child the pull path can actually
+		// resolve. Generate() persisted+linked this manifest (with its config and
+		// layers), so a by-digest GET /v2/{name}/manifests/<digest> now serves it.
+		// Skip any entry that does not resolve rather than emit a dangling index
+		// -- an index that references content the registry cannot serve is an
+		// unpullable image for every client.
+		belongs, err := h.DB.BlobBelongsToProject(r.Context(), project.ID, digest[7:])
+		if err != nil || !belongs {
+			continue
+		}
+
 		entry := indexEntry{
 			MediaType: "application/vnd.oci.image.manifest.v1+json",
-			Digest:    "sha256:" + hex.EncodeToString(digest[:]),
+			Digest:    digest,
 			Size:      int64(len(manifestData)),
 		}
 		entry.Platform.Architecture = string(a.Arch)
@@ -117,6 +146,20 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 	indexData, _ := json.Marshal(index)
 	digest := sha256.Sum256(indexData)
 
+	// Persist the index document under its own content digest and link it to the
+	// project, exactly as Generate persisted each child manifest above. The Docker
+	// daemon's classic (non-containerd) image store pulls a tag by reading the
+	// manifest, then re-requests that same manifest *by its Docker-Content-Digest*
+	// to store the image content-addressably; for a multi-arch image that by-digest
+	// request hits serveManifestByDigest, gated on BlobBelongsToProject. Without
+	// this link the parent index -- though served fine by tag -- 404s by digest and
+	// `docker pull <repo>:<tag>` dies with "manifest unknown". Content-addressed
+	// store + INSERT OR IGNORE link, so re-persisting on every pull is idempotent.
+	if err := h.persistManifestBlob(r.Context(), project.ID, indexData, "application/vnd.oci.image.index.v1+json"); err != nil {
+		ociError(w, http.StatusInternalServerError, "UNKNOWN", "failed to persist index")
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/vnd.oci.image.index.v1+json")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(indexData)))
 	w.Header().Set("Docker-Content-Digest", "sha256:"+hex.EncodeToString(digest[:]))
@@ -142,11 +185,12 @@ func (h *Handler) serveSingleManifest(w http.ResponseWriter, r *http.Request, pr
 	}
 
 	for _, a := range artifacts {
-		out, err := h.Gen.Generate(r.Context(), repackage.FormatOCI, *project, *release, a)
+		out, err := h.Gen.Generate(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestRootURL(r))
 		if err != nil {
 			continue
 		}
 		manifestData, err := io.ReadAll(out.Reader)
+		out.Reader.Close()
 		if err != nil {
 			continue
 		}
@@ -185,13 +229,29 @@ func (h *Handler) serveManifestByDigest(w http.ResponseWriter, r *http.Request, 
 	}
 	defer rc.Close()
 
-	w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+	w.Header().Set("Content-Type", h.manifestContentType(r.Context(), project, key))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
 	w.Header().Set("Docker-Content-Digest", digest)
 
 	if r.Method != http.MethodHead {
 		io.Copy(w, rc)
 	}
+}
+
+// persistManifestBlob stores a synthesized manifest or index document under its
+// own content digest and links it to the project, so a subsequent by-digest
+// GET/HEAD resolves via serveManifestByDigest (gated on BlobBelongsToProject).
+// This is what makes every digest the registry advertises in a Docker-Content-
+// Digest header actually retrievable -- the same guarantee Generate gives each
+// child manifest and PutManifest gives pushed content. The store is content-
+// addressed and LinkOCIBlob is INSERT OR IGNORE, so calling this on every pull is
+// idempotent; the stored key equals sha256(data), i.e. the advertised digest.
+func (h *Handler) persistManifestBlob(ctx context.Context, projectID int64, data []byte, mediaType string) error {
+	key, size, err := h.Store.Put(ctx, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	return h.DB.LinkOCIBlob(ctx, projectID, key, mediaType, size, true)
 }
 
 func (h *Handler) serveBlob(w http.ResponseWriter, r *http.Request, digest string) {
@@ -229,15 +289,43 @@ func (h *Handler) serveBlob(w http.ResponseWriter, r *http.Request, digest strin
 	}
 }
 
+// manifestContentType returns the media type a stored manifest/index should be
+// served with, recovered from its blob-link record (so an image index is not
+// mislabelled as an image manifest). Falls back to the OCI image manifest type.
+func (h *Handler) manifestContentType(ctx context.Context, project *db.Project, key string) string {
+	if link, err := h.DB.GetOCIBlobLink(ctx, project.ID, key); err == nil && link.MediaType != "" {
+		return link.MediaType
+	}
+	return "application/vnd.oci.image.manifest.v1+json"
+}
+
 func (h *Handler) serveTags(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
+
+	seen := map[string]bool{}
+	tags := []string{}
+	add := func(t string) {
+		if t != "" && !seen[t] {
+			seen[t] = true
+			tags = append(tags, t)
+		}
+	}
+
+	// Real docker tags pushed via the registry push API.
+	if ociTags, err := h.DB.ListOCITags(r.Context(), project.ID); err == nil {
+		for _, t := range ociTags {
+			add(t.Tag)
+		}
+	}
+
+	// Binary projects: each published release with a binary artifact is a
+	// synthesized image tagged by version, plus a "latest" alias.
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)
 	if err != nil {
 		ociError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 		return
 	}
-
-	tags := []string{}
+	hasBinary := false
 	for _, rel := range releases {
 		if !rel.Published {
 			continue
@@ -248,13 +336,14 @@ func (h *Handler) serveTags(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, a := range artifacts {
 			if a.Kind == db.KindBinary {
-				tags = append(tags, rel.Version)
+				add(rel.Version)
+				hasBinary = true
 				break
 			}
 		}
 	}
-	if len(tags) > 0 {
-		tags = append(tags, "latest")
+	if hasBinary {
+		add("latest")
 	}
 
 	resp := map[string]any{

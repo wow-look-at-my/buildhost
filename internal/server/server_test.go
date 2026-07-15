@@ -13,30 +13,66 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	_ "github.com/wow-look-at-my/buildhost/internal/api"
-	_ "github.com/wow-look-at-my/buildhost/internal/apt"
+	"github.com/wow-look-at-my/buildhost/internal/apt"
 	_ "github.com/wow-look-at-my/buildhost/internal/brew"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	_ "github.com/wow-look-at-my/buildhost/internal/dl"
+	_ "github.com/wow-look-at-my/buildhost/internal/llms"
 	_ "github.com/wow-look-at-my/buildhost/internal/npm"
 	_ "github.com/wow-look-at-my/buildhost/internal/oci"
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	_ "github.com/wow-look-at-my/buildhost/internal/sites"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/require"
 )
 
-// testEnv bundles the objects needed by every integration test.
+// testEnv bundles the objects needed by every integration test. cfg, store,
+// and handler are kept so a test can simulate a redeploy (server.New over the
+// same data dir) or serve the same router under a rewritten Host.
 type testEnv struct {
-	ts		*httptest.Server
-	database	*db.DB
-	token		string	// plaintext API token with read,write scopes
+	ts       *httptest.Server
+	database *db.DB
+	token    string // plaintext API token with read,write scopes
+	cfg      config.Config
+	store    storage.Storage
+	handler  http.Handler
+}
+
+// The apt backend generates a fresh 4096-bit RSA signing key the first time a
+// server starts (apt's OnReady, reached via server.New). Doing that in every
+// setup() makes the many servers in this package's tests run ~1-2s each, and
+// serially they brush up against the 30s package test timeout on shared CI
+// runners. Generate one key for the whole package and seed it into each
+// server's data dir so apt loads it instead of regenerating. This does not
+// touch production keygen, and the apt package's own tests still cover real
+// key generation.
+var (
+	aptKeyOnce  sync.Once
+	aptKeyBytes []byte
+)
+
+func aptSigningKey(t *testing.T) []byte {
+	t.Helper()
+	aptKeyOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "apt-test-key-*")
+		require.Nil(t, err)
+		defer os.RemoveAll(dir)
+		apt.NewSigner(dir) // writes dir/apt-signing.key (one keygen for the package)
+		b, err := os.ReadFile(filepath.Join(dir, "apt-signing.key"))
+		require.Nil(t, err)
+		aptKeyBytes = b
+	})
+	return aptKeyBytes
 }
 
 func setup(t *testing.T) *testEnv {
@@ -44,6 +80,9 @@ func setup(t *testing.T) *testEnv {
 
 	dbDir := t.TempDir()
 	storeDir := t.TempDir()
+
+	// Reuse a single signing key so apt loads it instead of regenerating (slow).
+	require.Nil(t, os.WriteFile(filepath.Join(dbDir, "apt-signing.key"), aptSigningKey(t), 0o600))
 
 	dbPath := filepath.Join(dbDir, "test.db")
 	database, err := db.Open(dbPath)
@@ -55,21 +94,21 @@ func setup(t *testing.T) *testEnv {
 	require.Nil(t, err)
 
 	cfg := config.Config{
-		ListenAddr:	":0",
-		DataDir:	dbDir,
-		DBPath:		dbPath,
-		BaseURL:	"http://localhost",
+		ListenAddr: ":0",
+		DataDir:    dbDir,
+		DBPath:     dbPath,
 	}
 
 	srv := server.New(cfg, database, store)
-	ts := httptest.NewServer(srv.Handler())
+	handler := srv.Handler()
+	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
 
 	// Create an API token directly in the DB.
 	plaintext, _, err := database.CreateToken(context.Background(), "test", nil, "read,write")
 	require.Nil(t, err)
 
-	return &testEnv{ts: ts, database: database, token: plaintext}
+	return &testEnv{ts: ts, database: database, token: plaintext, cfg: cfg, store: store, handler: handler}
 }
 
 // helpers -------------------------------------------------------------------
@@ -114,6 +153,40 @@ func (e *testEnv) doRequest(t *testing.T, method, path, contentType string, body
 	require.Nil(t, err)
 
 	return resp
+}
+
+func (e *testEnv) doSubdomainRequest(t *testing.T, method, subdomain, path, contentType string, body io.Reader, auth bool) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(method, e.ts.URL+path, body)
+	require.Nil(t, err)
+
+	req.Host = subdomain + ".test.local"
+
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	if auth {
+		req.Header.Set("Authorization", "Bearer "+e.token)
+	}
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
+	require.Nil(t, err)
+
+	return resp
+}
+
+func (e *testEnv) authGetSubdomain(t *testing.T, subdomain, path string) *http.Response {
+	t.Helper()
+	return e.doSubdomainRequest(t, "GET", subdomain, path, "", nil, true)
+}
+
+func (e *testEnv) getSubdomain(t *testing.T, subdomain, path string) *http.Response {
+	t.Helper()
+	return e.doSubdomainRequest(t, "GET", subdomain, path, "", nil, false)
 }
 
 func decodeJSON(t *testing.T, resp *http.Response, v any) {
@@ -166,7 +239,7 @@ func TestFullLifecycle(t *testing.T) {
 	require.True(t, found)
 
 	// (c) Create release
-	resp = env.postJSON(t, "/api/v1/projects/myapp/releases", `{"git_branch":"main","git_commit":"abc123"}`)
+	resp = env.postJSON(t, "/api/v1/projects/myapp/releases", `{"git_branch":"master","git_commit":"abc123"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 	var release db.Release
@@ -175,7 +248,7 @@ func TestFullLifecycle(t *testing.T) {
 
 	require.Equal(t, int64(1), release.VersionNum)
 
-	require.Equal(t, "main", release.GitBranch)
+	require.Equal(t, "master", release.GitBranch)
 
 	require.Equal(t, "abc123", release.GitCommit)
 
@@ -199,30 +272,30 @@ func TestFullLifecycle(t *testing.T) {
 	decodeJSON(t, resp, &published)
 	require.True(t, published.Published)
 
-	// (f) Download raw binary by exact version -- redirects to /static
-	resp = env.get(t, "/dl/myapp/1/linux/amd64")
-	require.Equal(t, http.StatusFound, resp.StatusCode)
-	require.Contains(t, resp.Header.Get("Location"), "/static?")
+	// (f) Download raw binary by exact version -- redirects to static subdomain
+	resp = env.getSubdomain(t, "dl", "/myapp?v=1&os=linux&arch=amd64")
+	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "static.test.local/file?")
 
 	// (g) Download via "latest" alias -- redirects with resolved version
-	resp = env.get(t, "/dl/myapp/latest/linux/amd64")
+	resp = env.getSubdomain(t, "dl", "/myapp?os=linux&arch=amd64")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
-	require.Contains(t, resp.Header.Get("Location"), "/static?")
-	require.Contains(t, resp.Header.Get("Location"), "id=myapp")
+	require.Contains(t, resp.Header.Get("Location"), "static.test.local/file?")
+	require.Contains(t, resp.Header.Get("Location"), "project=myapp")
 
 	// (h) Download via branch -- redirects with resolved version
-	resp = env.get(t, "/dl/myapp/branch/main/linux/amd64")
+	resp = env.getSubdomain(t, "dl", "/myapp?branch=master&os=linux&arch=amd64")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
-	require.Contains(t, resp.Header.Get("Location"), "/static?")
+	require.Contains(t, resp.Header.Get("Location"), "static.test.local/file?")
 
 	// (i) Download tar.gz -- redirects with fmt=tar.gz
-	resp = env.get(t, "/dl/myapp/1/linux/amd64?format=tar.gz")
-	require.Equal(t, http.StatusFound, resp.StatusCode)
+	resp = env.getSubdomain(t, "dl", "/myapp?v=1&os=linux&arch=amd64&fmt=tar.gz")
+	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
 	require.Contains(t, resp.Header.Get("Location"), "fmt=tar.gz")
 
 	// (j) Download zip -- redirects with fmt=zip
-	resp = env.get(t, "/dl/myapp/1/linux/amd64?format=zip")
-	require.Equal(t, http.StatusFound, resp.StatusCode)
+	resp = env.getSubdomain(t, "dl", "/myapp?v=1&os=linux&arch=amd64&fmt=zip")
+	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
 	require.Contains(t, resp.Header.Get("Location"), "fmt=zip")
 
 }
@@ -235,9 +308,17 @@ func TestHealthz(t *testing.T) {
 	env := setup(t)
 	resp := env.get(t, "/healthz")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
 
-	body := readBody(t, resp)
-	require.Equal(t, "ok", string(body))
+	var body struct {
+		Status  string `json:"status"`
+		Commit  string `json:"commit"`
+		Version string `json:"version"`
+	}
+	require.NoError(t, json.Unmarshal(readBody(t, resp), &body))
+	require.Equal(t, "ok", body.Status)
+	require.NotEmpty(t, body.Commit)  // "unknown" in tests, but never empty
+	require.NotEmpty(t, body.Version) // "dev" in tests, but never empty
 }
 
 func TestHealthz_DBClosed(t *testing.T) {
@@ -249,8 +330,15 @@ func TestHealthz_DBClosed(t *testing.T) {
 	resp := env.get(t, "/healthz")
 	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 
-	body := readBody(t, resp)
-	require.Equal(t, "database unreachable", string(body))
+	var body struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+		Commit string `json:"commit"`
+	}
+	require.NoError(t, json.Unmarshal(readBody(t, resp), &body))
+	require.Equal(t, "unhealthy", body.Status)
+	require.Equal(t, "database unreachable", body.Error)
+	require.NotEmpty(t, body.Commit)
 }
 
 // ---------------------------------------------------------------------------
@@ -307,29 +395,60 @@ func TestPrivateProject_DownloadWithoutAuth_Returns401(t *testing.T) {
 	resp.Body.Close()
 
 	// Attempt unauthenticated download -- expect 401.
-	resp = env.get(t, "/dl/secretapp/1/linux/amd64")
+	resp = env.getSubdomain(t, "dl", "/secretapp?v=1&os=linux&arch=amd64")
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
 	resp.Body.Close()
 
 	// Attempt unauthenticated latest download -- expect 401.
-	resp = env.get(t, "/dl/secretapp/latest/linux/amd64")
+	resp = env.getSubdomain(t, "dl", "/secretapp?os=linux&arch=amd64")
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
 	resp.Body.Close()
 
 	// Attempt unauthenticated branch download -- expect 401.
-	resp = env.get(t, "/dl/secretapp/branch/main/linux/amd64")
+	resp = env.getSubdomain(t, "dl", "/secretapp?branch=main&os=linux&arch=amd64")
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
 	resp.Body.Close()
 
-	// With auth, download should redirect to /static.
-	resp = env.authGet(t, "/dl/secretapp/1/linux/amd64")
-	require.Equal(t, http.StatusFound, resp.StatusCode)
-	require.Contains(t, resp.Header.Get("Location"), "/static?")
-	require.Contains(t, resp.Header.Get("Location"), "id=secretapp")
+	// Unauthenticated fetches where a FORMULA belongs must be clean HTTP
+	// errors -- never a 200 whose body is not Ruby. (A 200 JSON body saved as
+	// formula.rb is exactly the ".rb: syntax error" failure class a user hit.)
+	for _, p := range []string{"/secretapp", "/Formula/secretapp.rb"} {
+		resp = env.getSubdomain(t, "brew", p)
+		require.Equalf(t, http.StatusUnauthorized, resp.StatusCode, "GET brew%s", p)
+		require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+		errBody, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Truef(t, strings.HasPrefix(string(errBody), "{"), "error body must be JSON, got %q", errBody)
+		resp.Body.Close()
+	}
 
+	// With auth, download redirects to the static subdomain. For a PRIVATE
+	// project the redirect is a 302 whose Location carries a short-lived
+	// signed token (clients drop the Authorization header on the cross-host
+	// follow), and it must never be cached: the Location embeds a credential.
+	resp = env.authGetSubdomain(t, "dl", "/secretapp?v=1&os=linux&arch=amd64")
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "static.test.local/file?")
+	require.Contains(t, resp.Header.Get("Location"), "project=secretapp")
+	require.Contains(t, resp.Header.Get("Location"), "token=bhdl_")
+	require.Equal(t, "private, no-store", resp.Header.Get("Cache-Control"))
+
+	loc, err := url.Parse(resp.Header.Get("Location"))
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	// Following the redirect Location anonymously must succeed: the signed
+	// token in the query authorizes exactly this artifact. This is the hop
+	// curl/brew actually perform after the header is dropped.
+	resp = env.getSubdomain(t, "static", loc.Path+"?"+loc.RawQuery)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, binaryPayload, body)
 }
 
 // ---------------------------------------------------------------------------
@@ -339,7 +458,7 @@ func TestPrivateProject_DownloadWithoutAuth_Returns401(t *testing.T) {
 func TestDownload_NonexistentProject_Returns404(t *testing.T) {
 	env := setup(t)
 
-	resp := env.get(t, "/dl/nonexistent/1/linux/amd64")
+	resp := env.getSubdomain(t, "dl", "/nonexistent?v=1&os=linux&arch=amd64")
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 
 	resp.Body.Close()
@@ -528,7 +647,6 @@ func TestOIDC_AutoCreateProject(t *testing.T) {
 		ListenAddr:  ":0",
 		DataDir:     dbDir,
 		DBPath:      dbPath,
-		BaseURL:     "http://localhost",
 		OIDCIssuers: []string{jwksSrv.URL},
 		OIDCOrgs:    []string{"*"},
 		OIDCEvents:  []string{"push"},
@@ -542,7 +660,7 @@ func TestOIDC_AutoCreateProject(t *testing.T) {
 		"iss":        jwksSrv.URL,
 		"sub":        "repo:myorg/autoproject:ref:refs/heads/main",
 		"event_name": "push",
-		"aud":        cfg.BaseURL,
+		"aud":        "https://buildhost.example.com",
 		"exp":        time.Now().Add(10 * time.Minute).Unix(),
 		"iat":        time.Now().Unix(),
 	})
