@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -30,7 +29,10 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, t.TempDir())}
+	dataDir := t.TempDir()
+	tmp := filepath.Join(dataDir, "tmp")
+	require.NoError(t, os.MkdirAll(tmp, 0o755))
+	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, tmp), TmpDir: tmp, DataDir: dataDir}
 	return h, d, store
 }
 
@@ -169,6 +171,10 @@ func TestServeFormula_EmitsAllSupportedPlatforms(t *testing.T) {
 	assert.Contains(t, body, "fmt=tar.gz")
 	assert.Contains(t, body, "v=v1.2.3")
 	assert.NotContains(t, body, "os=windows")
+	// Dual-OS: importable everywhere as-is, so no platform gate; the top-level
+	// stable url is still present (canonical resource = linux/amd64).
+	assert.NotContains(t, body, "depends_on")
+	assert.Contains(t, body, "\n  url \"https://dl.example.com:18080/go-toolchain?arch=amd64&fmt=tar.gz&os=linux&v=v1.2.3\"\n")
 
 	tgz, err := h.Gen.Generate(ctx, repackage.FormatTarGZ, *proj, *rel, darwinARM, "https://example.com")
 	require.NoError(t, err)
@@ -178,7 +184,7 @@ func TestServeFormula_EmitsAllSupportedPlatforms(t *testing.T) {
 	assert.Contains(t, body, fmt.Sprintf(`sha256 "%x"`, sum))
 }
 
-func TestServeTap_GeneratesSmartGitRepo(t *testing.T) {
+func TestServeTap_GeneratesDumbGitRepo(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -197,61 +203,24 @@ func TestServeTap_GeneratesSmartGitRepo(t *testing.T) {
 	private := &db.Project{Name: "secret-tool", IsPrivate: true, Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, private))
 
-	req := httptest.NewRequest("GET", "/info/refs?service=git-upload-pack", nil)
-	req.Host = "brew.example.com"
+	req := httptest.NewRequest("GET", "/brew/tap.git/info/refs?service=git-upload-pack", nil)
+	req.Host = "git.example.com"
+	req.SetPathValue("path", "info/refs")
 	rec := httptest.NewRecorder()
-	h.ServeUploadPackInfoRefs(rec, req)
+	h.ServeTap(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/x-git-upload-pack-advertisement", rec.Header().Get("Content-Type"))
 	infoRefs := rec.Body.String()
-	assert.Contains(t, infoRefs, "# service=git-upload-pack")
-	assert.Contains(t, infoRefs, "HEAD\x00")
-	assert.Contains(t, infoRefs, "symref=HEAD:refs/heads/main")
 	assert.Contains(t, infoRefs, "refs/heads/main")
 
-	repo, err := h.buildTapRepo(req)
+	recHead := getTap(t, h, "git.example.com", "HEAD")
+	require.Equal(t, http.StatusOK, recHead.Code)
+	assert.Equal(t, "ref: refs/heads/main\n", recHead.Body.String())
+
+	files, err := h.buildTapFiles(req)
 	require.NoError(t, err)
-	assert.Equal(t, []byte("ref: refs/heads/main\n"), repo.Loose["HEAD"])
-	assert.Contains(t, string(repo.Loose["info/refs"]), "refs/heads/main")
-	assert.True(t, strings.HasPrefix(string(repo.Pack), "PACK"))
-	assert.NotContains(t, fmt.Sprint(repo.Loose), "secret-tool")
-}
-
-func TestServeUploadPack_AllowsShallowGitClone(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git binary not available")
-	}
-
-	h, d, store := setupTest(t)
-	ctx := context.Background()
-
-	proj := &db.Project{Name: "go-toolchain", Versioning: db.VersioningSemver}
-	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000, GitBranch: db.LatestBranch}
-	require.NoError(t, d.CreateRelease(ctx, rel))
-	require.NoError(t, d.PublishRelease(ctx, rel.ID))
-	key, size, err := store.Put(ctx, strings.NewReader("binary"))
-	require.NoError(t, err)
-	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
-		ReleaseID: rel.ID, OS: db.OSDarwin, Arch: db.ArchARM64,
-		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
-	}))
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /info/refs", h.ServeUploadPackInfoRefs)
-	mux.HandleFunc("POST /git-upload-pack", h.ServeUploadPack)
-	ts := httptest.NewServer(mux)
-	t.Cleanup(ts.Close)
-
-	dir := filepath.Join(t.TempDir(), "tap")
-	cmd := exec.Command("git", "clone", "--depth", "1", ts.URL, dir)
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, string(out))
-
-	data, err := os.ReadFile(filepath.Join(dir, "Formula", "go-toolchain.rb"))
-	require.NoError(t, err)
-	assert.Contains(t, string(data), "class GoToolchain < Formula")
+	assert.Contains(t, files, "Formula/go-toolchain.rb")
+	assert.NotContains(t, tapFilesText(files), "secret-tool")
 }
 
 func TestRedirectTap_ToGitService(t *testing.T) {
@@ -268,9 +237,115 @@ func TestRedirectTap_ToGitService(t *testing.T) {
 }
 
 func TestParseRoute(t *testing.T) {
+	h, _, _ := setupTest(t)
 	req := httptest.NewRequest("GET", "/myapp", nil)
 	req.SetPathValue("project", "myapp")
-	ri := parseRoute(req)
+	ri := h.parseRoute(req)
 	assert.Equal(t, "myapp", ri.ProjectName())
 	assert.Equal(t, auth.ReadAccess, ri.Access())
+}
+
+// A tap formula's FILENAME folds the slash namespace ("gcc/pgo" ->
+// gcc-pgo.rb), so the per-formula URL users copy out of the tap carries the
+// folded name. The route must resolve it back to the real project -- while a
+// literally named project always wins over a fold match.
+func TestParseRoute_FoldedTapNameResolvesToProject(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	seedBrewProject(t, d, store, "gcc/pgo", "pgo-binary")
+
+	req := httptest.NewRequest("GET", "/Formula/gcc-pgo.rb", nil)
+	req.SetPathValue("project", "gcc-pgo")
+	assert.Equal(t, "gcc/pgo", h.parseRoute(req).ProjectName())
+
+	// No fold candidate: the literal name passes through untouched (404s in
+	// requireProject as before).
+	req = httptest.NewRequest("GET", "/Formula/no-such.rb", nil)
+	req.SetPathValue("project", "no-such")
+	assert.Equal(t, "no-such", h.parseRoute(req).ProjectName())
+
+	// A PRIVATE project's folded name resolves only for a request that could
+	// read it anyway (the tap-membership rule): anonymously it stays
+	// indistinguishable from a nonexistent project -- requireProject then 404s
+	// on the literal name instead of revealing existence with a 401.
+	secret := seedPrivateBrewProject(t, d, store, "ns/hidden", "hidden-binary")
+	req = httptest.NewRequest("GET", "/Formula/ns-hidden.rb", nil)
+	req.SetPathValue("project", "ns-hidden")
+	assert.Equal(t, "ns-hidden", h.parseRoute(req).ProjectName())
+	authed := withReadToken(httptest.NewRequest("GET", "/Formula/ns-hidden.rb", nil), &secret.ID)
+	authed.SetPathValue("project", "ns-hidden")
+	assert.Equal(t, "ns/hidden", h.parseRoute(authed).ProjectName())
+
+	// A project literally named like the folded form wins over the fold.
+	literal := &db.Project{Name: "gcc-pgo", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, literal))
+	req = httptest.NewRequest("GET", "/Formula/gcc-pgo.rb", nil)
+	req.SetPathValue("project", "gcc-pgo")
+	assert.Equal(t, "gcc-pgo", h.parseRoute(req).ProjectName())
+}
+
+// BUG guard: a single-OS project's formula must carry a TOP-LEVEL url/sha256
+// and a depends_on gate. With only on_<os> stanzas, Homebrew on the OTHER
+// platform found no stable URL ("formula requires at least a URL") and the
+// failed import poisoned the whole tap for that platform.
+func TestServeFormula_LinuxOnlyCarriesTopLevelURLAndDependsOnLinux(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "gcc", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000, GitBranch: db.LatestBranch}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+	key, size, err := store.Put(ctx, strings.NewReader("linux-only-binary"))
+	require.NoError(t, err)
+	a := db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}
+	require.NoError(t, d.CreateArtifact(ctx, &a))
+
+	req := httptest.NewRequest("GET", "/Formula/gcc.rb", nil)
+	req.Host = "brew.example.com"
+	req = req.WithContext(withProject(req.Context(), proj))
+	rec := httptest.NewRecorder()
+	h.ServeFormula(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "depends_on :linux")
+	assert.NotContains(t, body, "depends_on :macos")
+
+	// The top-level (stable) url/sha256 is the canonical linux/amd64 resource
+	// -- the same url and digest the on_linux/on_intel block carries.
+	tgz, err := h.Gen.Generate(ctx, repackage.FormatTarGZ, *proj, *rel, a, "https://example.com")
+	require.NoError(t, err)
+	payload, err := io.ReadAll(tgz.Reader)
+	require.NoError(t, err)
+	require.NoError(t, tgz.Reader.Close())
+	wantSHA := fmt.Sprintf("%x", sha256.Sum256(payload))
+	wantURL := `url "https://dl.example.com/gcc?arch=amd64&fmt=tar.gz&os=linux&v=1.0.0"`
+	// The top-level pair sits at 2-space indent (the on_* block copy at 6).
+	assert.Contains(t, body, "\n  "+wantURL+"\n  sha256 \""+wantSHA+"\"\n")
+	assert.Equal(t, 2, strings.Count(body, wantURL), "top-level url plus the on_linux block")
+	assert.Equal(t, 2, strings.Count(body, fmt.Sprintf("sha256 %q", wantSHA)))
+	assert.Contains(t, body, "on_linux do")
+}
+
+func TestServeFormula_MacOnlyDependsOnMacos(t *testing.T) {
+	h, d, store := setupTest(t)
+	proj, _, _ := seedBrewProject(t, d, store, "mactool", "mac-binary") // darwin/arm64 only
+
+	req := httptest.NewRequest("GET", "/Formula/mactool.rb", nil)
+	req.Host = "brew.example.com"
+	req = req.WithContext(withProject(req.Context(), proj))
+	rec := httptest.NewRecorder()
+	h.ServeFormula(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "depends_on :macos")
+	assert.NotContains(t, body, "depends_on :linux")
+	assert.Contains(t, body, "on_macos do")
 }

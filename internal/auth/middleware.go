@@ -225,6 +225,32 @@ func userCanReadProject(ctx context.Context, project *db.Project) bool {
 	return mw.GitHub.canAccessRepo(ctx, login, GitHubTokenFrom(ctx), project.GithubRepo)
 }
 
+// TokenCanReadProject reports whether the request context carries a credential
+// that authorizes READING the given project, applying exactly the token rules
+// requireProject's ReadAccess branch applies to a private project: a token with
+// the read scope, authorized for the project, and -- for OIDC identities -- inside
+// the repo's slash-namespace. Public projects are readable by definition.
+//
+// This exists for handlers that assemble a MULTI-project response (e.g. the
+// generated Homebrew tap) and therefore cannot ride the per-project
+// requireProject middleware; using this predicate keeps their visibility
+// decisions byte-identical to the centralized single-project rule. It
+// deliberately considers only tokens (not browser GitHub sessions): the
+// consumers are package-manager clients, which never carry a session cookie.
+func TokenCanReadProject(ctx context.Context, project *db.Project) bool {
+	if !project.IsPrivate {
+		return true
+	}
+	t := TokenFrom(ctx)
+	if t == nil || !t.HasScope("read") || !t.AuthorizedForProject(project.ID) {
+		return false
+	}
+	if oidcProject := OIDCProjectFrom(ctx); oidcProject != "" && !oidcAuthorizesProject(oidcProject, project.Name) {
+		return false
+	}
+	return true
+}
+
 // oidcAuthorizesProject reports whether an OIDC identity auto-provisioned for a
 // repository may act on the given project. oidcProject is the repo's derived
 // single-segment name (see projectFromSubject). A repo owns its own project and
@@ -283,18 +309,25 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				// effect. (A hidden read uses this same 404 for private projects
 				// it may not see, so existence never leaks either.)
 				if ri.Access() != WriteAccess || t == nil || oidcProject == "" || !oidcAuthorizesProject(oidcProject, ri.ProjectName()) || !validNamespacedProjectName(ri.ProjectName()) {
-					// A write that presented a JWT which was rejected (bad org,
-					// event, expiry, signature, ...) reaches here with no token.
-					// Surface the rejection reason as a 401 instead of a bare
-					// "project not found" 404 -- otherwise an auth failure on a
-					// not-yet-existing project is indistinguishable from a missing
-					// one, which is exactly what made an OIDC org-allowlist
-					// rejection look like the project simply did not exist. Writes
-					// to existing projects already explain themselves this way (see
-					// the WriteAccess switch below); this closes the same gap for
-					// the auto-provision path. Reads keep the 404 so a private
-					// project's existence never leaks.
-					if ri.Access() == WriteAccess && OIDCErrorFrom(r.Context()) != nil {
+					// A write request that arrived without a usable credential gets a
+					// 401 (carrying the OCI Basic challenge on /v2/), never a bare 404.
+					// Two cases reach here with t == nil:
+					//   * a JWT was presented and rejected (bad org, event, expiry,
+					//     signature, ...): OIDCErrorFrom is set and unauthorizedResponse
+					//     surfaces the reason, so a CI caller sees what to fix; and
+					//   * no credential was sent at all -- which is exactly the first,
+					//     scheme-discovery request a docker/buildkit pusher makes when
+					//     creating a new repo. It sends POST /v2/{name}/blobs/uploads/
+					//     unauthenticated and only sends the OIDC token after a 401 +
+					//     WWW-Authenticate challenge. Returning a "project not found" 404
+					//     here made the client give up before authenticating, so a
+					//     brand-new project could never be auto-provisioned on first push
+					//     (push-to-create was broken; pushing to an already-existing
+					//     project worked via the WriteAccess switch below). The
+					//     authenticated retry lands back here with a token and provisions.
+					// Reads keep the 404 so a private project's existence never leaks --
+					// this branch is WriteAccess only.
+					if ri.Access() == WriteAccess && t == nil {
 						unauthorizedResponse(w, r)
 						return
 					}

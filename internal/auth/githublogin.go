@@ -8,7 +8,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -150,6 +152,11 @@ func handleSigninStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next := safeNextURL(r, r.URL.Query().Get("next"))
+	// retry=1 marks a flow the callback auto-restarted after a recoverable
+	// failure. The marker rides the signed state, so if the restarted flow fails
+	// again the callback renders a terminal page instead of redirecting forever.
+	// It never relaxes any validation.
+	retried := r.URL.Query().Get("retry") == "1"
 
 	nonce := randToken()
 	// Bind the destination into a signed state and tie the flow to this browser
@@ -159,7 +166,7 @@ func handleSigninStart(w http.ResponseWriter, r *http.Request) {
 		Name: stateCookieName, Value: nonce, Path: signinCallbackPath,
 		MaxAge: stateMaxAge, HttpOnly: true, Secure: RequestScheme(r) == "https", SameSite: http.SameSiteLaxMode,
 	})
-	state := signState(nonce, next, time.Now().Add(stateMaxAge*time.Second))
+	state := signState(signinState{nonce: nonce, next: next, retried: retried}, time.Now().Add(stateMaxAge*time.Second))
 
 	q := url.Values{
 		"client_id":    {g.clientID},
@@ -173,6 +180,12 @@ func handleSigninStart(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, githubAuthorizeURL+"?"+q.Encode(), http.StatusSeeOther)
 }
 
+// handleSigninCallback completes the OAuth round-trip. No failure here may be a
+// dead end: the browser is sitting on the fixed callback URL, where a reload
+// just re-submits the consumed single-use code, so every exit either restarts
+// the flow or renders a page with a way to. And never with a 5xx -- Cloudflare
+// replaces origin 5xx bodies with its own bare error page, which used to strand
+// users on "error code: 502" with no explanation and nothing logged.
 func handleSigninCallback(w http.ResponseWriter, r *http.Request) {
 	g := githubAuth()
 	if g == nil {
@@ -180,36 +193,103 @@ func handleSigninCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	if e := q.Get("error"); e != "" {
-		http.Error(w, "GitHub sign-in was cancelled or failed.", http.StatusForbidden)
-		return
-	}
-	nonce, next, ok := verifyState(q.Get("state"))
+	st, expired, ok := parseState(q.Get("state"))
 	if !ok {
-		http.Error(w, "Invalid or expired sign-in state.", http.StatusBadRequest)
+		// Forged or corrupt state: nothing in it can be trusted, so no automatic
+		// redirect -- just a page offering a fresh start.
+		slog.WarnContext(r.Context(), "github signin: invalid state at callback")
+		signinFailedHTML(w, r, http.StatusBadRequest, "This sign-in link is invalid. It may have been truncated or altered.", "")
 		return
 	}
-	// Double-submit: the state's nonce must match the cookie set at start.
-	if c, err := r.Cookie(stateCookieName); err != nil || c.Value != nonce {
-		http.Error(w, "Sign-in state mismatch.", http.StatusBadRequest)
+	// st is MAC-verified from here on (even when expired), so its next URL is
+	// trustworthy -- and safeNextURL re-validates it at every use anyway.
+	if e := q.Get("error"); e != "" {
+		slog.WarnContext(r.Context(), "github signin: github returned an error", "error", e, "description", q.Get("error_description"))
+		signinFailedHTML(w, r, http.StatusForbidden, "GitHub sign-in was cancelled or failed.", st.next)
+		return
+	}
+	if expired {
+		slog.InfoContext(r.Context(), "github signin: state expired", "retried", st.retried)
+		restartOrFail(w, r, st, "The sign-in attempt took too long.")
+		return
+	}
+	// Double-submit: the state's nonce must match the cookie set at start. A
+	// mismatch is usually benign -- the cookie expired, or a newer sign-in tab
+	// overwrote it -- so restart rather than reject.
+	if c, err := r.Cookie(stateCookieName); err != nil || c.Value != st.nonce {
+		slog.InfoContext(r.Context(), "github signin: state nonce does not match cookie", "retried", st.retried)
+		restartOrFail(w, r, st, "Your browser did not present the sign-in cookie.")
 		return
 	}
 	clearCookie(w, r, stateCookieName, signinCallbackPath)
 
 	token, err := g.exchangeCode(r.Context(), q.Get("code"), callbackURL(r))
 	if err != nil {
-		http.Error(w, "Could not complete GitHub sign-in.", http.StatusBadGateway)
+		slog.ErrorContext(r.Context(), "github signin: code exchange failed", "err", err)
+		signinFailedHTML(w, r, http.StatusForbidden, "GitHub did not accept the sign-in.", st.next)
 		return
 	}
 	login, err := g.fetchLogin(r.Context(), token)
 	if err != nil {
-		http.Error(w, "Could not read your GitHub identity.", http.StatusBadGateway)
+		slog.ErrorContext(r.Context(), "github signin: fetching user identity failed", "err", err)
+		signinFailedHTML(w, r, http.StatusForbidden, "Could not read your GitHub identity.", st.next)
 		return
 	}
+	slog.InfoContext(r.Context(), "github signin: signed in", "login", login)
 	// The session carries the user's login and token; per-resource authorization
 	// is the user's access to that project's repo, checked at request time.
 	setSessionCookie(w, r, mintSession(login, token, time.Now().Add(sessionMaxAge*time.Second)))
-	http.Redirect(w, r, safeNextURL(r, next), http.StatusSeeOther)
+	http.Redirect(w, r, safeNextURL(r, st.next), http.StatusSeeOther)
+}
+
+// restartOrFail handles a recoverable callback failure (expired state, nonce
+// cookie lost or overwritten by a newer tab): it transparently sends the
+// browser back through /__signin to try again -- once. The restarted flow's
+// state carries the retried marker, so a second failure renders the terminal
+// page instead of looping.
+func restartOrFail(w http.ResponseWriter, r *http.Request, st signinState, reason string) {
+	if st.retried {
+		signinFailedHTML(w, r, http.StatusBadRequest, reason, st.next)
+		return
+	}
+	http.Redirect(w, r, apexRootURL(r)+signinStartPath+"?retry=1&next="+url.QueryEscape(st.next), http.StatusSeeOther)
+}
+
+// signinFailedHTML renders a terminal sign-in failure: one plain sentence about
+// what went wrong plus a link to start over (the browser is parked on the
+// callback URL, where reloading can never succeed -- the code is single-use).
+// Always 4xx, never 5xx, so Cloudflare passes the page through instead of
+// substituting its own.
+func signinFailedHTML(w http.ResponseWriter, r *http.Request, status int, reason, next string) {
+	retry := apexRootURL(r) + signinStartPath
+	if next != "" {
+		retry += "?next=" + url.QueryEscape(next)
+	}
+	// Relax the global default-src 'none' just enough for the one inline <style>;
+	// no scripts, no external resources (same approach as signedInForbiddenHTML).
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	esc := template.HTMLEscapeString
+	fmt.Fprintf(w, `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign-in failed</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 34rem; margin: 12vh auto; padding: 0 1.25rem; line-height: 1.55; }
+  h1 { font-size: 1.4rem; margin-bottom: .5rem; }
+  a.btn { display: inline-block; margin-top: 1rem; padding: .55rem .9rem; border: 1px solid; border-radius: .4rem; text-decoration: none; }
+</style>
+</head>
+<body>
+<h1>Sign-in failed</h1>
+<p>%s</p>
+<div><a class="btn" href="%s">Try signing in again</a></div>
+</body>
+</html>
+`, esc(reason), esc(retry))
 }
 
 func handleSignout(w http.ResponseWriter, r *http.Request) {
@@ -241,15 +321,23 @@ func (g *GitHubAuth) exchangeCode(ctx context.Context, code, redirectURI string)
 		return "", err
 	}
 	defer resp.Body.Close()
+	// GitHub reports exchange failures (bad_verification_code,
+	// incorrect_client_credentials, redirect_uri_mismatch, ...) as an error JSON
+	// body, typically under HTTP 200 -- so classify by body, not status, and
+	// carry GitHub's own diagnosis in the error (it names no secrets or codes).
 	var body struct {
 		AccessToken string `json:"access_token"`
 		Error       string `json:"error"`
+		ErrorDesc   string `json:"error_description"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body); err != nil {
-		return "", err
+		return "", fmt.Errorf("token endpoint HTTP %d: %w", resp.StatusCode, err)
 	}
 	if body.AccessToken == "" {
-		return "", fmt.Errorf("no access token (%s)", body.Error)
+		if body.Error == "" {
+			return "", fmt.Errorf("token endpoint HTTP %d: no access token in response", resp.StatusCode)
+		}
+		return "", fmt.Errorf("token endpoint HTTP %d: %s: %s", resp.StatusCode, body.Error, body.ErrorDesc)
 	}
 	return body.AccessToken, nil
 }
@@ -280,13 +368,26 @@ func (g *GitHubAuth) fetchLogin(ctx context.Context, token string) (string, erro
 
 // canAccessRepo reports whether the signed-in user (identified by login, using
 // their token) can access ownerRepo -- i.e. GET /repos/{owner}/{repo} returns
-// 200. Results are cached per (login, repo) for a short TTL so the GitHub call
-// does not run on every asset request.
+// 200. Results are cached per (login, repo, token) for a short TTL so the GitHub
+// call does not run on every asset request.
+//
+// Two properties keep the cache from ever locking out a user who DOES have
+// access (the failure that made an authorized repo owner see "Access denied"):
+//
+//   - Only an *authoritative* answer is cached -- a definite 200 (access) or 404
+//     (no access / not visible to this token). A transient failure (network
+//     error, 5xx, 429, or a 401/403 that is typically a rate limit or a token
+//     still propagating) denies only the current request and is NOT cached, so a
+//     refresh re-checks immediately instead of being pinned for the whole TTL on
+//     one momentary GitHub hiccup.
+//   - The cache key includes a fingerprint of the token, so a user who re-signs
+//     in with a fresh, broader-scoped token is never shadowed by a negative
+//     cached against their previous token.
 func (g *GitHubAuth) canAccessRepo(ctx context.Context, login, token, ownerRepo string) bool {
 	if login == "" || token == "" || !validRepoPath(ownerRepo) {
 		return false
 	}
-	key := login + "\x00" + ownerRepo
+	key := login + "\x00" + ownerRepo + "\x00" + tokenFingerprint(token)
 	now := time.Now()
 	g.mu.Lock()
 	if e, ok := g.repoCache[key]; ok && now.Before(e.exp) {
@@ -295,7 +396,13 @@ func (g *GitHubAuth) canAccessRepo(ctx context.Context, login, token, ownerRepo 
 	}
 	g.mu.Unlock()
 
-	allowed := g.checkRepoAccess(ctx, token, ownerRepo)
+	allowed, authoritative := g.checkRepoAccess(ctx, token, ownerRepo)
+	if !authoritative {
+		// Non-answer (transient error / rate limit): fail closed for this request
+		// but do not cache, so the next request re-checks rather than inheriting a
+		// stale denial.
+		return allowed
+	}
 
 	g.mu.Lock()
 	g.repoCache[key] = repoAccess{allowed: allowed, exp: now.Add(repoAccessTTL)}
@@ -303,20 +410,41 @@ func (g *GitHubAuth) canAccessRepo(ctx context.Context, login, token, ownerRepo 
 	return allowed
 }
 
-func (g *GitHubAuth) checkRepoAccess(ctx context.Context, token, ownerRepo string) bool {
+// checkRepoAccess performs GET /repos/{owner}/{repo} and classifies the result.
+// allowed is true only on 200. authoritative is true only when GitHub gave a
+// definite answer -- a 200 (access) or a 404 (no access; GitHub 404s a repo the
+// token cannot see, rather than 403, so existence never leaks). Anything else
+// (network error, 5xx, 429, or a 401/403 that is usually a rate limit or a
+// freshly minted token still propagating) is treated as non-authoritative so the
+// caller never caches a non-answer as a hard denial.
+func (g *GitHubAuth) checkRepoAccess(ctx context.Context, token, ownerRepo string) (allowed, authoritative bool) {
 	req, err := http.NewRequestWithContext(ctx, "GET", githubAPIBase+"/repos/"+ownerRepo, nil)
 	if err != nil {
-		return false
+		return false, false
 	}
 	setGitHubHeaders(req, token)
 	resp, err := g.http.Do(req)
 	if err != nil {
-		return false
+		return false, false
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
-	// 200 => the user can see the repo (read access). 404 => no access / no repo.
-	return resp.StatusCode == http.StatusOK
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return true, true
+	case http.StatusNotFound:
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+// tokenFingerprint returns a short, non-reversible fingerprint of a token, used
+// only as part of the in-memory repo-access cache key so the raw token is never
+// held as a map key while two distinct tokens still hash to distinct keys.
+func tokenFingerprint(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return base64.RawURLEncoding.EncodeToString(sum[:8])
 }
 
 func setGitHubHeaders(req *http.Request, token string) {
@@ -345,20 +473,43 @@ func verifySession(value string) (login, token string, ok bool) {
 	return l, t, true
 }
 
-func signState(nonce, next string, exp time.Time) string {
-	return signValue("state", nonce+"\x00"+next, exp)
+// signinState is the payload bound into the signed OAuth state parameter: the
+// CSRF nonce, the URL to return to after sign-in, and whether this flow is
+// already an automatic retry (so a failing flow restarts at most once).
+type signinState struct {
+	nonce   string
+	next    string
+	retried bool
 }
 
-func verifyState(value string) (nonce, next string, ok bool) {
-	payload, valid := verifySignedValue("state", value)
-	if !valid {
-		return "", "", false
+func signState(st signinState, exp time.Time) string {
+	flags := ""
+	if st.retried {
+		flags = "r"
 	}
-	n, nx, found := strings.Cut(payload, "\x00")
+	return signValue("state", st.nonce+"\x00"+flags+"\x00"+st.next, exp)
+}
+
+// parseState authenticates an OAuth state parameter. ok reports a valid
+// signature; everything in st is then trustworthy even when expired is set
+// (the MAC covers the expiry too), so an expired flow can still be restarted
+// to its own next URL. ok=false means forged or corrupt: use nothing from it.
+func parseState(value string) (st signinState, expired, ok bool) {
+	payload, expired, ok := parseSignedValue("state", value)
+	if !ok {
+		return signinState{}, false, false
+	}
+	nonce, rest, found := strings.Cut(payload, "\x00")
 	if !found {
-		return "", "", false
+		return signinState{}, false, false
 	}
-	return n, nx, true
+	flags, next, found := strings.Cut(rest, "\x00")
+	if !found {
+		// A state minted before the retried flag existed (nonce\x00next): still
+		// authentic; treat as a first attempt.
+		return signinState{nonce: nonce, next: rest}, expired, true
+	}
+	return signinState{nonce: nonce, next: next, retried: flags == "r"}, expired, true
 }
 
 // signValue returns base64(payload).base64(mac) where mac is HMAC over the
@@ -371,27 +522,35 @@ func signValue(purpose, payload string, exp time.Time) string {
 }
 
 func verifySignedValue(purpose, value string) (string, bool) {
+	payload, expired, ok := parseSignedValue(purpose, value)
+	return payload, ok && !expired
+}
+
+// parseSignedValue verifies the MAC and splits off the expiry. ok reports an
+// authentic (correctly signed) value; expired is reported separately so a
+// caller can distinguish "forged" from "genuine but past its expiry".
+func parseSignedValue(purpose, value string) (payload string, expired, ok bool) {
 	dot := strings.IndexByte(value, '.')
 	if dot <= 0 {
-		return "", false
+		return "", false, false
 	}
 	body, err := base64.RawURLEncoding.DecodeString(value[:dot])
 	if err != nil {
-		return "", false
+		return "", false, false
 	}
 	gotMAC, err := base64.RawURLEncoding.DecodeString(value[dot+1:])
 	if err != nil || !hmac.Equal(gotMAC, valueMAC(purpose, string(body))) {
-		return "", false
+		return "", false, false
 	}
 	payload, expStr, ok := cutLast(string(body), '\x00')
 	if !ok {
-		return "", false
+		return "", false, false
 	}
 	expUnix, err := strconv.ParseInt(expStr, 10, 64)
-	if err != nil || time.Now().Unix() > expUnix {
-		return "", false
+	if err != nil {
+		return "", false, false
 	}
-	return payload, true
+	return payload, time.Now().Unix() > expUnix, true
 }
 
 // cutLast splits on the final occurrence of sep, so a payload that itself

@@ -13,6 +13,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/buildhost/internal/uploads"
 )
 
 var healthDB *db.DB
@@ -91,6 +92,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) Handler() http.Handler {
 	var h http.Handler = http.HandlerFunc(auth.ServeHTTP)
+	// Between Authenticate (needs the token in context to bind sessions to
+	// their creator) and routing (so every upload endpoint gets the swapped
+	// body transparently): finalize chunked upload sessions by reference.
+	h = uploads.ResolveSessionBody(h)
 	h = auth.GetMiddleware().Authenticate(h)
 	h = admin.TrackInflight(h)
 	h = securityHeaders(h)
