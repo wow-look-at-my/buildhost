@@ -142,6 +142,28 @@ func NormalizeArch(s string) (Arch, bool) {
 	return "", false
 }
 
+// NormalizeLegacyWasmPair maps the deprecated GOOS/GOARCH-ordered
+// WebAssembly pair -- (os=js, arch=wasm) or (os=wasip1, arch=wasm), the
+// `name_GOOS_GOARCH` filename convention currently-released go-toolchain
+// autoreleases derive upload parameters from -- to the canonical
+// (OSWasm, flavor arch) form. It is a parse-time alias only: "js" is never
+// stored or surfaced as an os in artifact rows, URLs, or canonical query
+// params. Returns ("", "", false) when the pair is not the legacy form
+// (callers then proceed with normal per-value normalization). Deprecated
+// from day one: publishers should upload os=wasm, arch=js|wasip1.
+func NormalizeLegacyWasmPair(osName, arch string) (OS, Arch, bool) {
+	if strings.ToLower(strings.TrimSpace(arch)) != "wasm" {
+		return "", "", false
+	}
+	switch strings.ToLower(strings.TrimSpace(osName)) {
+	case "js":
+		return OSWasm, ArchJS, true
+	case "wasip1":
+		return OSWasm, ArchWasip1, true
+	}
+	return "", "", false
+}
+
 func ValidKind(s string) bool {
 	switch Kind(s) {
 	case KindBinary, KindLibrary, KindAssets, KindArchive, KindDocker, KindNPMPackage:

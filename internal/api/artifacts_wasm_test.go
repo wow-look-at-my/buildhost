@@ -53,6 +53,53 @@ func TestUploadArtifact_WasmFlavorFanOut(t *testing.T) {
 	assert.Len(t, rows, 2)
 }
 
+// Deprecated legacy shim: pre-#305 go-toolchain autoreleases derive upload
+// parameters from GOOS_GOARCH filenames (name_js_wasm / name_wasip1_wasm) and
+// upload with os=js/arch=wasm. The pair folds to the canonical os=wasm form
+// at parse time; "js" is never stored or surfaced as an os.
+func TestUploadArtifact_LegacyGoosGoarchPair(t *testing.T) {
+	h, proj, rel := setupUploadTest(t, "wasmlegacy")
+
+	rec := doUpload(t, h, proj, "js", "wasm", "", "\x00asm-js-module")
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	var a db.Artifact
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &a))
+	assert.Equal(t, db.OSWasm, a.OS)
+	assert.Equal(t, db.ArchJS, a.Arch)
+	assert.NotContains(t, rec.Body.String(), `"os":"js"`, "js must never surface as an os")
+
+	rec = doUpload(t, h, proj, "wasip1", "wasm", "", "\x00asm-wasip1-module")
+	require.Equal(t, http.StatusCreated, rec.Code)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &a))
+	assert.Equal(t, db.OSWasm, a.OS)
+	assert.Equal(t, db.ArchWasip1, a.Arch)
+
+	// The stored rows are canonical: os=wasm only, never os=js/wasip1.
+	rows, err := h.DB.ListArtifacts(context.Background(), rel.ID)
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	for _, row := range rows {
+		assert.Equal(t, db.OSWasm, row.OS, "legacy pair must be stored under os=wasm")
+		assert.Contains(t, []db.Arch{db.ArchJS, db.ArchWasip1}, row.Arch)
+	}
+
+	// The alias maps onto the SAME canonical row identity: re-uploading the
+	// canonical form after the legacy form conflicts (and vice versa).
+	rec = doUpload(t, h, proj, "wasm", "js", "", "\x00asm-js-module")
+	assert.Equal(t, http.StatusConflict, rec.Code)
+
+	// The shim is pair-level only. os=js with any other arch stays invalid,
+	// and arch=wasm with any other os stays invalid.
+	rec = doUpload(t, h, proj, "js", "amd64", "", "bin")
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), `invalid os \"js\"`)
+
+	rec = doUpload(t, h, proj, "linux", "wasm", "", "bin")
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), `invalid arch \"wasm\"`)
+}
+
 // os=wasm pairs only with the wasm flavor arches, and those arches only with
 // os=wasm -- every incompatible combination is a 400 that creates nothing,
 // including via the any/all arch alias and the cosmo os alias (neither alias

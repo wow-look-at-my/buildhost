@@ -171,6 +171,12 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		oses, arches = []db.OS{db.OS(rt.os)}, []db.Arch{db.Arch(rt.arch)}
+	} else if o, a, ok := db.NormalizeLegacyWasmPair(rt.os, rt.arch); ok {
+		// Deprecated legacy shim: currently-released go-toolchain autoreleases
+		// name wasm artifacts GOOS_GOARCH (name_js_wasm / name_wasip1_wasm)
+		// and upload with os=js/arch=wasm. Fold the pair to the canonical
+		// os=wasm form at parse time -- "js" is never stored as an os.
+		oses, arches = []db.OS{o}, []db.Arch{a}
 	} else {
 		var err error
 		if oses, err = expandOSSpec(rt.os); err != nil {

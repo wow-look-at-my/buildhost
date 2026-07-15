@@ -357,6 +357,18 @@ host or WASI runtime. Publish wasm explicitly. Wasm artifacts are served raw
 and via the archive formats (`tar.gz`, `zip`, ...); they never appear in the
 APT index or Homebrew tap (linux/darwin-only by construction).
 
+**Deprecated legacy compatibility shim**: currently-released go-toolchain
+autoreleases derive upload parameters from GOOS_GOARCH-ordered filenames
+(`name_js_wasm` / `name_wasip1_wasm`) and therefore upload with
+`os=js`/`arch=wasm` (or `os=wasip1`/`arch=wasm`). That exact pair is folded to
+the canonical form at parse time -- on upload, on `dl` queries, and in the
+static endpoint's canonicalization redirect -- so such uploads succeed and are
+stored, listed, and served as `os=wasm`/`arch=js|wasip1`; `js` is never stored
+or surfaced as an os anywhere. The shim is pair-level only (`os=js` with any
+other arch, or `arch=wasm` with any other os, stays invalid) and exists for
+pre-#305 go-toolchain releases; new publishers should use the canonical
+`os=wasm` form.
+
 ## Versioning
 
 Projects use auto-incrementing versions by default (v1, v2, v3...). Opt into semver with `--versioning semver` at project creation.

@@ -51,6 +51,32 @@ func TestCompatiblePlatform(t *testing.T) {
 	}
 }
 
+func TestNormalizeLegacyWasmPair(t *testing.T) {
+	// The deprecated GOOS/GOARCH-ordered pair folds to canonical os=wasm.
+	o, a, ok := NormalizeLegacyWasmPair("js", "wasm")
+	assert.True(t, ok)
+	assert.Equal(t, OSWasm, o)
+	assert.Equal(t, ArchJS, a)
+
+	// Case-insensitive and whitespace-tolerant like the other normalizers.
+	o, a, ok = NormalizeLegacyWasmPair(" WASIP1 ", "WASM")
+	assert.True(t, ok)
+	assert.Equal(t, OSWasm, o)
+	assert.Equal(t, ArchWasip1, a)
+
+	// Anything else is not the legacy pair -- including the canonical form
+	// itself, a lone js/wasip1 os with a non-wasm arch, and linux/wasm.
+	notLegacy := [][2]string{
+		{"wasm", "js"}, {"wasm", "wasip1"}, {"wasm", "wasm"},
+		{"js", "amd64"}, {"wasip1", "arm64"}, {"js", ""},
+		{"linux", "wasm"}, {"", "wasm"}, {"linux", "amd64"}, {"", ""},
+	}
+	for _, c := range notLegacy {
+		_, _, ok := NormalizeLegacyWasmPair(c[0], c[1])
+		assert.False(t, ok, "%s/%s must not be the legacy pair", c[0], c[1])
+	}
+}
+
 func TestValidKind(t *testing.T) {
 	valid := []string{"binary", "library", "assets", "archive"}
 	for _, s := range valid {
