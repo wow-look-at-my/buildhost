@@ -19,6 +19,11 @@ const (
 	OSDarwin  OS = "darwin"
 	OSWindows OS = "windows"
 	OSFreeBSD OS = "freebsd"
+	// OSWasm is the platform identifier for WebAssembly artifacts. The Arch
+	// distinguishes the flavor -- Go's two wasm ports are ArchJS (GOOS=js,
+	// the browser/Node port) and ArchWasip1 (GOOS=wasip1, WASI). OSWasm
+	// pairs only with those arches (and vice versa); see CompatiblePlatform.
+	OSWasm OS = "wasm"
 )
 
 type Arch string
@@ -28,6 +33,12 @@ const (
 	ArchARM64 Arch = "arm64"
 	Arch386   Arch = "386"
 	ArchARM   Arch = "arm"
+	// ArchJS and ArchWasip1 are the WebAssembly flavors, named after Go's
+	// GOOS for the port (js = browser/Node, wasip1 = WASI preview 1) so the
+	// publisher mapping is trivial: os is always wasm, arch is the GOOS.
+	// They only ever pair with OSWasm.
+	ArchJS     Arch = "js"
+	ArchWasip1 Arch = "wasip1"
 )
 
 type Kind string
@@ -51,7 +62,7 @@ func (k Kind) ServedViaDockerOnly() bool {
 
 func ValidOS(s string) bool {
 	switch OS(s) {
-	case OSLinux, OSDarwin, OSWindows, OSFreeBSD:
+	case OSLinux, OSDarwin, OSWindows, OSFreeBSD, OSWasm:
 		return true
 	}
 	return false
@@ -59,10 +70,29 @@ func ValidOS(s string) bool {
 
 func ValidArch(s string) bool {
 	switch Arch(s) {
-	case ArchAMD64, ArchARM64, Arch386, ArchARM:
+	case ArchAMD64, ArchARM64, Arch386, ArchARM, ArchJS, ArchWasip1:
 		return true
 	}
 	return false
+}
+
+// wasmFlavorArch reports whether arch is one of the WebAssembly flavor
+// architectures, which only ever pair with OSWasm.
+func wasmFlavorArch(a Arch) bool {
+	return a == ArchJS || a == ArchWasip1
+}
+
+// CompatiblePlatform reports whether the (os, arch) pair names a coherent
+// platform: OSWasm pairs only with the wasm flavor arches (ArchJS/ArchWasip1)
+// and those arches pair only with OSWasm -- a "linux/js" or "wasm/amd64"
+// artifact could never be downloaded by anything real. Every other pairing is
+// allowed (this is a coherence check, not a validity check; callers validate
+// the individual values separately).
+func CompatiblePlatform(os OS, arch Arch) bool {
+	if os == OSWasm || wasmFlavorArch(arch) {
+		return os == OSWasm && wasmFlavorArch(arch)
+	}
+	return true
 }
 
 // NormalizeOS maps an operating-system name to its canonical db.OS, accepting the
@@ -80,6 +110,8 @@ func NormalizeOS(s string) (OS, bool) {
 		return OSWindows, true
 	case "freebsd":
 		return OSFreeBSD, true
+	case "wasm", "webassembly":
+		return OSWasm, true
 	}
 	return "", false
 }
@@ -99,6 +131,13 @@ func NormalizeArch(s string) (Arch, bool) {
 		return Arch386, true
 	case "arm", "armv7", "armv7l", "armv6", "armv6l", "armhf":
 		return ArchARM, true
+	case "js":
+		return ArchJS, true
+	// Deliberately no bare "wasi" alias: WASI has versioned snapshots
+	// (preview 1 today, preview 2 in the wings) and an unversioned alias
+	// would silently change meaning later.
+	case "wasip1":
+		return ArchWasip1, true
 	}
 	return "", false
 }
