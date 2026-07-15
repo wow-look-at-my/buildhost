@@ -58,6 +58,11 @@ var maxUploadSize = config.MaxUploadSize()
 // time -- each combination becomes an ordinary per-platform artifact row, all
 // sharing the same content-addressed blob -- so downloads, latest-resolution,
 // format handlers, and retention are untouched.
+//
+// The wasm platform is deliberately absent from both expansions: "any"/"all"
+// mean "runs on every native desktop platform", and a wasm module is not that
+// -- it needs a JS host or WASI runtime, and a native binary cannot run under
+// one. Publish wasm explicitly (os=wasm, arch=js/wasip1).
 var (
 	osAliasExpansion   = []db.OS{db.OSLinux, db.OSDarwin, db.OSWindows}
 	archAliasExpansion = []db.Arch{db.ArchAMD64, db.ArchARM64}
@@ -166,6 +171,12 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		oses, arches = []db.OS{db.OS(rt.os)}, []db.Arch{db.Arch(rt.arch)}
+	} else if o, a, ok := db.NormalizeLegacyWasmPair(rt.os, rt.arch); ok {
+		// Deprecated legacy shim: currently-released go-toolchain autoreleases
+		// name wasm artifacts GOOS_GOARCH (name_js_wasm / name_wasip1_wasm)
+		// and upload with os=js/arch=wasm. Fold the pair to the canonical
+		// os=wasm form at parse time -- "js" is never stored as an os.
+		oses, arches = []db.OS{o}, []db.Arch{a}
 	} else {
 		var err error
 		if oses, err = expandOSSpec(rt.os); err != nil {
@@ -175,6 +186,21 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		if arches, err = expandArchSpec(rt.arch); err != nil {
 			jsonError(w, http.StatusBadRequest, err.Error())
 			return
+		}
+		// Every combination the upload fans out to must be a coherent
+		// platform: os=wasm pairs only with the wasm flavor arches
+		// (js/wasip1) and vice versa -- a "linux/js" or "wasm/amd64" row
+		// could never be downloaded by anything real. Checked before the
+		// body is read so a bad spec stores nothing.
+		for _, osName := range oses {
+			for _, arch := range arches {
+				if !db.CompatiblePlatform(osName, arch) {
+					jsonError(w, http.StatusBadRequest, fmt.Sprintf(
+						"incompatible os/arch pair %s/%s: os=wasm pairs only with arch js or wasip1 (and those arches only with os=wasm)",
+						osName, arch))
+					return
+				}
+			}
 		}
 	}
 
