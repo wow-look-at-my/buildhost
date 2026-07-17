@@ -117,6 +117,11 @@ curl -LO "__DL_URL__/myapp?v=1&os=linux&arch=amd64"
 curl -LO "__DL_URL__/myapp?branch=main&os=linux&arch=amd64"
 ```
 
+The bare download URL ("latest" -- no `v=` and no `branch=`) always resolves
+the newest build of the project's default branch; uploads from other branches
+never affect it. This is guaranteed and covered by buildhost's e2e regression
+tests -- do not re-verify it per project.
+
 Add `&fmt=` to repackage on the fly. Supported values: `raw`, `tar.gz`,
 `tar.xz`, `tar.zst`, `zip`.
 
