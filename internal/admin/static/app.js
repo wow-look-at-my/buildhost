@@ -111,6 +111,52 @@ App.codeBlock = function (label, code) {
         '<copy-btn class="code-copy-btn" data-src="pre"></copy-btn></div><pre>' + App.h(code) + "</pre></div>";
 };
 
+App.projectTreeRows = function (projects) {
+    var root = { children: {} };
+    var nodeFor = function (parent, name) {
+        if (!parent.children[name]) parent.children[name] = { name: name, children: {}, project: null };
+        return parent.children[name];
+    };
+    for (var i = 0; i < projects.length; i++) {
+        var p = projects[i];
+        var parts = String(p.name || "").split("/");
+        var cur = root;
+        for (var j = 0; j < parts.length; j++) cur = nodeFor(cur, parts[j]);
+        cur.project = p;
+    }
+
+    var out = [];
+    var walk = function (node, depth) {
+        var names = Object.keys(node.children).sort();
+        for (var i = 0; i < names.length; i++) {
+            var child = node.children[names[i]];
+            if (Object.keys(child.children).length > 0) {
+                out.push({ kind: "folder", depth: depth, name: child.name });
+            }
+            if (child.project) {
+                out.push({ kind: "project", depth: depth, project: child.project });
+            }
+            walk(child, depth + 1);
+        }
+    };
+    walk(root, 0);
+    return out;
+};
+
+App.projectLabel = function (name) {
+    var s = String(name || "");
+    var i = s.lastIndexOf("/");
+    return i >= 0 ? s.substring(i + 1) : s;
+};
+
+App.projectNameCell = function (project, depth) {
+    var name = project.name || "";
+    var label = App.projectLabel(name);
+    var cell = '<span class="project-label"><a href="#/projects/' + App.h(name) + '">' + App.h(label) + "</a></span>";
+    if (label !== name) cell += '<span class="project-path">' + App.h(name) + "</span>";
+    return '<td class="project-name-cell project-depth-' + depth + '">' + cell + "</td>";
+};
+
 // --- Pages ---
 
 App.pages = {};
@@ -184,9 +230,16 @@ App.pages.projects = function () {
         if (projects.length === 0) {
             html += '<tr><td colspan="7" class="empty">No projects yet</td></tr>';
         } else {
-            for (var i = 0; i < projects.length; i++) {
-                var p = projects[i];
-                html += "<tr><td><a href='#/projects/" + App.h(p.name) + "'>" + App.h(p.name) + "</a></td>";
+            var rows = App.projectTreeRows(projects);
+            for (var i = 0; i < rows.length; i++) {
+                var row = rows[i];
+                if (row.kind === "folder") {
+                    html += '<tr class="project-folder-row"><td colspan="7" class="project-folder-cell project-depth-' + row.depth + '"><span class="project-folder-icon"></span>' + App.h(row.name) + "</td></tr>";
+                    continue;
+                }
+                var p = row.project;
+                html += "<tr class='project-tree-row'>";
+                html += App.projectNameCell(p, row.depth);
                 html += '<td class="truncate">' + App.h(p.description) + "</td>";
                 html += "<td>" + App.badge("neutral", p.versioning) + "</td>";
                 html += "<td>" + (p.is_private ? App.badge("warning", "Private") : App.badge("success", "Public")) + "</td>";
@@ -290,7 +343,7 @@ App.pages.project = function (name) {
                 ).cls("info-table"),
                 Html.raw(App.codeBlock("Direct download (curl)", curlCmd)),
                 Html.raw(App.codeBlock("APT", aptCmd)),
-                Html.raw(App.codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "/tap.git\nbrew install pazer/build/" + p.name)),
+                Html.raw(App.codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "\nbrew install pazer/build/" + p.name)),
                 Html.raw(App.codeBlock("npm", npmCmd)),
                 Html.raw(App.codeBlock("Docker", dockerCmd))
             ).cls("card");
@@ -444,9 +497,9 @@ App.pages.registries = function () {
         html += "</div>";
 
         html += '<div class="card"><h2>Homebrew Tap</h2><p class="section-desc">Homebrew formulas are served through a generated Git tap. Formula files auto-detect macOS and Linux artifacts.</p>';
-        html += '<table class="info-table"><tr><td class="info-label">Tap Git URL</td><td class="endpoint-cell"><code>' + App.h(brew + "/tap.git") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += '<table class="info-table"><tr><td class="info-label">Tap Git URL</td><td class="endpoint-cell"><code>' + App.h(brew) + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += '<tr><td class="info-label">Formula</td><td class="endpoint-cell"><code>' + App.h(brew + "/Formula/{project}.rb") + "</code><copy-btn data-src='code'></copy-btn></td></tr></table>";
-        html += App.codeBlock("Install", "brew tap pazer/build " + brew + "/tap.git\nbrew install pazer/build/{project}");
+        html += App.codeBlock("Install", "brew tap pazer/build " + brew + "\nbrew install pazer/build/{project}");
         html += "</div>";
 
         html += '<div class="card"><h2>npm Registry</h2><p class="section-desc">npm-compatible registry. Packages are scoped under <code>@buildhost</code>.</p>';
