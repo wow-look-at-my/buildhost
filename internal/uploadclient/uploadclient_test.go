@@ -33,6 +33,10 @@ type mockServer struct {
 
 	maxDirect int64 // advertised by /api/v1/server-info; 0 omits the endpoint
 
+	// uploadBySHA256 is advertised on server-info when set (a server with
+	// hash-reference upload support).
+	uploadBySHA256 bool
+
 	sessions map[string][]byte // id -> spooled bytes
 	nextID   int
 
@@ -53,6 +57,7 @@ type mockServer struct {
 	captured      []byte
 	capturedQuery map[string]string
 	capturedCT    string
+	capturedHdr   http.Header
 }
 
 func newMockServer(t *testing.T) (*mockServer, *httptest.Server) {
@@ -72,7 +77,11 @@ func (m *mockServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{"max_direct_upload_bytes": m.maxDirect, "upload_sessions": true})
+		json.NewEncoder(w).Encode(map[string]any{
+			"max_direct_upload_bytes": m.maxDirect,
+			"upload_sessions":         true,
+			"upload_by_sha256":        m.uploadBySHA256,
+		})
 
 	case r.URL.Path == "/api/v1/uploads" && r.Method == "POST":
 		m.sessionCalls++
@@ -130,6 +139,7 @@ func (m *mockServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			m.capturedQuery[k] = q.Get(k)
 		}
 		m.capturedCT = r.Header.Get("Content-Type")
+		m.capturedHdr = r.Header.Clone()
 		if id := q.Get("upload_session"); id != "" {
 			buf, ok := m.sessions[id]
 			if !ok {
@@ -259,4 +269,56 @@ func TestNoProgressGivesUpAndAborts(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no progress")
 	assert.Empty(t, m.sessions, "session aborted after the hard failure")
+}
+
+func TestFileSHA256(t *testing.T) {
+	path, data := tempFile(t, 33)
+	sum := sha256.Sum256(data)
+
+	got, err := FileSHA256(path)
+	require.NoError(t, err)
+	assert.Equal(t, hex.EncodeToString(sum[:]), got)
+
+	_, err = FileSHA256(filepath.Join(t.TempDir(), "missing"))
+	require.Error(t, err)
+}
+
+// The hash-reference capability must ONLY come from an explicit server-info
+// advertisement: a server that predates the feature ignores upload_sha256 and
+// would store the empty request body, so guessing is never safe.
+func TestSupportsUploadBySHA256(t *testing.T) {
+	m, ts := newMockServer(t)
+	m.uploadBySHA256 = true
+	u := &Uploader{Server: ts.URL, Token: "tok"}
+	assert.True(t, u.SupportsUploadBySHA256())
+
+	// Advertised absent (an older server): reported false.
+	_, ts2 := newMockServer(t)
+	u2 := &Uploader{Server: ts2.URL, Token: "tok"}
+	assert.False(t, u2.SupportsUploadBySHA256())
+
+	// server-info unreachable: reported false, never guessed.
+	m3, ts3 := newMockServer(t)
+	m3.maxDirect = 0 // 404s server-info
+	u3 := &Uploader{Server: ts3.URL, Token: "tok"}
+	assert.False(t, u3.SupportsUploadBySHA256())
+}
+
+func TestUploadByHash(t *testing.T) {
+	m, ts := newMockServer(t)
+	u := &Uploader{Server: ts.URL, Token: "tok"}
+
+	sum := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	resp, err := u.UploadByHash("PUT", ts.URL+"/target?kind=binary",
+		map[string]string{"X-Artifact-Filename": "tool.exe"}, sum)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	assert.Empty(t, m.captured, "a hash-reference upload carries no body")
+	assert.Equal(t, sum, m.capturedQuery["upload_sha256"])
+	assert.Equal(t, "binary", m.capturedQuery["kind"], "target query preserved")
+	assert.Empty(t, m.capturedQuery["upload_session"], "never a session finalize")
+	assert.Equal(t, "tool.exe", m.capturedHdr.Get("X-Artifact-Filename"), "per-slot headers ride the reference")
+	assert.Empty(t, m.capturedCT, "no Content-Type on an empty-body reference")
 }
