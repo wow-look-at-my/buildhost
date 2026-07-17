@@ -28,13 +28,15 @@ func init() {
 	publishCmd.Flags().String("token", "", "API token")
 	publishCmd.Flags().String("project", "", "Project name")
 	publishCmd.Flags().String("version", "", "Version (auto-assigned if omitted for auto-versioned projects)")
-	publishCmd.Flags().String("os", "", "Target OS")
-	publishCmd.Flags().String("arch", "", "Target architecture")
+	publishCmd.Flags().String("os", "", "Target OS: one name, a comma-separated list (linux,darwin,windows), or cosmo/any for all of linux+darwin+windows")
+	publishCmd.Flags().String("arch", "", "Target architecture: one name, a comma-separated list, or any for amd64+arm64")
 	publishCmd.Flags().String("kind", "binary", "Artifact kind (binary, library, assets, archive)")
 	publishCmd.Flags().String("artifact", "", "Path to artifact file")
 	publishCmd.Flags().String("git-branch", "", "Git branch")
 	publishCmd.Flags().String("git-commit", "", "Git commit")
+	publishCmd.Flags().String("oci-user", "", "Run-as user for synthesized OCI images (uid[:gid] or name[:group]); default is root")
 	publishCmd.Flags().String("manifest", "", "Path to release manifest (TOML)")
+	addChunkSizeFlag(publishCmd)
 }
 
 type manifest struct {
@@ -45,6 +47,7 @@ type manifest struct {
 	GitBranch string             `toml:"git_branch"`
 	GitCommit string             `toml:"git_commit"`
 	Notes     string             `toml:"notes"`
+	OciUser   string             `toml:"oci_user"`
 	Artifacts []manifestArtifact `toml:"artifact"`
 }
 
@@ -59,7 +62,7 @@ type manifestArtifact struct {
 func runPublish(cmd *cobra.Command, _ []string) error {
 	manifestPath, _ := cmd.Flags().GetString("manifest")
 	if manifestPath != "" {
-		return publishFromManifest(manifestPath)
+		return publishFromManifest(cmd, manifestPath)
 	}
 	return publishSingle(cmd)
 }
@@ -75,6 +78,7 @@ func publishSingle(cmd *cobra.Command) error {
 	artifactPath, _ := cmd.Flags().GetString("artifact")
 	gitBranch, _ := cmd.Flags().GetString("git-branch")
 	gitCommit, _ := cmd.Flags().GetString("git-commit")
+	ociUser, _ := cmd.Flags().GetString("oci-user")
 
 	if serverURL == "" || token == "" || project == "" || artifactPath == "" || osStr == "" || archStr == "" {
 		return fmt.Errorf("--server, --token, --project, --artifact, --os, and --arch are required")
@@ -84,6 +88,7 @@ func publishSingle(cmd *cobra.Command) error {
 		"version":    version,
 		"git_branch": gitBranch,
 		"git_commit": gitCommit,
+		"oci_user":   ociUser,
 	})
 	resp, err := doRequest("POST", serverURL+"/api/v1/projects/"+project+"/releases", token, bytes.NewReader(releaseBody))
 	if err != nil {
@@ -100,15 +105,14 @@ func publishSingle(cmd *cobra.Command) error {
 		rel.Version = version
 	}
 
-	f, err := os.Open(artifactPath)
+	up, err := newUploader(cmd, serverURL, token)
 	if err != nil {
-		return fmt.Errorf("open artifact: %w", err)
+		return err
 	}
-	defer f.Close()
 
 	url := fmt.Sprintf("%s/api/v1/projects/%s/releases/%s/artifacts/%s/%s?kind=%s",
 		serverURL, project, rel.Version, osStr, archStr, kind)
-	resp, err = doRequest("PUT", url, token, f)
+	resp, err = up.Upload("PUT", url, nil, artifactPath)
 	if err != nil {
 		return fmt.Errorf("upload artifact: %w", err)
 	}
@@ -121,7 +125,7 @@ func publishSingle(cmd *cobra.Command) error {
 	return nil
 }
 
-func publishFromManifest(path string) error {
+func publishFromManifest(cmd *cobra.Command, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read manifest: %w", err)
@@ -137,6 +141,7 @@ func publishFromManifest(path string) error {
 		"git_branch": m.GitBranch,
 		"git_commit": m.GitCommit,
 		"notes":      m.Notes,
+		"oci_user":   m.OciUser,
 	})
 	resp, err := doRequest("POST", m.Server+"/api/v1/projects/"+m.Project+"/releases", m.Token, bytes.NewReader(releaseBody))
 	if err != nil {
@@ -149,16 +154,16 @@ func publishFromManifest(path string) error {
 		rel.Version = m.Version
 	}
 
+	up, err := newUploader(cmd, m.Server, m.Token)
+	if err != nil {
+		return err
+	}
+
 	baseDir := filepath.Dir(path)
 	for _, a := range m.Artifacts {
 		artifactPath := a.Path
 		if !filepath.IsAbs(artifactPath) {
 			artifactPath = filepath.Join(baseDir, artifactPath)
-		}
-
-		f, err := os.Open(artifactPath)
-		if err != nil {
-			return fmt.Errorf("open %s: %w", a.Path, err)
 		}
 
 		kind := a.Kind
@@ -169,18 +174,12 @@ func publishFromManifest(path string) error {
 		url := fmt.Sprintf("%s/api/v1/projects/%s/releases/%s/artifacts/%s/%s?kind=%s",
 			m.Server, m.Project, rel.Version, a.OS, a.Arch, kind)
 
-		req, err := http.NewRequest("PUT", url, f)
-		if err != nil {
-			f.Close()
-			return err
-		}
-		req.Header.Set("Authorization", "Bearer "+m.Token)
+		var header map[string]string
 		if a.Filename != "" {
-			req.Header.Set("X-Artifact-Filename", a.Filename)
+			header = map[string]string{"X-Artifact-Filename": a.Filename}
 		}
 
-		resp, err := http.DefaultClient.Do(req)
-		f.Close()
+		resp, err := up.Upload("PUT", url, header, artifactPath)
 		if err != nil {
 			return fmt.Errorf("upload %s/%s: %w", a.OS, a.Arch, err)
 		}

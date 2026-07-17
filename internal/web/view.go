@@ -5,11 +5,13 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 )
 
 // siteName is the product name shown in the header and titles.
@@ -25,24 +27,33 @@ var templateFuncs = template.FuncMap{
 
 type indexView struct {
 	SiteName string
-	Projects []projectCard
+	Rows     []projectListRow
 }
 
 type projectCard struct {
-	Name         string
-	URL          string
-	Description  string
-	ReleaseCount int64
+	Name          string
+	Label         string
+	URL           string
+	Description   string
+	ReleaseCount  int64
 	ArtifactCount int64
-	Updated      string
-	Private      bool
+	Updated       string
+	Private       bool
+}
+
+type projectListRow struct {
+	Kind    string
+	Depth   int
+	Folder  string
+	Project projectCard
 }
 
 func buildIndexView(rows []db.ProjectSummary) indexView {
-	cards := make([]projectCard, 0, len(rows))
+	root := newProjectNode("")
 	for _, p := range rows {
-		cards = append(cards, projectCard{
+		root.add(projectCard{
 			Name:          p.Name,
+			Label:         lastSegment(p.Name),
 			URL:           projectPath(p.Name),
 			Description:   p.Description,
 			ReleaseCount:  p.ReleaseCount,
@@ -51,7 +62,52 @@ func buildIndexView(rows []db.ProjectSummary) indexView {
 			Private:       p.IsPrivate,
 		})
 	}
-	return indexView{SiteName: siteName, Projects: cards}
+	return indexView{SiteName: siteName, Rows: root.rows(0)}
+}
+
+type projectNode struct {
+	name     string
+	project  *projectCard
+	children map[string]*projectNode
+}
+
+func newProjectNode(name string) *projectNode {
+	return &projectNode{name: name, children: map[string]*projectNode{}}
+}
+
+func (n *projectNode) add(card projectCard) {
+	cur := n
+	for _, part := range strings.Split(card.Name, "/") {
+		child := cur.children[part]
+		if child == nil {
+			child = newProjectNode(part)
+			cur.children[part] = child
+		}
+		cur = child
+	}
+	cur.project = &card
+}
+
+func (n *projectNode) rows(depth int) []projectListRow {
+	names := make([]string, 0, len(n.children))
+	for name := range n.children {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	out := make([]projectListRow, 0, len(names))
+	for _, name := range names {
+		child := n.children[name]
+		hasChildren := len(child.children) > 0
+		if hasChildren {
+			out = append(out, projectListRow{Kind: "folder", Depth: depth, Folder: name})
+		}
+		if child.project != nil {
+			out = append(out, projectListRow{Kind: "project", Depth: depth, Project: *child.project})
+		}
+		out = append(out, child.rows(depth+1)...)
+	}
+	return out
 }
 
 // ----- project -------------------------------------------------------------
@@ -115,8 +171,8 @@ func buildProjectView(r *http.Request, p *db.Project, rels []db.ReleaseSummary, 
 	}
 
 	// Only published releases are downloadable, so only those are shown. The
-	// first published row (the list is ordered newest-first) is the latest.
-	latestShown := false
+	// "latest" badge is tied to the already-resolved latest version rather than
+	// whichever branch happens to have the highest version number.
 	for _, rel := range rels {
 		if !rel.Published {
 			continue
@@ -129,9 +185,8 @@ func buildProjectView(r *http.Request, p *db.Project, rels []db.ReleaseSummary, 
 			Published:     publishedWhen(rel.PublishedAt, rel.CreatedAt),
 			ArtifactCount: rel.ArtifactCount,
 		}
-		if !latestShown {
+		if latestVersion != "" && rel.Version == latestVersion {
 			row.Latest = true
-			latestShown = true
 		}
 		v.Releases = append(v.Releases, row)
 	}
@@ -162,10 +217,18 @@ func buildInstallInfo(r *http.Request, project, version string, hasBinary bool) 
 	}
 	if hasBinary {
 		info.Curl = fmt.Sprintf("curl -LO %q", dlURL(r, project, "", "linux", "amd64", "raw"))
-		info.Brew = "brew install " + serviceURL(r, "brew", project)
+		info.Brew = "brew tap pazer/build " + serviceBase(r, "brew") + "\nbrew install pazer/build/" + project
 		info.Npm = "npm install @buildhost/" + project + " --registry " + serviceBase(r, "npm")
-		info.Apt = fmt.Sprintf("echo \"deb [signed-by=/etc/apt/keyrings/%s.gpg] %s stable main\" | sudo tee /etc/apt/sources.list.d/%s.list",
-			lastSegment(project), serviceURL(r, "apt", project), lastSegment(project))
+		aptURL := serviceURL(r, "apt", project)
+		// A slash-namespaced project keeps its slash in the repo URL but installs
+		// under a folded Debian package name (see repackage.DebPackageName).
+		pkg := repackage.DebPackageName(project)
+		info.Apt = fmt.Sprintf(
+			"sudo install -d -m 0755 /etc/apt/keyrings\n"+
+				"curl -fsSL %s/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\n"+
+				"echo \"deb [signed-by=/etc/apt/keyrings/buildhost.gpg] %s stable main\" | sudo tee /etc/apt/sources.list.d/%s.list\n"+
+				"sudo apt update && sudo apt install %s",
+			aptURL, aptURL, pkg, pkg)
 	}
 	return info
 }
@@ -301,6 +364,8 @@ func releasePath(project, version string) string {
 
 // ----- formatting helpers --------------------------------------------------
 
+// lastSegment returns the final /-separated segment of a slash-namespaced
+// project name -- the tree label shown next to the full name on the index.
 func lastSegment(name string) string {
 	if i := strings.LastIndexByte(name, '/'); i >= 0 {
 		return name[i+1:]

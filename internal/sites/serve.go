@@ -2,6 +2,7 @@ package sites
 
 import (
 	"archive/tar"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,9 +19,13 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
+const siteNotFoundPage = "404.html"
+
 func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	ctx, span := sitesTracer.Start(r.Context(), "sites.serve")
 	defer span.End()
+
+	setSiteSecurityHeaders(w)
 
 	project := auth.ProjectFrom(ctx)
 	rt := routeFrom(ctx)
@@ -37,13 +42,10 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decide "is this a directory request?" from the original request path, not
-	// rt.path: the router strips the trailing slash from the {path...} capture,
-	// so a request for /p/branch/main/docs/ arrives here as rt.path="docs". Only
-	// r.URL.Path preserves the trailing slash that distinguishes a directory
-	// (serve its index.html) from a file. Reading it off rt.path silently broke
-	// subdirectory index serving -- the bug the bypassing unit tests masked by
-	// hand-feeding route{path:"docs/"} the real router never produces.
+	// The {path...} router value has its trailing slash stripped, so detect a
+	// directory request from the real request path -- otherwise a nested dir URL
+	// like /scratchpads/foo/ is treated as a file, never gets index.html
+	// appended, and matches the 0-byte directory entry in the tar below.
 	isDir := rt.path == "" || strings.HasSuffix(r.URL.Path, "/")
 	filePath := path.Clean(rt.path)
 	if isDir || filePath == "." {
@@ -84,25 +86,118 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if hdr.Typeflag != tar.TypeReg {
+			continue // never serve a directory entry as a file (0-byte body)
+		}
 		name := path.Clean(hdr.Name)
 		if name == filePath {
-			ct := contentType(name)
-			w.Header().Set("Content-Type", ct)
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", hdr.Size))
-			w.Header().Set("Cache-Control", "no-cache")
-			// A hosted site is a real web page that must load its own
-			// scripts/styles/images. Override the server-wide API CSP
-			// ("default-src 'none'"), which would otherwise block every asset
-			// and render the site blank, with one that permits the site's own
-			// same-origin resources and data: URIs -- the same policy the admin
-			// server uses to serve this kind of SPA.
-			w.Header().Set("Content-Security-Policy", "default-src 'self' data:")
-			io.Copy(w, tr)
+			serveTarFile(w, tr, name, hdr, http.StatusOK)
+			return
+		}
+	}
+
+	rc, _, err = h.Store.Get(ctx, site.StorageKey)
+	if err != nil {
+		http.Error(w, "site data not found", http.StatusInternalServerError)
+		return
+	}
+	defer rc.Close()
+
+	tr = tar.NewReader(rc)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			http.Error(w, "corrupt site archive", http.StatusInternalServerError)
+			return
+		}
+
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		name := path.Clean(hdr.Name)
+		if name == siteNotFoundPage {
+			serveTarFile(w, tr, name, hdr, http.StatusNotFound)
 			return
 		}
 	}
 
 	http.NotFound(w, r)
+}
+
+// defaultBranch is the branch a project's bare root resolves to: its
+// projects.default_branch (learned from GitHub on publish, e.g. "main"),
+// falling back to the schema/seed default ("master") when unset. This is the
+// same branch the apex "latest" download tracks, so the root site URL and
+// "latest" stay consistent.
+func defaultBranch(project *db.Project) string {
+	if project != nil && project.DefaultBranch != "" {
+		return project.DefaultBranch
+	}
+	return db.LatestBranch
+}
+
+// resolveRootBranch returns the branch the bare site root should resolve to. It
+// prefers the project's default branch (defaultBranch), but only when a site has
+// actually been published there. projects.default_branch is a best-effort hint
+// learned from GitHub on publish; it can lag at the seed "master" -- e.g. until a
+// GitHub-OIDC publish corrects it, or when buildhost can't reach a private repo
+// to learn its real default -- in which case the sites may all live on a branch
+// (commonly "main") the hint doesn't name. Blindly trusting it then bounces the
+// root to /{project}/branch/{default}/ where no site exists, a guaranteed 404.
+//
+// So when the default branch has no site, fall back to one that does: prefer the
+// conventional "main"/"master" names (so the root lands on the canonical site,
+// not a more-recently-updated ephemeral PR-preview branch), then the most
+// recently updated site as a last resort. With no DB (unit tests) or no sites at
+// all, the default branch is returned unchanged, preserving the prior behavior.
+func resolveRootBranch(ctx context.Context, database *db.DB, project *db.Project) string {
+	preferred := defaultBranch(project)
+	if database == nil || siteExists(ctx, database, project.ID, preferred) {
+		return preferred
+	}
+	for _, b := range [...]string{"main", db.LatestBranch} {
+		if b != preferred && siteExists(ctx, database, project.ID, b) {
+			return b
+		}
+	}
+	if sites, err := database.ListSites(ctx, project.ID); err == nil && len(sites) > 0 {
+		return sites[0].Branch // ListSites is ordered updated_at DESC
+	}
+	return preferred // no sites at all -- keep the default (Serve 404s as before)
+}
+
+func siteExists(ctx context.Context, database *db.DB, projectID int64, branch string) bool {
+	if branch == "" {
+		return false
+	}
+	_, err := database.GetSite(ctx, projectID, branch)
+	return err == nil
+}
+
+// RedirectToDefaultBranch sends the bare site root (/{project} or /{project}/)
+// to /{project}/branch/{default}/, so a project's root URL resolves to its
+// canonical site without the caller having to know which branch it lives on.
+// The target is a mutable pointer -- the default branch can change and its site
+// updates in place -- so it is a 302 marked no-store, never cached like the
+// permanent trailing-slash canonicalization in Serve.
+func (h *Handler) RedirectToDefaultBranch(w http.ResponseWriter, r *http.Request) {
+	project := auth.ProjectFrom(r.Context())
+	target := "/" + project.Name + "/branch/" + resolveRootBranch(r.Context(), h.DB, project) + "/"
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, target, http.StatusFound)
+}
+
+func serveTarFile(w http.ResponseWriter, tr *tar.Reader, name string, hdr *tar.Header, status int) {
+	w.Header().Set("Content-Type", contentType(name))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", hdr.Size))
+	w.Header().Set("Cache-Control", "no-cache")
+	if status != http.StatusOK {
+		w.WriteHeader(status)
+	}
+	io.Copy(w, tr)
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -120,6 +215,17 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(sites)
+}
+
+// setSiteSecurityHeaders drops app-level hardening headers that block hosted
+// site assets, then applies the hosted-site isolation and non-credentialed CORS
+// headers.
+func setSiteSecurityHeaders(w http.ResponseWriter) {
+	w.Header().Del("Content-Security-Policy")
+	w.Header().Del("X-Frame-Options")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+	w.Header().Set("Cross-Origin-Embedder-Policy", "credentialless")
 }
 
 func contentType(name string) string {

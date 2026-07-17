@@ -15,11 +15,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 // The sites service is registered as a subdomain route (sites.{domain}/...), so
@@ -161,6 +161,37 @@ func TestRouting(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, apex.Code, "apex /sites path must not reach the sites handler")
 }
 
+func TestUpload_PublicSiteFlag(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "priv")
+
+	// X-Public-Site: true marks the site public.
+	body := makeTarGz(t, map[string]string{"index.html": "<h1>hi</h1>"})
+	req := httptest.NewRequest("PUT", "/sites/priv/branch/pr-1", bytes.NewReader(body))
+	req.Header.Set("X-Public-Site", "true")
+	req = withRoute(req, proj, route{project: "priv", branch: "pr-1", write: true})
+	rec := httptest.NewRecorder()
+	h.Upload(rec, req)
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	site, err := d.GetSite(context.Background(), proj.ID, "pr-1")
+	require.NoError(t, err)
+	assert.True(t, site.IsPublic, "X-Public-Site: true should persist as public")
+
+	// The Serve route reports this branch as publicly readable; write and the
+	// branch listing never do.
+	assert.True(t, route{project: "priv", branch: "pr-1"}.AllowsPublicRead(context.Background(), d, proj))
+	assert.False(t, route{project: "priv", branch: "pr-1", write: true}.AllowsPublicRead(context.Background(), d, proj))
+	assert.False(t, route{project: "priv", branch: ""}.AllowsPublicRead(context.Background(), d, proj))
+
+	// Without the header a site stays private (gated).
+	uploadSite(t, h, proj, "pr-2", map[string]string{"index.html": "x"})
+	gated, err := d.GetSite(context.Background(), proj.ID, "pr-2")
+	require.NoError(t, err)
+	assert.False(t, gated.IsPublic)
+	assert.False(t, route{project: "priv", branch: "pr-2"}.AllowsPublicRead(context.Background(), d, proj))
+}
+
 func TestUpload(t *testing.T) {
 	env := setupTest(t)
 	seedProject(t, env.db, "mysite")
@@ -222,9 +253,11 @@ func TestServe_File(t *testing.T) {
 	assert.Contains(t, rec.Header().Get("Content-Type"), "css")
 }
 
-// A served site asset must carry a CSP that lets the site load its own
-// resources. The server-wide middleware sets "default-src 'none'" (right for the
-// JSON/binary API); Serve overrides it so hosted pages are not blanked by it.
+// A served site asset must drop the app's strict security headers so the
+// site can load its own resources. The server-wide middleware sets
+// "default-src 'none'" and "X-Frame-Options: DENY" (right for the JSON/binary
+// API); Serve's setSiteSecurityHeaders removes them and applies the hosted-site
+// isolation/CORS headers instead, so hosted pages are not blanked by it.
 func TestServe_CSPAllowsOwnAssets(t *testing.T) {
 	env := setupTest(t)
 	seedProject(t, env.db, "mysite")
@@ -233,10 +266,14 @@ func TestServe_CSPAllowsOwnAssets(t *testing.T) {
 		"app.js":     "console.log(1)",
 	})
 
-	for _, path := range []string{"/mysite/branch/main/", "/mysite/branch/main/app.js"} {
-		rec := env.do(t, "GET", path, "", nil, false)
-		require.Equal(t, http.StatusOK, rec.Code, path)
-		assert.Equal(t, "default-src 'self' data:", rec.Header().Get("Content-Security-Policy"), path)
+	for _, p := range []string{"/mysite/branch/main/", "/mysite/branch/main/app.js"} {
+		rec := env.do(t, "GET", p, "", nil, false)
+		require.Equal(t, http.StatusOK, rec.Code, p)
+		assert.Empty(t, rec.Header().Get("Content-Security-Policy"), p)
+		assert.Empty(t, rec.Header().Get("X-Frame-Options"), p)
+		assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"), p)
+		assert.Equal(t, "same-origin", rec.Header().Get("Cross-Origin-Opener-Policy"), p)
+		assert.Equal(t, "credentialless", rec.Header().Get("Cross-Origin-Embedder-Policy"), p)
 	}
 }
 
@@ -279,6 +316,11 @@ func TestServe_Redirect(t *testing.T) {
 	rec := env.do(t, "GET", "/mysite/branch/main", "", nil, false)
 	assert.Equal(t, http.StatusMovedPermanently, rec.Code)
 	assert.Equal(t, "/mysite/branch/main/", rec.Header().Get("Location"))
+	// The redirect response also drops the app's strict security headers.
+	assert.Empty(t, rec.Header().Get("Content-Security-Policy"))
+	assert.Empty(t, rec.Header().Get("X-Frame-Options"))
+	assert.Equal(t, "same-origin", rec.Header().Get("Cross-Origin-Opener-Policy"))
+	assert.Equal(t, "credentialless", rec.Header().Get("Cross-Origin-Embedder-Policy"))
 }
 
 func TestDelete(t *testing.T) {
@@ -625,7 +667,9 @@ func TestZipToTar_PathTraversal(t *testing.T) {
 	zw.Close()
 
 	var out bytes.Buffer
-	_, err = zipToTar(buf.Bytes(), &out)
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	require.NoError(t, err)
+	_, err = zipToTar(zr, &out)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "path traversal")
 }
@@ -639,7 +683,9 @@ func TestZipToTar_AbsolutePath(t *testing.T) {
 	zw.Close()
 
 	var out bytes.Buffer
-	_, err = zipToTar(buf.Bytes(), &out)
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	require.NoError(t, err)
+	_, err = zipToTar(zr, &out)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "absolute path")
 }

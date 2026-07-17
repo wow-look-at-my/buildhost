@@ -34,13 +34,45 @@ func init() {
 
 type route struct {
 	project string
+	version string
+	os      string
+	arch    string
+	fmtStr  string
+	debug   bool
+	token   string
 }
 
 func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
+// AllowsPublicRead lets a valid signed download token (&token=) authorize this
+// one artifact even under a private project, the same way a public site bypasses
+// the private gate. The signature binds the exact (project, version, os, arch,
+// fmt, debug) tuple, so the bypass is scoped to precisely the linked file -- the
+// rest of the project stays gated. Consulted by requireProject only for a
+// private-project read.
+func (r route) AllowsPublicRead(_ context.Context, _ *db.DB, project *db.Project) bool {
+	if r.token == "" {
+		return false
+	}
+	return auth.VerifyDownloadToken(r.token, project.Name, r.version, r.os, r.arch, r.fmtStr, r.debug)
+}
+
 func parseRoute(r *http.Request) auth.RouteInfo {
-	return route{project: r.URL.Query().Get("project")}
+	q := r.URL.Query()
+	fmtStr := q.Get("fmt")
+	if fmtStr == "" {
+		fmtStr = "raw"
+	}
+	return route{
+		project: q.Get("project"),
+		version: q.Get("v"),
+		os:      q.Get("os"),
+		arch:    q.Get("arch"),
+		fmtStr:  fmtStr,
+		debug:   q.Get("debug") == "1",
+		token:   q.Get("token"),
+	}
 }
 
 type staticHandler struct {
@@ -129,7 +161,13 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("ETag", etag)
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	if r.URL.Query().Get("token") != "" {
+		// A token-gated (signed-link) fetch is private content: never let a shared
+		// CDN cache it, regardless of the project's visibility.
+		w.Header().Set("Cache-Control", "private, no-store")
+	} else {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
 
 	if err := f.Serve(w, r, sctx); err != nil {
 		if w.Header().Get("Content-Length") == "" {

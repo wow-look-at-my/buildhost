@@ -21,9 +21,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # The CA bundle baked into the binary is fetched here, not committed (so the repo
+      # carries no unreviewable cert blob). Must run before go-toolchain builds/embeds.
+      - run: ./scripts/fetch-cacerts.sh
       - uses: wow-look-at-my/go-toolchain@v1
         with:
-          generate: 52b76a04057b
+          generate: acf27fe87179
           autorelease: 'false'
       # On the default branch, cache this commit's route list keyed by its SHA.
       # Caches created on the default branch are restorable from every branch,
@@ -79,13 +82,19 @@ jobs:
         with:
           ref: ${{ steps.base.outputs.sha }}
           path: base
+      # Base may post-date the CA-bundle change and embed it; fetch before building it.
+      # Inlined (not the script) so it works even on base commits that predate the script.
+      - if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p base/internal/repackage/cacerts
+          curl -fsSL --retry 3 --proto '=https' --tlsv1.2 -o base/internal/repackage/cacerts/ca-certificates.crt https://curl.se/ca/cacert.pem
       - if: steps.cache.outputs.cache-hit != 'true'
         uses: wow-look-at-my/go-toolchain@v1
         with:
           working-directory: base
           # Same go:generate approval hash as the build job -- go-toolchain
           # refuses to run generate directives without it.
-          generate: 52b76a04057b
+          generate: acf27fe87179
           os: linux
           arch: amd64
           autorelease: 'false'
@@ -150,8 +159,10 @@ jobs:
               }
 
   container-healthcheck:
+    # Only meaningful if the build succeeded and uploaded the go-build artifact. Without
+    # this, an always()-style condition makes it run on build failure and then fail on the
+    # missing artifact (a misleading second red X for one real failure).
     needs: build
-    if: always() && !cancelled()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -167,6 +178,271 @@ jobs:
       - run: docker compose -f docker-compose.ci.yml up -d --wait --wait-timeout 30
       - run: docker compose -f docker-compose.ci.yml logs
         if: failure()
+
+  # Proves the DOCUMENTED Homebrew flows -- public and private -- work against a
+  # real spawned buildhost with the real brew executable. The brew commands are
+  # not written here: .github/scripts/brew-tap-e2e.ts extracts them verbatim
+  # from README.md (and asserts the served llms.txt agrees), substituting only
+  # the server host. Changing what CI runs therefore REQUIRES changing the
+  # user-facing docs -- a "fix CI only" change goes red. (That drift already
+  # happened once: Homebrew 6.0 broke `brew install` and the fix landed in CI
+  # only, while README/llms.txt kept documenting a flow that failed for users.)
+  homebrew-tap-e2e:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
+      BUILDHOST_BASE_URL: http://localhost:18080
+      # CI-speed hygiene only -- these do not alter whether the documented flow
+      # works (they skip brew's self-update and post-install cleanup). Every
+      # flow-affecting knob (trust, the Linux sandbox) must come from the docs.
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - if: runner.os == 'Linux'
+        uses: Homebrew/actions/setup-homebrew@main
+      # Homebrew 6's Linux build sandbox (bubblewrap) needs unprivileged user
+      # namespaces, which Ubuntu 24.04 runners restrict via AppArmor. Lift the
+      # restriction so CI runs the sandbox the way a real Linux user machine
+      # does -- the docs document this exact sysctl for hardened hosts. The
+      # HOMEBREW_NO_SANDBOX_LINUX opt-out the docs reserve for containers
+      # without user namespaces is deliberately NOT set here.
+      - if: runner.os == 'Linux'
+        name: Host prep for Homebrew's build sandbox (bubblewrap + user namespaces)
+        run: |
+          sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: ./scripts/fetch-cacerts.sh
+      - run: go generate ./internal/api
+      - run: go build -o buildhost ./cmd/buildhost
+      - name: Start local buildhost
+        shell: bash
+        env:
+          BUILDHOST_DATA_DIR: ${{ runner.temp }}/buildhost-data
+          BUILDHOST_DB_PATH: ${{ runner.temp }}/buildhost-data/buildhost.db
+          BUILDHOST_ADMIN_LISTEN_ADDR: ""
+        run: |
+          set -euo pipefail
+          TOKEN="$(./buildhost bootstrap --name ci)"
+          echo "::add-mask::$TOKEN"
+          echo "BUILDHOST_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          ./buildhost serve > "$RUNNER_TEMP/buildhost.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/buildhost.pid"
+          for _ in {1..60}; do
+            if curl -fsS "$BUILDHOST_BASE_URL/healthz" >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/buildhost.log"
+          exit 1
+      - name: Publish go-toolchain artifact (public)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)" in
+            Darwin) os=darwin ;;
+            Linux) os=linux ;;
+            *) echo "unsupported OS"; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64) arch=amd64 ;;
+            arm64|aarch64) arch=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          printf '%s\n' '#!/bin/sh' 'echo buildhost-homebrew-ok' > "$RUNNER_TEMP/go-toolchain"
+          chmod +x "$RUNNER_TEMP/go-toolchain"
+          ./buildhost project create \
+            --server "$BUILDHOST_BASE_URL" \
+            --token "$BUILDHOST_TOKEN" \
+            --name go-toolchain \
+            --versioning semver
+          printf '%s\n' \
+            "server = \"$BUILDHOST_BASE_URL\"" \
+            "token = \"$BUILDHOST_TOKEN\"" \
+            'project = "go-toolchain"' \
+            'version = "1.0.0"' \
+            'git_branch = "master"' \
+            "" \
+            "[[artifact]]" \
+            "path = \"$RUNNER_TEMP/go-toolchain\"" \
+            "os = \"$os\"" \
+            "arch = \"$arch\"" \
+            'kind = "binary"' \
+            > "$RUNNER_TEMP/buildhost-release.toml"
+          ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release.toml"
+      # Slash-namespaced AND private -- the exact shape of the live project this
+      # e2e exists for. The folded formula name (myrepo-myapp) and the
+      # basename-install rule are covered end to end.
+      - name: Publish myrepo/myapp artifact (private, slash-namespaced)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)" in
+            Darwin) os=darwin ;;
+            Linux) os=linux ;;
+            *) echo "unsupported OS"; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64) arch=amd64 ;;
+            arm64|aarch64) arch=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          printf '%s\n' '#!/bin/sh' 'echo buildhost-homebrew-private-ok' > "$RUNNER_TEMP/myapp"
+          chmod +x "$RUNNER_TEMP/myapp"
+          ./buildhost project create \
+            --server "$BUILDHOST_BASE_URL" \
+            --token "$BUILDHOST_TOKEN" \
+            --name myrepo/myapp \
+            --versioning semver \
+            --private
+          printf '%s\n' \
+            "server = \"$BUILDHOST_BASE_URL\"" \
+            "token = \"$BUILDHOST_TOKEN\"" \
+            'project = "myrepo/myapp"' \
+            'version = "1.0.0"' \
+            'git_branch = "master"' \
+            "" \
+            "[[artifact]]" \
+            "path = \"$RUNNER_TEMP/myapp\"" \
+            "os = \"$os\"" \
+            "arch = \"$arch\"" \
+            'kind = "binary"' \
+            > "$RUNNER_TEMP/buildhost-release-private.toml"
+          ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-private.toml"
+      # Hostile-name fixtures for the formula-codegen guarantees the e2e
+      # asserts: a digit-leading name must be EXCLUDED from brew entirely
+      # (`class 7zip < Formula` is invalid Ruby and unloadable by design), and
+      # a dotted name must fold into a valid, loadable class (DottedApp).
+      - name: Publish hostile-name fixtures (public)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)" in
+            Darwin) os=darwin ;;
+            Linux) os=linux ;;
+            *) echo "unsupported OS"; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64) arch=amd64 ;;
+            arm64|aarch64) arch=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          printf '%s\n' '#!/bin/sh' 'echo hostile-name-fixture' > "$RUNNER_TEMP/hostile-bin"
+          chmod +x "$RUNNER_TEMP/hostile-bin"
+          for name in 7zip dotted.app; do
+            ./buildhost project create \
+              --server "$BUILDHOST_BASE_URL" \
+              --token "$BUILDHOST_TOKEN" \
+              --name "$name" \
+              --versioning semver
+            printf '%s\n' \
+              "server = \"$BUILDHOST_BASE_URL\"" \
+              "token = \"$BUILDHOST_TOKEN\"" \
+              "project = \"$name\"" \
+              'version = "1.0.0"' \
+              'git_branch = "master"' \
+              "" \
+              "[[artifact]]" \
+              "path = \"$RUNNER_TEMP/hostile-bin\"" \
+              "os = \"$os\"" \
+              "arch = \"$arch\"" \
+              'kind = "binary"' \
+              > "$RUNNER_TEMP/buildhost-release-hostile.toml"
+            ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-hostile.toml"
+          done
+      - name: Public install flow (brew commands extracted from the docs)
+        uses: wow-look-at-my/actions@typescript#latest
+        env:
+          LEG: public
+        with:
+          file: .github/scripts/brew-tap-e2e.ts
+      - name: Execute the publicly installed binary
+        run: test "$(go-toolchain)" = "buildhost-homebrew-ok"
+      # Docs: the authenticated tap replaces the public tap under the same name
+      # ("remove it first with brew untap --force" -- plain untap refuses while
+      # formulae installed from the tap exist).
+      - name: Untap the public tap before the private flow (per docs)
+        run: brew untap --force pazer/build
+      - name: Private install flow (brew commands extracted from the docs)
+        uses: wow-look-at-my/actions@typescript#latest
+        env:
+          LEG: private
+        with:
+          file: .github/scripts/brew-tap-e2e.ts
+      - name: Execute the privately installed binary
+        run: test "$(myapp)" = "buildhost-homebrew-private-ok"
+      - name: Anonymous tap must not leak the private project
+        uses: wow-look-at-my/actions@typescript#latest
+        env:
+          LEG: anon-leak
+        with:
+          file: .github/scripts/brew-tap-e2e.ts
+      - name: Dump buildhost log
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/buildhost.log" ]; then
+            cat "$RUNNER_TEMP/buildhost.log"
+          else
+            echo "buildhost log was not created"
+          fi
+      - name: Stop local buildhost
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/buildhost.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/buildhost.pid")" || true
+          fi
+
+  # Prove an image buildhost SYNTHESIZES from a plain binary is a valid, loadable
+  # container image whose baked-in CA bundle works for real outbound HTTPS. Uses crane
+  # (go-containerregistry): it pulls/decompresses buildhost's zstd layers, which the
+  # default GitHub Docker (no containerd image store) may not.
+  synthesized-image-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: go-build
+          path: build/
+      - run: chmod +x build/buildhost_linux_amd64
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install crane (zstd-capable OCI client)
+        run: go install github.com/google/go-containerregistry/cmd/crane@latest
+      - name: Build netcheck entrypoint (static linux/amd64)
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/netcheck" ./test/e2e/testdata/netcheck
+      - name: Pull and run the synthesized OCI image
+        run: PATH="$(go env GOPATH)/bin:$PATH" bash test/e2e/run.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/netcheck"
+
+  apt-install-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: go-build
+          path: build/
+      - run: chmod +x build/buildhost_linux_amd64
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build apt test package payload (static linux/amd64)
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/buildhost-apt-e2e" ./test/e2e/testdata/netcheck
+      - name: Install from the generated APT repository
+        run: bash test/e2e/apt-install.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/buildhost-apt-e2e"
 
   publish-ghcr:
     needs: container-healthcheck

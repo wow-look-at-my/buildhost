@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestServiceRedirect(t *testing.T) {
@@ -95,7 +95,7 @@ func TestDeriveServiceURL_HTTP(t *testing.T) {
 
 	u := DeriveServiceURL(req, "static")
 	assert.Equal(t, "http", u.Scheme)
-	assert.Equal(t, "static.localhost", u.Host)
+	assert.Equal(t, "static.localhost:8080", u.Host)
 }
 
 func TestRequestScheme(t *testing.T) {
