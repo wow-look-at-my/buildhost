@@ -1,6 +1,6 @@
 name: Publish to Buildhost
 version: 1
-description: Publish go-toolchain matrix artifacts to a buildhost registry using GHA OIDC.
+description: Publish go-toolchain matrix binaries to a buildhost registry using GHA OIDC, from a GHA run artifact or a local directory.
 
 inputs:
   server:
@@ -11,9 +11,12 @@ inputs:
     description: 'Project name (defaults to the repository name)'
     required: false
   artifact_name:
-    description: 'GHA run artifact name (defaults to go-build from go-toolchain)'
+    description: 'GHA run artifact name (defaults to go-build from go-toolchain); ignored when path is set'
     required: false
     default: 'go-build'
+  path:
+    description: 'Local directory containing the release binaries to publish, resolved relative to the workspace. When set, the run''s artifacts are NOT downloaded and the artifact_name input is ignored; files are read from this directory instead (no actions: read permission needed, GITHUB_TOKEN never read).'
+    required: false
   version:
     description: 'Release version (omit for auto-versioned projects)'
     required: false
@@ -29,7 +32,9 @@ runs:
   steps:
     - uses: wow-look-at-my/actions@typescript#latest
       env:
-        GITHUB_TOKEN: ${{ github.token }}
+        # Only artifact mode (path unset) talks to the GitHub API; path mode
+        # gets no token at all.
+        GITHUB_TOKEN: ${{ inputs.path == '' && github.token || '' }}
       with:
         script: |
           await (async () => {
@@ -38,30 +43,51 @@ runs:
             const inputBranch: string = "${{ inputs.git_branch }}";
             const inputCommit: string = "${{ inputs.git_commit }}";
             const artifactName: string = "${{ inputs.artifact_name }}";
+            const inputPath: string = "${{ inputs.path }}";
 
             const server = "${{ inputs.server }}";
             const project = inputProject.length > 0 ? inputProject : github.repository.split("/").pop()!;
             const version = inputVersion;
             const gitBranch = inputBranch.length > 0 ? inputBranch : github.ref_name;
             const gitCommit = inputCommit.length > 0 ? inputCommit : github.sha;
-            const downloadDir = path.join(os.tmpdir(), "buildhost-publish");
-            fs.mkdirSync(downloadDir, { recursive: true });
 
-            // Download artifact via octokit
-            const oct = octokit(process.env.GITHUB_TOKEN!);
-            const [owner, repo] = github.repository.split("/");
-            const { data: { artifacts } } = await oct.rest.actions.listWorkflowRunArtifacts({
-              owner, repo, run_id: github.run_id,
-            });
-            const artifact = artifacts.find((a: any) => a.name === artifactName);
-            if (!artifact) { core.setFailed(`Artifact '${artifactName}' not found in run`); return; }
+            // Locate the release binaries. `path` mode reads a local directory
+            // as-is -- no GHA artifact download, no GitHub API call, and
+            // GITHUB_TOKEN is never read (so the caller needs no
+            // `actions: read` permission). Artifact mode (the default)
+            // downloads the run's `artifact_name` artifact and unzips it.
+            let sourceDir: string;
+            if (inputPath.length > 0) {
+              sourceDir = path.resolve(env.GITHUB_WORKSPACE || process.cwd(), inputPath);
+              if (!fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory()) {
+                core.setFailed(`Binaries directory '${sourceDir}' (from the 'path' input) does not exist or is not a directory`);
+                return;
+              }
+              if (fs.readdirSync(sourceDir).length === 0) {
+                core.setFailed(`Binaries directory '${sourceDir}' (from the 'path' input) is empty`);
+                return;
+              }
+              core.info(`Publishing from local directory ${sourceDir} (GHA artifact download skipped)`);
+            } else {
+              sourceDir = path.join(os.tmpdir(), "buildhost-publish");
+              fs.mkdirSync(sourceDir, { recursive: true });
 
-            const { data: zip } = await oct.rest.actions.downloadArtifact({
-              owner, repo, artifact_id: artifact.id, archive_format: "zip",
-            });
-            const zipPath = path.join(downloadDir, "artifact.zip");
-            fs.writeFileSync(zipPath, Buffer.from(zip as ArrayBuffer));
-            await exec.exec("unzip", ["-o", zipPath, "-d", downloadDir]);
+              // Download artifact via octokit
+              const oct = octokit(process.env.GITHUB_TOKEN!);
+              const [owner, repo] = github.repository.split("/");
+              const { data: { artifacts } } = await oct.rest.actions.listWorkflowRunArtifacts({
+                owner, repo, run_id: github.run_id,
+              });
+              const artifact = artifacts.find((a: any) => a.name === artifactName);
+              if (!artifact) { core.setFailed(`Artifact '${artifactName}' not found in run`); return; }
+
+              const { data: zip } = await oct.rest.actions.downloadArtifact({
+                owner, repo, artifact_id: artifact.id, archive_format: "zip",
+              });
+              const zipPath = path.join(sourceDir, "artifact.zip");
+              fs.writeFileSync(zipPath, Buffer.from(zip as ArrayBuffer));
+              await exec.exec("unzip", ["-o", zipPath, "-d", sourceDir]);
+            }
 
             // Mint OIDC token for buildhost
             const idTokenUrl = env.ACTIONS_ID_TOKEN_REQUEST_URL;
@@ -81,8 +107,8 @@ runs:
             // hyphens (e.g. log-streamer-client); os and arch are the trailing
             // two underscore-separated tokens.
             const artifactRe = /^(.+)_([a-z]+)_([a-z0-9]+)$/;
-            const files = fs.readdirSync(downloadDir).filter((f) => {
-              const full = path.join(downloadDir, f);
+            const files = fs.readdirSync(sourceDir).filter((f) => {
+              const full = path.join(sourceDir, f);
               if (fs.lstatSync(full).isSymbolicLink()) return false;
               if (!fs.statSync(full).isFile()) return false;
               if (f === "checksums.txt" || f.endsWith(".zip")) return false;
@@ -91,7 +117,7 @@ runs:
 
             if (files.length === 0) {
               core.setFailed(`No matrix artifacts matching '<binary>_{os}_{arch}' found`);
-              core.info(`Files: ${fs.readdirSync(downloadDir).join(", ")}`);
+              core.info(`Files: ${fs.readdirSync(sourceDir).join(", ")}`);
               return;
             }
 
@@ -174,7 +200,7 @@ runs:
             // Upload every os/arch artifact for a release, then publish it.
             const uploadAndPublish = async (proj: string, releaseVersion: string, items: { file: string; os: string; arch: string }[]) => {
               for (const { file, os: fileOs, arch } of items) {
-                const body = fs.readFileSync(path.join(downloadDir, file));
+                const body = fs.readFileSync(path.join(sourceDir, file));
                 const r = await api("PUT", `/api/v1/projects/${proj}/releases/${releaseVersion}/artifacts/${fileOs}/${arch}?kind=binary`, body);
                 if (r.status !== 201) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${r.status}): ${r.text}`); return false; }
                 core.info(`Uploaded ${proj} ${fileOs}/${arch}`);
