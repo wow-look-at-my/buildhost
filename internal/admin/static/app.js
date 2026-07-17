@@ -290,7 +290,7 @@ App.pages.project = function (name) {
                 ).cls("info-table"),
                 Html.raw(App.codeBlock("Direct download (curl)", curlCmd)),
                 Html.raw(App.codeBlock("APT", aptCmd)),
-                Html.raw(App.codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "/tap.git\nbrew install pazer/build/" + p.name)),
+                Html.raw(App.codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "\nbrew install pazer/build/" + p.name)),
                 Html.raw(App.codeBlock("npm", npmCmd)),
                 Html.raw(App.codeBlock("Docker", dockerCmd))
             ).cls("card");
@@ -444,9 +444,9 @@ App.pages.registries = function () {
         html += "</div>";
 
         html += '<div class="card"><h2>Homebrew Tap</h2><p class="section-desc">Homebrew formulas are served through a generated Git tap. Formula files auto-detect macOS and Linux artifacts.</p>';
-        html += '<table class="info-table"><tr><td class="info-label">Tap Git URL</td><td class="endpoint-cell"><code>' + App.h(brew + "/tap.git") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += '<table class="info-table"><tr><td class="info-label">Tap Git URL</td><td class="endpoint-cell"><code>' + App.h(brew) + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += '<tr><td class="info-label">Formula</td><td class="endpoint-cell"><code>' + App.h(brew + "/Formula/{project}.rb") + "</code><copy-btn data-src='code'></copy-btn></td></tr></table>";
-        html += App.codeBlock("Install", "brew tap pazer/build " + brew + "/tap.git\nbrew install pazer/build/{project}");
+        html += App.codeBlock("Install", "brew tap pazer/build " + brew + "\nbrew install pazer/build/{project}");
         html += "</div>";
 
         html += '<div class="card"><h2>npm Registry</h2><p class="section-desc">npm-compatible registry. Packages are scoped under <code>@buildhost</code>.</p>';
