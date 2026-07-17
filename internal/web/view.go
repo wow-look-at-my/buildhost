@@ -162,7 +162,7 @@ func buildInstallInfo(r *http.Request, project, version string, hasBinary bool) 
 	}
 	if hasBinary {
 		info.Curl = fmt.Sprintf("curl -LO %q", dlURL(r, project, "", "linux", "amd64", "raw"))
-		info.Brew = "brew tap pazer/build " + serviceURL(r, "brew", "tap.git") + "\nbrew install pazer/build/" + project
+		info.Brew = "brew tap pazer/build " + serviceBase(r, "brew") + "\nbrew install pazer/build/" + project
 		info.Npm = "npm install @buildhost/" + project + " --registry " + serviceBase(r, "npm")
 		aptURL := serviceURL(r, "apt", project)
 		// A slash-namespaced project keeps its slash in the repo URL but installs
