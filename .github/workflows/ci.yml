@@ -28,6 +28,12 @@ jobs:
         with:
           generate: acf27fe87179
           autorelease: 'false'
+      # Hand build/ to the downstream jobs via the run-scoped cache -- go-toolchain
+      # no longer uploads a go-build artifact.
+      - uses: wow-look-at-my/actions@cache-upload#latest
+        with:
+          name: go-build
+          path: build/
       # On the default branch, cache this commit's route list keyed by its SHA.
       # Caches created on the default branch are restorable from every branch,
       # so feature-branch route-diff runs reuse this instead of rebuilding base.
@@ -58,8 +64,8 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      # PR routes: from the artifact the build job already produced for this ref.
-      - uses: actions/download-artifact@v4
+      # PR routes: from the hand-off the build job already produced for this ref.
+      - uses: wow-look-at-my/actions@cache-download#latest
         with:
           name: go-build
           path: build/
@@ -98,7 +104,6 @@ jobs:
           os: linux
           arch: amd64
           autorelease: 'false'
-          upload-artifacts: 'false'
       - if: steps.cache.outputs.cache-hit != 'true'
         run: chmod +x base/build/buildhost_linux_amd64 && ./base/build/buildhost_linux_amd64 routes > base-routes.txt
       - if: steps.cache.outputs.cache-hit != 'true'
@@ -159,14 +164,14 @@ jobs:
               }
 
   container-healthcheck:
-    # Only meaningful if the build succeeded and uploaded the go-build artifact. Without
+    # Only meaningful if the build succeeded and uploaded the go-build hand-off. Without
     # this, an always()-style condition makes it run on build failure and then fail on the
-    # missing artifact (a misleading second red X for one real failure).
+    # missing hand-off (a misleading second red X for one real failure).
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: wow-look-at-my/actions@cache-download#latest
         with:
           name: go-build
           path: build/
@@ -411,7 +416,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: wow-look-at-my/actions@cache-download#latest
         with:
           name: go-build
           path: build/
@@ -431,7 +436,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: wow-look-at-my/actions@cache-download#latest
         with:
           name: go-build
           path: build/
@@ -447,3 +452,14 @@ jobs:
   publish-ghcr:
     needs: container-healthcheck
     uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@master
+
+  # Org-standard hygiene: delete this run's cache hand-offs and sweep >12h leftovers.
+  cache-cleanup:
+    needs: [route-diff, homebrew-tap-e2e, synthesized-image-e2e, apt-install-e2e, publish-ghcr]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: wow-look-at-my/actions@cache-cleanup#latest
