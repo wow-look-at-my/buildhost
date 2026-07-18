@@ -27,6 +27,13 @@ type serverInfoResponse struct {
 	MaxUploadBytes int64 `json:"max_upload_bytes"`
 	// UploadSessions reports that chunked upload sessions are supported.
 	UploadSessions bool `json:"upload_sessions"`
+	// UploadBySHA256 reports that hash-reference uploads are supported: an
+	// empty-body artifact PUT with ?upload_sha256=<hex> registers the
+	// referenced, already-uploaded blob for the request's os/arch instead of
+	// re-sending the bytes. Clients must use the parameter ONLY when this is
+	// true -- a server without the capability silently ignores it and stores
+	// the empty body as the artifact.
+	UploadBySHA256 bool `json:"upload_by_sha256"`
 }
 
 // ServerInfo is public (like /healthz): clients need the limits to shape an
@@ -36,5 +43,6 @@ func (h *Handler) ServerInfo(w http.ResponseWriter, r *http.Request) {
 		MaxDirectUploadBytes: config.MaxDirectUploadSize(),
 		MaxUploadBytes:       maxUploadSize,
 		UploadSessions:       true,
+		UploadBySHA256:       true,
 	})
 }

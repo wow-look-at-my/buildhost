@@ -56,6 +56,17 @@ type Uploader struct {
 	Threshold int64
 	// Stdout receives chunk progress lines; nil discards them.
 	Stdout io.Writer
+
+	// info caches the parsed /api/v1/server-info response (fetched at most
+	// once per Uploader; the zero value on any error).
+	info        serverInfo
+	infoFetched bool
+}
+
+// serverInfo is the subset of GET /api/v1/server-info this client consumes.
+type serverInfo struct {
+	MaxDirectUploadBytes int64 `json:"max_direct_upload_bytes"`
+	UploadBySHA256       bool  `json:"upload_by_sha256"`
 }
 
 func (u *Uploader) client() *http.Client {
@@ -109,27 +120,76 @@ func (u *Uploader) directLimit() int64 {
 		return u.Threshold
 	}
 	u.Threshold = DefaultChunkThreshold
+	if info := u.serverInfo(); info.MaxDirectUploadBytes > 0 {
+		u.Threshold = info.MaxDirectUploadBytes
+	}
+	return u.Threshold
+}
+
+// serverInfo fetches and caches /api/v1/server-info. Any fetch or parse
+// failure yields the zero value (built-in threshold, no optional
+// capabilities) -- never an error, since every capability has a safe fallback.
+func (u *Uploader) serverInfo() serverInfo {
+	if u.infoFetched {
+		return u.info
+	}
+	u.infoFetched = true
 	req, err := http.NewRequest(http.MethodGet, u.Server+"/api/v1/server-info", nil)
 	if err != nil {
-		return u.Threshold
+		return u.info
 	}
 	c := *u.client()
 	c.Timeout = 5 * time.Second
 	resp, err := c.Do(req)
 	if err != nil {
-		return u.Threshold
+		return u.info
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return u.Threshold
+		return u.info
 	}
-	var info struct {
-		MaxDirectUploadBytes int64 `json:"max_direct_upload_bytes"`
+	var info serverInfo
+	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info) == nil {
+		u.info = info
 	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info) == nil && info.MaxDirectUploadBytes > 0 {
-		u.Threshold = info.MaxDirectUploadBytes
+	return u.info
+}
+
+// SupportsUploadBySHA256 reports whether the server advertises the
+// upload_by_sha256 capability: an empty-body artifact PUT carrying
+// ?upload_sha256=<hex> registers an already-uploaded blob for another os/arch
+// slot without re-sending the bytes. Hash-reference uploads MUST be gated on
+// this -- a server without the capability silently ignores the parameter and
+// would store the empty request body as the artifact, permanently poisoning
+// the slot. Unknown/unreachable servers report false (full uploads always
+// work).
+func (u *Uploader) SupportsUploadBySHA256() bool {
+	return u.serverInfo().UploadBySHA256
+}
+
+// UploadByHash performs a hash-reference upload: an empty-body request whose
+// upload_sha256 query parameter names a blob the project already uploaded.
+// The caller must have confirmed SupportsUploadBySHA256 first, and should
+// fall back to a full Upload on any response other than 201 (e.g. a 404 for a
+// blob the server has since garbage-collected).
+func (u *Uploader) UploadByHash(method, target string, header map[string]string, sha256hex string) (*http.Response, error) {
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return nil, fmt.Errorf("parse upload URL: %w", err)
 	}
-	return u.Threshold
+	q := parsed.Query()
+	q.Set("upload_sha256", sha256hex)
+	parsed.RawQuery = q.Encode()
+
+	req, err := http.NewRequest(method, parsed.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+u.Token)
+	for k, v := range header {
+		req.Header.Set(k, v)
+	}
+	return u.client().Do(req)
 }
 
 // direct is the classic single-request upload, matching what the CLI always
@@ -336,6 +396,18 @@ func (u *Uploader) sessionRequest(method, path string, body io.Reader) (*http.Re
 		req.Header.Set("Content-Type", "application/octet-stream")
 	}
 	return u.client().Do(req)
+}
+
+// FileSHA256 returns the hex SHA-256 of the file at path -- the value
+// UploadByHash sends, computed the same way the server keys its
+// content-addressed storage.
+func FileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	return fileSHA256(f)
 }
 
 // fileSHA256 hashes the whole file and rewinds it.
