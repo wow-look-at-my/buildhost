@@ -84,6 +84,19 @@ downloads are unchanged -- always request a concrete os/arch. A single os/arch
 returns one artifact JSON object; a multi-platform upload returns a JSON array
 of them.
 
+Hash-reference uploads: when `GET __BASE_URL__/api/v1/server-info` advertises
+`"upload_by_sha256": true`, a file byte-identical to one this project already
+uploaded (any release) can be registered for more os/arch slots without
+re-sending it -- PUT the artifact URL with an EMPTY body and
+`?upload_sha256=<hex sha256 of the file>`. The created rows and responses are
+identical to a full upload's, and the reference composes with the os/arch
+list grammar above. A 404 means the blob is not available to this project
+(unknown, another project's, or garbage-collected): fall back to a full
+upload. NEVER send an empty-body `upload_sha256` request to a server that
+does not advertise the capability -- it would store the empty body as the
+artifact. Together with `upload_session=` the parameter keeps its
+session-integrity meaning (below).
+
 Large uploads: a proxy in front of the server may cap single request bodies
 (Cloudflare's edge rejects bodies over 100 MB). Check
 `GET __BASE_URL__/api/v1/server-info` for `max_direct_upload_bytes`; anything

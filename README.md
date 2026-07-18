@@ -352,6 +352,53 @@ when finalizing a [chunked upload session](#large-uploads) (one session, one
 body, N rows). `kind=npm-package` keeps its literal `os=any`/`arch=any`
 sentinel row and never fans out.
 
+### Registering more slots by hash (no re-upload)
+
+An **exact** slot set that is not an os x arch product -- say
+`{linux/amd64, linux/arm64, windows/amd64}`, where `windows/arm64` must stay
+free for a different native binary -- cannot be expressed with the fan-out
+grammar. For that case (and to skip re-sending a byte-identical binary
+entirely), upload the file once and register the remaining slots by **hash
+reference**: an empty-body PUT naming the stored blob's SHA-256.
+
+```bash
+SUM=$(sha256sum ./mytool | awk '{print $1}')
+
+# First slot carries the bytes:
+curl -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @./mytool \
+  "https://buildhost.example.com/api/v1/projects/myapp/releases/7/artifacts/linux/amd64"
+
+# The rest reference the stored blob -- no bytes sent:
+for slot in linux/arm64 windows/amd64; do
+  curl -X PUT -H "Authorization: Bearer $TOKEN" \
+    "https://buildhost.example.com/api/v1/projects/myapp/releases/7/artifacts/$slot?upload_sha256=$SUM"
+done
+```
+
+Semantics:
+
+- **Check the capability first.** Only send `upload_sha256` on an empty-body
+  request when `GET /api/v1/server-info` advertises
+  `"upload_by_sha256": true`. A server without the capability ignores the
+  parameter and stores the empty body as the artifact.
+- The referenced blob must already belong to **this project** (uploaded for
+  any of its releases, so re-releasing an unchanged binary is nearly free).
+  An unknown hash, another project's blob, and a since-garbage-collected blob
+  all return the same 404 -- fall back to a full upload.
+- The created rows are ordinary artifact rows, field-for-field identical to a
+  full upload's, with the same 201/409 semantics; the reference composes with
+  the `{os}`/`{arch}` fan-out grammar, and each hash-ref request carries its
+  own optional `X-Artifact-Filename`.
+- `upload_sha256` keeps its existing meanings elsewhere: on a request **with**
+  a body it is ignored, and combined with `upload_session=` it remains the
+  session-finalize integrity check.
+
+The in-repo publishers do this automatically when the server advertises the
+capability: the `buildhost-publish` GitHub action and `buildhost publish
+--manifest` hash the files they are about to upload, send each distinct file
+once, and register byte-identical slots by reference (go-toolchain's three
+identical APE slot copies transfer once instead of three times).
+
 ## WebAssembly artifacts
 
 WebAssembly modules publish under the platform identifier `os=wasm`, with
@@ -440,6 +487,13 @@ never reaches the origin. Two ways around that, both first-try reliable:
   exposes a hostname that reaches the origin without the proxied body cap,
   point `--server` (or your upload URLs) at it and single-request uploads of
   any size just work. Nothing else changes.
+- **Hash-reference uploads (identical bytes, zero transfer).** A file that
+  is byte-identical to one the project already uploaded -- another platform
+  slot of the same release, or an unchanged re-release -- does not need to be
+  sent at all: register it with an empty-body PUT naming the blob's SHA-256.
+  See [Registering more slots by hash](#registering-more-slots-by-hash-no-re-upload).
+  The in-repo publish clients do this automatically when the server
+  advertises `upload_by_sha256`.
 - **Chunked upload sessions (automatic fallback).** Through the proxied
   hostname, the CLI transparently splits large files into chunks that fit
   under the cap. You don't have to know this exists: `buildhost publish` and
@@ -473,7 +527,7 @@ assembled bytes as if they were the request body.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/server-info` | Advertised limits: `max_direct_upload_bytes`, `max_upload_bytes`, `upload_sessions` (public) |
+| GET | `/api/v1/server-info` | Advertised limits and capabilities: `max_direct_upload_bytes`, `max_upload_bytes`, `upload_sessions`, `upload_by_sha256` (public) |
 | POST | `/api/v1/uploads` | Create a session (`write` scope; bound to your identity) |
 | PATCH | `/api/v1/uploads/{id}?offset=N` | Append a chunk at offset N; 409 with the committed `size` on mismatch (resume from it) |
 | GET | `/api/v1/uploads/{id}` | Current committed `size` (for resuming) |
@@ -627,9 +681,9 @@ The link is a stateless HMAC signature (keyed by a server-side key generated on 
 | POST | `/api/v1/projects` | Create project |
 | GET | `/api/v1/projects` | List projects |
 | POST | `/api/v1/projects/{project}/releases` | Create release |
-| PUT | `/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}` | Upload artifact (accepts `?upload_session=` -- see [Large uploads](#large-uploads); `{os}`/`{arch}` may be a comma list or `cosmo`/`any` -- see [Multi-platform binaries](#multi-platform-binaries-cosmopolitan--ape)) |
+| PUT | `/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}` | Upload artifact (accepts `?upload_session=` -- see [Large uploads](#large-uploads); `{os}`/`{arch}` may be a comma list or `cosmo`/`any`, and an empty body + `?upload_sha256=` registers an already-uploaded blob for the slot -- see [Multi-platform binaries](#multi-platform-binaries-cosmopolitan--ape)) |
 | POST | `/api/v1/projects/{project}/releases/{version}/publish` | Publish release |
-| GET | `/api/v1/server-info` | Advertised upload limits (public) |
+| GET | `/api/v1/server-info` | Advertised upload limits and capabilities (public) |
 | POST | `/api/v1/uploads` | Create a chunked upload session |
 | GET | `/api/v1/uploads/{id}` | Read a session's committed size |
 | PATCH | `/api/v1/uploads/{id}?offset=N` | Append a chunk to a session |
