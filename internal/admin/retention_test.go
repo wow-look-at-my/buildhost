@@ -3,6 +3,8 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -57,6 +59,23 @@ func TestAdminRetention_UpdateValidation(t *testing.T) {
 		rec := serve(srv, "PUT", "/api/retention", bytes.NewBufferString(body))
 		assert.Equal(t, 400, rec.Code, "expected 400 for body %q", body)
 	}
+}
+
+// An enforcing on-demand run defers while writes are in flight (like the
+// background sweeper): it could otherwise free a blob a mid-flight write --
+// e.g. a hash-reference upload that just passed its existence check -- is
+// about to reference. Report-only runs mutate nothing and stay allowed.
+func TestAdminRetention_RunEnforceDefersOnInflightWrites(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	atomic.AddInt64(&inflightWrites, 1)
+	defer atomic.AddInt64(&inflightWrites, -1)
+
+	rec := serve(srv, "POST", "/api/retention/run", bytes.NewBufferString(`{"enforce":true}`))
+	assert.Equal(t, http.StatusConflict, rec.Code)
+
+	rec = serve(srv, "POST", "/api/retention/run", bytes.NewBufferString(`{"enforce":false}`))
+	assert.Equal(t, 200, rec.Code, "report-only runs are not deferred")
 }
 
 func TestAdminRetention_Run(t *testing.T) {

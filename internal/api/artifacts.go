@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"go.opentelemetry.io/otel"
@@ -17,6 +19,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/uploads"
 )
 
 var apiTracer = otel.Tracer("buildhost.api")
@@ -49,6 +52,28 @@ func sanitizeFilename(name string) string {
 // maxUploadSize caps a single REST artifact upload. It is read once from config
 // (BUILDHOST_MAX_UPLOAD_SIZE) so the limit is tunable rather than hardcoded.
 var maxUploadSize = config.MaxUploadSize()
+
+// validSHA256Hex mirrors the storage layer's key shape (lowercase hex SHA-256):
+// a hash-reference upload names a content-addressed storage key directly.
+var validSHA256Hex = regexp.MustCompile(`^[a-f0-9]{64}$`)
+
+// hashRefRequest reports whether this request is a hash-reference upload: an
+// upload_sha256 with no upload_session and a definitively empty body. A
+// session finalize keeps its existing meaning for upload_sha256 (integrity
+// check of the spooled bytes, enforced by the uploads middleware before this
+// handler runs -- the middleware also replaces ContentLength with the spool
+// size), and a request actually carrying bytes keeps today's behavior (the
+// parameter is ignored), so existing clients are byte-identical. Clients must
+// only send this form when server-info advertises upload_by_sha256: a server
+// without the capability ignores the parameter and stores the empty body.
+func hashRefRequest(r *http.Request) (string, bool) {
+	q := r.URL.Query()
+	ref := q.Get(uploads.SHA256Param)
+	if ref == "" || q.Get(uploads.SessionParam) != "" || r.ContentLength != 0 {
+		return "", false
+	}
+	return strings.ToLower(ref), true
+}
 
 // Multi-platform alias expansions for the {os} and {arch} upload path
 // segments. A Cosmopolitan/APE binary is one file that runs on every desktop
@@ -204,23 +229,41 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
+	var storageKey, sha256hex string
+	var size int64
+	if refHex, ok := hashRefRequest(r); ok {
+		// Hash-reference upload: register row(s) for a blob this project
+		// already has in storage instead of re-sending the bytes. This is how
+		// one uploaded binary covers an exact set of platform slots the
+		// cartesian {os}/{arch} grammar cannot express (and how byte-identical
+		// re-releases skip the transfer entirely). Everything after this block
+		// -- fan-out combinations, row creation, conflict semantics, responses
+		// -- is shared with a full upload.
+		storageKey, size, ok = h.resolveHashRef(ctx, w, project.ID, refHex)
+		if !ok {
+			return
+		}
+		sha256hex = storageKey
+	} else {
+		r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 
-	hasher := sha256.New()
-	body := io.TeeReader(r.Body, hasher)
+		hasher := sha256.New()
+		body := io.TeeReader(r.Body, hasher)
 
-	// The body is streamed to content-addressed storage exactly once no matter
-	// how many combinations it fans out to; every artifact row references the
-	// same blob (storage dedup makes the fan-out cost rows, not bytes).
-	storageKey, size, err := h.Store.Put(ctx, body)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "store failed")
-		jsonError(w, http.StatusInternalServerError, "failed to store artifact")
-		return
+		// The body is streamed to content-addressed storage exactly once no matter
+		// how many combinations it fans out to; every artifact row references the
+		// same blob (storage dedup makes the fan-out cost rows, not bytes).
+		var err error
+		storageKey, size, err = h.Store.Put(ctx, body)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "store failed")
+			jsonError(w, http.StatusInternalServerError, "failed to store artifact")
+			return
+		}
+
+		sha256hex = hex.EncodeToString(hasher.Sum(nil))
 	}
-
-	sha256hex := hex.EncodeToString(hasher.Sum(nil))
 	span.SetAttributes(attribute.Int64("artifact.size", size))
 
 	filename := sanitizeFilename(r.Header.Get("X-Artifact-Filename"))
@@ -245,6 +288,7 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 	// multi-combination upload creates all rows atomically (any conflicting
 	// combination fails the whole request with nothing created, so the client
 	// can resolve it and retry the identical request).
+	var err error
 	if len(artifacts) == 1 {
 		err = h.DB.CreateArtifact(ctx, artifacts[0])
 	} else {
@@ -273,4 +317,51 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, http.StatusCreated, artifacts)
+}
+
+// resolveHashRef authorizes and resolves a hash-reference upload: the
+// referenced blob must already belong to this project (any release -- which
+// covers "the previous slot of this same release" as well as an unchanged
+// binary from an earlier release) and must still exist in storage. It returns
+// the storage key plus the blob's decompressed size for the artifact row; on
+// failure it writes the error response and returns ok=false.
+//
+// The same-project gate is the authorization boundary. SHA-256 values are
+// public (release JSON, checksums files), so bare knowledge of a hash must
+// never let one project mint a row that serves another project's -- possibly
+// private -- bytes. Gate failure is reported exactly like a missing blob
+// (404), so probing cannot distinguish "exists in another project" from "does
+// not exist".
+func (h *Handler) resolveHashRef(ctx context.Context, w http.ResponseWriter, projectID int64, refHex string) (string, int64, bool) {
+	if !validSHA256Hex.MatchString(refHex) {
+		jsonError(w, http.StatusBadRequest, "invalid upload_sha256: want 64 hex characters")
+		return "", 0, false
+	}
+	owned, err := h.DB.BlobBelongsToProject(ctx, projectID, refHex)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to look up blob")
+		return "", 0, false
+	}
+	exists := false
+	if owned {
+		// The blob may have been garbage-collected since its rows were
+		// evicted; a dangling reference must miss, not create a broken row.
+		if exists, err = h.Store.Exists(ctx, refHex); err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to look up blob")
+			return "", 0, false
+		}
+	}
+	if !owned || !exists {
+		jsonError(w, http.StatusNotFound, "no blob with this upload_sha256 in this project")
+		return "", 0, false
+	}
+	// Open/close to read the decompressed size from the blob header; the body
+	// itself is never decoded.
+	rc, size, err := h.Store.Get(ctx, refHex)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to read blob")
+		return "", 0, false
+	}
+	rc.Close()
+	return refHex, size, true
 }
