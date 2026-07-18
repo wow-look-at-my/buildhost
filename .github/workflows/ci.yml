@@ -51,15 +51,14 @@ jobs:
     if: github.ref != format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     permissions:
-      # id-token: write is needed by go-toolchain's secret-server step (used by
-      # the cold-cache base build below); job-level permissions replace the
-      # workflow-level block, so it must be repeated here.
-      id-token: write
       contents: read
       pull-requests: write
     steps:
-      # PR routes: from the artifact the build job already produced for this ref.
-      - uses: actions/download-artifact@v4
+      # PR routes: from the go-build hand-off the build job already produced for
+      # this ref. go-toolchain@v1 saves build/ via cache-upload (run-keyed cache
+      # entry) instead of a GHA artifact, so it must be restored with the
+      # matching cache-download action, not actions/download-artifact.
+      - uses: wow-look-at-my/actions@cache-download#latest
         with:
           name: go-build
           path: build/
@@ -88,17 +87,20 @@ jobs:
         run: |
           mkdir -p base/internal/repackage/cacerts
           curl -fsSL --retry 3 --proto '=https' --tlsv1.2 -o base/internal/repackage/cacerts/ca-certificates.crt https://curl.se/ca/cacert.pem
+      # Build base with plain Go, NOT the go-toolchain action: go-toolchain@v1
+      # unconditionally hands off build/ under the run-unique go-build cache key,
+      # and a second same-run invocation (the build job already ran one) collides
+      # on that key and fails. Mirrors homebrew-tap-e2e's setup-go + generate +
+      # build recipe -- route-diff only needs a runnable base binary.
       - if: steps.cache.outputs.cache-hit != 'true'
-        uses: wow-look-at-my/go-toolchain@v1
+        uses: actions/setup-go@v5
         with:
-          working-directory: base
-          # Same go:generate approval hash as the build job -- go-toolchain
-          # refuses to run generate directives without it.
-          generate: acf27fe87179
-          os: linux
-          arch: amd64
-          autorelease: 'false'
-          upload-artifacts: 'false'
+          go-version-file: base/go.mod
+      - if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: base
+        run: |
+          go generate ./internal/api
+          go build -o build/buildhost_linux_amd64 ./cmd/buildhost
       - if: steps.cache.outputs.cache-hit != 'true'
         run: chmod +x base/build/buildhost_linux_amd64 && ./base/build/buildhost_linux_amd64 routes > base-routes.txt
       - if: steps.cache.outputs.cache-hit != 'true'
@@ -159,14 +161,14 @@ jobs:
               }
 
   container-healthcheck:
-    # Only meaningful if the build succeeded and uploaded the go-build artifact. Without
-    # this, an always()-style condition makes it run on build failure and then fail on the
-    # missing artifact (a misleading second red X for one real failure).
+    # Only meaningful if the build succeeded and saved the go-build hand-off. Without
+    # this, an always()-style condition makes it run on build failure and then fail on
+    # the missing hand-off (a misleading second red X for one real failure).
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: wow-look-at-my/actions@cache-download#latest
         with:
           name: go-build
           path: build/
@@ -411,7 +413,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: wow-look-at-my/actions@cache-download#latest
         with:
           name: go-build
           path: build/
@@ -431,7 +433,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: wow-look-at-my/actions@cache-download#latest
         with:
           name: go-build
           path: build/

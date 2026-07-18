@@ -102,6 +102,31 @@ runs:
             const token: string = ((await idResp.json()) as { value: string }).value;
             if (!token) { core.setFailed("Failed to obtain OIDC token"); return; }
 
+            // Hash-reference capability (public server-info): when advertised,
+            // byte-identical files upload once and the remaining slots are
+            // registered with an empty-body PUT + upload_sha256. NEVER probe
+            // instead of checking -- a server without the capability silently
+            // ignores the parameter and would store the empty body as the
+            // artifact, permanently poisoning the slot.
+            let canHashRef = false;
+            try {
+              const infoResp = await fetch(`${server}/api/v1/server-info`);
+              if (infoResp.ok) {
+                canHashRef = ((await infoResp.json()) as { upload_by_sha256?: boolean }).upload_by_sha256 === true;
+              }
+            } catch { /* capability stays off; full uploads always work */ }
+
+            // Streaming file hash (the TS action injects no `crypto` global;
+            // require is the documented route to node modules).
+            const crypto = require("crypto");
+            const fileSHA256 = (p: string): Promise<string> => new Promise((resolve, reject) => {
+              const hash = crypto.createHash("sha256");
+              fs.createReadStream(p)
+                .on("error", reject)
+                .on("data", (chunk: Buffer) => hash.update(chunk))
+                .on("end", () => resolve(hash.digest("hex")));
+            });
+
             // Discover matrix artifacts: files named <binary>_<os>_<arch>[.exe].
             // <binary> is the cmd/ leaf name from go-toolchain and may contain
             // hyphens (e.g. log-streamer-client); os and arch are the trailing
@@ -198,11 +223,34 @@ runs:
             };
 
             // Upload every os/arch artifact for a release, then publish it.
+            // When the server supports hash references, byte-identical files
+            // (e.g. go-toolchain's cosmo slot copies) transfer once: the first
+            // slot of each hash does the full PUT exactly as before, the rest
+            // send an empty-body PUT naming the hash. Without the capability
+            // the request sequence is byte-identical to the pre-feature action.
             const uploadAndPublish = async (proj: string, releaseVersion: string, items: { file: string; os: string; arch: string }[]) => {
+              const uploadedHash = new Map<string, string>(); // sha256 -> first uploaded file
               for (const { file, os: fileOs, arch } of items) {
+                const slot = `/api/v1/projects/${proj}/releases/${releaseVersion}/artifacts/${fileOs}/${arch}?kind=binary`;
+                let sum = "";
+                if (canHashRef) {
+                  sum = await fileSHA256(path.join(sourceDir, file));
+                  if (uploadedHash.has(sum)) {
+                    const ref = await api("PUT", `${slot}&upload_sha256=${sum}`);
+                    if (ref.status === 201) {
+                      core.info(`Registered ${proj} ${fileOs}/${arch} by hash (identical to ${uploadedHash.get(sum)})`);
+                      continue;
+                    }
+                    if (ref.status === 409) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${ref.status}): ${ref.text}`); return false; }
+                    // E.g. a 404 for a blob evicted since the first slot: the
+                    // bytes are right here, send them the classic way.
+                    core.warning(`Hash-reference upload ${proj} ${fileOs}/${arch} returned ${ref.status}; falling back to a full upload`);
+                  }
+                }
                 const body = fs.readFileSync(path.join(sourceDir, file));
-                const r = await api("PUT", `/api/v1/projects/${proj}/releases/${releaseVersion}/artifacts/${fileOs}/${arch}?kind=binary`, body);
+                const r = await api("PUT", slot, body);
                 if (r.status !== 201) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${r.status}): ${r.text}`); return false; }
+                if (canHashRef) uploadedHash.set(sum, file);
                 core.info(`Uploaded ${proj} ${fileOs}/${arch}`);
               }
               const pub = await api("POST", `/api/v1/projects/${proj}/releases/${releaseVersion}/publish`);
