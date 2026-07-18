@@ -159,6 +159,64 @@ func TestRun_NothingToDo(t *testing.T) {
 	assert.Equal(t, 0, rep.BlobsDeleted)
 }
 
+// Hash-reference uploads let several releases (and slots) share one blob:
+// the blob must survive until the LAST referencing release is evicted, then
+// be freed exactly once.
+func TestRun_SharedBlobFreedWithLastReference(t *testing.T) {
+	d, store, p := setup(t)
+	ctx := context.Background()
+
+	key, size, err := store.Put(ctx, bytes.NewReader([]byte("shared-bytes")))
+	require.NoError(t, err)
+
+	addRelease := func(version string, num int64) *db.Release {
+		r := &db.Release{ProjectID: p.ID, Version: version, VersionNum: num, GitBranch: "main"}
+		require.NoError(t, d.CreateRelease(ctx, r))
+		require.NoError(t, d.PublishRelease(ctx, r.ID))
+		return r
+	}
+	addRow := func(r *db.Release, osName db.OS, arch db.Arch) {
+		require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+			ReleaseID: r.ID, OS: osName, Arch: arch, Kind: db.KindBinary,
+			StorageKey: key, Size: size, SHA256: key,
+		}))
+	}
+
+	// v1 uploaded the blob; v2's rows reference the same blob (hash-reference
+	// uploads: several slots, zero new store puts); v3 is unrelated content
+	// and stays the branch tip.
+	v1 := addRelease("v1", 1)
+	addRow(v1, db.OSLinux, db.ArchAMD64)
+	v2 := addRelease("v2", 2)
+	addRow(v2, db.OSLinux, db.ArchAMD64)
+	addRow(v2, db.OSWindows, db.ArchAMD64)
+	v3key := putRelease(t, d, store, p.ID, "v3", 3, "main", "unrelated-v3")
+
+	// Evict v1: the shared blob survives because v2 still references it.
+	ret := New(d, store, Config{KeepN: 2, RecencyGuard: 24 * time.Hour, Enforce: true})
+	ret.clock = futureClock()
+	rep, err := ret.Run(ctx)
+	require.NoError(t, err)
+	assert.Len(t, rep.EvictedReleases, 1)
+	assert.Equal(t, 0, rep.BlobsDeleted)
+	assert.Equal(t, 1, rep.BlobsRetained)
+	ex, _ := store.Exists(ctx, key)
+	assert.True(t, ex, "blob shared with a live release must survive")
+
+	// Evict v2, the last reference: the blob is freed (once, despite two
+	// referencing rows).
+	ret = New(d, store, Config{KeepN: 1, RecencyGuard: 24 * time.Hour, Enforce: true})
+	ret.clock = futureClock()
+	rep, err = ret.Run(ctx)
+	require.NoError(t, err)
+	assert.Len(t, rep.EvictedReleases, 1)
+	assert.Equal(t, 1, rep.BlobsDeleted)
+	ex, _ = store.Exists(ctx, key)
+	assert.False(t, ex, "blob must be freed with its last reference")
+	ex, _ = store.Exists(ctx, v3key)
+	assert.True(t, ex, "the tip's own blob is untouched")
+}
+
 func TestDeleteBlobIfUnreferenced(t *testing.T) {
 	d, store, p := setup(t)
 	ctx := context.Background()

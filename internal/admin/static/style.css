@@ -311,6 +311,68 @@ a.stat-card-link:hover .stat-label {
     border-bottom: none;
 }
 
+.project-folder-row {
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.data-table tbody tr.project-folder-row:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.project-folder-cell {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.project-folder-icon {
+    position: relative;
+    display: inline-block;
+    width: 16px;
+    height: 12px;
+    margin-right: 8px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--card-bg);
+    vertical-align: -2px;
+}
+
+.project-folder-icon::before {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: -5px;
+    width: 7px;
+    height: 5px;
+    border: 1px solid var(--border);
+    border-bottom: 0;
+    border-radius: 3px 3px 0 0;
+    background: var(--card-bg);
+}
+
+.project-name-cell {
+    white-space: nowrap;
+}
+
+.project-label {
+    font-weight: 600;
+}
+
+.project-path {
+    display: block;
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.project-depth-1 { padding-left: 36px !important; }
+.project-depth-2 { padding-left: 60px !important; }
+.project-depth-3 { padding-left: 84px !important; }
+.project-depth-4 { padding-left: 108px !important; }
+.project-depth-5 { padding-left: 132px !important; }
+
 .breakdown-table {
     width: 100%;
     max-width: 480px;
