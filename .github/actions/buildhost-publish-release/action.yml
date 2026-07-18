@@ -25,6 +25,9 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Refuse jobs named all-builds
+      uses: wow-look-at-my/actions@no-all-builds-job#latest
+
     - id: publish
       uses: wow-look-at-my/actions@typescript#latest
       with:
