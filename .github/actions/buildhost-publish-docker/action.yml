@@ -67,6 +67,9 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Refuse jobs named all-builds
+      uses: wow-look-at-my/actions@no-all-builds-job#latest
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
