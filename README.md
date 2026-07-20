@@ -185,6 +185,16 @@ not apply to it -- it is just a container image. Pushed image layers are
 content-addressed and deduplicated, so unchanged layers are not re-uploaded on
 later pushes. Per-blob size is capped by `BUILDHOST_MAX_BLOB_SIZE` (default 10 GiB).
 
+If a proxy in front of the server caps request bodies (Cloudflare's edge 413s
+bodies over ~100 MB), `docker push` fails on big layers -- docker/buildx send
+each layer as one request. Push through the CLI instead: it uploads blobs in
+chunks sized under the server's advertised limit, so any layer size goes through.
+
+```bash
+docker buildx build --output type=oci,dest=image.tar -t oci.builds.example.com/myproject:v1.2.3 .
+buildhost docker-push --token "$TOKEN" --image image.tar oci.builds.example.com/myproject:v1.2.3
+```
+
 ### From GitHub Actions
 
 Use the `buildhost-publish-docker` action to build and push in one step,
