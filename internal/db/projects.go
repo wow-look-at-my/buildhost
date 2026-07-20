@@ -67,6 +67,17 @@ func (d *DB) SetProjectDefaultBranch(ctx context.Context, id int64, branch strin
 	})
 }
 
+// SetProjectCreateService flips the packaging-agnostic "runs as a background
+// service" project setting, which each download format materializes its own
+// way (brew: `service do` block; deb: systemd user unit). Written by the
+// release-create declaration path and the operator PATCH override.
+func (d *DB) SetProjectCreateService(ctx context.Context, id int64, enabled bool) error {
+	return d.q.SetProjectCreateService(ctx, SetProjectCreateServiceParams{
+		CreateService: enabled,
+		ID:            id,
+	})
+}
+
 func (d *DB) ListProjects(ctx context.Context) ([]Project, error) {
 	return d.q.ListAllProjects(ctx)
 }

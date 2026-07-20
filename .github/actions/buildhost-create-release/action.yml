@@ -29,6 +29,16 @@ inputs:
     description: 'Release notes'
     required: false
     default: ''
+  create_service:
+    description: >-
+      Declare that the project's installed binary runs as a background
+      service ('true' or 'false'); each download format materializes it its
+      own way (brew formulas gain a `service do` block, on-the-fly debs ship
+      a systemd user unit). Empty (the default) sends nothing, leaving the
+      stored project setting untouched -- byte-identical request to before
+      this input existed.
+    required: false
+    default: ''
 
 outputs:
   response:
@@ -63,8 +73,15 @@ runs:
             const gitBranch: string = gitBranchInput || github.ref_name;
             const gitCommit: string = gitCommitInput || github.sha;
 
-            const body: Record<string, string> = { git_branch: gitBranch, git_commit: gitCommit, notes: "${{ inputs.notes }}" };
+            const body: Record<string, string | boolean> = { git_branch: gitBranch, git_commit: gitCommit, notes: "${{ inputs.notes }}" };
             if (version) body['version'] = version;
+            const brewService: string = "${{ inputs.create_service }}";
+            if (brewService === 'true' || brewService === 'false') {
+              body['create_service'] = brewService === 'true';
+            } else if (brewService !== '') {
+              core.setFailed(`create_service must be 'true', 'false', or empty; got '${brewService}'`);
+              return;
+            }
 
             const resp = await fetch(`${server}/api/v1/projects/${project}/releases`, {
               method: 'POST',
