@@ -72,6 +72,37 @@ remote. The `?token=` query parameter cannot be used with `brew tap`: git
 appends its own path segments (`/info/refs`, ...) after the query string, so
 the URL stops resolving as a git repository.
 
+### Background services (create_service)
+
+A project can declare that its binary runs as a background service. Declare
+it in the publishing repo's CI: `create_service: 'true'` on the
+`buildhost-create-release` or `buildhost-publish` action (go-toolchain's
+composite: `autorelease_args: create_service=true`). Every publish asserts
+the declared value; an absent input leaves the stored setting untouched.
+Operators can also flip it directly: `PATCH /api/v1/projects/{project}` with
+`{"create_service": true}`.
+
+Each install format materializes the setting its own way. Homebrew formulas
+gain a `service do` block; activating it is one one-time command, after which
+it starts at login and survives upgrades (the block runs the `opt` path):
+
+```bash
+brew services start pazer/build/competent-search-thing
+```
+
+Homebrew cannot run that for you at install: a formula's only install-time
+hook (`post_install`) runs inside brew's sandbox, whose profile denies all
+file writes outside build paths -- `~/Library/LaunchAgents` included -- so no
+formula can register a LaunchAgent. `brew uninstall` does not stop services
+either: run `brew services stop <tap>/<project>` before removing.
+
+The service restarts only after a crash (`keep_alive successful_exit: false`;
+a clean exit stays exited) and logs to `$(brew --prefix)/var/log/<name>.log`.
+On Linux prefer the APT install below -- brew's Linux units carry no
+graphical-session ordering. The deb materialization (which does auto-enable)
+is described in the APT section; other formats (raw, zip, npm, OCI) store the
+flag without materializing it.
+
 ## APT (Debian / Ubuntu)
 
 buildhost serves each project as its own GPG-signed APT repository at
@@ -150,6 +181,20 @@ echo "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] https://apt.pazer.build/pr
   | sudo tee /etc/apt/sources.list.d/pr-reviewer-agent-server.list
 sudo apt update && sudo apt install pr-reviewer-agent-server
 ```
+
+### Background services (create_service)
+
+A `create_service` project's generated deb (see the Homebrew section for the
+flag itself) ships a systemd user unit at
+`/usr/lib/systemd/user/<pkg>.service` -- crash-only `Restart=on-failure`,
+bound to `graphical-session.target` -- and sets it up at install: the
+package's postinst runs `systemctl --global enable`, so the service starts at
+every user's next graphical login (plus a best-effort immediate start for the
+installing sudo user's live session). Removing the package disables it again.
+
+This applies to buildhost-GENERATED debs only (`fmt=deb`, i.e. this APT
+repository). A pre-built `.deb` uploaded as an artifact (`kind=archive`) is
+served byte-identical -- buildhost never injects into uploaded files.
 
 ## Web frontend
 

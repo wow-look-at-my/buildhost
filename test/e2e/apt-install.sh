@@ -64,17 +64,23 @@ for host in "$APTHOST" "$STATICHOST"; do
 	grep -Eq "[[:space:]]${host}([[:space:]]|$)" /etc/hosts || echo "127.0.0.1 $host" | sudo tee -a /etc/hosts >/dev/null
 done
 
-# publish_project <project>: create a public project, a release, upload the
-# linux/amd64 binary, and publish. Logs go to stderr; the resolved version is
-# echoed to stdout for command substitution.
+# publish_project <project> [extra-release-json]: create a public project, a
+# release, upload the linux/amd64 binary, and publish. The optional second
+# argument is spliced into the release-create JSON body (e.g.
+# '"create_service":true' -- the declarative publish-path settings). Logs go
+# to stderr; the resolved version is echoed to stdout for command
+# substitution.
 publish_project() {
-	local project="$1"
+	local project="$1" extra="${2:-}"
 	echo "== create public project '$project' ==" >&2
 	curl -fsS "${auth[@]}" -H "Content-Type: application/json" \
 		-d "{\"name\":\"$project\",\"versioning\":\"auto\",\"is_private\":false,\"description\":\"APT endpoint e2e package\"}" \
 		"$BASE/api/v1/projects" >/dev/null
+	local body='{"git_branch":"master"'
+	[ -n "$extra" ] && body="${body},${extra}"
+	body="${body}}"
 	local version
-	version="$(curl -fsS "${auth[@]}" -H "Content-Type: application/json" -d '{"git_branch":"master"}' \
+	version="$(curl -fsS "${auth[@]}" -H "Content-Type: application/json" -d "$body" \
 		"$BASE/api/v1/projects/$project/releases" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
 	[ -n "$version" ] || { echo "could not determine release version for '$project'" >&2; exit 1; }
 	echo "   version=$version" >&2
@@ -111,12 +117,29 @@ install_via_apt() {
 	echo "== OK: installed '$pkg' $version from project '$project' =="
 }
 
-# 1) Plain single-segment project: package name == project name.
-V1="$(publish_project "buildhost-apt-e2e")"
+# 1) Plain single-segment project, declaring create_service on release-create
+#    (the declarative publish-path flow): the installed deb must ship the
+#    systemd USER unit with the documented content.
+V1="$(publish_project "buildhost-apt-e2e" '"create_service":true')"
 install_via_apt "buildhost-apt-e2e" "buildhost-apt-e2e" "$V1"
 
-# 2) Slash-namespaced project: the Debian package name folds '/' to '-'.
+echo "== verify create_service systemd user unit landed =="
+UNIT="/usr/lib/systemd/user/buildhost-apt-e2e.service"
+[ -f "$UNIT" ] || { echo "missing $UNIT (create_service was declared on release-create)" >&2; exit 1; }
+grep -q '^ExecStart=/usr/bin/buildhost-apt-e2e$' "$UNIT"
+grep -q '^Restart=on-failure$' "$UNIT"
+grep -q '^WantedBy=graphical-session.target$' "$UNIT"
+
+echo "== verify postinst auto-enabled the unit (global enable symlink) =="
+WANTS="/etc/systemd/user/graphical-session.target.wants/buildhost-apt-e2e.service"
+[ -L "$WANTS" ] || { echo "missing enable symlink $WANTS -- postinst did not run systemctl --global enable" >&2; exit 1; }
+echo "== OK: unit present (crash-only restart), auto-enabled for every user's next graphical login =="
+
+# 2) Slash-namespaced project, flag off: the Debian package name folds '/'
+#    to '-', and the flag-off deb must NOT ship a unit.
 V2="$(publish_project "buildhost-apt-e2e/tool")"
 install_via_apt "buildhost-apt-e2e/tool" "buildhost-apt-e2e-tool" "$V2"
+[ ! -e /usr/lib/systemd/user/buildhost-apt-e2e-tool.service ] || { echo "flag-off project unexpectedly shipped a unit" >&2; exit 1; }
+[ ! -e /etc/systemd/user/graphical-session.target.wants/buildhost-apt-e2e-tool.service ] || { echo "flag-off project unexpectedly enabled a unit" >&2; exit 1; }
 
-echo "== E2E OK: apt endpoint installed plain and namespaced packages =="
+echo "== E2E OK: apt endpoint installed plain (with service unit) and namespaced (without) packages =="
