@@ -124,6 +124,21 @@ func publishSingle(cmd *cobra.Command) error {
 	}
 
 	fmt.Printf("uploaded %s/%s %s/%s\n", project, rel.Version, osStr, archStr)
+
+	// Publish the release, exactly like manifest mode: an unpublished release
+	// is invisible to latest/branch resolution (dl, brew, apt, npm, the web
+	// frontend) and is eventually swept by retention as an abandoned upload --
+	// and the CLI has no other way to publish it later.
+	resp, err = doRequest("POST", fmt.Sprintf("%s/api/v1/projects/%s/releases/%s/publish", serverURL, project, rel.Version), token, nil)
+	if err != nil {
+		return fmt.Errorf("publish release: %w", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("publish failed: %s", resp.Status)
+	}
+
+	fmt.Printf("published %s/%s\n", project, rel.Version)
 	return nil
 }
 
