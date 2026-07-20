@@ -171,6 +171,13 @@ For a slash-namespaced project the repository URL keeps the slash, but the
 Debian package name folds `/` and `_` to `-` (for example, `myrepo/server` is
 served at `__APT_URL__/myrepo/server` and installs as `myrepo-server`).
 
+A `create_service` project's generated deb also ships a systemd user unit
+(`/usr/lib/systemd/user/<pkg>.service`, crash-only restart, bound to the
+graphical session) that the package auto-enables at install: it starts at
+each user's next graphical login, and removal disables it again. Pre-built
+`.deb` artifacts uploaded as `kind=archive` are served byte-identical --
+never injected into.
+
 Homebrew (tap the generated Git repository, trust it -- required since
 Homebrew 6.0 -- then install; on Linux the bottle-less install runs Homebrew's
 build sandbox, which needs bubblewrap and unprivileged user namespaces, or
@@ -203,6 +210,15 @@ A slash-namespaced project folds `/` to `-` in its formula name (the same
 rule as APT package names), and the installed command keeps the binary's own
 name: `myrepo/myapp` installs as `brew install pazer/build/myrepo-myapp` and
 puts `myapp` on PATH.
+
+A project that declares its `create_service` setting (a bool its CI sends on
+release-create, or an operator sets via the API) is a background service,
+materialized per format. Its formula carries a `service do` block: activate
+once with `brew services start pazer/build/<project>` (user LaunchAgent at
+login, crash-only restart, logs under `$(brew --prefix)/var/log/`; Homebrew's
+sandbox makes install-time auto-start impossible for any formula, and
+`brew uninstall` does not stop services -- `brew services stop` first). Its
+generated deb ships an auto-enabled systemd user unit -- see the APT section.
 
 npm (packages are published under the `@buildhost` scope):
 

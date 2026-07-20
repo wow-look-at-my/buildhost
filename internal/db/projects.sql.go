@@ -11,7 +11,7 @@ import (
 )
 
 const getProjectByName = `-- name: GetProjectByName :one
-SELECT id, name, description, homepage, license, is_private, versioning, github_repo, default_branch, created_at, updated_at
+SELECT id, name, description, homepage, license, is_private, versioning, github_repo, default_branch, create_service, created_at, updated_at
 FROM projects WHERE name = ?
 `
 
@@ -28,6 +28,7 @@ func (q *Queries) GetProjectByName(ctx context.Context, name string) (Project, e
 		&i.Versioning,
 		&i.GithubRepo,
 		&i.DefaultBranch,
+		&i.CreateService,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -62,7 +63,7 @@ func (q *Queries) InsertProject(ctx context.Context, arg InsertProjectParams) (s
 }
 
 const listAllProjects = `-- name: ListAllProjects :many
-SELECT id, name, description, homepage, license, is_private, versioning, github_repo, default_branch, created_at, updated_at
+SELECT id, name, description, homepage, license, is_private, versioning, github_repo, default_branch, create_service, created_at, updated_at
 FROM projects ORDER BY name
 `
 
@@ -85,6 +86,7 @@ func (q *Queries) ListAllProjects(ctx context.Context) ([]Project, error) {
 			&i.Versioning,
 			&i.GithubRepo,
 			&i.DefaultBranch,
+			&i.CreateService,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -99,6 +101,20 @@ func (q *Queries) ListAllProjects(ctx context.Context) ([]Project, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const setProjectCreateService = `-- name: SetProjectCreateService :exec
+UPDATE projects SET create_service = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type SetProjectCreateServiceParams struct {
+	CreateService bool  `json:"create_service"`
+	ID            int64 `json:"id"`
+}
+
+func (q *Queries) SetProjectCreateService(ctx context.Context, arg SetProjectCreateServiceParams) error {
+	_, err := q.db.ExecContext(ctx, setProjectCreateService, arg.CreateService, arg.ID)
+	return err
 }
 
 const setProjectDefaultBranch = `-- name: SetProjectDefaultBranch :exec
