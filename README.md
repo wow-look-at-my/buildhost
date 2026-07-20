@@ -78,8 +78,31 @@ buildhost serves each project as its own GPG-signed APT repository at
 `apt.<domain>/<project>` (suite `stable`, component `main`). Packages are
 generated on demand from the uploaded binary -- nothing is pre-built.
 
-Import the repository signing key once, add the source, then install. The key is
-served per project path but is the same server-wide key:
+The fastest way to add a repository is the generated per-project installer. It
+saves the armored signing key to `/etc/apt/keyrings/`, writes a `signed-by`
+source, and refreshes the package index (APT reads the armored key directly via
+`signed-by`, so no `gpg` binary is needed on the client):
+
+```bash
+curl -fsSL https://apt.pazer.build/myapp/install.sh | sudo sh
+sudo apt-get install myapp
+```
+
+For a private project, pass a read token -- the installer also records it in
+`/etc/apt/auth.conf.d/`, covering both the apt host and the static host the
+`.deb` download redirects to:
+
+```bash
+curl -fsSL -H "Authorization: Bearer $TOKEN" https://apt.pazer.build/myapp/install.sh \
+  | sudo BUILDHOST_TOKEN=$TOKEN sh
+```
+
+One-line install commands (and per-project copy buttons) are also available on
+the admin dashboard: see each project's page or the **Registries** tab.
+
+Prefer to set it up by hand? Import the repository signing key once, add the
+source, then install. The key is served per project path but is the same
+server-wide key:
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings

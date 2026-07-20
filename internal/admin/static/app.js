@@ -314,8 +314,15 @@ App.pages.project = function (name) {
                 ? 'curl -fsSL --location-trusted -u "token:$TOKEN" -O \\\n  "' + dlBase + '?os=linux&arch=amd64"'
                 : 'curl -fsSL -O "' + dlBase + '?os=linux&arch=amd64"';
 
-            // APT: signed-by key-import flow + folded Debian package name,
-            // matching the Registries page and the web frontend.
+            // APT: the server-generated install.sh is the one-line path (it
+            // saves the armored key, writes the signed-by source, records the
+            // token for private repos, and refreshes the index).
+            var aptOneLiner = priv
+                ? 'curl -fsSL -H "Authorization: Bearer $TOKEN" ' + aptBase + "/install.sh \\\n  | sudo BUILDHOST_TOKEN=$TOKEN sh"
+                : "curl -fsSL " + aptBase + "/install.sh | sudo sh";
+
+            // APT manual flow: signed-by key-import + folded Debian package
+            // name, matching the Registries page and the web frontend.
             var aptCmd = priv
                 ? 'sudo install -d -m 0755 /etc/apt/keyrings\n# the token is the HTTP Basic password (username is ignored)\ncurl -fsSL -u "token:$TOKEN" ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + aptPkg + '.list\n# both apt (metadata) and static (the .deb download redirect) need the token\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf\nmachine ' + aptHost + ' login token password $TOKEN\nmachine ' + staticHost + ' login token password $TOKEN\nEOF\nsudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf\nsudo apt update && sudo apt install ' + aptPkg
                 : 'sudo install -d -m 0755 /etc/apt/keyrings\ncurl -fsSL ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + aptPkg + '.list\nsudo apt update && sudo apt install ' + aptPkg;
@@ -337,12 +344,14 @@ App.pages.project = function (name) {
                         Html.td(Html.raw(App.urlTpl(dlBase + "?os={os}&arch={arch}", dlBase + "?os=", "&arch="))).cls("endpoint-cell")
                     ),
                     endpointRow("APT", aptBase, aptBase + "/dists/stable/Release", aptBase),
+                    endpointRow("APT installer", aptBase + "/install.sh", aptBase + "/install.sh", null),
                     endpointRow("Homebrew", brewU, brewU, null),
                     endpointRow("npm", npmU, npmU, null),
                     endpointRow("OCI", ociU, ociU, null)
                 ).cls("info-table"),
                 Html.raw(App.codeBlock("Direct download (curl)", curlCmd)),
-                Html.raw(App.codeBlock("APT", aptCmd)),
+                Html.raw(App.codeBlock("APT (one-line install)", aptOneLiner)),
+                Html.raw(App.codeBlock("APT (manual setup)", aptCmd)),
                 Html.raw(App.codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "\nbrew install pazer/build/" + p.name)),
                 Html.raw(App.codeBlock("npm", npmCmd)),
                 Html.raw(App.codeBlock("Docker", dockerCmd))
@@ -485,13 +494,17 @@ App.pages.registries = function () {
         html += App.codeBlock("Query parameters", "?os=linux         # Required: target OS\n?arch=amd64       # Required: target architecture\n?v={version}      # Pin to a version (default: latest)\n?branch={branch}  # Latest build on a git branch\n?fmt=tar.gz       # Repackage: raw, tar.gz, tar.xz, tar.zst, zip\n?debug=1          # Debug symbols");
         html += "</div>";
 
-        html += '<div class="card"><h2>APT Repository</h2><p class="section-desc">Debian/Ubuntu package repository. Packages are generated on demand at download time. The repository URL keeps a slash-namespaced project name, but the Debian package name folds <code>/</code> and <code>_</code> to <code>-</code> &mdash; e.g. <code>myrepo/server</code> installs as <code>myrepo-server</code>.</p>';
+        html += '<div class="card"><h2>APT Repository</h2><p class="section-desc">Debian/Ubuntu package repository. Packages are generated on demand at download time. The <code>install.sh</code> one-liner installs the signing key and source for you. The repository URL keeps a slash-namespaced project name, but the Debian package name folds <code>/</code> and <code>_</code> to <code>-</code> &mdash; e.g. <code>myrepo/server</code> installs as <code>myrepo-server</code>.</p>';
         html += '<table class="info-table">';
         html += "<tr><td class='info-label'>Release</td><td class='endpoint-cell'><code>" + App.h(apt + "/{project}/dists/stable/Release") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "<tr><td class='info-label'>InRelease</td><td class='endpoint-cell'><code>" + App.h(apt + "/{project}/dists/stable/InRelease") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "<tr><td class='info-label'>Packages</td><td class='endpoint-cell'><code>" + App.h(apt + "/{project}/dists/stable/main/binary-{arch}/Packages") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "<tr><td class='info-label'>Pool</td><td class='endpoint-cell'><code>" + App.h(apt + "/{project}/pool/{filename}") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Signing key</td><td class='endpoint-cell'><code>" + App.h(apt + "/{project}/key.asc") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Installer</td><td class='endpoint-cell'><code>" + App.h(apt + "/{project}/install.sh") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "</table>";
+        html += App.codeBlock("One-line install (public project)", "curl -fsSL " + apt + "/{project}/install.sh | sudo sh");
+        html += App.codeBlock("One-line install (private project)", 'curl -fsSL -H "Authorization: Bearer $TOKEN" ' + apt + "/{project}/install.sh \\\n  | sudo BUILDHOST_TOKEN=$TOKEN sh");
         html += App.codeBlock("Setup (public project)", 'sudo install -d -m 0755 /etc/apt/keyrings\ncurl -fsSL ' + apt + '/{project}/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\nsudo apt update && sudo apt install {project}');
         html += App.codeBlock("Setup (private project)", 'sudo install -d -m 0755 /etc/apt/keyrings\n# the token is the HTTP Basic password (username is ignored)\ncurl -fsSL -u "token:$TOKEN" ' + apt + '/{project}/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\n# both apt (metadata) and static (the .deb download redirect) need the token\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf\nmachine ' + aptHost + ' login token password $TOKEN\nmachine ' + staticHost + ' login token password $TOKEN\nEOF\nsudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf\nsudo apt update && sudo apt install {project}');
         html += "</div>";
@@ -550,7 +563,10 @@ App.pages.registries = function () {
                 html += "<tr><td><a href='#/projects/" + App.h(pr.name) + "'>" + App.h(pr.name) + "</a></td>";
                 html += "<td>" + (pr.is_private ? App.badge("warning", "Private") : App.badge("success", "Public")) + "</td>";
                 html += "<td class='endpoint-cell'><span class='url-tpl' data-tpl='" + App.h(prDl + "?os={os}&arch={arch}") + "'><code class='truncate'>" + App.h(prDl + "?os=") + "</code><select class='tpl-select tpl-select-sm' data-var='os'><option value='linux'>linux</option><option value='darwin'>darwin</option><option value='windows'>windows</option><option value='freebsd'>freebsd</option></select><code>&arch=</code><select class='tpl-select tpl-select-sm' data-var='arch'><option value='amd64'>amd64</option><option value='arm64'>arm64</option><option value='386'>386</option><option value='arm'>arm</option></select></span><copy-btn></copy-btn></td>";
-                html += "<td class='endpoint-cell'><a href='" + App.h(apt + "/" + pr.name + "/dists/stable/Release") + "' data-copy='" + App.h(apt + "/" + pr.name) + "'>" + App.h(apt + "/" + pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
+                var aptOneLiner = pr.is_private
+                    ? 'curl -fsSL -H "Authorization: Bearer $TOKEN" ' + apt + "/" + pr.name + "/install.sh | sudo BUILDHOST_TOKEN=$TOKEN sh"
+                    : "curl -fsSL " + apt + "/" + pr.name + "/install.sh | sudo sh";
+                html += "<td class='endpoint-cell'><a href='" + App.h(apt + "/" + pr.name + "/install.sh") + "' data-copy='" + App.h(aptOneLiner) + "' title='Copies the one-line install command'>" + App.h(apt + "/" + pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
                 html += "<td class='endpoint-cell'><a href='" + App.h(brew + "/" + pr.name) + "'>" + App.h(brew + "/" + pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
                 html += "<td class='endpoint-cell'><a href='" + App.h(npm + "/@buildhost/" + pr.name) + "'>" + App.h(npm + "/@buildhost/" + pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
                 html += "</tr>";
