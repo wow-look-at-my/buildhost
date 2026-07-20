@@ -29,6 +29,14 @@ inputs:
     description: 'Release notes'
     required: false
     default: ''
+  brew_service:
+    description: >-
+      Declare whether the project's generated Homebrew formula carries a
+      `service do` block (brew services support): 'true' or 'false'. Empty
+      (the default) sends nothing, leaving the stored project setting
+      untouched -- byte-identical request to before this input existed.
+    required: false
+    default: ''
 
 outputs:
   response:
@@ -63,8 +71,15 @@ runs:
             const gitBranch: string = gitBranchInput || github.ref_name;
             const gitCommit: string = gitCommitInput || github.sha;
 
-            const body: Record<string, string> = { git_branch: gitBranch, git_commit: gitCommit, notes: "${{ inputs.notes }}" };
+            const body: Record<string, string | boolean> = { git_branch: gitBranch, git_commit: gitCommit, notes: "${{ inputs.notes }}" };
             if (version) body['version'] = version;
+            const brewService: string = "${{ inputs.brew_service }}";
+            if (brewService === 'true' || brewService === 'false') {
+              body['brew_service'] = brewService === 'true';
+            } else if (brewService !== '') {
+              core.setFailed(`brew_service must be 'true', 'false', or empty; got '${brewService}'`);
+              return;
+            }
 
             const resp = await fetch(`${server}/api/v1/projects/${project}/releases`, {
               method: 'POST',

@@ -113,6 +113,50 @@ func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
 	assert.Equal(t, "v1", latest.GitBranch)
 }
 
+// The publish path is the declarative surface for brew_service: a present
+// field is asserted on EVERY publish (idempotently), an absent field leaves
+// the stored setting untouched -- so an older CI that never sends it can
+// never clobber an operator-set value, and a declaring CI is the source of
+// truth.
+func TestCreateRelease_BrewServiceDeclaration(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "svctool", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	createRelease := func(body string) *httptest.ResponseRecorder {
+		t.Helper()
+		got, err := h.DB.GetProject(ctx, "svctool")
+		require.NoError(t, err)
+		req := httptest.NewRequest("POST", "/api/projects/svctool/releases", strings.NewReader(body))
+		req.SetPathValue("project", "svctool")
+		req = withProjectRoute(req, got)
+		req = req.WithContext(writeToken(req.Context(), "read,write"))
+		rec := httptest.NewRecorder()
+		h.CreateRelease(rec, req)
+		return rec
+	}
+	flag := func() bool {
+		t.Helper()
+		got, err := h.DB.GetProject(ctx, "svctool")
+		require.NoError(t, err)
+		return got.BrewService
+	}
+
+	// Declared true: recorded.
+	require.Equal(t, http.StatusCreated, createRelease(`{"git_branch":"main","brew_service":true}`).Code)
+	assert.True(t, flag())
+
+	// Absent: untouched (an old CI never clobbers the setting).
+	require.Equal(t, http.StatusCreated, createRelease(`{"git_branch":"main"}`).Code)
+	assert.True(t, flag())
+
+	// Declared false: asserted back off on the next publish.
+	require.Equal(t, http.StatusCreated, createRelease(`{"git_branch":"main","brew_service":false}`).Code)
+	assert.False(t, flag())
+}
+
 func TestCreateRelease_InvalidDefaultBranch(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()

@@ -74,10 +74,14 @@ the URL stops resolving as a git repository.
 
 ### Run as a login service (brew services)
 
-A project can opt into a `service do` block in its generated formula. The flag
-is operator-set on the project (`brew_service` via
-`PATCH /api/v1/projects/{project}`), so the publishing repo's CI changes
-nothing. With it on, the install supports:
+A project can opt into a `service do` block in its generated formula. Declare
+it in the publishing repo's CI: `brew_service: 'true'` on the
+`buildhost-create-release` or `buildhost-publish` action (go-toolchain's
+composite: `autorelease_args: brew_service=true`). Every publish asserts the
+declared value; an absent input leaves the stored setting untouched.
+Operators can also flip the stored flag directly:
+`PATCH /api/v1/projects/{project}` with `{"brew_service": true}`. With it on,
+the install supports:
 
 ```bash
 brew services start pazer/build/competent-search-thing

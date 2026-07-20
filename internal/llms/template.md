@@ -204,10 +204,11 @@ rule as APT package names), and the installed command keeps the binary's own
 name: `myrepo/myapp` installs as `brew install pazer/build/myrepo-myapp` and
 puts `myapp` on PATH.
 
-A project whose operator enabled its `brew_service` setting carries a
-`service do` block in its formula, so `brew services start pazer/build/<project>`
-runs the installed binary as a login service on macOS (user LaunchAgent,
-crash-only restart, logs under `$(brew --prefix)/var/log/`).
+A project that declares its `brew_service` setting (a bool its CI sends on
+release-create, or an operator sets via the API) carries a `service do` block
+in its formula, so `brew services start pazer/build/<project>` runs the
+installed binary as a login service on macOS (user LaunchAgent, crash-only
+restart, logs under `$(brew --prefix)/var/log/`).
 
 npm (packages are published under the `@buildhost` scope):
 

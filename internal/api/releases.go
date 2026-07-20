@@ -37,8 +37,15 @@ type createReleaseRequest struct {
 	// "latest" tracks for this project, so a project that releases off a
 	// non-master branch (e.g. go-toolchain on "v1") resolves "latest" correctly.
 	DefaultBranch string `json:"default_branch"`
-	Notes         string `json:"notes"`
-	OciUser       string `json:"oci_user"`
+	// BrewService declares whether the project's generated Homebrew formula
+	// carries a `service do` block (brew services support). Pointer: absent =
+	// leave the stored project setting untouched (an older CI that never sends
+	// the field can never clobber an operator-set value), present = assert
+	// that value on every publish, so the repo's CI is the declarative source
+	// of truth once it sends it.
+	BrewService *bool  `json:"brew_service"`
+	Notes       string `json:"notes"`
+	OciUser     string `json:"oci_user"`
 }
 
 func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
@@ -101,6 +108,19 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 	if req.OciUser != "" && !validOCIUser(req.OciUser) {
 		jsonError(w, http.StatusBadRequest, "invalid oci_user")
 		return
+	}
+
+	// Assert the declared brew_service setting on EVERY publish attempt --
+	// including a re-publish whose release create will 409 below -- so the
+	// repo's CI declaration is idempotently enforced, not just recorded at
+	// first provisioning. Absent field = untouched (see createReleaseRequest).
+	// Best-effort like the default-branch sync: a failure must not fail the
+	// publish.
+	if req.BrewService != nil && *req.BrewService != project.BrewService {
+		if err := h.DB.SetProjectBrewService(r.Context(), project.ID, *req.BrewService); err != nil {
+			slog.WarnContext(r.Context(), "failed to update project brew_service",
+				"project", project.Name, "brew_service", *req.BrewService, "err", err)
+		}
 	}
 
 	rel := &db.Release{
