@@ -455,6 +455,15 @@ jobs:
   # server stored must match the local file exactly. The create-release and
   # publish-release composites run as part of the flow, so the whole
   # create -> upload -> publish action chain is covered end to end.
+  #
+  # The same spawned server also guards single-mode `buildhost publish` (no
+  # --manifest) actually PUBLISHING the release it creates. The CLI package
+  # deliberately has no unit tests (see internal/uploadclient's doc comment),
+  # so like the --manifest flavor in homebrew-tap-e2e, the real binary is
+  # exercised here: after a single-mode publish, the project's apex `latest`
+  # must resolve to a published release -- it used to stay unpublished
+  # forever (invisible to latest/branch/brew/apt/npm/web, eventually GC'd by
+  # retention as an abandoned upload, with no CLI way to publish it later).
   upload-artifact-action-e2e:
     needs: build
     runs-on: ubuntu-latest
@@ -577,6 +586,23 @@ jobs:
           cmp "$RUNNER_TEMP/big.bin" "$RUNNER_TEMP/big.dl"
           # After publish, the release is visible as the apex latest.
           curl -fsS "$BUILDHOST_BASE_URL/api/v1/projects/upload-e2e/releases/latest" | grep -q '"published":true'
+      - name: Single-mode CLI publish must publish the release
+        shell: bash
+        run: |
+          set -euo pipefail
+          head -c 4096 /dev/urandom > "$RUNNER_TEMP/cli.bin"
+          ./build/buildhost_linux_amd64 project create \
+            --server "$BUILDHOST_BASE_URL" \
+            --token "$BUILDHOST_TOKEN" \
+            --name cli-single-e2e
+          ./build/buildhost_linux_amd64 publish \
+            --server "$BUILDHOST_BASE_URL" \
+            --token "$BUILDHOST_TOKEN" \
+            --project cli-single-e2e \
+            --os linux --arch amd64 \
+            --git-branch master \
+            --artifact "$RUNNER_TEMP/cli.bin"
+          curl -fsS "$BUILDHOST_BASE_URL/api/v1/projects/cli-single-e2e/releases/latest" | grep -q '"published":true'
       - name: Dump buildhost log
         if: failure()
         shell: bash

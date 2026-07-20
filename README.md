@@ -482,12 +482,14 @@ never reaches the origin. Two ways around that, both first-try reliable:
   The in-repo publish clients do this automatically when the server
   advertises `upload_by_sha256`.
 - **Chunked upload sessions (automatic fallback).** Through the proxied
-  hostname, the CLI transparently splits large files into chunks that fit
-  under the cap. You don't have to know this exists: `buildhost publish` and
-  `buildhost publish-site` check the file size against the server's advertised
-  limit (`GET /api/v1/server-info`, `max_direct_upload_bytes`, default 95 MiB)
-  before sending anything, and switch to a session only when needed. Small
-  files keep using the classic single request.
+  hostname, the in-repo publish clients transparently split large files into
+  chunks that fit under the cap. You don't have to know this exists:
+  `buildhost publish`, `buildhost publish-site`, and the
+  `buildhost-upload-artifact` GitHub action all check the file size against
+  the server's advertised limit (`GET /api/v1/server-info`,
+  `max_direct_upload_bytes`, default 95 MiB) before sending anything, and
+  switch to a session only when needed. Small files keep using the classic
+  single request.
 
 ```bash
 # Exactly the same command whether the file is 5 MB or 5 GB -- chunking is
@@ -525,9 +527,17 @@ Sessions expire after 24h (`BUILDHOST_UPLOAD_SESSION_TTL`), count against the
 normal 2 GiB upload cap at append time, and only the identity that created a
 session can touch it. A successful finalize consumes the session.
 
-From CI without the CLI (e.g. a GitHub Actions step uploading a >100 MB
-artifact through the proxied hostname), the same protocol is a short curl
-loop:
+From GitHub Actions, the
+`wow-look-at-my/buildhost/.github/actions/buildhost-upload-artifact@master`
+composite does all of this automatically: it checks the advertised limit,
+sends small files as the classic direct PUT (streamed from disk), assembles
+larger ones through a session (default 64 MiB chunks, tunable via its
+optional `chunk_size` input), resumes from the server's committed size on
+hiccups, finalizes with the file's SHA-256, and retries transient
+server/network errors with backoff.
+
+From other CI without the CLI (uploading a >100 MB artifact through the
+proxied hostname), the same protocol is a short curl loop:
 
 ```bash
 FILE=./huge-artifact
