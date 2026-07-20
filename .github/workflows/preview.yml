@@ -19,6 +19,13 @@ permissions:
   actions: read
   pull-requests: write
   id-token: write
+  # checks read: the org no-all-builds-job guard (the first step inside
+  # buildhost-publish-site, which the reusable buildhost-preview workflow
+  # calls) scans the run's jobs and the head commit's check runs since
+  # no-all-builds-job#3 (2026-07-20), and FAILS CLOSED when it cannot scan
+  # ("Resource not accessible by integration"). A called workflow's jobs
+  # never get a scope its caller does not grant, so the grant must be here.
+  checks: read
 
 jobs:
   preview:
