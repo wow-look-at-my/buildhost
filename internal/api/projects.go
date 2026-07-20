@@ -20,6 +20,7 @@ func init() {
 		auth.HandleRaw("POST /api/v1/projects", handler.CreateProject)
 		auth.HandleRaw("GET /api/v1/projects", handler.ListProjects)
 		auth.Handle("GET /api/v1/projects/{project}", parseRoute, handler.GetProject)
+		auth.Handle("PATCH /api/v1/projects/{project}", parseRoute, handler.UpdateProjectSettings)
 	})
 }
 
@@ -94,6 +95,41 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusOK, auth.ProjectFrom(r.Context()))
+}
+
+// updateProjectRequest carries operator-set project settings. Every field is a
+// pointer so an absent key leaves the setting unchanged (PATCH semantics).
+type updateProjectRequest struct {
+	// CreateService declares that the project's installed binary runs as a
+	// background service; each download format materializes it its own way
+	// (brew formulas gain a `service do` block, on-the-fly debs ship a
+	// systemd user unit). Operator override for the release-create
+	// declaration path.
+	CreateService *bool `json:"create_service"`
+}
+
+// UpdateProjectSettings PATCHes operator-set project settings. Auth rides the
+// centralized requireProject middleware: PATCH is a write verb (parseRoute),
+// so only a write-scoped token authorized for the project reaches here.
+func (h *Handler) UpdateProjectSettings(w http.ResponseWriter, r *http.Request) {
+	project := auth.ProjectFrom(r.Context())
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
+	var req updateProjectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.CreateService != nil && *req.CreateService != project.CreateService {
+		if err := h.DB.SetProjectCreateService(r.Context(), project.ID, *req.CreateService); err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to update project")
+			return
+		}
+		project.CreateService = *req.CreateService
+	}
+
+	jsonResponse(w, http.StatusOK, project)
 }
 
 func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
