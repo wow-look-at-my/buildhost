@@ -19,16 +19,21 @@ import (
 // errBlobTooLarge is returned when an upload exceeds the configured per-blob cap.
 var errBlobTooLarge = errors.New("blob exceeds maximum size")
 
+// errRangeMismatch is returned when a chunk's Content-Range start does not
+// equal the bytes committed so far (an out-of-order or duplicated chunk).
+var errRangeMismatch = errors.New("chunk offset does not match committed size")
+
 // uploadSession is an in-progress OCI blob upload. Bytes are streamed to a temp
 // file under the data dir (never /tmp) and hashed incrementally so the final
 // digest can be verified against the client-supplied digest.
 type uploadSession struct {
-	uuid    string
-	mu      sync.Mutex // serializes appendChunk/finalize for one session
-	file    *os.File
-	hasher  hash.Hash
-	written int64
-	created time.Time
+	uuid       string
+	mu         sync.Mutex // serializes appendChunk/finalize for one session
+	file       *os.File
+	hasher     hash.Hash
+	written    int64
+	created    time.Time
+	lastActive time.Time // guarded by mu; sweep goes by activity, not creation
 }
 
 // uploadStore tracks in-progress blob uploads. Sessions live in memory plus a
@@ -56,10 +61,11 @@ func (s *uploadStore) start() (*uploadSession, error) {
 		return nil, fmt.Errorf("create upload temp: %w", err)
 	}
 	sess := &uploadSession{
-		uuid:    filepath.Base(f.Name()),
-		file:    f,
-		hasher:  sha256.New(),
-		created: time.Now(),
+		uuid:       filepath.Base(f.Name()),
+		file:       f,
+		hasher:     sha256.New(),
+		created:    time.Now(),
+		lastActive: time.Now(),
 	}
 	s.mu.Lock()
 	s.sessions[sess.uuid] = sess
@@ -87,15 +93,36 @@ func (s *uploadStore) remove(sess *uploadSession) {
 
 // appendChunk streams r into the session, enforcing the per-blob cap.
 func (s *uploadStore) appendChunk(sess *uploadSession, r io.Reader) (int64, error) {
+	return s.appendChunkAt(sess, r, -1)
+}
+
+// appendChunkAt appends r at the stated start offset (-1 skips the offset
+// check). A start that does not equal the committed size returns
+// errRangeMismatch with the committed size and consumes nothing, so a client
+// that retried an already-applied chunk can resume instead of corrupting the
+// blob. On success it returns the new committed size.
+func (s *uploadStore) appendChunkAt(sess *uploadSession, r io.Reader, start int64) (int64, error) {
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
+	sess.lastActive = time.Now()
+	if start >= 0 && start != sess.written {
+		return sess.written, errRangeMismatch
+	}
 	capped := &cappedReader{r: r, remaining: s.maxBlob - sess.written}
 	n, err := io.Copy(io.MultiWriter(sess.file, sess.hasher), capped)
 	sess.written += n
 	if capped.exceeded {
-		return n, errBlobTooLarge
+		return sess.written, errBlobTooLarge
 	}
-	return n, err
+	return sess.written, err
+}
+
+// committed returns the bytes received so far (for status reads and resume).
+func (s *uploadStore) committed(sess *uploadSession) int64 {
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
+	sess.lastActive = time.Now()
+	return sess.written
 }
 
 // finalize verifies the accumulated digest against expectedDigest, then stores
@@ -122,19 +149,27 @@ func (s *uploadStore) finalize(ctx context.Context, store storage.Storage, sess 
 	return gotDigest, n, nil
 }
 
-// sweep removes sessions older than maxAge (abandoned uploads).
+// sweep removes sessions idle longer than maxAge (abandoned uploads). Idleness
+// goes by last activity, not creation time: a large chunked upload legitimately
+// stays open for as long as its chunks keep arriving.
 func (s *uploadStore) sweep(maxAge time.Duration) {
 	cutoff := time.Now().Add(-maxAge)
 	s.mu.Lock()
-	var stale []*uploadSession
+	all := make([]*uploadSession, 0, len(s.sessions))
 	for _, sess := range s.sessions {
-		if sess.created.Before(cutoff) {
-			stale = append(stale, sess)
-		}
+		all = append(all, sess)
 	}
 	s.mu.Unlock()
-	for _, sess := range stale {
-		s.remove(sess)
+	// Check idleness outside s.mu: finalize holds sess.mu while it calls
+	// remove (which takes s.mu), so taking sess.mu under s.mu would invert
+	// that order and risk a deadlock.
+	for _, sess := range all {
+		sess.mu.Lock()
+		idle := sess.lastActive.Before(cutoff)
+		sess.mu.Unlock()
+		if idle {
+			s.remove(sess)
+		}
 	}
 }
 
