@@ -211,12 +211,15 @@ steps:
     with:
       server: https://builds.example.com   # optional, defaults to https://pazer.build
       context: .                            # optional
-      # tags default to the commit SHA and "latest"; bare tags are expanded to
-      # <registry>/<project>:<tag>, full references (with "/" or ":") are used as-is.
-      tags: |
-        ${{ github.sha }}
-        latest
 ```
+
+With `tags` omitted, pushes are tagged with the commit SHA and the sanitized
+branch name (`claude/foo` -> `claude-foo`); `latest` is added only on the
+default branch, so a feature branch never moves the `:latest` pointer.
+
+Pass `tags` (newline-separated) to override: bare tags expand to
+`<registry>/<project>:<tag>`; references containing `/` or `:` are used
+as-is, so you can also push to another registry you are logged in to.
 
 For a build you drive yourself (e.g. `docker buildx imagetools` to copy an
 existing multi-arch image), use the lower-level `buildhost-docker-login` action,
