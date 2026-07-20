@@ -37,6 +37,15 @@ type createReleaseRequest struct {
 	// "latest" tracks for this project, so a project that releases off a
 	// non-master branch (e.g. go-toolchain on "v1") resolves "latest" correctly.
 	DefaultBranch string `json:"default_branch"`
+	// CreateService declares that the project's installed binary runs as a
+	// background service -- packaging-format-agnostic; each format
+	// materializes it its own way (brew formulas gain a `service do` block,
+	// on-the-fly debs ship a systemd user unit). Pointer: absent = leave the
+	// stored project setting untouched (an older CI that never sends the
+	// field can never clobber an operator-set value), present = assert that
+	// value on every publish, so the repo's CI is the declarative source of
+	// truth once it sends it.
+	CreateService *bool  `json:"create_service"`
 	Notes         string `json:"notes"`
 	OciUser       string `json:"oci_user"`
 }
@@ -101,6 +110,19 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 	if req.OciUser != "" && !validOCIUser(req.OciUser) {
 		jsonError(w, http.StatusBadRequest, "invalid oci_user")
 		return
+	}
+
+	// Assert the declared create_service setting on EVERY publish attempt --
+	// including a re-publish whose release create will 409 below -- so the
+	// repo's CI declaration is idempotently enforced, not just recorded at
+	// first provisioning. Absent field = untouched (see createReleaseRequest).
+	// Best-effort like the default-branch sync: a failure must not fail the
+	// publish.
+	if req.CreateService != nil && *req.CreateService != project.CreateService {
+		if err := h.DB.SetProjectCreateService(r.Context(), project.ID, *req.CreateService); err != nil {
+			slog.WarnContext(r.Context(), "failed to update project create_service",
+				"project", project.Name, "create_service", *req.CreateService, "err", err)
+		}
 	}
 
 	rel := &db.Release{
