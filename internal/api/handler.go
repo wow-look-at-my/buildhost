@@ -45,7 +45,7 @@ func parseRoute(r *http.Request) auth.RouteInfo {
 		version: r.PathValue("version"),
 		os:      r.PathValue("os"),
 		arch:    r.PathValue("arch"),
-		write:   r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE",
+		write:   r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" || r.Method == "DELETE",
 	}
 }
 
