@@ -246,8 +246,8 @@ func RenderBrewFormula(f BrewFormula) (*Output, error) {
 		Homepage:    sanitizeBrewString(f.Homepage),
 		Version:     sanitizeBrewString(f.Version),
 		License:     sanitizeBrewString(f.License),
-		Kind:    f.Kind,
-		Private: f.Private,
+		Kind:        f.Kind,
+		Private:     f.Private,
 		// The service block references opt_bin/<InstallName>, which exists
 		// only after a bin.install -- gate on the binary kind so a flagged
 		// project publishing a library/archive still renders loadable Ruby
