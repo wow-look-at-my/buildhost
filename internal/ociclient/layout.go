@@ -149,11 +149,12 @@ func writeFileFrom(dest string, r io.Reader) error {
 	return out.Close()
 }
 
-// root returns the layout's single top-level descriptor. Both `docker buildx
-// --output type=oci` and `docker save <one image>` write exactly one entry in
-// index.json (an image manifest, or a nested index for multi-platform /
-// attestation-carrying builds); a layout holding several images has no single
-// pushable root, so it is rejected.
+// root returns the layout's single top-level descriptor -- the one image the
+// layout holds. `docker buildx --output type=oci` writes one index.json entry
+// PER TAG, every entry referencing the same digest (only the
+// io.containerd.image.name annotation differs), so same-digest entries
+// collapse to one root. A layout whose entries reference distinct digests
+// holds several images and has no single pushable root, so it is rejected.
 func (l *layout) root() (descriptor, error) {
 	data, err := os.ReadFile(filepath.Join(l.dir, "index.json"))
 	if err != nil {
@@ -163,10 +164,16 @@ func (l *layout) root() (descriptor, error) {
 	if err := json.Unmarshal(data, &idx); err != nil {
 		return descriptor{}, fmt.Errorf("parse index.json: %w", err)
 	}
-	if len(idx.Manifests) != 1 {
-		return descriptor{}, fmt.Errorf("image layout has %d top-level manifests, want exactly 1 (one image per push)", len(idx.Manifests))
+	if len(idx.Manifests) == 0 {
+		return descriptor{}, fmt.Errorf("image layout has no top-level manifest")
 	}
-	return idx.Manifests[0], nil
+	root := idx.Manifests[0]
+	for _, m := range idx.Manifests[1:] {
+		if m.Digest != root.Digest {
+			return descriptor{}, fmt.Errorf("image layout holds several distinct images (%s and %s); push one image per invocation", root.Digest, m.Digest)
+		}
+	}
+	return root, nil
 }
 
 // blobPath resolves a digest to its blob file, verifying the file exists and

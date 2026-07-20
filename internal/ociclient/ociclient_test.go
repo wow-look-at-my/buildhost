@@ -262,6 +262,47 @@ func TestPush_SmallBlobsMonolithic(t *testing.T) {
 	assert.Equal(t, f.manifests["latest"], f.manifests[manifestDigest], "tag and digest must resolve to the same manifest")
 }
 
+// TestPush_BuildxPerTagIndexEntries pushes a layout shaped the way
+// `docker buildx --output type=oci` writes it for a MULTI-TAG build: one
+// index.json entry per tag, all referencing the same digest with only the
+// io.containerd.image.name annotation differing. (Regression: this shape was
+// once rejected as "2 top-level manifests".)
+func TestPush_BuildxPerTagIndexEntries(t *testing.T) {
+	f := newFakeRegistry(t)
+	srv := httptest.NewServer(f.handler("proj"))
+	defer srv.Close()
+
+	layer := []byte("per-tag-layer")
+	dir, manifestDigest := buildImageLayout(t, layer)
+
+	// Rewrite index.json with two per-tag entries for the same manifest.
+	entry := func(name string) map[string]any {
+		return map[string]any{
+			"mediaType":   "application/vnd.oci.image.manifest.v1+json",
+			"digest":      manifestDigest,
+			"size":        1, // descriptor size of the index entry is not used by the walk
+			"annotations": map[string]any{"io.containerd.image.name": "reg.example/proj:" + name},
+		}
+	}
+	// The walk reads the manifest blob by digest, so give the entries the real size.
+	st, err := os.Stat(filepath.Join(dir, "blobs", "sha256", manifestDigest[len("sha256:"):]))
+	require.NoError(t, err)
+	e1, e2 := entry("sha"), entry("latest")
+	e1["size"], e2["size"] = st.Size(), st.Size()
+	index, _ := json.Marshal(map[string]any{
+		"schemaVersion": 2,
+		"mediaType":     "application/vnd.oci.image.index.v1+json",
+		"manifests":     []map[string]any{e1, e2},
+	})
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.json"), index, 0o644))
+
+	p := newPusher(srv, "proj", 1<<20)
+	require.NoError(t, p.Push(dir, []string{"sha", "latest"}))
+	assert.NotNil(t, f.manifests["sha"])
+	assert.NotNil(t, f.manifests["latest"])
+	assert.Equal(t, f.manifests["sha"], f.manifests[manifestDigest])
+}
+
 func TestPush_LargeBlobChunked(t *testing.T) {
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))

@@ -118,7 +118,19 @@ func TestLayoutRoot_RejectsMultiImage(t *testing.T) {
 		[]byte(`{"manifests":[{"digest":"sha256:aa"},{"digest":"sha256:bb"}]}`), 0o644))
 	l := &layout{dir: dir}
 	_, err := l.root()
-	assert.ErrorContains(t, err, "exactly 1")
+	assert.ErrorContains(t, err, "several distinct images")
+
+	// buildx writes one entry PER TAG, all naming the same digest (only the
+	// image-name annotation differs): that is ONE image and must be accepted.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.json"),
+		[]byte(`{"manifests":[{"digest":"sha256:aa","mediaType":"application/vnd.oci.image.manifest.v1+json"},{"digest":"sha256:aa","mediaType":"application/vnd.oci.image.manifest.v1+json"}]}`), 0o644))
+	root, err := l.root()
+	require.NoError(t, err)
+	assert.Equal(t, "sha256:aa", root.Digest)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.json"), []byte(`{"manifests":[]}`), 0o644))
+	_, err = l.root()
+	assert.ErrorContains(t, err, "no top-level manifest")
 }
 
 func TestBlobPath_Validation(t *testing.T) {
