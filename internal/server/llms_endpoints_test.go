@@ -132,6 +132,7 @@ func TestLLMsTxt_DocumentedFlowsWork(t *testing.T) {
 		{"static rejects latest", "GET", "static", "/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=latest", false, http.StatusBadRequest},
 		{"brew formula", "GET", "brew", "/myapp", false, http.StatusOK},
 		{"apt Release", "GET", "apt", "/myapp/dists/stable/Release", false, http.StatusOK},
+		{"apt install script", "GET", "apt", "/myapp/install.sh", false, http.StatusOK},
 		{"npm metadata", "GET", "npm", "/@buildhost/myapp", false, http.StatusOK},
 		// /v2/ is the OCI auth-discovery endpoint: anonymous -> 401 + challenge,
 		// authenticated -> 200. The documented "docker login then pull" flow
