@@ -4,9 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strconv"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 )
+
+// contentRangePattern matches the OCI distribution chunk range form
+// "<start>-<end>" (inclusive byte offsets, no "bytes " prefix).
+var contentRangePattern = regexp.MustCompile(`^([0-9]+)-([0-9]+)$`)
 
 // StartBlobUpload handles POST /v2/{name}/blobs/uploads/.
 //
@@ -62,6 +68,13 @@ func (h *Handler) StartBlobUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 // PatchBlobUpload handles PATCH /v2/{name}/blobs/uploads/{uuid} (chunk append).
+//
+// A Content-Range header ("<start>-<end>", as the OCI distribution spec has
+// chunked clients send) is verified against the bytes committed so far: a
+// mismatched start returns 416 with the current Range and consumes nothing, so
+// a client that lost a response can query where the server actually is and
+// resume instead of corrupting the blob. Requests without the header keep the
+// old append-only behavior (docker's single in-session PATCH sends none).
 func (h *Handler) PatchBlobUpload(w http.ResponseWriter, r *http.Request, uuid string) {
 	project := auth.ProjectFrom(r.Context())
 	sess := h.uploads.get(uuid)
@@ -69,21 +82,58 @@ func (h *Handler) PatchBlobUpload(w http.ResponseWriter, r *http.Request, uuid s
 		ociError(w, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload unknown")
 		return
 	}
-	if _, err := h.uploads.appendChunk(sess, r.Body); err != nil {
+
+	start := int64(-1)
+	if cr := r.Header.Get("Content-Range"); cr != "" {
+		m := contentRangePattern.FindStringSubmatch(cr)
+		if m == nil {
+			ociError(w, http.StatusBadRequest, "BLOB_UPLOAD_INVALID", "malformed Content-Range")
+			return
+		}
+		start, _ = strconv.ParseInt(m[1], 10, 64)
+	}
+
+	committed, err := h.uploads.appendChunkAt(sess, r.Body, start)
+	if errors.Is(err, errRangeMismatch) {
+		setUploadHeaders(w, project.Name, sess.uuid, committed)
+		ociError(w, http.StatusRequestedRangeNotSatisfiable, "RANGE_INVALID",
+			fmt.Sprintf("chunk start %d does not match committed size %d", start, committed))
+		return
+	}
+	if err != nil {
 		h.uploads.remove(sess)
 		h.uploadError(w, err)
 		return
 	}
-	// Range is the inclusive byte range received so far. Clamp the end to >= 0 so
-	// an empty/zero-byte chunk reports "0-0" rather than an invalid "0--1".
-	end := sess.written - 1
+	setUploadHeaders(w, project.Name, sess.uuid, committed)
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// GetBlobUploadStatus handles GET /v2/{name}/blobs/uploads/{uuid}: the upload
+// status read a chunked client uses to learn the committed size and resume
+// after a lost response or connection.
+func (h *Handler) GetBlobUploadStatus(w http.ResponseWriter, r *http.Request, uuid string) {
+	project := auth.ProjectFrom(r.Context())
+	sess := h.uploads.get(uuid)
+	if sess == nil {
+		ociError(w, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload unknown")
+		return
+	}
+	setUploadHeaders(w, project.Name, sess.uuid, h.uploads.committed(sess))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// setUploadHeaders writes the shared upload-session response headers. Range is
+// the inclusive byte range received so far, with the end clamped to >= 0 so an
+// empty session reports "0-0" rather than an invalid "0--1".
+func setUploadHeaders(w http.ResponseWriter, projectName, uuid string, committed int64) {
+	end := committed - 1
 	if end < 0 {
 		end = 0
 	}
-	w.Header().Set("Location", uploadPath(project.Name, sess.uuid))
-	w.Header().Set("Docker-Upload-UUID", sess.uuid)
+	w.Header().Set("Location", uploadPath(projectName, uuid))
+	w.Header().Set("Docker-Upload-UUID", uuid)
 	w.Header().Set("Range", fmt.Sprintf("0-%d", end))
-	w.WriteHeader(http.StatusAccepted)
 }
 
 // PutBlobUpload handles PUT /v2/{name}/blobs/uploads/{uuid}?digest=... (finalize).

@@ -39,8 +39,13 @@ type route struct {
 func (r route) ProjectName() string { return r.project }
 
 // Access is write for push verbs (so requireProject enforces a write-scoped
-// token authorized for the project) and read for pulls.
+// token authorized for the project) and read for pulls. Upload sessions are
+// push-flow state in every method -- the GET status read exists to resume an
+// interrupted chunked upload -- so they always require write.
 func (r route) Access() auth.AccessLevel {
+	if r.action == "uploads" {
+		return auth.WriteAccess
+	}
 	switch r.method {
 	case http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete:
 		return auth.WriteAccess
@@ -162,6 +167,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.PatchBlobUpload(w, r, rt.reference)
 		case http.MethodPut:
 			h.PutBlobUpload(w, r, rt.reference)
+		case http.MethodGet:
+			h.GetBlobUploadStatus(w, r, rt.reference)
 		default:
 			ociError(w, http.StatusMethodNotAllowed, "UNSUPPORTED", "unsupported method")
 		}
