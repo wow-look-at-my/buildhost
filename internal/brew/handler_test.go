@@ -125,10 +125,10 @@ func TestServeFormula_Success(t *testing.T) {
 	assert.NotEmpty(t, rec.Body.Bytes())
 }
 
-// The operator-set projects.brew_service flag round-trips DB -> formula: the
+// The operator-set projects.create_service flag round-trips DB -> formula: the
 // served formula carries the `service do` block only once the flag is on, and
 // an off-flag project's formula never mentions it.
-func TestServeFormula_BrewServiceFlag(t *testing.T) {
+func TestServeFormula_CreateServiceFlag(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -159,7 +159,7 @@ func TestServeFormula_BrewServiceFlag(t *testing.T) {
 
 	assert.NotContains(t, serveBody(), "service do")
 
-	require.NoError(t, d.SetProjectBrewService(ctx, proj.ID, true))
+	require.NoError(t, d.SetProjectCreateService(ctx, proj.ID, true))
 	body := serveBody()
 	assert.Contains(t, body, "service do")
 	assert.Contains(t, body, "run [opt_bin/\"myapp\"]")

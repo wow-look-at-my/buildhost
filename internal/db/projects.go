@@ -67,13 +67,14 @@ func (d *DB) SetProjectDefaultBranch(ctx context.Context, id int64, branch strin
 	})
 }
 
-// SetProjectBrewService flips the project's opt-in Homebrew `service do`
-// block. Operator-set (never part of a publish), so a consumer repo's CI needs
-// no changes for its generated formula to gain brew-services support.
-func (d *DB) SetProjectBrewService(ctx context.Context, id int64, enabled bool) error {
-	return d.q.SetProjectBrewService(ctx, SetProjectBrewServiceParams{
-		BrewService: enabled,
-		ID:          id,
+// SetProjectCreateService flips the packaging-agnostic "runs as a background
+// service" project setting, which each download format materializes its own
+// way (brew: `service do` block; deb: systemd user unit). Written by the
+// release-create declaration path and the operator PATCH override.
+func (d *DB) SetProjectCreateService(ctx context.Context, id int64, enabled bool) error {
+	return d.q.SetProjectCreateService(ctx, SetProjectCreateServiceParams{
+		CreateService: enabled,
+		ID:            id,
 	})
 }
 

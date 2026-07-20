@@ -29,12 +29,14 @@ inputs:
     description: 'Release notes'
     required: false
     default: ''
-  brew_service:
+  create_service:
     description: >-
-      Declare whether the project's generated Homebrew formula carries a
-      `service do` block (brew services support): 'true' or 'false'. Empty
-      (the default) sends nothing, leaving the stored project setting
-      untouched -- byte-identical request to before this input existed.
+      Declare that the project's installed binary runs as a background
+      service ('true' or 'false'); each download format materializes it its
+      own way (brew formulas gain a `service do` block, on-the-fly debs ship
+      a systemd user unit). Empty (the default) sends nothing, leaving the
+      stored project setting untouched -- byte-identical request to before
+      this input existed.
     required: false
     default: ''
 
@@ -73,11 +75,11 @@ runs:
 
             const body: Record<string, string | boolean> = { git_branch: gitBranch, git_commit: gitCommit, notes: "${{ inputs.notes }}" };
             if (version) body['version'] = version;
-            const brewService: string = "${{ inputs.brew_service }}";
+            const brewService: string = "${{ inputs.create_service }}";
             if (brewService === 'true' || brewService === 'false') {
-              body['brew_service'] = brewService === 'true';
+              body['create_service'] = brewService === 'true';
             } else if (brewService !== '') {
-              core.setFailed(`brew_service must be 'true', 'false', or empty; got '${brewService}'`);
+              core.setFailed(`create_service must be 'true', 'false', or empty; got '${brewService}'`);
               return;
             }
 

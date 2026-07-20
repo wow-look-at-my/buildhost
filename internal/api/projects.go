@@ -100,11 +100,12 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 // updateProjectRequest carries operator-set project settings. Every field is a
 // pointer so an absent key leaves the setting unchanged (PATCH semantics).
 type updateProjectRequest struct {
-	// BrewService opts the project's generated Homebrew formula into a
-	// `service do` block, so `brew services start` manages the installed
-	// binary as a login service. Project-level and operator-set -- never part
-	// of a publish -- so the publishing repo's CI needs zero changes.
-	BrewService *bool `json:"brew_service"`
+	// CreateService declares that the project's installed binary runs as a
+	// background service; each download format materializes it its own way
+	// (brew formulas gain a `service do` block, on-the-fly debs ship a
+	// systemd user unit). Operator override for the release-create
+	// declaration path.
+	CreateService *bool `json:"create_service"`
 }
 
 // UpdateProjectSettings PATCHes operator-set project settings. Auth rides the
@@ -120,12 +121,12 @@ func (h *Handler) UpdateProjectSettings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if req.BrewService != nil && *req.BrewService != project.BrewService {
-		if err := h.DB.SetProjectBrewService(r.Context(), project.ID, *req.BrewService); err != nil {
+	if req.CreateService != nil && *req.CreateService != project.CreateService {
+		if err := h.DB.SetProjectCreateService(r.Context(), project.ID, *req.CreateService); err != nil {
 			jsonError(w, http.StatusInternalServerError, "failed to update project")
 			return
 		}
-		project.BrewService = *req.BrewService
+		project.CreateService = *req.CreateService
 	}
 
 	jsonResponse(w, http.StatusOK, project)

@@ -119,7 +119,7 @@ end
 	assert.NotContains(t, body, "service do")
 }
 
-// The opt-in service block (projects.brew_service): brew services manages the
+// The opt-in service block (projects.create_service): brew services manages the
 // installed binary as a login service. keep_alive uses the CRASH-ONLY form --
 // `successful_exit: false` renders KeepAlive {SuccessfulExit: false} in the
 // launchd plist (Homebrew service.rb KEEP_ALIVE_KEYS) -- because plain

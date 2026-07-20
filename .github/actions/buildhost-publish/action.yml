@@ -26,14 +26,15 @@ inputs:
   git_commit:
     description: 'Git commit SHA (defaults to GITHUB_SHA)'
     required: false
-  brew_service:
+  create_service:
     description: >-
-      Declare whether the generated Homebrew formula carries a `service do`
-      block (brew services support): 'true' or 'false'. Empty (the default)
-      sends nothing, leaving the stored project setting untouched --
-      byte-identical requests to before this input existed. Applies to every
-      project this publish creates a release for (the repo project and any
-      <repo>/<binary> sub-projects).
+      Declare that the published binary runs as a background service ('true'
+      or 'false'); each download format materializes it its own way (brew
+      formulas gain a `service do` block, on-the-fly debs ship a systemd
+      user unit). Empty (the default) sends nothing, leaving the stored
+      project setting untouched -- byte-identical requests to before this
+      input existed. Applies to every project this publish creates a release
+      for (the repo project and any <repo>/<binary> sub-projects).
     required: false
     default: ''
 
@@ -57,9 +58,9 @@ runs:
             const inputCommit: string = "${{ inputs.git_commit }}";
             const artifactName: string = "${{ inputs.artifact_name }}";
             const inputPath: string = "${{ inputs.path }}";
-            const inputBrewService: string = "${{ inputs.brew_service }}";
+            const inputBrewService: string = "${{ inputs.create_service }}";
             if (inputBrewService !== '' && inputBrewService !== 'true' && inputBrewService !== 'false') {
-              core.setFailed(`brew_service must be 'true', 'false', or empty; got '${inputBrewService}'`);
+              core.setFailed(`create_service must be 'true', 'false', or empty; got '${inputBrewService}'`);
               return;
             }
 
@@ -229,7 +230,7 @@ runs:
               // Empty input sends nothing (stored setting untouched); a set
               // value is asserted on every publish. An older server ignores
               // the unknown field.
-              ...(inputBrewService.length > 0 ? { brew_service: inputBrewService === 'true' } : {}),
+              ...(inputBrewService.length > 0 ? { create_service: inputBrewService === 'true' } : {}),
             });
 
             // Resolve a release version from a create-release response (201 new,

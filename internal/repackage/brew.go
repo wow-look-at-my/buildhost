@@ -225,11 +225,12 @@ type BrewFormula struct {
 	// HOMEBREW_BUILDHOST_TOKEN. The formula itself never embeds a token.
 	Private bool
 	// Service adds a `service do` block so `brew services start` manages the
-	// installed binary as a login service (projects.brew_service, an
-	// operator-set project flag -- never publisher data, so no
-	// publisher-controlled Ruby can enter the template through it). Only
-	// meaningful for Kind "binary": the block runs opt_bin/<InstallName>,
-	// which only a bin.install stages, so other kinds never emit it.
+	// installed binary as a login service -- the brew materialization of the
+	// packaging-agnostic projects.create_service setting (a declared BOOL,
+	// never publisher strings, so no publisher-controlled Ruby can enter the
+	// template through it). Only meaningful for Kind "binary": the block runs
+	// opt_bin/<InstallName>, which only a bin.install stages, so other kinds
+	// never emit it.
 	Service   bool
 	Resources []BrewResource
 }
@@ -317,7 +318,7 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 		License:     sanitizeBrewString(firstNonEmpty(input.Project.License, "MIT")),
 		Kind:        string(input.Artifact.Kind),
 		Private:     input.Project.IsPrivate,
-		Service:     input.Project.BrewService,
+		Service:     input.Project.CreateService,
 		Resources: []BrewResource{{
 			OS:     brewOS,
 			Arch:   brewArch,

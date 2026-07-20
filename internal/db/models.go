@@ -94,7 +94,7 @@ type Project struct {
 	Versioning    Versioning `json:"versioning"`
 	GithubRepo    string     `json:"github_repo"`
 	DefaultBranch string     `json:"default_branch"`
-	BrewService   bool       `json:"brew_service"`
+	CreateService bool       `json:"create_service"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 }

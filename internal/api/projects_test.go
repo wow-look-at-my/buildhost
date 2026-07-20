@@ -142,7 +142,7 @@ func TestParseRoute_PATCHIsWrite(t *testing.T) {
 	assert.Equal(t, auth.WriteAccess, parseRoute(req).Access())
 }
 
-func TestUpdateProjectSettings_BrewService(t *testing.T) {
+func TestUpdateProjectSettings_CreateService(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -159,28 +159,28 @@ func TestUpdateProjectSettings_BrewService(t *testing.T) {
 	}
 
 	// Enable: the response and a fresh DB read both carry the flag.
-	rec := patch(`{"brew_service":true}`, proj)
+	rec := patch(`{"create_service":true}`, proj)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	var p db.Project
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
-	assert.True(t, p.BrewService)
+	assert.True(t, p.CreateService)
 	got, err := h.DB.GetProject(ctx, "svcproj")
 	require.NoError(t, err)
-	assert.True(t, got.BrewService)
+	assert.True(t, got.CreateService)
 
 	// Absent key = unchanged (PATCH semantics).
 	rec = patch(`{}`, got)
 	require.Equal(t, http.StatusOK, rec.Code)
 	got, err = h.DB.GetProject(ctx, "svcproj")
 	require.NoError(t, err)
-	assert.True(t, got.BrewService)
+	assert.True(t, got.CreateService)
 
 	// Explicit false flips it back off.
-	rec = patch(`{"brew_service":false}`, got)
+	rec = patch(`{"create_service":false}`, got)
 	require.Equal(t, http.StatusOK, rec.Code)
 	got, err = h.DB.GetProject(ctx, "svcproj")
 	require.NoError(t, err)
-	assert.False(t, got.BrewService)
+	assert.False(t, got.CreateService)
 }
 
 func TestUpdateProjectSettings_InvalidBody(t *testing.T) {

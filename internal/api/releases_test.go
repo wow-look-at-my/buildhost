@@ -113,12 +113,12 @@ func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
 	assert.Equal(t, "v1", latest.GitBranch)
 }
 
-// The publish path is the declarative surface for brew_service: a present
+// The publish path is the declarative surface for create_service: a present
 // field is asserted on EVERY publish (idempotently), an absent field leaves
 // the stored setting untouched -- so an older CI that never sends it can
 // never clobber an operator-set value, and a declaring CI is the source of
 // truth.
-func TestCreateRelease_BrewServiceDeclaration(t *testing.T) {
+func TestCreateRelease_CreateServiceDeclaration(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -141,11 +141,11 @@ func TestCreateRelease_BrewServiceDeclaration(t *testing.T) {
 		t.Helper()
 		got, err := h.DB.GetProject(ctx, "svctool")
 		require.NoError(t, err)
-		return got.BrewService
+		return got.CreateService
 	}
 
 	// Declared true: recorded.
-	require.Equal(t, http.StatusCreated, createRelease(`{"git_branch":"main","brew_service":true}`).Code)
+	require.Equal(t, http.StatusCreated, createRelease(`{"git_branch":"main","create_service":true}`).Code)
 	assert.True(t, flag())
 
 	// Absent: untouched (an old CI never clobbers the setting).
@@ -153,7 +153,7 @@ func TestCreateRelease_BrewServiceDeclaration(t *testing.T) {
 	assert.True(t, flag())
 
 	// Declared false: asserted back off on the next publish.
-	require.Equal(t, http.StatusCreated, createRelease(`{"git_branch":"main","brew_service":false}`).Code)
+	require.Equal(t, http.StatusCreated, createRelease(`{"git_branch":"main","create_service":false}`).Code)
 	assert.False(t, flag())
 }
 
