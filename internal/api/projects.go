@@ -20,6 +20,7 @@ func init() {
 		auth.HandleRaw("POST /api/v1/projects", handler.CreateProject)
 		auth.HandleRaw("GET /api/v1/projects", handler.ListProjects)
 		auth.Handle("GET /api/v1/projects/{project}", parseRoute, handler.GetProject)
+		auth.Handle("PATCH /api/v1/projects/{project}", parseRoute, handler.UpdateProjectSettings)
 	})
 }
 
@@ -94,6 +95,40 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusOK, auth.ProjectFrom(r.Context()))
+}
+
+// updateProjectRequest carries operator-set project settings. Every field is a
+// pointer so an absent key leaves the setting unchanged (PATCH semantics).
+type updateProjectRequest struct {
+	// BrewService opts the project's generated Homebrew formula into a
+	// `service do` block, so `brew services start` manages the installed
+	// binary as a login service. Project-level and operator-set -- never part
+	// of a publish -- so the publishing repo's CI needs zero changes.
+	BrewService *bool `json:"brew_service"`
+}
+
+// UpdateProjectSettings PATCHes operator-set project settings. Auth rides the
+// centralized requireProject middleware: PATCH is a write verb (parseRoute),
+// so only a write-scoped token authorized for the project reaches here.
+func (h *Handler) UpdateProjectSettings(w http.ResponseWriter, r *http.Request) {
+	project := auth.ProjectFrom(r.Context())
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
+	var req updateProjectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.BrewService != nil && *req.BrewService != project.BrewService {
+		if err := h.DB.SetProjectBrewService(r.Context(), project.ID, *req.BrewService); err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to update project")
+			return
+		}
+		project.BrewService = *req.BrewService
+	}
+
+	jsonResponse(w, http.StatusOK, project)
 }
 
 func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {

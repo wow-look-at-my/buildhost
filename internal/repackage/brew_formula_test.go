@@ -85,6 +85,91 @@ func TestRenderBrewFormula_NoResourcesErrors(t *testing.T) {
 	require.Error(t, err)
 }
 
+// With the flag OFF the formula must be BYTE-IDENTICAL to the pre-flag output:
+// formula bytes feed the tap's content-addressed git objects, so any off-state
+// drift would mint a spurious tap commit for every project on deploy. The full
+// golden pins it.
+func TestRenderBrewFormula_ServiceOffByteIdentical(t *testing.T) {
+	body := renderFormula(t, baseFormula(
+		BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/linux-amd64", SHA256: strings.Repeat("aa", 32)},
+	))
+
+	want := `class Mytool < Formula
+  desc "desc"
+  homepage "https://example.com"
+  version "1.0.0"
+  license "MIT"
+
+  url "https://dl.example/linux-amd64"
+  sha256 "` + strings.Repeat("aa", 32) + `"
+  depends_on :linux
+  on_linux do
+    on_intel do
+      url "https://dl.example/linux-amd64"
+      sha256 "` + strings.Repeat("aa", 32) + `"
+    end
+  end
+
+  def install
+    bin.install "mytool"
+  end
+end
+`
+	assert.Equal(t, want, body)
+	assert.NotContains(t, body, "service do")
+}
+
+// The opt-in service block (projects.brew_service): brew services manages the
+// installed binary as a login service. keep_alive uses the CRASH-ONLY form --
+// `successful_exit: false` renders KeepAlive {SuccessfulExit: false} in the
+// launchd plist (Homebrew service.rb KEEP_ALIVE_KEYS) -- because plain
+// `keep_alive true` would respawn a deliberately-exiting app (a single-instance
+// exit-0 handoff, a quit command) every ~10 seconds forever.
+func TestRenderBrewFormula_ServiceBlock(t *testing.T) {
+	f := baseFormula(BrewResource{OS: "macos", Arch: "arm", URL: "https://dl.example/darwin-arm64", SHA256: strings.Repeat("bb", 32)})
+	f.Service = true
+	body := renderFormula(t, f)
+
+	want := `  def install
+    bin.install "mytool"
+  end
+
+  service do
+    run [opt_bin/"mytool"]
+    keep_alive successful_exit: false
+    log_path var/"log/mytool.log"
+    error_log_path var/"log/mytool.log"
+    process_type :interactive
+  end
+end
+`
+	assert.True(t, strings.HasSuffix(body, want), "formula must end with the service block:\n%s", body)
+}
+
+// The service block runs opt_bin/<InstallName>, which only a bin.install
+// stages -- non-binary kinds must never emit it, flag or no flag.
+func TestRenderBrewFormula_ServiceNonBinaryKindOmitsBlock(t *testing.T) {
+	f := baseFormula(BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/lib", SHA256: strings.Repeat("cc", 32)})
+	f.Kind = "library"
+	f.Service = true
+	body := renderFormula(t, f)
+
+	assert.NotContains(t, body, "service do")
+	assert.Contains(t, body, "lib.install \"mytool\"")
+}
+
+// Slash-namespaced projects install (and therefore run) the BASENAME -- the
+// service block must reference the same staged name bin.install produces.
+func TestRenderBrewFormula_ServiceSlashNamespacedUsesBasename(t *testing.T) {
+	f := baseFormula(BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/x", SHA256: strings.Repeat("dd", 32)})
+	f.Name = "myrepo/myapp"
+	f.Service = true
+	body := renderFormula(t, f)
+
+	assert.Contains(t, body, "run [opt_bin/\"myapp\"]")
+	assert.Contains(t, body, "log_path var/\"log/myapp.log\"")
+}
+
 func TestBrewCanonicalResource(t *testing.T) {
 	linuxIntel := BrewResource{OS: "linux", Arch: "intel", URL: "li"}
 	linuxArm := BrewResource{OS: "linux", Arch: "arm", URL: "la"}

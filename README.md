@@ -72,6 +72,25 @@ remote. The `?token=` query parameter cannot be used with `brew tap`: git
 appends its own path segments (`/info/refs`, ...) after the query string, so
 the URL stops resolving as a git repository.
 
+### Run as a login service (brew services)
+
+A project can opt into a `service do` block in its generated formula. The flag
+is operator-set on the project (`brew_service` via
+`PATCH /api/v1/projects/{project}`), so the publishing repo's CI changes
+nothing. With it on, the install supports:
+
+```bash
+brew services start pazer/build/competent-search-thing
+```
+
+On macOS that installs a user LaunchAgent: started at login without sudo,
+restarted only after a crash (`keep_alive successful_exit: false` -- a clean
+exit stays exited), logging to `$(brew --prefix)/var/log/<name>.log`.
+
+On Linux `brew services` writes a systemd user unit with no graphical-session
+ordering and no display environment -- a poor fit for GUI apps. Prefer the
+app's own service mechanism there.
+
 ## APT (Debian / Ubuntu)
 
 buildhost serves each project as its own GPG-signed APT repository at

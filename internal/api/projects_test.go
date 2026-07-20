@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
@@ -131,6 +132,72 @@ func TestGetProject_Success(t *testing.T) {
 
 // Note: GetProject auth (private project, not found) is tested via requireProject
 // middleware in the auth package.
+
+// PATCH must classify as a write verb: UpdateProjectSettings relies on the
+// centralized requireProject middleware demanding a write-scoped token
+// authorized for the project, which only happens for WriteAccess routes.
+func TestParseRoute_PATCHIsWrite(t *testing.T) {
+	req := httptest.NewRequest("PATCH", "/api/v1/projects/x", nil)
+	req.SetPathValue("project", "x")
+	assert.Equal(t, auth.WriteAccess, parseRoute(req).Access())
+}
+
+func TestUpdateProjectSettings_BrewService(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "svcproj", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	patch := func(body string, p *db.Project) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("PATCH", "/api/v1/projects/svcproj", strings.NewReader(body))
+		req.SetPathValue("project", "svcproj")
+		req = withProjectRoute(req, p)
+		rec := httptest.NewRecorder()
+		h.UpdateProjectSettings(rec, req)
+		return rec
+	}
+
+	// Enable: the response and a fresh DB read both carry the flag.
+	rec := patch(`{"brew_service":true}`, proj)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var p db.Project
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
+	assert.True(t, p.BrewService)
+	got, err := h.DB.GetProject(ctx, "svcproj")
+	require.NoError(t, err)
+	assert.True(t, got.BrewService)
+
+	// Absent key = unchanged (PATCH semantics).
+	rec = patch(`{}`, got)
+	require.Equal(t, http.StatusOK, rec.Code)
+	got, err = h.DB.GetProject(ctx, "svcproj")
+	require.NoError(t, err)
+	assert.True(t, got.BrewService)
+
+	// Explicit false flips it back off.
+	rec = patch(`{"brew_service":false}`, got)
+	require.Equal(t, http.StatusOK, rec.Code)
+	got, err = h.DB.GetProject(ctx, "svcproj")
+	require.NoError(t, err)
+	assert.False(t, got.BrewService)
+}
+
+func TestUpdateProjectSettings_InvalidBody(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "badbody", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	req := httptest.NewRequest("PATCH", "/api/v1/projects/badbody", strings.NewReader("not json"))
+	req.SetPathValue("project", "badbody")
+	req = withProjectRoute(req, proj)
+	rec := httptest.NewRecorder()
+	h.UpdateProjectSettings(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
 
 func TestListProjects_FiltersPrivate(t *testing.T) {
 	h := setupTestHandler(t)

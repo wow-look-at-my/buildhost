@@ -125,6 +125,47 @@ func TestServeFormula_Success(t *testing.T) {
 	assert.NotEmpty(t, rec.Body.Bytes())
 }
 
+// The operator-set projects.brew_service flag round-trips DB -> formula: the
+// served formula carries the `service do` block only once the flag is on, and
+// an off-flag project's formula never mentions it.
+func TestServeFormula_BrewServiceFlag(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000, GitBranch: db.LatestBranch}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, strings.NewReader("binary"))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSDarwin, Arch: db.ArchARM64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	serveBody := func() string {
+		t.Helper()
+		got, gerr := d.GetProject(ctx, "myapp")
+		require.NoError(t, gerr)
+		req := httptest.NewRequest("GET", "/myapp.rb", nil)
+		req = req.WithContext(withProject(req.Context(), got))
+		rec := httptest.NewRecorder()
+		h.ServeFormula(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		return rec.Body.String()
+	}
+
+	assert.NotContains(t, serveBody(), "service do")
+
+	require.NoError(t, d.SetProjectBrewService(ctx, proj.ID, true))
+	body := serveBody()
+	assert.Contains(t, body, "service do")
+	assert.Contains(t, body, "run [opt_bin/\"myapp\"]")
+	assert.Contains(t, body, "keep_alive successful_exit: false")
+}
+
 func TestServeFormula_EmitsAllSupportedPlatforms(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()

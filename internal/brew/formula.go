@@ -76,7 +76,10 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 		Kind:        kind,
 		// A private project's formula downloads through the tap's token-aware
 		// strategy (the artifact endpoints reject anonymous requests).
-		Private:   project.IsPrivate,
+		Private: project.IsPrivate,
+		// Operator-set project flag: opt into a `service do` block so
+		// `brew services start` manages the binary as a login service.
+		Service:   project.BrewService,
 		Resources: resources,
 	})
 }

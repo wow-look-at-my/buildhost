@@ -18,6 +18,8 @@ sql:
         overrides:
           - column: "projects.is_private"
             go_type: "bool"
+          - column: "projects.brew_service"
+            go_type: "bool"
           - column: "releases.published"
             go_type: "bool"
           - column: "sites.is_public"
