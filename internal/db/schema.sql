@@ -7,7 +7,10 @@ CREATE TABLE projects (
     is_private  INTEGER NOT NULL DEFAULT 0,
     versioning  TEXT NOT NULL DEFAULT 'auto',
     github_repo TEXT NOT NULL DEFAULT '',
+    github_owner_id TEXT NOT NULL DEFAULT '',
+    github_repo_id TEXT NOT NULL DEFAULT '',
     default_branch TEXT NOT NULL DEFAULT 'master',
+    create_service INTEGER NOT NULL DEFAULT 0,
     created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );

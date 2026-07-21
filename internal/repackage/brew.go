@@ -80,6 +80,16 @@ var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }
     prefix.install Dir["*"]
     {{- end }}
   end
+  {{- if .Service }}
+
+  service do
+    run [opt_bin/"{{ .InstallName }}"]
+    keep_alive successful_exit: false
+    log_path var/"log/{{ .InstallName }}.log"
+    error_log_path var/"log/{{ .InstallName }}.log"
+    process_type :interactive
+  end
+  {{- end }}
 end
 `))
 
@@ -151,6 +161,7 @@ type brewData struct {
 	License     string
 	Kind        string
 	Private     bool
+	Service     bool
 	Canonical   BrewResource
 	DependsOnOS string
 	Resources   []BrewResource
@@ -212,7 +223,15 @@ type BrewFormula struct {
 	// BuildhostCurlDownloadStrategy (BrewPrivateStrategyPath) and downloads
 	// with `using:` it, so the artifact fetch carries the user's token from
 	// HOMEBREW_BUILDHOST_TOKEN. The formula itself never embeds a token.
-	Private   bool
+	Private bool
+	// Service adds a `service do` block so `brew services start` manages the
+	// installed binary as a login service -- the brew materialization of the
+	// packaging-agnostic projects.create_service setting (a declared BOOL,
+	// never publisher strings, so no publisher-controlled Ruby can enter the
+	// template through it). Only meaningful for Kind "binary": the block runs
+	// opt_bin/<InstallName>, which only a bin.install stages, so other kinds
+	// never emit it.
+	Service   bool
 	Resources []BrewResource
 }
 
@@ -230,6 +249,11 @@ func RenderBrewFormula(f BrewFormula) (*Output, error) {
 		License:     sanitizeBrewString(f.License),
 		Kind:        f.Kind,
 		Private:     f.Private,
+		// The service block references opt_bin/<InstallName>, which exists
+		// only after a bin.install -- gate on the binary kind so a flagged
+		// project publishing a library/archive still renders loadable Ruby
+		// that never points brew services at a nonexistent executable.
+		Service:     f.Service && f.Kind == "binary",
 		Canonical:   brewCanonicalResource(f.Resources),
 		DependsOnOS: brewDependsOnOS(f.Resources),
 		Resources:   f.Resources,
@@ -294,6 +318,7 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 		License:     sanitizeBrewString(firstNonEmpty(input.Project.License, "MIT")),
 		Kind:        string(input.Artifact.Kind),
 		Private:     input.Project.IsPrivate,
+		Service:     input.Project.CreateService,
 		Resources: []BrewResource{{
 			OS:     brewOS,
 			Arch:   brewArch,

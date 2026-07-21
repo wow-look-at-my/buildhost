@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -51,7 +50,12 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 					if oidcProject != "" {
 						rctx = WithOIDCProject(rctx, oidcProject)
 						rctx = WithOIDCPrivate(rctx, vr.OIDCPrivate)
-						rctx = WithOIDCRepo(rctx, vr.RepoPath, vr.Issuer)
+						rctx = WithOIDCRepo(rctx, OIDCRepoIdentity{
+							RepoPath: vr.RepoPath,
+							Issuer:   vr.Issuer,
+							OwnerID:  vr.OwnerID,
+							RepoID:   vr.RepoID,
+						})
 					}
 					r = r.WithContext(rctx)
 					next.ServeHTTP(w, r)
@@ -92,122 +96,6 @@ func RequireWrite(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
-}
-
-// projectNotFound writes the canonical 404 for a project that does not exist or
-// that the caller may not see. Both cases share this exact response so a hidden
-// (HiddenReadAccess) read cannot be used to probe for the existence of private
-// projects.
-func projectNotFound(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotFound)
-	w.Write([]byte(`{"error":"project not found"}`))
-}
-
-func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
-	msg := "authentication required"
-	if err := OIDCErrorFrom(r.Context()); err != nil {
-		// A JWT was presented and rejected -- say why (audience, org allowlist,
-		// event, expiry, signature, ...) instead of a bare message, so a CI
-		// caller can see what to fix.
-		msg += ": OIDC token rejected: " + err.Error()
-	}
-
-	if strings.HasPrefix(r.URL.Path, "/v2/") {
-		// OCI clients (docker pull/push) require the registry error envelope and
-		// a Basic challenge on /v2/ so they retry with credentials.
-		w.Header().Set("Www-Authenticate", `Basic realm="buildhost"`)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		body, _ := json.Marshal(map[string]any{
-			"errors": []map[string]string{{"code": "UNAUTHORIZED", "message": msg}},
-		})
-		w.Write(body)
-		return
-	}
-
-	// Browser handling when "Sign in with GitHub" is configured. Programmatic
-	// clients (no text/html) -- and deployments without GitHub login configured --
-	// fall through to the plain JSON 401 below, unchanged.
-	if prefersHTML(r) && githubAuthEnabled() {
-		login, signedIn := UserFrom(r.Context())
-		switch {
-		case !signedIn && TokenFrom(r.Context()) == nil:
-			// Anonymous browser: send them to GitHub to sign in, returning to the
-			// resource afterward.
-			http.Redirect(w, r, loginRedirectURL(r), http.StatusSeeOther)
-			return
-		case signedIn:
-			// Signed in, but not authorized for this resource (their GitHub account
-			// can't read the backing repo, or the project has no repo recorded).
-			// Re-redirecting to /__signin would loop -- GitHub re-auths the same
-			// account and bounces straight back -- so render an actionable page
-			// (who you are, what access is needed, sign out to switch accounts)
-			// instead of the dead-end JSON 401 a browser cannot act on.
-			signedInForbiddenHTML(w, r, login, ProjectFrom(r.Context()))
-			return
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusUnauthorized)
-	body, _ := json.Marshal(map[string]string{"error": msg})
-	w.Write(body)
-}
-
-// signedInForbiddenHTML renders an actionable page for a browser that IS signed
-// in with GitHub but is not authorized to read this resource. The anonymous case
-// redirects to /__signin; this one must NOT -- the user already holds a valid
-// session, so a redirect would bounce straight back here (GitHub re-auths the
-// same account), an infinite loop. So we explain the situation and offer a
-// sign-out, letting them switch to an account that has access. It returns 403
-// (authenticated but not permitted), not 401.
-func signedInForbiddenHTML(w http.ResponseWriter, r *http.Request, login string, project *db.Project) {
-	esc := template.HTMLEscapeString
-	var detail string
-	if project != nil && project.GithubRepo != "" {
-		detail = "Your GitHub account <strong>" + esc(login) + "</strong> doesn't have access to <strong>" +
-			esc(project.GithubRepo) + "</strong>, the repository behind this resource. " +
-			"Switch to an account that can, or ask the owner for access."
-	} else {
-		detail = "You're signed in as <strong>" + esc(login) + "</strong>, but this resource isn't shared " +
-			"through GitHub sign-in. Ask the owner for a project access token or a temporary download link."
-	}
-
-	// Relax the global default-src 'none' just enough for the one inline <style>;
-	// no scripts, no external resources (same approach as the web frontend).
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusForbidden)
-	fmt.Fprintf(w, `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Access denied</title>
-<style>
-  body { font-family: system-ui, -apple-system, sans-serif; max-width: 34rem; margin: 12vh auto; padding: 0 1.25rem; line-height: 1.55; }
-  h1 { font-size: 1.4rem; margin-bottom: .5rem; }
-  a.btn { display: inline-block; margin-top: 1rem; padding: .55rem .9rem; border: 1px solid; border-radius: .4rem; text-decoration: none; }
-  .hint { margin-top: 1.25rem; font-size: .85rem; opacity: .8; }
-</style>
-</head>
-<body>
-<h1>Access denied</h1>
-<p>%s</p>
-<div><a class="btn" href="%s">Sign out &amp; switch account</a></div>
-<p class="hint">To use a different account you may also need to <a href="https://github.com/logout">sign out of GitHub</a> first.</p>
-</body>
-</html>
-`, detail, esc(signoutURL(r)))
-}
-
-// prefersHTML reports whether the request came from a browser navigation (its
-// Accept header lists text/html). Used to decide whether an auth failure should
-// drive the Cloudflare Access sign-in redirect versus the raw JSON that
-// programmatic clients expect.
-func prefersHTML(r *http.Request) bool {
-	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
 // userCanReadProject reports whether the request's signed-in GitHub user (if
@@ -335,8 +223,17 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 					return
 				}
 				oidcPrivate, _ := OIDCPrivateFrom(r.Context())
-				oidcRepoPath, _ := OIDCRepoFrom(r.Context())
-				project = &db.Project{Name: ri.ProjectName(), Versioning: db.VersioningAuto, IsPrivate: oidcPrivate, GithubRepo: oidcRepoPath}
+				oidcRepo := OIDCRepoFrom(r.Context())
+				// The numeric IDs are pinned from birth when the token carries them,
+				// so a later re-created repo under the same name is refused below.
+				project = &db.Project{
+					Name:          ri.ProjectName(),
+					Versioning:    db.VersioningAuto,
+					IsPrivate:     oidcPrivate,
+					GithubRepo:    oidcRepo.RepoPath,
+					GithubOwnerID: oidcRepo.OwnerID,
+					GithubRepoID:  oidcRepo.RepoID,
+				}
 				createErr := mw.DB.CreateProject(r.Context(), project)
 				if createErr != nil && !errors.Is(createErr, db.ErrConflict) {
 					http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
@@ -375,24 +272,73 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						parentSpan.SetAttributes(attribute.Bool("project.visibility_synced", true))
 					}
 				}
-				// The OIDC publish subject carries the repo identity; use it for two
-				// things, both derived from the token (nothing sent in the request):
-				// (1) record owner/repo on the project so GitHub-login authz can check
-				// the user's access to it; (2) resolve the repo's default branch from
-				// GitHub (best-effort, cached, GitHub Actions issuer only) so the apex
-				// "latest" tracks it.
-				if repoPath, issuer := OIDCRepoFrom(r.Context()); repoPath != "" {
-					if project.GithubRepo != repoPath {
-						if updateErr := mw.DB.SetProjectGitHubRepo(r.Context(), project.ID, repoPath); updateErr == nil {
-							project.GithubRepo = repoPath
+				// The OIDC token carries the repo identity; use it for three things,
+				// all derived from the token (nothing sent in the request):
+				// (1) pin/verify the numeric GitHub IDs against rename/resurrection
+				// takeover; (2) record owner/repo on the project so GitHub-login authz
+				// can check the user's access to it; (3) resolve the repo's default
+				// branch from GitHub (best-effort, cached, GitHub Actions issuer only)
+				// so the apex "latest" tracks it.
+				if repo := OIDCRepoFrom(r.Context()); repo.RepoPath != "" {
+					if repo.OwnerID != "" && repo.RepoID != "" {
+						if project.GithubOwnerID != "" || project.GithubRepoID != "" {
+							// Rename/resurrection guard: GitHub NAMES are reusable --
+							// delete (or rename) a repo and a stranger can re-register the
+							// name and mint valid OIDC tokens for the same "owner/repo" --
+							// but the numeric IDs are not. A token whose IDs disagree with
+							// the pin may not act on the project, read or write.
+							if project.GithubOwnerID != repo.OwnerID || project.GithubRepoID != repo.RepoID {
+								slog.WarnContext(r.Context(), "OIDC repo identity mismatch",
+									"project", project.Name,
+									"repo", repo.RepoPath,
+									"pinned_owner_id", project.GithubOwnerID,
+									"pinned_repo_id", project.GithubRepoID,
+									"token_owner_id", repo.OwnerID,
+									"token_repo_id", repo.RepoID,
+									"oidc_subject", t.Name,
+								)
+								if ri.Access() == HiddenReadAccess {
+									// Hidden reads answer every unauthorized caller with the
+									// canonical 404 so existence never leaks; keep that here.
+									projectNotFound(w)
+									return
+								}
+								msg := fmt.Sprintf("OIDC repo identity mismatch: token for %s carries GitHub ids owner=%s repo=%s, but project %q is pinned to owner=%s repo=%s; a renamed or re-created (resurrected) repository may not take over an existing project -- if this project should belong to the new repo, an operator must clear or re-pin its recorded GitHub identity",
+									repo.RepoPath, repo.OwnerID, repo.RepoID, project.Name, project.GithubOwnerID, project.GithubRepoID)
+								w.Header().Set("Content-Type", "application/json")
+								w.WriteHeader(http.StatusForbidden)
+								body, _ := json.Marshal(map[string]string{"error": msg})
+								w.Write(body)
+								return
+							}
+						} else if ri.Access() == WriteAccess {
+							// Legacy project with no pinned IDs: pin them on the first
+							// ID-bearing publish (trust on first use). Write-only, mirroring
+							// provisioning -- a read never mutates project state.
+							if updateErr := mw.DB.SetProjectGitHubIDs(r.Context(), project.ID, repo.OwnerID, repo.RepoID); updateErr == nil {
+								slog.WarnContext(r.Context(), "OIDC repo identity pinned",
+									"project", project.Name,
+									"repo", repo.RepoPath,
+									"owner_id", repo.OwnerID,
+									"repo_id", repo.RepoID,
+								)
+								project.GithubOwnerID = repo.OwnerID
+								project.GithubRepoID = repo.RepoID
+								parentSpan.SetAttributes(attribute.Bool("project.github_ids_pinned", true))
+							}
 						}
 					}
-					if issuer == GitHubActionsIssuer {
-						if branch := GitHubDefaultBranch(r.Context(), repoPath); branch != "" && branch != project.DefaultBranch {
+					if project.GithubRepo != repo.RepoPath {
+						if updateErr := mw.DB.SetProjectGitHubRepo(r.Context(), project.ID, repo.RepoPath); updateErr == nil {
+							project.GithubRepo = repo.RepoPath
+						}
+					}
+					if repo.Issuer == GitHubActionsIssuer {
+						if branch := GitHubDefaultBranch(r.Context(), repo.RepoPath); branch != "" && branch != project.DefaultBranch {
 							if updateErr := mw.DB.SetProjectDefaultBranch(r.Context(), project.ID, branch); updateErr == nil {
 								slog.WarnContext(r.Context(), "OIDC default-branch sync",
 									"project", project.Name,
-									"repo", repoPath,
+									"repo", repo.RepoPath,
 									"was", project.DefaultBranch,
 									"now", branch,
 								)

@@ -72,14 +72,68 @@ remote. The `?token=` query parameter cannot be used with `brew tap`: git
 appends its own path segments (`/info/refs`, ...) after the query string, so
 the URL stops resolving as a git repository.
 
+### Background services (create_service)
+
+A project can declare that its binary runs as a background service. Declare
+it in the publishing repo's CI: `create_service: 'true'` on the
+`buildhost-create-release` or `buildhost-publish` action (go-toolchain's
+composite: `autorelease_args: create_service=true`). Every publish asserts
+the declared value; an absent input leaves the stored setting untouched.
+Operators can also flip it directly: `PATCH /api/v1/projects/{project}` with
+`{"create_service": true}`.
+
+Each install format materializes the setting its own way. Homebrew formulas
+gain a `service do` block; activating it is one one-time command, after which
+it starts at login and survives upgrades (the block runs the `opt` path):
+
+```bash
+brew services start pazer/build/competent-search-thing
+```
+
+Homebrew cannot run that for you at install: a formula's only install-time
+hook (`post_install`) runs inside brew's sandbox, whose profile denies all
+file writes outside build paths -- `~/Library/LaunchAgents` included -- so no
+formula can register a LaunchAgent. `brew uninstall` does not stop services
+either: run `brew services stop <tap>/<project>` before removing.
+
+The service restarts only after a crash (`keep_alive successful_exit: false`;
+a clean exit stays exited) and logs to `$(brew --prefix)/var/log/<name>.log`.
+On Linux prefer the APT install below -- brew's Linux units carry no
+graphical-session ordering. The deb materialization (which does auto-enable)
+is described in the APT section; other formats (raw, zip, npm, OCI) store the
+flag without materializing it.
+
 ## APT (Debian / Ubuntu)
 
 buildhost serves each project as its own GPG-signed APT repository at
 `apt.<domain>/<project>` (suite `stable`, component `main`). Packages are
 generated on demand from the uploaded binary -- nothing is pre-built.
 
-Import the repository signing key once, add the source, then install. The key is
-served per project path but is the same server-wide key:
+The fastest way to add a repository is the generated per-project installer. It
+saves the armored signing key to `/etc/apt/keyrings/`, writes a `signed-by`
+source, and refreshes the package index (APT reads the armored key directly via
+`signed-by`, so no `gpg` binary is needed on the client):
+
+```bash
+curl -fsSL https://apt.pazer.build/myapp/install.sh | sudo sh
+sudo apt-get install myapp
+```
+
+For a private project, pass a read token -- the installer also records it in
+`/etc/apt/auth.conf.d/`, covering both the apt host and the static host the
+`.deb` download redirects to:
+
+```bash
+curl -fsSL -H "Authorization: Bearer $TOKEN" https://apt.pazer.build/myapp/install.sh \
+  | sudo BUILDHOST_TOKEN=$TOKEN sh
+```
+
+One-line install commands (and per-project copy buttons) are also available on
+the admin dashboard: see each project's page or the **Registries** tab.
+
+Prefer to set it up by hand? Import the repository signing key once, add the
+source, then install. The key is served per project path but is the same
+server-wide key:
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
@@ -127,6 +181,20 @@ echo "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] https://apt.pazer.build/pr
   | sudo tee /etc/apt/sources.list.d/pr-reviewer-agent-server.list
 sudo apt update && sudo apt install pr-reviewer-agent-server
 ```
+
+### Background services (create_service)
+
+A `create_service` project's generated deb (see the Homebrew section for the
+flag itself) ships a systemd user unit at
+`/usr/lib/systemd/user/<pkg>.service` -- crash-only `Restart=on-failure`,
+bound to `graphical-session.target` -- and sets it up at install: the
+package's postinst runs `systemctl --global enable`, so the service starts at
+every user's next graphical login (plus a best-effort immediate start for the
+installing sudo user's live session). Removing the package disables it again.
+
+This applies to buildhost-GENERATED debs only (`fmt=deb`, i.e. this APT
+repository). A pre-built `.deb` uploaded as an artifact (`kind=archive`) is
+served byte-identical -- buildhost never injects into uploaded files.
 
 ## Web frontend
 
@@ -211,12 +279,15 @@ steps:
     with:
       server: https://builds.example.com   # optional, defaults to https://pazer.build
       context: .                            # optional
-      # tags default to the commit SHA and "latest"; bare tags are expanded to
-      # <registry>/<project>:<tag>, full references (with "/" or ":") are used as-is.
-      tags: |
-        ${{ github.sha }}
-        latest
 ```
+
+With `tags` omitted, pushes are tagged with the commit SHA and the sanitized
+branch name (`claude/foo` -> `claude-foo`); `latest` is added only on the
+default branch, so a feature branch never moves the `:latest` pointer.
+
+Pass `tags` (newline-separated) to override: bare tags expand to
+`<registry>/<project>:<tag>`; references containing `/` or `:` are used
+as-is, so you can also push to another registry you are logged in to.
 
 For a build you drive yourself (e.g. `docker buildx imagetools` to copy an
 existing multi-arch image), use the lower-level `buildhost-docker-login` action,
@@ -485,12 +556,14 @@ never reaches the origin. Two ways around that, both first-try reliable:
   The in-repo publish clients do this automatically when the server
   advertises `upload_by_sha256`.
 - **Chunked upload sessions (automatic fallback).** Through the proxied
-  hostname, the CLI transparently splits large files into chunks that fit
-  under the cap. You don't have to know this exists: `buildhost publish` and
-  `buildhost publish-site` check the file size against the server's advertised
-  limit (`GET /api/v1/server-info`, `max_direct_upload_bytes`, default 95 MiB)
-  before sending anything, and switch to a session only when needed. Small
-  files keep using the classic single request.
+  hostname, the in-repo publish clients transparently split large files into
+  chunks that fit under the cap. You don't have to know this exists:
+  `buildhost publish`, `buildhost publish-site`, and the
+  `buildhost-upload-artifact` GitHub action all check the file size against
+  the server's advertised limit (`GET /api/v1/server-info`,
+  `max_direct_upload_bytes`, default 95 MiB) before sending anything, and
+  switch to a session only when needed. Small files keep using the classic
+  single request.
 
 ```bash
 # Exactly the same command whether the file is 5 MB or 5 GB -- chunking is
@@ -528,9 +601,17 @@ Sessions expire after 24h (`BUILDHOST_UPLOAD_SESSION_TTL`), count against the
 normal 2 GiB upload cap at append time, and only the identity that created a
 session can touch it. A successful finalize consumes the session.
 
-From CI without the CLI (e.g. a GitHub Actions step uploading a >100 MB
-artifact through the proxied hostname), the same protocol is a short curl
-loop:
+From GitHub Actions, the
+`wow-look-at-my/buildhost/.github/actions/buildhost-upload-artifact@master`
+composite does all of this automatically: it checks the advertised limit,
+sends small files as the classic direct PUT (streamed from disk), assembles
+larger ones through a session (default 64 MiB chunks, tunable via its
+optional `chunk_size` input), resumes from the server's committed size on
+hiccups, finalizes with the file's SHA-256, and retries transient
+server/network errors with backoff.
+
+From other CI without the CLI (uploading a >100 MB artifact through the
+proxied hostname), the same protocol is a short curl loop:
 
 ```bash
 FILE=./huge-artifact

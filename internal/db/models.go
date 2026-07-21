@@ -93,7 +93,10 @@ type Project struct {
 	IsPrivate     bool       `json:"is_private"`
 	Versioning    Versioning `json:"versioning"`
 	GithubRepo    string     `json:"github_repo"`
+	GithubOwnerID string     `json:"github_owner_id"`
+	GithubRepoID  string     `json:"github_repo_id"`
 	DefaultBranch string     `json:"default_branch"`
+	CreateService bool       `json:"create_service"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 }

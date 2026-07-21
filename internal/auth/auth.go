@@ -20,12 +20,18 @@ const (
 	githubTokenKey
 )
 
-// oidcRepo carries the GitHub repo identity from a verified OIDC token, so the
-// project-auth middleware can resolve the repo's default branch from GitHub and
-// persist the repo on the project for GitHub-login authorization.
-type oidcRepo struct {
-	repoPath string // "owner/repo"
-	issuer   string
+// OIDCRepoIdentity carries the GitHub repo identity from a verified OIDC
+// token, so the project-auth middleware can resolve the repo's default branch
+// from GitHub, persist the repo on the project for GitHub-login authorization,
+// and pin/verify the numeric IDs against rename/resurrection takeover.
+type OIDCRepoIdentity struct {
+	RepoPath string // "owner/repo" (plain names, IDs stripped)
+	Issuer   string
+	// OwnerID / RepoID are GitHub's numeric account/repository IDs (from the
+	// dedicated repository_owner_id / repository_id claims, or an immutable
+	// subject's @id suffixes). Empty when the issuer provides none.
+	OwnerID string
+	RepoID  string
 }
 
 // WithGitHubToken stashes the signed-in user's GitHub OAuth token (from the
@@ -99,18 +105,18 @@ func OIDCPrivateFrom(ctx context.Context) (bool, bool) {
 	return v, ok
 }
 
-// WithOIDCRepo records the GitHub repo identity (owner/repo) and issuer from a
-// verified OIDC token, so the project-auth middleware can resolve the repo's
-// default branch from GitHub.
-func WithOIDCRepo(ctx context.Context, repoPath, issuer string) context.Context {
-	return context.WithValue(ctx, oidcRepoKey, oidcRepo{repoPath: repoPath, issuer: issuer})
+// WithOIDCRepo records the GitHub repo identity (owner/repo, issuer, numeric
+// IDs) from a verified OIDC token, so the project-auth middleware can resolve
+// the repo's default branch from GitHub and pin/verify the repo identity.
+func WithOIDCRepo(ctx context.Context, identity OIDCRepoIdentity) context.Context {
+	return context.WithValue(ctx, oidcRepoKey, identity)
 }
 
-// OIDCRepoFrom returns the OIDC repo path ("owner/repo") and issuer, or empty
-// strings if none was recorded.
-func OIDCRepoFrom(ctx context.Context) (repoPath, issuer string) {
-	v, _ := ctx.Value(oidcRepoKey).(oidcRepo)
-	return v.repoPath, v.issuer
+// OIDCRepoFrom returns the OIDC repo identity, or the zero value if none was
+// recorded.
+func OIDCRepoFrom(ctx context.Context) OIDCRepoIdentity {
+	v, _ := ctx.Value(oidcRepoKey).(OIDCRepoIdentity)
+	return v
 }
 
 // WithOIDCError records why OIDC verification failed for a presented JWT, so an
