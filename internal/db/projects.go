@@ -12,13 +12,15 @@ var ErrConflict = errors.New("already exists")
 
 func (d *DB) CreateProject(ctx context.Context, p *Project) error {
 	res, err := d.q.InsertProject(ctx, InsertProjectParams{
-		Name:        p.Name,
-		Description: p.Description,
-		Homepage:    p.Homepage,
-		License:     p.License,
-		IsPrivate:   p.IsPrivate,
-		Versioning:  p.Versioning,
-		GithubRepo:  p.GithubRepo,
+		Name:          p.Name,
+		Description:   p.Description,
+		Homepage:      p.Homepage,
+		License:       p.License,
+		IsPrivate:     p.IsPrivate,
+		Versioning:    p.Versioning,
+		GithubRepo:    p.GithubRepo,
+		GithubOwnerID: p.GithubOwnerID,
+		GithubRepoID:  p.GithubRepoID,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -53,6 +55,20 @@ func (d *DB) SetProjectGitHubRepo(ctx context.Context, id int64, repo string) er
 	return d.q.SetProjectGitHubRepo(ctx, SetProjectGitHubRepoParams{
 		GithubRepo: repo,
 		ID:         id,
+	})
+}
+
+// SetProjectGitHubIDs pins the numeric GitHub owner/repo IDs behind
+// github_repo. GitHub names are reusable (a deleted or renamed repo's name can
+// be re-registered), so the auth middleware records the IDs from the first
+// ID-bearing OIDC publish and rejects later OIDC requests whose token carries
+// different IDs -- a re-created ("resurrected") repo under the same name may
+// not take over the project.
+func (d *DB) SetProjectGitHubIDs(ctx context.Context, id int64, ownerID, repoID string) error {
+	return d.q.SetProjectGitHubIDs(ctx, SetProjectGitHubIDsParams{
+		GithubOwnerID: ownerID,
+		GithubRepoID:  repoID,
+		ID:            id,
 	})
 }
 
