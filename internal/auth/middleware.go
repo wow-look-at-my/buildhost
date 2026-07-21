@@ -100,15 +100,18 @@ func RequireWrite(next http.HandlerFunc) http.HandlerFunc {
 
 // userCanReadProject reports whether the request's signed-in GitHub user (if
 // any) may read this private project -- i.e. they can access the project's
-// GitHub repo. False if not signed in, the project has no known repo, or GitHub
-// login is not configured.
-func userCanReadProject(ctx context.Context, project *db.Project) bool {
+// GitHub repo. allowed is false if not signed in, the project has no known
+// repo, or GitHub login is not configured. sessionTokenDead reports that the
+// user IS signed in but the GitHub token embedded in their session cookie is
+// dead (GitHub 401 on the access probe: revoked or expired mid-session) -- the
+// deny path uses it to re-auth the browser instead of claiming "no access".
+func userCanReadProject(ctx context.Context, project *db.Project) (allowed, sessionTokenDead bool) {
 	if mw == nil || mw.GitHub == nil || project.GithubRepo == "" {
-		return false
+		return false, false
 	}
 	login, ok := UserFrom(ctx)
 	if !ok {
-		return false
+		return false, false
 	}
 	return mw.GitHub.canAccessRepo(ctx, login, GitHubTokenFrom(ctx), project.GithubRepo)
 }
@@ -379,11 +382,20 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 					// A human who signed in with GitHub and has access to this
 					// project's repo may read it. This is what the browser sign-in
 					// redirect leads to.
-					if userCanReadProject(r.Context(), project) {
+					userOK, sessionDead := userCanReadProject(r.Context(), project)
+					if userOK {
 						parentSpan.SetAttributes(attribute.Bool("project.user_read", true))
 						break
 					}
 					if t == nil || !t.HasScope("read") {
+						if sessionDead {
+							// The browser IS signed in, but the GitHub token inside
+							// its session cookie died mid-session (GitHub 401 on the
+							// access probe). Mark it so unauthorizedResponse clears
+							// the dead session and re-runs sign-in instead of
+							// rendering the misleading "no access" page.
+							r = r.WithContext(WithSessionTokenDead(r.Context()))
+						}
 						unauthorizedResponse(w, r)
 						return
 					}
@@ -397,8 +409,11 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				// Same authorization as ReadAccess, but an unauthorized caller
 				// gets a 404 (not 401/403) so a private project never reveals it
 				// exists -- indistinguishable from a project that does not exist.
+				// Deliberately no dead-session re-auth here: a re-auth redirect
+				// would reveal the hidden project exists.
 				if project.IsPrivate {
-					authorized := userCanReadProject(r.Context(), project) || (t != nil && t.HasScope("read") &&
+					userOK, _ := userCanReadProject(r.Context(), project)
+					authorized := userOK || (t != nil && t.HasScope("read") &&
 						t.AuthorizedForProject(project.ID) &&
 						(oidcProject == "" || oidcAuthorizesProject(oidcProject, project.Name)))
 					if !authorized {
