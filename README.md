@@ -549,9 +549,6 @@ branch behind a `~` sigil: `https://myapp.pazer.site/~pr-7/`.
 - Private sites sign in via the primary apex: set `BUILDHOST_PRIMARY_DOMAIN`
   (e.g. `pazer.build`) and the browser authenticates there (same single GitHub
   OAuth app), then is handed back to the site domain -- no second OAuth app.
-- Setting `BUILDHOST_PRIMARY_DOMAIN` also scopes the web UI and `/api/v1` to
-  that apex: other hosts get a plain 404 (health, sign-in, `llms.txt` stay
-  host-agnostic). Unset, everything stays host-agnostic as before.
 
 ## Large uploads
 

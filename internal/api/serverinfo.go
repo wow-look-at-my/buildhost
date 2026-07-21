@@ -9,7 +9,7 @@ import (
 
 func init() {
 	auth.OnReady(func() {
-		auth.HandleRawPrimary("GET /api/v1/server-info", handler.ServerInfo)
+		auth.HandleRaw("GET /api/v1/server-info", handler.ServerInfo)
 	})
 }
 

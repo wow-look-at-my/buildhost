@@ -22,9 +22,9 @@ import (
 
 func init() {
 	auth.OnReady(func() {
-		auth.HandlePrimary("POST /api/v1/projects/{project}/releases", parseRoute, handler.CreateRelease)
-		auth.HandlePrimary("GET /api/v1/projects/{project}/releases", parseRoute, handler.ListReleases)
-		auth.HandlePrimary("GET /api/v1/projects/{project}/releases/{version}", parseRoute, handler.GetRelease)
+		auth.Handle("POST /api/v1/projects/{project}/releases", parseRoute, handler.CreateRelease)
+		auth.Handle("GET /api/v1/projects/{project}/releases", parseRoute, handler.ListReleases)
+		auth.Handle("GET /api/v1/projects/{project}/releases/{version}", parseRoute, handler.GetRelease)
 	})
 }
 

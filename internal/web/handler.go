@@ -31,18 +31,15 @@ func init() {
 	})
 
 	// Home and the stylesheet are public (no project context). Project and
-	// release pages go through auth.HandlePrimary with HiddenReadAccess, so the
-	// shared requireProject middleware enforces visibility (the one place auth
-	// lives) and returns a 404 -- never a 401 -- for a private project the
-	// viewer may not see, and never auto-provisions on a GET. Visibility is
-	// GitHub-style: a private project is indistinguishable from one that does
-	// not exist. The whole frontend is primary-scoped: with
-	// BUILDHOST_PRIMARY_DOMAIN configured it answers only on that apex (an
-	// unknown domain pointed at buildhost gets the router's plain 404).
-	auth.HandleRawPrimary("GET /", handler.Index)
-	auth.HandleRawPrimary("GET /_ui/style.css", handler.Stylesheet)
-	auth.HandlePrimary("GET /projects/{project}", parseProjectRoute, handler.Project)
-	auth.HandlePrimary("GET /projects/{project}/releases/{version}", parseProjectRoute, handler.Release)
+	// release pages go through auth.Handle with HiddenReadAccess, so the shared
+	// requireProject middleware enforces visibility (the one place auth lives)
+	// and returns a 404 -- never a 401 -- for a private project the viewer may
+	// not see, and never auto-provisions on a GET. Visibility is GitHub-style:
+	// a private project is indistinguishable from one that does not exist.
+	auth.HandleRaw("GET /", handler.Index)
+	auth.HandleRaw("GET /_ui/style.css", handler.Stylesheet)
+	auth.Handle("GET /projects/{project}", parseProjectRoute, handler.Project)
+	auth.Handle("GET /projects/{project}/releases/{version}", parseProjectRoute, handler.Release)
 }
 
 type Handler struct {

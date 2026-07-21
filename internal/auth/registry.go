@@ -87,49 +87,6 @@ func HandleHandler(pattern string, parse ParseFunc, handler http.Handler) {
 	mux.Handle(pattern, router.Allow, requireProject(parse)(handler))
 }
 
-// HandlePrimary and HandleRawPrimary register main-domain routes that belong to
-// the registry's own UI/API surface (the web frontend and /api/v1). When
-// BUILDHOST_PRIMARY_DOMAIN is configured they answer ONLY on that apex: on any
-// other unclaimed host (a stray CNAME, the bare site apex, ...) they serve the
-// router's canonical not-found response, so an unknown domain pointed at
-// buildhost is indistinguishable from a host with no such route. With no
-// primary domain configured they are byte-identical to Handle/HandleRaw (fully
-// host-agnostic, the historical behavior), so existing deployments and tests
-// are unchanged.
-//
-// Deliberately NOT primary-scoped (must answer on any unclaimed host):
-// /healthz and /ready-to-update (container-internal probes address the server
-// by container DNS/localhost), /llms.txt, the sign-in flow (/__signin,
-// /__signin/callback, /__signout), /__sso (bare-site-apex redemption), and the
-// /npm/* -> npm.{domain} convenience redirect. Service-subdomain routes
-// (ServiceHandle*) and {project}.<site-domain> routes have host-bearing
-// patterns and are never affected.
-func HandlePrimary(pattern string, parse ParseFunc, handler http.HandlerFunc) {
-	mux.HandleFunc(pattern, router.Allow, primaryOnly(requireProjectFunc(parse, handler)))
-}
-
-func HandleRawPrimary(pattern string, handler http.HandlerFunc) {
-	mux.HandleFunc(pattern, router.Allow, primaryOnly(handler))
-}
-
-// primaryOnly gates a handler to the configured primary apex (exact host match,
-// port stripped, case-folded; PrimaryDomain() is stored lowercased). The gate
-// runs BEFORE requireProject on purpose: a request on a foreign host must
-// produce exactly the router's not-found response -- http.NotFound, the same
-// call the router makes for an unregistered path -- with no auth semantics
-// (401s, sign-in redirects, OIDC auto-provisioning) that would reveal the
-// route exists. It reads PrimaryDomain() per request, not at registration
-// time, because web routes register in init() before config is known.
-func primaryOnly(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if pd := PrimaryDomain(); pd != "" && strings.ToLower(hostNoPort(r.Host)) != pd {
-			http.NotFound(w, r)
-			return
-		}
-		h(w, r)
-	}
-}
-
 // servicePattern turns a path-only service pattern into a host+path pattern
 // anchored to the service's subdomain, e.g. ("apt", "GET /{path...}") becomes
 // "GET apt.{domain}/{path...}". The router matches the host's first label
