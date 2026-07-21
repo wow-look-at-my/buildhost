@@ -4,14 +4,12 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/repackage"
 )
 
 func (h *Handler) serveRelease(w http.ResponseWriter, r *http.Request, inRelease bool) {
@@ -27,7 +25,11 @@ func (h *Handler) serveRelease(w http.ResponseWriter, r *http.Request, inRelease
 
 	var hashes []hashEntry
 	if release != nil {
-		hashes = h.computePackagesHashes(r, project, release)
+		hashes, err = h.computePackagesHashes(r, project, release)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	content := buildRelease(project.Name, hashes)
@@ -67,7 +69,11 @@ func (h *Handler) serveReleaseGPG(w http.ResponseWriter, r *http.Request) {
 
 	var hashes []hashEntry
 	if release != nil {
-		hashes = h.computePackagesHashes(r, project, release)
+		hashes, err = h.computePackagesHashes(r, project, release)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	content := buildRelease(project.Name, hashes)
@@ -106,12 +112,21 @@ type hashEntry struct {
 	size int
 }
 
-func (h *Handler) computePackagesHashes(r *http.Request, project *db.Project, release *db.Release) []hashEntry {
+// computePackagesHashes renders each architecture's Packages index through
+// packagesEntry -- the same renderer servePackages serves -- and hashes the
+// rendered bytes, so the Release/InRelease SHA256 lines can never disagree
+// with the served index. With the deb digest cache warm this is one DB read
+// per architecture; no repackaging happens here.
+func (h *Handler) computePackagesHashes(r *http.Request, project *db.Project, release *db.Release) ([]hashEntry, error) {
 	arches := []string{"amd64", "arm64", "i386", "armhf"}
+	baseURL := auth.RequestRootURL(r)
 	var entries []hashEntry
 
 	for _, arch := range arches {
-		data := h.renderPackagesEntry(r, project, release, arch)
+		data, err := h.packagesEntry(r.Context(), project, release, arch, baseURL)
+		if err != nil {
+			return nil, err
+		}
 		if data == "" {
 			continue
 		}
@@ -122,50 +137,7 @@ func (h *Handler) computePackagesHashes(r *http.Request, project *db.Project, re
 			size: len(data),
 		})
 	}
-	return entries
-}
-
-func (h *Handler) renderPackagesEntry(r *http.Request, project *db.Project, release *db.Release, debArch string) string {
-	goArch := goArchFromDeb(debArch)
-	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, string(db.OSLinux), goArch)
-	if err != nil {
-		return ""
-	}
-
-	version := strings.TrimPrefix(release.Version, "v")
-	if version == "" {
-		version = fmt.Sprintf("%d", release.VersionNum)
-	}
-
-	if !validDebVersion.MatchString(version) {
-		return ""
-	}
-
-	debSize := artifact.Size
-	debSHA := artifact.SHA256
-	out, err := h.Gen.Generate(r.Context(), repackage.FormatDeb, *project, *release, *artifact, auth.RequestRootURL(r))
-	if err == nil {
-		hsh := sha256.New()
-		n, rerr := io.Copy(hsh, out.Reader)
-		out.Reader.Close()
-		if rerr == nil {
-			debSize = n
-			debSHA = fmt.Sprintf("%x", hsh.Sum(nil))
-		}
-	}
-
-	pkgName := repackage.DebPackageName(project.Name)
-	desc := strings.NewReplacer("\n", " ", "\r", " ").Replace(project.Description)
-	return fmt.Sprintf(`Package: %s
-Version: %s
-Architecture: %s
-Filename: pool/%s_%s_%s.deb
-Size: %d
-SHA256: %s
-Description: %s
-
-`, pkgName, version, debArch, pkgName, version, debArch,
-		debSize, debSHA, desc)
+	return entries, nil
 }
 
 func buildRelease(projectName string, hashes []hashEntry) string {
