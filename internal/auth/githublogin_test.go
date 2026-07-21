@@ -481,16 +481,23 @@ func TestCanAccessRepo(t *testing.T) {
 	defer func() { githubAPIBase = orig }()
 
 	g := NewGitHubAuth("cid", "secret")
-	ctx := context.Background()
-	assert.True(t, g.canAccessRepo(ctx, "alice", "tok", "PazerOP/allowed"))
-	assert.False(t, g.canAccessRepo(ctx, "alice", "tok", "PazerOP/denied"))
+	assert.True(t, canAccess(t, g, "alice", "tok", "PazerOP/allowed"))
+	assert.False(t, canAccess(t, g, "alice", "tok", "PazerOP/denied"))
 	// Cached: a repeat does not hit GitHub again.
 	before := calls
-	assert.True(t, g.canAccessRepo(ctx, "alice", "tok", "PazerOP/allowed"))
+	assert.True(t, canAccess(t, g, "alice", "tok", "PazerOP/allowed"))
 	assert.Equal(t, before, calls, "second check should be served from cache")
 	// Missing inputs => false, no call.
-	assert.False(t, g.canAccessRepo(ctx, "", "tok", "PazerOP/allowed"))
-	assert.False(t, g.canAccessRepo(ctx, "alice", "", "PazerOP/allowed"))
+	assert.False(t, canAccess(t, g, "", "tok", "PazerOP/allowed"))
+	assert.False(t, canAccess(t, g, "alice", "", "PazerOP/allowed"))
+}
+
+// canAccess collapses canAccessRepo's (allowed, tokenDead) pair to just
+// allowed, for tests that only assert access.
+func canAccess(t *testing.T, g *GitHubAuth, login, token, repo string) bool {
+	t.Helper()
+	allowed, _ := g.canAccessRepo(context.Background(), login, token, repo)
+	return allowed
 }
 
 // A transient GitHub failure (5xx/429/network/rate-limit 403) must NOT be cached
@@ -510,15 +517,17 @@ func TestCanAccessRepo_TransientFailureNotCached(t *testing.T) {
 	defer func() { githubAPIBase = orig }()
 
 	g := NewGitHubAuth("cid", "secret")
-	ctx := context.Background()
 
-	// First check hits a transient 500 -> denied, but the non-answer is not cached.
-	assert.False(t, g.canAccessRepo(ctx, "matt", "tok", "PazerOP/UE553"))
+	// First check hits a transient 500 -> denied, but the non-answer is not
+	// cached -- and is NOT classified as a dead token.
+	allowed, tokenDead := g.canAccessRepo(context.Background(), "matt", "tok", "PazerOP/UE553")
+	assert.False(t, allowed)
+	assert.False(t, tokenDead, "a transient failure must not be classified token-dead")
 	// GitHub recovers; the next check must re-hit GitHub (not the cache) and now
 	// succeed -- the owner is not locked out by the earlier blip.
 	status = http.StatusOK
 	before := calls
-	assert.True(t, g.canAccessRepo(ctx, "matt", "tok", "PazerOP/UE553"),
+	assert.True(t, canAccess(t, g, "matt", "tok", "PazerOP/UE553"),
 		"a transient failure must not be cached as a hard denial")
 	assert.Greater(t, calls, before, "recovery check must reach GitHub, not a cached deny")
 }
@@ -541,13 +550,12 @@ func TestCanAccessRepo_NewTokenNotShadowedByStaleNegative(t *testing.T) {
 	defer func() { githubAPIBase = orig }()
 
 	g := NewGitHubAuth("cid", "secret")
-	ctx := context.Background()
 
 	// Old, insufficient token: authoritative 404 -> denied (and cached for it).
-	assert.False(t, g.canAccessRepo(ctx, "matt", "scopeless", "PazerOP/UE553"))
+	assert.False(t, canAccess(t, g, "matt", "scopeless", "PazerOP/UE553"))
 	// Re-auth yields a new token with access; it must be re-checked, not shadowed
 	// by the cached deny keyed to the previous token.
-	assert.True(t, g.canAccessRepo(ctx, "matt", "good", "PazerOP/UE553"),
+	assert.True(t, canAccess(t, g, "matt", "good", "PazerOP/UE553"),
 		"a new token must be re-checked, not shadowed by the previous token's cached deny")
 }
 
@@ -675,5 +683,7 @@ func TestUserCanReadProject_NoRepo_Denied(t *testing.T) {
 
 	proj := &db.Project{Name: "norepo", IsPrivate: true, Versioning: "auto"} // GithubRepo == ""
 	ctx := WithGitHubToken(WithUser(context.Background(), "alice"), "tok")
-	assert.False(t, userCanReadProject(ctx, proj))
+	allowed, tokenDead := userCanReadProject(ctx, proj)
+	assert.False(t, allowed)
+	assert.False(t, tokenDead)
 }
