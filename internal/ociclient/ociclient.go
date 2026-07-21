@@ -281,4 +281,3 @@ func (p *Pusher) serverDirectLimit() int64 {
 	}
 	return info.MaxDirectUploadBytes
 }
-
