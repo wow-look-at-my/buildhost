@@ -9,11 +9,8 @@ concurrency:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
   packages: write
-  # Required by the publish-ghcr reusable workflow (it verifies actions:read to
-  # download build artifacts). A reusable workflow cannot be granted more than
-  # the caller declares, so omitting this makes the whole run a startup_failure.
   actions: read
 
 jobs:
@@ -445,6 +442,180 @@ jobs:
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/buildhost-apt-e2e" ./test/e2e/testdata/netcheck
       - name: Install from the generated APT repository
         run: bash test/e2e/apt-install.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/buildhost-apt-e2e"
+
+  # Proves the buildhost-upload-artifact composite action's BOTH upload paths
+  # against a real spawned buildhost. The server's advertised direct-upload
+  # limit is shrunk to 1 MiB so the chunked path runs with CI-sized files: a
+  # 64 KiB file must go as one classic direct PUT (no session endpoints
+  # touched), a ~3 MiB file must be assembled from 1 MiB chunks through an
+  # upload session (create + 4 offset PATCHes + finalize), and the bytes the
+  # server stored must match the local file exactly. The create-release and
+  # publish-release composites run as part of the flow, so the whole
+  # create -> upload -> publish action chain is covered end to end.
+  #
+  # The same spawned server also guards single-mode `buildhost publish` (no
+  # --manifest) actually PUBLISHING the release it creates. The CLI package
+  # deliberately has no unit tests (see internal/uploadclient's doc comment),
+  # so like the --manifest flavor in homebrew-tap-e2e, the real binary is
+  # exercised here: after a single-mode publish, the project's apex `latest`
+  # must resolve to a published release -- it used to stay unpublished
+  # forever (invisible to latest/branch/brew/apt/npm/web, eventually GC'd by
+  # retention as an abandoned upload, with no CLI way to publish it later).
+  upload-artifact-action-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
+      BUILDHOST_BASE_URL: http://localhost:18080
+    steps:
+      - uses: actions/checkout@v4
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build
+          path: build/
+      - run: chmod +x build/buildhost_linux_amd64
+      - name: Start local buildhost (1 MiB direct-upload limit)
+        shell: bash
+        env:
+          BUILDHOST_DATA_DIR: ${{ runner.temp }}/buildhost-data
+          BUILDHOST_DB_PATH: ${{ runner.temp }}/buildhost-data/buildhost.db
+          BUILDHOST_ADMIN_LISTEN_ADDR: ""
+          BUILDHOST_MAX_DIRECT_UPLOAD_SIZE: "1048576"
+        run: |
+          set -euo pipefail
+          TOKEN="$(./build/buildhost_linux_amd64 bootstrap --name ci)"
+          echo "::add-mask::$TOKEN"
+          echo "BUILDHOST_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          ./build/buildhost_linux_amd64 serve > "$RUNNER_TEMP/buildhost.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/buildhost.pid"
+          for _ in {1..60}; do
+            if curl -fsS "$BUILDHOST_BASE_URL/healthz" >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/buildhost.log"
+          exit 1
+      - name: Create project and test files
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./build/buildhost_linux_amd64 project create \
+            --server "$BUILDHOST_BASE_URL" \
+            --token "$BUILDHOST_TOKEN" \
+            --name upload-e2e
+          head -c 65536 /dev/urandom > "$RUNNER_TEMP/small.bin"
+          head -c 3158217 /dev/urandom > "$RUNNER_TEMP/big.bin"
+      - name: Create release
+        id: release
+        uses: ./.github/actions/buildhost-create-release
+        with:
+          server: http://localhost:18080
+          token: ${{ env.BUILDHOST_TOKEN }}
+          project: upload-e2e
+          git_branch: master
+      - name: Upload small file (direct PUT path)
+        id: small
+        uses: ./.github/actions/buildhost-upload-artifact
+        with:
+          server: http://localhost:18080
+          token: ${{ env.BUILDHOST_TOKEN }}
+          project: upload-e2e
+          version: ${{ steps.release.outputs.version }}
+          os: linux
+          arch: amd64
+          path: ${{ runner.temp }}/small.bin
+          filename: small.bin
+      - name: Small upload must not have used a session
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -q "path=/api/v1/uploads" "$RUNNER_TEMP/buildhost.log"; then
+            echo "direct-path upload unexpectedly touched the session endpoints"
+            grep "path=/api/v1/uploads" "$RUNNER_TEMP/buildhost.log"
+            exit 1
+          fi
+      - name: Upload big file (chunked session path, 1 MiB chunks)
+        id: big
+        uses: ./.github/actions/buildhost-upload-artifact
+        with:
+          server: http://localhost:18080
+          token: ${{ env.BUILDHOST_TOKEN }}
+          project: upload-e2e
+          version: ${{ steps.release.outputs.version }}
+          os: linux
+          arch: arm64
+          path: ${{ runner.temp }}/big.bin
+          filename: big.bin
+          chunk_size: "1048576"
+      - name: Big upload must have gone through a session in 4 chunks
+        shell: bash
+        run: |
+          set -euo pipefail
+          creates=$(grep -c "method=POST path=/api/v1/uploads " "$RUNNER_TEMP/buildhost.log" || true)
+          chunks=$(grep -c "method=PATCH path=/api/v1/uploads/" "$RUNNER_TEMP/buildhost.log" || true)
+          echo "session creates: $creates, chunk appends: $chunks"
+          test "$creates" = "1"
+          test "$chunks" = "4"
+      - name: Publish release
+        uses: ./.github/actions/buildhost-publish-release
+        with:
+          server: http://localhost:18080
+          token: ${{ env.BUILDHOST_TOKEN }}
+          project: upload-e2e
+          version: ${{ steps.release.outputs.version }}
+      - name: Verify uploaded artifacts
+        shell: bash
+        env:
+          SMALL_SHA: ${{ steps.small.outputs.sha256 }}
+          BIG_SHA: ${{ steps.big.outputs.sha256 }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The sha256 outputs come from the SERVER hashing what it received
+          # and stored -- equality with the local files proves byte integrity
+          # end to end for both paths.
+          test "$SMALL_SHA" = "$(sha256sum "$RUNNER_TEMP/small.bin" | awk '{print $1}')"
+          test "$BIG_SHA" = "$(sha256sum "$RUNNER_TEMP/big.bin" | awk '{print $1}')"
+          # And the chunk-assembled artifact downloads back byte-identical.
+          curl -fsSL -o "$RUNNER_TEMP/big.dl" \
+            "http://static.localhost:18080/file?project=upload-e2e&v=$VERSION&os=linux&arch=arm64"
+          cmp "$RUNNER_TEMP/big.bin" "$RUNNER_TEMP/big.dl"
+          # After publish, the release is visible as the apex latest.
+          curl -fsS "$BUILDHOST_BASE_URL/api/v1/projects/upload-e2e/releases/latest" | grep -q '"published":true'
+      - name: Single-mode CLI publish must publish the release
+        shell: bash
+        run: |
+          set -euo pipefail
+          head -c 4096 /dev/urandom > "$RUNNER_TEMP/cli.bin"
+          ./build/buildhost_linux_amd64 project create \
+            --server "$BUILDHOST_BASE_URL" \
+            --token "$BUILDHOST_TOKEN" \
+            --name cli-single-e2e
+          ./build/buildhost_linux_amd64 publish \
+            --server "$BUILDHOST_BASE_URL" \
+            --token "$BUILDHOST_TOKEN" \
+            --project cli-single-e2e \
+            --os linux --arch amd64 \
+            --git-branch master \
+            --artifact "$RUNNER_TEMP/cli.bin"
+          curl -fsS "$BUILDHOST_BASE_URL/api/v1/projects/cli-single-e2e/releases/latest" | grep -q '"published":true'
+      - name: Dump buildhost log
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/buildhost.log" ]; then
+            cat "$RUNNER_TEMP/buildhost.log"
+          else
+            echo "buildhost log was not created"
+          fi
+      - name: Stop local buildhost
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/buildhost.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/buildhost.pid")" || true
+          fi
 
   publish-ghcr:
     needs: container-healthcheck

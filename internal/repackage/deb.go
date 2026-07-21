@@ -51,11 +51,24 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 		sanitizeControlField(firstNonEmpty(input.Project.Homepage, "unknown")),
 		sanitizeControlField(firstNonEmpty(input.Project.Description, input.Project.Name)))
 
-	controlTar, err := buildTarGZ([]tarEntry{{
+	// The deb materialization of the packaging-agnostic create_service
+	// project setting. Only for the binary kind (the unit's ExecStart is the
+	// /usr/bin install path); with the flag off both members are
+	// byte-identical to before the setting existed.
+	withService := input.Project.CreateService && input.Artifact.Kind == db.KindBinary
+
+	controlEntries := []tarEntry{{
 		Name: "./control",
 		Data: []byte(controlContent),
 		Mode: 0o644,
-	}})
+	}}
+	if withService {
+		controlEntries = append(controlEntries,
+			tarEntry{Name: "./postinst", Data: []byte(debPostinst(pkgName)), Mode: 0o755},
+			tarEntry{Name: "./prerm", Data: []byte(debPrerm(pkgName)), Mode: 0o755},
+		)
+	}
+	controlTar, err := buildTarGZ(controlEntries)
 	if err != nil {
 		return nil, fmt.Errorf("build control.tar.gz: %w", err)
 	}
@@ -73,6 +86,15 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 		mode = 0o755
 	}
 
+	var extraEntries []tarEntry
+	if withService {
+		extraEntries = append(extraEntries, tarEntry{
+			Name: "." + DebServiceUnitPath(pkgName),
+			Data: []byte(DebServiceUnit(pkgName, firstNonEmpty(input.Project.Description, pkgName))),
+			Mode: 0o644,
+		})
+	}
+
 	// The ar container needs each member's exact byte length in its header, before the
 	// body. The data.tar.gz member's compressed length isn't known until it's produced,
 	// so stream the artifact -> tar -> gzip into a temp file (the compressed member, far
@@ -82,7 +104,7 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create deb temp: %w", err)
 	}
-	dataLen, err := streamDebData(dataTmp, input.Reader, "."+installDir+fileName, input.Size, mode)
+	dataLen, err := streamDebData(dataTmp, input.Reader, "."+installDir+fileName, input.Size, mode, extraEntries)
 	if err != nil {
 		dataTmp.Close()
 		os.Remove(dataTmp.Name())
@@ -119,9 +141,11 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 	}, nil
 }
 
-// streamDebData writes a single-entry tar.gz (the artifact, at name) to f and returns the
-// number of compressed bytes written.
-func streamDebData(f *os.File, r io.Reader, name string, size, mode int64) (int64, error) {
+// streamDebData writes the data tar.gz (the artifact at name, then any extra
+// small entries such as the create_service systemd unit) to f and returns the
+// number of compressed bytes written. An empty extra list produces the exact
+// single-entry member of before, so flag-off debs stay byte-identical.
+func streamDebData(f *os.File, r io.Reader, name string, size, mode int64, extra []tarEntry) (int64, error) {
 	gw := gzip.NewWriter(f)
 	tw := tar.NewWriter(gw)
 	if err := tw.WriteHeader(&tar.Header{Name: name, Size: size, Mode: mode}); err != nil {
@@ -129,6 +153,14 @@ func streamDebData(f *os.File, r io.Reader, name string, size, mode int64) (int6
 	}
 	if _, err := io.Copy(tw, r); err != nil {
 		return 0, fmt.Errorf("write data: %w", err)
+	}
+	for _, e := range extra {
+		if err := tw.WriteHeader(&tar.Header{Name: e.Name, Size: int64(len(e.Data)), Mode: e.Mode}); err != nil {
+			return 0, fmt.Errorf("write data tar header %q: %w", e.Name, err)
+		}
+		if _, err := tw.Write(e.Data); err != nil {
+			return 0, fmt.Errorf("write data entry %q: %w", e.Name, err)
+		}
 	}
 	if err := tw.Close(); err != nil {
 		return 0, err
@@ -141,6 +173,38 @@ func streamDebData(f *os.File, r io.Reader, name string, size, mode int64) (int6
 		return 0, err
 	}
 	return fi.Size(), nil
+}
+
+// DebServiceUnitPath is where the create_service systemd USER unit lands in
+// the installed filesystem (and, "."-prefixed, in the deb's data tar).
+func DebServiceUnitPath(pkgName string) string {
+	return "/usr/lib/systemd/user/" + pkgName + ".service"
+}
+
+// DebServiceUnit renders the systemd USER unit shipped when the project
+// declares create_service. A user unit -- not a system one -- because the
+// declared binaries are per-user (often GUI) apps: it is ordered after and
+// bound to graphical-session.target (systemd.special(7): graphical user
+// services carry PartOf=graphical-session.target so they stop with the
+// session, and enablement attaches them via
+// WantedBy=graphical-session.target), and Restart=on-failure is the
+// crash-only policy (restart on non-zero exit or signal, stay stopped on a
+// clean exit -- the brew materialization's KeepAlive {SuccessfulExit:false}
+// twin). The package's postinst auto-enables it at install (debPostinst);
+// `systemctl --user enable --now <pkg>` remains the manual override.
+func DebServiceUnit(pkgName, description string) string {
+	return fmt.Sprintf(`[Unit]
+Description=%s
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/%s
+Restart=on-failure
+
+[Install]
+WantedBy=graphical-session.target
+`, sanitizeControlField(description), pkgName)
 }
 
 type tarEntry struct {
@@ -189,6 +253,42 @@ func writeArMember(w io.Writer, name string, body io.Reader, size int64) error {
 		}
 	}
 	return nil
+}
+
+// debPostinst is the maintainer script that sets the create_service unit up
+// automatically at install. `systemctl --global enable` is pure symlink
+// manipulation under /etc/systemd/user (no running manager needed; works in
+// chroots/containers), attaching the unit to every user's
+// graphical-session.target -- so the service starts at each user's NEXT
+// graphical login. The immediate start is strictly best-effort for the
+// sudo-invoking user's already-running session (`systemctl --user -M user@`
+// needs systemd >= 248 and a live user session; apt runs as root, which has
+// no user manager of its own). Every action is guarded and ||-true'd: a
+// missing systemctl or a failed start must never leave the package
+// unconfigured.
+func debPostinst(pkgName string) string {
+	return fmt.Sprintf(`#!/bin/sh
+set -e
+if [ "$1" = "configure" ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl --global enable %s.service >/dev/null 2>&1 || true
+    if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+        systemctl --user -M "${SUDO_USER}@" start %s.service >/dev/null 2>&1 || true
+    fi
+fi
+`, pkgName, pkgName)
+}
+
+// debPrerm undoes the postinst enablement when the package is removed. The
+// unit file itself is removed by dpkg with the package; running instances end
+// with the owning session (PartOf=graphical-session.target) or at its next
+// logout -- prerm deliberately does not reach into user sessions to kill them.
+func debPrerm(pkgName string) string {
+	return fmt.Sprintf(`#!/bin/sh
+set -e
+if [ "$1" = "remove" ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl --global disable %s.service >/dev/null 2>&1 || true
+fi
+`, pkgName)
 }
 
 func debArch(a db.Arch) string {

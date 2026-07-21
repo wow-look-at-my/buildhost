@@ -261,8 +261,15 @@ App.pages.project = function (name) {
                 ? 'curl -fsSL --location-trusted -u "token:$TOKEN" -O \\\n  "' + dlBase + '?os=linux&arch=amd64"'
                 : 'curl -fsSL -O "' + dlBase + '?os=linux&arch=amd64"';
 
-            // APT: signed-by key-import flow + folded Debian package name,
-            // matching the Registries page and the web frontend.
+            // APT: the server-generated install.sh is the one-line path (it
+            // saves the armored key, writes the signed-by source, records the
+            // token for private repos, and refreshes the index).
+            var aptOneLiner = priv
+                ? 'curl -fsSL -H "Authorization: Bearer $TOKEN" ' + aptBase + "/install.sh \\\n  | sudo BUILDHOST_TOKEN=$TOKEN sh"
+                : "curl -fsSL " + aptBase + "/install.sh | sudo sh";
+
+            // APT manual flow: signed-by key-import + folded Debian package
+            // name, matching the Registries page and the web frontend.
             var aptCmd = priv
                 ? 'sudo install -d -m 0755 /etc/apt/keyrings\n# the token is the HTTP Basic password (username is ignored)\ncurl -fsSL -u "token:$TOKEN" ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + aptPkg + '.list\n# both apt (metadata) and static (the .deb download redirect) need the token\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf\nmachine ' + aptHost + ' login token password $TOKEN\nmachine ' + staticHost + ' login token password $TOKEN\nEOF\nsudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf\nsudo apt update && sudo apt install ' + aptPkg
                 : 'sudo install -d -m 0755 /etc/apt/keyrings\ncurl -fsSL ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + aptPkg + '.list\nsudo apt update && sudo apt install ' + aptPkg;
@@ -284,12 +291,14 @@ App.pages.project = function (name) {
                         Html.td(Html.raw(App.urlTpl(dlBase + "?os={os}&arch={arch}", dlBase + "?os=", "&arch="))).cls("endpoint-cell")
                     ),
                     endpointRow("APT", aptBase, aptBase + "/dists/stable/Release", aptBase),
+                    endpointRow("APT installer", aptBase + "/install.sh", aptBase + "/install.sh", null),
                     endpointRow("Homebrew", brewU, brewU, null),
                     endpointRow("npm", npmU, npmU, null),
                     endpointRow("OCI", ociU, ociU, null)
                 ).cls("info-table"),
                 Html.raw(App.codeBlock("Direct download (curl)", curlCmd)),
-                Html.raw(App.codeBlock("APT", aptCmd)),
+                Html.raw(App.codeBlock("APT (one-line install)", aptOneLiner)),
+                Html.raw(App.codeBlock("APT (manual setup)", aptCmd)),
                 Html.raw(App.codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "/tap.git\nbrew install pazer/build/" + p.name)),
                 Html.raw(App.codeBlock("npm", npmCmd)),
                 Html.raw(App.codeBlock("Docker", dockerCmd))
@@ -523,6 +532,7 @@ App.pages.registries = function () {
     App.renderSidebar("registries");
     App.fetch("/registries").then(function (d) {
         var bu = d.base_url, svc = d.services || {};
+
         var projects = d.projects || [];
 
         if (projects.length === 0) {
