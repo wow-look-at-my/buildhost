@@ -32,10 +32,10 @@ func init() {
 			active.Store(store)
 		}
 
-		auth.HandleRaw("POST /api/v1/uploads", handleCreate)
-		auth.HandleRaw("GET /api/v1/uploads/{id}", handleStatus)
-		auth.HandleRaw("PATCH /api/v1/uploads/{id}", handleAppend)
-		auth.HandleRaw("DELETE /api/v1/uploads/{id}", handleAbort)
+		auth.HandleRawPrimary("POST /api/v1/uploads", handleCreate)
+		auth.HandleRawPrimary("GET /api/v1/uploads/{id}", handleStatus)
+		auth.HandleRawPrimary("PATCH /api/v1/uploads/{id}", handleAppend)
+		auth.HandleRawPrimary("DELETE /api/v1/uploads/{id}", handleAbort)
 	})
 }
 
