@@ -97,7 +97,7 @@ func TestServeFormula_CachesTarGZDigest(t *testing.T) {
 	}
 
 	// No cache row before the first fetch.
-	_, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "tar.gz")
+	_, _, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "tar.gz")
 	require.ErrorIs(t, err, db.ErrNotFound)
 
 	body := fetch()
@@ -113,7 +113,7 @@ func TestServeFormula_CachesTarGZDigest(t *testing.T) {
 	require.NoError(t, tgz.Reader.Close())
 	want := fmt.Sprintf("%x", sha256.Sum256(payload))
 
-	cachedKey, cachedSize, cachedSHA, _, err := d.GetPackagedArtifact(ctx, a.ID, "tar.gz")
+	cachedKey, cachedSize, cachedSHA, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "tar.gz")
 	require.NoError(t, err)
 	assert.Equal(t, want, cachedSHA)
 	assert.Equal(t, int64(len(payload)), cachedSize)

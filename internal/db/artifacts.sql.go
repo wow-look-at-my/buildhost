@@ -111,7 +111,7 @@ func (q *Queries) GetArtifactByReleaseOSArch(ctx context.Context, arg GetArtifac
 }
 
 const getPackagedArtifact = `-- name: GetPackagedArtifact :one
-SELECT storage_key, size, sha256, filename FROM packaged_artifacts
+SELECT storage_key, size, sha256, filename, metadata FROM packaged_artifacts
 WHERE artifact_id = ? AND format = ?
 `
 
@@ -125,6 +125,7 @@ type GetPackagedArtifactRow struct {
 	Size       int64  `json:"size"`
 	SHA256     string `json:"sha256"`
 	Filename   string `json:"filename"`
+	Metadata   string `json:"metadata"`
 }
 
 func (q *Queries) GetPackagedArtifact(ctx context.Context, arg GetPackagedArtifactParams) (GetPackagedArtifactRow, error) {
@@ -135,6 +136,7 @@ func (q *Queries) GetPackagedArtifact(ctx context.Context, arg GetPackagedArtifa
 		&i.Size,
 		&i.SHA256,
 		&i.Filename,
+		&i.Metadata,
 	)
 	return i, err
 }
