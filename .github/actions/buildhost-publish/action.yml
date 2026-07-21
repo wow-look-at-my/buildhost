@@ -15,7 +15,7 @@ inputs:
     required: false
     default: 'go-build'
   path:
-    description: 'Local directory containing the release binaries to publish, resolved relative to the workspace. When set, the run''s artifacts are NOT downloaded and the artifact_name input is ignored; files are read from this directory instead (no actions: read permission needed, GITHUB_TOKEN never read).'
+    description: 'Local directory containing the release binaries to publish, resolved relative to the workspace. When set, the run''s artifacts are NOT downloaded and the artifact_name input is ignored; files are read from this directory instead (no actions: read permission needed; the publish script never reads GITHUB_TOKEN in this mode, though the optional GitHub Deployment steps use github.token and warn-skip without deployments: write -- see create_deployment).'
     required: false
   version:
     description: 'Release version (omit for auto-versioned projects)'
@@ -48,6 +48,20 @@ inputs:
       project this publish creates a release for.
     required: false
     default: ''
+  create_deployment:
+    description: >-
+      Register this publish as a GitHub Deployment in the calling repo (with a
+      success status linking to the live buildhost URL). Needs
+      `deployments: write` in the calling job's permissions block; without it
+      the step warns and skips -- deployments are additive and never fail the
+      publish. Set 'false' to opt out (and silence the warning).
+    required: false
+    default: 'true'
+  deployment_environment:
+    description: >-
+      GitHub Deployment environment name (defaults to `buildhost/<project>`).
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -55,10 +69,74 @@ runs:
     - name: Refuse jobs named all-builds
       uses: wow-look-at-my/actions@no-all-builds-job#latest
 
-    - uses: wow-look-at-my/actions@typescript#latest
+    # Best-effort GitHub Deployment registration: the publish shows up in the
+    # calling repo's Environments/Deployments UI with a link to the live
+    # buildhost URL. Requires `deployments: write` in the calling job; without
+    # it the step warns and skips -- it can never fail the publish.
+    - name: Create GitHub Deployment
+      id: deployment
+      if: ${{ inputs.create_deployment == 'true' }}
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            core.setOutput('deployment_id', '');
+            try {
+              const inputProject: string = "${{ inputs.project }}";
+              const project: string = inputProject || github.repository.split('/').pop()!;
+              const envInput: string = "${{ inputs.deployment_environment }}";
+              const environment: string = envInput || `buildhost/${project}`;
+              const inputCommit: string = "${{ inputs.git_commit }}";
+              const ref: string = inputCommit || context.sha;
+              const inputBranch: string = "${{ inputs.git_branch }}";
+              const branch: string = inputBranch || github.ref_name || '';
+              const defaultBranch: string = context.payload.repository?.default_branch ?? '';
+              const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+              // required_contexts MUST be [] (the API default is "every commit
+              // status", and the org's all-builds status is still pending on
+              // this sha mid-run -> 409 Conflict); auto_merge MUST be false
+              // (the API default would try to merge the default branch into
+              // ref). A 2xx response without an id (e.g. the 202 auto-merge
+              // shape) is treated as "no deployment".
+              const dep = await octokit.rest.repos.createDeployment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref,
+                environment,
+                auto_merge: false,
+                required_contexts: [],
+                transient_environment: false,
+                production_environment: defaultBranch !== '' && branch === defaultBranch,
+                description: `buildhost publish of ${project}`.slice(0, 140),
+              });
+              const id = (dep.data as any)?.id;
+              if (typeof id !== 'number') {
+                core.warning(`GitHub Deployment not created (HTTP ${dep.status}); publishing without one`);
+                return;
+              }
+              core.setOutput('deployment_id', String(id));
+              await octokit.rest.repos.createDeploymentStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: id,
+                state: 'in_progress',
+                log_url: runUrl,
+                description: 'Publishing to buildhost',
+              });
+              core.info(`Created GitHub Deployment ${id} in environment '${environment}'`);
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              core.warning(`Skipping GitHub Deployment (${msg}). Grant 'deployments: write' in the calling job's permissions block, or set create_deployment: 'false' to silence this warning.`);
+            }
+          })();
+
+    - id: publish
+      uses: wow-look-at-my/actions@typescript#latest
       env:
-        # Only artifact mode (path unset) talks to the GitHub API; path mode
-        # gets no token at all.
+        # Only artifact mode (path unset) talks to the GitHub API from THIS
+        # step; path mode gets no token at all. (The optional deployment steps
+        # authenticate separately, via the typescript action's own
+        # github-token input default -- never via this env var.)
         GITHUB_TOKEN: ${{ inputs.path == '' && github.token || '' }}
       with:
         script: |
@@ -326,18 +404,63 @@ runs:
                 const rv = releaseVersionFrom(project, await api("POST", `/api/v1/projects/${project}/releases`, releaseBody()));
                 if (rv === null) return;
                 core.info(`Release: ${project}/${rv} (legacy flat layout)`);
-                await uploadAndPublish(project, rv, legacy);
+                if (!(await uploadAndPublish(project, rv, legacy))) return;
+                core.setOutput('deployment_url', `${server}/projects/${project}/releases/${rv}`);
                 return;
               }
               created.set(proj, probe);
             }
 
             // Namespaced path: publish each <repo>/<binary> project independently.
+            const published: { proj: string; rv: string }[] = [];
             for (const [proj, items] of groupList) {
               const createResp = created.get(proj) ?? await api("POST", `/api/v1/projects/${proj}/releases`, releaseBody());
               const rv = releaseVersionFrom(proj, createResp);
               if (rv === null) return;
               core.info(`Release: ${proj}/${rv}`);
               if (!(await uploadAndPublish(proj, rv, items))) return;
+              published.push({ proj, rv });
+            }
+
+            // Live URL for the GitHub Deployment status: the release page for
+            // a single published project, the primary project's page for a
+            // multi-project fan-out (primary = the group matching the
+            // repo-level project name, else the first group).
+            if (published.length === 1) {
+              core.setOutput('deployment_url', `${server}/projects/${published[0].proj}/releases/${published[0].rv}`);
+            } else if (published.length > 1) {
+              const primary = published.find((p) => p.proj === project) ?? published[0];
+              core.setOutput('deployment_url', `${server}/projects/${primary.proj}`);
+            }
+          })();
+
+    # Terminal status for the GitHub Deployment created above; runs even when
+    # the publish failed so the deployment is marked failure instead of
+    # dangling in_progress. Never fails the action.
+    - name: Finish GitHub Deployment
+      id: deployment-status
+      if: ${{ always() && steps.deployment.outputs.deployment_id != '' }}
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            try {
+              const publishOutcome: string = "${{ steps.publish.outcome }}";
+              const ok = publishOutcome === 'success';
+              const environmentUrl: string = "${{ steps.publish.outputs.deployment_url }}";
+              const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+              await octokit.rest.repos.createDeploymentStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: Number("${{ steps.deployment.outputs.deployment_id }}"),
+                state: ok ? 'success' : 'failure',
+                log_url: runUrl,
+                ...(ok && environmentUrl !== '' ? { environment_url: environmentUrl } : {}),
+                description: ok ? 'Published to buildhost' : 'buildhost publish failed',
+              });
+              core.info(`GitHub Deployment marked ${ok ? 'success' : 'failure'}`);
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              core.warning(`Could not update the GitHub Deployment status (${msg})`);
             }
           })();
