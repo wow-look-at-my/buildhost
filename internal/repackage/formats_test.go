@@ -346,9 +346,9 @@ func TestOCIRepackage(t *testing.T) {
 	assert.Equal(t, "amd64", output.Metadata["arch"])
 
 	// Verify config and layer blobs were stored
-	_, _, _, _, err = d.GetPackagedArtifact(ctx, a.ID, "oci-config")
+	_, _, _, _, _, err = d.GetPackagedArtifact(ctx, a.ID, "oci-config")
 	require.NoError(t, err)
-	_, _, _, _, err = d.GetPackagedArtifact(ctx, a.ID, "oci-layer")
+	_, _, _, _, _, err = d.GetPackagedArtifact(ctx, a.ID, "oci-layer")
 	require.NoError(t, err)
 }
 
