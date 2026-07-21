@@ -19,6 +19,8 @@ var (
 	sharedData                string
 	sharedFetchDomains        []string
 	sharedGitHubWebhookSecret string
+	sharedSiteDomain          string
+	sharedPrimaryDomain       string
 )
 
 func Router() *router.Router      { return mux }
@@ -29,18 +31,35 @@ func GetMiddleware() *Middleware  { return mw }
 func SiteFetchDomains() []string  { return sharedFetchDomains }
 func GitHubWebhookSecret() string { return sharedGitHubWebhookSecret }
 
+// SiteDomain is the optional dedicated domain for project static sites
+// (BUILDHOST_SITE_DOMAIN); "" when the feature is off. When set, project sites
+// are also served at {project}.<SiteDomain> and the SSO handoff routes exist.
+func SiteDomain() string { return sharedSiteDomain }
+
+// PrimaryDomain is the apex carrying the GitHub OAuth callback
+// (BUILDHOST_PRIMARY_DOMAIN); "" when unset. Site-domain browser sign-ins
+// redirect to https://<PrimaryDomain>/__signin.
+func PrimaryDomain() string { return sharedPrimaryDomain }
+
 func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
 }
 
-func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string, githubWebhookSecret, githubClientID, githubClientSecret string) {
+func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string, githubWebhookSecret, githubClientID, githubClientSecret, siteDomain, primaryDomain string) {
 	sharedDB = database
 	sharedStore = store
 	sharedData = dataDir
 	sharedFetchDomains = siteFetchDomains
 	sharedGitHubWebhookSecret = githubWebhookSecret
+	sharedSiteDomain = strings.ToLower(strings.Trim(siteDomain, " ."))
+	sharedPrimaryDomain = strings.ToLower(strings.Trim(primaryDomain, " ."))
 
 	initDownloadSecret(dataDir)
+	// Config-conditional: registers the /__sso handoff routes only when a site
+	// domain is configured, so an unset BUILDHOST_SITE_DOMAIN leaves the route
+	// table byte-identical. Must run before the OnReady funcs below only for
+	// tidiness -- route precedence is score-based, not registration-order-based.
+	registerSSOHandoffRoutes()
 
 	mw = &Middleware{
 		DB: database,
@@ -81,6 +100,39 @@ func servicePattern(subdomain, pattern string) string {
 		rest = pattern[i+1:]
 	}
 	return method + subdomain + ".{domain}" + rest
+}
+
+// siteDomainPattern turns a path-only pattern into a host+path pattern anchored
+// to a project label under a configured site domain, e.g. ("pazer.site",
+// "GET /{path...}") becomes "GET {project}.pazer.site/{path...}". A non-final
+// host parameter binds exactly one request-host label, so the handler reads the
+// project name via r.PathValue("project"). The pattern's two literal host
+// labels outrank every service route's one, so the site domain's whole
+// one-label-deep host space belongs to the project family.
+func siteDomainPattern(domain, pattern string) string {
+	method := ""
+	rest := pattern
+	if i := strings.IndexByte(pattern, ' '); i >= 0 {
+		method = pattern[:i+1] // keep the trailing space
+		rest = pattern[i+1:]
+	}
+	return method + "{project}." + domain + rest
+}
+
+// SiteDomainHandle registers a project-auth'd route on the {project}.<domain>
+// scheme, the site-domain sibling of ServiceHandle. domain must be a literal
+// (registration is per configured domain -- a {project}.{domain} form would
+// swallow every >=3-label host with zero host literals and lose to every
+// service route).
+func SiteDomainHandle(domain, pattern string, parse ParseFunc, handler http.HandlerFunc) {
+	mux.HandleFunc(siteDomainPattern(domain, pattern), router.Allow, requireProjectFunc(parse, handler))
+}
+
+// SiteDomainHandleRaw registers an unauthenticated route on the
+// {project}.<domain> scheme (the /__sso redemption endpoint -- its caller is by
+// definition unauthenticated).
+func SiteDomainHandleRaw(domain, pattern string, handler http.HandlerFunc) {
+	mux.HandleFunc(siteDomainPattern(domain, pattern), router.Allow, handler)
 }
 
 func ServiceHandle(subdomain, pattern string, parse ParseFunc, handler http.HandlerFunc) {

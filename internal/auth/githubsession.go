@@ -171,9 +171,16 @@ func clearCookie(w http.ResponseWriter, r *http.Request, name, path string) {
 // callback run, stripping is a no-op; it matters when the dead-session re-auth
 // (unauthorizedResponse) clears the cookie from a service subdomain, since a
 // Set-Cookie only removes the domain-wide cookie if its Domain matches the one
-// the cookie was set with.
+// the cookie was set with. A host on the configured site domain classifies to
+// the SITE apex (myapp.pazer.site -> pazer.site) -- a different registrable
+// domain -- so a cookie minted by the /__sso redemption covers every project
+// site under the domain, and a clear from a site host removes the site-domain
+// cookie.
 func apexHost(r *http.Request) string {
 	host := hostNoPort(r.Host)
+	if sd := siteApexOf(host); sd != "" {
+		return sd
+	}
 	if dot := strings.IndexByte(host, '.'); dot > 0 && knownServiceLabels[host[:dot]] {
 		host = host[dot+1:]
 	}
@@ -200,6 +207,14 @@ func safeNextURL(r *http.Request, next string) string {
 	apex := apexHost(r)
 	host := u.Hostname()
 	if host == apex || strings.HasSuffix(host, "."+apex) {
+		return next
+	}
+	// The configured site domain (or exactly one label under it) is part of this
+	// deployment too: the cross-domain handoff signs a browser in on the primary
+	// apex and returns it to a project site. Anything else is still rejected --
+	// notably lookalikes like x.<site-domain>.evil.com, which fail siteApexOf's
+	// exact-suffix check.
+	if siteApexOf(host) != "" {
 		return next
 	}
 	return root + "/"
