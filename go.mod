@@ -60,6 +60,9 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 )
 
+// TODO(router): requires wow-look-at-my/router PR #7 (host label params); replace is dropped + pin bumped to the merged master commit at finalize.
+replace github.com/wow-look-at-my/router => /tmp/router-local
+
 replace gonum.org/v1/gonum v0.17.0 => github.com/gonum/gonum v0.17.0
 
 replace go.yaml.in/yaml/v3 v3.0.4 => github.com/yaml/go-yaml/v3 v3.0.4

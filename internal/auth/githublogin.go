@@ -107,10 +107,23 @@ func githubAuthEnabled() bool { return githubAuth() != nil }
 
 // loginRedirectURL is the absolute URL a browser needing to authenticate is sent
 // to: the apex sign-in entrypoint, carrying a next= back to the full original
-// URL (which may be on a service subdomain).
+// URL (which may be on a service subdomain). A request on the configured site
+// domain cannot run the OAuth flow on its own apex -- the single GitHub OAuth
+// callback is registered on the primary apex -- so it is sent there instead and
+// /__sso hands the session back afterward. Returns "" when that hop is
+// unavailable (site-domain host, no BUILDHOST_PRIMARY_DOMAIN configured); the
+// caller then falls back to the plain JSON 401.
 func loginRedirectURL(r *http.Request) string {
 	next := RequestBaseURL(r) + r.URL.RequestURI()
-	return apexRootURL(r) + signinStartPath + "?next=" + url.QueryEscape(next)
+	base := apexRootURL(r)
+	if requestSiteApex(r) != "" {
+		pd := PrimaryDomain()
+		if pd == "" {
+			return ""
+		}
+		base = RequestScheme(r) + "://" + pd
+	}
+	return base + signinStartPath + "?next=" + url.QueryEscape(next)
 }
 
 // signoutURL is the apex sign-out entrypoint, carrying a next= back to the full
@@ -126,12 +139,16 @@ func signoutURL(r *http.Request) string {
 // stripping a known leading service label (apt/dl/sites/...). Correct whether
 // called from a service subdomain (strips it) or the apex itself (nothing to
 // strip) -- unlike RequestRootURL, which strips the first label unconditionally.
+// A host on the configured site domain classifies to the SITE apex (myapp.pazer.site
+// -> pazer.site): it is a different registrable domain, never the primary apex.
 func apexRootURL(r *http.Request) string {
 	host, port := r.Host, ""
 	if i := strings.LastIndex(host, ":"); i >= 0 {
 		host, port = host[:i], host[i:]
 	}
-	if dot := strings.IndexByte(host, '.'); dot > 0 && knownServiceLabels[host[:dot]] {
+	if sd := siteApexOf(host); sd != "" {
+		host = sd
+	} else if dot := strings.IndexByte(host, '.'); dot > 0 && knownServiceLabels[host[:dot]] {
 		host = host[dot+1:]
 	}
 	return RequestScheme(r) + "://" + host + port
@@ -152,6 +169,17 @@ func handleSigninStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next := safeNextURL(r, r.URL.Query().Get("next"))
+	// Instant cross-domain handoff: the browser already holds a valid session on
+	// this apex and is heading to a site-domain destination -- skip the GitHub
+	// round-trip entirely and hand the existing session across via /__sso.
+	if c, err := r.Cookie(sessionCookieName); err == nil {
+		if _, _, ok := verifySession(c.Value); ok {
+			if target := mintSiteHandoff(c.Value, next); target != "" {
+				http.Redirect(w, r, target, http.StatusSeeOther)
+				return
+			}
+		}
+	}
 	// retry=1 marks a flow the callback auto-restarted after a recoverable
 	// failure. The marker rides the signed state, so if the restarted flow fails
 	// again the callback renders a terminal page instead of redirecting forever.
@@ -238,8 +266,18 @@ func handleSigninCallback(w http.ResponseWriter, r *http.Request) {
 	slog.InfoContext(r.Context(), "github signin: signed in", "login", login)
 	// The session carries the user's login and token; per-resource authorization
 	// is the user's access to that project's repo, checked at request time.
-	setSessionCookie(w, r, mintSession(login, token, time.Now().Add(sessionMaxAge*time.Second)))
-	http.Redirect(w, r, safeNextURL(r, st.next), http.StatusSeeOther)
+	session := mintSession(login, token, time.Now().Add(sessionMaxAge*time.Second))
+	setSessionCookie(w, r, session)
+	dest := safeNextURL(r, st.next)
+	// A site-domain destination cannot receive this apex's cookie (different
+	// registrable domain): park the session and send the browser through the
+	// site domain's /__sso, which sets it there. The session value itself never
+	// rides the URL -- only a signed one-time code.
+	if target := mintSiteHandoff(session, dest); target != "" {
+		http.Redirect(w, r, target, http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
 
 // restartOrFail handles a recoverable callback failure (expired state, nonce
@@ -265,6 +303,13 @@ func signinFailedHTML(w http.ResponseWriter, r *http.Request, status int, reason
 	if next != "" {
 		retry += "?next=" + url.QueryEscape(next)
 	}
+	signinFailedPage(w, r, status, reason, retry)
+}
+
+// signinFailedPage is the shared terminal failure page body, parameterized on
+// the restart URL so the /__sso redemption (whose restart lives on the PRIMARY
+// apex, not this request's own) can reuse it.
+func signinFailedPage(w http.ResponseWriter, _ *http.Request, status int, reason, retry string) {
 	// Relax the global default-src 'none' just enough for the one inline <style>;
 	// no scripts, no external resources (same approach as signedInForbiddenHTML).
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
@@ -608,8 +653,15 @@ func clearCookie(w http.ResponseWriter, r *http.Request, name, path string) {
 
 // apexHost is the registrable host the session cookie is scoped to (request Host
 // minus port). /__signin runs on the apex, so r.Host is already the apex there.
+// A site-domain host classifies to the site apex (myapp.pazer.site ->
+// pazer.site), so a cookie minted by the /__sso redemption covers every project
+// site under the domain.
 func apexHost(r *http.Request) string {
-	return hostNoPort(r.Host)
+	host := hostNoPort(r.Host)
+	if sd := siteApexOf(host); sd != "" {
+		return sd
+	}
+	return host
 }
 
 // safeNextURL keeps post-login redirects inside this deployment: it accepts an
@@ -632,6 +684,14 @@ func safeNextURL(r *http.Request, next string) string {
 	apex := apexHost(r)
 	host := u.Hostname()
 	if host == apex || strings.HasSuffix(host, "."+apex) {
+		return next
+	}
+	// The configured site domain (or exactly one label under it) is part of this
+	// deployment too: the cross-domain handoff signs a browser in on the primary
+	// apex and returns it to a project site. Anything else is still rejected --
+	// notably lookalikes like x.<site-domain>.evil.com, which fail siteApexOf's
+	// exact-suffix check.
+	if siteApexOf(host) != "" {
 		return next
 	}
 	return root + "/"
