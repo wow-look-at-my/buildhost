@@ -55,9 +55,14 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case !signedIn && TokenFrom(r.Context()) == nil:
 			// Anonymous browser: send them to GitHub to sign in, returning to the
-			// resource afterward.
-			http.Redirect(w, r, loginRedirectURL(r), http.StatusSeeOther)
-			return
+			// resource afterward. On a site-domain host the sign-in entrypoint is
+			// the PRIMARY apex (the OAuth callback lives there); when no primary
+			// domain is configured that hop is unavailable and loginRedirectURL
+			// returns "" -- fall through to the plain JSON 401 below.
+			if target := loginRedirectURL(r); target != "" {
+				http.Redirect(w, r, target, http.StatusSeeOther)
+				return
+			}
 		case signedIn:
 			if SessionTokenDeadFrom(r.Context()) {
 				// Signed in, but the GitHub token embedded in the session cookie is
@@ -70,8 +75,15 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 				// fresh token, so a re-signed-in browser cannot bounce straight
 				// back here with another dead token.
 				clearCookie(w, r, sessionCookieName, "/")
-				http.Redirect(w, r, loginRedirectURL(r), http.StatusSeeOther)
-				return
+				if target := loginRedirectURL(r); target != "" {
+					http.Redirect(w, r, target, http.StatusSeeOther)
+					return
+				}
+				// Site-domain host with no primary domain configured: the
+				// cross-domain re-auth hop is unavailable. The dead cookie is
+				// cleared; fall through to the JSON 401 (never the forbidden
+				// page -- the account was never checked).
+				break
 			}
 			// Signed in with a live token, but not authorized for this resource
 			// (their GitHub account can't read the backing repo, or the project
