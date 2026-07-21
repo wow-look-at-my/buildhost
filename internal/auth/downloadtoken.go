@@ -137,13 +137,17 @@ var knownServiceLabels = map[string]bool{
 // request Host by stripping a known leading service/admin label. Unlike
 // DeriveServiceURL -- which strips the first label unconditionally and is only
 // correct when called from a service subdomain -- this is also correct from the
-// apex, so it works for both the apex REST API and the admin subdomain.
+// apex, so it works for both the apex REST API and the admin subdomain. A host
+// on the configured site domain classifies to the site apex (its {project}
+// label is a project name, not a service).
 func ApexServiceURL(r *http.Request, service string) *url.URL {
 	host, port := r.Host, ""
 	if i := strings.LastIndex(host, ":"); i >= 0 {
 		host, port = host[:i], host[i:]
 	}
-	if dot := strings.IndexByte(host, '.'); dot > 0 && knownServiceLabels[host[:dot]] {
+	if sd := siteApexOf(host); sd != "" {
+		host = sd
+	} else if dot := strings.IndexByte(host, '.'); dot > 0 && knownServiceLabels[host[:dot]] {
 		host = host[dot+1:]
 	}
 	return &url.URL{Scheme: RequestScheme(r), Host: service + "." + host + port}
