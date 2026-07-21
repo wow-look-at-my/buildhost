@@ -34,6 +34,21 @@ inputs:
     description: 'Serve the site publicly even when the source repo/project is private. The project itself (and any release artifacts) stays private; only this site branch is opened.'
     required: false
     default: 'false'
+  create_deployment:
+    description: >-
+      Register this site publish as a GitHub Deployment in the calling repo
+      (with a success status linking to the live site URL). Needs
+      `deployments: write` in the calling job's permissions block; without it
+      the step warns and skips -- deployments are additive and never fail the
+      publish. Set 'false' to opt out (and silence the warning).
+    required: false
+    default: 'true'
+  deployment_environment:
+    description: >-
+      GitHub Deployment environment name (defaults to
+      `buildhost/<project>/<branch>`).
+    required: false
+    default: ''
 
 outputs:
   response:
@@ -48,6 +63,70 @@ runs:
   steps:
     - name: Refuse jobs named all-builds
       uses: wow-look-at-my/actions@no-all-builds-job#latest
+
+    # Best-effort GitHub Deployment registration: the site publish shows up in
+    # the calling repo's Environments/Deployments UI with a link to the live
+    # site. Requires `deployments: write` in the calling job; without it the
+    # step warns and skips -- it can never fail the publish.
+    - name: Create GitHub Deployment
+      id: deployment
+      if: ${{ inputs.create_deployment == 'true' }}
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            core.setOutput('deployment_id', '');
+            try {
+              const projectInput: string = "${{ inputs.project }}";
+              const project: string = projectInput || github.repository.split('/').pop()!;
+              const branch: string = "${{ inputs.branch }}";
+              const envInput: string = "${{ inputs.deployment_environment }}";
+              const environment: string = envInput || `buildhost/${project}/${branch}`;
+              const gitCommitInput: string = "${{ inputs.git_commit }}";
+              const ref: string = gitCommitInput || context.sha;
+              // PR-preview branches (pr-<n>, as deployed by the
+              // buildhost-preview reusable workflow) are transient
+              // environments: GitHub expects them to go away again.
+              const transient = /^pr-\d+$/.test(branch);
+              const defaultBranch: string = context.payload.repository?.default_branch ?? '';
+              const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+              // required_contexts MUST be [] (the API default is "every commit
+              // status", and the org's all-builds status is still pending on
+              // this sha mid-run -> 409 Conflict); auto_merge MUST be false
+              // (the API default would try to merge the default branch into
+              // ref). A 2xx response without an id (e.g. the 202 auto-merge
+              // shape) is treated as "no deployment".
+              const dep = await octokit.rest.repos.createDeployment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref,
+                environment,
+                auto_merge: false,
+                required_contexts: [],
+                transient_environment: transient,
+                production_environment: !transient && defaultBranch !== '' && branch === defaultBranch,
+                description: `buildhost site publish of ${project} (branch ${branch})`.slice(0, 140),
+              });
+              const id = (dep.data as any)?.id;
+              if (typeof id !== 'number') {
+                core.warning(`GitHub Deployment not created (HTTP ${dep.status}); publishing without one`);
+                return;
+              }
+              core.setOutput('deployment_id', String(id));
+              await octokit.rest.repos.createDeploymentStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: id,
+                state: 'in_progress',
+                log_url: runUrl,
+                description: 'Publishing site to buildhost',
+              });
+              core.info(`Created GitHub Deployment ${id} in environment '${environment}'`);
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              core.warning(`Skipping GitHub Deployment (${msg}). Grant 'deployments: write' in the calling job's permissions block, or set create_deployment: 'false' to silence this warning.`);
+            }
+          })();
 
     - id: publish
       uses: wow-look-at-my/actions@typescript#latest
@@ -134,4 +213,35 @@ runs:
             core.info(JSON.stringify(JSON.parse(text), null, 2));
             core.setOutput('response', text);
             core.setOutput('site_url', siteURL);
+          })();
+
+    # Terminal status for the GitHub Deployment created above; runs even when
+    # the publish failed so the deployment is marked failure instead of
+    # dangling in_progress. Never fails the action.
+    - name: Finish GitHub Deployment
+      id: deployment-status
+      if: ${{ always() && steps.deployment.outputs.deployment_id != '' }}
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            try {
+              const publishOutcome: string = "${{ steps.publish.outcome }}";
+              const ok = publishOutcome === 'success';
+              const environmentUrl: string = "${{ steps.publish.outputs.site_url }}";
+              const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+              await octokit.rest.repos.createDeploymentStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: Number("${{ steps.deployment.outputs.deployment_id }}"),
+                state: ok ? 'success' : 'failure',
+                log_url: runUrl,
+                ...(ok && environmentUrl !== '' ? { environment_url: environmentUrl } : {}),
+                description: ok ? 'Site published to buildhost' : 'buildhost site publish failed',
+              });
+              core.info(`GitHub Deployment marked ${ok ? 'success' : 'failure'}`);
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              core.warning(`Could not update the GitHub Deployment status (${msg})`);
+            }
           })();
