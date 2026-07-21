@@ -44,6 +44,16 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		attribute.String("sites.branch", rt.branch),
 	)
 
+	// The branch was previously stored verbatim (any bytes the router decoded).
+	// Enforce the same charset the rest of the system uses for git refs
+	// (api validGitBranch / auth validRefName): serve-side longest-match
+	// resolution skips out-of-charset candidates, so an unservable branch must
+	// never be accepted in the first place.
+	if !validSiteBranch(rt.branch) {
+		http.Error(w, `{"error":"invalid branch name: 1-256 characters of [a-zA-Z0-9._/-]"}`, http.StatusBadRequest)
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, maxSiteUploadSize)
 
 	// Resolve body and content type — either direct upload or URL fetch.
