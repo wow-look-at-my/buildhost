@@ -145,7 +145,7 @@ func TestCreateAndGetPackagedArtifact(t *testing.T) {
 
 	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "deb", "debkey", 600, "debhash", "pkg.deb", `{"arch":"amd64"}`))
 
-	key, size, sha, filename, err := d.GetPackagedArtifact(ctx, a.ID, "deb")
+	key, size, sha, filename, metadata, err := d.GetPackagedArtifact(ctx, a.ID, "deb")
 	require.Nil(t, err)
 
 	assert.Equal(t, "debkey", key)
@@ -155,6 +155,8 @@ func TestCreateAndGetPackagedArtifact(t *testing.T) {
 	assert.Equal(t, "debhash", sha)
 
 	assert.Equal(t, "pkg.deb", filename)
+
+	assert.Equal(t, `{"arch":"amd64"}`, metadata)
 
 }
 
@@ -174,7 +176,7 @@ func TestGetPackagedArtifactNotFound(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	_, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "rpm")
+	_, _, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "rpm")
 	assert.True(t, errors.Is(err, ErrNotFound))
 
 }
@@ -200,7 +202,7 @@ func TestCreatePackagedArtifactUpserts(t *testing.T) {
 
 	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "deb", "key2", 200, "sha2", "f2.deb", "{}"))
 
-	key, size, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "deb")
+	key, size, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "deb")
 	require.Nil(t, err)
 
 	assert.Equal(t, "key2", key)
