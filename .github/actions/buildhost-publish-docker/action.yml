@@ -1,5 +1,5 @@
 name: Build and publish docker image to Buildhost
-version: 2
+version: 3
 description: >
   Build a Docker image with buildx and push it to a buildhost OCI registry in a
   single step, authenticating with a GitHub Actions OIDC token (no static
@@ -32,8 +32,16 @@ inputs:
       Newline-separated image tags. A bare tag (e.g. "latest" or a commit SHA)
       is expanded to <registry>/<project>:<tag>; a value containing "/" or ":"
       is used as a full image reference (so you can also push to another
-      registry you have already logged in to). Defaults to the commit SHA and
-      "latest".
+      registry you have already logged in to). When omitted, defaults to the
+      commit SHA plus the docker-sanitized ref name (branch or git tag:
+      lowercased, runs of characters outside [a-z0-9._-] become "-", leading
+      dots/dashes stripped -- so "claude/foo" pushes as "claude-foo", a bare
+      buildhost tag, never a foreign reference), and "latest" ONLY when the
+      push is to the repository's default branch -- pushed OCI tags are
+      mutable pointers, so a feature-branch push must not move the :latest
+      ref that stable consumers track. (The default branch is read from the
+      event payload; events without one, e.g. schedule, fall back to
+      "master" and so never add "latest" on a "main"-defaulted repo.)
     required: false
     default: ''
   platforms:
@@ -78,6 +86,29 @@ runs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
+    # When `tags` is omitted, compute branch-aware defaults instead of an
+    # unconditional "SHA + latest": pushed OCI tags are mutable pointers
+    # (resolved before buildhost's default-branch fallback), so defaulting
+    # `latest` everywhere would let any feature-branch push hijack the stable
+    # :latest ref consumers track (e.g. a docker-updater re-pulling it).
+    - name: Compute default tags
+      id: default-tags
+      if: ${{ inputs.tags == '' }}
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          // Short ref name, mirroring GITHUB_REF_NAME: the branch for
+          // refs/heads/*, the git tag for refs/tags/*, "<pr>/merge" for pulls.
+          const refName: string = env.GITHUB_REF_NAME ?? context.ref.replace(/^refs\/[^/]+\//, "");
+          const defaultBranch: string = context.payload.repository?.default_branch ?? "master";
+          // Docker-sanitize so the result is always a bare (buildhost-bound)
+          // tag: "claude/foo" -> "claude-foo", never a foreign reference.
+          const refTag = refName.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[.-]+/, "");
+          const tags = [context.sha, refTag].filter(Boolean);
+          if (context.ref === `refs/heads/${defaultBranch}`) tags.push("latest");
+          core.setOutput("tags", tags.join("\n"));
+          core.info(`tags input omitted; defaulting to: ${tags.join(", ")}`);
+
     - name: Resolve image references
       id: refs
       shell: bash
@@ -85,6 +116,7 @@ runs:
         SERVER: ${{ inputs.server }}
         PROJECT: ${{ inputs.project }}
         TAGS: ${{ inputs.tags }}
+        DEFAULT_TAGS: ${{ steps.default-tags.outputs.tags }}
         EXTRA_LABELS: ${{ inputs.labels }}
         CACHE: ${{ inputs.cache }}
       run: |
@@ -96,7 +128,7 @@ runs:
         if [ -n "${TAGS}" ]; then
           tags_in="${TAGS}"
         else
-          printf -v tags_in '%s\n%s' "${GITHUB_SHA}" "latest"
+          tags_in="${DEFAULT_TAGS}"
         fi
 
         # Split references into buildhost-bound ones (pushed by the chunk-aware
