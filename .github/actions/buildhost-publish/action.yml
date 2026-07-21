@@ -37,6 +37,17 @@ inputs:
       for (the repo project and any <repo>/<binary> sub-projects).
     required: false
     default: ''
+  default_branch:
+    description: >-
+      The repo's default branch (e.g. 'main'). When set, the apex "latest"
+      tracks this branch for each published project -- a manual override for
+      publishers whose default branch the server cannot learn itself (private
+      repos it cannot reach, non-GitHub publishers). Empty (the default)
+      sends nothing, leaving the stored project setting untouched --
+      byte-identical requests to before this input existed. Applies to every
+      project this publish creates a release for.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -63,6 +74,7 @@ runs:
               core.setFailed(`create_service must be 'true', 'false', or empty; got '${inputBrewService}'`);
               return;
             }
+            const inputDefaultBranch: string = "${{ inputs.default_branch }}";
 
             const server = "${{ inputs.server }}";
             const project = inputProject.length > 0 ? inputProject : github.repository.split("/").pop()!;
@@ -231,6 +243,7 @@ runs:
               // value is asserted on every publish. An older server ignores
               // the unknown field.
               ...(inputBrewService.length > 0 ? { create_service: inputBrewService === 'true' } : {}),
+              ...(inputDefaultBranch.length > 0 ? { default_branch: inputDefaultBranch } : {}),
             });
 
             // Resolve a release version from a create-release response (201 new,
