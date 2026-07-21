@@ -13,7 +13,7 @@ require (
 	github.com/ulikunitz/xz v0.5.15
 	github.com/wow-look-at-my/go-mmap v0.0.0-20260524160502-7c9fb35436a9
 	github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260709175026-98aa140090d9
-	github.com/wow-look-at-my/router v0.0.0-20260609085900-fcf2d9b53cf1
+	github.com/wow-look-at-my/router v0.0.0-20260721161008-302008ab1248
 	go.opentelemetry.io/contrib/bridges/otelslog v0.18.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.19.0
