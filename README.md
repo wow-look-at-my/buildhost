@@ -538,6 +538,21 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
   http://sites.localhost:8080/myapp/branch/main
 ```
 
+### Project site subdomains (optional)
+
+Set `BUILDHOST_SITE_DOMAIN` (e.g. `pazer.site`) to also serve each project's site
+at `https://<project>.<domain>/` -- the default branch on bare paths, any other
+branch behind a `~` sigil: `https://myapp.pazer.site/~pr-7/`.
+
+- Slash-named branches (`claude/foo`) resolve by longest match; a `~<default-branch>`
+  URL 302s to the canonical bare form.
+- Only project names that are a single DNS label serve here (`[a-z0-9-]`, max 63,
+  no leading/trailing `-`); everything else stays on `sites.<apex>/...`.
+- Reserved on this scheme: a leading `~` path segment and the literal `/__sso`.
+- Private sites sign in via the primary apex: set `BUILDHOST_PRIMARY_DOMAIN`
+  (e.g. `pazer.build`) and the browser authenticates there (same single GitHub
+  OAuth app), then is handed back to the site domain -- no second OAuth app.
+
 ## Large uploads
 
 buildhost accepts single uploads up to 2 GiB, but a proxy in front of it may

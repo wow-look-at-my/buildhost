@@ -67,7 +67,11 @@ func aptSigningKey(t *testing.T) []byte {
 	return aptKeyBytes
 }
 
-func setup(t *testing.T) *testEnv {
+func setup(t *testing.T) *testEnv { return setupWith(t, nil) }
+
+// setupWith boots a full server whose config was adjusted by mutate (nil for
+// the defaults) -- e.g. the site-domain tests set cfg.SiteDomain/PrimaryDomain.
+func setupWith(t *testing.T, mutate func(*config.Config)) *testEnv {
 	t.Helper()
 
 	dbDir := t.TempDir()
@@ -89,6 +93,9 @@ func setup(t *testing.T) *testEnv {
 		ListenAddr: ":0",
 		DataDir:    dbDir,
 		DBPath:     dbPath,
+	}
+	if mutate != nil {
+		mutate(&cfg)
 	}
 
 	srv := server.New(cfg, database, store)

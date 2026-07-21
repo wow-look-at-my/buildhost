@@ -244,7 +244,7 @@ buildhost publish-site --server __BASE_URL__ --token $TOKEN \
   --project myapp --branch main --dir ./dist
 # served at __SITES_URL__/myapp/branch/main/
 ```
-
+__SITE_SECTION__
 ## REST API reference
 
 API routes are on the main domain. Service-specific routes use subdomains.
