@@ -70,6 +70,8 @@ github.com/wow-look-at-my/go-mmap v0.0.0-20260524160502-7c9fb35436a9 h1:par9Tv9k
 github.com/wow-look-at-my/go-mmap v0.0.0-20260524160502-7c9fb35436a9/go.mod h1:JM0y3LYD27uGHE34wamVHIaIvYx/vugAaqE20bsLvqs=
 github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260709175026-98aa140090d9 h1:vW0fNDiaZl387wOBvMY6sisi9Neo4u0QDY54p20TsxE=
 github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260709175026-98aa140090d9/go.mod h1:EMTej8E5qYiv8JsKJ50LQBzShqC2EUi7h4sZ7/j4968=
+github.com/wow-look-at-my/router v0.0.0-20260721161008-302008ab1248 h1:Q+azGb/H5f/XaV2m5Rpx2QEy8r76hFz2gFifXKEUYg8=
+github.com/wow-look-at-my/router v0.0.0-20260721161008-302008ab1248/go.mod h1:De660ANDS/5mxdUW1xBGkp4+VT0pkhwdj767nYfoaKw=
 github.com/wow-look-at-my/testify v0.0.0-20260217010200-5fd2c08e3abb h1:kLSElPimf1wjuunb+noAlkV/xzrE65BzqnQr3Xr31u4=
 github.com/wow-look-at-my/testify v0.0.0-20260217010200-5fd2c08e3abb/go.mod h1:xlD/Hz0iizP83KvPMWiQ8dbEvfjRGQ2A5qsK+GBq9do=
 github.com/yaml/go-yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=

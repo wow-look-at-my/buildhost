@@ -13,7 +13,7 @@ require (
 	github.com/ulikunitz/xz v0.5.15
 	github.com/wow-look-at-my/go-mmap v0.0.0-20260524160502-7c9fb35436a9
 	github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260709175026-98aa140090d9
-	github.com/wow-look-at-my/router v0.0.0-20260609085900-fcf2d9b53cf1
+	github.com/wow-look-at-my/router v0.0.0-20260721161008-302008ab1248
 	go.opentelemetry.io/contrib/bridges/otelslog v0.18.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.19.0
@@ -59,9 +59,6 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
-
-// TODO(router): requires wow-look-at-my/router PR #7 (host label params); replace is dropped + pin bumped to the merged master commit at finalize.
-replace github.com/wow-look-at-my/router => /tmp/router-local
 
 replace gonum.org/v1/gonum v0.17.0 => github.com/gonum/gonum v0.17.0
 
