@@ -9,7 +9,7 @@ concurrency:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
   packages: write
   # Required by the publish-ghcr reusable workflow (it verifies actions:read to
   # download build artifacts). A reusable workflow cannot be granted more than
@@ -19,11 +19,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: write
-      packages: write
-      actions: read
     steps:
       - uses: actions/checkout@v4
       # The CA bundle baked into the binary is fetched here, not committed (so the repo
@@ -415,7 +410,7 @@ jobs:
   # default GitHub Docker (no containerd image store) may not.
   synthesized-image-e2e:
     needs: build
-    runs-on: wow-linux
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/actions@cache-download#latest
@@ -435,7 +430,7 @@ jobs:
 
   apt-install-e2e:
     needs: build
-    runs-on: wow-linux
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/actions@cache-download#latest
@@ -471,7 +466,7 @@ jobs:
   # retention as an abandoned upload, with no CLI way to publish it later).
   upload-artifact-action-e2e:
     needs: build
-    runs-on: wow-linux
+    runs-on: ubuntu-latest
     env:
       BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
       BUILDHOST_BASE_URL: http://localhost:18080
