@@ -51,7 +51,12 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 					if oidcProject != "" {
 						rctx = WithOIDCProject(rctx, oidcProject)
 						rctx = WithOIDCPrivate(rctx, vr.OIDCPrivate)
-						rctx = WithOIDCRepo(rctx, vr.RepoPath, vr.Issuer)
+						rctx = WithOIDCRepo(rctx, OIDCRepoIdentity{
+							RepoPath: vr.RepoPath,
+							Issuer:   vr.Issuer,
+							OwnerID:  vr.OwnerID,
+							RepoID:   vr.RepoID,
+						})
 					}
 					r = r.WithContext(rctx)
 					next.ServeHTTP(w, r)
@@ -335,8 +340,17 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 					return
 				}
 				oidcPrivate, _ := OIDCPrivateFrom(r.Context())
-				oidcRepoPath, _ := OIDCRepoFrom(r.Context())
-				project = &db.Project{Name: ri.ProjectName(), Versioning: db.VersioningAuto, IsPrivate: oidcPrivate, GithubRepo: oidcRepoPath}
+				oidcRepo := OIDCRepoFrom(r.Context())
+				// The numeric IDs are pinned from birth when the token carries them,
+				// so a later re-created repo under the same name is refused below.
+				project = &db.Project{
+					Name:          ri.ProjectName(),
+					Versioning:    db.VersioningAuto,
+					IsPrivate:     oidcPrivate,
+					GithubRepo:    oidcRepo.RepoPath,
+					GithubOwnerID: oidcRepo.OwnerID,
+					GithubRepoID:  oidcRepo.RepoID,
+				}
 				createErr := mw.DB.CreateProject(r.Context(), project)
 				if createErr != nil && !errors.Is(createErr, db.ErrConflict) {
 					http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
@@ -375,24 +389,73 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						parentSpan.SetAttributes(attribute.Bool("project.visibility_synced", true))
 					}
 				}
-				// The OIDC publish subject carries the repo identity; use it for two
-				// things, both derived from the token (nothing sent in the request):
-				// (1) record owner/repo on the project so GitHub-login authz can check
-				// the user's access to it; (2) resolve the repo's default branch from
-				// GitHub (best-effort, cached, GitHub Actions issuer only) so the apex
-				// "latest" tracks it.
-				if repoPath, issuer := OIDCRepoFrom(r.Context()); repoPath != "" {
-					if project.GithubRepo != repoPath {
-						if updateErr := mw.DB.SetProjectGitHubRepo(r.Context(), project.ID, repoPath); updateErr == nil {
-							project.GithubRepo = repoPath
+				// The OIDC token carries the repo identity; use it for three things,
+				// all derived from the token (nothing sent in the request):
+				// (1) pin/verify the numeric GitHub IDs against rename/resurrection
+				// takeover; (2) record owner/repo on the project so GitHub-login authz
+				// can check the user's access to it; (3) resolve the repo's default
+				// branch from GitHub (best-effort, cached, GitHub Actions issuer only)
+				// so the apex "latest" tracks it.
+				if repo := OIDCRepoFrom(r.Context()); repo.RepoPath != "" {
+					if repo.OwnerID != "" && repo.RepoID != "" {
+						if project.GithubOwnerID != "" || project.GithubRepoID != "" {
+							// Rename/resurrection guard: GitHub NAMES are reusable --
+							// delete (or rename) a repo and a stranger can re-register the
+							// name and mint valid OIDC tokens for the same "owner/repo" --
+							// but the numeric IDs are not. A token whose IDs disagree with
+							// the pin may not act on the project, read or write.
+							if project.GithubOwnerID != repo.OwnerID || project.GithubRepoID != repo.RepoID {
+								slog.WarnContext(r.Context(), "OIDC repo identity mismatch",
+									"project", project.Name,
+									"repo", repo.RepoPath,
+									"pinned_owner_id", project.GithubOwnerID,
+									"pinned_repo_id", project.GithubRepoID,
+									"token_owner_id", repo.OwnerID,
+									"token_repo_id", repo.RepoID,
+									"oidc_subject", t.Name,
+								)
+								if ri.Access() == HiddenReadAccess {
+									// Hidden reads answer every unauthorized caller with the
+									// canonical 404 so existence never leaks; keep that here.
+									projectNotFound(w)
+									return
+								}
+								msg := fmt.Sprintf("OIDC repo identity mismatch: token for %s carries GitHub ids owner=%s repo=%s, but project %q is pinned to owner=%s repo=%s; a renamed or re-created (resurrected) repository may not take over an existing project -- if this project should belong to the new repo, an operator must clear or re-pin its recorded GitHub identity",
+									repo.RepoPath, repo.OwnerID, repo.RepoID, project.Name, project.GithubOwnerID, project.GithubRepoID)
+								w.Header().Set("Content-Type", "application/json")
+								w.WriteHeader(http.StatusForbidden)
+								body, _ := json.Marshal(map[string]string{"error": msg})
+								w.Write(body)
+								return
+							}
+						} else if ri.Access() == WriteAccess {
+							// Legacy project with no pinned IDs: pin them on the first
+							// ID-bearing publish (trust on first use). Write-only, mirroring
+							// provisioning -- a read never mutates project state.
+							if updateErr := mw.DB.SetProjectGitHubIDs(r.Context(), project.ID, repo.OwnerID, repo.RepoID); updateErr == nil {
+								slog.WarnContext(r.Context(), "OIDC repo identity pinned",
+									"project", project.Name,
+									"repo", repo.RepoPath,
+									"owner_id", repo.OwnerID,
+									"repo_id", repo.RepoID,
+								)
+								project.GithubOwnerID = repo.OwnerID
+								project.GithubRepoID = repo.RepoID
+								parentSpan.SetAttributes(attribute.Bool("project.github_ids_pinned", true))
+							}
 						}
 					}
-					if issuer == GitHubActionsIssuer {
-						if branch := GitHubDefaultBranch(r.Context(), repoPath); branch != "" && branch != project.DefaultBranch {
+					if project.GithubRepo != repo.RepoPath {
+						if updateErr := mw.DB.SetProjectGitHubRepo(r.Context(), project.ID, repo.RepoPath); updateErr == nil {
+							project.GithubRepo = repo.RepoPath
+						}
+					}
+					if repo.Issuer == GitHubActionsIssuer {
+						if branch := GitHubDefaultBranch(r.Context(), repo.RepoPath); branch != "" && branch != project.DefaultBranch {
 							if updateErr := mw.DB.SetProjectDefaultBranch(r.Context(), project.ID, branch); updateErr == nil {
 								slog.WarnContext(r.Context(), "OIDC default-branch sync",
 									"project", project.Name,
-									"repo", repoPath,
+									"repo", repo.RepoPath,
 									"was", project.DefaultBranch,
 									"now", branch,
 								)

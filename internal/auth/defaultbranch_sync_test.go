@@ -43,7 +43,7 @@ func TestRequireProject_OIDCSyncsDefaultBranch(t *testing.T) {
 	tok := &db.APIToken{ID: -1, Scopes: "read,write"}
 	ctx := WithToken(context.Background(), tok)
 	ctx = WithOIDCProject(ctx, "go-toolchain")
-	ctx = WithOIDCRepo(ctx, "wow-look-at-my/go-toolchain", GitHubActionsIssuer)
+	ctx = WithOIDCRepo(ctx, OIDCRepoIdentity{RepoPath: "wow-look-at-my/go-toolchain", Issuer: GitHubActionsIssuer})
 	req := httptest.NewRequest("PUT", "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -80,7 +80,7 @@ func TestRequireProject_NonGitHubIssuer_NoDefaultBranchSync(t *testing.T) {
 	tok := &db.APIToken{ID: -1, Scopes: "read,write"}
 	ctx := WithToken(context.Background(), tok)
 	ctx = WithOIDCProject(ctx, "gitlab-proj")
-	ctx = WithOIDCRepo(ctx, "group/proj", "https://gitlab.example.com")
+	ctx = WithOIDCRepo(ctx, OIDCRepoIdentity{RepoPath: "group/proj", Issuer: "https://gitlab.example.com"})
 	req := httptest.NewRequest("PUT", "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
