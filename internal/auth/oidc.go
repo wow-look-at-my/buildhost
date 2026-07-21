@@ -378,6 +378,32 @@ func base64URLDecode(s string) ([]byte, error) {
 	return base64.RawURLEncoding.DecodeString(s)
 }
 
+// trimImmutableID strips the "@<numeric-id>" suffix from one segment of an
+// OIDC subject repo path. GitHub repos created after 2026-07-15 mint
+// "immutable" subject claims that pin each segment to its account/repo ID --
+// `repo:OWNER@OWNERID/REPO@REPOID:ref:...` -- while classic repos keep the
+// bare `repo:OWNER/REPO:ref:...` form (see
+// https://github.blog/changelog/2026-04-23-immutable-subject-claims-for-github-actions-oidc-tokens/).
+// Org allowlisting, project derivation, and GitHub REST lookups all want the
+// NAME, so the ID is dropped. Only a suffix after the LAST "@" that is
+// non-empty and all digits is stripped (GitHub names cannot contain "@", but
+// be conservative); anything else -- including every classic segment -- passes
+// through byte-for-byte. The raw subject (IDs included) still ends up in the
+// token name ("oidc:<sub>"), so the IDs stay visible in logs and token
+// listings.
+func trimImmutableID(segment string) string {
+	at := strings.LastIndexByte(segment, '@')
+	if at <= 0 || at == len(segment)-1 {
+		return segment
+	}
+	for _, c := range segment[at+1:] {
+		if c < '0' || c > '9' {
+			return segment
+		}
+	}
+	return segment[:at]
+}
+
 func projectFromSubject(subject string) string {
 	if !strings.HasPrefix(subject, "repo:") {
 		return ""
@@ -392,7 +418,7 @@ func projectFromSubject(subject string) string {
 	if slash < 0 {
 		return ""
 	}
-	name := strings.ToLower(repoPath[slash+1:])
+	name := strings.ToLower(trimImmutableID(repoPath[slash+1:]))
 	if !validOIDCProjectName(name) {
 		return ""
 	}
@@ -418,7 +444,10 @@ func validOIDCProjectName(name string) bool {
 // repoPathFromSubject extracts "owner/repo" from a GitHub Actions OIDC subject
 // of the form "repo:OWNER/REPO:...". Returns "" if the subject is not in that
 // form. Unlike projectFromSubject it preserves the owner and original casing,
-// since it feeds a GitHub REST lookup (github.com/OWNER/REPO).
+// since it feeds a GitHub REST lookup (github.com/OWNER/REPO). Immutable
+// numeric IDs ("OWNER@ID/REPO@ID", see trimImmutableID) are stripped so the
+// result stays a valid REST path -- validRepoPath rejects "@", and github.com
+// wants the names.
 func repoPathFromSubject(subject string) string {
 	if !strings.HasPrefix(subject, "repo:") {
 		return ""
@@ -428,7 +457,11 @@ func repoPathFromSubject(subject string) string {
 	if colon < 0 {
 		return ""
 	}
-	return rest[:colon]
+	segments := strings.Split(rest[:colon], "/")
+	for i, s := range segments {
+		segments[i] = trimImmutableID(s)
+	}
+	return strings.Join(segments, "/")
 }
 
 func orgFromSubject(subject string) string {
@@ -445,7 +478,7 @@ func orgFromSubject(subject string) string {
 	if slash < 0 {
 		return ""
 	}
-	return repoPath[:slash]
+	return trimImmutableID(repoPath[:slash])
 }
 
 func matchSubject(pattern, subject string) bool {
