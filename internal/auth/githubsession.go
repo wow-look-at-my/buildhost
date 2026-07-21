@@ -165,10 +165,19 @@ func clearCookie(w http.ResponseWriter, r *http.Request, name, path string) {
 	})
 }
 
-// apexHost is the registrable host the session cookie is scoped to (request Host
-// minus port). /__signin runs on the apex, so r.Host is already the apex there.
+// apexHost is the registrable host the session cookie is scoped to: the request
+// Host minus port, with a known leading service label (sites/dl/...) stripped --
+// the same apex derivation as apexRootURL. On the apex, where /__signin and the
+// callback run, stripping is a no-op; it matters when the dead-session re-auth
+// (unauthorizedResponse) clears the cookie from a service subdomain, since a
+// Set-Cookie only removes the domain-wide cookie if its Domain matches the one
+// the cookie was set with.
 func apexHost(r *http.Request) string {
-	return hostNoPort(r.Host)
+	host := hostNoPort(r.Host)
+	if dot := strings.IndexByte(host, '.'); dot > 0 && knownServiceLabels[host[:dot]] {
+		host = host[dot+1:]
+	}
+	return host
 }
 
 // safeNextURL keeps post-login redirects inside this deployment: it accepts an

@@ -65,11 +65,30 @@ type GitHubAuth struct {
 }
 
 type repoAccess struct {
-	allowed bool
-	exp     time.Time
+	result repoCheckResult
+	exp    time.Time
 }
 
 const repoAccessTTL = 5 * time.Minute
+
+// repoCheckResult classifies one GET /repos/{owner}/{repo} access probe.
+type repoCheckResult int
+
+const (
+	// repoCheckTransient is a non-answer: network error, 5xx, 429, or a 403
+	// (rate limit / abuse detection). Deny the current request, cache nothing.
+	repoCheckTransient repoCheckResult = iota
+	// repoCheckAllowed: 200 -- the token's user can access the repo.
+	repoCheckAllowed
+	// repoCheckNoAccess: 404 -- definite no access (GitHub 404s a repo the
+	// token cannot see rather than 403, so existence never leaks).
+	repoCheckNoAccess
+	// repoCheckTokenDead: 401 -- the credential itself is dead (revoked or
+	// expired), not "no access to this repo". On this fixed-host authenticated
+	// GET, GitHub reports rate limiting as 403/429 -- never 401 -- so a 401
+	// unambiguously means the session's embedded token died mid-session.
+	repoCheckTokenDead
+)
 
 // NewGitHubAuth returns a configured GitHubAuth, or nil if either the client id
 // or secret is empty (the feature is then disabled and browsers fall back to the
