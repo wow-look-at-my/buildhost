@@ -273,6 +273,7 @@ auto-provisions on first push):
 permissions:
   id-token: write   # required to mint the OIDC token
   contents: read
+  deployments: write   # optional, additive: register the publish as a GitHub Deployment
 steps:
   - uses: actions/checkout@v4
   - uses: wow-look-at-my/buildhost/.github/actions/buildhost-publish-docker@master
@@ -294,6 +295,23 @@ existing multi-arch image), use the lower-level `buildhost-docker-login` action,
 which performs the OIDC `docker login` and exposes the registry host
 (`oci.<domain>`) as its `registry` output, so you can push to
 `<registry>/<project>:<tag>` and then run your own docker commands.
+
+## GitHub Deployments
+
+The top-level publish actions -- `buildhost-publish`, `buildhost-publish-site`,
+and `buildhost-publish-docker` -- register each publish as a GitHub Deployment
+in the calling repo: it appears in that repo's Environments/Deployments UI with
+a "View deployment" link to the live buildhost URL (the release page, the site
+URL, or the project page).
+
+- On by default (`create_deployment: 'true'`), but it needs `deployments: write`
+  in the calling job -- without it the step warns and the publish proceeds.
+- `deployments: write` is **additive** to each action's existing permissions
+  (keep `id-token: write` etc.). A job-level `permissions:` block replaces the
+  workflow-level one, so list the full set wherever you declare one.
+- Environments auto-name as `buildhost/<project>` (sites:
+  `buildhost/<project>/<branch>`); override with `deployment_environment`.
+- Set `create_deployment: 'false'` to opt out (and silence the warning).
 
 ## Container image
 
