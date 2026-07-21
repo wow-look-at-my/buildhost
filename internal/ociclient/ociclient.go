@@ -21,7 +21,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
@@ -30,10 +29,6 @@ import (
 
 // retryAttempts bounds per-chunk no-progress loops and status-read retries.
 const retryAttempts = 4
-
-// rangePattern matches the inclusive "start-end" byte range the registry
-// reports in Range headers.
-var rangePattern = regexp.MustCompile(`^([0-9]+)-([0-9]+)$`)
 
 // RetryBaseDelay is doubled per retry (1s, 2s, 4s). Var so tests can shorten it.
 var RetryBaseDelay = time.Second

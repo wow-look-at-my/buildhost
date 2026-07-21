@@ -2,8 +2,6 @@ package ociclient
 
 import (
 	"encoding/json"
-	"fmt"
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
