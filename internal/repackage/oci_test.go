@@ -50,11 +50,11 @@ func TestOCIRepackageEssentials(t *testing.T) {
 	require.NoError(t, err)
 
 	// All three blobs are registered against this artifact so the pull gate serves them.
-	cfgKey, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "oci-config")
+	cfgKey, _, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "oci-config")
 	require.NoError(t, err)
-	baseKey, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "oci-base-layer")
+	baseKey, _, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "oci-base-layer")
 	require.NoError(t, err)
-	_, _, _, _, err = d.GetPackagedArtifact(ctx, a.ID, "oci-layer")
+	_, _, _, _, _, err = d.GetPackagedArtifact(ctx, a.ID, "oci-layer")
 	require.NoError(t, err)
 
 	// Manifest references two layers; the base (essentials) layer is first.
@@ -211,7 +211,7 @@ func TestOCIRepackageUser(t *testing.T) {
 	require.NoError(t, err)
 
 	// The per-release oci_user must surface as config.User in the synthesized config.
-	cfgKey, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "oci-config")
+	cfgKey, _, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "oci-config")
 	require.NoError(t, err)
 	rc, _, err := store.Get(ctx, cfgKey)
 	require.NoError(t, err)
