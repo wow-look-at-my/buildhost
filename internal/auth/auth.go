@@ -18,6 +18,7 @@ const (
 	oidcRepoKey
 	userKey
 	githubTokenKey
+	sessionTokenDeadKey
 )
 
 // OIDCRepoIdentity carries the GitHub repo identity from a verified OIDC
@@ -43,6 +44,22 @@ func WithGitHubToken(ctx context.Context, token string) context.Context {
 func GitHubTokenFrom(ctx context.Context) string {
 	s, _ := ctx.Value(githubTokenKey).(string)
 	return s
+}
+
+// WithSessionTokenDead marks the request's bh_session as carrying a dead GitHub
+// token: the cookie's MAC still verifies (the user counts as signed in), but
+// GitHub answered 401 to the repo-access probe, meaning the embedded token was
+// revoked or expired mid-session. unauthorizedResponse uses it to clear the
+// session and re-run sign-in instead of rendering the "no access" page.
+func WithSessionTokenDead(ctx context.Context) context.Context {
+	return context.WithValue(ctx, sessionTokenDeadKey, true)
+}
+
+// SessionTokenDeadFrom reports whether the session's GitHub token was found
+// dead by the repo-access probe.
+func SessionTokenDeadFrom(ctx context.Context) bool {
+	v, _ := ctx.Value(sessionTokenDeadKey).(bool)
+	return v
 }
 
 // WithUser marks the request as a signed-in human (identity is their GitHub
