@@ -15,7 +15,7 @@ import (
 
 func init() {
 	auth.OnReady(func() {
-		auth.HandleRaw("POST /api/v1/projects/{project}/download-links", handler.CreateDownloadLink)
+		auth.HandleRawPrimary("POST /api/v1/projects/{project}/download-links", handler.CreateDownloadLink)
 	})
 }
 
