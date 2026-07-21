@@ -59,12 +59,27 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, loginRedirectURL(r), http.StatusSeeOther)
 			return
 		case signedIn:
-			// Signed in, but not authorized for this resource (their GitHub account
-			// can't read the backing repo, or the project has no repo recorded).
-			// Re-redirecting to /__signin would loop -- GitHub re-auths the same
-			// account and bounces straight back -- so render an actionable page
-			// (who you are, what access is needed, sign out to switch accounts)
-			// instead of the dead-end JSON 401 a browser cannot act on.
+			if SessionTokenDeadFrom(r.Context()) {
+				// Signed in, but the GitHub token embedded in the session cookie is
+				// dead (revoked or expired mid-session) -- the 12h cookie outlived
+				// its credential. This is not "your account lacks access": the
+				// account was never checked. Clear the dead session (with the apex
+				// Domain it was set with, or browsers keep it) and transparently
+				// re-run sign-in, returning to this resource. Loop-safe: the OAuth
+				// callback mints a session only after GET /user succeeds with the
+				// fresh token, so a re-signed-in browser cannot bounce straight
+				// back here with another dead token.
+				clearCookie(w, r, sessionCookieName, "/")
+				http.Redirect(w, r, loginRedirectURL(r), http.StatusSeeOther)
+				return
+			}
+			// Signed in with a live token, but not authorized for this resource
+			// (their GitHub account can't read the backing repo, or the project
+			// has no repo recorded). Re-redirecting to /__signin would loop --
+			// GitHub re-auths the same account and bounces straight back -- so
+			// render an actionable page (who you are, what access is needed, sign
+			// out to switch accounts) instead of the dead-end JSON 401 a browser
+			// cannot act on.
 			signedInForbiddenHTML(w, r, login, ProjectFrom(r.Context()))
 			return
 		}
