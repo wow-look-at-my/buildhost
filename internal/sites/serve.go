@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -30,6 +31,18 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(ctx)
 	rt := routeFrom(ctx)
 
+	// Branch names may contain "/" (claude/foo). The route's {branch} bound only
+	// the FIRST path segment -- with a wildcard following, the router tries the
+	// shortest split first and never backtracks on a DB miss -- so a slash-named
+	// branch uploaded via the greedy PUT bind used to be unservable (404). Re-split
+	// branch/path by longest match against the project's site rows: the same
+	// resolution AllowsPublicRead applies, so gate and serve always agree.
+	branch, filePath, ok := splitSiteBranch(ctx, h.DB, project.ID, joinBranchPath(rt.branch, rt.path))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
 	// Redirect a branch root with no trailing slash (e.g. /p/branch/main) to the
 	// slashed form so relative links in index.html resolve under the branch, not
 	// its parent. This redirect used to live on its own GET /{project}/branch/{branch}
@@ -37,28 +50,38 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	// scoring higher than this {path...} route, shadowed it -- so every file
 	// request hit the redirect and looped (/x -> /x/ -> /x/ ...). Folding it in
 	// here keeps a single GET route, so file requests reach Serve directly.
-	if rt.path == "" && !strings.HasSuffix(r.URL.Path, "/") {
+	if filePath == "" && !strings.HasSuffix(r.URL.Path, "/") {
 		http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
 		return
 	}
 
+	h.serveSiteFile(ctx, w, r, project, branch, filePath)
+}
+
+// serveSiteFile streams one file of a branch's site archive: the tar scan, the
+// index.html directory default, the 404.html fallback, and the content
+// headers. Shared by the classic sites.{domain} scheme (Serve) and the
+// {project}.<site-domain> scheme (ServeSubdomain), which resolve project and
+// branch differently but serve identically. rawPath is the file path within
+// the site ("" or a trailing-slash request URL means a directory).
+func (h *Handler) serveSiteFile(ctx context.Context, w http.ResponseWriter, r *http.Request, project *db.Project, branch, rawPath string) {
 	// The {path...} router value has its trailing slash stripped, so detect a
 	// directory request from the real request path -- otherwise a nested dir URL
 	// like /scratchpads/foo/ is treated as a file, never gets index.html
 	// appended, and matches the 0-byte directory entry in the tar below.
-	isDir := rt.path == "" || strings.HasSuffix(r.URL.Path, "/")
-	filePath := path.Clean(rt.path)
+	isDir := rawPath == "" || strings.HasSuffix(r.URL.Path, "/")
+	filePath := path.Clean(rawPath)
 	if isDir || filePath == "." {
 		filePath = path.Join(filePath, "index.html")
 	}
 
-	span.SetAttributes(
+	trace.SpanFromContext(ctx).SetAttributes(
 		attribute.String("sites.project", project.Name),
-		attribute.String("sites.branch", rt.branch),
+		attribute.String("sites.branch", branch),
 		attribute.String("sites.path", filePath),
 	)
 
-	site, err := h.DB.GetSite(ctx, project.ID, rt.branch)
+	site, err := h.DB.GetSite(ctx, project.ID, branch)
 	if errors.Is(err, db.ErrNotFound) {
 		http.NotFound(w, r)
 		return
@@ -175,6 +198,61 @@ func siteExists(ctx context.Context, database *db.DB, projectID int64, branch st
 	}
 	_, err := database.GetSite(ctx, projectID, branch)
 	return err == nil
+}
+
+// joinBranchPath reassembles the raw "<branch>[/<path>]" remainder from the
+// router's split, for splitSiteBranch to re-split correctly.
+func joinBranchPath(branch, filePath string) string {
+	if filePath == "" {
+		return branch
+	}
+	return branch + "/" + filePath
+}
+
+// splitSiteBranch splits a combined "<branch>[/<path>]" remainder into the
+// branch and the file path by LONGEST match against the project's existing
+// site rows. Branch names may legally contain "/" (claude/foo), so no purely
+// syntactic split can be right: try every segment prefix, longest first, and
+// take the first one a site exists for. When sites exist for both "claude" and
+// "claude/foo", paths under claude/foo/ resolve to the longer branch -- the
+// same shadowing rule as git refs; claude's own files stay reachable at
+// claude/<file> for every <file> that is not itself a branch suffix. ok is
+// false when no prefix names an existing site.
+//
+// Candidates that cannot be a stored branch (over 256 chars, or characters
+// outside the branch charset -- typically the file-path half of the remainder)
+// are skipped, not fatal: "main/caf%C3%A9.js" still resolves to branch "main".
+func splitSiteBranch(ctx context.Context, database *db.DB, projectID int64, remainder string) (branch, filePath string, ok bool) {
+	segs := strings.Split(remainder, "/")
+	for i := len(segs); i >= 1; i-- {
+		cand := strings.Join(segs[:i], "/")
+		if !validSiteBranch(cand) {
+			continue
+		}
+		if siteExists(ctx, database, projectID, cand) {
+			return cand, strings.Join(segs[i:], "/"), true
+		}
+	}
+	return "", "", false
+}
+
+// validSiteBranch mirrors the api layer's validGitBranch (and auth's
+// validRefName): 1..256 chars of [a-zA-Z0-9._/-]. Enforced on site upload --
+// the classic PUT previously stored any bytes the router decoded -- and used
+// to skip impossible longest-match candidates on the serve side.
+func validSiteBranch(s string) bool {
+	if s == "" || len(s) > 256 {
+		return false
+	}
+	for _, c := range s {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9',
+			c == '.', c == '_', c == '/', c == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // RedirectToDefaultBranch sends the bare site root (/{project} or /{project}/)
