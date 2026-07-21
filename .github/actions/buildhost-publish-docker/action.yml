@@ -68,6 +68,21 @@ inputs:
     description: 'Push to the registry (set false to build only).'
     required: false
     default: 'true'
+  create_deployment:
+    description: >-
+      Register this image publish as a GitHub Deployment in the calling repo
+      (with a success status linking to the project's buildhost page). Needs
+      `deployments: write` in the calling job's permissions block; without it
+      the step warns and skips -- deployments are additive and never fail the
+      publish. Only applies when push is 'true' (a build-only run deploys
+      nothing). Set 'false' to opt out (and silence the warning).
+    required: false
+    default: 'true'
+  deployment_environment:
+    description: >-
+      GitHub Deployment environment name (defaults to `buildhost/<project>`).
+    required: false
+    default: ''
 
 outputs:
   image:
@@ -82,6 +97,64 @@ runs:
   steps:
     - name: Refuse jobs named all-builds
       uses: wow-look-at-my/actions@no-all-builds-job#latest
+
+    # Best-effort GitHub Deployment registration: the image publish shows up
+    # in the calling repo's Environments/Deployments UI with a link to the
+    # project's buildhost page. Requires `deployments: write` in the calling
+    # job; without it the step warns and skips -- it can never fail the
+    # publish. Skipped entirely for build-only runs (push != 'true').
+    - name: Create GitHub Deployment
+      id: deployment
+      if: ${{ inputs.create_deployment == 'true' && inputs.push == 'true' }}
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            core.setOutput('deployment_id', '');
+            try {
+              const projectInput: string = "${{ inputs.project }}";
+              const project: string = projectInput || github.repository.split('/').pop()!;
+              const envInput: string = "${{ inputs.deployment_environment }}";
+              const environment: string = envInput || `buildhost/${project}`;
+              const defaultBranch: string = context.payload.repository?.default_branch ?? '';
+              const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+              // required_contexts MUST be [] (the API default is "every commit
+              // status", and the org's all-builds status is still pending on
+              // this sha mid-run -> 409 Conflict); auto_merge MUST be false
+              // (the API default would try to merge the default branch into
+              // ref). A 2xx response without an id (e.g. the 202 auto-merge
+              // shape) is treated as "no deployment".
+              const dep = await octokit.rest.repos.createDeployment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: context.sha,
+                environment,
+                auto_merge: false,
+                required_contexts: [],
+                transient_environment: false,
+                production_environment: defaultBranch !== '' && context.ref === `refs/heads/${defaultBranch}`,
+                description: `buildhost docker publish of ${project}`.slice(0, 140),
+              });
+              const id = (dep.data as any)?.id;
+              if (typeof id !== 'number') {
+                core.warning(`GitHub Deployment not created (HTTP ${dep.status}); publishing without one`);
+                return;
+              }
+              core.setOutput('deployment_id', String(id));
+              await octokit.rest.repos.createDeploymentStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: id,
+                state: 'in_progress',
+                log_url: runUrl,
+                description: 'Publishing Docker image to buildhost',
+              });
+              core.info(`Created GitHub Deployment ${id} in environment '${environment}'`);
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              core.warning(`Skipping GitHub Deployment (${msg}). Grant 'deployments: write' in the calling job's permissions block, or set create_deployment: 'false' to silence this warning.`);
+            }
+          })();
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -193,6 +266,7 @@ runs:
     # exactly the version this action ref was reviewed with -- no separate
     # release to fetch or to drift from.
     - name: Set up Go (for the buildhost CLI)
+      id: setup-go
       if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
       uses: actions/setup-go@v5
       with:
@@ -200,6 +274,7 @@ runs:
         cache-dependency-path: ${{ github.action_path }}/../../../go.sum
 
     - name: Build the buildhost CLI
+      id: cli
       if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
       shell: bash
       env:
@@ -213,6 +288,7 @@ runs:
         go build -o "${RUNNER_TEMP}/buildhost-cli" ./cmd/buildhost
 
     - name: Push to buildhost (chunked)
+      id: push-buildhost
       if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
       uses: wow-look-at-my/actions@typescript#latest
       env:
@@ -250,6 +326,7 @@ runs:
     # Tags that reference other registries keep the old buildx push path; the
     # rebuild is a full cache hit from the step above.
     - name: Push non-buildhost references
+      id: push-foreign
       if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' && steps.refs.outputs.foreign_refs != '' }}
       uses: docker/build-push-action@v6
       with:
@@ -262,3 +339,50 @@ runs:
         labels: ${{ steps.refs.outputs.labels }}
         build-args: ${{ inputs.build-args }}
         cache-from: ${{ steps.refs.outputs.cache_from }}
+
+    # Terminal status for the GitHub Deployment created above; runs even when
+    # a publish step failed so the deployment is marked failure instead of
+    # dangling in_progress. Never fails the action.
+    - name: Finish GitHub Deployment
+      id: deployment-status
+      if: ${{ always() && steps.deployment.outputs.deployment_id != '' }}
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            try {
+              const server: string = "${{ inputs.server }}";
+              const projectInput: string = "${{ inputs.project }}";
+              const project: string = projectInput || github.repository.split('/').pop()!;
+              // The image build must have succeeded, and every push-path step
+              // that actually ran must have succeeded. 'skipped' is fine:
+              // which push steps run depends on the registries the tags
+              // target. A failure BEFORE the build (refs, or buildx setup)
+              // leaves the build outcome 'skipped', which also reads as
+              // failure here.
+              const buildOutcome: string = "${{ steps.build.outcome }}";
+              const outcomes: string[] = [
+                "${{ steps.refs.outcome }}",
+                buildOutcome,
+                "${{ steps.setup-go.outcome }}",
+                "${{ steps.cli.outcome }}",
+                "${{ steps.push-buildhost.outcome }}",
+                "${{ steps.push-foreign.outcome }}",
+              ];
+              const ok = buildOutcome === 'success' && outcomes.every((o) => o !== 'failure' && o !== 'cancelled');
+              const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+              await octokit.rest.repos.createDeploymentStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: Number("${{ steps.deployment.outputs.deployment_id }}"),
+                state: ok ? 'success' : 'failure',
+                log_url: runUrl,
+                ...(ok ? { environment_url: `${server}/projects/${project}` } : {}),
+                description: ok ? 'Docker image published to buildhost' : 'buildhost docker publish failed',
+              });
+              core.info(`GitHub Deployment marked ${ok ? 'success' : 'failure'}`);
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              core.warning(`Could not update the GitHub Deployment status (${msg})`);
+            }
+          })();
