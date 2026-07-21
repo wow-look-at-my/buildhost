@@ -453,6 +453,15 @@ jobs:
   # publish-release composites run as part of the flow, so the whole
   # create -> upload -> publish action chain is covered end to end.
   #
+  # The buildhost-publish-site composite gets the same two-path treatment on
+  # the same server: a tiny site must publish as one direct PUT (no new
+  # session), and a site whose archive exceeds the direct limit must be
+  # assembled from 1 MiB chunks through an upload session and finalized on the
+  # sites endpoint by reference -- the flow that lets a site publish bigger
+  # than the fronting proxy's request-body cap (Cloudflare edge-413s single
+  # bodies over ~100 MB before the origin ever sees them) succeed on the first
+  # attempt. The served files must match the source bytes.
+  #
   # The same spawned server also guards single-mode `buildhost publish` (no
   # --manifest) actually PUBLISHING the release it creates. The CLI package
   # deliberately has no unit tests (see internal/uploadclient's doc comment),
@@ -583,6 +592,60 @@ jobs:
           cmp "$RUNNER_TEMP/big.bin" "$RUNNER_TEMP/big.dl"
           # After publish, the release is visible as the apex latest.
           curl -fsS "$BUILDHOST_BASE_URL/api/v1/projects/upload-e2e/releases/latest" | grep -q '"published":true'
+      - name: Create site fixtures (one tiny, one over the direct limit)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/small-site" "$RUNNER_TEMP/big-site"
+          printf '<h1>direct site</h1>' > "$RUNNER_TEMP/small-site/index.html"
+          printf '<h1>chunked site</h1>' > "$RUNNER_TEMP/big-site/index.html"
+          # Incompressible payload so the tar.gz stays ~3 MB, well over the
+          # server's 1 MiB direct limit -> the action must pick the session.
+          head -c 3000000 /dev/urandom > "$RUNNER_TEMP/big-site/blob.bin"
+      - name: Publish small site (direct PUT path)
+        uses: ./.github/actions/buildhost-publish-site
+        with:
+          server: http://localhost:18080
+          token: ${{ env.BUILDHOST_TOKEN }}
+          project: upload-e2e
+          branch: direct
+          source_dir: ${{ runner.temp }}/small-site
+          chunk_size: "1048576"
+      - name: Small site publish must not have opened another session
+        shell: bash
+        run: |
+          set -euo pipefail
+          creates=$(grep -c "method=POST path=/api/v1/uploads " "$RUNNER_TEMP/buildhost.log" || true)
+          echo "session creates: $creates"
+          test "$creates" = "1"
+      - name: Publish big site (chunked session path, 1 MiB chunks)
+        uses: ./.github/actions/buildhost-publish-site
+        with:
+          server: http://localhost:18080
+          token: ${{ env.BUILDHOST_TOKEN }}
+          project: upload-e2e
+          branch: chunked
+          source_dir: ${{ runner.temp }}/big-site
+          chunk_size: "1048576"
+      - name: Big site publish must have gone through its own session
+        shell: bash
+        run: |
+          set -euo pipefail
+          creates=$(grep -c "method=POST path=/api/v1/uploads " "$RUNNER_TEMP/buildhost.log" || true)
+          chunks=$(grep -c "method=PATCH path=/api/v1/uploads/" "$RUNNER_TEMP/buildhost.log" || true)
+          echo "session creates: $creates, total chunk appends: $chunks"
+          test "$creates" = "2"
+          # 4 chunks from the artifact upload + at least 3 for the ~3 MB site.
+          test "$chunks" -ge 7
+      - name: Served site files must match the source bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(curl -fsSL http://sites.localhost:18080/upload-e2e/branch/direct/index.html)" = '<h1>direct site</h1>'
+          test "$(curl -fsSL http://sites.localhost:18080/upload-e2e/branch/chunked/index.html)" = '<h1>chunked site</h1>'
+          curl -fsSL -o "$RUNNER_TEMP/blob.dl" \
+            "http://sites.localhost:18080/upload-e2e/branch/chunked/blob.bin"
+          cmp "$RUNNER_TEMP/big-site/blob.bin" "$RUNNER_TEMP/blob.dl"
       - name: Single-mode CLI publish must publish the release
         shell: bash
         run: |
