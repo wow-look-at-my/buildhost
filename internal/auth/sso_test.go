@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -141,11 +142,24 @@ func TestRequireProject_SiteDomainBrowser_RedirectsToPrimary(t *testing.T) {
 }
 
 // The instant path: a browser that already holds a valid primary-apex session
-// and asks to sign in to a site-domain destination skips OAuth entirely -- the
-// session is parked and the browser is bounced straight to /__sso. The full
-// redemption round trip must set the SAME session value as a site-apex cookie,
-// and the code must be single-use.
+// (with a LIVE GitHub token -- probed via GET /user) and asks to sign in to a
+// site-domain destination skips the OAuth consent round-trip -- the session is
+// parked and the browser is bounced straight to /__sso. The full redemption
+// round trip must set the SAME session value as a site-apex cookie, and the
+// code must be single-use.
 func TestSigninStart_InstantHandoff_RoundTrip(t *testing.T) {
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/user" {
+			w.Write([]byte(`{"login":"alice"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer gh.Close()
+	origAPI := githubAPIBase
+	githubAPIBase = gh.URL
+	defer func() { githubAPIBase = origAPI }()
+
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	mw.GitHub = NewGitHubAuth("cid", "secret")
@@ -207,6 +221,39 @@ func TestSigninStart_InstantHandoff_RoundTrip(t *testing.T) {
 	// The failure page offers a restart at the PRIMARY apex carrying the
 	// MAC-verified next.
 	assert.Contains(t, rec.Body.String(), "https://pazer.build"+signinStartPath)
+}
+
+// A session whose embedded GitHub token is DEAD must not ride the instant
+// path: handing it across would loop (the site's dead-session re-auth bounces
+// back to /__signin, whose still-MAC-valid apex cookie would mint the same
+// dead session forever). The liveness probe fails and the flow falls through
+// to full OAuth, which mints a fresh session for the handoff.
+func TestSigninStart_InstantHandoff_DeadTokenFallsThroughToOAuth(t *testing.T) {
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized) // GET /user: token revoked
+	}))
+	defer gh.Close()
+	origAPI := githubAPIBase
+	githubAPIBase = gh.URL
+	defer func() { githubAPIBase = origAPI }()
+
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+	mw.GitHub = NewGitHubAuth("cid", "secret")
+	setTestSiteDomain(t, "pazer.site", "pazer.build")
+
+	next := "https://myapp.pazer.site/f"
+	req := httptest.NewRequest("GET", signinStartPath+"?next="+url.QueryEscape(next), nil)
+	req.Host = "pazer.build"
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: mintSession("alice", "gho_dead", time.Now().Add(time.Hour))})
+	rec := httptest.NewRecorder()
+	handleSigninStart(rec, req)
+
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	loc := rec.Header().Get("Location")
+	assert.True(t, strings.HasPrefix(loc, githubAuthorizeURL+"?"),
+		"a dead-token session must fall through to full OAuth, got %q", loc)
+	assert.NotContains(t, loc, ssoPath)
 }
 
 // The OAuth-callback path: completing GitHub sign-in with a site-domain next
@@ -389,11 +436,14 @@ func TestSSORedeem_HostGate(t *testing.T) {
 // handed-over cookie authorizing a private-project read on the site domain.
 func TestSSOHandoff_EndToEnd_AuthorizesSiteDomainRead(t *testing.T) {
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/repos/PazerOP/tesla-wheel-data" {
+		switch r.URL.Path {
+		case "/repos/PazerOP/tesla-wheel-data":
 			w.WriteHeader(http.StatusOK)
-			return
+		case "/user":
+			w.Write([]byte(`{"login":"alice"}`)) // the instant path's liveness probe
+		default:
+			w.WriteHeader(http.StatusNotFound)
 		}
-		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer gh.Close()
 	orig := githubAPIBase

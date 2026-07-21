@@ -144,6 +144,20 @@ func registerSSOHandoffRoutes() {
 	SiteDomainHandleRaw(sd, "GET "+ssoPath, handleSSORedeem)
 }
 
+// siteHandoffDest returns the parsed destination when next is a URL on the
+// configured site domain (the shape a cross-domain handoff exists for), and
+// nil otherwise.
+func siteHandoffDest(next string) *url.URL {
+	if SiteDomain() == "" {
+		return nil
+	}
+	u, err := url.Parse(next)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || siteApexOf(u.Hostname()) == "" {
+		return nil
+	}
+	return u
+}
+
 // mintSiteHandoff mints a single-use handoff code for a sign-in whose
 // destination is on the configured site domain and returns the absolute
 // /__sso redemption URL to redirect the browser to. It returns "" when the
@@ -152,11 +166,8 @@ func registerSSOHandoffRoutes() {
 // bh_session value to hand across; it is parked server-side and never appears
 // in the returned URL.
 func mintSiteHandoff(sessionValue, next string) string {
-	if SiteDomain() == "" {
-		return ""
-	}
-	u, err := url.Parse(next)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || siteApexOf(u.Hostname()) == "" {
+	u := siteHandoffDest(next)
+	if u == nil {
 		return ""
 	}
 	nonce := randToken()
