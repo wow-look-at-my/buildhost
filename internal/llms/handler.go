@@ -57,8 +57,38 @@ func render(baseURL string) []byte {
 	// challenge, and brew stores the remote verbatim). "$TOKEN" is a literal
 	// shell placeholder for the reader, not a server-side substitution.
 	out = strings.ReplaceAll(out, "__BREW_TOKEN_URL__", scheme+"x:$TOKEN@brew."+host)
+	out = strings.ReplaceAll(out, "__SITE_SECTION__", siteSection(scheme))
 
 	return []byte(out)
+}
+
+// siteSection documents the {project}.<site-domain> serving scheme when a site
+// domain is configured, and renders nothing otherwise -- the served guide only
+// describes endpoints this deployment actually has. The section's URLs live on
+// the dedicated site domain, never on a service subdomain of the apex, so the
+// per-subdomain rendering guards are unaffected.
+func siteSection(scheme string) string {
+	sd := auth.SiteDomain()
+	if sd == "" {
+		return ""
+	}
+	return `
+## Project site subdomains
+
+This deployment also serves each project's static site on a dedicated domain,
+one subdomain per project (only for project names that are a valid single DNS
+label: [a-z0-9-], max 63 chars, no leading/trailing hyphen):
+
+` + "```" + `
+` + scheme + `myapp.` + sd + `/                # default branch (same branch "latest" tracks)
+` + scheme + `myapp.` + sd + `/~pr-7/          # any other branch, behind the ~ sigil
+` + scheme + `myapp.` + sd + `/~claude/foo/    # slash-named branches resolve by longest match
+` + "```" + `
+
+A ~<default-branch> URL 302s to the canonical bare form. The path prefixes
+"~" (at the path root) and "/__sso" are reserved on this scheme; other project
+names and paths remain available on the classic sites URL above.
+`
 }
 
 // apexBaseURL returns the request's scheme + apex host. /llms.txt is served on

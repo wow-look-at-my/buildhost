@@ -141,6 +141,21 @@ type Config struct {
 	OTELEndpoint     string
 	SiteFetchDomains []string
 
+	// SiteDomain is an optional dedicated domain for project static sites: when
+	// set (BUILDHOST_SITE_DOMAIN, e.g. "pazer.site"), each project whose name is
+	// a valid single DNS label is also served at https://<project>.<SiteDomain>/.
+	// Unset (the default) registers zero extra routes -- routing is byte-identical
+	// to a deployment without the feature.
+	SiteDomain string
+	// PrimaryDomain is the apex the GitHub OAuth callback is registered on (e.g.
+	// "pazer.build"). The server otherwise derives every URL from the request
+	// Host, but a browser on the site domain that needs to sign in must be sent
+	// to this apex -- it cannot be derived from a <project>.<SiteDomain> request.
+	// If SiteDomain is set and PrimaryDomain is not, the cross-domain sign-in
+	// redirect is unavailable and unauthenticated site-domain browsers get the
+	// plain JSON 401.
+	PrimaryDomain string
+
 	// Sign in with GitHub (browser login for private resources). When the client
 	// id + secret are set, a browser hitting a private resource is redirected to
 	// GitHub to log in; a signed-in user may then read a private project if they
@@ -190,6 +205,15 @@ func unescapePEMNewlines(v string) string {
 	v = strings.ReplaceAll(v, `\r\n`, "\n")
 	v = strings.ReplaceAll(v, `\n`, "\n")
 	return v
+}
+
+// normalizeDomain canonicalizes a configured domain name: trimmed, lowercased,
+// with a leading "*." or "." (people write the wildcard DNS record form) and any
+// trailing dot stripped -- so "*.Pazer.Site." configures the domain "pazer.site".
+func normalizeDomain(v string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	v = strings.TrimPrefix(v, "*.")
+	return strings.Trim(v, ".")
 }
 
 func Load() Config {
@@ -278,6 +302,12 @@ func Load() Config {
 				c.SiteFetchDomains = append(c.SiteFetchDomains, d)
 			}
 		}
+	}
+	if v := os.Getenv("BUILDHOST_SITE_DOMAIN"); v != "" {
+		c.SiteDomain = normalizeDomain(v)
+	}
+	if v := os.Getenv("BUILDHOST_PRIMARY_DOMAIN"); v != "" {
+		c.PrimaryDomain = normalizeDomain(v)
 	}
 	if v := os.Getenv("BUILDHOST_RETENTION_KEEP_N"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
