@@ -1,10 +1,9 @@
 package apt
 
 import (
-	"crypto/sha256"
+	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -37,45 +36,50 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 		return
 	}
 
-	goArch := goArchFromDeb(arch)
-	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, string(db.OSLinux), goArch)
-	if errors.Is(err, db.ErrNotFound) {
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(""))
-		return
-	}
+	entry, err := h.packagesEntry(r.Context(), project, release, arch, auth.RequestRootURL(r))
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Write([]byte(entry))
+}
+
+// packagesEntry renders the Packages stanza for one architecture, or "" when
+// the release exposes no apt package for it (no linux artifact for the arch, a
+// docker-only artifact, or a version no deb can carry). It is the SINGLE
+// renderer behind both the served Packages index (servePackages) and the
+// Release/InRelease hash computation (computePackagesHashes), so the signed
+// hashes always describe exactly the bytes the index route serves. The deb
+// Size/SHA256 come from the packaged_artifacts digest cache (debDigest): one
+// DB read once cached, a single repackage+hash on the first need.
+func (h *Handler) packagesEntry(ctx context.Context, project *db.Project, release *db.Release, debArch, baseURL string) (string, error) {
+	goArch := goArchFromDeb(debArch)
+	artifact, err := h.DB.GetArtifact(ctx, release.ID, string(db.OSLinux), goArch)
+	if errors.Is(err, db.ErrNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
 	// Docker images aren't debs: a docker-only release exposes no apt package.
 	if artifact.Kind.ServedViaDockerOnly() {
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(""))
-		return
+		return "", nil
 	}
 
 	version := strings.TrimPrefix(release.Version, "v")
 	if version == "" {
 		version = fmt.Sprintf("%d", release.VersionNum)
 	}
-
-	debSize := artifact.Size
-	debSHA := artifact.SHA256
-	out, err := h.Gen.Generate(r.Context(), repackage.FormatDeb, *project, *release, *artifact, auth.RequestRootURL(r))
-	if err == nil {
-		hsh := sha256.New()
-		n, rerr := io.Copy(hsh, out.Reader)
-		out.Reader.Close()
-		if rerr == nil {
-			debSize = n
-			debSHA = fmt.Sprintf("%x", hsh.Sum(nil))
-		}
+	if !validDebVersion.MatchString(version) {
+		return "", nil
 	}
 
-	if !validDebVersion.MatchString(version) {
-		http.Error(w, "invalid version for deb format", http.StatusInternalServerError)
-		return
+	debSize, debSHA, err := h.debDigest(ctx, project, release, artifact, baseURL)
+	if err != nil {
+		return "", err
 	}
 
 	// The project name may be slash-namespaced; fold it to a valid Debian
@@ -83,7 +87,7 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 	// from the request path, not this filename, so the rename is safe.
 	pkgName := repackage.DebPackageName(project.Name)
 	desc := strings.NewReplacer("\n", " ", "\r", " ").Replace(project.Description)
-	entry := fmt.Sprintf(`Package: %s
+	return fmt.Sprintf(`Package: %s
 Version: %s
 Architecture: %s
 Filename: pool/%s_%s_%s.deb
@@ -91,12 +95,8 @@ Size: %d
 SHA256: %s
 Description: %s
 
-`, pkgName, version, arch, pkgName, version, arch,
-		debSize, debSHA, desc)
-
-	w.Header().Set("Content-Type", "text/plain")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Write([]byte(entry))
+`, pkgName, version, debArch, pkgName, version, debArch,
+		debSize, debSHA, desc), nil
 }
 
 func (h *Handler) servePool(w http.ResponseWriter, r *http.Request, subpath string) {
