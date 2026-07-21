@@ -11,6 +11,8 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/spf13/cobra"
+
+	"github.com/wow-look-at-my/buildhost/internal/uploadclient"
 )
 
 func init() {
@@ -122,6 +124,21 @@ func publishSingle(cmd *cobra.Command) error {
 	}
 
 	fmt.Printf("uploaded %s/%s %s/%s\n", project, rel.Version, osStr, archStr)
+
+	// Publish the release, exactly like manifest mode: an unpublished release
+	// is invisible to latest/branch resolution (dl, brew, apt, npm, the web
+	// frontend) and is eventually swept by retention as an abandoned upload --
+	// and the CLI has no other way to publish it later.
+	resp, err = doRequest("POST", fmt.Sprintf("%s/api/v1/projects/%s/releases/%s/publish", serverURL, project, rel.Version), token, nil)
+	if err != nil {
+		return fmt.Errorf("publish release: %w", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("publish failed: %s", resp.Status)
+	}
+
+	fmt.Printf("published %s/%s\n", project, rel.Version)
 	return nil
 }
 
@@ -159,6 +176,16 @@ func publishFromManifest(cmd *cobra.Command, path string) error {
 		return err
 	}
 
+	// When the server supports hash-reference uploads, byte-identical manifest
+	// entries transfer once: the first entry of each (sha256, kind) group
+	// sends the bytes, the rest register the stored blob by reference -- each
+	// keeping its own per-entry filename header. Without the capability the
+	// loop is exactly the classic one-full-upload-per-entry (and never probes:
+	// an old server ignores upload_sha256 and would store the empty body).
+	canHashRef := up.SupportsUploadBySHA256()
+	type blobGroup struct{ sum, kind string }
+	uploaded := make(map[blobGroup]bool)
+
 	baseDir := filepath.Dir(path)
 	for _, a := range m.Artifacts {
 		artifactPath := a.Path
@@ -179,6 +206,34 @@ func publishFromManifest(cmd *cobra.Command, path string) error {
 			header = map[string]string{"X-Artifact-Filename": a.Filename}
 		}
 
+		var group blobGroup
+		if canHashRef {
+			sum, err := uploadclient.FileSHA256(artifactPath)
+			if err != nil {
+				return fmt.Errorf("hash %s: %w", artifactPath, err)
+			}
+			group = blobGroup{sum, kind}
+			if uploaded[group] {
+				resp, err := up.UploadByHash("PUT", url, header, sum)
+				if err != nil {
+					return fmt.Errorf("upload %s/%s: %w", a.OS, a.Arch, err)
+				}
+				resp.Body.Close()
+				switch resp.StatusCode {
+				case http.StatusCreated:
+					fmt.Printf("registered %s/%s %s/%s (existing blob, no bytes sent)\n", m.Project, rel.Version, a.OS, a.Arch)
+					continue
+				case http.StatusConflict:
+					// A real slot conflict -- the full upload would 409 too.
+					return fmt.Errorf("upload %s/%s failed: %s", a.OS, a.Arch, resp.Status)
+				default:
+					// E.g. 404: the blob vanished between uploads. The bytes
+					// are right here -- fall back to sending them.
+					fmt.Printf("hash-reference upload for %s/%s returned %s; sending full upload\n", a.OS, a.Arch, resp.Status)
+				}
+			}
+		}
+
 		resp, err := up.Upload("PUT", url, header, artifactPath)
 		if err != nil {
 			return fmt.Errorf("upload %s/%s: %w", a.OS, a.Arch, err)
@@ -186,6 +241,9 @@ func publishFromManifest(cmd *cobra.Command, path string) error {
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusCreated {
 			return fmt.Errorf("upload %s/%s failed: %s", a.OS, a.Arch, resp.Status)
+		}
+		if canHashRef {
+			uploaded[group] = true
 		}
 
 		fmt.Printf("uploaded %s/%s %s/%s\n", m.Project, rel.Version, a.OS, a.Arch)

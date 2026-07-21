@@ -72,14 +72,68 @@ remote. The `?token=` query parameter cannot be used with `brew tap`: git
 appends its own path segments (`/info/refs`, ...) after the query string, so
 the URL stops resolving as a git repository.
 
+### Background services (create_service)
+
+A project can declare that its binary runs as a background service. Declare
+it in the publishing repo's CI: `create_service: 'true'` on the
+`buildhost-create-release` or `buildhost-publish` action (go-toolchain's
+composite: `autorelease_args: create_service=true`). Every publish asserts
+the declared value; an absent input leaves the stored setting untouched.
+Operators can also flip it directly: `PATCH /api/v1/projects/{project}` with
+`{"create_service": true}`.
+
+Each install format materializes the setting its own way. Homebrew formulas
+gain a `service do` block; activating it is one one-time command, after which
+it starts at login and survives upgrades (the block runs the `opt` path):
+
+```bash
+brew services start pazer/build/competent-search-thing
+```
+
+Homebrew cannot run that for you at install: a formula's only install-time
+hook (`post_install`) runs inside brew's sandbox, whose profile denies all
+file writes outside build paths -- `~/Library/LaunchAgents` included -- so no
+formula can register a LaunchAgent. `brew uninstall` does not stop services
+either: run `brew services stop <tap>/<project>` before removing.
+
+The service restarts only after a crash (`keep_alive successful_exit: false`;
+a clean exit stays exited) and logs to `$(brew --prefix)/var/log/<name>.log`.
+On Linux prefer the APT install below -- brew's Linux units carry no
+graphical-session ordering. The deb materialization (which does auto-enable)
+is described in the APT section; other formats (raw, zip, npm, OCI) store the
+flag without materializing it.
+
 ## APT (Debian / Ubuntu)
 
 buildhost serves each project as its own GPG-signed APT repository at
 `apt.<domain>/<project>` (suite `stable`, component `main`). Packages are
 generated on demand from the uploaded binary -- nothing is pre-built.
 
-Import the repository signing key once, add the source, then install. The key is
-served per project path but is the same server-wide key:
+The fastest way to add a repository is the generated per-project installer. It
+saves the armored signing key to `/etc/apt/keyrings/`, writes a `signed-by`
+source, and refreshes the package index (APT reads the armored key directly via
+`signed-by`, so no `gpg` binary is needed on the client):
+
+```bash
+curl -fsSL https://apt.pazer.build/myapp/install.sh | sudo sh
+sudo apt-get install myapp
+```
+
+For a private project, pass a read token -- the installer also records it in
+`/etc/apt/auth.conf.d/`, covering both the apt host and the static host the
+`.deb` download redirects to:
+
+```bash
+curl -fsSL -H "Authorization: Bearer $TOKEN" https://apt.pazer.build/myapp/install.sh \
+  | sudo BUILDHOST_TOKEN=$TOKEN sh
+```
+
+One-line install commands (and per-project copy buttons) are also available on
+the admin dashboard: see each project's page or the **Registries** tab.
+
+Prefer to set it up by hand? Import the repository signing key once, add the
+source, then install. The key is served per project path but is the same
+server-wide key:
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
@@ -127,6 +181,20 @@ echo "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] https://apt.pazer.build/pr
   | sudo tee /etc/apt/sources.list.d/pr-reviewer-agent-server.list
 sudo apt update && sudo apt install pr-reviewer-agent-server
 ```
+
+### Background services (create_service)
+
+A `create_service` project's generated deb (see the Homebrew section for the
+flag itself) ships a systemd user unit at
+`/usr/lib/systemd/user/<pkg>.service` -- crash-only `Restart=on-failure`,
+bound to `graphical-session.target` -- and sets it up at install: the
+package's postinst runs `systemctl --global enable`, so the service starts at
+every user's next graphical login (plus a best-effort immediate start for the
+installing sudo user's live session). Removing the package disables it again.
+
+This applies to buildhost-GENERATED debs only (`fmt=deb`, i.e. this APT
+repository). A pre-built `.deb` uploaded as an artifact (`kind=archive`) is
+served byte-identical -- buildhost never injects into uploaded files.
 
 ## Web frontend
 
@@ -185,6 +253,16 @@ not apply to it -- it is just a container image. Pushed image layers are
 content-addressed and deduplicated, so unchanged layers are not re-uploaded on
 later pushes. Per-blob size is capped by `BUILDHOST_MAX_BLOB_SIZE` (default 10 GiB).
 
+If a proxy in front of the server caps request bodies (Cloudflare's edge 413s
+bodies over ~100 MB), `docker push` fails on big layers -- docker/buildx send
+each layer as one request. Push through the CLI instead: it uploads blobs in
+chunks sized under the server's advertised limit, so any layer size goes through.
+
+```bash
+docker buildx build --output type=oci,dest=image.tar -t oci.builds.example.com/myproject:v1.2.3 .
+buildhost docker-push --token "$TOKEN" --image image.tar oci.builds.example.com/myproject:v1.2.3
+```
+
 ### From GitHub Actions
 
 Use the `buildhost-publish-docker` action to build and push in one step,
@@ -201,12 +279,15 @@ steps:
     with:
       server: https://builds.example.com   # optional, defaults to https://pazer.build
       context: .                            # optional
-      # tags default to the commit SHA and "latest"; bare tags are expanded to
-      # <registry>/<project>:<tag>, full references (with "/" or ":") are used as-is.
-      tags: |
-        ${{ github.sha }}
-        latest
 ```
+
+With `tags` omitted, pushes are tagged with the commit SHA and the sanitized
+branch name (`claude/foo` -> `claude-foo`); `latest` is added only on the
+default branch, so a feature branch never moves the `:latest` pointer.
+
+Pass `tags` (newline-separated) to override: bare tags expand to
+`<registry>/<project>:<tag>`; references containing `/` or `:` are used
+as-is, so you can also push to another registry you are logged in to.
 
 For a build you drive yourself (e.g. `docker buildx imagetools` to copy an
 existing multi-arch image), use the lower-level `buildhost-docker-login` action,
@@ -329,6 +410,53 @@ when finalizing a [chunked upload session](#large-uploads) (one session, one
 body, N rows). `kind=npm-package` keeps its literal `os=any`/`arch=any`
 sentinel row and never fans out.
 
+### Registering more slots by hash (no re-upload)
+
+An **exact** slot set that is not an os x arch product -- say
+`{linux/amd64, linux/arm64, windows/amd64}`, where `windows/arm64` must stay
+free for a different native binary -- cannot be expressed with the fan-out
+grammar. For that case (and to skip re-sending a byte-identical binary
+entirely), upload the file once and register the remaining slots by **hash
+reference**: an empty-body PUT naming the stored blob's SHA-256.
+
+```bash
+SUM=$(sha256sum ./mytool | awk '{print $1}')
+
+# First slot carries the bytes:
+curl -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @./mytool \
+  "https://buildhost.example.com/api/v1/projects/myapp/releases/7/artifacts/linux/amd64"
+
+# The rest reference the stored blob -- no bytes sent:
+for slot in linux/arm64 windows/amd64; do
+  curl -X PUT -H "Authorization: Bearer $TOKEN" \
+    "https://buildhost.example.com/api/v1/projects/myapp/releases/7/artifacts/$slot?upload_sha256=$SUM"
+done
+```
+
+Semantics:
+
+- **Check the capability first.** Only send `upload_sha256` on an empty-body
+  request when `GET /api/v1/server-info` advertises
+  `"upload_by_sha256": true`. A server without the capability ignores the
+  parameter and stores the empty body as the artifact.
+- The referenced blob must already belong to **this project** (uploaded for
+  any of its releases, so re-releasing an unchanged binary is nearly free).
+  An unknown hash, another project's blob, and a since-garbage-collected blob
+  all return the same 404 -- fall back to a full upload.
+- The created rows are ordinary artifact rows, field-for-field identical to a
+  full upload's, with the same 201/409 semantics; the reference composes with
+  the `{os}`/`{arch}` fan-out grammar, and each hash-ref request carries its
+  own optional `X-Artifact-Filename`.
+- `upload_sha256` keeps its existing meanings elsewhere: on a request **with**
+  a body it is ignored, and combined with `upload_session=` it remains the
+  session-finalize integrity check.
+
+The in-repo publishers do this automatically when the server advertises the
+capability: the `buildhost-publish` GitHub action and `buildhost publish
+--manifest` hash the files they are about to upload, send each distinct file
+once, and register byte-identical slots by reference (go-toolchain's three
+identical APE slot copies transfer once instead of three times).
+
 ## WebAssembly artifacts
 
 WebAssembly modules publish under the platform identifier `os=wasm`, with
@@ -417,13 +545,22 @@ never reaches the origin. Two ways around that, both first-try reliable:
   exposes a hostname that reaches the origin without the proxied body cap,
   point `--server` (or your upload URLs) at it and single-request uploads of
   any size just work. Nothing else changes.
+- **Hash-reference uploads (identical bytes, zero transfer).** A file that
+  is byte-identical to one the project already uploaded -- another platform
+  slot of the same release, or an unchanged re-release -- does not need to be
+  sent at all: register it with an empty-body PUT naming the blob's SHA-256.
+  See [Registering more slots by hash](#registering-more-slots-by-hash-no-re-upload).
+  The in-repo publish clients do this automatically when the server
+  advertises `upload_by_sha256`.
 - **Chunked upload sessions (automatic fallback).** Through the proxied
-  hostname, the CLI transparently splits large files into chunks that fit
-  under the cap. You don't have to know this exists: `buildhost publish` and
-  `buildhost publish-site` check the file size against the server's advertised
-  limit (`GET /api/v1/server-info`, `max_direct_upload_bytes`, default 95 MiB)
-  before sending anything, and switch to a session only when needed. Small
-  files keep using the classic single request.
+  hostname, the in-repo publish clients transparently split large files into
+  chunks that fit under the cap. You don't have to know this exists:
+  `buildhost publish`, `buildhost publish-site`, and the
+  `buildhost-upload-artifact` GitHub action all check the file size against
+  the server's advertised limit (`GET /api/v1/server-info`,
+  `max_direct_upload_bytes`, default 95 MiB) before sending anything, and
+  switch to a session only when needed. Small files keep using the classic
+  single request.
 
 ```bash
 # Exactly the same command whether the file is 5 MB or 5 GB -- chunking is
@@ -450,7 +587,7 @@ assembled bytes as if they were the request body.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/server-info` | Advertised limits: `max_direct_upload_bytes`, `max_upload_bytes`, `upload_sessions` (public) |
+| GET | `/api/v1/server-info` | Advertised limits and capabilities: `max_direct_upload_bytes`, `max_upload_bytes`, `upload_sessions`, `upload_by_sha256` (public) |
 | POST | `/api/v1/uploads` | Create a session (`write` scope; bound to your identity) |
 | PATCH | `/api/v1/uploads/{id}?offset=N` | Append a chunk at offset N; 409 with the committed `size` on mismatch (resume from it) |
 | GET | `/api/v1/uploads/{id}` | Current committed `size` (for resuming) |
@@ -461,9 +598,17 @@ Sessions expire after 24h (`BUILDHOST_UPLOAD_SESSION_TTL`), count against the
 normal 2 GiB upload cap at append time, and only the identity that created a
 session can touch it. A successful finalize consumes the session.
 
-From CI without the CLI (e.g. a GitHub Actions step uploading a >100 MB
-artifact through the proxied hostname), the same protocol is a short curl
-loop:
+From GitHub Actions, the
+`wow-look-at-my/buildhost/.github/actions/buildhost-upload-artifact@master`
+composite does all of this automatically: it checks the advertised limit,
+sends small files as the classic direct PUT (streamed from disk), assembles
+larger ones through a session (default 64 MiB chunks, tunable via its
+optional `chunk_size` input), resumes from the server's committed size on
+hiccups, finalizes with the file's SHA-256, and retries transient
+server/network errors with backoff.
+
+From other CI without the CLI (uploading a >100 MB artifact through the
+proxied hostname), the same protocol is a short curl loop:
 
 ```bash
 FILE=./huge-artifact
@@ -604,9 +749,9 @@ The link is a stateless HMAC signature (keyed by a server-side key generated on 
 | POST | `/api/v1/projects` | Create project |
 | GET | `/api/v1/projects` | List projects |
 | POST | `/api/v1/projects/{project}/releases` | Create release |
-| PUT | `/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}` | Upload artifact (accepts `?upload_session=` -- see [Large uploads](#large-uploads); `{os}`/`{arch}` may be a comma list or `cosmo`/`any` -- see [Multi-platform binaries](#multi-platform-binaries-cosmopolitan--ape)) |
+| PUT | `/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}` | Upload artifact (accepts `?upload_session=` -- see [Large uploads](#large-uploads); `{os}`/`{arch}` may be a comma list or `cosmo`/`any`, and an empty body + `?upload_sha256=` registers an already-uploaded blob for the slot -- see [Multi-platform binaries](#multi-platform-binaries-cosmopolitan--ape)) |
 | POST | `/api/v1/projects/{project}/releases/{version}/publish` | Publish release |
-| GET | `/api/v1/server-info` | Advertised upload limits (public) |
+| GET | `/api/v1/server-info` | Advertised upload limits and capabilities (public) |
 | POST | `/api/v1/uploads` | Create a chunked upload session |
 | GET | `/api/v1/uploads/{id}` | Read a session's committed size |
 | PATCH | `/api/v1/uploads/{id}?offset=N` | Append a chunk to a session |

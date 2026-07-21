@@ -1,9 +1,14 @@
 name: Build and publish docker image to Buildhost
-version: 1
+version: 3
 description: >
   Build a Docker image with buildx and push it to a buildhost OCI registry in a
   single step, authenticating with a GitHub Actions OIDC token (no static
-  secret). The project auto-provisions on first push.
+  secret). The project auto-provisions on first push. Buildhost-bound pushes go
+  through the `buildhost docker-push` CLI, which uploads blobs in chunks sized
+  under the server's advertised request-body limit -- so layers over the
+  Cloudflare ~100 MB edge cap publish instead of dying with a 413 (docker/buildx
+  send each layer as one request). Tags that reference other registries are
+  still pushed with buildx as before.
 
 inputs:
   server:
@@ -27,8 +32,16 @@ inputs:
       Newline-separated image tags. A bare tag (e.g. "latest" or a commit SHA)
       is expanded to <registry>/<project>:<tag>; a value containing "/" or ":"
       is used as a full image reference (so you can also push to another
-      registry you have already logged in to). Defaults to the commit SHA and
-      "latest".
+      registry you have already logged in to). When omitted, defaults to the
+      commit SHA plus the docker-sanitized ref name (branch or git tag:
+      lowercased, runs of characters outside [a-z0-9._-] become "-", leading
+      dots/dashes stripped -- so "claude/foo" pushes as "claude-foo", a bare
+      buildhost tag, never a foreign reference), and "latest" ONLY when the
+      push is to the repository's default branch -- pushed OCI tags are
+      mutable pointers, so a feature-branch push must not move the :latest
+      ref that stable consumers track. (The default branch is read from the
+      event payload; events without one, e.g. schedule, fall back to
+      "master" and so never add "latest" on a "main"-defaulted repo.)
     required: false
     default: ''
   platforms:
@@ -67,8 +80,34 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Refuse jobs named all-builds
+      uses: wow-look-at-my/actions@no-all-builds-job#latest
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
+
+    # When `tags` is omitted, compute branch-aware defaults instead of an
+    # unconditional "SHA + latest": pushed OCI tags are mutable pointers
+    # (resolved before buildhost's default-branch fallback), so defaulting
+    # `latest` everywhere would let any feature-branch push hijack the stable
+    # :latest ref consumers track (e.g. a docker-updater re-pulling it).
+    - name: Compute default tags
+      id: default-tags
+      if: ${{ inputs.tags == '' }}
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          // Short ref name, mirroring GITHUB_REF_NAME: the branch for
+          // refs/heads/*, the git tag for refs/tags/*, "<pr>/merge" for pulls.
+          const refName: string = env.GITHUB_REF_NAME ?? context.ref.replace(/^refs\/[^/]+\//, "");
+          const defaultBranch: string = context.payload.repository?.default_branch ?? "master";
+          // Docker-sanitize so the result is always a bare (buildhost-bound)
+          // tag: "claude/foo" -> "claude-foo", never a foreign reference.
+          const refTag = refName.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[.-]+/, "");
+          const tags = [context.sha, refTag].filter(Boolean);
+          if (context.ref === `refs/heads/${defaultBranch}`) tags.push("latest");
+          core.setOutput("tags", tags.join("\n"));
+          core.info(`tags input omitted; defaulting to: ${tags.join(", ")}`);
 
     - name: Resolve image references
       id: refs
@@ -77,6 +116,7 @@ runs:
         SERVER: ${{ inputs.server }}
         PROJECT: ${{ inputs.project }}
         TAGS: ${{ inputs.tags }}
+        DEFAULT_TAGS: ${{ steps.default-tags.outputs.tags }}
         EXTRA_LABELS: ${{ inputs.labels }}
         CACHE: ${{ inputs.cache }}
       run: |
@@ -88,10 +128,14 @@ runs:
         if [ -n "${TAGS}" ]; then
           tags_in="${TAGS}"
         else
-          printf -v tags_in '%s\n%s' "${GITHUB_SHA}" "latest"
+          tags_in="${DEFAULT_TAGS}"
         fi
 
+        # Split references into buildhost-bound ones (pushed by the chunk-aware
+        # `buildhost docker-push` CLI) and foreign ones (pushed by buildx).
         refs=""
+        buildhost_refs=""
+        foreign_refs=""
         while IFS= read -r line; do
           tag="$(printf '%s' "${line}" | tr -d '[:space:]')"
           [ -z "${tag}" ] && continue
@@ -100,12 +144,19 @@ runs:
             *)       ref="${registry}/${project}:${tag}" ;; # bare tag -> buildhost ref
           esac
           refs="${refs}${ref}"$'\n'
+          case "${ref}" in
+            "${registry}/"*) buildhost_refs="${buildhost_refs}${ref}"$'\n' ;;
+            *)               foreign_refs="${foreign_refs}${ref}"$'\n' ;;
+          esac
         done <<< "${tags_in}"
 
         {
           echo "registry=${registry}"
           echo "primary=$(printf '%s' "${refs}" | head -n1)"
+          echo "layout=${RUNNER_TEMP}/buildhost-oci-layout"
           echo "tags<<__TAGS__"; printf '%s' "${refs}"; echo "__TAGS__"
+          echo "buildhost_refs<<__BH__"; printf '%s' "${buildhost_refs}"; echo "__BH__"
+          echo "foreign_refs<<__FOREIGN__"; printf '%s' "${foreign_refs}"; echo "__FOREIGN__"
           echo "labels<<__LABELS__"
           printf '%s\n' "org.opencontainers.image.revision=${GITHUB_SHA}" \
                         "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
@@ -117,24 +168,69 @@ runs:
           fi
         } >> "${GITHUB_OUTPUT}"
 
-    - name: Log in to buildhost
-      if: ${{ inputs.push == 'true' }}
+    # When any tag targets buildhost, the build EXPORTS an OCI layout instead of
+    # pushing: docker/buildx upload every blob as one request, which the proxy in
+    # front of a deployed buildhost rejects for layers over ~100 MB (Cloudflare
+    # edge 413). The chunk-aware CLI below pushes the layout instead. A run whose
+    # tags are all foreign (or push=false) keeps the old buildx behavior exactly.
+    - name: Build and push
+      id: build
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.file }}
+        push: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs == '' }}
+        outputs: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' && format('type=oci,tar=false,dest={0}', steps.refs.outputs.layout) || '' }}
+        platforms: ${{ inputs.platforms }}
+        provenance: ${{ inputs.provenance }}
+        tags: ${{ steps.refs.outputs.tags }}
+        labels: ${{ steps.refs.outputs.labels }}
+        build-args: ${{ inputs.build-args }}
+        cache-from: ${{ steps.refs.outputs.cache_from }}
+        cache-to: ${{ steps.refs.outputs.cache_to }}
+
+    # The CLI is built from THIS action's own checkout, so the client is always
+    # exactly the version this action ref was reviewed with -- no separate
+    # release to fetch or to drift from.
+    - name: Set up Go (for the buildhost CLI)
+      if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: ${{ github.action_path }}/../../../go.mod
+        cache-dependency-path: ${{ github.action_path }}/../../../go.sum
+
+    - name: Build the buildhost CLI
+      if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        repo="$(cd "${ACTION_PATH}/../../.." && pwd)"
+        cd "${repo}"
+        ./scripts/fetch-cacerts.sh
+        go generate ./internal/api
+        go build -o "${RUNNER_TEMP}/buildhost-cli" ./cmd/buildhost
+
+    - name: Push to buildhost (chunked)
+      if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
       uses: wow-look-at-my/actions@typescript#latest
+      env:
+        BUILDHOST_REFS: ${{ steps.refs.outputs.buildhost_refs }}
+        OCI_LAYOUT: ${{ steps.refs.outputs.layout }}
       with:
         script: |
           await (async () => {
             const server: string = "${{ inputs.server }}";
-            // The OCI registry is served on the oci.<domain> subdomain.
-            const registry = `oci.${new URL(server).host}`;
             const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
             const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
             if (!url || !bearer) {
               core.setFailed("OIDC not available. Add 'permissions: { id-token: write }' to the job.");
               return;
             }
-            // Mint a GHA OIDC token with the buildhost URL as the audience and
-            // use it as the docker password; buildhost verifies the JWT and
-            // auto-provisions the project on first push.
+            // Mint a GHA OIDC token with the buildhost URL as the audience;
+            // buildhost verifies the JWT and auto-provisions the project on
+            // first push.
             const resp = await fetch(`${url}&audience=${server}`, {
               headers: { Authorization: `Bearer ${bearer}` },
             });
@@ -144,23 +240,25 @@ runs:
               return;
             }
             core.setSecret(token);
-            await exec.exec("docker", ["login", registry, "-u", "oidc", "--password-stdin"], {
-              input: Buffer.from(token),
+            const refs = (env.BUILDHOST_REFS ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
+            const cli = path.join(env.RUNNER_TEMP!, "buildhost-cli");
+            await exec.exec(cli, ["docker-push", "--server", server, "--image", env.OCI_LAYOUT!, ...refs], {
+              env: { ...process.env, BUILDHOST_TOKEN: token },
             });
-            core.info(`Logged in to buildhost registry ${registry}`);
           })();
 
-    - name: Build and push
-      id: build
+    # Tags that reference other registries keep the old buildx push path; the
+    # rebuild is a full cache hit from the step above.
+    - name: Push non-buildhost references
+      if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' && steps.refs.outputs.foreign_refs != '' }}
       uses: docker/build-push-action@v6
       with:
         context: ${{ inputs.context }}
         file: ${{ inputs.file }}
-        push: ${{ inputs.push }}
+        push: true
         platforms: ${{ inputs.platforms }}
         provenance: ${{ inputs.provenance }}
-        tags: ${{ steps.refs.outputs.tags }}
+        tags: ${{ steps.refs.outputs.foreign_refs }}
         labels: ${{ steps.refs.outputs.labels }}
         build-args: ${{ inputs.build-args }}
         cache-from: ${{ steps.refs.outputs.cache_from }}
-        cache-to: ${{ steps.refs.outputs.cache_to }}

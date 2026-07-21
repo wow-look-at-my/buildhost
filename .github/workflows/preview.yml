@@ -19,6 +19,7 @@ permissions:
   actions: read
   pull-requests: write
   id-token: write
+  checks: read
 
 jobs:
   preview:

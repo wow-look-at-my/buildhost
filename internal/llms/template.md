@@ -84,6 +84,19 @@ downloads are unchanged -- always request a concrete os/arch. A single os/arch
 returns one artifact JSON object; a multi-platform upload returns a JSON array
 of them.
 
+Hash-reference uploads: when `GET __BASE_URL__/api/v1/server-info` advertises
+`"upload_by_sha256": true`, a file byte-identical to one this project already
+uploaded (any release) can be registered for more os/arch slots without
+re-sending it -- PUT the artifact URL with an EMPTY body and
+`?upload_sha256=<hex sha256 of the file>`. The created rows and responses are
+identical to a full upload's, and the reference composes with the os/arch
+list grammar above. A 404 means the blob is not available to this project
+(unknown, another project's, or garbage-collected): fall back to a full
+upload. NEVER send an empty-body `upload_sha256` request to a server that
+does not advertise the capability -- it would store the empty body as the
+artifact. Together with `upload_session=` the parameter keeps its
+session-integrity meaning (below).
+
 Large uploads: a proxy in front of the server may cap single request bodies
 (Cloudflare's edge rejects bodies over 100 MB). Check
 `GET __BASE_URL__/api/v1/server-info` for `max_direct_upload_bytes`; anything
@@ -136,18 +149,34 @@ version first (use a download URL without `v=`, or the API).
 
 ## Package managers
 
-APT (Debian / Ubuntu). The repository is GPG-signed; see the README for the
-exact signing-key setup, then add the repo and install:
+APT (Debian / Ubuntu). Each project is its own GPG-signed repository. The
+generated installer adds the signing key and source, then refreshes the index:
 
 ```
-echo "deb [signed-by=/etc/apt/keyrings/myapp.gpg] __APT_URL__/myapp stable main" \
-  | sudo tee /etc/apt/sources.list.d/myapp.list
-sudo apt update && sudo apt install myapp
+curl -fsSL __APT_URL__/myapp/install.sh | sudo sh
+sudo apt-get install myapp
 ```
+
+For a private project, pass a read token:
+
+```
+curl -fsSL -H "Authorization: Bearer $TOKEN" __APT_URL__/myapp/install.sh \
+  | sudo BUILDHOST_TOKEN=$TOKEN sh
+```
+
+To set it up by hand instead, see the README. APT reads the armored key at
+__APT_URL__/myapp/key.asc directly via signed-by, so no gpg step is needed.
 
 For a slash-namespaced project the repository URL keeps the slash, but the
 Debian package name folds `/` and `_` to `-` (for example, `myrepo/server` is
 served at `__APT_URL__/myrepo/server` and installs as `myrepo-server`).
+
+A `create_service` project's generated deb also ships a systemd user unit
+(`/usr/lib/systemd/user/<pkg>.service`, crash-only restart, bound to the
+graphical session) that the package auto-enables at install: it starts at
+each user's next graphical login, and removal disables it again. Pre-built
+`.deb` artifacts uploaded as `kind=archive` are served byte-identical --
+never injected into.
 
 Homebrew (tap the generated Git repository, trust it -- required since
 Homebrew 6.0 -- then install; on Linux the bottle-less install runs Homebrew's
@@ -181,6 +210,15 @@ A slash-namespaced project folds `/` to `-` in its formula name (the same
 rule as APT package names), and the installed command keeps the binary's own
 name: `myrepo/myapp` installs as `brew install pazer/build/myrepo-myapp` and
 puts `myapp` on PATH.
+
+A project that declares its `create_service` setting (a bool its CI sends on
+release-create, or an operator sets via the API) is a background service,
+materialized per format. Its formula carries a `service do` block: activate
+once with `brew services start pazer/build/<project>` (user LaunchAgent at
+login, crash-only restart, logs under `$(brew --prefix)/var/log/`; Homebrew's
+sandbox makes install-time auto-start impossible for any formula, and
+`brew uninstall` does not stop services -- `brew services stop` first). Its
+generated deb ships an auto-enabled systemd user unit -- see the APT section.
 
 npm (packages are published under the `@buildhost` scope):
 
