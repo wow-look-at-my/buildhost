@@ -99,7 +99,7 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 // storage_key records the SOURCE artifact blob (a key the retention refcount
 // already tracks) and the row is dropped with its artifact on eviction.
 func (h *Handler) tarGZSHA256(ctx context.Context, project db.Project, release db.Release, a db.Artifact, baseURL string) (string, error) {
-	_, _, cached, _, err := h.DB.GetPackagedArtifact(ctx, a.ID, string(repackage.FormatTarGZ))
+	_, _, cached, _, _, err := h.DB.GetPackagedArtifact(ctx, a.ID, string(repackage.FormatTarGZ))
 	if err == nil {
 		return cached, nil
 	}

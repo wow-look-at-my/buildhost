@@ -127,18 +127,18 @@ func (d *DB) CreatePackagedArtifact(ctx context.Context, artifactID int64, forma
 	})
 }
 
-func (d *DB) GetPackagedArtifact(ctx context.Context, artifactID int64, format string) (storageKey string, size int64, sha256sum string, filename string, err error) {
+func (d *DB) GetPackagedArtifact(ctx context.Context, artifactID int64, format string) (storageKey string, size int64, sha256sum string, filename string, metadata string, err error) {
 	row, err := d.q.GetPackagedArtifact(ctx, GetPackagedArtifactParams{
 		ArtifactID: artifactID,
 		Format:     format,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", 0, "", "", ErrNotFound
+		return "", 0, "", "", "", ErrNotFound
 	}
 	if err != nil {
-		return "", 0, "", "", err
+		return "", 0, "", "", "", err
 	}
-	return row.StorageKey, row.Size, row.SHA256, row.Filename, nil
+	return row.StorageKey, row.Size, row.SHA256, row.Filename, row.Metadata, nil
 }
 
 func (d *DB) BlobBelongsToProject(ctx context.Context, projectID int64, storageKey string) (bool, error) {

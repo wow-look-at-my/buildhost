@@ -30,7 +30,7 @@ INSERT OR REPLACE INTO packaged_artifacts (artifact_id, format, storage_key, siz
 VALUES (?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetPackagedArtifact :one
-SELECT storage_key, size, sha256, filename FROM packaged_artifacts
+SELECT storage_key, size, sha256, filename, metadata FROM packaged_artifacts
 WHERE artifact_id = ? AND format = ?;
 
 -- name: BlobBelongsToProject :one
