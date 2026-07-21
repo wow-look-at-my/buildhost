@@ -39,6 +39,16 @@ inputs:
       this input existed.
     required: false
     default: ''
+  default_branch:
+    description: >-
+      The repo's default branch (e.g. 'main'). When set, the apex "latest"
+      tracks this branch for the project -- a manual override for publishers
+      whose default branch the server cannot learn itself (private repos it
+      cannot reach, non-GitHub publishers). Empty (the default) sends
+      nothing, leaving the stored project setting untouched -- byte-identical
+      request to before this input existed.
+    required: false
+    default: ''
 
 outputs:
   response:
@@ -82,6 +92,11 @@ runs:
               core.setFailed(`create_service must be 'true', 'false', or empty; got '${brewService}'`);
               return;
             }
+            // Empty input sends nothing (stored setting untouched); a set
+            // value is asserted on every publish. An older server ignores
+            // the unknown field.
+            const defaultBranch: string = "${{ inputs.default_branch }}";
+            if (defaultBranch) body['default_branch'] = defaultBranch;
 
             const resp = await fetch(`${server}/api/v1/projects/${project}/releases`, {
               method: 'POST',
