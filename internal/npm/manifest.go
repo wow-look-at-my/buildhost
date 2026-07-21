@@ -1,9 +1,8 @@
 package npm
 
-// Reading a pre-built npm-package tarball's own package.json manifest, so the
-// packument can reflect the fields npm resolves against (dependencies, bin,
-// os/cpu, engines, ...). Split from handler.go, which holds the registry
-// routes and packument/tarball serving.
+// Pre-built npm-package artifact support: reflecting the uploaded tarball's
+// own package.json manifest into the packument, and serving the stored
+// tarball itself.
 
 import (
 	"archive/tar"
@@ -11,8 +10,13 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net/http"
 	"strings"
+
+	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 // manifestPassthroughFields are the package.json fields buildhost surfaces from
@@ -93,4 +97,50 @@ func readPackageJSONFromTarball(r io.Reader) (map[string]any, error) {
 		}
 		return pkg, nil
 	}
+}
+
+func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request) {
+	project := auth.ProjectFrom(r.Context())
+	ri := tarballRouteFrom(r.Context())
+	filename := ri.filename
+
+	// The tarball filename embeds the npm-encoded project name (see
+	// projectToNPMName); decode happens at route parse, encode here to match.
+	prefix := projectToNPMName(project.Name) + "-"
+	if !strings.HasPrefix(filename, prefix) {
+		http.NotFound(w, r)
+		return
+	}
+	version := strings.TrimSuffix(filename[len(prefix):], ".tgz")
+	if version == "" || version == filename[len(prefix):] {
+		http.NotFound(w, r)
+		return
+	}
+
+	release, err := h.DB.GetRelease(r.Context(), project.ID, version)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	artifact, err := h.DB.GetArtifactByKind(r.Context(), release.ID, db.KindNPMPackage)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	rc, size, err := h.Store.Get(r.Context(), artifact.StorageKey)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	defer rc.Close()
+
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename=%q`, filename))
+	if size > 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(size))
+	}
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	io.Copy(w, rc)
 }
