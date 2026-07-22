@@ -147,8 +147,13 @@ func TestFrontend(t *testing.T) {
 		require.Contains(t, body, "/projects/myapp/releases/1")
 		require.Contains(t, body, `/projects/myapp/releases/1">1</a> <span class="badge badge-latest">latest</span>`)
 		require.NotContains(t, body, `/projects/myapp/releases/2">2</a> <span class="badge badge-latest">latest</span>`)
-		require.Contains(t, body, "brew tap pazer/build")
-		require.Contains(t, body, "brew install pazer/build/myapp")
+		// The published tap command must clone the /tap.git smart-HTTP endpoint
+		// (a bare `git clone` of the brew host 404s) and include the Homebrew
+		// 6.0+ `brew trust` step, matching llms.txt / README exactly. Asserting
+		// the whole tail catches a regression to either the bare host or a
+		// dropped trust line.
+		brewBase := "http://brew." + strings.TrimPrefix(e.ts.URL, "http://")
+		require.Contains(t, body, "brew tap pazer/build "+brewBase+"/tap.git\nbrew trust pazer/build\nbrew install pazer/build/myapp")
 		require.Contains(t, body, "docker pull oci.")
 		require.Contains(t, body, "docker pull oci."+strings.TrimPrefix(e.ts.URL, "http://")+"/myapp:1")
 	})
