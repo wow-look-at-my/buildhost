@@ -217,7 +217,13 @@ func buildInstallInfo(r *http.Request, project, version string, hasBinary bool) 
 	}
 	if hasBinary {
 		info.Curl = fmt.Sprintf("curl -LO %q", dlURL(r, project, "", "linux", "amd64", "raw"))
-		info.Brew = "brew tap pazer/build " + serviceBase(r, "brew") + "\nbrew install pazer/build/" + project
+		// The cloneable tap URL is the /tap.git smart-HTTP endpoint, never the
+		// bare host (a bare `git clone` there 404s). `brew trust` is required
+		// since Homebrew 6.0 before a third-party tap's formulae will evaluate.
+		// Keep this flow byte-for-byte in step with llms.txt / README.
+		info.Brew = "brew tap pazer/build " + serviceBase(r, "brew") + "/tap.git" +
+			"\nbrew trust pazer/build" +
+			"\nbrew install pazer/build/" + project
 		info.Npm = "npm install @buildhost/" + project + " --registry " + serviceBase(r, "npm")
 		aptURL := serviceURL(r, "apt", project)
 		// A slash-namespaced project keeps its slash in the repo URL but installs
