@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 
@@ -173,7 +175,57 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 		if w.Header().Get("Content-Length") == "" {
 			http.Error(w, "not found", http.StatusNotFound)
 		}
+		return
 	}
+
+	// A concrete artifact's bytes were just served -- record who fetched what.
+	// Best-effort: the download already succeeded, so bookkeeping never fails or
+	// slows it. The os=any/arch=any manifest path resolves no single artifact.
+	if sctx.Artifact.ID != 0 {
+		h.recordDownload(r, sctx.Artifact.ID, fmtStr)
+	}
+}
+
+// recordDownload appends a download-attribution row and bumps the aggregate
+// counter for a served artifact. Best-effort: failures are logged, not
+// propagated -- the bytes are already on the wire.
+func (h *staticHandler) recordDownload(r *http.Request, artifactID int64, fmtStr string) {
+	ctx := r.Context()
+	if err := h.DB.IncrementDownloadCount(ctx, artifactID); err != nil {
+		slog.WarnContext(ctx, "download count increment failed", "err", err, "artifact_id", artifactID)
+	}
+	if err := h.DB.RecordDownloadEvent(ctx, artifactID, fmtStr, clientIP(r), r.UserAgent(), downloadPrincipal(ctx)); err != nil {
+		slog.WarnContext(ctx, "download event record failed", "err", err, "artifact_id", artifactID)
+	}
+}
+
+// downloadPrincipal names the authenticated requester for the audit row: the
+// signed-in user, else the API token (as "token:<name>"), else "" for an
+// anonymous public download.
+func downloadPrincipal(ctx context.Context) string {
+	if user, ok := auth.UserFrom(ctx); ok && user != "" {
+		return user
+	}
+	if tok := auth.TokenFrom(ctx); tok != nil {
+		return "token:" + tok.Name
+	}
+	return ""
+}
+
+// clientIP extracts the originating client address, preferring the first
+// X-Forwarded-For hop (buildhost runs behind a proxy/CDN) and otherwise the
+// direct peer address with its port stripped.
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if i := strings.IndexByte(xff, ','); i >= 0 {
+			return strings.TrimSpace(xff[:i])
+		}
+		return strings.TrimSpace(xff)
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 func computeETag(ctx ServeContext, fmtStr string) string {
