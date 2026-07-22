@@ -299,7 +299,7 @@ App.pages.project = function (name) {
                 Html.raw(App.codeBlock("Direct download (curl)", curlCmd)),
                 Html.raw(App.codeBlock("APT (one-line install)", aptOneLiner)),
                 Html.raw(App.codeBlock("APT (manual setup)", aptCmd)),
-                Html.raw(App.codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "/tap.git\nbrew install pazer/build/" + p.name)),
+                Html.raw(App.codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "/tap.git\nbrew trust pazer/build\nbrew install pazer/build/" + p.name)),
                 Html.raw(App.codeBlock("npm", npmCmd)),
                 Html.raw(App.codeBlock("Docker", dockerCmd))
             ).cls("card");
@@ -532,6 +532,7 @@ App.pages.registries = function () {
     App.renderSidebar("registries");
     App.fetch("/registries").then(function (d) {
         var bu = d.base_url, svc = d.services || {};
+
 
         var projects = d.projects || [];
 
