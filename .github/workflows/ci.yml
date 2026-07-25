@@ -256,7 +256,21 @@ jobs:
             arm64|aarch64) arch=arm64 ;;
             *) echo "unsupported arch"; exit 1 ;;
           esac
-          printf '%s\n' '#!/bin/sh' 'echo buildhost-homebrew-ok' > "$RUNNER_TEMP/go-toolchain"
+          # Stands in for the real go-toolchain binary: an Actually Portable
+          # Executable (Cosmopolitan). Two properties are load-bearing and must
+          # not be "simplified" back into a shebang script. (1) It does NOT
+          # start with `#!` and is neither ELF nor Mach-O -- exactly what
+          # Homebrew's Cleaner keys on (extend/os/{linux,mac}/cleaner.rb) when
+          # it rewrites every installed file's mode to 0555 or, for anything it
+          # does not recognize, 0444. (2) It writes to ITSELF, standing in for
+          # the self-assimilation a real APE performs on first run, so a 0555
+          # install fails too. A shebang-script fixture passes whatever brew
+          # chmods the file -- which is how `brew install go-toolchain` shipped
+          # a 0444, unrunnable binary to users while this job stayed green.
+          printf '%s\n' \
+            "MZqFpD='APE fixture: not a shebang script, not an ELF'" \
+            ': >> "$0" || { echo "self-write failed: an APE binary rewrites itself on first run" >&2; exit 1; }' \
+            'echo buildhost-homebrew-ok' > "$RUNNER_TEMP/go-toolchain"
           chmod +x "$RUNNER_TEMP/go-toolchain"
           ./buildhost project create \
             --server "$BUILDHOST_BASE_URL" \
@@ -363,6 +377,21 @@ jobs:
           LEG: public
         with:
           file: .github/scripts/brew-tap-e2e.ts
+      # The installed file must keep BOTH bits Homebrew's Cleaner would take
+      # away: executable (it chmods anything it does not recognize as a
+      # shebang/ELF/Mach-O to 0444) and writable (an APE rewrites itself in
+      # place on first run and dies with "Permission denied" at 0555). The
+      # generated formula opts out with skip_clean "bin"; these assertions are
+      # what turn a regression in that codegen red instead of shipping a
+      # binary users cannot run.
+      - name: Installed binary must stay executable and writable
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$(brew --prefix pazer/build/go-toolchain)/bin/go-toolchain"
+          ls -l "$bin"
+          test -x "$bin" || { echo "installed binary is not executable -- Homebrew's Cleaner chmods unrecognized files 0444"; exit 1; }
+          test -w "$bin" || { echo "installed binary is not writable -- an APE binary rewrites itself on first run"; exit 1; }
       - name: Execute the publicly installed binary
         run: test "$(go-toolchain)" = "buildhost-homebrew-ok"
       # Docs: the authenticated tap replaces the public tap under the same name
