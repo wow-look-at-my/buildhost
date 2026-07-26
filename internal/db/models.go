@@ -121,6 +121,7 @@ type Release struct {
 	Notes       string     `json:"notes"`
 	OciUser     string     `json:"oci_user"`
 	Published   bool       `json:"published"`
+	Draft       bool       `json:"draft"`
 	CreatedAt   time.Time  `json:"created_at"`
 	PublishedAt *time.Time `json:"published_at"`
 }

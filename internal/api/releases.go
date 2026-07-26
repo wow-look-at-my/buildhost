@@ -48,6 +48,14 @@ type createReleaseRequest struct {
 	CreateService *bool  `json:"create_service"`
 	Notes         string `json:"notes"`
 	OciUser       string `json:"oci_user"`
+	// Draft keeps the release out of the project's public release stream: it
+	// stays unpublished, so `latest`, per-branch downloads, Homebrew, APT, npm
+	// and OCI never see it, but it is downloadable by exact version -- a build
+	// published for yourself. Unlike an ordinary unpublished release (which is
+	// an abandoned partial upload as far as the server knows, and is swept
+	// once it ages past the retention cutoff), a draft is kept. Publishing it
+	// later clears the flag.
+	Draft bool `json:"draft"`
 }
 
 func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
@@ -133,6 +141,7 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 		GitCommit:  req.GitCommit,
 		Notes:      req.Notes,
 		OciUser:    req.OciUser,
+		Draft:      req.Draft,
 	}
 
 	if err := h.DB.CreateRelease(r.Context(), rel); err != nil {

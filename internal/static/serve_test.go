@@ -11,6 +11,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -375,4 +377,77 @@ func TestServe_RepackageFormat(t *testing.T) {
 	h.Serve(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.NotEmpty(t, rec.Body.Bytes())
+}
+
+// A binary artifact that is not an ELF must be served EXACTLY as uploaded, and
+// the same immutable URL must return the same bytes every time.
+//
+// Regression: buildhost strips binaries at download time wherever strip and
+// objcopy exist (only the distroless production image lacks them). Those tools
+// go through BFD, which accepts PE/COFF, so a Cosmopolitan APE binary -- what
+// go-toolchain ships on Linux -- was not rejected but rewritten: roughly half
+// the bytes, corrupt, and different on every request. That broke `brew install`
+// outright, since a formula's sha256 is computed from one generation of the
+// download and verified against another.
+func TestServe_NonELFBinary_ServedVerbatimAndStable(t *testing.T) {
+	h, d, store := setupIntegration(t)
+	ctx := context.Background()
+
+	// A REAL PE32+ binary, which is what a Cosmopolitan APE looks like to BFD.
+	// A hand-written MZ header would not do: BFD rejects a malformed one, so
+	// strip would error and the fallback would hide the bug.
+	ape := buildPEArtifact(t)
+
+	proj := &db.Project{Name: "apeapp", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	require.NoError(t, d.PublishRelease(ctx, rel.ID))
+
+	key, size, err := store.Put(ctx, bytes.NewReader(ape))
+	require.NoError(t, err)
+	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}))
+
+	RegisterRepackageFmt("tar.gz")
+
+	get := func(format string) []byte {
+		t.Helper()
+		req := httptest.NewRequest("GET", "/file?arch=amd64&fmt="+format+"&os=linux&project=apeapp&v=1.0.0", nil)
+		req = withProject(req, proj)
+		rec := httptest.NewRecorder()
+		h.Serve(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		return rec.Body.Bytes()
+	}
+
+	raw := get("raw")
+	assert.Equal(t, ape, raw, "a non-ELF binary must be served byte-for-byte as uploaded")
+	assert.Equal(t, raw, get("raw"), "repeated downloads of an immutable artifact must be identical")
+
+	// The repackage path opens the same (optionally stripped) stream, so it
+	// carries the same guarantee -- and its bytes are what a Homebrew formula's
+	// sha256 is computed over.
+	assert.Equal(t, get("tar.gz"), get("tar.gz"), "tar.gz generation must be reproducible")
+}
+
+// buildPEArtifact returns a real PE32+ binary to stand in for a Cosmopolitan
+// APE artifact -- the shape strip/objcopy accept and rewrite.
+func buildPEArtifact(t *testing.T) []byte {
+	t.Helper()
+	dir := t.TempDir()
+	src := filepath.Join(dir, "main.go")
+	require.NoError(t, os.WriteFile(src, []byte("package main\nfunc main() {}\n"), 0o644))
+
+	out := filepath.Join(dir, "fixture.exe")
+	cmd := exec.Command("go", "build", "-o", out, src)
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=windows", "GOARCH=amd64")
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("cannot build a PE fixture (no go toolchain?): %s: %s", err, b)
+	}
+	data, err := os.ReadFile(out)
+	require.NoError(t, err)
+	return data
 }
