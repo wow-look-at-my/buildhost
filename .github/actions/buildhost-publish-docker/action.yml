@@ -372,7 +372,7 @@ runs:
                 registry_url: registryURL,
                 repository,
                 artifact_url: `${registryURL}/v2/${repository}/manifests/${digest}`,
-                github_repository: `${context.repo.owner}/${context.repo.repo}`,
+                github_repository: context.repo.repo,
                 status: "active",
                 return_records: false,
               });
