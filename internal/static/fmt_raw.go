@@ -21,9 +21,27 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 	}
 
 	debug := r.URL.Query().Get("debug") == "1"
-	shouldStrip := strip.Available() && !debug
 
-	if strip.Available() {
+	// Whether this artifact can be stripped is a property of the ARTIFACT, not
+	// of the host: stripping is in-process now, but only ELF can be stripped.
+	// Peek the magic before deciding, so a non-ELF artifact (a Cosmopolitan
+	// APE, a Mach-O, a script) skips the spool-to-disk entirely and keeps the
+	// zstd passthrough below.
+	strippable := false
+	if peek, _, err := ctx.Store.Get(r.Context(), ctx.Artifact.StorageKey); err == nil {
+		strippable = strip.LooksELF(peek)
+		peek.Close()
+		if !strippable {
+			strip.LogSkipped(r.Context(), ctx.Artifact.StorageKey, strip.ErrNotELF)
+		}
+	}
+	shouldStrip := strippable && !debug
+
+	// The header answers "can I fetch symbols for THIS artifact?", which is
+	// only true when it is an ELF we can split. It used to report whether the
+	// host had binutils -- which in the production image meant every download
+	// said "unavailable" and no one noticed for weeks.
+	if strippable {
 		w.Header().Set("X-Debug-Symbols", "available")
 	} else {
 		w.Header().Set("X-Debug-Symbols", "unavailable")
@@ -65,7 +83,8 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 	}
 
 	if shouldStrip {
-		if sr, ssize, serr := strip.StripReader(rc, ctx.TmpDir); serr == nil {
+		sr, ssize, serr := strip.StripReader(rc, ctx.TmpDir)
+		if serr == nil {
 			rc.Close()
 			defer sr.Close()
 			w.Header().Set("Content-Type", "application/octet-stream")
@@ -74,8 +93,9 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 			io.Copy(w, sr)
 			return nil
 		}
-		// strip failed (e.g. not an ELF): the reader was consumed, so re-open and serve
-		// the artifact unstripped.
+		// Stripping failed on something that looked like an ELF: serve it
+		// untouched, but log it -- silence here is what hid the breakage.
+		strip.LogSkipped(r.Context(), ctx.Artifact.StorageKey, serr)
 		rc.Close()
 		rc, size, err = ctx.Store.Get(r.Context(), ctx.Artifact.StorageKey)
 		if err != nil {

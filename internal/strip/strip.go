@@ -2,11 +2,12 @@ package strip
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
@@ -129,40 +130,28 @@ func (t *tempFileReadCloser) Close() error {
 // which is exactly the right behavior here.
 var ErrNotELF = errors.New("strip: input is not an ELF binary")
 
-// elfMagic is the 4-byte header every ELF file starts with.
-var elfMagic = []byte{0x7f, 'E', 'L', 'F'}
-
 // Strip splits an ELF binary into a stripped binary and its debug symbols.
 //
-// The ELF magic check is load-bearing, not defensive coding. strip/objcopy go
-// through BFD, which recognizes far more than ELF -- PE/COFF, Mach-O, archives
-// -- and on those inputs they do NOT fail: they rewrite the file. A
-// Cosmopolitan APE binary (go-toolchain's Linux artifact) is a PE32+ as far as
-// BFD is concerned, so `objcopy --only-keep-debug` + `strip --strip-unneeded`
-// silently produced a half-size, corrupted, and -- worse -- NON-REPRODUCIBLE
-// output: two downloads of the same immutable artifact URL returned different
-// bytes, so the sha256 baked into a Homebrew formula could never match and
-// `brew install` failed outright on any host with binutils present. (Only the
-// distroless production image, which has no strip at all, was spared.) Both
-// download call sites already documented the intent -- "strip failed (e.g. not
-// an ELF): serve it unstripped" -- and merely trusted the tools to error out.
-// Now they do.
+// The work is done in-process (see elf.go), NOT by shelling out to
+// strip/objcopy. Two reasons, both of which cost production dearly:
+//
+//   - The hardened image is distroless and ships no binutils, so the shell-out
+//     implementation could never run there. Stripping silently no-opped in
+//     production for weeks -- every download carried `X-Debug-Symbols:
+//     unavailable` and nobody was told -- while the design says stripping
+//     happens at download time.
+//   - strip/objcopy go through BFD, which accepts PE/COFF and Mach-O as well as
+//     ELF and rewrites those inputs rather than failing. A Cosmopolitan APE
+//     artifact is a PE32+ to BFD, so it was served corrupt and irreproducible,
+//     breaking `brew install` on any host that did have binutils.
+//
+// Non-ELF input is refused (ErrNotELF) before anything is written, so the
+// caller falls back to serving the uploaded bytes untouched.
 func Strip(inputPath string) (*Result, error) {
-	src, err := os.Open(inputPath)
-	if err != nil {
-		return nil, fmt.Errorf("read input: %w", err)
-	}
-	defer src.Close()
-
-	var magic [4]byte
-	if _, err := io.ReadFull(src, magic[:]); err != nil {
-		// Too short to be an ELF (or unreadable): nothing to strip.
-		return nil, ErrNotELF
-	}
-	if !bytes.Equal(magic[:], elfMagic) {
-		return nil, ErrNotELF
-	}
-	if _, err := src.Seek(0, io.SeekStart); err != nil {
+	// Check the input before creating anything, so an unreadable path fails
+	// cleanly instead of leaving temp files next to a directory that may not
+	// even exist.
+	if _, err := os.Stat(inputPath); err != nil {
 		return nil, fmt.Errorf("read input: %w", err)
 	}
 
@@ -183,46 +172,49 @@ func Strip(inputPath string) (*Result, error) {
 	debugPath := debugFile.Name()
 	debugFile.Close()
 
-	// Stream the copy: an artifact can be gigabytes, and the whole download
-	// path is otherwise bounded by the compressor window rather than the
-	// artifact size.
-	if err := copyToFile(src, strippedPath); err != nil {
+	if err := stripELF64(inputPath, strippedPath, debugPath); err != nil {
 		os.Remove(strippedPath)
 		os.Remove(debugPath)
-		return nil, fmt.Errorf("copy for stripping: %w", err)
-	}
-
-	if err := exec.Command("objcopy", "--only-keep-debug", strippedPath, debugPath).Run(); err != nil {
-		os.Remove(strippedPath)
-		os.Remove(debugPath)
-		return nil, fmt.Errorf("extract debug info: %w", err)
-	}
-
-	if err := exec.Command("strip", "--strip-debug", "--strip-unneeded", strippedPath).Run(); err != nil {
-		os.Remove(strippedPath)
-		os.Remove(debugPath)
-		return nil, fmt.Errorf("strip binary: %w", err)
+		return nil, err
 	}
 
 	return &Result{StrippedPath: strippedPath, DebugPath: debugPath}, nil
 }
 
-// copyToFile writes r into path (truncating it), streaming rather than
-// buffering the whole artifact in memory.
-func copyToFile(r io.Reader, path string) error {
-	dst, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
+// Available reports whether binary stripping can run. It is now always true:
+// stripping is implemented in-process, so it no longer depends on strip(1) and
+// objcopy(1) being installed. It used to be false in the distroless production
+// image, which is how the feature came to silently do nothing there.
+func Available() bool { return true }
+
+// LooksELF reports whether r begins with the ELF magic, consuming only those
+// bytes. Callers use it to decide whether stripping is worth attempting BEFORE
+// spooling an artifact to disk: a non-ELF artifact (a Cosmopolitan APE, a
+// Mach-O, a script, an archive) can never be stripped, and spooling gigabytes
+// to discover that on every download would be pure waste.
+func LooksELF(r io.Reader) bool {
+	var magic [4]byte
+	if _, err := io.ReadFull(r, magic[:]); err != nil {
+		return false
 	}
-	if _, err := io.Copy(dst, r); err != nil {
-		dst.Close()
-		return err
-	}
-	return dst.Close()
+	return bytes.Equal(magic[:], elfMagic)
 }
 
-func Available() bool {
-	_, err1 := exec.LookPath("strip")
-	_, err2 := exec.LookPath("objcopy")
-	return err1 == nil && err2 == nil
+// LogSkipped reports that an artifact was served unstripped, and why.
+//
+// This exists because the opposite -- swallowing the error -- is what let
+// stripping be broken in production for weeks without a trace: the shipped
+// image had no strip(1), every attempt failed, both call sites discarded the
+// error, and the only visible symptom was a header nobody was watching. A
+// non-ELF artifact is an ordinary, expected skip and logs at debug level;
+// anything else is a real failure and logs at warn, because it means an ELF
+// this server was supposed to strip came out the other side untouched.
+func LogSkipped(ctx context.Context, storageKey string, err error) {
+	if errors.Is(err, ErrNotELF) || errors.Is(err, ErrUnsupportedELF) {
+		slog.DebugContext(ctx, "serving artifact unstripped",
+			"storage_key", storageKey, "reason", err)
+		return
+	}
+	slog.WarnContext(ctx, "binary stripping failed; serving artifact unstripped",
+		"storage_key", storageKey, "error", err)
 }

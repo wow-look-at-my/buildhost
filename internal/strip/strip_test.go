@@ -2,6 +2,7 @@ package strip
 
 import (
 	"bytes"
+	"debug/elf"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,20 +13,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Stripping is implemented in-process, so it is available wherever buildhost
+// runs -- including the distroless production image, which ships no binutils
+// and where the previous shell-out implementation silently did nothing.
 func TestAvailable(t *testing.T) {
-	// Available returns true only when both strip and objcopy are in PATH.
-	_, err1 := exec.LookPath("strip")
-	_, err2 := exec.LookPath("objcopy")
-	expected := err1 == nil && err2 == nil
-
-	assert.Equal(t, expected, Available())
+	assert.True(t, Available())
 }
 
-func TestAvailable_MissingTools(t *testing.T) {
-	// Override PATH to ensure tools are not found.
+func TestAvailable_NoExternalTools(t *testing.T) {
+	// An empty PATH removes strip(1)/objcopy(1) entirely. Stripping must still
+	// be available: that is the whole point of doing it natively.
 	t.Setenv("PATH", t.TempDir())
+	assert.True(t, Available())
 
-	assert.False(t, Available())
+	dir := t.TempDir()
+	input := filepath.Join(dir, "bin")
+	require.NoError(t, os.WriteFile(input, buildELFFixture(t), 0o755))
+
+	res, err := Strip(input)
+	require.NoError(t, err)
+	t.Cleanup(func() { os.Remove(res.StrippedPath); os.Remove(res.DebugPath) })
+
+	si, err := os.Stat(res.StrippedPath)
+	require.NoError(t, err)
+	oi, err := os.Stat(input)
+	require.NoError(t, err)
+	assert.Less(t, si.Size(), oi.Size(), "stripping must actually remove bytes with no binutils present")
 }
 
 func TestStrip_NonexistentFile(t *testing.T) {
@@ -111,18 +124,11 @@ func TestStripReader_NonELFRefused(t *testing.T) {
 }
 
 func TestStripBytes_NonELF(t *testing.T) {
-	if !Available() {
-		t.Skip("strip/objcopy not available")
-	}
 	_, err := StripBytes([]byte("not an ELF"))
 	require.Error(t, err)
 }
 
 func TestStripBytes_RealBinary(t *testing.T) {
-	if !Available() {
-		t.Skip("strip/objcopy not available")
-	}
-
 	dir := t.TempDir()
 	src := filepath.Join(dir, "main.go")
 	require.NoError(t, os.WriteFile(src, []byte("package main\nfunc main() {}\n"), 0o644))
@@ -145,10 +151,6 @@ func TestStripBytes_RealBinary(t *testing.T) {
 }
 
 func TestStrip_RealELFBinary(t *testing.T) {
-	if !Available() {
-		t.Skip("strip/objcopy not available")
-	}
-
 	// Build a tiny Go program to get a real ELF binary.
 	dir := t.TempDir()
 	src := filepath.Join(dir, "main.go")
@@ -181,4 +183,118 @@ func TestStrip_RealELFBinary(t *testing.T) {
 	origInfo, _ := os.Stat(outputBin)
 	strippedInfo, _ := os.Stat(result.StrippedPath)
 	assert.Less(t, strippedInfo.Size(), origInfo.Size(), "stripped binary should be smaller")
+}
+
+// buildELFFixture returns a real ELF binary built for the host, so tests can
+// both inspect and EXECUTE the stripped result.
+func buildELFFixture(t *testing.T) []byte {
+	t.Helper()
+	dir := t.TempDir()
+	src := filepath.Join(dir, "main.go")
+	require.NoError(t, os.WriteFile(src,
+		[]byte("package main\nimport \"fmt\"\nfunc main() { fmt.Println(\"strip-fixture-ok\") }\n"), 0o644))
+
+	out := filepath.Join(dir, "fixture")
+	cmd := exec.Command("go", "build", "-o", out, src)
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("cannot build an ELF fixture (no go toolchain?): %s: %s", err, b)
+	}
+	data, err := os.ReadFile(out)
+	require.NoError(t, err)
+	if len(data) < 4 || string(data[:4]) != "\x7fELF" {
+		t.Skipf("host toolchain does not produce ELF binaries")
+	}
+	return data
+}
+
+// The acceptance test for the whole package: a stripped binary must still RUN.
+// Everything else here -- sizes, section lists -- is secondary to that. This is
+// what a corrupting implementation (the BFD shell-out on a non-ELF, or a bad
+// rewrite of an ELF) cannot pass.
+func TestStrip_StrippedBinaryStillRuns(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "fixture")
+	require.NoError(t, os.WriteFile(input, buildELFFixture(t), 0o755))
+
+	before, err := exec.Command(input).CombinedOutput()
+	require.NoError(t, err, "fixture must run before stripping")
+	require.Equal(t, "strip-fixture-ok\n", string(before))
+
+	res, err := Strip(input)
+	require.NoError(t, err)
+	t.Cleanup(func() { os.Remove(res.StrippedPath); os.Remove(res.DebugPath) })
+	require.NoError(t, os.Chmod(res.StrippedPath, 0o755))
+
+	after, err := exec.Command(res.StrippedPath).CombinedOutput()
+	require.NoError(t, err, "stripped binary must still run: %s", after)
+	assert.Equal(t, string(before), string(after), "stripping must not change behavior")
+}
+
+// Downloads are cached by strong ETag and their sha256 is baked into Homebrew
+// formulas and APT indexes, so the same artifact must strip to the same bytes
+// every time.
+func TestStrip_Deterministic(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "fixture")
+	require.NoError(t, os.WriteFile(input, buildELFFixture(t), 0o755))
+
+	read := func() []byte {
+		res, err := Strip(input)
+		require.NoError(t, err)
+		defer os.Remove(res.StrippedPath)
+		defer os.Remove(res.DebugPath)
+		b, err := os.ReadFile(res.StrippedPath)
+		require.NoError(t, err)
+		return b
+	}
+
+	assert.Equal(t, read(), read(), "stripping the same input twice must produce identical bytes")
+}
+
+// What gets removed and what must survive: debug and symbol-table sections go,
+// everything the loader or the Go runtime reaches stays.
+func TestStrip_SectionSelection(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "fixture")
+	require.NoError(t, os.WriteFile(input, buildELFFixture(t), 0o755))
+
+	res, err := Strip(input)
+	require.NoError(t, err)
+	t.Cleanup(func() { os.Remove(res.StrippedPath); os.Remove(res.DebugPath) })
+
+	orig, err := elf.Open(input)
+	require.NoError(t, err)
+	defer orig.Close()
+	stripped, err := elf.Open(res.StrippedPath)
+	require.NoError(t, err)
+	defer stripped.Close()
+
+	names := map[string]bool{}
+	for _, s := range stripped.Sections {
+		names[s.Name] = true
+	}
+	assert.False(t, names[".symtab"], ".symtab must be stripped")
+	assert.False(t, names[".debug_info"], ".debug_info must be stripped")
+
+	// Every allocated section survives, at its original file offset -- program
+	// headers address them directly, so moving one would break execution.
+	for _, s := range orig.Sections {
+		if s.Flags&elf.SHF_ALLOC == 0 {
+			continue
+		}
+		got := stripped.Section(s.Name)
+		require.NotNil(t, got, "allocated section %s must survive", s.Name)
+		assert.Equal(t, s.Offset, got.Offset, "allocated section %s must not move", s.Name)
+	}
+
+	// The debug companion carries the symbols that were removed.
+	dbg, err := elf.Open(res.DebugPath)
+	require.NoError(t, err)
+	defer dbg.Close()
+	sec := dbg.Section(".debug_info")
+	require.NotNil(t, sec, "debug file must carry .debug_info")
+	data, err := sec.Data()
+	require.NoError(t, err)
+	assert.NotEmpty(t, data)
 }
