@@ -122,9 +122,55 @@ func TestServeFormula_CachesTarGZDigest(t *testing.T) {
 
 	// A second fetch reads the cached digest instead of regenerating: poison
 	// the row with a sentinel and the served formula must carry the sentinel.
+	// The row must carry the CURRENT transform version to count as a hit.
 	sentinel := strings.Repeat("42", 32)
-	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "tar.gz", a.StorageKey, cachedSize, sentinel, "x.tar.gz", "{}"))
+	currentMeta := fmt.Sprintf(`{"transform":%q}`, repackage.TransformVersion)
+	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "tar.gz", a.StorageKey, cachedSize, sentinel, "x.tar.gz", currentMeta))
 	assert.Contains(t, fetch(), fmt.Sprintf("sha256 %q", sentinel))
+}
+
+// A cached digest describes the artifact AFTER download-time transformation
+// (stripping). If that transformation changes, every stored digest describes
+// bytes the server no longer sends -- and a Homebrew formula carrying one fails
+// `brew install` with a checksum error, for every project at once. Rows written
+// under a different (or absent) transform version must therefore be recomputed
+// rather than trusted.
+func TestServeFormula_StaleTransformDigestRecomputed(t *testing.T) {
+	h, d, store := setupTest(t)
+	ctx := context.Background()
+	proj, rel, a := seedBrewProject(t, d, store, "myapp", "binary-bytes")
+
+	tgz, err := h.Gen.Generate(ctx, repackage.FormatTarGZ, *proj, *rel, *a, "https://elsewhere.example")
+	require.NoError(t, err)
+	payload, err := io.ReadAll(tgz.Reader)
+	require.NoError(t, err)
+	require.NoError(t, tgz.Reader.Close())
+	want := fmt.Sprintf("%x", sha256.Sum256(payload))
+
+	sentinel := strings.Repeat("42", 32)
+	for name, metadata := range map[string]string{
+		"row predating the transform field": "{}",
+		"row from a different transform":    `{"transform":"strip-something-else"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "tar.gz", a.StorageKey, int64(len(payload)), sentinel, "x.tar.gz", metadata))
+
+			req := httptest.NewRequest("GET", "/myapp.rb", nil)
+			req = req.WithContext(withProject(req.Context(), proj))
+			rec := httptest.NewRecorder()
+			h.ServeFormula(rec, req)
+			require.Equal(t, http.StatusOK, rec.Code)
+
+			assert.NotContains(t, rec.Body.String(), sentinel, "a stale digest must not be served")
+			assert.Contains(t, rec.Body.String(), fmt.Sprintf("sha256 %q", want))
+
+			// The stale row is replaced in place, stamped with the current version.
+			_, _, cachedSHA, _, metadata, err := d.GetPackagedArtifact(ctx, a.ID, "tar.gz")
+			require.NoError(t, err)
+			assert.Equal(t, want, cachedSHA)
+			assert.Contains(t, metadata, repackage.TransformVersion)
+		})
+	}
 }
 
 func TestServeTap_LineageCachedAndAppendsOnChange(t *testing.T) {

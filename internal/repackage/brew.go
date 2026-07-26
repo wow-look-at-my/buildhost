@@ -48,6 +48,18 @@ func (b *Brew) Applicable(a db.Artifact) bool {
 // single-platform pattern: `depends_on :linux` makes a foreign-platform
 // install fail cleanly ("Linux is required...") instead of fetching a binary
 // that cannot run.
+//
+// A binary-kind formula also pairs `chmod 0755` with `skip_clean "bin"`.
+// Homebrew's Cleaner rewrites the mode of every installed file under bin
+// (Library/Homebrew/extend/os/{linux,mac}/cleaner.rb): 0555 when it recognizes
+// the file as executable -- a `#!` script, an ELF, or a Mach-O -- and 0444
+// otherwise, ignoring whatever mode the artifact was installed with. A
+// Cosmopolitan/APE binary is none of the three, so `brew install` left it 0444
+// (not executable at all); and 0555 would not save it either, because an APE
+// rewrites itself in place on first run and fails with "Permission denied"
+// unless it is still writable. skip_clean prunes the Cleaner for bin, so the
+// mode this formula installs is the mode that survives.
+
 var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }}require_relative "../lib/buildhost_private_download"
 
 {{ end }}class {{ .ClassName }} < Formula
@@ -70,10 +82,20 @@ var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }
     end
   end
   {{- end }}
+  {{- if eq .Kind "binary" }}
+
+  # Homebrew's Cleaner rewrites the mode of everything under bin: 0555 for a
+  # file it recognizes as executable (shebang script, ELF, Mach-O), 0444 for
+  # anything else. An Actually Portable Executable is none of those, and it
+  # rewrites itself in place on first run, so it needs both bits the Cleaner
+  # would take away. skip_clean keeps the 0755 installed below.
+  skip_clean "bin"
+  {{- end }}
 
   def install
     {{- if eq .Kind "binary" }}
     bin.install "{{ .InstallName }}"
+    chmod 0755, bin/"{{ .InstallName }}"
     {{- else if eq .Kind "library" }}
     lib.install "{{ .InstallName }}"
     {{- else }}

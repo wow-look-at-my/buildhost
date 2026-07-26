@@ -426,3 +426,67 @@ func TestSemverToNum(t *testing.T) {
 		assert.Equal(t, tt.expected, got, "semverToNum(%q)", tt.input)
 	}
 }
+
+// A draft release is uploaded deliberately but kept out of the project's
+// release stream: `latest` (and per-branch resolution, and every package
+// manager built on it) must not see it, while an exact-version lookup must.
+// That is the whole point -- publishing a build for yourself without moving the
+// pointer everyone else follows.
+func TestCreateRelease_Draft(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "draftproj", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+	// The apex "latest" tracks the project's default branch; use it so the
+	// assertions below exercise the real resolution path.
+	branch := db.LatestBranch
+
+	create := func(body string) db.Release {
+		t.Helper()
+		req := httptest.NewRequest("POST", "/api/projects/draftproj/releases", strings.NewReader(body))
+		req.SetPathValue("project", "draftproj")
+		req = withProjectRoute(req, proj)
+		req = req.WithContext(writeToken(req.Context(), "read,write"))
+		rec := httptest.NewRecorder()
+		h.CreateRelease(rec, req)
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+		var rel db.Release
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
+		return rel
+	}
+
+	published := create(`{"git_branch":"` + branch + `"}`)
+	require.NoError(t, h.DB.PublishRelease(ctx, published.ID))
+
+	draft := create(`{"git_branch":"` + branch + `","draft":true}`)
+	assert.True(t, draft.Draft)
+	assert.False(t, draft.Published)
+
+	// The apex "latest" still resolves to the published release, not the
+	// newer draft.
+	latest, err := h.DB.GetLatestRelease(ctx, proj.ID)
+	require.NoError(t, err)
+	assert.Equal(t, published.Version, latest.Version, "a draft must never become latest")
+
+	// ... and the same for the branch pointer.
+	branchLatest, err := h.DB.GetLatestReleaseByBranch(ctx, proj.ID, branch)
+	require.NoError(t, err)
+	assert.Equal(t, published.Version, branchLatest.Version, "a draft must never become a branch tip")
+
+	// But it is reachable by exact version -- how its owner downloads it.
+	got, err := h.DB.GetRelease(ctx, proj.ID, draft.Version)
+	require.NoError(t, err)
+	assert.True(t, got.Draft)
+
+	// Publishing it later clears the draft flag and moves latest.
+	require.NoError(t, h.DB.PublishRelease(ctx, draft.ID))
+	promoted, err := h.DB.GetRelease(ctx, proj.ID, draft.Version)
+	require.NoError(t, err)
+	assert.True(t, promoted.Published)
+	assert.False(t, promoted.Draft, "publishing must clear the draft flag")
+
+	latest, err = h.DB.GetLatestRelease(ctx, proj.ID)
+	require.NoError(t, err)
+	assert.Equal(t, draft.Version, latest.Version)
+}

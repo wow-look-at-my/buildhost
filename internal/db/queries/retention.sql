@@ -80,10 +80,16 @@ ORDER BY r.project_id, r.git_branch, r.version_num DESC;
 
 -- name: ListAbandonedReleases :many
 -- Unpublished (partial/failed upload) releases older than the cutoff.
+--
+-- Drafts are deliberately excluded: an unpublished release used to mean only
+-- "an upload that never finished", so sweeping them was safe. A draft is an
+-- unpublished release its owner MEANT to keep (downloadable by exact version,
+-- invisible to latest/brew/apt/npm/OCI), and deleting one because it got old
+-- would be deleting the feature.
 SELECT r.id, r.project_id, p.name AS project_name, r.git_branch, r.version
 FROM releases r
 JOIN projects p ON p.id = r.project_id
-WHERE r.published = 0 AND r.created_at < datetime(sqlc.arg(cutoff));
+WHERE r.published = 0 AND r.draft = 0 AND r.created_at < datetime(sqlc.arg(cutoff));
 
 -- name: SumReclaimableBytes :one
 -- UPPER BOUND on bytes keep-N would free: the logical sizes of evictable releases'
