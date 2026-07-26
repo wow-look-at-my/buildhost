@@ -20,6 +20,10 @@ permissions:
   pull-requests: write
   id-token: write
   checks: read
+  # buildhost-publish-site records what it uploaded on the org's linked
+  # artifacts page; that recording is part of publishing, not optional,
+  # so the publish fails without this.
+  artifact-metadata: write
 
 jobs:
   preview:
