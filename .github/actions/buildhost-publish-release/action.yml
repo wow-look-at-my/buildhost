@@ -68,7 +68,7 @@ runs:
             };
             const artifacts = published.artifacts ?? [];
             if (artifacts.length === 0) {
-              core.warning(`Publish response carried no artifacts, so nothing was recorded on the org's linked artifacts page. Upgrade the buildhost server: the publish endpoint returns them as of the release that added artifact-metadata recording.`);
+              core.setFailed(`Publish response carried no artifacts, so nothing can be recorded on the org's linked artifacts page. Upgrade the buildhost server: the publish endpoint returns them as of the release that added artifact-metadata recording. A publish that records nothing must not report success.`);
               return;
             }
 
@@ -94,7 +94,8 @@ runs:
               // is the one URL whose bytes hash to the recorded digest.
               const artifactURL = `${dl}/${project}?v=${encodeURIComponent(releaseVersion)}&os=${a.os ?? ''}&arch=${a.arch ?? ''}&debug=1`;
               if (artifactURL.length > 152) {
-                core.warning(`Recording ${project} ${slot} without artifact_url: ${artifactURL.length} chars exceeds the API's 152-char limit`);
+                core.setFailed(`Cannot record ${project} ${slot}: its artifact_url is ${artifactURL.length} chars, over the API's 152-char limit. Recording it without the URL would silently drop the only link back to the bytes the digest covers; shorten the project name or change the download URL scheme.`);
+                return;
               }
               try {
                 await octokit.request("POST /orgs/{org}/artifacts/metadata/storage-record", {
@@ -105,7 +106,7 @@ runs:
                   registry_url: server,
                   repository: project,
                   path: slot,
-                  ...(artifactURL.length <= 152 ? { artifact_url: artifactURL } : {}),
+                  artifact_url: artifactURL,
                   github_repository: context.repo.repo,
                   status: "active",
                   return_records: false,
