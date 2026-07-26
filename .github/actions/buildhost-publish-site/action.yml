@@ -310,8 +310,8 @@ runs:
               // would be an unreachable row on the org's page. A property of
               // the target, not a caller-facing switch.
               const host = new URL(server).hostname;
-              if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
-                core.info(`Skipping the storage record: ${server} is a loopback test server, not a reachable registry`);
+              if (host === "localhost" || host === "127.0.0.1" || host === "::1" || !server.startsWith("https://")) {
+                core.info(`Skipping the storage record: ${server} is not a reachable https registry (the API accepts https URLs only)`);
                 return;
               }
               const org = context.repo.owner;
@@ -328,7 +328,7 @@ runs:
                   registry_url: server,
                   repository: project,
                   path: `branch/${branch}`,
-                  github_repository: `${context.repo.owner}/${context.repo.repo}`,
+                  github_repository: context.repo.repo,
                   status: "active",
                   return_records: false,
                 });
