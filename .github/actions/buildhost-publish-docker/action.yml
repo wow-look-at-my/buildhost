@@ -83,18 +83,6 @@ inputs:
       GitHub Deployment environment name (defaults to `buildhost/<project>`).
     required: false
     default: ''
-  create_storage_record:
-    description: >-
-      Record the pushed image on the organization's linked artifacts page via
-      GitHub's artifact metadata API, keyed by the image's own manifest digest,
-      so it can be traced from the repo and commit that built it to the
-      registry holding it. Only applies to buildhost-bound pushes (tags
-      targeting other registries are that registry's business). Needs
-      `artifact-metadata: write` in the calling job's permissions block;
-      without it the step warns and skips -- records are additive and never
-      fail the publish. Set 'false' to opt out (and silence the warning).
-    required: false
-    default: 'true'
 
 outputs:
   image:
@@ -333,6 +321,71 @@ runs:
             await exec.exec(cli, ["docker-push", "--server", server, "--image", env.OCI_LAYOUT!, ...refs], {
               env: { ...process.env, BUILDHOST_TOKEN: token },
             });
+
+            // Recording what buildhost now stores is PART of pushing, not a
+            // bolt-on: it happens in this step, right after the push it
+            // describes, with no opt-out input, and a failure fails the step.
+            // A warn-and-continue path would be an opt-out by neglect -- the
+            // push would stay green while the org's linked artifacts page
+            // silently fell behind reality.
+            //
+            // The digest comes from the exported OCI layout's index.json root
+            // descriptor, not a buildx output: on this path buildx writes a
+            // layout for the CLI rather than pushing, so that descriptor IS
+            // what buildhost stored and serves.
+            const indexPath = path.join(env.OCI_LAYOUT!, "index.json");
+            const index = JSON.parse(fs.readFileSync(indexPath, "utf8")) as { manifests?: { digest?: string }[] };
+            const digest: string = index.manifests?.[0]?.digest ?? "";
+            if (digest === "") {
+              core.setFailed(`Pushed image recorded no manifest digest in ${indexPath}; cannot record what was stored`);
+              return;
+            }
+
+            // First buildhost-bound reference: <oci-host>/<repository>:<tag>.
+            // Foreign references are another registry's to account for.
+            const primary = refs[0] ?? "";
+            const slash = primary.indexOf("/");
+            const colon = primary.lastIndexOf(":");
+            if (slash < 0 || colon < slash) {
+              core.setFailed(`Could not parse the buildhost image reference '${primary}'; cannot record what was stored`);
+              return;
+            }
+            const repository = primary.slice(slash + 1, colon);
+            const registryURL = `https://${primary.slice(0, slash)}`;
+
+            // A loopback server is not a registry anything can fetch from, so
+            // a record pointing at it would be an unreachable row on the org's
+            // page. A property of the target, not a caller-facing switch.
+            const host = new URL(registryURL).hostname;
+            if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
+              core.info(`Skipping the storage record: ${registryURL} is a loopback test server, not a reachable registry`);
+              return;
+            }
+
+            const org = context.repo.owner;
+            try {
+              await octokit.request("POST /orgs/{org}/artifacts/metadata/storage-record", {
+                org,
+                name: repository,
+                version: primary.slice(colon + 1),
+                digest,
+                registry_url: registryURL,
+                repository,
+                artifact_url: `${registryURL}/v2/${repository}/manifests/${digest}`,
+                github_repository: `${context.repo.owner}/${context.repo.repo}`,
+                status: "active",
+                return_records: false,
+              });
+              core.info(`Recorded ${repository} ${digest} on ${org}'s linked artifacts page`);
+            } catch (e) {
+              const status = (e as { status?: number }).status;
+              const msg = e instanceof Error ? e.message : String(e);
+              core.setFailed(
+                status === 403 || status === 404
+                  ? `Could not record ${repository} on ${org}'s linked artifacts page (HTTP ${status}: ${msg}). Add 'artifact-metadata: write' to this job's permissions block -- job-level permissions REPLACE workflow-level ones, so add it alongside the ones the job already declares. Recording what buildhost stores is part of publishing and cannot be turned off.`
+                  : `Could not record ${repository} on ${org}'s linked artifacts page (${msg})`,
+              );
+            }
           })();
 
     # Tags that reference other registries keep the old buildx push path; the
@@ -351,70 +404,6 @@ runs:
         labels: ${{ steps.refs.outputs.labels }}
         build-args: ${{ inputs.build-args }}
         cache-from: ${{ steps.refs.outputs.cache_from }}
-
-    # Best-effort artifact-metadata bookkeeping for the buildhost-bound push.
-    # The digest comes from the exported OCI layout rather than a buildx output:
-    # on this path buildx does not push (it writes a layout for the chunk-aware
-    # CLI), so the layout's index.json root descriptor IS the digest buildhost
-    # stores and serves. Skipped when the push failed (no `always()`).
-    - name: Resolve pushed image record
-      id: image-record
-      if: ${{ inputs.create_storage_record == 'true' && inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
-      uses: wow-look-at-my/actions@typescript#latest
-      env:
-        OCI_LAYOUT: ${{ steps.refs.outputs.layout }}
-        BUILDHOST_REFS: ${{ steps.refs.outputs.buildhost_refs }}
-      with:
-        script: |
-          await (async () => {
-            core.setOutput('records', '[]');
-
-            const indexPath = path.join(env.OCI_LAYOUT ?? '', 'index.json');
-            if (!fs.existsSync(indexPath)) {
-              core.warning(`No OCI layout at ${indexPath}; skipping the artifact storage record`);
-              return;
-            }
-            const index = JSON.parse(fs.readFileSync(indexPath, 'utf8')) as {
-              manifests?: { digest?: string }[];
-            };
-            const digest: string = index.manifests?.[0]?.digest ?? '';
-            if (digest === '') {
-              core.warning('OCI layout index.json has no manifest digest; skipping the artifact storage record');
-              return;
-            }
-
-            // First buildhost-bound reference: <oci-host>/<repository>:<tag>.
-            // Foreign references are deliberately not recorded here -- they
-            // live in another registry with its own provenance story.
-            const ref: string = (env.BUILDHOST_REFS ?? '').split('\n').map((s) => s.trim()).filter(Boolean)[0] ?? '';
-            const slash = ref.indexOf('/');
-            const colon = ref.lastIndexOf(':');
-            if (slash < 0 || colon < slash) {
-              core.warning(`Could not parse the buildhost image reference '${ref}'; skipping the artifact storage record`);
-              return;
-            }
-            const registryHost = ref.slice(0, slash);
-            const repository = ref.slice(slash + 1, colon);
-            const tag = ref.slice(colon + 1);
-            const registryURL = `https://${registryHost}`;
-
-            core.setOutput('records', JSON.stringify([{
-              name: repository,
-              version: tag,
-              digest,
-              registry_url: registryURL,
-              repository,
-              artifact_url: `${registryURL}/v2/${repository}/manifests/${digest}`,
-            }]));
-            core.info(`Image record: ${repository} ${digest} in ${registryURL}`);
-          })();
-
-    - name: Record artifact storage
-      id: storage-record
-      if: ${{ inputs.create_storage_record == 'true' && steps.image-record.outputs.records != '' && steps.image-record.outputs.records != '[]' }}
-      uses: wow-look-at-my/actions@artifact-storage-record#latest
-      with:
-        records: ${{ steps.image-record.outputs.records }}
 
     # Terminal status for the GitHub Deployment created above; runs even when
     # a publish step failed so the deployment is marked failure instead of

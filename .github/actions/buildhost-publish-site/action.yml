@@ -61,19 +61,6 @@ inputs:
       `buildhost/<project>/<branch>`).
     required: false
     default: ''
-  create_storage_record:
-    description: >-
-      Record the uploaded site archive on the organization's linked artifacts
-      page via GitHub's artifact metadata API, keyed by the sha256 of the
-      tar.gz/zip as uploaded. Defaults to 'false', unlike the binary and image
-      publishers: a site is served unpacked, so no URL returns the bytes the
-      digest covers (the record carries no artifact_url), and the dominant
-      caller is the PR-preview workflow, which would add a record per preview
-      push. Turn it on for sites whose archives you want inventoried. Needs
-      `artifact-metadata: write` in the calling job's permissions block;
-      without it the step warns and skips.
-    required: false
-    default: 'false'
 
 outputs:
   response:
@@ -312,30 +299,65 @@ runs:
             });
             const sum = await fileSHA256(archivePath);
 
+            // Recording what buildhost now stores is PART of publishing, not a
+            // bolt-on: it happens in this step, has no opt-out input, and a
+            // failure fails the publish. A warn-and-continue path would be an
+            // opt-out by neglect -- the publish would stay green while the
+            // org's linked artifacts page silently fell behind reality.
+            const postStorageRecord = async (): Promise<void> => {
+              // A loopback server is not a registry anything can fetch from
+              // (buildhost's own e2e spawns one), so a record pointing at it
+              // would be an unreachable row on the org's page. A property of
+              // the target, not a caller-facing switch.
+              const host = new URL(server).hostname;
+              if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
+                core.info(`Skipping the storage record: ${server} is a loopback test server, not a reachable registry`);
+                return;
+              }
+              const org = context.repo.owner;
+              try {
+                // Deliberately no artifact_url: buildhost serves a site
+                // unpacked, so no URL returns the archive bytes this digest
+                // covers, and a record must never point at bytes that hash to
+                // something else.
+                await octokit.request("POST /orgs/{org}/artifacts/metadata/storage-record", {
+                  org,
+                  name: project,
+                  version: gitCommit,
+                  digest: `sha256:${sum}`,
+                  registry_url: server,
+                  repository: project,
+                  path: `branch/${branch}`,
+                  github_repository: `${context.repo.owner}/${context.repo.repo}`,
+                  status: "active",
+                  return_records: false,
+                });
+                core.info(`Recorded ${project} branch/${branch} sha256:${sum} on ${org}'s linked artifacts page`);
+              } catch (e) {
+                const status = (e as { status?: number }).status;
+                const msg = e instanceof Error ? e.message : String(e);
+                core.setFailed(
+                  status === 403 || status === 404
+                    ? `Could not record ${project} branch/${branch} on ${org}'s linked artifacts page (HTTP ${status}: ${msg}). Add 'artifact-metadata: write' to this job's permissions block -- job-level permissions REPLACE workflow-level ones, so add it alongside the ones the job already declares. Recording what buildhost stores is part of publishing and cannot be turned off.`
+                    : `Could not record ${project} branch/${branch} on ${org}'s linked artifacts page (${msg})`,
+                );
+              }
+            };
+
             // The endpoint's own response -- from the direct PUT or the
             // session finalize, same endpoint either way -- feeds the outputs.
-            const finishPublish = (r: { status: number; text: string }): void => {
+            const finishPublish = async (r: { status: number; text: string }): Promise<void> => {
               if (r.status < 200 || r.status >= 300) { core.setFailed(`HTTP ${r.status}: ${r.text}`); return; }
               const siteURL = `${sitesBase}/${project}/branch/${branch}/`;
               core.info(`Published site to ${siteURL}`);
               core.info(JSON.stringify(JSON.parse(r.text), null, 2));
               core.setOutput('response', r.text);
               core.setOutput('site_url', siteURL);
-              // Deliberately no artifact_url: buildhost serves a site unpacked,
-              // so no URL returns the archive bytes this digest covers, and a
-              // record must never point at bytes that hash to something else.
-              core.setOutput('storage_records', JSON.stringify([{
-                name: project,
-                version: gitCommit,
-                digest: `sha256:${sum}`,
-                registry_url: server,
-                repository: project,
-                path: `branch/${branch}`,
-              }]));
+              await postStorageRecord();
             };
 
             if (chunkSize <= 0 || size <= directLimit) {
-              finishPublish(await api('PUT', target, blob, uploadHeaders));
+              await finishPublish(await api('PUT', target, blob, uploadHeaders));
               return;
             }
 
@@ -355,7 +377,7 @@ runs:
               // single request -- exactly what the old action sent -- with a
               // heads-up, since a proxy body cap may reject it.
               core.warning(`server does not support chunked uploads; sending ${size} bytes as a single request`);
-              finishPublish(await api('PUT', target, blob, uploadHeaders));
+              await finishPublish(await api('PUT', target, blob, uploadHeaders));
               return;
             }
             if (create.status !== 201) {
@@ -456,18 +478,8 @@ runs:
               // the TTL sweeper.
               await abortSession();
             }
-            finishPublish(fin);
+            await finishPublish(fin);
           })();
-
-    # Best-effort artifact-metadata bookkeeping (opt-in for sites, see the
-    # create_storage_record input). Skipped when the publish failed (no
-    # `always()`), so nothing that did not land is ever recorded.
-    - name: Record artifact storage
-      id: storage-record
-      if: ${{ inputs.create_storage_record == 'true' && steps.publish.outputs.storage_records != '' && steps.publish.outputs.storage_records != '[]' }}
-      uses: wow-look-at-my/actions@artifact-storage-record#latest
-      with:
-        records: ${{ steps.publish.outputs.storage_records }}
 
     # Terminal status for the GitHub Deployment created above; runs even when
     # the publish failed so the deployment is marked failure instead of
