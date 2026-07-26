@@ -46,15 +46,6 @@ inputs:
       --chunk-size); 0 disables chunking entirely (always one direct request)
     required: false
     default: ''
-  create_deployment:
-    description: >-
-      Register this site publish as a GitHub Deployment in the calling repo
-      (with a success status linking to the live site URL). Needs
-      `deployments: write` in the calling job's permissions block; without it
-      the step warns and skips -- deployments are additive and never fail the
-      publish. Set 'false' to opt out (and silence the warning).
-    required: false
-    default: 'true'
   deployment_environment:
     description: >-
       GitHub Deployment environment name (defaults to
@@ -76,18 +67,31 @@ runs:
     - name: Refuse jobs named all-builds
       uses: wow-look-at-my/actions@no-all-builds-job#latest
 
-    # Best-effort GitHub Deployment registration: the site publish shows up in
-    # the calling repo's Environments/Deployments UI with a link to the live
-    # site. Requires `deployments: write` in the calling job; without it the
-    # step warns and skips -- it can never fail the publish.
+    # Registering the site publish as a GitHub Deployment is part of publishing,
+    # not an add-on: no opt-out input, and a failure fails the step. See
+    # buildhost-publish for why warn-and-continue was removed. The calling job
+    # needs `deployments: write` (ADDITIVE -- a job-level permissions block
+    # replaces the workflow-level one).
     - name: Create GitHub Deployment
       id: deployment
-      if: ${{ inputs.create_deployment == 'true' }}
       uses: wow-look-at-my/actions@typescript#latest
       with:
         script: |
           await (async () => {
             core.setOutput('deployment_id', '');
+            // A deployment asserts "this publish is live at <environment_url>".
+            // Against a loopback or plain-http server -- buildhost's own e2e
+            // spawns one on http://localhost:18080 -- that assertion is false:
+            // nothing outside the runner can reach it. So there is nothing true
+            // to register, exactly as there is nothing recordable for a loopback
+            // registry. A property of the target, not an opt-out: every publish
+            // to a real server registers, and a failure there is fatal.
+            const deployServer: string = "${{ inputs.server }}";
+            const deployHost: string = new URL(deployServer).hostname;
+            if (deployHost === "localhost" || deployHost === "127.0.0.1" || deployHost === "::1" || !deployServer.startsWith("https://")) {
+              core.info(`Skipping the GitHub Deployment: ${deployServer} is not a reachable https server, so its deployment URL would point nowhere`);
+              return;
+            }
             try {
               const projectInput: string = "${{ inputs.project }}";
               const project: string = projectInput || github.repository.split('/').pop()!;
@@ -121,7 +125,7 @@ runs:
               });
               const id = (dep.data as any)?.id;
               if (typeof id !== 'number') {
-                core.warning(`GitHub Deployment not created (HTTP ${dep.status}); publishing without one`);
+                core.setFailed(`GitHub Deployment not created (HTTP ${dep.status}): the API returned no deployment id`);
                 return;
               }
               core.setOutput('deployment_id', String(id));
@@ -136,7 +140,7 @@ runs:
               core.info(`Created GitHub Deployment ${id} in environment '${environment}'`);
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
-              core.warning(`Skipping GitHub Deployment (${msg}). Grant 'deployments: write' in the calling job's permissions block, or set create_deployment: 'false' to silence this warning.`);
+              core.setFailed(`Could not create the GitHub Deployment (${msg}). Add 'deployments: write' to this job's permissions block -- job-level permissions REPLACE workflow-level ones, so add it alongside the ones the job already declares. Registering the publish is part of publishing and cannot be turned off.`);
             }
           })();
 
@@ -508,6 +512,6 @@ runs:
               core.info(`GitHub Deployment marked ${ok ? 'success' : 'failure'}`);
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
-              core.warning(`Could not update the GitHub Deployment status (${msg})`);
+              core.setFailed(`Could not post the terminal GitHub Deployment status (${msg}); the deployment would be left stuck in_progress`);
             }
           })();
