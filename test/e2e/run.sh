@@ -31,6 +31,7 @@ export BUILDHOST_DATA_DIR="$WORK/data"
 export BUILDHOST_DB_PATH="$WORK/data/buildhost.db"   # DBPath is independent of DataDir
 export BUILDHOST_LISTEN_ADDR=":${PORT}"
 export BUILDHOST_ADMIN_LISTEN_ADDR=""                # disable admin server (avoid extra port)
+export BUILDHOST_PRIMARY_DOMAIN="*"                  # required; "*" = serve every Host (localhost + *.localhost here)
 SERVER_PID=""
 cleanup() { [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true; rm -rf "$WORK"; }
 trap cleanup EXIT

@@ -873,6 +873,8 @@ Environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `BUILDHOST_PRIMARY_DOMAIN` | **required** | Apex owning the web UI, `/api/v1` and the GitHub OAuth callback; other hosts get a plain 404. Use `*` to serve every `Host` (host-agnostic). No default -- the server refuses to start without it |
+| `BUILDHOST_SITE_DOMAIN` | (off) | Dedicated domain for project static sites: serves each DNS-label-named project at `<project>.<domain>` |
 | `BUILDHOST_LISTEN_ADDR` | `:8080` | API listen address |
 | `BUILDHOST_ADMIN_LISTEN_ADDR` | `:9090` | Admin dashboard listen address (empty to disable) |
 | `BUILDHOST_DATA_DIR` | `./data` | Data directory |
