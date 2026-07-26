@@ -370,6 +370,25 @@ volumes:
 
 **Note:** Serving through Cloudflare's proxy caps request bodies at the edge (100 MB on the Free plan); [`deploy/DIRECT-INGRESS.md`](deploy/DIRECT-INGRESS.md) adds an opt-in direct TLS ingress so uploads of any size work in a single request.
 
+## Draft releases
+
+A release you upload but do not publish is a **draft**: it is downloadable by
+its exact version and nothing else sees it — `latest`, per-branch downloads,
+Homebrew, APT, npm and OCI all resolve published releases only. Use it to put a
+build somewhere you can `curl` it without moving the pointer everyone follows.
+
+```bash
+buildhost publish --draft --server https://buildhost.example.com --token $TOKEN \
+  --project myapp --os linux --arch amd64 --artifact ./myapp
+# draft myapp/7 (not published)
+# download: https://static.buildhost.example.com/file?project=myapp&v=7&os=linux&arch=amd64
+```
+
+Publish it later (`POST /api/v1/projects/{project}/releases/{version}/publish`)
+and it joins the release stream, clearing the draft flag. Drafts are kept until
+you delete them: retention sweeps *unpublished* releases as abandoned uploads,
+but never drafts.
+
 ## Quick start
 
 ```bash
