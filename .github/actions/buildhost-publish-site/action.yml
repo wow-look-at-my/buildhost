@@ -61,6 +61,19 @@ inputs:
       `buildhost/<project>/<branch>`).
     required: false
     default: ''
+  create_storage_record:
+    description: >-
+      Record the uploaded site archive on the organization's linked artifacts
+      page via GitHub's artifact metadata API, keyed by the sha256 of the
+      tar.gz/zip as uploaded. Defaults to 'false', unlike the binary and image
+      publishers: a site is served unpacked, so no URL returns the bytes the
+      digest covers (the record carries no artifact_url), and the dominant
+      caller is the PR-preview workflow, which would add a record per preview
+      push. Turn it on for sites whose archives you want inventoried. Needs
+      `artifact-metadata: write` in the calling job's permissions block;
+      without it the step warns and skips.
+    required: false
+    default: 'false'
 
 outputs:
   response:
@@ -284,6 +297,21 @@ runs:
               return { status: 0, text: "unreachable" };
             };
 
+            // The archive's sha256, needed on both paths: the chunked finalize
+            // verifies the assembled spool against it, and the artifact-metadata
+            // storage record is keyed by it. One streaming read either way (the
+            // TS action injects no `crypto` global; require is the documented
+            // route to node modules).
+            const crypto = require("crypto");
+            const fileSHA256 = (p: string): Promise<string> => new Promise((resolve, reject) => {
+              const hash = crypto.createHash("sha256");
+              fs.createReadStream(p)
+                .on("error", reject)
+                .on("data", (chunk: Buffer) => hash.update(chunk))
+                .on("end", () => resolve(hash.digest("hex")));
+            });
+            const sum = await fileSHA256(archivePath);
+
             // The endpoint's own response -- from the direct PUT or the
             // session finalize, same endpoint either way -- feeds the outputs.
             const finishPublish = (r: { status: number; text: string }): void => {
@@ -293,6 +321,17 @@ runs:
               core.info(JSON.stringify(JSON.parse(r.text), null, 2));
               core.setOutput('response', r.text);
               core.setOutput('site_url', siteURL);
+              // Deliberately no artifact_url: buildhost serves a site unpacked,
+              // so no URL returns the archive bytes this digest covers, and a
+              // record must never point at bytes that hash to something else.
+              core.setOutput('storage_records', JSON.stringify([{
+                name: project,
+                version: gitCommit,
+                digest: `sha256:${sum}`,
+                registry_url: server,
+                repository: project,
+                path: `branch/${branch}`,
+              }]));
             };
 
             if (chunkSize <= 0 || size <= directLimit) {
@@ -307,19 +346,9 @@ runs:
             // endpoint's own routing, auth, size caps, and Content-Type
             // dispatch all run unchanged against the assembled spool.
 
-            // Streaming file hash for the integrity-checked finalize (the TS
-            // action injects no `crypto` global; require is the documented
-            // route to node modules).
-            const crypto = require("crypto");
-            const fileSHA256 = (p: string): Promise<string> => new Promise((resolve, reject) => {
-              const hash = crypto.createHash("sha256");
-              fs.createReadStream(p)
-                .on("error", reject)
-                .on("data", (chunk: Buffer) => hash.update(chunk))
-                .on("end", () => resolve(hash.digest("hex")));
-            });
-            const sum = await fileSHA256(archivePath);
-
+            // `sum` (the archive's sha256, used by the finalize's integrity
+            // check) is computed above, since the record needs it on the
+            // direct-upload path too.
             const create = await api('POST', `${server}/api/v1/uploads`);
             if (create.status === 404 || create.status === 405) {
               // Server predates upload sessions. Fall back to the classic
@@ -429,6 +458,16 @@ runs:
             }
             finishPublish(fin);
           })();
+
+    # Best-effort artifact-metadata bookkeeping (opt-in for sites, see the
+    # create_storage_record input). Skipped when the publish failed (no
+    # `always()`), so nothing that did not land is ever recorded.
+    - name: Record artifact storage
+      id: storage-record
+      if: ${{ inputs.create_storage_record == 'true' && steps.publish.outputs.storage_records != '' && steps.publish.outputs.storage_records != '[]' }}
+      uses: wow-look-at-my/actions@artifact-storage-record#latest
+      with:
+        records: ${{ steps.publish.outputs.storage_records }}
 
     # Terminal status for the GitHub Deployment created above; runs even when
     # the publish failed so the deployment is marked failure instead of
