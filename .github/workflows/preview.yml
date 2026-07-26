@@ -24,6 +24,7 @@ permissions:
   # artifacts page; that recording is part of publishing, not optional,
   # so the publish fails without this.
   artifact-metadata: write
+  deployments: write
 
 jobs:
   preview:
