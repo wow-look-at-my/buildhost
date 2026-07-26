@@ -15,7 +15,7 @@ inputs:
     required: false
     default: 'go-build'
   path:
-    description: 'Local directory containing the release binaries to publish, resolved relative to the workspace. When set, the run''s artifacts are NOT downloaded and the artifact_name input is ignored; files are read from this directory instead (no actions: read permission needed; the publish script never reads GITHUB_TOKEN in this mode, though the optional GitHub Deployment steps use github.token and warn-skip without deployments: write -- see create_deployment).'
+    description: 'Local directory containing the release binaries to publish, resolved relative to the workspace. When set, the run''s artifacts are NOT downloaded and the artifact_name input is ignored; files are read from this directory instead (no actions: read permission needed; the publish script never reads GITHUB_TOKEN in this mode, though the GitHub Deployment steps use github.token and require deployments: write).'
     required: false
   version:
     description: 'Release version (omit for auto-versioned projects)'
@@ -48,15 +48,6 @@ inputs:
       project this publish creates a release for.
     required: false
     default: ''
-  create_deployment:
-    description: >-
-      Register this publish as a GitHub Deployment in the calling repo (with a
-      success status linking to the live buildhost URL). Needs
-      `deployments: write` in the calling job's permissions block; without it
-      the step warns and skips -- deployments are additive and never fail the
-      publish. Set 'false' to opt out (and silence the warning).
-    required: false
-    default: 'true'
   deployment_environment:
     description: >-
       GitHub Deployment environment name (defaults to `buildhost/<project>`).
@@ -69,13 +60,14 @@ runs:
     - name: Refuse jobs named all-builds
       uses: wow-look-at-my/actions@no-all-builds-job#latest
 
-    # Best-effort GitHub Deployment registration: the publish shows up in the
-    # calling repo's Environments/Deployments UI with a link to the live
-    # buildhost URL. Requires `deployments: write` in the calling job; without
-    # it the step warns and skips -- it can never fail the publish.
+    # Registering the publish as a GitHub Deployment is part of publishing, not
+    # an add-on: it has no opt-out input and a failure fails the step. Warning
+    # and continuing was an opt-out by neglect -- seven of the eight callers had
+    # been skipping deployments entirely, each one green, because nobody reads a
+    # warning in a passing run. The calling job needs `deployments: write`
+    # (ADDITIVE -- a job-level permissions block replaces the workflow-level one).
     - name: Create GitHub Deployment
       id: deployment
-      if: ${{ inputs.create_deployment == 'true' }}
       uses: wow-look-at-my/actions@typescript#latest
       with:
         script: |
@@ -111,7 +103,7 @@ runs:
               });
               const id = (dep.data as any)?.id;
               if (typeof id !== 'number') {
-                core.warning(`GitHub Deployment not created (HTTP ${dep.status}); publishing without one`);
+                core.setFailed(`GitHub Deployment not created (HTTP ${dep.status}): the API returned no deployment id`);
                 return;
               }
               core.setOutput('deployment_id', String(id));
@@ -126,7 +118,7 @@ runs:
               core.info(`Created GitHub Deployment ${id} in environment '${environment}'`);
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
-              core.warning(`Skipping GitHub Deployment (${msg}). Grant 'deployments: write' in the calling job's permissions block, or set create_deployment: 'false' to silence this warning.`);
+              core.setFailed(`Could not create the GitHub Deployment (${msg}). Add 'deployments: write' to this job's permissions block -- job-level permissions REPLACE workflow-level ones, so add it alongside the ones the job already declares. Registering the publish is part of publishing and cannot be turned off.`);
             }
           })();
 
@@ -260,12 +252,12 @@ runs:
               for (const rec of storageRecords) {
                 const { artifact_url: artifactURL, ...rest } = rec;
                 if (artifactURL.length > 152) {
-                  core.warning(`Recording ${rec.name} ${rec.path} without artifact_url: ${artifactURL.length} chars exceeds the API's 152-char limit`);
+                  core.setFailed(`Cannot record ${rec.name} ${rec.path}: its artifact_url is ${artifactURL.length} chars, over the API's 152-char limit. Recording it without the URL would silently drop the only link back to the bytes the digest covers; shorten the project name or change the download URL scheme.`);
+                  return false;
                 }
                 try {
                   await octokit.request("POST /orgs/{org}/artifacts/metadata/storage-record", {
-                    org, ...rest,
-                    ...(artifactURL.length <= 152 ? { artifact_url: artifactURL } : {}),
+                    org, ...rest, artifact_url: artifactURL,
                     github_repository: githubRepository, status: "active", return_records: false,
                   });
                   core.info(`Recorded ${rec.name} ${rec.path} ${rec.digest}`);
@@ -543,6 +535,6 @@ runs:
               core.info(`GitHub Deployment marked ${ok ? 'success' : 'failure'}`);
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
-              core.warning(`Could not update the GitHub Deployment status (${msg})`);
+              core.setFailed(`Could not post the terminal GitHub Deployment status (${msg}); the deployment would be left stuck in_progress`);
             }
           })();

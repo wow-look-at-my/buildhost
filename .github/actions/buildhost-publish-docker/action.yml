@@ -68,16 +68,6 @@ inputs:
     description: 'Push to the registry (set false to build only).'
     required: false
     default: 'true'
-  create_deployment:
-    description: >-
-      Register this image publish as a GitHub Deployment in the calling repo
-      (with a success status linking to the project's buildhost page). Needs
-      `deployments: write` in the calling job's permissions block; without it
-      the step warns and skips -- deployments are additive and never fail the
-      publish. Only applies when push is 'true' (a build-only run deploys
-      nothing). Set 'false' to opt out (and silence the warning).
-    required: false
-    default: 'true'
   deployment_environment:
     description: >-
       GitHub Deployment environment name (defaults to `buildhost/<project>`).
@@ -98,14 +88,16 @@ runs:
     - name: Refuse jobs named all-builds
       uses: wow-look-at-my/actions@no-all-builds-job#latest
 
-    # Best-effort GitHub Deployment registration: the image publish shows up
-    # in the calling repo's Environments/Deployments UI with a link to the
-    # project's buildhost page. Requires `deployments: write` in the calling
-    # job; without it the step warns and skips -- it can never fail the
-    # publish. Skipped entirely for build-only runs (push != 'true').
+    # Registering the image publish as a GitHub Deployment is part of
+    # publishing, not an add-on: no opt-out input, and a failure fails the step.
+    # See buildhost-publish for why warn-and-continue was removed. Still skipped
+    # for build-only runs -- `push != 'true'` publishes nothing, so there is
+    # nothing to deploy; that is a property of the run, not a switch. The calling
+    # job needs `deployments: write` (ADDITIVE -- a job-level permissions block
+    # replaces the workflow-level one).
     - name: Create GitHub Deployment
       id: deployment
-      if: ${{ inputs.create_deployment == 'true' && inputs.push == 'true' }}
+      if: ${{ inputs.push == 'true' }}
       uses: wow-look-at-my/actions@typescript#latest
       with:
         script: |
@@ -137,7 +129,7 @@ runs:
               });
               const id = (dep.data as any)?.id;
               if (typeof id !== 'number') {
-                core.warning(`GitHub Deployment not created (HTTP ${dep.status}); publishing without one`);
+                core.setFailed(`GitHub Deployment not created (HTTP ${dep.status}): the API returned no deployment id`);
                 return;
               }
               core.setOutput('deployment_id', String(id));
@@ -152,7 +144,7 @@ runs:
               core.info(`Created GitHub Deployment ${id} in environment '${environment}'`);
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
-              core.warning(`Skipping GitHub Deployment (${msg}). Grant 'deployments: write' in the calling job's permissions block, or set create_deployment: 'false' to silence this warning.`);
+              core.setFailed(`Could not create the GitHub Deployment (${msg}). Add 'deployments: write' to this job's permissions block -- job-level permissions REPLACE workflow-level ones, so add it alongside the ones the job already declares. Registering the publish is part of publishing and cannot be turned off.`);
             }
           })();
 
@@ -448,6 +440,6 @@ runs:
               core.info(`GitHub Deployment marked ${ok ? 'success' : 'failure'}`);
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
-              core.warning(`Could not update the GitHub Deployment status (${msg})`);
+              core.setFailed(`Could not post the terminal GitHub Deployment status (${msg}); the deployment would be left stuck in_progress`);
             }
           })();
