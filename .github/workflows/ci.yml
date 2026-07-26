@@ -175,6 +175,16 @@ jobs:
       # image build/pull. up then reuses this image instead of rebuilding.
       - run: docker compose -f docker-compose.ci.yml build
       - run: docker compose -f docker-compose.ci.yml up -d --wait --wait-timeout 30
+      # Stripping is documented to happen at download time, and it silently did
+      # NOT happen in the shipped image for weeks: it shelled out to
+      # strip(1)/objcopy(1), which the distroless image does not ship, so every
+      # download went out unstripped and fmt=symbols could not work. Unit tests
+      # could not see it -- the runner has binutils, the container does not --
+      # so the guarantee has to be asserted against the real image.
+      - name: The shipped image must actually strip on download
+        uses: wow-look-at-my/actions@typescript#latest
+        with:
+          file: .github/scripts/image-strips-e2e.ts
       - run: docker compose -f docker-compose.ci.yml logs
         if: failure()
 

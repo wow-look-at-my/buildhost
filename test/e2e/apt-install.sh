@@ -71,7 +71,7 @@ done
 # to stderr; the resolved version is echoed to stdout for command
 # substitution.
 publish_project() {
-	local project="$1" extra="${2:-}"
+	local project="$1" extra="${2:-}" payload="${3:-$ARTIFACT_BIN}"
 	echo "== create public project '$project' ==" >&2
 	curl -fsS "${auth[@]}" -H "Content-Type: application/json" \
 		-d "{\"name\":\"$project\",\"versioning\":\"auto\",\"is_private\":false,\"description\":\"APT endpoint e2e package\"}" \
@@ -84,7 +84,7 @@ publish_project() {
 		"$BASE/api/v1/projects/$project/releases" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
 	[ -n "$version" ] || { echo "could not determine release version for '$project'" >&2; exit 1; }
 	echo "   version=$version" >&2
-	curl -fsS "${auth[@]}" -X PUT --data-binary "@$ARTIFACT_BIN" \
+	curl -fsS "${auth[@]}" -X PUT --data-binary "@$payload" \
 		"$BASE/api/v1/projects/$project/releases/$version/artifacts/linux/amd64?kind=binary" >/dev/null
 	curl -fsS "${auth[@]}" -X POST "$BASE/api/v1/projects/$project/releases/$version/publish" >/dev/null
 	echo "$version"
@@ -142,4 +142,39 @@ install_via_apt "buildhost-apt-e2e/tool" "buildhost-apt-e2e-tool" "$V2"
 [ ! -e /usr/lib/systemd/user/buildhost-apt-e2e-tool.service ] || { echo "flag-off project unexpectedly shipped a unit" >&2; exit 1; }
 [ ! -e /etc/systemd/user/graphical-session.target.wants/buildhost-apt-e2e-tool.service ] || { echo "flag-off project unexpectedly enabled a unit" >&2; exit 1; }
 
-echo "== E2E OK: apt endpoint installed plain (with service unit) and namespaced (without) packages =="
+# 3) A Cosmopolitan APE artifact. An APE rewrites its own file the first time it
+#    runs, and dpkg installs binaries root-owned 0755 -- so a plain /usr/bin
+#    install is unrunnable for every user except root ("cannot create
+#    /usr/bin/<pkg>: Permission denied"), which is what `apt install
+#    go-toolchain` produced. The package must instead install the binary under
+#    /usr/lib and ship a launcher that keeps a per-user writable copy.
+#
+#    The fixture is APE-SHAPED on purpose: no shebang, and it writes to itself
+#    before printing its marker. A normal binary cannot exercise this at all.
+APE_BIN="$WORK/ape-fixture"
+{
+	printf '%s\n' "MZqFpD='APE-shaped fixture: rewrites itself on first run'"
+	printf '%s\n' ': >> "$0" || { echo "self-write failed" >&2; exit 1; }'
+	printf '%s\n' 'echo buildhost-apt-ape-ok'
+} >"$APE_BIN"
+chmod +x "$APE_BIN"
+
+V3="$(publish_project "buildhost-apt-e2e-ape" "" "$APE_BIN")"
+install_via_apt "buildhost-apt-e2e-ape" "buildhost-apt-e2e-ape" "$V3"
+
+echo "== verify the APE package ships a launcher, not a bare root-owned binary =="
+REAL="/usr/lib/buildhost-apt-e2e-ape/buildhost-apt-e2e-ape"
+[ -f "$REAL" ] || { echo "missing $REAL -- the APE binary should install under /usr/lib" >&2; exit 1; }
+head -n1 /usr/bin/buildhost-apt-e2e-ape | grep -q '^#!/bin/sh$' || {
+	echo "/usr/bin/buildhost-apt-e2e-ape is not the generated launcher" >&2; exit 1; }
+
+echo "== run it as the CURRENT (non-root) user -- the case that was broken =="
+id -u | grep -qv '^0$' || { echo "expected to be running as a non-root user" >&2; exit 1; }
+OUT="$(/usr/bin/buildhost-apt-e2e-ape)"
+[ "$OUT" = "buildhost-apt-ape-ok" ] || { echo "APE launcher output was '$OUT'" >&2; exit 1; }
+
+COPY="${XDG_CACHE_HOME:-$HOME/.cache}/buildhost/buildhost-apt-e2e-ape/$V3/buildhost-apt-e2e-ape"
+[ -w "$COPY" ] || { echo "expected a writable per-user copy at $COPY" >&2; exit 1; }
+echo "== OK: apt-installed APE runs as a non-root user, via a writable per-user copy =="
+
+echo "== E2E OK: apt endpoint installed plain (with service unit), namespaced (without), and APE (via launcher) packages =="
