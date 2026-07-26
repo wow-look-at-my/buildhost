@@ -1,6 +1,8 @@
 package strip
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -122,9 +124,45 @@ func (t *tempFileReadCloser) Close() error {
 	return err
 }
 
+// ErrNotELF is returned when the input is not an ELF object file. Callers on
+// the download path treat any Strip error as "serve the artifact unstripped",
+// which is exactly the right behavior here.
+var ErrNotELF = errors.New("strip: input is not an ELF binary")
+
+// elfMagic is the 4-byte header every ELF file starts with.
+var elfMagic = []byte{0x7f, 'E', 'L', 'F'}
+
+// Strip splits an ELF binary into a stripped binary and its debug symbols.
+//
+// The ELF magic check is load-bearing, not defensive coding. strip/objcopy go
+// through BFD, which recognizes far more than ELF -- PE/COFF, Mach-O, archives
+// -- and on those inputs they do NOT fail: they rewrite the file. A
+// Cosmopolitan APE binary (go-toolchain's Linux artifact) is a PE32+ as far as
+// BFD is concerned, so `objcopy --only-keep-debug` + `strip --strip-unneeded`
+// silently produced a half-size, corrupted, and -- worse -- NON-REPRODUCIBLE
+// output: two downloads of the same immutable artifact URL returned different
+// bytes, so the sha256 baked into a Homebrew formula could never match and
+// `brew install` failed outright on any host with binutils present. (Only the
+// distroless production image, which has no strip at all, was spared.) Both
+// download call sites already documented the intent -- "strip failed (e.g. not
+// an ELF): serve it unstripped" -- and merely trusted the tools to error out.
+// Now they do.
 func Strip(inputPath string) (*Result, error) {
-	data, err := os.ReadFile(inputPath)
+	src, err := os.Open(inputPath)
 	if err != nil {
+		return nil, fmt.Errorf("read input: %w", err)
+	}
+	defer src.Close()
+
+	var magic [4]byte
+	if _, err := io.ReadFull(src, magic[:]); err != nil {
+		// Too short to be an ELF (or unreadable): nothing to strip.
+		return nil, ErrNotELF
+	}
+	if !bytes.Equal(magic[:], elfMagic) {
+		return nil, ErrNotELF
+	}
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("read input: %w", err)
 	}
 
@@ -145,7 +183,10 @@ func Strip(inputPath string) (*Result, error) {
 	debugPath := debugFile.Name()
 	debugFile.Close()
 
-	if err := os.WriteFile(strippedPath, data, 0o600); err != nil {
+	// Stream the copy: an artifact can be gigabytes, and the whole download
+	// path is otherwise bounded by the compressor window rather than the
+	// artifact size.
+	if err := copyToFile(src, strippedPath); err != nil {
 		os.Remove(strippedPath)
 		os.Remove(debugPath)
 		return nil, fmt.Errorf("copy for stripping: %w", err)
@@ -164,6 +205,20 @@ func Strip(inputPath string) (*Result, error) {
 	}
 
 	return &Result{StrippedPath: strippedPath, DebugPath: debugPath}, nil
+}
+
+// copyToFile writes r into path (truncating it), streaming rather than
+// buffering the whole artifact in memory.
+func copyToFile(r io.Reader, path string) error {
+	dst, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(dst, r); err != nil {
+		dst.Close()
+		return err
+	}
+	return dst.Close()
 }
 
 func Available() bool {
