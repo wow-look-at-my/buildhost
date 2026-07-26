@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/spf13/cobra"
@@ -38,6 +39,7 @@ func init() {
 	publishCmd.Flags().String("git-commit", "", "Git commit")
 	publishCmd.Flags().String("oci-user", "", "Run-as user for synthesized OCI images (uid[:gid] or name[:group]); default is root")
 	publishCmd.Flags().String("manifest", "", "Path to release manifest (TOML)")
+	publishCmd.Flags().Bool("draft", false, "Upload without publishing: the release stays out of latest/branch resolution and every package manager, downloadable only by its exact version")
 	addChunkSizeFlag(publishCmd)
 }
 
@@ -81,16 +83,18 @@ func publishSingle(cmd *cobra.Command) error {
 	gitBranch, _ := cmd.Flags().GetString("git-branch")
 	gitCommit, _ := cmd.Flags().GetString("git-commit")
 	ociUser, _ := cmd.Flags().GetString("oci-user")
+	draft, _ := cmd.Flags().GetBool("draft")
 
 	if serverURL == "" || token == "" || project == "" || artifactPath == "" || osStr == "" || archStr == "" {
 		return fmt.Errorf("--server, --token, --project, --artifact, --os, and --arch are required")
 	}
 
-	releaseBody, _ := json.Marshal(map[string]string{
+	releaseBody, _ := json.Marshal(map[string]any{
 		"version":    version,
 		"git_branch": gitBranch,
 		"git_commit": gitCommit,
 		"oci_user":   ociUser,
+		"draft":      draft,
 	})
 	resp, err := doRequest("POST", serverURL+"/api/v1/projects/"+project+"/releases", token, bytes.NewReader(releaseBody))
 	if err != nil {
@@ -124,6 +128,17 @@ func publishSingle(cmd *cobra.Command) error {
 	}
 
 	fmt.Printf("uploaded %s/%s %s/%s\n", project, rel.Version, osStr, archStr)
+
+	// A draft stops here by design: it stays unpublished, so latest/branch
+	// resolution and every package manager ignore it, and retention keeps it
+	// rather than sweeping it as an abandoned upload. Print the exact-version
+	// URL, which is the only way to reach it.
+	if draft {
+		fmt.Printf("draft %s/%s (not published)\n", project, rel.Version)
+		fmt.Printf("download: %s?project=%s&v=%s&os=%s&arch=%s\n",
+			strings.Replace(serverURL, "://", "://static.", 1)+"/file", project, rel.Version, osStr, archStr)
+		return nil
+	}
 
 	// Publish the release, exactly like manifest mode: an unpublished release
 	// is invisible to latest/branch resolution (dl, brew, apt, npm, the web

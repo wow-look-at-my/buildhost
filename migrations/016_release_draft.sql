@@ -1,0 +1,12 @@
+-- A draft release: uploaded deliberately, but not part of the project's public
+-- release stream. It resolves only by exact version -- `latest`, per-branch
+-- downloads, Homebrew, APT, npm and OCI all filter on published = 1 -- which is
+-- what makes it useful for publishing a build just for yourself.
+--
+-- The flag exists to distinguish INTENT from failure. Retention sweeps
+-- unpublished releases as "abandoned" partial uploads once they age past the
+-- cutoff; without this column a deliberate draft is indistinguishable from a
+-- crashed upload and gets deleted out from under its owner.
+--
+-- Default 0 leaves every existing release exactly as it was.
+ALTER TABLE releases ADD COLUMN draft INTEGER NOT NULL DEFAULT 0;

@@ -131,6 +131,11 @@ curl -fsSL -H "Authorization: Bearer $TOKEN" https://apt.pazer.build/myapp/insta
 One-line install commands (and per-project copy buttons) are also available on
 the admin dashboard: see each project's page or the **Registries** tab.
 
+Self-modifying binaries (Cosmopolitan APEs, which rewrite their own file the
+first time they run) are packaged with a launcher: the binary installs under
+`/usr/lib/<pkg>/` and `/usr/bin/<pkg>` keeps a writable per-user copy, so an
+ordinary user can run it. Everything else installs straight to `/usr/bin`.
+
 Prefer to set it up by hand? Import the repository signing key once, add the
 source, then install. The key is served per project path but is the same
 server-wide key:
@@ -361,9 +366,28 @@ volumes:
 
 **Note:** The server reads the container's memory cgroup at startup and sets `GOMEMLIMIT` to ~90% of it (via [automemlimit](https://github.com/KimMachineGun/automemlimit)), and all download/repackage paths stream (blob reads are mmap-backed, nothing buffers a whole artifact), so buildhost serves artifacts far larger than `mem_limit` without OOM-ing. Set `GOMEMLIMIT` yourself (or `AUTOMEMLIMIT=off`) to override.
 
-**Note:** Binary stripping (`strip`/`objcopy`) is not available in the hardened image. Uploaded binaries are served as-is. If you need debug info stripping, run it in your CI pipeline before uploading.
+**Note:** ELF binaries are stripped on download and their symbols served separately at `?fmt=symbols`; `?debug=1` returns the artifact exactly as uploaded. Stripping runs in-process, so it needs no `strip`/`objcopy` in the image. Anything that is not an ELF — a Cosmopolitan APE, a Mach-O, a script — is always served byte-for-byte as uploaded.
 
 **Note:** Serving through Cloudflare's proxy caps request bodies at the edge (100 MB on the Free plan); [`deploy/DIRECT-INGRESS.md`](deploy/DIRECT-INGRESS.md) adds an opt-in direct TLS ingress so uploads of any size work in a single request.
+
+## Draft releases
+
+A release you upload but do not publish is a **draft**: it is downloadable by
+its exact version and nothing else sees it — `latest`, per-branch downloads,
+Homebrew, APT, npm and OCI all resolve published releases only. Use it to put a
+build somewhere you can `curl` it without moving the pointer everyone follows.
+
+```bash
+buildhost publish --draft --server https://buildhost.example.com --token $TOKEN \
+  --project myapp --os linux --arch amd64 --artifact ./myapp
+# draft myapp/7 (not published)
+# download: https://static.buildhost.example.com/file?project=myapp&v=7&os=linux&arch=amd64
+```
+
+Publish it later (`POST /api/v1/projects/{project}/releases/{version}/publish`)
+and it joins the release stream, clearing the draft flag. Drafts are kept until
+you delete them: retention sweeps *unpublished* releases as abandoned uploads,
+but never drafts.
 
 ## Quick start
 
