@@ -249,17 +249,24 @@ runs:
               // (buildhost's own e2e spawns one), so a record pointing at it
               // would be an unreachable row on the org's page. This is a
               // property of the target, not a caller-facing switch.
-              const host = new URL(storageRecords[0].registry_url).hostname;
-              if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
-                core.info(`Skipping ${storageRecords.length} storage record(s): ${storageRecords[0].registry_url} is a loopback test server, not a reachable registry`);
+              const registry = storageRecords[0].registry_url;
+              const host = new URL(registry).hostname;
+              if (host === "localhost" || host === "127.0.0.1" || host === "::1" || !registry.startsWith("https://")) {
+                core.info(`Skipping ${storageRecords.length} storage record(s): ${registry} is not a reachable https registry (the API accepts https URLs only)`);
                 return true;
               }
               const org = context.repo.owner;
-              const githubRepository = `${context.repo.owner}/${context.repo.repo}`;
+              const githubRepository = context.repo.repo;
               for (const rec of storageRecords) {
+                const { artifact_url: artifactURL, ...rest } = rec;
+                if (artifactURL.length > 152) {
+                  core.warning(`Recording ${rec.name} ${rec.path} without artifact_url: ${artifactURL.length} chars exceeds the API's 152-char limit`);
+                }
                 try {
                   await octokit.request("POST /orgs/{org}/artifacts/metadata/storage-record", {
-                    org, ...rec, github_repository: githubRepository, status: "active", return_records: false,
+                    org, ...rest,
+                    ...(artifactURL.length <= 152 ? { artifact_url: artifactURL } : {}),
+                    github_repository: githubRepository, status: "active", return_records: false,
                   });
                   core.info(`Recorded ${rec.name} ${rec.path} ${rec.digest}`);
                 } catch (e) {
