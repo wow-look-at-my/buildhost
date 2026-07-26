@@ -18,12 +18,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The CA bundle baked into the binary is fetched here, not committed (so the repo
-      # carries no unreviewable cert blob). Must run before go-toolchain builds/embeds.
-      - run: ./scripts/fetch-cacerts.sh
+      # No fetch-cacerts step: the CA bundle is a generate directive
+      # (internal/repackage/oci.go), so `generate:` below fetches it. Keeping a
+      # step here would hide a broken directive from CI and leave a fresh clone
+      # unbuildable for everyone who is not this workflow. The setup-go jobs
+      # below still fetch explicitly: they run plain `go`, never generate.
       - uses: wow-look-at-my/go-toolchain@v1
         with:
-          generate: acf27fe87179
+          generate: 904cd8d22ac8
           autorelease: 'false'
       # On the default branch, cache this commit's route list keyed by its SHA.
       # Caches created on the default branch are restorable from every branch,
