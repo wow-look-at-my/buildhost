@@ -86,7 +86,34 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 		mode = 0o755
 	}
 
+	// A Cosmopolitan APE binary cannot be run from a root-owned /usr/bin entry
+	// by a non-root user -- it assimilates itself on first run and needs the
+	// write bit. Install it under /usr/lib and put a launcher on $PATH that
+	// maintains a per-user writable copy (see debAPELauncher). Detection is a
+	// byte check on the artifact's own header; nothing is executed, and a
+	// non-APE binary keeps the previous layout byte-for-byte.
+	artifactReader := input.Reader
+	var launcher []byte
+	if input.Artifact.Kind == db.KindBinary {
+		isAPE, rest, err := peekAPE(artifactReader)
+		if err != nil {
+			return nil, fmt.Errorf("inspect artifact: %w", err)
+		}
+		artifactReader = rest
+		if isAPE {
+			installDir = fmt.Sprintf("/usr/lib/%s/", pkgName)
+			launcher = []byte(debAPELauncher(pkgName, version))
+		}
+	}
+
 	var extraEntries []tarEntry
+	if launcher != nil {
+		extraEntries = append(extraEntries, tarEntry{
+			Name: "./usr/bin/" + pkgName,
+			Data: launcher,
+			Mode: 0o755,
+		})
+	}
 	if withService {
 		extraEntries = append(extraEntries, tarEntry{
 			Name: "." + DebServiceUnitPath(pkgName),
@@ -104,7 +131,14 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create deb temp: %w", err)
 	}
-	dataLen, err := streamDebData(dataTmp, input.Reader, "."+installDir+fileName, input.Size, mode, extraEntries)
+	// dpkg creates no leading directories of its own, so a package installing
+	// outside /usr/bin must carry its directory entry (see tarEntry.Dir).
+	var preEntries []tarEntry
+	if installDir != "/usr/bin/" {
+		preEntries = append(preEntries, tarEntry{Name: "." + installDir, Mode: 0o755, Dir: true})
+	}
+
+	dataLen, err := streamDebData(dataTmp, artifactReader, "."+installDir+fileName, input.Size, mode, preEntries, extraEntries)
 	if err != nil {
 		dataTmp.Close()
 		os.Remove(dataTmp.Name())
@@ -145,9 +179,19 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 // small entries such as the create_service systemd unit) to f and returns the
 // number of compressed bytes written. An empty extra list produces the exact
 // single-entry member of before, so flag-off debs stay byte-identical.
-func streamDebData(f *os.File, r io.Reader, name string, size, mode int64, extra []tarEntry) (int64, error) {
+func streamDebData(f *os.File, r io.Reader, name string, size, mode int64, pre, extra []tarEntry) (int64, error) {
 	gw := gzip.NewWriter(f)
 	tw := tar.NewWriter(gw)
+	for _, e := range pre {
+		if err := tw.WriteHeader(debTarHeader(e)); err != nil {
+			return 0, fmt.Errorf("write data tar header %q: %w", e.Name, err)
+		}
+		if !e.Dir {
+			if _, err := tw.Write(e.Data); err != nil {
+				return 0, fmt.Errorf("write data entry %q: %w", e.Name, err)
+			}
+		}
+	}
 	if err := tw.WriteHeader(&tar.Header{Name: name, Size: size, Mode: mode}); err != nil {
 		return 0, fmt.Errorf("write data tar header: %w", err)
 	}
@@ -155,11 +199,13 @@ func streamDebData(f *os.File, r io.Reader, name string, size, mode int64, extra
 		return 0, fmt.Errorf("write data: %w", err)
 	}
 	for _, e := range extra {
-		if err := tw.WriteHeader(&tar.Header{Name: e.Name, Size: int64(len(e.Data)), Mode: e.Mode}); err != nil {
+		if err := tw.WriteHeader(debTarHeader(e)); err != nil {
 			return 0, fmt.Errorf("write data tar header %q: %w", e.Name, err)
 		}
-		if _, err := tw.Write(e.Data); err != nil {
-			return 0, fmt.Errorf("write data entry %q: %w", e.Name, err)
+		if !e.Dir {
+			if _, err := tw.Write(e.Data); err != nil {
+				return 0, fmt.Errorf("write data entry %q: %w", e.Name, err)
+			}
 		}
 	}
 	if err := tw.Close(); err != nil {
@@ -211,6 +257,12 @@ type tarEntry struct {
 	Name string
 	Data []byte
 	Mode int64
+	// Dir marks a directory entry. dpkg does not create leading directories
+	// implicitly: a data.tar that names ./usr/lib/<pkg>/<file> without also
+	// carrying ./usr/lib/<pkg>/ fails to unpack with "unable to create
+	// ... No such file or directory". Every install path below /usr/bin needs
+	// its own directory entry, written before the files inside it.
+	Dir bool
 }
 
 func buildTarGZ(entries []tarEntry) ([]byte, error) {
@@ -331,4 +383,13 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// debTarHeader renders a tarEntry as a tar header, distinguishing directories
+// (no payload, TypeDir) from regular files.
+func debTarHeader(e tarEntry) *tar.Header {
+	if e.Dir {
+		return &tar.Header{Name: e.Name, Typeflag: tar.TypeDir, Mode: e.Mode}
+	}
+	return &tar.Header{Name: e.Name, Size: int64(len(e.Data)), Mode: e.Mode}
 }

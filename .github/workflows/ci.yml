@@ -181,6 +181,16 @@ jobs:
       # image build/pull. up then reuses this image instead of rebuilding.
       - run: docker compose -f docker-compose.ci.yml build
       - run: docker compose -f docker-compose.ci.yml up -d --wait --wait-timeout 30
+      # Stripping is documented to happen at download time, and it silently did
+      # NOT happen in the shipped image for weeks: it shelled out to
+      # strip(1)/objcopy(1), which the distroless image does not ship, so every
+      # download went out unstripped and fmt=symbols could not work. Unit tests
+      # could not see it -- the runner has binutils, the container does not --
+      # so the guarantee has to be asserted against the real image.
+      - name: The shipped image must actually strip on download
+        uses: wow-look-at-my/actions@typescript#latest
+        with:
+          file: .github/scripts/image-strips-e2e.ts
       - run: docker compose -f docker-compose.ci.yml logs
         if: failure()
 
@@ -262,8 +272,23 @@ jobs:
             arm64|aarch64) arch=arm64 ;;
             *) echo "unsupported arch"; exit 1 ;;
           esac
-          printf '%s\n' '#!/bin/sh' 'echo buildhost-homebrew-ok' > "$RUNNER_TEMP/go-toolchain"
+          # Publish the REAL go-toolchain binary from the live registry, not a
+          # stand-in. What mode Homebrew leaves an installed file in depends on
+          # that file's TYPE (extend/os/{linux,mac}/cleaner.rb chmods a shebang
+          # script / ELF / Mach-O 0555 and everything else 0444), so a fixture
+          # that is not shaped like the real artifact tests a different code
+          # path than the one users hit. The linux artifact is a Cosmopolitan
+          # APE -- exactly the shape that used to install 0444 and could not be
+          # executed at all -- while a `#!/bin/sh` fixture is always classified
+          # executable, which is how that bug shipped while this job stayed
+          # green. The download is public (no token); the live registry is
+          # already a hard dependency of this workflow (the go-toolchain action
+          # in `build` pulls from it), so this adds no new failure mode.
+          curl -fsSL --compressed \
+            "https://dl.pazer.build/go-toolchain?branch=v1&os=$os&arch=$arch" \
+            -o "$RUNNER_TEMP/go-toolchain"
           chmod +x "$RUNNER_TEMP/go-toolchain"
+          file "$RUNNER_TEMP/go-toolchain"
           ./buildhost project create \
             --server "$BUILDHOST_BASE_URL" \
             --token "$BUILDHOST_TOKEN" \
@@ -283,6 +308,55 @@ jobs:
             'kind = "binary"' \
             > "$RUNNER_TEMP/buildhost-release.toml"
           ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release.toml"
+      # go-toolchain ships an APE only on Linux; its darwin artifacts are plain
+      # Mach-O binaries, which Homebrew's Cleaner recognizes and chmods 0555 --
+      # so the macOS leg of the real-binary install cannot exercise the mode
+      # invariant at all. buildhost serves whatever publishers upload, and a
+      # Cosmopolitan binary is the same file on every OS, so this synthetic
+      # fixture keeps that invariant covered on BOTH runners (and keeps it
+      # covered if go-toolchain ever changes format). It is deliberately
+      # APE-SHAPED: no `#!` line and neither ELF nor Mach-O, so brew's Cleaner
+      # does not recognize it, and it writes to ITSELF before printing its
+      # marker -- standing in for the self-assimilation that makes a real APE
+      # need the write bit too, so a 0555 install fails here as well.
+      - name: Publish ape-fixture artifact (public, APE-shaped)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)" in
+            Darwin) os=darwin ;;
+            Linux) os=linux ;;
+            *) echo "unsupported OS"; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64) arch=amd64 ;;
+            arm64|aarch64) arch=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          printf '%s\n' \
+            "MZqFpD='APE-shaped fixture: not a shebang script, not an ELF or Mach-O'" \
+            ': >> "$0" || { echo "self-write failed: an APE binary rewrites itself on first run" >&2; exit 1; }' \
+            'echo buildhost-homebrew-ape-ok' > "$RUNNER_TEMP/ape-fixture"
+          chmod +x "$RUNNER_TEMP/ape-fixture"
+          ./buildhost project create \
+            --server "$BUILDHOST_BASE_URL" \
+            --token "$BUILDHOST_TOKEN" \
+            --name ape-fixture \
+            --versioning semver
+          printf '%s\n' \
+            "server = \"$BUILDHOST_BASE_URL\"" \
+            "token = \"$BUILDHOST_TOKEN\"" \
+            'project = "ape-fixture"' \
+            'version = "1.0.0"' \
+            'git_branch = "master"' \
+            "" \
+            "[[artifact]]" \
+            "path = \"$RUNNER_TEMP/ape-fixture\"" \
+            "os = \"$os\"" \
+            "arch = \"$arch\"" \
+            'kind = "binary"' \
+            > "$RUNNER_TEMP/buildhost-release-ape.toml"
+          ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-ape.toml"
       # Slash-namespaced AND private -- the exact shape of the live project this
       # e2e exists for. The folded formula name (myrepo-myapp) and the
       # basename-install rule are covered end to end.
@@ -369,8 +443,53 @@ jobs:
           LEG: public
         with:
           file: .github/scripts/brew-tap-e2e.ts
+      # The installed file must keep BOTH bits Homebrew's Cleaner would take
+      # away: executable (it chmods anything it does not recognize as a
+      # shebang/ELF/Mach-O to 0444) and writable (an APE rewrites itself in
+      # place on first run and dies with "Permission denied" at 0555). The
+      # generated formula opts out with skip_clean "bin"; these assertions are
+      # what turn a regression in that codegen red instead of shipping a
+      # binary users cannot run.
+      - name: Installed binary must stay executable and writable
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$(brew --prefix pazer/build/go-toolchain)/bin/go-toolchain"
+          ls -l "$bin"
+          test -x "$bin" || { echo "installed binary is not executable -- Homebrew's Cleaner chmods unrecognized files 0444"; exit 1; }
+          test -w "$bin" || { echo "installed binary is not writable -- an APE binary rewrites itself on first run"; exit 1; }
+      # Running the REAL binary is the actual user-facing claim: `brew install
+      # pazer/build/go-toolchain` must produce something that executes. On
+      # Linux this is also where a Cosmopolitan APE assimilates itself (it
+      # rewrites its own file into a native ELF), which is why the write bit
+      # above is load-bearing rather than cosmetic. `version` exits 0 even when
+      # its background update check cannot reach GitHub, so this is not a
+      # network-flaky assertion.
       - name: Execute the publicly installed binary
-        run: test "$(go-toolchain)" = "buildhost-homebrew-ok"
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(go-toolchain version)"
+          printf '%s\n' "$out"
+          case "$out" in
+            *"Version:"*) ;;
+            *) echo "go-toolchain version did not print a version line"; exit 1 ;;
+          esac
+      # Same guarantees against the APE-SHAPED fixture, so the invariant holds
+      # on macOS too (where go-toolchain's own artifact is a Mach-O brew
+      # recognizes) and for any publisher shipping a Cosmopolitan binary. The
+      # fixture fails loudly at 0555 (its self-write) and cannot even be
+      # executed at 0444.
+      - name: Install the APE-shaped fixture and assert mode + execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install pazer/build/ape-fixture
+          bin="$(brew --prefix pazer/build/ape-fixture)/bin/ape-fixture"
+          ls -l "$bin"
+          test -x "$bin" || { echo "installed APE-shaped binary is not executable (Cleaner chmods unrecognized files 0444)"; exit 1; }
+          test -w "$bin" || { echo "installed APE-shaped binary is not writable (an APE rewrites itself on first run)"; exit 1; }
+          test "$(ape-fixture)" = "buildhost-homebrew-ape-ok"
       # Docs: the authenticated tap replaces the public tap under the same name
       # ("remove it first with brew untap --force" -- plain untap refuses while
       # formulae installed from the tap exist).

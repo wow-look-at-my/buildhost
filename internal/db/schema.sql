@@ -25,6 +25,7 @@ CREATE TABLE releases (
     notes        TEXT NOT NULL DEFAULT '',
     oci_user     TEXT NOT NULL DEFAULT '',
     published    INTEGER NOT NULL DEFAULT 0,
+    draft        INTEGER NOT NULL DEFAULT 0,
     created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
     published_at DATETIME,
     UNIQUE(project_id, version)

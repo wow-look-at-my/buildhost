@@ -132,13 +132,29 @@ func OpenArtifactStream(ctx context.Context, store storage.Storage, artifact db.
 		return nil, 0, err
 	}
 	if (artifact.Kind == db.KindBinary || artifact.Kind == db.KindLibrary) && strip.Available() {
+		// Peek first: only an ELF can be stripped, and spooling a
+		// multi-gigabyte artifact to disk just to discover it is a Cosmopolitan
+		// APE or a Mach-O would cost a full disk round-trip on every download.
+		elf := strip.LooksELF(rc)
+		rc.Close()
+		rc, size, err = store.Get(ctx, artifact.StorageKey)
+		if err != nil {
+			return nil, 0, err
+		}
+		if !elf {
+			strip.LogSkipped(ctx, artifact.StorageKey, strip.ErrNotELF)
+			return rc, size, nil
+		}
+
 		sr, ssize, serr := strip.StripReader(rc, tmpDir)
 		rc.Close()
 		if serr == nil {
 			return sr, ssize, nil
 		}
-		// Strip failed (e.g. not an ELF): the first reader was consumed, so re-open the
-		// raw artifact and serve it unstripped.
+		// Stripping failed on something that looked like an ELF: serve the
+		// artifact untouched, but never silently -- an unexpected failure here
+		// is exactly the kind that went unnoticed for weeks.
+		strip.LogSkipped(ctx, artifact.StorageKey, serr)
 		rc, size, err = store.Get(ctx, artifact.StorageKey)
 		if err != nil {
 			return nil, 0, err

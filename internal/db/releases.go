@@ -22,6 +22,7 @@ func (d *DB) CreateRelease(ctx context.Context, r *Release) error {
 		GitCommit:  r.GitCommit,
 		Notes:      r.Notes,
 		OciUser:    r.OciUser,
+		Draft:      r.Draft,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
