@@ -118,3 +118,16 @@ func NewOrchestrator(store storage.Storage, database *db.DB) *Orchestrator {
 func (o *Orchestrator) PublishRelease(ctx context.Context, _ db.Project, release db.Release) error {
 	return o.DB.PublishRelease(ctx, release.ID)
 }
+
+// TransformVersion identifies the byte-level transformation buildhost applies
+// to an artifact on the way out -- currently binary stripping. It is mixed into
+// every cached digest's fingerprint (Homebrew formulas' tar.gz sha256, the APT
+// Packages index' deb sha256), so changing what stripping does invalidates
+// those rows instead of leaving them describing bytes the server no longer
+// sends.
+//
+// This is not optional bookkeeping. A cached digest that disagrees with the
+// served bytes is a checksum failure in the user's face: `brew install` aborts
+// and apt reports "Hash Sum mismatch". Bump this whenever the output of a
+// download-time transformation changes for input it already handled.
+const TransformVersion = "strip-native-1"

@@ -85,10 +85,10 @@ func TestRenderBrewFormula_NoResourcesErrors(t *testing.T) {
 	require.Error(t, err)
 }
 
-// With the flag OFF the formula must be BYTE-IDENTICAL to the pre-flag output:
-// formula bytes feed the tap's content-addressed git objects, so any off-state
-// drift would mint a spurious tap commit for every project on deploy. The full
-// golden pins it.
+// The flag-OFF rendering is pinned byte-for-byte: formula bytes feed the tap's
+// content-addressed git objects, so unintended drift mints a spurious tap
+// commit for every project on deploy. Any deliberate change to the formula
+// (e.g. the skip_clean/chmod mode fix) belongs in this golden.
 func TestRenderBrewFormula_ServiceOffByteIdentical(t *testing.T) {
 	body := renderFormula(t, baseFormula(
 		BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/linux-amd64", SHA256: strings.Repeat("aa", 32)},
@@ -110,8 +110,16 @@ func TestRenderBrewFormula_ServiceOffByteIdentical(t *testing.T) {
     end
   end
 
+  # Homebrew's Cleaner rewrites the mode of everything under bin: 0555 for a
+  # file it recognizes as executable (shebang script, ELF, Mach-O), 0444 for
+  # anything else. An Actually Portable Executable is none of those, and it
+  # rewrites itself in place on first run, so it needs both bits the Cleaner
+  # would take away. skip_clean keeps the 0755 installed below.
+  skip_clean "bin"
+
   def install
     bin.install "mytool"
+    chmod 0755, bin/"mytool"
   end
 end
 `
@@ -132,6 +140,7 @@ func TestRenderBrewFormula_ServiceBlock(t *testing.T) {
 
 	want := `  def install
     bin.install "mytool"
+    chmod 0755, bin/"mytool"
   end
 
   service do
@@ -168,6 +177,50 @@ func TestRenderBrewFormula_ServiceSlashNamespacedUsesBasename(t *testing.T) {
 
 	assert.Contains(t, body, "run [opt_bin/\"myapp\"]")
 	assert.Contains(t, body, "log_path var/\"log/myapp.log\"")
+}
+
+// Homebrew's Cleaner chmods every file under bin to 0555 (a `#!` script, an
+// ELF or a Mach-O) or 0444 (anything else), whatever mode the formula
+// installed. A Cosmopolitan/APE binary is none of the three, so it landed 0444
+// and `brew install go-toolchain` produced a file that could not be executed
+// at all -- and 0555 is no better, because an APE rewrites itself in place on
+// first run and dies with "Permission denied" without the write bit. A
+// binary-kind formula therefore installs 0755 and prunes the Cleaner for bin.
+func TestRenderBrewFormula_BinaryKeepsExecutableWritableMode(t *testing.T) {
+	body := renderFormula(t, baseFormula(
+		BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/x", SHA256: strings.Repeat("aa", 32)},
+	))
+
+	assert.Contains(t, body, "\n  skip_clean \"bin\"\n")
+	assert.Contains(t, body, "\n    chmod 0755, bin/\"mytool\"\n")
+	// skip_clean is a class-body call, not an install step: it must sit
+	// outside `def install` (before it), or Ruby raises NoMethodError on the
+	// formula INSTANCE at install time.
+	assert.Less(t, strings.Index(body, `skip_clean "bin"`), strings.Index(body, "def install"))
+}
+
+// The Cleaner opt-out exists for the bin.install path; other kinds stage
+// nothing under bin, so they keep Homebrew's default cleanup.
+func TestRenderBrewFormula_NonBinaryKindHasNoSkipClean(t *testing.T) {
+	for _, kind := range []string{"library", "archive"} {
+		f := baseFormula(BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/x", SHA256: strings.Repeat("bb", 32)})
+		f.Kind = kind
+		body := renderFormula(t, f)
+
+		assert.NotContains(t, body, "skip_clean", "kind %q", kind)
+		assert.NotContains(t, body, "chmod", "kind %q", kind)
+	}
+}
+
+// Slash-namespaced projects install the BASENAME (brew strips the lone
+// top-level directory when unpacking), so the chmod must name the same file
+// bin.install staged -- chmod'ing the slashed path would ENOENT the install.
+func TestRenderBrewFormula_SlashNamespacedChmodsBasename(t *testing.T) {
+	f := baseFormula(BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/x", SHA256: strings.Repeat("cc", 32)})
+	f.Name = "myrepo/myapp"
+	body := renderFormula(t, f)
+
+	assert.Contains(t, body, "\n    bin.install \"myapp\"\n    chmod 0755, bin/\"myapp\"\n")
 }
 
 func TestBrewCanonicalResource(t *testing.T) {

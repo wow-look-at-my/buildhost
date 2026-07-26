@@ -94,7 +94,7 @@ const listAbandonedReleases = `-- name: ListAbandonedReleases :many
 SELECT r.id, r.project_id, p.name AS project_name, r.git_branch, r.version
 FROM releases r
 JOIN projects p ON p.id = r.project_id
-WHERE r.published = 0 AND r.created_at < datetime(?1)
+WHERE r.published = 0 AND r.draft = 0 AND r.created_at < datetime(?1)
 `
 
 type ListAbandonedReleasesRow struct {
@@ -106,6 +106,12 @@ type ListAbandonedReleasesRow struct {
 }
 
 // Unpublished (partial/failed upload) releases older than the cutoff.
+//
+// Drafts are deliberately excluded: an unpublished release used to mean only
+// "an upload that never finished", so sweeping them was safe. A draft is an
+// unpublished release its owner MEANT to keep (downloadable by exact version,
+// invisible to latest/brew/apt/npm/OCI), and deleting one because it got old
+// would be deleting the feature.
 func (q *Queries) ListAbandonedReleases(ctx context.Context, cutoff interface{}) ([]ListAbandonedReleasesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listAbandonedReleases, cutoff)
 	if err != nil {
