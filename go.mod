@@ -11,6 +11,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/ulikunitz/xz v0.5.15
+	github.com/wow-look-at-my/bin-file-fmt/go v0.0.0-20260727003338-7bc4a5165584
 	github.com/wow-look-at-my/go-mmap v0.0.0-20260524160502-7c9fb35436a9
 	github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260709175026-98aa140090d9
 	github.com/wow-look-at-my/router v0.0.0-20260721161008-302008ab1248

@@ -66,6 +66,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/ulikunitz/xz v0.5.15 h1:9DNdB5s+SgV3bQ2ApL10xRc35ck0DuIX/isZvIk+ubY=
 github.com/ulikunitz/xz v0.5.15/go.mod h1:nbz6k7qbPmH4IRqmfOplQw/tblSgqTqBwxkY0oWt/14=
+github.com/wow-look-at-my/bin-file-fmt/go v0.0.0-20260727003338-7bc4a5165584 h1:OQOA4w1vfzd6zyyBLHHadp8TgQbV0RaSQI3Ujs6GUSQ=
+github.com/wow-look-at-my/bin-file-fmt/go v0.0.0-20260727003338-7bc4a5165584/go.mod h1:FQGuANVTnht2a7ZCMJWhd7086/AkY6FMyNZalTvb3f4=
 github.com/wow-look-at-my/go-mmap v0.0.0-20260524160502-7c9fb35436a9 h1:par9Tv9kLcWCCy8Z0ciMaeyHfx8kbiLiB45n2fmjTqI=
 github.com/wow-look-at-my/go-mmap v0.0.0-20260524160502-7c9fb35436a9/go.mod h1:JM0y3LYD27uGHE34wamVHIaIvYx/vugAaqE20bsLvqs=
 github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260709175026-98aa140090d9 h1:vW0fNDiaZl387wOBvMY6sisi9Neo4u0QDY54p20TsxE=
