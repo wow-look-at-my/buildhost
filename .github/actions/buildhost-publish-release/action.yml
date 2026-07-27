@@ -62,14 +62,38 @@ runs:
             // without this that whole path stores artifacts and records
             // nothing. The publish response carries the artifacts it just made
             // public; each becomes one storage record.
-            const published = JSON.parse(text) as {
+            type ReleaseBody = {
               version?: string;
               artifacts?: { os?: string; arch?: string; sha256?: string }[];
             };
-            const artifacts = published.artifacts ?? [];
+            const published = JSON.parse(text) as ReleaseBody;
+            let artifacts = published.artifacts ?? [];
+
+            // A response with no `artifacts` means an older container served the
+            // publish. That is a transient condition during a rolling deploy --
+            // the release IS published, only this response predates the field --
+            // so re-read the release until a current container answers, rather
+            // than failing a build for someone else's deploy. Only a server that
+            // never provides them fails, which is a real "upgrade the server".
             if (artifacts.length === 0) {
-              core.setFailed(`Publish response carried no artifacts, so nothing can be recorded on the org's linked artifacts page. Upgrade the buildhost server: the publish endpoint returns them as of the release that added artifact-metadata recording. A publish that records nothing must not report success.`);
-              return;
+              const releaseURL = `${server}/api/v1/projects/${project}/releases/${version}`;
+              const waits = [5, 10, 20, 30, 30, 30];
+              for (let attempt = 0; attempt < waits.length && artifacts.length === 0; attempt++) {
+                core.info(`Publish response carried no artifacts (server mid-deploy?); re-reading the release in ${waits[attempt]}s (attempt ${attempt + 1}/${waits.length})`);
+                await new Promise((r) => setTimeout(r, waits[attempt] * 1000));
+                try {
+                  const reread = await fetch(releaseURL, { headers: { Authorization: `Bearer ${token}` } });
+                  if (!reread.ok) continue;
+                  artifacts = ((await reread.json()) as ReleaseBody).artifacts ?? [];
+                } catch (e) {
+                  core.info(`  re-read failed (${e instanceof Error ? e.message : String(e)}); retrying`);
+                }
+              }
+              if (artifacts.length === 0) {
+                core.setFailed(`Neither the publish response nor a re-read of ${project}/${version} carried any artifacts, so nothing can be recorded on the org's linked artifacts page. Upgrade the buildhost server: the publish and release endpoints return them as of the release that added artifact-metadata recording. A publish that records nothing must not report success.`);
+                return;
+              }
+              core.info(`Recovered ${artifacts.length} artifact(s) by re-reading the release`);
             }
 
             const host = new URL(server).hostname;
