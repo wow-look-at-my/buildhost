@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -110,6 +112,10 @@ func tarballRouteFrom(ctx context.Context) tarballRoute {
 type Handler struct {
 	DB    *db.DB
 	Store storage.Storage
+	// fillBudget overrides manifestFillBudget for manifest cache fills; zero
+	// uses the default. Set only by tests, which need the budget to expire
+	// faster than a test run.
+	fillBudget time.Duration
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -156,17 +162,51 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 		return
 	}
 
-	versions := map[string]any{}
-	distTags := map[string]string{}
-
+	// Pass 1 -- DB only: classify each published release as a pre-built
+	// npm-package or a binary repackage. Nothing touches a blob here, so the
+	// manifest reads the pre-built packages need can be batched below instead
+	// of running one at a time down the middle of the response.
+	type packumentRelease struct {
+		release db.Release
+		npmPkg  *db.Artifact
+	}
+	var (
+		ordered []packumentRelease
+		npmPkgs []db.Artifact
+	)
 	for _, rel := range releases {
 		if !rel.Published {
 			continue
 		}
+		pr := packumentRelease{release: rel}
+		if a, err := h.DB.GetArtifactByKind(r.Context(), rel.ID, db.KindNPMPackage); err == nil && a != nil {
+			pr.npmPkg = a
+			npmPkgs = append(npmPkgs, *a)
+		}
+		ordered = append(ordered, pr)
+	}
+
+	// Pass 2: resolve every pre-built package's manifest fields, from cache
+	// where possible. A packument that cannot resolve them all in time is an
+	// error, never a packument whose version entries silently lost their
+	// dependency graph.
+	manifestFields, err := h.resolveNPMManifestFields(r.Context(), npmPkgs)
+	if err != nil {
+		slog.Warn("npm: packument manifest resolution", "project", projectName, "releases", len(npmPkgs), "err", err)
+		w.Header().Set("Retry-After", "5")
+		http.Error(w, "npm package manifests are still being indexed, retry shortly", http.StatusServiceUnavailable)
+		return
+	}
+
+	versions := map[string]any{}
+	distTags := map[string]string{}
+
+	for _, pr := range ordered {
+		rel := pr.release
 		version := normalizeVersion(rel.Version)
 
-		// Check for a pre-built npm-package artifact first.
-		if npmPkg, err := h.DB.GetArtifactByKind(r.Context(), rel.ID, db.KindNPMPackage); err == nil && npmPkg != nil {
+		// A pre-built npm-package artifact wins over binary repackaging.
+		if pr.npmPkg != nil {
 			npmBase := auth.DeriveServiceURL(r, "npm")
 			tarballURL := fmt.Sprintf("%s/@buildhost/%s/-/%s-%s.tgz", npmBase, npmName, npmName, version)
 			entry := map[string]any{
@@ -183,7 +223,7 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 			// -- so npm would never install the sub-packages it needs and the
 			// artifact would install but never work. name/version/dist stay
 			// buildhost-authoritative and are not overridden.
-			for k, v := range h.npmManifestFields(r.Context(), npmPkg.StorageKey) {
+			for k, v := range manifestFields[pr.npmPkg.ID] {
 				if _, reserved := entry[k]; !reserved {
 					entry[k] = v
 				}
