@@ -25,6 +25,7 @@ CREATE TABLE releases (
     notes        TEXT NOT NULL DEFAULT '',
     oci_user     TEXT NOT NULL DEFAULT '',
     published    INTEGER NOT NULL DEFAULT 0,
+    draft        INTEGER NOT NULL DEFAULT 0,
     created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
     published_at DATETIME,
     UNIQUE(project_id, version)
@@ -89,6 +90,18 @@ CREATE TABLE download_counts (
     artifact_id INTEGER PRIMARY KEY REFERENCES artifacts(id),
     count       INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE download_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    artifact_id INTEGER NOT NULL REFERENCES artifacts(id),
+    fmt         TEXT NOT NULL DEFAULT 'raw',
+    client_ip   TEXT NOT NULL DEFAULT '',
+    user_agent  TEXT NOT NULL DEFAULT '',
+    principal   TEXT NOT NULL DEFAULT '',
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_download_events_artifact ON download_events(artifact_id);
+CREATE INDEX IF NOT EXISTS idx_download_events_created  ON download_events(created_at DESC);
 
 CREATE TABLE sites (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -68,6 +68,11 @@ inputs:
     description: 'Push to the registry (set false to build only).'
     required: false
     default: 'true'
+  deployment_environment:
+    description: >-
+      GitHub Deployment environment name (defaults to `buildhost/<project>`).
+    required: false
+    default: ''
 
 outputs:
   image:
@@ -82,6 +87,79 @@ runs:
   steps:
     - name: Refuse jobs named all-builds
       uses: wow-look-at-my/actions@no-all-builds-job#latest
+
+    # Registering the image publish as a GitHub Deployment is part of
+    # publishing, not an add-on: no opt-out input, and a failure fails the step.
+    # See buildhost-publish for why warn-and-continue was removed. Still skipped
+    # for build-only runs -- `push != 'true'` publishes nothing, so there is
+    # nothing to deploy; that is a property of the run, not a switch. The calling
+    # job needs `deployments: write` (ADDITIVE -- a job-level permissions block
+    # replaces the workflow-level one).
+    - name: Create GitHub Deployment
+      id: deployment
+      if: ${{ inputs.push == 'true' }}
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            core.setOutput('deployment_id', '');
+            // A deployment asserts "this publish is live at <environment_url>".
+            // Against a loopback or plain-http server -- buildhost's own e2e
+            // spawns one on http://localhost:18080 -- that assertion is false:
+            // nothing outside the runner can reach it. So there is nothing true
+            // to register, exactly as there is nothing recordable for a loopback
+            // registry. A property of the target, not an opt-out: every publish
+            // to a real server registers, and a failure there is fatal.
+            const deployServer: string = "${{ inputs.server }}";
+            const deployHost: string = new URL(deployServer).hostname;
+            if (deployHost === "localhost" || deployHost === "127.0.0.1" || deployHost === "::1" || !deployServer.startsWith("https://")) {
+              core.info(`Skipping the GitHub Deployment: ${deployServer} is not a reachable https server, so its deployment URL would point nowhere`);
+              return;
+            }
+            try {
+              const projectInput: string = "${{ inputs.project }}";
+              const project: string = projectInput || github.repository.split('/').pop()!;
+              const envInput: string = "${{ inputs.deployment_environment }}";
+              const environment: string = envInput || `buildhost/${project}`;
+              const defaultBranch: string = context.payload.repository?.default_branch ?? '';
+              const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+              // required_contexts MUST be [] (the API default is "every commit
+              // status", and the org's all-builds status is still pending on
+              // this sha mid-run -> 409 Conflict); auto_merge MUST be false
+              // (the API default would try to merge the default branch into
+              // ref). A 2xx response without an id (e.g. the 202 auto-merge
+              // shape) is treated as "no deployment".
+              const dep = await octokit.rest.repos.createDeployment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: context.sha,
+                environment,
+                auto_merge: false,
+                required_contexts: [],
+                transient_environment: false,
+                production_environment: defaultBranch !== '' && context.ref === `refs/heads/${defaultBranch}`,
+                description: `buildhost docker publish of ${project}`.slice(0, 140),
+              });
+              const id = (dep.data as any)?.id;
+              if (typeof id !== 'number') {
+                core.setFailed(`GitHub Deployment not created (HTTP ${dep.status}): the API returned no deployment id`);
+                return;
+              }
+              core.setOutput('deployment_id', String(id));
+              await octokit.rest.repos.createDeploymentStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: id,
+                state: 'in_progress',
+                log_url: runUrl,
+                description: 'Publishing Docker image to buildhost',
+              });
+              core.info(`Created GitHub Deployment ${id} in environment '${environment}'`);
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              core.setFailed(`Could not create the GitHub Deployment (${msg}). Add 'deployments: write' to this job's permissions block -- job-level permissions REPLACE workflow-level ones, so add it alongside the ones the job already declares. Registering the publish is part of publishing and cannot be turned off.`);
+            }
+          })();
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -193,6 +271,7 @@ runs:
     # exactly the version this action ref was reviewed with -- no separate
     # release to fetch or to drift from.
     - name: Set up Go (for the buildhost CLI)
+      id: setup-go
       if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
       uses: actions/setup-go@v5
       with:
@@ -200,6 +279,7 @@ runs:
         cache-dependency-path: ${{ github.action_path }}/../../../go.sum
 
     - name: Build the buildhost CLI
+      id: cli
       if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
       shell: bash
       env:
@@ -213,6 +293,7 @@ runs:
         go build -o "${RUNNER_TEMP}/buildhost-cli" ./cmd/buildhost
 
     - name: Push to buildhost (chunked)
+      id: push-buildhost
       if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
       uses: wow-look-at-my/actions@typescript#latest
       env:
@@ -245,11 +326,77 @@ runs:
             await exec.exec(cli, ["docker-push", "--server", server, "--image", env.OCI_LAYOUT!, ...refs], {
               env: { ...process.env, BUILDHOST_TOKEN: token },
             });
+
+            // Recording what buildhost now stores is PART of pushing, not a
+            // bolt-on: it happens in this step, right after the push it
+            // describes, with no opt-out input, and a failure fails the step.
+            // A warn-and-continue path would be an opt-out by neglect -- the
+            // push would stay green while the org's linked artifacts page
+            // silently fell behind reality.
+            //
+            // The digest comes from the exported OCI layout's index.json root
+            // descriptor, not a buildx output: on this path buildx writes a
+            // layout for the CLI rather than pushing, so that descriptor IS
+            // what buildhost stored and serves.
+            const indexPath = path.join(env.OCI_LAYOUT!, "index.json");
+            const index = JSON.parse(fs.readFileSync(indexPath, "utf8")) as { manifests?: { digest?: string }[] };
+            const digest: string = index.manifests?.[0]?.digest ?? "";
+            if (digest === "") {
+              core.setFailed(`Pushed image recorded no manifest digest in ${indexPath}; cannot record what was stored`);
+              return;
+            }
+
+            // First buildhost-bound reference: <oci-host>/<repository>:<tag>.
+            // Foreign references are another registry's to account for.
+            const primary = refs[0] ?? "";
+            const slash = primary.indexOf("/");
+            const colon = primary.lastIndexOf(":");
+            if (slash < 0 || colon < slash) {
+              core.setFailed(`Could not parse the buildhost image reference '${primary}'; cannot record what was stored`);
+              return;
+            }
+            const repository = primary.slice(slash + 1, colon);
+            const registryURL = `https://${primary.slice(0, slash)}`;
+
+            // A loopback server is not a registry anything can fetch from, so
+            // a record pointing at it would be an unreachable row on the org's
+            // page. A property of the target, not a caller-facing switch.
+            const host = new URL(registryURL).hostname;
+            if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
+              core.info(`Skipping the storage record: ${registryURL} is a loopback test server, not a reachable registry`);
+              return;
+            }
+
+            const org = context.repo.owner;
+            try {
+              await octokit.request("POST /orgs/{org}/artifacts/metadata/storage-record", {
+                org,
+                name: repository,
+                version: primary.slice(colon + 1),
+                digest,
+                registry_url: registryURL,
+                repository,
+                artifact_url: `${registryURL}/v2/${repository}/manifests/${digest}`,
+                github_repository: context.repo.repo,
+                status: "active",
+                return_records: false,
+              });
+              core.info(`Recorded ${repository} ${digest} on ${org}'s linked artifacts page`);
+            } catch (e) {
+              const status = (e as { status?: number }).status;
+              const msg = e instanceof Error ? e.message : String(e);
+              core.setFailed(
+                status === 403 || status === 404
+                  ? `Could not record ${repository} on ${org}'s linked artifacts page (HTTP ${status}: ${msg}). Add 'artifact-metadata: write' to this job's permissions block -- job-level permissions REPLACE workflow-level ones, so add it alongside the ones the job already declares. Recording what buildhost stores is part of publishing and cannot be turned off.`
+                  : `Could not record ${repository} on ${org}'s linked artifacts page (${msg})`,
+              );
+            }
           })();
 
     # Tags that reference other registries keep the old buildx push path; the
     # rebuild is a full cache hit from the step above.
     - name: Push non-buildhost references
+      id: push-foreign
       if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' && steps.refs.outputs.foreign_refs != '' }}
       uses: docker/build-push-action@v6
       with:
@@ -262,3 +409,50 @@ runs:
         labels: ${{ steps.refs.outputs.labels }}
         build-args: ${{ inputs.build-args }}
         cache-from: ${{ steps.refs.outputs.cache_from }}
+
+    # Terminal status for the GitHub Deployment created above; runs even when
+    # a publish step failed so the deployment is marked failure instead of
+    # dangling in_progress. Never fails the action.
+    - name: Finish GitHub Deployment
+      id: deployment-status
+      if: ${{ always() && steps.deployment.outputs.deployment_id != '' }}
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            try {
+              const server: string = "${{ inputs.server }}";
+              const projectInput: string = "${{ inputs.project }}";
+              const project: string = projectInput || github.repository.split('/').pop()!;
+              // The image build must have succeeded, and every push-path step
+              // that actually ran must have succeeded. 'skipped' is fine:
+              // which push steps run depends on the registries the tags
+              // target. A failure BEFORE the build (refs, or buildx setup)
+              // leaves the build outcome 'skipped', which also reads as
+              // failure here.
+              const buildOutcome: string = "${{ steps.build.outcome }}";
+              const outcomes: string[] = [
+                "${{ steps.refs.outcome }}",
+                buildOutcome,
+                "${{ steps.setup-go.outcome }}",
+                "${{ steps.cli.outcome }}",
+                "${{ steps.push-buildhost.outcome }}",
+                "${{ steps.push-foreign.outcome }}",
+              ];
+              const ok = buildOutcome === 'success' && outcomes.every((o) => o !== 'failure' && o !== 'cancelled');
+              const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+              await octokit.rest.repos.createDeploymentStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: Number("${{ steps.deployment.outputs.deployment_id }}"),
+                state: ok ? 'success' : 'failure',
+                log_url: runUrl,
+                ...(ok ? { environment_url: `${server}/projects/${project}` } : {}),
+                description: ok ? 'Docker image published to buildhost' : 'buildhost docker publish failed',
+              });
+              core.info(`GitHub Deployment marked ${ok ? 'success' : 'failure'}`);
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              core.setFailed(`Could not post the terminal GitHub Deployment status (${msg}); the deployment would be left stuck in_progress`);
+            }
+          })();

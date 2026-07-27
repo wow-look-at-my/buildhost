@@ -3,6 +3,7 @@ package brew
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -99,11 +100,11 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 // storage_key records the SOURCE artifact blob (a key the retention refcount
 // already tracks) and the row is dropped with its artifact on eviction.
 func (h *Handler) tarGZSHA256(ctx context.Context, project db.Project, release db.Release, a db.Artifact, baseURL string) (string, error) {
-	_, _, cached, _, _, err := h.DB.GetPackagedArtifact(ctx, a.ID, string(repackage.FormatTarGZ))
-	if err == nil {
+	_, _, cached, _, metadata, err := h.DB.GetPackagedArtifact(ctx, a.ID, string(repackage.FormatTarGZ))
+	if err == nil && tarGZMetadataTransform(metadata) == repackage.TransformVersion {
 		return cached, nil
 	}
-	if !errors.Is(err, db.ErrNotFound) {
+	if err != nil && !errors.Is(err, db.ErrNotFound) {
 		return "", err
 	}
 
@@ -122,7 +123,11 @@ func (h *Handler) tarGZSHA256(ctx context.Context, project db.Project, release d
 	// Best-effort cache fill: the digest above is already correct for this
 	// response. INSERT OR REPLACE makes a concurrent double-compute benign --
 	// the value is deterministic, so both writers store the same digest.
-	if err := h.DB.CreatePackagedArtifact(ctx, a.ID, string(repackage.FormatTarGZ), a.StorageKey, size, sum, tgz.Filename, "{}"); err != nil {
+	metaJSON, merr := json.Marshal(tarGZMetadata{Transform: repackage.TransformVersion})
+	if merr != nil {
+		return sum, nil
+	}
+	if err := h.DB.CreatePackagedArtifact(ctx, a.ID, string(repackage.FormatTarGZ), a.StorageKey, size, sum, tgz.Filename, string(metaJSON)); err != nil {
 		slog.Warn("cache tar.gz digest", "artifact_id", a.ID, "err", err)
 	}
 	return sum, nil
@@ -176,4 +181,21 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// tarGZMetadata records which transformation pipeline a cached tar.gz digest
+// was computed under. A row written before the field existed (or under a
+// different pipeline) reads as a miss and is recomputed in place -- the
+// alternative is a Homebrew formula whose sha256 describes bytes the server no
+// longer produces, which fails `brew install` outright.
+type tarGZMetadata struct {
+	Transform string `json:"transform"`
+}
+
+func tarGZMetadataTransform(metadata string) string {
+	var m tarGZMetadata
+	if err := json.Unmarshal([]byte(metadata), &m); err != nil {
+		return ""
+	}
+	return m.Transform
 }

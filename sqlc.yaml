@@ -22,6 +22,8 @@ sql:
             go_type: "bool"
           - column: "releases.published"
             go_type: "bool"
+          - column: "releases.draft"
+            go_type: "bool"
           - column: "sites.is_public"
             go_type: "bool"
           - column: "projects.versioning"

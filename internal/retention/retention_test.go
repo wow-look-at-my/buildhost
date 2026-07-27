@@ -250,3 +250,54 @@ func TestDeleteBlobIfUnreferenced(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, deleted)
 }
+
+// A draft is an unpublished release its owner MEANT to keep: uploaded to be
+// downloaded by exact version, deliberately outside latest/branch resolution
+// and every package manager. The abandoned sweep exists for partial uploads
+// that never finished, and cannot be allowed to delete drafts -- doing so would
+// quietly delete the feature.
+func TestRun_DraftsSurviveAbandonedSweep(t *testing.T) {
+	d, store, p := setup(t)
+	ctx := context.Background()
+
+	putRelease(t, d, store, p.ID, "v1", 1, "main", "published") // branch tip, kept
+
+	newUnpublished := func(version string, num int64, draft bool, payload string) string {
+		t.Helper()
+		key, size, err := store.Put(ctx, bytes.NewReader([]byte(payload)))
+		require.NoError(t, err)
+		rel := &db.Release{ProjectID: p.ID, Version: version, VersionNum: num, GitBranch: "main", Draft: draft}
+		require.NoError(t, d.CreateRelease(ctx, rel))
+		require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
+			ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64, Kind: db.KindBinary,
+			StorageKey: key, Size: size, SHA256: key,
+		}))
+		return key
+	}
+
+	draftKey := newUnpublished("d1", 2, true, "draft-payload")
+	abandonedKey := newUnpublished("u1", 3, false, "abandoned-payload")
+
+	ret := New(d, store, Config{KeepN: 10, RecencyGuard: 24 * time.Hour, Enforce: true})
+	ret.clock = futureClock()
+
+	rep, err := ret.Run(ctx)
+	require.NoError(t, err)
+
+	// Only the genuinely abandoned upload is swept.
+	require.Len(t, rep.AbandonedReleases, 1)
+	assert.Equal(t, "u1", rep.AbandonedReleases[0].Version)
+
+	_, err = d.GetRelease(ctx, p.ID, "u1")
+	assert.ErrorIs(t, err, db.ErrNotFound)
+	abandonedExists, _ := store.Exists(ctx, abandonedKey)
+	assert.False(t, abandonedExists)
+
+	// The draft, and its bytes, are still there.
+	draft, err := d.GetRelease(ctx, p.ID, "d1")
+	require.NoError(t, err, "a draft must not be swept as an abandoned upload")
+	assert.True(t, draft.Draft)
+	assert.False(t, draft.Published)
+	draftExists, _ := store.Exists(ctx, draftKey)
+	assert.True(t, draftExists, "the draft's artifact bytes must survive")
+}

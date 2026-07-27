@@ -43,6 +43,16 @@ type DownloadCount struct {
 	Count      int64 `json:"count"`
 }
 
+type DownloadEvent struct {
+	ID         int64     `json:"id"`
+	ArtifactID int64     `json:"artifact_id"`
+	Fmt        string    `json:"fmt"`
+	ClientIp   string    `json:"client_ip"`
+	UserAgent  string    `json:"user_agent"`
+	Principal  string    `json:"principal"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 type OciBlobLink struct {
 	ID         int64     `json:"id"`
 	ProjectID  int64     `json:"project_id"`
@@ -111,6 +121,7 @@ type Release struct {
 	Notes       string     `json:"notes"`
 	OciUser     string     `json:"oci_user"`
 	Published   bool       `json:"published"`
+	Draft       bool       `json:"draft"`
 	CreatedAt   time.Time  `json:"created_at"`
 	PublishedAt *time.Time `json:"published_at"`
 }
