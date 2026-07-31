@@ -1,9 +1,6 @@
 package npm
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -108,18 +105,7 @@ func seedNPMPackageTarball(t *testing.T, project, version string, pkgJSON map[st
 	rel := &db.Release{ProjectID: proj.ID, Version: version, VersionNum: 1000000}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 
-	body, err := json.Marshal(pkgJSON)
-	require.NoError(t, err)
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gz)
-	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "package/package.json", Mode: 0o644, Size: int64(len(body))}))
-	_, err = tw.Write(body)
-	require.NoError(t, err)
-	require.NoError(t, tw.Close())
-	require.NoError(t, gz.Close())
-
-	key, size, err := store.Put(ctx, bytes.NewReader(buf.Bytes()))
+	key, size, err := store.Put(ctx, strings.NewReader(npmTarball(t, pkgJSON)))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
 		ReleaseID: rel.ID, OS: "any", Arch: "any",
