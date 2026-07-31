@@ -18,9 +18,7 @@ import (
 	"path"
 	"sort"
 	"strings"
-	"sync"
 
-	"github.com/klauspost/compress/zstd"
 	binpazer "github.com/wow-look-at-my/bin-file-fmt/go"
 )
 
@@ -61,33 +59,6 @@ type directory struct {
 	Entries []Entry `json:"entries"`
 }
 
-// zstdCodec teaches binpazer the zstd codec (SPEC registry id 3). The library
-// itself ships only what the Go standard library provides, so every other
-// codec arrives this way.
-type zstdCodec struct{}
-
-func (zstdCodec) NewReader(r io.Reader) (io.ReadCloser, error) {
-	zr, err := zstd.NewReader(r)
-	if err != nil {
-		return nil, err
-	}
-	return zr.IOReadCloser(), nil
-}
-
-func (zstdCodec) NewWriter(w io.Writer) (io.WriteCloser, error) {
-	return zstd.NewWriter(w)
-}
-
-var registerOnce sync.Once
-
-func registerCodecs() {
-	registerOnce.Do(func() {
-		if err := binpazer.RegisterCodec(binpazer.CodecZstd, zstdCodec{}); err != nil {
-			panic("binarchive: registering the zstd codec: " + err.Error())
-		}
-	})
-}
-
 // MaxEntries and MaxTotalSize bound what a single archive may hold; they mirror
 // the caller's own upload limits so a hostile tar cannot make the writer
 // allocate without end.
@@ -109,8 +80,6 @@ type Stats struct {
 // w must be seekable: binpazer back-patches the file length and, because the
 // archive uses compressed blocks, the header's version_minor.
 func WriteFromTar(w io.WriteSeeker, tr *tar.Reader, lim Limits) (*Stats, error) {
-	registerCodecs()
-
 	bw, err := binpazer.NewWriter(w, writerGUID, "buildhost", []binpazer.TypeDef{
 		{TypeID: typeEntry, GUID: entryGUID, Name: "File"},
 		{TypeID: typeDir, GUID: dirGUID, Name: "Directory"},
@@ -197,8 +166,6 @@ type Archive struct {
 // Open reads an archive's directory. ra must be safe for concurrent use (an
 // mmap'd blob is).
 func Open(ra io.ReaderAt, size int64) (*Archive, error) {
-	registerCodecs()
-
 	br, err := binpazer.NewReader(io.NewSectionReader(ra, 0, size))
 	if err != nil {
 		return nil, err
