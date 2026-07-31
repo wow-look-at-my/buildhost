@@ -85,8 +85,8 @@ func TestBrewTapSmart_GitUpdateFastForwardsAcrossPublishAndRedeploy(t *testing.T
 	require.Equal(t, "application/x-git-upload-pack-advertisement", resp.Header.Get("Content-Type"))
 	resp.Body.Close()
 
-	clone := filepath.Join(t.TempDir(), "tap")
-	gitRun(t, t.TempDir(), "clone", "-c", "fetch.unpackLimit=1", gitTS.URL+"/brew/tap.git", clone)
+	clone := filepath.Join(gitScratchDir(t), "tap")
+	gitRun(t, gitScratchDir(t), "clone", "-c", "fetch.unpackLimit=1", gitTS.URL+"/brew/tap.git", clone)
 	require.True(t, hasPackFiles(t, clone), "a smart clone stores the transferred pack")
 	_, err = os.Stat(filepath.Join(clone, ".git", "shallow"))
 	require.True(t, os.IsNotExist(err), "a plain clone must not be shallow")
@@ -133,8 +133,8 @@ func TestBrewTapSmart_DepthOneCloneThroughRouter(t *testing.T) {
 	publishBrewProject(t, env, "apptwo", "apptwo-binary")
 	server.New(env.cfg, env.database, env.store)
 
-	clone := filepath.Join(t.TempDir(), "tap")
-	gitRun(t, t.TempDir(), "clone", "--depth", "1", gitTS.URL+"/brew/tap.git", clone)
+	clone := filepath.Join(gitScratchDir(t), "tap")
+	gitRun(t, gitScratchDir(t), "clone", "--depth", "1", gitTS.URL+"/brew/tap.git", clone)
 
 	_, err = os.Stat(filepath.Join(clone, ".git", "shallow"))
 	require.NoError(t, err, "depth-1 clone of a 2-commit history must be shallow")
@@ -161,8 +161,8 @@ func TestBrewTapSmart_BrewHostTapURLClonesDirectly(t *testing.T) {
 	require.Equal(t, "application/x-git-upload-pack-advertisement", resp.Header.Get("Content-Type"))
 	resp.Body.Close()
 
-	clone := filepath.Join(t.TempDir(), "tap")
-	gitRun(t, t.TempDir(), "clone", "-c", "fetch.unpackLimit=1", brewTS.URL+"/tap.git", clone)
+	clone := filepath.Join(gitScratchDir(t), "tap")
+	gitRun(t, gitScratchDir(t), "clone", "-c", "fetch.unpackLimit=1", brewTS.URL+"/tap.git", clone)
 	require.True(t, hasPackFiles(t, clone), "the brew-host clone must transfer via the smart pack")
 	_, err = os.Stat(filepath.Join(clone, ".git", "shallow"))
 	require.True(t, os.IsNotExist(err))
@@ -189,8 +189,8 @@ func TestBrewTapDumb_StillServesLooseObjectsAndFastForwards(t *testing.T) {
 	gitTS := gitTapServer(t, env)
 
 	dumb := []string{"GIT_SMART_HTTP=0"}
-	clone := filepath.Join(t.TempDir(), "tap")
-	gitRunEnv(t, t.TempDir(), dumb, "clone", "-c", "fetch.unpackLimit=1", gitTS.URL+"/brew/tap.git", clone)
+	clone := filepath.Join(gitScratchDir(t), "tap")
+	gitRunEnv(t, gitScratchDir(t), dumb, "clone", "-c", "fetch.unpackLimit=1", gitTS.URL+"/brew/tap.git", clone)
 	// With unpackLimit pinned, a pack transfer would have been KEPT: no pack
 	// files proves GIT_SMART_HTTP=0 really used the dumb loose-object path.
 	require.False(t, hasPackFiles(t, clone), "a dumb clone fetches loose objects, never a pack")
