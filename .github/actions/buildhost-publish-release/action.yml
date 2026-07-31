@@ -76,21 +76,31 @@ runs:
             // than failing a build for someone else's deploy. Only a server that
             // never provides them fails, which is a real "upgrade the server".
             if (artifacts.length === 0) {
+              // Wait out the deploy, not an arbitrary attempt count. An old
+              // container can legitimately keep serving for the length of its
+              // drain, which buildhost documents in two places that agree:
+              // stop_grace_period: 5m in deploy/docker-compose.yml, and the
+              // 5-minute http.Server.Shutdown timeout in cmd/buildhost/serve.go.
+              // Giving up sooner would fail a publish while the server is still
+              // behaving exactly as designed.
+              const drainMs = 5 * 60 * 1000;
+              const pollMs = 10 * 1000;
+              const deadline = Date.now() + drainMs;
               const releaseURL = `${server}/api/v1/projects/${project}/releases/${version}`;
-              const waits = [5, 10, 20, 30, 30, 30];
-              for (let attempt = 0; attempt < waits.length && artifacts.length === 0; attempt++) {
-                core.info(`Publish response carried no artifacts (server mid-deploy?); re-reading the release in ${waits[attempt]}s (attempt ${attempt + 1}/${waits.length})`);
-                await new Promise((r) => setTimeout(r, waits[attempt] * 1000));
+              core.info(`Publish response carried no artifacts (server mid-deploy?); re-reading ${project}/${version} every ${pollMs / 1000}s for up to ${drainMs / 60000}m`);
+              while (artifacts.length === 0 && Date.now() < deadline) {
+                await new Promise((r) => setTimeout(r, pollMs));
                 try {
                   const reread = await fetch(releaseURL, { headers: { Authorization: `Bearer ${token}` } });
                   if (!reread.ok) continue;
                   artifacts = ((await reread.json()) as ReleaseBody).artifacts ?? [];
-                } catch (e) {
-                  core.info(`  re-read failed (${e instanceof Error ? e.message : String(e)}); retrying`);
+                } catch {
+                  // A dropped connection is what a container going away looks
+                  // like; that is the case being waited out, so keep polling.
                 }
               }
               if (artifacts.length === 0) {
-                core.setFailed(`Neither the publish response nor a re-read of ${project}/${version} carried any artifacts, so nothing can be recorded on the org's linked artifacts page. Upgrade the buildhost server: the publish and release endpoints return them as of the release that added artifact-metadata recording. A publish that records nothing must not report success.`);
+                core.setFailed(`Neither the publish response nor ${drainMs / 60000}m of re-reading ${project}/${version} carried any artifacts, so nothing can be recorded on the org's linked artifacts page. That is longer than a rolling deploy's drain window, so this is a server version, not a timing accident: upgrade buildhost, whose publish and release endpoints return artifacts as of the release that added artifact-metadata recording. A publish that records nothing must not report success.`);
                 return;
               }
               core.info(`Recovered ${artifacts.length} artifact(s) by re-reading the release`);
