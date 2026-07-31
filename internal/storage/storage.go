@@ -41,3 +41,37 @@ type CompressedBlob struct {
 type CompressedGetter interface {
 	GetCompressed(ctx context.Context, key string) (*CompressedBlob, error)
 }
+
+// ErrRandomUnsupported is returned by a RandomGetter when a blob cannot be read
+// at an offset -- because the backend cannot, or because that blob is stored
+// zstd-compressed, which has no offsets to seek to.
+var ErrRandomUnsupported = errors.New("storage: random access not supported for this blob")
+
+// ReaderAtCloser is a random-access view of a blob's bytes. It is safe for
+// concurrent use (an mmap'd blob is), and Close releases the mapping.
+type ReaderAtCloser interface {
+	io.ReaderAt
+	io.Closer
+}
+
+// RandomGetter is an optional Storage capability: read a blob at an offset
+// instead of streaming it from the start. It is what makes an indexed
+// container (see internal/binarchive) worth storing -- an index into bytes you
+// can only read sequentially saves nothing.
+//
+// Only a blob stored UNCOMPRESSED can be read this way; anything else returns
+// ErrRandomUnsupported and the caller falls back to Get. Put compresses by
+// default, so a blob meant for random access is written with
+// UncompressedPutter.
+type RandomGetter interface {
+	OpenReaderAt(ctx context.Context, key string) (ReaderAtCloser, int64, error)
+}
+
+// UncompressedPutter is an optional Storage capability: store a blob without
+// the storage layer's own zstd wrapper, so it stays randomly accessible. Use
+// it for content that carries its own compression (a binpazer archive
+// compresses each block on its own); double-compressing it would only trade
+// the index away for nothing.
+type UncompressedPutter interface {
+	PutUncompressed(ctx context.Context, r io.Reader) (key string, size int64, err error)
+}
