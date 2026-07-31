@@ -22,14 +22,24 @@ type Config struct {
 // Retention is the eviction engine shared by the background sweeper, the gc CLI,
 // and the admin estimate.
 type Retention struct {
-	db    *db.DB
-	store storage.Storage
-	cfg   Config
-	clock func() time.Time
+	db            *db.DB
+	store         storage.Storage
+	cfg           Config
+	clock         func() time.Time
+	recordDeleter RecordDeleter
 }
 
 func New(database *db.DB, store storage.Storage, cfg Config) *Retention {
 	return &Retention{db: database, store: store, cfg: cfg, clock: time.Now}
+}
+
+// WithRecordDeleter attaches the sink that marks an org's artifact-metadata
+// storage records deleted as releases are evicted. Without one, eviction still
+// works and the report says so (RecordsUnmarked) rather than pretending the
+// org's linked artifacts page is current.
+func (r *Retention) WithRecordDeleter(d RecordDeleter) *Retention {
+	r.recordDeleter = d
+	return r
 }
 
 // ConfigFromSettings builds an engine Config from the stored (UI-editable) policy
@@ -61,6 +71,14 @@ type Report struct {
 	BlobsDeleted      int          // blobs freed (enforce) or that would be freed (dry run)
 	BlobsRetained     int          // candidate blobs kept because still shared
 	ReclaimableBytes  int64        // exact bytes freed / that would be freed
+
+	// Artifact-metadata bookkeeping for the evicted releases. An artifact whose
+	// release is gone is no longer fetchable at the URL its storage record
+	// advertises, so the record must be marked deleted or the org's linked
+	// artifacts page keeps claiming buildhost holds it.
+	RecordsMarkedDeleted int      // records successfully marked deleted
+	RecordsUnmarked      int      // records that could NOT be marked (see RecordErrors)
+	RecordErrors         []string // one line per distinct failure, deduplicated
 }
 
 // Releases is the total number of releases evicted (or that would be).
@@ -102,6 +120,11 @@ func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
 		return rep, nil
 	}
 
+	// Capture what each doomed release holds BEFORE the rows go: after eviction
+	// the artifacts (and their digests) are unrecoverable, so there is no later
+	// pass that could retract their storage records.
+	doomed := r.collectRecords(ctx, append(append([]ReleaseRef{}, rep.EvictedReleases...), rep.AbandonedReleases...))
+
 	// EvictReleases deletes the rows in one transaction and reports which blobs
 	// became unreferenced. With enforce=false it rolls back (a true dry run) yet
 	// still returns the exact set that WOULD be freed.
@@ -123,5 +146,94 @@ func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
 		}
 	}
 
+	// Only a run that actually deleted has anything to retract. A dry run
+	// reports the count it WOULD mark, so an operator sees the work before
+	// committing to it.
+	if enforce {
+		r.markRecordsDeleted(ctx, &rep, doomed)
+	} else {
+		rep.RecordsUnmarked = len(doomed)
+	}
+
 	return rep, nil
+}
+
+// doomedRecord is one artifact about to stop existing, captured while its rows
+// are still readable.
+type doomedRecord struct {
+	githubRepo string
+	project    string
+	version    string
+	sha256     string
+}
+
+// collectRecords resolves the artifacts of the releases about to be evicted.
+// Releases whose project records no github_repo are skipped: the record was
+// posted under some org's linked artifacts page and without the repo there is
+// no way to know which, so there is nothing addressable to retract.
+func (r *Retention) collectRecords(ctx context.Context, refs []ReleaseRef) []doomedRecord {
+	var out []doomedRecord
+	repos := make(map[int64]string, len(refs))
+
+	for _, ref := range refs {
+		repo, seen := repos[ref.ProjectID]
+		if !seen {
+			if proj, err := r.db.GetProject(ctx, ref.ProjectName); err == nil && proj != nil {
+				repo = proj.GithubRepo
+			}
+			repos[ref.ProjectID] = repo
+		}
+		if repo == "" {
+			continue
+		}
+		artifacts, err := r.db.ListArtifacts(ctx, ref.ID)
+		if err != nil {
+			slog.WarnContext(ctx, "retention: could not list artifacts for eviction bookkeeping",
+				"project", ref.ProjectName, "version", ref.Version, "err", err)
+			continue
+		}
+		for _, a := range artifacts {
+			if a.SHA256 == "" {
+				continue
+			}
+			out = append(out, doomedRecord{githubRepo: repo, project: ref.ProjectName, version: ref.Version, sha256: a.SHA256})
+		}
+	}
+	return out
+}
+
+// markRecordsDeleted retracts the storage records of everything just evicted.
+//
+// A failure here never rolls back the eviction -- the bytes are already gone,
+// and refusing to GC because GitHub is unreachable would be worse. It is
+// counted instead: RecordsUnmarked and RecordErrors travel in the Report, the
+// gc CLI exits non-zero on them, and the sweeper logs them. The gap stays
+// visible rather than becoming a page that quietly drifts.
+func (r *Retention) markRecordsDeleted(ctx context.Context, rep *Report, doomed []doomedRecord) {
+	if len(doomed) == 0 {
+		return
+	}
+	if r.recordDeleter == nil {
+		rep.RecordsUnmarked = len(doomed)
+		rep.RecordErrors = append(rep.RecordErrors,
+			"no artifact-metadata record deleter configured: the org's linked artifacts page will keep listing these evicted artifacts as stored")
+		slog.WarnContext(ctx, "retention: evicted artifacts left recorded as stored",
+			"records", len(doomed), "reason", "no record deleter configured")
+		return
+	}
+
+	seenErr := make(map[string]bool)
+	for _, d := range doomed {
+		if err := r.recordDeleter.MarkDeleted(ctx, d.githubRepo, d.project, d.version, d.sha256); err != nil {
+			rep.RecordsUnmarked++
+			if msg := err.Error(); !seenErr[msg] {
+				seenErr[msg] = true
+				rep.RecordErrors = append(rep.RecordErrors, msg)
+			}
+			slog.WarnContext(ctx, "retention: could not mark storage record deleted",
+				"project", d.project, "version", d.version, "err", err)
+			continue
+		}
+		rep.RecordsMarkedDeleted++
+	}
 }
