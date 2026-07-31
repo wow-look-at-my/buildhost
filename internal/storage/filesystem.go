@@ -117,6 +117,83 @@ func (fs *Filesystem) Put(_ context.Context, r io.Reader) (string, int64, error)
 	return key, size, nil
 }
 
+// PutUncompressed stores a blob without the storage layer's zstd wrapper, so
+// it can be read at an offset later (see OpenReaderAt). The key is unchanged --
+// it is the sha256 of the same bytes -- so a blob already stored compressed
+// dedups to that copy and simply keeps its compressed form; OpenReaderAt then
+// reports ErrRandomUnsupported and the caller falls back to a sequential read.
+func (fs *Filesystem) PutUncompressed(ctx context.Context, r io.Reader) (string, int64, error) {
+	if !fs.compress {
+		return fs.Put(ctx, r) // already the uncompressed path
+	}
+	raw := &Filesystem{root: fs.root, compress: false}
+	return raw.Put(ctx, r)
+}
+
+// OpenReaderAt returns a random-access view of a blob, mapped rather than read,
+// so a container's index can be followed with seeks instead of a scan. A blob
+// stored zstd-compressed has no offsets to seek to and yields
+// ErrRandomUnsupported.
+func (fs *Filesystem) OpenReaderAt(_ context.Context, key string) (ReaderAtCloser, int64, error) {
+	if !validStorageKey.MatchString(key) {
+		return nil, 0, os.ErrNotExist
+	}
+	f, err := fs.root.Open(fs.rel(key))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, 0, os.ErrNotExist
+		}
+		return nil, 0, fmt.Errorf("open blob: %w", err)
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, 0, fmt.Errorf("stat blob: %w", err)
+	}
+	size := info.Size()
+	if size == 0 {
+		f.Close()
+		return nopReaderAtCloser{bytes.NewReader(nil)}, 0, nil
+	}
+
+	m, err := mmap.MapRegion(int(f.Fd()), size, mmap.ProtRead, mmap.MapShared, 0)
+	f.Close()
+	if err != nil {
+		return nil, 0, fmt.Errorf("mmap blob: %w", err)
+	}
+	// Random access, so the kernel must not drop pages behind a cursor that
+	// does not exist.
+	_ = m.Advise(mmap.AdvRandom)
+
+	if len(m) >= 12 && bytes.Equal(m[:4], compressedMagic[:]) {
+		_ = m.Unmap()
+		return nil, 0, ErrRandomUnsupported
+	}
+	return &mmapReaderAt{m: m}, size, nil
+}
+
+// mmapReaderAt serves ReadAt straight out of a blob's mapping: no copy beyond
+// the caller's buffer, and no per-read syscall.
+type mmapReaderAt struct{ m mmap.MMap }
+
+func (r *mmapReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	if off < 0 || off > int64(len(r.m)) {
+		return 0, io.EOF
+	}
+	n := copy(p, r.m[off:])
+	if n < len(p) {
+		return n, io.EOF
+	}
+	return n, nil
+}
+
+func (r *mmapReaderAt) Close() error { return r.m.Unmap() }
+
+// nopReaderAtCloser adapts an empty blob's reader to ReaderAtCloser.
+type nopReaderAtCloser struct{ io.ReaderAt }
+
+func (nopReaderAtCloser) Close() error { return nil }
+
 func (fs *Filesystem) Get(_ context.Context, key string) (io.ReadCloser, int64, error) {
 	if !validStorageKey.MatchString(key) {
 		return nil, 0, os.ErrNotExist
