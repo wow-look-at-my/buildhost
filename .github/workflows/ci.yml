@@ -230,14 +230,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      # buildhost depends on the private wow-look-at-my/bin-file-fmt module, and
-      # this job builds with plain `go`, not the go-toolchain action that wires
-      # this up itself. Without it the build fails resolving the module.
-      - uses: wow-look-at-my/actions@secret-server#latest
-      - if: env.PRIVATE_ORG_REPO_READ != ''
-        run: |
-          git config --global url."https://${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
-          go env -w GOPRIVATE='github.com/wow-look-at-my/*'
       - run: ./scripts/fetch-cacerts.sh
       - run: go generate ./internal/api
       - run: go build -o buildhost ./cmd/buildhost
