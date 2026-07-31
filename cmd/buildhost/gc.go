@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
@@ -42,15 +43,37 @@ var gcCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("load retention settings: %w", err)
 		}
-		ret := retention.New(database, store, retention.ConfigFromSettings(settings, enforce || cfg.RetentionEnforce))
+		ret := retention.New(database, store, retention.ConfigFromSettings(settings, enforce || cfg.RetentionEnforce)).
+			WithRecordDeleter(recordDeleterFor(cfg))
 
 		rep, err := ret.Run(cmd.Context())
 		if err != nil {
 			return fmt.Errorf("gc: %w", err)
 		}
 		printGCReport(rep, settings)
+		if rep.RecordsUnmarked > 0 && rep.Enforced {
+			return fmt.Errorf("%d artifact storage record(s) could not be marked deleted; the org's linked artifacts page still lists evicted artifacts as stored", rep.RecordsUnmarked)
+		}
 		return nil
 	},
+}
+
+// recordDeleterFor builds the sink that retracts an evicted release's
+// artifact-metadata storage records, authenticating as buildhost itself.
+//
+// RegistryURL must match the registry_url the publishing CI recorded, which is
+// buildhost's own public base URL. The server is otherwise never told its own
+// URL (every generated link is derived from the request Host), but a background
+// sweep has no request to derive one from -- so this is the one place it needs
+// configuring, and BUILDHOST_PRIMARY_DOMAIN already names that apex. When it is
+// unset the deleter still runs and fails loudly per record rather than
+// silently leaving the org's page stale.
+func recordDeleterFor(cfg config.Config) retention.RecordDeleter {
+	registry := ""
+	if cfg.PrimaryDomain != "" {
+		registry = "https://" + cfg.PrimaryDomain
+	}
+	return &retention.GitHubRecordDeleter{RegistryURL: registry, Bearer: auth.BearerForRepo}
 }
 
 func printGCReport(rep retention.Report, settings db.RetentionSettings) {
@@ -74,6 +97,19 @@ func printGCReport(rep retention.Report, settings db.RetentionSettings) {
 		verb = "freed"
 	}
 	fmt.Printf("  blobs %s: %d (%s); %d shared blobs kept\n", verb, rep.BlobsDeleted, humanBytes(rep.ReclaimableBytes), rep.BlobsRetained)
+
+	// An evicted artifact whose storage record still says "stored" is a lie on
+	// the org's linked artifacts page, so the numbers are always printed --
+	// including the zero case, so a run that retracted nothing cannot be read
+	// as a run that had nothing to retract.
+	if rep.Enforced {
+		fmt.Printf("  storage records marked deleted: %d (%d could not be marked)\n", rep.RecordsMarkedDeleted, rep.RecordsUnmarked)
+	} else {
+		fmt.Printf("  storage records that would be marked deleted: %d\n", rep.RecordsUnmarked)
+	}
+	for _, e := range rep.RecordErrors {
+		fmt.Printf("    record error: %s\n", e)
+	}
 }
 
 func branchLabel(b string) string {

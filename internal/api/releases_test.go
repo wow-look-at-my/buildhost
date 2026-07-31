@@ -257,6 +257,55 @@ func TestGetRelease_Success(t *testing.T) {
 	assert.Equal(t, "2.0.0", got.Version)
 }
 
+// GetRelease must carry the release's artifacts. buildhost-publish-release
+// falls back to re-reading the release when the publish response predates the
+// artifacts field -- a rolling deploy can serve that publish from an older
+// container -- so without this the fallback has nothing to recover and a
+// publish fails for the duration of someone else's deploy.
+func TestGetRelease_ReturnsArtifacts(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "relartifacts", Versioning: db.VersioningSemver}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "2.0.0", VersionNum: 2000000}
+	require.NoError(t, h.DB.CreateRelease(ctx, rel))
+
+	key, size, err := h.Store.Put(ctx, strings.NewReader("binary"))
+	require.NoError(t, err)
+	for _, arch := range []db.Arch{db.ArchAMD64, db.ArchARM64} {
+		require.NoError(t, h.DB.CreateArtifact(ctx, &db.Artifact{
+			ReleaseID: rel.ID, OS: db.OSLinux, Arch: arch,
+			Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		}))
+	}
+
+	req := httptest.NewRequest("GET", "/api/projects/relartifacts/releases/2.0.0", nil)
+	req.SetPathValue("project", "relartifacts")
+	req.SetPathValue("version", "2.0.0")
+	req = withProjectRoute(req, proj)
+	rec := httptest.NewRecorder()
+	h.GetRelease(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got struct {
+		Version   string        `json:"version"`
+		Artifacts []db.Artifact `json:"artifacts"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+
+	// The embedded release keeps its pre-existing top-level fields.
+	assert.Equal(t, "2.0.0", got.Version)
+
+	require.Len(t, got.Artifacts, 2)
+	for _, a := range got.Artifacts {
+		// The digest is what a storage record is keyed by; an empty one would
+		// make the recovery path useless even when it fires.
+		assert.Equal(t, key, a.SHA256)
+	}
+}
+
 func TestGetRelease_ReleaseNotFound(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
