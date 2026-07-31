@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -180,7 +181,8 @@ func startRetentionSweeper(ctx context.Context, cfg config.Config, database *db.
 					slog.Error("retention sweep: load settings failed", "err", err)
 					continue
 				}
-				ret := retention.New(database, store, retention.ConfigFromSettings(settings, cfg.RetentionEnforce))
+				ret := retention.New(database, store, retention.ConfigFromSettings(settings, cfg.RetentionEnforce)).
+					WithRecordDeleter(recordDeleterFor(cfg))
 				rep, err := ret.Run(ctx)
 				if err != nil {
 					slog.Error("retention sweep failed", "err", err)
@@ -208,5 +210,14 @@ func logRetentionReport(rep retention.Report) {
 	}
 	slog.Info("retention sweep complete",
 		"enforced", rep.Enforced, "releases", rep.Releases(),
-		"blobs_freed", rep.BlobsDeleted, "blobs_kept", rep.BlobsRetained, "bytes_freed", rep.ReclaimableBytes)
+		"blobs_freed", rep.BlobsDeleted, "blobs_kept", rep.BlobsRetained, "bytes_freed", rep.ReclaimableBytes,
+		"records_marked_deleted", rep.RecordsMarkedDeleted, "records_unmarked", rep.RecordsUnmarked)
+
+	// Every unmarked record is the org's linked artifacts page claiming
+	// buildhost still holds something it just deleted. The sweeper cannot fail
+	// a build over it, so it says so at WARN with the reason attached.
+	if rep.RecordsUnmarked > 0 {
+		slog.Warn("retention: evicted artifacts still recorded as stored",
+			"records", rep.RecordsUnmarked, "errors", strings.Join(rep.RecordErrors, "; "))
+	}
 }
