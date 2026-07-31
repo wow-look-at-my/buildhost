@@ -11,7 +11,6 @@ package binarchive
 
 import (
 	"archive/tar"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -121,8 +120,8 @@ func WriteFromTar(w io.WriteSeeker, tr *tar.Reader, lim Limits) (*Stats, error) 
 		if _, err := io.ReadFull(tr, body); err != nil {
 			return nil, fmt.Errorf("read %s: %w", name, err)
 		}
-		offset := bw.Offset()
-		if err := bw.CompressedBlock(typeEntry, binpazer.FlagHasCRC, binpazer.CodecZstd, body); err != nil {
+		offset, err := bw.PutCompressed(typeEntry, binpazer.FlagHasCRC, binpazer.CodecZstd, body)
+		if err != nil {
 			return nil, fmt.Errorf("write %s: %w", name, err)
 		}
 		seen[name] = true
@@ -136,17 +135,10 @@ func WriteFromTar(w io.WriteSeeker, tr *tar.Reader, lim Limits) (*Stats, error) 
 	// Sorted so a reader can binary-search it, and so the same input always
 	// produces the same directory bytes.
 	sort.Slice(dir.Entries, func(i, j int) bool { return dir.Entries[i].Path < dir.Entries[j].Path })
-	payload, err := json.Marshal(dir)
-	if err != nil {
-		return nil, err
-	}
-	if err := bw.CompressedBlock(typeDir, binpazer.FlagCritical|binpazer.FlagHasCRC, binpazer.CodecZstd, payload); err != nil {
+	if _, err := bw.PutJSON(typeDir, binpazer.FlagCritical|binpazer.FlagHasCRC, binpazer.CodecZstd, dir); err != nil {
 		return nil, fmt.Errorf("write directory: %w", err)
 	}
-	if err := bw.WriteIndex(); err != nil {
-		return nil, err
-	}
-	if err := bw.End(); err != nil {
+	if err := bw.Finish(); err != nil {
 		return nil, err
 	}
 	return &stats, nil
@@ -166,28 +158,13 @@ type Archive struct {
 // Open reads an archive's directory. ra must be safe for concurrent use (an
 // mmap'd blob is).
 func Open(ra io.ReaderAt, size int64) (*Archive, error) {
-	br, err := binpazer.NewReader(io.NewSectionReader(ra, 0, size))
+	br, err := binpazer.NewReaderAt(ra, size)
 	if err != nil {
 		return nil, err
-	}
-	offsets, err := br.Find(typeDir)
-	if err != nil {
-		return nil, fmt.Errorf("find directory: %w", err)
-	}
-	if len(offsets) == 0 {
-		return nil, fmt.Errorf("archive has no directory block")
-	}
-	b, err := br.At(offsets[len(offsets)-1])
-	if err != nil {
-		return nil, err
-	}
-	payload, err := br.ReadDecompressedPayload(b)
-	if err != nil {
-		return nil, fmt.Errorf("read directory: %w", err)
 	}
 	var dir directory
-	if err := json.Unmarshal(payload, &dir); err != nil {
-		return nil, fmt.Errorf("parse directory: %w", err)
+	if err := br.DecodeJSONLast(typeDir, &dir); err != nil {
+		return nil, fmt.Errorf("read directory: %w", err)
 	}
 	a := &Archive{ra: ra, size: size, entries: dir.Entries, byPath: make(map[string]Entry, len(dir.Entries))}
 	for _, e := range dir.Entries {
@@ -216,18 +193,11 @@ func (a *Archive) OpenFile(p string) (io.Reader, Entry, error) {
 	if !ok {
 		return nil, Entry{}, ErrNotFound
 	}
-	br, err := binpazer.NewReader(io.NewSectionReader(a.ra, 0, a.size))
+	br, err := binpazer.NewReaderAt(a.ra, a.size)
 	if err != nil {
 		return nil, e, err
 	}
-	b, err := br.At(e.Offset)
-	if err != nil {
-		return nil, e, err
-	}
-	if b.TypeID != typeEntry {
-		return nil, e, fmt.Errorf("directory points at a type-%d block, not a file", b.TypeID)
-	}
-	r, err := br.DecompressedPayloadReader(b)
+	r, _, err := br.OpenAt(e.Offset, typeEntry)
 	if err != nil {
 		return nil, e, err
 	}
