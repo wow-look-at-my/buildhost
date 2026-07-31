@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path"
@@ -22,8 +23,10 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/binarchive"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
+	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
 const (
@@ -139,6 +142,9 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	if storeErr != nil {
 		span.RecordError(storeErr)
 		span.SetStatus(codes.Error, "store failed")
+		// Logged as well as traced: the client gets a generic message, so
+		// without this the reason for a failed deploy exists only in a span.
+		slog.Error("sites: store site", "project", project.Name, "branch", rt.branch, "err", storeErr)
 		http.Error(w, `{"error":"failed to store site"}`, http.StatusInternalServerError)
 		return
 	}
@@ -195,6 +201,30 @@ var errSiteTooLarge = errors.New("decompressed archive too large")
 // validErr is a client error (invalid archive or over the cap); storeErr is a server
 // error from the storage backend.
 func (h *Handler) storeTar(ctx context.Context, writeTar func(io.Writer) (int, error)) (key string, size int64, sha string, fileCount int, validErr, storeErr error) {
+	// The stored blob is a binpazer archive, not the tar: one compressed block
+	// per file plus a path -> offset directory, so serving one file is a seek
+	// instead of a scan. sha256 still describes the CANONICAL TAR the uploader
+	// sent, so identical uploads stay identifiable; only what is stored changed.
+	//
+	// It is spooled to a temp file because binpazer back-patches the header
+	// (file length, and the version a compressed block requires), which needs a
+	// seekable destination.
+	// The tar path never needed a spool before, so it cannot assume the temp
+	// directory already exists.
+	if h.TmpDir != "" {
+		if err := os.MkdirAll(h.TmpDir, 0o755); err != nil {
+			return "", 0, "", 0, nil, fmt.Errorf("create temp dir: %w", err)
+		}
+	}
+	tmp, err := os.CreateTemp(h.TmpDir, "site-archive-*")
+	if err != nil {
+		return "", 0, "", 0, nil, fmt.Errorf("create archive temp: %w", err)
+	}
+	defer func() {
+		tmp.Close()
+		os.Remove(tmp.Name())
+	}()
+
 	hasher := sha256.New()
 	pr, pw := io.Pipe()
 	type result struct {
@@ -209,15 +239,40 @@ func (h *Handler) storeTar(ctx context.Context, writeTar func(io.Writer) (int, e
 		rc <- result{n, werr}
 	}()
 
-	key, size, perr := h.Store.Put(ctx, pr)
+	_, aerr := binarchive.WriteFromTar(tmp, tar.NewReader(pr), binarchive.Limits{
+		MaxEntries:   maxFileCount,
+		MaxTotalSize: maxSiteDecompressedSize,
+	})
+	// Unblocks the producer if the archive writer stopped early, so the
+	// goroutine below always finishes.
+	pr.CloseWithError(aerr)
 	res := <-rc
 	if res.err != nil {
 		return "", 0, "", 0, res.err, nil
 	}
+	if aerr != nil {
+		return "", 0, "", 0, fmt.Errorf("archive site: %w", aerr), nil
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		return "", 0, "", 0, nil, fmt.Errorf("rewind archive temp: %w", err)
+	}
+
+	key, size, perr := putUncompressed(ctx, h.Store, tmp)
 	if perr != nil {
 		return "", 0, "", 0, nil, perr
 	}
 	return key, size, hex.EncodeToString(hasher.Sum(nil)), res.n, nil, nil
+}
+
+// putUncompressed stores a blob without the storage layer's whole-blob zstd
+// wrapper, so its index can be followed with seeks. A backend without the
+// capability stores it compressed; the site then still serves, through the
+// sequential fallback.
+func putUncompressed(ctx context.Context, s storage.Storage, r io.Reader) (string, int64, error) {
+	if up, ok := s.(storage.UncompressedPutter); ok {
+		return up.PutUncompressed(ctx, r)
+	}
+	return s.Put(ctx, r)
 }
 
 // cappedWriter forwards writes to w until more than max bytes have been written, then
