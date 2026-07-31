@@ -62,13 +62,15 @@ runs:
             // without this that whole path stores artifacts and records
             // nothing. The publish response carries the artifacts it just made
             // public; each becomes one storage record.
-            const published = JSON.parse(text) as {
+            type ReleaseBody = {
               version?: string;
               artifacts?: { os?: string; arch?: string; sha256?: string }[];
             };
+            const published = JSON.parse(text) as ReleaseBody;
             const artifacts = published.artifacts ?? [];
+
             if (artifacts.length === 0) {
-              core.setFailed(`Publish response carried no artifacts, so nothing can be recorded on the org's linked artifacts page. Upgrade the buildhost server: the publish endpoint returns them as of the release that added artifact-metadata recording. A publish that records nothing must not report success.`);
+              core.setFailed(`Publishing ${project}/${version} returned no artifacts, so nothing can be recorded on the org's linked artifacts page. The publish endpoint returns them as of the buildhost release that added artifact-metadata recording -- this server is older than that, which is a version to upgrade rather than a condition to wait out. A publish that records nothing must not report success.`);
               return;
             }
 
