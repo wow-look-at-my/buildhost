@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/server"
@@ -19,6 +20,42 @@ func gitOrSkip(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
+}
+
+// gitScratchDir is t.TempDir() for a git working tree: a scratch dir whose
+// removal tolerates a transient concurrent creator.
+//
+// A working tree is touched by a tree of git subprocesses, and on a loaded
+// runner an entry has been observed appearing inside .git between
+// t.TempDir()'s final readdir and its rmdir -- Go's RemoveAll surfaces exactly
+// that as "unlinkat ...: directory not empty" (its source returns the parent's
+// ENOTEMPTY only when every child was removed cleanly), and t.TempDir() then
+// fails a test whose every assertion passed. Which subprocess does it is not
+// established: git's auto-maintenance is the obvious suspect and is ruled out
+// -- these clones pin fetch.unpackLimit=1, so transfers stay packed, and
+// `git maintenance run --auto` spawns no gc below the 6700-loose-object
+// threshold.
+//
+// Retrying is right regardless of the culprit: this is the git CLIENT's
+// scratch space, nothing buildhost owns is written here, so no product
+// invariant can hide behind it -- a test's verdict must come from its
+// assertions, not from temp-dir hygiene. A removal that never succeeds is
+// logged rather than silently dropped.
+func gitScratchDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "buildhost-git")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		var err error
+		for range 5 {
+			if err = os.RemoveAll(dir); err == nil {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		t.Logf("git scratch dir %s not removed: %v", dir, err)
+	})
+	return dir
 }
 
 func gitRun(t *testing.T, dir string, args ...string) string {
@@ -72,8 +109,8 @@ func TestBrewTap_GitUpdateFastForwardsAcrossPublishAndRedeploy(t *testing.T) {
 	}))
 	t.Cleanup(gitTS.Close)
 
-	clone := filepath.Join(t.TempDir(), "tap")
-	gitRun(t, t.TempDir(), "clone", gitTS.URL+"/brew/tap.git", clone)
+	clone := filepath.Join(gitScratchDir(t), "tap")
+	gitRun(t, gitScratchDir(t), "clone", gitTS.URL+"/brew/tap.git", clone)
 	tip1 := strings.TrimSpace(gitRun(t, clone, "rev-parse", "origin/main"))
 
 	publishBrewProject(t, env, "apptwo", "apptwo-binary")
