@@ -89,6 +89,16 @@ func currentGitHubApp() *githubApp {
 // for owner/repo: a GitHub App installation token when an App is configured,
 // otherwise the static PAT, otherwise "" (anonymous). Best-effort -- a failure to
 // mint an App token falls through to the PAT/anonymous path.
+// BearerForRepo exposes bearerForRepo to other packages that must call the
+// GitHub API as buildhost itself rather than as a request's caller -- notably
+// internal/retention, which marks an org's artifact-metadata storage records
+// deleted when it evicts the releases they describe, with no HTTP request in
+// flight to borrow a credential from. Returns "" when neither a GitHub App nor
+// a static token is configured.
+func BearerForRepo(ctx context.Context, owner, repo string) string {
+	return bearerForRepo(ctx, owner, repo)
+}
+
 func bearerForRepo(ctx context.Context, owner, repo string) string {
 	if app := currentGitHubApp(); app != nil {
 		if tok := app.installationToken(ctx, owner, repo); tok != "" {

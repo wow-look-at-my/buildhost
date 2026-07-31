@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,6 +35,30 @@ func tapGitServer(t *testing.T, h *Handler) *httptest.Server {
 	}))
 	t.Cleanup(ts.Close)
 	return ts
+}
+
+// gitScratchDir is t.TempDir() for a git working tree, with a removal that
+// tolerates a transient concurrent creator: an entry appearing inside .git
+// between RemoveAll's last readdir and its rmdir fails t.TempDir() cleanup
+// ("directory not empty") and reds a test whose assertions all passed. Nothing
+// buildhost owns is written here -- it is the git CLIENT's scratch space -- so
+// no product invariant can hide behind the retry. See the fuller note on the
+// twin helper in internal/server/brew_tap_ff_test.go.
+func gitScratchDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "buildhost-git")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		var err error
+		for range 5 {
+			if err = os.RemoveAll(dir); err == nil {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		t.Logf("git scratch dir %s not removed: %v", dir, err)
+	})
+	return dir
 }
 
 func runGit(t *testing.T, dir string, args ...string) string {
@@ -66,8 +91,8 @@ func TestTap_BrewUpdateFastForwardsAcrossPublishes(t *testing.T) {
 	seedBrewProject(t, d, store, "appone", "appone-binary")
 
 	ts := tapGitServer(t, h)
-	clone := filepath.Join(t.TempDir(), "tap")
-	runGit(t, t.TempDir(), "clone", ts.URL+"/brew/tap.git", clone)
+	clone := filepath.Join(gitScratchDir(t), "tap")
+	runGit(t, gitScratchDir(t), "clone", ts.URL+"/brew/tap.git", clone)
 	oldTip := strings.TrimSpace(runGit(t, clone, "rev-parse", "origin/main"))
 
 	// A publish changes the tap contents...
@@ -106,8 +131,8 @@ func TestTap_RestartPreservesHistoryAndFastForwards(t *testing.T) {
 	seedBrewProject(t, d, store, "appone", "appone-binary")
 
 	ts := tapGitServer(t, h)
-	clone := filepath.Join(t.TempDir(), "tap")
-	runGit(t, t.TempDir(), "clone", ts.URL+"/brew/tap.git", clone)
+	clone := filepath.Join(gitScratchDir(t), "tap")
+	runGit(t, gitScratchDir(t), "clone", ts.URL+"/brew/tap.git", clone)
 	tip1 := strings.TrimSpace(runGit(t, clone, "rev-parse", "origin/main"))
 
 	// "Restart": a fresh handler instance over the same DataDir, wired the way
