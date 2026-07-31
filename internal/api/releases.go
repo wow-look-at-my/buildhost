@@ -185,7 +185,17 @@ func (h *Handler) GetRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jsonResponse(w, http.StatusOK, rel)
+	// Artifacts ride along so a release's contents are readable without a
+	// publish: a publisher that published against an older container (mid
+	// rolling deploy) re-reads the release here rather than failing outright,
+	// and there is no other endpoint that enumerates them.
+	artifacts, err := h.DB.ListArtifacts(r.Context(), rel.ID)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to list artifacts")
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, publishedRelease{Release: *rel, Artifacts: artifacts})
 }
 
 func (h *Handler) ListReleases(w http.ResponseWriter, r *http.Request) {
