@@ -36,12 +36,22 @@ jobs:
       - name: Generated output must not be tracked in git
         run: |
           set -eu
+          # Drift: a committed artifact whose source no longer produces it.
           if ! git diff --quiet; then
             echo "::error::Running generate modified files that are committed to git."
-            echo "Either the file is a build artifact that must be gitignored and"
-            echo "produced by its //go:generate directive, or it is a tracked"
-            echo "generated file that has drifted from its source. Both are bugs."
+            echo "A tracked generated file has drifted from the source it claims to"
+            echo "be built from. Gitignore it and let its //go:generate produce it."
             git diff --stat
+            exit 1
+          fi
+          # Committed-at-all: a tracked file that .gitignore says is build output.
+          # Catches the artifact even while it still happens to match its source.
+          ignored="$(git ls-files -i -c --exclude-standard)"
+          if [ -n "$ignored" ]; then
+            echo "::error::These build artifacts are committed to git:"
+            echo "$ignored"
+            echo "Remove them from the index (git rm --cached) -- a tracked artifact"
+            echo "drifts from its source silently. See docs/no-committed-build-artifacts.md"
             exit 1
           fi
       # On the default branch, cache this commit's route list keyed by its SHA.

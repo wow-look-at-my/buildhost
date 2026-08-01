@@ -54,21 +54,23 @@ its source rots, and every test that reads it keeps passing.
 ## The check
 
 Prose does not survive. `.github/workflows/ci.yml` runs every generate directive
-and then fails if that changed a **tracked** file:
+and then makes two assertions, because the bug has two shapes and one check
+catches only one of them:
 
 ```
-git diff --quiet   # after generate
+git diff --quiet                      # 1. drift
+git ls-files -i -c --exclude-standard # 2. committed at all
 ```
 
-That single assertion covers both shapes of the bug:
-
-- an artifact that is committed *and stale* — regenerating changes it, so the
-  diff is non-empty;
-- an artifact that is committed at all, since it will be rewritten by its own
-  directive on the next run.
-
-It would have gone red the first time the TypeScript and the committed bundle
-disagreed, instead of months later when the file was deleted.
+1. **Drift** — a committed artifact whose source no longer produces it.
+   Regenerating rewrites the file, so the working tree is dirty. This is the
+   assertion that would have gone red the first time the TypeScript and the
+   committed bundle disagreed, instead of months later when the file was
+   deleted.
+2. **Committed at all** — a tracked file that `.gitignore` says is build output.
+   Needed because a deterministic build (esbuild is one) regenerates a
+   *byte-identical* artifact, leaving check 1 green while the artifact sits in
+   git waiting to drift. This one flags it immediately, in sync or not.
 
 ## When a test must assert on built output
 
