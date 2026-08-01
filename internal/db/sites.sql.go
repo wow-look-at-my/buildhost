@@ -24,6 +24,51 @@ func (q *Queries) DeleteSiteByProjectAndBranch(ctx context.Context, arg DeleteSi
 	return err
 }
 
+const getSiteByCommitPrefix = `-- name: GetSiteByCommitPrefix :many
+SELECT id, project_id, branch, storage_key, size, sha256, file_count, git_commit, is_public, created_at, updated_at
+FROM sites WHERE project_id = ? AND git_commit != '' AND git_commit LIKE ? ORDER BY updated_at DESC
+`
+
+type GetSiteByCommitPrefixParams struct {
+	ProjectID int64  `json:"project_id"`
+	GitCommit string `json:"git_commit"`
+}
+
+func (q *Queries) GetSiteByCommitPrefix(ctx context.Context, arg GetSiteByCommitPrefixParams) ([]Site, error) {
+	rows, err := q.db.QueryContext(ctx, getSiteByCommitPrefix, arg.ProjectID, arg.GitCommit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Site{}
+	for rows.Next() {
+		var i Site
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.Branch,
+			&i.StorageKey,
+			&i.Size,
+			&i.SHA256,
+			&i.FileCount,
+			&i.GitCommit,
+			&i.IsPublic,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSiteByProjectAndBranch = `-- name: GetSiteByProjectAndBranch :one
 SELECT id, project_id, branch, storage_key, size, sha256, file_count, git_commit, is_public, created_at, updated_at
 FROM sites WHERE project_id = ? AND branch = ?

@@ -242,8 +242,39 @@ git branch:
 ```
 buildhost publish-site --server __BASE_URL__ --token $TOKEN \
   --project myapp --branch main --dir ./dist
-# served at __SITES_URL__/myapp/branch/main/
+# served at __SITES_URL__/myapp/@main/
 ```
+
+The project's own root path is the canonical URL: it serves the default branch
+directly, so a link into a site need not name a branch at all.
+
+```
+__SITES_URL__/myapp/            -> index.html, from the default branch
+__SITES_URL__/myapp/runner.html -> that file, from the default branch
+```
+
+Any other branch, or a specific commit, is named with the `@` sigil -- it cannot
+occur in a project or branch name and is vanishingly rare in a file name:
+
+```
+__SITES_URL__/myapp/@pr-7/          -> the pr-7 preview
+__SITES_URL__/myapp/@pr-7/x.css     -> x.css on that branch
+__SITES_URL__/myapp/@0f1e2d3/x.css  -> x.css from that exact commit
+```
+
+A commit ref takes the full 40-hex sha or any abbreviation of 7+ characters. It
+resolves while that commit is still the live deployment of some branch, so the
+URL serves exactly that build or 404s -- it never quietly becomes a later one.
+
+Redirects only ever run toward the shorter URL: `@<default branch>` 302s to the
+bare path above, never the reverse. The original `/myapp/branch/main/x.css`
+spelling is not going away either -- it 302s to whichever of the two URLs above
+names the same file, so every published link keeps resolving.
+
+Project names are slash-namespaced, so the bare path's split is resolved by
+longest match: with projects `org` and `org/repo`, `__SITES_URL__/org/repo` is
+org/repo's root, not the file `repo` under `org`. The `@` form never needs the
+lookup -- the sigil marks exactly where the project name ends.
 __SITE_SECTION__
 ## REST API reference
 
