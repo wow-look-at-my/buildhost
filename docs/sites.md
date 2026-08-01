@@ -72,6 +72,16 @@ served in place rather than redirected somewhere that means something else.
 -- the classic scheme's `branch/` path segment and the subdomain scheme's `~`
 -- with one grammar, and both older forms keep working (see below).
 
+Each older form keeps working **only on the scheme it came from**, and the
+asymmetry is easy to misread: `/branch/{branch}/` is classic-scheme only (302 to
+the canonical URL), `~{branch}` is subdomain-scheme only (301 to `@`). `~` has
+never been a sigil on the classic scheme, so `/{project}/~{branch}/<file>` is an
+ordinary path naming a literal file `~{branch}/<file>` under the default branch:
+it answers 404, or 401 on a private project whose root branch is not public --
+never a redirect. Pinned by `TestLegacySigil_*` in `internal/sites`, because the
+top-level CLAUDE.md once claimed `~` redirected on the classic scheme too and
+sent a reader hunting a routing bug that does not exist.
+
 Why a sigil rather than a path segment: `branch` is an ordinary segment, so a
 site with a top-level `branch/` directory could not be addressed at all through
 the old form, and every URL in it carried a segment that reads like part of the
