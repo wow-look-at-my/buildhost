@@ -30,6 +30,12 @@ const HOST = `sites.localhost:${PORT}`;
 const SITES = `http://${HOST}`;
 const CONSUMER_ORIGIN = `http://localhost:${CONSUMER_PORT}`;
 const PROJECT = "cors-e2e";
+// The shape that actually broke: a PRIVATE project serving one public site
+// branch (X-Public-Site), which is how every PR preview and published library
+// site under a private repo is served. A public project would not exercise the
+// public-read bypass at all, so a redirect that lost either the CORS header or
+// the anonymous bypass would go unnoticed.
+const PRIVATE_PROJECT = "cors-e2e-private";
 const MARKER = "site-module-loaded";
 
 // The router dispatches on the Host's first label, so the sites service has to
@@ -187,6 +193,22 @@ try {
 		if (up.status !== 201) throw new Error(`upload ${branch}: ${up.status} ${await up.text()}`);
 	}
 
+	// A private project whose `library` branch is published public. Its default
+	// branch has no site at all, mirroring a repo that only ever publishes the
+	// one library branch.
+	const createdPriv = await fetch(`http://localhost:${PORT}/api/v1/projects`, {
+		method: "POST",
+		headers: { ...auth, "Content-Type": "application/json" },
+		body: JSON.stringify({ name: PRIVATE_PROJECT, visibility: "private" }),
+	});
+	if (!createdPriv.ok) throw new Error(`create private project: ${createdPriv.status} ${await createdPriv.text()}`);
+	const upPriv = await fetch(`${SITES}/${PRIVATE_PROJECT}/branch/library`, {
+		method: "PUT",
+		headers: { ...auth, "X-Public-Site": "true" },
+		body: new Uint8Array(tarGz({ "ui/mod.js": `export const MARKER = ${JSON.stringify(MARKER)};\n` })),
+	});
+	if (upPriv.status !== 201) throw new Error(`upload private site: ${upPriv.status} ${await upPriv.text()}`);
+
 	// --- Layer 1: every hop of every redirect shape -------------------------
 	core.info("CORS headers on every redirect hop:");
 	// The exact URL that broke production: legacy spelling of a NON-default
@@ -203,12 +225,20 @@ try {
 	// Plain serves, which were never broken -- so a regression here is caught too.
 	await assertChainCORS("canonical @branch file", `/${PROJECT}/@library/ui/mod.js`, false);
 	await assertChainCORS("bare apex file", `/${PROJECT}/index.html`, false);
+	// The production shape: private project, public site branch, ANONYMOUS (no
+	// token is ever sent above -- assertChainCORS sends only an Origin). This
+	// also pins that the public-read bypass survives the redirect, since a 401
+	// mid-chain would fail here just as loudly as a missing header.
+	await assertChainCORS("private project, public branch (legacy /branch/)", `/${PRIVATE_PROJECT}/branch/library/ui/mod.js`, true);
 
 	// --- Layer 2: a real browser, a real cross-origin import ----------------
 	// Everything above is a header assertion. This is the actual user-visible
 	// claim, and it covers what header assertions cannot: MIME type, CSP, and
 	// module specifier resolution against the post-redirect URL.
-	const MODULE_URL = `${SITES}/${PROJECT}/branch/library/ui/mod.js`;
+	// The private-project/public-branch URL, because that is the production
+	// shape -- and the browser sends no credentials, so it also proves the
+	// anonymous public-read bypass holds across the redirect.
+	const MODULE_URL = `${SITES}/${PRIVATE_PROJECT}/branch/library/ui/mod.js`;
 	const page_html = `<!doctype html><meta charset=utf-8><title>consumer</title><script type="module">
   const done = (t) => { window.__result = t; };
   try { const m = await import(${JSON.stringify(MODULE_URL)}); done('OK:' + m.MARKER); }
