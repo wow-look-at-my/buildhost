@@ -205,6 +205,10 @@ func (h *Handler) ServeDefaultBranch(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 	r = r.WithContext(ctx)
 
+	// Set before the redirect below, not after it: a cross-origin fetch is
+	// checked at every hop, so a redirect missing these headers fails the load.
+	setSiteSecurityHeaders(w)
+
 	rt := routeFrom(ctx)
 	// The project root without its trailing slash: canonicalize so relative
 	// links in index.html resolve under the project, not the host root. Same
@@ -214,7 +218,6 @@ func (h *Handler) ServeDefaultBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setSiteSecurityHeaders(w)
 	project := auth.ProjectFrom(ctx)
 	h.serveSiteFile(ctx, w, r, project, resolveRootBranch(ctx, h.DB, project), rt.path)
 }
