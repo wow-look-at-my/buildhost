@@ -1,7 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "build": "esbuild src/app.ts src/copy.ts --bundle --outdir=../static --format=iife --target=es2020",
+    "build": "npm run check && esbuild src/app.ts --bundle --outfile=../static/app.js --format=iife --global-name=App --target=es2020 && esbuild src/copy.ts --bundle --outfile=../static/copy.js --format=iife --target=es2020",
     "check": "tsc --noEmit"
   },
   "devDependencies": {
