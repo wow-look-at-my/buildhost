@@ -150,7 +150,7 @@ runs:
         GITHUB_TOKEN: ${{ github.token }}
       with:
         script: |
-          import { recordSite } from "${{ github.action_path }}/../lib/storage-record";
+          const { recordSite } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
           await (async () => {
             const server: string = "${{ inputs.server }}";
             const sourceDir: string = "${{ inputs.source_dir }}";

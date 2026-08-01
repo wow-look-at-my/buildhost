@@ -32,7 +32,7 @@ runs:
       uses: wow-look-at-my/actions@typescript#latest
       with:
         script: |
-          import { recordReleaseArtifacts } from "${{ github.action_path }}/../lib/storage-record";
+          const { recordReleaseArtifacts } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
           await (async () => {
             const server: string = "${{ inputs.server }}";
             let token: string = "${{ inputs.token }}";

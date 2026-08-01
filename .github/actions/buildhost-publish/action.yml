@@ -145,7 +145,7 @@ runs:
         GITHUB_TOKEN: ${{ inputs.path == '' && github.token || '' }}
       with:
         script: |
-          import { recordReleaseArtifacts, PublishedArtifact } from "${{ github.action_path }}/../lib/storage-record";
+          const { recordReleaseArtifacts } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
           await (async () => {
             const inputProject: string = "${{ inputs.project }}";
             const inputVersion: string = "${{ inputs.version }}";
@@ -238,7 +238,7 @@ runs:
             // failure fails the publish. A warn-and-continue path would be an
             // opt-out by neglect -- the publish would stay green while the
             // org's linked artifacts page silently fell behind reality.
-            const uploadedSlots: PublishedArtifact[] = [];
+            const uploadedSlots: import("${{ github.action_path }}/../lib/storage-record").PublishedArtifact[] = [];
             const drainStorageRecords = async (): Promise<boolean> =>
               recordReleaseArtifacts(octokit, core, context, { server, artifacts: uploadedSlots });
 
