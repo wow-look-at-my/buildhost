@@ -194,7 +194,7 @@ func buildProjectView(r *http.Request, p *db.Project, rels []db.ReleaseSummary, 
 	for _, s := range sites {
 		v.Sites = append(v.Sites, siteRow{
 			Branch:  s.Branch,
-			URL:     serviceURL(r, "sites", p.Name+"/branch/"+s.Branch+"/"),
+			URL:     serviceURL(r, "sites", p.Name+"/@"+s.Branch+"/"),
 			Files:   s.FileCount,
 			Updated: timeAgo(s.UpdatedAt),
 		})

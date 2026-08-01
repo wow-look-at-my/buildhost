@@ -571,23 +571,34 @@ buildhost publish-site \
   --branch main \
   --dir ./dist
 
-# The site is available at:
-# http://sites.localhost:8080/myapp/branch/main/
+# The site is available at its own root path, on the default branch:
+# http://sites.localhost:8080/myapp/           (index.html)
+# http://sites.localhost:8080/myapp/index.css  (any file)
+
+# Any other branch, or a specific commit, is named with the @ sigil:
+# http://sites.localhost:8080/myapp/@pr-7/index.css
+# http://sites.localhost:8080/myapp/@0f1e2d3/index.css
+
+# Redirects only run toward the shorter URL: @main (the default branch) 302s to
+# /myapp/, and the original /myapp/branch/main/ spelling 302s to whichever of the
+# two URLs above names the same file -- so every published link keeps resolving.
 
 # Re-deploying the same branch replaces the previous site atomically.
 # Deleting a branch deployment:
 curl -X DELETE -H "Authorization: Bearer $TOKEN" \
-  http://sites.localhost:8080/myapp/branch/main
+  http://sites.localhost:8080/myapp/@main
 ```
 
 ### Project site subdomains (optional)
 
 Set `BUILDHOST_SITE_DOMAIN` (e.g. `pazer.site`) to also serve each project's site
 at `https://<project>.<domain>/` -- the default branch on bare paths, any other
-branch behind a `~` sigil: `https://myapp.pazer.site/~pr-7/`.
+branch (or commit) behind the `@` sigil: `https://myapp.pazer.site/@pr-7/`,
+`https://myapp.pazer.site/@0f1e2d3/`.
 
-- Slash-named branches (`claude/foo`) resolve by longest match; a `~<default-branch>`
-  URL 302s to the canonical bare form.
+- Slash-named branches (`claude/foo`) resolve by longest match; an `@<default-branch>`
+  URL 302s to the canonical bare form. The `~` sigil this scheme launched with
+  still works and 301s to the `@` form.
 - Only project names that are a single DNS label serve here (`[a-z0-9-]`, max 63,
   no leading/trailing `-`); everything else stays on `sites.<apex>/...`.
 - Reserved on this scheme: a leading `~` path segment and the literal `/__sso`.
@@ -823,9 +834,11 @@ The link is a stateless HMAC signature (keyed by a server-side key generated on 
 | GET | `/dl/{project}/{version}/{os}/{arch}` | Download |
 | GET | `/dl/{project}/latest/{os}/{arch}` | Download latest |
 | GET | `/dl/{project}/branch/{branch}/{os}/{arch}` | Download latest for branch |
-| PUT | `/sites/{project}/branch/{branch}` | Deploy static site (tar.gz body) |
-| DELETE | `/sites/{project}/branch/{branch}` | Remove static site |
-| GET | `/sites/{project}/branch/{branch}/{path}` | Serve static site file |
+| PUT | `/sites/{project}/@{branch}` | Deploy static site (tar.gz body) |
+| DELETE | `/sites/{project}/@{branch}` | Remove static site |
+| GET | `/sites/{project}/{path}` | Serve a file from the default branch (canonical) |
+| GET | `/sites/{project}/@{ref}/{path}` | Serve it from a branch or commit |
+| GET | `/sites/{project}/branch/{branch}/{path}` | 302 to the canonical URL above |
 | GET | `/sites/{project}/branches` | List branch deployments |
 | GET | `/llms.txt` | Plain-text guide to buildhost for LLMs ([llmstxt.org](https://llmstxt.org)) |
 | GET | `/healthz` | Liveness check (database ping); JSON body reports the running build's commit and version |
