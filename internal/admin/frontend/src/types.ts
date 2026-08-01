@@ -42,6 +42,7 @@ export interface RecentRelease {
 }
 
 export interface DashboardData {
+    services: ServiceURLs;
     stats: DashboardStats;
     recent: RecentRelease[];
     config: DashboardConfig;
@@ -93,6 +94,7 @@ export interface SiteInfo {
 }
 
 export interface ProjectData {
+    services: ServiceURLs;
     project: Project;
     releases: ReleaseSummary[];
     sites: SiteInfo[];
@@ -127,6 +129,7 @@ export interface ArtifactDetail {
 }
 
 export interface ReleaseData {
+    services: ServiceURLs;
     project: Project;
     release: Release;
     artifacts: ArtifactDetail[];
@@ -136,11 +139,13 @@ export interface ReleaseData {
 }
 
 export interface RegistriesData {
+    services: ServiceURLs;
     base_url: string;
     projects: ProjectSummary[];
 }
 
 export interface TokenInfo {
+    id: number;
     name: string;
     token_prefix: string;
     is_global: boolean;
@@ -162,6 +167,7 @@ export interface SiteDetail {
 }
 
 export interface SitesData {
+    services: ServiceURLs;
     sites: SiteDetail[];
     base_url: string;
 }
@@ -200,6 +206,10 @@ export interface StorageProject {
 export interface StorageData {
     projects: StorageProject[];
     total_bytes: number;
+    stripped_bytes: number;
+    debug_bytes: number;
+    packaged_bytes: number;
+    reclaimable_bytes: number;
     logical_bytes: number;
     physical_bytes: number;
     disk_bytes: number;
@@ -219,4 +229,75 @@ export interface ProjectGroupInfo {
     total_size: number;
     total_files: number;
     last_updated: string;
+}
+
+// --- Retention (admin GET/PUT /api/retention, POST /api/retention/run) ---
+
+export interface RetentionRelease {
+    project_id: number;
+    project_name: string;
+    branch: string;
+    version: string;
+    reason: string;
+}
+
+export interface RetentionPreview {
+    release_count: number;
+    reclaimable_bytes: number;
+    blobs: number;
+    blobs_retained: number;
+    releases: RetentionRelease[];
+}
+
+export interface RetentionData {
+    keep_n: number;
+    recency_hours: number;
+    sweeper_enabled: boolean;
+    sweeper_enforce: boolean;
+    preview: RetentionPreview;
+}
+
+// --- Project tree (the Projects page groups slash-namespaced names) ---
+
+export interface TreeRow {
+    kind: "folder" | "project";
+    depth: number;
+    name?: string;
+    project?: ProjectSummary;
+}
+
+// --- Page registry ---
+
+export interface Pages {
+    dashboard(): void;
+    projects(): void;
+    project(name: string): void;
+    release(name: string, version: string): void;
+    registries(): void;
+    tokens(): void;
+    sites(): void;
+    site(name: string): void;
+    oidc(): void;
+    artifacts(): void;
+    storage(): void;
+    retention(): void;
+}
+
+// --- Signed temporary download link (admin POST .../download-links) ---
+
+export interface DownloadLink {
+    url: string;
+}
+
+// serviceURLs(r) in internal/admin/admin.go: one absolute base URL per service
+// subdomain, derived per request. Present on the dashboard, project, release
+// and registries payloads.
+export interface ServiceURLs {
+    dl: string;
+    apt: string;
+    brew: string;
+    npm: string;
+    oci: string;
+    sites: string;
+    static: string;
 }
