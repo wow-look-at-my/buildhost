@@ -3,6 +3,7 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -82,14 +83,28 @@ func runPublishSite(cmd *cobra.Command, _ []string) error {
 	}
 	defer resp.Body.Close()
 
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("upload failed: %s: %s", resp.Status, body)
 	}
 
 	fmt.Printf("published site %s branch %s\n", project, branch)
-	fmt.Printf("  %s/%s/branch/%s/\n", sitesBase, project, branch)
+	fmt.Printf("  %s\n", publishedSiteURL(body, sitesBase, project, branch))
 	return nil
+}
+
+// publishedSiteURL is where the site is now served. Never derive it: the server
+// owns the URL grammar and reports it. The fallback is for servers predating
+// that field -- keep it on the canonical spelling, not the /branch/ one the
+// upload endpoint uses. see docs/sites.md
+func publishedSiteURL(body []byte, sitesBase, project, branch string) string {
+	var resp struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(body, &resp); err == nil && resp.URL != "" {
+		return resp.URL
+	}
+	return fmt.Sprintf("%s/%s/@%s/", sitesBase, project, branch)
 }
 
 func createTarGz(w io.Writer, dir string) error {
