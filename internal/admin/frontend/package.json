@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/app.ts src/copy.ts --bundle --outdir=../static --format=iife --target=es2020",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  }
+}
