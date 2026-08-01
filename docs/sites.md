@@ -122,8 +122,12 @@ branches stay gated). Used for PR previews of private repos (the
 ## Storage and limits
 
 Sites are uploaded as tar.gz (`Content-Type: application/gzip`) or zip
-(`Content-Type: application/zip`). Both formats are stored as raw tar
-internally and served by scanning tar headers per request. Each branch is an
+(`Content-Type: application/zip`) and stored as an indexed binpazer archive
+(`internal/binarchive`), so serving one file is a directory lookup plus a block
+decode rather than a scan of the whole tar; a pre-archive blob is detected by
+magic and served through the old scan. See `docs/site-archives.md`. Both the
+branch routes and the apex path go through `serveSiteFile`, so both get the
+indexed read. Each branch is an
 independent deployment (one row in the `sites` table). Re-deploying a branch
 replaces the previous site atomically. Upload size capped at 256 MiB, max
 10,000 files per site. The project's own visibility is unchanged by a public
