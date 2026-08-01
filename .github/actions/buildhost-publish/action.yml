@@ -277,9 +277,21 @@ runs:
                 } catch (e) {
                   const status = (e as { status?: number }).status;
                   const msg = e instanceof Error ? e.message : String(e);
+                  // A personal account has no linked artifacts page, so the
+                  // org-scoped endpoint 404s no matter what the token grants
+                  // -- a property of the target, like the loopback skip above.
+                  // Checked only on a 404 (orgs pay no extra call) and fails
+                  // closed: an unreadable owner type leaves the failure standing.
+                  const ownerType = status === 404
+                    ? await octokit.rest.users.getByUsername({ username: org }).then((r: { data: { type?: string } }) => r.data.type ?? "").catch(() => "")
+                    : "";
+                  if (ownerType === "User") {
+                    core.info(`Skipping ${storageRecords.length} storage record(s): ${org} is a user account, which has no linked artifacts page`);
+                    return true;
+                  }
                   core.setFailed(
                     status === 403 || status === 404
-                      ? `Could not record ${rec.name} ${rec.path} on ${org}'s linked artifacts page (HTTP ${status}: ${msg}). Add 'artifact-metadata: write' to this job's permissions block -- job-level permissions REPLACE workflow-level ones, so add it alongside the ones the job already declares. Recording what buildhost stores is part of publishing and cannot be turned off.`
+                      ? `Could not record ${rec.name} ${rec.path} on ${org}'s linked artifacts page (HTTP ${status}: ${msg}). Either ${org} has no linked artifacts page, or this job's token lacks 'artifact-metadata: write' -- job-level permissions REPLACE workflow-level ones, so a job-level block must list it alongside the ones it already declares. Recording what buildhost stores is part of publishing and cannot be turned off.`
                       : `Could not record ${rec.name} ${rec.path} on ${org}'s linked artifacts page (${msg})`,
                   );
                   return false;
