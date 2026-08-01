@@ -223,72 +223,6 @@ func TestSiteDomain_DispatchAndServe(t *testing.T) {
 	assert.NotContains(t, body, "__SITE_SECTION__")
 }
 
-func TestSiteDomain_TildeGrammar(t *testing.T) {
-	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, false)
-
-	env.createProject(t, "tilde-p", false)
-	env.uploadBranchSite(t, "tilde-p", "master", false, map[string]string{
-		"index.html": "m-index", "a.html": "m-a", "404.html": "m-404",
-	})
-	env.uploadBranchSite(t, "tilde-p", "staging", false, map[string]string{
-		"index.html": "s-index", "sub/x.js": "s-x",
-	})
-	env.uploadBranchSite(t, "tilde-p", "claude", false, map[string]string{
-		"b.html": "c-b",
-	})
-	env.uploadBranchSite(t, "tilde-p", "claude/foo", false, map[string]string{
-		"index.html": "cf-index", "c.html": "cf-c",
-	})
-
-	host := "tilde-p." + siteTestDomain
-
-	// ~<branch> serves that branch.
-	resp, body := siteGet(t, env, host, "/~staging/")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, "s-index", body)
-	resp, body = siteGet(t, env, host, "/~staging/sub/x.js")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, "s-x", body)
-
-	// Branch root without a trailing slash canonicalizes, like the classic scheme.
-	resp, _ = siteGet(t, env, host, "/~staging")
-	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
-	assert.Equal(t, "/~staging/", resp.Header.Get("Location"))
-
-	// ~<default-branch> is non-canonical: 302 (no-store) to the bare form.
-	resp, _ = siteGet(t, env, host, "/~master")
-	require.Equal(t, http.StatusFound, resp.StatusCode)
-	assert.Equal(t, "/", resp.Header.Get("Location"))
-	assert.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
-	resp, _ = siteGet(t, env, host, "/~master/a.html")
-	require.Equal(t, http.StatusFound, resp.StatusCode)
-	assert.Equal(t, "/a.html", resp.Header.Get("Location"))
-	assert.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
-
-	// Slash-named branches resolve by longest match: claude/foo wins for its own
-	// paths, claude keeps everything else.
-	resp, body = siteGet(t, env, host, "/~claude/foo/")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, "cf-index", body)
-	resp, body = siteGet(t, env, host, "/~claude/foo/c.html")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, "cf-c", body)
-	resp, body = siteGet(t, env, host, "/~claude/b.html")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, "c-b", body)
-
-	// The 404.html fallback applies on the subdomain scheme.
-	resp, body = siteGet(t, env, host, "/nope.html")
-	require.Equal(t, http.StatusNotFound, resp.StatusCode)
-	assert.Equal(t, "m-404", body)
-
-	// A ~ with no branch, and a branch that doesn't exist, both 404.
-	resp, _ = siteGet(t, env, host, "/~")
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
-	resp, _ = siteGet(t, env, host, "/~nosuchbranch/")
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
-}
-
 func TestSiteDomain_Visibility(t *testing.T) {
 	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, true)
 
@@ -299,7 +233,7 @@ func TestSiteDomain_Visibility(t *testing.T) {
 	host := "secret." + siteTestDomain
 
 	// The public branch serves anonymously even under the private project.
-	resp, body := siteGet(t, env, host, "/~preview/")
+	resp, body := siteGet(t, env, host, "/@preview/")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "public-preview", body)
 
@@ -358,39 +292,58 @@ func TestSiteDomain_SlashBranchClassicScheme(t *testing.T) {
 	env := setup(t) // no site domain needed: this is the classic-scheme fix
 
 	env.createProject(t, "p2", false)
+	// A site on the default branch, so the slash-named branches under test stay
+	// non-default refs and are served at their own URLs rather than collapsing
+	// into the bare project path.
+	env.uploadBranchSite(t, "p2", "master", false, map[string]string{"index.html": "default"})
 	env.uploadBranchSite(t, "p2", "claude/foo", false, map[string]string{
 		"index.html": "cf", "f.js": "cf-f",
 	})
 
-	// Regression: these were 404 before the fix.
-	resp, body := siteGet(t, env, "sites.test.local", "/p2/branch/claude/foo/index.html")
+	// Regression: these were 404 before the fix. A slash-named branch is
+	// addressed with the "@" sigil, which marks where the ref STARTS -- the
+	// remainder is still split by longest match against the project's sites.
+	resp, body := siteGet(t, env, "sites.test.local", "/p2/@claude/foo/index.html")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "cf", body)
-	resp, body = siteGet(t, env, "sites.test.local", "/p2/branch/claude/foo/")
+	resp, body = siteGet(t, env, "sites.test.local", "/p2/@claude/foo/")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "cf", body)
 
 	// Branch root canonicalization still applies to the full slashed branch.
-	resp, _ = siteGet(t, env, "sites.test.local", "/p2/branch/claude/foo")
+	resp, _ = siteGet(t, env, "sites.test.local", "/p2/@claude/foo")
 	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
-	assert.Equal(t, "/p2/branch/claude/foo/", resp.Header.Get("Location"))
+	assert.Equal(t, "/p2/@claude/foo/", resp.Header.Get("Location"))
+
+	// The legacy spelling resolves the same slash-named branch and 302s to it,
+	// naming the branch it resolved -- in one hop, not a chain.
+	resp, _ = siteGet(t, env, "sites.test.local", "/p2/branch/claude/foo/index.html")
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	assert.Equal(t, "/p2/@claude/foo/index.html", resp.Header.Get("Location"))
 
 	// With BOTH claude and claude/foo, each file serves from its own branch.
 	env.uploadBranchSite(t, "p2", "claude", false, map[string]string{"a.html": "c-a"})
-	resp, body = siteGet(t, env, "sites.test.local", "/p2/branch/claude/a.html")
+	resp, body = siteGet(t, env, "sites.test.local", "/p2/@claude/a.html")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "c-a", body)
-	resp, body = siteGet(t, env, "sites.test.local", "/p2/branch/claude/foo/f.js")
+	resp, body = siteGet(t, env, "sites.test.local", "/p2/@claude/foo/f.js")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "cf-f", body)
 
 	// The public-read gate resolves the same way (private project, public
-	// slash-named branch, anonymous read).
+	// slash-named branch, anonymous read). claude/foo is p3's only site, so it
+	// is also its default branch -- the canonical URL is the bare project path.
 	env.createProject(t, "p3", true)
 	env.uploadBranchSite(t, "p3", "claude/foo", true, map[string]string{"index.html": "pub-cf"})
-	resp, body = siteGet(t, env, "sites.test.local", "/p3/branch/claude/foo/index.html")
+	resp, body = siteGet(t, env, "sites.test.local", "/p3/index.html")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "pub-cf", body)
+
+	// The gate opens the legacy URL for that same public branch too: it
+	// redirects rather than 401ing, so an old shared link still lands.
+	resp, _ = siteGet(t, env, "sites.test.local", "/p3/branch/claude/foo/index.html")
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	assert.Equal(t, "/p3/index.html", resp.Header.Get("Location"))
 }
 
 func TestSiteUploadValidation(t *testing.T) {
@@ -433,8 +386,8 @@ func TestSiteDomain_DNSLabelGate(t *testing.T) {
 	for _, name := range []string{"x_y", "bad-", "x.y", long, "a/b"} {
 		env.createProject(t, name, false)
 		env.uploadBranchSite(t, name, "master", false, files)
-		// All of them serve on the classic scheme.
-		resp, body := siteGet(t, env, "sites.test.local", "/"+name+"/branch/master/")
+		// All of them serve on the classic scheme, at the canonical URL.
+		resp, body := siteGet(t, env, "sites.test.local", "/"+name+"/")
 		require.Equalf(t, http.StatusOK, resp.StatusCode, "classic serve for %q", name)
 		assert.Equal(t, "gated", body)
 	}
