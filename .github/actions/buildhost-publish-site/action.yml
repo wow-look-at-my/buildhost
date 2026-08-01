@@ -10,7 +10,7 @@ description: >
 
 inputs:
   server:
-    description: 'Buildhost server URL'
+    description: 'Buildhost server URL (apex; the sites subdomain is derived from it)'
     required: false
     default: 'https://pazer.build'
   token:
