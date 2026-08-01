@@ -38,7 +38,7 @@ func TestSitesServedFileCSP(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
 
-	resp = env.doSubdomainRequest(t, "GET", "sites", "/mysite/branch/main/app.js", "", nil, false)
+	resp = env.doSubdomainRequest(t, "GET", "sites", "/mysite/app.js", "", nil, false)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	// The global "default-src 'none'" CSP must be absent on site responses so
@@ -95,10 +95,11 @@ func TestSitesApexPath(t *testing.T) {
 	require.Equal(t, "/apexp/runner.html", resp.Header.Get("Location"))
 	require.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
 
-	// The legacy branch route is unshadowed and still serves in place.
-	resp, body = siteGet(t, env, "sites.test.local", "/apexp/branch/main/runner.html")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	require.Equal(t, "runner", body)
+	// The legacy branch route is unshadowed, and 302s to the canonical URL for
+	// the same file rather than serving a second copy of it.
+	resp, _ = siteGet(t, env, "sites.test.local", "/apexp/branch/main/runner.html")
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Equal(t, "/apexp/runner.html", resp.Header.Get("Location"))
 
 	resp, body = siteGet(t, env, "sites.test.local", "/apexp/branches")
 	require.Equal(t, http.StatusOK, resp.StatusCode)

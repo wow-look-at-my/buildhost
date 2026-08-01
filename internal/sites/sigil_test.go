@@ -94,22 +94,44 @@ func TestBranchSigil_DefaultBranchCollapsesToBareURL(t *testing.T) {
 	assert.Equal(t, "/p/", rec.Header().Get("Location"))
 }
 
-// The older spellings may not change: /branch/{branch}/ is what every published
-// preview link, README and deployed client already says. It is the
-// compatibility alias, so it serves in place -- it is never redirected, not
-// even to the shorter canonical URL, because that would bounce deployed
-// clients that never asked for the new grammar.
-func TestBranchSigil_OlderFormsUnchanged(t *testing.T) {
+// /branch/{branch}/ is what every published preview link, README and deployed
+// client already says, so it keeps working -- as a 302 to the canonical URL for
+// the same file. It stops being a second place that serves bytes, and every
+// client that follows redirects (all of them, for GET) is unaffected.
+func TestBranchSigil_LegacyFormRedirects(t *testing.T) {
 	env := setupEnv(t)
 	seedProject(t, env.db, "p")
 	env.uploadSite(t, "p", "master", map[string]string{"index.html": "root", "a/x.css": "body{}"})
-	env.uploadSite(t, "p", "pr-1", map[string]string{"index.html": "preview"})
+	env.uploadSite(t, "p", "pr-1", map[string]string{"index.html": "preview", "a/x.css": "pv{}"})
 
 	for path, want := range map[string]string{
-		"/p/branch/master/a/x.css": "body{}",  // the original form, default branch
-		"/p/a/x.css":               "body{}",  // ...and the canonical apex path
-		"/p/branch/pr-1/":          "preview", // a non-default branch
-		"/p/@pr-1/":                "preview", // ...in the new spelling
+		// The default branch: the shortest URL there is.
+		"/p/branch/master/a/x.css": "/p/a/x.css",
+		"/p/branch/master/":        "/p/",
+		"/p/branch/master":         "/p/",
+		// Any other branch: the "@" spelling of the same ref.
+		"/p/branch/pr-1/a/x.css": "/p/@pr-1/a/x.css",
+		"/p/branch/pr-1/":        "/p/@pr-1/",
+		"/p/branch/pr-1":         "/p/@pr-1/",
+	} {
+		rec := env.do(t, "GET", path, "", nil, false)
+		require.Equalf(t, http.StatusFound, rec.Code, "GET %s: %s", path, rec.Body.String())
+		assert.Equalf(t, want, rec.Header().Get("Location"), "GET %s", path)
+	}
+
+	// The query string survives.
+	rec := env.do(t, "GET", "/p/branch/pr-1/a/x.css?v=2", "", nil, false)
+	require.Equal(t, http.StatusFound, rec.Code)
+	assert.Equal(t, "/p/@pr-1/a/x.css?v=2", rec.Header().Get("Location"))
+
+	// A branch with no site still 404s rather than redirecting somewhere empty.
+	rec = env.do(t, "GET", "/p/branch/nosuch/x.css", "", nil, false)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	// Every target it names actually serves the bytes, in one further hop.
+	for path, want := range map[string]string{
+		"/p/a/x.css":       "body{}",
+		"/p/@pr-1/a/x.css": "pv{}",
 	} {
 		rec := env.do(t, "GET", path, "", nil, false)
 		require.Equalf(t, http.StatusOK, rec.Code, "GET %s: %s", path, rec.Body.String())
@@ -117,7 +139,7 @@ func TestBranchSigil_OlderFormsUnchanged(t *testing.T) {
 	}
 
 	// The branches listing is a literal segment and outranks everything.
-	rec := env.do(t, "GET", "/p/branches", "", nil, true)
+	rec = env.do(t, "GET", "/p/branches", "", nil, true)
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), `"branch":"master"`)
 }
@@ -184,16 +206,24 @@ func TestBranchSigil_UploadAndDelete(t *testing.T) {
 		makeTarGz(t, map[string]string{"index.html": "cf"}), true)
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 
-	// Both are readable in every form.
+	// Both are readable in the canonical form...
 	for path, want := range map[string]string{
-		"/p/@pr-3/":             "three",
-		"/p/branch/pr-3/":       "three",
-		"/p/@claude/foo/":       "cf",
-		"/p/branch/claude/foo/": "cf",
+		"/p/@pr-3/":       "three",
+		"/p/@claude/foo/": "cf",
 	} {
 		rec := env.do(t, "GET", path, "", nil, false)
 		require.Equalf(t, http.StatusOK, rec.Code, "GET %s: %s", path, rec.Body.String())
 		assert.Equalf(t, want, rec.Body.String(), "GET %s", path)
+	}
+
+	// ...and the legacy URL for each 302s there, slash-named branch included.
+	for path, want := range map[string]string{
+		"/p/branch/pr-3/":       "/p/@pr-3/",
+		"/p/branch/claude/foo/": "/p/@claude/foo/",
+	} {
+		rec := env.do(t, "GET", path, "", nil, false)
+		require.Equalf(t, http.StatusFound, rec.Code, "GET %s: %s", path, rec.Body.String())
+		assert.Equalf(t, want, rec.Header().Get("Location"), "GET %s", path)
 	}
 
 	// A write still needs a token, exactly like the /branch/ form.

@@ -25,11 +25,13 @@ func init() {
 		// Config-conditional {project}.<site-domain> scheme (see subdomain.go).
 		registerSiteDomainRoutes()
 	})
-	// The original /branch/{branch}/ form. Kept working forever: it is what every
-	// published preview link, README and deployed client already says.
+	// The original /branch/{branch}/ form. Kept working forever -- it is what
+	// every published preview link, README and deployed client already says --
+	// but reads of it 302 to the canonical URL rather than serving in place, so
+	// there is one URL per file and exactly one serving implementation.
 	auth.ServiceHandle("sites", "PUT /{project}/branch/{branch}", parseRoute, handler.Upload)
 	auth.ServiceHandle("sites", "DELETE /{project}/branch/{branch}", parseRoute, handler.Delete)
-	auth.ServiceHandle("sites", "GET /{project}/branch/{branch}/{path...}", parseRoute, handler.Serve)
+	auth.ServiceHandle("sites", "GET /{project}/branch/{branch}/{path...}", parseRoute, handler.RedirectLegacyBranch)
 	auth.ServiceHandle("sites", "GET /{project}/branches", parseRoute, handler.List)
 	// Writes in the canonical "@" form. Two patterns because "@{branch}" is a
 	// single path segment and branch names may contain "/" (claude/foo): the

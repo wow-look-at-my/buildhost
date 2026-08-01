@@ -3,6 +3,11 @@
 Static site hosting: `internal/sites/`. Upload tar.gz (or zip) archives, serve
 files per branch. Self-registering via `auth.OnReady()`.
 
+Three files carry the URL grammar, in the order a request meets them:
+`resolve.go` (a `<ref>[/<path>]` remainder -> the branch serving it),
+`canonical.go` (which URL is THE URL, and how every other spelling redirects
+toward it), `serve.go` (streaming the bytes).
+
 Extracted verbatim from CLAUDE.md's `internal/sites/` entry, which had grown
 into a manual; the apex-path section below is the only new prose.
 
@@ -16,7 +21,8 @@ same helpers, so a URL means the same file either way.
 - `/{project}/<file>` -- **the canonical URL**: the project's own root path,
   served from its default branch. See below.
 - `/{project}/@{ref}/{path...}` -- an explicit branch or commit. See below.
-- `/{project}/branch/{branch}/{path...}` -- the same file, original spelling.
+- `/{project}/branch/{branch}/{path...}` -- the original spelling; `302`s to
+  whichever of the two above names the same file.
 - `/{project}/branches` -- the branch listing (gated; never public-read).
 - `PUT`/`DELETE /{project}/@{branch}` (and the `/branch/{branch}` spelling) --
   deploy and remove.
@@ -33,18 +39,25 @@ file redirects INTO it, never the other way round:
 | `/{project}/@{default}/<file>` | `302` no-store -> `/{project}/<file>` |
 | `/{project}/@{other}/<file>` | serves (no shorter spelling exists) |
 | `/{project}/@{commit}/<file>` | serves (see below -- never collapsed) |
-| `/{project}/branch/{branch}/<file>` | serves (compatibility alias) |
+| `/{project}/branch/{default}/<file>` | `302` no-store -> `/{project}/<file>` |
+| `/{project}/branch/{other}/<file>` | `302` -> `/{project}/@{other}/<file>` |
 
 The bare root used to `302` to `/{project}/branch/{default}/`. That was
 backwards -- it pointed the short, stable URL at the long one -- and it is gone:
 naming the default branch says nothing the bare path doesn't already say.
 
-Two things deliberately do NOT redirect. A **commit** ref is the most specific
-spelling there is, so collapsing it into a mutable pointer would throw the pin
-away (`refNamesBranch` gates the collapse). And the legacy **`/branch/`** form
-serves in place: it is what every published link already says, and bouncing
-deployed clients that never asked for the new grammar is the exact breakage this
-whole change is supposed to avoid.
+**Exactly one URL serves each file.** The legacy `/branch/` form is a pure
+redirect shim (`RedirectLegacyBranch`), never a second place that serves bytes,
+so there is one serving implementation and one canonical URL per file. It is
+still not going away -- it is what every published preview link, README and
+deployed client already says, and a `302` keeps every one of them working, since
+all HTTP clients follow redirects on GET. It resolves its branch the same way
+the `@` form does (`splitSiteBranch`, so a slash-named branch still works) and
+names the resolved branch in its target, in ONE hop.
+
+One thing deliberately does not collapse: a **commit** ref is the most specific
+spelling there is, so rewriting it to a mutable pointer would throw the pin away
+(`refNamesBranch` gates the collapse).
 
 The collapse is also skipped when the bare URL would address a DIFFERENT project
 (`apexURLFor`): with projects `org` and `org/repo`, `org`'s own file `repo/x.css`
@@ -83,11 +96,14 @@ the `{project}.<site-domain>` scheme has always kept its sigil grammar. Writes
 segment while a branch name may span several, so the second binds the rest and
 `parseSigilRoute` rejoins them.
 
-Nothing older changes. `/{project}/branch/{branch}/...` is what every published
-preview link, README and deployed client already says; it is not deprecated, not
-redirected, and is pinned by `TestBranchSigil_OlderFormsUnchanged`. The only
-links buildhost itself generates in the `@` form are the web frontend's
-per-branch site links.
+No published URL breaks. `/{project}/branch/{branch}/...` keeps resolving --
+as a `302`, pinned by `TestBranchSigil_LegacyFormRedirects` and, over real HTTP
+with a real client, by the `upload-artifact-action-e2e` CI job. The CLI and the
+`buildhost-publish-site` action deliberately keep EMITTING that spelling: both
+can run against a server older than this change, where it is the URL that
+serves, and against a newer one it redirects. The only links buildhost itself
+generates in the `@` form are the web frontend's per-branch site links, which
+ship in the same binary and so can never outrun the server.
 
 ### Commit refs (`@{commit}`)
 

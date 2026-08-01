@@ -577,7 +577,8 @@ buildhost publish-site \
 # http://sites.localhost:8080/myapp/@0f1e2d3/index.css
 
 # Redirects only run toward the shorter URL: @main (the default branch) 302s to
-# /myapp/. The older /myapp/branch/main/ spelling serves in place and still works.
+# /myapp/, and the original /myapp/branch/main/ spelling 302s to whichever of the
+# two URLs above names the same file -- so every published link keeps resolving.
 
 # Re-deploying the same branch replaces the previous site atomically.
 # Deleting a branch deployment:
@@ -834,6 +835,7 @@ The link is a stateless HMAC signature (keyed by a server-side key generated on 
 | DELETE | `/sites/{project}/@{branch}` | Remove static site |
 | GET | `/sites/{project}/{path}` | Serve a file from the default branch (canonical) |
 | GET | `/sites/{project}/@{ref}/{path}` | Serve it from a branch or commit |
+| GET | `/sites/{project}/branch/{branch}/{path}` | 302 to the canonical URL above |
 | GET | `/sites/{project}/branches` | List branch deployments |
 | GET | `/llms.txt` | Plain-text guide to buildhost for LLMs ([llmstxt.org](https://llmstxt.org)) |
 | GET | `/healthz` | Liveness check (database ping); JSON body reports the running build's commit and version |

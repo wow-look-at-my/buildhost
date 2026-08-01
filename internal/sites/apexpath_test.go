@@ -48,10 +48,12 @@ func TestApexPath_ServesFilesFromDefaultBranch(t *testing.T) {
 	require.Equal(t, http.StatusMovedPermanently, rec.Code)
 	assert.Equal(t, "/jsperf.app/", rec.Header().Get("Location"))
 
-	// ...and the branch routes still win: the apex route never shadows them.
+	// ...and the branch routes still win the routing: the apex route never
+	// shadows them. main is the default branch here, so the legacy URL 302s to
+	// the canonical apex URL for the same file.
 	rec = env.do(t, "GET", "/jsperf.app/branch/main/assets/app.js", "", nil, false)
-	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "console.log(1)", rec.Body.String())
+	require.Equal(t, http.StatusFound, rec.Code)
+	assert.Equal(t, "/jsperf.app/assets/app.js", rec.Header().Get("Location"))
 
 	rec = env.do(t, "GET", "/jsperf.app/branches", "", nil, true)
 	require.Equal(t, http.StatusOK, rec.Code)

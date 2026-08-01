@@ -267,8 +267,9 @@ resolves while that commit is still the live deployment of some branch, so the
 URL serves exactly that build or 404s -- it never quietly becomes a later one.
 
 Redirects only ever run toward the shorter URL: `@<default branch>` 302s to the
-bare path above, never the reverse. The older `/myapp/branch/main/x.css`
-spelling is not going away and serves the same file in place.
+bare path above, never the reverse. The original `/myapp/branch/main/x.css`
+spelling is not going away either -- it 302s to whichever of the two URLs above
+names the same file, so every published link keeps resolving.
 
 Project names are slash-namespaced, so the bare path's split is resolved by
 longest match: with projects `org` and `org/repo`, `__SITES_URL__/org/repo` is
