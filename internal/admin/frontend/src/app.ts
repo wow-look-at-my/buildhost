@@ -34,6 +34,14 @@ const h = function (s: string | number | null | undefined): string {
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 };
 
+// siteBranchURL links to a site's deployment. "@" is the read grammar; the
+// "/branch/" spelling only redirects here. The default branch's shorter bare
+// URL needs server state the admin API does not carry, and "@" reaches it in
+// one hop, so this names the branch either way.
+const siteBranchURL = function (sitesBase: string, project: string, branch: string): string {
+    return sitesBase + "/" + project + "/@" + branch + "/";
+};
+
 const humanSize = function (b: number): string {
     if (b < 1024) return b + " B";
     var units = ["KiB", "MiB", "GiB", "TiB", "PiB"];
@@ -411,7 +419,7 @@ pages.project = function (name: string): void {
                 html += "<td>" + h(humanSize(si.size)) + "</td>";
                 html += "<td>" + (si.git_commit ? '<code class="commit">' + h(si.git_commit.substring(0, 12)) + "</code>" : "-") + "</td>";
                 html += '<td title="' + h(formatTime(si.updated_at)) + '">' + h(timeAgo(si.updated_at)) + "</td>";
-                html += '<td><a href="' + h(sitesBase + "/" + p.name + "/branch/" + si.branch + "/") + '" target="_blank">Open</a></td></tr>';
+                html += '<td><a href="' + h(siteBranchURL(sitesBase, p.name, si.branch)) + '" target="_blank">Open</a></td></tr>';
             }
             html += "</tbody></table></div>";
         }
@@ -561,7 +569,7 @@ pages.registries = function (): void {
         html += '<div class="card"><h2>Static Sites</h2><p class="section-desc">Host small, self-contained static sites with independent per-branch deployments.</p>';
         html += '<table class="info-table">';
         html += "<tr><td class='info-label'>Deploy</td><td class='endpoint-cell'><code>PUT " + h(sites + "/{project}/branch/{branch}") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Serve</td><td class='endpoint-cell'><code>" + h(sites + "/{project}/branch/{branch}/{path}") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Serve</td><td class='endpoint-cell'><code>" + h(sites + "/{project}/@{branch}/{path}") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "<tr><td class='info-label'>Delete</td><td class='endpoint-cell'><code>DELETE " + h(sites + "/{project}/branch/{branch}") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "<tr><td class='info-label'>List branches</td><td class='endpoint-cell'><code>GET " + h(sites + "/{project}/branches") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "</table>";
@@ -883,7 +891,7 @@ pages.site = function (name: string): void {
                 html += "<td>" + h(humanSize(s.size)) + "</td>";
                 html += "<td>" + (s.git_commit ? '<code class="commit">' + h(s.git_commit.substring(0, 12)) + "</code>" : "-") + "</td>";
                 html += '<td title="' + h(formatTime(s.updated_at)) + '">' + h(timeAgo(s.updated_at)) + "</td>";
-                html += '<td><a href="' + h(sitesBase + "/" + p.name + "/branch/" + s.branch + "/") + '" target="_blank">Open</a></td></tr>';
+                html += '<td><a href="' + h(siteBranchURL(sitesBase, p.name, s.branch)) + '" target="_blank">Open</a></td></tr>';
             }
         }
         html += "</tbody></table></div>";

@@ -131,6 +131,14 @@ the server (see "The publish response says where the site is"), so a publisher
 running against a server older than this change falls back to the `@` spelling
 rather than one that only redirects.
 
+Inside buildhost, every site LINK is in the `@` form -- the web frontend's
+per-branch links and the admin dashboard's "Open" links alike, the latter via
+`siteBranchURL`. Both ship in the same binary as the server, so neither can
+outrun it. The dashboard still shows `/branch/` in its endpoint table and curl
+snippets, and should: those are the `PUT`/`DELETE` write routes.
+`TestAdminStaticSiteLinksUseRefSigil` tells the two apart -- a link concatenates
+a runtime branch, an endpoint carries the literal `{branch}` placeholder.
+
 ### Commit refs (`@{commit}`)
 
 `@` also takes a git commit -- the full 40-hex sha or any abbreviation of at
