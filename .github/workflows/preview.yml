@@ -20,10 +20,33 @@ permissions:
   pull-requests: write
   id-token: write
   checks: read
+  # buildhost-publish-site records what it uploaded on the org's linked
+  # artifacts page; that recording is part of publishing, not optional,
+  # so the publish fails without this.
+  artifact-metadata: write
+  deployments: write
 
 jobs:
+  # internal/admin/static holds only index.html and style.css in git -- app.js and
+  # copy.js are build output (the //go:generate beside the go:embed produces them),
+  # so deploying the directory straight from a checkout ships a page whose scripts
+  # 404 and renders blank. Build first, deploy the built directory as an artifact.
+  build-site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The same script the //go:generate directive runs, so the preview and the
+      # embedded dashboard are built exactly one way.
+      - run: ./scripts/build-admin-frontend.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: admin-static
+          path: internal/admin/static/
+          if-no-files-found: error
+
   preview:
+    needs: build-site
     uses: wow-look-at-my/actions/.github/workflows/buildhost-preview.yml@master
     with:
-      source-dir: internal/admin/static
+      artifact-name: admin-static
     secrets: inherit

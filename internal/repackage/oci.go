@@ -23,6 +23,11 @@ import (
 // x509 loader checks by default -- in the shared essentials base layer, so a binary that
 // makes outbound TLS calls works inside the synthesized image. See cacerts/README.md.
 //
+// The bundle is fetched, not committed, so it is a generated build input like
+// internal/api's gen_*.go: fetching it is a generate directive, and a build that
+// runs generate needs no separate "remember to run the script" step.
+//
+//go:generate ../../scripts/fetch-cacerts.sh cacerts/ca-certificates.crt
 //go:embed cacerts/ca-certificates.crt
 var caCertsPEM []byte
 

@@ -10,10 +10,14 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -39,21 +43,207 @@ var manifestPassthroughFields = []string{
 	"engines",
 }
 
-// npmManifestFields reads package/package.json from a stored npm-package tarball
-// and returns the subset of fields (manifestPassthroughFields) buildhost echoes
-// into the packument. Returns nil on any error -- missing blob, unreadable
-// archive, bad JSON -- so the packument still serves a minimal-but-valid entry
-// rather than failing the whole request.
-func (h *Handler) npmManifestFields(ctx context.Context, storageKey string) map[string]any {
+const (
+	// npmManifestCacheFormat is the packaged_artifacts format under which an
+	// npm-package artifact's extracted manifest fields are cached. No packaged
+	// blob is stored: storage_key/size record the SOURCE artifact blob (as
+	// brew's tar.gz and apt's deb digest rows do), so the row rides the
+	// existing retention cascade and never adds a reference of its own.
+	npmManifestCacheFormat = "npm-manifest"
+
+	// npmManifestFieldsVersion identifies the extraction contract -- which
+	// package.json fields are surfaced (manifestPassthroughFields). Bump it
+	// when that set changes: a row written under an older contract reads as a
+	// miss and is refilled in place, so a packument can never advertise the
+	// field set of a server that no longer exists.
+	npmManifestFieldsVersion = 1
+)
+
+// npmManifestMetadata is the cached extraction result, stored in the row's
+// metadata column. Fields is the answer itself, so a warm packument needs no
+// blob read at all -- an empty map is a real answer (a blob that is not a
+// readable npm tarball), not a miss.
+type npmManifestMetadata struct {
+	FieldsVersion int            `json:"fields_version"`
+	Fields        map[string]any `json:"fields"`
+}
+
+const (
+	// manifestFillConcurrency bounds the parallel cache fills one packument
+	// performs. Each fill streams a single artifact through zstd+gzip, so
+	// memory stays bounded by the decoder windows, not the artifact size.
+	manifestFillConcurrency = 8
+
+	// manifestFillBudget caps the time one packument spends filling the
+	// manifest cache. Overrunning it fails the request rather than serving
+	// version entries stripped of their dependency graph -- an npm install
+	// that silently resolves nothing is worse than an error the client can
+	// see. Fills already committed survive, so each retry has less to do and a
+	// cold project converges instead of failing forever.
+	manifestFillBudget = 20 * time.Second
+)
+
+// errManifestFillBudget reports that a packument could not resolve every
+// version's manifest within manifestFillBudget.
+var errManifestFillBudget = errors.New("npm: manifest cache fill exceeded its budget")
+
+// resolveNPMManifestFields returns the passthrough fields for each npm-package
+// artifact of a packument, keyed by artifact ID. Cached artifacts cost one
+// indexed DB read; the rest are extracted from their stored tarballs
+// concurrently, under a hard budget.
+//
+// The cache is what makes a packument affordable. Extraction decompresses a
+// stored blob up to package/package.json -- tens of megabytes for a real
+// pre-built package -- and a packument describes EVERY published release, so an
+// uncached packument costs one full decompression per release and gets slower
+// with every publish. That is what made https://npm.pazer.build hang: 238
+// published 17 MB releases took 44s to answer, past every client timeout, with
+// no byte written until the very end.
+func (h *Handler) resolveNPMManifestFields(ctx context.Context, artifacts []db.Artifact) (map[int64]map[string]any, error) {
+	out := make(map[int64]map[string]any, len(artifacts))
+	var misses []db.Artifact
+	for _, a := range artifacts {
+		if fields, ok := h.cachedNPMManifestFields(ctx, a.ID); ok {
+			out[a.ID] = fields
+			continue
+		}
+		misses = append(misses, a)
+	}
+	if len(misses) == 0 {
+		return out, nil
+	}
+	slog.Info("npm: filling manifest cache", "artifacts", len(misses))
+
+	budget := h.fillBudget
+	if budget <= 0 {
+		budget = manifestFillBudget
+	}
+	ctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+
+	// Group the misses by blob. Storage is content-addressed, so a release
+	// that re-registers unchanged bytes (a hash-reference upload) shares one
+	// blob with its predecessor: extracting it once answers for all of them.
+	byBlob := map[string][]db.Artifact{}
+	var blobs []string
+	for _, a := range misses {
+		if _, seen := byBlob[a.StorageKey]; !seen {
+			blobs = append(blobs, a.StorageKey)
+		}
+		byBlob[a.StorageKey] = append(byBlob[a.StorageKey], a)
+	}
+
+	var (
+		mu  sync.Mutex
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, manifestFillConcurrency)
+	)
+	for _, key := range blobs {
+		if ctx.Err() != nil {
+			break
+		}
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(key string, sharing []db.Artifact) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if ctx.Err() != nil {
+				return
+			}
+			fields, cacheable, err := h.extractNPMManifestFields(ctx, key)
+			if err != nil {
+				// The budget check below is what turns a systemic stall into
+				// an error. A single unreadable blob (evicted, storage error)
+				// is not that: it leaves a minimal-but-valid version entry,
+				// exactly as before the cache existed.
+				if ctx.Err() == nil {
+					slog.Warn("npm: read package manifest", "storage_key", key, "err", err)
+					fields = map[string]any{}
+				} else {
+					return
+				}
+			}
+			mu.Lock()
+			for _, a := range sharing {
+				out[a.ID] = fields
+			}
+			mu.Unlock()
+			if cacheable {
+				// One row per artifact: the cache is keyed by artifact, so
+				// every release sharing the blob gets its own hit next time.
+				for _, a := range sharing {
+					h.cacheNPMManifestFields(ctx, a, fields)
+				}
+			}
+		}(key, byBlob[key])
+	}
+	wg.Wait()
+
+	for _, a := range artifacts {
+		if _, ok := out[a.ID]; !ok {
+			return nil, errManifestFillBudget
+		}
+	}
+	return out, nil
+}
+
+// cachedNPMManifestFields reports the artifact's cached fields. ok=false means
+// the cache holds no usable answer (never filled, filled under an older
+// extraction contract, or corrupt) -- distinct from a cached empty map, which
+// is the final answer for a blob that is not a readable npm tarball.
+func (h *Handler) cachedNPMManifestFields(ctx context.Context, artifactID int64) (map[string]any, bool) {
+	_, _, _, _, metadata, err := h.DB.GetPackagedArtifact(ctx, artifactID, npmManifestCacheFormat)
+	if err != nil {
+		return nil, false
+	}
+	var m npmManifestMetadata
+	if err := json.Unmarshal([]byte(metadata), &m); err != nil || m.FieldsVersion != npmManifestFieldsVersion {
+		return nil, false
+	}
+	if m.Fields == nil {
+		m.Fields = map[string]any{}
+	}
+	return m.Fields, true
+}
+
+// cacheNPMManifestFields fills the cache. Best-effort: the fields are already
+// correct for this response, and the extraction is a pure function of a
+// content-addressed blob, so a concurrent double-fill stores the same value.
+func (h *Handler) cacheNPMManifestFields(ctx context.Context, a db.Artifact, fields map[string]any) {
+	meta, err := json.Marshal(npmManifestMetadata{FieldsVersion: npmManifestFieldsVersion, Fields: fields})
+	if err != nil {
+		return
+	}
+	// storage_key/size mirror the source artifact exactly so retention's
+	// freed-bytes UNION dedupes this row against the artifact's own.
+	if err := h.DB.CreatePackagedArtifact(ctx, a.ID, npmManifestCacheFormat, a.StorageKey, a.Size, a.SHA256, "package.json", string(meta)); err != nil {
+		slog.Warn("cache npm manifest fields", "artifact_id", a.ID, "err", err)
+	}
+}
+
+// extractNPMManifestFields reads package/package.json out of a stored
+// npm-package tarball and returns the subset of fields
+// (manifestPassthroughFields) buildhost echoes into the packument.
+//
+// cacheable distinguishes a final answer from a transient failure. A blob that
+// is readable but is not a usable npm tarball (not gzip, no package.json, bad
+// JSON) yields an empty map with cacheable=true: that verdict can never change
+// for a content-addressed blob, so caching it keeps the packument off the blob
+// forever after. A failure to read the blob at all -- storage error, cancelled
+// context -- returns an error and is never cached.
+func (h *Handler) extractNPMManifestFields(ctx context.Context, storageKey string) (fields map[string]any, cacheable bool, err error) {
 	rc, _, err := h.Store.Get(ctx, storageKey)
 	if err != nil {
-		return nil
+		return nil, false, err
 	}
 	defer rc.Close()
 
 	pkg, err := readPackageJSONFromTarball(rc)
 	if err != nil || pkg == nil {
-		return nil
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, false, ctxErr
+		}
+		return map[string]any{}, true, nil
 	}
 
 	out := map[string]any{}
@@ -62,7 +252,7 @@ func (h *Handler) npmManifestFields(ctx context.Context, storageKey string) map[
 			out[f] = v
 		}
 	}
-	return out
+	return out, true, nil
 }
 
 // readPackageJSONFromTarball extracts and parses package/package.json from a

@@ -68,16 +68,6 @@ inputs:
     description: 'Push to the registry (set false to build only).'
     required: false
     default: 'true'
-  create_deployment:
-    description: >-
-      Register this image publish as a GitHub Deployment in the calling repo
-      (with a success status linking to the project's buildhost page). Needs
-      `deployments: write` in the calling job's permissions block; without it
-      the step warns and skips -- deployments are additive and never fail the
-      publish. Only applies when push is 'true' (a build-only run deploys
-      nothing). Set 'false' to opt out (and silence the warning).
-    required: false
-    default: 'true'
   deployment_environment:
     description: >-
       GitHub Deployment environment name (defaults to `buildhost/<project>`).
@@ -98,19 +88,34 @@ runs:
     - name: Refuse jobs named all-builds
       uses: wow-look-at-my/actions@no-all-builds-job#latest
 
-    # Best-effort GitHub Deployment registration: the image publish shows up
-    # in the calling repo's Environments/Deployments UI with a link to the
-    # project's buildhost page. Requires `deployments: write` in the calling
-    # job; without it the step warns and skips -- it can never fail the
-    # publish. Skipped entirely for build-only runs (push != 'true').
+    # Registering the image publish as a GitHub Deployment is part of
+    # publishing, not an add-on: no opt-out input, and a failure fails the step.
+    # See buildhost-publish for why warn-and-continue was removed. Still skipped
+    # for build-only runs -- `push != 'true'` publishes nothing, so there is
+    # nothing to deploy; that is a property of the run, not a switch. The calling
+    # job needs `deployments: write` (ADDITIVE -- a job-level permissions block
+    # replaces the workflow-level one).
     - name: Create GitHub Deployment
       id: deployment
-      if: ${{ inputs.create_deployment == 'true' && inputs.push == 'true' }}
+      if: ${{ inputs.push == 'true' }}
       uses: wow-look-at-my/actions@typescript#latest
       with:
         script: |
           await (async () => {
             core.setOutput('deployment_id', '');
+            // A deployment asserts "this publish is live at <environment_url>".
+            // Against a loopback or plain-http server -- buildhost's own e2e
+            // spawns one on http://localhost:18080 -- that assertion is false:
+            // nothing outside the runner can reach it. So there is nothing true
+            // to register, exactly as there is nothing recordable for a loopback
+            // registry. A property of the target, not an opt-out: every publish
+            // to a real server registers, and a failure there is fatal.
+            const deployServer: string = "${{ inputs.server }}";
+            const deployHost: string = new URL(deployServer).hostname;
+            if (deployHost === "localhost" || deployHost === "127.0.0.1" || deployHost === "::1" || !deployServer.startsWith("https://")) {
+              core.info(`Skipping the GitHub Deployment: ${deployServer} is not a reachable https server, so its deployment URL would point nowhere`);
+              return;
+            }
             try {
               const projectInput: string = "${{ inputs.project }}";
               const project: string = projectInput || github.repository.split('/').pop()!;
@@ -137,7 +142,7 @@ runs:
               });
               const id = (dep.data as any)?.id;
               if (typeof id !== 'number') {
-                core.warning(`GitHub Deployment not created (HTTP ${dep.status}); publishing without one`);
+                core.setFailed(`GitHub Deployment not created (HTTP ${dep.status}): the API returned no deployment id`);
                 return;
               }
               core.setOutput('deployment_id', String(id));
@@ -152,7 +157,7 @@ runs:
               core.info(`Created GitHub Deployment ${id} in environment '${environment}'`);
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
-              core.warning(`Skipping GitHub Deployment (${msg}). Grant 'deployments: write' in the calling job's permissions block, or set create_deployment: 'false' to silence this warning.`);
+              core.setFailed(`Could not create the GitHub Deployment (${msg}). Add 'deployments: write' to this job's permissions block -- job-level permissions REPLACE workflow-level ones, so add it alongside the ones the job already declares. Registering the publish is part of publishing and cannot be turned off.`);
             }
           })();
 
@@ -296,6 +301,7 @@ runs:
         OCI_LAYOUT: ${{ steps.refs.outputs.layout }}
       with:
         script: |
+          const { recordImage } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
           await (async () => {
             const server: string = "${{ inputs.server }}";
             const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
@@ -321,6 +327,29 @@ runs:
             await exec.exec(cli, ["docker-push", "--server", server, "--image", env.OCI_LAYOUT!, ...refs], {
               env: { ...process.env, BUILDHOST_TOKEN: token },
             });
+
+            // Recording what buildhost now stores is PART of pushing, not a
+            // bolt-on: it happens in this step, right after the push it
+            // describes, with no opt-out input, and a failure fails the step.
+            // A warn-and-continue path would be an opt-out by neglect -- the
+            // push would stay green while the org's linked artifacts page
+            // silently fell behind reality.
+            //
+            // The digest comes from the exported OCI layout's index.json root
+            // descriptor, not a buildx output: on this path buildx writes a
+            // layout for the CLI rather than pushing, so that descriptor IS
+            // what buildhost stored and serves.
+            const indexPath = path.join(env.OCI_LAYOUT!, "index.json");
+            const index = JSON.parse(fs.readFileSync(indexPath, "utf8")) as { manifests?: { digest?: string }[] };
+            const digest: string = index.manifests?.[0]?.digest ?? "";
+            if (digest === "") {
+              core.setFailed(`Pushed image recorded no manifest digest in ${indexPath}; cannot record what was stored`);
+              return;
+            }
+
+            // The first buildhost-bound reference names what was stored;
+            // foreign references are another registry's to account for.
+            await recordImage(octokit, core, context, { reference: refs[0] ?? "", digest });
           })();
 
     # Tags that reference other registries keep the old buildx push path; the
@@ -383,6 +412,6 @@ runs:
               core.info(`GitHub Deployment marked ${ok ? 'success' : 'failure'}`);
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
-              core.warning(`Could not update the GitHub Deployment status (${msg})`);
+              core.setFailed(`Could not post the terminal GitHub Deployment status (${msg}); the deployment would be left stuck in_progress`);
             }
           })();

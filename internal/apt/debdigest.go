@@ -101,7 +101,11 @@ func debMetadataFingerprint(metadata string) string {
 func debDigestFingerprint(project *db.Project, a *db.Artifact) string {
 	withService := project.CreateService && a.Kind == db.KindBinary
 	hsh := sha256.New()
-	for _, s := range []string{project.Name, project.Description, project.Homepage, fmt.Sprintf("service=%t", withService)} {
+	// repackage.TransformVersion is part of the fingerprint because the deb's
+	// payload is the artifact AFTER download-time transformation: if stripping
+	// changes, these digests must be recomputed or apt rejects every pool
+	// download with "Hash Sum mismatch".
+	for _, s := range []string{project.Name, project.Description, project.Homepage, fmt.Sprintf("service=%t", withService), repackage.TransformVersion} {
 		hsh.Write([]byte(s))
 		hsh.Write([]byte{0})
 	}

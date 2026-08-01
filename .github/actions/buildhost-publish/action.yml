@@ -15,7 +15,7 @@ inputs:
     required: false
     default: 'go-build'
   path:
-    description: 'Local directory containing the release binaries to publish, resolved relative to the workspace. When set, the run''s artifacts are NOT downloaded and the artifact_name input is ignored; files are read from this directory instead (no actions: read permission needed; the publish script never reads GITHUB_TOKEN in this mode, though the optional GitHub Deployment steps use github.token and warn-skip without deployments: write -- see create_deployment).'
+    description: 'Local directory containing the release binaries to publish, resolved relative to the workspace. When set, the run''s artifacts are NOT downloaded and the artifact_name input is ignored; files are read from this directory instead (no actions: read permission needed; the publish script never reads GITHUB_TOKEN in this mode, though the GitHub Deployment steps use github.token and require deployments: write).'
     required: false
   version:
     description: 'Release version (omit for auto-versioned projects)'
@@ -48,15 +48,6 @@ inputs:
       project this publish creates a release for.
     required: false
     default: ''
-  create_deployment:
-    description: >-
-      Register this publish as a GitHub Deployment in the calling repo (with a
-      success status linking to the live buildhost URL). Needs
-      `deployments: write` in the calling job's permissions block; without it
-      the step warns and skips -- deployments are additive and never fail the
-      publish. Set 'false' to opt out (and silence the warning).
-    required: false
-    default: 'true'
   deployment_environment:
     description: >-
       GitHub Deployment environment name (defaults to `buildhost/<project>`).
@@ -69,18 +60,32 @@ runs:
     - name: Refuse jobs named all-builds
       uses: wow-look-at-my/actions@no-all-builds-job#latest
 
-    # Best-effort GitHub Deployment registration: the publish shows up in the
-    # calling repo's Environments/Deployments UI with a link to the live
-    # buildhost URL. Requires `deployments: write` in the calling job; without
-    # it the step warns and skips -- it can never fail the publish.
+    # Registering the publish as a GitHub Deployment is part of publishing, not
+    # an add-on: it has no opt-out input and a failure fails the step. Warning
+    # and continuing was an opt-out by neglect -- seven of the eight callers had
+    # been skipping deployments entirely, each one green, because nobody reads a
+    # warning in a passing run. The calling job needs `deployments: write`
+    # (ADDITIVE -- a job-level permissions block replaces the workflow-level one).
     - name: Create GitHub Deployment
       id: deployment
-      if: ${{ inputs.create_deployment == 'true' }}
       uses: wow-look-at-my/actions@typescript#latest
       with:
         script: |
           await (async () => {
             core.setOutput('deployment_id', '');
+            // A deployment asserts "this publish is live at <environment_url>".
+            // Against a loopback or plain-http server -- buildhost's own e2e
+            // spawns one on http://localhost:18080 -- that assertion is false:
+            // nothing outside the runner can reach it. So there is nothing true
+            // to register, exactly as there is nothing recordable for a loopback
+            // registry. A property of the target, not an opt-out: every publish
+            // to a real server registers, and a failure there is fatal.
+            const deployServer: string = "${{ inputs.server }}";
+            const deployHost: string = new URL(deployServer).hostname;
+            if (deployHost === "localhost" || deployHost === "127.0.0.1" || deployHost === "::1" || !deployServer.startsWith("https://")) {
+              core.info(`Skipping the GitHub Deployment: ${deployServer} is not a reachable https server, so its deployment URL would point nowhere`);
+              return;
+            }
             try {
               const inputProject: string = "${{ inputs.project }}";
               const project: string = inputProject || github.repository.split('/').pop()!;
@@ -111,7 +116,7 @@ runs:
               });
               const id = (dep.data as any)?.id;
               if (typeof id !== 'number') {
-                core.warning(`GitHub Deployment not created (HTTP ${dep.status}); publishing without one`);
+                core.setFailed(`GitHub Deployment not created (HTTP ${dep.status}): the API returned no deployment id`);
                 return;
               }
               core.setOutput('deployment_id', String(id));
@@ -126,7 +131,7 @@ runs:
               core.info(`Created GitHub Deployment ${id} in environment '${environment}'`);
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
-              core.warning(`Skipping GitHub Deployment (${msg}). Grant 'deployments: write' in the calling job's permissions block, or set create_deployment: 'false' to silence this warning.`);
+              core.setFailed(`Could not create the GitHub Deployment (${msg}). Add 'deployments: write' to this job's permissions block -- job-level permissions REPLACE workflow-level ones, so add it alongside the ones the job already declares. Registering the publish is part of publishing and cannot be turned off.`);
             }
           })();
 
@@ -140,6 +145,7 @@ runs:
         GITHUB_TOKEN: ${{ inputs.path == '' && github.token || '' }}
       with:
         script: |
+          const { recordReleaseArtifacts } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
           await (async () => {
             const inputProject: string = "${{ inputs.project }}";
             const inputVersion: string = "${{ inputs.version }}";
@@ -224,6 +230,17 @@ runs:
                 canHashRef = ((await infoResp.json()) as { upload_by_sha256?: boolean }).upload_by_sha256 === true;
               }
             } catch { /* capability stays off; full uploads always work */ }
+
+            // Artifact-metadata storage records, accumulated as artifacts are
+            // accepted and posted below before this step returns. The recorded
+            // Recording what buildhost now stores is PART of publishing, not a
+            // bolt-on: it happens inside this step, has no opt-out input, and a
+            // failure fails the publish. A warn-and-continue path would be an
+            // opt-out by neglect -- the publish would stay green while the
+            // org's linked artifacts page silently fell behind reality.
+            const uploadedSlots: import("${{ github.action_path }}/../lib/storage-record").PublishedArtifact[] = [];
+            const drainStorageRecords = async (): Promise<boolean> =>
+              recordReleaseArtifacts(octokit, core, context, { server, artifacts: uploadedSlots });
 
             // Streaming file hash (the TS action injects no `crypto` global;
             // require is the documented route to node modules).
@@ -346,25 +363,29 @@ runs:
               const uploadedHash = new Map<string, string>(); // sha256 -> first uploaded file
               for (const { file, os: fileOs, arch } of items) {
                 const slot = `/api/v1/projects/${proj}/releases/${releaseVersion}/artifacts/${fileOs}/${arch}?kind=binary`;
-                let sum = "";
-                if (canHashRef) {
-                  sum = await fileSHA256(path.join(sourceDir, file));
-                  if (uploadedHash.has(sum)) {
-                    const ref = await api("PUT", `${slot}&upload_sha256=${sum}`);
-                    if (ref.status === 201) {
-                      core.info(`Registered ${proj} ${fileOs}/${arch} by hash (identical to ${uploadedHash.get(sum)})`);
-                      continue;
-                    }
-                    if (ref.status === 409) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${ref.status}): ${ref.text}`); return false; }
-                    // E.g. a 404 for a blob evicted since the first slot: the
-                    // bytes are right here, send them the classic way.
-                    core.warning(`Hash-reference upload ${proj} ${fileOs}/${arch} returned ${ref.status}; falling back to a full upload`);
+                // Hashed unconditionally now: hash-reference uploads need it
+                // only when the server advertises them, but the storage record
+                // needs it always. It is one streaming read of a file this loop
+                // is about to read anyway.
+                const sum = await fileSHA256(path.join(sourceDir, file));
+                const record = () => uploadedSlots.push({ project: proj, version: releaseVersion, os: fileOs, arch, sha256: sum });
+                if (canHashRef && uploadedHash.has(sum)) {
+                  const ref = await api("PUT", `${slot}&upload_sha256=${sum}`);
+                  if (ref.status === 201) {
+                    core.info(`Registered ${proj} ${fileOs}/${arch} by hash (identical to ${uploadedHash.get(sum)})`);
+                    record();
+                    continue;
                   }
+                  if (ref.status === 409) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${ref.status}): ${ref.text}`); return false; }
+                  // E.g. a 404 for a blob evicted since the first slot: the
+                  // bytes are right here, send them the classic way.
+                  core.warning(`Hash-reference upload ${proj} ${fileOs}/${arch} returned ${ref.status}; falling back to a full upload`);
                 }
                 const body = fs.readFileSync(path.join(sourceDir, file));
                 const r = await api("PUT", slot, body);
                 if (r.status !== 201) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${r.status}): ${r.text}`); return false; }
-                if (canHashRef) uploadedHash.set(sum, file);
+                uploadedHash.set(sum, file);
+                record();
                 core.info(`Uploaded ${proj} ${fileOs}/${arch}`);
               }
               const pub = await api("POST", `/api/v1/projects/${proj}/releases/${releaseVersion}/publish`);
@@ -406,6 +427,7 @@ runs:
                 core.info(`Release: ${project}/${rv} (legacy flat layout)`);
                 if (!(await uploadAndPublish(project, rv, legacy))) return;
                 core.setOutput('deployment_url', `${server}/projects/${project}/releases/${rv}`);
+                await drainStorageRecords();
                 return;
               }
               created.set(proj, probe);
@@ -432,6 +454,8 @@ runs:
               const primary = published.find((p) => p.proj === project) ?? published[0];
               core.setOutput('deployment_url', `${server}/projects/${primary.proj}`);
             }
+
+            await drainStorageRecords();
           })();
 
     # Terminal status for the GitHub Deployment created above; runs even when
@@ -461,6 +485,6 @@ runs:
               core.info(`GitHub Deployment marked ${ok ? 'success' : 'failure'}`);
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
-              core.warning(`Could not update the GitHub Deployment status (${msg})`);
+              core.setFailed(`Could not post the terminal GitHub Deployment status (${msg}); the deployment would be left stuck in_progress`);
             }
           })();

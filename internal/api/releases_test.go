@@ -257,6 +257,55 @@ func TestGetRelease_Success(t *testing.T) {
 	assert.Equal(t, "2.0.0", got.Version)
 }
 
+// GetRelease must carry the release's artifacts. buildhost-publish-release
+// falls back to re-reading the release when the publish response predates the
+// artifacts field -- a rolling deploy can serve that publish from an older
+// container -- so without this the fallback has nothing to recover and a
+// publish fails for the duration of someone else's deploy.
+func TestGetRelease_ReturnsArtifacts(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "relartifacts", Versioning: db.VersioningSemver}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "2.0.0", VersionNum: 2000000}
+	require.NoError(t, h.DB.CreateRelease(ctx, rel))
+
+	key, size, err := h.Store.Put(ctx, strings.NewReader("binary"))
+	require.NoError(t, err)
+	for _, arch := range []db.Arch{db.ArchAMD64, db.ArchARM64} {
+		require.NoError(t, h.DB.CreateArtifact(ctx, &db.Artifact{
+			ReleaseID: rel.ID, OS: db.OSLinux, Arch: arch,
+			Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		}))
+	}
+
+	req := httptest.NewRequest("GET", "/api/projects/relartifacts/releases/2.0.0", nil)
+	req.SetPathValue("project", "relartifacts")
+	req.SetPathValue("version", "2.0.0")
+	req = withProjectRoute(req, proj)
+	rec := httptest.NewRecorder()
+	h.GetRelease(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got struct {
+		Version   string        `json:"version"`
+		Artifacts []db.Artifact `json:"artifacts"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+
+	// The embedded release keeps its pre-existing top-level fields.
+	assert.Equal(t, "2.0.0", got.Version)
+
+	require.Len(t, got.Artifacts, 2)
+	for _, a := range got.Artifacts {
+		// The digest is what a storage record is keyed by; an empty one would
+		// make the recovery path useless even when it fires.
+		assert.Equal(t, key, a.SHA256)
+	}
+}
+
 func TestGetRelease_ReleaseNotFound(t *testing.T) {
 	h := setupTestHandler(t)
 	ctx := context.Background()
@@ -425,4 +474,68 @@ func TestSemverToNum(t *testing.T) {
 		got := semverToNum(tt.input)
 		assert.Equal(t, tt.expected, got, "semverToNum(%q)", tt.input)
 	}
+}
+
+// A draft release is uploaded deliberately but kept out of the project's
+// release stream: `latest` (and per-branch resolution, and every package
+// manager built on it) must not see it, while an exact-version lookup must.
+// That is the whole point -- publishing a build for yourself without moving the
+// pointer everyone else follows.
+func TestCreateRelease_Draft(t *testing.T) {
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "draftproj", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+	// The apex "latest" tracks the project's default branch; use it so the
+	// assertions below exercise the real resolution path.
+	branch := db.LatestBranch
+
+	create := func(body string) db.Release {
+		t.Helper()
+		req := httptest.NewRequest("POST", "/api/projects/draftproj/releases", strings.NewReader(body))
+		req.SetPathValue("project", "draftproj")
+		req = withProjectRoute(req, proj)
+		req = req.WithContext(writeToken(req.Context(), "read,write"))
+		rec := httptest.NewRecorder()
+		h.CreateRelease(rec, req)
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+		var rel db.Release
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
+		return rel
+	}
+
+	published := create(`{"git_branch":"` + branch + `"}`)
+	require.NoError(t, h.DB.PublishRelease(ctx, published.ID))
+
+	draft := create(`{"git_branch":"` + branch + `","draft":true}`)
+	assert.True(t, draft.Draft)
+	assert.False(t, draft.Published)
+
+	// The apex "latest" still resolves to the published release, not the
+	// newer draft.
+	latest, err := h.DB.GetLatestRelease(ctx, proj.ID)
+	require.NoError(t, err)
+	assert.Equal(t, published.Version, latest.Version, "a draft must never become latest")
+
+	// ... and the same for the branch pointer.
+	branchLatest, err := h.DB.GetLatestReleaseByBranch(ctx, proj.ID, branch)
+	require.NoError(t, err)
+	assert.Equal(t, published.Version, branchLatest.Version, "a draft must never become a branch tip")
+
+	// But it is reachable by exact version -- how its owner downloads it.
+	got, err := h.DB.GetRelease(ctx, proj.ID, draft.Version)
+	require.NoError(t, err)
+	assert.True(t, got.Draft)
+
+	// Publishing it later clears the draft flag and moves latest.
+	require.NoError(t, h.DB.PublishRelease(ctx, draft.ID))
+	promoted, err := h.DB.GetRelease(ctx, proj.ID, draft.Version)
+	require.NoError(t, err)
+	assert.True(t, promoted.Published)
+	assert.False(t, promoted.Draft, "publishing must clear the draft flag")
+
+	latest, err = h.DB.GetLatestRelease(ctx, proj.ID)
+	require.NoError(t, err)
+	assert.Equal(t, draft.Version, latest.Version)
 }

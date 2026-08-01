@@ -48,6 +48,14 @@ type createReleaseRequest struct {
 	CreateService *bool  `json:"create_service"`
 	Notes         string `json:"notes"`
 	OciUser       string `json:"oci_user"`
+	// Draft keeps the release out of the project's public release stream: it
+	// stays unpublished, so `latest`, per-branch downloads, Homebrew, APT, npm
+	// and OCI never see it, but it is downloadable by exact version -- a build
+	// published for yourself. Unlike an ordinary unpublished release (which is
+	// an abandoned partial upload as far as the server knows, and is swept
+	// once it ages past the retention cutoff), a draft is kept. Publishing it
+	// later clears the flag.
+	Draft bool `json:"draft"`
 }
 
 func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
@@ -133,6 +141,7 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 		GitCommit:  req.GitCommit,
 		Notes:      req.Notes,
 		OciUser:    req.OciUser,
+		Draft:      req.Draft,
 	}
 
 	if err := h.DB.CreateRelease(r.Context(), rel); err != nil {
@@ -176,7 +185,17 @@ func (h *Handler) GetRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jsonResponse(w, http.StatusOK, rel)
+	// Artifacts ride along so a release's contents are readable without a
+	// publish: a publisher that published against an older container (mid
+	// rolling deploy) re-reads the release here rather than failing outright,
+	// and there is no other endpoint that enumerates them.
+	artifacts, err := h.DB.ListArtifacts(r.Context(), rel.ID)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to list artifacts")
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, publishedRelease{Release: *rel, Artifacts: artifacts})
 }
 
 func (h *Handler) ListReleases(w http.ResponseWriter, r *http.Request) {

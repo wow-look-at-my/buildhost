@@ -18,13 +18,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The CA bundle baked into the binary is fetched here, not committed (so the repo
-      # carries no unreviewable cert blob). Must run before go-toolchain builds/embeds.
-      - run: ./scripts/fetch-cacerts.sh
+      # No fetch-cacerts step: the CA bundle is a generate directive
+      # (internal/repackage/oci.go), so `generate:` below fetches it. Keeping a
+      # step here would hide a broken directive from CI and leave a fresh clone
+      # unbuildable for everyone who is not this workflow. The setup-go jobs
+      # below still fetch explicitly: they run plain `go`, never generate.
       - uses: wow-look-at-my/go-toolchain@v1
         with:
-          generate: acf27fe87179
+          generate: 476c7c5fc951
           autorelease: 'false'
+      # The step above just ran every generate directive. If that changed a
+      # TRACKED file, this repo is carrying a build artifact in git -- and a
+      # tracked artifact is free to drift from the source it claims to be built
+      # from, silently, for as long as nobody rebuilds. That is exactly how the
+      # admin dashboard shipped a bundle nothing in frontend/src produced.
+      # See docs/no-committed-build-artifacts.md.
+      - name: Generated output must not be tracked in git
+        run: |
+          set -eu
+          # Drift: a committed artifact whose source no longer produces it.
+          if ! git diff --quiet; then
+            echo "::error::Running generate modified files that are committed to git."
+            echo "A tracked generated file has drifted from the source it claims to"
+            echo "be built from. Gitignore it and let its //go:generate produce it."
+            git diff --stat
+            exit 1
+          fi
+          # Committed-at-all: a tracked file that .gitignore says is build output.
+          # Catches the artifact even while it still happens to match its source.
+          ignored="$(git ls-files -i -c --exclude-standard)"
+          if [ -n "$ignored" ]; then
+            echo "::error::These build artifacts are committed to git:"
+            echo "$ignored"
+            echo "Remove them from the index (git rm --cached) -- a tracked artifact"
+            echo "drifts from its source silently. See docs/no-committed-build-artifacts.md"
+            exit 1
+          fi
       # On the default branch, cache this commit's route list keyed by its SHA.
       # Caches created on the default branch are restorable from every branch,
       # so feature-branch route-diff runs reuse this instead of rebuilding base.
@@ -93,10 +122,16 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: base/go.mod
+      # The admin dashboard's JS is a generate directive too (internal/admin),
+      # and it is embedded by name, so a base that has it fails to compile
+      # without this. Guarded on the script's existence: older base commits
+      # shipped the JS committed and have no script to run -- same
+      # works-on-older-base reasoning as the inlined cacerts fetch above.
       - if: steps.cache.outputs.cache-hit != 'true'
         working-directory: base
         run: |
           go generate ./internal/api
+          if [ -x scripts/build-admin-frontend.sh ]; then ./scripts/build-admin-frontend.sh; fi
           go build -o build/buildhost_linux_amd64 ./cmd/buildhost
       - if: steps.cache.outputs.cache-hit != 'true'
         run: chmod +x base/build/buildhost_linux_amd64 && ./base/build/buildhost_linux_amd64 routes > base-routes.txt
@@ -157,6 +192,20 @@ jobs:
                   await gh.rest.issues.createComment({ ...repo, issue_number: pr, body });
               }
 
+  # The publish composites all import .github/actions/lib/storage-record, and
+  # nothing else can reach it: upload-artifact-action-e2e publishes to
+  # http://localhost:18080, where the unreachable-registry skip returns before
+  # a record is posted. Untested, a mistake there fails publishing for every
+  # repo in the org at once.
+  storage-record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The shared storage-record module must behave
+        uses: wow-look-at-my/actions@typescript#latest
+        with:
+          file: .github/scripts/storage-record-test.ts
+
   container-healthcheck:
     # Only meaningful if the build succeeded and saved the go-build hand-off. Without
     # this, an always()-style condition makes it run on build failure and then fail on
@@ -175,6 +224,16 @@ jobs:
       # image build/pull. up then reuses this image instead of rebuilding.
       - run: docker compose -f docker-compose.ci.yml build
       - run: docker compose -f docker-compose.ci.yml up -d --wait --wait-timeout 30
+      # Stripping is documented to happen at download time, and it silently did
+      # NOT happen in the shipped image for weeks: it shelled out to
+      # strip(1)/objcopy(1), which the distroless image does not ship, so every
+      # download went out unstripped and fmt=symbols could not work. Unit tests
+      # could not see it -- the runner has binutils, the container does not --
+      # so the guarantee has to be asserted against the real image.
+      - name: The shipped image must actually strip on download
+        uses: wow-look-at-my/actions@typescript#latest
+        with:
+          file: .github/scripts/image-strips-e2e.ts
       - run: docker compose -f docker-compose.ci.yml logs
         if: failure()
 
@@ -220,6 +279,8 @@ jobs:
           go-version-file: go.mod
       - run: ./scripts/fetch-cacerts.sh
       - run: go generate ./internal/api
+      # The dashboard JS is generated, not committed, and embedded by name.
+      - run: ./scripts/build-admin-frontend.sh
       - run: go build -o buildhost ./cmd/buildhost
       - name: Start local buildhost
         shell: bash
@@ -256,8 +317,23 @@ jobs:
             arm64|aarch64) arch=arm64 ;;
             *) echo "unsupported arch"; exit 1 ;;
           esac
-          printf '%s\n' '#!/bin/sh' 'echo buildhost-homebrew-ok' > "$RUNNER_TEMP/go-toolchain"
+          # Publish the REAL go-toolchain binary from the live registry, not a
+          # stand-in. What mode Homebrew leaves an installed file in depends on
+          # that file's TYPE (extend/os/{linux,mac}/cleaner.rb chmods a shebang
+          # script / ELF / Mach-O 0555 and everything else 0444), so a fixture
+          # that is not shaped like the real artifact tests a different code
+          # path than the one users hit. The linux artifact is a Cosmopolitan
+          # APE -- exactly the shape that used to install 0444 and could not be
+          # executed at all -- while a `#!/bin/sh` fixture is always classified
+          # executable, which is how that bug shipped while this job stayed
+          # green. The download is public (no token); the live registry is
+          # already a hard dependency of this workflow (the go-toolchain action
+          # in `build` pulls from it), so this adds no new failure mode.
+          curl -fsSL --compressed \
+            "https://dl.pazer.build/go-toolchain?branch=v1&os=$os&arch=$arch" \
+            -o "$RUNNER_TEMP/go-toolchain"
           chmod +x "$RUNNER_TEMP/go-toolchain"
+          file "$RUNNER_TEMP/go-toolchain"
           ./buildhost project create \
             --server "$BUILDHOST_BASE_URL" \
             --token "$BUILDHOST_TOKEN" \
@@ -277,6 +353,55 @@ jobs:
             'kind = "binary"' \
             > "$RUNNER_TEMP/buildhost-release.toml"
           ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release.toml"
+      # go-toolchain ships an APE only on Linux; its darwin artifacts are plain
+      # Mach-O binaries, which Homebrew's Cleaner recognizes and chmods 0555 --
+      # so the macOS leg of the real-binary install cannot exercise the mode
+      # invariant at all. buildhost serves whatever publishers upload, and a
+      # Cosmopolitan binary is the same file on every OS, so this synthetic
+      # fixture keeps that invariant covered on BOTH runners (and keeps it
+      # covered if go-toolchain ever changes format). It is deliberately
+      # APE-SHAPED: no `#!` line and neither ELF nor Mach-O, so brew's Cleaner
+      # does not recognize it, and it writes to ITSELF before printing its
+      # marker -- standing in for the self-assimilation that makes a real APE
+      # need the write bit too, so a 0555 install fails here as well.
+      - name: Publish ape-fixture artifact (public, APE-shaped)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)" in
+            Darwin) os=darwin ;;
+            Linux) os=linux ;;
+            *) echo "unsupported OS"; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64) arch=amd64 ;;
+            arm64|aarch64) arch=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          printf '%s\n' \
+            "MZqFpD='APE-shaped fixture: not a shebang script, not an ELF or Mach-O'" \
+            ': >> "$0" || { echo "self-write failed: an APE binary rewrites itself on first run" >&2; exit 1; }' \
+            'echo buildhost-homebrew-ape-ok' > "$RUNNER_TEMP/ape-fixture"
+          chmod +x "$RUNNER_TEMP/ape-fixture"
+          ./buildhost project create \
+            --server "$BUILDHOST_BASE_URL" \
+            --token "$BUILDHOST_TOKEN" \
+            --name ape-fixture \
+            --versioning semver
+          printf '%s\n' \
+            "server = \"$BUILDHOST_BASE_URL\"" \
+            "token = \"$BUILDHOST_TOKEN\"" \
+            'project = "ape-fixture"' \
+            'version = "1.0.0"' \
+            'git_branch = "master"' \
+            "" \
+            "[[artifact]]" \
+            "path = \"$RUNNER_TEMP/ape-fixture\"" \
+            "os = \"$os\"" \
+            "arch = \"$arch\"" \
+            'kind = "binary"' \
+            > "$RUNNER_TEMP/buildhost-release-ape.toml"
+          ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-ape.toml"
       # Slash-namespaced AND private -- the exact shape of the live project this
       # e2e exists for. The folded formula name (myrepo-myapp) and the
       # basename-install rule are covered end to end.
@@ -363,8 +488,53 @@ jobs:
           LEG: public
         with:
           file: .github/scripts/brew-tap-e2e.ts
+      # The installed file must keep BOTH bits Homebrew's Cleaner would take
+      # away: executable (it chmods anything it does not recognize as a
+      # shebang/ELF/Mach-O to 0444) and writable (an APE rewrites itself in
+      # place on first run and dies with "Permission denied" at 0555). The
+      # generated formula opts out with skip_clean "bin"; these assertions are
+      # what turn a regression in that codegen red instead of shipping a
+      # binary users cannot run.
+      - name: Installed binary must stay executable and writable
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$(brew --prefix pazer/build/go-toolchain)/bin/go-toolchain"
+          ls -l "$bin"
+          test -x "$bin" || { echo "installed binary is not executable -- Homebrew's Cleaner chmods unrecognized files 0444"; exit 1; }
+          test -w "$bin" || { echo "installed binary is not writable -- an APE binary rewrites itself on first run"; exit 1; }
+      # Running the REAL binary is the actual user-facing claim: `brew install
+      # pazer/build/go-toolchain` must produce something that executes. On
+      # Linux this is also where a Cosmopolitan APE assimilates itself (it
+      # rewrites its own file into a native ELF), which is why the write bit
+      # above is load-bearing rather than cosmetic. `version` exits 0 even when
+      # its background update check cannot reach GitHub, so this is not a
+      # network-flaky assertion.
       - name: Execute the publicly installed binary
-        run: test "$(go-toolchain)" = "buildhost-homebrew-ok"
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(go-toolchain version)"
+          printf '%s\n' "$out"
+          case "$out" in
+            *"Version:"*) ;;
+            *) echo "go-toolchain version did not print a version line"; exit 1 ;;
+          esac
+      # Same guarantees against the APE-SHAPED fixture, so the invariant holds
+      # on macOS too (where go-toolchain's own artifact is a Mach-O brew
+      # recognizes) and for any publisher shipping a Cosmopolitan binary. The
+      # fixture fails loudly at 0555 (its self-write) and cannot even be
+      # executed at 0444.
+      - name: Install the APE-shaped fixture and assert mode + execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install pazer/build/ape-fixture
+          bin="$(brew --prefix pazer/build/ape-fixture)/bin/ape-fixture"
+          ls -l "$bin"
+          test -x "$bin" || { echo "installed APE-shaped binary is not executable (Cleaner chmods unrecognized files 0444)"; exit 1; }
+          test -w "$bin" || { echo "installed APE-shaped binary is not writable (an APE rewrites itself on first run)"; exit 1; }
+          test "$(ape-fixture)" = "buildhost-homebrew-ape-ok"
       # Docs: the authenticated tap replaces the public tap under the same name
       # ("remove it first with brew untap --force" -- plain untap refuses while
       # formulae installed from the tap exist).
@@ -424,6 +594,39 @@ jobs:
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/netcheck" ./test/e2e/testdata/netcheck
       - name: Pull and run the synthesized OCI image
         run: PATH="$(go env GOPATH)/bin:$PATH" bash test/e2e/run.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/netcheck"
+
+  # Proves a hosted site stays loadable CROSS-ORIGIN, through its redirects, in
+  # a REAL BROWSER. Guards the defect that broke every cross-origin consumer at
+  # once: the legacy /{project}/branch/{branch}/ URL became a 302 to the
+  # canonical @{branch} form, and the redirect went out without the site CORS
+  # headers. Browsers enforce CORS on every hop, so the load died at the 302 and
+  # never reached the 200 that had the header.
+  #
+  # Unit tests could not catch it -- they cover the handlers that serve bytes --
+  # and neither could curl, which follows redirects without enforcing CORS at
+  # all and reported a clean 200 for the URL that was failing in production.
+  # That is why this job launches an actual browser and imports an actual module
+  # across origins; the header assertions alongside it only name which hop broke.
+  sites-cors-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build
+          path: build/
+      - run: chmod +x build/buildhost_linux_amd64
+      # playwright-core drives the runner's preinstalled Chrome; it is a
+      # package, not a third-party action, so the org's action allowlist is not
+      # involved. The script FAILS if no browser can be launched -- a skip here
+      # would turn the one check that can see this class of bug into decoration.
+      - name: Install browser driver
+        run: npm install --no-save --no-audit --no-fund playwright-core@1.62.1
+      - name: A hosted site must load cross-origin in a real browser
+        uses: wow-look-at-my/actions@typescript#latest
+        with:
+          file: .github/scripts/sites-cors-e2e.ts
 
   apt-install-e2e:
     needs: build
@@ -645,6 +848,28 @@ jobs:
           test "$(curl -fsSL http://sites.localhost:18080/upload-e2e/branch/chunked/index.html)" = '<h1>chunked site</h1>'
           curl -fsSL -o "$RUNNER_TEMP/blob.dl" \
             "http://sites.localhost:18080/upload-e2e/branch/chunked/blob.bin"
+          # The legacy /branch/ URL is a 302 to the canonical URL for the same
+          # file, and a real client following it lands on the bytes -- which is
+          # what the -L fetches above just proved. Pin both halves explicitly so
+          # a regression reads as a failure rather than a silent extra hop.
+          #
+          # Which canonical URL it names depends on which branch is the default,
+          # and this project has no site on main/master -- so resolveRootBranch
+          # falls back to the most recently updated, i.e. whichever of these two
+          # was deployed last. Assert the redirect and then follow the target the
+          # server actually named, rather than hard-coding one of the two forms.
+          for b in direct chunked; do
+            url="http://sites.localhost:18080/upload-e2e/branch/$b/index.html"
+            test "$(curl -fsS -o /dev/null -w '%{http_code}' "$url")" = '302'
+            loc="$(curl -fsS -o /dev/null -w '%{redirect_url}' "$url")"
+            case "$loc" in
+              http://sites.localhost:18080/upload-e2e/index.html) ;;        # the default branch
+              http://sites.localhost:18080/upload-e2e/@$b/index.html) ;;    # any other
+              *) echo "unexpected redirect target for $b: $loc" >&2; exit 1 ;;
+            esac
+            test "$(curl -fsS "$loc")" = "<h1>$b site</h1>"
+          done
+
           cmp "$RUNNER_TEMP/big-site/blob.bin" "$RUNNER_TEMP/blob.dl"
       - name: Single-mode CLI publish must publish the release
         shell: bash
