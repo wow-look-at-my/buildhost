@@ -92,6 +92,26 @@ All thirteen surfaces — twelve routes plus the sidebar — came back identical
 every pass. That is what "no functionality lost" was checked against, rather
 than asserted.
 
+## The other direction: work that was TypeScript-only
+
+The bug cuts both ways. Because the committed bundle is what shipped, anything
+written in `frontend/src` after the conversion never ran either — so restoring
+the old behavior verbatim would have thrown that away. Diffing the pristine
+TypeScript against the old bundle found exactly two such changes, both about URL
+handling and both kept:
+
+- **`encodeURIComponent` on admin API paths.** Verified against a running server
+  that `GET /api/projects/repo%2Fbinary` and `GET /api/projects/repo/binary` both
+  answer `200` for a slash-namespaced project, so this is safe for the namespace
+  feature rather than merely untested.
+- **Decoding the route segments.** Kept, but guarded (`decodeSegment`): a
+  malformed `%` sequence falls back to the raw text instead of throwing, which
+  the old router could not do because it never decoded at all.
+
+Everything else in the TypeScript was a strict subset of the old bundle:
+`copy.js` builds byte-identical, the types are a superset, and every rendering
+difference was a loss rather than an addition.
+
 ## When a test must assert on built output
 
 Assert on markup or behavior the build *emits*, not on identifiers the source

@@ -1078,6 +1078,17 @@ function runRetention(): void {
 
 // --- Router ---
 
+// Rendered links carry raw project names, but a hand-written URL may
+// percent-encode them. Decode when it is valid and fall back to the raw text
+// when it is not, so a stray % cannot throw the router.
+function decodeSegment(s: string): string {
+    try {
+        return decodeURIComponent(s);
+    } catch {
+        return s;
+    }
+}
+
 // Project names are slash-namespaced (`repo/binary`, to any depth), so the
 // project and release patterns match greedily across slashes. Splitting the hash
 // into a fixed number of segments would strand every namespaced project.
@@ -1085,13 +1096,13 @@ function route(): void {
     const hash = window.location.hash.replace(/^#\/?/, "") || "";
 
     const releaseM = hash.match(/^projects\/(.+)\/releases\/([^/]+)$/);
-    if (releaseM) { pageRelease(releaseM[1], releaseM[2]); return; }
+    if (releaseM) { pageRelease(decodeSegment(releaseM[1]), decodeSegment(releaseM[2])); return; }
 
     const projectM = hash.match(/^projects\/(.+)$/);
-    if (projectM) { pageProject(projectM[1]); return; }
+    if (projectM) { pageProject(decodeSegment(projectM[1])); return; }
 
     const siteM = hash.match(/^sites\/(.+)$/);
-    if (siteM) { pageSite(siteM[1]); return; }
+    if (siteM) { pageSite(decodeSegment(siteM[1])); return; }
 
     const first = hash.split("/")[0];
     if (first === "projects") pageProjects();
