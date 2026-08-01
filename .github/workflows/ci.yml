@@ -595,6 +595,39 @@ jobs:
       - name: Pull and run the synthesized OCI image
         run: PATH="$(go env GOPATH)/bin:$PATH" bash test/e2e/run.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/netcheck"
 
+  # Proves a hosted site stays loadable CROSS-ORIGIN, through its redirects, in
+  # a REAL BROWSER. Guards the defect that broke every cross-origin consumer at
+  # once: the legacy /{project}/branch/{branch}/ URL became a 302 to the
+  # canonical @{branch} form, and the redirect went out without the site CORS
+  # headers. Browsers enforce CORS on every hop, so the load died at the 302 and
+  # never reached the 200 that had the header.
+  #
+  # Unit tests could not catch it -- they cover the handlers that serve bytes --
+  # and neither could curl, which follows redirects without enforcing CORS at
+  # all and reported a clean 200 for the URL that was failing in production.
+  # That is why this job launches an actual browser and imports an actual module
+  # across origins; the header assertions alongside it only name which hop broke.
+  sites-cors-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build
+          path: build/
+      - run: chmod +x build/buildhost_linux_amd64
+      # playwright-core drives the runner's preinstalled Chrome; it is a
+      # package, not a third-party action, so the org's action allowlist is not
+      # involved. The script FAILS if no browser can be launched -- a skip here
+      # would turn the one check that can see this class of bug into decoration.
+      - name: Install browser driver
+        run: npm install --no-save --no-audit --no-fund playwright-core@1.62.1
+      - name: A hosted site must load cross-origin in a real browser
+        uses: wow-look-at-my/actions@typescript#latest
+        with:
+          file: .github/scripts/sites-cors-e2e.ts
+
   apt-install-e2e:
     needs: build
     runs-on: ubuntu-latest
