@@ -248,6 +248,20 @@ runs:
             // failure fails the publish. A warn-and-continue path would be an
             // opt-out by neglect -- the publish would stay green while the
             // org's linked artifacts page silently fell behind reality.
+            // What a failing storage-record POST actually tells you. A 404 is NOT
+            // proof of a missing grant: the endpoint is org-scoped, so it also 404s
+            // when {org} names no organization this token can see. The owner-type
+            // probe's own answer is what separates the two.
+            const recordFailureDetail = (status: number | undefined, msg: string, owner: string, ownerType: string): string => {
+              if (status === 403) {
+                return `(HTTP 403: ${msg}). The token was refused for artifact metadata: this job must grant 'artifact-metadata: write' -- job-level permissions REPLACE workflow-level ones, so a job-level block must list it alongside the ones it already declares. Recording what buildhost stores is part of publishing and cannot be turned off.`;
+              }
+              if (status === 404) {
+                const probe = ownerType === '' ? 'failed, so the owner type is unknown' : `reported '${ownerType}'`;
+                return `(HTTP 404: ${msg}). POST /orgs/${owner}/artifacts/metadata/storage-record found no organization named ${owner} that this token can see, and GET /users/${owner} ${probe} -- a user-account owner is skipped rather than recorded. If ${owner} is an organization, the token is missing 'artifact-metadata: write' (job-level permissions REPLACE workflow-level ones). Recording what buildhost stores is part of publishing and cannot be turned off.`;
+              }
+              return `(${msg}).`;
+            };
             const postStorageRecords = async (): Promise<boolean> => {
               if (storageRecords.length === 0) return true;
               // A loopback server is not a registry anything can fetch from
@@ -289,11 +303,7 @@ runs:
                     core.info(`Skipping ${storageRecords.length} storage record(s): ${org} is a user account, which has no linked artifacts page`);
                     return true;
                   }
-                  core.setFailed(
-                    status === 403 || status === 404
-                      ? `Could not record ${rec.name} ${rec.path} on ${org}'s linked artifacts page (HTTP ${status}: ${msg}). Either ${org} has no linked artifacts page, or this job's token lacks 'artifact-metadata: write' -- job-level permissions REPLACE workflow-level ones, so a job-level block must list it alongside the ones it already declares. Recording what buildhost stores is part of publishing and cannot be turned off.`
-                      : `Could not record ${rec.name} ${rec.path} on ${org}'s linked artifacts page (${msg})`,
-                  );
+                  core.setFailed(`Could not record ${rec.name} ${rec.path} on ${org}'s linked artifacts page ${recordFailureDetail(status, msg, org, ownerType)}`);
                   return false;
                 }
               }
