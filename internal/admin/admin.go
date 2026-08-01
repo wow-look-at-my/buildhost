@@ -18,6 +18,10 @@ import (
 	"github.com/wow-look-at-my/router"
 )
 
+// The embedded JS is built from frontend/src, gitignored like every other generated
+// input. Without this the binary embeds a dashboard whose scripts 404.
+//go:generate ../../scripts/build-admin-frontend.sh
+
 //go:embed static/*
 var content embed.FS
 

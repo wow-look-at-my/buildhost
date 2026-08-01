@@ -25,7 +25,7 @@ jobs:
       # below still fetch explicitly: they run plain `go`, never generate.
       - uses: wow-look-at-my/go-toolchain@v1
         with:
-          generate: 904cd8d22ac8
+          generate: 0709a9d4dd8d
           autorelease: 'false'
       # On the default branch, cache this commit's route list keyed by its SHA.
       # Caches created on the default branch are restorable from every branch,

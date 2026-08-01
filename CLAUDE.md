@@ -5,7 +5,7 @@ Universal package registry server. Upload artifacts once, download in any format
 ## Build
 
 ```bash
-go-toolchain --generate 904cd8d22ac8
+go-toolchain --generate 0709a9d4dd8d
 ```
 
 This runs mod tidy, generate, vet, tests with coverage, and builds the binary. Do not use bare `go` commands. The `--generate <hash>` flag is
@@ -17,9 +17,11 @@ cacerts/ca-certificates.crt: no matching files found`). go-toolchain prints the 
 ### Admin frontend (TypeScript)
 
 The admin dashboard frontend is written in TypeScript. Source files live in `internal/admin/frontend/src/` and compile to `internal/admin/static/*.js`
-(which are embedded into the Go binary via `go:embed`). The built JS files are checked in so `go-toolchain` works without Node.js.
+(which are embedded into the Go binary via `go:embed`). The built JS is **gitignored and produced by the `//go:generate` beside that embed**
+(`scripts/build-admin-frontend.sh`), like every other generated input -- so `go-toolchain --generate` needs Node on PATH, and a build that skips
+generate embeds a dashboard whose scripts 404.
 
-After editing TypeScript source files, rebuild before running `go-toolchain`:
+Rebuilding by hand (what the directive runs) after editing a source file:
 
 ```bash
 cd internal/admin/frontend && npm run build

@@ -26,8 +26,12 @@ func TestAdminStaticProjectsRenderAsTree(t *testing.T) {
 	data, err := os.ReadFile("static/app.js")
 	require.NoError(t, err)
 
+	// Assert the markup the tree emits, not the function names: the bundler keeps
+	// these module-scoped, so a name check would pin an implementation detail while
+	// silently passing on a build that renders a flat list.
 	body := string(data)
-	require.Contains(t, body, "App.projectTreeRows")
 	require.Contains(t, body, "project-folder-row")
-	require.Contains(t, body, "App.projectLabel")
+	require.Contains(t, body, "project-tree-row")
+	require.Contains(t, body, "project-name-cell")
+	require.Contains(t, body, "project-path")
 }

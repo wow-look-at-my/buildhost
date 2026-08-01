@@ -179,6 +179,49 @@ function pageDashboard(): void {
     });
 }
 
+// Project names are slash-namespaced, so the list renders as a tree: each shared
+// prefix becomes a folder row and the leaf shows only its own segment.
+type TreeNode = { name: string; children: Record<string, TreeNode>; project: ProjectSummary | null };
+type TreeRow = { kind: "folder"; depth: number; name: string } | { kind: "project"; depth: number; project: ProjectSummary };
+
+function projectTreeRows(projects: ProjectSummary[]): TreeRow[] {
+    const root: TreeNode = { name: "", children: {}, project: null };
+    for (const p of projects) {
+        let cur = root;
+        for (const part of String(p.name || "").split("/")) {
+            if (!cur.children[part]) cur.children[part] = { name: part, children: {}, project: null };
+            cur = cur.children[part];
+        }
+        cur.project = p;
+    }
+
+    const out: TreeRow[] = [];
+    const walk = (node: TreeNode, depth: number): void => {
+        for (const name of Object.keys(node.children).sort()) {
+            const child = node.children[name];
+            if (Object.keys(child.children).length > 0) out.push({ kind: "folder", depth, name: child.name });
+            if (child.project) out.push({ kind: "project", depth, project: child.project });
+            walk(child, depth + 1);
+        }
+    };
+    walk(root, 0);
+    return out;
+}
+
+function projectLabel(name: string): string {
+    const s = String(name || "");
+    const i = s.lastIndexOf("/");
+    return i >= 0 ? s.substring(i + 1) : s;
+}
+
+function projectNameCell(project: ProjectSummary, depth: number): string {
+    const name = project.name || "";
+    const label = projectLabel(name);
+    let cell = '<span class="project-label"><a href="#/projects/' + h(name) + '">' + h(label) + "</a></span>";
+    if (label !== name) cell += '<span class="project-path">' + h(name) + "</span>";
+    return '<td class="project-name-cell project-depth-' + depth + '">' + cell + "</td>";
+}
+
 function pageProjects(): void {
     setTitle("Projects");
     renderSidebar("projects");
@@ -187,8 +230,14 @@ function pageProjects(): void {
         if (projects.length === 0) {
             html += '<tr><td colspan="7" class="empty">No projects yet</td></tr>';
         } else {
-            for (const p of projects) {
-                html += "<tr><td><a href='#/projects/" + h(p.name) + "'>" + h(p.name) + "</a></td>";
+            for (const row of projectTreeRows(projects)) {
+                if (row.kind === "folder") {
+                    html += '<tr class="project-folder-row"><td colspan="7" class="project-folder-cell project-depth-' + row.depth + '"><span class="project-folder-icon"></span>' + h(row.name) + "</td></tr>";
+                    continue;
+                }
+                const p = row.project;
+                html += "<tr class='project-tree-row'>";
+                html += projectNameCell(p, row.depth);
                 html += '<td class="truncate">' + h(p.description) + "</td>";
                 html += "<td>" + badge("neutral", p.versioning) + "</td>";
                 html += "<td>" + (p.is_private ? badge("warning", "Private") : badge("success", "Public")) + "</td>";
@@ -342,10 +391,13 @@ function pageRegistries(): void {
         html += codeBlock("Setup (private project)", 'echo "deb [trusted=yes] ' + bu + '/apt/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/{project}.conf\nmachine ' + bu + "/apt/{project}\n  login token\n  password $TOKEN\nEOF\nsudo apt update && sudo apt install {project}");
         html += "</div>";
 
-        html += '<div class="card"><h2>Homebrew Tap</h2><p class="section-desc">Homebrew formula served as a single .rb file. Auto-detects macOS and Linux bottles.</p>';
-        html += '<table class="info-table"><tr><td class="info-label">Formula</td><td class="endpoint-cell"><code>' + h(bu) + "/brew/{project}.rb</code><copy-btn data-src='code'></copy-btn></td></tr></table>";
-        html += codeBlock("Install (public project)", "brew install " + bu + "/brew/{project}.rb");
-        html += codeBlock("Install (private project)", "HOMEBREW_BUILDHOST_TOKEN=$TOKEN brew install " + bu + "/brew/{project}.rb");
+        // The tap, not a bare formula URL: a formula alone has no tap to resolve
+        // `brew trust` against, and a bare host 404s -- clone /tap.git.
+        html += '<div class="card"><h2>Homebrew Tap</h2><p class="section-desc">Homebrew formulas are served through a generated Git tap. Formula files auto-detect macOS and Linux artifacts.</p>';
+        html += '<table class="info-table"><tr><td class="info-label">Tap Git URL</td><td class="endpoint-cell"><code>' + h(bu) + "/brew/tap.git</code><copy-btn data-src='code'></copy-btn></td></tr>";
+        html += '<tr><td class="info-label">Formula</td><td class="endpoint-cell"><code>' + h(bu) + "/brew/Formula/{project}.rb</code><copy-btn data-src='code'></copy-btn></td></tr></table>";
+        html += codeBlock("Install", "brew tap pazer/build " + bu + "/brew/tap.git\nbrew trust pazer/build\nbrew install pazer/build/{project}");
+        html += codeBlock("Install (private project)", "HOMEBREW_BUILDHOST_TOKEN=$TOKEN brew install pazer/build/{project}");
         html += "</div>";
 
         html += '<div class="card"><h2>npm Registry</h2><p class="section-desc">npm-compatible registry. Packages are scoped under <code>@buildhost</code>.</p>';
