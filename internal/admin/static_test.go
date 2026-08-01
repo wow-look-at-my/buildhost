@@ -116,3 +116,20 @@ func TestAdminStaticScriptTagsResolve(t *testing.T) {
 		require.NoErrorf(t, err, "index.html loads %q but it is not embedded", m[1])
 	}
 }
+
+// A site LINK the dashboard hands a user must be the read grammar ("@branch"),
+// not the "/branch/" spelling that only redirects. The two are distinguishable
+// in the bundle: a link concatenates a runtime branch value onto the path, while
+// the endpoint documentation and curl snippets carry the literal "{branch}"
+// placeholder -- and those are WRITE routes (PUT/DELETE), where "/branch/" is
+// correct and must stay.
+func TestAdminStaticSiteLinksUseRefSigil(t *testing.T) {
+	body := readBundle(t)
+
+	require.NotContains(t, body, `/branch/" +`,
+		`a site link is built by concatenating a branch onto "/branch/"; use siteBranchURL (the "@" form) -- "/branch/" only redirects on reads`)
+	require.Contains(t, body, `"/@"`, "the canonical site-link helper is gone")
+	// The write endpoints keep the old spelling; if they ever disappear, this
+	// test has stopped looking at the thing it thinks it is.
+	require.Contains(t, body, "/branch/{branch}", "the site write endpoints should still be documented")
+}
