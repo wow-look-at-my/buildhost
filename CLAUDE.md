@@ -10,6 +10,28 @@ go-toolchain --generate 904cd8d22ac8
 
 This runs mod tidy, generate, vet, tests with coverage, and builds the binary. Do not use bare `go` commands. The `--generate <hash>` flag is go-toolchain's approval gate over the repo's `//go:generate` directives and is REQUIRED here: the generated regex matchers, sqlc code, and the embedded CA bundle are all gitignored build inputs, so a fresh clone without generate fails to compile (`undefined: validProjectNameRegex`, `pattern cacerts/ca-certificates.crt: no matching files found`). go-toolchain prints the current hash if this one is stale; update it here and in `.github/workflows/ci.yml` whenever a directive changes.
 
+### Admin frontend (TypeScript)
+
+The admin dashboard frontend is written in TypeScript. Source files live in `internal/admin/frontend/src/` and compile to `internal/admin/static/*.js` (which are embedded into the Go binary via `go:embed`). The built JS files are checked in so `go-toolchain` works without Node.js.
+
+After editing TypeScript source files, rebuild before running `go-toolchain`:
+
+```bash
+cd internal/admin/frontend && npm run build
+```
+
+Type checking (no emit):
+
+```bash
+cd internal/admin/frontend && npm run check
+```
+
+First-time setup (install esbuild + typescript):
+
+```bash
+cd internal/admin/frontend && npm install
+```
+
 ## Project structure
 
 - `cmd/buildhost/` - CLI entrypoint (cobra, one subcommand per file, self-registering via init()). Backend imports (backend_*.go) trigger init() registration for each handler package.
@@ -37,7 +59,7 @@ This runs mod tidy, generate, vet, tests with coverage, and builds the binary. D
 - `internal/uploadclient/` - The CLI's upload engine (used by `publish` and `publish-site`): stats the file locally, fetches the server's advertised `max_direct_upload_bytes` from `GET /api/v1/server-info` (fallback: built-in 95 MiB), and picks direct-vs-chunked BEFORE sending anything -- the first attempt is the one that succeeds; there is no try-a-big-PUT-and-react-to-413 path. Small files keep the classic single request byte-for-byte; larger ones create a session, append sequential chunks (default 64 MiB, `--chunk-size`, `0` disables) with per-chunk retry/backoff that resumes from the server's committed size (409 or status read), then finalize with the file's sha256 and best-effort DELETE the session on hard failure. Against an old server without session support it warns and falls back to the classic single request (no regression for non-proxied deployments). Lives in `internal/` (not `cmd/`) so its tests don't drag the untested CLI package into coverage.
 - `internal/ociclient/` - The CLI's `docker-push` engine: pushes a locally built OCI image layout (`docker buildx build --output type=oci` tarball or `tar=false` directory, or `docker save`) to the OCI endpoint, uploading every blob larger than the server's advertised `max_direct_upload_bytes` through the OCI chunked upload session (sequential `Content-Range` PATCH appends each under the limit, digest-checked PUT finalize) -- so image layers over a fronting proxy's request-body cap (Cloudflare edge 413s ~100 MB) publish where docker/buildx/crane's one-request-per-blob uploads cannot. Sizing is decided up front from the blob size + server-info (never by reacting to a 413); `--chunk-size` only clamps DOWN from the advertised limit; interrupted chunks resume from the server's committed size (416 `Range` / the status GET). Blobs the registry already has are HEAD-skipped; small blobs keep the classic monolithic `POST ?digest=`. The layout walk pushes depth-first (blobs, then child manifests by digest -- attestation manifests included -- then the root by each tag) and requires exactly one top-level `index.json` entry (one image per push). The `buildhost-publish-docker` action builds with buildx `--output type=oci,tar=false` and pushes through this client (building the CLI from the action's own checkout); tags referencing foreign registries still go through buildx `push: true`. When its `tags` input is omitted the action computes branch-aware defaults (TypeScript step `id: default-tags` in the action): the commit SHA + the docker-sanitized short ref name (lowercase; runs of `[^a-z0-9._-]` -> `-`; leading dots/dashes stripped -- so a `claude/foo` branch yields the bare buildhost-bound tag `claude-foo`, never a foreign `/`-reference), plus `latest` ONLY when the push is to the repo's default branch (read from the event payload; payload-less events like `schedule` fall back to `master`, failing closed -- no `latest` -- on `main`-defaulted repos). Feature-branch pushes therefore never move the mutable `:latest` pointer -- the OCI-tag analogue of the apex-`latest` no-hijack rule. An explicitly passed `tags` input skips the compute step entirely (byte-identical to the previous behavior).
 - `internal/buildinfo/` - Build-time VCS stamps (commit, time, dirty flag) read once from `runtime/debug.ReadBuildInfo()`; reported by `buildhost version` and the `GET /healthz` JSON body
-- `internal/admin/` - Admin dashboard (separate HTTP server, JSON API + static SPA frontend), inflight write counter for update coordination
+- `internal/admin/` - Admin dashboard (separate HTTP server, JSON API + static SPA frontend), inflight write counter for update coordination. Frontend TypeScript source in `frontend/src/`, compiled JS output in `static/`.
 - `internal/config/` - Server configuration from env vars
 - `migrations/` - SQLite schema (embedded via go:embed)
 
