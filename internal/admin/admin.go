@@ -18,7 +18,14 @@ import (
 	"github.com/wow-look-at-my/router"
 )
 
-//go:embed static/*
+// The dashboard's JS is GENERATED from internal/admin/frontend/src (TypeScript);
+// the .js files are gitignored build artifacts, never committed. Each generated
+// file is embedded BY NAME on purpose: a wildcard still matches index.html and
+// style.css, so a build that skipped generate would compile clean and serve a
+// blank dashboard -- naming them makes that a compile error instead.
+//
+//go:generate ../../scripts/build-admin-frontend.sh
+//go:embed static/index.html static/style.css static/app.js static/copy.js
 var content embed.FS
 
 type BuildInfo struct {
