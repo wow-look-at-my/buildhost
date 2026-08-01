@@ -171,12 +171,27 @@ try {
 	core.setSecret(token);
 	const auth = { Authorization: `Bearer ${token}` };
 
-	const created = await fetch(`http://127.0.0.1:${PORT}/api/v1/projects`, {
-		method: "POST",
-		headers: { ...auth, "Content-Type": "application/json" },
-		body: JSON.stringify({ name: PROJECT, visibility: "public" }),
-	});
-	if (!created.ok) throw new Error(`create project: ${created.status} ${await created.text()}`);
+	// The create-project field is `is_private` (bool). An unknown field is
+	// IGNORED, so a wrong name silently yields a PUBLIC project -- which is how
+	// the private-project case below spent its first life asserting nothing. Every
+	// creation here therefore reads the visibility back and fails on a mismatch.
+	async function createProject(name: string, isPrivate: boolean) {
+		const res = await fetch(`http://localhost:${PORT}/api/v1/projects`, {
+			method: "POST",
+			headers: { ...auth, "Content-Type": "application/json" },
+			body: JSON.stringify({ name, is_private: isPrivate }),
+		});
+		if (!res.ok) throw new Error(`create project ${name}: ${res.status} ${await res.text()}`);
+		const got = (await res.json()) as { is_private?: boolean };
+		if (got.is_private !== isPrivate) {
+			throw new Error(
+				`project ${name} came back is_private=${got.is_private}, wanted ${isPrivate}. ` +
+					`The visibility field was not applied, so this case would silently test the wrong thing.`,
+			);
+		}
+	}
+
+	await createProject(PROJECT, false);
 
 	// Two branches so `library` is NOT the default -- the production shape,
 	// where the legacy URL redirects to the @branch form rather than collapsing
@@ -193,15 +208,32 @@ try {
 		if (up.status !== 201) throw new Error(`upload ${branch}: ${up.status} ${await up.text()}`);
 	}
 
-	// A private project whose `library` branch is published public. Its default
-	// branch has no site at all, mirroring a repo that only ever publishes the
-	// one library branch.
-	const createdPriv = await fetch(`http://localhost:${PORT}/api/v1/projects`, {
-		method: "POST",
-		headers: { ...auth, "Content-Type": "application/json" },
-		body: JSON.stringify({ name: PRIVATE_PROJECT, visibility: "private" }),
+	// A private project whose `library` branch is published public -- the
+	// production shape. Its `master` branch is published WITHOUT the flag, and
+	// asserted below to be refused anonymously: without that, "the public-read
+	// bypass survives the redirect" would be an untested claim, since a project
+	// that was accidentally public serves every branch anyway.
+	await createProject(PRIVATE_PROJECT, true);
+	const upGated = await fetch(`${SITES}/${PRIVATE_PROJECT}/branch/master`, {
+		method: "PUT",
+		headers: auth,
+		body: new Uint8Array(tarGz({ "index.html": "<h1>gated</h1>" })),
 	});
-	if (!createdPriv.ok) throw new Error(`create private project: ${createdPriv.status} ${await createdPriv.text()}`);
+	if (upGated.status !== 201) throw new Error(`upload gated branch: ${upGated.status} ${await upGated.text()}`);
+	{
+		const gated = await fetch(`${SITES}/${PRIVATE_PROJECT}/@master/index.html`, {
+			redirect: "manual",
+			headers: { Origin: CONSUMER_ORIGIN },
+		});
+		await gated.arrayBuffer().catch(() => undefined);
+		if (gated.status !== 401 && gated.status !== 404) {
+			failures.push(
+				`a NON-public branch of a private project answered ${gated.status} anonymously (want 401/404). ` +
+					`Either the project is not actually private or the gate is open -- in both cases the ` +
+					`public-branch case below proves nothing.`,
+			);
+		}
+	}
 	const upPriv = await fetch(`${SITES}/${PRIVATE_PROJECT}/branch/library`, {
 		method: "PUT",
 		headers: { ...auth, "X-Public-Site": "true" },
