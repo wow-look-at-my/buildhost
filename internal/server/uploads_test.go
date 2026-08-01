@@ -417,7 +417,7 @@ func TestChunkedSiteDeploy(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
 
-	resp = env.doSubdomainRequest(t, "GET", "sites", "/sitey/branch/main/index.html", "", nil, true)
+	resp = env.doSubdomainRequest(t, "GET", "sites", "/sitey/index.html", "", nil, true)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "<h1>chunked</h1>", string(readBody(t, resp)))
 }

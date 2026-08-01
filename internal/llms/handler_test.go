@@ -111,7 +111,9 @@ func TestRender_ServiceSubdomains(t *testing.T) {
 	// Service URLs are subdomains of the base host, not paths.
 	body := string(render("https://pazer.build"))
 	assert.Contains(t, body, "https://dl.pazer.build/myapp")
-	assert.Contains(t, body, "https://sites.pazer.build/myapp/branch/main/")
+	assert.Contains(t, body, "https://sites.pazer.build/myapp/@main/")
+	// The older spelling is documented as still working, so it must stay in the guide.
+	assert.Contains(t, body, "/myapp/branch/main/x.css")
 	assert.NotContains(t, body, "https://pazer.build/dl/")
 	assert.NotContains(t, body, "https://pazer.build/sites/")
 }

@@ -772,6 +772,28 @@ jobs:
           test "$(curl -fsSL http://sites.localhost:18080/upload-e2e/branch/chunked/index.html)" = '<h1>chunked site</h1>'
           curl -fsSL -o "$RUNNER_TEMP/blob.dl" \
             "http://sites.localhost:18080/upload-e2e/branch/chunked/blob.bin"
+          # The legacy /branch/ URL is a 302 to the canonical URL for the same
+          # file, and a real client following it lands on the bytes -- which is
+          # what the -L fetches above just proved. Pin both halves explicitly so
+          # a regression reads as a failure rather than a silent extra hop.
+          #
+          # Which canonical URL it names depends on which branch is the default,
+          # and this project has no site on main/master -- so resolveRootBranch
+          # falls back to the most recently updated, i.e. whichever of these two
+          # was deployed last. Assert the redirect and then follow the target the
+          # server actually named, rather than hard-coding one of the two forms.
+          for b in direct chunked; do
+            url="http://sites.localhost:18080/upload-e2e/branch/$b/index.html"
+            test "$(curl -fsS -o /dev/null -w '%{http_code}' "$url")" = '302'
+            loc="$(curl -fsS -o /dev/null -w '%{redirect_url}' "$url")"
+            case "$loc" in
+              http://sites.localhost:18080/upload-e2e/index.html) ;;        # the default branch
+              http://sites.localhost:18080/upload-e2e/@$b/index.html) ;;    # any other
+              *) echo "unexpected redirect target for $b: $loc" >&2; exit 1 ;;
+            esac
+            test "$(curl -fsS "$loc")" = "<h1>$b site</h1>"
+          done
+
           cmp "$RUNNER_TEMP/big-site/blob.bin" "$RUNNER_TEMP/blob.dl"
       - name: Single-mode CLI publish must publish the release
         shell: bash
