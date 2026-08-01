@@ -3,6 +3,7 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -82,14 +83,30 @@ func runPublishSite(cmd *cobra.Command, _ []string) error {
 	}
 	defer resp.Body.Close()
 
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("upload failed: %s: %s", resp.Status, body)
 	}
 
 	fmt.Printf("published site %s branch %s\n", project, branch)
-	fmt.Printf("  %s/%s/branch/%s/\n", sitesBase, project, branch)
+	fmt.Printf("  %s\n", publishedSiteURL(body, sitesBase, project, branch))
 	return nil
+}
+
+// publishedSiteURL is where the site is now served. The server says so in the
+// response (it owns the URL grammar); deriving it here would be a second copy of
+// that grammar, which is how published links kept naming the legacy /branch/
+// spelling after the canonical form moved to the bare project path. The fallback
+// covers a server too old to send the field, and uses the current spelling
+// rather than the one that only redirects.
+func publishedSiteURL(body []byte, sitesBase, project, branch string) string {
+	var resp struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(body, &resp); err == nil && resp.URL != "" {
+		return resp.URL
+	}
+	return fmt.Sprintf("%s/%s/@%s/", sitesBase, project, branch)
 }
 
 func createTarGz(w io.Writer, dir string) error {

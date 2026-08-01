@@ -822,6 +822,7 @@ jobs:
           echo "session creates: $creates"
           test "$creates" = "1"
       - name: Publish big site (chunked session path, 1 MiB chunks)
+        id: publish-big-site
         uses: ./.github/actions/buildhost-publish-site
         with:
           server: http://localhost:18080
@@ -840,6 +841,24 @@ jobs:
           test "$creates" = "2"
           # 4 chunks from the artifact upload + at least 3 for the ~3 MB site.
           test "$chunks" -ge 7
+      # The URL the action advertises is the one that ends up in preview
+      # comments and deployment environment_urls, so it has to be the URL that
+      # SERVES -- not one that only redirects there. It comes from the publish
+      # response now (the server owns the grammar); this is the check that it
+      # arrived and is canonical, since a fallback to a stale spelling would
+      # otherwise look identical to a green run.
+      - name: The advertised site URL must serve the bytes with no redirect
+        shell: bash
+        env:
+          SITE_URL: ${{ steps.publish-big-site.outputs.site_url }}
+        run: |
+          set -euo pipefail
+          echo "site_url: $SITE_URL"
+          case "$SITE_URL" in
+            *"/branch/"*) echo "advertised the legacy /branch/ spelling" >&2; exit 1 ;;
+          esac
+          # No -L: the advertised URL must answer 200 itself.
+          test "$(curl -fsS "${SITE_URL}index.html")" = '<h1>chunked site</h1>'
       - name: Served site files must match the source bytes
         shell: bash
         run: |

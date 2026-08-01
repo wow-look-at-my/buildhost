@@ -313,9 +313,20 @@ runs:
             // session finalize, same endpoint either way -- feeds the outputs.
             const finishPublish = async (r: { status: number; text: string }): Promise<void> => {
               if (r.status < 200 || r.status >= 300) { core.setFailed(`HTTP ${r.status}: ${r.text}`); return; }
-              const siteURL = `${sitesBase}/${project}/branch/${branch}/`;
+              const body = JSON.parse(r.text);
+              // The server reports the URL it now serves this deployment at.
+              // Building it here instead means owning a copy of buildhost's URL
+              // grammar, which is how every published preview link kept naming
+              // the legacy /branch/ spelling after the canonical form moved to
+              // the bare project path. The fallback is for a server older than
+              // that field, and uses the current spelling rather than the one
+              // that only redirects.
+              const siteURL: string =
+                typeof body.url === 'string' && body.url !== ''
+                  ? body.url
+                  : `${sitesBase}/${project}/@${branch}/`;
               core.info(`Published site to ${siteURL}`);
-              core.info(JSON.stringify(JSON.parse(r.text), null, 2));
+              core.info(JSON.stringify(body, null, 2));
               core.setOutput('response', r.text);
               core.setOutput('site_url', siteURL);
               await recordSite(octokit, core, context, { server, project, branch, version: gitCommit, sha256: sum });

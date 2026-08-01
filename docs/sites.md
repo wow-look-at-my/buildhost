@@ -55,6 +55,21 @@ all HTTP clients follow redirects on GET. It resolves its branch the same way
 the `@` form does (`splitSiteBranch`, so a slash-named branch still works) and
 names the resolved branch in its target, in ONE hop.
 
+### The publish response says where the site is
+
+The upload's `201` body is the stored row plus a `url` field: the canonical URL
+this deployment is now served at -- the bare project path when it is on the
+default branch, else the `@` spelling. `canonicalSiteURL` is the same
+`canonicalURLFor` the redirects use, so the URL a publisher advertises and the
+URL the server considers canonical cannot drift apart.
+
+The field exists because they DID drift. Every publisher used to build the URL
+from the project and branch, which made each one a copy of the grammar; when the
+canonical form moved to the bare path, they all kept posting `/branch/` links
+that from then on only redirected. A publisher should ask, not re-derive.
+(`buildhost-publish-site` falls back to the `@` spelling against a server too old
+to send the field -- the current grammar, not the one that only redirects.)
+
 One thing deliberately does not collapse: a **commit** ref is the most specific
 spelling there is, so rewriting it to a mutable pointer would throw the pin away
 (`refNamesBranch` gates the collapse).
@@ -108,12 +123,13 @@ segment while a branch name may span several, so the second binds the rest and
 
 No published URL breaks. `/{project}/branch/{branch}/...` keeps resolving --
 as a `302`, pinned by `TestBranchSigil_LegacyFormRedirects` and, over real HTTP
-with a real client, by the `upload-artifact-action-e2e` CI job. The CLI and the
-`buildhost-publish-site` action deliberately keep EMITTING that spelling: both
-can run against a server older than this change, where it is the URL that
-serves, and against a newer one it redirects. The only links buildhost itself
-generates in the `@` form are the web frontend's per-branch site links, which
-ship in the same binary and so can never outrun the server.
+with a real client, by the `upload-artifact-action-e2e` CI job. What both
+publishers still EMIT that spelling for is the upload endpoint itself
+(`PUT /{project}/branch/{branch}`), which is a write route that older servers
+also accept -- not the URL they advertise afterwards. That one now comes from
+the server (see "The publish response says where the site is"), so a publisher
+running against a server older than this change falls back to the `@` spelling
+rather than one that only redirects.
 
 ### Commit refs (`@{commit}`)
 

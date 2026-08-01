@@ -190,7 +190,28 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(site)
+	json.NewEncoder(w).Encode(publishedSite{Site: site, URL: h.canonicalSiteURL(ctx, project, site.Branch, r)})
+}
+
+// publishedSite is the upload response: the stored row, plus the URL the site is
+// now served at.
+//
+// Publishers used to build that URL themselves from the project and branch,
+// which made every one of them a copy of the URL grammar -- and when the
+// canonical form changed they all kept advertising the legacy /branch/ spelling,
+// which now only redirects. The server owns the grammar, so it says.
+type publishedSite struct {
+	*db.Site
+	URL string `json:"url"`
+}
+
+// canonicalSiteURL is the absolute form of canonicalURLFor for a whole
+// deployment: the bare project path when this branch is the default one, else
+// the "@" spelling. Derived from the request's own host, like every other link
+// buildhost hands out -- the server is never told its own URL.
+func (h *Handler) canonicalSiteURL(ctx context.Context, project *db.Project, branch string, r *http.Request) string {
+	path, _ := h.canonicalURLFor(ctx, project, branch, "", r)
+	return strings.TrimSuffix(auth.ApexServiceURL(r, "sites").String(), "/") + path
 }
 
 var errSiteTooLarge = errors.New("decompressed archive too large")
