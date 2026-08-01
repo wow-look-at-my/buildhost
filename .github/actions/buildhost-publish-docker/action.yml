@@ -301,6 +301,7 @@ runs:
         OCI_LAYOUT: ${{ steps.refs.outputs.layout }}
       with:
         script: |
+          const { recordImage } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
           await (async () => {
             const server: string = "${{ inputs.server }}";
             const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
@@ -346,51 +347,9 @@ runs:
               return;
             }
 
-            // First buildhost-bound reference: <oci-host>/<repository>:<tag>.
-            // Foreign references are another registry's to account for.
-            const primary = refs[0] ?? "";
-            const slash = primary.indexOf("/");
-            const colon = primary.lastIndexOf(":");
-            if (slash < 0 || colon < slash) {
-              core.setFailed(`Could not parse the buildhost image reference '${primary}'; cannot record what was stored`);
-              return;
-            }
-            const repository = primary.slice(slash + 1, colon);
-            const registryURL = `https://${primary.slice(0, slash)}`;
-
-            // A loopback server is not a registry anything can fetch from, so
-            // a record pointing at it would be an unreachable row on the org's
-            // page. A property of the target, not a caller-facing switch.
-            const host = new URL(registryURL).hostname;
-            if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
-              core.info(`Skipping the storage record: ${registryURL} is a loopback test server, not a reachable registry`);
-              return;
-            }
-
-            const org = context.repo.owner;
-            try {
-              await octokit.request("POST /orgs/{org}/artifacts/metadata/storage-record", {
-                org,
-                name: repository,
-                version: primary.slice(colon + 1),
-                digest,
-                registry_url: registryURL,
-                repository,
-                artifact_url: `${registryURL}/v2/${repository}/manifests/${digest}`,
-                github_repository: context.repo.repo,
-                status: "active",
-                return_records: false,
-              });
-              core.info(`Recorded ${repository} ${digest} on ${org}'s linked artifacts page`);
-            } catch (e) {
-              const status = (e as { status?: number }).status;
-              const msg = e instanceof Error ? e.message : String(e);
-              core.setFailed(
-                status === 403 || status === 404
-                  ? `Could not record ${repository} on ${org}'s linked artifacts page (HTTP ${status}: ${msg}). Add 'artifact-metadata: write' to this job's permissions block -- job-level permissions REPLACE workflow-level ones, so add it alongside the ones the job already declares. Recording what buildhost stores is part of publishing and cannot be turned off.`
-                  : `Could not record ${repository} on ${org}'s linked artifacts page (${msg})`,
-              );
-            }
+            // The first buildhost-bound reference names what was stored;
+            // foreign references are another registry's to account for.
+            await recordImage(octokit, core, context, { reference: refs[0] ?? "", digest });
           })();
 
     # Tags that reference other registries keep the old buildx push path; the
