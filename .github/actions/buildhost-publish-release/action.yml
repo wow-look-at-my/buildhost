@@ -32,6 +32,7 @@ runs:
       uses: wow-look-at-my/actions@typescript#latest
       with:
         script: |
+          const { recordReleaseArtifacts } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
           await (async () => {
             const server: string = "${{ inputs.server }}";
             let token: string = "${{ inputs.token }}";
@@ -74,55 +75,5 @@ runs:
               return;
             }
 
-            const host = new URL(server).hostname;
-            if (host === "localhost" || host === "127.0.0.1" || host === "::1" || !server.startsWith("https://")) {
-              core.info(`Skipping ${artifacts.length} storage record(s): ${server} is not a reachable https registry (the API accepts https URLs only)`);
-              return;
-            }
-
-            const dl = (() => { const u = new URL(server); u.host = `dl.${u.host}`; return u.origin; })();
-            const releaseVersion: string = published.version ?? version;
-            const org = context.repo.owner;
-
-            for (const a of artifacts) {
-              const slot = `${a.os ?? ''}/${a.arch ?? ''}`;
-              const sha: string = a.sha256 ?? '';
-              if (sha === '') {
-                core.setFailed(`Published artifact ${slot} carried no sha256; cannot record what buildhost stored`);
-                return;
-              }
-              // debug=1 is the only download returning the uploaded bytes
-              // verbatim -- buildhost strips and repackages on demand -- so it
-              // is the one URL whose bytes hash to the recorded digest.
-              const artifactURL = `${dl}/${project}?v=${encodeURIComponent(releaseVersion)}&os=${a.os ?? ''}&arch=${a.arch ?? ''}&debug=1`;
-              if (artifactURL.length > 152) {
-                core.setFailed(`Cannot record ${project} ${slot}: its artifact_url is ${artifactURL.length} chars, over the API's 152-char limit. Recording it without the URL would silently drop the only link back to the bytes the digest covers; shorten the project name or change the download URL scheme.`);
-                return;
-              }
-              try {
-                await octokit.request("POST /orgs/{org}/artifacts/metadata/storage-record", {
-                  org,
-                  name: project,
-                  version: releaseVersion,
-                  digest: `sha256:${sha}`,
-                  registry_url: server,
-                  repository: project,
-                  path: slot,
-                  artifact_url: artifactURL,
-                  github_repository: context.repo.repo,
-                  status: "active",
-                  return_records: false,
-                });
-                core.info(`Recorded ${project} ${slot} sha256:${sha} on ${org}'s linked artifacts page`);
-              } catch (e) {
-                const status = (e as { status?: number }).status;
-                const msg = e instanceof Error ? e.message : String(e);
-                core.setFailed(
-                  status === 403 || status === 404
-                    ? `Could not record ${project} ${slot} on ${org}'s linked artifacts page (HTTP ${status}: ${msg}). Add 'artifact-metadata: write' to this job's permissions block -- job-level permissions REPLACE workflow-level ones, so add it alongside the ones the job already declares. Recording what buildhost stores is part of publishing and cannot be turned off.`
-                    : `Could not record ${project} ${slot} on ${org}'s linked artifacts page (${msg})`,
-                );
-                return;
-              }
-            }
+            await recordReleaseArtifacts(octokit, core, context, { server, project, version: published.version ?? version, artifacts });
           })();
