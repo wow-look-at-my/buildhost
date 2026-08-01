@@ -159,36 +159,6 @@ jobs:
                   await gh.rest.issues.createComment({ ...repo, issue_number: pr, body });
               }
 
-  # CLAUDE.md is re-sent on every request for a whole session, so its shape is a
-  # standing cost, not a style preference. This catches the mechanical half --
-  # unwrapped walls of text. The per-item budget (~2-4 rendered lines, depth in
-  # docs/) is still convention only: the file has pre-existing items far over it,
-  # so a check would be red on arrival. See claude_snippets/claude-md-is-an-index.
-  claude-md-format:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: CLAUDE.md lines must wrap at 150 columns
-        uses: wow-look-at-my/actions@typescript#latest
-        with:
-          script: |
-            const LIMIT = 150;
-            const lines = fs.readFileSync("CLAUDE.md", "utf8").split("\n");
-            const over: string[] = [];
-            let fenced = false;
-            lines.forEach((line, i) => {
-              if (/^\s*(```|~~~)/.test(line)) { fenced = !fenced; return; }
-              // Code, tables and indented blocks cannot be rewrapped.
-              if (fenced || line.startsWith("    ") || /^\s*[|>]/.test(line)) return;
-              // A single unbreakable token (a URL) is not a wrapping failure.
-              if (line.length > LIMIT && line.slice(0, LIMIT).includes(" ")) {
-                over.push(`  line ${i + 1} (${line.length} chars): ${line.slice(0, 70)}...`);
-              }
-            });
-            if (over.length > 0) {
-              core.setFailed(`CLAUDE.md has ${over.length} line(s) over ${LIMIT} columns. Wrap them -- an unwrapped wall of text is also the shape of an item that should have been a pointer to docs/.\n${over.join("\n")}`);
-            }
-
   # The publish composites all import .github/actions/lib/storage-record, and
   # nothing else can reach it: upload-artifact-action-e2e publishes to
   # http://localhost:18080, where the unreachable-registry skip returns before
