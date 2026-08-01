@@ -1,13 +1,107 @@
-// Posting storage records to GitHub's artifact metadata API, shared by every
-// publish composite. See storage-record.d.ts for the typed surface and
-// docs/artifact-storage-records.md for why this is a module and not a step.
+// Recording what buildhost stores on the org's linked artifacts page.
 //
-// Hand-written CommonJS with a sibling .d.ts: the publish steps import it by
-// absolute path (${{ github.action_path }}/../lib/storage-record), so tsc
-// resolves the .d.ts and node loads this .js. No build step, no Node needed to
-// use the actions.
+// buildhost stores exactly three kinds of thing, so this module exports three
+// functions -- one per kind -- and each publish composite calls the one that
+// matches what it just published. Callers pass what they PUBLISHED (project,
+// version, slots, digests); every record field, URL and message is derived
+// here, so a caller never restates the record shape. That is deliberate: the
+// artifact_url/digest agreement below is a correctness rule, and four
+// composites deriving it independently is how it drifts.
+//
+// See docs/artifact-storage-records.md.
 
 const MAX_ARTIFACT_URL = 152;
+
+// ---------------------------------------------------------------- public API
+
+/**
+ * Release artifacts (buildhost-publish, buildhost-publish-release). Entries may
+ * carry their own project/version, else the top-level ones apply -- one call
+ * covers a single release or a whole namespaced fan-out.
+ */
+async function recordReleaseArtifacts(octokit, core, context, params) {
+	const records = [];
+	for (const a of params.artifacts) {
+		const project = a.project ?? params.project ?? '';
+		const version = a.version ?? params.version ?? '';
+		const slot = `${a.os ?? ''}/${a.arch ?? ''}`;
+		if (!a.sha256) {
+			core.setFailed(`Published artifact ${project} ${slot} carried no sha256; cannot record what buildhost stored`);
+			return false;
+		}
+		records.push({
+			name: project,
+			version,
+			digest: `sha256:${a.sha256}`,
+			registry_url: params.server,
+			repository: project,
+			path: slot,
+			// debug=1 is the only download that returns the uploaded bytes
+			// verbatim -- buildhost strips and repackages on demand -- so it is
+			// the one URL whose bytes hash to the recorded digest.
+			artifact_url: `${downloadOrigin(params.server)}/${project}?v=${encodeURIComponent(version)}&os=${a.os ?? ''}&arch=${a.arch ?? ''}&debug=1`,
+		});
+	}
+	return post(octokit, core, context, records, (rec) => `${rec.name} ${rec.path}`);
+}
+
+/** A static site archive (buildhost-publish-site). */
+async function recordSite(octokit, core, context, params) {
+	return post(
+		octokit, core, context,
+		[{
+			name: params.project,
+			version: params.version,
+			digest: `sha256:${params.sha256}`,
+			registry_url: params.server,
+			repository: params.project,
+			path: `branch/${params.branch}`,
+			// Deliberately no artifact_url: a site is served unpacked, so no URL
+			// returns the archive bytes this digest covers, and a record must
+			// never point at bytes that hash to something else.
+		}],
+		() => `${params.project} branch/${params.branch}`,
+	);
+}
+
+/**
+ * A pushed image (buildhost-publish-docker), named by its buildhost-bound
+ * reference `<oci-host>/<repository>:<tag>`. Foreign references are another
+ * registry's inventory to account for and are never passed here.
+ */
+async function recordImage(octokit, core, context, params) {
+	const ref = params.reference;
+	const slash = ref.indexOf('/');
+	const colon = ref.lastIndexOf(':');
+	if (slash < 0 || colon < slash) {
+		core.setFailed(`Could not parse the buildhost image reference '${ref}'; cannot record what was stored`);
+		return false;
+	}
+	const repository = ref.slice(slash + 1, colon);
+	const registryURL = `https://${ref.slice(0, slash)}`;
+	return post(
+		octokit, core, context,
+		[{
+			name: repository,
+			version: ref.slice(colon + 1),
+			digest: params.digest,
+			registry_url: registryURL,
+			repository,
+			artifact_url: `${registryURL}/v2/${repository}/manifests/${params.digest}`,
+		}],
+		(rec) => rec.repository,
+	);
+}
+
+// --------------------------------------------------------------- the posting
+
+// Downloads live on the dl.<host> subdomain -- buildhost dispatches services by
+// the first label of the request Host.
+function downloadOrigin(server) {
+	const u = new URL(server);
+	u.host = `dl.${u.host}`;
+	return u.origin;
+}
 
 function unreachableRegistry(registryURL) {
 	let host;
@@ -37,7 +131,9 @@ function failureDetail(status, msg, owner, ownerType) {
 	return `(${msg}).`;
 }
 
-async function postStorageRecords(octokit, core, records, opts) {
+// Post every record, in order. Returns false only after calling core.setFailed,
+// so a caller's `if (!ok) return` needs no message of its own.
+async function post(octokit, core, context, records, label) {
 	if (records.length === 0) {
 		return true;
 	}
@@ -53,24 +149,25 @@ async function postStorageRecords(octokit, core, records, opts) {
 		return true;
 	}
 
-	const owner = opts.owner;
+	const owner = context.repo.owner;
 	for (const rec of records) {
-		const label = opts.label(rec);
 		// A record without the link back to the bytes its digest covers is a
 		// silent downgrade, so an over-long URL fails rather than dropping it.
 		if (rec.artifact_url !== undefined && rec.artifact_url.length > MAX_ARTIFACT_URL) {
-			core.setFailed(`Cannot record ${label}: its artifact_url is ${rec.artifact_url.length} chars, over the API's ${MAX_ARTIFACT_URL}-char limit. Recording it without the URL would silently drop the only link back to the bytes the digest covers; shorten the project name or change the download URL scheme.`);
+			core.setFailed(`Cannot record ${label(rec)}: its artifact_url is ${rec.artifact_url.length} chars, over the API's ${MAX_ARTIFACT_URL}-char limit. Recording it without the URL would silently drop the only link back to the bytes the digest covers; shorten the project name or change the download URL scheme.`);
 			return false;
 		}
 		try {
 			await octokit.request('POST /orgs/{org}/artifacts/metadata/storage-record', {
 				org: owner,
 				...rec,
-				github_repository: opts.githubRepository,
+				// The API takes the repo NAME only -- an owner/repo value is
+				// rejected outright, and the owner is already the path param.
+				github_repository: context.repo.repo,
 				status: 'active',
 				return_records: false,
 			});
-			core.info(`Recorded ${label} ${rec.digest} on ${owner}'s linked artifacts page`);
+			core.info(`Recorded ${label(rec)} ${rec.digest} on ${owner}'s linked artifacts page`);
 		} catch (e) {
 			const status = e.status;
 			const msg = e instanceof Error ? e.message : String(e);
@@ -87,11 +184,11 @@ async function postStorageRecords(octokit, core, records, opts) {
 				core.info(`Skipping ${plural}: ${owner} is a user account, which has no linked artifacts page`);
 				return true;
 			}
-			core.setFailed(`Could not record ${label} on ${owner}'s linked artifacts page ${failureDetail(status, msg, owner, ownerType)}`);
+			core.setFailed(`Could not record ${label(rec)} on ${owner}'s linked artifacts page ${failureDetail(status, msg, owner, ownerType)}`);
 			return false;
 		}
 	}
 	return true;
 }
 
-module.exports = { postStorageRecords };
+module.exports = { recordReleaseArtifacts, recordSite, recordImage };

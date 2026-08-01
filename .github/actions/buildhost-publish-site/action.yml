@@ -150,7 +150,7 @@ runs:
         GITHUB_TOKEN: ${{ github.token }}
       with:
         script: |
-          import { postStorageRecords } from "${{ github.action_path }}/../lib/storage-record";
+          import { recordSite } from "${{ github.action_path }}/../lib/storage-record";
           await (async () => {
             const server: string = "${{ inputs.server }}";
             const sourceDir: string = "${{ inputs.source_dir }}";
@@ -308,30 +308,7 @@ runs:
             // bolt-on: it happens in this step, has no opt-out input, and a
             // failure fails the publish. A warn-and-continue path would be an
             // opt-out by neglect -- the publish would stay green while the
-            // org's linked artifacts page silently fell behind reality. The
-            // posting itself lives in ../lib/storage-record, shared by every
-            // publish composite.
-            //
-            // Deliberately no artifact_url: buildhost serves a site unpacked,
-            // so no URL returns the archive bytes this digest covers, and a
-            // record must never point at bytes that hash to something else.
-            const postStorageRecord = async (): Promise<boolean> => postStorageRecords(
-              octokit, core,
-              [{
-                name: project,
-                version: gitCommit,
-                digest: `sha256:${sum}`,
-                registry_url: server,
-                repository: project,
-                path: `branch/${branch}`,
-              }],
-              {
-                owner: context.repo.owner,
-                githubRepository: context.repo.repo,
-                label: () => `${project} branch/${branch}`,
-              },
-            );
-
+            // org's linked artifacts page silently fell behind reality.
             // The endpoint's own response -- from the direct PUT or the
             // session finalize, same endpoint either way -- feeds the outputs.
             const finishPublish = async (r: { status: number; text: string }): Promise<void> => {
@@ -341,7 +318,7 @@ runs:
               core.info(JSON.stringify(JSON.parse(r.text), null, 2));
               core.setOutput('response', r.text);
               core.setOutput('site_url', siteURL);
-              await postStorageRecord();
+              await recordSite(octokit, core, context, { server, project, branch, version: gitCommit, sha256: sum });
             };
 
             if (chunkSize <= 0 || size <= directLimit) {

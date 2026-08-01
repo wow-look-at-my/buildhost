@@ -145,7 +145,7 @@ runs:
         GITHUB_TOKEN: ${{ inputs.path == '' && github.token || '' }}
       with:
         script: |
-          import { postStorageRecords } from "${{ github.action_path }}/../lib/storage-record";
+          import { recordReleaseArtifacts, PublishedArtifact } from "${{ github.action_path }}/../lib/storage-record";
           await (async () => {
             const inputProject: string = "${{ inputs.project }}";
             const inputVersion: string = "${{ inputs.version }}";
@@ -233,40 +233,14 @@ runs:
 
             // Artifact-metadata storage records, accumulated as artifacts are
             // accepted and posted below before this step returns. The recorded
-            // digest is always the sha256 of the bytes as UPLOADED -- buildhost
-            // strips and repackages on demand, so the default download of an
-            // ELF is not byte-identical to the upload. `debug=1` is the one
-            // download that returns the uploaded bytes verbatim, so that is
-            // what artifact_url points at: the URL and the digest must agree.
-            type StorageRecord = {
-              name: string; version: string; digest: string; registry_url: string;
-              repository: string; path: string; artifact_url: string;
-            };
-            const storageRecords: StorageRecord[] = [];
-
             // Recording what buildhost now stores is PART of publishing, not a
             // bolt-on: it happens inside this step, has no opt-out input, and a
             // failure fails the publish. A warn-and-continue path would be an
             // opt-out by neglect -- the publish would stay green while the
             // org's linked artifacts page silently fell behind reality.
-            // The posting itself lives in ../lib/storage-record, shared by
-            // every publish composite.
-            const drainStorageRecords = async (): Promise<boolean> => postStorageRecords(
-              octokit, core, storageRecords,
-              {
-                owner: context.repo.owner,
-                githubRepository: context.repo.repo,
-                label: (rec) => `${rec.name} ${rec.path}`,
-              },
-            );
-
-            // Downloads live on the dl.<host> subdomain -- buildhost dispatches
-            // services by the first label of the request Host.
-            const dlBase = (() => {
-              const u = new URL(server);
-              u.host = `dl.${u.host}`;
-              return u.origin;
-            })();
+            const uploadedSlots: PublishedArtifact[] = [];
+            const drainStorageRecords = async (): Promise<boolean> =>
+              recordReleaseArtifacts(octokit, core, context, { server, artifacts: uploadedSlots });
 
             // Streaming file hash (the TS action injects no `crypto` global;
             // require is the documented route to node modules).
@@ -394,15 +368,7 @@ runs:
                 // needs it always. It is one streaming read of a file this loop
                 // is about to read anyway.
                 const sum = await fileSHA256(path.join(sourceDir, file));
-                const record = () => storageRecords.push({
-                  name: proj,
-                  version: releaseVersion,
-                  digest: `sha256:${sum}`,
-                  registry_url: server,
-                  repository: proj,
-                  path: `${fileOs}/${arch}`,
-                  artifact_url: `${dlBase}/${proj}?v=${encodeURIComponent(releaseVersion)}&os=${fileOs}&arch=${arch}&debug=1`,
-                });
+                const record = () => uploadedSlots.push({ project: proj, version: releaseVersion, os: fileOs, arch, sha256: sum });
                 if (canHashRef && uploadedHash.has(sum)) {
                   const ref = await api("PUT", `${slot}&upload_sha256=${sum}`);
                   if (ref.status === 201) {

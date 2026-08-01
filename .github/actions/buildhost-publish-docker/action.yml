@@ -301,7 +301,7 @@ runs:
         OCI_LAYOUT: ${{ steps.refs.outputs.layout }}
       with:
         script: |
-          import { postStorageRecords } from "${{ github.action_path }}/../lib/storage-record";
+          import { recordImage } from "${{ github.action_path }}/../lib/storage-record";
           await (async () => {
             const server: string = "${{ inputs.server }}";
             const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
@@ -347,34 +347,9 @@ runs:
               return;
             }
 
-            // First buildhost-bound reference: <oci-host>/<repository>:<tag>.
-            // Foreign references are another registry's to account for.
-            const primary = refs[0] ?? "";
-            const slash = primary.indexOf("/");
-            const colon = primary.lastIndexOf(":");
-            if (slash < 0 || colon < slash) {
-              core.setFailed(`Could not parse the buildhost image reference '${primary}'; cannot record what was stored`);
-              return;
-            }
-            const repository = primary.slice(slash + 1, colon);
-            const registryURL = `https://${primary.slice(0, slash)}`;
-
-            await postStorageRecords(
-              octokit, core,
-              [{
-                name: repository,
-                version: primary.slice(colon + 1),
-                digest,
-                registry_url: registryURL,
-                repository,
-                artifact_url: `${registryURL}/v2/${repository}/manifests/${digest}`,
-              }],
-              {
-                owner: context.repo.owner,
-                githubRepository: context.repo.repo,
-                label: (rec) => rec.repository ?? rec.name,
-              },
-            );
+            // The first buildhost-bound reference names what was stored;
+            // foreign references are another registry's to account for.
+            await recordImage(octokit, core, context, { reference: refs[0] ?? "", digest });
           })();
 
     # Tags that reference other registries keep the old buildx push path; the

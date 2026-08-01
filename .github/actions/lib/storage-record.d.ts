@@ -1,32 +1,10 @@
-/** One row on the org's linked artifacts page. `org`, `github_repository`,
- *  `status` and `return_records` are supplied by postStorageRecords. */
-export interface StorageRecord {
-	name: string;
-	version: string;
-	/** Lowercase `sha256:<64 hex>` of the bytes as UPLOADED. */
-	digest: string;
-	/** Must be `https://` -- a loopback or plain-http registry is skipped. */
-	registry_url: string;
-	repository?: string;
-	path?: string;
-	/** Must serve bytes hashing to `digest`; capped at 152 chars by the API. */
-	artifact_url?: string;
-}
-
-export interface RecordOptions {
-	/** GitHub owner the endpoint is scoped to (context.repo.owner). */
-	owner: string;
-	/** Repo NAME only -- the API rejects `owner/repo`. */
-	githubRepository: string;
-	/** Human label for one record, used in every log and error message. */
-	label(record: StorageRecord): string;
-}
-
+/** The injected `core` (only what this module calls). */
 export interface RecordCore {
 	info(message: string): void;
 	setFailed(message: string): void;
 }
 
+/** The injected `octokit` (only what this module calls). */
 export interface RecordOctokit {
 	request(route: string, params: Record<string, unknown>): Promise<unknown>;
 	rest: {
@@ -36,15 +14,68 @@ export interface RecordOctokit {
 	};
 }
 
+/** The injected `context` (only what this module reads). */
+export interface RecordContext {
+	repo: { owner: string; repo: string };
+}
+
+/** One published os/arch slot. `project`/`version` default to the call's. */
+export interface PublishedArtifact {
+	os?: string;
+	arch?: string;
+	/** Bare hex sha256 of the bytes as UPLOADED. Missing = a failed publish. */
+	sha256?: string;
+	project?: string;
+	version?: string;
+}
+
 /**
- * Post one storage record per entry, in order. Returns true when the records
- * were posted or deliberately skipped (unreachable registry, user-account
- * owner), false when one failed -- in which case core.setFailed has already
- * been called and the caller should stop.
+ * Record release artifacts. Every field, URL and message is derived here --
+ * pass only what was published.
+ *
+ * Returns false only after calling core.setFailed. True means the records were
+ * posted, or deliberately skipped (unreachable registry, user-account owner).
  */
-export declare function postStorageRecords(
+export declare function recordReleaseArtifacts(
 	octokit: RecordOctokit,
 	core: RecordCore,
-	records: readonly StorageRecord[],
-	opts: RecordOptions,
+	context: RecordContext,
+	params: {
+		/** Buildhost server URL; the download origin is derived from it. */
+		server: string;
+		/** Default project for artifacts that do not name their own. */
+		project?: string;
+		/** Default version for artifacts that do not name their own. */
+		version?: string;
+		artifacts: readonly PublishedArtifact[];
+	},
+): Promise<boolean>;
+
+/** Record a published static site archive. Same contract as above. */
+export declare function recordSite(
+	octokit: RecordOctokit,
+	core: RecordCore,
+	context: RecordContext,
+	params: {
+		server: string;
+		project: string;
+		branch: string;
+		/** Release version (the site's git commit). */
+		version: string;
+		/** Bare hex sha256 of the uploaded archive. */
+		sha256: string;
+	},
+): Promise<boolean>;
+
+/** Record a pushed image. Same contract as above. */
+export declare function recordImage(
+	octokit: RecordOctokit,
+	core: RecordCore,
+	context: RecordContext,
+	params: {
+		/** Buildhost-bound reference `<oci-host>/<repository>:<tag>`. */
+		reference: string;
+		/** Manifest digest, `sha256:`-prefixed as OCI writes it. */
+		digest: string;
+	},
 ): Promise<boolean>;

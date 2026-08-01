@@ -1,11 +1,37 @@
-# Artifact storage records: one module, four composites
+# Artifact storage records: three kinds, one module
 
 Every publish composite posts storage records to GitHub's artifact metadata API
 (`POST /orgs/{org}/artifacts/metadata/storage-record`) so what buildhost stores
-shows up on the org's linked artifacts page. The posting lives in ONE place --
-`.github/actions/lib/storage-record.js` -- imported by
-`buildhost-publish`, `buildhost-publish-site`, `buildhost-publish-docker` and
-`buildhost-publish-release`.
+shows up on the org's linked artifacts page.
+
+buildhost stores exactly **three kinds of thing**, so
+`.github/actions/lib/storage-record.js` exports three functions and each
+composite calls the one matching what it just published:
+
+| Kind | Function | Called by |
+|---|---|---|
+| release artifacts | `recordReleaseArtifacts` | `buildhost-publish`, `buildhost-publish-release` |
+| a static site archive | `recordSite` | `buildhost-publish-site` |
+| a pushed image | `recordImage` | `buildhost-publish-docker` |
+
+Four callsites, three kinds: `buildhost-publish` and `buildhost-publish-release`
+record the same kind, because `buildhost-publish` POSTs the publish endpoint
+directly rather than going through the composite. They used to DERIVE that kind
+independently -- two copies of the `dl.<host>` origin, the `debug=1` URL and the
+`sha256:` digest, which is exactly how the artifact_url/digest agreement drifts.
+Now both call one function.
+
+**Callers pass what they published, never a record.** Project, version, slots,
+digests; every field, URL, label and message is derived in the module. A
+composite's whole footprint is an import and a call:
+
+```ts
+import { recordSite } from "${{ github.action_path }}/../lib/storage-record";
+await recordSite(octokit, core, context, { server, project, branch, version: gitCommit, sha256: sum });
+```
+
+`buildhost-publish` adds two lines because it accumulates slots during upload
+and posts once at the end -- it still restates no part of the record shape.
 
 ## Why a module and not a step
 
@@ -15,16 +41,9 @@ a reusable `wow-look-at-my/actions@artifact-storage-record#latest` failed
 concretely: GitHub resolves a composite's `uses:` refs EAGERLY, before any
 step's `if:` is evaluated, so an unpublished tag broke a job that had recording
 turned off. Sharing SOURCE keeps that invariant -- the code is inlined into the
-same step it always ran in -- while removing the four copies that used to drift
-independently.
+same step it always ran in.
 
 ## How the import resolves
-
-Each publish step opens with
-
-```ts
-import { postStorageRecords } from "${{ github.action_path }}/../lib/storage-record";
-```
 
 - `github.action_path` is the action's own directory. For a remote composite
   GitHub downloads the WHOLE repo, so sibling directories are on disk during a
@@ -44,10 +63,10 @@ import { postStorageRecords } from "${{ github.action_path }}/../lib/storage-rec
 
 ## What the module decides
 
-`postStorageRecords(octokit, core, records, opts)` posts one record per entry
-and returns `false` only when it has already called `core.setFailed` (the caller
-stops). Recording has no opt-out input and a failure is RED. Two things suppress
-a record, and both are properties of the TARGET rather than a switch:
+Each function returns `false` only when it has already called `core.setFailed`,
+so a caller's `if (!ok) return` needs no message of its own. Recording has no
+opt-out input and a failure is RED. Two things suppress a record, and both are
+properties of the TARGET rather than a switch:
 
 - **An unreachable registry** -- a `registry_url` on `localhost`/`127.0.0.1`/
   `::1`, or any non-`https://` URL. The row would point at bytes nothing can
@@ -88,10 +107,15 @@ loopback server, where the unreachable-registry skip returns before a single
 record is posted, so every branch here would otherwise ship untested -- and a
 mistake in this module fails publishing for every repo in the org at once.
 
-Covered: the field set the module owns (`org`, `github_repository`, `status`,
-`return_records`), the empty-list no-op, each unreachable-registry form, the
-user-account skip, an organization's 404 failing closed with the probe's answer
-quoted, an unreadable owner type failing closed, a 403 naming the grant without
-costing a lookup, a successful POST costing no lookup, the 152-char
-`artifact_url` cap failing rather than dropping the link, and a non-HTTP failure
-keeping its bare message.
+Per kind: a release artifact's full derived record (asserted field by field,
+including the `dl.` origin and `debug=1` URL), a namespaced fan-out where
+entries carry their own project/version, a missing sha256 failing the publish, a
+site's deliberate absence of `artifact_url`, an image's registry/repository/tag
+split, and an unparseable reference recording nothing.
+
+Shared: the empty-list no-op, each unreachable-registry form, the user-account
+skip, an organization's 404 failing closed with the probe's answer quoted, an
+unreadable owner type failing closed, a 403 naming the grant without costing a
+lookup, a successful POST costing no lookup, the 152-char `artifact_url` cap
+failing rather than dropping the link, and a non-HTTP failure keeping its bare
+message.
