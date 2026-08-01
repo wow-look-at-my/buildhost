@@ -96,15 +96,21 @@ func TestRouting(t *testing.T) {
 		"style.css":  "body{}",
 	})
 
-	// A file under a branch reaches Serve and is served -- not 301-redirected
-	// into a loop (the bug). This only passes via the real router.
-	rec := env.do(t, "GET", "/mysite/branch/main/style.css", "", nil, false)
+	// A file reaches the serving handler and is served -- not redirected into a
+	// loop (the bug). This only passes via the real router.
+	rec := env.do(t, "GET", "/mysite/style.css", "", nil, false)
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "body{}", rec.Body.String())
 
+	// The legacy branch URL for that same file 302s to it, in one hop -- never
+	// a chain and never a loop.
+	rec = env.do(t, "GET", "/mysite/branch/main/style.css", "", nil, false)
+	require.Equal(t, http.StatusFound, rec.Code)
+	assert.Equal(t, "/mysite/style.css", rec.Header().Get("Location"))
+
 	// The service answers on the sites subdomain, not on the apex with a
 	// "/sites/..." path prefix. An apex request never reaches the handler.
-	apex := env.doHost(t, "test.local", "GET", "/sites/mysite/branch/main/style.css", "", nil, false)
+	apex := env.doHost(t, "test.local", "GET", "/sites/mysite/style.css", "", nil, false)
 	assert.Equal(t, http.StatusNotFound, apex.Code, "apex /sites path must not reach the sites handler")
 }
 
