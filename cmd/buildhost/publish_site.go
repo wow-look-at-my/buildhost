@@ -93,12 +93,10 @@ func runPublishSite(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// publishedSiteURL is where the site is now served. The server says so in the
-// response (it owns the URL grammar); deriving it here would be a second copy of
-// that grammar, which is how published links kept naming the legacy /branch/
-// spelling after the canonical form moved to the bare project path. The fallback
-// covers a server too old to send the field, and uses the current spelling
-// rather than the one that only redirects.
+// publishedSiteURL is where the site is now served. Never derive it: the server
+// owns the URL grammar and reports it. The fallback is for servers predating
+// that field -- keep it on the canonical spelling, not the /branch/ one the
+// upload endpoint uses. see docs/sites.md
 func publishedSiteURL(body []byte, sitesBase, project, branch string) string {
 	var resp struct {
 		URL string `json:"url"`

@@ -841,12 +841,9 @@ jobs:
           test "$creates" = "2"
           # 4 chunks from the artifact upload + at least 3 for the ~3 MB site.
           test "$chunks" -ge 7
-      # The URL the action advertises is the one that ends up in preview
-      # comments and deployment environment_urls, so it has to be the URL that
-      # SERVES -- not one that only redirects there. It comes from the publish
-      # response now (the server owns the grammar); this is the check that it
-      # arrived and is canonical, since a fallback to a stale spelling would
-      # otherwise look identical to a green run.
+      # The advertised URL is what lands in preview comments and deployment
+      # environment_urls, so it must SERVE, not redirect. Catches the action
+      # silently falling back to a stale spelling, which is green otherwise.
       - name: The advertised site URL must serve the bytes with no redirect
         shell: bash
         env:

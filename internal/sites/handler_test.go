@@ -338,10 +338,8 @@ func TestParseRoute_BranchList(t *testing.T) {
 	assert.Equal(t, "", r.branch)
 }
 
-// The publish response carries the URL the site is served at, so a publisher
-// never has to reimplement the URL grammar -- which is how every one of them
-// ended up advertising the legacy /branch/ spelling after the canonical form
-// moved to the bare project path.
+// The publish response must name the canonical URL for the branch it deployed,
+// so no publisher has to reimplement the grammar to advertise a site.
 func TestUpload_ResponseCarriesCanonicalURL(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
