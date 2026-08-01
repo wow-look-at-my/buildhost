@@ -206,6 +206,20 @@ jobs:
         with:
           file: .github/scripts/storage-record-test.ts
 
+  # An oversized CLAUDE.md is re-sent in full on EVERY request of every agent
+  # session, so it is a permanent tax on the context the actual work needs. The
+  # web config's hook advises the model about this, but a hook only fires when
+  # the session's environment has a current config installed -- which is how this
+  # file reached 3.02x budget through a dozen edits with nothing going red.
+  claude-md-budget:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instruction files must stay within budget and wrapped
+        uses: wow-look-at-my/actions@typescript#latest
+        with:
+          file: .github/scripts/claude-md-budget.ts
+
   container-healthcheck:
     # Only meaningful if the build succeeded and saved the go-build hand-off. Without
     # this, an always()-style condition makes it run on build failure and then fail on
