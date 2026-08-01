@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"path"
@@ -17,7 +18,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/binarchive"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
 const siteNotFoundPage = "404.html"
@@ -88,6 +91,14 @@ func (h *Handler) serveSiteFile(ctx context.Context, w http.ResponseWriter, r *h
 	}
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Indexed path: a site stored as a binpazer archive answers "give me this
+	// one file" with a seek. served reports whether it handled the request; a
+	// blob that is not an archive (every site uploaded before this format) or
+	// that cannot be read at an offset falls through to the tar scan below.
+	if h.serveFromArchive(ctx, w, site.StorageKey, filePath) {
 		return
 	}
 
@@ -289,6 +300,58 @@ func (h *Handler) RedirectToDefaultBranch(w http.ResponseWriter, r *http.Request
 	target := "/" + project.Name + "/branch/" + resolveRootBranch(r.Context(), h.DB, project) + "/"
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, target, http.StatusFound)
+}
+
+// serveFromArchive serves one file out of a binpazer-archived site and reports
+// whether it handled the request. This is the whole point of storing sites in
+// an indexed container: the response costs a directory read plus one block
+// decode, instead of scanning the archive from the start -- twice, when the
+// request 404s and the not-found page has to be found too.
+//
+// It answers false only when the indexed path does not apply (legacy tar blob,
+// or a blob the backend cannot read at an offset), never when the file is
+// merely missing: a real archive answers its own 404.
+func (h *Handler) serveFromArchive(ctx context.Context, w http.ResponseWriter, storageKey, filePath string) bool {
+	rg, ok := h.Store.(storage.RandomGetter)
+	if !ok {
+		return false
+	}
+	ra, size, err := rg.OpenReaderAt(ctx, storageKey)
+	if err != nil {
+		return false // ErrRandomUnsupported for a compressed blob, or missing
+	}
+	defer ra.Close()
+
+	head := make([]byte, len(binarchive.Magic))
+	if _, err := ra.ReadAt(head, 0); err != nil || !binarchive.IsArchive(head) {
+		return false // a tar blob from before sites were archived
+	}
+	a, err := binarchive.Open(ra, size)
+	if err != nil {
+		slog.Warn("sites: opening archive", "storage_key", storageKey, "err", err)
+		return false // fall back to the scan rather than fail the request
+	}
+
+	if r, e, err := a.OpenFile(filePath); err == nil {
+		serveArchiveFile(w, r, e, http.StatusOK)
+		return true
+	}
+	if r, e, err := a.OpenFile(siteNotFoundPage); err == nil {
+		serveArchiveFile(w, r, e, http.StatusNotFound)
+		return true
+	}
+	http.Error(w, "404 page not found", http.StatusNotFound)
+	return true
+}
+
+func serveArchiveFile(w http.ResponseWriter, r io.Reader, e binarchive.Entry, status int) {
+	w.Header().Set("Content-Type", contentType(e.Path))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", e.Size))
+	w.Header().Set("Cache-Control", "no-cache")
+	if status != http.StatusOK {
+		w.WriteHeader(status)
+	}
+	io.Copy(w, r)
 }
 
 func serveTarFile(w http.ResponseWriter, tr *tar.Reader, name string, hdr *tar.Header, status int) {

@@ -7,10 +7,11 @@ require (
 	github.com/KimMachineGun/automemlimit v0.7.5
 	github.com/ProtonMail/go-crypto v1.4.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/klauspost/compress v1.18.6
+	github.com/klauspost/compress v1.19.1
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/ulikunitz/xz v0.5.15
+	github.com/wow-look-at-my/bin-file-fmt/go v0.0.0-20260731091144-01a2ece92036
 	github.com/wow-look-at-my/go-mmap v0.0.0-20260524160502-7c9fb35436a9
 	github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260709175026-98aa140090d9
 	github.com/wow-look-at-my/router v0.0.0-20260721161008-302008ab1248
@@ -38,6 +39,7 @@ require (
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
+	github.com/pierrec/lz4/v4 v4.1.27 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
