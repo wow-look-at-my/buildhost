@@ -13,17 +13,57 @@ same helpers, so a URL means the same file either way.
 
 ### Classic: `sites.{domain}/{project}/...`
 
-- `/{project}/branch/{branch}/{path...}` -- an explicit branch.
+- `/{project}/@{branch}/{path...}` -- an explicit branch (canonical). See below.
+- `/{project}/branch/{branch}/{path...}` -- the same file, original spelling.
 - `/{project}/branches` -- the branch listing (gated; never public-read).
 - `/{project}` -- the apex path: the project's root and any file under it, on
   the project's default branch. See below.
-- `PUT`/`DELETE /{project}/branch/{branch}` -- deploy and remove.
+- `PUT`/`DELETE /{project}/@{branch}` (and the `/branch/{branch}` spelling) --
+  deploy and remove.
+
+### The `@` branch sigil
+
+`@` names the branch on both schemes:
+`sites.{domain}/{project}/@{branch}/{path}` and
+`{project}.<site-domain>/@{branch}/{path}`. It replaces two different spellings
+-- the classic scheme's `branch/` path segment and the subdomain scheme's `~`
+-- with one grammar, and both older forms keep working (see below).
+
+Why a sigil rather than a path segment: `branch` is an ordinary segment, so a
+site with a top-level `branch/` directory could not be addressed at all through
+the old form, and every URL in it carried a segment that reads like part of the
+site. `@` is outside the branch charset (`validSiteBranch`) AND the project-name
+charset, so it can never be part of a name it separates -- which makes the
+project/branch split exact, with no DB lookup, however deeply namespaced the
+project is (`splitBranchSigil`). It is also vanishingly rare in real file names,
+which is what makes it safe to reserve at that one position.
+
+What it does NOT delimit is where the branch ENDS: branch names may contain `/`
+(`claude/foo`), so `@claude/foo/c.html` is still resolved by longest match
+against the project's site rows (`splitSiteBranch`) -- the same rule the older
+spelling needs. Both spellings hand the same raw `<branch>[/<path>]` remainder
+(`route.ref()`) to that one resolver, so they can never disagree about which
+file a URL addresses.
+
+Reads share the apex route: a sigil is not a path segment, so no pattern can
+express it without out-scoring the literal-less `GET /{project}`, and
+`parseRootRoute` splits at the sigil when there is one. That is the same place
+the `{project}.<site-domain>` scheme has always kept its sigil grammar. Writes
+(`PUT`/`DELETE`) do get their own patterns, two each -- `@{branch}` is one path
+segment while a branch name may span several, so the second binds the rest and
+`parseSigilRoute` rejoins them.
+
+Nothing older changes. `/{project}/branch/{branch}/...` is what every published
+preview link, README and deployed client already says; it is not deprecated, not
+redirected, and is pinned by `TestBranchSigil_OlderFormsUnchanged`. Only the
+links buildhost itself generates use `@`: the apex root redirect and the web
+frontend's site links.
 
 ### Apex path (`/{project}` and `/{project}/<file>`)
 
 The **bare project root** (`/{project}` and `/{project}/`) `302`-redirects
 (`Cache-Control: no-store`, since the target is a mutable pointer) to
-`/{project}/branch/{default}/` -- the project's `default_branch` (learned from
+`/{project}/@{default}/` -- the project's `default_branch` (learned from
 GitHub on publish, e.g. `main`; seed default `master`, the same branch the apex
 download `latest` tracks), so a project's root URL resolves to its canonical
 site without the caller knowing which branch it lives on. When the resolved
@@ -40,7 +80,7 @@ default branch unchanged).
 A **file path under the project root** (`/{project}/<file>`) serves that file
 from the same resolved default branch (`ServeDefaultBranch` -> `serveSiteFile`,
 the same tar scan / `index.html` / `404.html` handling every other site read
-uses). Without it, only `/branch/{branch}/{path}` served a file and the bare
+uses). Without it, only an explicit branch URL served a file and the bare
 root merely redirected, so every link into a site had to name a branch it has no
 business knowing -- an MCP App declaring a runner origin, a README, a
 cross-project link. This is the grammar the `{project}.<site-domain>` scheme
@@ -87,17 +127,18 @@ and the centralized `requireProject` flow apply verbatim.
 
 Grammar: a bare path serves the **default branch** via `resolveRootBranch`
 (`root=true` -- the exact chain the classic apex path and its gate share);
-`~<branch>/<path>` serves any other branch behind the `~` sigil (outside the
-branch charset, so no collision); `~<branch>` == the resolved default 302s
+`@<branch>/<path>` serves any other branch behind the `@` sigil (outside the
+branch charset, so no collision); `@<branch>` == the resolved default 302s
 (`no-store`) to the canonical bare form (one canonical URL per file; the default
-branch is a mutable pointer); a branch root missing its trailing slash 301s to
+branch is a mutable pointer); `~<branch>` -- this scheme's original sigil --
+301s to the `@` spelling, so no published URL breaks; a branch root missing its trailing slash 301s to
 the slashed form. Slash-named branches resolve by **longest match** against
 existing site rows (`splitSiteBranch`: segment prefixes longest->shortest via
 `GetSite`, skipping candidates outside the branch charset -- the same
 git-refs-style shadowing rule everywhere).
 
-Reserved on the subdomain scheme only: the `~` sigil at path root, and the
-literal `/__sso` (the cross-domain sign-in redemption endpoint, registered by
+Reserved on the subdomain scheme only: the `@` and `~` sigils at path root,
+and the literal `/__sso` (the cross-domain sign-in redemption endpoint, registered by
 internal/auth inside the same host family because the `{project}.<site-domain>`
 pattern's 2 literal host labels outrank every path term -- it claims ALL of
 `*.<site-domain>` one label deep, including would-be service labels like `dl`,

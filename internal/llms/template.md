@@ -242,20 +242,32 @@ git branch:
 ```
 buildhost publish-site --server __BASE_URL__ --token $TOKEN \
   --project myapp --branch main --dir ./dist
-# served at __SITES_URL__/myapp/branch/main/
+# served at __SITES_URL__/myapp/@main/
 ```
 
+A branch is named with the `@` sigil, which cannot occur in a project or branch
+name and is vanishingly rare in a file name:
+
+```
+__SITES_URL__/myapp/@main/x.css  -> x.css on branch main
+__SITES_URL__/myapp/@pr-7/       -> the pr-7 preview
+```
+
+The older `/myapp/branch/main/x.css` spelling still serves the same file and is
+not going away; `@` is just the canonical one.
+
 The project's default branch is also served at the project's own root path, so
-a link into a site need not name a branch:
+a link into a site need not name a branch at all:
 
 ```
 __SITES_URL__/myapp/            -> 302 to the default branch's URL
 __SITES_URL__/myapp/runner.html -> that file, from the default branch
 ```
 
-Project names are slash-namespaced, so the split is resolved by longest match:
+Project names are slash-namespaced, so that split is resolved by longest match:
 with projects `org` and `org/repo`, `__SITES_URL__/org/repo` is org/repo's root,
-not the file `repo` under `org`.
+not the file `repo` under `org`. The `@` form never needs the lookup -- the
+sigil marks exactly where the project name ends.
 __SITE_SECTION__
 ## REST API reference
 

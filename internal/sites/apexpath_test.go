@@ -41,7 +41,7 @@ func TestApexPath_ServesFilesFromDefaultBranch(t *testing.T) {
 	for _, path := range []string{"/jsperf.app", "/jsperf.app/"} {
 		rec := env.do(t, "GET", path, "", nil, false)
 		require.Equalf(t, http.StatusFound, rec.Code, "GET %s", path)
-		assert.Equal(t, "/jsperf.app/branch/main/", rec.Header().Get("Location"))
+		assert.Equal(t, "/jsperf.app/@main/", rec.Header().Get("Location"))
 		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 	}
 
@@ -72,7 +72,7 @@ func TestApexPath_NamespacedProjectRootUnchanged(t *testing.T) {
 	// /org/repo is the namespaced project's root -> redirect, not the decoy file.
 	rec := env.do(t, "GET", "/org/repo", "", nil, false)
 	require.Equal(t, http.StatusFound, rec.Code)
-	assert.Equal(t, "/org/repo/branch/main/", rec.Header().Get("Location"))
+	assert.Equal(t, "/org/repo/@main/", rec.Header().Get("Location"))
 
 	// Files under each project resolve to that project's own site.
 	rec = env.do(t, "GET", "/org/repo/x.css", "", nil, false)

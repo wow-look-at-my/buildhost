@@ -81,13 +81,14 @@ label: [a-z0-9-], max 63 chars, no leading/trailing hyphen):
 
 ` + "```" + `
 ` + scheme + `myapp.` + sd + `/                # default branch (same branch "latest" tracks)
-` + scheme + `myapp.` + sd + `/~pr-7/          # any other branch, behind the ~ sigil
-` + scheme + `myapp.` + sd + `/~claude/foo/    # slash-named branches resolve by longest match
+` + scheme + `myapp.` + sd + `/@pr-7/          # any other branch, behind the @ sigil
+` + scheme + `myapp.` + sd + `/@claude/foo/    # slash-named branches resolve by longest match
 ` + "```" + `
 
-A ~<default-branch> URL 302s to the canonical bare form. The path prefixes
-"~" (at the path root) and "/__sso" are reserved on this scheme; other project
-names and paths remain available on the classic sites URL above.
+An @<default-branch> URL 302s to the canonical bare form. The path prefixes
+"@" and "~" (at the path root) and "/__sso" are reserved on this scheme; other
+project names and paths remain available on the classic sites URL above. "~"
+was this scheme's original branch sigil and 301s to the "@" spelling.
 `
 }
 

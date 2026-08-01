@@ -77,12 +77,12 @@ func TestRedirectToDefaultBranch(t *testing.T) {
 		wantLoc       string
 	}{
 		// Learned default branch (e.g. ue553 releases off "main").
-		{"learned_main", "ue553", "main", "/ue553", "/ue553/branch/main/"},
-		{"learned_main_slash", "ue553", "main", "/ue553/", "/ue553/branch/main/"},
+		{"learned_main", "ue553", "main", "/ue553", "/ue553/@main/"},
+		{"learned_main_slash", "ue553", "main", "/ue553/", "/ue553/@main/"},
 		// Unset default branch falls back to the schema/seed default ("master").
-		{"seed_master", "foo", "", "/foo", "/foo/branch/master/"},
+		{"seed_master", "foo", "", "/foo", "/foo/@master/"},
 		// Namespaced project name is preserved verbatim in the target.
-		{"namespaced", "org/repo", "v1", "/org/repo", "/org/repo/branch/v1/"},
+		{"namespaced", "org/repo", "v1", "/org/repo", "/org/repo/@v1/"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

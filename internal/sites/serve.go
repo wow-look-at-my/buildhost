@@ -34,13 +34,16 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(ctx)
 	rt := routeFrom(ctx)
 
-	// Branch names may contain "/" (claude/foo). The route's {branch} bound only
-	// the FIRST path segment -- with a wildcard following, the router tries the
-	// shortest split first and never backtracks on a DB miss -- so a slash-named
-	// branch uploaded via the greedy PUT bind used to be unservable (404). Re-split
-	// branch/path by longest match against the project's site rows: the same
-	// resolution AllowsPublicRead applies, so gate and serve always agree.
-	branch, filePath, ok := splitSiteBranch(ctx, h.DB, project.ID, joinPathParts(rt.branch, rt.path))
+	// Branch names may contain "/" (claude/foo), and neither spelling of a branch
+	// URL delimits one: on /branch/{branch}/{path...} the router bound {branch}
+	// to only the FIRST segment (with a wildcard following it tries the shortest
+	// split first and never backtracks on a DB miss, so a slash-named branch
+	// uploaded via the greedy PUT bind used to be unservable), and "@" marks
+	// where the branch STARTS, not where it ends. route.ref() hands over the raw
+	// remainder either way; re-split it by longest match against the project's
+	// site rows -- the same resolution AllowsPublicRead applies, so gate and
+	// serve always agree.
+	branch, filePath, ok := splitSiteBranch(ctx, h.DB, project.ID, rt.ref())
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -180,7 +183,7 @@ func defaultBranch(project *db.Project) string {
 // GitHub-OIDC publish corrects it, or when buildhost can't reach a private repo
 // to learn its real default -- in which case the sites may all live on a branch
 // (commonly "main") the hint doesn't name. Blindly trusting it then bounces the
-// root to /{project}/branch/{default}/ where no site exists, a guaranteed 404.
+// root to /{project}/@{default}/ where no site exists, a guaranteed 404.
 //
 // So when the default branch has no site, fall back to one that does: prefer the
 // conventional "main"/"master" names (so the root lands on the canonical site,
@@ -267,14 +270,20 @@ func validSiteBranch(s string) bool {
 	return true
 }
 
-// ServeDefaultBranch serves the apex site path. /{project} (and /{project}/)
-// redirects to the canonical /{project}/branch/{default}/ URL as before, and
-// /{project}/<file> serves that file from the same resolved default branch --
-// so a project's files are reachable under its own root path without the
-// caller having to know which branch the site lives on. That is the grammar
+// ServeDefaultBranch serves the two grammars parseRootRoute resolves.
+// /{project}/@{branch}/<file> is an explicit branch and serves exactly like the
+// /branch/ form. /{project} (and /{project}/) redirects to the canonical
+// branch URL, and /{project}/<file> serves that file from the resolved default
+// branch -- so a project's files are reachable under its own root path without
+// the caller having to know which branch the site lives on. That is the grammar
 // the {project}.<site-domain> scheme already has for a bare path, and it uses
 // the same resolveRootBranch chain, so the two schemes address the same file.
 func (h *Handler) ServeDefaultBranch(w http.ResponseWriter, r *http.Request) {
+	if routeFrom(r.Context()).sigil != "" {
+		h.Serve(w, r)
+		return
+	}
+
 	ctx, span := sitesTracer.Start(r.Context(), "sites.serve_default_branch")
 	defer span.End()
 	r = r.WithContext(ctx)
@@ -290,14 +299,16 @@ func (h *Handler) ServeDefaultBranch(w http.ResponseWriter, r *http.Request) {
 }
 
 // RedirectToDefaultBranch sends the bare site root (/{project} or /{project}/)
-// to /{project}/branch/{default}/, so a project's root URL resolves to its
-// canonical site without the caller having to know which branch it lives on.
+// to /{project}/@{default}/, so a project's root URL resolves to its canonical
+// site without the caller having to know which branch it lives on. It names the
+// branch in the "@" form because that is the canonical spelling; the older
+// /branch/{default}/ URL still serves the same file.
 // The target is a mutable pointer -- the default branch can change and its site
 // updates in place -- so it is a 302 marked no-store, never cached like the
 // permanent trailing-slash canonicalization in Serve.
 func (h *Handler) RedirectToDefaultBranch(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
-	target := "/" + project.Name + "/branch/" + resolveRootBranch(r.Context(), h.DB, project) + "/"
+	target := "/" + project.Name + "/" + string(branchSigil) + resolveRootBranch(r.Context(), h.DB, project) + "/"
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, target, http.StatusFound)
 }

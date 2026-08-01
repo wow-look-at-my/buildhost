@@ -83,7 +83,7 @@ func TestSitesApexPath(t *testing.T) {
 	// routes are unshadowed.
 	resp, _ := siteGet(t, env, "sites.test.local", "/apexp")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
-	require.Equal(t, "/apexp/branch/main/", resp.Header.Get("Location"))
+	require.Equal(t, "/apexp/@main/", resp.Header.Get("Location"))
 
 	resp, body := siteGet(t, env, "sites.test.local", "/apexp/branch/main/runner.html")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -120,4 +120,21 @@ func TestSitesApexPathVisibility(t *testing.T) {
 	resp, text := siteGet(t, env, "sites.test.local", "/apexpub/preview.html")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, "public-preview", text)
+
+	// The "@" spelling is gated identically: the public branch serves
+	// anonymously, the private one does not. Both spellings resolve the branch
+	// through the same helper the gate uses, so they cannot diverge.
+	resp, text = siteGet(t, env, "sites.test.local", "/apexpub/@main/preview.html")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, "public-preview", text)
+
+	resp, _ = siteGet(t, env, "sites.test.local", "/apexpriv/@master/secret.txt")
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+
+	resp = env.doFullHost(t, "GET", "sites.test.local", "/apexpriv/@master/secret.txt", "", nil, nil, true)
+	body, err = io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, "top-secret", string(body))
 }

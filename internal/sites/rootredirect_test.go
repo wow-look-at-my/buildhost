@@ -34,16 +34,16 @@ func TestRootRedirect_FallsBackToExistingSite(t *testing.T) {
 
 	// default_branch stuck at the seed "master" (no site there) -> fall back to main.
 	proj.DefaultBranch = "master"
-	assert.Equal(t, "/ue553/branch/main/", rootRedirectTarget(t, h, proj))
+	assert.Equal(t, "/ue553/@main/", rootRedirectTarget(t, h, proj))
 
 	// Unset default_branch behaves the same (defaultBranch() seeds "master").
 	proj.DefaultBranch = ""
-	assert.Equal(t, "/ue553/branch/main/", rootRedirectTarget(t, h, proj))
+	assert.Equal(t, "/ue553/@main/", rootRedirectTarget(t, h, proj))
 
 	// Once the default branch has its own site, the redirect uses it unchanged.
 	uploadSite(t, h, proj, "master", map[string]string{"index.html": "<h1>m</h1>"})
 	proj.DefaultBranch = "master"
-	assert.Equal(t, "/ue553/branch/master/", rootRedirectTarget(t, h, proj))
+	assert.Equal(t, "/ue553/@master/", rootRedirectTarget(t, h, proj))
 }
 
 // The fallback prefers the conventional "main"/"master" over a more recently
@@ -56,7 +56,7 @@ func TestRootRedirect_PrefersMainOverRecentPreview(t *testing.T) {
 	uploadSite(t, h, proj, "pr-9", map[string]string{"index.html": "pr"}) // deployed later
 
 	proj.DefaultBranch = "develop" // no site on develop
-	assert.Equal(t, "/proj/branch/main/", rootRedirectTarget(t, h, proj))
+	assert.Equal(t, "/proj/@main/", rootRedirectTarget(t, h, proj))
 }
 
 // With no sites at all, the redirect keeps targeting the default branch (Serve
@@ -65,5 +65,5 @@ func TestRootRedirect_NoSitesKeepsDefault(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "empty")
 	proj.DefaultBranch = "main"
-	assert.Equal(t, "/empty/branch/main/", rootRedirectTarget(t, h, proj))
+	assert.Equal(t, "/empty/@main/", rootRedirectTarget(t, h, proj))
 }
