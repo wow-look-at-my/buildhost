@@ -21,6 +21,9 @@ The admin dashboard frontend is written in TypeScript. Source files live in `int
 (`scripts/build-admin-frontend.sh`), like every other generated input -- so `go-toolchain --generate` needs Node on PATH, and a build that skips
 generate embeds a dashboard whose scripts 404.
 
+Build artifacts are never committed, and CI fails if running generate touches a tracked file -- the admin bundle was committed once and silently stopped
+matching its source. Depth: `docs/no-committed-build-artifacts.md`.
+
 Rebuilding by hand (what the directive runs) after editing a source file:
 
 ```bash

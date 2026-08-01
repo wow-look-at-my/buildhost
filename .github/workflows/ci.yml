@@ -27,6 +27,23 @@ jobs:
         with:
           generate: 0709a9d4dd8d
           autorelease: 'false'
+      # The step above just ran every generate directive. If that changed a
+      # TRACKED file, this repo is carrying a build artifact in git -- and a
+      # tracked artifact is free to drift from the source it claims to be built
+      # from, silently, for as long as nobody rebuilds. That is exactly how the
+      # admin dashboard shipped a bundle nothing in frontend/src produced.
+      # See docs/no-committed-build-artifacts.md.
+      - name: Generated output must not be tracked in git
+        run: |
+          set -eu
+          if ! git diff --quiet; then
+            echo "::error::Running generate modified files that are committed to git."
+            echo "Either the file is a build artifact that must be gitignored and"
+            echo "produced by its //go:generate directive, or it is a tracked"
+            echo "generated file that has drifted from its source. Both are bugs."
+            git diff --stat
+            exit 1
+          fi
       # On the default branch, cache this commit's route list keyed by its SHA.
       # Caches created on the default branch are restorable from every branch,
       # so feature-branch route-diff runs reuse this instead of rebuilding base.
