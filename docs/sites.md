@@ -72,6 +72,16 @@ served in place rather than redirected somewhere that means something else.
 -- the classic scheme's `branch/` path segment and the subdomain scheme's `~`
 -- with one grammar, and both older forms keep working (see below).
 
+Each older form keeps working **only on the scheme it came from**, and the
+asymmetry is easy to misread: `/branch/{branch}/` is classic-scheme only (302 to
+the canonical URL), `~{branch}` is subdomain-scheme only (301 to `@`). `~` has
+never been a sigil on the classic scheme, so `/{project}/~{branch}/<file>` is an
+ordinary path naming a literal file `~{branch}/<file>` under the default branch:
+it answers 404, or 401 on a private project whose root branch is not public --
+never a redirect. Pinned by `TestLegacySigil_*` in `internal/sites`, because the
+top-level CLAUDE.md once claimed `~` redirected on the classic scheme too and
+sent a reader hunting a routing bug that does not exist.
+
 Why a sigil rather than a path segment: `branch` is an ordinary segment, so a
 site with a top-level `branch/` directory could not be addressed at all through
 the old form, and every URL in it carried a segment that reads like part of the
@@ -223,6 +233,41 @@ ONLY while `BUILDHOST_PRIMARY_DOMAIN` is unset -- with it set those routes are
 primary-scoped and 404 off-apex, see the unknown-domain security note). Names
 with `/`, `.`, `_` or over 63 chars 404 on the scheme and stay reachable on
 `sites.{domain}/...` (no brew-style fold-back in v1).
+
+## CORS applies to REDIRECTS, not just to the bytes
+
+`setSiteSecurityHeaders` (`internal/sites/serve.go`) drops the app's strict
+`Content-Security-Policy`/`X-Frame-Options` and sets the hosted-site headers,
+`Access-Control-Allow-Origin: *` among them. **Every site response must go
+through it -- redirects included, and BEFORE the redirect is written.**
+
+A browser re-checks CORS on each hop of a cross-origin fetch. A redirect that
+omits the header therefore fails the whole load even when its target carries
+it, and the browser reports the failure against the ORIGINAL URL, so the 200
+at the end of the chain looks innocent. `curl` does not enforce CORS at any
+hop, so a redirect chain it follows happily can be completely unusable from a
+page.
+
+This is not hypothetical. When the legacy `/{project}/branch/{branch}/` form
+became a redirect to the canonical spelling, `RedirectLegacyBranch` did not
+call the helper at all and `ServeDefaultBranch` called it *after* writing its
+root-trailing-slash redirect. Since the legacy form is what every deployed
+client, README and published preview link still says, every cross-origin
+consumer of every hosted site broke at once -- an admin dashboard importing an
+ES module from `sites.pazer.build` sat retrying `error loading dynamically
+imported module` on every page view, while the same URL returned 200 to curl.
+
+Two checks guard it, and both were verified to fail before the fix:
+
+- `internal/sites/cors_test.go` -- every redirect either scheme can emit must
+  carry the header. Add a case here when you add a redirect.
+- CI job `sites-cors-e2e` (`.github/scripts/sites-cors-e2e.ts`) -- spawns a
+  real server, walks each redirect chain asserting the header on every hop,
+  then has a **real headless browser** import a module cross-origin through
+  the legacy redirect. The browser layer is the point: it also covers MIME
+  type and CSP, which header assertions cannot see. It FAILS when no browser
+  can be launched rather than skipping, because a check that cannot go red is
+  decoration.
 
 ## Public sites under private projects
 
