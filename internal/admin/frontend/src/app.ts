@@ -55,14 +55,16 @@ function formatTime(s: string): string {
         " " + pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + " UTC";
 }
 
+// A path with no demo entry falls back to {} rather than undefined: pages read
+// `d.foo || []` off the result, so undefined throws before rendering anything.
 function apiFetch<T>(path: string): Promise<T> {
-    if (demo) return Promise.resolve(demoData[path] as T);
+    if (demo) return Promise.resolve((demoData[path] || {}) as T);
     return fetch("/api" + path).then((r) => {
         if (!r.ok) throw new Error(String(r.status));
         return r.json() as Promise<T>;
     }).catch(() => {
         demo = true;
-        return demoData[path] as T;
+        return (demoData[path] || {}) as T;
     });
 }
 
@@ -106,11 +108,16 @@ function badge(type: string, text: string): string {
     return '<span class="badge badge-' + type + '">' + h(text) + "</span>";
 }
 
-function urlTpl(tpl: string, base: string, suffix?: string): string {
+// urlTpl renders a copyable URL with inline os/arch dropdowns. `base` is the text
+// before the os dropdown, `mid` the text BETWEEN the os and arch dropdowns (e.g.
+// "&arch=" for the query-param download URLs -- it is not always "/"), and
+// `suffix` optional text after. `tpl` is the full template with {os}/{arch}
+// placeholders that the copy button substitutes the selected values into.
+function urlTpl(tpl: string, base: string, mid: string, suffix?: string): string {
     return '<span class="url-tpl" data-tpl="' + h(tpl) + '">' +
         "<code>" + h(base) + "</code>" +
         '<select class="tpl-select" data-var="os"><option value="linux">linux</option><option value="darwin">darwin</option><option value="windows">windows</option><option value="freebsd">freebsd</option></select>' +
-        "<code>/</code>" +
+        "<code>" + h(mid) + "</code>" +
         '<select class="tpl-select" data-var="arch"><option value="amd64">amd64</option><option value="arm64">arm64</option><option value="386">386</option><option value="arm">arm</option></select>' +
         (suffix ? "<code>" + h(suffix) + "</code>" : "") +
         "</span><copy-btn></copy-btn>";
@@ -517,7 +524,6 @@ function pageRegistries(): void {
         html += '<table class="info-table"><tr><td class="info-label">Tap Git URL</td><td class="endpoint-cell"><code>' + h(brew + "/tap.git") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += '<tr><td class="info-label">Formula</td><td class="endpoint-cell"><code>' + h(brew + "/Formula/{project}.rb") + "</code><copy-btn data-src='code'></copy-btn></td></tr></table>";
         html += codeBlock("Install", "brew tap pazer/build " + brew + "/tap.git\nbrew trust pazer/build\nbrew install pazer/build/{project}");
-        html += codeBlock("Install (private project)", "HOMEBREW_BUILDHOST_TOKEN=$TOKEN brew install pazer/build/{project}");
         html += "</div>";
 
         html += '<div class="card"><h2>npm Registry</h2><p class="section-desc">npm-compatible registry. Packages are scoped under <code>@buildhost</code>.</p>';
@@ -955,7 +961,7 @@ function editToken(id: number, name: string, scopes: string): void {
     const actionsCell = row ? row.querySelector(".row-actions") : null;
     if (actionsCell) {
         actionsCell.innerHTML = '<button class="btn btn-sm btn-primary" onclick="App.saveToken(' + id + ')">Save</button> ' +
-            '<button class="btn btn-sm" onclick="App.reloadTokens()">Cancel</button>';
+            '<button class="btn btn-sm" onclick="App.pages.tokens._reload()">Cancel</button>';
     }
 }
 
@@ -1030,7 +1036,7 @@ function renderRetention(d: RetentionData): void {
     }
     html += "</tbody></table>";
     html += '<div class="row-actions" style="margin-top:16px">';
-    html += '<button class="btn" onclick="App.pageRetention()">Refresh preview</button> ';
+    html += '<button class="btn" onclick="App.pages.retention()">Refresh preview</button> ';
     html += '<button class="btn btn-danger" onclick="App.runRetention()">Run garbage collection now</button>';
     html += "</div></div>";
 
@@ -1101,6 +1107,20 @@ function route(): void {
 
 // --- Demo data ---
 
+// Demo mode renders the dashboard with no backend (the API is unreachable, e.g.
+// the static preview build), so every payload here carries the same shape the
+// server sends -- including `services`, without which every endpoint the pages
+// render would come out blank.
+const demoServices: ServiceURLs = {
+    dl: "https://dl.builds.example.com",
+    apt: "https://apt.builds.example.com",
+    brew: "https://brew.builds.example.com",
+    npm: "https://npm.builds.example.com",
+    oci: "https://oci.builds.example.com",
+    sites: "https://sites.builds.example.com",
+    static: "https://static.builds.example.com",
+};
+
 const demoData: Record<string, unknown> = {
     "/sidebar": { build: { version: "v0.0.0-demo", commit: "demo", commit_url: "", short_commit: "demo", date: "" }, build_age: "", cpu_percent: "0.0%", disk_used: "0 B", disk_total: "0 B" },
     "/dashboard": {
@@ -1110,6 +1130,7 @@ const demoData: Record<string, unknown> = {
             { project_name: "cli-tool", version: "1.2.0", git_branch: "release", published: true, created_at: new Date(Date.now() - 86400000).toISOString() },
         ],
         config: { base_url: "https://builds.example.com", listen_addr: ":8080", admin_listen_addr: ":9090", data_dir: "./data", oidc_issuers: ["https://token.actions.githubusercontent.com"], oidc_orgs: ["myorg"], oidc_events: ["push"] },
+        services: demoServices,
         build: { version: "v0.0.0-demo", commit: "demo", commit_url: "", short_commit: "demo", date: "" },
         uptime: "0m 0s", cpu_percent: "0.0%", cpu_total: "0m 0s",
     },
@@ -1122,10 +1143,11 @@ const demoData: Record<string, unknown> = {
         releases: [{ version: "3", git_branch: "main", git_commit: "abc123", published: true, artifact_count: 4, published_at: new Date(Date.now() - 3600000).toISOString(), created_at: new Date(Date.now() - 3600000).toISOString() }],
         sites: [{ branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }],
         base_url: "https://builds.example.com",
+        services: demoServices,
     },
-    "/registries": { base_url: "https://builds.example.com", projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
-    "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com" },
-    "/tokens": [{ name: "deploy", token_prefix: "bh_abc", is_global: false, project_name: "myapp", scopes: "read,write", is_expired: false, created_at: new Date(Date.now() - 864e5 * 7).toISOString(), last_used_at: new Date(Date.now() - 3600000).toISOString() }],
+    "/registries": { base_url: "https://builds.example.com", services: demoServices, projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
+    "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com", services: demoServices },
+    "/tokens": [{ id: 1, name: "deploy", token_prefix: "bh_abc", is_global: false, project_id: 1, project_name: "myapp", scopes: "read,write", is_expired: false, created_at: new Date(Date.now() - 864e5 * 7).toISOString(), last_used_at: new Date(Date.now() - 3600000).toISOString() }],
     "/oidc": [{ issuer: "https://token.actions.githubusercontent.com", subject_pattern: "repo:myorg/myapp:*", audience: "", project_name: "myapp", scopes: "read,write", created_at: new Date(Date.now() - 864e5 * 14).toISOString() }],
     "/artifacts": [
         { id: 1, os: "linux", arch: "amd64", kind: "binary", size: 15728640, filename: "myapp", created_at: new Date(Date.now() - 3600000).toISOString(), version: "3", git_branch: "main", project_name: "myapp", download_count: 42 },
@@ -1140,6 +1162,18 @@ const demoData: Record<string, unknown> = {
         total_bytes: 52428800, logical_bytes: 58000000, physical_bytes: 48000000, disk_bytes: 50000000,
         disk_used: 120000000, disk_total: 500000000,
     },
+    "/retention": {
+        keep_n: 10, recency_hours: 24, sweeper_enabled: false, sweeper_enforce: false,
+        preview: {
+            enforced: false, release_count: 3, keep_n_count: 2, abandoned_count: 1,
+            blobs: 4, blobs_retained: 1, reclaimable_bytes: 18874368,
+            releases: [
+                { project_name: "myapp", project_id: 1, branch: "main", version: "7", reason: "keep-n" },
+                { project_name: "myapp", project_id: 1, branch: "main", version: "8", reason: "keep-n" },
+                { project_name: "cli-tool", project_id: 2, branch: "feature-x", version: "3", reason: "abandoned" },
+            ],
+        },
+    },
 };
 
 // --- Global handle ---
@@ -1147,7 +1181,15 @@ const demoData: Record<string, unknown> = {
 // Rendered markup wires buttons and links with inline onclick="App.…", so these
 // have to be reachable from the page. The bundle is an IIFE, which otherwise
 // keeps every function module-scoped and every one of those handlers dead.
+// `pages` keeps the shape the rendered handlers reference (App.pages.retention(),
+// App.pages.tokens._reload()) so the markup is identical to what shipped.
+const pages = {
+    retention: pageRetention,
+    tokens: Object.assign(pageTokens, { _reload: reloadTokens }),
+};
+
 const App = {
+    pages,
     projectTreeRows,
     projectLabel,
     projectNameCell,

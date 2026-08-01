@@ -72,6 +72,26 @@ git ls-files -i -c --exclude-standard # 2. committed at all
    *byte-identical* artifact, leaving check 1 green while the artifact sits in
    git waiting to drift. This one flags it immediately, in sync or not.
 
+## How the restored bundle was verified
+
+Grepping the two bundles for shared strings proves nothing much — a bundler
+splits string concatenation differently, so identical output reads as hundreds
+of differences. What settles it is rendering.
+
+Both bundles were loaded into a `node:vm` sandbox with a stub DOM, driven
+through every route, and the resulting `#content` HTML compared byte-for-byte:
+
+- with no backend, so each bundle used its own built-in demo payloads;
+- with a stubbed `fetch` serving the old bundle's demo payloads to *both*, so
+  they saw identical server responses;
+- with the release page fixtured at `is_private` both false and true, since that
+  page's public/private split (plain links vs mint-on-click signed links) is
+  where the divergence was widest.
+
+All thirteen surfaces — twelve routes plus the sidebar — came back identical in
+every pass. That is what "no functionality lost" was checked against, rather
+than asserted.
+
 ## When a test must assert on built output
 
 Assert on markup or behavior the build *emits*, not on identifiers the source
