@@ -3,10 +3,10 @@
 Universal package registry server. Upload artifacts once, download in any format.
 
 This file is an INDEX: what exists, the invariants one line each, and where the
-depth lives. Depth goes in `docs/`, never back into a bullet here. CI enforces it
-(`claude-md-budget`): over 40,000 characters, within 2.5% of it, or a line past
-150 columns all fail the build. Why that check exists, and how this file reached
-3.02x budget with nothing going red: `docs/claude-md-budget.md`.
+depth lives. Depth goes in `docs/`, never back into a bullet here. The
+`claude-md-budget` plugin enforces it: over 40,000 characters, within 2.5% of it,
+or a line past 150 columns. How this file reached 3.02x budget with nothing going
+red: `docs/claude-md-budget.md`.
 
 ## Build
 

@@ -45,30 +45,19 @@ current upstream wording is the opposite -- "Editing one of these files this
 session? Then fix it as you go" -- which is another way of saying the fix had
 already been made upstream and had not reached here.)
 
-**4. The repo-local CI check was deleted in favour of the hook.** Commit
-`76110b4` removed a CLAUDE.md wrap check from `ci.yml` with the reasoning: "The
-rule belongs in the web config, where it applies to every repo a session touches,
-not bolted onto one repo's CI. It now lives in
-`claude_snippets/claude-md-is-an-index.md` and is enforced by the
-claude-md-budget hook at edit time and at end of turn."
-
-That reasoning is right about where the rule belongs and wrong about what
-enforcement survives the move. A hook fires only if the session that happens to
-be running has a current config installed. CI runs for everyone, every push,
-regardless of whose machine or which config version. Trading the second for the
-first traded a check that always runs for one that runs conditionally -- and the
-condition turned out to be false here.
+**4. The one guard that reached this container was the wrong one.** Delivery, not
+authorship, was the whole failure: config installs once when an environment is
+built, so a snapshot predating a guard never receives it and has no way to fetch
+it -- the self-updater ships inside the artifact it updates.
 
 ## The rule that follows
 
-A hook and a CI check are layers, not duplicates. The hook tells the model, in
-the session, while it can still act. CI is the thing that cannot be skipped. A
-requirement that is only enforced by advice is enforced by nothing on the day the
-advice does not arrive.
+Enforcement belongs in the channel that refreshes. The guard is the
+`claude-md-budget` marketplace plugin, reinstalled every session, and it is the
+ONLY copy -- a per-repo CI script re-deriving the same rule was tried here and
+deleted, because three implementations of one rule is the disease, not the cure.
 
-`.github/scripts/claude-md-budget.ts` (CI job `claude-md-budget`) is the layer
-that fails the build. It measures every CLAUDE.md in the repo and fails on three
-things:
+It fails on three things:
 
 - **over budget** -- more than 40,000 characters;
 - **at the wall** -- at or above 97.5% of budget, because landing one character
@@ -78,8 +67,6 @@ things:
   an unwrapped file makes every edit a one-line diff no reviewer can read, and a
   paragraph running for thousands of columns is the visible SHAPE of an item that
   should have been a pointer to `docs/`.
-
-Each class was verified to go red before the check was wired in.
 
 ## How the file was brought back
 
