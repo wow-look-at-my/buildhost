@@ -293,6 +293,43 @@ func TestSiteDomain_SigilGrammar(t *testing.T) {
 // spelling of the same URL, so every published ~ link keeps working while there
 // is exactly one canonical form per file. The redirect lives in the handler, so
 // a private branch is still gated before it is issued.
+// A commit sha resolves on the project-subdomain scheme too: both schemes hand
+// the same "<ref>[/<path>]" remainder to the one resolver, so a URL means the
+// same file whichever host serves it. Unlike a branch name, a commit is never
+// collapsed into the bare path -- it is the most specific spelling there is.
+func TestSiteDomain_CommitRef(t *testing.T) {
+	const sha = "0f1e2d3c4b5a69788796a5b4c3d2e1f001234567"
+	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, false)
+
+	env.createProject(t, "commit-p", false)
+	resp := env.doFullHost(t, "PUT", "sites.test.local", "/commit-p/@master", "application/gzip",
+		map[string]string{"X-Git-Commit": sha},
+		bytes.NewReader(makeSiteTarGz(t, map[string]string{"index.html": "pinned", "a.css": "body{}"})), true)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	resp.Body.Close()
+
+	host := "commit-p." + siteTestDomain
+
+	resp, body := siteGet(t, env, host, "/@"+sha+"/a.css")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "body{}", body)
+
+	// The abbreviated form, and no collapse even though this commit's site IS
+	// the default branch (the bare path serves the same bytes today, but the
+	// commit URL promises this build specifically).
+	resp, body = siteGet(t, env, host, "/@"+sha[:7]+"/")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "pinned", body)
+
+	// The branch name, by contrast, collapses into the bare path.
+	resp, _ = siteGet(t, env, host, "/@master/a.css")
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	assert.Equal(t, "/a.css", resp.Header.Get("Location"))
+
+	resp, _ = siteGet(t, env, host, "/@abcdef1234567890/")
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
 func TestSiteDomain_LegacySigilRedirects(t *testing.T) {
 	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, false)
 

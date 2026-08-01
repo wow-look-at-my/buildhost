@@ -49,6 +49,25 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Naming the default branch is redundant: the bare project path already
+	// serves it, and it is the shorter URL. Collapse to it -- redirects always
+	// run toward the simpler form, never away from it.
+	if rt.sigil != "" && refNamesBranch(rt.sigil, branch) && branch == resolveRootBranch(ctx, h.DB, project) {
+		if target, okc := h.apexURLFor(ctx, project, filePath, r); okc {
+			if q := r.URL.RawQuery; q != "" {
+				target += "?" + q
+			}
+			// 302 + no-store: the default branch is a mutable pointer, so which
+			// branch this URL collapses into can change with the next publish.
+			w.Header().Set("Cache-Control", "no-store")
+			http.Redirect(w, r, target, http.StatusFound)
+			return
+		}
+		// The bare URL would address a different project (a namespaced sibling
+		// shadows this file path), so there is no simpler URL for this file.
+		// Serve it here rather than redirect somewhere that means something else.
+	}
+
 	// Redirect a branch root with no trailing slash (e.g. /p/branch/main) to the
 	// slashed form so relative links in index.html resolve under the branch, not
 	// its parent. This redirect used to live on its own GET /{project}/branch/{branch}
@@ -62,6 +81,29 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.serveSiteFile(ctx, w, r, project, branch, filePath)
+}
+
+// apexURLFor builds the bare project-path URL for a file -- "/{project}/<file>"
+// -- and reports whether that URL actually addresses this project's file.
+//
+// The check is the whole point. The apex path's project/file split is resolved
+// by longest match against existing projects, so with projects "org" and
+// "org/repo" the URL /org/repo/x.css belongs to org/repo, NOT to the file
+// repo/x.css under org. Collapsing org's file to that URL would silently point
+// at another project's site, so the caller keeps serving in place instead.
+func (h *Handler) apexURLFor(ctx context.Context, project *db.Project, filePath string, r *http.Request) (string, bool) {
+	target := "/" + project.Name + "/"
+	if filePath != "" {
+		target += filePath
+		if strings.HasSuffix(r.URL.Path, "/") {
+			target += "/"
+		}
+	}
+	gotProject, gotPath := h.splitProjectPath(ctx, joinPathParts(project.Name, filePath))
+	if gotProject != project.Name || gotPath != filePath {
+		return "", false
+	}
+	return target, true
 }
 
 // serveSiteFile streams one file of a branch's site archive: the tar scan, the
@@ -224,19 +266,24 @@ func joinPathParts(head, tail string) string {
 	return head + "/" + tail
 }
 
-// splitSiteBranch splits a combined "<branch>[/<path>]" remainder into the
-// branch and the file path by LONGEST match against the project's existing
+// splitSiteBranch splits a combined "<ref>[/<path>]" remainder into the branch
+// serving it and the file path, by LONGEST match against the project's existing
 // site rows. Branch names may legally contain "/" (claude/foo), so no purely
 // syntactic split can be right: try every segment prefix, longest first, and
 // take the first one a site exists for. When sites exist for both "claude" and
 // "claude/foo", paths under claude/foo/ resolve to the longer branch -- the
 // same shadowing rule as git refs; claude's own files stay reachable at
-// claude/<file> for every <file> that is not itself a branch suffix. ok is
-// false when no prefix names an existing site.
+// claude/<file> for every <file> that is not itself a branch suffix.
 //
 // Candidates that cannot be a stored branch (over 256 chars, or characters
 // outside the branch charset -- typically the file-path half of the remainder)
 // are skipped, not fatal: "main/caf%C3%A9.js" still resolves to branch "main".
+//
+// When no prefix names a branch, the FIRST segment is tried as a git commit
+// (resolveCommitRef) -- so @<sha> addresses the build rather than the branch.
+// Branches are tried first, so a branch whose name happens to be hex always
+// wins, and no URL that resolved before can be repointed by a commit.
+// ok is false when neither resolves.
 func splitSiteBranch(ctx context.Context, database *db.DB, projectID int64, remainder string) (branch, filePath string, ok bool) {
 	segs := strings.Split(remainder, "/")
 	for i := len(segs); i >= 1; i-- {
@@ -248,7 +295,58 @@ func splitSiteBranch(ctx context.Context, database *db.DB, projectID int64, rema
 			return cand, strings.Join(segs[i:], "/"), true
 		}
 	}
+	if b, okc := resolveCommitRef(ctx, database, projectID, segs[0]); okc {
+		return b, strings.Join(segs[1:], "/"), true
+	}
 	return "", "", false
+}
+
+// refNamesBranch reports whether the ref as SPELLED in the URL is the branch
+// name itself, rather than a commit that resolved to it. Only a branch name is
+// collapsible into the bare project URL: a commit is the most specific spelling
+// there is, and rewriting it to a mutable pointer would throw the pin away.
+func refNamesBranch(ref, branch string) bool {
+	return ref == branch || strings.HasPrefix(ref, branch+"/")
+}
+
+// minCommitRefLen is the shortest abbreviated sha accepted as a commit ref.
+// git's own default abbreviation is 7; below that a hex string is far more
+// likely to be a file or directory name than a deliberate commit reference.
+const minCommitRefLen = 7
+
+// resolveCommitRef resolves a git commit (full sha or an abbreviation of at
+// least minCommitRefLen) to the branch whose CURRENT deployment was built from
+// it. A commit cannot contain "/", so only one segment is ever a candidate.
+//
+// Deployments are keyed by branch and replaced in place, so a commit resolves
+// only while it is still some branch's live site: the URL serves exactly that
+// build or 404s, and never silently becomes a later one. When several branches
+// sit on the same commit the newest deployment wins (ListSites/SitesByCommitPrefix
+// order by updated_at DESC), so the answer is deterministic.
+func resolveCommitRef(ctx context.Context, database *db.DB, projectID int64, seg string) (branch string, ok bool) {
+	if database == nil || !looksLikeCommit(seg) {
+		return "", false
+	}
+	sites, err := database.SitesByCommitPrefix(ctx, projectID, strings.ToLower(seg))
+	if err != nil || len(sites) == 0 {
+		return "", false
+	}
+	return sites[0].Branch, true
+}
+
+// looksLikeCommit reports whether a path segment could be a git commit sha:
+// minCommitRefLen..40 hex characters. Anything else never reaches the DB.
+func looksLikeCommit(s string) bool {
+	if len(s) < minCommitRefLen || len(s) > 40 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 // validSiteBranch mirrors the api layer's validGitBranch (and auth's
@@ -271,13 +369,17 @@ func validSiteBranch(s string) bool {
 }
 
 // ServeDefaultBranch serves the two grammars parseRootRoute resolves.
-// /{project}/@{branch}/<file> is an explicit branch and serves exactly like the
-// /branch/ form. /{project} (and /{project}/) redirects to the canonical
-// branch URL, and /{project}/<file> serves that file from the resolved default
-// branch -- so a project's files are reachable under its own root path without
-// the caller having to know which branch the site lives on. That is the grammar
+// /{project}/@{ref}/<file> names a branch or commit and serves exactly like the
+// /branch/ form. /{project}/ and /{project}/<file> are the CANONICAL site URLs:
+// they serve straight from the resolved default branch, so a project's files
+// are reachable under its own root path without the caller having to know which
+// branch the site lives on -- and without a redirect hop. That is the grammar
 // the {project}.<site-domain> scheme already has for a bare path, and it uses
 // the same resolveRootBranch chain, so the two schemes address the same file.
+//
+// The bare root used to 302 to the branch URL. It no longer does: the branch
+// URL is the longer, more fragile spelling, so pointing the short URL at it was
+// backwards. Redirects now run the other way (see Serve).
 func (h *Handler) ServeDefaultBranch(w http.ResponseWriter, r *http.Request) {
 	if routeFrom(r.Context()).sigil != "" {
 		h.Serve(w, r)
@@ -288,29 +390,18 @@ func (h *Handler) ServeDefaultBranch(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 	r = r.WithContext(ctx)
 
-	if routeFrom(ctx).path == "" {
-		h.RedirectToDefaultBranch(w, r)
+	rt := routeFrom(ctx)
+	// The project root without its trailing slash: canonicalize so relative
+	// links in index.html resolve under the project, not the host root. Same
+	// permanent rule a branch root follows in Serve.
+	if rt.path == "" && !strings.HasSuffix(r.URL.Path, "/") {
+		http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
 		return
 	}
 
 	setSiteSecurityHeaders(w)
 	project := auth.ProjectFrom(ctx)
-	h.serveSiteFile(ctx, w, r, project, resolveRootBranch(ctx, h.DB, project), routeFrom(ctx).path)
-}
-
-// RedirectToDefaultBranch sends the bare site root (/{project} or /{project}/)
-// to /{project}/@{default}/, so a project's root URL resolves to its canonical
-// site without the caller having to know which branch it lives on. It names the
-// branch in the "@" form because that is the canonical spelling; the older
-// /branch/{default}/ URL still serves the same file.
-// The target is a mutable pointer -- the default branch can change and its site
-// updates in place -- so it is a 302 marked no-store, never cached like the
-// permanent trailing-slash canonicalization in Serve.
-func (h *Handler) RedirectToDefaultBranch(w http.ResponseWriter, r *http.Request) {
-	project := auth.ProjectFrom(r.Context())
-	target := "/" + project.Name + "/" + string(branchSigil) + resolveRootBranch(r.Context(), h.DB, project) + "/"
-	w.Header().Set("Cache-Control", "no-store")
-	http.Redirect(w, r, target, http.StatusFound)
+	h.serveSiteFile(ctx, w, r, project, resolveRootBranch(ctx, h.DB, project), rt.path)
 }
 
 // serveFromArchive serves one file out of a binpazer-archived site and reports

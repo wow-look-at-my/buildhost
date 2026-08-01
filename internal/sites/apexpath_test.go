@@ -37,16 +37,19 @@ func TestApexPath_ServesFilesFromDefaultBranch(t *testing.T) {
 		assert.Equalf(t, want, rec.Body.String(), "GET %s", path)
 	}
 
-	// The bare root keeps redirecting to the canonical branch URL, unchanged.
-	for _, path := range []string{"/jsperf.app", "/jsperf.app/"} {
-		rec := env.do(t, "GET", path, "", nil, false)
-		require.Equalf(t, http.StatusFound, rec.Code, "GET %s", path)
-		assert.Equal(t, "/jsperf.app/@main/", rec.Header().Get("Location"))
-		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
-	}
+	// The bare root IS the canonical site URL: it serves, in one hop. Only the
+	// missing trailing slash is canonicalized, so relative links in index.html
+	// resolve under the project rather than the host root.
+	rec := env.do(t, "GET", "/jsperf.app/", "", nil, false)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, "<h1>root</h1>", rec.Body.String())
+
+	rec = env.do(t, "GET", "/jsperf.app", "", nil, false)
+	require.Equal(t, http.StatusMovedPermanently, rec.Code)
+	assert.Equal(t, "/jsperf.app/", rec.Header().Get("Location"))
 
 	// ...and the branch routes still win: the apex route never shadows them.
-	rec := env.do(t, "GET", "/jsperf.app/branch/main/assets/app.js", "", nil, false)
+	rec = env.do(t, "GET", "/jsperf.app/branch/main/assets/app.js", "", nil, false)
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "console.log(1)", rec.Body.String())
 
@@ -69,10 +72,15 @@ func TestApexPath_NamespacedProjectRootUnchanged(t *testing.T) {
 	env.uploadSite(t, "org", "main", map[string]string{"repo": "decoy", "ok.txt": "shorter"})
 	env.uploadSite(t, "org/repo", "main", map[string]string{"index.html": "<h1>ns</h1>", "x.css": "body{}"})
 
-	// /org/repo is the namespaced project's root -> redirect, not the decoy file.
+	// /org/repo is the namespaced project's root -> its own trailing-slash
+	// canonicalization, not the decoy file under project "org".
 	rec := env.do(t, "GET", "/org/repo", "", nil, false)
-	require.Equal(t, http.StatusFound, rec.Code)
-	assert.Equal(t, "/org/repo/@main/", rec.Header().Get("Location"))
+	require.Equal(t, http.StatusMovedPermanently, rec.Code)
+	assert.Equal(t, "/org/repo/", rec.Header().Get("Location"))
+
+	rec = env.do(t, "GET", "/org/repo/", "", nil, false)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "<h1>ns</h1>", rec.Body.String())
 
 	// Files under each project resolve to that project's own site.
 	rec = env.do(t, "GET", "/org/repo/x.css", "", nil, false)

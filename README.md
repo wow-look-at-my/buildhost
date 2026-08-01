@@ -568,13 +568,16 @@ buildhost publish-site \
   --branch main \
   --dir ./dist
 
-# The site is available at:
-# http://sites.localhost:8080/myapp/@main/
-# ...and, on the project's default branch, at its own root path:
-# http://sites.localhost:8080/myapp/          (302 to the branch URL above)
-# http://sites.localhost:8080/myapp/index.css (served straight from it)
+# The site is available at its own root path, on the default branch:
+# http://sites.localhost:8080/myapp/           (index.html)
+# http://sites.localhost:8080/myapp/index.css  (any file)
 
-# The older /myapp/branch/main/ spelling serves the same files and still works.
+# Any other branch, or a specific commit, is named with the @ sigil:
+# http://sites.localhost:8080/myapp/@pr-7/index.css
+# http://sites.localhost:8080/myapp/@0f1e2d3/index.css
+
+# Redirects only run toward the shorter URL: @main (the default branch) 302s to
+# /myapp/. The older /myapp/branch/main/ spelling serves in place and still works.
 
 # Re-deploying the same branch replaces the previous site atomically.
 # Deleting a branch deployment:
@@ -586,7 +589,8 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 
 Set `BUILDHOST_SITE_DOMAIN` (e.g. `pazer.site`) to also serve each project's site
 at `https://<project>.<domain>/` -- the default branch on bare paths, any other
-branch behind the `@` sigil: `https://myapp.pazer.site/@pr-7/`.
+branch (or commit) behind the `@` sigil: `https://myapp.pazer.site/@pr-7/`,
+`https://myapp.pazer.site/@0f1e2d3/`.
 
 - Slash-named branches (`claude/foo`) resolve by longest match; an `@<default-branch>`
   URL 302s to the canonical bare form. The `~` sigil this scheme launched with
@@ -828,8 +832,8 @@ The link is a stateless HMAC signature (keyed by a server-side key generated on 
 | GET | `/dl/{project}/branch/{branch}/{os}/{arch}` | Download latest for branch |
 | PUT | `/sites/{project}/@{branch}` | Deploy static site (tar.gz body) |
 | DELETE | `/sites/{project}/@{branch}` | Remove static site |
-| GET | `/sites/{project}/@{branch}/{path}` | Serve static site file |
-| GET | `/sites/{project}/{path}` | Serve it from the default branch |
+| GET | `/sites/{project}/{path}` | Serve a file from the default branch (canonical) |
+| GET | `/sites/{project}/@{ref}/{path}` | Serve it from a branch or commit |
 | GET | `/sites/{project}/branches` | List branch deployments |
 | GET | `/llms.txt` | Plain-text guide to buildhost for LLMs ([llmstxt.org](https://llmstxt.org)) |
 | GET | `/healthz` | Liveness check (database ping); JSON body reports the running build's commit and version |

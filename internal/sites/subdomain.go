@@ -142,8 +142,10 @@ func (h *Handler) ServeSubdomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if branch == resolveRootBranch(ctx, h.DB, project) {
+	if refNamesBranch(rt.sigil, branch) && branch == resolveRootBranch(ctx, h.DB, project) {
 		// @<default-branch> is non-canonical: the bare path serves this branch.
+		// A commit ref that happens to resolve the default branch is NOT
+		// collapsed -- it is the most specific spelling there is.
 		// 302 (no-store): the default branch is a mutable pointer, so the mapping
 		// from @<branch> form to bare form can change with the next publish.
 		target := "/" + filePath

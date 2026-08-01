@@ -79,13 +79,24 @@ func TestSitesApexPath(t *testing.T) {
 		}
 	}
 
-	// The bare root still redirects to the canonical branch URL, and the branch
-	// routes are unshadowed.
-	resp, _ := siteGet(t, env, "sites.test.local", "/apexp")
-	require.Equal(t, http.StatusFound, resp.StatusCode)
-	require.Equal(t, "/apexp/@main/", resp.Header.Get("Location"))
+	// The bare root IS the canonical URL: it serves in one hop, and only its
+	// missing trailing slash is canonicalized -- never to a branch URL.
+	resp, body := siteGet(t, env, "sites.test.local", "/apexp/")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, "root", body)
 
-	resp, body := siteGet(t, env, "sites.test.local", "/apexp/branch/main/runner.html")
+	resp, _ = siteGet(t, env, "sites.test.local", "/apexp")
+	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
+	require.Equal(t, "/apexp/", resp.Header.Get("Location"))
+
+	// The @ spelling of that same default branch collapses INTO the bare URL.
+	resp, _ = siteGet(t, env, "sites.test.local", "/apexp/@main/runner.html")
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Equal(t, "/apexp/runner.html", resp.Header.Get("Location"))
+	require.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
+
+	// The legacy branch route is unshadowed and still serves in place.
+	resp, body = siteGet(t, env, "sites.test.local", "/apexp/branch/main/runner.html")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, "runner", body)
 
@@ -124,17 +135,20 @@ func TestSitesApexPathVisibility(t *testing.T) {
 	// The "@" spelling is gated identically: the public branch serves
 	// anonymously, the private one does not. Both spellings resolve the branch
 	// through the same helper the gate uses, so they cannot diverge.
-	resp, text = siteGet(t, env, "sites.test.local", "/apexpub/@main/preview.html")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	require.Equal(t, "public-preview", text)
+	// main is apexpub's only (therefore default) branch, so the @ spelling
+	// collapses -- but the gate runs FIRST, so an anonymous request gets that
+	// redirect only because the branch is public.
+	resp, _ = siteGet(t, env, "sites.test.local", "/apexpub/@main/preview.html")
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Equal(t, "/apexpub/preview.html", resp.Header.Get("Location"))
 
+	// The private project's @ URL is gated identically to its apex path: no
+	// token, no redirect and no bytes -- just the 401.
 	resp, _ = siteGet(t, env, "sites.test.local", "/apexpriv/@master/secret.txt")
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
 	resp = env.doFullHost(t, "GET", "sites.test.local", "/apexpriv/@master/secret.txt", "", nil, nil, true)
-	body, err = io.ReadAll(resp.Body)
-	require.NoError(t, err)
 	resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	require.Equal(t, "top-secret", string(body))
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Equal(t, "/apexpriv/secret.txt", resp.Header.Get("Location"))
 }

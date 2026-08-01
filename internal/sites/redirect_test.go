@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/router"
 )
 
@@ -64,39 +63,82 @@ func TestRootRedirectRouteShadowing(t *testing.T) {
 	}
 }
 
-// TestRedirectToDefaultBranch checks the bare-root handler emits a no-store 302
-// to the project's default branch, preserving the trailing slash and a
-// namespaced project name, and falling back to the seed default when unset.
-func TestRedirectToDefaultBranch(t *testing.T) {
-	h := &Handler{}
+// The default branch never needs naming: the bare project path already serves
+// it and is shorter, so an "@<default>" URL collapses INTO it. Redirects only
+// ever run toward the simpler URL -- the bare root pointing at a branch URL,
+// as it once did, was backwards.
+func TestSigilDefaultBranchCollapsesToBareURL(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "ue553")
+	uploadSite(t, h, proj, "main", map[string]string{"index.html": "root", "a/x.css": "body{}"})
+	uploadSite(t, h, proj, "pr-7", map[string]string{"index.html": "preview"})
+	proj.DefaultBranch = "main"
+
 	cases := []struct {
-		name          string
-		projectName   string
-		defaultBranch string
-		reqPath       string
-		wantLoc       string
+		name, reqPath, ref, filePath, wantLoc string
 	}{
-		// Learned default branch (e.g. ue553 releases off "main").
-		{"learned_main", "ue553", "main", "/ue553", "/ue553/@main/"},
-		{"learned_main_slash", "ue553", "main", "/ue553/", "/ue553/@main/"},
-		// Unset default branch falls back to the schema/seed default ("master").
-		{"seed_master", "foo", "", "/foo", "/foo/@master/"},
-		// Namespaced project name is preserved verbatim in the target.
-		{"namespaced", "org/repo", "v1", "/org/repo", "/org/repo/@v1/"},
+		{"branch root", "/ue553/@main/", "main", "", "/ue553/"},
+		{"file", "/ue553/@main/a/x.css", "main/a/x.css", "", "/ue553/a/x.css"},
+		{"dir", "/ue553/@main/a/", "main/a", "", "/ue553/a/"},
+		{"no trailing slash", "/ue553/@main", "main", "", "/ue553/"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			project := &db.Project{Name: tc.projectName, DefaultBranch: tc.defaultBranch}
 			req := httptest.NewRequest("GET", "http://sites.example.com"+tc.reqPath, nil)
-			req = withRoute(req, project, route{project: tc.projectName, root: true})
+			req = withRoute(req, proj, route{project: "ue553", sigil: tc.ref})
 			rec := httptest.NewRecorder()
+			h.Serve(rec, req)
 
-			h.RedirectToDefaultBranch(rec, req)
-
-			assert.Equal(t, http.StatusFound, rec.Code)
+			assert.Equal(t, http.StatusFound, rec.Code, rec.Body.String())
 			assert.Equal(t, tc.wantLoc, rec.Header().Get("Location"))
-			// The default branch is a mutable pointer -- never cache the redirect.
+			// Which branch the bare URL means is a mutable pointer: never cache.
 			assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 		})
 	}
+
+	// A NON-default branch has no shorter spelling, so it serves in place.
+	req := httptest.NewRequest("GET", "http://sites.example.com/ue553/@pr-7/", nil)
+	req = withRoute(req, proj, route{project: "ue553", sigil: "pr-7"})
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "preview", rec.Body.String())
+
+	// Neither does the legacy /branch/ spelling redirect: it is the
+	// compatibility alias every published link already uses, so it serves the
+	// same bytes in place rather than bouncing deployed clients.
+	req = httptest.NewRequest("GET", "http://sites.example.com/ue553/branch/main/a/x.css", nil)
+	req = withRoute(req, proj, route{project: "ue553", branch: "main", path: "a/x.css"})
+	rec = httptest.NewRecorder()
+	h.Serve(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "body{}", rec.Body.String())
+}
+
+// The collapse is skipped when the bare URL would address a DIFFERENT project:
+// the apex path splits project from file by longest match, so with projects
+// "org" and "org/repo", /org/repo/x.css is org/repo's file. Redirecting org's
+// own repo/x.css there would silently point at another project's site.
+func TestSigilDefaultBranchKeepsShadowedFileInPlace(t *testing.T) {
+	h, d, _ := setupTest(t)
+	org := seedProject(t, d, "org")
+	seedProject(t, d, "org/repo")
+	uploadSite(t, h, org, "main", map[string]string{"repo/x.css": "shadowed{}", "ok.css": "fine{}"})
+	org.DefaultBranch = "main"
+
+	// The shadowed path has no usable shorter URL -> served in place, no redirect.
+	req := httptest.NewRequest("GET", "http://sites.example.com/org/@main/repo/x.css", nil)
+	req = withRoute(req, org, route{project: "org", sigil: "main/repo/x.css"})
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, "shadowed{}", rec.Body.String())
+
+	// An unshadowed path in the same site still collapses.
+	req = httptest.NewRequest("GET", "http://sites.example.com/org/@main/ok.css", nil)
+	req = withRoute(req, org, route{project: "org", sigil: "main/ok.css"})
+	rec = httptest.NewRecorder()
+	h.Serve(rec, req)
+	assert.Equal(t, http.StatusFound, rec.Code)
+	assert.Equal(t, "/org/ok.css", rec.Header().Get("Location"))
 }

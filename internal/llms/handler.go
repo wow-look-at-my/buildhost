@@ -82,6 +82,7 @@ label: [a-z0-9-], max 63 chars, no leading/trailing hyphen):
 ` + "```" + `
 ` + scheme + `myapp.` + sd + `/                # default branch (same branch "latest" tracks)
 ` + scheme + `myapp.` + sd + `/@pr-7/          # any other branch, behind the @ sigil
+` + scheme + `myapp.` + sd + `/@0f1e2d3/       # a specific commit (7+ hex, or the full sha)
 ` + scheme + `myapp.` + sd + `/@claude/foo/    # slash-named branches resolve by longest match
 ` + "```" + `
 

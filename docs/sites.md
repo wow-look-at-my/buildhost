@@ -13,15 +13,45 @@ same helpers, so a URL means the same file either way.
 
 ### Classic: `sites.{domain}/{project}/...`
 
-- `/{project}/@{branch}/{path...}` -- an explicit branch (canonical). See below.
+- `/{project}/<file>` -- **the canonical URL**: the project's own root path,
+  served from its default branch. See below.
+- `/{project}/@{ref}/{path...}` -- an explicit branch or commit. See below.
 - `/{project}/branch/{branch}/{path...}` -- the same file, original spelling.
 - `/{project}/branches` -- the branch listing (gated; never public-read).
-- `/{project}` -- the apex path: the project's root and any file under it, on
-  the project's default branch. See below.
 - `PUT`/`DELETE /{project}/@{branch}` (and the `/branch/{branch}` spelling) --
   deploy and remove.
 
-### The `@` branch sigil
+### Redirects only ever run toward the shorter URL
+
+The bare project path is canonical. Every other spelling that means the same
+file redirects INTO it, never the other way round:
+
+| request | result |
+| --- | --- |
+| `/{project}/<file>` | serves (canonical, no hop) |
+| `/{project}` | `301` -> `/{project}/` (trailing slash only) |
+| `/{project}/@{default}/<file>` | `302` no-store -> `/{project}/<file>` |
+| `/{project}/@{other}/<file>` | serves (no shorter spelling exists) |
+| `/{project}/@{commit}/<file>` | serves (see below -- never collapsed) |
+| `/{project}/branch/{branch}/<file>` | serves (compatibility alias) |
+
+The bare root used to `302` to `/{project}/branch/{default}/`. That was
+backwards -- it pointed the short, stable URL at the long one -- and it is gone:
+naming the default branch says nothing the bare path doesn't already say.
+
+Two things deliberately do NOT redirect. A **commit** ref is the most specific
+spelling there is, so collapsing it into a mutable pointer would throw the pin
+away (`refNamesBranch` gates the collapse). And the legacy **`/branch/`** form
+serves in place: it is what every published link already says, and bouncing
+deployed clients that never asked for the new grammar is the exact breakage this
+whole change is supposed to avoid.
+
+The collapse is also skipped when the bare URL would address a DIFFERENT project
+(`apexURLFor`): with projects `org` and `org/repo`, `org`'s own file `repo/x.css`
+has no usable short URL, because `/org/repo/x.css` belongs to org/repo. It is
+served in place rather than redirected somewhere that means something else.
+
+### The `@` ref sigil
 
 `@` names the branch on both schemes:
 `sites.{domain}/{project}/@{branch}/{path}` and
@@ -55,33 +85,60 @@ segment while a branch name may span several, so the second binds the rest and
 
 Nothing older changes. `/{project}/branch/{branch}/...` is what every published
 preview link, README and deployed client already says; it is not deprecated, not
-redirected, and is pinned by `TestBranchSigil_OlderFormsUnchanged`. Only the
-links buildhost itself generates use `@`: the apex root redirect and the web
-frontend's site links.
+redirected, and is pinned by `TestBranchSigil_OlderFormsUnchanged`. The only
+links buildhost itself generates in the `@` form are the web frontend's
+per-branch site links.
+
+### Commit refs (`@{commit}`)
+
+`@` also takes a git commit -- the full 40-hex sha or any abbreviation of at
+least 7 characters, case-insensitively, like git (`looksLikeCommit`). So a link
+can pin the exact build it was tested against instead of tracking wherever the
+branch moves next:
+
+    sites.{domain}/myapp/@0f1e2d3/runner.html
+
+This needs nothing new from publishers: every deploy already records its commit
+(`sites.git_commit`, from the `X-Git-Commit` header the CLI and the
+`buildhost-publish-site` action send, defaulted to `github.sha`).
+
+Resolution order is branches first, then commits (`splitSiteBranch` ->
+`resolveCommitRef`), so a branch whose name happens to be hex always wins and no
+URL that resolved before can be repointed by a commit.
+
+What a commit URL guarantees, exactly: sites are keyed `(project, branch)` and
+replaced in place on re-deploy, so a commit resolves only while it is still some
+branch's LIVE deployment. Re-deploy the branch and the old sha `404`s. That is
+the useful half of immutability -- the URL serves that build or nothing, and
+never quietly becomes a later one -- without retaining every historical
+deployment. When several branches sit on the same commit the newest deployment
+wins, so the answer is deterministic (`SitesByCommitPrefix` orders by
+`updated_at DESC`).
 
 ### Apex path (`/{project}` and `/{project}/<file>`)
 
-The **bare project root** (`/{project}` and `/{project}/`) `302`-redirects
-(`Cache-Control: no-store`, since the target is a mutable pointer) to
-`/{project}/@{default}/` -- the project's `default_branch` (learned from
-GitHub on publish, e.g. `main`; seed default `master`, the same branch the apex
-download `latest` tracks), so a project's root URL resolves to its canonical
-site without the caller knowing which branch it lives on. When the resolved
+The **bare project root** (`/{project}/`) serves `index.html` straight from the
+project's `default_branch` (learned from GitHub on publish, e.g. `main`; seed
+default `master`, the same branch the apex download `latest` tracks), so a
+project's root URL resolves to its canonical site without the caller knowing
+which branch it lives on -- and without a redirect hop. `/{project}` without the
+slash `301`s to `/{project}/` so relative links in `index.html` resolve under the
+project rather than the host root. When the resolved
 `default_branch` has **no published site** (e.g. the GitHub-learned default lags
 at the seed `master` while sites were only ever deployed to `main`, because
-buildhost couldn't reach a private repo to learn its real default), the redirect
-falls back to a branch that *does* have a site -- preferring the conventional
+buildhost couldn't reach a private repo to learn its real default), it falls
+back to a branch that *does* have a site -- preferring the conventional
 `main`/`master` names over a more-recently-updated ephemeral PR-preview branch,
-then the newest site as a last resort -- so the root never bounces to a
-guaranteed 404 (`resolveRootBranch` in `serve.go`, used by both the redirect and
-its public-read gate so they stay consistent; with no sites at all it keeps the
-default branch unchanged).
+then the newest site as a last resort -- so the root never serves a guaranteed
+404 (`resolveRootBranch` in `serve.go`, used by the serve, the `@{default}`
+collapse and the public-read gate alike so they stay consistent; with no sites
+at all it keeps the default branch unchanged).
 
 A **file path under the project root** (`/{project}/<file>`) serves that file
 from the same resolved default branch (`ServeDefaultBranch` -> `serveSiteFile`,
 the same tar scan / `index.html` / `404.html` handling every other site read
 uses). Without it, only an explicit branch URL served a file and the bare
-root merely redirected, so every link into a site had to name a branch it has no
+root only redirected, so every link into a site had to name a branch it has no
 business knowing -- an MCP App declaring a runner origin, a README, a
 cross-project link. This is the grammar the `{project}.<site-domain>` scheme
 already had for bare paths.
