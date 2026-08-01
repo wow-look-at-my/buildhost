@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"io"
 	"net/http"
 	"testing"
 
@@ -43,4 +44,80 @@ func TestSitesServedFileCSP(t *testing.T) {
 	// The global "default-src 'none'" CSP must be absent on site responses so
 	// the page can load its own assets. The Serve handler removes it.
 	require.Empty(t, resp.Header.Get("Content-Security-Policy"))
+}
+
+// A site file must be reachable at the project's own root path, through the
+// whole stack: host dispatch -> requireProject -> sites handler. Before this,
+// only /{project}/branch/{branch}/{path} served a file and the bare root merely
+// redirected, so every link into a site had to name a branch -- and any link
+// that did not (an MCP App's declared runner origin, for one) 404'd.
+func TestSitesApexPath(t *testing.T) {
+	env := setup(t)
+
+	env.createProject(t, "apexp", false)
+	env.uploadBranchSite(t, "apexp", "main", false, map[string]string{
+		"index.html":  "root",
+		"runner.html": "runner",
+		"a/b.css":     "nested",
+		"404.html":    "missing",
+	})
+
+	// Files resolve under the project root, on the project's default branch
+	// (default_branch is the seed "master" here, so this also exercises
+	// resolveRootBranch's fallback to the branch that actually has a site).
+	for path, want := range map[string]string{
+		"/apexp/runner.html": "runner",
+		"/apexp/a/b.css":     "nested",
+		"/apexp/a/":          "missing", // no a/index.html -> the site's own 404
+	} {
+		resp, body := siteGet(t, env, "sites.test.local", path)
+		require.Equalf(t, want, body, "GET %s", path)
+		if path == "/apexp/a/" {
+			require.Equal(t, http.StatusNotFound, resp.StatusCode)
+		} else {
+			require.Equalf(t, http.StatusOK, resp.StatusCode, "GET %s", path)
+		}
+	}
+
+	// The bare root still redirects to the canonical branch URL, and the branch
+	// routes are unshadowed.
+	resp, _ := siteGet(t, env, "sites.test.local", "/apexp")
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.Equal(t, "/apexp/branch/main/", resp.Header.Get("Location"))
+
+	resp, body := siteGet(t, env, "sites.test.local", "/apexp/branch/main/runner.html")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, "runner", body)
+
+	resp, body = siteGet(t, env, "sites.test.local", "/apexp/branches")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Contains(t, body, `"branch":"main"`)
+}
+
+// The apex file path is gated exactly like every other site read: the
+// public-read bypass opens only a public site's own default branch, and the
+// gate resolves that branch through the same helper the handler does.
+func TestSitesApexPathVisibility(t *testing.T) {
+	env := setup(t)
+
+	env.createProject(t, "apexpriv", true)
+	env.uploadBranchSite(t, "apexpriv", "master", false, map[string]string{"secret.txt": "top-secret"})
+
+	resp, _ := siteGet(t, env, "sites.test.local", "/apexpriv/secret.txt")
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+
+	resp = env.doFullHost(t, "GET", "sites.test.local", "/apexpriv/secret.txt", "", nil, nil, true)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, "top-secret", string(body))
+
+	// A public site under a private project serves its files anonymously at the
+	// apex path, the same shareable-preview rule the branch URL follows.
+	env.createProject(t, "apexpub", true)
+	env.uploadBranchSite(t, "apexpub", "main", true, map[string]string{"preview.html": "public-preview"})
+	resp, text := siteGet(t, env, "sites.test.local", "/apexpub/preview.html")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, "public-preview", text)
 }

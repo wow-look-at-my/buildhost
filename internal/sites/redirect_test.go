@@ -10,13 +10,18 @@ import (
 	"github.com/wow-look-at-my/router"
 )
 
-// TestRootRedirectRouteShadowing proves the bare GET /{project} root route
-// matches /{project} and /{project}/ (binding the project verbatim, no trailing
-// slash) yet never shadows the more specific branch / branches routes. The
-// router is best-match: more literal segments win, so the literal-less root
-// route only catches paths that aren't one of the others. This is the exact
-// shadowing failure documented in serve.go (a higher-scoring route eating the
-// {path...} route), guarded here against regression on the real router.
+// TestRootRedirectRouteShadowing proves the apex GET /{project} route catches
+// the project root and every file path under it, yet never shadows the more
+// specific branch / branches routes. The router is best-match: more literal
+// segments win, so the literal-less apex route only catches paths that aren't
+// one of the others. This is the exact shadowing failure documented in serve.go
+// (a higher-scoring route eating the {path...} route), guarded here against
+// regression on the real router.
+//
+// It also pins WHY parseRootRoute re-splits against the DB: {project} has no
+// wildcard after it, so it binds the whole remainder greedily -- the router
+// hands over "ue553/runner.html" as one string and cannot know where the
+// project name ends and the file path begins.
 func TestRootRedirectRouteShadowing(t *testing.T) {
 	var hit, gotProject string
 	mk := func(name string) http.HandlerFunc {
@@ -40,6 +45,10 @@ func TestRootRedirectRouteShadowing(t *testing.T) {
 		{"/ue553", "root", "ue553"},
 		{"/ue553/", "root", "ue553"},
 		{"/org/repo", "root", "org/repo"}, // namespaced project root
+		// A file under the project root: the whole remainder arrives as
+		// {project}, for parseRootRoute to split.
+		{"/ue553/runner.html", "root", "ue553/runner.html"},
+		{"/ue553/assets/app.js", "root", "ue553/assets/app.js"},
 		{"/ue553/branches", "list", "ue553"},
 		{"/ue553/branch/main", "serve", "ue553"},
 		{"/ue553/branch/main/", "serve", "ue553"},

@@ -37,7 +37,7 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	// branch uploaded via the greedy PUT bind used to be unservable (404). Re-split
 	// branch/path by longest match against the project's site rows: the same
 	// resolution AllowsPublicRead applies, so gate and serve always agree.
-	branch, filePath, ok := splitSiteBranch(ctx, h.DB, project.ID, joinBranchPath(rt.branch, rt.path))
+	branch, filePath, ok := splitSiteBranch(ctx, h.DB, project.ID, joinPathParts(rt.branch, rt.path))
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -200,13 +200,14 @@ func siteExists(ctx context.Context, database *db.DB, projectID int64, branch st
 	return err == nil
 }
 
-// joinBranchPath reassembles the raw "<branch>[/<path>]" remainder from the
-// router's split, for splitSiteBranch to re-split correctly.
-func joinBranchPath(branch, filePath string) string {
-	if filePath == "" {
-		return branch
+// joinPathParts reassembles the raw remainder the router split in two --
+// "<branch>[/<path>]" for a branch route, "<project>[/<path>]" for the apex
+// one -- so the DB-backed longest-match split can re-split it correctly.
+func joinPathParts(head, tail string) string {
+	if tail == "" {
+		return head
 	}
-	return branch + "/" + filePath
+	return head + "/" + tail
 }
 
 // splitSiteBranch splits a combined "<branch>[/<path>]" remainder into the
@@ -253,6 +254,28 @@ func validSiteBranch(s string) bool {
 		}
 	}
 	return true
+}
+
+// ServeDefaultBranch serves the apex site path. /{project} (and /{project}/)
+// redirects to the canonical /{project}/branch/{default}/ URL as before, and
+// /{project}/<file> serves that file from the same resolved default branch --
+// so a project's files are reachable under its own root path without the
+// caller having to know which branch the site lives on. That is the grammar
+// the {project}.<site-domain> scheme already has for a bare path, and it uses
+// the same resolveRootBranch chain, so the two schemes address the same file.
+func (h *Handler) ServeDefaultBranch(w http.ResponseWriter, r *http.Request) {
+	ctx, span := sitesTracer.Start(r.Context(), "sites.serve_default_branch")
+	defer span.End()
+	r = r.WithContext(ctx)
+
+	if routeFrom(ctx).path == "" {
+		h.RedirectToDefaultBranch(w, r)
+		return
+	}
+
+	setSiteSecurityHeaders(w)
+	project := auth.ProjectFrom(ctx)
+	h.serveSiteFile(ctx, w, r, project, resolveRootBranch(ctx, h.DB, project), routeFrom(ctx).path)
 }
 
 // RedirectToDefaultBranch sends the bare site root (/{project} or /{project}/)

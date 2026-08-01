@@ -570,6 +570,9 @@ buildhost publish-site \
 
 # The site is available at:
 # http://sites.localhost:8080/myapp/branch/main/
+# ...and, on the project's default branch, at its own root path:
+# http://sites.localhost:8080/myapp/          (302 to the branch URL above)
+# http://sites.localhost:8080/myapp/index.css (served straight from it)
 
 # Re-deploying the same branch replaces the previous site atomically.
 # Deleting a branch deployment:
