@@ -69,6 +69,22 @@ func (d *DB) ListSites(ctx context.Context, projectID int64) ([]Site, error) {
 	return d.q.ListSitesByProject(ctx, projectID)
 }
 
+// SitesByCommitPrefix returns the project's sites whose recorded git_commit
+// starts with prefix, newest deployment first. prefix must be hex (the caller
+// validates it), which is also what makes it safe to interpolate into LIKE:
+// neither "%" nor "_" can occur in it.
+//
+// Sites are keyed (project, branch) and replaced in place on re-deploy, so this
+// finds a commit only while it is some branch's CURRENT deployment. That is the
+// point: a commit URL either serves exactly that build or 404s -- it never
+// quietly starts serving a later one.
+func (d *DB) SitesByCommitPrefix(ctx context.Context, projectID int64, prefix string) ([]Site, error) {
+	return d.q.GetSiteByCommitPrefix(ctx, GetSiteByCommitPrefixParams{
+		ProjectID: projectID,
+		GitCommit: prefix + "%",
+	})
+}
+
 func (d *DB) DeleteSite(ctx context.Context, projectID int64, branch string) (storageKey string, err error) {
 	tx, err := d.DB.BeginTx(ctx, nil)
 	if err != nil {

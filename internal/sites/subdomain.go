@@ -16,26 +16,28 @@ import (
 //	https://myapp.pazer.site/            -> default branch (resolveRootBranch),
 //	https://myapp.pazer.site/docs/x.css     same chain as the classic root
 //	                                        redirect, so gate and serve agree
-//	https://myapp.pazer.site/~pr-7/      -> branch pr-7 (the "~" sigil names a
-//	https://myapp.pazer.site/~pr-7/x.css    branch; it is outside the branch
+//	https://myapp.pazer.site/@pr-7/      -> branch pr-7 (the "@" sigil names a
+//	https://myapp.pazer.site/@pr-7/x.css    branch; it is outside the branch
 //	                                        charset, so no branch can collide)
 //
-// Branches may contain "/" (claude/foo), so "~claude/foo/x.css" is ambiguous
+// Branches may contain "/" (claude/foo), so "@claude/foo/x.css" is ambiguous
 // syntactically; splitSiteBranch resolves it by longest match against the
-// project's site rows. A "~<branch>" that resolves to the SAME branch the bare
+// project's site rows. An "@<branch>" that resolves to the SAME branch the bare
 // root serves is non-canonical and 302s (no-store) to the bare form -- one
 // canonical URL per file, and the default branch stays a mutable pointer.
 //
-// Reserved on this scheme (still served on sites.{domain}/...): the "~" sigil
-// at the path root, and the literal /__sso path (the cross-domain sign-in
-// redemption endpoint, registered by internal/auth inside this host family
-// because host-agnostic routes never serve on a claimed host).
+// "~" was this scheme's original sigil, before "@" became the one branch
+// spelling shared with sites.{domain}/{project}/@{branch}/. It still resolves
+// and 301s to the "@" form, so no published URL breaks.
+//
+// Reserved on this scheme (still served on sites.{domain}/...): the "@" and "~"
+// sigils at the path root, and the literal /__sso path (the cross-domain
+// sign-in redemption endpoint, registered by internal/auth inside this host
+// family because host-agnostic routes never serve on a claimed host).
 //
 // v1 serves only names already valid as a single DNS label ([a-z0-9-], max 63,
 // no leading/trailing hyphen): names with "/", ".", "_", or over 63 chars 404
 // here and stay reachable on the classic scheme. No fold-back mapping.
-
-const tildeSigil = '~'
 
 // siteDomainRegistered keeps the config-conditional registration idempotent
 // across repeated auth.Init calls (tests boot several servers per process).
@@ -57,7 +59,7 @@ func registerSiteDomainRoutes() {
 
 // parseSubdomainRoute builds the sites route for a {project}.<site-domain>
 // request: the project is the host label ({project} binds exactly one label),
-// the branch/path come from the "~" grammar. The result is the same route
+// the branch/path come from the sigil grammar. The result is the same route
 // struct the classic scheme uses, so AllowsPublicRead and the centralized
 // requireProject flow apply verbatim (GET only -- always ReadAccess, never
 // auto-provisioning).
@@ -70,7 +72,7 @@ func parseSubdomainRoute(r *http.Request) auth.RouteInfo {
 		return route{}
 	}
 	p := r.PathValue("path")
-	if len(p) == 0 || p[0] != tildeSigil {
+	if len(p) == 0 || (p[0] != branchSigil && p[0] != legacyBranchSigil) {
 		// Bare path: the default branch. root=true routes both the gate
 		// (AllowsPublicRead) and the handler through resolveRootBranch, the same
 		// chain the classic bare-root redirect uses.
@@ -78,10 +80,10 @@ func parseSubdomainRoute(r *http.Request) auth.RouteInfo {
 	}
 	rest := p[1:]
 	if rest == "" || rest[0] == '/' {
-		// "~" with no branch name is not a valid reference.
+		// A sigil with no branch name is not a valid reference.
 		return route{}
 	}
-	return route{project: project, tilde: rest}
+	return route{project: project, sigil: rest}
 }
 
 // validSiteLabel reports whether a project name is servable as a single DNS
@@ -102,7 +104,7 @@ func validSiteLabel(s string) bool {
 }
 
 // ServeSubdomain serves a {project}.<site-domain> request: the default branch
-// on bare paths, an explicit branch behind the "~" sigil, canonicalizing
+// on bare paths, an explicit branch behind the "@" sigil, canonicalizing
 // redirects between the two forms. File serving itself (tar scan, index.html,
 // 404.html) is shared with the classic scheme via serveSiteFile.
 func (h *Handler) ServeSubdomain(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +116,19 @@ func (h *Handler) ServeSubdomain(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(ctx)
 	rt := routeFrom(ctx)
 
-	if rt.tilde == "" {
+	// The original "~" spelling names the same branch as "@", permanently, so
+	// canonicalize it: one URL per file, and the rest of this handler only has
+	// to reason about one sigil.
+	if strings.HasPrefix(r.URL.Path, "/"+string(legacyBranchSigil)) {
+		target := "/" + string(branchSigil) + r.URL.Path[2:]
+		if q := r.URL.RawQuery; q != "" {
+			target += "?" + q
+		}
+		http.Redirect(w, r, target, http.StatusMovedPermanently)
+		return
+	}
+
+	if rt.sigil == "" {
 		// Bare path: the project's default branch, resolved through the same
 		// chain as the classic root redirect (and as AllowsPublicRead just did
 		// for the gate, so they cannot disagree).
@@ -122,16 +136,18 @@ func (h *Handler) ServeSubdomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	branch, filePath, ok := splitSiteBranch(ctx, h.DB, project.ID, rt.tilde)
+	branch, filePath, ok := splitSiteBranch(ctx, h.DB, project.ID, rt.sigil)
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 
-	if branch == resolveRootBranch(ctx, h.DB, project) {
-		// ~<default-branch> is non-canonical: the bare path serves this branch.
+	if refNamesBranch(rt.sigil, branch) && branch == resolveRootBranch(ctx, h.DB, project) {
+		// @<default-branch> is non-canonical: the bare path serves this branch.
+		// A commit ref that happens to resolve the default branch is NOT
+		// collapsed -- it is the most specific spelling there is.
 		// 302 (no-store): the default branch is a mutable pointer, so the mapping
-		// from ~<branch> form to bare form can change with the next publish.
+		// from @<branch> form to bare form can change with the next publish.
 		target := "/" + filePath
 		if filePath != "" && strings.HasSuffix(r.URL.Path, "/") {
 			target += "/"
@@ -144,7 +160,7 @@ func (h *Handler) ServeSubdomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Canonicalize a branch root without its trailing slash (~pr-7 -> ~pr-7/) so
+	// Canonicalize a branch root without its trailing slash (@pr-7 -> @pr-7/) so
 	// relative links in index.html resolve under the branch -- same rule as the
 	// classic scheme's branch root.
 	if filePath == "" && !strings.HasSuffix(r.URL.Path, "/") {
