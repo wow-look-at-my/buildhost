@@ -337,3 +337,38 @@ func TestParseRoute_BranchList(t *testing.T) {
 	assert.Equal(t, "myapp", r.ProjectName())
 	assert.Equal(t, "", r.branch)
 }
+
+// The publish response must name the canonical URL for the branch it deployed,
+// so no publisher has to reimplement the grammar to advertise a site.
+func TestUpload_ResponseCarriesCanonicalURL(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "mysite")
+	require.NoError(t, d.SetProjectDefaultBranch(context.Background(), proj.ID, "master"))
+	proj.DefaultBranch = "master"
+
+	publish := func(branch string) string {
+		t.Helper()
+		body := makeTarGz(t, map[string]string{"index.html": "<h1>hi</h1>"})
+		req := httptest.NewRequest("PUT", "/sites/mysite/branch/"+branch, bytes.NewReader(body))
+		req = withRoute(req, proj, route{project: "mysite", branch: branch, write: true})
+		rec := httptest.NewRecorder()
+		h.Upload(rec, req)
+		require.Equal(t, http.StatusCreated, rec.Code)
+
+		var got struct {
+			db.Site
+			URL string `json:"url"`
+		}
+		require.NoError(t, json.NewDecoder(rec.Body).Decode(&got))
+		// The embedded row's fields stay top-level, so an older client that
+		// decodes into db.Site reads exactly what it always did.
+		assert.Equal(t, branch, got.Branch)
+		return got.URL
+	}
+
+	// The default branch's deployment IS the bare project path.
+	assert.Equal(t, "https://sites.example.com/mysite/", publish("master"))
+	// Any other branch needs naming, and the "@" form is how it is named --
+	// never "/branch/", which now only redirects here.
+	assert.Equal(t, "https://sites.example.com/mysite/@pr-7/", publish("pr-7"))
+}
