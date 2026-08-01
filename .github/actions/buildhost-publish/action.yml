@@ -145,6 +145,7 @@ runs:
         GITHUB_TOKEN: ${{ inputs.path == '' && github.token || '' }}
       with:
         script: |
+          import { postStorageRecords } from "${{ github.action_path }}/../lib/storage-record";
           await (async () => {
             const inputProject: string = "${{ inputs.project }}";
             const inputVersion: string = "${{ inputs.version }}";
@@ -248,68 +249,16 @@ runs:
             // failure fails the publish. A warn-and-continue path would be an
             // opt-out by neglect -- the publish would stay green while the
             // org's linked artifacts page silently fell behind reality.
-            // What a failing storage-record POST actually tells you. A 404 is NOT
-            // proof of a missing grant: the endpoint is org-scoped, so it also 404s
-            // when {org} names no organization this token can see. The owner-type
-            // probe's own answer is what separates the two.
-            const recordFailureDetail = (status: number | undefined, msg: string, owner: string, ownerType: string): string => {
-              if (status === 403) {
-                return `(HTTP 403: ${msg}). The token was refused for artifact metadata: this job must grant 'artifact-metadata: write' -- job-level permissions REPLACE workflow-level ones, so a job-level block must list it alongside the ones it already declares. Recording what buildhost stores is part of publishing and cannot be turned off.`;
-              }
-              if (status === 404) {
-                const probe = ownerType === '' ? 'failed, so the owner type is unknown' : `reported '${ownerType}'`;
-                return `(HTTP 404: ${msg}). POST /orgs/${owner}/artifacts/metadata/storage-record found no organization named ${owner} that this token can see, and GET /users/${owner} ${probe} -- a user-account owner is skipped rather than recorded. If ${owner} is an organization, the token is missing 'artifact-metadata: write' (job-level permissions REPLACE workflow-level ones). Recording what buildhost stores is part of publishing and cannot be turned off.`;
-              }
-              return `(${msg}).`;
-            };
-            const postStorageRecords = async (): Promise<boolean> => {
-              if (storageRecords.length === 0) return true;
-              // A loopback server is not a registry anything can fetch from
-              // (buildhost's own e2e spawns one), so a record pointing at it
-              // would be an unreachable row on the org's page. This is a
-              // property of the target, not a caller-facing switch.
-              const registry = storageRecords[0].registry_url;
-              const host = new URL(registry).hostname;
-              if (host === "localhost" || host === "127.0.0.1" || host === "::1" || !registry.startsWith("https://")) {
-                core.info(`Skipping ${storageRecords.length} storage record(s): ${registry} is not a reachable https registry (the API accepts https URLs only)`);
-                return true;
-              }
-              const org = context.repo.owner;
-              const githubRepository = context.repo.repo;
-              for (const rec of storageRecords) {
-                const { artifact_url: artifactURL, ...rest } = rec;
-                if (artifactURL.length > 152) {
-                  core.setFailed(`Cannot record ${rec.name} ${rec.path}: its artifact_url is ${artifactURL.length} chars, over the API's 152-char limit. Recording it without the URL would silently drop the only link back to the bytes the digest covers; shorten the project name or change the download URL scheme.`);
-                  return false;
-                }
-                try {
-                  await octokit.request("POST /orgs/{org}/artifacts/metadata/storage-record", {
-                    org, ...rest, artifact_url: artifactURL,
-                    github_repository: githubRepository, status: "active", return_records: false,
-                  });
-                  core.info(`Recorded ${rec.name} ${rec.path} ${rec.digest}`);
-                } catch (e) {
-                  const status = (e as { status?: number }).status;
-                  const msg = e instanceof Error ? e.message : String(e);
-                  // A personal account has no linked artifacts page, so the
-                  // org-scoped endpoint 404s no matter what the token grants
-                  // -- a property of the target, like the loopback skip above.
-                  // Checked only on a 404 (orgs pay no extra call) and fails
-                  // closed: an unreadable owner type leaves the failure standing.
-                  const ownerType = status === 404
-                    ? await octokit.rest.users.getByUsername({ username: org }).then((r: { data: { type?: string } }) => r.data.type ?? "").catch(() => "")
-                    : "";
-                  if (ownerType === "User") {
-                    core.info(`Skipping ${storageRecords.length} storage record(s): ${org} is a user account, which has no linked artifacts page`);
-                    return true;
-                  }
-                  core.setFailed(`Could not record ${rec.name} ${rec.path} on ${org}'s linked artifacts page ${recordFailureDetail(status, msg, org, ownerType)}`);
-                  return false;
-                }
-              }
-              core.info(`Recorded ${storageRecords.length} artifact(s) on ${org}'s linked artifacts page`);
-              return true;
-            };
+            // The posting itself lives in ../lib/storage-record, shared by
+            // every publish composite.
+            const drainStorageRecords = async (): Promise<boolean> => postStorageRecords(
+              octokit, core, storageRecords,
+              {
+                owner: context.repo.owner,
+                githubRepository: context.repo.repo,
+                label: (rec) => `${rec.name} ${rec.path}`,
+              },
+            );
 
             // Downloads live on the dl.<host> subdomain -- buildhost dispatches
             // services by the first label of the request Host.
@@ -512,7 +461,7 @@ runs:
                 core.info(`Release: ${project}/${rv} (legacy flat layout)`);
                 if (!(await uploadAndPublish(project, rv, legacy))) return;
                 core.setOutput('deployment_url', `${server}/projects/${project}/releases/${rv}`);
-                await postStorageRecords();
+                await drainStorageRecords();
                 return;
               }
               created.set(proj, probe);
@@ -540,7 +489,7 @@ runs:
               core.setOutput('deployment_url', `${server}/projects/${primary.proj}`);
             }
 
-            await postStorageRecords();
+            await drainStorageRecords();
           })();
 
     # Terminal status for the GitHub Deployment created above; runs even when

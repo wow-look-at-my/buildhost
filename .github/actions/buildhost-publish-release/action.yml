@@ -32,6 +32,7 @@ runs:
       uses: wow-look-at-my/actions@typescript#latest
       with:
         script: |
+          import { postStorageRecords } from "${{ github.action_path }}/../lib/storage-record";
           await (async () => {
             const server: string = "${{ inputs.server }}";
             let token: string = "${{ inputs.token }}";
@@ -74,30 +75,10 @@ runs:
               return;
             }
 
-            const host = new URL(server).hostname;
-            if (host === "localhost" || host === "127.0.0.1" || host === "::1" || !server.startsWith("https://")) {
-              core.info(`Skipping ${artifacts.length} storage record(s): ${server} is not a reachable https registry (the API accepts https URLs only)`);
-              return;
-            }
-
             const dl = (() => { const u = new URL(server); u.host = `dl.${u.host}`; return u.origin; })();
             const releaseVersion: string = published.version ?? version;
-            // What a failing storage-record POST actually tells you. A 404 is NOT
-            // proof of a missing grant: the endpoint is org-scoped, so it also 404s
-            // when {org} names no organization this token can see. The owner-type
-            // probe's own answer is what separates the two.
-            const recordFailureDetail = (status: number | undefined, msg: string, owner: string, ownerType: string): string => {
-              if (status === 403) {
-                return `(HTTP 403: ${msg}). The token was refused for artifact metadata: this job must grant 'artifact-metadata: write' -- job-level permissions REPLACE workflow-level ones, so a job-level block must list it alongside the ones it already declares. Recording what buildhost stores is part of publishing and cannot be turned off.`;
-              }
-              if (status === 404) {
-                const probe = ownerType === '' ? 'failed, so the owner type is unknown' : `reported '${ownerType}'`;
-                return `(HTTP 404: ${msg}). POST /orgs/${owner}/artifacts/metadata/storage-record found no organization named ${owner} that this token can see, and GET /users/${owner} ${probe} -- a user-account owner is skipped rather than recorded. If ${owner} is an organization, the token is missing 'artifact-metadata: write' (job-level permissions REPLACE workflow-level ones). Recording what buildhost stores is part of publishing and cannot be turned off.`;
-              }
-              return `(${msg}).`;
-            };
-            const org = context.repo.owner;
 
+            const records = [];
             for (const a of artifacts) {
               const slot = `${a.os ?? ''}/${a.arch ?? ''}`;
               const sha: string = a.sha256 ?? '';
@@ -105,46 +86,23 @@ runs:
                 core.setFailed(`Published artifact ${slot} carried no sha256; cannot record what buildhost stored`);
                 return;
               }
-              // debug=1 is the only download returning the uploaded bytes
-              // verbatim -- buildhost strips and repackages on demand -- so it
-              // is the one URL whose bytes hash to the recorded digest.
-              const artifactURL = `${dl}/${project}?v=${encodeURIComponent(releaseVersion)}&os=${a.os ?? ''}&arch=${a.arch ?? ''}&debug=1`;
-              if (artifactURL.length > 152) {
-                core.setFailed(`Cannot record ${project} ${slot}: its artifact_url is ${artifactURL.length} chars, over the API's 152-char limit. Recording it without the URL would silently drop the only link back to the bytes the digest covers; shorten the project name or change the download URL scheme.`);
-                return;
-              }
-              try {
-                await octokit.request("POST /orgs/{org}/artifacts/metadata/storage-record", {
-                  org,
-                  name: project,
-                  version: releaseVersion,
-                  digest: `sha256:${sha}`,
-                  registry_url: server,
-                  repository: project,
-                  path: slot,
-                  artifact_url: artifactURL,
-                  github_repository: context.repo.repo,
-                  status: "active",
-                  return_records: false,
-                });
-                core.info(`Recorded ${project} ${slot} sha256:${sha} on ${org}'s linked artifacts page`);
-              } catch (e) {
-                const status = (e as { status?: number }).status;
-                const msg = e instanceof Error ? e.message : String(e);
-                // A personal account has no linked artifacts page, so the
-                // org-scoped endpoint 404s no matter what the token grants --
-                // a property of the target, like the loopback skip above.
-                // Checked only on a 404 (orgs pay no extra call) and fails
-                // closed: an unreadable owner type leaves the failure standing.
-                const ownerType = status === 404
-                  ? await octokit.rest.users.getByUsername({ username: org }).then((r: { data: { type?: string } }) => r.data.type ?? "").catch(() => "")
-                  : "";
-                if (ownerType === "User") {
-                  core.info(`Skipping the storage record(s): ${org} is a user account, which has no linked artifacts page`);
-                  return;
-                }
-                core.setFailed(`Could not record ${project} ${slot} on ${org}'s linked artifacts page ${recordFailureDetail(status, msg, org, ownerType)}`);
-                return;
-              }
+              records.push({
+                name: project,
+                version: releaseVersion,
+                digest: `sha256:${sha}`,
+                registry_url: server,
+                repository: project,
+                path: slot,
+                // debug=1 is the only download returning the uploaded bytes
+                // verbatim -- buildhost strips and repackages on demand -- so
+                // it is the one URL whose bytes hash to the recorded digest.
+                artifact_url: `${dl}/${project}?v=${encodeURIComponent(releaseVersion)}&os=${a.os ?? ''}&arch=${a.arch ?? ''}&debug=1`,
+              });
             }
+
+            await postStorageRecords(octokit, core, records, {
+              owner: context.repo.owner,
+              githubRepository: context.repo.repo,
+              label: (rec) => `${rec.name} ${rec.path}`,
+            });
           })();

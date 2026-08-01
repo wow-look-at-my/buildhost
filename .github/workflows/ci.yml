@@ -159,6 +159,20 @@ jobs:
                   await gh.rest.issues.createComment({ ...repo, issue_number: pr, body });
               }
 
+  # The publish composites all import .github/actions/lib/storage-record, and
+  # nothing else can reach it: upload-artifact-action-e2e publishes to
+  # http://localhost:18080, where the unreachable-registry skip returns before
+  # a record is posted. Untested, a mistake there fails publishing for every
+  # repo in the org at once.
+  storage-record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The shared storage-record module must behave
+        uses: wow-look-at-my/actions@typescript#latest
+        with:
+          file: .github/scripts/storage-record-test.ts
+
   container-healthcheck:
     # Only meaningful if the build succeeded and saved the go-build hand-off. Without
     # this, an always()-style condition makes it run on build failure and then fail on

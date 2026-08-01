@@ -150,6 +150,7 @@ runs:
         GITHUB_TOKEN: ${{ github.token }}
       with:
         script: |
+          import { postStorageRecords } from "${{ github.action_path }}/../lib/storage-record";
           await (async () => {
             const server: string = "${{ inputs.server }}";
             const sourceDir: string = "${{ inputs.source_dir }}";
@@ -307,68 +308,29 @@ runs:
             // bolt-on: it happens in this step, has no opt-out input, and a
             // failure fails the publish. A warn-and-continue path would be an
             // opt-out by neglect -- the publish would stay green while the
-            // org's linked artifacts page silently fell behind reality.
-            // What a failing storage-record POST actually tells you. A 404 is NOT
-            // proof of a missing grant: the endpoint is org-scoped, so it also 404s
-            // when {org} names no organization this token can see. The owner-type
-            // probe's own answer is what separates the two.
-            const recordFailureDetail = (status: number | undefined, msg: string, owner: string, ownerType: string): string => {
-              if (status === 403) {
-                return `(HTTP 403: ${msg}). The token was refused for artifact metadata: this job must grant 'artifact-metadata: write' -- job-level permissions REPLACE workflow-level ones, so a job-level block must list it alongside the ones it already declares. Recording what buildhost stores is part of publishing and cannot be turned off.`;
-              }
-              if (status === 404) {
-                const probe = ownerType === '' ? 'failed, so the owner type is unknown' : `reported '${ownerType}'`;
-                return `(HTTP 404: ${msg}). POST /orgs/${owner}/artifacts/metadata/storage-record found no organization named ${owner} that this token can see, and GET /users/${owner} ${probe} -- a user-account owner is skipped rather than recorded. If ${owner} is an organization, the token is missing 'artifact-metadata: write' (job-level permissions REPLACE workflow-level ones). Recording what buildhost stores is part of publishing and cannot be turned off.`;
-              }
-              return `(${msg}).`;
-            };
-            const postStorageRecord = async (): Promise<void> => {
-              // A loopback server is not a registry anything can fetch from
-              // (buildhost's own e2e spawns one), so a record pointing at it
-              // would be an unreachable row on the org's page. A property of
-              // the target, not a caller-facing switch.
-              const host = new URL(server).hostname;
-              if (host === "localhost" || host === "127.0.0.1" || host === "::1" || !server.startsWith("https://")) {
-                core.info(`Skipping the storage record: ${server} is not a reachable https registry (the API accepts https URLs only)`);
-                return;
-              }
-              const org = context.repo.owner;
-              try {
-                // Deliberately no artifact_url: buildhost serves a site
-                // unpacked, so no URL returns the archive bytes this digest
-                // covers, and a record must never point at bytes that hash to
-                // something else.
-                await octokit.request("POST /orgs/{org}/artifacts/metadata/storage-record", {
-                  org,
-                  name: project,
-                  version: gitCommit,
-                  digest: `sha256:${sum}`,
-                  registry_url: server,
-                  repository: project,
-                  path: `branch/${branch}`,
-                  github_repository: context.repo.repo,
-                  status: "active",
-                  return_records: false,
-                });
-                core.info(`Recorded ${project} branch/${branch} sha256:${sum} on ${org}'s linked artifacts page`);
-              } catch (e) {
-                const status = (e as { status?: number }).status;
-                const msg = e instanceof Error ? e.message : String(e);
-                // A personal account has no linked artifacts page, so the
-                // org-scoped endpoint 404s no matter what the token grants --
-                // a property of the target, like the loopback skip above.
-                // Checked only on a 404 (orgs pay no extra call) and fails
-                // closed: an unreadable owner type leaves the failure standing.
-                const ownerType = status === 404
-                  ? await octokit.rest.users.getByUsername({ username: org }).then((r: { data: { type?: string } }) => r.data.type ?? "").catch(() => "")
-                  : "";
-                if (ownerType === "User") {
-                  core.info(`Skipping the storage record: ${org} is a user account, which has no linked artifacts page`);
-                  return;
-                }
-                core.setFailed(`Could not record ${project} branch/${branch} on ${org}'s linked artifacts page ${recordFailureDetail(status, msg, org, ownerType)}`);
-              }
-            };
+            // org's linked artifacts page silently fell behind reality. The
+            // posting itself lives in ../lib/storage-record, shared by every
+            // publish composite.
+            //
+            // Deliberately no artifact_url: buildhost serves a site unpacked,
+            // so no URL returns the archive bytes this digest covers, and a
+            // record must never point at bytes that hash to something else.
+            const postStorageRecord = async (): Promise<boolean> => postStorageRecords(
+              octokit, core,
+              [{
+                name: project,
+                version: gitCommit,
+                digest: `sha256:${sum}`,
+                registry_url: server,
+                repository: project,
+                path: `branch/${branch}`,
+              }],
+              {
+                owner: context.repo.owner,
+                githubRepository: context.repo.repo,
+                label: () => `${project} branch/${branch}`,
+              },
+            );
 
             // The endpoint's own response -- from the direct PUT or the
             // session finalize, same endpoint either way -- feeds the outputs.
