@@ -49,6 +49,7 @@ export interface DashboardData {
     uptime: string;
     cpu_percent: string;
     cpu_total: string;
+    services?: ServiceURLs;
 }
 
 export interface ProjectSummary {
@@ -97,6 +98,7 @@ export interface ProjectData {
     releases: ReleaseSummary[];
     sites: SiteInfo[];
     base_url: string;
+    services?: ServiceURLs;
 }
 
 export interface Release {
@@ -133,14 +135,17 @@ export interface ReleaseData {
     total_downloads: number;
     total_size: number;
     base_url: string;
+    services?: ServiceURLs;
 }
 
 export interface RegistriesData {
     base_url: string;
     projects: ProjectSummary[];
+    services?: ServiceURLs;
 }
 
 export interface TokenInfo {
+    id: number;
     name: string;
     token_prefix: string;
     is_global: boolean;
@@ -164,6 +169,7 @@ export interface SiteDetail {
 export interface SitesData {
     sites: SiteDetail[];
     base_url: string;
+    services?: ServiceURLs;
 }
 
 export interface OIDCPolicy {
@@ -205,6 +211,10 @@ export interface StorageData {
     disk_bytes: number;
     disk_used: number;
     disk_total: number;
+    packaged_bytes: number;
+    stripped_bytes: number;
+    debug_bytes: number;
+    reclaimable_bytes: number;
 }
 
 export interface NavItem {
@@ -219,4 +229,44 @@ export interface ProjectGroupInfo {
     total_size: number;
     total_files: number;
     last_updated: string;
+}
+
+// Service URLs are per-subdomain (dl./apt./brew./…), served by the admin API
+// alongside every payload that renders an endpoint. base_url is the apex and is
+// NOT interchangeable with these -- the apex serves no /dl/ or /apt/ path.
+export interface ServiceURLs {
+    dl: string;
+    apt: string;
+    brew: string;
+    npm: string;
+    oci: string;
+    sites: string;
+    static: string;
+}
+
+export interface RetentionRelease {
+    project_name: string;
+    project_id: number;
+    branch: string;
+    version: string;
+    reason: string;
+}
+
+export interface RetentionPreview {
+    enforced: boolean;
+    release_count: number;
+    keep_n_count: number;
+    abandoned_count: number;
+    blobs: number;
+    blobs_retained: number;
+    reclaimable_bytes: number;
+    releases: RetentionRelease[];
+}
+
+export interface RetentionData {
+    keep_n: number;
+    recency_hours: number;
+    sweeper_enabled: boolean;
+    sweeper_enforce: boolean;
+    preview: RetentionPreview;
 }
