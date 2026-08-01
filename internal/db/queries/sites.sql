@@ -18,6 +18,10 @@ ON CONFLICT(project_id, branch) DO UPDATE SET
   is_public = excluded.is_public,
   updated_at = datetime('now');
 
+-- name: GetSiteByCommitPrefix :many
+SELECT id, project_id, branch, storage_key, size, sha256, file_count, git_commit, is_public, created_at, updated_at
+FROM sites WHERE project_id = ? AND git_commit != '' AND git_commit LIKE ? ORDER BY updated_at DESC;
+
 -- name: GetSiteStorageKey :one
 SELECT storage_key FROM sites WHERE project_id = ? AND branch = ?;
 

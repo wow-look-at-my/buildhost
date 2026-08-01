@@ -98,17 +98,17 @@ func TestUploadStoresArchiveAndServesByIndex(t *testing.T) {
 
 	before := counting.count()
 
-	rec := env.do(t, "GET", "/indexed/branch/main/a/b/c.css", "", nil, false)
+	rec := env.do(t, "GET", "/indexed/a/b/c.css", "", nil, false)
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "body{color:red}", rec.Body.String())
 
-	rec = env.do(t, "GET", "/indexed/branch/main/", "", nil, false)
+	rec = env.do(t, "GET", "/indexed/", "", nil, false)
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "<h1>home</h1>", rec.Body.String())
 
 	// A miss still finds the site's own 404 page -- which used to mean a SECOND
 	// full scan of the archive.
-	rec = env.do(t, "GET", "/indexed/branch/main/nope.html", "", nil, false)
+	rec = env.do(t, "GET", "/indexed/nope.html", "", nil, false)
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	assert.Equal(t, "<h1>missing</h1>", rec.Body.String())
 
@@ -143,11 +143,11 @@ func TestLegacyTarSiteStillServes(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	rec := env.do(t, "GET", "/legacy/branch/main/", "", nil, false)
+	rec := env.do(t, "GET", "/legacy/", "", nil, false)
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "<h1>old</h1>", rec.Body.String())
 
-	rec = env.do(t, "GET", "/legacy/branch/main/gone.html", "", nil, false)
+	rec = env.do(t, "GET", "/legacy/gone.html", "", nil, false)
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	assert.Equal(t, "<h1>old 404</h1>", rec.Body.String())
 
