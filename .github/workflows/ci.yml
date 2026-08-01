@@ -25,7 +25,7 @@ jobs:
       # below still fetch explicitly: they run plain `go`, never generate.
       - uses: wow-look-at-my/go-toolchain@v1
         with:
-          generate: 0709a9d4dd8d
+          generate: 476c7c5fc951
           autorelease: 'false'
       # The step above just ran every generate directive. If that changed a
       # TRACKED file, this repo is carrying a build artifact in git -- and a
@@ -122,10 +122,16 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: base/go.mod
+      # The admin dashboard's JS is a generate directive too (internal/admin),
+      # and it is embedded by name, so a base that has it fails to compile
+      # without this. Guarded on the script's existence: older base commits
+      # shipped the JS committed and have no script to run -- same
+      # works-on-older-base reasoning as the inlined cacerts fetch above.
       - if: steps.cache.outputs.cache-hit != 'true'
         working-directory: base
         run: |
           go generate ./internal/api
+          if [ -x scripts/build-admin-frontend.sh ]; then ./scripts/build-admin-frontend.sh; fi
           go build -o build/buildhost_linux_amd64 ./cmd/buildhost
       - if: steps.cache.outputs.cache-hit != 'true'
         run: chmod +x base/build/buildhost_linux_amd64 && ./base/build/buildhost_linux_amd64 routes > base-routes.txt
@@ -273,6 +279,8 @@ jobs:
           go-version-file: go.mod
       - run: ./scripts/fetch-cacerts.sh
       - run: go generate ./internal/api
+      # The dashboard JS is generated, not committed, and embedded by name.
+      - run: ./scripts/build-admin-frontend.sh
       - run: go build -o buildhost ./cmd/buildhost
       - name: Start local buildhost
         shell: bash

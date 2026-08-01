@@ -1,4 +1,5 @@
-// Tiny HTML builder. Nested calls become an escaped HTML string:
+// Tiny standalone HTML builder. No dependency on any global -- it just turns
+// nested calls into an escaped HTML string:
 //
 //   Html.div(Html.h2("Title", Html.span("note").cls("muted"))).cls("card")
 //
@@ -10,15 +11,24 @@
 
 export type Node = El | Raw | string | number | null | undefined | boolean | Node[];
 
+type AttrValue = string | number | boolean | null | undefined;
+
+// escape renders text HTML-safe (the five entities the DOM needs).
 export function escape(s: unknown): string {
     if (s == null) return "";
-    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 }
 
 // Raw marks an already-built, trusted HTML string so the builder emits it
-// verbatim instead of escaping it (e.g. the output of codeBlock/urlTpl).
+// verbatim instead of escaping it (e.g. the output of other string-building
+// helpers).
 export class Raw {
-    html: string;
+    private readonly html: string;
     constructor(html: unknown) {
         this.html = html == null ? "" : String(html);
     }
@@ -31,36 +41,41 @@ export function raw(html: unknown): Raw {
     return new Raw(html);
 }
 
-const VOID_TAGS: Record<string, boolean> = {
-    area: true, base: true, br: true, col: true, embed: true, hr: true, img: true,
-    input: true, link: true, meta: true, param: true, source: true, track: true, wbr: true,
-};
+const VOID_TAGS = new Set([
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+]);
 
 export class El {
-    tag: string;
-    a: Record<string, string | boolean | null | undefined>;
-    kids: Node[];
+    private readonly tag: string;
+    private readonly a: Record<string, AttrValue> = {};
+    private readonly kids: Node[];
+
     constructor(tag: string, kids?: Node[]) {
         this.tag = tag;
-        this.a = {};
         this.kids = kids || [];
     }
-    attr(k: string, v: string | boolean | null | undefined): this {
+
+    attr(k: string, v: AttrValue): this {
         this.a[k] = v;
         return this;
     }
+
     cls(v: string): this {
         this.a["class"] = v;
         return this;
     }
+
     style(v: string): this {
-        this.a.style = v;
+        this.a["style"] = v;
         return this;
     }
+
     add(...kids: Node[]): this {
         for (const kid of kids) this.kids.push(kid);
         return this;
     }
+
     toString(): string {
         let attrs = "";
         for (const k of Object.keys(this.a)) {
@@ -72,7 +87,7 @@ export class El {
             }
             attrs += " " + k + '="' + escape(v) + '"';
         }
-        if (VOID_TAGS[this.tag]) return "<" + this.tag + attrs + ">";
+        if (VOID_TAGS.has(this.tag)) return "<" + this.tag + attrs + ">";
         return "<" + this.tag + attrs + ">" + render(this.kids) + "</" + this.tag + ">";
     }
 }
@@ -91,20 +106,29 @@ export function render(node: Node): string {
 }
 
 // el(tag, ...children) builds an arbitrary/custom tag (e.g. "copy-btn"); the
-// common tags also get a shorthand below.
+// common tags also get a shorthand Html.<tag>(...children).
 export function el(tag: string, ...kids: Node[]): El {
     return new El(tag, kids);
 }
 
-const TAGS = ["div", "span", "p", "a", "h1", "h2", "h3", "code", "pre", "strong", "sub", "ul", "li",
-    "table", "thead", "tbody", "tr", "th", "td", "form", "label", "button"] as const;
+const SHORTHAND_TAGS = [
+    "div", "span", "p", "a", "h1", "h2", "h3", "code", "pre", "strong", "sub", "ul", "li",
+    "table", "thead", "tbody", "tr", "th", "td", "form", "label", "button",
+] as const;
 
-type TagFn = (...kids: Node[]) => El;
+type Shorthand = { [K in (typeof SHORTHAND_TAGS)[number]]: (...kids: Node[]) => El };
 
-export const Html: { escape: typeof escape; raw: typeof raw; render: typeof render; el: typeof el } & Record<(typeof TAGS)[number], TagFn> = {
-    escape, raw, render, el,
-} as never;
-
-for (const tag of TAGS) {
-    (Html as unknown as Record<string, TagFn>)[tag] = (...kids: Node[]): El => new El(tag, kids);
+const shorthand = {} as Shorthand;
+for (const tag of SHORTHAND_TAGS) {
+    shorthand[tag] = (...kids: Node[]): El => new El(tag, kids);
 }
+
+export const Html = {
+    escape,
+    raw,
+    Raw,
+    El,
+    render,
+    el,
+    ...shorthand,
+};

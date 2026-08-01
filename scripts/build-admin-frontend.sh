@@ -1,25 +1,37 @@
 #!/usr/bin/env bash
-# Build the admin dashboard's TypeScript into the static/ files that go:embed bakes
-# into the binary. The outputs are gitignored build artifacts, so this runs as a
-# //go:generate directive like every other generated input -- a build that skips
-# generate ships an admin dashboard with no JavaScript, which is what happened when
-# the built JS was un-committed with nothing left to rebuild it.
+# Build the admin dashboard's TypeScript into the JS that internal/admin embeds.
+#
+# The outputs (internal/admin/static/*.js) are gitignored BUILD ARTIFACTS: the
+# TypeScript under internal/admin/frontend/src is the only source. This script is
+# the //go:generate directive beside that embed, so `go-toolchain --generate`
+# materializes them exactly like the CA bundle and the sqlc/regex code.
+#
+# It fails loudly rather than skipping: a dashboard that ships without its JS is
+# a blank page, and that is precisely the failure that went unnoticed when the
+# artifacts were committed instead of generated.
 set -euo pipefail
 
-cd "$(dirname "$0")/../internal/admin/frontend"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+frontend="$here/internal/admin/frontend"
 
-# npm ci needs the lockfile and is reproducible; fall back to install if the tree
-# was vendored some other way. --silent keeps the go-toolchain log readable.
-if [ -f package-lock.json ]; then
-	npm ci --silent --no-audit --no-fund
-else
-	npm install --silent --no-audit --no-fund
+if ! command -v npm >/dev/null 2>&1; then
+    echo "build-admin-frontend: npm is required to build internal/admin/static/*.js" >&2
+    echo "  (the admin dashboard's JS is generated from $frontend/src, never committed)" >&2
+    exit 1
 fi
 
+cd "$frontend"
+
+# npm ci needs the lockfile; reuse an existing tree so repeat generates are fast.
+if [ ! -d node_modules ]; then
+    npm ci --silent
+fi
+
+# `npm run build` type-checks first (tsc --noEmit), then bundles with esbuild.
 npm run build --silent
 
-# esbuild writes what index.html loads; a missing output here means the binary would
-# embed an admin page whose scripts 404, so fail loudly instead.
-for f in app.js copy.js; do
-	test -s "../static/$f" || { echo "build-admin-frontend: ../static/$f was not produced" >&2; exit 1; }
+for f in ../static/app.js ../static/copy.js; do
+    [ -s "$f" ] || { echo "build-admin-frontend: $f was not produced" >&2; exit 1; }
 done
+
+echo "> built admin frontend -> internal/admin/static/{app,copy}.js"

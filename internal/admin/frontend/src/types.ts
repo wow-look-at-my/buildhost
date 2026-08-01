@@ -42,6 +42,7 @@ export interface RecentRelease {
 }
 
 export interface DashboardData {
+    services: ServiceURLs;
     stats: DashboardStats;
     recent: RecentRelease[];
     config: DashboardConfig;
@@ -49,7 +50,6 @@ export interface DashboardData {
     uptime: string;
     cpu_percent: string;
     cpu_total: string;
-    services?: ServiceURLs;
 }
 
 export interface ProjectSummary {
@@ -94,11 +94,11 @@ export interface SiteInfo {
 }
 
 export interface ProjectData {
+    services: ServiceURLs;
     project: Project;
     releases: ReleaseSummary[];
     sites: SiteInfo[];
     base_url: string;
-    services?: ServiceURLs;
 }
 
 export interface Release {
@@ -129,19 +129,19 @@ export interface ArtifactDetail {
 }
 
 export interface ReleaseData {
+    services: ServiceURLs;
     project: Project;
     release: Release;
     artifacts: ArtifactDetail[];
     total_downloads: number;
     total_size: number;
     base_url: string;
-    services?: ServiceURLs;
 }
 
 export interface RegistriesData {
+    services: ServiceURLs;
     base_url: string;
     projects: ProjectSummary[];
-    services?: ServiceURLs;
 }
 
 export interface TokenInfo {
@@ -167,9 +167,9 @@ export interface SiteDetail {
 }
 
 export interface SitesData {
+    services: ServiceURLs;
     sites: SiteDetail[];
     base_url: string;
-    services?: ServiceURLs;
 }
 
 export interface OIDCPolicy {
@@ -206,15 +206,15 @@ export interface StorageProject {
 export interface StorageData {
     projects: StorageProject[];
     total_bytes: number;
+    stripped_bytes: number;
+    debug_bytes: number;
+    packaged_bytes: number;
+    reclaimable_bytes: number;
     logical_bytes: number;
     physical_bytes: number;
     disk_bytes: number;
     disk_used: number;
     disk_total: number;
-    packaged_bytes: number;
-    stripped_bytes: number;
-    debug_bytes: number;
-    reclaimable_bytes: number;
 }
 
 export interface NavItem {
@@ -231,35 +231,21 @@ export interface ProjectGroupInfo {
     last_updated: string;
 }
 
-// Service URLs are per-subdomain (dl./apt./brew./…), served by the admin API
-// alongside every payload that renders an endpoint. base_url is the apex and is
-// NOT interchangeable with these -- the apex serves no /dl/ or /apt/ path.
-export interface ServiceURLs {
-    dl: string;
-    apt: string;
-    brew: string;
-    npm: string;
-    oci: string;
-    sites: string;
-    static: string;
-}
+// --- Retention (admin GET/PUT /api/retention, POST /api/retention/run) ---
 
 export interface RetentionRelease {
-    project_name: string;
     project_id: number;
+    project_name: string;
     branch: string;
     version: string;
     reason: string;
 }
 
 export interface RetentionPreview {
-    enforced: boolean;
     release_count: number;
-    keep_n_count: number;
-    abandoned_count: number;
+    reclaimable_bytes: number;
     blobs: number;
     blobs_retained: number;
-    reclaimable_bytes: number;
     releases: RetentionRelease[];
 }
 
@@ -269,4 +255,49 @@ export interface RetentionData {
     sweeper_enabled: boolean;
     sweeper_enforce: boolean;
     preview: RetentionPreview;
+}
+
+// --- Project tree (the Projects page groups slash-namespaced names) ---
+
+export interface TreeRow {
+    kind: "folder" | "project";
+    depth: number;
+    name?: string;
+    project?: ProjectSummary;
+}
+
+// --- Page registry ---
+
+export interface Pages {
+    dashboard(): void;
+    projects(): void;
+    project(name: string): void;
+    release(name: string, version: string): void;
+    registries(): void;
+    tokens(): void;
+    sites(): void;
+    site(name: string): void;
+    oidc(): void;
+    artifacts(): void;
+    storage(): void;
+    retention(): void;
+}
+
+// --- Signed temporary download link (admin POST .../download-links) ---
+
+export interface DownloadLink {
+    url: string;
+}
+
+// serviceURLs(r) in internal/admin/admin.go: one absolute base URL per service
+// subdomain, derived per request. Present on the dashboard, project, release
+// and registries payloads.
+export interface ServiceURLs {
+    dl: string;
+    apt: string;
+    brew: string;
+    npm: string;
+    oci: string;
+    sites: string;
+    static: string;
 }
