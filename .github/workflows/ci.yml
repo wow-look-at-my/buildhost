@@ -12,6 +12,8 @@ permissions:
   contents: write
   packages: write
   actions: read
+  deployments: write
+  artifact-metadata: write
 
 jobs:
   build:
@@ -23,10 +25,13 @@ jobs:
       # step here would hide a broken directive from CI and leave a fresh clone
       # unbuildable for everyone who is not this workflow. The setup-go jobs
       # below still fetch explicitly: they run plain `go`, never generate.
+      # autorelease publishes this binary to buildhost on every push, which is
+      # what makes the CLI downloadable -- the publish composites fetch it from
+      # dl instead of building cmd/buildhost from a checkout that has none of
+      # the generated files it embeds.
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           generate: 476c7c5fc951
-          autorelease: 'false'
       # The step above just ran every generate directive. If that changed a
       # TRACKED file, this repo is carrying a build artifact in git -- and a
       # tracked artifact is free to drift from the source it claims to be built

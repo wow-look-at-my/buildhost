@@ -45,6 +45,16 @@ static token; see the README for OIDC setup.
 
 ## Publishing with the CLI
 
+The CLI is the same binary that runs the server, published here on every build
+and downloadable without a token:
+
+```
+curl -fLo buildhost "__DL_URL__/buildhost?os=linux&arch=amd64"
+chmod +x buildhost
+```
+
+`os` is `linux`, `darwin` or `windows`; `arch` is `amd64` or `arm64`.
+
 ```
 # Create a project once
 buildhost project create --server __BASE_URL__ --token $TOKEN --name myapp
