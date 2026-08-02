@@ -68,31 +68,38 @@ runs:
       with:
         script: |
           await (async () => {
+            // Every input is bound to a string-annotated const before it is
+            // used. Interpolated straight into a comparison, tsc sees a string
+            // LITERAL and rejects the expression as always true or always
+            // false; the annotation widens it back to string.
             const server: string = "${{ inputs.server }}";
             const project: string = "${{ inputs.project }}";
-            const required: boolean = "${{ inputs.required }}" === "true";
+            const token: string = "${{ inputs.token }}";
+            const versionInput: string = "${{ inputs.version }}";
+            const branchInput: string = "${{ inputs.branch }}";
+            const osInput: string = "${{ inputs.os }}";
+            const archInput: string = "${{ inputs.arch }}";
+            const formatInput: string = "${{ inputs.format }}";
+            const pathInput: string = "${{ inputs.path }}";
+            const executable: string = "${{ inputs.executable }}";
+            const required: string = "${{ inputs.required }}";
 
             // dl is a subdomain of the server's own host, so a non-default
             // deployment resolves without a second input to keep in sync.
             const host = new URL(server).host;
             const runnerArch: Record<string, string> = { X64: "amd64", ARM64: "arm64", X86: "386", ARM: "arm" };
             const query = new URLSearchParams({
-              os: "${{ inputs.os }}" || (env.RUNNER_OS ?? "Linux").toLowerCase(),
-              arch: "${{ inputs.arch }}" || runnerArch[env.RUNNER_ARCH ?? "X64"] || "amd64",
+              os: osInput || (env.RUNNER_OS ?? "Linux").toLowerCase(),
+              arch: archInput || runnerArch[env.RUNNER_ARCH ?? "X64"] || "amd64",
             });
-            for (const [key, value] of Object.entries({
-              v: "${{ inputs.version }}",
-              branch: "${{ inputs.branch }}",
-              fmt: "${{ inputs.format }}",
-            })) {
+            for (const [key, value] of Object.entries({ v: versionInput, branch: branchInput, fmt: formatInput })) {
               if (value) query.set(key, value);
             }
             const url = `https://dl.${host}/${project}?${query}`;
 
-            const token: string = "${{ inputs.token }}";
             const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
             const destination: string =
-              "${{ inputs.path }}" || path.join(env.RUNNER_TEMP!, project.split("/").pop()!);
+              pathInput || path.join(env.RUNNER_TEMP!, project.split("/").pop()!);
 
             // Retried because a registry blip should not fail a publish, but
             // bounded: an artifact that is genuinely absent must be reported,
@@ -104,7 +111,7 @@ runs:
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 fs.mkdirSync(path.dirname(destination), { recursive: true });
                 fs.writeFileSync(destination, Buffer.from(await response.arrayBuffer()));
-                if ("${{ inputs.executable }}" === "true") fs.chmodSync(destination, 0o755);
+                if (executable === "true") fs.chmodSync(destination, 0o755);
                 core.info(`Downloaded ${url} -> ${destination}`);
                 core.setOutput("path", destination);
                 core.setOutput("downloaded", "true");
@@ -117,7 +124,7 @@ runs:
 
             core.setOutput("path", "");
             core.setOutput("downloaded", "false");
-            if (required) {
+            if (required === "true") {
               core.setFailed(`Could not download ${url}: ${lastError}`);
             } else {
               core.warning(`Could not download ${url}: ${lastError}`);
