@@ -267,13 +267,15 @@ runs:
         cache-from: ${{ steps.refs.outputs.cache_from }}
         cache-to: ${{ steps.refs.outputs.cache_to }}
 
-    # Downloaded, not built. cmd/buildhost embeds generated files that are all
-    # gitignored (admin JS, cacerts, sqlc output), so building it from a
-    # consumer's checkout of this action needs every generate directive to have
-    # run there -- it did not, and the build died on
-    # "pattern static/app.js: no matching files found". The server publishes its
-    # own binary on every push, and the bare download resolves the newest build
-    # of the default branch, so this is the running server's own client.
+    # Downloaded first, built only if that fails. cmd/buildhost embeds files
+    # that are all gitignored (the CA bundle, the project-name matcher, the
+    # admin dashboard's JS), so building it needs those directives to have run
+    # -- the old build-only path ran one of the three and died on
+    # "pattern static/app.js: no matching files found" for every consumer.
+    #
+    # The server publishes its own binary on every push and the bare download
+    # resolves the newest build of the default branch, so the happy path is the
+    # running server's own client, with no Go toolchain on the runner.
     - name: Download the buildhost CLI
       id: cli
       if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
@@ -281,20 +283,66 @@ runs:
       env:
         SERVER: ${{ inputs.server }}
       run: |
-        set -euo pipefail
+        set -uo pipefail
+        cli="${RUNNER_TEMP}/buildhost-cli"
         host="${SERVER#*://}"
         host="${host%%/*}"
         os="$(uname -s | tr '[:upper:]' '[:lower:]')"
         case "$(uname -m)" in
           x86_64) arch=amd64 ;;
           aarch64|arm64) arch=arm64 ;;
-          *) echo "unsupported runner architecture $(uname -m)" >&2; exit 1 ;;
+          *) arch="$(uname -m)" ;;
         esac
-        curl -fSL --retry 3 --retry-all-errors \
-          -o "${RUNNER_TEMP}/buildhost-cli" \
-          "https://dl.${host}/buildhost?os=${os}&arch=${arch}"
-        chmod +x "${RUNNER_TEMP}/buildhost-cli"
+        url="https://dl.${host}/buildhost?os=${os}&arch=${arch}"
+
+        # A download that arrives is not the same as a CLI that works: the
+        # published binary predated docker-push once already, which would fail
+        # in the push step with no hint that the CLI was the problem.
+        reason=""
+        if ! curl -fSL --retry 3 --retry-all-errors --max-time 300 -o "${cli}" "${url}"; then
+          reason="${url} could not be downloaded (buildhost unreachable, or it publishes no CLI)"
+        else
+          chmod +x "${cli}"
+          if ! "${cli}" version; then
+            reason="the CLI downloaded from ${url} does not run on this runner"
+          elif ! "${cli}" docker-push --help >/dev/null 2>&1; then
+            reason="the CLI downloaded from ${url} has no docker-push command"
+          fi
+        fi
+
+        if [ -n "${reason}" ]; then
+          echo "::warning::Falling back to building the buildhost CLI from source: ${reason}."
+          echo "source_build=true" >> "${GITHUB_OUTPUT}"
+        else
+          echo "source_build=false" >> "${GITHUB_OUTPUT}"
+        fi
+
+    # The fallback, reached only when the download is missing or unusable. It
+    # runs every generate directive the binary's embeds need, which is what the
+    # old path got wrong.
+    - name: Set up Go (to build the CLI from source)
+      if: ${{ steps.cli.outputs.source_build == 'true' }}
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: ${{ github.action_path }}/../../../go.mod
+        cache-dependency-path: ${{ github.action_path }}/../../../go.sum
+
+    - name: Build the buildhost CLI from source
+      id: cli-source
+      if: ${{ steps.cli.outputs.source_build == 'true' }}
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        repo="$(cd "${ACTION_PATH}/../../.." && pwd)"
+        cd "${repo}"
+        ./scripts/fetch-cacerts.sh
+        go generate ./internal/api
+        ./scripts/build-admin-frontend.sh
+        go build -o "${RUNNER_TEMP}/buildhost-cli" ./cmd/buildhost
         "${RUNNER_TEMP}/buildhost-cli" version
+        "${RUNNER_TEMP}/buildhost-cli" docker-push --help >/dev/null
 
     - name: Push to buildhost (chunked)
       id: push-buildhost
@@ -398,6 +446,7 @@ runs:
                 "${{ steps.refs.outcome }}",
                 buildOutcome,
                 "${{ steps.cli.outcome }}",
+                "${{ steps.cli-source.outcome }}",
                 "${{ steps.push-buildhost.outcome }}",
                 "${{ steps.push-foreign.outcome }}",
               ];
