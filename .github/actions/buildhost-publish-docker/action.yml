@@ -267,90 +267,14 @@ runs:
         cache-from: ${{ steps.refs.outputs.cache_from }}
         cache-to: ${{ steps.refs.outputs.cache_to }}
 
-    # The CLI is built from THIS action's own checkout, so the client is always
-    # exactly the version this action ref was reviewed with -- no separate
-    # release to fetch or to drift from.
-    - name: Set up Go (for the buildhost CLI)
-      id: setup-go
-      if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
-      uses: actions/setup-go@v5
-      with:
-        go-version-file: ${{ github.action_path }}/../../../go.mod
-        cache-dependency-path: ${{ github.action_path }}/../../../go.sum
-
-    - name: Build the buildhost CLI
-      id: cli
-      if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
-      shell: bash
-      env:
-        ACTION_PATH: ${{ github.action_path }}
-      run: |
-        set -euo pipefail
-        repo="$(cd "${ACTION_PATH}/../../.." && pwd)"
-        cd "${repo}"
-        ./scripts/fetch-cacerts.sh
-        go generate ./internal/api
-        go build -o "${RUNNER_TEMP}/buildhost-cli" ./cmd/buildhost
-
     - name: Push to buildhost (chunked)
       id: push-buildhost
       if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
-      uses: wow-look-at-my/actions@typescript#latest
-      env:
-        BUILDHOST_REFS: ${{ steps.refs.outputs.buildhost_refs }}
-        OCI_LAYOUT: ${{ steps.refs.outputs.layout }}
+      uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-push@master
       with:
-        script: |
-          const { recordImage } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
-          await (async () => {
-            const server: string = "${{ inputs.server }}";
-            const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
-            const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
-            if (!url || !bearer) {
-              core.setFailed("OIDC not available. Add 'permissions: { id-token: write }' to the job.");
-              return;
-            }
-            // Mint a GHA OIDC token with the buildhost URL as the audience;
-            // buildhost verifies the JWT and auto-provisions the project on
-            // first push.
-            const resp = await fetch(`${url}&audience=${server}`, {
-              headers: { Authorization: `Bearer ${bearer}` },
-            });
-            const token: string = ((await resp.json()) as { value: string }).value;
-            if (!token) {
-              core.setFailed(`Failed to obtain OIDC token for ${server}`);
-              return;
-            }
-            core.setSecret(token);
-            const refs = (env.BUILDHOST_REFS ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
-            const cli = path.join(env.RUNNER_TEMP!, "buildhost-cli");
-            await exec.exec(cli, ["docker-push", "--server", server, "--image", env.OCI_LAYOUT!, ...refs], {
-              env: { ...process.env, BUILDHOST_TOKEN: token },
-            });
-
-            // Recording what buildhost now stores is PART of pushing, not a
-            // bolt-on: it happens in this step, right after the push it
-            // describes, with no opt-out input, and a failure fails the step.
-            // A warn-and-continue path would be an opt-out by neglect -- the
-            // push would stay green while the org's linked artifacts page
-            // silently fell behind reality.
-            //
-            // The digest comes from the exported OCI layout's index.json root
-            // descriptor, not a buildx output: on this path buildx writes a
-            // layout for the CLI rather than pushing, so that descriptor IS
-            // what buildhost stored and serves.
-            const indexPath = path.join(env.OCI_LAYOUT!, "index.json");
-            const index = JSON.parse(fs.readFileSync(indexPath, "utf8")) as { manifests?: { digest?: string }[] };
-            const digest: string = index.manifests?.[0]?.digest ?? "";
-            if (digest === "") {
-              core.setFailed(`Pushed image recorded no manifest digest in ${indexPath}; cannot record what was stored`);
-              return;
-            }
-
-            // The first buildhost-bound reference names what was stored;
-            // foreign references are another registry's to account for.
-            await recordImage(octokit, core, context, { reference: refs[0] ?? "", digest });
-          })();
+        server: ${{ inputs.server }}
+        image: ${{ steps.refs.outputs.layout }}
+        refs: ${{ steps.refs.outputs.buildhost_refs }}
 
     # Tags that reference other registries keep the old buildx push path; the
     # rebuild is a full cache hit from the step above.
@@ -393,8 +317,6 @@ runs:
               const outcomes: string[] = [
                 "${{ steps.refs.outcome }}",
                 buildOutcome,
-                "${{ steps.setup-go.outcome }}",
-                "${{ steps.cli.outcome }}",
                 "${{ steps.push-buildhost.outcome }}",
                 "${{ steps.push-foreign.outcome }}",
               ];
