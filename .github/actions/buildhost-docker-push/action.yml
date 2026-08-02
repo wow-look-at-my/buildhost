@@ -106,7 +106,11 @@ runs:
         script: |
           const { recordImage } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
           await (async () => {
+            // String-annotated before use: interpolated straight into a
+            // comparison, tsc narrows to a literal and rejects the expression
+            // as always true or always false.
             const server: string = "${{ inputs.server }}";
+            const record: string = "${{ inputs.record }}";
             let token: string = "${{ inputs.token }}";
             if (!token) {
               const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
@@ -157,7 +161,7 @@ runs:
             // describes, and a failure fails the step. A warn-and-continue path
             // would be an opt-out by neglect -- the push would stay green while
             // the org's linked artifacts page silently fell behind reality.
-            if ("${{ inputs.record }}" === "true") {
+            if (record === "true") {
               // The first buildhost-bound reference names what was stored;
               // foreign references are another registry's to account for.
               await recordImage(octokit, core, context, { reference: refs[0] ?? "", digest });
