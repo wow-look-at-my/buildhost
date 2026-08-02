@@ -267,30 +267,34 @@ runs:
         cache-from: ${{ steps.refs.outputs.cache_from }}
         cache-to: ${{ steps.refs.outputs.cache_to }}
 
-    # The CLI is built from THIS action's own checkout, so the client is always
-    # exactly the version this action ref was reviewed with -- no separate
-    # release to fetch or to drift from.
-    - name: Set up Go (for the buildhost CLI)
-      id: setup-go
-      if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
-      uses: actions/setup-go@v5
-      with:
-        go-version-file: ${{ github.action_path }}/../../../go.mod
-        cache-dependency-path: ${{ github.action_path }}/../../../go.sum
-
-    - name: Build the buildhost CLI
+    # Downloaded, not built. cmd/buildhost embeds generated files that are all
+    # gitignored (admin JS, cacerts, sqlc output), so building it from a
+    # consumer's checkout of this action needs every generate directive to have
+    # run there -- it did not, and the build died on
+    # "pattern static/app.js: no matching files found". The server publishes its
+    # own binary on every push, and the bare download resolves the newest build
+    # of the default branch, so this is the running server's own client.
+    - name: Download the buildhost CLI
       id: cli
       if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
       shell: bash
       env:
-        ACTION_PATH: ${{ github.action_path }}
+        SERVER: ${{ inputs.server }}
       run: |
         set -euo pipefail
-        repo="$(cd "${ACTION_PATH}/../../.." && pwd)"
-        cd "${repo}"
-        ./scripts/fetch-cacerts.sh
-        go generate ./internal/api
-        go build -o "${RUNNER_TEMP}/buildhost-cli" ./cmd/buildhost
+        host="${SERVER#*://}"
+        host="${host%%/*}"
+        os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+        case "$(uname -m)" in
+          x86_64) arch=amd64 ;;
+          aarch64|arm64) arch=arm64 ;;
+          *) echo "unsupported runner architecture $(uname -m)" >&2; exit 1 ;;
+        esac
+        curl -fSL --retry 3 --retry-all-errors \
+          -o "${RUNNER_TEMP}/buildhost-cli" \
+          "https://dl.${host}/buildhost?os=${os}&arch=${arch}"
+        chmod +x "${RUNNER_TEMP}/buildhost-cli"
+        "${RUNNER_TEMP}/buildhost-cli" version
 
     - name: Push to buildhost (chunked)
       id: push-buildhost
@@ -393,7 +397,6 @@ runs:
               const outcomes: string[] = [
                 "${{ steps.refs.outcome }}",
                 buildOutcome,
-                "${{ steps.setup-go.outcome }}",
                 "${{ steps.cli.outcome }}",
                 "${{ steps.push-buildhost.outcome }}",
                 "${{ steps.push-foreign.outcome }}",
