@@ -295,6 +295,19 @@ Pass `tags` (newline-separated) to override: bare tags expand to
 `<registry>/<project>:<tag>`; references containing `/` or `:` are used
 as-is, so you can also push to another registry you are logged in to.
 
+To fetch an artifact back in a workflow, `buildhost-download` resolves the same
+way the URL does and defaults to the runner's own platform:
+
+```yaml
+- uses: wow-look-at-my/buildhost/.github/actions/buildhost-download@master
+  id: cli
+  with:
+    project: buildhost      # optional: version, branch, os, arch, format, token
+```
+
+It outputs `path`. With `required: 'false'` a missing artifact sets
+`downloaded: 'false'` instead of failing, so a caller can fall back.
+
 For a build you drive yourself (e.g. `docker buildx imagetools` to copy an
 existing multi-arch image), use the lower-level `buildhost-docker-login` action,
 which performs the OIDC `docker login` and exposes the registry host

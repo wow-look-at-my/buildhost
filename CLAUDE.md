@@ -131,6 +131,10 @@ separately if any tracked file is gitignored build output. Depth:
 
 - Every publish registers a **GitHub Deployment** in the calling repo, and a
   failure is RED -- there is no opt-out. Depth: `docs/github-deployments.md`.
+- **`buildhost-download`** fetches one artifact from `dl`; `required: 'false'`
+  reports a miss as an output instead of failing, which is how
+  `buildhost-publish-docker` falls back to building the CLI when the published
+  one is missing or predates `docker-push`.
 - Every publish posts a **storage record** to the org's artifact metadata API,
   inside the publish step itself rather than as a separate step, and retention
   retracts what it evicts. Failure is RED. Depth:
