@@ -8,6 +8,18 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// The publish composites download the CLI rather than building it, so the
+// guide has to name the URL they depend on.
+func TestServe_DocumentsCLIDownload(t *testing.T) {
+	h := &Handler{}
+
+	req := httptest.NewRequest("GET", "https://pazer.build/llms.txt", nil)
+	rec := httptest.NewRecorder()
+	h.Serve(rec, req)
+
+	assert.Contains(t, rec.Body.String(), "https://dl.pazer.build/buildhost?os=linux&arch=amd64")
+}
+
 func TestServe_RendersBaseURL(t *testing.T) {
 	h := &Handler{}
 
