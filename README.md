@@ -295,11 +295,36 @@ Pass `tags` (newline-separated) to override: bare tags expand to
 `<registry>/<project>:<tag>`; references containing `/` or `:` are used
 as-is, so you can also push to another registry you are logged in to.
 
-For a build you drive yourself (e.g. `docker buildx imagetools` to copy an
-existing multi-arch image), use the lower-level `buildhost-docker-login` action,
-which performs the OIDC `docker login` and exposes the registry host
-(`oci.<domain>`) as its `registry` output, so you can push to
-`<registry>/<project>:<tag>` and then run your own docker commands.
+To fetch an artifact back in a workflow, `buildhost-download` resolves the same
+way the URL does and defaults to the runner's own platform:
+
+```yaml
+- uses: wow-look-at-my/buildhost/.github/actions/buildhost-download@master
+  id: cli
+  with:
+    project: buildhost      # optional: version, branch, os, arch, format, token
+```
+
+It outputs `path`. With `required: 'false'` a missing artifact sets
+`downloaded: 'false'` instead of failing, so a caller can fall back.
+
+For a build you drive yourself, `buildhost-docker-push` takes an OCI layout you
+already produced and pushes it in chunks, so a layer over the proxy's body cap
+still goes through. Obtaining a CLI that can do that is the action's problem,
+not yours:
+
+```yaml
+- run: docker buildx build --output type=oci,tar=false,dest=layout .
+- uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-push@master
+  with:
+    image: layout
+    refs: oci.pazer.build/myproject:v1.2.3
+```
+
+If you only need a plain `docker push` (no large layers), `buildhost-docker-login`
+performs the OIDC `docker login` and exposes the registry host (`oci.<domain>`)
+as its `registry` output, so you can push to `<registry>/<project>:<tag>` and
+then run your own docker commands.
 
 ## GitHub Deployments
 
