@@ -190,7 +190,24 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(site)
+	json.NewEncoder(w).Encode(publishedSite{Site: site, URL: h.canonicalSiteURL(ctx, project, site.Branch, r)})
+}
+
+// publishedSite is the upload response: the stored row (embedded, so its fields
+// stay top-level for clients decoding a db.Site) plus where the site is served.
+// Publishers must not derive that URL -- see docs/sites.md.
+type publishedSite struct {
+	*db.Site
+	URL string `json:"url"`
+}
+
+// canonicalSiteURL is the absolute form of canonicalURLFor for a whole
+// deployment, so the URL a publisher advertises is the one the redirects treat
+// as canonical. Host comes from the request -- the server is never told its own
+// URL.
+func (h *Handler) canonicalSiteURL(ctx context.Context, project *db.Project, branch string, r *http.Request) string {
+	path, _ := h.canonicalURLFor(ctx, project, branch, "", r)
+	return strings.TrimSuffix(auth.ApexServiceURL(r, "sites").String(), "/") + path
 }
 
 var errSiteTooLarge = errors.New("decompressed archive too large")

@@ -12,6 +12,8 @@ permissions:
   contents: write
   packages: write
   actions: read
+  deployments: write
+  artifact-metadata: write
 
 jobs:
   build:
@@ -23,10 +25,40 @@ jobs:
       # step here would hide a broken directive from CI and leave a fresh clone
       # unbuildable for everyone who is not this workflow. The setup-go jobs
       # below still fetch explicitly: they run plain `go`, never generate.
+      # autorelease publishes this binary to buildhost on every push, which is
+      # what makes the CLI downloadable -- the publish composites fetch it from
+      # dl instead of building cmd/buildhost from a checkout that has none of
+      # the generated files it embeds.
       - uses: wow-look-at-my/go-toolchain@v1
         with:
-          generate: 904cd8d22ac8
-          autorelease: 'false'
+          generate: 476c7c5fc951
+      # The step above just ran every generate directive. If that changed a
+      # TRACKED file, this repo is carrying a build artifact in git -- and a
+      # tracked artifact is free to drift from the source it claims to be built
+      # from, silently, for as long as nobody rebuilds. That is exactly how the
+      # admin dashboard shipped a bundle nothing in frontend/src produced.
+      # See docs/no-committed-build-artifacts.md.
+      - name: Generated output must not be tracked in git
+        run: |
+          set -eu
+          # Drift: a committed artifact whose source no longer produces it.
+          if ! git diff --quiet; then
+            echo "::error::Running generate modified files that are committed to git."
+            echo "A tracked generated file has drifted from the source it claims to"
+            echo "be built from. Gitignore it and let its //go:generate produce it."
+            git diff --stat
+            exit 1
+          fi
+          # Committed-at-all: a tracked file that .gitignore says is build output.
+          # Catches the artifact even while it still happens to match its source.
+          ignored="$(git ls-files -i -c --exclude-standard)"
+          if [ -n "$ignored" ]; then
+            echo "::error::These build artifacts are committed to git:"
+            echo "$ignored"
+            echo "Remove them from the index (git rm --cached) -- a tracked artifact"
+            echo "drifts from its source silently. See docs/no-committed-build-artifacts.md"
+            exit 1
+          fi
       # On the default branch, cache this commit's route list keyed by its SHA.
       # Caches created on the default branch are restorable from every branch,
       # so feature-branch route-diff runs reuse this instead of rebuilding base.
@@ -95,10 +127,16 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: base/go.mod
+      # The admin dashboard's JS is a generate directive too (internal/admin),
+      # and it is embedded by name, so a base that has it fails to compile
+      # without this. Guarded on the script's existence: older base commits
+      # shipped the JS committed and have no script to run -- same
+      # works-on-older-base reasoning as the inlined cacerts fetch above.
       - if: steps.cache.outputs.cache-hit != 'true'
         working-directory: base
         run: |
           go generate ./internal/api
+          if [ -x scripts/build-admin-frontend.sh ]; then ./scripts/build-admin-frontend.sh; fi
           go build -o build/buildhost_linux_amd64 ./cmd/buildhost
       - if: steps.cache.outputs.cache-hit != 'true'
         run: chmod +x base/build/buildhost_linux_amd64 && ./base/build/buildhost_linux_amd64 routes > base-routes.txt
@@ -158,6 +196,20 @@ jobs:
               } else {
                   await gh.rest.issues.createComment({ ...repo, issue_number: pr, body });
               }
+
+  # The publish composites all import .github/actions/lib/storage-record, and
+  # nothing else can reach it: upload-artifact-action-e2e publishes to
+  # http://localhost:18080, where the unreachable-registry skip returns before
+  # a record is posted. Untested, a mistake there fails publishing for every
+  # repo in the org at once.
+  storage-record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The shared storage-record module must behave
+        uses: wow-look-at-my/actions@typescript#latest
+        with:
+          file: .github/scripts/storage-record-test.ts
 
   container-healthcheck:
     # Only meaningful if the build succeeded and saved the go-build hand-off. Without
@@ -232,6 +284,8 @@ jobs:
           go-version-file: go.mod
       - run: ./scripts/fetch-cacerts.sh
       - run: go generate ./internal/api
+      # The dashboard JS is generated, not committed, and embedded by name.
+      - run: ./scripts/build-admin-frontend.sh
       - run: go build -o buildhost ./cmd/buildhost
       - name: Start local buildhost
         shell: bash
@@ -546,6 +600,39 @@ jobs:
       - name: Pull and run the synthesized OCI image
         run: PATH="$(go env GOPATH)/bin:$PATH" bash test/e2e/run.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/netcheck"
 
+  # Proves a hosted site stays loadable CROSS-ORIGIN, through its redirects, in
+  # a REAL BROWSER. Guards the defect that broke every cross-origin consumer at
+  # once: the legacy /{project}/branch/{branch}/ URL became a 302 to the
+  # canonical @{branch} form, and the redirect went out without the site CORS
+  # headers. Browsers enforce CORS on every hop, so the load died at the 302 and
+  # never reached the 200 that had the header.
+  #
+  # Unit tests could not catch it -- they cover the handlers that serve bytes --
+  # and neither could curl, which follows redirects without enforcing CORS at
+  # all and reported a clean 200 for the URL that was failing in production.
+  # That is why this job launches an actual browser and imports an actual module
+  # across origins; the header assertions alongside it only name which hop broke.
+  sites-cors-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build
+          path: build/
+      - run: chmod +x build/buildhost_linux_amd64
+      # playwright-core drives the runner's preinstalled Chrome; it is a
+      # package, not a third-party action, so the org's action allowlist is not
+      # involved. The script FAILS if no browser can be launched -- a skip here
+      # would turn the one check that can see this class of bug into decoration.
+      - name: Install browser driver
+        run: npm install --no-save --no-audit --no-fund playwright-core@1.62.1
+      - name: A hosted site must load cross-origin in a real browser
+        uses: wow-look-at-my/actions@typescript#latest
+        with:
+          file: .github/scripts/sites-cors-e2e.ts
+
   apt-install-e2e:
     needs: build
     runs-on: ubuntu-latest
@@ -740,6 +827,7 @@ jobs:
           echo "session creates: $creates"
           test "$creates" = "1"
       - name: Publish big site (chunked session path, 1 MiB chunks)
+        id: publish-big-site
         uses: ./.github/actions/buildhost-publish-site
         with:
           server: http://localhost:18080
@@ -758,6 +846,21 @@ jobs:
           test "$creates" = "2"
           # 4 chunks from the artifact upload + at least 3 for the ~3 MB site.
           test "$chunks" -ge 7
+      # The advertised URL is what lands in preview comments and deployment
+      # environment_urls, so it must SERVE, not redirect. Catches the action
+      # silently falling back to a stale spelling, which is green otherwise.
+      - name: The advertised site URL must serve the bytes with no redirect
+        shell: bash
+        env:
+          SITE_URL: ${{ steps.publish-big-site.outputs.site_url }}
+        run: |
+          set -euo pipefail
+          echo "site_url: $SITE_URL"
+          case "$SITE_URL" in
+            *"/branch/"*) echo "advertised the legacy /branch/ spelling" >&2; exit 1 ;;
+          esac
+          # No -L: the advertised URL must answer 200 itself.
+          test "$(curl -fsS "${SITE_URL}index.html")" = '<h1>chunked site</h1>'
       - name: Served site files must match the source bytes
         shell: bash
         run: |

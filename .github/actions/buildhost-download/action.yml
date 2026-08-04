@@ -1,0 +1,132 @@
+name: Buildhost - Download
+description: >
+  Downloads one artifact from a Buildhost registry's dl endpoint. Resolves the
+  same way the URL does -- a bare request is the newest release on the
+  project's default branch; version or branch pin it -- and defaults os/arch to
+  the runner's own platform. Set required: false to report a missing or
+  unreachable artifact as an output instead of failing the step, which is what
+  lets a caller fall back to some other way of getting the file.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: false
+    default: 'https://pazer.build'
+  token:
+    description: 'API token with read scope; omit for a public project'
+    required: false
+    default: ''
+  project:
+    description: 'Project name'
+    required: true
+  version:
+    description: 'Release version (e.g. v3); omit for the newest on the default branch'
+    required: false
+    default: ''
+  branch:
+    description: 'Git branch to resolve the newest release from; omit for the default branch'
+    required: false
+    default: ''
+  os:
+    description: 'Target OS; defaults to the runner OS'
+    required: false
+    default: ''
+  arch:
+    description: 'Target arch; defaults to the runner arch'
+    required: false
+    default: ''
+  format:
+    description: 'Repackaging format (tar.gz, zip, deb, ...); omit for the raw artifact'
+    required: false
+    default: ''
+  path:
+    description: 'Where to write the file; defaults to RUNNER_TEMP/<project basename>'
+    required: false
+    default: ''
+  executable:
+    description: 'chmod +x the downloaded file'
+    required: false
+    default: 'true'
+  required:
+    description: 'Fail the step when the artifact cannot be downloaded'
+    required: false
+    default: 'true'
+
+outputs:
+  path:
+    description: 'Full path to the downloaded file (empty when it was not downloaded)'
+    value: ${{ steps.download.outputs.path }}
+  downloaded:
+    description: 'true when the file was downloaded, false when it was missing and required was false'
+    value: ${{ steps.download.outputs.downloaded }}
+
+runs:
+  using: composite
+  steps:
+    - id: download
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        script: |
+          await (async () => {
+            // Every input is bound to a string-annotated const before it is
+            // used. Interpolated straight into a comparison, tsc sees a string
+            // LITERAL and rejects the expression as always true or always
+            // false; the annotation widens it back to string.
+            const server: string = "${{ inputs.server }}";
+            const project: string = "${{ inputs.project }}";
+            const token: string = "${{ inputs.token }}";
+            const versionInput: string = "${{ inputs.version }}";
+            const branchInput: string = "${{ inputs.branch }}";
+            const osInput: string = "${{ inputs.os }}";
+            const archInput: string = "${{ inputs.arch }}";
+            const formatInput: string = "${{ inputs.format }}";
+            const pathInput: string = "${{ inputs.path }}";
+            const executable: string = "${{ inputs.executable }}";
+            const required: string = "${{ inputs.required }}";
+
+            // dl is a subdomain of the server's own host, so a non-default
+            // deployment resolves without a second input to keep in sync.
+            const host = new URL(server).host;
+            const runnerArch: Record<string, string> = { X64: "amd64", ARM64: "arm64", X86: "386", ARM: "arm" };
+            const query = new URLSearchParams({
+              os: osInput || (env.RUNNER_OS ?? "Linux").toLowerCase(),
+              arch: archInput || runnerArch[env.RUNNER_ARCH ?? "X64"] || "amd64",
+            });
+            for (const [key, value] of Object.entries({ v: versionInput, branch: branchInput, fmt: formatInput })) {
+              if (value) query.set(key, value);
+            }
+            const url = `https://dl.${host}/${project}?${query}`;
+
+            const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+            const destination: string =
+              pathInput || path.join(env.RUNNER_TEMP!, project.split("/").pop()!);
+
+            // Retried because a registry blip should not fail a publish, but
+            // bounded: an artifact that is genuinely absent must be reported,
+            // not waited on.
+            let lastError = "";
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              try {
+                const response = await fetch(url, { headers, redirect: "follow" });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                fs.mkdirSync(path.dirname(destination), { recursive: true });
+                fs.writeFileSync(destination, Buffer.from(await response.arrayBuffer()));
+                if (executable === "true") fs.chmodSync(destination, 0o755);
+                core.info(`Downloaded ${url} -> ${destination}`);
+                core.setOutput("path", destination);
+                core.setOutput("downloaded", "true");
+                return;
+              } catch (e) {
+                lastError = e instanceof Error ? e.message : String(e);
+                if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
+              }
+            }
+
+            core.setOutput("path", "");
+            core.setOutput("downloaded", "false");
+            if (required === "true") {
+              core.setFailed(`Could not download ${url}: ${lastError}`);
+            } else {
+              core.warning(`Could not download ${url}: ${lastError}`);
+            }
+          })();

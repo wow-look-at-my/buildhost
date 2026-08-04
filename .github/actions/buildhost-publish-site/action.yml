@@ -10,7 +10,7 @@ description: >
 
 inputs:
   server:
-    description: 'Buildhost server URL'
+    description: 'Buildhost server URL (apex; the sites subdomain is derived from it)'
     required: false
     default: 'https://pazer.build'
   token:
@@ -150,6 +150,7 @@ runs:
         GITHUB_TOKEN: ${{ github.token }}
       with:
         script: |
+          const { recordSite } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
           await (async () => {
             const server: string = "${{ inputs.server }}";
             const sourceDir: string = "${{ inputs.source_dir }}";
@@ -308,56 +309,23 @@ runs:
             // failure fails the publish. A warn-and-continue path would be an
             // opt-out by neglect -- the publish would stay green while the
             // org's linked artifacts page silently fell behind reality.
-            const postStorageRecord = async (): Promise<void> => {
-              // A loopback server is not a registry anything can fetch from
-              // (buildhost's own e2e spawns one), so a record pointing at it
-              // would be an unreachable row on the org's page. A property of
-              // the target, not a caller-facing switch.
-              const host = new URL(server).hostname;
-              if (host === "localhost" || host === "127.0.0.1" || host === "::1" || !server.startsWith("https://")) {
-                core.info(`Skipping the storage record: ${server} is not a reachable https registry (the API accepts https URLs only)`);
-                return;
-              }
-              const org = context.repo.owner;
-              try {
-                // Deliberately no artifact_url: buildhost serves a site
-                // unpacked, so no URL returns the archive bytes this digest
-                // covers, and a record must never point at bytes that hash to
-                // something else.
-                await octokit.request("POST /orgs/{org}/artifacts/metadata/storage-record", {
-                  org,
-                  name: project,
-                  version: gitCommit,
-                  digest: `sha256:${sum}`,
-                  registry_url: server,
-                  repository: project,
-                  path: `branch/${branch}`,
-                  github_repository: context.repo.repo,
-                  status: "active",
-                  return_records: false,
-                });
-                core.info(`Recorded ${project} branch/${branch} sha256:${sum} on ${org}'s linked artifacts page`);
-              } catch (e) {
-                const status = (e as { status?: number }).status;
-                const msg = e instanceof Error ? e.message : String(e);
-                core.setFailed(
-                  status === 403 || status === 404
-                    ? `Could not record ${project} branch/${branch} on ${org}'s linked artifacts page (HTTP ${status}: ${msg}). Add 'artifact-metadata: write' to this job's permissions block -- job-level permissions REPLACE workflow-level ones, so add it alongside the ones the job already declares. Recording what buildhost stores is part of publishing and cannot be turned off.`
-                    : `Could not record ${project} branch/${branch} on ${org}'s linked artifacts page (${msg})`,
-                );
-              }
-            };
-
             // The endpoint's own response -- from the direct PUT or the
             // session finalize, same endpoint either way -- feeds the outputs.
             const finishPublish = async (r: { status: number; text: string }): Promise<void> => {
               if (r.status < 200 || r.status >= 300) { core.setFailed(`HTTP ${r.status}: ${r.text}`); return; }
-              const siteURL = `${sitesBase}/${project}/branch/${branch}/`;
+              const body = JSON.parse(r.text);
+              // Never derive this: the server owns the URL grammar and reports it.
+              // The fallback is for servers predating that field -- keep it on the
+              // canonical spelling, not the /branch/ one the upload endpoint uses.
+              const siteURL: string =
+                typeof body.url === 'string' && body.url !== ''
+                  ? body.url
+                  : `${sitesBase}/${project}/@${branch}/`;
               core.info(`Published site to ${siteURL}`);
-              core.info(JSON.stringify(JSON.parse(r.text), null, 2));
+              core.info(JSON.stringify(body, null, 2));
               core.setOutput('response', r.text);
               core.setOutput('site_url', siteURL);
-              await postStorageRecord();
+              await recordSite(octokit, core, context, { server, project, branch, version: gitCommit, sha256: sum });
             };
 
             if (chunkSize <= 0 || size <= directLimit) {

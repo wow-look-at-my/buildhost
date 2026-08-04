@@ -1,0 +1,169 @@
+name: Buildhost - Docker Push
+description: >
+  Pushes a locally built OCI image layout to a Buildhost registry, in blob
+  chunks sized under the server's advertised limit -- which is what `docker
+  push` cannot do: buildx sends each layer as one request, so a proxy that caps
+  request bodies (Cloudflare's edge 413s over ~100 MB) fails the push on a big
+  layer. Recording what was stored is part of the push, not a separate step a
+  caller could forget.
+
+  Getting a CLI that can do this is this action's problem, not the caller's: it
+  downloads the published binary and builds one from source only if that is
+  missing or too old.
+
+inputs:
+  server:
+    description: 'Buildhost server URL'
+    required: false
+    default: 'https://pazer.build'
+  token:
+    description: 'API token with write scope; omit to mint a GHA OIDC token (needs id-token: write)'
+    required: false
+    default: ''
+  image:
+    description: >
+      Path to an OCI image layout -- a directory or tarball, as produced by
+      `docker buildx build --output type=oci` or `docker save`.
+    required: true
+  refs:
+    description: 'Image references to push, newline-separated (e.g. oci.pazer.build/myproject:v1)'
+    required: true
+  record:
+    description: 'Post a storage record for the pushed image to the org artifact metadata API'
+    required: false
+    default: 'true'
+
+outputs:
+  digest:
+    description: 'Manifest digest of the pushed image'
+    value: ${{ steps.push.outputs.digest }}
+
+runs:
+  using: composite
+  steps:
+    # Pinned at @master rather than a relative path: a composite step's
+    # relative uses: resolves against the CALLING repository, which is the
+    # consumer's, not this one.
+    - name: Download the buildhost CLI
+      id: download-cli
+      uses: wow-look-at-my/buildhost/.github/actions/buildhost-download@master
+      with:
+        server: ${{ inputs.server }}
+        project: buildhost
+        path: ${{ runner.temp }}/buildhost-cli
+        required: 'false'
+
+    - name: Check the CLI can push
+      id: cli
+      shell: bash
+      run: |
+        set -uo pipefail
+        # Probing docker-push covers both ways a downloaded CLI can still be
+        # unusable: a binary that will not run here, and one published before
+        # the subcommand existed.
+        if [ "${{ steps.download-cli.outputs.downloaded }}" = true ] &&
+           "${RUNNER_TEMP}/buildhost-cli" docker-push --help >/dev/null 2>&1; then
+          echo "source_build=false" >> "${GITHUB_OUTPUT}"
+        else
+          echo "::warning::the published buildhost CLI is missing or has no docker-push; building it from source."
+          echo "source_build=true" >> "${GITHUB_OUTPUT}"
+        fi
+
+    # The fallback. cmd/buildhost embeds files that are all gitignored (the CA
+    # bundle, the project-name matcher, the admin dashboard's JS), so a source
+    # build has to run every one of those directives -- missing one is what made
+    # the old build-only path die on "pattern static/app.js: no matching files
+    # found" for every consumer.
+    - name: Set up Go (to build the CLI from source)
+      if: ${{ steps.cli.outputs.source_build == 'true' }}
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: ${{ github.action_path }}/../../../go.mod
+        cache-dependency-path: ${{ github.action_path }}/../../../go.sum
+
+    - name: Build the buildhost CLI from source
+      id: cli-source
+      if: ${{ steps.cli.outputs.source_build == 'true' }}
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        repo="$(cd "${ACTION_PATH}/../../.." && pwd)"
+        cd "${repo}"
+        ./scripts/fetch-cacerts.sh
+        go generate ./internal/api
+        ./scripts/build-admin-frontend.sh
+        go build -o "${RUNNER_TEMP}/buildhost-cli" ./cmd/buildhost
+
+    - name: Push to buildhost (chunked)
+      id: push
+      uses: wow-look-at-my/actions@typescript#latest
+      env:
+        BUILDHOST_REFS: ${{ inputs.refs }}
+        OCI_LAYOUT: ${{ inputs.image }}
+      with:
+        script: |
+          const { recordImage } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
+          await (async () => {
+            // String-annotated before use: interpolated straight into a
+            // comparison, tsc narrows to a literal and rejects the expression
+            // as always true or always false.
+            const server: string = "${{ inputs.server }}";
+            const record: string = "${{ inputs.record }}";
+            let token: string = "${{ inputs.token }}";
+            if (!token) {
+              const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+              const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+              if (!url || !bearer) {
+                core.setFailed("No token input and OIDC is unavailable. Add 'permissions: { id-token: write }' to the job, or pass token.");
+                return;
+              }
+              // Mint a GHA OIDC token with the buildhost URL as the audience;
+              // buildhost verifies the JWT and auto-provisions the project on
+              // first push.
+              const resp = await fetch(`${url}&audience=${server}`, {
+                headers: { Authorization: `Bearer ${bearer}` },
+              });
+              token = ((await resp.json()) as { value: string }).value;
+              if (!token) {
+                core.setFailed(`Failed to obtain OIDC token for ${server}`);
+                return;
+              }
+            }
+            core.setSecret(token);
+
+            const refs = (env.BUILDHOST_REFS ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
+            if (refs.length === 0) {
+              core.setFailed("refs is empty: nothing to push");
+              return;
+            }
+            const cli = path.join(env.RUNNER_TEMP!, "buildhost-cli");
+            await exec.exec(cli, ["docker-push", "--server", server, "--image", env.OCI_LAYOUT!, ...refs], {
+              env: { ...process.env, BUILDHOST_TOKEN: token },
+            });
+
+            // The digest comes from the OCI layout's index.json root
+            // descriptor, not a buildx output: on this path buildx writes a
+            // layout for the CLI rather than pushing, so that descriptor IS
+            // what buildhost stored and serves.
+            const indexPath = path.join(env.OCI_LAYOUT!, "index.json");
+            const index = JSON.parse(fs.readFileSync(indexPath, "utf8")) as { manifests?: { digest?: string }[] };
+            const digest: string = index.manifests?.[0]?.digest ?? "";
+            if (digest === "") {
+              core.setFailed(`Pushed image recorded no manifest digest in ${indexPath}; cannot record what was stored`);
+              return;
+            }
+            core.setOutput("digest", digest);
+
+            // Recording what buildhost now stores is PART of pushing, not a
+            // bolt-on: it happens in this step, right after the push it
+            // describes, and a failure fails the step. A warn-and-continue path
+            // would be an opt-out by neglect -- the push would stay green while
+            // the org's linked artifacts page silently fell behind reality.
+            if (record === "true") {
+              // The first buildhost-bound reference names what was stored;
+              // foreign references are another registry's to account for.
+              await recordImage(octokit, core, context, { reference: refs[0] ?? "", digest });
+            }
+          })();
