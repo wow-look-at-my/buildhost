@@ -73,6 +73,17 @@ inputs:
       GitHub Deployment environment name (defaults to `buildhost/<project>`).
     required: false
     default: ''
+  deployment_ref:
+    description: >-
+      Ref the GitHub Deployment is created against (defaults to GITHUB_SHA).
+      Pass a BRANCH NAME to make the publish appear in the branch and PR
+      deployment views: GitHub stores this string verbatim, and a deployment
+      whose ref is a bare SHA belongs to no branch, so those views read "This
+      branch has not been deployed". A branch here still fills the deployment's
+      `sha` (GitHub resolves it), so the commit-level association survives.
+      See docs/github-deployments.md.
+    required: false
+    default: ''
 
 outputs:
   image:
@@ -123,6 +134,11 @@ runs:
               const environment: string = envInput || `buildhost/${project}`;
               const defaultBranch: string = context.payload.repository?.default_branch ?? '';
               const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+              // A bare SHA here belongs to no branch, so GitHub's branch and PR
+              // deployment views report the branch as never deployed. Callers
+              // that want the publish to surface there pass a branch name.
+              const deploymentRefInput: string = "${{ inputs.deployment_ref }}";
+              const ref: string = deploymentRefInput || context.sha;
               // required_contexts MUST be [] (the API default is "every commit
               // status", and the org's all-builds status is still pending on
               // this sha mid-run -> 409 Conflict); auto_merge MUST be false
@@ -132,7 +148,7 @@ runs:
               const dep = await octokit.rest.repos.createDeployment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                ref: context.sha,
+                ref,
                 environment,
                 auto_merge: false,
                 required_contexts: [],
