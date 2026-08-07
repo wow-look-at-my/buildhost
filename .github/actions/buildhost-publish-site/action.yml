@@ -36,6 +36,18 @@ inputs:
     description: 'Git commit SHA (defaults to github.sha)'
     required: false
     default: ''
+  deployment_ref:
+    description: >-
+      Ref the GitHub Deployment is created against (defaults to git_commit, then
+      github.sha). Pass a BRANCH NAME to make the publish appear in the branch
+      and PR deployment views: GitHub stores this string verbatim, and a
+      deployment whose ref is a bare SHA belongs to no branch, so those views
+      read "This branch has not been deployed". A branch here still fills the
+      deployment's `sha` (GitHub resolves it), so the commit-level association
+      survives. Separate from git_commit because that one is the site's recorded
+      commit (X-Git-Commit) and has to stay a real SHA.
+    required: false
+    default: ''
   public:
     description: 'Serve the site publicly even when the source repo/project is private. The project itself (and any release artifacts) stays private; only this site branch is opened.'
     required: false
@@ -99,7 +111,11 @@ runs:
               const envInput: string = "${{ inputs.deployment_environment }}";
               const environment: string = envInput || `buildhost/${project}/${branch}`;
               const gitCommitInput: string = "${{ inputs.git_commit }}";
-              const ref: string = gitCommitInput || context.sha;
+              // A bare SHA here belongs to no branch, so GitHub's branch and PR
+              // deployment views report the branch as never deployed. Callers
+              // that want the publish to surface there pass a branch name.
+              const deploymentRefInput: string = "${{ inputs.deployment_ref }}";
+              const ref: string = deploymentRefInput || gitCommitInput || context.sha;
               // PR-preview branches (pr-<n>, as deployed by the
               // buildhost-preview reusable workflow) are transient
               // environments: GitHub expects them to go away again.
