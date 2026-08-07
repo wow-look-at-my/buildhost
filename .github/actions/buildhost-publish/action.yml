@@ -53,6 +53,19 @@ inputs:
       GitHub Deployment environment name (defaults to `buildhost/<project>`).
     required: false
     default: ''
+  deployment_ref:
+    description: >-
+      Ref the GitHub Deployment is created against (defaults to git_commit, then
+      GITHUB_SHA). Pass a BRANCH NAME to make the publish appear in the branch
+      and PR deployment views: GitHub stores this string verbatim, and a
+      deployment whose ref is a bare SHA belongs to no branch, so those views
+      read "This branch has not been deployed". A branch here still fills the
+      deployment's `sha` (GitHub resolves it), so the commit-level association
+      survives. Separate from git_commit because that one is the release's
+      recorded commit and has to stay a real SHA.
+      See docs/github-deployments.md.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -92,7 +105,11 @@ runs:
               const envInput: string = "${{ inputs.deployment_environment }}";
               const environment: string = envInput || `buildhost/${project}`;
               const inputCommit: string = "${{ inputs.git_commit }}";
-              const ref: string = inputCommit || context.sha;
+              // A bare SHA here belongs to no branch, so GitHub's branch and PR
+              // deployment views report the branch as never deployed. Callers
+              // that want the publish to surface there pass a branch name.
+              const deploymentRefInput: string = "${{ inputs.deployment_ref }}";
+              const ref: string = deploymentRefInput || inputCommit || context.sha;
               const inputBranch: string = "${{ inputs.git_branch }}";
               const branch: string = inputBranch || github.ref_name || '';
               const defaultBranch: string = context.payload.repository?.default_branch ?? '';

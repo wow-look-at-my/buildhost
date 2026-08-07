@@ -25,6 +25,36 @@ API default is "all commit statuses must be green", and the org's `all-builds`
 status is still pending on that sha mid-run -> 409 Conflict) and `auto_merge:
 false` (the default would try to merge the default branch into the ref).
 
+## The deployment's `ref` decides whether anyone can find it
+
+GitHub stores a deployment's `ref` verbatim. A deployment created against a bare
+commit SHA therefore belongs to no branch, and every branch-scoped view -- the
+branch and PR deployment panels -- reports "This branch has not been deployed /
+No deployments", however healthy the deployment is. Creating it against a BRANCH
+NAME populates both fields: GitHub resolves the branch and fills `sha` itself, so
+the commit-level association is kept too. A branch name is strictly more
+discoverable than a SHA, never less.
+
+All three top-level composites take an optional `deployment_ref`, defaulting to
+what they used before it existed, so nothing changes until a caller opts in:
+`deployment_ref || git_commit || github.sha` for `buildhost-publish` and
+`buildhost-publish-site`, `deployment_ref || github.sha` for
+`buildhost-publish-docker` (which has no commit input). It is a separate input
+because `git_commit` cannot serve double duty: that one is the recorded commit of
+the release or site (the site sends it as `X-Git-Commit` and stores it as the
+record's version) and has to stay a real SHA. Callers that want the publish to
+surface on the branch pass a branch name:
+
+```yaml
+    deployment_ref: ${{ github.head_ref || github.ref_name }}
+```
+
+`github.head_ref` is the PR's source branch and is empty off `pull_request`, so
+that expression is the branch in both cases. Do NOT use `github.ref_name` alone
+on a `pull_request` event -- there it is the synthetic merge ref (`23/merge`).
+`github.sha` carries the matching trap: it is the merge COMMIT, which is in no
+branch and stops existing when the PR closes.
+
 ## Registering the deployment is part of publishing, and failure is RED
 
 There is no `create_deployment` opt-out and no warn-and-continue: a failed create
