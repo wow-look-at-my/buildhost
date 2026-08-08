@@ -217,15 +217,6 @@ runs:
             const token: string = ((await idResp.json()) as { value: string }).value;
             if (!token) { core.setFailed("Failed to obtain OIDC token"); return; }
 
-            // When server-info advertises it, byte-identical files upload once and the rest register with an empty-body PUT + upload_sha256. Check, NEVER probe: a server without it ignores the parameter and stores the empty body as the artifact.
-            let canHashRef = false;
-            try {
-              const infoResp = await fetch(`${server}/api/v1/server-info`);
-              if (infoResp.ok) {
-                canHashRef = ((await infoResp.json()) as { upload_by_sha256?: boolean }).upload_by_sha256 === true;
-              }
-            } catch { /* capability stays off; full uploads always work */ }
-
             // Recording is PART of publishing: accumulated as artifacts are accepted, posted before this step returns, no opt-out input, and a failure fails the publish -- a warn-and-continue would leave it green while the artifacts page fell behind reality.
             const uploadedSlots: import("${{ github.action_path }}/../lib/storage-record").PublishedArtifact[] = [];
             const drainStorageRecords = async (): Promise<boolean> =>
@@ -327,31 +318,52 @@ runs:
               return null;
             };
 
-            // Uploads every os/arch slot, then publishes. With hash references, byte-identical files transfer once -- first slot a full PUT, the rest an empty-body PUT naming the hash; without, the request sequence is unchanged.
+            // Uploads every os/arch slot, then publishes. Identical bytes under several slot names is the NORMAL case, not an edge -- a cosmo build emits one APE named for every platform -- so slots are grouped by content and each group transfers once.
             const uploadAndPublish = async (proj: string, releaseVersion: string, items: { file: string; os: string; arch: string }[]) => {
-              const uploadedHash = new Map<string, string>(); // sha256 -> first uploaded file
-              for (const { file, os: fileOs, arch } of items) {
-                const slot = `/api/v1/projects/${proj}/releases/${releaseVersion}/artifacts/${fileOs}/${arch}?kind=binary`;
-                // Hashed unconditionally: the storage record always needs it, and it is one streaming read of a file this loop is about to read anyway.
-                const sum = await fileSHA256(path.join(sourceDir, file));
-                const record = () => uploadedSlots.push({ project: proj, version: releaseVersion, os: fileOs, arch, sha256: sum });
-                if (canHashRef && uploadedHash.has(sum)) {
-                  const ref = await api("PUT", `${slot}&upload_sha256=${sum}`);
-                  if (ref.status === 201) {
-                    core.info(`Registered ${proj} ${fileOs}/${arch} by hash (identical to ${uploadedHash.get(sum)})`);
-                    record();
-                    continue;
+              const slotURL = (os: string, arch: string) =>
+                `/api/v1/projects/${proj}/releases/${releaseVersion}/artifacts/${os}/${arch}?kind=binary`;
+
+              // Hashed unconditionally: the storage record needs it for every slot, and it is one streaming read of a file this loop is about to read anyway.
+              const byContent = new Map<string, { file: string; os: string; arch: string }[]>();
+              for (const item of items) {
+                const sum = await fileSHA256(path.join(sourceDir, item.file));
+                byContent.set(sum, [...(byContent.get(sum) ?? []), item]);
+              }
+
+              for (const [sum, group] of [...byContent.entries()]) {
+                const body = () => fs.readFileSync(path.join(sourceDir, group[0].file));
+                const record = () => {
+                  for (const { os: fileOs, arch } of group) {
+                    uploadedSlots.push({ project: proj, version: releaseVersion, os: fileOs, arch, sha256: sum });
                   }
-                  if (ref.status === 409) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${ref.status}): ${ref.text}`); return false; }
-                  // E.g. a 404 for a blob evicted since the first slot: the bytes are right here, send them the classic way.
-                  core.warning(`Hash-reference upload ${proj} ${fileOs}/${arch} returned ${ref.status}; falling back to a full upload`);
+                };
+                const oses = [...new Set(group.map((i) => i.os))];
+                const arches = [...new Set(group.map((i) => i.arch))];
+
+                // Fan-out: when the group's slots are exactly the product of the platforms it covers -- what a cosmo build always produces -- buildhost makes every row from one streamed body, in one transaction.
+                if (oses.length * arches.length === group.length) {
+                  const r = await api("PUT", slotURL(oses.join(","), arches.join(",")), body());
+                  if (r.status !== 201) { core.setFailed(`Upload ${proj} ${oses.join(",")}/${arches.join(",")} failed (${r.status}): ${r.text}`); return false; }
+                  record();
+                  core.info(`Uploaded ${proj} ${oses.join(",")}/${arches.join(",")} (${group.length} slot(s), one transfer)`);
+                  continue;
                 }
-                const body = fs.readFileSync(path.join(sourceDir, file));
-                const r = await api("PUT", slot, body);
-                if (r.status !== 201) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${r.status}): ${r.text}`); return false; }
-                uploadedHash.set(sum, file);
+
+                // A ragged slot set the cartesian grammar cannot express (e.g. every platform but windows/arm64): send the bytes once, then register the rest against the stored blob by hash.
+                const [first, ...rest] = group;
+                const r = await api("PUT", slotURL(first.os, first.arch), body());
+                if (r.status !== 201) { core.setFailed(`Upload ${proj} ${first.os}/${first.arch} failed (${r.status}): ${r.text}`); return false; }
+                core.info(`Uploaded ${proj} ${first.os}/${first.arch}`);
+                for (const { os: fileOs, arch } of rest) {
+                  const ref = await api("PUT", `${slotURL(fileOs, arch)}&upload_sha256=${sum}`);
+                  if (ref.status === 201) { core.info(`Registered ${proj} ${fileOs}/${arch} by hash`); continue; }
+                  if (ref.status === 409) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${ref.status}): ${ref.text}`); return false; }
+                  // The blob was evicted between the two requests: the bytes are right here.
+                  core.warning(`Hash-reference upload ${proj} ${fileOs}/${arch} returned ${ref.status}; sending the bytes`);
+                  const full = await api("PUT", slotURL(fileOs, arch), body());
+                  if (full.status !== 201) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${full.status}): ${full.text}`); return false; }
+                }
                 record();
-                core.info(`Uploaded ${proj} ${fileOs}/${arch}`);
               }
               const pub = await api("POST", `/api/v1/projects/${proj}/releases/${releaseVersion}/publish`);
               if (pub.status !== 200) { core.setFailed(`Publish ${proj} failed (${pub.status}): ${pub.text}`); return false; }
@@ -361,40 +373,10 @@ runs:
 
             const groupList = [...groups.entries()];
 
-            // Transitional shim: a server predating slash-namespaced projects rejects one with 404/403, so the first namespaced group is probed up front and a rejection publishes the old flat `<repo>` layout instead. The probe's create-release is reused below, so an up-to-date server gets no stray release. Remove once every target server authorizes namespaces.
-            const created = new Map<string, { status: number; text: string }>();
-            const firstNs = groupList.find(([p]) => p.includes("/"));
-            if (firstNs) {
-              const [proj] = firstNs;
-              const probe = await api("POST", `/api/v1/projects/${proj}/releases`, releaseBody());
-              if (probe.status === 404 || probe.status === 403) {
-                core.warning(`Server rejected namespaced project '${proj}' (HTTP ${probe.status}); falling back to the legacy flat '${project}' layout. Upgrade buildhost to enable per-binary projects.`);
-                const re = new RegExp(`^${project}_([a-z]+)_([a-z0-9]+)$`);
-                const legacy: { file: string; os: string; arch: string }[] = [];
-                for (const file of files) {
-                  const m = file.replace(/\.exe$/, "").match(re);
-                  if (m) legacy.push({ file, os: m[1], arch: m[2] });
-                }
-                if (legacy.length === 0) {
-                  core.setFailed(`Server does not support namespaced projects, and no artifacts match the legacy '${project}_{os}_{arch}' layout`);
-                  return;
-                }
-                const rv = releaseVersionFrom(project, await api("POST", `/api/v1/projects/${project}/releases`, releaseBody()));
-                if (rv === null) return;
-                core.info(`Release: ${project}/${rv} (legacy flat layout)`);
-                if (!(await uploadAndPublish(project, rv, legacy))) return;
-                core.setOutput('deployment_url', `${server}/projects/${project}/releases/${rv}`);
-                await drainStorageRecords();
-                return;
-              }
-              created.set(proj, probe);
-            }
-
-            // Namespaced path: publish each <repo>/<binary> project independently.
+            // Publish each <repo>/<binary> project independently.
             const published: { proj: string; rv: string }[] = [];
             for (const [proj, items] of groupList) {
-              const createResp = created.get(proj) ?? await api("POST", `/api/v1/projects/${proj}/releases`, releaseBody());
-              const rv = releaseVersionFrom(proj, createResp);
+              const rv = releaseVersionFrom(proj, await api("POST", `/api/v1/projects/${proj}/releases`, releaseBody()));
               if (rv === null) return;
               core.info(`Release: ${proj}/${rv}`);
               if (!(await uploadAndPublish(proj, rv, items))) return;

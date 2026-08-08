@@ -176,12 +176,6 @@ runs:
             const sum = await fileSHA256(filePath);
 
             const create = await api('POST', `${server}/api/v1/uploads`);
-            if (create.status === 404 || create.status === 405) {
-              // Server predates upload sessions: fall back to the classic single request, loudly, since a proxy body cap may reject it.
-              core.warning(`server does not support chunked uploads; sending ${size} bytes as a single request`);
-              finishUpload(await api('PUT', target, blob, uploadHeaders));
-              return;
-            }
             if (create.status !== 201) {
               core.setFailed(`create upload session failed: HTTP ${create.status}: ${create.text}`);
               return;

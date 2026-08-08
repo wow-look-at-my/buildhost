@@ -306,12 +306,6 @@ runs:
 
             // Chunked session (mirrors buildhost-upload-artifact / internal/uploadclient): assemble the archive server-side from proxy-sized requests, then finalize the ORIGINAL sites PUT by reference with an empty body, so that endpoint's routing, auth, caps and Content-Type dispatch all run unchanged against the spool.
             const create = await api('POST', `${server}/api/v1/uploads`);
-            if (create.status === 404 || create.status === 405) {
-              // Server predates upload sessions: fall back to the classic single request, loudly, since a proxy body cap may reject it.
-              core.warning(`server does not support chunked uploads; sending ${size} bytes as a single request`);
-              await finishPublish(await api('PUT', target, blob, uploadHeaders));
-              return;
-            }
             if (create.status !== 201) {
               core.setFailed(`create upload session failed: HTTP ${create.status}: ${create.text}`);
               return;
