@@ -13,7 +13,6 @@ require (
 	github.com/ulikunitz/xz v0.5.15
 	github.com/wow-look-at-my/bin-file-fmt/go v0.0.0-20260731091144-01a2ece92036
 	github.com/wow-look-at-my/go-mmap v0.0.0-20260524160502-7c9fb35436a9
-	github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260709175026-98aa140090d9
 	github.com/wow-look-at-my/router v0.0.0-20260721161008-302008ab1248
 	go.opentelemetry.io/contrib/bridges/otelslog v0.18.0
 	go.opentelemetry.io/otel v1.43.0
@@ -54,7 +53,7 @@ require (
 	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260523011958-0a33c5d7ca68 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260523011958-0a33c5d7ca68 // indirect
-	google.golang.org/grpc v1.81.1 // indirect
+	google.golang.org/grpc v1.82.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/libc v1.72.5 // indirect
