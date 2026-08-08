@@ -91,13 +91,7 @@ runs:
         script: |
           await (async () => {
             core.setOutput('deployment_id', '');
-            // A deployment asserts "this publish is live at <environment_url>".
-            // Against a loopback or plain-http server -- buildhost's own e2e
-            // spawns one on http://localhost:18080 -- that assertion is false:
-            // nothing outside the runner can reach it. So there is nothing true
-            // to register, exactly as there is nothing recordable for a loopback
-            // registry. A property of the target, not an opt-out: every publish
-            // to a real server registers, and a failure there is fatal.
+            // No true environment_url to assert against a loopback/non-https target -- a property of the target, not an opt-out; every real-server publish registers, and failure there is fatal. See docs/github-deployments.md.
             const deployServer: string = "${{ inputs.server }}";
             const deployHost: string = new URL(deployServer).hostname;
             if (deployHost === "localhost" || deployHost === "127.0.0.1" || deployHost === "::1" || !deployServer.startsWith("https://")) {
