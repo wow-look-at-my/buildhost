@@ -1,9 +1,11 @@
 name: Build and publish docker image to Buildhost
-version: 3
+version: 4
 description: >
   Build a Docker image with buildx and push it to a buildhost OCI registry in a
   single step, authenticating with a GitHub Actions OIDC token (no static
-  secret). The project auto-provisions on first push. Buildhost-bound pushes go
+  secret). The project auto-provisions on first push. The same OIDC identity
+  logs docker in before the build, so a Dockerfile can be `FROM` an image this
+  registry already holds without the caller adding a login step. Buildhost-bound pushes go
   through the `buildhost docker-push` CLI, which uploads blobs in chunks sized
   under the server's advertised request-body limit -- so layers over the
   Cloudflare ~100 MB edge cap publish instead of dying with a 413 (docker/buildx
@@ -179,6 +181,17 @@ runs:
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
+
+    # Pushing does not need a docker login -- `buildhost docker-push` carries
+    # its own OIDC token -- but BUILDING can: a Dockerfile whose FROM is one of
+    # this registry's own images makes buildx pull that base, and an
+    # unauthenticated pull of a private project is a 401. Logging in here is
+    # what keeps "build an image FROM an image you published" a single step
+    # instead of a login every caller has to remember.
+    - name: Log in to the buildhost registry (for private FROM bases)
+      uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-login@master
+      with:
+        server: ${{ inputs.server }}
 
     # When `tags` is omitted, compute branch-aware defaults instead of an
     # unconditional "SHA + latest": pushed OCI tags are mutable pointers
