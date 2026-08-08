@@ -18,6 +18,12 @@ ENV BUILDHOST_DB_PATH=/var/lib/buildhost/buildhost.db
 
 VOLUME /var/lib/buildhost
 
+# Metadata only -- this publishes nothing on the host. It is what lets
+# docker-updater find the port serving /.well-known/docker-updater/ without a
+# per-deployment label. Exactly one port may be declared here or discovery has
+# to be told which one; the admin port is deliberately left undeclared.
+EXPOSE 8080
+
 STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD ["/usr/local/bin/buildhost", "healthcheck"]
