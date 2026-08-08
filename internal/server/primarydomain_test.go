@@ -101,17 +101,17 @@ func TestPrimaryDomain_ScopesWebAndAPIToApex(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
-// With no primary domain configured the main-domain surface stays fully
-// host-agnostic -- the historical behavior, pinned so the scoping is provably
-// opt-in -- and configuring one changes serve-time behavior only, never the
-// route table.
-func TestPrimaryDomain_UnsetKeepsHostAgnostic(t *testing.T) {
-	env := setup(t)
+// BUILDHOST_PRIMARY_DOMAIN="*" is the explicit opt-in to serving every Host:
+// the main-domain surface stays fully host-agnostic (the historical unset
+// behavior), and configuring a real apex changes serve-time behavior only,
+// never the route table.
+func TestPrimaryDomain_WildcardKeepsHostAgnostic(t *testing.T) {
+	env := setupWith(t, func(cfg *config.Config) { cfg.PrimaryDomain = config.PrimaryDomainAny })
 	env.createProject(t, "anyhost-app", false)
 
 	for _, host := range []string{"evil.example", "some.random.host"} {
 		resp, _ := siteGet(t, env, host, "/")
-		require.Equalf(t, http.StatusOK, resp.StatusCode, "GET %s/ with no primary domain", host)
+		require.Equalf(t, http.StatusOK, resp.StatusCode, "GET %s/ with primary domain %q", host, config.PrimaryDomainAny)
 		resp, body := siteGet(t, env, host, "/api/v1/projects")
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		assert.Contains(t, body, "anyhost-app")
@@ -125,4 +125,18 @@ func TestPrimaryDomain_UnsetKeepsHostAgnostic(t *testing.T) {
 	setupWith(t, func(cfg *config.Config) { cfg.PrimaryDomain = "route-pin.example" })
 	require.Equal(t, base, routePatterns(),
 		"configuring a primary domain must not change the route table")
+}
+
+// The wildcard is an explicit choice, not a default: an unset
+// BUILDHOST_PRIMARY_DOMAIN is a startup error, so "serve every Host" can never
+// be reached by forgetting to configure anything.
+func TestPrimaryDomain_UnsetIsAStartupError(t *testing.T) {
+	err := config.Config{PrimaryDomain: ""}.Validate()
+	require.Error(t, err, "unset BUILDHOST_PRIMARY_DOMAIN must not be accepted")
+	assert.Contains(t, err.Error(), "BUILDHOST_PRIMARY_DOMAIN")
+	assert.Contains(t, err.Error(), config.PrimaryDomainAny,
+		"the error must name the wildcard opt-in so the operator knows how to get host-agnostic serving")
+
+	require.NoError(t, config.Config{PrimaryDomain: config.PrimaryDomainAny}.Validate())
+	require.NoError(t, config.Config{PrimaryDomain: "example.com"}.Validate())
 }

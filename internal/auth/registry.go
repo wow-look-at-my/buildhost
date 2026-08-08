@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/router"
@@ -38,8 +39,22 @@ func SiteDomain() string { return sharedSiteDomain }
 
 // PrimaryDomain is the apex carrying the GitHub OAuth callback
 // (BUILDHOST_PRIMARY_DOMAIN); "" when unset. Site-domain browser sign-ins
-// redirect to https://<PrimaryDomain>/__signin.
+// redirect to https://<PrimaryDomain>/__signin. It may also be
+// config.PrimaryDomainAny ("*"), the explicit opt-in to serving every Host --
+// callers that need a real hostname to build a URL must use PinnedPrimaryDomain.
 func PrimaryDomain() string { return sharedPrimaryDomain }
+
+// PinnedPrimaryDomain is PrimaryDomain reduced to an actually-addressable host,
+// or "" when no single host is canonical. It collapses the two "not pinned to
+// one apex" cases -- unset, and the config.PrimaryDomainAny ("*") wildcard --
+// so URL builders cannot emit a literal "https://*/...". Use this anywhere the
+// value becomes a hostname; use PrimaryDomain only to inspect the raw setting.
+func PinnedPrimaryDomain() string {
+	if sharedPrimaryDomain == config.PrimaryDomainAny {
+		return ""
+	}
+	return sharedPrimaryDomain
+}
 
 func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
@@ -120,9 +135,18 @@ func HandleRawPrimary(pattern string, handler http.HandlerFunc) {
 // (401s, sign-in redirects, OIDC auto-provisioning) that would reveal the
 // route exists. It reads PrimaryDomain() per request, not at registration
 // time, because web routes register in init() before config is known.
+//
+// config.PrimaryDomainAny ("*") is the operator's explicit opt-in to serving
+// every Host, so it passes everything through -- byte-identical to the
+// historical unpinned behavior. An empty PrimaryDomain cannot reach here in a
+// real server (config.Validate rejects it at startup); it is still treated as
+// pass-through so that tests and library callers constructing an auth registry
+// directly keep the permissive default rather than silently 404ing everything.
 func primaryOnly(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if pd := PrimaryDomain(); pd != "" && strings.ToLower(hostNoPort(r.Host)) != pd {
+		pd := PrimaryDomain()
+		pinned := pd != "" && pd != config.PrimaryDomainAny
+		if pinned && strings.ToLower(hostNoPort(r.Host)) != pd {
 			http.NotFound(w, r)
 			return
 		}
