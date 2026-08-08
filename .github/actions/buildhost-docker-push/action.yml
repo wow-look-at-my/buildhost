@@ -106,9 +106,7 @@ runs:
         script: |
           const { recordImage } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
           await (async () => {
-            // String-annotated before use: interpolated straight into a
-            // comparison, tsc narrows to a literal and rejects the expression
-            // as always true or always false.
+            // String-annotated before use: interpolated straight into a comparison, tsc narrows to a literal and rejects the expression as always true or always false.
             const server: string = "${{ inputs.server }}";
             const record: string = "${{ inputs.record }}";
             let token: string = "${{ inputs.token }}";
@@ -119,9 +117,7 @@ runs:
                 core.setFailed("No token input and OIDC is unavailable. Add 'permissions: { id-token: write }' to the job, or pass token.");
                 return;
               }
-              // Mint a GHA OIDC token with the buildhost URL as the audience;
-              // buildhost verifies the JWT and auto-provisions the project on
-              // first push.
+              // Mint a GHA OIDC token with the buildhost URL as the audience; buildhost verifies the JWT and auto-provisions the project on first push.
               const resp = await fetch(`${url}&audience=${server}`, {
                 headers: { Authorization: `Bearer ${bearer}` },
               });
@@ -143,10 +139,7 @@ runs:
               env: { ...process.env, BUILDHOST_TOKEN: token },
             });
 
-            // The digest comes from the OCI layout's index.json root
-            // descriptor, not a buildx output: on this path buildx writes a
-            // layout for the CLI rather than pushing, so that descriptor IS
-            // what buildhost stored and serves.
+            // From index.json's root descriptor, not a buildx output: buildx wrote a layout for the CLI rather than pushing, so this IS what buildhost serves.
             const indexPath = path.join(env.OCI_LAYOUT!, "index.json");
             const index = JSON.parse(fs.readFileSync(indexPath, "utf8")) as { manifests?: { digest?: string }[] };
             const digest: string = index.manifests?.[0]?.digest ?? "";
@@ -156,14 +149,9 @@ runs:
             }
             core.setOutput("digest", digest);
 
-            // Recording what buildhost now stores is PART of pushing, not a
-            // bolt-on: it happens in this step, right after the push it
-            // describes, and a failure fails the step. A warn-and-continue path
-            // would be an opt-out by neglect -- the push would stay green while
-            // the org's linked artifacts page silently fell behind reality.
+            // Recording the push is part of the push, so a failure here fails the step. Warn-and-continue would leave it green while the artifacts page fell behind.
             if (record === "true") {
-              // The first buildhost-bound reference names what was stored;
-              // foreign references are another registry's to account for.
+              // The first buildhost-bound reference names what was stored; foreign references are another registry's to account for.
               await recordImage(octokit, core, context, { reference: refs[0] ?? "", digest });
             }
           })();

@@ -76,9 +76,7 @@ runs:
             });
             const text = await resp.text();
 
-            // Idempotent: a 409 means the project already exists, which is success
-            // for "ensure this project exists" callers. Fetch the existing project
-            // so the id/response outputs are still populated.
+            // 409 means it already exists, which is success here. Fetch it so the outputs are still populated.
             if (resp.status === 409) {
               core.info(`Project "${name}" already exists; treating as success.`);
               const getResp = await fetch(`${server}/api/v1/projects/${name}`, {

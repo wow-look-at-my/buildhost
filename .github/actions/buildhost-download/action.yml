@@ -68,10 +68,7 @@ runs:
       with:
         script: |
           await (async () => {
-            // Every input is bound to a string-annotated const before it is
-            // used. Interpolated straight into a comparison, tsc sees a string
-            // LITERAL and rejects the expression as always true or always
-            // false; the annotation widens it back to string.
+            // Bind every input to a string-annotated const: interpolated raw, tsc narrows to a literal and calls the comparison always true.
             const server: string = "${{ inputs.server }}";
             const project: string = "${{ inputs.project }}";
             const token: string = "${{ inputs.token }}";
@@ -84,8 +81,7 @@ runs:
             const executable: string = "${{ inputs.executable }}";
             const required: string = "${{ inputs.required }}";
 
-            // dl is a subdomain of the server's own host, so a non-default
-            // deployment resolves without a second input to keep in sync.
+            // dl is a subdomain of the server's own host, so a non-default deployment resolves without a second input to keep in sync.
             const host = new URL(server).host;
             const runnerArch: Record<string, string> = { X64: "amd64", ARM64: "arm64", X86: "386", ARM: "arm" };
             const query = new URLSearchParams({
@@ -101,9 +97,7 @@ runs:
             const destination: string =
               pathInput || path.join(env.RUNNER_TEMP!, project.split("/").pop()!);
 
-            // Retried because a registry blip should not fail a publish, but
-            // bounded: an artifact that is genuinely absent must be reported,
-            // not waited on.
+            // Retried because a registry blip should not fail a publish, but bounded: an artifact that is genuinely absent must be reported, not waited on.
             let lastError = "";
             for (let attempt = 1; attempt <= 3; attempt++) {
               try {

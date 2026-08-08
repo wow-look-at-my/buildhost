@@ -116,13 +116,7 @@ runs:
         script: |
           await (async () => {
             core.setOutput('deployment_id', '');
-            // A deployment asserts "this publish is live at <environment_url>".
-            // Against a loopback or plain-http server -- buildhost's own e2e
-            // spawns one on http://localhost:18080 -- that assertion is false:
-            // nothing outside the runner can reach it. So there is nothing true
-            // to register, exactly as there is nothing recordable for a loopback
-            // registry. A property of the target, not an opt-out: every publish
-            // to a real server registers, and a failure there is fatal.
+            // A deployment claims the publish is live at environment_url -- false for a loopback server nothing outside the runner can reach.
             const deployServer: string = "${{ inputs.server }}";
             const deployHost: string = new URL(deployServer).hostname;
             if (deployHost === "localhost" || deployHost === "127.0.0.1" || deployHost === "::1" || !deployServer.startsWith("https://")) {
@@ -136,17 +130,10 @@ runs:
               const environment: string = envInput || `buildhost/${project}`;
               const defaultBranch: string = context.payload.repository?.default_branch ?? '';
               const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-              // A bare SHA here belongs to no branch, so GitHub's branch and PR
-              // deployment views report the branch as never deployed. Callers
-              // that want the publish to surface there pass a branch name.
+              // A bare SHA belongs to no branch, so GitHub's branch and PR views report it as never deployed. Pass a branch name to surface there.
               const deploymentRefInput: string = "${{ inputs.deployment_ref }}";
               const ref: string = deploymentRefInput || context.sha;
-              // required_contexts MUST be [] (the API default is "every commit
-              // status", and the org's all-builds status is still pending on
-              // this sha mid-run -> 409 Conflict); auto_merge MUST be false
-              // (the API default would try to merge the default branch into
-              // ref). A 2xx response without an id (e.g. the 202 auto-merge
-              // shape) is treated as "no deployment".
+              // required_contexts [] or the default (every commit status) 409s on all-builds, still pending mid-run; auto_merge false or the API merges into ref.
               const dep = await octokit.rest.repos.createDeployment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -204,12 +191,10 @@ runs:
       uses: wow-look-at-my/actions@typescript#latest
       with:
         script: |
-          // Short ref name, mirroring GITHUB_REF_NAME: the branch for
-          // refs/heads/*, the git tag for refs/tags/*, "<pr>/merge" for pulls.
+          // Short ref name, mirroring GITHUB_REF_NAME: the branch for refs/heads/*, the git tag for refs/tags/*, "<pr>/merge" for pulls.
           const refName: string = env.GITHUB_REF_NAME ?? context.ref.replace(/^refs\/[^/]+\//, "");
           const defaultBranch: string = context.payload.repository?.default_branch ?? "master";
-          // Docker-sanitize so the result is always a bare (buildhost-bound)
-          // tag: "claude/foo" -> "claude-foo", never a foreign reference.
+          // Docker-sanitize: "claude/foo" -> "claude-foo".
           const refTag = refName.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[.-]+/, "");
           const tags = [context.sha, refTag].filter(Boolean);
           if (context.ref === `refs/heads/${defaultBranch}`) tags.push("latest");
@@ -336,12 +321,7 @@ runs:
               const server: string = "${{ inputs.server }}";
               const projectInput: string = "${{ inputs.project }}";
               const project: string = projectInput || github.repository.split('/').pop()!;
-              // The image build must have succeeded, and every push-path step
-              // that actually ran must have succeeded. 'skipped' is fine:
-              // which push steps run depends on the registries the tags
-              // target. A failure BEFORE the build (refs, or buildx setup)
-              // leaves the build outcome 'skipped', which also reads as
-              // failure here.
+              // The build and every push step that RAN must have succeeded. 'skipped' is fine for a push step, but on the build it means something failed earlier.
               const buildOutcome: string = "${{ steps.build.outcome }}";
               const outcomes: string[] = [
                 "${{ steps.refs.outcome }}",
