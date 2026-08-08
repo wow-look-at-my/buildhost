@@ -57,16 +57,19 @@ Enforcement belongs in the channel that refreshes. The guard is the
 ONLY copy -- a per-repo CI script re-deriving the same rule was tried here and
 deleted, because three implementations of one rule is the disease, not the cure.
 
-It fails on three things:
+It fails on two things:
 
 - **over budget** -- more than 40,000 characters;
 - **at the wall** -- at or above 97.5% of budget, because landing one character
   under the limit is not a fix: the next ordinary edit breaks it, and whoever
-  makes that edit inherits the extraction that was skipped;
-- **unwrapped** -- any line over 150 columns that could have been wrapped, since
-  an unwrapped file makes every edit a one-line diff no reviewer can read, and a
-  paragraph running for thousands of columns is the visible SHAPE of an item that
-  should have been a pointer to `docs/`.
+  makes that edit inherits the extraction that was skipped.
+
+A third check, **unwrapped** -- any line over 150 columns that could have been
+wrapped -- exists but is off unless `CC_CLAUDE_MD_WIDTH` is set. Wrapping is
+still worth doing (an unwrapped file makes every edit a one-line diff no
+reviewer can read, and a paragraph running for thousands of columns is the
+visible SHAPE of an item that should have been a pointer to `docs/`); it is just
+not what this guard is for.
 
 ## How the file was brought back
 
