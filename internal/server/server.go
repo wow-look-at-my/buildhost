@@ -18,6 +18,15 @@ import (
 
 var healthDB *db.DB
 
+// The update-check contract docker-updater probes on the container's own port,
+// reading only the status code. RFC 8615 reserves /.well-known/ for exactly
+// this: a path an automated client may request without prior arrangement.
+// see docs/deploy-and-updates.md
+const (
+	wellKnownHealth    = "/.well-known/docker-updater/health"
+	wellKnownPreUpdate = "/.well-known/docker-updater/pre-update"
+)
+
 // healthResponse is the JSON body of GET /healthz. It always reports the build
 // the server is running (commit and version) so a deploy can be verified
 // without a dedicated version endpoint; status is "ok" only when the database
@@ -44,7 +53,7 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 	}
 	healthDB = database
 
-	auth.HandleRaw("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+	health := func(w http.ResponseWriter, r *http.Request) {
 		resp := healthResponse{
 			Status:   "ok",
 			Commit:   buildinfo.Commit(),
@@ -60,14 +69,31 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(code)
 		_ = json.NewEncoder(w).Encode(resp)
-	})
-	auth.HandleRaw("GET /ready-to-update", func(w http.ResponseWriter, _ *http.Request) {
+	}
+	readyToUpdate := func(w http.ResponseWriter, _ *http.Request) {
 		if admin.InflightWrites() > 0 {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-	})
+	}
+
+	auth.HandleRaw("GET /healthz", health)
+	auth.HandleRaw("GET /ready-to-update", readyToUpdate)
+
+	// The same two questions at the paths docker-updater discovers on its own,
+	// with no label to configure: is this container serving, and may it be
+	// replaced right now. It reads the status code and ignores the body, so
+	// these are aliases rather than new handlers -- and being aliases is the
+	// point, because a second implementation of "is it healthy" is a second
+	// answer that can disagree with the first.
+	//
+	// HandleRaw, so they skip requireProject: the prober carries no credential,
+	// and a 401 here would read as "serving but permanently unhealthy". Apex
+	// only, like the two above -- the router partitions strictly by host, and
+	// the prober addresses the container by IP, which is an unclaimed host.
+	auth.HandleRaw("GET "+wellKnownHealth, health)
+	auth.HandleRaw("GET "+wellKnownPreUpdate, readyToUpdate)
 
 	s := &Server{cfg: cfg}
 	s.srv = &http.Server{
