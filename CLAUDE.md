@@ -164,7 +164,12 @@ never share the service alias.
 
 ## Testing
 
-`go-toolchain` runs all tests. Several end-to-end jobs in `ci.yml` are NOT part of
+`go-toolchain` runs all tests. An inline `script:` in any action or workflow may
+not carry two or more consecutive `//` comment lines -- the typescript action
+refuses to run one, so CI checks every file up front rather than letting a
+seldom-triggered action break in a consumer repo.
+
+Several end-to-end jobs in `ci.yml` are NOT part of
 it and guard defects unit tests structurally cannot catch (`synthesized-image-e2e`,
 `homebrew-tap-e2e`, `container-healthcheck`, `apt-install-e2e`,
 `upload-artifact-action-e2e`). Depth: `docs/testing.md`.

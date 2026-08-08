@@ -57,12 +57,7 @@ runs:
             core.info(JSON.stringify(JSON.parse(text), null, 2));
             core.setOutput('response', text);
 
-            // Recording what buildhost now holds is part of publishing. This
-            // composite is the final step of the create/upload/publish chain
-            // assembled by publishers that do not use buildhost-publish, so
-            // without this that whole path stores artifacts and records
-            // nothing. The publish response carries the artifacts it just made
-            // public; each becomes one storage record.
+            // Recording is part of publishing, and this is the last step of the chain publishers assemble without buildhost-publish, so without it that whole path records nothing. One record per artifact in the response.
             type ReleaseBody = {
               version?: string;
               artifacts?: { os?: string; arch?: string; sha256?: string }[];

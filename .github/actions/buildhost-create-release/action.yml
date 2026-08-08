@@ -92,9 +92,7 @@ runs:
               core.setFailed(`create_service must be 'true', 'false', or empty; got '${brewService}'`);
               return;
             }
-            // Empty input sends nothing (stored setting untouched); a set
-            // value is asserted on every publish. An older server ignores
-            // the unknown field.
+            // Empty sends nothing and leaves the stored setting alone; a set value is asserted on every publish, and an older server ignores the unknown field.
             const defaultBranch: string = "${{ inputs.default_branch }}";
             if (defaultBranch) body['default_branch'] = defaultBranch;
 
