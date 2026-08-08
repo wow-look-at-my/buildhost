@@ -59,6 +59,12 @@ jobs:
             echo "drifts from its source silently. See docs/no-committed-build-artifacts.md"
             exit 1
           fi
+      # Hand build/ to the downstream jobs via the run-scoped cache -- go-toolchain
+      # no longer uploads a go-build artifact.
+      - uses: wow-look-at-my/actions@cache-upload#latest
+        with:
+          name: go-build
+          path: build/
       # On the default branch, cache this commit's route list keyed by its SHA.
       # Caches created on the default branch are restorable from every branch,
       # so feature-branch route-diff runs reuse this instead of rebuilding base.
@@ -929,3 +935,14 @@ jobs:
   publish-ghcr:
     needs: container-healthcheck
     uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@master
+
+  # Org-standard hygiene: delete this run's cache hand-offs and sweep >12h leftovers.
+  cache-cleanup:
+    needs: [route-diff, homebrew-tap-e2e, synthesized-image-e2e, apt-install-e2e, publish-ghcr]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: wow-look-at-my/actions@cache-cleanup#latest
