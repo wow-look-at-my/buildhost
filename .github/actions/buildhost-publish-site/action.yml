@@ -91,16 +91,11 @@ runs:
         script: |
           await (async () => {
             core.setOutput('deployment_id', '');
-            // A deployment asserts "this publish is live at <environment_url>".
-            // Against a loopback or plain-http server -- buildhost's own e2e
-            // spawns one on http://localhost:18080 -- that assertion is false:
-            // nothing outside the runner can reach it. So there is nothing true
-            // to register, exactly as there is nothing recordable for a loopback
-            // registry. A property of the target, not an opt-out: every publish
-            // to a real server registers, and a failure there is fatal.
             const deployServer: string = "${{ inputs.server }}";
             const deployHost: string = new URL(deployServer).hostname;
+            // this check finds a target nothing outside the runner can reach
             if (deployHost === "localhost" || deployHost === "127.0.0.1" || deployHost === "::1" || !deployServer.startsWith("https://")) {
+              // a loopback or plain-http target has nothing true to register as live
               core.info(`Skipping the GitHub Deployment: ${deployServer} is not a reachable https server, so its deployment URL would point nowhere`);
               return;
             }
@@ -128,6 +123,7 @@ runs:
               // (the API default would try to merge the default branch into
               // ref). A 2xx response without an id (e.g. the 202 auto-merge
               // shape) is treated as "no deployment".
+              // registering here is a property of the target, not an optional step
               const dep = await octokit.rest.repos.createDeployment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -155,6 +151,7 @@ runs:
               });
               core.info(`Created GitHub Deployment ${id} in environment '${environment}'`);
             } catch (e) {
+              // a registration failure here is fatal
               const msg = e instanceof Error ? e.message : String(e);
               core.setFailed(`Could not create the GitHub Deployment (${msg}). Add 'deployments: write' to this job's permissions block -- job-level permissions REPLACE workflow-level ones, so add it alongside the ones the job already declares. Registering the publish is part of publishing and cannot be turned off.`);
             }
