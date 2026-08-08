@@ -215,7 +215,9 @@ runs:
     # Pushing does not need a docker login -- `buildhost docker-push` carries
     # its own OIDC token -- but BUILDING can: a Dockerfile whose FROM is one of
     # this registry's own images makes buildx pull that base, and an
-    # unauthenticated pull of a private project is a 401.
+    # unauthenticated pull of a private project is a 401. Logging in here is
+    # what keeps "build an image FROM an image you published" a single step
+    # instead of a login every caller has to remember.
     - name: Log in to the buildhost registry (for private FROM bases)
       shell: bash
       run: bash "${{ github.action_path }}/docker-login.sh" "${{ inputs.server }}"
