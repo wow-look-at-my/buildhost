@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 )
 
 const getOCIBlobLink = `-- name: GetOCIBlobLink :one
@@ -80,6 +81,76 @@ func (q *Queries) InsertOCIBlobLink(ctx context.Context, arg InsertOCIBlobLinkPa
 		arg.IsManifest,
 	)
 	return err
+}
+
+const listOCIBlobLinkProjects = `-- name: ListOCIBlobLinkProjects :many
+SELECT p.id, p.name, p.description, p.homepage, p.license, p.is_private, p.versioning,
+       p.github_repo, p.github_owner_id, p.github_repo_id, p.default_branch, p.create_service,
+       p.created_at, p.updated_at,
+       l.media_type, l.size, l.is_manifest
+FROM oci_blob_links l JOIN projects p ON p.id = l.project_id
+WHERE l.storage_key = ?
+`
+
+type ListOCIBlobLinkProjectsRow struct {
+	ID            int64      `json:"id"`
+	Name          string     `json:"name"`
+	Description   string     `json:"description"`
+	Homepage      string     `json:"homepage"`
+	License       string     `json:"license"`
+	IsPrivate     bool       `json:"is_private"`
+	Versioning    Versioning `json:"versioning"`
+	GithubRepo    string     `json:"github_repo"`
+	GithubOwnerID string     `json:"github_owner_id"`
+	GithubRepoID  string     `json:"github_repo_id"`
+	DefaultBranch string     `json:"default_branch"`
+	CreateService bool       `json:"create_service"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	MediaType     string     `json:"media_type"`
+	Size          int64      `json:"size"`
+	IsManifest    int64      `json:"is_manifest"`
+}
+
+func (q *Queries) ListOCIBlobLinkProjects(ctx context.Context, storageKey string) ([]ListOCIBlobLinkProjectsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOCIBlobLinkProjects, storageKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOCIBlobLinkProjectsRow{}
+	for rows.Next() {
+		var i ListOCIBlobLinkProjectsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.Homepage,
+			&i.License,
+			&i.IsPrivate,
+			&i.Versioning,
+			&i.GithubRepo,
+			&i.GithubOwnerID,
+			&i.GithubRepoID,
+			&i.DefaultBranch,
+			&i.CreateService,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.MediaType,
+			&i.Size,
+			&i.IsManifest,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listOCITags = `-- name: ListOCITags :many

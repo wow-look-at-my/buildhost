@@ -96,6 +96,16 @@ type fakeRegistry struct {
 	failPatches int
 	// statusReads counts GET upload-status requests (the resume path).
 	statusReads int
+	// mountable is the set of digests this registry will grant a cross-repo
+	// mount for (in the real server: blobs storage already holds under a
+	// project the caller can read).
+	mountable map[string]bool
+	// mounts records the digests that were mounted rather than uploaded.
+	mounts []string
+	// dropSessionsAfter, once positive, deletes the session after that many
+	// PATCH appends -- what a server restart looks like to a client.
+	dropSessionsAfter int
+	patchCount        int
 }
 
 func newFakeRegistry(t *testing.T) *fakeRegistry {
@@ -104,6 +114,7 @@ func newFakeRegistry(t *testing.T) *fakeRegistry {
 		blobs:     map[string][]byte{},
 		manifests: map[string][]byte{},
 		sessions:  map[string][]byte{},
+		mountable: map[string]bool{},
 	}
 }
 
@@ -121,6 +132,13 @@ func (f *fakeRegistry) handler(project string) http.Handler {
 			}
 			w.WriteHeader(http.StatusNotFound)
 		case r.Method == "POST" && path == "blobs/uploads/":
+			if mount := r.URL.Query().Get("mount"); mount != "" && f.mountable[mount] {
+				f.blobs[mount] = nil // linked, not uploaded
+				f.mounts = append(f.mounts, mount)
+				w.Header().Set("Docker-Content-Digest", mount)
+				w.WriteHeader(http.StatusCreated)
+				return
+			}
 			if digest := r.URL.Query().Get("digest"); digest != "" {
 				body := readAll(f.t, r)
 				if digestOf(body) != digest {
@@ -161,6 +179,14 @@ func (f *fakeRegistry) handler(project string) http.Handler {
 			}
 			f.patchSizes = append(f.patchSizes, int64(len(body)))
 			f.sessions[uuid] = append(sess, body...)
+			f.patchCount++
+			if f.dropSessionsAfter > 0 && f.patchCount >= f.dropSessionsAfter {
+				// A restart takes every in-memory session with it.
+				f.dropSessionsAfter = 0
+				clear(f.sessions)
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			w.Header().Set("Range", fmt.Sprintf("0-%d", max(int64(len(f.sessions[uuid]))-1, 0)))
 			w.WriteHeader(http.StatusAccepted)
 		case r.Method == "GET" && strings.HasPrefix(path, "blobs/uploads/"):
@@ -180,6 +206,9 @@ func (f *fakeRegistry) handler(project string) http.Handler {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
+			// The real server appends the PUT body before finalizing, which is
+			// how a blob small enough for one request is sent.
+			sess = append(sess, readAll(f.t, r)...)
 			digest := r.URL.Query().Get("digest")
 			if digestOf(sess) != digest {
 				w.WriteHeader(http.StatusBadRequest)
