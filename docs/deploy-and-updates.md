@@ -32,6 +32,39 @@ server is idle, or HTTP 503 when there are in-flight write requests. It is
 designed for docker-updater's HTTP pre-update checks -- no exec into the container
 (the distroless image has no shell).
 
+### The standard `/.well-known/docker-updater/` spellings
+
+The same two handlers also answer at the paths docker-updater discovers by
+itself, with no label at all:
+
+| Path | Same as | Answers |
+|---|---|---|
+| `/.well-known/docker-updater/health` | `/healthz` | 200 while the database pings, 503 otherwise |
+| `/.well-known/docker-updater/pre-update` | `/ready-to-update` | 200 when idle, 503 with writes in flight |
+
+Aliases on purpose: a second implementation of "is it healthy" is a second
+answer that can disagree with the first. Both are registered `HandleRaw` (no
+project auth -- the prober carries no credential, and a 401 would read as
+"serving but permanently unhealthy") and apex-only, since the prober addresses
+the container by IP, which the router treats as an unclaimed host.
+
+Discovery builds that URL from the container's **first network IP and its
+single exposed TCP port**. buildhost's image declares no port, so the deploy
+names it:
+
+```yaml
+labels:
+  docker-updater.well-known.port: "8080"
+```
+
+With that, no check labels are needed at all. The caveat is the same one as the
+port-only pre-check form below: the address is a bridge IP, so docker-updater
+has to be on a network that reaches it -- it shares `internal` in
+`deploy/docker-compose.yml`, which is enough. If a future deployment puts
+buildhost on several networks and the updater on only one of them, discovery may
+resolve an address it cannot reach; the full-URL label form below is the escape
+hatch, and docker-updater says which of the two failed.
+
 docker-updater reaches it over the **shared `internal` Docker network** via
 buildhost's DNS alias, configured as a full URL:
 
