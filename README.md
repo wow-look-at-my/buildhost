@@ -584,6 +584,9 @@ Directory requests serve `index.html`. If a requested file is missing and the up
 Sites are served on the `sites.` subdomain (like every other service); pass the
 apex `--server` and the CLI derives it.
 
+Sites are served on the `sites.` subdomain (like every other service); pass the
+apex `--server` and the CLI derives it.
+
 ```bash
 # Deploy a site from a directory
 buildhost publish-site \
