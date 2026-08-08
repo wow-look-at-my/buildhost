@@ -80,6 +80,15 @@ func TestPrimaryDomain_ScopesWebAndAPIToApex(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	resp, _ = siteGet(t, env, "evil.example", "/ready-to-update")
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	// docker-updater probes the container by IP, i.e. on an unclaimed host, and
+	// carries no credential: both standard endpoints have to answer there. The
+	// paths are spelled out rather than taken from the server package's consts
+	// -- they are an external contract, and a rename that silently moved them
+	// would be exactly the regression this pins.
+	resp, _ = siteGet(t, env, "evil.example", "/.well-known/docker-updater/health")
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	resp, _ = siteGet(t, env, "evil.example", "/.well-known/docker-updater/pre-update")
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	resp, _ = siteGet(t, env, "evil.example", "/llms.txt")
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	resp = env.doFullHost(t, "GET", "evil.example", "/__signin", "", nil, nil, false)
