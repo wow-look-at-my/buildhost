@@ -52,10 +52,6 @@ services:
     labels:
       docker-updater.enable: "true"
       docker-updater.rolling: "true"
-      # The image declares no port, so name the one serving the standard
-      # /.well-known/docker-updater/ endpoints. Without it discovery has nothing
-      # to probe and post-update liveness falls back to Docker's HEALTHCHECK.
-      docker-updater.well-known.port: "8080"
     stop_grace_period: 5m
     volumes:
       - buildhost-data:/var/lib/buildhost

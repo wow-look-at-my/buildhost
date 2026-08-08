@@ -49,15 +49,13 @@ project auth -- the prober carries no credential, and a 401 would read as
 the container by IP, which the router treats as an unclaimed host.
 
 Discovery builds that URL from the container's **first network IP and its
-single exposed TCP port**. buildhost's image declares no port, so the deploy
-names it:
+single exposed TCP port**. The Dockerfile's `EXPOSE 8080` is what supplies that
+port -- image metadata, publishing nothing on the host, so it costs a deployment
+nothing and needs no per-deployment label. Only one port may be declared or
+discovery cannot choose; the admin port is deliberately left undeclared, and a
+deployment that wants a different one sets `docker-updater.well-known.port`.
 
-```yaml
-labels:
-  docker-updater.well-known.port: "8080"
-```
-
-With that, no check labels are needed at all. The caveat is the same one as the
+So no labels are needed at all. The caveat is the same one as the
 port-only pre-check form below: the address is a bridge IP, so docker-updater
 has to be on a network that reaches it -- it shares `internal` in
 `deploy/docker-compose.yml`, which is enough. If a future deployment puts
