@@ -137,8 +137,11 @@ uploads cannot.
 Sizing is decided up front from the blob size + server-info (never by reacting to
 a 413); `--chunk-size` only clamps DOWN from the advertised limit; interrupted
 chunks resume from the server's committed size (416 `Range` / the status GET).
-Blobs the registry already has are HEAD-skipped; small blobs keep the classic
-monolithic `POST ?digest=`. The layout walk pushes depth-first (blobs, then child
+Blobs the registry already has are HEAD-skipped; a blob small enough for one
+request still opens a session (that POST is what asks for a cross-repo mount)
+and finalizes with a single PUT carrying the bytes. Every upload request sets
+`GetBody`, or net/http declines to retry it once the body has been written and
+one mid-flight stream error fails the whole publish. The layout walk pushes depth-first (blobs, then child
 manifests by digest -- attestation manifests included -- then the root by each tag)
 and requires exactly one top-level `index.json` entry (one image per push).
 
