@@ -1,8 +1,9 @@
 package ociclient
 
-// Test harness: a minimal in-memory fake of the buildhost OCI registry
-// (monolithic + chunked blob uploads, manifest PUTs) plus helpers that build
-// on-disk OCI image layouts for the push tests.
+// Test harness: a minimal in-memory fake of the buildhost OCI registry (blob
+// upload sessions, mounts, manifest PUTs) plus helpers that build on-disk OCI
+// image layouts for the push tests. It serves only what the client sends, so a
+// branch here that no push reaches is dead weight rather than coverage.
 
 import (
 	"crypto/sha256"
@@ -90,7 +91,7 @@ type fakeRegistry struct {
 
 	patchSizes  []int64 // observed PATCH body sizes
 	patchRange  []string
-	blobUploads []string // digests that arrived via upload (monolithic or finalize)
+	blobUploads []string // digests that arrived as uploaded bytes, not a mount
 
 	// failPatches makes the next N PATCH requests 500 AFTER consuming the body.
 	failPatches int
@@ -136,17 +137,6 @@ func (f *fakeRegistry) handler(project string) http.Handler {
 				f.blobs[mount] = nil // linked, not uploaded
 				f.mounts = append(f.mounts, mount)
 				w.Header().Set("Docker-Content-Digest", mount)
-				w.WriteHeader(http.StatusCreated)
-				return
-			}
-			if digest := r.URL.Query().Get("digest"); digest != "" {
-				body := readAll(f.t, r)
-				if digestOf(body) != digest {
-					w.WriteHeader(http.StatusBadRequest)
-					return
-				}
-				f.blobs[digest] = body
-				f.blobUploads = append(f.blobUploads, digest)
 				w.WriteHeader(http.StatusCreated)
 				return
 			}
