@@ -20,9 +20,15 @@ type Signer struct {
 	entity *openpgp.Entity
 }
 
+// SigningKeyFile is the name NewSigner reads and writes inside its data
+// directory. Exported so a test can seed a directory with an existing key and
+// get the load path instead of another key generation; a second copy of the
+// literal would silently fall back to generating when the two drifted.
+const SigningKeyFile = "apt-signing.key"
+
 func NewSigner(dataDir string) *Signer {
 	s := &Signer{}
-	keyPath := filepath.Join(dataDir, "apt-signing.key")
+	keyPath := filepath.Join(dataDir, SigningKeyFile)
 	if err := s.loadOrGenerate(keyPath); err != nil {
 		slog.Error("apt signing key setup failed", "err", err)
 	}

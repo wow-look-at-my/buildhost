@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,6 +16,40 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
+
+// Generating an RSA-4096 signing key takes seconds and the time varies widely,
+// so a package that built one per test spent its whole 30s budget on key
+// generation and eventually timed out in CI. Generate one for the package and
+// seed each test's directory with it, exactly as internal/server does; the two
+// tests below whose subject IS generation still generate their own.
+var (
+	aptKeyOnce  sync.Once
+	aptKeyBytes []byte
+)
+
+func sharedSigningKey(t *testing.T) []byte {
+	t.Helper()
+	aptKeyOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "apt-test-key-*")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+		NewSigner(dir) // one keygen for the package
+		b, err := os.ReadFile(filepath.Join(dir, SigningKeyFile))
+		require.NoError(t, err)
+		aptKeyBytes = b
+	})
+	require.NotEmpty(t, aptKeyBytes)
+	return aptKeyBytes
+}
+
+// seedSigningKey puts the shared key in dir so NewSigner loads it.
+func seedSigningKey(t *testing.T, dir string) string {
+	t.Helper()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, SigningKeyFile), sharedSigningKey(t), 0o600,
+	))
+	return dir
+}
 
 func setupSigningTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	t.Helper()
@@ -25,7 +61,7 @@ func setupSigningTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	store, err := storage.NewFilesystem(filepath.Join(tmpDir, "blobs"), true)
 	require.NoError(t, err)
 
-	signer := NewSigner(tmpDir)
+	signer := NewSigner(seedSigningKey(t, tmpDir))
 	require.True(t, signer.Available())
 
 	h := &Handler{
@@ -37,26 +73,43 @@ func setupSigningTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	return h, d, store
 }
 
+// The one test that still pays for a key generation, because generating is
+// what it is about. It also asserts the key was persisted, which is the half of
+// the round trip the load test can no longer observe.
 func TestNewSigner_GeneratesKey(t *testing.T) {
 	tmpDir := t.TempDir()
 	s := NewSigner(tmpDir)
 	assert.True(t, s.Available())
 	assert.NotEmpty(t, s.Fingerprint())
+
+	written, err := os.ReadFile(filepath.Join(tmpDir, SigningKeyFile))
+	require.NoError(t, err)
+	assert.Contains(t, string(written), "-----BEGIN PGP PRIVATE KEY BLOCK-----")
 }
 
+// An existing key is reused rather than regenerated. Asserting the file is
+// byte-identical afterwards says that directly; matching fingerprints alone
+// would also pass if the second signer had rewritten the key and reported the
+// new one.
 func TestNewSigner_LoadsExistingKey(t *testing.T) {
-	tmpDir := t.TempDir()
-	s1 := NewSigner(tmpDir)
-	fp1 := s1.Fingerprint()
+	tmpDir := seedSigningKey(t, t.TempDir())
+	keyPath := filepath.Join(tmpDir, SigningKeyFile)
+	before, err := os.ReadFile(keyPath)
+	require.NoError(t, err)
 
-	s2 := NewSigner(tmpDir)
-	fp2 := s2.Fingerprint()
+	fp1 := NewSigner(tmpDir).Fingerprint()
+	fp2 := NewSigner(tmpDir).Fingerprint()
 
+	assert.NotEmpty(t, fp1)
 	assert.Equal(t, fp1, fp2)
+
+	after, err := os.ReadFile(keyPath)
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "an existing key must not be regenerated")
 }
 
 func TestSigner_PublicKeyArmored(t *testing.T) {
-	s := NewSigner(t.TempDir())
+	s := NewSigner(seedSigningKey(t, t.TempDir()))
 	key, err := s.PublicKeyArmored()
 	require.NoError(t, err)
 	assert.Contains(t, string(key), "-----BEGIN PGP PUBLIC KEY BLOCK-----")
@@ -64,7 +117,7 @@ func TestSigner_PublicKeyArmored(t *testing.T) {
 }
 
 func TestSigner_ClearSign(t *testing.T) {
-	s := NewSigner(t.TempDir())
+	s := NewSigner(seedSigningKey(t, t.TempDir()))
 	data := []byte("test content to sign")
 	signed, err := s.ClearSign(data)
 	require.NoError(t, err)
@@ -74,7 +127,7 @@ func TestSigner_ClearSign(t *testing.T) {
 }
 
 func TestSigner_DetachedSign(t *testing.T) {
-	s := NewSigner(t.TempDir())
+	s := NewSigner(seedSigningKey(t, t.TempDir()))
 	data := []byte("test content to sign")
 	sig, err := s.DetachedSign(data)
 	require.NoError(t, err)
@@ -194,7 +247,7 @@ func TestServeKeyASC_NoSigner(t *testing.T) {
 }
 
 func TestSigner_Fingerprint(t *testing.T) {
-	s := NewSigner(t.TempDir())
+	s := NewSigner(seedSigningKey(t, t.TempDir()))
 	fp := s.Fingerprint()
 	assert.Len(t, fp, 40)
 }
