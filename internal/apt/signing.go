@@ -15,6 +15,16 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp/packet"
 )
 
+// productionRSABits is the size of a signing key buildhost ships. Generating
+// one costs seconds (BenchmarkKeygenBySize), paid once per data directory and
+// never again, so the server wears that and nothing else has to.
+const productionRSABits = 4096
+
+// rsaBits is what generateAndSave uses. Only TestMain lowers it, so a suite
+// that throws away a key per test does not pay the production cost for each
+// one. Nothing at runtime writes to it.
+var rsaBits = productionRSABits
+
 type Signer struct {
 	mu     sync.RWMutex
 	entity *openpgp.Entity
@@ -115,7 +125,7 @@ func (s *Signer) loadKey(data []byte) error {
 
 func (s *Signer) generateAndSave(keyPath string) error {
 	entity, err := openpgp.NewEntity("Buildhost", "APT Release signing", "apt@buildhost.local", &packet.Config{
-		RSABits:     4096,
+		RSABits:     rsaBits,
 		DefaultHash: crypto.SHA256,
 	})
 	if err != nil {
