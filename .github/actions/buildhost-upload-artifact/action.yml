@@ -123,7 +123,6 @@ runs:
 
             // a transient 5xx or an empty-body proxy 404 (unlike the app's own 404, which carries JSON) gets retried; any 4xx with a body returns immediately
             const isTransient = (status: number, text: string): boolean =>
-              // An empty-body 404 is the proxy's; buildhost's own always carries JSON, and a 4xx with a body is the caller's answer.
               status >= 500 || (status === 404 && text.trim() === "");
 
             // retries a transient failure with backoff so a rolling buildhost deploy never hard-fails the upload
@@ -179,13 +178,6 @@ runs:
             const sum = await fileSHA256(filePath);
 
             const create = await api('POST', `${server}/api/v1/uploads`);
-            // a 404/405 here means the server predates upload sessions
-            if (create.status === 404 || create.status === 405) {
-              // falls back to the classic single request the old action always sent; a proxy body cap may still reject it
-              core.warning(`server does not support chunked uploads; sending ${size} bytes as a single request`);
-              finishUpload(await api('PUT', target, blob, uploadHeaders));
-              return;
-            }
             if (create.status !== 201) {
               core.setFailed(`create upload session failed: HTTP ${create.status}: ${create.text}`);
               return;

@@ -316,13 +316,6 @@ runs:
 
             // assembles the archive server-side (mirrors buildhost-upload-artifact / internal/uploadclient) from requests small enough to pass the proxy
             const create = await api('POST', `${server}/api/v1/uploads`);
-            // a 404/405 here means the server predates upload sessions
-            if (create.status === 404 || create.status === 405) {
-              // falls back to the classic single request the old action always sent; a proxy body cap may still reject it
-              core.warning(`server does not support chunked uploads; sending ${size} bytes as a single request`);
-              await finishPublish(await api('PUT', target, blob, uploadHeaders));
-              return;
-            }
             if (create.status !== 201) {
               core.setFailed(`create upload session failed: HTTP ${create.status}: ${create.text}`);
               return;
