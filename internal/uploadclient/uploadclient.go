@@ -220,13 +220,6 @@ func (u *Uploader) chunked(method, target string, header map[string]string, f *o
 	if err != nil {
 		return nil, err
 	}
-	if id == "" {
-		// Server predates upload sessions. Fall back to the classic single
-		// request -- exactly what an old CLI would have sent -- with a
-		// heads-up, since a proxy body cap may reject it.
-		fmt.Fprintf(u.stdout(), "warning: server does not support chunked uploads; sending %d MiB as a single request\n", size>>20)
-		return u.direct(method, target, header, f)
-	}
 
 	chunkSize := u.chunkSize()
 	totalChunks := (size + chunkSize - 1) / chunkSize
@@ -283,9 +276,6 @@ func (u *Uploader) createSession() (string, error) {
 		return "", fmt.Errorf("create upload session: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
-		return "", nil
-	}
 	if resp.StatusCode != http.StatusCreated {
 		return "", fmt.Errorf("create upload session failed: %s: %s", resp.Status, readErrBody(resp))
 	}

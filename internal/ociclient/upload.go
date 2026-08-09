@@ -1,9 +1,10 @@
 package ociclient
 
-// Blob upload paths for Pusher: HEAD-based existence skip and the classic
-// monolithic POST for blobs under the server's advertised request-size limit
-// (the resumable chunked session for everything larger lives in chunked.go),
-// plus the shared HTTP plumbing (request building, redirects, error bodies).
+// Blob upload paths for Pusher: the HEAD existence skip, the cross-repository
+// mount that skips bytes the registry already stores under another project, and
+// the single-request finalize for blobs under the server's advertised
+// request-size limit (the resumable chunked session for everything larger lives
+// in chunked.go), plus the shared HTTP plumbing.
 
 import (
 	"bytes"
@@ -45,10 +46,20 @@ func (p *Pusher) pushBlob(l *layout, d descriptor) error {
 		return err
 	}
 
+	mounted, loc, err := p.startSession(d.Digest)
+	if err != nil {
+		return fmt.Errorf("upload blob %s: %w", d.Digest, err)
+	}
+	if mounted {
+		fmt.Fprintf(p.stdout(), "  blob %s mounted from another project, %d bytes not uploaded\n", d.Digest, st.Size())
+		p.pushed[d.Digest] = true
+		return nil
+	}
+
 	if st.Size() <= p.chunk {
-		err = p.pushBlobMonolithic(d.Digest, f, st.Size())
+		err = p.putSessionBlob(loc, d.Digest, f, st.Size())
 	} else {
-		err = p.pushBlobChunked(d.Digest, f, st.Size())
+		err = p.pushBlobChunked(loc, d.Digest, f, st.Size())
 	}
 	if err != nil {
 		return err
@@ -66,10 +77,14 @@ func (p *Pusher) blobExists(digest string) (bool, error) {
 	return resp.StatusCode == http.StatusOK, nil
 }
 
-// pushBlobMonolithic uploads a blob in one request:
-// POST /v2/{name}/blobs/uploads/?digest=... with the blob as the body.
-func (p *Pusher) pushBlobMonolithic(digest string, f *os.File, size int64) error {
-	resp, err := p.do(http.MethodPost, p.baseURL()+"/v2/"+p.Project+"/blobs/uploads/?digest="+url.QueryEscape(digest), f, size, nil)
+// putSessionBlob finalizes a session in one request, sending a blob that fits
+// under the request-size limit as the PUT body.
+func (p *Pusher) putSessionBlob(loc, digest string, f *os.File, size int64) error {
+	putURL, err := addQuery(loc, "digest", digest)
+	if err != nil {
+		return err
+	}
+	resp, err := p.do(http.MethodPut, putURL, f, size, nil)
 	if err != nil {
 		return fmt.Errorf("upload blob %s: %w", digest, err)
 	}
