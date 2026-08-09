@@ -56,9 +56,10 @@ type Server struct {
 	build     BuildInfo
 	startTime time.Time
 
-	cpuMu      sync.Mutex
-	cpuPercent float64
-	cpuTotal   time.Duration
+	cpuTrackerOnce sync.Once
+	cpuMu          sync.Mutex
+	cpuPercent     float64
+	cpuTotal       time.Duration
 
 	staticFS  fs.FS
 	indexHTML []byte
@@ -81,27 +82,33 @@ func New(cfg config.Config, database *db.DB, store storage.Storage, build BuildI
 	return s
 }
 
+// startCPUTracker spawns the background sampling goroutine at most once per
+// Server: NewHTTPServer can be called repeatedly (every admin test request
+// does), and without this guard each call leaked another ticker goroutine
+// forever.
 func (s *Server) startCPUTracker() {
-	prev := getCPUTime()
-	prevWall := time.Now()
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			curr := getCPUTime()
-			wall := time.Now()
-			elapsed := wall.Sub(prevWall)
-			if elapsed > 0 {
-				pct := float64(curr-prev) / float64(elapsed) * 100
-				s.cpuMu.Lock()
-				s.cpuPercent = pct
-				s.cpuTotal = curr
-				s.cpuMu.Unlock()
+	s.cpuTrackerOnce.Do(func() {
+		prev := getCPUTime()
+		prevWall := time.Now()
+		go func() {
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+			for range ticker.C {
+				curr := getCPUTime()
+				wall := time.Now()
+				elapsed := wall.Sub(prevWall)
+				if elapsed > 0 {
+					pct := float64(curr-prev) / float64(elapsed) * 100
+					s.cpuMu.Lock()
+					s.cpuPercent = pct
+					s.cpuTotal = curr
+					s.cpuMu.Unlock()
+				}
+				prev = curr
+				prevWall = wall
 			}
-			prev = curr
-			prevWall = wall
-		}
-	}()
+		}()
+	})
 }
 
 func (s *Server) NewHTTPServer() *http.Server {
