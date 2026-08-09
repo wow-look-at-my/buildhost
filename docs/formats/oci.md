@@ -91,6 +91,27 @@ so `ociclient` opens a fresh session and re-sends the blob from zero rather than
 failing a publish that is minutes deep; opening a session is retried on 5xx for
 the same reason.
 
+## Published layers are zstd, with no opt-out
+
+`buildhost-publish-docker` exports `compression=zstd,force-compression=true`.
+There is no input that selects an algorithm: buildhost's own synthesized images
+have always been zstd, and buildx's gzip default was the only reason a published
+image differed from a synthesized one. `force-compression` is what reaches layers
+that arrive already compressed -- from a cache hit or a `FROM` base -- so an
+image cannot ship half gzip. Only `compression-level` (zstd 0-22) stays
+adjustable.
+
+A consumer therefore needs an OCI-aware puller: Docker's containerd image store
+(the default on Engine 29.0+ fresh installs, `features.containerd-snapshotter`
+before that), containerd, podman, or go-containerregistry. Docker's classic
+image store cannot read a zstd layer at all, and the failure is a hard
+"media type application/vnd.oci.image.layer.v1.tar+zstd not supported" on pull.
+
+Every push is then pulled back and its recorded
+`org.opencontainers.image.revision` checked against the building commit, in the
+action rather than in a caller's workflow: the action knows the refs it pushed,
+and a registry that stored the wrong bytes looks identical from the build host.
+
 ## Docker push as a release kind
 
 A release containing pushed `kind=docker` artifacts is a "docker build" -- served

@@ -127,7 +127,8 @@ separately if any tracked file is gitignored build output. Depth:
 - Docker-pushed releases are OCI-only, gated out of apt/brew/npm and `/static`.
   A push mounts any blob storage already holds under a project the caller can
   read, so an image built `FROM` a published base never re-uploads that base.
-  Depth: `docs/formats/oci.md`.
+  Published layers are always zstd -- no algorithm input, so consumers need an
+  OCI-aware puller. Depth: `docs/formats/oci.md`.
 - Static sites are stored as an indexed archive, one deployment per branch,
   replaced atomically. Depth: `docs/sites.md`.
 
