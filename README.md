@@ -332,10 +332,10 @@ registry credential:
     images: oci.pazer.build/myproject:v1.2.3
 ```
 
-There is deliberately no login-only action. Outside Actions, where there is no
-OIDC token to mint, `buildhost docker-login --server <url>` is the same flow --
-run it immediately before the command that needs it rather than once at the top
-of a script, since the credential is short-lived.
+These actions -- `buildhost-publish-docker`, `buildhost-docker-push`, and
+`buildhost-docker-pull` -- are the only supported way to authenticate a CI
+Docker workflow to buildhost. There is no login-only action and no CLI
+equivalent.
 
 ## GitHub Deployments
 

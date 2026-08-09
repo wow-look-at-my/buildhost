@@ -14,9 +14,9 @@
 # credential back in a caller's hands, which is the thing this file exists to
 # prevent.
 #
-# Bash rather than `buildhost docker-login` (internal/ociclient/login.go, the
-# same flow for anyone outside a publish) because this runs before the step that
-# fetches the CLI.
+# Bash rather than a buildhost CLI subcommand because this runs before the step
+# that fetches the CLI, and because there is no supported docker-login CLI path
+# for anything outside the official buildhost actions.
 #
 # Usage: docker-login.sh <server-url>   (e.g. https://pazer.build)
 set -euo pipefail
