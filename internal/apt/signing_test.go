@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,6 +44,29 @@ func TestNewSigner_GeneratesKey(t *testing.T) {
 	s := NewSigner(tmpDir)
 	assert.True(t, s.Available())
 	assert.NotEmpty(t, s.Fingerprint())
+}
+
+// keyBudget is what a signing key may cost to generate. Every caller
+// generates on demand -- each test here, every server in internal/server, and
+// a cold production start -- so this is the number that decides whether any of
+// them needs a workaround.
+const keyBudget = 100 * time.Millisecond
+
+// An RSA-4096 key cost seconds, which is what made this package and
+// internal/server share one generated key between tests to stay inside the 30s
+// package timeout. Timed over several keys because generation time varies.
+func TestNewSigner_GenerationIsWithinBudget(t *testing.T) {
+	t.Parallel()
+	var worst time.Duration
+	for range 5 {
+		start := time.Now()
+		s := NewSigner(t.TempDir())
+		elapsed := time.Since(start)
+
+		require.True(t, s.Available(), "generation must have produced a usable key")
+		worst = max(worst, elapsed)
+	}
+	assert.Less(t, worst, keyBudget, "slowest of 5 key generations")
 }
 
 func TestNewSigner_LoadsExistingKey(t *testing.T) {
