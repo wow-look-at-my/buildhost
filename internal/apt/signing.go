@@ -15,14 +15,15 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp/packet"
 )
 
-// productionRSABits is the size of a signing key buildhost ships. Generating
-// one costs seconds (BenchmarkKeygenBySize), paid once per data directory and
-// never again, so the server wears that and nothing else has to.
+// productionRSABits is the RSA size buildhost shipped before generateAndSave
+// switched to EdDSA. BenchmarkKeygenBySize measures the per-size cost, and
+// TestSigningKeySizeIsLoweredForTestsOnly guards the shipped size; generateAndSave
+// no longer reads it.
 const productionRSABits = 4096
 
-// rsaBits is what generateAndSave uses. Only TestMain lowers it, so a suite
-// that throws away a key per test does not pay the production cost for each
-// one. Nothing at runtime writes to it.
+// rsaBits is what TestSigningKeySizeIsLoweredForTestsOnly references; TestMain
+// lowers it. generateAndSave no longer reads it -- it generates an EdDSA key --
+// so this is test-only evidence, not a production knob.
 var rsaBits = productionRSABits
 
 type Signer struct {
@@ -124,8 +125,18 @@ func (s *Signer) loadKey(data []byte) error {
 }
 
 func (s *Signer) generateAndSave(keyPath string) error {
+	// Ed25519, not RSA: generating a key is one fixed-base scalar multiply
+	// rather than a probabilistic search for two 2048-bit primes, and
+	// NewEntity pays for the key twice (primary + encryption subkey).
+	//
+	// Keep the algorithm at PubKeyAlgoEdDSA with Curve25519 (OpenPGP
+	// algorithm 22). The newer PubKeyAlgoEd25519 (algorithm 27) is rejected
+	// by the gpgv apt shells out to -- "Can't check signature: Invalid
+	// public key algorithm" on GnuPG 2.4 -- which would break every client's
+	// apt update, not just new ones.
 	entity, err := openpgp.NewEntity("Buildhost", "APT Release signing", "apt@buildhost.local", &packet.Config{
-		RSABits:     rsaBits,
+		Algorithm:   packet.PubKeyAlgoEdDSA,
+		Curve:       packet.Curve25519,
 		DefaultHash: crypto.SHA256,
 	})
 	if err != nil {
