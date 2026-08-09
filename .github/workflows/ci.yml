@@ -41,6 +41,9 @@ jobs:
       - name: Inline action scripts must carry no stacked comments
         run: node .github/scripts/no-stacked-comments.ts .github/actions/*/action.yml .github/workflows/*.yml
 
+      - name: compression-level accepts an integer and nothing else
+        run: bash .github/scripts/compression-opts-test.sh
+
       - name: Generated output must not be tracked in git
         run: |
           set -eu
