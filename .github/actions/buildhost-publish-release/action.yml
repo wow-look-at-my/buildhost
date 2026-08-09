@@ -57,17 +57,13 @@ runs:
             core.info(JSON.stringify(JSON.parse(text), null, 2));
             core.setOutput('response', text);
 
-            // Recording what buildhost now holds is part of publishing. This
-            // composite is the final step of the create/upload/publish chain
-            // assembled by publishers that do not use buildhost-publish, so
-            // without this that whole path stores artifacts and records
-            // nothing. The publish response carries the artifacts it just made
-            // public; each becomes one storage record.
+            // recording happens here because this composite is the last step of the create/upload/publish chain for publishers that assemble it themselves
             type ReleaseBody = {
               version?: string;
               artifacts?: { os?: string; arch?: string; sha256?: string }[];
             };
             const published = JSON.parse(text) as ReleaseBody;
+            // the publish response carries the artifacts it just made public; each becomes one storage record
             const artifacts = published.artifacts ?? [];
 
             if (artifacts.length === 0) {
