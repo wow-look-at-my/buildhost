@@ -14,7 +14,7 @@ import (
 
 func init() { RetryBaseDelay = time.Millisecond }
 
-func TestPush_SmallBlobsMonolithic(t *testing.T) {
+func TestPush_SmallBlobsFinalizeInOneRequest(t *testing.T) {
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
