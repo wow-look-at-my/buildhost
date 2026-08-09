@@ -70,6 +70,36 @@ inputs:
     description: 'Push to the registry (set false to build only).'
     required: false
     default: 'true'
+  compression:
+    description: >
+      Layer compression: zstd (default), gzip, estargz or uncompressed. zstd
+      compresses smaller and decompresses several times faster than gzip, and
+      buildhost's own synthesized images have always used it -- buildx's gzip
+      default was the only reason published images differed. Consumers need an
+      OCI-aware puller: Docker's containerd image store (the default for Engine
+      29.0+ on fresh installs, `features.containerd-snapshotter` before that),
+      containerd, podman, or go-containerregistry. Set gzip only for a consumer
+      pinned to Docker's classic image store.
+    required: false
+    default: 'zstd'
+  compression-level:
+    description: 'Compression level (zstd 0-22, gzip/estargz 0-9). Empty uses the algorithm default.'
+    required: false
+    default: ''
+  force-compression:
+    description: >
+      Re-compress layers that arrive already compressed -- from a cache hit or
+      a base image built with a different algorithm. Without it a `FROM` base
+      keeps its original layers and the image ships mixed compression.
+    required: false
+    default: 'true'
+  verify:
+    description: >
+      After pushing, pull each buildhost reference back and check its recorded
+      revision. On by default: a push that cannot be pulled is not a publish,
+      and finding that out here beats finding it out from a consumer.
+    required: false
+    default: 'true'
   deployment_environment:
     description: >-
       GitHub Deployment environment name (defaults to `buildhost/<project>`).
@@ -180,9 +210,8 @@ runs:
     # what keeps "build an image FROM an image you published" a single step
     # instead of a login every caller has to remember.
     - name: Log in to the buildhost registry (for private FROM bases)
-      uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-login@master
-      with:
-        server: ${{ inputs.server }}
+      shell: bash
+      run: bash "${{ github.action_path }}/docker-login.sh" "${{ inputs.server }}"
 
     # When `tags` is omitted, compute branch-aware defaults instead of an
     # unconditional "SHA + latest": pushed OCI tags are mutable pointers
@@ -215,6 +244,10 @@ runs:
         DEFAULT_TAGS: ${{ steps.default-tags.outputs.tags }}
         EXTRA_LABELS: ${{ inputs.labels }}
         CACHE: ${{ inputs.cache }}
+        PUSH: ${{ inputs.push }}
+        COMPRESSION: ${{ inputs.compression }}
+        COMPRESSION_LEVEL: ${{ inputs.compression-level }}
+        FORCE_COMPRESSION: ${{ inputs.force-compression }}
       run: |
         set -euo pipefail
         # The OCI registry is served on the oci.<domain> subdomain.
@@ -246,10 +279,25 @@ runs:
           esac
         done <<< "${tags_in}"
 
+        # Compression rides the exporter, not a build-push-action input, so it has to be spelled into every output form.
+        # force-compression is what applies it to layers inherited from a base or a cache hit, not only to newly built ones.
+        compression="compression=${COMPRESSION},force-compression=${FORCE_COMPRESSION}"
+        [ -n "${COMPRESSION_LEVEL}" ] && compression="${compression},compression-level=${COMPRESSION_LEVEL}"
+
+        layout="${RUNNER_TEMP}/buildhost-oci-layout"
+        if [ -n "${buildhost_refs}" ]; then
+          # exported for the chunk-aware CLI to push; never pushed by buildx
+          build_outputs="type=oci,tar=false,dest=${layout},${compression}"
+        else
+          build_outputs="type=image,push=${PUSH},${compression}"
+        fi
+
         {
           echo "registry=${registry}"
           echo "primary=$(printf '%s' "${refs}" | head -n1)"
-          echo "layout=${RUNNER_TEMP}/buildhost-oci-layout"
+          echo "layout=${layout}"
+          echo "compression_opts=${compression}"
+          echo "build_outputs=${build_outputs}"
           echo "tags<<__TAGS__"; printf '%s' "${refs}"; echo "__TAGS__"
           echo "buildhost_refs<<__BH__"; printf '%s' "${buildhost_refs}"; echo "__BH__"
           echo "foreign_refs<<__FOREIGN__"; printf '%s' "${foreign_refs}"; echo "__FOREIGN__"
@@ -275,8 +323,7 @@ runs:
       with:
         context: ${{ inputs.context }}
         file: ${{ inputs.file }}
-        push: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs == '' }}
-        outputs: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' && format('type=oci,tar=false,dest={0}', steps.refs.outputs.layout) || '' }}
+        outputs: ${{ steps.refs.outputs.build_outputs }}
         platforms: ${{ inputs.platforms }}
         provenance: ${{ inputs.provenance }}
         tags: ${{ steps.refs.outputs.tags }}
@@ -303,13 +350,39 @@ runs:
       with:
         context: ${{ inputs.context }}
         file: ${{ inputs.file }}
-        push: true
+        outputs: type=image,push=true,${{ steps.refs.outputs.compression_opts }}
         platforms: ${{ inputs.platforms }}
         provenance: ${{ inputs.provenance }}
         tags: ${{ steps.refs.outputs.foreign_refs }}
         labels: ${{ steps.refs.outputs.labels }}
         build-args: ${{ inputs.build-args }}
         cache-from: ${{ steps.refs.outputs.cache_from }}
+
+    # Publishing is not finished until the image can be PULLED back. This lives
+    # here rather than in every caller's workflow: the action knows the refs it
+    # pushed, and the credential is short-lived, so the login belongs next to
+    # the pull -- a long build outlives a token minted before it.
+    - name: Verify the published image pulls
+      id: verify
+      if: ${{ inputs.push == 'true' && inputs.verify == 'true' && steps.refs.outputs.buildhost_refs != '' }}
+      shell: bash
+      env:
+        REFS: ${{ steps.refs.outputs.buildhost_refs }}
+      run: |
+        set -euo pipefail
+        bash "${{ github.action_path }}/docker-login.sh" "${{ inputs.server }}"
+        while IFS= read -r ref; do
+          [ -z "${ref}" ] && continue
+          docker image rm "${ref}" >/dev/null 2>&1 || true
+          docker pull "${ref}"
+          revision="$(docker image inspect \
+            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${ref}")"
+          if [ "${revision}" != "${GITHUB_SHA}" ]; then
+            echo "::error::${ref} pulled with revision ${revision}, expected ${GITHUB_SHA}"
+            exit 1
+          fi
+          echo "verified ${ref} (revision ${revision})"
+        done <<< "${REFS}"
 
     # Terminal status for the GitHub Deployment created above; runs even when
     # a publish step failed so the deployment is marked failure instead of

@@ -5,10 +5,13 @@
 # AND that the CA bundle baked into it works for real outbound HTTPS -- the whole point
 # of the essentials layer.
 #
-# crane (not docker) is used deliberately: buildhost's layers are zstd-compressed
-# (application/vnd.oci.image.layer.v1.tar+zstd), which go-containerregistry pulls and
-# decompresses, but GitHub-hosted Docker (without the containerd image store) may not.
-# crane is also daemon-free, so the same script runs in CI and locally.
+# Two clients, on purpose. crane (go-containerregistry) is daemon-free, so the same
+# script runs in CI and locally. Docker is then exercised as well, because "a valid,
+# pullable container image" is a claim about the client people actually use, and
+# buildhost's layers are zstd (application/vnd.oci.image.layer.v1.tar+zstd) -- which
+# Docker reads only through the containerd image store, the default since Engine 29.0
+# and a daemon feature flag before that. Testing crane alone proved the half that was
+# never in doubt and left the half that breaks consumers unmeasured.
 #
 # Usage: run.sh <buildhost-binary> <netcheck-binary>
 set -euo pipefail
@@ -91,4 +94,34 @@ grep -q '^nonroot:x:65532:65532:' "$ROOT/etc/passwd" || { echo "FAIL: nonroot us
 echo "== run the image's entrypoint (HTTPS via the image's CA bundle) =="
 SSL_CERT_FILE="$ROOT/etc/ssl/certs/ca-certificates.crt" "$ROOT/netcheck"
 
-echo "== E2E OK: synthesized image loaded and ran; CA bundle validated a live HTTPS request =="
+# The claim under test is "docker pull works on a buildhost image", so it is tested
+# with docker. zstd layers need the containerd image store; the classic graphdriver
+# store cannot read them, and a consumer on one gets an unreadable-manifest error at
+# pull time rather than anything actionable.
+echo "== docker pull the synthesized image (containerd image store, zstd layers) =="
+command -v docker >/dev/null 2>&1 || { echo "docker not found on PATH" >&2; exit 2; }
+
+store="$(docker info --format '{{ .DriverStatus }}' 2>/dev/null || true)"
+if ! docker info --format '{{ range .DriverStatus }}{{ println . }}{{ end }}' 2>/dev/null | grep -qi 'io.containerd'; then
+	echo "   enabling the containerd image store (current driver status: ${store:-unknown})"
+	sudo mkdir -p /etc/docker
+	# Preserve whatever is already configured; add the store and this registry.
+	existing="$(sudo cat /etc/docker/daemon.json 2>/dev/null || echo '{}')"
+	printf '%s' "$existing" | jq \
+		--arg reg "$HOST:$PORT" \
+		'.features."containerd-snapshotter" = true
+		 | .["insecure-registries"] = ((.["insecure-registries"] // []) + [$reg] | unique)' \
+		| sudo tee /etc/docker/daemon.json >/dev/null
+	sudo systemctl restart docker
+	for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
+fi
+
+docker image rm "$REF" >/dev/null 2>&1 || true
+docker pull "$REF"
+docker image inspect "$REF" --format '{{ .Os }}/{{ .Architecture }}' | grep -qx 'linux/amd64' \
+	|| { echo "FAIL: pulled image is not linux/amd64" >&2; exit 1; }
+
+echo "== docker run the entrypoint =="
+docker run --rm "$REF"
+
+echo "== E2E OK: synthesized image pulled by crane AND docker, ran, and its CA bundle validated a live HTTPS request =="
