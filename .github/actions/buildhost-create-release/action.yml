@@ -92,15 +92,14 @@ runs:
               core.setFailed(`create_service must be 'true', 'false', or empty; got '${brewService}'`);
               return;
             }
-            // Empty input sends nothing (stored setting untouched); a set
-            // value is asserted on every publish. An older server ignores
-            // the unknown field.
             const defaultBranch: string = "${{ inputs.default_branch }}";
+            // sends default_branch only when set, leaving the stored setting untouched otherwise
             if (defaultBranch) body['default_branch'] = defaultBranch;
 
             const resp = await fetch(`${server}/api/v1/projects/${project}/releases`, {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              // an older server ignores this field if it predates default_branch
               body: JSON.stringify(body),
             });
             const text = await resp.text();
