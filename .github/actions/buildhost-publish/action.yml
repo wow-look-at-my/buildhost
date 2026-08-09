@@ -86,7 +86,6 @@ runs:
         script: |
           await (async () => {
             core.setOutput('deployment_id', '');
-            // A deployment claims the publish is live at a reachable URL, which is false for a loopback server. Not an opt-out: see docs/github-deployments.md.
             const deployServer: string = "${{ inputs.server }}";
             const deployHost: string = new URL(deployServer).hostname;
             // this check finds a target nothing outside the runner can reach
@@ -101,7 +100,6 @@ runs:
               const envInput: string = "${{ inputs.deployment_environment }}";
               const environment: string = envInput || `buildhost/${project}`;
               const inputCommit: string = "${{ inputs.git_commit }}";
-              // A bare SHA belongs to no branch, so GitHub's branch and PR deployment views report the branch as never deployed; pass a branch name to surface there.
               const deploymentRefInput: string = "${{ inputs.deployment_ref }}";
               // a bare SHA belongs to no branch, so GitHub's branch/PR deployment views show it as never deployed -- pass a branch name here to fix that
               const ref: string = deploymentRefInput || inputCommit || context.sha;
@@ -109,7 +107,7 @@ runs:
               const branch: string = inputBranch || github.ref_name || '';
               const defaultBranch: string = context.payload.repository?.default_branch ?? '';
               const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-              // required_contexts and auto_merge are load-bearing and their API defaults both break this (docs/github-deployments.md); a 2xx carrying no id is "no deployment".
+              // every publish to a real server registers -- there's no opt-out
               const dep = await octokit.rest.repos.createDeployment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -176,7 +174,6 @@ runs:
             const gitBranch = inputBranch.length > 0 ? inputBranch : github.ref_name;
             const gitCommit = inputCommit.length > 0 ? inputCommit : github.sha;
 
-            // `path` mode reads a local directory as-is: no artifact download, no GitHub API call, GITHUB_TOKEN never read, so the caller needs no `actions: read`. Artifact mode (the default) downloads and unzips the run's `artifact_name`.
             let sourceDir: string;
             if (inputPath.length > 0) {
               // path mode reads a local directory as-is -- no GHA artifact download, no GitHub API call, and GITHUB_TOKEN is never read, so the caller needs no actions: read permission
@@ -225,12 +222,13 @@ runs:
             const token: string = ((await idResp.json()) as { value: string }).value;
             if (!token) { core.setFailed("Failed to obtain OIDC token"); return; }
 
-            // Recording is PART of publishing: accumulated as artifacts are accepted, posted before this step returns, no opt-out input, and a failure fails the publish -- a warn-and-continue would leave it green while the artifacts page fell behind reality.
+            // artifacts accumulate here as they're accepted, posted below before this step returns
             const uploadedSlots: import("${{ github.action_path }}/../lib/storage-record").PublishedArtifact[] = [];
+            // recording happens inline, with no opt-out; skipping it silently would leave the artifacts page stale while the publish stayed green
             const drainStorageRecords = async (): Promise<boolean> =>
               recordReleaseArtifacts(octokit, core, context, { server, artifacts: uploadedSlots });
 
-            // Streaming file hash; the TS action injects no `crypto` global, so require is the documented route.
+            // require is the documented route to node modules -- the TS action injects no crypto global
             const crypto = require("crypto");
             const fileSHA256 = (p: string): Promise<string> => new Promise((resolve, reject) => {
               const hash = crypto.createHash("sha256");
@@ -240,7 +238,7 @@ runs:
                 .on("end", () => resolve(hash.digest("hex")));
             });
 
-            // Matrix artifacts are named <binary>_<os>_<arch>[.exe], where <binary> is go-toolchain's cmd/ leaf name and may contain hyphens, so os and arch are the trailing two tokens.
+            // matches <binary>_<os>_<arch>[.exe]; binary is the cmd/ leaf name from go-toolchain and may contain hyphens (e.g. log-streamer-client)
             const artifactRe = /^(.+)_([a-z]+)_([a-z0-9]+)$/;
             const files = fs.readdirSync(sourceDir).filter((f) => {
               const full = path.join(sourceDir, f);
@@ -256,7 +254,7 @@ runs:
               return;
             }
 
-            // A binary named exactly after the repo publishes flat as "<repo>"; every other one nests under "<repo>/<binary>", stripping a redundant leading "<repo>-".
+            // a binary named exactly after the repo publishes flat as "<repo>"; every other binary nests under "<repo>/<binary>", stripping a redundant leading "<repo>-"
             const projectForBinary = (binary: string): string => {
               if (binary === project) return project;
               if (binary.startsWith(`${project}-`)) return `${project}/${binary.slice(project.length + 1)}`;
@@ -278,7 +276,7 @@ runs:
 
             const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-            // A rolling deploy makes the edge briefly emit a 5xx or an EMPTY-BODY 404 -- the app's own 404 always carries JSON -- so those retry while any 4xx with a body returns at once.
+            // a transient 5xx or an empty-body proxy 404 (unlike the app's own 404, which carries JSON) gets retried; any 4xx with a body (including a genuine "project not found") returns immediately
             const isTransient = (status: number, text: string): boolean =>
               status >= 500 || (status === 404 && text.trim() === "");
 
@@ -311,13 +309,13 @@ runs:
             const releaseBody = () => JSON.stringify({
               git_branch: gitBranch, git_commit: gitCommit,
               ...(version.length > 0 ? { version } : {}),
-              // Empty sends nothing and leaves the stored setting alone; a set value is asserted on every publish, and an older server ignores the unknown field.
+              // empty leaves the stored setting untouched; sent only when set
               ...(inputBrewService.length > 0 ? { create_service: inputBrewService === 'true' } : {}),
               // an older server ignores this unknown field
               ...(inputDefaultBranch.length > 0 ? { default_branch: inputDefaultBranch } : {}),
             });
 
-            // 201 new, 409 existing; any other status returns null and fails the action.
+            // resolves a version from a create-release response (201 new, 409 existing); null and a failure on any other status
             const releaseVersionFrom = (proj: string, resp: { status: number; text: string }): string | null => {
               if (resp.status === 201) return JSON.parse(resp.text).version;
               if (resp.status === 409) {
@@ -328,12 +326,12 @@ runs:
               return null;
             };
 
-            // Uploads every os/arch slot, then publishes. Identical bytes under several slot names is the NORMAL case, not an edge -- a cosmo build emits one APE named for every platform -- so slots are grouped by content and each group transfers once.
+            // identical bytes under several slot names is the NORMAL case -- a cosmo build emits one APE named for every platform -- so slots group by content and each group transfers once
             const uploadAndPublish = async (proj: string, releaseVersion: string, items: { file: string; os: string; arch: string }[]) => {
               const slotURL = (os: string, arch: string) =>
                 `/api/v1/projects/${proj}/releases/${releaseVersion}/artifacts/${os}/${arch}?kind=binary`;
 
-              // Hashed unconditionally: the storage record needs it for every slot, and it is one streaming read of a file this loop is about to read anyway.
+              // hashed unconditionally: the storage record needs it for every slot, and it's one streaming read of a file this loop is about to read anyway
               const byContent = new Map<string, { file: string; os: string; arch: string }[]>();
               for (const item of items) {
                 const sum = await fileSHA256(path.join(sourceDir, item.file));
@@ -350,7 +348,7 @@ runs:
                 const oses = [...new Set(group.map((i) => i.os))];
                 const arches = [...new Set(group.map((i) => i.arch))];
 
-                // Fan-out: when the group's slots are exactly the product of the platforms it covers -- what a cosmo build always produces -- buildhost makes every row from one streamed body, in one transaction.
+                // fan-out: when a group's slots are exactly the product of the platforms it covers -- what a cosmo build always produces -- buildhost makes every row from one streamed body, in one transaction
                 if (oses.length * arches.length === group.length) {
                   const r = await api("PUT", slotURL(oses.join(","), arches.join(",")), body());
                   if (r.status !== 201) { core.setFailed(`Upload ${proj} ${oses.join(",")}/${arches.join(",")} failed (${r.status}): ${r.text}`); return false; }
@@ -359,7 +357,7 @@ runs:
                   continue;
                 }
 
-                // A ragged slot set the cartesian grammar cannot express (e.g. every platform but windows/arm64): send the bytes once, then register the rest against the stored blob by hash.
+                // a ragged slot set the cartesian grammar cannot express (e.g. every platform but windows/arm64): send the bytes once, then register the rest against the stored blob by hash
                 const [first, ...rest] = group;
                 const r = await api("PUT", slotURL(first.os, first.arch), body());
                 if (r.status !== 201) { core.setFailed(`Upload ${proj} ${first.os}/${first.arch} failed (${r.status}): ${r.text}`); return false; }
@@ -368,7 +366,7 @@ runs:
                   const ref = await api("PUT", `${slotURL(fileOs, arch)}&upload_sha256=${sum}`);
                   if (ref.status === 201) { core.info(`Registered ${proj} ${fileOs}/${arch} by hash`); continue; }
                   if (ref.status === 409) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${ref.status}): ${ref.text}`); return false; }
-                  // The blob was evicted between the two requests: the bytes are right here.
+                  // the blob was evicted between the two requests -- the bytes are right here
                   core.warning(`Hash-reference upload ${proj} ${fileOs}/${arch} returned ${ref.status}; sending the bytes`);
                   const full = await api("PUT", slotURL(fileOs, arch), body());
                   if (full.status !== 201) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${full.status}): ${full.text}`); return false; }
@@ -383,7 +381,7 @@ runs:
 
             const groupList = [...groups.entries()];
 
-            // Publish each <repo>/<binary> project independently.
+            // publish each <repo>/<binary> project independently
             const published: { proj: string; rv: string }[] = [];
             for (const [proj, items] of groupList) {
               const rv = releaseVersionFrom(proj, await api("POST", `/api/v1/projects/${proj}/releases`, releaseBody()));
@@ -393,7 +391,7 @@ runs:
               published.push({ proj, rv });
             }
 
-            // Live URL for the deployment status: the release page for one project, else the primary group's project page (the one matching the repo-level name, else the first).
+            // the release page, for the GitHub Deployment's live URL
             if (published.length === 1) {
               core.setOutput('deployment_url', `${server}/projects/${published[0].proj}/releases/${published[0].rv}`);
             } else if (published.length > 1) {

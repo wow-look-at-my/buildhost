@@ -54,6 +54,22 @@ inputs:
     description: 'Newline-separated build args (KEY=value).'
     required: false
     default: ''
+  labels:
+    description: 'Newline-separated image labels. OCI revision/source labels are added automatically.'
+    required: false
+    default: ''
+  provenance:
+    description: 'buildx provenance attestations.'
+    required: false
+    default: 'false'
+  cache:
+    description: 'Use the GitHub Actions layer cache (type=gha).'
+    required: false
+    default: 'true'
+  push:
+    description: 'Push to the registry (set false to build only).'
+    required: false
+    default: 'true'
   compression:
     description: >
       Layer compression: zstd (default), gzip, estargz or uncompressed. zstd
@@ -73,24 +89,8 @@ inputs:
   force-compression:
     description: >
       Re-compress layers that arrive already compressed -- from a cache hit or
-      an base image built with a different algorithm. Without it a `FROM` base
+      a base image built with a different algorithm. Without it a `FROM` base
       keeps its original layers and the image ships mixed compression.
-    required: false
-    default: 'true'
-  labels:
-    description: 'Newline-separated image labels. OCI revision/source labels are added automatically.'
-    required: false
-    default: ''
-  provenance:
-    description: 'buildx provenance attestations.'
-    required: false
-    default: 'false'
-  cache:
-    description: 'Use the GitHub Actions layer cache (type=gha).'
-    required: false
-    default: 'true'
-  push:
-    description: 'Push to the registry (set false to build only).'
     required: false
     default: 'true'
   verify:
@@ -146,7 +146,6 @@ runs:
         script: |
           await (async () => {
             core.setOutput('deployment_id', '');
-            // A deployment claims the publish is live at a reachable URL, which is false for a loopback server. Not an opt-out: see docs/github-deployments.md.
             const deployServer: string = "${{ inputs.server }}";
             const deployHost: string = new URL(deployServer).hostname;
             // this check finds a target nothing outside the runner can reach
@@ -162,11 +161,10 @@ runs:
               const environment: string = envInput || `buildhost/${project}`;
               const defaultBranch: string = context.payload.repository?.default_branch ?? '';
               const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-              // A bare SHA belongs to no branch, so GitHub's branch and PR deployment views report the branch as never deployed; pass a branch name to surface there.
               const deploymentRefInput: string = "${{ inputs.deployment_ref }}";
               // a bare SHA belongs to no branch, so GitHub's branch/PR deployment views show it as never deployed -- pass a branch name here to fix that
               const ref: string = deploymentRefInput || context.sha;
-              // required_contexts and auto_merge are load-bearing and their API defaults both break this (docs/github-deployments.md); a 2xx carrying no id is "no deployment".
+              // every publish to a real server registers -- there's no opt-out
               const dep = await octokit.rest.repos.createDeployment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -226,10 +224,10 @@ runs:
       uses: wow-look-at-my/actions@typescript#latest
       with:
         script: |
-          // Short ref name, mirroring GITHUB_REF_NAME: the branch for refs/heads/*, the git tag for refs/tags/*, "<pr>/merge" for pulls.
+          // mirrors GITHUB_REF_NAME: the branch for refs/heads/*, the git tag for refs/tags/*, "<pr>/merge" for pulls
           const refName: string = env.GITHUB_REF_NAME ?? context.ref.replace(/^refs\/[^/]+\//, "");
           const defaultBranch: string = context.payload.repository?.default_branch ?? "master";
-          // Docker-sanitize so the result is always a bare (buildhost-bound) tag: "claude/foo" -> "claude-foo", never a foreign reference.
+          // docker-sanitized so the result is always a bare buildhost-bound tag, e.g. "claude/foo" -> "claude-foo", never a foreign reference
           const refTag = refName.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[.-]+/, "");
           const tags = [context.sha, refTag].filter(Boolean);
           if (context.ref === `refs/heads/${defaultBranch}`) tags.push("latest");
@@ -281,16 +279,14 @@ runs:
           esac
         done <<< "${tags_in}"
 
-        # Compression rides the exporter, not a build-push-action input, so it
-        # has to be spelled into every output form. force-compression is what
-        # makes it apply to layers inherited from a base or a cache hit rather
-        # than only to newly built ones.
+        # Compression rides the exporter, not a build-push-action input, so it has to be spelled into every output form.
+        # force-compression is what applies it to layers inherited from a base or a cache hit, not only to newly built ones.
         compression="compression=${COMPRESSION},force-compression=${FORCE_COMPRESSION}"
         [ -n "${COMPRESSION_LEVEL}" ] && compression="${compression},compression-level=${COMPRESSION_LEVEL}"
 
         layout="${RUNNER_TEMP}/buildhost-oci-layout"
         if [ -n "${buildhost_refs}" ]; then
-          # Exported for the chunk-aware CLI to push; never pushed by buildx.
+          # exported for the chunk-aware CLI to push; never pushed by buildx
           build_outputs="type=oci,tar=false,dest=${layout},${compression}"
         else
           build_outputs="type=image,push=${PUSH},${compression}"
@@ -402,7 +398,7 @@ runs:
               const server: string = "${{ inputs.server }}";
               const projectInput: string = "${{ inputs.project }}";
               const project: string = projectInput || github.repository.split('/').pop()!;
-              // The build and every push step that actually ran must have succeeded; 'skipped' is fine on a push step (which run depends on the tags' registries) but reads as failure on the build, which is also what a pre-build failure leaves behind.
+              // a failure before the build (refs, or buildx setup) leaves this 'skipped', which must not count as success below
               const buildOutcome: string = "${{ steps.build.outcome }}";
               const outcomes: string[] = [
                 "${{ steps.refs.outcome }}",

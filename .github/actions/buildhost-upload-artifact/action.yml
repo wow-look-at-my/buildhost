@@ -92,7 +92,7 @@ runs:
             };
             if (filename) uploadHeaders['X-Artifact-Filename'] = filename;
 
-            // Mirrors internal/uploadclient's DefaultChunkThreshold/DefaultChunkSize; chunk_size 0 disables chunking (always direct).
+            // mirrors internal/uploadclient's DefaultChunkSize
             let chunkSize = 64 * 1024 * 1024;
             if (chunkSizeInput) {
               const n = Number(chunkSizeInput);
@@ -104,7 +104,7 @@ runs:
               chunkSize = n === 0 ? -1 : n;
             }
 
-            // Decided from the local size and the advertised limit, never by reacting to a failed oversized attempt: a proxy's body-cap 413 never reaches the origin. A probe failure just means the default.
+            // the direct/chunked decision comes purely from the local file size and the server-advertised limit, never from a failed oversized attempt -- a proxy's body cap 413 never reaches the origin
             let directLimit = 95 * 1024 * 1024;
             try {
               const infoResp = await fetch(`${server}/api/v1/server-info`);
@@ -116,12 +116,12 @@ runs:
               }
             } catch { /* capability probe only; the default always works */ }
 
-            // A Blob reads the file lazily: fetch streams it with a correct Content-Length instead of buffering the artifact, slice() gives cheap per-chunk views, and it can be re-read, so a retry is safe.
+            // a Blob (unlike a Buffer) streams with a correct Content-Length instead of holding the whole artifact in memory, and can be re-read, so retried attempts are safe
             const blob = await fs.openAsBlob(filePath);
 
             const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-            // A rolling deploy makes the edge briefly emit a 5xx or an EMPTY-BODY 404 -- the app's own 404 always carries JSON -- so those retry while any 4xx with a body returns at once.
+            // a transient 5xx or an empty-body proxy 404 (unlike the app's own 404, which carries JSON) gets retried; any 4xx with a body returns immediately
             const isTransient = (status: number, text: string): boolean =>
               status >= 500 || (status === 404 && text.trim() === "");
 
@@ -149,7 +149,7 @@ runs:
               return { status: 0, text: "unreachable" };
             };
 
-            // The endpoint's own response feeds the outputs, from the direct PUT or the session finalize -- same endpoint either way.
+            // r is the same endpoint's response either way -- the direct PUT or the session finalize
             const finishUpload = (r: { status: number; text: string }): void => {
               if (r.status < 200 || r.status >= 300) { core.setFailed(`HTTP ${r.status}: ${r.text}`); return; }
               const data = JSON.parse(r.text);
@@ -166,7 +166,7 @@ runs:
 
             // --- Chunked upload session (mirrors internal/uploadclient) ---
 
-            // Streaming file hash for the integrity-checked finalize; the TS action injects no `crypto` global, so require is the documented route.
+            // require is the documented route to node modules -- the TS action injects no crypto global
             const crypto = require("crypto");
             const fileSHA256 = (p: string): Promise<string> => new Promise((resolve, reject) => {
               const hash = crypto.createHash("sha256");
@@ -209,7 +209,7 @@ runs:
               throw new Error(`read upload session size: ${lastErr}`);
             };
 
-            // Returns the server's committed size: a 409 carries the authoritative one, a transport error or 5xx resolves via a status read, so a partially delivered chunk resumes instead of restarting.
+            // resumes from wherever the server actually is on conflict or transport failure, so a partially delivered chunk resumes instead of restarting
             const appendChunk = async (offset: number, chunk: Blob): Promise<number> => {
               let status: number;
               let text: string;
@@ -222,7 +222,7 @@ runs:
                 status = resp.status;
                 text = await resp.text();
               } catch {
-                // The chunk may have partially landed before the connection broke; ask the server how much it has and resume from there.
+                // the chunk may have partially landed before the connection broke -- resume from what the server actually has
                 return sessionSize();
               }
               // 409 (offset conflict / busy) carries the authoritative size
@@ -260,10 +260,10 @@ runs:
               return;
             }
 
-            // Finalize: the original upload URL, empty body, naming the session and the file's sha256 -- checked server-side against the assembled spool before the artifact endpoint runs.
+            // sha256 is verified server-side against the assembled spool before the artifact endpoint ever runs
             const fin = await api('PUT', `${target}&upload_session=${sessionID}&upload_sha256=${sum}`, undefined, uploadHeaders);
             if (fin.status < 200 || fin.status >= 300) {
-              // The server keeps a session on a failed finalize so it can be retried; ours are exhausted, so don't leave the spool to the TTL sweeper.
+              // the server keeps a session after a failed finalize for retries; ours are exhausted, so don't leave the spool for the TTL sweeper
               await abortSession();
             }
             finishUpload(fin);
