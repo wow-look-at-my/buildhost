@@ -52,8 +52,16 @@ project from the request path; only the package *name* is folded (e.g.
 
 ## Release signing
 
-RSA 4096 key auto-generated on first startup, stored in
-`BUILDHOST_DATA_DIR/apt-signing.key`. InRelease (clearsigned), Release.gpg
+Ed25519 (OpenPGP EdDSA over Curve25519, algorithm 22) key auto-generated on
+first startup, stored in `BUILDHOST_DATA_DIR/apt-signing.key`. Generation is one
+scalar multiply -- about a millisecond, held under 100ms by
+`TestNewSigner_GenerationIsWithinBudget`, where an RSA-4096 prime search took
+seconds and made every caller work around the cost. Do not move to the newer
+`PubKeyAlgoEd25519` (algorithm 27): GnuPG 2.4's `gpgv` rejects it with "Invalid
+public key algorithm", which is every client's `apt update`. An existing RSA key
+on disk is still loaded and used as-is, so upgrading does not rotate a
+deployment's key or invalidate a client's `signed-by`.
+InRelease (clearsigned), Release.gpg
 (detached), and key.asc (public key) endpoints are all served. Easiest client
 setup is the generated per-project installer (`curl -fsSL
 apt.{domain}/{project}/install.sh | sudo sh`): it saves the armored `key.asc` to

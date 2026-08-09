@@ -141,11 +141,12 @@ separately if any tracked file is gitignored build output. Depth:
   getting a CLI that can: download, else build from source. No caller handles a
   CLI.
 - **Logging docker in is buildhost's job, never a caller's, and never a bare CLI
-  command.** `buildhost-publish-docker` does it internally (`docker-login.sh`)
-  before the build and before the pull-back. There is no `docker-login` CLI
-  subcommand and no other supported path -- a workflow needing Docker auth
-  uses `buildhost-publish-docker` or `buildhost-docker-push`, never a
-  standalone login step.
+  command.** Actions do it inside their own steps, from the one shared
+  `.github/actions/lib/docker-login.sh`: `buildhost-publish-docker` (before the
+  build and the pull-back) and **`buildhost-docker-pull`** (fetch published
+  images, e.g. into a nested daemon). There is no `docker-login` CLI subcommand,
+  no login-only action, and no other supported path -- exposing one puts the
+  credential back in a caller's hands.
 - **`buildhost-download`** fetches one artifact from `dl`; `required: 'false'`
   reports a miss as an output instead of failing, which is what makes that
   fallback expressible.
