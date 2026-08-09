@@ -1,0 +1,54 @@
+name: Buildhost docker pull
+description: >
+  Pull one or more images from a buildhost OCI registry. Authenticating is this
+  action's job -- it mints a GitHub Actions OIDC token itself, so a caller never
+  handles a registry credential and never runs `docker login`.
+
+inputs:
+  images:
+    description: >
+      Full image references to pull, one per line
+      (e.g. `oci.pazer.build/myproject:v1.2.3`). Blank lines are ignored; an
+      empty list is an error rather than a silent no-op.
+    required: true
+  server:
+    description: 'Buildhost base URL (the OIDC audience). Images come from its `oci.` subdomain.'
+    required: false
+    default: 'https://pazer.build'
+
+outputs:
+  registry:
+    description: 'The registry pulled from (e.g. oci.pazer.build). References are <registry>/<project>:<tag>.'
+    value: ${{ steps.pull.outputs.registry }}
+
+runs:
+  using: composite
+  steps:
+    # Login and pull are one step on purpose: the OIDC credential is
+    # short-lived, and splitting them is how a caller ends up owning the gap
+    # between them.
+    - id: pull
+      shell: bash
+      env:
+        IMAGES: ${{ inputs.images }}
+      run: |
+        set -euo pipefail
+        bash "${{ github.action_path }}/../lib/docker-login.sh" "${{ inputs.server }}"
+
+        host="${{ inputs.server }}"; host="${host#*://}"
+        echo "registry=oci.${host%%/*}" >> "${GITHUB_OUTPUT}"
+
+        pulled=0
+        while IFS= read -r image; do
+          image="${image#"${image%%[![:space:]]*}"}"
+          image="${image%"${image##*[![:space:]]}"}"
+          [ -z "${image}" ] && continue
+          docker pull "${image}"
+          pulled=$((pulled + 1))
+        done <<< "${IMAGES}"
+
+        if [ "${pulled}" -eq 0 ]; then
+          echo "::error::no images to pull -- 'images' was empty or whitespace only" >&2
+          exit 1
+        fi
+        echo "pulled ${pulled} image(s)"
