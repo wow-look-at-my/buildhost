@@ -70,6 +70,30 @@ func TestPush_ResumesAfterTransientPatchFailure(t *testing.T) {
 	assert.Equal(t, layer, f.blobs[digestOf(layer)], "resume must not corrupt the blob")
 }
 
+// A registry keeps upload sessions in memory, so a restart mid-push forgets
+// every one of them and answers BLOB_UPLOAD_UNKNOWN. Nothing is resumable at
+// that point, so the blob starts over on a fresh session rather than failing a
+// publish that is already minutes deep.
+func TestPush_RestartsWhenTheRegistryForgetsTheSession(t *testing.T) {
+	f := newFakeRegistry(t)
+	srv := httptest.NewServer(f.handler("proj"))
+	defer srv.Close()
+
+	layer := make([]byte, 2500)
+	for i := range layer {
+		layer[i] = byte(i * 3)
+	}
+	dir, _ := buildImageLayout(t, layer)
+	f.dropSessionsAfter = 2 // the second chunk lands, then the session vanishes
+
+	p := newPusher(srv, "proj", 1000)
+	require.NoError(t, p.Push(dir, []string{"latest"}))
+
+	assert.Equal(t, layer, f.blobs[digestOf(layer)], "the restarted upload must reassemble byte-identically")
+	assert.Equal(t, []int64{1000, 1000, 1000, 1000, 500}, f.patchSizes,
+		"the two chunks sent before the session was dropped must be re-sent on the new one")
+}
+
 func TestPush_NoProgressAborts(t *testing.T) {
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))

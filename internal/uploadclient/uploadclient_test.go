@@ -245,17 +245,21 @@ func TestServerInfoUnavailableFallsBackToDefaultThreshold(t *testing.T) {
 	assert.Equal(t, 0, m.sessionCalls)
 }
 
-func TestOldServerFallsBackToDirect(t *testing.T) {
+// A missing session endpoint is a broken server, not a mode to accommodate:
+// the one buildhost advertises upload_sessions, and the old fallback's real
+// effect was to send a several-hundred-megabyte single request for the proxy
+// to reject with a 413 nobody could trace back to here.
+func TestMissingSessionEndpointFailsLoudly(t *testing.T) {
 	m, ts := newMockServer(t)
-	m.disableSessions = true // POST /api/v1/uploads 404s (old buildhost)
-	path, data := tempFile(t, 100)
+	m.disableSessions = true
+	path, _ := tempFile(t, 100)
 
 	u := &Uploader{Server: ts.URL, Token: "tok", ChunkSize: 7}
-	resp, err := u.Upload("PUT", ts.URL+"/target", nil, path)
-	require.NoError(t, err)
-	resp.Body.Close()
+	_, err := u.Upload("PUT", ts.URL+"/target", nil, path)
 
-	assert.Equal(t, data, m.captured, "falls back to the classic single request")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create upload session")
+	assert.Empty(t, m.captured, "nothing may be sent to the artifact endpoint instead")
 	assert.Equal(t, 1, m.sessionCalls, "tried the session endpoint once")
 }
 

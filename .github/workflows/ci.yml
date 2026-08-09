@@ -38,6 +38,9 @@ jobs:
       # from, silently, for as long as nobody rebuilds. That is exactly how the
       # admin dashboard shipped a bundle nothing in frontend/src produced.
       # See docs/no-committed-build-artifacts.md.
+      - name: Inline action scripts must carry no stacked comments
+        run: node .github/scripts/no-stacked-comments.ts .github/actions/*/action.yml .github/workflows/*.yml
+
       - name: Generated output must not be tracked in git
         run: |
           set -eu

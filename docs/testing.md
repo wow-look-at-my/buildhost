@@ -6,6 +6,20 @@ Extracted verbatim from CLAUDE.md, no wording changed.
 temp SQLite DB. OIDC tests generate ephemeral RSA keys and run a local JWKS
 server.
 
+## Inline action scripts must carry no stacked comments
+
+`.github/scripts/no-stacked-comments.ts` (a `build` step) refuses two or more
+consecutive comment-only `//` lines inside an inline `script:` in any
+`.github/actions/*/action.yml` or workflow. That is the rule
+`wow-look-at-my/actions@typescript#latest` enforces at RUN time, with no opt-out
+— but most of these actions only execute on some triggers, so without a
+repo-level check a violation ships and surfaces as a broken publish in whichever
+consumer runs it next. A shell `run:` block and a checked-in `file:` script are
+exempt, exactly as they are for the action.
+
+The remedy is the one the action names: say it in a single line, or move the
+prose to `docs/` and leave a pointer.
+
 ## llms.txt drift guard
 
 `internal/server/llms_endpoints_test.go` guards the `/llms.txt` document against
