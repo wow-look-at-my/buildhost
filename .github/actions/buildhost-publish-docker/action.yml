@@ -70,36 +70,10 @@ inputs:
     description: 'Push to the registry (set false to build only).'
     required: false
     default: 'true'
-  compression:
-    description: >
-      Layer compression: zstd (default), gzip, estargz or uncompressed. zstd
-      compresses smaller and decompresses several times faster than gzip, and
-      buildhost's own synthesized images have always used it -- buildx's gzip
-      default was the only reason published images differed. Consumers need an
-      OCI-aware puller: Docker's containerd image store (the default for Engine
-      29.0+ on fresh installs, `features.containerd-snapshotter` before that),
-      containerd, podman, or go-containerregistry. Set gzip only for a consumer
-      pinned to Docker's classic image store.
-    required: false
-    default: 'zstd'
   compression-level:
-    description: 'Compression level (zstd 0-22, gzip/estargz 0-9). Empty uses the algorithm default.'
+    description: 'zstd compression level, 0-22. Empty uses zstd''s default.'
     required: false
     default: ''
-  force-compression:
-    description: >
-      Re-compress layers that arrive already compressed -- from a cache hit or
-      a base image built with a different algorithm. Without it a `FROM` base
-      keeps its original layers and the image ships mixed compression.
-    required: false
-    default: 'true'
-  verify:
-    description: >
-      After pushing, pull each buildhost reference back and check its recorded
-      revision. On by default: a push that cannot be pulled is not a publish,
-      and finding that out here beats finding it out from a consumer.
-    required: false
-    default: 'true'
   deployment_environment:
     description: >-
       GitHub Deployment environment name (defaults to `buildhost/<project>`).
@@ -245,9 +219,7 @@ runs:
         EXTRA_LABELS: ${{ inputs.labels }}
         CACHE: ${{ inputs.cache }}
         PUSH: ${{ inputs.push }}
-        COMPRESSION: ${{ inputs.compression }}
         COMPRESSION_LEVEL: ${{ inputs.compression-level }}
-        FORCE_COMPRESSION: ${{ inputs.force-compression }}
       run: |
         set -euo pipefail
         # The OCI registry is served on the oci.<domain> subdomain.
@@ -280,8 +252,8 @@ runs:
         done <<< "${tags_in}"
 
         # Compression rides the exporter, not a build-push-action input, so it has to be spelled into every output form.
-        # force-compression is what applies it to layers inherited from a base or a cache hit, not only to newly built ones.
-        compression="compression=${COMPRESSION},force-compression=${FORCE_COMPRESSION}"
+        # force-compression is what reaches layers inherited from a base or a cache hit, not only newly built ones.
+        compression="compression=zstd,force-compression=true"
         [ -n "${COMPRESSION_LEVEL}" ] && compression="${compression},compression-level=${COMPRESSION_LEVEL}"
 
         layout="${RUNNER_TEMP}/buildhost-oci-layout"
@@ -364,7 +336,7 @@ runs:
     # the pull -- a long build outlives a token minted before it.
     - name: Verify the published image pulls
       id: verify
-      if: ${{ inputs.push == 'true' && inputs.verify == 'true' && steps.refs.outputs.buildhost_refs != '' }}
+      if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
       shell: bash
       env:
         REFS: ${{ steps.refs.outputs.buildhost_refs }}
