@@ -1,7 +1,8 @@
 // Chunked OCI upload sessions: blobs larger than the server's advertised
 // direct-upload limit go through POST session + sequential PATCH appends +
 // digest-checked PUT, resuming from the server's committed size. Split from
-// ociclient.go, which holds the pusher, refs, and monolithic uploads.
+// upload.go, which holds the existence skip, the mount, and the single-request
+// finalize.
 package ociclient
 
 import (
