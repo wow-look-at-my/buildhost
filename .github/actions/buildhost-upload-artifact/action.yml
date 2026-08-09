@@ -123,7 +123,6 @@ runs:
 
             // a transient 5xx or an empty-body proxy 404 (unlike the app's own 404, which carries JSON) gets retried; any 4xx with a body returns immediately
             const isTransient = (status: number, text: string): boolean =>
-              // An empty-body 404 is the proxy's; buildhost's own always carries JSON, and a 4xx with a body is the caller's answer.
               status >= 500 || (status === 404 && text.trim() === "");
 
             // retries a transient failure with backoff so a rolling buildhost deploy never hard-fails the upload
