@@ -63,6 +63,34 @@ for push verbs), and every `uploads`-action route requires write regardless of
 method (the GET status read is push-flow state). Self-registering via
 auth.OnReady().
 
+### Cross-repository mount
+
+`POST /v2/{name}/blobs/uploads/?mount=<digest>[&from=<project>]` links a blob
+storage already holds instead of receiving it again, answering 201 when granted.
+Storage is content-addressed and server-wide, so the bytes are there whoever
+pushed them first; what the mount decides is only whether this project may point
+at them. It may when the caller can READ a project that already links the blob
+(`auth.TokenCanReadProject` over `DB.ListOCIBlobOwners`) -- then the mount
+discloses nothing a pull would not. Otherwise, and when storage no longer has the
+bytes, the request falls through to an ordinary upload session (202), which is
+the spec's fallback and always correct, just slower. `from` narrows the search to
+one project rather than widening it.
+
+Without this every image built `FROM` a published base re-uploads that base into
+its own project: a fan-out of six harness images on one session image re-sent
+several hundred megabytes each, in parallel, and the redundant load is what
+turned a single registry hiccup into four failed publishes. The client asks to
+mount every blob before uploading it (`ociclient.Pusher.startSession`), so no
+caller has to know where a base came from.
+
+### When the registry forgets a session
+
+Sessions are server memory (`uploadStore`), so a restart takes every one of them
+and later requests answer `BLOB_UPLOAD_UNKNOWN`. There is nothing to resume from,
+so `ociclient` opens a fresh session and re-sends the blob from zero rather than
+failing a publish that is minutes deep; opening a session is retried on 5xx for
+the same reason.
+
 ## Docker push as a release kind
 
 A release containing pushed `kind=docker` artifacts is a "docker build" -- served

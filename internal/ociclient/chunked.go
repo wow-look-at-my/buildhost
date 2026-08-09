@@ -5,9 +5,11 @@
 package ociclient
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -18,18 +20,41 @@ import (
 // reports in Range headers.
 var rangePattern = regexp.MustCompile(`^([0-9]+)-([0-9]+)$`)
 
-// pushBlobChunked uploads a blob through an OCI upload session: POST opens the
-// session, sequential PATCH appends carry chunks no bigger than the resolved
-// limit, and a final empty PUT with ?digest= verifies and stores. Every
-// iteration trusts the server's committed size (from the append's Range
-// header, a 416's Range header, or the status endpoint after a transport
-// error), so a partially delivered chunk resumes instead of restarting.
-func (p *Pusher) pushBlobChunked(digest string, f *os.File, size int64) error {
-	loc, err := p.startSession()
-	if err != nil {
-		return fmt.Errorf("upload blob %s: %w", digest, err)
-	}
+// errSessionGone reports that the registry no longer knows the upload session
+// (it answers BLOB_UPLOAD_UNKNOWN). Sessions are server memory, so a restart or
+// a sweep takes every one of them with it; there is nothing left to resume
+// from, only a fresh session to start.
+var errSessionGone = errors.New("upload session no longer exists")
 
+// pushBlobChunked uploads a blob through the given OCI upload session, opening
+// a replacement and starting the blob over if the registry forgets it -- a
+// publish minutes deep must not die because the far end restarted.
+func (p *Pusher) pushBlobChunked(loc, digest string, f *os.File, size int64) error {
+	for attempt := range retryAttempts {
+		if attempt > 0 {
+			time.Sleep(RetryBaseDelay << (attempt - 1))
+			var err error
+			if _, loc, err = p.startSession(""); err != nil {
+				return fmt.Errorf("upload blob %s: %w", digest, err)
+			}
+			fmt.Fprintf(p.stdout(), "  blob %s: upload session was dropped, restarting it\n", digest)
+		}
+		err := p.uploadChunks(loc, digest, f, size)
+		if errors.Is(err, errSessionGone) {
+			continue
+		}
+		return err
+	}
+	return fmt.Errorf("upload blob %s: the registry dropped the upload session %d times", digest, retryAttempts)
+}
+
+// uploadChunks drives one session to completion: sequential PATCH appends carry
+// chunks no bigger than the resolved limit, and a final empty PUT with ?digest=
+// verifies and stores. Every iteration trusts the server's committed size (from
+// the append's Range header, a 416's Range header, or the status endpoint after
+// a transport error), so a partially delivered chunk resumes instead of
+// restarting.
+func (p *Pusher) uploadChunks(loc, digest string, f *os.File, size int64) error {
 	totalChunks := (size + p.chunk - 1) / p.chunk
 	fmt.Fprintf(p.stdout(), "  blob %s: %d MiB in %d chunks of <=%d MiB\n", digest, size>>20, totalChunks, p.chunk>>20)
 
@@ -63,27 +88,59 @@ func (p *Pusher) pushBlobChunked(digest string, f *os.File, size int64) error {
 		return fmt.Errorf("finalize blob %s: %w", digest, err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return errSessionGone
+	}
 	if resp.StatusCode != http.StatusCreated {
 		return fmt.Errorf("finalize blob %s failed: %s: %s", digest, resp.Status, readErrBody(resp))
 	}
 	return nil
 }
 
-// startSession opens a blob upload session and returns its absolute URL.
-func (p *Pusher) startSession() (string, error) {
-	resp, err := p.do(http.MethodPost, p.baseURL()+"/v2/"+p.Project+"/blobs/uploads/", nil, 0, nil)
-	if err != nil {
-		return "", err
+// startSession opens a blob upload session, first asking the registry to mount
+// a blob it already stores under another project when mount is a digest. It
+// returns mounted=true (with no session) if that was granted, and otherwise the
+// session's absolute URL -- a registry that will not mount answers with an
+// ordinary session, so the one request covers both outcomes.
+//
+// Retried on transport errors and 5xx: opening a session is the one step with
+// nothing yet invested, and a publish should not be lost to a single timeout at
+// the very start of a several-hundred-megabyte blob.
+func (p *Pusher) startSession(mount string) (bool, string, error) {
+	target := p.baseURL() + "/v2/" + p.Project + "/blobs/uploads/"
+	if mount != "" {
+		target += "?mount=" + url.QueryEscape(mount)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusAccepted {
-		return "", fmt.Errorf("start upload session: %s: %s", resp.Status, readErrBody(resp))
+	var lastErr error
+	for attempt := range retryAttempts {
+		if attempt > 0 {
+			time.Sleep(RetryBaseDelay << (attempt - 1))
+		}
+		resp, err := p.do(http.MethodPost, target, nil, 0, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		status, loc := resp.StatusCode, resp.Header.Get("Location")
+		body := readErrBody(resp)
+		resp.Body.Close()
+
+		switch {
+		case status == http.StatusCreated:
+			return true, "", nil
+		case status == http.StatusAccepted:
+			if loc == "" {
+				return false, "", fmt.Errorf("start upload session: no Location header")
+			}
+			abs, err := p.absoluteURL(loc)
+			return false, abs, err
+		case status >= 500:
+			lastErr = fmt.Errorf("start upload session: %s: %s", resp.Status, body)
+		default:
+			return false, "", fmt.Errorf("start upload session: %s: %s", resp.Status, body)
+		}
 	}
-	loc := resp.Header.Get("Location")
-	if loc == "" {
-		return "", fmt.Errorf("start upload session: no Location header")
-	}
-	return p.absoluteURL(loc)
+	return false, "", fmt.Errorf("start upload session: %w", lastErr)
 }
 
 // patchChunk sends one chunk and returns the server's committed size. A 416
@@ -106,6 +163,8 @@ func (p *Pusher) patchChunk(loc string, chunk io.Reader, offset, n int64) (int64
 			return 0, fmt.Errorf("append chunk: response carried no usable Range header")
 		}
 		return committed, nil
+	case resp.StatusCode == http.StatusNotFound:
+		return 0, errSessionGone
 	case resp.StatusCode >= 500:
 		return p.sessionStatus(loc)
 	default:
@@ -130,6 +189,9 @@ func (p *Pusher) sessionStatus(loc string) (int64, error) {
 			if committed, ok := committedFromRange(resp.Header.Get("Range")); ok {
 				return committed, nil
 			}
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			return 0, errSessionGone
 		}
 		lastErr = fmt.Errorf("read upload status: %s", resp.Status)
 	}

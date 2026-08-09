@@ -46,14 +46,28 @@ combination build, row insert, 409 conflict semantics, and 201 responses are
 shared with full uploads, and each hash-ref request carries its own
 `X-Artifact-Filename` (per-slot filenames, unlike fan-out's single shared header).
 
-Server-info advertises `upload_by_sha256: true` and clients MUST gate on it: a
-pre-feature server silently ignores the parameter and 201s the empty body into the
-slot (no artifact DELETE exists to repair it), so blind probing is forbidden.
-Body-carrying PUTs (param ignored) and session finalizes (param = spool integrity
-check) are byte-identical to before. Both in-repo publishers collapse
-automatically when the capability is advertised: the buildhost-publish action and
-`buildhost publish --manifest` hash their files, full-upload the first slot of
-each hash, hash-ref the rest, and fall back to a full upload on any non-201/409.
+Server-info advertises `upload_by_sha256: true`. Body-carrying PUTs (param
+ignored) and session finalizes (param = spool integrity check) are byte-identical
+to before.
+
+**Fan-out first, hash references only for what fan-out cannot express.** A
+publisher holding one file that belongs in several slots reaches for the URL
+grammar before it reaches for hashes: `PUT .../artifacts/linux,darwin,windows/amd64,arm64`
+streams the body ONCE. The buildhost-publish action groups discovered artifacts by
+sha256 and, when a group's slots are exactly the product of the platforms it
+covers -- which is every cosmo build, the case that motivated hash references at
+all -- sends that one request. Only a ragged set (`{linux/amd64, linux/arm64,
+windows/amd64}`, no windows/arm64) falls through to upload-first-then-hash-ref,
+with a full upload on any non-201/409 in case the blob was evicted in between.
+`buildhost publish --manifest` still hash-refs per entry: a manifest names each
+slot's own `X-Artifact-Filename`, which fan-out's single shared header cannot
+carry.
+
+The action does NOT probe server-info for the capability first. There is one
+buildhost, it advertises `upload_by_sha256`, and a dedicated round-trip to
+re-confirm a constant is a probe for a known truth. `internal/uploadclient` still
+exposes `SupportsUploadBySHA256()` for the CLI, where server-info is already
+fetched for the chunk threshold so the answer is free.
 
 ## Chunked upload sessions (internal/uploads)
 
@@ -102,9 +116,11 @@ try-a-big-PUT-and-react-to-413 path. Small files keep the classic single request
 byte-for-byte; larger ones create a session, append sequential chunks (default 64
 MiB, `--chunk-size`, `0` disables) with per-chunk retry/backoff that resumes from
 the server's committed size (409 or status read), then finalize with the file's
-sha256 and best-effort DELETE the session on hard failure. Against an old server
-without session support it warns and falls back to the classic single request (no
-regression for non-proxied deployments). Lives in `internal/` (not `cmd/`) so its
+sha256 and best-effort DELETE the session on hard failure. A missing session
+endpoint is a hard error, not a mode: the one buildhost advertises
+`upload_sessions`, and the old 404/405 fallback's real effect was to send a
+several-hundred-megabyte single request for the proxy to reject with a 413 nobody
+could trace back to the client. Lives in `internal/` (not `cmd/`) so its
 tests don't drag the untested CLI package into coverage.
 
 ## The docker-push engine (internal/ociclient)

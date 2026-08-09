@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 // contentRangePattern matches the OCI distribution chunk range form
@@ -16,14 +17,20 @@ var contentRangePattern = regexp.MustCompile(`^([0-9]+)-([0-9]+)$`)
 
 // StartBlobUpload handles POST /v2/{name}/blobs/uploads/.
 //
-// Two modes:
+// Three modes:
+//   - mount:      ?mount=sha256:... -> link a blob storage already holds, 201.
 //   - monolithic: ?digest=sha256:... with the blob as the body -> store now, 201.
-//   - session:    no digest -> open an upload session, 202 + Location for PATCH/PUT.
-//
-// A ?mount= request (cross-repo blob mount) is treated as a session start: we
-// don't implement mounting, and the client falls back to a normal upload.
+//   - session:    neither -> open an upload session, 202 + Location for PATCH/PUT.
 func (h *Handler) StartBlobUpload(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
+
+	if mount := r.URL.Query().Get("mount"); mount != "" {
+		if h.mountBlob(w, r, project, mount, r.URL.Query().Get("from")) {
+			return
+		}
+		// Not mountable. The spec's fallback is a normal upload session, so the
+		// client uploads the bytes rather than failing.
+	}
 
 	digest := r.URL.Query().Get("digest")
 	if digest != "" {
@@ -65,6 +72,48 @@ func (h *Handler) StartBlobUpload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Docker-Upload-UUID", sess.uuid)
 	w.Header().Set("Range", "0-0")
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// mountBlob answers a cross-repository blob mount, reporting whether it wrote a
+// response. Storage is content-addressed and global, so mounting is a link row:
+// the bytes are already there, whoever pushed them first.
+//
+// Authorization is what stops that from being a way to read a private image by
+// guessing its digest: the mount is granted only when the caller may READ a
+// project that already links the blob, and then it discloses nothing they could
+// not pull directly. `from` narrows the search to one project when the client
+// names one (the spec's form); without it any readable owner will do, which is
+// what lets a pusher mount a base image's layers without being told where they
+// came from. An unmountable request is not an error -- the caller falls back to
+// uploading, which is always correct, just slower.
+func (h *Handler) mountBlob(w http.ResponseWriter, r *http.Request, project *db.Project, digest, from string) bool {
+	if !validDigest.MatchString(digest) {
+		return false
+	}
+	key := digest[7:]
+	if ok, err := h.Store.Exists(r.Context(), key); err != nil || !ok {
+		return false
+	}
+	owners, err := h.DB.ListOCIBlobOwners(r.Context(), key)
+	if err != nil {
+		return false
+	}
+	for _, owner := range owners {
+		if from != "" && owner.Project.Name != from {
+			continue
+		}
+		if owner.Project.ID != project.ID && !auth.TokenCanReadProject(r.Context(), &owner.Project) {
+			continue
+		}
+		if err := h.DB.LinkOCIBlob(r.Context(), project.ID, key, owner.MediaType, owner.Size, owner.IsManifest); err != nil {
+			return false
+		}
+		w.Header().Set("Location", blobPath(project.Name, digest))
+		w.Header().Set("Docker-Content-Digest", digest)
+		w.WriteHeader(http.StatusCreated)
+		return true
+	}
+	return false
 }
 
 // PatchBlobUpload handles PATCH /v2/{name}/blobs/uploads/{uuid} (chunk append).
