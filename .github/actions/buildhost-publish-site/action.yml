@@ -91,16 +91,11 @@ runs:
         script: |
           await (async () => {
             core.setOutput('deployment_id', '');
-            // A deployment asserts "this publish is live at <environment_url>".
-            // Against a loopback or plain-http server -- buildhost's own e2e
-            // spawns one on http://localhost:18080 -- that assertion is false:
-            // nothing outside the runner can reach it. So there is nothing true
-            // to register, exactly as there is nothing recordable for a loopback
-            // registry. A property of the target, not an opt-out: every publish
-            // to a real server registers, and a failure there is fatal.
             const deployServer: string = "${{ inputs.server }}";
             const deployHost: string = new URL(deployServer).hostname;
+            // this check finds a target nothing outside the runner can reach
             if (deployHost === "localhost" || deployHost === "127.0.0.1" || deployHost === "::1" || !deployServer.startsWith("https://")) {
+              // a loopback or plain-http target has nothing true to register as live
               core.info(`Skipping the GitHub Deployment: ${deployServer} is not a reachable https server, so its deployment URL would point nowhere`);
               return;
             }
@@ -111,35 +106,29 @@ runs:
               const envInput: string = "${{ inputs.deployment_environment }}";
               const environment: string = envInput || `buildhost/${project}/${branch}`;
               const gitCommitInput: string = "${{ inputs.git_commit }}";
-              // A bare SHA here belongs to no branch, so GitHub's branch and PR
-              // deployment views report the branch as never deployed. Callers
-              // that want the publish to surface there pass a branch name.
               const deploymentRefInput: string = "${{ inputs.deployment_ref }}";
+              // a bare SHA belongs to no branch, so GitHub's branch/PR deployment views show it as never deployed -- pass a branch name here to fix that
               const ref: string = deploymentRefInput || gitCommitInput || context.sha;
-              // PR-preview branches (pr-<n>, as deployed by the
-              // buildhost-preview reusable workflow) are transient
-              // environments: GitHub expects them to go away again.
+              // pr-<n> branches, as deployed by the buildhost-preview reusable workflow, are transient environments GitHub expects to go away again
               const transient = /^pr-\d+$/.test(branch);
               const defaultBranch: string = context.payload.repository?.default_branch ?? '';
               const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-              // required_contexts MUST be [] (the API default is "every commit
-              // status", and the org's all-builds status is still pending on
-              // this sha mid-run -> 409 Conflict); auto_merge MUST be false
-              // (the API default would try to merge the default branch into
-              // ref). A 2xx response without an id (e.g. the 202 auto-merge
-              // shape) is treated as "no deployment".
+              // every publish to a real server registers -- there's no opt-out
               const dep = await octokit.rest.repos.createDeployment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 ref,
                 environment,
+                // the API default would try to merge the default branch into ref
                 auto_merge: false,
+                // the API default is "every commit status", and the org's all-builds status is still pending on this sha mid-run -> 409 Conflict
                 required_contexts: [],
                 transient_environment: transient,
                 production_environment: !transient && defaultBranch !== '' && branch === defaultBranch,
                 description: `buildhost site publish of ${project} (branch ${branch})`.slice(0, 140),
               });
               const id = (dep.data as any)?.id;
+              // a 2xx response without an id (e.g. the 202 auto-merge shape) counts as no deployment
               if (typeof id !== 'number') {
                 core.setFailed(`GitHub Deployment not created (HTTP ${dep.status}): the API returned no deployment id`);
                 return;
@@ -179,23 +168,18 @@ runs:
               core.setFailed('Either source_dir or artifact_name is required'); return;
             }
 
-            // Route inputs through string-typed locals before `||`. A bare
-            // input literal substituted directly into `x || y` is statically
-            // empty-or-not, which the typescript action rejects (TS2872/TS2873).
+            // routed through string-typed locals: a bare input literal substituted directly into `x || y` is statically empty-or-not, which the typescript action rejects (TS2872/TS2873)
             const projectInput: string = "${{ inputs.project }}";
             const project: string = projectInput || github.repository.split('/').pop()!;
             const branch: string = "${{ inputs.branch }}";
             const gitCommitInput: string = "${{ inputs.git_commit }}";
             const gitCommit: string = gitCommitInput || github.sha;
-            // Opt-in public flag. buildhost serves a site published with
-            // X-Public-Site: true without a token even under a private project.
             const publicInput: string = "${{ inputs.public }}";
             const isPublic: string = publicInput === 'true' ? 'true' : 'false';
             const chunkSizeInput: string = "${{ inputs.chunk_size }}";
 
-            // buildhost serves each service on its own subdomain and dispatches
-            // by the first Host label, so the sites endpoint is sites.<domain>.
             const su = new URL(server);
+            // buildhost dispatches each service by the first Host label, so the sites endpoint is sites.<domain>
             const sitesBase = `${su.protocol}//sites.${su.host}`;
 
             let token: string = "${{ inputs.token }}";
@@ -208,10 +192,7 @@ runs:
               }
             }
 
-            // Build the archive on disk (never a whole-archive Buffer): a Blob
-            // opened from the path lets fetch stream it with a correct
-            // Content-Length, blob.slice() gives cheap per-chunk views, and a
-            // Blob can be re-read, so retried attempts are safe.
+            // built to disk, never held as a whole-archive Buffer
             let archivePath: string;
             let contentType: string;
             if (artifactName) {
@@ -237,11 +218,11 @@ runs:
               'Authorization': `Bearer ${token}`,
               'Content-Type': contentType,
               'X-Git-Commit': gitCommit,
+              // serves this site without a token, even under a private project, when true
               'X-Public-Site': isPublic,
             };
 
-            // Mirrors internal/uploadclient's DefaultChunkThreshold /
-            // DefaultChunkSize. chunk_size 0 disables chunking (always direct).
+            // mirrors internal/uploadclient's DefaultChunkSize
             let chunkSize = 64 * 1024 * 1024;
             if (chunkSizeInput) {
               const n = Number(chunkSizeInput);
@@ -249,14 +230,11 @@ runs:
                 core.setFailed(`invalid chunk_size '${chunkSizeInput}': expected a non-negative integer (bytes)`);
                 return;
               }
+              // chunk_size 0 disables chunking, always direct
               chunkSize = n === 0 ? -1 : n;
             }
 
-            // The direct/chunked decision is made purely from the local
-            // archive size plus the limit the server advertises -- never by
-            // reacting to a failed oversized attempt (a proxy's body cap 413
-            // never even reaches the origin). Any fetch/parse failure just
-            // means the built-in default.
+            // the direct/chunked decision comes purely from the local archive size and the server-advertised limit, never from a failed oversized attempt -- a proxy's body cap 413 never reaches the origin
             let directLimit = 95 * 1024 * 1024;
             try {
               const infoResp = await fetch(`${server}/api/v1/server-info`);
@@ -268,20 +246,16 @@ runs:
               }
             } catch { /* capability probe only; the default always works */ }
 
+            // a Blob (unlike a Buffer) streams with a correct Content-Length and can be re-read, so retried attempts are safe
             const blob = await fs.openAsBlob(archivePath);
 
             const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-            // Buildhost runs behind a CDN/reverse proxy and is redeployed
-            // with rolling updates. During a deploy window the edge can
-            // briefly emit a transient 5xx, a connection error, or an
-            // empty-body 404 (an origin/proxy 404 -- distinct from the app's
-            // own 404, which always carries a JSON body). Retry those with
-            // backoff so a buildhost deploy never hard-fails a publish. Any
-            // 4xx that carries a body returns at once for the caller.
+            // a transient 5xx or an empty-body proxy 404 (unlike the app's own 404, which carries JSON) gets retried; any 4xx with a body returns immediately
             const isTransient = (status: number, text: string): boolean =>
               status >= 500 || (status === 404 && text.trim() === "");
 
+            // retries a transient failure with backoff so a rolling buildhost deploy never hard-fails the publish
             const api = async (method: string, url: string, body?: Blob, headers?: Record<string, string>) => {
               const h: Record<string, string> = headers ?? { Authorization: `Bearer ${token}` };
               const maxAttempts = 5;
@@ -305,11 +279,7 @@ runs:
               return { status: 0, text: "unreachable" };
             };
 
-            // The archive's sha256, needed on both paths: the chunked finalize
-            // verifies the assembled spool against it, and the artifact-metadata
-            // storage record is keyed by it. One streaming read either way (the
-            // TS action injects no `crypto` global; require is the documented
-            // route to node modules).
+            // require is the documented route to node modules -- the TS action injects no crypto global
             const crypto = require("crypto");
             const fileSHA256 = (p: string): Promise<string> => new Promise((resolve, reject) => {
               const hash = crypto.createHash("sha256");
@@ -318,24 +288,19 @@ runs:
                 .on("data", (chunk: Buffer) => hash.update(chunk))
                 .on("end", () => resolve(hash.digest("hex")));
             });
+            // this sha256 is needed on both paths: the chunked finalize verifies the assembled spool against it, and the storage record is keyed by it
             const sum = await fileSHA256(archivePath);
 
-            // Recording what buildhost now stores is PART of publishing, not a
-            // bolt-on: it happens in this step, has no opt-out input, and a
-            // failure fails the publish. A warn-and-continue path would be an
-            // opt-out by neglect -- the publish would stay green while the
-            // org's linked artifacts page silently fell behind reality.
-            // The endpoint's own response -- from the direct PUT or the
-            // session finalize, same endpoint either way -- feeds the outputs.
+            // recording happens inline here, with no opt-out; skipping it silently would leave the artifacts page stale while the publish stayed green
             const finishPublish = async (r: { status: number; text: string }): Promise<void> => {
               if (r.status < 200 || r.status >= 300) { core.setFailed(`HTTP ${r.status}: ${r.text}`); return; }
+              // r is the same endpoint's response either way -- the direct PUT or the session finalize
               const body = JSON.parse(r.text);
-              // Never derive this: the server owns the URL grammar and reports it.
-              // The fallback is for servers predating that field -- keep it on the
-              // canonical spelling, not the /branch/ one the upload endpoint uses.
+              // never derive this: the server owns the URL grammar and reports it
               const siteURL: string =
                 typeof body.url === 'string' && body.url !== ''
                   ? body.url
+                  // the fallback is for servers predating this field -- keep the canonical spelling, not the /branch/ one the upload endpoint uses
                   : `${sitesBase}/${project}/@${branch}/`;
               core.info(`Published site to ${siteURL}`);
               core.info(JSON.stringify(body, null, 2));
@@ -349,21 +314,11 @@ runs:
               return;
             }
 
-            // --- Chunked upload session (mirrors buildhost-upload-artifact /
-            // internal/uploadclient): assemble the archive server-side from
-            // requests small enough to pass the proxy, then finalize the
-            // ORIGINAL sites PUT by reference with an empty body. The sites
-            // endpoint's own routing, auth, size caps, and Content-Type
-            // dispatch all run unchanged against the assembled spool.
-
-            // `sum` (the archive's sha256, used by the finalize's integrity
-            // check) is computed above, since the record needs it on the
-            // direct-upload path too.
+            // assembles the archive server-side (mirrors buildhost-upload-artifact / internal/uploadclient) from requests small enough to pass the proxy
             const create = await api('POST', `${server}/api/v1/uploads`);
+            // a 404/405 here means the server predates upload sessions
             if (create.status === 404 || create.status === 405) {
-              // Server predates upload sessions. Fall back to the classic
-              // single request -- exactly what the old action sent -- with a
-              // heads-up, since a proxy body cap may reject it.
+              // falls back to the classic single request the old action always sent; a proxy body cap may still reject it
               core.warning(`server does not support chunked uploads; sending ${size} bytes as a single request`);
               await finishPublish(await api('PUT', target, blob, uploadHeaders));
               return;
@@ -399,12 +354,7 @@ runs:
               throw new Error(`read upload session size: ${lastErr}`);
             };
 
-            // appendChunk PATCHes one chunk and returns the server's
-            // committed size. A 409 (offset conflict / busy) carries the
-            // authoritative size; a transport error or 5xx resolves to a
-            // status read -- either way the loop resumes from wherever the
-            // server actually is, so a partially delivered chunk resumes
-            // instead of restarting.
+            // resumes from wherever the server actually is on conflict or transport failure, so a partially delivered chunk resumes instead of restarting
             const appendChunk = async (offset: number, chunk: Blob): Promise<number> => {
               let status: number;
               let text: string;
@@ -417,10 +367,10 @@ runs:
                 status = resp.status;
                 text = await resp.text();
               } catch {
-                // The chunk may have partially landed before the connection
-                // broke; ask the server how much it has and resume from there.
+                // the chunk may have partially landed before the connection broke -- resume from what the server actually has
                 return sessionSize();
               }
+              // 409 (offset conflict / busy) carries the authoritative size
               if (status === 200 || status === 409) {
                 const body = JSON.parse(text) as { size?: number };
                 if (typeof body.size !== 'number') throw new Error(`upload chunk at ${offset}: bad response`);
@@ -437,6 +387,7 @@ runs:
               let offset = 0;
               let failures = 0;
               while (offset < size) {
+                // blob.slice() gives a cheap per-chunk view without re-reading the file
                 const newOffset = await appendChunk(offset, blob.slice(offset, Math.min(offset + chunkSize, size)));
                 if (newOffset <= offset) {
                   failures++;
@@ -454,16 +405,10 @@ runs:
               return;
             }
 
-            // Finalize: the original sites PUT with an empty body, referencing
-            // the session and the archive's sha256 (verified server-side
-            // against the assembled spool before the sites endpoint ever
-            // runs). The X-Git-Commit / X-Public-Site headers and Content-Type
-            // ride on this request exactly as they would on a direct upload.
+            // sha256 is verified server-side against the assembled spool before the sites endpoint ever runs
             const fin = await api('PUT', `${target}?upload_session=${sessionID}&upload_sha256=${sum}`, undefined, uploadHeaders);
             if (fin.status < 200 || fin.status >= 300) {
-              // The server keeps a session on a failed finalize (for
-              // retries); ours are exhausted, so don't leave the spool for
-              // the TTL sweeper.
+              // the server keeps a session after a failed finalize for retries; ours are exhausted, so don't leave the spool for the TTL sweeper
               await abortSession();
             }
             await finishPublish(fin);
