@@ -16,9 +16,9 @@ import (
 	"strings"
 )
 
-// pushBlob uploads one blob, skipping blobs the registry already has (HEAD),
-// monolithically when it fits in a single request and through a chunked upload
-// session otherwise.
+// pushBlob uploads one blob: skipped entirely when the registry already has it
+// (HEAD) or will mount it from another project, then finalized in one request
+// when it fits under the request-size limit, and chunked when it does not.
 func (p *Pusher) pushBlob(l *layout, d descriptor) error {
 	if p.pushed[d.Digest] {
 		return nil
@@ -115,13 +115,9 @@ func (p *Pusher) putManifest(reference, mediaType string, body []byte) error {
 
 // do issues one authenticated request. size < 0 leaves Content-Length unset.
 func (p *Pusher) do(method, target string, body io.Reader, size int64, header map[string]string) (*http.Response, error) {
-	req, err := http.NewRequest(method, target, body)
+	req, err := newRequest(method, target, body, size)
 	if err != nil {
 		return nil, err
-	}
-	if body != nil {
-		req.ContentLength = size
-		req.Header.Set("Content-Type", "application/octet-stream")
 	}
 	if p.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+p.Token)
@@ -130,6 +126,47 @@ func (p *Pusher) do(method, target string, body io.Reader, size int64, header ma
 		req.Header.Set(k, v)
 	}
 	return p.client().Do(req)
+}
+
+// newRequest builds one upload request, giving a seekable body the GetBody the
+// transport needs to retry it. http.NewRequest supplies GetBody only for the
+// in-memory reader types, so a file or a chunk's section reader arrives without
+// one -- and net/http then refuses to retry after the body has been written,
+// surfacing a single mid-flight stream error as a failed publish:
+//
+//	http2: Transport: cannot retry err [stream error: ...; PROTOCOL_ERROR;
+//	received from peer] after Request.Body was written; define Request.GetBody
+//
+// A retry only ever starts after the previous attempt is finished, so rewinding
+// the same reader is safe. size < 0 leaves Content-Length unset.
+func newRequest(method, target string, body io.Reader, size int64) (*http.Request, error) {
+	req, err := http.NewRequest(method, target, body)
+	if err != nil {
+		return nil, err
+	}
+	if body == nil {
+		return req, nil
+	}
+	req.ContentLength = size
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	seeker, ok := body.(io.Seeker)
+	if !ok || req.GetBody != nil {
+		return req, nil
+	}
+	// Relative to whatever the reader is anchored on: a section reader's own
+	// start, an open file's absolute position.
+	start, err := seeker.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return nil, fmt.Errorf("%s %s: body is not rewindable: %w", method, target, err)
+	}
+	req.GetBody = func() (io.ReadCloser, error) {
+		if _, err := seeker.Seek(start, io.SeekStart); err != nil {
+			return nil, err
+		}
+		return io.NopCloser(body), nil
+	}
+	return req, nil
 }
 
 // absoluteURL resolves a Location header (usually path-absolute) against the

@@ -1,7 +1,7 @@
 // Tests for the chunked OCI upload-session path (chunked.go): large-blob
 // chunking, exact-multiple sizing, resume after transient failures, the
 // no-progress abort, server-advertised limits, and Range parsing. Split from
-// ociclient_test.go, which holds the fake registry and monolithic-path tests.
+// ociclient_test.go, which holds the fake registry and the single-request path.
 package ociclient
 
 import (

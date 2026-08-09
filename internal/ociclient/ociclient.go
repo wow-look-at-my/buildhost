@@ -231,7 +231,7 @@ func (p *Pusher) pushChildren(l *layout, m *imageManifest) error {
 // lowered -- never raised -- by an explicit ChunkSize. Anything above the
 // advertised limit is the 413 this client exists to avoid, so overrides only
 // clamp down. A negative ChunkSize disables chunking entirely (every blob is
-// one monolithic request -- for servers with no proxy body cap).
+// one request -- for servers with no proxy body cap).
 func (p *Pusher) resolveChunkSize() int64 {
 	if p.ChunkSize < 0 {
 		return math.MaxInt64
