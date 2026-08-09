@@ -140,10 +140,12 @@ separately if any tracked file is gitignored build output. Depth:
   cannot do through a body-capped proxy) and records what was stored. It owns
   getting a CLI that can: download, else build from source. No caller handles a
   CLI.
-- **Logging docker in is buildhost's job, never a caller's.** `buildhost-publish-docker`
-  does it before the build and before the pull-back; anything else runs
-  `buildhost docker-login --server <url>` (internal/ociclient/login.go). No
-  consumer repo restates the audience, token endpoint or `oci.<domain>` rule.
+- **Logging docker in is buildhost's job, never a caller's, and there is no
+  login-only action** -- exposing one puts the credential back in a caller's
+  hands. Actions that need it do it inside their own steps, from the one shared
+  `.github/actions/lib/docker-login.sh`: `buildhost-publish-docker` (build,
+  pull-back) and **`buildhost-docker-pull`** (pull images, e.g. into a nested
+  daemon). Outside Actions: `buildhost docker-login` (internal/ociclient/login.go).
 - **`buildhost-download`** fetches one artifact from `dl`; `required: 'false'`
   reports a miss as an output instead of failing, which is what makes that
   fallback expressible.

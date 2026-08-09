@@ -3,10 +3,16 @@
 # Actions OIDC token.
 #
 # This is INTERNAL to the buildhost repo on purpose. Authenticating to buildhost
-# is this action's business, not its callers': a workflow that has to log in
+# is an action's business, not its callers': a workflow that has to log in
 # before it can build or pull is an action that did not finish its job, and the
 # credential is short-lived, so "log in once at the top" is wrong anyway. Call
 # this immediately before the docker operation that needs it.
+#
+# It lives in lib/ because more than one action does such an operation --
+# buildhost-publish-docker builds and pulls back, buildhost-docker-pull pulls.
+# There is deliberately no action that only logs in: exposing one would put the
+# credential back in a caller's hands, which is the thing this file exists to
+# prevent.
 #
 # Bash rather than `buildhost docker-login` (internal/ociclient/login.go, the
 # same flow for anyone outside a publish) because this runs before the step that

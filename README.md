@@ -321,11 +321,21 @@ not yours:
     refs: oci.pazer.build/myproject:v1.2.3
 ```
 
-Publishing logs docker in for you. When you need the credential for something
-else -- a plain `docker push`, or pulling a published image back -- run
-`buildhost docker-login --server <url>` immediately before that command, rather
-than once at the top of the job: the OIDC token behind it is short-lived, and a
-long build outlives it.
+Publishing logs docker in for you, and so does pulling. To fetch a published
+image -- into a nested daemon, or just onto the runner -- use
+`buildhost-docker-pull`; it authenticates itself, so no workflow handles a
+registry credential:
+
+```yaml
+- uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-pull@master
+  with:
+    images: oci.pazer.build/myproject:v1.2.3
+```
+
+There is deliberately no login-only action. Outside Actions, where there is no
+OIDC token to mint, `buildhost docker-login --server <url>` is the same flow --
+run it immediately before the command that needs it rather than once at the top
+of a script, since the credential is short-lived.
 
 ## GitHub Deployments
 
