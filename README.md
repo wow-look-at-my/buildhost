@@ -322,10 +322,18 @@ not yours:
 ```
 
 Publishing logs docker in for you. When you need the credential for something
-else -- a plain `docker push`, or pulling a published image back -- run
-`buildhost docker-login --server <url>` immediately before that command, rather
-than once at the top of the job: the OIDC token behind it is short-lived, and a
-long build outlives it.
+else -- a plain `docker push`, or pulling a published image back into a nested
+daemon -- add the login action immediately before that command, rather than once
+at the top of the job: the OIDC token behind it is short-lived, and a long build
+outlives it.
+
+```yaml
+- uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-login@master
+  id: registry            # outputs `registry`, e.g. oci.pazer.build
+- run: docker pull ${{ steps.registry.outputs.registry }}/myproject:v1.2.3
+```
+
+Outside Actions, `buildhost docker-login --server <url>` is the same flow.
 
 ## GitHub Deployments
 

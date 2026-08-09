@@ -211,7 +211,7 @@ runs:
     # instead of a login every caller has to remember.
     - name: Log in to the buildhost registry (for private FROM bases)
       shell: bash
-      run: bash "${{ github.action_path }}/docker-login.sh" "${{ inputs.server }}"
+      run: bash "${{ github.action_path }}/../lib/docker-login.sh" "${{ inputs.server }}"
 
     # When `tags` is omitted, compute branch-aware defaults instead of an
     # unconditional "SHA + latest": pushed OCI tags are mutable pointers
@@ -370,7 +370,7 @@ runs:
         REFS: ${{ steps.refs.outputs.buildhost_refs }}
       run: |
         set -euo pipefail
-        bash "${{ github.action_path }}/docker-login.sh" "${{ inputs.server }}"
+        bash "${{ github.action_path }}/../lib/docker-login.sh" "${{ inputs.server }}"
         while IFS= read -r ref; do
           [ -z "${ref}" ] && continue
           docker image rm "${ref}" >/dev/null 2>&1 || true

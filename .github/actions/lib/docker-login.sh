@@ -2,15 +2,18 @@
 # Log docker in to this buildhost's OCI registry with a freshly minted GitHub
 # Actions OIDC token.
 #
-# This is INTERNAL to the buildhost repo on purpose. Authenticating to buildhost
-# is this action's business, not its callers': a workflow that has to log in
-# before it can build or pull is an action that did not finish its job, and the
-# credential is short-lived, so "log in once at the top" is wrong anyway. Call
-# this immediately before the docker operation that needs it.
+# The single implementation of that login, shared by buildhost-publish-docker
+# (which logs in before the build and before the pull-back) and by the
+# buildhost-docker-login action a consumer uses for a docker operation of its
+# own. Consumers must never restate the audience, token endpoint or
+# `oci.<domain>` rule; a second copy is a second thing to get wrong.
+#
+# The credential is short-lived, so call this immediately before the docker
+# operation that needs it, not once at the top of a long job.
 #
 # Bash rather than `buildhost docker-login` (internal/ociclient/login.go, the
-# same flow for anyone outside a publish) because this runs before the step that
-# fetches the CLI.
+# same flow outside Actions) because this runs before the step that fetches the
+# CLI, and a consumer would otherwise need a CLI just to log in.
 #
 # Usage: docker-login.sh <server-url>   (e.g. https://pazer.build)
 set -euo pipefail

@@ -1,0 +1,34 @@
+name: Buildhost docker login
+description: >
+  Log docker in to a buildhost OCI registry with a GitHub Actions OIDC token (no
+  static secret). Publishing already logs in for you -- reach for this only when
+  a job runs a docker operation of its own, such as pulling a published image
+  into a nested daemon. The credential is short-lived: put this immediately
+  before that operation rather than once at the top of the job.
+
+inputs:
+  server:
+    description: 'Buildhost base URL (the OIDC audience). Docker logs in to its `oci.` subdomain.'
+    required: false
+    default: 'https://pazer.build'
+
+outputs:
+  registry:
+    description: 'The registry docker logged in to (e.g. oci.pazer.build). Images are <registry>/<project>:<tag>.'
+    value: ${{ steps.login.outputs.registry }}
+
+runs:
+  using: composite
+  steps:
+    # The same script buildhost-publish-docker runs, so a consumer's login and
+    # a publish's login cannot drift. Bash, not `buildhost docker-login`: a
+    # consumer that needed the CLI merely to authenticate would be back to
+    # handling a CLI itself.
+    - id: login
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash "${{ github.action_path }}/../lib/docker-login.sh" "${{ inputs.server }}"
+        server="${{ inputs.server }}"
+        host="${server#*://}"
+        echo "registry=oci.${host%%/*}" >> "${GITHUB_OUTPUT}"
