@@ -31,6 +31,32 @@ func TestPush_SmallBlobsMonolithic(t *testing.T) {
 	assert.Equal(t, f.manifests["latest"], f.manifests[manifestDigest], "tag and digest must resolve to the same manifest")
 }
 
+// Every image built FROM a published base carries that base's layers, and the
+// registry already stores them. Asking to mount before uploading is what keeps
+// a fan-out of N images layered on one base from re-sending the base N times.
+func TestPush_MountsBlobsTheRegistryAlreadyStores(t *testing.T) {
+	f := newFakeRegistry(t)
+	srv := httptest.NewServer(f.handler("proj"))
+	defer srv.Close()
+
+	base := make([]byte, 4000) // big enough that uploading it would chunk
+	for i := range base {
+		base[i] = byte(i)
+	}
+	own := []byte("this-image-only")
+	dir, _ := buildImageLayout(t, base, own)
+	f.mountable[digestOf(base)] = true
+
+	p := newPusher(srv, "proj", 1000)
+	require.NoError(t, p.Push(dir, []string{"latest"}))
+
+	assert.Equal(t, []string{digestOf(base)}, f.mounts)
+	assert.NotContains(t, f.blobUploads, digestOf(base), "a mounted blob must not be uploaded")
+	assert.Empty(t, f.patchSizes, "a mounted blob must not open a chunk session")
+	assert.Contains(t, f.blobUploads, digestOf(own), "the layer only this image has still uploads")
+	assert.NotNil(t, f.manifests["latest"])
+}
+
 // TestPush_BuildxPerTagIndexEntries pushes a layout shaped the way
 // `docker buildx --output type=oci` writes it for a MULTI-TAG build: one
 // index.json entry per tag, all referencing the same digest with only the
