@@ -86,10 +86,11 @@ runs:
         script: |
           await (async () => {
             core.setOutput('deployment_id', '');
-            // A deployment claims the publish is live at environment_url -- false for a loopback server nothing outside the runner can reach.
             const deployServer: string = "${{ inputs.server }}";
             const deployHost: string = new URL(deployServer).hostname;
+            // this check finds a target nothing outside the runner can reach
             if (deployHost === "localhost" || deployHost === "127.0.0.1" || deployHost === "::1" || !deployServer.startsWith("https://")) {
+              // a loopback or plain-http target has nothing true to register as live
               core.info(`Skipping the GitHub Deployment: ${deployServer} is not a reachable https server, so its deployment URL would point nowhere`);
               return;
             }
@@ -99,26 +100,29 @@ runs:
               const envInput: string = "${{ inputs.deployment_environment }}";
               const environment: string = envInput || `buildhost/${project}`;
               const inputCommit: string = "${{ inputs.git_commit }}";
-              // A bare SHA belongs to no branch, so GitHub's branch and PR views report it as never deployed. Pass a branch name to surface there.
               const deploymentRefInput: string = "${{ inputs.deployment_ref }}";
+              // a bare SHA belongs to no branch, so GitHub's branch/PR deployment views show it as never deployed -- pass a branch name here to fix that
               const ref: string = deploymentRefInput || inputCommit || context.sha;
               const inputBranch: string = "${{ inputs.git_branch }}";
               const branch: string = inputBranch || github.ref_name || '';
               const defaultBranch: string = context.payload.repository?.default_branch ?? '';
               const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-              // required_contexts [] or the default (every commit status) 409s on all-builds, still pending mid-run; auto_merge false or the API merges into ref.
+              // every publish to a real server registers -- there's no opt-out
               const dep = await octokit.rest.repos.createDeployment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 ref,
                 environment,
+                // the API default would try to merge the default branch into ref
                 auto_merge: false,
+                // the API default is "every commit status", and the org's all-builds status is still pending on this sha mid-run -> 409 Conflict
                 required_contexts: [],
                 transient_environment: false,
                 production_environment: defaultBranch !== '' && branch === defaultBranch,
                 description: `buildhost publish of ${project}`.slice(0, 140),
               });
               const id = (dep.data as any)?.id;
+              // a 2xx response without an id (e.g. the 202 auto-merge shape) counts as no deployment
               if (typeof id !== 'number') {
                 core.setFailed(`GitHub Deployment not created (HTTP ${dep.status}): the API returned no deployment id`);
                 return;
@@ -170,9 +174,9 @@ runs:
             const gitBranch = inputBranch.length > 0 ? inputBranch : github.ref_name;
             const gitCommit = inputCommit.length > 0 ? inputCommit : github.sha;
 
-            // `path` mode reads a local directory as-is: no download, no API call, no GITHUB_TOKEN, so the caller needs no `actions: read`.
             let sourceDir: string;
             if (inputPath.length > 0) {
+              // path mode reads a local directory as-is -- no GHA artifact download, no GitHub API call, and GITHUB_TOKEN is never read, so the caller needs no actions: read permission
               sourceDir = path.resolve(env.GITHUB_WORKSPACE || process.cwd(), inputPath);
               if (!fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory()) {
                 core.setFailed(`Binaries directory '${sourceDir}' (from the 'path' input) does not exist or is not a directory`);
@@ -184,6 +188,7 @@ runs:
               }
               core.info(`Publishing from local directory ${sourceDir} (GHA artifact download skipped)`);
             } else {
+              // the default: downloads the run's artifact_name artifact and unzips it
               sourceDir = path.join(os.tmpdir(), "buildhost-publish");
               fs.mkdirSync(sourceDir, { recursive: true });
 
@@ -217,7 +222,7 @@ runs:
             const token: string = ((await idResp.json()) as { value: string }).value;
             if (!token) { core.setFailed("Failed to obtain OIDC token"); return; }
 
-            // CHECK the advertised capability, never probe: a server without it ignores upload_sha256 and stores the empty body, poisoning the slot forever.
+            // never probe instead of checking -- a server without the capability silently ignores the parameter and would store the empty body as the artifact, permanently poisoning the slot
             let canHashRef = false;
             try {
               const infoResp = await fetch(`${server}/api/v1/server-info`);
@@ -226,12 +231,13 @@ runs:
               }
             } catch { /* capability stays off; full uploads always work */ }
 
-            // Recording the publish is part of the publish: no opt-out input, and a failure here fails it. Warn-and-continue would leave it green while the artifacts page fell behind.
+            // artifacts accumulate here as they're accepted, posted below before this step returns
             const uploadedSlots: import("${{ github.action_path }}/../lib/storage-record").PublishedArtifact[] = [];
+            // recording happens inline, with no opt-out; skipping it silently would leave the artifacts page stale while the publish stayed green
             const drainStorageRecords = async (): Promise<boolean> =>
               recordReleaseArtifacts(octokit, core, context, { server, artifacts: uploadedSlots });
 
-            // Streaming file hash (the TS action injects no `crypto` global; require is the documented route to node modules).
+            // require is the documented route to node modules -- the TS action injects no crypto global
             const crypto = require("crypto");
             const fileSHA256 = (p: string): Promise<string> => new Promise((resolve, reject) => {
               const hash = crypto.createHash("sha256");
@@ -241,7 +247,7 @@ runs:
                 .on("end", () => resolve(hash.digest("hex")));
             });
 
-            // Files named <binary>_<os>_<arch>[.exe]. <binary> may contain hyphens, so os and arch are the LAST two underscore-separated tokens.
+            // matches <binary>_<os>_<arch>[.exe]; binary is the cmd/ leaf name from go-toolchain and may contain hyphens (e.g. log-streamer-client)
             const artifactRe = /^(.+)_([a-z]+)_([a-z0-9]+)$/;
             const files = fs.readdirSync(sourceDir).filter((f) => {
               const full = path.join(sourceDir, f);
@@ -257,7 +263,7 @@ runs:
               return;
             }
 
-            // A binary named after the repo publishes flat as "<repo>"; others nest under "<repo>/<binary>", minus a redundant leading "<repo>-".
+            // a binary named exactly after the repo publishes flat as "<repo>"; every other binary nests under "<repo>/<binary>", stripping a redundant leading "<repo>-"
             const projectForBinary = (binary: string): string => {
               if (binary === project) return project;
               if (binary.startsWith(`${project}-`)) return `${project}/${binary.slice(project.length + 1)}`;
@@ -279,10 +285,11 @@ runs:
 
             const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-            // A buildhost deploy must not hard-fail a publish: its edge emits brief 5xx and connection errors mid-rollout, and an empty-body 404 is the proxy's, not the app's.
+            // a transient 5xx or an empty-body proxy 404 (unlike the app's own 404, which carries JSON) gets retried; any 4xx with a body (including a genuine "project not found") returns immediately
             const isTransient = (status: number, text: string): boolean =>
               status >= 500 || (status === 404 && text.trim() === "");
 
+            // retries a transient failure with backoff so a rolling buildhost deploy never hard-fails the publish
             const api = async (method: string, urlPath: string, body?: string | Buffer) => {
               const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
               if (typeof body === "string") headers["Content-Type"] = "application/json";
@@ -311,12 +318,13 @@ runs:
             const releaseBody = () => JSON.stringify({
               git_branch: gitBranch, git_commit: gitCommit,
               ...(version.length > 0 ? { version } : {}),
-              // Empty input sends nothing (stored setting untouched); a set value is asserted on every publish, and an older server ignores the field.
+              // empty leaves the stored setting untouched; sent only when set
               ...(inputBrewService.length > 0 ? { create_service: inputBrewService === 'true' } : {}),
+              // an older server ignores this unknown field
               ...(inputDefaultBranch.length > 0 ? { default_branch: inputDefaultBranch } : {}),
             });
 
-            // 201 new, 409 existing; null (and a failed action) on anything else.
+            // resolves a version from a create-release response (201 new, 409 existing); null and a failure on any other status
             const releaseVersionFrom = (proj: string, resp: { status: number; text: string }): string | null => {
               if (resp.status === 201) return JSON.parse(resp.text).version;
               if (resp.status === 409) {
@@ -327,12 +335,12 @@ runs:
               return null;
             };
 
-            // With hash references, byte-identical files transfer once: first slot does the full PUT, the rest name the hash. Without, the requests are unchanged.
+            // when the server supports hash references, byte-identical files (e.g. go-toolchain's cosmo slot copies) transfer once -- the first slot of each hash PUTs fully, the rest name the hash with an empty body
             const uploadAndPublish = async (proj: string, releaseVersion: string, items: { file: string; os: string; arch: string }[]) => {
               const uploadedHash = new Map<string, string>(); // sha256 -> first uploaded file
               for (const { file, os: fileOs, arch } of items) {
                 const slot = `/api/v1/projects/${proj}/releases/${releaseVersion}/artifacts/${fileOs}/${arch}?kind=binary`;
-                // Unconditional: hash-reference uploads need it only when advertised, the storage record always does.
+                // hashed unconditionally: the storage record needs it even when hash-reference uploads don't, and it's one streaming read of a file this loop is about to read anyway
                 const sum = await fileSHA256(path.join(sourceDir, file));
                 const record = () => uploadedSlots.push({ project: proj, version: releaseVersion, os: fileOs, arch, sha256: sum });
                 if (canHashRef && uploadedHash.has(sum)) {
@@ -343,7 +351,7 @@ runs:
                     continue;
                   }
                   if (ref.status === 409) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${ref.status}): ${ref.text}`); return false; }
-                  // E.g. a 404 for a blob evicted since the first slot: the bytes are right here, send them the classic way.
+                  // e.g. a 404 for a blob evicted since the first slot -- the bytes are right here, send them the classic way
                   core.warning(`Hash-reference upload ${proj} ${fileOs}/${arch} returned ${ref.status}; falling back to a full upload`);
                 }
                 const body = fs.readFileSync(path.join(sourceDir, file));
@@ -361,12 +369,15 @@ runs:
 
             const groupList = [...groups.entries()];
 
-            // SHIM, removable once every target server authorizes namespaced projects: one that predates them 404/403s here, so fall back to the flat `<repo>` layout instead of regressing a repo mid-rollout.
+            // transitional backward-compat shim -- remove once every target server authorizes namespaced projects
             const created = new Map<string, { status: number; text: string }>();
+            // single-binary repos publish flat either way and never trigger this probe
             const firstNs = groupList.find(([p]) => p.includes("/"));
             if (firstNs) {
               const [proj] = firstNs;
+              // a server that predates namespace support rejects this with 404/403
               const probe = await api("POST", `/api/v1/projects/${proj}/releases`, releaseBody());
+              // falls back so this action never regresses a repo mid-rollout
               if (probe.status === 404 || probe.status === 403) {
                 core.warning(`Server rejected namespaced project '${proj}' (HTTP ${probe.status}); falling back to the legacy flat '${project}' layout. Upgrade buildhost to enable per-binary projects.`);
                 const re = new RegExp(`^${project}_([a-z]+)_([a-z0-9]+)$`);
@@ -387,6 +398,7 @@ runs:
                 await drainStorageRecords();
                 return;
               }
+              // reused below so an up-to-date server gets no stray release
               created.set(proj, probe);
             }
 
@@ -401,10 +413,11 @@ runs:
               published.push({ proj, rv });
             }
 
-            // The release page for one project; for a fan-out, the group matching the repo-level project name, else the first.
+            // the release page, for the GitHub Deployment's live URL
             if (published.length === 1) {
               core.setOutput('deployment_url', `${server}/projects/${published[0].proj}/releases/${published[0].rv}`);
             } else if (published.length > 1) {
+              // primary is the group matching the repo-level project name, else the first group
               const primary = published.find((p) => p.proj === project) ?? published[0];
               core.setOutput('deployment_url', `${server}/projects/${primary.proj}`);
             }

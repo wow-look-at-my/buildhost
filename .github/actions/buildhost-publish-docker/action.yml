@@ -116,10 +116,11 @@ runs:
         script: |
           await (async () => {
             core.setOutput('deployment_id', '');
-            // A deployment claims the publish is live at environment_url -- false for a loopback server nothing outside the runner can reach.
             const deployServer: string = "${{ inputs.server }}";
             const deployHost: string = new URL(deployServer).hostname;
+            // this check finds a target nothing outside the runner can reach
             if (deployHost === "localhost" || deployHost === "127.0.0.1" || deployHost === "::1" || !deployServer.startsWith("https://")) {
+              // a loopback or plain-http target has nothing true to register as live
               core.info(`Skipping the GitHub Deployment: ${deployServer} is not a reachable https server, so its deployment URL would point nowhere`);
               return;
             }
@@ -130,22 +131,25 @@ runs:
               const environment: string = envInput || `buildhost/${project}`;
               const defaultBranch: string = context.payload.repository?.default_branch ?? '';
               const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-              // A bare SHA belongs to no branch, so GitHub's branch and PR views report it as never deployed. Pass a branch name to surface there.
               const deploymentRefInput: string = "${{ inputs.deployment_ref }}";
+              // a bare SHA belongs to no branch, so GitHub's branch/PR deployment views show it as never deployed -- pass a branch name here to fix that
               const ref: string = deploymentRefInput || context.sha;
-              // required_contexts [] or the default (every commit status) 409s on all-builds, still pending mid-run; auto_merge false or the API merges into ref.
+              // every publish to a real server registers -- there's no opt-out
               const dep = await octokit.rest.repos.createDeployment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 ref,
                 environment,
+                // the API default would try to merge the default branch into ref
                 auto_merge: false,
+                // the API default is "every commit status", and the org's all-builds status is still pending on this sha mid-run -> 409 Conflict
                 required_contexts: [],
                 transient_environment: false,
                 production_environment: defaultBranch !== '' && context.ref === `refs/heads/${defaultBranch}`,
                 description: `buildhost docker publish of ${project}`.slice(0, 140),
               });
               const id = (dep.data as any)?.id;
+              // a 2xx response without an id (e.g. the 202 auto-merge shape) counts as no deployment
               if (typeof id !== 'number') {
                 core.setFailed(`GitHub Deployment not created (HTTP ${dep.status}): the API returned no deployment id`);
                 return;
@@ -191,10 +195,10 @@ runs:
       uses: wow-look-at-my/actions@typescript#latest
       with:
         script: |
-          // Short ref name, mirroring GITHUB_REF_NAME: the branch for refs/heads/*, the git tag for refs/tags/*, "<pr>/merge" for pulls.
+          // mirrors GITHUB_REF_NAME: the branch for refs/heads/*, the git tag for refs/tags/*, "<pr>/merge" for pulls
           const refName: string = env.GITHUB_REF_NAME ?? context.ref.replace(/^refs\/[^/]+\//, "");
           const defaultBranch: string = context.payload.repository?.default_branch ?? "master";
-          // Docker-sanitize: "claude/foo" -> "claude-foo".
+          // docker-sanitized so the result is always a bare buildhost-bound tag, e.g. "claude/foo" -> "claude-foo", never a foreign reference
           const refTag = refName.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[.-]+/, "");
           const tags = [context.sha, refTag].filter(Boolean);
           if (context.ref === `refs/heads/${defaultBranch}`) tags.push("latest");
@@ -321,7 +325,7 @@ runs:
               const server: string = "${{ inputs.server }}";
               const projectInput: string = "${{ inputs.project }}";
               const project: string = projectInput || github.repository.split('/').pop()!;
-              // The build and every push step that RAN must have succeeded. 'skipped' is fine for a push step, but on the build it means something failed earlier.
+              // a failure before the build (refs, or buildx setup) leaves this 'skipped', which must not count as success below
               const buildOutcome: string = "${{ steps.build.outcome }}";
               const outcomes: string[] = [
                 "${{ steps.refs.outcome }}",
@@ -329,6 +333,7 @@ runs:
                 "${{ steps.push-buildhost.outcome }}",
                 "${{ steps.push-foreign.outcome }}",
               ];
+              // 'skipped' push steps are fine -- which ones ran depends on which registries the tags target
               const ok = buildOutcome === 'success' && outcomes.every((o) => o !== 'failure' && o !== 'cancelled');
               const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
               await octokit.rest.repos.createDeploymentStatus({

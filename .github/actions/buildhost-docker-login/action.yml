@@ -22,7 +22,7 @@ runs:
         script: |
           await (async () => {
             const server: string = "${{ inputs.server }}";
-            // The OCI registry lives on the `oci.` subdomain of the buildhost domain (the apex serves the API, not /v2/); the server URL itself is the OIDC audience.
+            // the OCI registry lives on the oci. subdomain -- the apex serves the API, not /v2/
             const registry = "oci." + new URL(server).host;
             const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
             const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
@@ -30,7 +30,7 @@ runs:
               core.setFailed("OIDC not available. Add 'permissions: { id-token: write }' to the job.");
               return;
             }
-            // Mint a GHA OIDC token (audience = the buildhost URL) and use it as the docker password; buildhost verifies the JWT and auto-provisions the project on first push.
+            // mints a GHA OIDC token audience-scoped to the buildhost server URL
             const resp = await fetch(`${url}&audience=${server}`, {
               headers: { Authorization: `Bearer ${bearer}` },
             });
@@ -40,6 +40,7 @@ runs:
               return;
             }
             core.setSecret(token);
+            // buildhost verifies the JWT and auto-provisions the project on first push
             await exec.exec("docker", ["login", registry, "-u", "oidc", "--password-stdin"], {
               input: Buffer.from(token),
             });
