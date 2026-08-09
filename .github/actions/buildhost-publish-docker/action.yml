@@ -252,9 +252,7 @@ runs:
         done <<< "${tags_in}"
 
         # Compression rides the exporter, not a build-push-action input, so it has to be spelled into every output form.
-        # force-compression is what reaches layers inherited from a base or a cache hit, not only newly built ones.
-        compression="compression=zstd,force-compression=true"
-        [ -n "${COMPRESSION_LEVEL}" ] && compression="${compression},compression-level=${COMPRESSION_LEVEL}"
+        compression="$(bash "${{ github.action_path }}/compression-opts.sh" "${COMPRESSION_LEVEL}")"
 
         layout="${RUNNER_TEMP}/buildhost-oci-layout"
         if [ -n "${buildhost_refs}" ]; then
