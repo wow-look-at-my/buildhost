@@ -100,6 +100,7 @@ runs:
                 core.setFailed(`invalid chunk_size '${chunkSizeInput}': expected a non-negative integer (bytes)`);
                 return;
               }
+              // chunk_size 0 disables chunking, always direct
               chunkSize = n === 0 ? -1 : n;
             }
 
@@ -124,6 +125,7 @@ runs:
             const isTransient = (status: number, text: string): boolean =>
               status >= 500 || (status === 404 && text.trim() === "");
 
+            // retries a transient failure with backoff so a rolling buildhost deploy never hard-fails the upload
             const api = async (method: string, url: string, body?: Blob, headers?: Record<string, string>) => {
               const h: Record<string, string> = headers ?? { Authorization: `Bearer ${token}` };
               const maxAttempts = 5;
@@ -223,6 +225,7 @@ runs:
                 // The chunk may have partially landed before the connection broke; ask the server how much it has and resume from there.
                 return sessionSize();
               }
+              // 409 (offset conflict / busy) carries the authoritative size
               if (status === 200 || status === 409) {
                 const body = JSON.parse(text) as { size?: number };
                 if (typeof body.size !== 'number') throw new Error(`upload chunk at ${offset}: bad response`);
@@ -239,6 +242,7 @@ runs:
               let offset = 0;
               let failures = 0;
               while (offset < size) {
+                // blob.slice() gives a cheap per-chunk view without re-reading the file
                 const newOffset = await appendChunk(offset, blob.slice(offset, Math.min(offset + chunkSize, size)));
                 if (newOffset <= offset) {
                   failures++;

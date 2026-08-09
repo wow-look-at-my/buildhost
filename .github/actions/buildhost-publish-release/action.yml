@@ -63,6 +63,7 @@ runs:
               artifacts?: { os?: string; arch?: string; sha256?: string }[];
             };
             const published = JSON.parse(text) as ReleaseBody;
+            // the publish response carries the artifacts it just made public; each becomes one storage record
             const artifacts = published.artifacts ?? [];
 
             if (artifacts.length === 0) {

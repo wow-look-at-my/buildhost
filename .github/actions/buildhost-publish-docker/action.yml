@@ -149,7 +149,9 @@ runs:
             // A deployment claims the publish is live at a reachable URL, which is false for a loopback server. Not an opt-out: see docs/github-deployments.md.
             const deployServer: string = "${{ inputs.server }}";
             const deployHost: string = new URL(deployServer).hostname;
+            // this check finds a target nothing outside the runner can reach
             if (deployHost === "localhost" || deployHost === "127.0.0.1" || deployHost === "::1" || !deployServer.startsWith("https://")) {
+              // a loopback or plain-http target has nothing true to register as live
               core.info(`Skipping the GitHub Deployment: ${deployServer} is not a reachable https server, so its deployment URL would point nowhere`);
               return;
             }
@@ -162,6 +164,7 @@ runs:
               const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
               // A bare SHA belongs to no branch, so GitHub's branch and PR deployment views report the branch as never deployed; pass a branch name to surface there.
               const deploymentRefInput: string = "${{ inputs.deployment_ref }}";
+              // a bare SHA belongs to no branch, so GitHub's branch/PR deployment views show it as never deployed -- pass a branch name here to fix that
               const ref: string = deploymentRefInput || context.sha;
               // required_contexts and auto_merge are load-bearing and their API defaults both break this (docs/github-deployments.md); a 2xx carrying no id is "no deployment".
               const dep = await octokit.rest.repos.createDeployment({
@@ -169,13 +172,16 @@ runs:
                 repo: context.repo.repo,
                 ref,
                 environment,
+                // the API default would try to merge the default branch into ref
                 auto_merge: false,
+                // the API default is "every commit status", and the org's all-builds status is still pending on this sha mid-run -> 409 Conflict
                 required_contexts: [],
                 transient_environment: false,
                 production_environment: defaultBranch !== '' && context.ref === `refs/heads/${defaultBranch}`,
                 description: `buildhost docker publish of ${project}`.slice(0, 140),
               });
               const id = (dep.data as any)?.id;
+              // a 2xx response without an id (e.g. the 202 auto-merge shape) counts as no deployment
               if (typeof id !== 'number') {
                 core.setFailed(`GitHub Deployment not created (HTTP ${dep.status}): the API returned no deployment id`);
                 return;
@@ -404,6 +410,7 @@ runs:
                 "${{ steps.push-buildhost.outcome }}",
                 "${{ steps.push-foreign.outcome }}",
               ];
+              // 'skipped' push steps are fine -- which ones ran depends on which registries the tags target
               const ok = buildOutcome === 'success' && outcomes.every((o) => o !== 'failure' && o !== 'cancelled');
               const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
               await octokit.rest.repos.createDeploymentStatus({

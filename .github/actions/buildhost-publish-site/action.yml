@@ -94,7 +94,9 @@ runs:
             // A deployment claims the publish is live at a reachable URL, which is false for a loopback server. Not an opt-out: see docs/github-deployments.md.
             const deployServer: string = "${{ inputs.server }}";
             const deployHost: string = new URL(deployServer).hostname;
+            // this check finds a target nothing outside the runner can reach
             if (deployHost === "localhost" || deployHost === "127.0.0.1" || deployHost === "::1" || !deployServer.startsWith("https://")) {
+              // a loopback or plain-http target has nothing true to register as live
               core.info(`Skipping the GitHub Deployment: ${deployServer} is not a reachable https server, so its deployment URL would point nowhere`);
               return;
             }
@@ -107,6 +109,7 @@ runs:
               const gitCommitInput: string = "${{ inputs.git_commit }}";
               // A bare SHA belongs to no branch, so GitHub's branch and PR deployment views report the branch as never deployed; pass a branch name to surface there.
               const deploymentRefInput: string = "${{ inputs.deployment_ref }}";
+              // a bare SHA belongs to no branch, so GitHub's branch/PR deployment views show it as never deployed -- pass a branch name here to fix that
               const ref: string = deploymentRefInput || gitCommitInput || context.sha;
               // PR-preview branches (pr-<n>, from the buildhost-preview reusable workflow) are transient environments: GitHub expects them to go away again.
               const transient = /^pr-\d+$/.test(branch);
@@ -118,13 +121,16 @@ runs:
                 repo: context.repo.repo,
                 ref,
                 environment,
+                // the API default would try to merge the default branch into ref
                 auto_merge: false,
+                // the API default is "every commit status", and the org's all-builds status is still pending on this sha mid-run -> 409 Conflict
                 required_contexts: [],
                 transient_environment: transient,
                 production_environment: !transient && defaultBranch !== '' && branch === defaultBranch,
                 description: `buildhost site publish of ${project} (branch ${branch})`.slice(0, 140),
               });
               const id = (dep.data as any)?.id;
+              // a 2xx response without an id (e.g. the 202 auto-merge shape) counts as no deployment
               if (typeof id !== 'number') {
                 core.setFailed(`GitHub Deployment not created (HTTP ${dep.status}): the API returned no deployment id`);
                 return;
@@ -177,6 +183,7 @@ runs:
 
             // buildhost dispatches by the first Host label, so the sites endpoint is sites.<domain>.
             const su = new URL(server);
+            // buildhost dispatches each service by the first Host label, so the sites endpoint is sites.<domain>
             const sitesBase = `${su.protocol}//sites.${su.host}`;
 
             let token: string = "${{ inputs.token }}";
@@ -215,6 +222,7 @@ runs:
               'Authorization': `Bearer ${token}`,
               'Content-Type': contentType,
               'X-Git-Commit': gitCommit,
+              // serves this site without a token, even under a private project, when true
               'X-Public-Site': isPublic,
             };
 
@@ -226,6 +234,7 @@ runs:
                 core.setFailed(`invalid chunk_size '${chunkSizeInput}': expected a non-negative integer (bytes)`);
                 return;
               }
+              // chunk_size 0 disables chunking, always direct
               chunkSize = n === 0 ? -1 : n;
             }
 
@@ -241,6 +250,7 @@ runs:
               }
             } catch { /* capability probe only; the default always works */ }
 
+            // a Blob (unlike a Buffer) streams with a correct Content-Length and can be re-read, so retried attempts are safe
             const blob = await fs.openAsBlob(archivePath);
 
             const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -249,6 +259,7 @@ runs:
             const isTransient = (status: number, text: string): boolean =>
               status >= 500 || (status === 404 && text.trim() === "");
 
+            // retries a transient failure with backoff so a rolling buildhost deploy never hard-fails the publish
             const api = async (method: string, url: string, body?: Blob, headers?: Record<string, string>) => {
               const h: Record<string, string> = headers ?? { Authorization: `Bearer ${token}` };
               const maxAttempts = 5;
@@ -281,16 +292,19 @@ runs:
                 .on("data", (chunk: Buffer) => hash.update(chunk))
                 .on("end", () => resolve(hash.digest("hex")));
             });
+            // this sha256 is needed on both paths: the chunked finalize verifies the assembled spool against it, and the storage record is keyed by it
             const sum = await fileSHA256(archivePath);
 
             // Recording is PART of publishing: same step, no opt-out input, and a failure fails it -- a warn-and-continue would leave the publish green while the artifacts page fell behind reality. The outputs come from the endpoint's own response, direct PUT or session finalize alike.
             const finishPublish = async (r: { status: number; text: string }): Promise<void> => {
               if (r.status < 200 || r.status >= 300) { core.setFailed(`HTTP ${r.status}: ${r.text}`); return; }
+              // r is the same endpoint's response either way -- the direct PUT or the session finalize
               const body = JSON.parse(r.text);
               // Never derive this -- the server owns the URL grammar and reports it. The fallback is for servers predating that field: keep it on the canonical spelling, not the /branch/ one the upload endpoint uses.
               const siteURL: string =
                 typeof body.url === 'string' && body.url !== ''
                   ? body.url
+                  // the fallback is for servers predating this field -- keep the canonical spelling, not the /branch/ one the upload endpoint uses
                   : `${sitesBase}/${project}/@${branch}/`;
               core.info(`Published site to ${siteURL}`);
               core.info(JSON.stringify(body, null, 2));
@@ -353,6 +367,7 @@ runs:
                 // The chunk may have partially landed before the connection broke; ask the server how much it has and resume from there.
                 return sessionSize();
               }
+              // 409 (offset conflict / busy) carries the authoritative size
               if (status === 200 || status === 409) {
                 const body = JSON.parse(text) as { size?: number };
                 if (typeof body.size !== 'number') throw new Error(`upload chunk at ${offset}: bad response`);
@@ -369,6 +384,7 @@ runs:
               let offset = 0;
               let failures = 0;
               while (offset < size) {
+                // blob.slice() gives a cheap per-chunk view without re-reading the file
                 const newOffset = await appendChunk(offset, blob.slice(offset, Math.min(offset + chunkSize, size)));
                 if (newOffset <= offset) {
                   failures++;

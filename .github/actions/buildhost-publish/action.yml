@@ -89,7 +89,9 @@ runs:
             // A deployment claims the publish is live at a reachable URL, which is false for a loopback server. Not an opt-out: see docs/github-deployments.md.
             const deployServer: string = "${{ inputs.server }}";
             const deployHost: string = new URL(deployServer).hostname;
+            // this check finds a target nothing outside the runner can reach
             if (deployHost === "localhost" || deployHost === "127.0.0.1" || deployHost === "::1" || !deployServer.startsWith("https://")) {
+              // a loopback or plain-http target has nothing true to register as live
               core.info(`Skipping the GitHub Deployment: ${deployServer} is not a reachable https server, so its deployment URL would point nowhere`);
               return;
             }
@@ -101,6 +103,7 @@ runs:
               const inputCommit: string = "${{ inputs.git_commit }}";
               // A bare SHA belongs to no branch, so GitHub's branch and PR deployment views report the branch as never deployed; pass a branch name to surface there.
               const deploymentRefInput: string = "${{ inputs.deployment_ref }}";
+              // a bare SHA belongs to no branch, so GitHub's branch/PR deployment views show it as never deployed -- pass a branch name here to fix that
               const ref: string = deploymentRefInput || inputCommit || context.sha;
               const inputBranch: string = "${{ inputs.git_branch }}";
               const branch: string = inputBranch || github.ref_name || '';
@@ -112,13 +115,16 @@ runs:
                 repo: context.repo.repo,
                 ref,
                 environment,
+                // the API default would try to merge the default branch into ref
                 auto_merge: false,
+                // the API default is "every commit status", and the org's all-builds status is still pending on this sha mid-run -> 409 Conflict
                 required_contexts: [],
                 transient_environment: false,
                 production_environment: defaultBranch !== '' && branch === defaultBranch,
                 description: `buildhost publish of ${project}`.slice(0, 140),
               });
               const id = (dep.data as any)?.id;
+              // a 2xx response without an id (e.g. the 202 auto-merge shape) counts as no deployment
               if (typeof id !== 'number') {
                 core.setFailed(`GitHub Deployment not created (HTTP ${dep.status}): the API returned no deployment id`);
                 return;
@@ -173,6 +179,7 @@ runs:
             // `path` mode reads a local directory as-is: no artifact download, no GitHub API call, GITHUB_TOKEN never read, so the caller needs no `actions: read`. Artifact mode (the default) downloads and unzips the run's `artifact_name`.
             let sourceDir: string;
             if (inputPath.length > 0) {
+              // path mode reads a local directory as-is -- no GHA artifact download, no GitHub API call, and GITHUB_TOKEN is never read, so the caller needs no actions: read permission
               sourceDir = path.resolve(env.GITHUB_WORKSPACE || process.cwd(), inputPath);
               if (!fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory()) {
                 core.setFailed(`Binaries directory '${sourceDir}' (from the 'path' input) does not exist or is not a directory`);
@@ -184,6 +191,7 @@ runs:
               }
               core.info(`Publishing from local directory ${sourceDir} (GHA artifact download skipped)`);
             } else {
+              // the default: downloads the run's artifact_name artifact and unzips it
               sourceDir = path.join(os.tmpdir(), "buildhost-publish");
               fs.mkdirSync(sourceDir, { recursive: true });
 
@@ -274,6 +282,7 @@ runs:
             const isTransient = (status: number, text: string): boolean =>
               status >= 500 || (status === 404 && text.trim() === "");
 
+            // retries a transient failure with backoff so a rolling buildhost deploy never hard-fails the publish
             const api = async (method: string, urlPath: string, body?: string | Buffer) => {
               const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
               if (typeof body === "string") headers["Content-Type"] = "application/json";
@@ -304,6 +313,7 @@ runs:
               ...(version.length > 0 ? { version } : {}),
               // Empty sends nothing and leaves the stored setting alone; a set value is asserted on every publish, and an older server ignores the unknown field.
               ...(inputBrewService.length > 0 ? { create_service: inputBrewService === 'true' } : {}),
+              // an older server ignores this unknown field
               ...(inputDefaultBranch.length > 0 ? { default_branch: inputDefaultBranch } : {}),
             });
 
@@ -387,6 +397,7 @@ runs:
             if (published.length === 1) {
               core.setOutput('deployment_url', `${server}/projects/${published[0].proj}/releases/${published[0].rv}`);
             } else if (published.length > 1) {
+              // primary is the group matching the repo-level project name, else the first group
               const primary = published.find((p) => p.proj === project) ?? published[0];
               core.setOutput('deployment_url', `${server}/projects/${primary.proj}`);
             }

@@ -135,6 +135,7 @@ runs:
               return;
             }
             const cli = path.join(env.RUNNER_TEMP!, "buildhost-cli");
+            // buildhost verifies the JWT and auto-provisions the project on first push
             await exec.exec(cli, ["docker-push", "--server", server, "--image", env.OCI_LAYOUT!, ...refs], {
               env: { ...process.env, BUILDHOST_TOKEN: token },
             });
