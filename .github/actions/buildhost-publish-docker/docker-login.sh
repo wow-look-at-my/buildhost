@@ -8,9 +8,9 @@
 # credential is short-lived, so "log in once at the top" is wrong anyway. Call
 # this immediately before the docker operation that needs it.
 #
-# Bash rather than `buildhost docker-login` (internal/ociclient/login.go, the
-# same flow for anyone outside a publish) because this runs before the step that
-# fetches the CLI.
+# Bash rather than a buildhost CLI subcommand because this runs before the step
+# that fetches the CLI, and because there is no supported docker-login CLI path
+# for anything outside the official buildhost actions.
 #
 # Usage: docker-login.sh <server-url>   (e.g. https://pazer.build)
 set -euo pipefail

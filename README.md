@@ -321,11 +321,10 @@ not yours:
     refs: oci.pazer.build/myproject:v1.2.3
 ```
 
-Publishing logs docker in for you. When you need the credential for something
-else -- a plain `docker push`, or pulling a published image back -- run
-`buildhost docker-login --server <url>` immediately before that command, rather
-than once at the top of the job: the OIDC token behind it is short-lived, and a
-long build outlives it.
+Publishing logs docker in for you. There is no CLI equivalent for a plain
+`docker push` or pulling a published image back outside these actions -- the
+`buildhost-publish-docker` and `buildhost-docker-push` actions are the only
+supported way to authenticate a CI Docker workflow to buildhost.
 
 ## GitHub Deployments
 
