@@ -321,10 +321,11 @@ not yours:
     refs: oci.pazer.build/myproject:v1.2.3
 ```
 
-If you only need a plain `docker push` (no large layers), `buildhost-docker-login`
-performs the OIDC `docker login` and exposes the registry host (`oci.<domain>`)
-as its `registry` output, so you can push to `<registry>/<project>:<tag>` and
-then run your own docker commands.
+Publishing logs docker in for you. When you need the credential for something
+else -- a plain `docker push`, or pulling a published image back -- run
+`buildhost docker-login --server <url>` immediately before that command, rather
+than once at the top of the job: the OIDC token behind it is short-lived, and a
+long build outlives it.
 
 ## GitHub Deployments
 
