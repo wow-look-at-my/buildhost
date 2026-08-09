@@ -321,10 +321,21 @@ not yours:
     refs: oci.pazer.build/myproject:v1.2.3
 ```
 
-Publishing logs docker in for you. There is no CLI equivalent for a plain
-`docker push` or pulling a published image back outside these actions -- the
-`buildhost-publish-docker` and `buildhost-docker-push` actions are the only
-supported way to authenticate a CI Docker workflow to buildhost.
+Publishing logs docker in for you, and so does pulling. To fetch a published
+image -- into a nested daemon, or just onto the runner -- use
+`buildhost-docker-pull`; it authenticates itself, so no workflow handles a
+registry credential:
+
+```yaml
+- uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-pull@master
+  with:
+    images: oci.pazer.build/myproject:v1.2.3
+```
+
+These actions -- `buildhost-publish-docker`, `buildhost-docker-push`, and
+`buildhost-docker-pull` -- are the only supported way to authenticate a CI
+Docker workflow to buildhost. There is no login-only action and no CLI
+equivalent.
 
 ## GitHub Deployments
 
