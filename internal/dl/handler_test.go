@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/exeformat"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -82,29 +83,23 @@ func seedArtifact(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID i
 	return a
 }
 
-func seedArtifactWithDebug(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, os, arch, content, debugContent string) *db.Artifact {
+// seedMultiPlatformArtifact stores one blob and registers it as a single
+// artifact covering every platform in the set -- the APE shape, seeded the way
+// the /artifacts/ape endpoint writes it.
+func seedMultiPlatformArtifact(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, content string, platforms ...db.Platform) *db.Artifact {
 	t.Helper()
-	a := seedArtifact(t, d, store, releaseID, os, arch, content)
-
-	debugKey, debugSize, err := store.Put(context.Background(), strings.NewReader(debugContent))
+	key, size, err := store.Put(context.Background(), strings.NewReader(content))
 	require.NoError(t, err)
 
-	require.NoError(t, d.UpdateArtifactStripped(context.Background(), a.ID, "", 0, "", debugKey, debugSize))
-	a.DebugStorageKey = debugKey
-	a.DebugSize = debugSize
-	return a
-}
-
-func seedArtifactWithStripped(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, os, arch, content, strippedContent string) *db.Artifact {
-	t.Helper()
-	a := seedArtifact(t, d, store, releaseID, os, arch, content)
-
-	strippedKey, strippedSize, err := store.Put(context.Background(), strings.NewReader(strippedContent))
-	require.NoError(t, err)
-
-	require.NoError(t, d.UpdateArtifactStripped(context.Background(), a.ID, strippedKey, strippedSize, strippedKey, "", 0))
-	a.StrippedStorageKey = strippedKey
-	a.StrippedSize = strippedSize
+	a := &db.Artifact{
+		ReleaseID:  releaseID,
+		Kind:       db.KindBinary,
+		StorageKey: key,
+		Size:       size,
+		SHA256:     key,
+		ExeFormat:  string(exeformat.APE),
+	}
+	require.NoError(t, d.CreateMultiPlatformArtifact(context.Background(), a, platforms))
 	return a
 }
 

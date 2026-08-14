@@ -40,12 +40,12 @@ type Artifact struct {
 }
 
 type ArtifactPlatform struct {
-	ArtifactID int64  `json:"artifact_id"`
-	ReleaseID  int64  `json:"release_id"`
-	Kind       string `json:"kind"`
-	OS         string `json:"os"`
-	Arch       string `json:"arch"`
-	Ordinal    int64  `json:"ordinal"`
+	ArtifactID int64 `json:"artifact_id"`
+	ReleaseID  int64 `json:"release_id"`
+	Kind       Kind  `json:"kind"`
+	OS         OS    `json:"os"`
+	Arch       Arch  `json:"arch"`
+	Ordinal    int64 `json:"ordinal"`
 }
 
 type DownloadCount struct {

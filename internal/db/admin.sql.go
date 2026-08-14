@@ -130,9 +130,9 @@ SELECT artifact_id, os, arch FROM artifact_platforms ORDER BY artifact_id, ordin
 `
 
 type ListAllArtifactPlatformsRow struct {
-	ArtifactID int64  `json:"artifact_id"`
-	OS         string `json:"os"`
-	Arch       string `json:"arch"`
+	ArtifactID int64 `json:"artifact_id"`
+	OS         OS    `json:"os"`
+	Arch       Arch  `json:"arch"`
 }
 
 func (q *Queries) ListAllArtifactPlatforms(ctx context.Context) ([]ListAllArtifactPlatformsRow, error) {

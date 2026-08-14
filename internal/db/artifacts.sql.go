@@ -95,9 +95,9 @@ ORDER BY a.id
 `
 
 type GetArtifactByReleaseOSArchParams struct {
-	ReleaseID int64  `json:"release_id"`
-	OS        string `json:"os"`
-	Arch      string `json:"arch"`
+	ReleaseID int64 `json:"release_id"`
+	OS        OS    `json:"os"`
+	Arch      Arch  `json:"arch"`
 }
 
 // Resolution goes through artifact_platforms, which holds every slot an
@@ -196,12 +196,12 @@ VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type InsertArtifactPlatformParams struct {
-	ArtifactID int64  `json:"artifact_id"`
-	ReleaseID  int64  `json:"release_id"`
-	Kind       string `json:"kind"`
-	OS         string `json:"os"`
-	Arch       string `json:"arch"`
-	Ordinal    int64  `json:"ordinal"`
+	ArtifactID int64 `json:"artifact_id"`
+	ReleaseID  int64 `json:"release_id"`
+	Kind       Kind  `json:"kind"`
+	OS         OS    `json:"os"`
+	Arch       Arch  `json:"arch"`
+	Ordinal    int64 `json:"ordinal"`
 }
 
 func (q *Queries) InsertArtifactPlatform(ctx context.Context, arg InsertArtifactPlatformParams) error {
@@ -221,8 +221,8 @@ SELECT os, arch FROM artifact_platforms WHERE artifact_id = ? ORDER BY ordinal
 `
 
 type ListArtifactPlatformsByArtifactRow struct {
-	OS   string `json:"os"`
-	Arch string `json:"arch"`
+	OS   OS   `json:"os"`
+	Arch Arch `json:"arch"`
 }
 
 func (q *Queries) ListArtifactPlatformsByArtifact(ctx context.Context, artifactID int64) ([]ListArtifactPlatformsByArtifactRow, error) {
@@ -254,9 +254,9 @@ WHERE release_id = ? ORDER BY artifact_id, ordinal
 `
 
 type ListArtifactPlatformsByReleaseRow struct {
-	ArtifactID int64  `json:"artifact_id"`
-	OS         string `json:"os"`
-	Arch       string `json:"arch"`
+	ArtifactID int64 `json:"artifact_id"`
+	OS         OS    `json:"os"`
+	Arch       Arch  `json:"arch"`
 }
 
 func (q *Queries) ListArtifactPlatformsByRelease(ctx context.Context, releaseID int64) ([]ListArtifactPlatformsByReleaseRow, error) {
