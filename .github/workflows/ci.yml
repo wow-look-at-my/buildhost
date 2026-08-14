@@ -684,6 +684,108 @@ jobs:
   # must resolve to a published release -- it used to stay unpublished
   # forever (invisible to latest/branch/brew/apt/npm/web, eventually GC'd by
   # retention as an abandoned upload, with no CLI way to publish it later).
+  # One APE, published once, must download identically for every platform it
+  # covers -- through the real binary, over real HTTP, from the real dl
+  # redirect. A unit test cannot catch a redirect that resolves per platform
+  # instead of per artifact, which is exactly how one file grows N URLs again.
+  multi-platform-ape-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      BUILDHOST_LISTEN_ADDR: 127.0.0.1:18081
+      BUILDHOST_BASE_URL: http://localhost:18081
+    steps:
+      - uses: actions/checkout@v4
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build
+          path: build/
+      - run: chmod +x build/buildhost_linux_amd64
+      - name: Start local buildhost
+        shell: bash
+        env:
+          BUILDHOST_DATA_DIR: ${{ runner.temp }}/ape-data
+          BUILDHOST_DB_PATH: ${{ runner.temp }}/ape-data/buildhost.db
+          BUILDHOST_ADMIN_LISTEN_ADDR: ""
+        run: |
+          set -euo pipefail
+          TOKEN="$(./build/buildhost_linux_amd64 bootstrap --name ci)"
+          echo "::add-mask::$TOKEN"
+          echo "BUILDHOST_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          ./build/buildhost_linux_amd64 serve > "$RUNNER_TEMP/ape.log" 2>&1 &
+          for _ in {1..60}; do
+            if curl -fsS "$BUILDHOST_BASE_URL/healthz" >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/ape.log"
+          exit 1
+      - name: Publish one APE covering three platforms
+        shell: bash
+        run: |
+          set -euo pipefail
+          # MZqFpD is the magic every Actually Portable Executable opens with;
+          # the server refuses a multi-platform claim without it.
+          { printf 'MZqFpD'; head -c 4096 /dev/urandom; } > "$RUNNER_TEMP/ape.bin"
+          { printf '\177ELF'; head -c 4096 /dev/urandom; } > "$RUNNER_TEMP/plain.bin"
+          curl -fsS -X POST "$BUILDHOST_BASE_URL/api/v1/projects" \
+            -H "Authorization: Bearer $BUILDHOST_TOKEN" -H 'Content-Type: application/json' \
+            -d '{"name":"ape-e2e","versioning":"auto"}' >/dev/null
+          VERSION="$(curl -fsS -X POST "$BUILDHOST_BASE_URL/api/v1/projects/ape-e2e/releases" \
+            -H "Authorization: Bearer $BUILDHOST_TOKEN" -H 'Content-Type: application/json' \
+            -d '{"git_branch":"master"}' | jq -r .version)"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          curl -fsS -X PUT --data-binary "@$RUNNER_TEMP/ape.bin" \
+            -H "Authorization: Bearer $BUILDHOST_TOKEN" -H 'X-Artifact-Filename: ape-e2e' \
+            "$BUILDHOST_BASE_URL/api/v1/projects/ape-e2e/releases/$VERSION/artifacts/ape?platforms=linux/amd64,darwin/arm64,windows/amd64" \
+            -o "$RUNNER_TEMP/artifact.json"
+          jq -e '.platforms | length == 3' "$RUNNER_TEMP/artifact.json"
+          jq -e '.exe_format == "ape"' "$RUNNER_TEMP/artifact.json"
+          curl -fsS -X POST "$BUILDHOST_BASE_URL/api/v1/projects/ape-e2e/releases/$VERSION/publish" \
+            -H "Authorization: Bearer $BUILDHOST_TOKEN" -H 'Content-Type: application/json' -d '{}' >/dev/null
+      - name: One artifact row, one link, one URL, one digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(curl -fsS "$BUILDHOST_BASE_URL/api/v1/projects/ape-e2e/releases/$VERSION" | jq '.artifacts | length')" = "1"
+          want="$(sha256sum "$RUNNER_TEMP/ape.bin" | awk '{print $1}')"
+          first=""
+          for spec in linux/amd64 darwin/arm64 windows/amd64 macOS/aarch64; do
+            os="${spec%%/*}"; arch="${spec##*/}"
+            loc="$(curl -fsS -o /dev/null -w '%{redirect_url}' \
+              "http://dl.localhost:18081/ape-e2e?os=$os&arch=$arch&v=$VERSION")"
+            test -n "$loc"
+            if [ -z "$first" ]; then first="$loc"; else
+              test "$loc" = "$first" || { echo "$spec redirected to $loc, want $first"; exit 1; }
+            fi
+            got="$(curl -fsSL "$loc" | sha256sum | awk '{print $1}')"
+            test "$got" = "$want" || { echo "$spec served $got, want $want"; exit 1; }
+          done
+          echo "all platforms -> $first"
+      - name: The release page shows one link with an APE badge
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS "$BUILDHOST_BASE_URL/projects/ape-e2e/releases/$VERSION" > "$RUNNER_TEMP/release.html"
+          grep -q 'badge badge-format' "$RUNNER_TEMP/release.html"
+          grep -q 'APE: ' "$RUNNER_TEMP/release.html"
+          grep -q 'linux/amd64, darwin/arm64, windows/amd64' "$RUNNER_TEMP/release.html"
+          test "$(grep -c '>raw</a>' "$RUNNER_TEMP/release.html")" = "1"
+      - name: A non-APE multi-platform claim is rejected
+        shell: bash
+        run: |
+          set -euo pipefail
+          V2="$(curl -fsS -X POST "$BUILDHOST_BASE_URL/api/v1/projects/ape-e2e/releases" \
+            -H "Authorization: Bearer $BUILDHOST_TOKEN" -H 'Content-Type: application/json' \
+            -d '{"git_branch":"master"}' | jq -r .version)"
+          code="$(curl -sS -o "$RUNNER_TEMP/reject.json" -w '%{http_code}' -X PUT \
+            --data-binary "@$RUNNER_TEMP/plain.bin" -H "Authorization: Bearer $BUILDHOST_TOKEN" \
+            "$BUILDHOST_BASE_URL/api/v1/projects/ape-e2e/releases/$V2/artifacts/ape?platforms=linux/amd64,darwin/arm64")"
+          test "$code" = "400" || { echo "want 400, got $code"; cat "$RUNNER_TEMP/reject.json"; exit 1; }
+          test "$(curl -fsS -H "Authorization: Bearer $BUILDHOST_TOKEN" \
+            "$BUILDHOST_BASE_URL/api/v1/projects/ape-e2e/releases/$V2" | jq '.artifacts | length')" = "0"
+
   upload-artifact-action-e2e:
     needs: build
     runs-on: ubuntu-latest

@@ -159,3 +159,13 @@ closed -- no `latest` -- on `main`-defaulted repos). Feature-branch pushes
 therefore never move the mutable `:latest` pointer -- the OCI-tag analogue of the
 apex-`latest` no-hijack rule. An explicitly passed `tags` input skips the compute
 step entirely (byte-identical to the previous behavior).
+
+## One artifact covering several platforms
+
+Fan-out answers "N builds that share bytes". The other question -- "ONE file
+that runs on several platforms", an APE -- is answered by `PUT
+.../artifacts/ape?platforms=linux/amd64,darwin/arm64,windows/amd64`, which
+stores ONE artifact row occupying every named slot: one download link, not N.
+The same `kind`, `X-Artifact-Filename`, `upload_session` and `upload_sha256`
+mechanics apply. A multi-platform declaration whose file carries no APE magic is
+rejected. Depth: `docs/multi-platform-artifacts.md`.

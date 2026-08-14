@@ -240,16 +240,64 @@ runs:
 
             // matches <binary>_<os>_<arch>[.exe]; binary is the cmd/ leaf name from go-toolchain and may contain hyphens (e.g. log-streamer-client)
             const artifactRe = /^(.+)_([a-z]+)_([a-z0-9]+)$/;
+
+            // A build that emits ONE file running on several platforms cannot say so in a filename, so it declares the set here and buildhost stores one artifact with one download link
+            type PortableEntry = { file: string; filename: string; kind: string; platforms: string[] };
+            const manifestName = "buildhost-artifacts.json";
+            const readPortableManifest = (): PortableEntry[] | null => {
+              const manifestPath = path.join(sourceDir, manifestName);
+              if (!fs.existsSync(manifestPath)) return [];
+              let doc: any;
+              try {
+                doc = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+              } catch (e) {
+                core.setFailed(`${manifestName}: not valid JSON: ${e instanceof Error ? e.message : String(e)}`);
+                return null;
+              }
+              if (doc?.schema !== 1) {
+                core.setFailed(`${manifestName}: unsupported schema ${JSON.stringify(doc?.schema)}, want 1`);
+                return null;
+              }
+              if (!Array.isArray(doc.artifacts)) {
+                core.setFailed(`${manifestName}: "artifacts" must be an array`);
+                return null;
+              }
+              const out: PortableEntry[] = [];
+              for (const raw of doc.artifacts) {
+                const file = String(raw?.file ?? "");
+                if (!file || file.includes("..") || path.isAbsolute(file)) {
+                  core.setFailed(`${manifestName}: bad "file" ${JSON.stringify(raw?.file)}`);
+                  return null;
+                }
+                if (!fs.existsSync(path.join(sourceDir, file))) {
+                  core.setFailed(`${manifestName}: "${file}" does not exist in ${sourceDir}`);
+                  return null;
+                }
+                const platforms = raw?.platforms;
+                if (!Array.isArray(platforms) || platforms.length === 0 || platforms.some((p: any) => typeof p !== "string" || !p.includes("/"))) {
+                  core.setFailed(`${manifestName}: "${file}" needs a non-empty "platforms" array of "os/arch" strings`);
+                  return null;
+                }
+                out.push({ file, filename: String(raw?.filename ?? path.basename(file)), kind: String(raw?.kind ?? "binary"), platforms });
+              }
+              return out;
+            };
+
+            const portable = readPortableManifest();
+            if (portable === null) return;
+            const portableFiles = new Set(portable.map((p) => p.file));
+
             const files = fs.readdirSync(sourceDir).filter((f) => {
               const full = path.join(sourceDir, f);
               if (fs.lstatSync(full).isSymbolicLink()) return false;
               if (!fs.statSync(full).isFile()) return false;
-              if (f === "checksums.txt" || f.endsWith(".zip")) return false;
+              if (f === "checksums.txt" || f === manifestName || f.endsWith(".zip")) return false;
+              if (portableFiles.has(f)) return false;
               return artifactRe.test(f.replace(/\.exe$/, ""));
             });
 
-            if (files.length === 0) {
-              core.setFailed(`No matrix artifacts matching '<binary>_{os}_{arch}' found`);
+            if (files.length === 0 && portable.length === 0) {
+              core.setFailed(`No matrix artifacts matching '<binary>_{os}_{arch}' found, and no ${manifestName}`);
               core.info(`Files: ${fs.readdirSync(sourceDir).join(", ")}`);
               return;
             }
@@ -263,16 +311,29 @@ runs:
 
             // Group artifacts by destination project.
             type Item = { file: string; os: string; arch: string };
-            const groups = new Map<string, Item[]>();
+            type Group = { slots: Item[]; portable: PortableEntry[] };
+            const groups = new Map<string, Group>();
+            const groupFor = (proj: string): Group => {
+              const g = groups.get(proj) ?? { slots: [], portable: [] };
+              groups.set(proj, g);
+              return g;
+            };
             for (const file of files) {
               const m = file.replace(/\.exe$/, "").match(artifactRe)!;
               const [, binary, fileOs, arch] = m;
-              const proj = projectForBinary(binary);
-              const list = groups.get(proj) ?? [];
-              list.push({ file, os: fileOs, arch });
-              groups.set(proj, list);
+              groupFor(projectForBinary(binary)).slots.push({ file, os: fileOs, arch });
             }
-            core.info(`Found ${files.length} artifact(s) across ${groups.size} project(s): ${[...groups.keys()].join(", ")}`);
+            // the binary name is the served filename when the manifest gave one, else the file's own name with a trailing _<os>_<arch> stripped
+            const binaryForPortable = (entry: PortableEntry): string => {
+              const base = path.basename(entry.file).replace(/\.exe$/, "");
+              if (entry.filename !== path.basename(entry.file)) return entry.filename;
+              const m = base.match(artifactRe);
+              return m ? m[1] : base;
+            };
+            for (const entry of portable) {
+              groupFor(projectForBinary(binaryForPortable(entry))).portable.push(entry);
+            }
+            core.info(`Found ${files.length} per-platform artifact(s) and ${portable.length} portable artifact(s) across ${groups.size} project(s): ${[...groups.keys()].join(", ")}`);
 
             const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -306,6 +367,16 @@ runs:
               return { status: 0, text: "unreachable" };
             };
 
+            // the ape endpoint names the served file in a header, so the download is not called <binary>_cosmo_fat
+            const apiWithFilename = async (method: string, urlPath: string, body: Buffer, filename: string) => {
+              const resp = await fetch(`${server}${urlPath}`, {
+                method,
+                headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/octet-stream", "X-Artifact-Filename": filename },
+                body,
+              });
+              return { status: resp.status, text: await resp.text() };
+            };
+
             const releaseBody = () => JSON.stringify({
               git_branch: gitBranch, git_commit: gitCommit,
               ...(version.length > 0 ? { version } : {}),
@@ -327,9 +398,24 @@ runs:
             };
 
             // identical bytes under several slot names is the NORMAL case -- a cosmo build emits one APE named for every platform -- so slots group by content and each group transfers once
-            const uploadAndPublish = async (proj: string, releaseVersion: string, items: { file: string; os: string; arch: string }[]) => {
+            const uploadAndPublish = async (proj: string, releaseVersion: string, group: Group) => {
+              const items = group.slots;
               const slotURL = (os: string, arch: string) =>
                 `/api/v1/projects/${proj}/releases/${releaseVersion}/artifacts/${os}/${arch}?kind=binary`;
+
+              // one file that runs on several platforms: ONE artifact carrying the whole set, so consumers see one download link instead of one per platform
+              for (const entry of group.portable) {
+                const full = path.join(sourceDir, entry.file);
+                const sum = await fileSHA256(full);
+                const url = `/api/v1/projects/${proj}/releases/${releaseVersion}/artifacts/ape?platforms=${entry.platforms.join(",")}&kind=${entry.kind}`;
+                const r = await apiWithFilename("PUT", url, fs.readFileSync(full), entry.filename);
+                if (r.status !== 201) { core.setFailed(`Upload ${proj} ${entry.file} [${entry.platforms.join(", ")}] failed (${r.status}): ${r.text}`); return false; }
+                for (const platform of entry.platforms) {
+                  const [platformOS, platformArch] = platform.split("/");
+                  uploadedSlots.push({ project: proj, version: releaseVersion, os: platformOS, arch: platformArch, sha256: sum });
+                }
+                core.info(`Uploaded ${proj} ${entry.file} as one artifact covering ${entry.platforms.join(", ")}`);
+              }
 
               // hashed unconditionally: the storage record needs it for every slot, and it's one streaming read of a file this loop is about to read anyway
               const byContent = new Map<string, { file: string; os: string; arch: string }[]>();
@@ -375,7 +461,7 @@ runs:
               }
               const pub = await api("POST", `/api/v1/projects/${proj}/releases/${releaseVersion}/publish`);
               if (pub.status !== 200) { core.setFailed(`Publish ${proj} failed (${pub.status}): ${pub.text}`); return false; }
-              core.info(`Published ${proj}/${releaseVersion} (${items.length} artifacts) to ${server}`);
+              core.info(`Published ${proj}/${releaseVersion} (${items.length + group.portable.length} artifacts) to ${server}`);
               return true;
             };
 
@@ -383,11 +469,11 @@ runs:
 
             // publish each <repo>/<binary> project independently
             const published: { proj: string; rv: string }[] = [];
-            for (const [proj, items] of groupList) {
+            for (const [proj, group] of groupList) {
               const rv = releaseVersionFrom(proj, await api("POST", `/api/v1/projects/${proj}/releases`, releaseBody()));
               if (rv === null) return;
               core.info(`Release: ${proj}/${rv}`);
-              if (!(await uploadAndPublish(proj, rv, items))) return;
+              if (!(await uploadAndPublish(proj, rv, group))) return;
               published.push({ proj, rv });
             }
 

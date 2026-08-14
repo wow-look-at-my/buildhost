@@ -54,3 +54,12 @@ All artifact downloads go through `static.{domain}/file?project=&v=&os=&arch=&fm
 immutable cache headers. Format handlers (dl, apt, brew, npm) redirect to static
 after resolving version/branch. `v=latest` returns 400 (callers must resolve
 first). Repackage formats self-register via `Fmt` interface.
+
+## Multi-platform artifacts
+
+Artifact lookup resolves through `artifact_platforms`, so a platform covered by
+a single multi-platform artifact (one APE) resolves to that artifact and serves
+its blob. The ETag is derived from the artifact's storage key, so every covered
+platform shares one ETag; `/dl` additionally folds covered platforms to the
+artifact's canonical os/arch, so they share one URL too. Depth:
+`docs/multi-platform-artifacts.md`.

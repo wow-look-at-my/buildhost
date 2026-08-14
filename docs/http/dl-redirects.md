@@ -22,3 +22,12 @@ Platform-name aliases in `os`/`arch` (GitHub Actions' RUNNER_OS
 `x86_64`/`aarch64`, ...) are folded to canonical via
 `db.NormalizeOS`/`db.NormalizeArch` before redirecting, so callers can pass
 platform names through verbatim.
+
+## Canonical platform fold
+
+A request for a platform covered by a single multi-platform artifact (one APE
+covering linux/darwin/windows) is redirected with the artifact's CANONICAL
+os/arch, not the requested pair, so every covered platform shares one static
+URL, one digest and one ETag instead of producing one CDN object per platform.
+A pair no artifact covers is left untouched and static answers the 404. Depth:
+`docs/multi-platform-artifacts.md`.

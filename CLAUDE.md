@@ -107,6 +107,10 @@ separately if any tracked file is gitignored build output. Depth:
 - Multi-platform fan-out happens at upload time, never at download time: one blob
   -> N ordinary per-platform rows. No stored `os=any`, no download-time fallback.
   Depth: `docs/uploads.md`.
+- ONE file that runs on several platforms (an APE) is ONE artifact row, not N:
+  `PUT .../artifacts/ape?platforms=os/arch,...`. `artifact_platforms` holds the
+  slots, every covered platform folds to one static URL, and a multi-platform
+  claim without APE magic is rejected. Depth: `docs/multi-platform-artifacts.md`.
 - Every download goes through `static.{domain}/file` -- one CDN-cacheable endpoint
   with sorted params, strong ETags and immutable headers. `v=latest` returns 400.
 - Storage is content-addressed (SHA-256), zstd-compressed and deduplicated;
@@ -176,7 +180,7 @@ seldom-triggered action break in a consumer repo.
 Several end-to-end jobs in `ci.yml` are NOT part of
 it and guard defects unit tests structurally cannot catch (`synthesized-image-e2e`,
 `homebrew-tap-e2e`, `container-healthcheck`, `apt-install-e2e`,
-`upload-artifact-action-e2e`). Depth: `docs/testing.md`.
+`upload-artifact-action-e2e`, `multi-platform-ape-e2e`). Depth: `docs/testing.md`.
 
 ## Security
 
