@@ -72,7 +72,17 @@ jobs:
       # cache version from the path, so a mismatched path is a guaranteed miss
       # even for an identical key.
       - if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        run: chmod +x build/buildhost_linux_amd64 && ./build/buildhost_linux_amd64 routes > base-routes.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x build/buildhost_linux_amd64
+          ./build/buildhost_linux_amd64 routes > base-routes.txt
+          # Never cache an empty list: every later PR would restore it and
+          # report its whole route table as added.
+          if [ ! -s base-routes.txt ]; then
+            echo "::error::route render produced no output; refusing to cache an empty base list"
+            exit 1
+          fi
       - if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         uses: actions/cache/save@v4
         with:
@@ -99,8 +109,45 @@ jobs:
         with:
           name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64 && echo "routes=$(./build/buildhost_linux_amd64 routes | base64 -w0)" >> "$GITHUB_OUTPUT"
-        id: routes
+      # render-routes: run the binary and REFUSE an empty or failed result.
+      # A silently empty render reports every route as added, which is worse
+      # than no check at all -- a reviewer who is misled once stops reading it.
+      - name: Define the route renderer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/render-routes.sh" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          bin="$1"; out="$2"; label="$3"
+          if ! "$bin" routes > "$out"; then
+            echo "::error::$label route render FAILED: '$bin routes' exited non-zero"
+            exit 1
+          fi
+          if [ ! -s "$out" ]; then
+            echo "::error::$label route render produced NO OUTPUT. Refusing to diff:"
+            echo "::error::an empty $label makes every route look added or removed."
+            exit 1
+          fi
+          echo "$label routes: $(wc -l < "$out") total, $(grep -c '^/api/v1' "$out" || true) under /api/v1"
+          SH
+          chmod +x "$RUNNER_TEMP/render-routes.sh"
+      - id: routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x build/buildhost_linux_amd64
+          "$RUNNER_TEMP/render-routes.sh" ./build/buildhost_linux_amd64 pr-routes.txt "PR"
+          # The shipped binary must enumerate its own REST API. Zero here means
+          # routes regressed to registering inside auth.OnReady(), which fires
+          # only at server boot -- invisible to this check, to docs/routes.txt
+          # and to `buildhost routes`. See internal/routescheck.
+          if ! grep -q '^/api/v1' pr-routes.txt; then
+            echo "::error::PR route render contains no /api/v1 routes."
+            echo "::error::Routes must register in init(), never inside auth.OnReady()."
+            exit 1
+          fi
+          echo "routes=$(base64 -w0 pr-routes.txt)" >> "$GITHUB_OUTPUT"
       # The committed route table is what makes a route change reviewable: this
       # repo has no central router file, so without it an added, removed or
       # duplicated endpoint leaves nothing route-shaped in Files Changed. The
@@ -114,9 +161,8 @@ jobs:
       - shell: bash
         run: |
           set -euo pipefail
-          ./build/buildhost_linux_amd64 routes > /tmp/actual-routes.txt
           if ! diff -u --label "docs/routes.txt (committed)" --label "buildhost routes (built binary)" \
-              src/docs/routes.txt /tmp/actual-routes.txt; then
+              src/docs/routes.txt pr-routes.txt; then
             echo
             echo "docs/routes.txt is stale. Regenerate it and commit the result:"
             echo "    go-toolchain && ./build/buildhost routes > docs/routes.txt"
@@ -167,14 +213,27 @@ jobs:
           if [ -x scripts/build-admin-frontend.sh ]; then ./scripts/build-admin-frontend.sh; fi
           go build -o build/buildhost_linux_amd64 ./cmd/buildhost
       - if: steps.cache.outputs.cache-hit != 'true'
-        run: chmod +x base/build/buildhost_linux_amd64 && ./base/build/buildhost_linux_amd64 routes > base-routes.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x base/build/buildhost_linux_amd64
+          "$RUNNER_TEMP/render-routes.sh" ./base/build/buildhost_linux_amd64 base-routes.txt "base"
       - if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: base-routes.txt
           key: route-list-${{ steps.base.outputs.sha }}
       - id: baseroutes
-        run: echo "routes=$(base64 -w0 base-routes.txt)" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -s base-routes.txt ]; then
+            echo "::error::base route list is empty or missing (cache hit: ${{ steps.cache.outputs.cache-hit }})."
+            echo "::error::Refusing to diff -- an empty base reports every route as added."
+            exit 1
+          fi
+          echo "base routes: $(wc -l < base-routes.txt) total, $(grep -c '^/api/v1' base-routes.txt || true) under /api/v1"
+          echo "routes=$(base64 -w0 base-routes.txt)" >> "$GITHUB_OUTPUT"
       - uses: wow-look-at-my/actions@typescript#latest
         with:
           steps: ${{ toJSON(steps) }}
