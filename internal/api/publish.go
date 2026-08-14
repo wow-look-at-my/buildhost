@@ -11,10 +11,8 @@ import (
 )
 
 func init() {
-	auth.OnReady(func() {
-		auth.HandlePrimary("POST /api/v1/projects/{project}/releases/{version}/publish",
-			parseRoute, handler.PublishRelease)
-	})
+	auth.HandlePrimary("POST /api/v1/projects/{project}/releases/{version}/publish",
+		parseRoute, handler.PublishRelease)
 }
 
 func (h *Handler) PublishRelease(w http.ResponseWriter, r *http.Request) {

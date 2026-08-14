@@ -54,6 +54,25 @@ func TestAllRoutesRegisteredWithoutInit(t *testing.T) {
 		"sites.{domain}/{project}/branch/{branch}",
 		"static.{domain}/file",
 		"oci.{domain}/v2/",
+
+		// The REST API, which registered entirely inside OnReady until this
+		// list started covering it -- so every /api/v1 route was missing from
+		// `buildhost routes` and from the route-diff check, and a reviewer had
+		// no way to see an endpoint being added.
+		"/api/v1/projects",
+		"/api/v1/projects/{project}",
+		"/api/v1/projects/{project}/releases",
+		"/api/v1/projects/{project}/releases/{version}",
+		"/api/v1/projects/{project}/releases/{version}/publish",
+		"/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}",
+		"/api/v1/projects/{project}/releases/{version}/artifacts/ape",
+		"/api/v1/projects/{project}/download-links",
+		"/api/v1/server-info",
+		"/api/v1/tokens",
+		"/api/v1/oidc/policies",
+		"/api/v1/webhooks/github",
+		"/api/v1/uploads",
+		"/api/v1/uploads/{id}",
 	}
 	for _, w := range want {
 		assert.Contains(t, patterns, w,

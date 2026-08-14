@@ -12,10 +12,8 @@ import (
 )
 
 func init() {
-	auth.OnReady(func() {
-		auth.HandlePrimary("PUT /api/v1/projects/{project}/releases/{version}/artifacts/ape",
-			parseRoute, handler.UploadMultiPlatformArtifact)
-	})
+	auth.HandlePrimary("PUT /api/v1/projects/{project}/releases/{version}/artifacts/ape",
+		parseRoute, handler.UploadMultiPlatformArtifact)
 }
 
 // UploadMultiPlatformArtifact publishes ONE file that runs on several platforms

@@ -101,6 +101,28 @@ jobs:
           path: build/
       - run: chmod +x build/buildhost_linux_amd64 && echo "routes=$(./build/buildhost_linux_amd64 routes | base64 -w0)" >> "$GITHUB_OUTPUT"
         id: routes
+      # The committed route table is what makes a route change reviewable: this
+      # repo has no central router file, so without it an added, removed or
+      # duplicated endpoint leaves nothing route-shaped in Files Changed. The
+      # Go test in internal/routescheck already fails on drift; this step
+      # re-checks the golden against the REAL BINARY's output, so the file can
+      # never describe routes the shipped program does not serve.
+      - name: docs/routes.txt matches the built binary
+        uses: actions/checkout@v4
+        with:
+          path: src
+      - shell: bash
+        run: |
+          set -euo pipefail
+          ./build/buildhost_linux_amd64 routes > /tmp/actual-routes.txt
+          if ! diff -u --label "docs/routes.txt (committed)" --label "buildhost routes (built binary)" \
+              src/docs/routes.txt /tmp/actual-routes.txt; then
+            echo
+            echo "docs/routes.txt is stale. Regenerate it and commit the result:"
+            echo "    go-toolchain && ./build/buildhost routes > docs/routes.txt"
+            echo "  (or, without a built binary:  UPDATE_ROUTES_GOLDEN=1 go-toolchain)"
+            exit 1
+          fi
       # Base routes: prefer the route list the default-branch build cached
       # (keyed by the base commit SHA). Build base from source only on a cold
       # cache -- without a real baseline the diff reports every route as added.

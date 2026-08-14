@@ -61,6 +61,10 @@ separately if any tracked file is gitignored build output. Depth:
   `docs/sites.md`, `docs/site-archives.md`.
 - `internal/llms/` -- public `/llms.txt` guide, on the apex and every service
   subdomain. Depth: `docs/http/routing-and-auth.md`.
+- `docs/routes.txt` -- the committed route table, rendered BY the program. Routes
+  must register in `init()`, never inside `auth.OnReady()` (which fires only at
+  server boot, hiding them from every enumeration). Both gates fail on drift.
+  Depth: `docs/testing.md`.
 - `internal/web/` -- public, read-only, no-JavaScript browse frontend on the main
   domain. Depth: `docs/http/routing-and-auth.md`.
 - `internal/auth/` -- token auth, OIDC verification, the centralized
