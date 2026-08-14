@@ -143,6 +143,9 @@ func deleteReleaseRows(ctx context.Context, q *Queries, releaseID int64) error {
 	if err := q.DeleteReleaseOCITags(ctx, releaseID); err != nil {
 		return fmt.Errorf("delete oci tags: %w", err)
 	}
+	if err := q.DeleteReleaseArtifactPlatforms(ctx, releaseID); err != nil {
+		return fmt.Errorf("delete artifact platforms: %w", err)
+	}
 	if err := q.DeleteReleaseArtifacts(ctx, releaseID); err != nil {
 		return fmt.Errorf("delete artifacts: %w", err)
 	}

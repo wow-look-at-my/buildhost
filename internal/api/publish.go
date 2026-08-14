@@ -39,7 +39,7 @@ func (h *Handler) PublishRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	artifacts, err := h.DB.ListArtifacts(ctx, release.ID)
+	artifacts, err := h.DB.ListArtifactsWithPlatforms(ctx, release.ID)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "list artifacts failed")
@@ -77,5 +77,5 @@ func (h *Handler) PublishRelease(w http.ResponseWriter, r *http.Request) {
 // field at the top level, so older clients are unaffected either way.
 type publishedRelease struct {
 	db.Release
-	Artifacts []db.Artifact `json:"artifacts"`
+	Artifacts []db.ArtifactWithPlatforms `json:"artifacts"`
 }

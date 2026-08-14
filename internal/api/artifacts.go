@@ -19,6 +19,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/exeformat"
 	"github.com/wow-look-at-my/buildhost/internal/uploads"
 )
 
@@ -172,13 +173,7 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kind := r.URL.Query().Get("kind")
-	if kind == "" {
-		kind = r.Header.Get("X-Artifact-Kind")
-	}
-	if kind == "" {
-		kind = "binary"
-	}
+	kind := artifactKind(r)
 	if !db.ValidKind(kind) {
 		jsonError(w, http.StatusBadRequest, "invalid kind")
 		return
@@ -229,42 +224,11 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var storageKey, sha256hex string
-	var size int64
-	if refHex, ok := hashRefRequest(r); ok {
-		// Hash-reference upload: register row(s) for a blob this project
-		// already has in storage instead of re-sending the bytes. This is how
-		// one uploaded binary covers an exact set of platform slots the
-		// cartesian {os}/{arch} grammar cannot express (and how byte-identical
-		// re-releases skip the transfer entirely). Everything after this block
-		// -- fan-out combinations, row creation, conflict semantics, responses
-		// -- is shared with a full upload.
-		storageKey, size, ok = h.resolveHashRef(ctx, w, project.ID, refHex)
-		if !ok {
-			return
-		}
-		sha256hex = storageKey
-	} else {
-		r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
-
-		hasher := sha256.New()
-		body := io.TeeReader(r.Body, hasher)
-
-		// The body is streamed to content-addressed storage exactly once no matter
-		// how many combinations it fans out to; every artifact row references the
-		// same blob (storage dedup makes the fan-out cost rows, not bytes).
-		var err error
-		storageKey, size, err = h.Store.Put(ctx, body)
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "store failed")
-			jsonError(w, http.StatusInternalServerError, "failed to store artifact")
-			return
-		}
-
-		sha256hex = hex.EncodeToString(hasher.Sum(nil))
+	stored, ok := h.storeUpload(ctx, w, r, project.ID)
+	if !ok {
+		return
 	}
-	span.SetAttributes(attribute.Int64("artifact.size", size))
+	span.SetAttributes(attribute.Int64("artifact.size", stored.size))
 
 	filename := sanitizeFilename(r.Header.Get("X-Artifact-Filename"))
 
@@ -276,10 +240,11 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 				OS:         osName,
 				Arch:       arch,
 				Kind:       db.Kind(kind),
-				StorageKey: storageKey,
-				Size:       size,
-				SHA256:     sha256hex,
+				StorageKey: stored.storageKey,
+				Size:       stored.size,
+				SHA256:     stored.sha256hex,
 				Filename:   filename,
+				ExeFormat:  string(stored.format),
 			})
 		}
 	}
@@ -312,19 +277,89 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(artifacts) == 1 {
-		jsonResponse(w, http.StatusCreated, artifacts[0])
+	// Every artifact response carries its platform set, so a consumer reads one
+	// field whether the row is an ordinary per-platform build (one entry) or a
+	// single file covering several.
+	withPlatforms := make([]db.ArtifactWithPlatforms, len(artifacts))
+	for i, a := range artifacts {
+		withPlatforms[i] = db.ArtifactWithPlatforms{
+			Artifact:  *a,
+			Platforms: []db.Platform{{OS: a.OS, Arch: a.Arch}},
+		}
+	}
+	if len(withPlatforms) == 1 {
+		jsonResponse(w, http.StatusCreated, withPlatforms[0])
 		return
 	}
-	jsonResponse(w, http.StatusCreated, artifacts)
+	jsonResponse(w, http.StatusCreated, withPlatforms)
+}
+
+// storedUpload is the outcome of getting an upload's bytes into storage,
+// whichever way they arrived (streamed body, chunked session, or a hash
+// reference to a blob the project already has).
+type storedUpload struct {
+	storageKey string
+	sha256hex  string
+	size       int64
+	// format is what the leading bytes say the file is. "" means unrecognized,
+	// which is normal for an ordinary per-platform binary and disqualifying for
+	// a multi-platform claim.
+	format exeformat.Format
+}
+
+// storeUpload resolves an artifact upload's bytes to a stored blob. A
+// hash-reference upload (empty body + upload_sha256) registers a blob the
+// project already has; anything else streams the body to content-addressed
+// storage exactly once, no matter how many artifact rows or platform slots it
+// ends up backing. On failure it writes the error response and returns
+// ok=false.
+func (h *Handler) storeUpload(ctx context.Context, w http.ResponseWriter, r *http.Request, projectID int64) (storedUpload, bool) {
+	if refHex, ok := hashRefRequest(r); ok {
+		key, size, head, ok := h.resolveHashRef(ctx, w, projectID, refHex)
+		if !ok {
+			return storedUpload{}, false
+		}
+		return storedUpload{storageKey: key, sha256hex: key, size: size, format: exeformat.Detect(head)}, true
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
+
+	hasher := sha256.New()
+	head := &headCapture{}
+	body := io.TeeReader(io.TeeReader(r.Body, hasher), head)
+
+	key, size, err := h.Store.Put(ctx, body)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to store artifact")
+		return storedUpload{}, false
+	}
+	return storedUpload{
+		storageKey: key,
+		sha256hex:  hex.EncodeToString(hasher.Sum(nil)),
+		size:       size,
+		format:     exeformat.Detect(head.head),
+	}, true
+}
+
+// headCapture keeps the first exeformat.SniffLen bytes written through it, so
+// the format check reads the same stream that goes to storage instead of
+// re-opening the blob afterwards.
+type headCapture struct{ head []byte }
+
+func (c *headCapture) Write(p []byte) (int, error) {
+	if n := exeformat.SniffLen - len(c.head); n > 0 {
+		c.head = append(c.head, p[:min(n, len(p))]...)
+	}
+	return len(p), nil
 }
 
 // resolveHashRef authorizes and resolves a hash-reference upload: the
 // referenced blob must already belong to this project (any release -- which
 // covers "the previous slot of this same release" as well as an unchanged
 // binary from an earlier release) and must still exist in storage. It returns
-// the storage key plus the blob's decompressed size for the artifact row; on
-// failure it writes the error response and returns ok=false.
+// the storage key, the blob's decompressed size for the artifact row, and its
+// leading bytes for the executable-format check; on failure it writes the error
+// response and returns ok=false.
 //
 // The same-project gate is the authorization boundary. SHA-256 values are
 // public (release JSON, checksums files), so bare knowledge of a hash must
@@ -332,15 +367,15 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 // private -- bytes. Gate failure is reported exactly like a missing blob
 // (404), so probing cannot distinguish "exists in another project" from "does
 // not exist".
-func (h *Handler) resolveHashRef(ctx context.Context, w http.ResponseWriter, projectID int64, refHex string) (string, int64, bool) {
+func (h *Handler) resolveHashRef(ctx context.Context, w http.ResponseWriter, projectID int64, refHex string) (string, int64, []byte, bool) {
 	if !validSHA256Hex.MatchString(refHex) {
 		jsonError(w, http.StatusBadRequest, "invalid upload_sha256: want 64 hex characters")
-		return "", 0, false
+		return "", 0, nil, false
 	}
 	owned, err := h.DB.BlobBelongsToProject(ctx, projectID, refHex)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed to look up blob")
-		return "", 0, false
+		return "", 0, nil, false
 	}
 	exists := false
 	if owned {
@@ -348,20 +383,27 @@ func (h *Handler) resolveHashRef(ctx context.Context, w http.ResponseWriter, pro
 		// evicted; a dangling reference must miss, not create a broken row.
 		if exists, err = h.Store.Exists(ctx, refHex); err != nil {
 			jsonError(w, http.StatusInternalServerError, "failed to look up blob")
-			return "", 0, false
+			return "", 0, nil, false
 		}
 	}
 	if !owned || !exists {
 		jsonError(w, http.StatusNotFound, "no blob with this upload_sha256 in this project")
-		return "", 0, false
+		return "", 0, nil, false
 	}
-	// Open/close to read the decompressed size from the blob header; the body
-	// itself is never decoded.
+	// Read the decompressed size from the blob header, plus enough leading
+	// bytes to classify the executable format; the rest of the body is never
+	// decoded.
 	rc, size, err := h.Store.Get(ctx, refHex)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed to read blob")
-		return "", 0, false
+		return "", 0, nil, false
 	}
-	rc.Close()
-	return refHex, size, true
+	defer rc.Close()
+	head := make([]byte, exeformat.SniffLen)
+	n, err := io.ReadFull(rc, head)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		jsonError(w, http.StatusInternalServerError, "failed to read blob")
+		return "", 0, nil, false
+	}
+	return refHex, size, head[:n], true
 }
