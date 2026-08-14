@@ -9,7 +9,6 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/exeformat"
 )
 
 func init() {

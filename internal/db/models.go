@@ -35,7 +35,17 @@ type Artifact struct {
 	DebugStorageKey    string    `json:"debug_storage_key"`
 	DebugSize          int64     `json:"debug_size"`
 	Filename           string    `json:"filename"`
+	ExeFormat          string    `json:"exe_format"`
 	CreatedAt          time.Time `json:"created_at"`
+}
+
+type ArtifactPlatform struct {
+	ArtifactID int64  `json:"artifact_id"`
+	ReleaseID  int64  `json:"release_id"`
+	Kind       string `json:"kind"`
+	OS         string `json:"os"`
+	Arch       string `json:"arch"`
+	Ordinal    int64  `json:"ordinal"`
 }
 
 type DownloadCount struct {
