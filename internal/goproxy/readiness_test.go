@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -170,4 +171,21 @@ func TestLoadConfigExplicitPrefixesWin(t *testing.T) {
 
 	assert.Equal(t, []string{"github.com/a", "github.com/b"}, c.PrivatePrefixes)
 	assert.Equal(t, "https://mirror.example.com", c.Upstream)
+}
+
+// A passthrough-only proxy has nothing a credential is needed for, so readiness
+// is settled inline and no background loop starts. Every test in this repo that
+// calls auth.Init has that shape, and a per-call ticker would outlive the test.
+func TestPassthroughOnlyStartsNoBackgroundLoop(t *testing.T) {
+	fake := newFakeGitHub(t)
+	s := newTestService(t, fake, "", nil)
+
+	before := runtime.NumGoroutine()
+	s.startReadiness(context.Background())
+
+	// Health is populated by the time startReadiness returns, with no goroutine
+	// left running behind it.
+	assert.True(t, s.Health().Healthy)
+	assert.False(t, s.Health().CheckedAt.IsZero())
+	assert.LessOrEqual(t, runtime.NumGoroutine(), before)
 }

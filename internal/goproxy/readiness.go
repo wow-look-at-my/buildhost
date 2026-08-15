@@ -69,10 +69,22 @@ func (s *Service) Health() Health { return s.health.get() }
 
 const readinessInterval = 15 * time.Minute
 
-// startReadiness runs the check once at startup and then periodically. The first
-// run is synchronous-ish (its own goroutine, but immediate) so a misconfigured
-// proxy says so in the startup logs rather than on the first failing build.
+// startReadiness evaluates readiness now and keeps it current.
+//
+// With no private prefixes there is nothing a credential is needed for, so the
+// result cannot change: the check runs once, inline, and no background loop
+// starts. That is the shape every test that calls auth.Init has -- a ticker per
+// call would leak for the life of the test binary, and a probe would reach
+// api.github.com from a unit test the moment someone passed real orgs.
+//
+// Otherwise the first run goes on its own goroutine (immediate, so a
+// misconfigured proxy says so in the startup logs rather than on the first
+// failing build) and repeats on the interval.
 func (s *Service) startReadiness(ctx context.Context) {
+	if len(s.cfg.PrivatePrefixes) == 0 {
+		s.checkHealth(ctx)
+		return
+	}
 	go func() {
 		s.checkHealth(ctx)
 		t := time.NewTicker(readinessInterval)
