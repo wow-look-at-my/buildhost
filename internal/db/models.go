@@ -53,6 +53,29 @@ type DownloadEvent struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+type GoproxyModule struct {
+	ID            int64      `json:"id"`
+	ModulePath    string     `json:"module_path"`
+	Source        string     `json:"source"`
+	LastErrorKind string     `json:"last_error_kind"`
+	LastError     string     `json:"last_error"`
+	LastErrorAt   *time.Time `json:"last_error_at"`
+	LastSuccessAt *time.Time `json:"last_success_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+}
+
+type GoproxyVersion struct {
+	ID            int64      `json:"id"`
+	ModuleID      int64      `json:"module_id"`
+	Version       string     `json:"version"`
+	CommitSha     string     `json:"commit_sha"`
+	CommittedAt   *time.Time `json:"committed_at"`
+	GoMod         string     `json:"go_mod"`
+	ZipStorageKey string     `json:"zip_storage_key"`
+	ZipSize       int64      `json:"zip_size"`
+	FetchedAt     time.Time  `json:"fetched_at"`
+}
+
 type OciBlobLink struct {
 	ID         int64     `json:"id"`
 	ProjectID  int64     `json:"project_id"`

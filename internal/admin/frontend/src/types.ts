@@ -281,6 +281,7 @@ export interface Pages {
     artifacts(): void;
     storage(): void;
     retention(): void;
+    goproxy(): void;
 }
 
 // --- Signed temporary download link (admin POST .../download-links) ---
@@ -300,4 +301,66 @@ export interface ServiceURLs {
     oci: string;
     sites: string;
     static: string;
+}
+
+// --- Go module proxy (GET /api/goproxy) ---
+
+export interface GoproxyHealth {
+    healthy: boolean;
+    reason?: string;
+    credential_configured: boolean;
+    credential_kind: string;
+    private_prefixes: string[] | null;
+    upstream: string;
+    readiness_module: string;
+    probed: boolean;
+    probe_version?: string;
+    probe_error?: string;
+    probe_error_kind?: string;
+    checked_at: string;
+}
+
+export interface GoproxyModule {
+    path: string;
+    source: string;
+    private: boolean;
+    versions: number;
+    bytes: number;
+    last_error_kind: string;
+    last_error: string;
+    last_error_at?: string;
+    last_success_at?: string;
+    last_fetched_at?: string;
+}
+
+export interface GoproxyEvent {
+    at: string;
+    module: string;
+    version: string;
+    endpoint: string;
+    source: string;
+    outcome: string;
+    status: number;
+    detail: string;
+    duration: string;
+}
+
+export interface GoproxyState {
+    health: GoproxyHealth;
+    cache: { modules: number; versions: number; zips: number; bytes: number; failing_modules: number };
+    traffic: {
+        since_start: boolean;
+        cache_hits: number;
+        cache_misses: number;
+        fetches: number;
+        bytes_sent: number;
+        errors: Record<string, number> | null;
+    };
+    modules: GoproxyModule[] | null;
+    recent: GoproxyEvent[] | null;
+}
+
+export interface GoproxyData {
+    enabled: boolean;
+    state?: GoproxyState;
 }
