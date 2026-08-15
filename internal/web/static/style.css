@@ -97,6 +97,10 @@ h3 { font-size: .92rem; margin: 1.1em 0 .35em; color: var(--muted); font-weight:
 }
 .badge-private { background: #3d2206; color: #e3a008; border: 1px solid #5a3a0a; }
 .badge-latest { background: #0b2a14; color: #3fb950; border: 1px solid #14431f; }
+/* One file, several platforms: the set is data, not a label, so it keeps its
+   case and its slashes while the badge's own text stays uppercase. */
+.badge-format { background: #12233d; color: #6cb6ff; border: 1px solid #1c3a5e; }
+.badge-format .platforms { text-transform: none; letter-spacing: 0; font-weight: 400; }
 
 /* Project tree (home) */
 .project-tree { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }

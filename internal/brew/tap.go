@@ -193,7 +193,7 @@ func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 			}
 			return nil, err
 		}
-		artifacts, err := h.DB.ListArtifacts(r.Context(), release.ID)
+		artifacts, err := h.DB.ListArtifactsByPlatform(r.Context(), release.ID)
 		if err != nil {
 			return nil, err
 		}

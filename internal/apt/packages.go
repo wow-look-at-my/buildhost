@@ -57,7 +57,7 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 // DB read once cached, a single repackage+hash on the first need.
 func (h *Handler) packagesEntry(ctx context.Context, project *db.Project, release *db.Release, debArch, baseURL string) (string, error) {
 	goArch := goArchFromDeb(debArch)
-	artifact, err := h.DB.GetArtifact(ctx, release.ID, string(db.OSLinux), goArch)
+	artifact, err := h.DB.GetPlatformArtifact(ctx, release.ID, string(db.OSLinux), goArch)
 	if errors.Is(err, db.ErrNotFound) {
 		return "", nil
 	}

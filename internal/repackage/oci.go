@@ -87,7 +87,10 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		return nil, fmt.Errorf("store config: %w", err)
 	}
 	if input.Artifact.ID > 0 && o.DB != nil {
-		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-config", configKey, configSize, configKey, "config.json", "{}")
+		// Suffixed: the config is the ONE derived blob that differs per
+		// platform (it names the architecture and os), so an unsuffixed key
+		// would unlink one platform's config when the next is generated.
+		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-config"+input.CacheSuffix, configKey, configSize, configKey, "config.json", "{}")
 	}
 
 	// Base layer first -- must match the diff_ids order in the config.
