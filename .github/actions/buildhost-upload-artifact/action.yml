@@ -155,7 +155,10 @@ runs:
               const data = JSON.parse(r.text);
               core.info(JSON.stringify(data, null, 2));
               core.setOutput('response', r.text);
-              core.setOutput('sha256', data.sha256);
+              // A non-APE fan-out answers with a row per platform, all sharing one blob, so any row carries the digest; an APE answers with the single row covering them all.
+              const row = Array.isArray(data) ? data[0] : data;
+              if (!row?.sha256) { core.setFailed(`upload response carried no sha256: ${r.text}`); return; }
+              core.setOutput('sha256', row.sha256);
             };
 
             if (chunkSize <= 0 || size <= directLimit) {
