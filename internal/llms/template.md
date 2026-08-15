@@ -256,11 +256,23 @@ machine __GOPROXY_HOST__ login x password $TOKEN
 ```
 
 ```
-export GOPROXY=__GOPROXY_URL__
-export GONOSUMDB='github.com/<your-org>/*'
-export GONOSUMCHECK=1
+export GOPROXY=__GOPROXY_URL__,direct
+export GOPRIVATE='github.com/<your-org>/*'
 go mod download
 ```
+
+The trailing `,direct` is load-bearing. This proxy serves its own org's modules
+and answers 404 for anything else, which is the module protocol's "try the next
+entry" -- so everything else is fetched straight from its origin. No third-party
+mirror is involved unless the operator configures one, and none is configured by
+default: a mirror sees the module path of every dependency routed through it.
+
+An authorization failure is a 403, not a 404, so it does NOT fall through to
+`direct` -- a credential problem halts the fetch and gets reported instead of
+being silently papered over.
+
+`GOPRIVATE` keeps your org's module paths out of the public checksum database
+(it sets `GONOPROXY` and `GONOSUMDB` for you).
 
 Every module needs an authenticated request, public ones included, so that
 "is this module private?" is not a question anyone can ask anonymously.

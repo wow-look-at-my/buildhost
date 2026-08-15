@@ -160,7 +160,14 @@ func TestSnapshotSurfacesAFailingModule(t *testing.T) {
 func TestLoadConfigDefaultsPrivatePrefixesFromOIDCOrgs(t *testing.T) {
 	c := loadConfig([]string{"wow-look-at-my", "PazerOP"})
 	assert.Equal(t, []string{"github.com/wow-look-at-my", "github.com/PazerOP"}, c.PrivatePrefixes)
-	assert.Equal(t, defaultUpstream, c.Upstream)
+}
+
+// No third-party mirror unless an operator asks for one. A mirror sees the path
+// of every dependency routed through it, so a default here would ship the org's
+// dependency graph to someone else without anyone choosing that.
+func TestLoadConfigConfiguresNoUpstreamByDefault(t *testing.T) {
+	c := loadConfig([]string{"wow-look-at-my"})
+	assert.Empty(t, c.Upstream, "buildhost must not pick a module mirror on the operator's behalf")
 }
 
 func TestLoadConfigExplicitPrefixesWin(t *testing.T) {

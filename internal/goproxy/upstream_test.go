@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeMirror is a public module mirror: it serves the module-proxy protocol for
-// a fixed set of paths and 404s everything else, like proxy.golang.org.
+// fakeMirror stands in for an operator-configured mirror: it serves the
+// module-proxy protocol for a fixed set of paths and 404s everything else.
 func fakeMirror(t *testing.T, files map[string]string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +37,7 @@ func TestUpstreamModuleIsServedAndCached(t *testing.T) {
 
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
-	s.upstream = newUpstreamSource(s.github.client, mirror.URL)
+	s.upstream = newUpstreamSource(s.github.client, mirror.URL, []string{privateOrg})
 
 	t.Run("list", func(t *testing.T) {
 		rec := serveProxy(t, s, "/golang.org/x/mod/@v/list")
@@ -83,24 +83,45 @@ func TestUpstreamMissIs404(t *testing.T) {
 	mirror := fakeMirror(t, nil)
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
-	s.upstream = newUpstreamSource(s.github.client, mirror.URL)
+	s.upstream = newUpstreamSource(s.github.client, mirror.URL, []string{privateOrg})
 
 	rec := serveProxy(t, s, "/example.com/nope/@v/list")
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 	assert.Contains(t, rec.Body.String(), "module not found")
 }
 
-// With passthrough disabled, a module outside the private prefixes has nowhere
-// to come from. That is a configuration failure, not a missing module -- so it
-// must not be reported as one.
-func TestNoUpstreamConfiguredIsNotAMissingModule(t *testing.T) {
+// The default shape: no mirror configured, so a module outside this proxy's
+// namespace is answered 404 -- the module protocol's "try the next GOPROXY
+// entry". That is what makes `GOPROXY=<proxy>,direct` fetch the rest of the
+// world from its origin instead of through a third party.
+func TestModuleOutsideOurNamespaceIs404SoDirectCanTakeIt(t *testing.T) {
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
 
 	rec := serveProxy(t, s, "/golang.org/x/mod/@v/list")
 
-	assert.Equal(t, http.StatusBadGateway, rec.Code)
-	assert.Contains(t, rec.Body.String(), "no upstream module mirror is configured")
+	require.Equal(t, http.StatusNotFound, rec.Code,
+		"only 404/410 make the go command advance to the next GOPROXY entry")
+	body := rec.Body.String()
+	assert.Contains(t, body, "not served by this proxy")
+	assert.Contains(t, body, privateOrg, "the body should say what this proxy does serve")
+	assert.Contains(t, body, ",direct")
+}
+
+// The counterpart, and the reason the 404 above is safe: an authorization
+// failure must NOT fall through to direct. 403 halts the go command, so a
+// credential problem is reported instead of being quietly papered over by a
+// direct fetch that happens to succeed.
+func TestAuthorizationFailureDoesNotFallThroughToDirect(t *testing.T) {
+	fake := newFakeGitHub(t)
+	fake.Private = true
+	s := newTestService(t, fake, "", []string{privateOrg})
+
+	rec := serveProxy(t, s, "/"+privateOrg+"/tml/@v/list")
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.NotEqual(t, http.StatusNotFound, rec.Code,
+		"a 404 here would let the go command silently try direct and hide the credential failure")
 }
 
 // A mirror that is up but broken is an upstream failure, not an absence.
@@ -112,7 +133,7 @@ func TestUpstreamServerErrorIsNotAMissingModule(t *testing.T) {
 
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
-	s.upstream = newUpstreamSource(s.github.client, srv.URL)
+	s.upstream = newUpstreamSource(s.github.client, srv.URL, []string{privateOrg})
 
 	rec := serveProxy(t, s, "/golang.org/x/mod/@v/list")
 	assert.Equal(t, http.StatusBadGateway, rec.Code)
@@ -133,7 +154,7 @@ func TestPrivateModuleNeverReachesTheMirror(t *testing.T) {
 	seedModule(fake, privateOrg+"/tml", "", "v1.0.0", "aaaa111122223333444455556666777788889999",
 		"module "+privateOrg+"/tml\n")
 	s := newTestService(t, fake, "tok", []string{privateOrg})
-	s.upstream = newUpstreamSource(s.github.client, srv.URL)
+	s.upstream = newUpstreamSource(s.github.client, srv.URL, []string{privateOrg})
 
 	require.Equal(t, http.StatusOK, serveProxy(t, s, "/"+privateOrg+"/tml/@v/list").Code)
 	assert.Zero(t, mirrorHits, "a private module path must not be sent to the public mirror")

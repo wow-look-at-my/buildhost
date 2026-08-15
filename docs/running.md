@@ -59,8 +59,15 @@ readiness check can only confirm a credential EXISTS, and a credential that
 authenticates but is not authorized for the org looks identical to a working one
 -- which is exactly how a proxy serving zero private modules went unnoticed. With
 it set, the check resolves that module every 15 minutes and reports unready when
-it cannot. `BUILDHOST_GOPROXY_PRIVATE_PREFIXES` and `BUILDHOST_GOPROXY_UPSTREAM`
-override the defaults. Depth: `docs/formats/goproxy.md`.
+it cannot. `BUILDHOST_GOPROXY_PRIVATE_PREFIXES` overrides which prefixes count as
+private.
+
+No third-party module mirror is configured, and buildhost never picks one: a
+mirror sees the path of every dependency routed through it. Modules this proxy
+does not serve are answered 404, the module protocol's "try the next entry", so
+clients use `GOPROXY=https://goproxy.{domain},direct` and fetch everything else
+from its origin. `BUILDHOST_GOPROXY_UPSTREAM` opts in to a mirror if you want
+one. Depth: `docs/formats/goproxy.md`.
 
 To disable application-level zstd compression (e.g., on ZFS or Btrfs with
 filesystem-level compression):

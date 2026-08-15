@@ -1149,7 +1149,11 @@ pages.goproxy = function (): void {
             (hl.credential_configured ? "" : " <strong>(none configured)</strong>") + "</td></tr>";
         html += "<tr><td class='info-label'>Private prefixes</td><td>" +
             h((hl.private_prefixes || []).join(", ") || "(none)") + "</td></tr>";
-        html += "<tr><td class='info-label'>Upstream mirror</td><td>" + h(hl.upstream || "(disabled)") + "</td></tr>";
+        html += "<tr><td class='info-label'>Upstream mirror</td><td>" +
+            (hl.upstream
+                ? h(hl.upstream)
+                : "<em>none &mdash; modules outside the prefixes above are 404'd so <code>GOPROXY=&hellip;,direct</code> fetches them from their origin</em>") +
+            "</td></tr>";
         html += "<tr><td class='info-label'>Readiness module</td><td>" +
             (hl.readiness_module
                 ? h(hl.readiness_module) + (hl.probe_version ? " &rarr; " + h(hl.probe_version) : "")
@@ -1307,7 +1311,7 @@ const demoData: Record<string, unknown> = {
                 credential_configured: true,
                 credential_kind: "token",
                 private_prefixes: ["github.com/myorg"],
-                upstream: "https://proxy.golang.org",
+                upstream: "",
                 readiness_module: "github.com/myorg/internal-lib",
                 probed: true,
                 probe_error_kind: "unauthorized",
@@ -1319,11 +1323,11 @@ const demoData: Record<string, unknown> = {
             modules: [
                 { path: "github.com/myorg/internal-lib", source: "github", private: true, versions: 0, bytes: 0, last_error_kind: "unauthorized", last_error: "github responded 404 for a repository the credential is not authorized for", last_error_at: "2026-01-01 00:00:00Z", last_success_at: "", last_fetched_at: "" },
                 { path: "github.com/myorg/tools", source: "github", private: true, versions: 4, bytes: 1_100_000, last_error_kind: "", last_error: "", last_success_at: "2026-01-01 00:00:00Z", last_fetched_at: "2026-01-01 00:00:00Z" },
-                { path: "golang.org/x/mod", source: "upstream", private: false, versions: 8, bytes: 3_100_000, last_error_kind: "", last_error: "", last_success_at: "2026-01-01 00:00:00Z", last_fetched_at: "2026-01-01 00:00:00Z" }
+                { path: "github.com/myorg/agentic-loop/go", source: "github", private: true, versions: 8, bytes: 3_100_000, last_error_kind: "", last_error: "", last_success_at: "2026-01-01 00:00:00Z", last_fetched_at: "2026-01-01 00:00:00Z" }
             ],
             recent: [
                 { at: new Date(Date.now() - 30000).toISOString(), module: "github.com/myorg/internal-lib", version: "", endpoint: "latest", source: "github", outcome: "error", status: 403, detail: "unauthorized", duration: "212ms" },
-                { at: new Date(Date.now() - 90000).toISOString(), module: "golang.org/x/mod", version: "v0.40.0", endpoint: "zip", source: "upstream", outcome: "hit", status: 200, detail: "", duration: "4ms" },
+                { at: new Date(Date.now() - 90000).toISOString(), module: "github.com/myorg/agentic-loop/go", version: "v0.40.0", endpoint: "zip", source: "github", outcome: "hit", status: 200, detail: "", duration: "4ms" },
                 { at: new Date(Date.now() - 150000).toISOString(), module: "github.com/myorg/tools", version: "v1.4.0", endpoint: "mod", source: "github", outcome: "fetch", status: 200, detail: "", duration: "684ms" }
             ]
         }

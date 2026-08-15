@@ -51,7 +51,7 @@ type Error struct {
 	// Module and Version address what was being fetched ("" when not applicable).
 	Module  string
 	Version string
-	// Upstream names the system that answered (e.g. "github", "proxy.golang.org")
+	// Upstream names the system that answered (e.g. "github", a mirror's URL)
 	// and UpstreamStatus its HTTP status, 0 when the failure was not an HTTP one.
 	Upstream       string
 	UpstreamStatus int
@@ -150,6 +150,38 @@ func upstreamErr(mod, ver, upstream string, status int, detail string, err error
 
 func invalidErr(mod, ver, detail string) *Error {
 	return &Error{Kind: KindInvalidRequest, Module: mod, Version: ver, Detail: detail}
+}
+
+// notServedErr answers a module outside this proxy's namespace, with no mirror
+// configured to forward it to.
+//
+// This is a 404 on purpose, and it is NOT the laundering the taxonomy exists to
+// stop. In a GOPROXY list, 404/410 is the protocol's "try the next entry" and
+// any other status halts the whole fetch (measured, not assumed). So a 404 here
+// lets `GOPROXY=https://goproxy.{domain},direct` fetch the rest of the world
+// straight from its origin, while an authorization failure stays a 403 and
+// still halts -- a credential problem must never fall through to direct and
+// succeed, because that hides the misconfiguration instead of reporting it.
+func notServedErr(mod, ver string, servedPrefixes []string) *Error {
+	return &Error{
+		Kind:    KindNotFound,
+		Module:  mod,
+		Version: ver,
+		Detail: "not served by this proxy (it serves " + joinOr(servedPrefixes, "no module prefixes") +
+			", and no upstream mirror is configured). Use GOPROXY=<this proxy>,direct so the go " +
+			"command fetches everything else straight from its origin.",
+	}
+}
+
+func joinOr(items []string, empty string) string {
+	if len(items) == 0 {
+		return empty
+	}
+	out := items[0]
+	for _, s := range items[1:] {
+		out += ", " + s
+	}
+	return out
 }
 
 // asError normalizes any error into an *Error so a handler never has to guess a

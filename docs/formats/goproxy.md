@@ -93,7 +93,7 @@ which is a worse outcome than the one being prevented.
 | Env var | Default | Meaning |
 | --- | --- | --- |
 | `BUILDHOST_GOPROXY_PRIVATE_PREFIXES` | `github.com/<org>` per `BUILDHOST_OIDC_ORGS` | Module prefixes fetched direct from GitHub with buildhost's credential. |
-| `BUILDHOST_GOPROXY_UPSTREAM` | `https://proxy.golang.org` | Public mirror for everything else; empty disables passthrough. |
+| `BUILDHOST_GOPROXY_UPSTREAM` | (unset) | Optional mirror to forward non-private modules to. Off by default. |
 | `BUILDHOST_GOPROXY_READINESS_MODULE` | (unset) | A PRIVATE module resolved at startup to prove the credential works. |
 
 The credential is buildhost's existing one -- `BUILDHOST_GITHUB_APP_ID` +
@@ -105,6 +105,33 @@ org-approval trap entirely.
 
 Private prefixes default to the configured OIDC orgs, so a deployment that
 already declares which orgs it serves needs no extra configuration.
+
+## No third-party mirror by default
+
+`BUILDHOST_GOPROXY_UPSTREAM` is unset out of the box, and buildhost never picks a
+mirror for you. A module mirror sees the path of every dependency routed through
+it, so defaulting to one would hand a third party the org's entire dependency
+graph -- including the path of any private module whose prefix was not listed in
+`BUILDHOST_GOPROXY_PRIVATE_PREFIXES`, which is the case where a leak is worst and
+least visible. Athens, which this replaces, ran `GOPROXY=direct` for the same
+reason; defaulting to a mirror here would have been a regression, not a port.
+
+A module this proxy does not serve is answered **404**, which in a `GOPROXY` list
+is the protocol's "try the next entry":
+
+```
+GOPROXY=https://goproxy.pazer.build,direct
+```
+
+Everything outside the org is then fetched straight from its origin, exactly as
+`GOPROXY=direct` did. Measured, not assumed: `go` advances to the next entry on
+404 and 410, and halts on any other status (403, 502, ...). That is why an
+authorization failure stays a 403 -- a credential problem must halt and be
+reported, never fall through to `direct` and quietly succeed while the proxy is
+misconfigured.
+
+An operator who does want a mirror sets `BUILDHOST_GOPROXY_UPSTREAM` explicitly,
+and can point it at a self-hosted one.
 
 ## Auth
 

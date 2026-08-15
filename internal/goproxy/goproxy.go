@@ -36,9 +36,18 @@ import (
 // Subdomain is the service label this backend answers on: goproxy.{domain}.
 const Subdomain = "goproxy"
 
-// defaultUpstream is the public module mirror used for every module outside the
-// configured private prefixes.
-const defaultUpstream = "https://proxy.golang.org"
+// No upstream mirror is configured by default, and buildhost never picks one for
+// you. A mirror sees the module path of every dependency routed through it, so
+// defaulting to a third party would hand that party the org's whole dependency
+// graph -- including the path of any private module whose prefix was not
+// configured here. Athens, which this replaces, ran GOPROXY=direct for the same
+// reason.
+//
+// Modules this proxy does not serve are answered 404, which is the module
+// protocol's signal to try the next GOPROXY entry, so
+// `GOPROXY=https://goproxy.{domain},direct` fetches everything else straight
+// from its origin. Set BUILDHOST_GOPROXY_UPSTREAM to opt in to a mirror.
+const defaultUpstream = ""
 
 // Config is resolved from the environment at registration time.
 type Config struct {
@@ -104,7 +113,7 @@ func newService(cfg Config, database *db.DB, store storage.Storage, dataDir stri
 		db:       database,
 		store:    store,
 		github:   newGitHubSource(client, dataDir),
-		upstream: newUpstreamSource(client, cfg.Upstream),
+		upstream: newUpstreamSource(client, cfg.Upstream, cfg.PrivatePrefixes),
 		metrics:  newMetrics(),
 		health:   newHealth(),
 	}
