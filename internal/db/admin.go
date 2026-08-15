@@ -41,6 +41,35 @@ func (d *DB) ListAllArtifacts(ctx context.Context) ([]ListAllArtifactsRow, error
 	return d.q.ListAllArtifacts(ctx)
 }
 
+// AllArtifactWithPlatforms is a dashboard artifact row plus every platform the
+// file covers.
+type AllArtifactWithPlatforms struct {
+	ListAllArtifactsRow
+	Platforms []Platform `json:"platforms"`
+}
+
+// ListAllArtifactsWithPlatforms lists every artifact once, carrying its full
+// platform set, so the dashboard shows one row per FILE.
+func (d *DB) ListAllArtifactsWithPlatforms(ctx context.Context) ([]AllArtifactWithPlatforms, error) {
+	rows, err := d.q.ListAllArtifacts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	platformRows, err := d.q.ListAllArtifactPlatforms(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list artifact platforms: %w", err)
+	}
+	byArtifact := make(map[int64][]Platform, len(rows))
+	for _, p := range platformRows {
+		byArtifact[p.ArtifactID] = append(byArtifact[p.ArtifactID], Platform{OS: p.OS, Arch: p.Arch})
+	}
+	out := make([]AllArtifactWithPlatforms, len(rows))
+	for i, r := range rows {
+		out[i] = AllArtifactWithPlatforms{ListAllArtifactsRow: r, Platforms: byArtifact[r.ID]}
+	}
+	return out, nil
+}
+
 func (d *DB) GetStorageBreakdown(ctx context.Context) ([]GetStorageBreakdownRow, error) {
 	return d.q.GetStorageBreakdown(ctx)
 }

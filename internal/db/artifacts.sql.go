@@ -39,10 +39,19 @@ func (q *Queries) BlobBelongsToProject(ctx context.Context, arg BlobBelongsToPro
 	return blob_exists, err
 }
 
+const deleteReleaseArtifactPlatforms = `-- name: DeleteReleaseArtifactPlatforms :exec
+DELETE FROM artifact_platforms WHERE release_id = ?
+`
+
+func (q *Queries) DeleteReleaseArtifactPlatforms(ctx context.Context, releaseID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteReleaseArtifactPlatforms, releaseID)
+	return err
+}
+
 const getArtifactByReleaseAndKind = `-- name: GetArtifactByReleaseAndKind :one
 SELECT id, release_id, os, arch, kind, storage_key, size, sha256,
        stripped_storage_key, stripped_size, stripped_sha256,
-       debug_storage_key, debug_size, filename, created_at
+       debug_storage_key, debug_size, filename, exe_format, created_at
 FROM artifacts WHERE release_id = ? AND kind = ?
 `
 
@@ -69,16 +78,20 @@ func (q *Queries) GetArtifactByReleaseAndKind(ctx context.Context, arg GetArtifa
 		&i.DebugStorageKey,
 		&i.DebugSize,
 		&i.Filename,
+		&i.ExeFormat,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getArtifactByReleaseOSArch = `-- name: GetArtifactByReleaseOSArch :one
-SELECT id, release_id, os, arch, kind, storage_key, size, sha256,
-       stripped_storage_key, stripped_size, stripped_sha256,
-       debug_storage_key, debug_size, filename, created_at
-FROM artifacts WHERE release_id = ? AND os = ? AND arch = ?
+SELECT a.id, a.release_id, a.os, a.arch, a.kind, a.storage_key, a.size, a.sha256,
+       a.stripped_storage_key, a.stripped_size, a.stripped_sha256,
+       a.debug_storage_key, a.debug_size, a.filename, a.exe_format, a.created_at
+FROM artifacts a
+JOIN artifact_platforms p ON p.artifact_id = a.id
+WHERE p.release_id = ? AND p.os = ? AND p.arch = ?
+ORDER BY a.id
 `
 
 type GetArtifactByReleaseOSArchParams struct {
@@ -87,6 +100,10 @@ type GetArtifactByReleaseOSArchParams struct {
 	Arch      Arch  `json:"arch"`
 }
 
+// Resolution goes through artifact_platforms, which holds every slot an
+// artifact occupies -- one row for an ordinary per-platform upload, N for a
+// multi-platform one. Every covered platform therefore resolves to the same
+// artifact, hence the same blob, digest and ETag.
 func (q *Queries) GetArtifactByReleaseOSArch(ctx context.Context, arg GetArtifactByReleaseOSArchParams) (Artifact, error) {
 	row := q.db.QueryRowContext(ctx, getArtifactByReleaseOSArch, arg.ReleaseID, arg.OS, arg.Arch)
 	var i Artifact
@@ -105,6 +122,7 @@ func (q *Queries) GetArtifactByReleaseOSArch(ctx context.Context, arg GetArtifac
 		&i.DebugStorageKey,
 		&i.DebugSize,
 		&i.Filename,
+		&i.ExeFormat,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -142,8 +160,8 @@ func (q *Queries) GetPackagedArtifact(ctx context.Context, arg GetPackagedArtifa
 }
 
 const insertArtifact = `-- name: InsertArtifact :execresult
-INSERT INTO artifacts (release_id, os, arch, kind, storage_key, size, sha256, filename)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO artifacts (release_id, os, arch, kind, storage_key, size, sha256, filename, exe_format)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertArtifactParams struct {
@@ -155,6 +173,7 @@ type InsertArtifactParams struct {
 	Size       int64  `json:"size"`
 	SHA256     string `json:"sha256"`
 	Filename   string `json:"filename"`
+	ExeFormat  string `json:"exe_format"`
 }
 
 func (q *Queries) InsertArtifact(ctx context.Context, arg InsertArtifactParams) (sql.Result, error) {
@@ -167,13 +186,106 @@ func (q *Queries) InsertArtifact(ctx context.Context, arg InsertArtifactParams) 
 		arg.Size,
 		arg.SHA256,
 		arg.Filename,
+		arg.ExeFormat,
 	)
+}
+
+const insertArtifactPlatform = `-- name: InsertArtifactPlatform :exec
+INSERT INTO artifact_platforms (artifact_id, release_id, kind, os, arch, ordinal)
+VALUES (?, ?, ?, ?, ?, ?)
+`
+
+type InsertArtifactPlatformParams struct {
+	ArtifactID int64 `json:"artifact_id"`
+	ReleaseID  int64 `json:"release_id"`
+	Kind       Kind  `json:"kind"`
+	OS         OS    `json:"os"`
+	Arch       Arch  `json:"arch"`
+	Ordinal    int64 `json:"ordinal"`
+}
+
+func (q *Queries) InsertArtifactPlatform(ctx context.Context, arg InsertArtifactPlatformParams) error {
+	_, err := q.db.ExecContext(ctx, insertArtifactPlatform,
+		arg.ArtifactID,
+		arg.ReleaseID,
+		arg.Kind,
+		arg.OS,
+		arg.Arch,
+		arg.Ordinal,
+	)
+	return err
+}
+
+const listArtifactPlatformsByArtifact = `-- name: ListArtifactPlatformsByArtifact :many
+SELECT os, arch FROM artifact_platforms WHERE artifact_id = ? ORDER BY ordinal
+`
+
+type ListArtifactPlatformsByArtifactRow struct {
+	OS   OS   `json:"os"`
+	Arch Arch `json:"arch"`
+}
+
+func (q *Queries) ListArtifactPlatformsByArtifact(ctx context.Context, artifactID int64) ([]ListArtifactPlatformsByArtifactRow, error) {
+	rows, err := q.db.QueryContext(ctx, listArtifactPlatformsByArtifact, artifactID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListArtifactPlatformsByArtifactRow{}
+	for rows.Next() {
+		var i ListArtifactPlatformsByArtifactRow
+		if err := rows.Scan(&i.OS, &i.Arch); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listArtifactPlatformsByRelease = `-- name: ListArtifactPlatformsByRelease :many
+SELECT artifact_id, os, arch FROM artifact_platforms
+WHERE release_id = ? ORDER BY artifact_id, ordinal
+`
+
+type ListArtifactPlatformsByReleaseRow struct {
+	ArtifactID int64 `json:"artifact_id"`
+	OS         OS    `json:"os"`
+	Arch       Arch  `json:"arch"`
+}
+
+func (q *Queries) ListArtifactPlatformsByRelease(ctx context.Context, releaseID int64) ([]ListArtifactPlatformsByReleaseRow, error) {
+	rows, err := q.db.QueryContext(ctx, listArtifactPlatformsByRelease, releaseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListArtifactPlatformsByReleaseRow{}
+	for rows.Next() {
+		var i ListArtifactPlatformsByReleaseRow
+		if err := rows.Scan(&i.ArtifactID, &i.OS, &i.Arch); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listArtifactsByRelease = `-- name: ListArtifactsByRelease :many
 SELECT id, release_id, os, arch, kind, storage_key, size, sha256,
        stripped_storage_key, stripped_size, stripped_sha256,
-       debug_storage_key, debug_size, filename, created_at
+       debug_storage_key, debug_size, filename, exe_format, created_at
 FROM artifacts WHERE release_id = ?
 `
 
@@ -201,6 +313,7 @@ func (q *Queries) ListArtifactsByRelease(ctx context.Context, releaseID int64) (
 			&i.DebugStorageKey,
 			&i.DebugSize,
 			&i.Filename,
+			&i.ExeFormat,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

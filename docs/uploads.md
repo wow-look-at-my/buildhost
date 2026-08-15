@@ -21,9 +21,33 @@ keeps the byte-identical single-object response; multi returns a JSON array of t
 same artifact objects. `kind=npm-package` keeps its literal os=any/arch=any
 sentinel row (never fans out).
 
+**An APE does not fan out.** When the uploaded file carries APE magic and the
+segments expand to more than one combination, the upload publishes ONE artifact
+with one slot per combination (`publishMultiPlatform`, shared with
+`PUT .../artifacts/ape`) instead of a row each. The alias spellings exist
+precisely to publish a file that runs everywhere, and a row per platform gives
+that file N download links when it is N-way portable by construction. The
+response is then the single `ArtifactWithPlatforms` object the explicit endpoint
+returns, not the array -- the same shape a single-combination upload has always
+had, with a `platforms` array listing what the one row covers. Fan-out is still
+what a NON-APE upload gets: there the combinations really are separate builds
+that happen to share bytes.
+
+**A declared platform is checked against the bytes.** `exeformat.DetectNTBoot`
+follows the DOS header's `e_lfanew` to the PE section count (both fixed by the PE
+format, not by any one toolchain). Exactly one section is Cosmopolitan's
+do-nothing stub header, which maps none of the payload: the binary starts on
+Windows and exits 0 without running, which every consumer downstream reads as
+success. A declared `windows/*` platform on such a file 400s at ingest. Other
+section counts read as a real boot header, so APEs from other Cosmopolitan
+toolchains are not rejected for being sectioned differently, and a PE header past
+the sniff window (`exeformat.SniffLen`) reads as unknown rather than as a
+rejection.
+
 Multi-platform publish fan-out happens at upload time, never at download time: one
 uploaded blob -> N ordinary per-platform artifact rows (comma list or
-`cosmo`/`any` alias in the upload URL's `{os}`/`{arch}` segments). There is
+`cosmo`/`any` alias in the upload URL's `{os}`/`{arch}` segments, for a non-APE
+upload; an APE takes the one-row path above instead). There is
 deliberately no stored `os=any` value and no download-time fallback, so downloads,
 `latest` resolution, format handlers, retention refcounting (`IsBlobReferenced`
 counts the shared blob until the last row goes), and CDN caching all see plain
@@ -159,3 +183,13 @@ closed -- no `latest` -- on `main`-defaulted repos). Feature-branch pushes
 therefore never move the mutable `:latest` pointer -- the OCI-tag analogue of the
 apex-`latest` no-hijack rule. An explicitly passed `tags` input skips the compute
 step entirely (byte-identical to the previous behavior).
+
+## One artifact covering several platforms
+
+Fan-out answers "N builds that share bytes". The other question -- "ONE file
+that runs on several platforms", an APE -- is answered by `PUT
+.../artifacts/ape?platforms=linux/amd64,darwin/arm64,windows/amd64`, which
+stores ONE artifact row occupying every named slot: one download link, not N.
+The same `kind`, `X-Artifact-Filename`, `upload_session` and `upload_sha256`
+mechanics apply. A multi-platform declaration whose file carries no APE magic is
+rejected. Depth: `docs/multi-platform-artifacts.md`.

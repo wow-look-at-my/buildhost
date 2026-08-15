@@ -48,7 +48,19 @@ func NewGenerator(store storage.Storage, database *db.DB, tmpDir string) *Genera
 // Generate repackages an artifact into format. baseURL is this server's own base
 // URL (derived per-request from the Host), used to build absolute download/home
 // URLs in formats like brew.
+// GenerateForPlatform repackages one artifact AS one of the platforms it
+// covers. Derived rows it caches carry the platform's suffix, so two platforms
+// of one file never overwrite each other's cached package.
+func (g *Generator) GenerateForPlatform(ctx context.Context, format Format, project db.Project, release db.Release, artifact db.PlatformArtifact, baseURL string) (*Output, error) {
+	return g.generate(ctx, format, project, release, artifact.Artifact, artifact.CacheSuffix, baseURL)
+}
+
+// Generate repackages an artifact at its canonical platform.
 func (g *Generator) Generate(ctx context.Context, format Format, project db.Project, release db.Release, artifact db.Artifact, baseURL string) (*Output, error) {
+	return g.generate(ctx, format, project, release, artifact, "", baseURL)
+}
+
+func (g *Generator) generate(ctx context.Context, format Format, project db.Project, release db.Release, artifact db.Artifact, cacheSuffix, baseURL string) (*Output, error) {
 	ctx, span := repackTracer.Start(ctx, "repackage.generate")
 	defer span.End()
 	span.SetAttributes(
@@ -81,13 +93,14 @@ func (g *Generator) Generate(ctx context.Context, format Format, project db.Proj
 	)
 	dlBase := dlServiceURL(baseURL)
 	out, err := rp.Repackage(ctx, Input{
-		Project:  project,
-		Release:  release,
-		Artifact: artifact,
-		Reader:   reader,
-		Size:     size,
-		TmpDir:   g.tmpDir,
-		BaseURL:  baseURL,
+		Project:     project,
+		Release:     release,
+		Artifact:    artifact,
+		Reader:      reader,
+		Size:        size,
+		TmpDir:      g.tmpDir,
+		BaseURL:     baseURL,
+		CacheSuffix: cacheSuffix,
 		DownloadURL: func(name, version string, os db.OS, arch db.Arch, format string) string {
 			q := url.Values{}
 			q.Set("os", string(os))

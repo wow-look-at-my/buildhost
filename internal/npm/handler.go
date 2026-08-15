@@ -130,7 +130,7 @@ type npmArtifactInfo struct {
 }
 
 func (h *Handler) collectNpmArtifacts(ctx context.Context, releaseID int64) []npmArtifactInfo {
-	artifacts, err := h.DB.ListArtifacts(ctx, releaseID)
+	artifacts, err := h.DB.ListArtifactsByPlatform(ctx, releaseID)
 	if err != nil {
 		return nil
 	}
