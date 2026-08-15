@@ -116,6 +116,25 @@ func userCanReadProject(ctx context.Context, project *db.Project) (allowed, sess
 	return mw.GitHub.canAccessRepo(ctx, login, GitHubTokenFrom(ctx), project.GithubRepo)
 }
 
+// UserCanReadRepo reports whether the request's signed-in GitHub user may read
+// owner/repo, asking GitHub itself with the token in their session.
+//
+// userCanReadProject answers the same question for a buildhost project, via the
+// repo recorded on it. This one takes the repo directly, for a resource that is
+// not a project at all -- a Go module path resolves to a repository with no
+// buildhost project behind it.
+func UserCanReadRepo(ctx context.Context, ownerRepo string) bool {
+	if mw == nil || mw.GitHub == nil || ownerRepo == "" {
+		return false
+	}
+	login, ok := UserFrom(ctx)
+	if !ok {
+		return false
+	}
+	allowed, _ := mw.GitHub.canAccessRepo(ctx, login, GitHubTokenFrom(ctx), ownerRepo)
+	return allowed
+}
+
 // TokenCanReadProject reports whether the request context carries a credential
 // that authorizes READING the given project, applying exactly the token rules
 // requireProject's ReadAccess branch applies to a private project: a token with
