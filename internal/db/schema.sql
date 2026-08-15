@@ -46,9 +46,21 @@ CREATE TABLE artifacts (
     debug_storage_key     TEXT NOT NULL DEFAULT '',
     debug_size            INTEGER NOT NULL DEFAULT 0,
     filename              TEXT NOT NULL DEFAULT '',
+    exe_format            TEXT NOT NULL DEFAULT '',
     created_at            DATETIME NOT NULL DEFAULT (datetime('now')),
     UNIQUE(release_id, os, arch, kind)
 );
+
+CREATE TABLE artifact_platforms (
+    artifact_id INTEGER NOT NULL REFERENCES artifacts(id),
+    release_id  INTEGER NOT NULL REFERENCES releases(id),
+    kind        TEXT NOT NULL,
+    os          TEXT NOT NULL,
+    arch        TEXT NOT NULL,
+    ordinal     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (artifact_id, os, arch)
+);
+CREATE UNIQUE INDEX idx_artifact_platforms_slot ON artifact_platforms(release_id, kind, os, arch);
 
 CREATE TABLE packaged_artifacts (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
