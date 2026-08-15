@@ -23,7 +23,14 @@ var (
 	sharedGitHubWebhookSecret string
 	sharedSiteDomain          string
 	sharedPrimaryDomain       string
+	sharedOIDCOrgs            []string
 )
+
+// OIDCOrgs are the GitHub orgs this deployment accepts OIDC from. Other backends
+// read it as "the orgs this buildhost serves" -- internal/goproxy derives which
+// module prefixes are private from it, so a deployment that already declares its
+// orgs needs no second list.
+func OIDCOrgs() []string { return sharedOIDCOrgs }
 
 func Router() *router.Router      { return mux }
 func DB() *db.DB                  { return sharedDB }
@@ -96,6 +103,7 @@ func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers
 	sharedData = dataDir
 	sharedFetchDomains = siteFetchDomains
 	sharedGitHubWebhookSecret = githubWebhookSecret
+	sharedOIDCOrgs = allowedOrgs
 	sharedSiteDomain = strings.ToLower(strings.Trim(siteDomain, " ."))
 	sharedPrimaryDomain = strings.ToLower(strings.Trim(primaryDomain, " ."))
 
