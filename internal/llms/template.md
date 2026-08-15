@@ -94,6 +94,28 @@ downloads are unchanged -- always request a concrete os/arch. A single os/arch
 returns one artifact JSON object; a multi-platform upload returns a JSON array
 of them.
 
+One binary that runs on SEVERAL platforms -- an Actually Portable Executable,
+which boots natively on Linux, macOS and Windows from one file -- is published
+as ONE artifact with ONE download link, not as N rows:
+
+```
+PUT __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/ape?platforms=linux/amd64,darwin/arm64,windows/amd64
+```
+
+`platforms` is a comma-separated `os/arch` list; each side accepts the same
+alias spellings as everywhere else (`macOS/aarch64` is `darwin/arm64`). The
+first entry is the artifact's canonical slot. Every listed platform then
+resolves to that one artifact -- `/{project}?os=darwin&arch=arm64` and
+`/{project}?os=linux&arch=amd64` redirect to the SAME download URL with the
+same digest and ETag -- and apt/brew/npm/oci still cover every listed platform.
+`?kind=`, `X-Artifact-Filename`, `upload_session=` and `upload_sha256=`
+work exactly as they do on the `{os}/{arch}` endpoint; `kind=docker` and
+`kind=npm-package` are rejected. A declaration of MORE THAN ONE platform whose
+uploaded bytes are not an APE (no `MZqFpD` magic) returns 400 -- publish
+per-platform builds to `/artifacts/{os}/{arch}` instead. Every artifact in a
+release's JSON carries a `platforms` array (one entry for an ordinary
+per-platform artifact), so read that rather than `os`/`arch` alone.
+
 Hash-reference uploads: when `GET __BASE_URL__/api/v1/server-info` advertises
 `"upload_by_sha256": true`, a file byte-identical to one this project already
 uploaded (any release) can be registered for more os/arch slots without
@@ -338,6 +360,7 @@ POST   /api/v1/projects/{project}/releases                                   cre
 GET    /api/v1/projects/{project}/releases                                   list releases
 GET    /api/v1/projects/{project}/releases/{version}                         get release
 PUT    /api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}   upload artifact
+PUT    /api/v1/projects/{project}/releases/{version}/artifacts/ape           upload one file covering ?platforms=os/arch,...
 POST   /api/v1/projects/{project}/releases/{version}/publish                 publish release
 GET    /api/v1/server-info                                                   upload limits (public)
 POST   /api/v1/uploads                                                       create chunked upload session

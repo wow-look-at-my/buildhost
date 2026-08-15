@@ -72,7 +72,7 @@ func (h *Handler) resolveTag(ctx context.Context, project *db.Project, tag strin
 }
 
 func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db.Project, release *db.Release) {
-	artifacts, err := h.DB.ListArtifacts(r.Context(), release.ID)
+	artifacts, err := h.DB.ListArtifactsByPlatform(r.Context(), release.ID)
 	if err != nil {
 		ociError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 		return
@@ -90,7 +90,7 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 
 	var manifests []indexEntry
 	for _, a := range artifacts {
-		out, err := h.Gen.Generate(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestRootURL(r))
+		out, err := h.Gen.GenerateForPlatform(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestRootURL(r))
 		if err != nil {
 			continue
 		}
@@ -178,14 +178,14 @@ func (h *Handler) serveSingleManifest(w http.ResponseWriter, r *http.Request, pr
 		OS           string `json:"os"`
 	} `json:"platform"`
 }) {
-	artifacts, err := h.DB.ListArtifacts(r.Context(), release.ID)
+	artifacts, err := h.DB.ListArtifactsByPlatform(r.Context(), release.ID)
 	if err != nil {
 		ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest unknown")
 		return
 	}
 
 	for _, a := range artifacts {
-		out, err := h.Gen.Generate(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestRootURL(r))
+		out, err := h.Gen.GenerateForPlatform(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestRootURL(r))
 		if err != nil {
 			continue
 		}

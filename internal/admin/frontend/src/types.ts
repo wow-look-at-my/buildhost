@@ -117,6 +117,11 @@ export interface PackageInfo {
     size: number;
 }
 
+export interface Platform {
+    os: string;
+    arch: string;
+}
+
 export interface ArtifactDetail {
     os: string;
     arch: string;
@@ -125,6 +130,8 @@ export interface ArtifactDetail {
     size: number;
     download_count: number;
     debug_storage_key: string;
+    exe_format: string;
+    platforms: Platform[];
     packages: PackageInfo[];
 }
 
@@ -188,6 +195,8 @@ export interface AllArtifact {
     kind: string;
     size: number;
     filename: string;
+    exe_format: string;
+    platforms: Platform[];
     created_at: string;
     version: string;
     git_branch: string;

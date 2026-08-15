@@ -36,9 +36,10 @@ import (
 // against the signed index. So the row's metadata records a fingerprint of
 // exactly those inputs (debDigestFingerprint) and a mismatch is treated as a
 // miss: the row is refilled in place via the INSERT OR REPLACE upsert.
-func (h *Handler) debDigest(ctx context.Context, project *db.Project, release *db.Release, a *db.Artifact, baseURL string) (int64, string, error) {
-	fp := debDigestFingerprint(project, a)
-	_, size, sum, _, metadata, err := h.DB.GetPackagedArtifact(ctx, a.ID, string(repackage.FormatDeb))
+func (h *Handler) debDigest(ctx context.Context, project *db.Project, release *db.Release, a *db.PlatformArtifact, baseURL string) (int64, string, error) {
+	fp := debDigestFingerprint(project, &a.Artifact)
+	cacheFormat := a.CacheFormat(string(repackage.FormatDeb))
+	_, size, sum, _, metadata, err := h.DB.GetPackagedArtifact(ctx, a.ID, cacheFormat)
 	if err == nil && debMetadataFingerprint(metadata) == fp {
 		return size, sum, nil
 	}
@@ -46,7 +47,7 @@ func (h *Handler) debDigest(ctx context.Context, project *db.Project, release *d
 		return 0, "", err
 	}
 
-	out, err := h.Gen.Generate(ctx, repackage.FormatDeb, *project, *release, *a, baseURL)
+	out, err := h.Gen.GenerateForPlatform(ctx, repackage.FormatDeb, *project, *release, *a, baseURL)
 	if err != nil {
 		return 0, "", err
 	}
@@ -67,7 +68,7 @@ func (h *Handler) debDigest(ctx context.Context, project *db.Project, release *d
 	if merr != nil {
 		return n, sum, nil
 	}
-	if err := h.DB.CreatePackagedArtifact(ctx, a.ID, string(repackage.FormatDeb), a.StorageKey, n, sum, out.Filename, string(metaJSON)); err != nil {
+	if err := h.DB.CreatePackagedArtifact(ctx, a.ID, cacheFormat, a.StorageKey, n, sum, out.Filename, string(metaJSON)); err != nil {
 		slog.Warn("cache deb digest", "artifact_id", a.ID, "err", err)
 	}
 	return n, sum, nil

@@ -14,6 +14,7 @@ import type {
     GoproxyData,
     OIDCPolicy,
     Pages,
+    Platform,
     ProjectData,
     ProjectSummary,
     RegistriesData,
@@ -124,6 +125,16 @@ const renderSidebar = function (nav: string): void {
 };
 
 const badge = function (type: string, text: string): string { return '<span class="badge badge-' + type + '">' + h(text) + "</span>"; };
+// platformBadge renders an artifact's whole platform set as ONE badge. A file
+// covering several platforms is one artifact with one download link, so listing
+// it once with "APE: linux/amd64, darwin/arm64" is the honest row.
+const platformBadge = function (platforms: Platform[] | undefined, exeFormat: string, os: string, arch: string): string {
+    var list = platforms && platforms.length > 0
+        ? platforms.map(function (p) { return p.os + "/" + p.arch; }).join(", ")
+        : os + "/" + arch;
+    if (exeFormat) return badge("info", exeFormat.toUpperCase() + ": " + list);
+    return badge("info", list);
+};
 
 // urlTpl renders a copyable URL with inline os/arch dropdowns. `base` is the
 // text before the os dropdown, `mid` the text between the os and arch dropdowns
@@ -468,7 +479,7 @@ pages.release = function (name: string, version: string): void {
         } else {
             for (var i = 0; i < arts.length; i++) {
                 var a = arts[i];
-                html += "<tr><td>" + badge("info", a.os + "/" + a.arch) + "</td>";
+                html += "<tr><td>" + platformBadge(a.platforms, a.exe_format, a.os, a.arch) + "</td>";
                 html += "<td>" + badge("neutral", a.kind) + "</td>";
                 html += "<td>" + (a.filename ? "<code>" + h(a.filename) + "</code>" : '<span class="muted">-</span>') + "</td>";
                 html += "<td>" + h(humanSize(a.size)) + "</td>";
@@ -949,7 +960,7 @@ pages.artifacts = function (): void {
                 var a = artifacts[i];
                 html += "<tr><td><a href='#/projects/" + h(a.project_name) + "'>" + h(a.project_name) + "</a></td>";
                 html += "<td><a href='#/projects/" + h(a.project_name) + "/releases/" + h(a.version) + "'><code>" + h(a.version) + "</code></a></td>";
-                html += "<td>" + badge("info", a.os + "/" + a.arch) + "</td>";
+                html += "<td>" + platformBadge(a.platforms, a.exe_format, a.os, a.arch) + "</td>";
                 html += "<td>" + badge("neutral", a.kind) + "</td>";
                 html += "<td>" + (a.filename ? "<code>" + h(a.filename) + "</code>" : '<span class="muted">-</span>') + "</td>";
                 html += "<td>" + h(humanSize(a.size)) + "</td>";
