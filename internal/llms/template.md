@@ -94,6 +94,14 @@ downloads are unchanged -- always request a concrete os/arch. A single os/arch
 returns one artifact JSON object; a multi-platform upload returns a JSON array
 of them.
 
+That per-combination fan-out applies to a file that is NOT an APE, where the
+combinations really are separate builds that happen to share bytes. When the
+uploaded body carries APE magic and the segments expand to more than one
+combination, the upload publishes ONE artifact covering them all -- exactly as
+the `/artifacts/ape` endpoint below does -- and answers with that single
+artifact JSON object rather than an array. A file that runs on N platforms gets
+one download link, never N.
+
 One binary that runs on SEVERAL platforms -- an Actually Portable Executable,
 which boots natively on Linux, macOS and Windows from one file -- is published
 as ONE artifact with ONE download link, not as N rows:
@@ -112,7 +120,11 @@ same digest and ETag -- and apt/brew/npm/oci still cover every listed platform.
 work exactly as they do on the `{os}/{arch}` endpoint; `kind=docker` and
 `kind=npm-package` are rejected. A declaration of MORE THAN ONE platform whose
 uploaded bytes are not an APE (no `MZqFpD` magic) returns 400 -- publish
-per-platform builds to `/artifacts/{os}/{arch}` instead. Every artifact in a
+per-platform builds to `/artifacts/{os}/{arch}` instead. A declared `windows/*`
+platform is checked against the bytes too: an APE whose PE header is the
+one-section do-nothing stub maps none of the payload, so the binary would start
+on Windows and exit 0 without running, and that upload returns 400 rather than
+publishing a download that fails silently. Every artifact in a
 release's JSON carries a `platforms` array (one entry for an ordinary
 per-platform artifact), so read that rather than `os`/`arch` alone.
 
