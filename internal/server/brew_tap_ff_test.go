@@ -58,14 +58,27 @@ func gitScratchDir(t *testing.T) string {
 	return dir
 }
 
+// gitTestEnv is the environment every git invocation in these tests runs with.
+// The identity vars keep commits reproducible; the GIT_CONFIG_* pair turns OFF
+// automatic repacking, which fetch, rebase and clone all trigger. Auto-gc runs
+// detached, so it can repack and delete a pack while a later `git fsck` in the
+// same test is still enumerating -- surfacing as "packfile ... index not
+// opened" / "unable to load rev-index for pack" on a tree nothing is wrong
+// with. GIT_CONFIG_* rather than `-c` so the setting reaches the child
+// processes git spawns for itself.
+var gitTestEnv = []string{
+	"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@test", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@test",
+	"GIT_TERMINAL_PROMPT=0",
+	"GIT_CONFIG_COUNT=2",
+	"GIT_CONFIG_KEY_0=gc.auto", "GIT_CONFIG_VALUE_0=0",
+	"GIT_CONFIG_KEY_1=maintenance.auto", "GIT_CONFIG_VALUE_1=false",
+}
+
 func gitRun(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
-		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@test", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@test",
-		"GIT_TERMINAL_PROMPT=0",
-	)
+	cmd.Env = append(os.Environ(), gitTestEnv...)
 	out, err := cmd.CombinedOutput()
 	require.NoErrorf(t, err, "git %s: %s", strings.Join(args, " "), out)
 	return string(out)
