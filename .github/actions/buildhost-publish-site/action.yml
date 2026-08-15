@@ -306,7 +306,7 @@ runs:
               core.info(JSON.stringify(body, null, 2));
               core.setOutput('response', r.text);
               core.setOutput('site_url', siteURL);
-              await recordSite(octokit, core, context, { server, project, branch, version: gitCommit, sha256: sum });
+              // DISABLED: await recordSite(octokit, core, context, { server, project, branch, version: gitCommit, sha256: sum });
             };
 
             if (chunkSize <= 0 || size <= directLimit) {
