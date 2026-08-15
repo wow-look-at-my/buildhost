@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // The {project}.<site-domain> serving scheme.
@@ -41,7 +42,7 @@ import (
 
 // siteDomainRegistered keeps the config-conditional registration idempotent
 // across repeated auth.Init calls (tests boot several servers per process).
-var siteDomainRegistered = map[string]bool{}
+var siteDomainRegistered = set.New[string]()
 
 // registerSiteDomainRoutes registers the {project}.<site-domain> serving route
 // iff a site domain is configured. The pattern depends on configuration, so it
@@ -49,10 +50,9 @@ var siteDomainRegistered = map[string]bool{}
 // auth.SiteDomainPlaceholder when routes are enumerated rather than served, so
 // `buildhost routes` and the PR route diff still cover it.
 func registerSiteDomainRoutes(d string) {
-	if d == "" || siteDomainRegistered[d] {
+	if d == "" || !siteDomainRegistered.Add(d) {
 		return
 	}
-	siteDomainRegistered[d] = true
 	auth.SiteDomainHandle(d, "GET /{path...}", parseSubdomainRoute, handler.ServeSubdomain)
 }
 

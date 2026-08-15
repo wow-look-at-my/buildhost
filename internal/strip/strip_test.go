@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // Stripping is implemented in-process, so it is available wherever buildhost
@@ -270,12 +271,12 @@ func TestStrip_SectionSelection(t *testing.T) {
 	require.NoError(t, err)
 	defer stripped.Close()
 
-	names := map[string]bool{}
+	names := set.New[string]()
 	for _, s := range stripped.Sections {
-		names[s.Name] = true
+		names.Add(s.Name)
 	}
-	assert.False(t, names[".symtab"], ".symtab must be stripped")
-	assert.False(t, names[".debug_info"], ".debug_info must be stripped")
+	assert.False(t, names.Contains(".symtab"), ".symtab must be stripped")
+	assert.False(t, names.Contains(".debug_info"), ".debug_info must be stripped")
 
 	// Every allocated section survives, at its original file offset -- program
 	// headers address them directly, so moving one would break execution.

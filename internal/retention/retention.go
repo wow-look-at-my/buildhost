@@ -8,6 +8,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // Config controls retention policy. KeepN published releases are kept on each
@@ -222,12 +223,11 @@ func (r *Retention) markRecordsDeleted(ctx context.Context, rep *Report, doomed 
 		return
 	}
 
-	seenErr := make(map[string]bool)
+	seenErr := set.New[string]()
 	for _, d := range doomed {
 		if err := r.recordDeleter.MarkDeleted(ctx, d.githubRepo, d.project, d.version, d.sha256); err != nil {
 			rep.RecordsUnmarked++
-			if msg := err.Error(); !seenErr[msg] {
-				seenErr[msg] = true
+			if msg := err.Error(); seenErr.Add(msg) {
 				rep.RecordErrors = append(rep.RecordErrors, msg)
 			}
 			slog.WarnContext(ctx, "retention: could not mark storage record deleted",
