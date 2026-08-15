@@ -123,6 +123,20 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		resolvedVersion = fmt.Sprintf("%d", release.VersionNum)
 	}
 
+	// One file covering several platforms must hand every one of them the SAME
+	// download URL, or a CDN caches N copies of one blob and a consumer
+	// comparing two platforms' links sees two URLs for one binary. Fold the
+	// requested pair to the artifact's canonical slot. A miss leaves the pair
+	// untouched: static answers the 404, exactly as before.
+	canonOS, canonArch, err := h.DB.CanonicalPlatform(r.Context(), release.ID, osStr, archStr)
+	switch {
+	case err == nil:
+		osStr, archStr = canonOS, canonArch
+	case !errors.Is(err, db.ErrNotFound):
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
 	p := static.For(project.Name).WithVersion(resolvedVersion).WithOS(db.OS(osStr)).WithArch(db.Arch(archStr)).WithFmt(fmtStr)
 	if q.Get("debug") == "1" {
 		p = p.WithDebug(true)
