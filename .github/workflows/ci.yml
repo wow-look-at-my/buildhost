@@ -32,12 +32,6 @@ jobs:
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           generate: 476c7c5fc951
-      # TEMPORARY diagnostic, removed once the dirty go.mod is understood: the
-      # dirty check names the file but never prints what changed, and a local
-      # run leaves the tree clean, so this is the only way to see the diff.
-      - name: TEMP show what CI rewrote
-        if: always()
-        run: git --no-pager diff -- go.mod go.sum
       # The step above just ran every generate directive. If that changed a
       # TRACKED file, this repo is carrying a build artifact in git -- and a
       # tracked artifact is free to drift from the source it claims to be built
