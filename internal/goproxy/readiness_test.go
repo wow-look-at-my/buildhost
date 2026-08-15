@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 // The failure readiness exists for: with no credential the proxy serves every
@@ -90,6 +92,18 @@ func TestPassthroughOnlyIsHealthy(t *testing.T) {
 	assert.Empty(t, h.Reason)
 }
 
+// serveHealthAs drives the health endpoint, optionally as a read-scoped caller.
+func serveHealthAs(t *testing.T, s *Service, authed bool) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	if authed {
+		req = req.WithContext(auth.WithToken(req.Context(), &db.ApiToken{Scopes: "read"}))
+	}
+	rec := httptest.NewRecorder()
+	s.serveHealth(rec, req)
+	return rec
+}
+
 // The health endpoint answers 503 when the proxy cannot serve what it claims,
 // so an external check sees the difference rather than only "the port is open".
 func TestHealthEndpointReports503WhenNotReady(t *testing.T) {
@@ -97,8 +111,7 @@ func TestHealthEndpointReports503WhenNotReady(t *testing.T) {
 	s := newTestService(t, fake, "", []string{privateOrg})
 	s.checkHealth(context.Background())
 
-	rec := httptest.NewRecorder()
-	s.serveHealth(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+	rec := serveHealthAs(t, s, true)
 
 	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
 
@@ -113,10 +126,38 @@ func TestHealthEndpointReports200WhenReady(t *testing.T) {
 	s := newTestService(t, fake, "tok", []string{privateOrg})
 	s.checkHealth(context.Background())
 
-	rec := httptest.NewRecorder()
-	s.serveHealth(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+	assert.Equal(t, http.StatusOK, serveHealthAs(t, s, false).Code)
+	assert.Equal(t, http.StatusOK, serveHealthAs(t, s, true).Code)
+}
 
-	assert.Equal(t, http.StatusOK, rec.Code)
+// serve() gates even public modules so nobody can ask anonymously which modules
+// are private. The health endpoint must not answer that same question for free:
+// the prefixes, the readiness module and a probe error all name private repos.
+// The verdict stays public so a monitor needs no credential.
+func TestHealthEndpointRedactsPrivateNamesFromAnonymousCallers(t *testing.T) {
+	fake := newFakeGitHub(t)
+	fake.Status = http.StatusNotFound
+	fake.Body = `{"message":"Not Found"}`
+	s := newTestService(t, fake, "a-token-without-org-access", []string{privateOrg})
+	s.cfg.ReadinessModule = privateOrg + "/tml"
+	s.checkHealth(context.Background())
+
+	rec := serveHealthAs(t, s, false)
+
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code,
+		"the verdict itself stays unauthenticated -- a monitor that must authenticate is one nobody wires up")
+
+	body := rec.Body.String()
+	assert.Contains(t, body, `"healthy":false`)
+	assert.NotContains(t, body, privateOrg, "the private prefix list must not leak to an anonymous caller")
+	assert.NotContains(t, body, "tml", "the readiness module names a private repository")
+	assert.NotContains(t, body, "credential_kind")
+
+	// The same request WITH a read token gets everything, so nothing an operator
+	// needs is actually hidden.
+	authed := serveHealthAs(t, s, true).Body.String()
+	assert.Contains(t, authed, privateOrg+"/tml")
+	assert.Contains(t, authed, "credential_kind")
 }
 
 // The dashboard's snapshot has to survive an empty cache: a proxy that has

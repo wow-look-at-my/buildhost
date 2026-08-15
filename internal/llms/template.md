@@ -304,7 +304,8 @@ own credential could not read the module, 502 when the upstream failed, and 404
 only when upstream is readable and the module genuinely is not there. A 404 from
 this proxy means the module does not exist -- it never means "I was not allowed
 to look". `__GOPROXY_URL__/health` reports whether the proxy can currently serve
-private modules at all.
+private modules at all: 200 or 503 with no credential, and the reason plus the
+configured prefixes when you present a read token.
 
 ## Static sites
 

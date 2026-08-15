@@ -84,6 +84,15 @@ It reports three distinct states:
   class this package exists for.
 - **Ready** -- the readiness module resolved.
 
+The endpoint splits what it tells whom. The status code and the `healthy` flag
+are unauthenticated, so a monitor needs no credential -- one that does is one
+nobody wires up. The reason, the credential state, the private prefixes and the
+readiness module are served only to a read-scoped caller: each of them names a
+private repository, and the whole point of gating even public modules is that
+"is this module private?" cannot be asked anonymously. The admin dashboard reads
+the full state directly, on the admin port, so nothing is hidden from an
+operator.
+
 It deliberately does NOT fail the registry's `/healthz`. A goproxy
 misconfiguration would then take every other buildhost service out of rotation,
 which is a worse outcome than the one being prevented.

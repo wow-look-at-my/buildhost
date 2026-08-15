@@ -193,10 +193,24 @@ func joinPrefixes(p []string) string {
 	return out
 }
 
+// publicHealth is what an unauthenticated caller sees: the verdict and nothing
+// that names a module.
+type publicHealth struct {
+	Healthy   bool      `json:"healthy"`
+	CheckedAt time.Time `json:"checked_at"`
+	Detail    string    `json:"detail"`
+}
+
 // serveHealth exposes readiness on the proxy's own subdomain, so an external
 // check can ask this proxy whether it can serve private modules rather than
-// only whether it is listening. Public: it reports configuration state and
-// never module content.
+// only whether it is listening.
+//
+// The status code and the healthy flag are unauthenticated, because a monitor
+// that must authenticate is a monitor nobody wires up. Everything else needs a
+// read token: the private prefixes, the readiness module and a probe error all
+// NAME private repositories, and serve() gates even public modules so that "is
+// this module private?" is not a question anybody can ask anonymously. Handing
+// out the prefix list here would answer it for free.
 func (s *Service) serveHealth(w http.ResponseWriter, r *http.Request) {
 	h := s.Health()
 	w.Header().Set("Content-Type", "application/json")
@@ -204,7 +218,15 @@ func (s *Service) serveHealth(w http.ResponseWriter, r *http.Request) {
 	if !h.Healthy {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
-	_ = json.NewEncoder(w).Encode(h)
+	if s.authorized(r) {
+		_ = json.NewEncoder(w).Encode(h)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(publicHealth{
+		Healthy:   h.Healthy,
+		CheckedAt: h.CheckedAt,
+		Detail:    "authenticate with a read-scoped token for the reason, the credential state and the configured prefixes",
+	})
 }
 
 // cachedFromResolved converts a resolution into a cache row.
