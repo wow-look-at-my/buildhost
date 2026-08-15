@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // Cross-domain sign-in handoff.
@@ -113,7 +115,7 @@ func requestSiteApex(r *http.Request) string {
 // ssoRegisteredDomains keeps registration idempotent across repeated Init calls
 // (tests boot several servers per process; the router tolerates duplicates but
 // there is no reason to accumulate them).
-var ssoRegisteredDomains = map[string]bool{}
+var ssoRegisteredDomains = set.New[string]()
 
 var ssoBareRegistered bool
 
@@ -141,10 +143,9 @@ func init() {
 // OnSiteDomain hook: with the real domain at Init, and with
 // SiteDomainPlaceholder whenever routes are enumerated instead of served.
 func registerSSOHandoffRoutes(sd string) {
-	if sd == "" || ssoRegisteredDomains[sd] {
+	if sd == "" || !ssoRegisteredDomains.Add(sd) {
 		return
 	}
-	ssoRegisteredDomains[sd] = true
 	// Host-agnostic, so it is the same route for every domain: register once.
 	if !ssoBareRegistered {
 		ssoBareRegistered = true

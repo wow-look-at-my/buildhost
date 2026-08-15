@@ -9,6 +9,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 type ServeContext struct {
@@ -114,15 +115,15 @@ func (p Params) values() url.Values {
 	return q
 }
 
-var knownParams = map[string]bool{
-	"arch": true, "debug": true, "fmt": true,
-	"project": true, "os": true, "v": true, "token": true,
-}
+var knownParams = set.Of(
+	"arch", "debug", "fmt",
+	"project", "os", "v", "token",
+)
 
 func canonicalQuery(raw url.Values) string {
 	clean := url.Values{}
 	for k, vs := range raw {
-		if !knownParams[k] || len(vs) == 0 {
+		if !knownParams.Contains(k) || len(vs) == 0 {
 			continue
 		}
 		v := vs[0]
