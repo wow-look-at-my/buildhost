@@ -22,9 +22,9 @@ func init() {
 		handler.Store = auth.Store()
 		handler.FetchDomains = auth.SiteFetchDomains()
 		handler.TmpDir = auth.DataDir() + "/tmp"
-		// Config-conditional {project}.<site-domain> scheme (see subdomain.go).
-		registerSiteDomainRoutes()
 	})
+	// Config-conditional {project}.<site-domain> scheme (see subdomain.go).
+	auth.OnSiteDomain(registerSiteDomainRoutes)
 	// The original /branch/{branch}/ form. Kept working forever -- it is what
 	// every published preview link, README and deployed client already says --
 	// but reads of it 302 to the canonical URL rather than serving in place, so

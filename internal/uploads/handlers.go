@@ -31,12 +31,12 @@ func init() {
 		} else {
 			active.Store(store)
 		}
-
-		auth.HandleRawPrimary("POST /api/v1/uploads", handleCreate)
-		auth.HandleRawPrimary("GET /api/v1/uploads/{id}", handleStatus)
-		auth.HandleRawPrimary("PATCH /api/v1/uploads/{id}", handleAppend)
-		auth.HandleRawPrimary("DELETE /api/v1/uploads/{id}", handleAbort)
 	})
+
+	auth.HandleRawPrimary("POST /api/v1/uploads", handleCreate)
+	auth.HandleRawPrimary("GET /api/v1/uploads/{id}", handleStatus)
+	auth.HandleRawPrimary("PATCH /api/v1/uploads/{id}", handleAppend)
+	auth.HandleRawPrimary("DELETE /api/v1/uploads/{id}", handleAbort)
 }
 
 // StartJanitor sweeps expired sessions in the background until ctx is done.
