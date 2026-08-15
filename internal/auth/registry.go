@@ -14,6 +14,7 @@ var (
 	mux                       = router.New()
 	mw                        *Middleware
 	readyFuncs                []func()
+	siteDomainFuncs           []func(domain string)
 	sharedDB                  *db.DB
 	sharedStore               storage.Storage
 	sharedData                string
@@ -41,8 +42,37 @@ func SiteDomain() string { return sharedSiteDomain }
 // redirect to https://<PrimaryDomain>/__signin.
 func PrimaryDomain() string { return sharedPrimaryDomain }
 
+// OnReady runs fn once auth.Init has wired the shared dependencies (DB, store,
+// data dir). Use it to populate handler fields and NOTHING else: a route
+// registered from here exists only in a booted server, so it is absent from
+// `buildhost routes` and from the PR route diff built on it.
+// TestInitRegistersOnlySiteDomainRoutes enforces that.
 func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
+}
+
+// OnSiteDomain is the one sanctioned way to register a route whose pattern
+// depends on configuration. fn runs with the configured BUILDHOST_SITE_DOMAIN
+// at Init, and again with SiteDomainPlaceholder from ListRoutes, so the route
+// is enumerable without booting a server and a change to it shows up on a PR.
+// fn must be idempotent per domain.
+func OnSiteDomain(fn func(domain string)) {
+	siteDomainFuncs = append(siteDomainFuncs, fn)
+}
+
+// SiteDomainPlaceholder stands in for the configured site domain when routes
+// are enumerated rather than served.
+const SiteDomainPlaceholder = "{site-domain}"
+
+// ListRoutes returns the complete route table for enumeration, including the
+// config-conditional site-domain families rendered against
+// SiteDomainPlaceholder. It registers those routes into the shared router, so
+// it is for processes that enumerate instead of serving (`buildhost routes`).
+func ListRoutes() []router.Route {
+	for _, fn := range siteDomainFuncs {
+		fn(SiteDomainPlaceholder)
+	}
+	return mux.Routes()
 }
 
 func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string, githubWebhookSecret, githubClientID, githubClientSecret, siteDomain, primaryDomain string) {
@@ -55,11 +85,14 @@ func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers
 	sharedPrimaryDomain = strings.ToLower(strings.Trim(primaryDomain, " ."))
 
 	initDownloadSecret(dataDir)
-	// Config-conditional: registers the /__sso handoff routes only when a site
-	// domain is configured, so an unset BUILDHOST_SITE_DOMAIN leaves the route
-	// table byte-identical. Must run before the OnReady funcs below only for
-	// tidiness -- route precedence is score-based, not registration-order-based.
-	registerSSOHandoffRoutes()
+	// Config-conditional families (the /__sso handoff, the {project}.<site-domain>
+	// scheme). With BUILDHOST_SITE_DOMAIN unset the route table stays
+	// byte-identical to a build without the feature.
+	if sharedSiteDomain != "" {
+		for _, fn := range siteDomainFuncs {
+			fn(sharedSiteDomain)
+		}
+	}
 
 	mw = &Middleware{
 		DB: database,
