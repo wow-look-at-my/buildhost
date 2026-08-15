@@ -16,6 +16,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 var validDigest = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
@@ -302,11 +303,10 @@ func (h *Handler) manifestContentType(ctx context.Context, project *db.Project, 
 func (h *Handler) serveTags(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
 
-	seen := map[string]bool{}
+	seen := set.New[string]()
 	tags := []string{}
 	add := func(t string) {
-		if t != "" && !seen[t] {
-			seen[t] = true
+		if t != "" && seen.Add(t) {
 			tags = append(tags, t)
 		}
 	}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 type Versioning string
@@ -80,7 +82,7 @@ func ParsePlatform(s string) (Platform, error) {
 func ParsePlatformList(spec string) ([]Platform, error) {
 	elems := strings.Split(spec, ",")
 	out := make([]Platform, 0, len(elems))
-	seen := make(map[Platform]bool, len(elems))
+	seen := set.New[Platform](len(elems))
 	for _, elem := range elems {
 		if strings.TrimSpace(elem) == "" {
 			return nil, fmt.Errorf("empty platform in %q", spec)
@@ -89,10 +91,9 @@ func ParsePlatformList(spec string) ([]Platform, error) {
 		if err != nil {
 			return nil, err
 		}
-		if seen[p] {
+		if !seen.Add(p) {
 			return nil, fmt.Errorf("duplicate platform %q", p)
 		}
-		seen[p] = true
 		out = append(out, p)
 	}
 	if len(out) == 0 {
@@ -294,15 +295,11 @@ type SiteDetail = ListSiteDetailsRow
 type AllArtifact = ListAllArtifactsRow
 type StorageBreakdown = GetStorageBreakdownRow
 
-var ValidScopes = map[string]bool{
-	"read":  true,
-	"write": true,
-	// share authorizes minting temporary, artifact-bound download links
-	// (POST /api/v1/projects/{project}/download-links). It is deliberately
-	// separate from write so a CI/deploy token cannot also hand out shareable
-	// links to private artifacts.
-	"share": true,
-}
+// share authorizes minting temporary, artifact-bound download links
+// (POST /api/v1/projects/{project}/download-links). It is deliberately
+// separate from write so a CI/deploy token cannot also hand out shareable
+// links to private artifacts.
+var ValidScopes = set.Of("read", "write", "share")
 
 func (r Release) IsPrerelease() bool {
 	return strings.Contains(r.Version, "-")

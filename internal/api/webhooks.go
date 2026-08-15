@@ -12,6 +12,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 const maxWebhookBody = 1 << 20 // 1 MiB
@@ -85,15 +86,15 @@ func (h *Handler) handleGitHubDelete(w http.ResponseWriter, r *http.Request, bod
 	}
 
 	blobsDeleted := 0
-	seenKeys := map[string]struct{}{}
+	seenKeys := set.New[string]()
 	for _, site := range deleted {
 		if site.StorageKey == "" {
 			continue
 		}
-		if _, seen := seenKeys[site.StorageKey]; seen {
+		if seenKeys.Contains(site.StorageKey) {
 			continue
 		}
-		seenKeys[site.StorageKey] = struct{}{}
+		seenKeys.Add(site.StorageKey)
 		ok, err := retention.DeleteBlobIfUnreferenced(r.Context(), h.DB, h.Store, site.StorageKey, true)
 		if err != nil {
 			slog.WarnContext(r.Context(), "github webhook: failed to delete unreferenced site blob",
