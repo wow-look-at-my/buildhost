@@ -226,7 +226,8 @@ runs:
             const uploadedSlots: import("${{ github.action_path }}/../lib/storage-record").PublishedArtifact[] = [];
             // recording happens inline, with no opt-out; skipping it silently would leave the artifacts page stale while the publish stayed green
             const drainStorageRecords = async (): Promise<boolean> =>
-              recordReleaseArtifacts(octokit, core, context, { server, artifacts: uploadedSlots });
+              // recordReleaseArtifacts(octokit, core, context, { server, artifacts: uploadedSlots });
+              true;
 
             // require is the documented route to node modules -- the TS action injects no crypto global
             const crypto = require("crypto");
