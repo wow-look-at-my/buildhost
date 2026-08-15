@@ -16,7 +16,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 )
 
-func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, release db.Release, artifacts []db.Artifact, baseURL string) (*repackage.Output, error) {
+func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, release db.Release, artifacts []db.PlatformArtifact, baseURL string) (*repackage.Output, error) {
 	// A digit-leading project name can never be a loadable Homebrew formula
 	// (see repackage.BrewEligibleProjectName); emitting one would put
 	// syntactically invalid Ruby in the tap and break evaluation of every
@@ -37,7 +37,7 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 	})
 
 	for _, a := range artifacts {
-		osName, archName, ok := brewPlatform(a)
+		osName, archName, ok := brewPlatform(a.Artifact)
 		if !ok {
 			continue
 		}
@@ -99,8 +99,9 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 // this stability. The row is a digest cache only: no tar.gz blob is stored, so
 // storage_key records the SOURCE artifact blob (a key the retention refcount
 // already tracks) and the row is dropped with its artifact on eviction.
-func (h *Handler) tarGZSHA256(ctx context.Context, project db.Project, release db.Release, a db.Artifact, baseURL string) (string, error) {
-	_, _, cached, _, metadata, err := h.DB.GetPackagedArtifact(ctx, a.ID, string(repackage.FormatTarGZ))
+func (h *Handler) tarGZSHA256(ctx context.Context, project db.Project, release db.Release, a db.PlatformArtifact, baseURL string) (string, error) {
+	cacheFormat := a.CacheFormat(string(repackage.FormatTarGZ))
+	_, _, cached, _, metadata, err := h.DB.GetPackagedArtifact(ctx, a.ID, cacheFormat)
 	if err == nil && tarGZMetadataTransform(metadata) == repackage.TransformVersion {
 		return cached, nil
 	}
@@ -108,7 +109,7 @@ func (h *Handler) tarGZSHA256(ctx context.Context, project db.Project, release d
 		return "", err
 	}
 
-	tgz, err := h.Gen.Generate(ctx, repackage.FormatTarGZ, project, release, a, baseURL)
+	tgz, err := h.Gen.GenerateForPlatform(ctx, repackage.FormatTarGZ, project, release, a, baseURL)
 	if err != nil {
 		return "", err
 	}
@@ -127,7 +128,7 @@ func (h *Handler) tarGZSHA256(ctx context.Context, project db.Project, release d
 	if merr != nil {
 		return sum, nil
 	}
-	if err := h.DB.CreatePackagedArtifact(ctx, a.ID, string(repackage.FormatTarGZ), a.StorageKey, size, sum, tgz.Filename, string(metaJSON)); err != nil {
+	if err := h.DB.CreatePackagedArtifact(ctx, a.ID, cacheFormat, a.StorageKey, size, sum, tgz.Filename, string(metaJSON)); err != nil {
 		slog.Warn("cache tar.gz digest", "artifact_id", a.ID, "err", err)
 	}
 	return sum, nil

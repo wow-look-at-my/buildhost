@@ -137,7 +137,7 @@ func (h *Handler) Release(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	arts, err := h.DB.ListArtifacts(ctx, rel.ID)
+	arts, err := h.DB.ListArtifactsWithPlatforms(ctx, rel.ID)
 	if err != nil {
 		h.fail(w, r, err)
 		return

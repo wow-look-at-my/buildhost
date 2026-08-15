@@ -19,10 +19,7 @@ func gitRunEnv(t *testing.T, dir string, extraEnv []string, args ...string) stri
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(append(os.Environ(),
-		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@test", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@test",
-		"GIT_TERMINAL_PROMPT=0",
-	), extraEnv...)
+	cmd.Env = append(append(os.Environ(), gitTestEnv...), extraEnv...)
 	out, err := cmd.CombinedOutput()
 	require.NoErrorf(t, err, "git %s: %s", strings.Join(args, " "), out)
 	return string(out)

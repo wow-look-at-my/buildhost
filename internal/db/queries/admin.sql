@@ -75,8 +75,11 @@ FROM sites s
 JOIN projects p ON s.project_id = p.id
 ORDER BY s.updated_at DESC;
 
+-- name: ListAllArtifactPlatforms :many
+SELECT artifact_id, os, arch FROM artifact_platforms ORDER BY artifact_id, ordinal;
+
 -- name: ListAllArtifacts :many
-SELECT a.id, a.os, a.arch, a.kind, a.size, a.filename, a.created_at,
+SELECT a.id, a.os, a.arch, a.kind, a.size, a.filename, a.exe_format, a.created_at,
        r.version, r.git_branch,
        p.name AS project_name,
        CAST(COALESCE(dc.count, 0) AS INTEGER) AS download_count

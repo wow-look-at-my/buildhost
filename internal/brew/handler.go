@@ -144,7 +144,7 @@ func (h *Handler) ServeFormula(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	artifacts, err := h.DB.ListArtifacts(r.Context(), release.ID)
+	artifacts, err := h.DB.ListArtifactsByPlatform(r.Context(), release.ID)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
