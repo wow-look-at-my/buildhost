@@ -88,8 +88,8 @@ The endpoint splits what it tells whom. The status code and the `healthy` flag
 are unauthenticated, so a monitor needs no credential -- one that does is one
 nobody wires up. The reason, the credential state, the private prefixes and the
 readiness module are served only to a read-scoped caller: each of them names a
-private repository, and the whole point of gating even public modules is that
-"is this module private?" cannot be asked anonymously. The admin dashboard reads
+private repository, and a private module's existence is not something an
+anonymous caller may learn. The admin dashboard reads
 the full state directly, on the admin port, so nothing is hidden from an
 operator.
 
@@ -144,9 +144,32 @@ and can point it at a self-hosted one.
 
 ## Auth
 
-Every request needs a read-scoped token (or a GitHub browser session), public
-modules included. Gating only the private prefixes would make "is this module
-private?" an oracle anyone could query anonymously.
+Two different credentials meet here, and confusing them is what produced the bug
+this package was written for. The PROXY's credential (a GitHub App installation
+token, else the static PAT, resolved per repo by `auth.BearerForRepo`) decides
+what the proxy can fetch. The CALLER's credential decides what they may see.
+
+A module outside the private namespaces is public source and needs no
+credential; requiring one would only stop `GOPROXY=<proxy>,direct` working for
+anyone without a buildhost token. Inside them, a caller needs either a GLOBAL
+read/write token or a signed-in GitHub user who can read the backing repo, asked
+of GitHub per repo. A project-scoped token is not enough: it says "this job may
+read project X", and a Go module is not a project, so accepting it would widen a
+least-privilege credential to the org's whole private source tree.
+
+A caller without that access gets **404**, never 401 or 403 -- the same answer a
+module that does not exist gets. Either of the other two confirms the module
+EXISTS, which is the fact a private module is keeping, and a prober could walk a
+name list and map the org's private repositories off the status code alone. The
+check runs before any upstream call, so the existing and the fictional module
+cannot drift apart in timing or body, and an unauthenticated request never spends
+GitHub API quota. `TestExistingAndMissingPrivateModulesAreIndistinguishable`
+holds the property.
+
+This is the exact opposite of `KindUnauthorized`, and the two must never merge.
+There the proxy's OWN credential failed: no caller can fix that, and a 404 buries
+it -- which is how a proxy serving zero private modules looked like a typo in
+everybody's `go.mod` for as long as it did. That case stays a loud 403.
 
 Point the toolchain at it with `~/.netrc`:
 

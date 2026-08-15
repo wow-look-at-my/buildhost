@@ -301,21 +301,23 @@ entry" -- so everything else is fetched straight from its origin. No third-party
 mirror is involved unless the operator configures one, and none is configured by
 default: a mirror sees the module path of every dependency routed through it.
 
-An authorization failure is a 403, not a 404, so it does NOT fall through to
-`direct` -- a credential problem halts the fetch and gets reported instead of
-being silently papered over.
+A failure of the PROXY's own credential is a 403, not a 404, so it does NOT fall
+through to `direct` -- an operator's credential problem halts the fetch and gets
+reported instead of being silently papered over.
 
 `GOPRIVATE` keeps your org's module paths out of the public checksum database
 (it sets `GONOPROXY` and `GONOSUMDB` for you).
 
-Every module needs an authenticated request, public ones included, so that
-"is this module private?" is not a question anyone can ask anonymously.
+Send a read-scoped token to fetch a module in one of this proxy's private
+namespaces. Without one, every such module is answered 404 -- the same answer a
+module that does not exist gets, and deliberately so: a 401 or 403 would confirm
+the module exists, which is the fact a private module is keeping. Public modules
+need no credential.
 
 A fetch that fails is answered with a status that says WHY: 403 when the proxy's
 own credential could not read the module, 502 when the upstream failed, and 404
-only when upstream is readable and the module genuinely is not there. A 404 from
-this proxy means the module does not exist -- it never means "I was not allowed
-to look". `__GOPROXY_URL__/health` reports whether the proxy can currently serve
+when the module is not there or is not visible to you. A 404 never means the
+proxy could not read the module on your behalf -- that case is the 403. `__GOPROXY_URL__/health` reports whether the proxy can currently serve
 private modules at all: 200 or 503 with no credential, and the reason plus the
 configured prefixes when you present a read token.
 

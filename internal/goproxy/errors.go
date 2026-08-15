@@ -27,6 +27,16 @@ const (
 	// KindInvalidRequest: the request itself is not a well-formed module-proxy
 	// request (bad escaping, unsupported module path). 400.
 	KindInvalidRequest
+	// KindInaccessible: the CALLER may not see this module. 404, deliberately:
+	// telling them "403, exists but not for you" confirms the module exists,
+	// which is the one fact a private module is keeping. It is answered
+	// byte-identically to a genuine absence.
+	//
+	// This is the opposite direction from KindUnauthorized and must never be
+	// confused with it. There the PROXY's credential failed, which no caller can
+	// fix and which 404 would bury; here the caller's own credential is the
+	// thing missing, and the module's existence is not theirs to learn.
+	KindInaccessible
 )
 
 func (k Kind) String() string {
@@ -39,6 +49,8 @@ func (k Kind) String() string {
 		return "upstream"
 	case KindInvalidRequest:
 		return "invalid_request"
+	case KindInaccessible:
+		return "inaccessible"
 	}
 	return "unknown"
 }
@@ -84,7 +96,7 @@ func (e *Error) Unwrap() error { return e.Err }
 // KindNotFound is allowed to become a 404.
 func (e *Error) HTTPStatus() int {
 	switch e.Kind {
-	case KindNotFound:
+	case KindNotFound, KindInaccessible:
 		return http.StatusNotFound
 	case KindUnauthorized:
 		return http.StatusForbidden
@@ -125,7 +137,7 @@ func (e *Error) Body() string {
 
 func (e *Error) headline() string {
 	switch e.Kind {
-	case KindNotFound:
+	case KindNotFound, KindInaccessible:
 		return "module not found"
 	case KindUnauthorized:
 		return "not authorized to read this module"
@@ -150,6 +162,25 @@ func upstreamErr(mod, ver, upstream string, status int, detail string, err error
 
 func invalidErr(mod, ver, detail string) *Error {
 	return &Error{Kind: KindInvalidRequest, Module: mod, Version: ver, Detail: detail}
+}
+
+// inaccessibleErr answers a caller who may not see this module.
+//
+// The answer is identical whether the module exists or not: the check runs
+// before any upstream call, so there is nothing that could differ. That is what
+// keeps a prober from mapping the org's private repositories by diffing
+// responses. The note is on both answers too, so it tells a caller who simply
+// forgot their token what to do without telling a prober which modules are real.
+func inaccessibleErr(mod, ver string) *Error {
+	return &Error{
+		Kind:    KindInaccessible,
+		Module:  mod,
+		Version: ver,
+		Detail: "no such module is visible to this caller. A module in one of this proxy's " +
+			"private namespaces is served only to an authenticated caller: send a read-scoped " +
+			"buildhost token (Authorization: Bearer, HTTP Basic password, or ?token=). A module " +
+			"that does not exist is answered exactly this way.",
+	}
 }
 
 // notServedErr answers a module outside this proxy's namespace, with no mirror

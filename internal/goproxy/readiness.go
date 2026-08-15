@@ -218,7 +218,7 @@ func (s *Service) serveHealth(w http.ResponseWriter, r *http.Request) {
 	if !h.Healthy {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
-	if s.authorized(r) {
+	if s.operatorView(r) {
 		_ = json.NewEncoder(w).Encode(h)
 		return
 	}

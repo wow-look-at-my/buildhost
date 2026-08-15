@@ -102,13 +102,14 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The proxy serves PRIVATE first-party module source. A read token is
-	// required for every module, not just the private ones: gating only the
-	// private prefixes would turn "is this module private?" into an oracle
-	// anybody could query anonymously.
-	if !s.authorized(r) {
-		w.Header().Set("WWW-Authenticate", `Bearer realm="buildhost goproxy"`)
-		http.Error(w, "buildhost goproxy: a read-scoped token is required\n", http.StatusUnauthorized)
+	// A module this caller may not see is answered 404, exactly as a module that
+	// does not exist is -- never 401 or 403. Either of those confirms the module
+	// EXISTS, which is the fact a private module is keeping; a prober could walk
+	// a name list and map the org's private repositories off the status code
+	// alone. The check runs before any upstream call, so the two answers cannot
+	// drift apart, and no unauthenticated request spends GitHub API quota.
+	if !s.accessible(r, req.Module) {
+		s.fail(w, r, req, inaccessibleErr(req.Module, req.Version), started)
 		return
 	}
 
@@ -124,14 +125,50 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Service) authorized(r *http.Request) bool {
-	if t := auth.TokenFrom(r.Context()); t != nil {
-		return t.HasScope("read") || t.HasScope("write")
+// operatorView reports whether this caller may see the proxy's own
+// configuration -- the private prefixes, the credential state, the readiness
+// module. Each of those names private repositories, so it takes the same
+// global credential a private module does.
+func (s *Service) operatorView(r *http.Request) bool {
+	if t := auth.TokenFrom(r.Context()); t != nil && t.ProjectID == nil &&
+		(t.HasScope("read") || t.HasScope("write")) {
+		return true
 	}
-	// A browser session that passed the org allowlist reads like an authorized
-	// human elsewhere in buildhost; the same holds here.
 	_, ok := auth.UserFrom(r.Context())
 	return ok
+}
+
+// accessible reports whether this caller may see this module.
+//
+// A module outside the private namespaces is public source: it needs no
+// credential, and requiring one would only stop `GOPROXY=<proxy>,direct` working
+// for anyone without a buildhost token.
+//
+// Inside them, access is the caller's own, never the proxy's:
+//   - a GLOBAL read/write token. A PROJECT-scoped token is deliberately not
+//     enough -- it says "this job may read project X", and a Go module is not a
+//     project, so honouring it here would quietly widen a least-privilege
+//     credential to the org's whole private source tree.
+//   - a signed-in GitHub user who can read the backing repository, asked of
+//     GitHub per repo rather than assumed from the session.
+func (s *Service) accessible(r *http.Request, modPath string) bool {
+	if !s.isPrivate(modPath) {
+		return true
+	}
+	if t := auth.TokenFrom(r.Context()); t != nil && t.ProjectID == nil &&
+		(t.HasScope("read") || t.HasScope("write")) {
+		return true
+	}
+	refs, err := parseModulePath(modPath)
+	if err != nil {
+		return false
+	}
+	for _, ref := range refs {
+		if auth.UserCanReadRepo(r.Context(), ref.Owner+"/"+ref.Repo) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) serveList(w http.ResponseWriter, r *http.Request, req request, started time.Time) {

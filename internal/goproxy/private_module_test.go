@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -162,17 +163,102 @@ func TestRejectedCredentialSaysSo(t *testing.T) {
 // The proxy serves private source, so an unauthenticated caller gets 401 before
 // anything reaches upstream -- including for a public module, so that "is this
 // module private?" is not an oracle anybody can query anonymously.
-func TestUnauthenticatedCallerIsRejected(t *testing.T) {
+// serveAnon drives the proxy with no credential at all.
+func serveAnon(t *testing.T, s *Service, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	s.serve(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	return rec
+}
+
+// A module the caller may not see is 404, never 401 or 403: either of those
+// confirms it EXISTS, which is the fact a private module is keeping.
+func TestInaccessibleModuleIs404NotUnauthorized(t *testing.T) {
 	fake := newFakeGitHub(t)
+	fake.Private = true
+	seedModule(fake, privateOrg+"/tml", "", "v1.0.0", "aaaa111122223333444455556666777788889999",
+		"module "+privateOrg+"/tml\n")
 	s := newTestService(t, fake, "tok", []string{privateOrg})
 
+	rec := serveAnon(t, s, "/"+privateOrg+"/tml/@v/list")
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.NotEqual(t, http.StatusUnauthorized, rec.Code)
+	assert.NotEqual(t, http.StatusForbidden, rec.Code)
+	assert.Empty(t, rec.Header().Get("WWW-Authenticate"),
+		"a challenge would announce that something is there to authenticate for")
+	assert.Zero(t, fake.calls, "an unauthorized caller must not reach upstream")
+}
+
+// The property that makes the 404 worth anything: a private module that EXISTS
+// and one that does not must be answered identically, or a prober maps the org's
+// private repositories by diffing responses.
+func TestExistingAndMissingPrivateModulesAreIndistinguishable(t *testing.T) {
+	fake := newFakeGitHub(t)
+	fake.Private = true
+	seedModule(fake, privateOrg+"/tml", "", "v1.0.0", "aaaa111122223333444455556666777788889999",
+		"module "+privateOrg+"/tml\n")
+	s := newTestService(t, fake, "tok", []string{privateOrg})
+
+	real := serveAnon(t, s, "/"+privateOrg+"/tml/@v/list")
+	fictional := serveAnon(t, s, "/"+privateOrg+"/no-such-repo-anywhere/@v/list")
+
+	assert.Equal(t, real.Code, fictional.Code)
+	assert.Equal(t, real.Header().Get("Content-Type"), fictional.Header().Get("Content-Type"))
+	// Only the echoed module path may differ, so compare with it removed.
+	assert.Equal(t,
+		strings.ReplaceAll(real.Body.String(), privateOrg+"/tml", "M"),
+		strings.ReplaceAll(fictional.Body.String(), privateOrg+"/no-such-repo-anywhere", "M"))
+}
+
+// A PROJECT-scoped token says "this job may read project X". A Go module is not
+// a project, so honouring it here would widen a least-privilege credential to
+// the org's whole private source tree.
+func TestProjectScopedTokenCannotReadPrivateModules(t *testing.T) {
+	fake := newFakeGitHub(t)
+	fake.Private = true
+	s := newTestService(t, fake, "tok", []string{privateOrg})
+
+	projectID := int64(1)
 	req := httptest.NewRequest(http.MethodGet, "/"+privateOrg+"/tml/@v/list", nil)
+	req = req.WithContext(auth.WithToken(req.Context(), &db.ApiToken{Scopes: "read", ProjectID: &projectID}))
 	rec := httptest.NewRecorder()
 	s.serve(rec, req)
 
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-	assert.NotEmpty(t, rec.Header().Get("WWW-Authenticate"))
-	assert.Zero(t, fake.calls, "an unauthenticated request must not reach upstream")
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Zero(t, fake.calls)
+}
+
+// The counterpart: gating PUBLIC modules would only stop GOPROXY=<proxy>,direct
+// working for anyone without a buildhost token, and there is nothing to hide.
+func TestPublicModuleNeedsNoCredential(t *testing.T) {
+	mirror := fakeMirror(t, map[string]string{"golang.org/x/mod/@v/list": "v0.40.0\n"})
+	fake := newFakeGitHub(t)
+	s := newTestService(t, fake, "tok", []string{privateOrg})
+	s.upstream = newUpstreamSource(s.github.client, mirror.URL, []string{privateOrg})
+
+	rec := serveAnon(t, s, "/golang.org/x/mod/@v/list")
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, "v0.40.0\n", rec.Body.String())
+}
+
+// The distinction the whole error taxonomy rests on, in one test: the caller's
+// credential missing is a 404, the PROXY's credential failing is a 403. Losing
+// the second one is the original bug -- nobody can fix a proxy credential they
+// cannot see, and 404 tells them to go hunt a typo in go.mod instead.
+func TestProxyCredentialFailureStays403WhileCallerFailureIs404(t *testing.T) {
+	fake := newFakeGitHub(t)
+	fake.Private = true
+	s := newTestService(t, fake, "", []string{privateOrg}) // proxy has NO credential
+
+	assert.Equal(t, http.StatusNotFound, serveAnon(t, s, "/"+privateOrg+"/tml/@v/list").Code,
+		"caller has no credential: the module's existence is not theirs to learn")
+
+	authed := serveProxy(t, s, "/"+privateOrg+"/tml/@v/list")
+	require.Equal(t, http.StatusForbidden, authed.Code,
+		"proxy has no credential: that is an operator failure and must be loud")
+	assert.Contains(t, authed.Body.String(), "NO GitHub credential")
 }
 
 // A failing module records why on its own row, so the dashboard shows a
