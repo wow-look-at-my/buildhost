@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/go-containers/set"
 	"github.com/wow-look-at-my/router"
 
 	// Import every backend so its init() registers routes. The guard below
@@ -50,17 +51,14 @@ func patterns(routes []router.Route) []string {
 // against auth.SiteDomainPlaceholder, keeping it enumerable.
 func TestInitRegistersOnlySiteDomainRoutes(t *testing.T) {
 	enumerable := patterns(auth.ListRoutes())
-	enumerableSet := map[string]bool{}
-	for _, p := range enumerable {
-		enumerableSet[p] = true
-	}
+	enumerableSet := set.Of(enumerable...)
 
 	auth.Init(nil, nil, t.TempDir(), nil, nil, nil, nil, "", "", "", testSiteDomain, "primary.example")
 
 	for _, p := range patterns(auth.AllRoutes()) {
 		// A configured site-domain route is the placeholder route with the real
 		// domain substituted back in.
-		if enumerableSet[strings.ReplaceAll(p, testSiteDomain, auth.SiteDomainPlaceholder)] {
+		if enumerableSet.Contains(strings.ReplaceAll(p, testSiteDomain, auth.SiteDomainPlaceholder)) {
 			continue
 		}
 		assert.Fail(t, "route is invisible to `buildhost routes`",

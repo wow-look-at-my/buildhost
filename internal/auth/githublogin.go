@@ -162,7 +162,7 @@ func apexRootURL(r *http.Request) string {
 	}
 	if sd := siteApexOf(host); sd != "" {
 		host = sd
-	} else if dot := strings.IndexByte(host, '.'); dot > 0 && knownServiceLabels[host[:dot]] {
+	} else if dot := strings.IndexByte(host, '.'); dot > 0 && knownServiceLabels.Contains(host[:dot]) {
 		host = host[dot+1:]
 	}
 	return RequestScheme(r) + "://" + host + port
