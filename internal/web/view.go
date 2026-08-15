@@ -11,6 +11,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/exeformat"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 )
 
@@ -254,8 +255,10 @@ type releaseView struct {
 }
 
 type artifactRow struct {
-	OS         string
-	Arch       string
+	// Platforms is every platform this ONE file runs on, rendered for display.
+	// A single-platform artifact reads "linux/amd64"; a portable one reads the
+	// whole set, and the row still offers exactly one set of download links.
+	Platforms  string
 	Kind       string
 	Filename   string
 	Size       string
@@ -263,6 +266,10 @@ type artifactRow struct {
 	Downloads  []downloadLink
 	Docker     bool
 	DockerPull string
+	// FormatBadge is the executable format detected at upload ("APE"), "" when
+	// the file's format was not recognized. Together with Platforms it renders
+	// as the "APE: linux/amd64, darwin/arm64, windows/amd64" badge.
+	FormatBadge string
 }
 
 type downloadLink struct {
@@ -274,7 +281,7 @@ type downloadLink struct {
 // non-docker artifact, matching the fmt values the dl/static endpoints accept.
 var archiveFormats = []string{"tar.gz", "tar.xz", "tar.zst", "zip"}
 
-func buildReleaseView(r *http.Request, p *db.Project, rel *db.Release, arts []db.Artifact) releaseView {
+func buildReleaseView(r *http.Request, p *db.Project, rel *db.Release, arts []db.ArtifactWithPlatforms) releaseView {
 	v := releaseView{
 		SiteName:    siteName,
 		ProjectName: p.Name,
@@ -288,12 +295,12 @@ func buildReleaseView(r *http.Request, p *db.Project, rel *db.Release, arts []db
 
 	for _, a := range arts {
 		row := artifactRow{
-			OS:       string(a.OS),
-			Arch:     string(a.Arch),
-			Kind:     string(a.Kind),
-			Filename: a.Filename,
-			Size:     humanSize(a.Size),
-			SHA256:   a.SHA256,
+			Platforms:   db.FormatPlatforms(a.Platforms),
+			Kind:        string(a.Kind),
+			Filename:    a.Filename,
+			Size:        humanSize(a.Size),
+			SHA256:      a.SHA256,
+			FormatBadge: exeformat.Format(a.ExeFormat).Label(),
 		}
 		if a.Kind.ServedViaDockerOnly() {
 			row.Docker = true

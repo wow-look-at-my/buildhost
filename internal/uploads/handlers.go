@@ -33,6 +33,9 @@ func init() {
 		}
 	})
 
+	// Registration stays OUT of the OnReady callback: OnReady fires only from
+	// auth.Init, so a route registered there is invisible to `buildhost routes`
+	// and to the route-diff check. Only dependency wiring belongs above.
 	auth.HandleRawPrimary("POST /api/v1/uploads", handleCreate)
 	auth.HandleRawPrimary("GET /api/v1/uploads/{id}", handleStatus)
 	auth.HandleRawPrimary("PATCH /api/v1/uploads/{id}", handleAppend)
