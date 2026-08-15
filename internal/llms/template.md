@@ -244,6 +244,34 @@ valid token works as the password):
 docker pull __OCI_HOST__/myapp:latest
 ```
 
+## Go module proxy
+
+buildhost serves the Go module download protocol, so `go` can fetch this org's
+private first-party modules alongside everything on the public mirror. Point the
+toolchain at it with a read-scoped token in `~/.netrc`:
+
+```
+# ~/.netrc
+machine __GOPROXY_HOST__ login x password $TOKEN
+```
+
+```
+export GOPROXY=__GOPROXY_URL__
+export GONOSUMDB='github.com/<your-org>/*'
+export GONOSUMCHECK=1
+go mod download
+```
+
+Every module needs an authenticated request, public ones included, so that
+"is this module private?" is not a question anyone can ask anonymously.
+
+A fetch that fails is answered with a status that says WHY: 403 when the proxy's
+own credential could not read the module, 502 when the upstream failed, and 404
+only when upstream is readable and the module genuinely is not there. A 404 from
+this proxy means the module does not exist -- it never means "I was not allowed
+to look". `__GOPROXY_URL__/health` reports whether the proxy can currently serve
+private modules at all.
+
 ## Static sites
 
 buildhost can also host small static sites, with one independent deployment per

@@ -192,7 +192,16 @@ func TestIsBlobReferenced_AllColumns(t *testing.T) {
 	_, err = d.UpsertSite(ctx, &Site{ProjectID: p.ID, Branch: "main", StorageKey: "sitekey", Size: 11, SHA256: "s"})
 	require.NoError(t, err)
 
-	for _, key := range []string{"akey", "skey", "dkey", "pkey", "ocikey", "sitekey"} {
+	// A cached Go module zip is a reference too. It hangs off no project and no
+	// release, so without this the GC would sweep the module cache out from
+	// under a perfectly healthy proxy.
+	modID, err := d.GoproxyModuleID(ctx, "github.com/o/r", "github")
+	require.NoError(t, err)
+	require.NoError(t, d.PutGoproxyCached(ctx, modID, &GoproxyCached{
+		Version: "v1.0.0", ZipKey: "gomodkey", ZipSize: 13,
+	}))
+
+	for _, key := range []string{"akey", "skey", "dkey", "pkey", "ocikey", "sitekey", "gomodkey"} {
 		ref, err := d.IsBlobReferenced(ctx, key)
 		require.NoError(t, err)
 		assert.True(t, ref, "expected %s referenced", key)

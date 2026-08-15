@@ -57,6 +57,9 @@ separately if any tracked file is gitignored build output. Depth:
   `docs/formats/npm.md`, `docs/npm-packument-manifest-cache.md`.
 - `internal/oci/` -- OCI distribution, read + write (`docker pull`/`docker push`).
   Depth: `docs/formats/oci.md`.
+- `internal/goproxy/` -- Go module proxy on `goproxy.{domain}`, replacing Athens.
+  Fetches over HTTP (no `go`/`git` subprocess) and caches module zips as blobs.
+  Depth: `docs/formats/goproxy.md`.
 - `internal/sites/` -- static site hosting, one deployment per branch. Depth:
   `docs/sites.md`, `docs/site-archives.md`.
 - `internal/llms/` -- public `/llms.txt` guide, on the apex and every service
@@ -131,6 +134,12 @@ separately if any tracked file is gitignored build output. Depth:
   OCI-aware puller. Depth: `docs/formats/oci.md`.
 - Static sites are stored as an indexed archive, one deployment per branch,
   replaced atomically. Depth: `docs/sites.md`.
+- The Go module proxy never answers an authorization failure with 404: at the
+  protocol level 404 means the module does not exist, so `go mod download`
+  reports a missing module and the reader hunts a typo instead of the credential.
+  403/502/404 by classified cause, and readiness is its own check because a
+  credential-less proxy serves every public module and no private one while
+  looking healthy. Depth: `docs/formats/goproxy.md`.
 
 ## Publishing from CI (.github/actions)
 

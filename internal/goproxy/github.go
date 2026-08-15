@@ -22,7 +22,9 @@ import (
 	modzip "golang.org/x/mod/zip"
 )
 
-const githubAPI = "https://api.github.com"
+// defaultGitHubAPI is the public API root. githubSource.api overrides it so
+// tests can drive a fake upstream and assert what each status becomes.
+const defaultGitHubAPI = "https://api.github.com"
 
 // upstreamGitHub is the Upstream name reported on an *Error from this source.
 const upstreamGitHub = "github"
@@ -34,6 +36,8 @@ const upstreamGitHub = "github"
 // invisible.
 type githubSource struct {
 	client *http.Client
+	// api is the GitHub API root.
+	api string
 	// tokenFor resolves the bearer for a repo; injected so tests can drive the
 	// credential without touching global auth state.
 	tokenFor func(ctx context.Context, owner, repo string) string
@@ -48,6 +52,7 @@ type githubSource struct {
 func newGitHubSource(client *http.Client, tmpDir string) *githubSource {
 	return &githubSource{
 		client:       client,
+		api:          defaultGitHubAPI,
 		tokenFor:     auth.BearerForRepo,
 		tarballLimit: 2 << 30,
 		tmpDir:       tmpDir,
@@ -185,7 +190,7 @@ func (g *githubSource) listTags(ctx context.Context, ref repoRef, mod string) ([
 	// versions come from the ref names.
 	for page := 1; page <= 20; page++ {
 		url := fmt.Sprintf("%s/repos/%s/%s/git/matching-refs/tags?per_page=100&page=%d",
-			githubAPI, ref.Owner, ref.Repo, page)
+			g.api, ref.Owner, ref.Repo, page)
 		resp, err := g.do(ctx, ref.Owner, ref.Repo, http.MethodGet, url, mod, "", "application/vnd.github+json")
 		if err != nil {
 			return nil, err
@@ -224,7 +229,7 @@ func (g *githubSource) commitSHA(ctx context.Context, ref repoRef, t tagRef, mod
 	if !t.Annotated {
 		return t.SHA, nil
 	}
-	url := fmt.Sprintf("%s/repos/%s/%s/git/tags/%s", githubAPI, ref.Owner, ref.Repo, t.SHA)
+	url := fmt.Sprintf("%s/repos/%s/%s/git/tags/%s", g.api, ref.Owner, ref.Repo, t.SHA)
 	resp, err := g.do(ctx, ref.Owner, ref.Repo, http.MethodGet, url, mod, ver, "application/vnd.github+json")
 	if err != nil {
 		return "", err
@@ -250,7 +255,7 @@ func (g *githubSource) commitSHA(ctx context.Context, ref repoRef, t tagRef, mod
 // silently treating "I could not read the repo" as "no default branch" is how a
 // credential failure disappears.
 func (g *githubSource) defaultBranch(ctx context.Context, ref repoRef, mod string) (string, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s", githubAPI, ref.Owner, ref.Repo)
+	url := fmt.Sprintf("%s/repos/%s/%s", g.api, ref.Owner, ref.Repo)
 	resp, err := g.do(ctx, ref.Owner, ref.Repo, http.MethodGet, url, mod, "", "application/vnd.github+json")
 	if err != nil {
 		return "", err
@@ -274,7 +279,7 @@ type commitInfo struct {
 }
 
 func (g *githubSource) getCommit(ctx context.Context, ref repoRef, rev, mod, ver string) (commitInfo, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/commits/%s", githubAPI, ref.Owner, ref.Repo, rev)
+	url := fmt.Sprintf("%s/repos/%s/%s/commits/%s", g.api, ref.Owner, ref.Repo, rev)
 	resp, err := g.do(ctx, ref.Owner, ref.Repo, http.MethodGet, url, mod, ver, "application/vnd.github+json")
 	if err != nil {
 		return commitInfo{}, err
@@ -302,7 +307,7 @@ func (g *githubSource) getCommit(ctx context.Context, ref repoRef, rev, mod, ver
 // without a go.mod is legal and gets a synthesized one.
 func (g *githubSource) getFile(ctx context.Context, ref repoRef, path, rev, mod, ver string) ([]byte, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/contents/%s?ref=%s",
-		githubAPI, ref.Owner, ref.Repo, path, rev)
+		g.api, ref.Owner, ref.Repo, path, rev)
 	resp, err := g.do(ctx, ref.Owner, ref.Repo, http.MethodGet, url, mod, ver, "application/vnd.github+json")
 	if err != nil {
 		var e *Error
@@ -359,7 +364,7 @@ func (g *githubSource) goModAt(ctx context.Context, ref repoRef, rev, modPath, v
 // The tarball is spooled to disk and expanded to a temp tree, so peak memory is
 // one buffer rather than the module's size.
 func (g *githubSource) buildZip(ctx context.Context, ref repoRef, rev string, mv module.Version) (path string, size int64, err error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/tarball/%s", githubAPI, ref.Owner, ref.Repo, rev)
+	url := fmt.Sprintf("%s/repos/%s/%s/tarball/%s", g.api, ref.Owner, ref.Repo, rev)
 	resp, err := g.do(ctx, ref.Owner, ref.Repo, http.MethodGet, url, mv.Path, mv.Version, "application/vnd.github+json")
 	if err != nil {
 		return "", 0, err
