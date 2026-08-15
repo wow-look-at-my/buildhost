@@ -32,8 +32,12 @@ type Input struct {
 	Size   int64
 	// TmpDir is scratch space for formats that must spool a member to learn its size
 	// (deb). Empty means the OS temp dir.
-	TmpDir      string
-	BaseURL     string
+	TmpDir  string
+	BaseURL string
+	// CacheSuffix distinguishes derived rows this repackage writes into
+	// packaged_artifacts when the same artifact serves several platforms. It is
+	// "" for the artifact's canonical slot; see db.PlatformArtifact.
+	CacheSuffix string
 	DownloadURL func(name, version string, os db.OS, arch db.Arch, format string) string
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/exeformat"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -79,6 +80,26 @@ func seedArtifact(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID i
 		SHA256:     key,
 	}
 	require.NoError(t, d.CreateArtifact(context.Background(), a))
+	return a
+}
+
+// seedMultiPlatformArtifact stores one blob and registers it as a single
+// artifact covering every platform in the set -- the APE shape, seeded the way
+// the /artifacts/ape endpoint writes it.
+func seedMultiPlatformArtifact(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, content string, platforms ...db.Platform) *db.Artifact {
+	t.Helper()
+	key, size, err := store.Put(context.Background(), strings.NewReader(content))
+	require.NoError(t, err)
+
+	a := &db.Artifact{
+		ReleaseID:  releaseID,
+		Kind:       db.KindBinary,
+		StorageKey: key,
+		Size:       size,
+		SHA256:     key,
+		ExeFormat:  string(exeformat.APE),
+	}
+	require.NoError(t, d.CreateMultiPlatformArtifact(context.Background(), a, platforms))
 	return a
 }
 

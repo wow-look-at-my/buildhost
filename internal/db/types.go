@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -40,6 +41,114 @@ const (
 	ArchJS     Arch = "js"
 	ArchWasip1 Arch = "wasip1"
 )
+
+// Platform is one (os, arch) slot. An artifact occupies at least one; an APE
+// occupies several with a single file.
+type Platform struct {
+	OS   OS   `json:"os"`
+	Arch Arch `json:"arch"`
+}
+
+func (p Platform) String() string { return string(p.OS) + "/" + string(p.Arch) }
+
+// ParsePlatform reads one "os/arch" pair, accepting the same alias spellings
+// NormalizeOS/NormalizeArch accept so a publisher can pass platform names
+// through verbatim. The pair must be coherent (CompatiblePlatform).
+func ParsePlatform(s string) (Platform, error) {
+	osPart, archPart, ok := strings.Cut(strings.TrimSpace(s), "/")
+	if !ok {
+		return Platform{}, fmt.Errorf("invalid platform %q: want os/arch", strings.TrimSpace(s))
+	}
+	osName, ok := NormalizeOS(osPart)
+	if !ok {
+		return Platform{}, fmt.Errorf("invalid os %q in platform %q", strings.TrimSpace(osPart), strings.TrimSpace(s))
+	}
+	arch, ok := NormalizeArch(archPart)
+	if !ok {
+		return Platform{}, fmt.Errorf("invalid arch %q in platform %q", strings.TrimSpace(archPart), strings.TrimSpace(s))
+	}
+	if !CompatiblePlatform(osName, arch) {
+		return Platform{}, fmt.Errorf("incompatible platform %q: os=wasm pairs only with arch js or wasip1 (and those arches only with os=wasm)", strings.TrimSpace(s))
+	}
+	return Platform{OS: osName, Arch: arch}, nil
+}
+
+// ParsePlatformList reads a comma-separated "os/arch,os/arch" set. An empty
+// list and a duplicate after normalization ("macos/arm64,darwin/arm64") are
+// both errors: a set that silently loses an entry would publish a binary as
+// covering less than the publisher declared.
+func ParsePlatformList(spec string) ([]Platform, error) {
+	elems := strings.Split(spec, ",")
+	out := make([]Platform, 0, len(elems))
+	seen := make(map[Platform]bool, len(elems))
+	for _, elem := range elems {
+		if strings.TrimSpace(elem) == "" {
+			return nil, fmt.Errorf("empty platform in %q", spec)
+		}
+		p, err := ParsePlatform(elem)
+		if err != nil {
+			return nil, err
+		}
+		if seen[p] {
+			return nil, fmt.Errorf("duplicate platform %q", p)
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no platforms")
+	}
+	return out, nil
+}
+
+// FormatPlatforms renders a set as "linux/amd64, darwin/arm64" for a badge or
+// an error message.
+func FormatPlatforms(platforms []Platform) string {
+	parts := make([]string, len(platforms))
+	for i, p := range platforms {
+		parts[i] = p.String()
+	}
+	return strings.Join(parts, ", ")
+}
+
+// ArtifactWithPlatforms is an artifact plus every platform it covers. Platforms
+// always holds at least the canonical slot, so a consumer reads one field
+// whether the artifact is an ordinary per-platform build or a single file
+// covering several.
+type ArtifactWithPlatforms struct {
+	Artifact
+	Platforms []Platform `json:"platforms"`
+}
+
+// MultiPlatform reports whether this one file covers more than one platform --
+// what makes it a single download link instead of several.
+func (a ArtifactWithPlatforms) MultiPlatform() bool { return len(a.Platforms) > 1 }
+
+// PlatformArtifact is an artifact viewed as ONE of the platforms it covers:
+// Artifact.OS/Arch are the covered platform, not necessarily the row's
+// canonical slot.
+type PlatformArtifact struct {
+	Artifact
+	// CacheSuffix distinguishes this platform's derived packages from the same
+	// artifact's other platforms in packaged_artifacts, which is keyed on
+	// (artifact_id, format). Without it a deb built for linux/arm64 would be
+	// served as the linux/amd64 deb of the same file. It is "" for the
+	// canonical slot, so every pre-existing cache row keeps its exact key.
+	CacheSuffix string
+}
+
+// CacheFormat is the packaged_artifacts format key for a derived package of
+// this artifact at this platform.
+func (p PlatformArtifact) CacheFormat(format string) string { return format + p.CacheSuffix }
+
+func newPlatformArtifact(a Artifact, p Platform) PlatformArtifact {
+	out := PlatformArtifact{Artifact: a}
+	if a.OS != p.OS || a.Arch != p.Arch {
+		out.OS, out.Arch = p.OS, p.Arch
+		out.CacheSuffix = "@" + p.String()
+	}
+	return out
+}
 
 type Kind string
 

@@ -186,11 +186,20 @@ func (s *Server) apiRelease(w http.ResponseWriter, r *http.Request) {
 	type artifactView struct {
 		db.ListArtifactDetailsWithDownloadsRow
 		Packages []db.ListPackagedFormatsRow `json:"packages"`
+		// Platforms is every platform this ONE file covers, so the dashboard
+		// lists one row per file instead of one per platform.
+		Platforms []db.Platform `json:"platforms"`
 	}
 	artifacts := make([]artifactView, len(rows))
 	var totalSize int64
 	for i, a := range rows {
-		artifacts[i] = artifactView{ListArtifactDetailsWithDownloadsRow: a, Packages: pkgs[i]}
+		platforms, err := s.db.ArtifactPlatforms(ctx, a.ID)
+		if err != nil {
+			slog.Error("admin api error", "err", err, "path", r.URL.Path)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		artifacts[i] = artifactView{ListArtifactDetailsWithDownloadsRow: a, Packages: pkgs[i], Platforms: platforms}
 		totalSize += a.Size
 	}
 
@@ -254,14 +263,14 @@ func (s *Server) apiOIDC(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) apiArtifacts(w http.ResponseWriter, r *http.Request) {
-	artifacts, err := s.db.ListAllArtifacts(r.Context())
+	artifacts, err := s.db.ListAllArtifactsWithPlatforms(r.Context())
 	if err != nil {
 		slog.Error("admin api error", "err", err, "path", r.URL.Path)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if artifacts == nil {
-		artifacts = []db.AllArtifact{}
+		artifacts = []db.AllArtifactWithPlatforms{}
 	}
 	s.writeJSON(w, artifacts)
 }
