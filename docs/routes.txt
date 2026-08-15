@@ -45,6 +45,9 @@ git.{domain}/brew/tap.git/git-upload-pack {POST}
 git.{domain}/brew/tap.git/info/refs {GET}
 git.{domain}/brew/tap.git/{path...} {GET}
 git.{domain}/llms.txt {GET}
+goproxy.{domain}/health {GET}
+goproxy.{domain}/llms.txt {GET}
+goproxy.{domain}/{path...} {GET,HEAD}
 npm.{domain}/@buildhost/{project}/-/{filename} {GET}
 npm.{domain}/llms.txt {GET}
 npm.{domain}/{pkg} {GET}
