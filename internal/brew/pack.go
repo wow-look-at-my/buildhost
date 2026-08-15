@@ -16,6 +16,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 type commitNode struct {
@@ -35,8 +37,8 @@ func walkCommits(root *os.Root, tip string, depth int, clientShallow []string) (
 		dist int
 	}
 	queue := []qnode{{sha: tip, dist: 1}}
-	seen := map[string]bool{tip: true}
-	inShallow := map[string]bool{}
+	seen := set.Of(tip)
+	inShallow := set.New[string]()
 
 	for len(queue) > 0 {
 		c := queue[0]
@@ -58,20 +60,19 @@ func walkCommits(root *os.Root, tip string, depth int, clientShallow []string) (
 		if depth > 0 && c.dist >= depth {
 			if len(parents) > 0 {
 				shallow = append(shallow, c.sha)
-				inShallow[c.sha] = true
+				inShallow.Add(c.sha)
 			}
 			continue
 		}
 		for _, p := range parents {
-			if !seen[p] {
-				seen[p] = true
+			if seen.Add(p) {
 				queue = append(queue, qnode{sha: p, dist: c.dist + 1})
 			}
 		}
 	}
 
 	for _, cs := range clientShallow {
-		if seen[cs] && !inShallow[cs] {
+		if seen.Contains(cs) && !inShallow.Contains(cs) {
 			unshallow = append(unshallow, cs)
 		}
 	}
@@ -84,10 +85,10 @@ func walkCommits(root *os.Root, tip string, depth int, clientShallow []string) (
 // are packed once. Every object is verified readable here, BEFORE the pack
 // header is on the wire.
 func collectPackEntries(root *os.Root, commits []commitNode) ([]string, error) {
-	seen := make(map[string]bool, len(commits)*4)
+	seen := set.New[string](len(commits) * 4)
 	var entries []string
 	add := func(sha string) {
-		seen[sha] = true
+		seen.Add(sha)
 		entries = append(entries, sha)
 	}
 	for _, c := range commits {
@@ -98,7 +99,7 @@ func collectPackEntries(root *os.Root, commits []commitNode) ([]string, error) {
 		for len(stack) > 0 {
 			treeSHA := stack[len(stack)-1]
 			stack = stack[:len(stack)-1]
-			if seen[treeSHA] {
+			if seen.Contains(treeSHA) {
 				continue
 			}
 			kind, body, err := readLooseObject(root, treeSHA)
@@ -114,7 +115,7 @@ func collectPackEntries(root *os.Root, commits []commitNode) ([]string, error) {
 				return nil, err
 			}
 			for _, ref := range refs {
-				if seen[ref.sha] {
+				if seen.Contains(ref.sha) {
 					continue
 				}
 				if ref.isTree {

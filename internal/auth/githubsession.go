@@ -181,7 +181,7 @@ func apexHost(r *http.Request) string {
 	if sd := siteApexOf(host); sd != "" {
 		return sd
 	}
-	if dot := strings.IndexByte(host, '.'); dot > 0 && knownServiceLabels[host[:dot]] {
+	if dot := strings.IndexByte(host, '.'); dot > 0 && knownServiceLabels.Contains(host[:dot]) {
 		host = host[dot+1:]
 	}
 	return host

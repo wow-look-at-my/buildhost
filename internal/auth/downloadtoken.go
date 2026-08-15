@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // downloadTokenPrefix tags a signed, artifact-bound temporary download token so
@@ -128,10 +130,10 @@ func downloadMAC(project, version, osStr, archStr, fmtStr string, debug bool, ex
 // knownServiceLabels are the first-Host-label names the server treats as service
 // subdomains, plus the admin dashboard host. Used to derive the registry apex
 // from any request Host.
-var knownServiceLabels = map[string]bool{
-	"apt": true, "brew": true, "dl": true, "git": true, "npm": true,
-	"oci": true, "sites": true, "static": true, "docker": true, "admin": true,
-}
+var knownServiceLabels = set.Of(
+	"apt", "brew", "dl", "git", "npm",
+	"oci", "sites", "static", "docker", "admin",
+)
 
 // ApexServiceURL returns scheme://<service>.<apex>, deriving the apex from the
 // request Host by stripping a known leading service/admin label. Unlike
@@ -147,7 +149,7 @@ func ApexServiceURL(r *http.Request, service string) *url.URL {
 	}
 	if sd := siteApexOf(host); sd != "" {
 		host = sd
-	} else if dot := strings.IndexByte(host, '.'); dot > 0 && knownServiceLabels[host[:dot]] {
+	} else if dot := strings.IndexByte(host, '.'); dot > 0 && knownServiceLabels.Contains(host[:dot]) {
 		host = host[dot+1:]
 	}
 	return &url.URL{Scheme: RequestScheme(r), Host: service + "." + host + port}

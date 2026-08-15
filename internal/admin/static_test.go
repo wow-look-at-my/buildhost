@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // readBundle returns the GENERATED dashboard bundle. It is produced from
@@ -42,14 +43,14 @@ func TestAdminStaticInlineHandlersAreExported(t *testing.T) {
 	exportTable := regexp.MustCompile(`(?s)__export\(app_exports, \{(.*?)\}\);`).FindStringSubmatch(body)
 	require.Len(t, exportTable, 2, "bundle has no export table: esbuild must run with --global-name=App on a module with exports")
 
-	exported := map[string]bool{}
+	exported := set.New[string]()
 	for _, m := range regexp.MustCompile(`(\w+):\s*\(\)\s*=>`).FindAllStringSubmatch(exportTable[1], -1) {
-		exported[m[1]] = true
+		exported.Add(m[1])
 	}
 
 	var dead []string
 	for name := range referenced {
-		if !exported[name] {
+		if !exported.Contains(name) {
 			dead = append(dead, name)
 		}
 	}

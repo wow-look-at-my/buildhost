@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/wow-look-at-my/buildhost/internal/uploadclient"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 func init() {
@@ -199,7 +200,7 @@ func publishFromManifest(cmd *cobra.Command, path string) error {
 	// an old server ignores upload_sha256 and would store the empty body).
 	canHashRef := up.SupportsUploadBySHA256()
 	type blobGroup struct{ sum, kind string }
-	uploaded := make(map[blobGroup]bool)
+	uploaded := set.New[blobGroup]()
 
 	baseDir := filepath.Dir(path)
 	for _, a := range m.Artifacts {
@@ -228,7 +229,7 @@ func publishFromManifest(cmd *cobra.Command, path string) error {
 				return fmt.Errorf("hash %s: %w", artifactPath, err)
 			}
 			group = blobGroup{sum, kind}
-			if uploaded[group] {
+			if uploaded.Contains(group) {
 				resp, err := up.UploadByHash("PUT", url, header, sum)
 				if err != nil {
 					return fmt.Errorf("upload %s/%s: %w", a.OS, a.Arch, err)
@@ -258,7 +259,7 @@ func publishFromManifest(cmd *cobra.Command, path string) error {
 			return fmt.Errorf("upload %s/%s failed: %s", a.OS, a.Arch, resp.Status)
 		}
 		if canHashRef {
-			uploaded[group] = true
+			uploaded.Add(group)
 		}
 
 		fmt.Printf("uploaded %s/%s %s/%s\n", m.Project, rel.Version, a.OS, a.Arch)

@@ -11,10 +11,10 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/ulikunitz/xz v0.5.15
-	github.com/wow-look-at-my/bin-file-fmt/go v0.0.0-20260731091144-01a2ece92036
-	github.com/wow-look-at-my/go-mmap v0.0.0-20260524160502-7c9fb35436a9
-	github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260709175026-98aa140090d9
-	github.com/wow-look-at-my/router v0.0.0-20260721161008-302008ab1248
+	github.com/wow-look-at-my/bin-file-fmt/go v0.0.0-20260809003625-b41c22095858 // go-toolchain:branch=master
+	github.com/wow-look-at-my/go-mmap v0.0.0-20260524160502-7c9fb35436a9 // go-toolchain:branch=master
+	github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260709175026-98aa140090d9 // go-toolchain:branch=master
+	github.com/wow-look-at-my/router v0.0.0-20260721161137-b771f1a0498f // go-toolchain:branch=master
 	go.opentelemetry.io/contrib/bridges/otelslog v0.18.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.19.0
@@ -25,6 +25,8 @@ require (
 	golang.org/x/mod v0.40.0
 	modernc.org/sqlite v1.50.1
 )
+
+require github.com/wow-look-at-my/go-containers v0.0.0-20260815193622-200150bfb1c8 // go-toolchain:branch=master
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect

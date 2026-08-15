@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	binpazer "github.com/wow-look-at-my/bin-file-fmt/go"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // Block type ids and their global GUIDs. binpazer interns the GUIDs to these
@@ -90,7 +91,7 @@ func WriteFromTar(w io.WriteSeeker, tr *tar.Reader, lim Limits) (*Stats, error) 
 	var (
 		dir   directory
 		stats Stats
-		seen  = map[string]bool{}
+		seen  = set.New[string]()
 	)
 	for {
 		hdr, err := tr.Next()
@@ -104,7 +105,7 @@ func WriteFromTar(w io.WriteSeeker, tr *tar.Reader, lim Limits) (*Stats, error) 
 			continue // directories and links carry no servable bytes
 		}
 		name := path.Clean(hdr.Name)
-		if seen[name] {
+		if seen.Contains(name) {
 			continue // last writer wins in tar; keep the first, as a scan would
 		}
 		if lim.MaxEntries > 0 && len(dir.Entries) >= lim.MaxEntries {
@@ -124,7 +125,7 @@ func WriteFromTar(w io.WriteSeeker, tr *tar.Reader, lim Limits) (*Stats, error) 
 		if err != nil {
 			return nil, fmt.Errorf("write %s: %w", name, err)
 		}
-		seen[name] = true
+		seen.Add(name)
 		dir.Entries = append(dir.Entries, Entry{
 			Path: name, Size: hdr.Size, Mode: uint32(hdr.Mode), Offset: offset,
 		})
