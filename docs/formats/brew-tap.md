@@ -198,4 +198,4 @@ update` now transfer one pack instead of ~4 loose GETs per past publish; dumb
 clients (no service param) are byte-for-byte unchanged.
 
 `ServeFormula` (single project) is uncached -- cheap once the digests are.
-Self-registering via auth.OnReady().
+Self-registering via init().

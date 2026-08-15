@@ -61,7 +61,7 @@ and session sweeping goes by **last activity** (2h idle), not creation time, so 
 long chunked upload never dies mid-flight. Route `Access()` is method-aware (write
 for push verbs), and every `uploads`-action route requires write regardless of
 method (the GET status read is push-flow state). Self-registering via
-auth.OnReady().
+init().
 
 ### Cross-repository mount
 
