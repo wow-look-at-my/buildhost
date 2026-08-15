@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/config"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // The {project}.<site-domain> serving scheme, end to end through the full
@@ -142,12 +143,9 @@ func TestSiteDomain_RouteTable(t *testing.T) {
 	after := routePatterns()
 
 	var added []string
-	inBase := map[string]bool{}
-	for _, p := range base {
-		inBase[p] = true
-	}
+	inBase := set.Of(base...)
 	for _, p := range after {
-		if !inBase[p] {
+		if !inBase.Contains(p) {
 			added = append(added, p)
 		}
 	}

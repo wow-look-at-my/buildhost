@@ -126,7 +126,7 @@ func validateScopes(w http.ResponseWriter, scopes string) string {
 	var parts []string
 	for _, s := range strings.Split(scopes, ",") {
 		s = strings.TrimSpace(s)
-		if !db.ValidScopes[s] {
+		if !db.ValidScopes.Contains(s) {
 			jsonError(w, http.StatusBadRequest, "invalid scope: "+s)
 			return ""
 		}

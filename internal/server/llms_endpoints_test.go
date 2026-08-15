@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 func routePatternMatches(pattern, path string) bool {
@@ -175,7 +176,7 @@ func seedPublishedRelease(t *testing.T, env *testEnv) {
 func documentedPaths(body, baseURL string) []string {
 	absURLRE := regexp.MustCompile(regexp.QuoteMeta(baseURL) + `(/[^\s"'<>)]*)`)
 
-	seen := map[string]bool{}
+	seen := set.New[string]()
 	var out []string
 	add := func(p string) {
 		if i := strings.IndexAny(p, "?#"); i >= 0 {
@@ -186,8 +187,7 @@ func documentedPaths(body, baseURL string) []string {
 			return
 		}
 		p = placeholderRE.ReplaceAllString(p, "x")
-		if !seen[p] {
-			seen[p] = true
+		if seen.Add(p) {
 			out = append(out, p)
 		}
 	}
