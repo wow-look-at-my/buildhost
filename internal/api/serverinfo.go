@@ -8,9 +8,7 @@ import (
 )
 
 func init() {
-	auth.OnReady(func() {
-		auth.HandleRawPrimary("GET /api/v1/server-info", handler.ServerInfo)
-	})
+	auth.HandleRawPrimary("GET /api/v1/server-info", handler.ServerInfo)
 }
 
 // serverInfoResponse advertises upload limits so clients can pick the right

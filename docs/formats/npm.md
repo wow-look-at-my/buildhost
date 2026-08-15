@@ -3,7 +3,7 @@
 `internal/npm/`. Extracted verbatim from CLAUDE.md, no wording changed.
 
 npm registry endpoint on `npm.{domain}/@buildhost/{project}`. Tarball URLs point
-to static. Self-registering via auth.OnReady().
+to static. Self-registering via init().
 
 A pre-built `kind=npm-package` artifact's packument reflects the uploaded
 tarball's own `package.json` manifest (dependency graph + `bin`/`os`/`cpu`/
