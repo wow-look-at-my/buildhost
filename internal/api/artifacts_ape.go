@@ -1,14 +1,17 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/exeformat"
 )
 
 func init() {
@@ -81,28 +84,68 @@ func (h *Handler) UploadMultiPlatformArtifact(w http.ResponseWriter, r *http.Req
 		attribute.String("artifact.exe_format", string(stored.format)),
 	)
 
+	h.publishMultiPlatform(ctx, w, publishSpec{
+		releaseID: release.ID,
+		kind:      kind,
+		filename:  sanitizeFilename(r.Header.Get("X-Artifact-Filename")),
+		stored:    stored,
+		platforms: platforms,
+		span:      span,
+	})
+}
+
+// publishSpec is one multi-platform publish: the stored blob plus what it is
+// being claimed to cover.
+type publishSpec struct {
+	releaseID int64
+	kind      string
+	filename  string
+	stored    storedUpload
+	platforms []db.Platform
+	span      trace.Span
+}
+
+// publishMultiPlatform records ONE artifact covering several platforms, after
+// checking the claim against the bytes. Both publishing routes come through
+// here -- the explicit /artifacts/ape endpoint and the {os}/{arch} route's
+// alias expansions -- so one file is one row whichever spelling published it,
+// and neither route can drift out of the gates below.
+func (h *Handler) publishMultiPlatform(ctx context.Context, w http.ResponseWriter, spec publishSpec) {
 	// A claim that one file runs on several platforms is only true for a format
 	// that actually carries several platforms' code. Reject anything else here
 	// rather than publish an unbacked claim -- the badge on the release page
 	// reads straight off this.
-	if len(platforms) > 1 && !stored.format.MultiPlatformCapable() {
+	if len(spec.platforms) > 1 && !spec.stored.format.MultiPlatformCapable() {
 		jsonError(w, http.StatusBadRequest, fmt.Sprintf(
 			"upload declares %d platforms but is not an Actually Portable Executable (no MZqFpD magic); "+
-				"publish per-platform builds to /artifacts/{os}/{arch} instead", len(platforms)))
+				"publish per-platform builds to /artifacts/{os}/{arch} instead", len(spec.platforms)))
 		return
+	}
+	// A declared windows platform served by the do-nothing stub PE header is the
+	// worst failure this endpoint can publish: the download succeeds, the binary
+	// starts, and it exits 0 without running. Nothing downstream can tell that
+	// apart from success, so refuse it at ingest.
+	if spec.stored.ntBoot == exeformat.NTStub {
+		if p, ok := firstWindows(spec.platforms); ok {
+			jsonError(w, http.StatusBadRequest, fmt.Sprintf(
+				"upload declares %s but its PE header is the do-nothing stub (one section), which maps none of the "+
+					"payload: the binary would start on Windows and exit 0 without running. Build the APE with "+
+					"windows support, or drop %s from platforms", p, p))
+			return
+		}
 	}
 
 	artifact := &db.Artifact{
-		ReleaseID:  release.ID,
-		Kind:       db.Kind(kind),
-		StorageKey: stored.storageKey,
-		Size:       stored.size,
-		SHA256:     stored.sha256hex,
-		Filename:   sanitizeFilename(r.Header.Get("X-Artifact-Filename")),
-		ExeFormat:  string(stored.format),
+		ReleaseID:  spec.releaseID,
+		Kind:       db.Kind(spec.kind),
+		StorageKey: spec.stored.storageKey,
+		Size:       spec.stored.size,
+		SHA256:     spec.stored.sha256hex,
+		Filename:   spec.filename,
+		ExeFormat:  string(spec.stored.format),
 	}
-	if err := h.DB.CreateMultiPlatformArtifact(ctx, artifact, platforms); err != nil {
-		span.RecordError(err)
+	if err := h.DB.CreateMultiPlatformArtifact(ctx, artifact, spec.platforms); err != nil {
+		spec.span.RecordError(err)
 		if errors.Is(err, db.ErrConflict) {
 			jsonError(w, http.StatusConflict, err.Error())
 			return
@@ -111,7 +154,17 @@ func (h *Handler) UploadMultiPlatformArtifact(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	jsonResponse(w, http.StatusCreated, db.ArtifactWithPlatforms{Artifact: *artifact, Platforms: platforms})
+	jsonResponse(w, http.StatusCreated, db.ArtifactWithPlatforms{Artifact: *artifact, Platforms: spec.platforms})
+}
+
+// firstWindows returns the first windows platform in the declared set.
+func firstWindows(platforms []db.Platform) (db.Platform, bool) {
+	for _, p := range platforms {
+		if p.OS == db.OSWindows {
+			return p, true
+		}
+	}
+	return db.Platform{}, false
 }
 
 // artifactKind reads the artifact kind an upload declares, from the query

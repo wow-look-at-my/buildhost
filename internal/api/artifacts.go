@@ -120,6 +120,18 @@ func expandOSSpec(spec string) ([]db.OS, error) {
 	return out, nil
 }
 
+// platformCombos is the cartesian product the {os}/{arch} segments expand to,
+// in the order the rows would have been created.
+func platformCombos(oses []db.OS, arches []db.Arch) []db.Platform {
+	out := make([]db.Platform, 0, len(oses)*len(arches))
+	for _, osName := range oses {
+		for _, arch := range arches {
+			out = append(out, db.Platform{OS: osName, Arch: arch})
+		}
+	}
+	return out
+}
+
 // expandArchSpec parses the {arch} path segment of an artifact upload: a
 // single architecture name (any spelling db.NormalizeArch accepts), a
 // comma-separated list, or "any"/"all" for the amd64+arm64 pair. Unknown
@@ -230,6 +242,24 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 
 	filename := sanitizeFilename(r.Header.Get("X-Artifact-Filename"))
 
+	// One APE covering several platforms is ONE artifact row, never one per
+	// platform. The alias spellings (cosmo/any/all/universal) and comma lists
+	// exist precisely to publish such a file, and they used to expand it into a
+	// row per combination -- N download links for a file that is N-way portable
+	// by construction. Fan-out is still right for a NON-APE upload, where the
+	// combinations really are separate builds that happen to share bytes.
+	if combos := platformCombos(oses, arches); len(combos) > 1 && stored.format.MultiPlatformCapable() {
+		h.publishMultiPlatform(ctx, w, publishSpec{
+			releaseID: release.ID,
+			kind:      kind,
+			filename:  filename,
+			stored:    stored,
+			platforms: combos,
+			span:      span,
+		})
+		return
+	}
+
 	artifacts := make([]*db.Artifact, 0, len(oses)*len(arches))
 	for _, osName := range oses {
 		for _, arch := range arches {
@@ -303,6 +333,9 @@ type storedUpload struct {
 	// which is normal for an ordinary per-platform binary and disqualifying for
 	// a multi-platform claim.
 	format exeformat.Format
+	// ntBoot says whether an APE's PE header can boot it on Windows, so a
+	// declared windows platform can be checked against the bytes.
+	ntBoot exeformat.NTBoot
 }
 
 // storeUpload resolves an artifact upload's bytes to a stored blob. A
@@ -317,7 +350,13 @@ func (h *Handler) storeUpload(ctx context.Context, w http.ResponseWriter, r *htt
 		if !ok {
 			return storedUpload{}, false
 		}
-		return storedUpload{storageKey: key, sha256hex: key, size: size, format: exeformat.Detect(head)}, true
+		return storedUpload{
+			storageKey: key,
+			sha256hex:  key,
+			size:       size,
+			format:     exeformat.Detect(head),
+			ntBoot:     exeformat.DetectNTBoot(head),
+		}, true
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
@@ -336,6 +375,7 @@ func (h *Handler) storeUpload(ctx context.Context, w http.ResponseWriter, r *htt
 		sha256hex:  hex.EncodeToString(hasher.Sum(nil)),
 		size:       size,
 		format:     exeformat.Detect(head.head),
+		ntBoot:     exeformat.DetectNTBoot(head.head),
 	}, true
 }
 

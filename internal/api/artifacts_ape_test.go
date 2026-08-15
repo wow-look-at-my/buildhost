@@ -234,3 +234,27 @@ func TestUploadArtifact_SinglePlatformResponseCarriesItsPlatform(t *testing.T) {
 	got := decodeArtifact(t, rec)
 	assert.Equal(t, []db.Platform{{OS: db.OSLinux, Arch: db.ArchAMD64}}, got.Platforms)
 }
+
+// TestUploadAPE_RejectsWindowsOnStubPE is the same gate on the explicit
+// endpoint. Both routes publish through publishMultiPlatform, so this pins that
+// neither can drift away from the check.
+func TestUploadAPE_RejectsWindowsOnStubPE(t *testing.T) {
+	h, proj, _ := setupUploadTest(t, "apestubpeproj")
+
+	rec := doAPEUpload(t, h, proj, "?platforms=linux/amd64,windows/amd64", apeWithPESections(t, 1), nil)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	msg := decodeError(t, rec)
+	assert.Contains(t, msg, "do-nothing stub")
+	assert.Contains(t, msg, "windows/amd64", "the error must name the platform to drop")
+}
+
+// TestUploadAPE_RealPEHeaderPublishesWindows is the negative control: the same
+// upload with a real header is accepted, so the gate keys on the section count
+// rather than on the presence of windows in the set.
+func TestUploadAPE_RealPEHeaderPublishesWindows(t *testing.T) {
+	h, proj, _ := setupUploadTest(t, "aperealpeproj")
+
+	rec := doAPEUpload(t, h, proj, "?platforms=linux/amd64,windows/amd64", apeWithPESections(t, 3), nil)
+	require.Equal(t, http.StatusCreated, rec.Code)
+	assert.Len(t, decodeArtifact(t, rec).Platforms, 2)
+}
