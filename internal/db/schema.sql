@@ -165,3 +165,32 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_stripped_key ON artifacts(stripped_stor
 CREATE INDEX IF NOT EXISTS idx_artifacts_debug_key    ON artifacts(debug_storage_key);
 CREATE INDEX IF NOT EXISTS idx_packaged_storage_key   ON packaged_artifacts(storage_key);
 CREATE INDEX IF NOT EXISTS idx_oci_blob_links_skey    ON oci_blob_links(storage_key);
+
+-- Go module proxy cache (mirrored from migrations/017_goproxy.sql). Cached
+-- upstream modules are NOT projects/releases -- see that migration for why.
+CREATE TABLE goproxy_modules (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_path     TEXT NOT NULL UNIQUE,
+    source          TEXT NOT NULL DEFAULT 'github',
+    last_error_kind TEXT NOT NULL DEFAULT '',
+    last_error      TEXT NOT NULL DEFAULT '',
+    last_error_at   DATETIME,
+    last_success_at DATETIME,
+    created_at      DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE goproxy_versions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_id       INTEGER NOT NULL REFERENCES goproxy_modules(id) ON DELETE CASCADE,
+    version         TEXT NOT NULL,
+    commit_sha      TEXT NOT NULL DEFAULT '',
+    committed_at    DATETIME,
+    go_mod          TEXT NOT NULL DEFAULT '',
+    zip_storage_key TEXT NOT NULL DEFAULT '',
+    zip_size        INTEGER NOT NULL DEFAULT 0,
+    fetched_at      DATETIME NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(module_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_goproxy_versions_module ON goproxy_versions(module_id);
+CREATE INDEX IF NOT EXISTS idx_goproxy_versions_key    ON goproxy_versions(zip_storage_key);

@@ -19,7 +19,7 @@ var handler Handler
 // strict host partitioning means a known subdomain never falls through to the
 // host-agnostic apex route, so a bare `GET /llms.txt` registration alone 404s on
 // every subdomain. render() uses this same list to build the per-service URLs.
-var serviceSubdomains = []string{"apt", "brew", "dl", "git", "npm", "oci", "sites", "static"}
+var serviceSubdomains = []string{"apt", "brew", "dl", "git", "goproxy", "npm", "oci", "sites", "static"}
 
 func init() {
 	auth.HandleRaw("GET /llms.txt", handler.Serve)
@@ -52,6 +52,8 @@ func render(baseURL string) []byte {
 		out = strings.ReplaceAll(out, placeholder, scheme+svc+"."+host)
 	}
 	out = strings.ReplaceAll(out, "__OCI_HOST__", "oci."+host)
+	// The netrc machine line takes a bare host, not a URL.
+	out = strings.ReplaceAll(out, "__GOPROXY_HOST__", "goproxy."+host)
 	// The authenticated Homebrew tap URL carries the token as the HTTP Basic
 	// password inside the URL (git only transmits credentials after a
 	// challenge, and brew stores the remote verbatim). "$TOKEN" is a literal

@@ -30,7 +30,8 @@ BUILDHOST_LISTEN_ADDR=:8080 buildhost serve
 Each service is accessed via a subdomain derived from the incoming request's
 `Host` header: `apt.example.com`, `brew.example.com`, `git.example.com`,
 `npm.example.com`, `oci.example.com` (canonical, `docker.example.com`
-301-redirects), `dl.example.com`, `sites.example.com`, `static.example.com`. API
+301-redirects), `dl.example.com`, `goproxy.example.com`, `sites.example.com`,
+`static.example.com`. API
 routes stay on the main domain. No domain configuration is required -- the server
 dispatches by matching the first label of the Host header against known service
 names.
@@ -44,6 +45,29 @@ site-domain browsers get the plain JSON 401; setting it also scopes the web UI a
 `/api/v1` to that apex -- see `docs/security/github-signin.md`). DNS for the site
 domain needs the apex plus a wildcard `*.<domain>` pointing at the same origin
 with Host passthrough, and a wildcard TLS cert at the proxy.
+
+## Go module proxy
+
+`goproxy.{domain}` serves the Go module download protocol. It needs no
+configuration to run: private module prefixes default to `github.com/<org>` for
+each `BUILDHOST_OIDC_ORGS` entry, and it uses buildhost's existing GitHub
+credential (`BUILDHOST_GITHUB_APP_ID` + `BUILDHOST_GITHUB_APP_PRIVATE_KEY`, else
+`BUILDHOST_GITHUB_TOKEN`).
+
+**Set `BUILDHOST_GOPROXY_READINESS_MODULE` to a private module.** Without it the
+readiness check can only confirm a credential EXISTS, and a credential that
+authenticates but is not authorized for the org looks identical to a working one
+-- which is exactly how a proxy serving zero private modules went unnoticed. With
+it set, the check resolves that module every 15 minutes and reports unready when
+it cannot. `BUILDHOST_GOPROXY_PRIVATE_PREFIXES` overrides which prefixes count as
+private.
+
+No third-party module mirror is configured, and buildhost never picks one: a
+mirror sees the path of every dependency routed through it. Modules this proxy
+does not serve are answered 404, the module protocol's "try the next entry", so
+clients use `GOPROXY=https://goproxy.{domain},direct` and fetch everything else
+from its origin. `BUILDHOST_GOPROXY_UPSTREAM` opts in to a mirror if you want
+one. Depth: `docs/formats/goproxy.md`.
 
 To disable application-level zstd compression (e.g., on ZFS or Btrfs with
 filesystem-level compression):

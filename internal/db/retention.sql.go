@@ -77,6 +77,7 @@ SELECT EXISTS(
     UNION ALL SELECT 1 FROM packaged_artifacts pa WHERE pa.storage_key = ?1
     UNION ALL SELECT 1 FROM sites s               WHERE s.storage_key = ?1
     UNION ALL SELECT 1 FROM oci_blob_links obl    WHERE obl.storage_key = ?1
+    UNION ALL SELECT 1 FROM goproxy_versions gv   WHERE gv.zip_storage_key = ?1
 ) AS referenced
 `
 
