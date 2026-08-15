@@ -115,6 +115,12 @@ func requestSiteApex(r *http.Request) string {
 // there is no reason to accumulate them).
 var ssoRegisteredDomains = map[string]bool{}
 
+var ssoBareRegistered bool
+
+func init() {
+	OnSiteDomain(registerSSOHandoffRoutes)
+}
+
 // registerSSOHandoffRoutes registers the /__sso redemption endpoint iff a site
 // domain is configured -- with BUILDHOST_SITE_DOMAIN unset the route table is
 // byte-identical to a build without the feature. Two registrations:
@@ -131,16 +137,19 @@ var ssoRegisteredDomains = map[string]bool{}
 //     handoff whose destination is https://<SiteDomain>/... redeems here. The
 //     handler's own Host gate keeps it a 404 everywhere outside the site domain.
 //
-// Config-conditional routes cannot register in init() (config is only known at
-// Init), so unlike the unconditional backends they are invisible to
-// `buildhost routes`, which enumerates without booting a server.
-func registerSSOHandoffRoutes() {
-	sd := sharedSiteDomain
+// The pattern depends on configuration, so registration runs from the
+// OnSiteDomain hook: with the real domain at Init, and with
+// SiteDomainPlaceholder whenever routes are enumerated instead of served.
+func registerSSOHandoffRoutes(sd string) {
 	if sd == "" || ssoRegisteredDomains[sd] {
 		return
 	}
 	ssoRegisteredDomains[sd] = true
-	HandleRaw("GET "+ssoPath, handleSSORedeem)
+	// Host-agnostic, so it is the same route for every domain: register once.
+	if !ssoBareRegistered {
+		ssoBareRegistered = true
+		HandleRaw("GET "+ssoPath, handleSSORedeem)
+	}
 	SiteDomainHandleRaw(sd, "GET "+ssoPath, handleSSORedeem)
 }
 

@@ -16,12 +16,10 @@ import (
 )
 
 func init() {
-	auth.OnReady(func() {
-		auth.HandleRawPrimary("POST /api/v1/projects", handler.CreateProject)
-		auth.HandleRawPrimary("GET /api/v1/projects", handler.ListProjects)
-		auth.HandlePrimary("GET /api/v1/projects/{project}", parseRoute, handler.GetProject)
-		auth.HandlePrimary("PATCH /api/v1/projects/{project}", parseRoute, handler.UpdateProjectSettings)
-	})
+	auth.HandleRawPrimary("POST /api/v1/projects", handler.CreateProject)
+	auth.HandleRawPrimary("GET /api/v1/projects", handler.ListProjects)
+	auth.HandlePrimary("GET /api/v1/projects/{project}", parseRoute, handler.GetProject)
+	auth.HandlePrimary("PATCH /api/v1/projects/{project}", parseRoute, handler.UpdateProjectSettings)
 }
 
 type createProjectRequest struct {

@@ -25,10 +25,8 @@ import (
 var apiTracer = otel.Tracer("buildhost.api")
 
 func init() {
-	auth.OnReady(func() {
-		auth.HandlePrimary("PUT /api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}",
-			parseRoute, handler.UploadArtifact)
-	})
+	auth.HandlePrimary("PUT /api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}",
+		parseRoute, handler.UploadArtifact)
 }
 
 func sanitizeFilename(name string) string {
