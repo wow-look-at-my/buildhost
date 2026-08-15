@@ -30,11 +30,30 @@ apex -- honored by `apexRootURL`, `apexHost`, `safeNextURL`, and
 `ApexServiceURL`), and `/__sso` redeems one-time handoff codes minted by
 `/__signin` on the primary apex (`BUILDHOST_PRIMARY_DOMAIN`).
 
-Backends self-register routes via auth.OnReady() on auth.Router(); adding a
+Backends self-register routes from init() on auth.Router(); adding a
 backend = adding files, no existing files modified. Each backend uses
 auth.ServiceHandle/ServiceHandleRaw/ServiceHandleHandler(subdomain, pattern, ...)
 for host-based routing; the registry prefixes the subdomain and a `{domain}` host
 token to the pattern so the router matches by Host (e.g. `apt.{domain}/{path...}`).
+
+### Registration timing: init(), never OnReady
+
+`auth.OnReady` runs from `auth.Init`, i.e. only in a booted server. A route
+registered there is absent from `buildhost routes`, so the PR route-diff job
+never shows it and it can change with nobody seeing the change. Register routes
+in `init()`; use OnReady only to wire handler dependencies (DB, store, data
+dir). Method values on the package-level `handler` var bind a pointer, so a
+route registered in `init()` still sees fields OnReady assigns later.
+
+A pattern that genuinely depends on configuration registers through
+`auth.OnSiteDomain` instead. `auth.Init` runs those with the configured site
+domain; `auth.ListRoutes` (what `buildhost routes` prints) runs them with
+`auth.SiteDomainPlaceholder`, so the family stays enumerable and diffable.
+
+`internal/routescheck` enforces both mechanically: it diffs the enumerable
+route table against a booted one, so ANY route that appears only after
+`auth.Init` fails. There is no allowlist to keep up to date and nothing a new
+backend has to remember to do.
 
 ## internal/web
 

@@ -102,7 +102,6 @@ func seedMultiPlatformArtifact(t *testing.T, d *db.DB, store *storage.Filesystem
 	require.NoError(t, d.CreateMultiPlatformArtifact(context.Background(), a, platforms))
 	return a
 }
-
 // makeRequest creates a GET request for the single Download handler using
 // query params (?v=, ?branch=, ?os=, ?arch=, ?fmt=).
 func makeRequest(project string, params url.Values) *http.Request {
