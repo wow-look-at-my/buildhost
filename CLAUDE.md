@@ -123,8 +123,12 @@ separately if any tracked file is gitignored build output. Depth:
   name folds `/` and `_` to `-` (`repackage.DebPackageName`), because the Debian
   grammar forbids them. Depth: `docs/project-names.md`.
 - Project auth is enforced ONCE, in `requireProject`. Handlers never check auth.
-- Backends self-register routes via `auth.OnReady()`; adding a backend means
-  adding files, never editing existing ones.
+- Backends self-register routes in `init()`; adding a backend means adding
+  files, never editing existing ones. `auth.OnReady` wires handler deps only --
+  a route registered there is invisible to `buildhost routes` and to the PR
+  route diff. Config-dependent patterns go through `auth.OnSiteDomain`, which
+  route listing also runs. `internal/routescheck` fails on any route that
+  appears only after `auth.Init`. Depth: `docs/http/routing-and-auth.md`.
 - Draft releases (`releases.draft`) record INTENT, so retention cannot sweep a
   deliberate draft as an abandoned upload. Depth: `docs/apex-latest.md`.
 - Docker-pushed releases are OCI-only, gated out of apt/brew/npm and `/static`.

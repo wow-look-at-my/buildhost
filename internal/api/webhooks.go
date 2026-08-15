@@ -17,9 +17,7 @@ import (
 const maxWebhookBody = 1 << 20 // 1 MiB
 
 func init() {
-	auth.OnReady(func() {
-		auth.HandleRawPrimary("POST /api/v1/webhooks/github", handler.GitHubWebhook)
-	})
+	auth.HandleRawPrimary("POST /api/v1/webhooks/github", handler.GitHubWebhook)
 }
 
 type githubDeleteEvent struct {
