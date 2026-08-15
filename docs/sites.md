@@ -1,7 +1,7 @@
 # Static sites
 
 Static site hosting: `internal/sites/`. Upload tar.gz (or zip) archives, serve
-files per branch. Self-registering via `auth.OnReady()`.
+files per branch. Self-registering via `init()`.
 
 Three files carry the URL grammar, in the order a request meets them:
 `resolve.go` (a `<ref>[/<path>]` remainder -> the branch serving it),
@@ -224,9 +224,9 @@ rule as a single-branch read.
 label (`validSiteLabel`: `[a-z0-9-]`, 1..63, no leading/trailing hyphen; host
 labels folded to lowercase like DNS) is ALSO served at
 `{project}.<site-domain>/{path...}` (registered via `auth.SiteDomainHandle`
-inside the sites `OnReady`, since config is unknown at `init()` -- the one
-sanctioned exception to the routescheck `init()`-registration rule, and
-therefore invisible to `buildhost routes`, which enumerates without booting).
+from an `auth.OnSiteDomain` hook, since the domain is unknown at `init()`;
+`buildhost routes` runs the same hook against `auth.SiteDomainPlaceholder`, so
+the route is still enumerable and still shows up in a PR's route diff).
 The route is GET-only ReadAccess (never provisions); `parseSubdomainRoute`
 builds the SAME `route` struct as the classic scheme (project = the host label
 bound by the router's non-final `{project}` host param), so `AllowsPublicRead`

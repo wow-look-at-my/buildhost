@@ -82,32 +82,6 @@ func seedArtifact(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID i
 	return a
 }
 
-func seedArtifactWithDebug(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, os, arch, content, debugContent string) *db.Artifact {
-	t.Helper()
-	a := seedArtifact(t, d, store, releaseID, os, arch, content)
-
-	debugKey, debugSize, err := store.Put(context.Background(), strings.NewReader(debugContent))
-	require.NoError(t, err)
-
-	require.NoError(t, d.UpdateArtifactStripped(context.Background(), a.ID, "", 0, "", debugKey, debugSize))
-	a.DebugStorageKey = debugKey
-	a.DebugSize = debugSize
-	return a
-}
-
-func seedArtifactWithStripped(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, os, arch, content, strippedContent string) *db.Artifact {
-	t.Helper()
-	a := seedArtifact(t, d, store, releaseID, os, arch, content)
-
-	strippedKey, strippedSize, err := store.Put(context.Background(), strings.NewReader(strippedContent))
-	require.NoError(t, err)
-
-	require.NoError(t, d.UpdateArtifactStripped(context.Background(), a.ID, strippedKey, strippedSize, strippedKey, "", 0))
-	a.StrippedStorageKey = strippedKey
-	a.StrippedSize = strippedSize
-	return a
-}
-
 // makeRequest creates a GET request for the single Download handler using
 // query params (?v=, ?branch=, ?os=, ?arch=, ?fmt=).
 func makeRequest(project string, params url.Values) *http.Request {

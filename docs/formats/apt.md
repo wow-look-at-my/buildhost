@@ -8,7 +8,7 @@ to static. Also serves the armored public signing key at `.../{project}/key.asc`
 and a generated per-project `install.sh` one-liner installer (`install.go`) that
 adds the `signed-by` source and refreshes the index (the script's final `apt-get
 install` hint uses the folded deb package name, see below). Self-registering via
-auth.OnReady().
+init().
 
 ## Digest cache
 
