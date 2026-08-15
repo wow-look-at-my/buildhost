@@ -3,7 +3,7 @@
 `internal/dl/`. Extracted verbatim from CLAUDE.md, no wording changed.
 
 Download handler on `dl.{domain}/{project}` with version/branch resolution via
-query params. Redirects to static. Self-registering via auth.OnReady().
+query params. Redirects to static. Self-registering via init().
 
 The `latest`/branch redirects (mutable pointers) are served `Cache-Control:
 no-store` so a CDN never pins clients to a stale release after a new publish,

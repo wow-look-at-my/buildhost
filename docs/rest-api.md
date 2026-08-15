@@ -6,7 +6,7 @@ this package (multi-platform fan-out, hash-reference uploads) lives in
 `docs/uploads.md`.
 
 REST API handlers (projects, releases, artifacts, publish, tokens). Each handler
-file registers its own routes via auth.OnReady().
+file registers its own routes in init() (see docs/http/routing-and-auth.md).
 
 ## Project settings
 

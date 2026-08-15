@@ -44,12 +44,11 @@ import (
 var siteDomainRegistered = map[string]bool{}
 
 // registerSiteDomainRoutes registers the {project}.<site-domain> serving route
-// iff a site domain is configured. Config is only known at auth.Init time, so
-// unlike the unconditional sites.{domain} routes this cannot happen in init():
-// with BUILDHOST_SITE_DOMAIN unset the route table stays byte-identical (and
-// `buildhost routes`, which enumerates without booting, never lists it).
-func registerSiteDomainRoutes() {
-	d := auth.SiteDomain()
+// iff a site domain is configured. The pattern depends on configuration, so it
+// runs from auth.OnSiteDomain: with the real domain at auth.Init, and with
+// auth.SiteDomainPlaceholder when routes are enumerated rather than served, so
+// `buildhost routes` and the PR route diff still cover it.
+func registerSiteDomainRoutes(d string) {
 	if d == "" || siteDomainRegistered[d] {
 		return
 	}

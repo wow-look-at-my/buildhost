@@ -454,7 +454,7 @@ func TestSSOHandoff_EndToEnd_AuthorizesSiteDomainRead(t *testing.T) {
 	initTestMiddleware(t, d)
 	mw.GitHub = NewGitHubAuth("cid", "secret")
 	setTestSiteDomain(t, "pazer.site", "pazer.build")
-	registerSSOHandoffRoutes() // Init-time registration, done by hand here
+	registerSSOHandoffRoutes(sharedSiteDomain) // Init-time registration, done by hand here
 
 	routerHandler := mw.Authenticate(http.HandlerFunc(ServeHTTP))
 
