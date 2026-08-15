@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 )
@@ -251,7 +250,3 @@ func shortRev(sha string) string {
 	}
 	return sha
 }
-
-// modulePathOf reports the module path a go.mod declares, "" when it declares
-// none. Thin wrapper so callers do not each import modfile.
-func modulePathOf(gomod []byte) string { return modfile.ModulePath(gomod) }
