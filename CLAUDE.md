@@ -110,11 +110,17 @@ separately if any tracked file is gitignored build output. Depth:
   checksum abort and an apt "Hash Sum mismatch" for every project at once.
 - Multi-platform fan-out happens at upload time, never at download time: one blob
   -> N ordinary per-platform rows. No stored `os=any`, no download-time fallback.
-  Depth: `docs/uploads.md`.
+  Only a NON-APE upload fans out. Depth: `docs/uploads.md`.
 - ONE file that runs on several platforms (an APE) is ONE artifact row, not N:
   `PUT .../artifacts/ape?platforms=os/arch,...`. `artifact_platforms` holds the
   slots, every covered platform folds to one static URL, and a multi-platform
-  claim without APE magic is rejected. Depth: `docs/multi-platform-artifacts.md`.
+  claim without APE magic is rejected. The `cosmo`/`any`/`all` aliases on the
+  `{os}/{arch}` route publish an APE the same one-row way rather than fanning it
+  out. Depth: `docs/multi-platform-artifacts.md`.
+- A declared platform is checked against the bytes: a `windows/*` claim on an APE
+  whose PE header is the one-section do-nothing stub is refused at ingest, because
+  that binary would start on Windows and exit 0 without running. Depth:
+  `docs/uploads.md`.
 - Every download goes through `static.{domain}/file` -- one CDN-cacheable endpoint
   with sorted params, strong ETags and immutable headers. `v=latest` returns 400.
 - Storage is content-addressed (SHA-256), zstd-compressed and deduplicated;
