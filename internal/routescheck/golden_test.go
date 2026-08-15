@@ -21,15 +21,32 @@ const regenHint = "regenerate with:  UPDATE_ROUTES_GOLDEN=1 go-toolchain   (or, 
 func updateGolden() bool { return os.Getenv("UPDATE_ROUTES_GOLDEN") == "1" }
 
 // renderRoutes is the exact rendering `buildhost routes` prints: one route per
-// line, from auth.AllRoutes(). Backends self-register in init(), so importing
-// them (see routes_test.go) is what populates the table.
+// line, from auth.ListRoutes(). It must stay ListRoutes and not AllRoutes --
+// only ListRoutes renders the config-conditional site-domain families against
+// SiteDomainPlaceholder, so AllRoutes here would assert the golden against a
+// table the CLI never prints, and the two gates could never both be green.
+// Backends self-register in init(), so importing them (see routes_test.go) is
+// what populates the table.
+//
+// Callers must not have run auth.Init: ListRoutes registers into the shared
+// mux, so a configured site domain would leave real-domain routes in the table
+// (assertNotInitialized fails loudly rather than baking them into the golden).
 func renderRoutes() string {
 	var b strings.Builder
-	for _, r := range auth.AllRoutes() {
+	for _, r := range auth.ListRoutes() {
 		b.WriteString(r.String())
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+// assertNotInitialized guards the ordering renderRoutes depends on. Test order
+// within a package follows file name, so golden_test.go currently runs before
+// routes_test.go calls auth.Init -- a fact no reader of either file can see.
+func assertNotInitialized(t *testing.T) {
+	t.Helper()
+	require.Empty(t, auth.SiteDomain(),
+		"auth.Init already ran, so ListRoutes would render real-domain routes into the golden; this test must run before any test that calls auth.Init")
 }
 
 // TestRouteTableMatchesGolden fails when the route set drifts from
@@ -41,6 +58,7 @@ func renderRoutes() string {
 // The table is rendered by the program, never parsed out of source, so it cannot
 // describe routes the binary does not actually serve.
 func TestRouteTableMatchesGolden(t *testing.T) {
+	assertNotInitialized(t)
 	got := renderRoutes()
 	if updateGolden() {
 		require.NoError(t, os.WriteFile(goldenPath, []byte(got), 0o644))
@@ -58,6 +76,7 @@ func TestRouteTableMatchesGolden(t *testing.T) {
 // stable order is what keeps an added route to a one-line diff instead of a
 // reshuffle nobody can read.
 func TestGoldenRouteTableIsSorted(t *testing.T) {
+	assertNotInitialized(t)
 	lines := strings.Split(strings.TrimSuffix(renderRoutes(), "\n"), "\n")
 	require.NotEmpty(t, lines)
 	require.IsIncreasing(t, lines)
