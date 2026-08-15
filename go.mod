@@ -26,7 +26,7 @@ require (
 	modernc.org/sqlite v1.50.1
 )
 
-require github.com/wow-look-at-my/go-containers v0.0.0-20260815182216-dbc69fb36452 // go-toolchain:branch=master
+require github.com/wow-look-at-my/go-containers v0.0.0-20260815193622-200150bfb1c8 // go-toolchain:branch=master
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
