@@ -2,6 +2,7 @@
 /__signin {GET}
 /__signin/callback {GET}
 /__signout {GET}
+/__sso {GET}
 /_ui/style.css {GET}
 /api/v1/oidc/policies {GET,POST}
 /api/v1/oidc/policies/{id} {DELETE}
@@ -59,3 +60,5 @@ sites.{domain}/{project}/branch/{branch}/{path...} {GET}
 sites.{domain}/{project}/branches {GET}
 static.{domain}/file {GET}
 static.{domain}/llms.txt {GET}
+{project}.{site-domain}/__sso {GET}
+{project}.{site-domain}/{path...} {GET}
