@@ -13,6 +13,7 @@ import (
 	_ "github.com/wow-look-at-my/buildhost/internal/apt"
 	_ "github.com/wow-look-at-my/buildhost/internal/brew"
 	_ "github.com/wow-look-at-my/buildhost/internal/dl"
+	_ "github.com/wow-look-at-my/buildhost/internal/goproxy"
 	_ "github.com/wow-look-at-my/buildhost/internal/llms"
 	_ "github.com/wow-look-at-my/buildhost/internal/npm"
 	_ "github.com/wow-look-at-my/buildhost/internal/oci"
@@ -54,6 +55,8 @@ func TestAllRoutesRegisteredWithoutInit(t *testing.T) {
 		"sites.{domain}/{project}/branch/{branch}",
 		"static.{domain}/file",
 		"oci.{domain}/v2/",
+		"goproxy.{domain}/{path...}",
+		"goproxy.{domain}/health",
 	}
 	for _, w := range want {
 		assert.Contains(t, patterns, w,

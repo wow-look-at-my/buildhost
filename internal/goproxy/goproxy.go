@@ -117,27 +117,33 @@ func (s *Service) isPrivate(modPath string) bool {
 }
 
 var (
-	registerOnce sync.Once
-	service      *Service
-	serviceMu    sync.RWMutex
+	startOnce sync.Once
+	service   *Service
+	serviceMu sync.RWMutex
 )
 
-// Current returns the running Service, or nil before Init. The admin dashboard
-// reads proxy state through it.
+// Current returns the running Service, or nil before auth.Init. The admin
+// dashboard reads proxy state through it.
 func Current() *Service {
 	serviceMu.RLock()
 	defer serviceMu.RUnlock()
 	return service
 }
 
+// Routes register in init(), NOT inside the OnReady callback below. An OnReady
+// callback fires only from auth.Init (server startup), so routes registered
+// there are invisible to `buildhost routes`, to the route-diff CI check, and to
+// anything else that enumerates routes without booting a server -- which is why
+// internal/routescheck guards it. OnReady is only for the dependencies the
+// handlers need.
 func init() {
+	registerRoutes()
 	auth.OnReady(func() {
-		registerOnce.Do(func() {
+		startOnce.Do(func() {
 			s := newService(loadConfig(auth.OIDCOrgs()), auth.DB(), auth.Store(), auth.DataDir())
 			serviceMu.Lock()
 			service = s
 			serviceMu.Unlock()
-			s.registerRoutes()
 			s.startReadiness(context.Background())
 		})
 	})

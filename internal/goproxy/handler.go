@@ -12,15 +12,33 @@ import (
 	"golang.org/x/mod/module"
 )
 
-func (s *Service) registerRoutes() {
+// registerRoutes runs at package init, before the Service exists, so each
+// handler resolves it per request via withService.
+func registerRoutes() {
 	// The module path is the whole prefix of the request path, so the protocol
 	// endpoints cannot be separate route patterns -- one catch-all parses the
 	// "@v/..." / "@latest" suffix itself.
-	auth.ServiceHandleRaw(Subdomain, "GET /{path...}", s.serve)
-	auth.ServiceHandleRaw(Subdomain, "HEAD /{path...}", s.serve)
+	serve := withService((*Service).serve)
+	auth.ServiceHandleRaw(Subdomain, "GET /{path...}", serve)
+	auth.ServiceHandleRaw(Subdomain, "HEAD /{path...}", serve)
 	// A literal path outranks the catch-all, and no module request can collide
 	// with it: every one carries "/@v/" or "/@latest".
-	auth.ServiceHandleRaw(Subdomain, "GET /health", s.serveHealth)
+	auth.ServiceHandleRaw(Subdomain, "GET /health", withService((*Service).serveHealth))
+}
+
+// withService adapts a Service method into a handler that resolves the running
+// Service per request. Before auth.Init there is none: the routes exist (so the
+// route table is complete) but answer 503 rather than panicking on a nil
+// receiver.
+func withService(fn func(*Service, http.ResponseWriter, *http.Request)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s := Current()
+		if s == nil {
+			http.Error(w, "buildhost goproxy: not initialized\n", http.StatusServiceUnavailable)
+			return
+		}
+		fn(s, w, r)
+	}
 }
 
 // request is a parsed module-proxy request.

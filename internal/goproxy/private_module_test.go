@@ -259,3 +259,53 @@ func TestMismatchedGoModIsNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 	assert.Contains(t, rec.Body.String(), "declares module github.com/somebody/else")
 }
+
+// Pseudo-versions are how this org pins its untagged first-party modules (the
+// go-toolchain branch pins produce them), so resolving one by the commit it
+// embeds is a primary path, not an edge case.
+func TestPseudoVersionResolvesByEmbeddedRevision(t *testing.T) {
+	fake := newFakeGitHub(t)
+	modPath := privateOrg + "/router"
+	const sha = "302008ab124800000000000000000000000000ff"
+	fake.Files["HEAD:go.mod"] = "module " + modPath + "\n"
+	fake.Files["302008ab1248:go.mod"] = "module " + modPath + "\n"
+	fake.Files[sha+":go.mod"] = "module " + modPath + "\n"
+	fake.TreeFiles["go.mod"] = "module " + modPath + "\n"
+	fake.TreeFiles["router.go"] = "package router\n"
+
+	const version = "v0.0.0-20260721161008-302008ab1248"
+	s := newTestService(t, fake, "tok", []string{privateOrg})
+
+	rec := serveProxy(t, s, "/"+modPath+"/@v/"+version+".info")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), version)
+
+	rec = serveProxy(t, s, "/"+modPath+"/@v/"+version+".zip")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.NotZero(t, rec.Body.Len())
+}
+
+// A version string that is not semver at all is a malformed request, not a
+// missing module -- the caller has to fix their request, not go looking for a
+// version that was never there.
+func TestNonSemverVersionIsABadRequest(t *testing.T) {
+	fake := newFakeGitHub(t)
+	s := newTestService(t, fake, "tok", []string{privateOrg})
+
+	rec := serveProxy(t, s, "/"+privateOrg+"/router/@v/1.2.3.info")
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "not a valid semantic version")
+}
+
+// A timestamp-only prerelease is NOT a pseudo-version: it carries no revision,
+// so it addresses no commit and is resolved as an ordinary tag -- which is
+// absent, and correctly reported as such.
+func TestTimestampPrereleaseIsResolvedAsATag(t *testing.T) {
+	fake := newFakeGitHub(t)
+	fake.Files["HEAD:go.mod"] = "module " + privateOrg + "/router\n"
+	s := newTestService(t, fake, "tok", []string{privateOrg})
+
+	rec := serveProxy(t, s, "/"+privateOrg+"/router/@v/v0.0.0-20260721161008.info")
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Contains(t, rec.Body.String(), "no tag")
+}
