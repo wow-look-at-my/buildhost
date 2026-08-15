@@ -85,6 +85,10 @@ func currentGitHubApp() *githubApp {
 	return ghApp
 }
 
+// HasGitHubApp reports whether App auth is configured, so a caller can name
+// which credential it is presenting rather than just that it has one.
+func HasGitHubApp() bool { return currentGitHubApp() != nil }
+
 // bearerForRepo returns the bearer token to authenticate a github.com REST call
 // for owner/repo: a GitHub App installation token when an App is configured,
 // otherwise the static PAT, otherwise "" (anonymous). Best-effort -- a failure to
