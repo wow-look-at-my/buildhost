@@ -152,6 +152,6 @@ runs:
 
             // recording happens inline so a failure here fails the push, instead of the artifacts page silently going stale
             if (record === "true") {
-              // DISABLED: refs[0] is what buildhost actually stored, not any foreign reference -- await recordImage(octokit, core, context, { reference: refs[0] ?? "", digest });
+              // refs[0] is what buildhost actually stored, not any foreign reference -- await recordImage(octokit, core, context, { reference: refs[0] ?? "", digest });
             }
           })();

@@ -71,5 +71,5 @@ runs:
               return;
             }
 
-            // DISABLED: await recordReleaseArtifacts(octokit, core, context, { server, project, version: published.version ?? version, artifacts });
+            // await recordReleaseArtifacts(octokit, core, context, { server, project, version: published.version ?? version, artifacts });
           })();
