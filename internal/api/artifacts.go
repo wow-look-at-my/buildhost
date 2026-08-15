@@ -21,6 +21,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/exeformat"
 	"github.com/wow-look-at-my/buildhost/internal/uploads"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 var apiTracer = otel.Tracer("buildhost.api")
@@ -105,16 +106,15 @@ func expandOSSpec(spec string) ([]db.OS, error) {
 
 	elems := strings.Split(spec, ",")
 	out := make([]db.OS, 0, len(elems))
-	seen := make(map[db.OS]bool, len(elems))
+	seen := set.New[db.OS](len(elems))
 	for _, elem := range elems {
 		osName, ok := db.NormalizeOS(elem)
 		if !ok {
 			return nil, fmt.Errorf("invalid os %q", strings.TrimSpace(elem))
 		}
-		if seen[osName] {
+		if !seen.Add(osName) {
 			return nil, fmt.Errorf("duplicate os %q", osName)
 		}
-		seen[osName] = true
 		out = append(out, osName)
 	}
 	return out, nil
@@ -144,16 +144,15 @@ func expandArchSpec(spec string) ([]db.Arch, error) {
 
 	elems := strings.Split(spec, ",")
 	out := make([]db.Arch, 0, len(elems))
-	seen := make(map[db.Arch]bool, len(elems))
+	seen := set.New[db.Arch](len(elems))
 	for _, elem := range elems {
 		arch, ok := db.NormalizeArch(elem)
 		if !ok {
 			return nil, fmt.Errorf("invalid arch %q", strings.TrimSpace(elem))
 		}
-		if seen[arch] {
+		if !seen.Add(arch) {
 			return nil, fmt.Errorf("duplicate arch %q", arch)
 		}
-		seen[arch] = true
 		out = append(out, arch)
 	}
 	return out, nil
