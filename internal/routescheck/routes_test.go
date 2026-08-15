@@ -15,6 +15,7 @@ import (
 	_ "github.com/wow-look-at-my/buildhost/internal/apt"
 	_ "github.com/wow-look-at-my/buildhost/internal/brew"
 	_ "github.com/wow-look-at-my/buildhost/internal/dl"
+	_ "github.com/wow-look-at-my/buildhost/internal/goproxy"
 	_ "github.com/wow-look-at-my/buildhost/internal/llms"
 	_ "github.com/wow-look-at-my/buildhost/internal/npm"
 	_ "github.com/wow-look-at-my/buildhost/internal/oci"
@@ -67,6 +68,7 @@ func TestInitRegistersOnlySiteDomainRoutes(t *testing.T) {
 				"auth.OnReady (OnReady is for wiring handler dependencies), or -- if its pattern "+
 				"genuinely depends on configuration -- through auth.OnSiteDomain. Enumerable routes:\n%s",
 			p, strings.Join(enumerable, "\n"))
+
 	}
 }
 

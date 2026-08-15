@@ -878,3 +878,39 @@ copy-btn {
 .row-actions {
 	white-space: nowrap;
 }
+
+/* Go proxy health. The border carries the state so the card reads at a glance
+   from the top of the page -- a proxy that cannot serve private modules is the
+   thing this page exists to make impossible to miss. */
+.goproxy-health {
+	border-left: 4px solid var(--border);
+}
+
+.goproxy-ok {
+	border-left-color: var(--green);
+}
+
+.goproxy-warn {
+	border-left-color: var(--yellow);
+}
+
+.goproxy-bad {
+	border-left-color: var(--red);
+}
+
+.goproxy-bad h2 {
+	color: var(--red);
+}
+
+.goproxy-error {
+	background: var(--code-bg);
+	padding: 0.75rem;
+	border-radius: 4px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.goproxy-row-bad td {
+	background: var(--badge-danger-bg);
+}

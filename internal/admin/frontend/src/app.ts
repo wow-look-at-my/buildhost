@@ -11,6 +11,7 @@ import type {
     AllArtifact,
     DashboardData,
     DownloadLink,
+    GoproxyData,
     OIDCPolicy,
     Pages,
     Platform,
@@ -94,6 +95,7 @@ var NAV_ITEMS = [
     { id: "registries", href: "#/registries", label: "Registries", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 0h8v3H6V4zm0 5h8v2H6V9zm0 4h5v2H6v-2z" clip-rule="evenodd"/></svg>' },
     { id: "tokens", href: "#/tokens", label: "Tokens", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/></svg>' },
     { id: "sites", href: "#/sites", label: "Sites", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4.083 9h1.946c.089-1.546.383-2.97.837-4.118A6.004 6.004 0 004.083 9zM10 2a8 8 0 100 16 8 8 0 000-16zm0 2c-.076 0-.232.032-.465.262-.238.234-.497.623-.737 1.182-.389.907-.673 2.142-.766 3.556h3.936c-.093-1.414-.377-2.649-.766-3.556-.24-.56-.5-.948-.737-1.182C10.232 4.032 10.076 4 10 4zm3.971 5c-.089-1.546-.383-2.97-.837-4.118A6.004 6.004 0 0115.917 9h-1.946zm-2.003 2H8.032c.093 1.414.377 2.649.766 3.556.24.56.5.948.737 1.182.233.23.389.262.465.262.076 0 .232-.032.465-.262.238-.234.497-.623.737-1.182.389-.907.673-2.142.766-3.556zm1.166 4.118c.454-1.147.748-2.572.837-4.118h1.946a6.004 6.004 0 01-2.783 4.118zm-6.268 0C6.412 13.97 6.118 12.546 6.029 11H4.083a6.004 6.004 0 002.783 4.118z" clip-rule="evenodd"/></svg>' },
+    { id: "goproxy", href: "#/goproxy", label: "Go Proxy", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>' },
     { id: "oidc", href: "#/oidc", label: "OIDC Policies", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' },
     { id: "retention", href: "#/retention", label: "Retention", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>' }
 ];
@@ -152,6 +154,12 @@ const urlTpl = function (tpl: string, base: string, mid?: string, suffix?: strin
 const codeBlock = function (label: string, code: string): string {
     return '<div class="code-block"><div class="code-label">' + h(label) +
         '<copy-btn class="code-copy-btn" data-src="pre"></copy-btn></div><pre>' + h(code) + "</pre></div>";
+};
+
+// statTile is the non-linking sibling of the dashboard's stat-card anchors.
+const statTile = function (value: string | number, label: string): string {
+    return '<div class="stat-card"><div class="stat-value">' + h(value) +
+        '</div><div class="stat-label">' + h(label) + "</div></div>";
 };
 
 const projectTreeRows = function (projects: ProjectSummary[]): TreeRow[] {
@@ -1113,6 +1121,130 @@ const runRetention = function (): void {
     }).catch(function () { alert("Could not run GC (preview/demo mode has no backend)."); });
 };
 
+// --- Go module proxy ---
+
+const recheckGoproxy = function (): void {
+    fetch("/api/goproxy/recheck", { method: "POST" }).then(function (res) {
+        if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); });
+        return res.json().then(function () { pages.goproxy(); });
+    }).catch(function () { alert("Could not re-check (preview/demo mode has no backend)."); });
+};
+
+pages.goproxy = function (): void {
+    setTitle("Go Proxy");
+    renderSidebar("goproxy");
+    apiFetch<GoproxyData>("/goproxy").then(function (d) {
+        if (!d.enabled || !d.state) {
+            document.getElementById("content")!.innerHTML =
+                '<h1>Go Proxy</h1><div class="card"><p class="empty">The Go module proxy is not running in this server.</p></div>';
+            return;
+        }
+        var st = d.state;
+        var hl = st.health;
+        var html = '<h1>Go Proxy</h1>';
+
+        // Health first, and loud. A proxy with no credential serves every public
+        // module and no private one, so "it is up" is not the question worth
+        // answering at the top of this page.
+        var cls = hl.healthy ? (hl.reason ? "warn" : "ok") : "bad";
+        var label = hl.healthy ? (hl.reason ? "Ready, but unproven" : "Ready") : "NOT serving private modules";
+        html += '<div class="card goproxy-health goproxy-' + cls + '">';
+        html += "<h2>" + h(label) + "</h2>";
+        if (hl.reason) html += '<p class="section-desc">' + h(hl.reason) + "</p>";
+        if (hl.probe_error) {
+            html += "<p><strong>" + h(hl.probe_error_kind || "error") + "</strong></p>";
+            html += "<pre class='goproxy-error'>" + h(hl.probe_error) + "</pre>";
+        }
+        html += '<table class="data-table"><tbody>';
+        html += "<tr><td class='info-label'>Credential</td><td>" + h(hl.credential_kind) +
+            (hl.credential_configured ? "" : " <strong>(none configured)</strong>") + "</td></tr>";
+        html += "<tr><td class='info-label'>Private prefixes</td><td>" +
+            h((hl.private_prefixes || []).join(", ") || "(none)") + "</td></tr>";
+        html += "<tr><td class='info-label'>Upstream mirror</td><td>" +
+            (hl.upstream
+                ? h(hl.upstream)
+                : "<em>none &mdash; modules outside the prefixes above are 404'd so <code>GOPROXY=&hellip;,direct</code> fetches them from their origin</em>") +
+            "</td></tr>";
+        html += "<tr><td class='info-label'>Readiness module</td><td>" +
+            (hl.readiness_module
+                ? h(hl.readiness_module) + (hl.probe_version ? " &rarr; " + h(hl.probe_version) : "")
+                : "<em>not configured &mdash; the credential's ACCESS is unproven</em>") + "</td></tr>";
+        html += "<tr><td class='info-label'>Checked</td><td>" + h(timeAgo(hl.checked_at)) + "</td></tr>";
+        html += "</tbody></table>";
+        html += '<p><button class="btn" onclick="App.recheckGoproxy()">Re-check now</button></p>';
+        html += "</div>";
+
+        var c = st.cache, t = st.traffic;
+        html += '<div class="card"><h2>Cache</h2><div class="stat-grid">';
+        html += statTile(c.modules, "Modules");
+        html += statTile(c.versions, "Versions");
+        html += statTile(c.zips, "Zips stored");
+        html += statTile(humanSize(c.bytes || 0), "Cached bytes");
+        html += statTile(c.failing_modules, "Failing modules");
+        html += "</div></div>";
+
+        html += '<div class="card"><h2>Traffic</h2><p class="section-desc">Counters since this process started; the cache figures above survive a restart.</p><div class="stat-grid">';
+        html += statTile(t.cache_hits, "Cache hits");
+        html += statTile(t.cache_misses, "Misses");
+        html += statTile(t.fetches, "Upstream fetches");
+        html += statTile(humanSize(t.bytes_sent || 0), "Bytes served");
+        html += "</div>";
+        var errs = t.errors || {};
+        var kinds = Object.keys(errs);
+        if (kinds.length > 0) {
+            html += '<table class="data-table"><thead><tr><th>Failure</th><th>Count</th></tr></thead><tbody>';
+            for (var e = 0; e < kinds.length; e++) {
+                html += "<tr><td>" + h(kinds[e]!) + "</td><td>" + h(errs[kinds[e]!]!) + "</td></tr>";
+            }
+            html += "</tbody></table>";
+        }
+        html += "</div>";
+
+        var mods = st.modules || [];
+        html += '<div class="card"><h2>Modules</h2><table class="data-table"><thead><tr><th>Module</th><th>Source</th><th>Versions</th><th>Size</th><th>Last success</th><th>Last failure</th></tr></thead><tbody>';
+        if (mods.length === 0) {
+            html += '<tr><td colspan="6" class="empty">Nothing cached yet</td></tr>';
+        } else {
+            for (var i = 0; i < mods.length; i++) {
+                var m = mods[i]!;
+                html += "<tr" + (m.last_error_kind ? ' class="goproxy-row-bad"' : "") + ">";
+                html += "<td><code>" + h(m.path) + "</code></td>";
+                html += "<td>" + h(m.source) + (m.private ? " (private)" : "") + "</td>";
+                html += "<td>" + h(m.versions) + "</td>";
+                html += "<td>" + h(humanSize(m.bytes || 0)) + "</td>";
+                html += "<td>" + h(m.last_success_at || "-") + "</td>";
+                html += "<td>" + (m.last_error_kind
+                    ? "<strong>" + h(m.last_error_kind) + "</strong><br><small>" + h(m.last_error) + "</small>"
+                    : "-") + "</td>";
+                html += "</tr>";
+            }
+        }
+        html += "</tbody></table></div>";
+
+        var recent = st.recent || [];
+        html += '<div class="card"><h2>Recent requests</h2><table class="data-table"><thead><tr><th>When</th><th>Module</th><th>Version</th><th>Endpoint</th><th>Outcome</th><th>Status</th><th>Took</th></tr></thead><tbody>';
+        if (recent.length === 0) {
+            html += '<tr><td colspan="7" class="empty">No requests yet</td></tr>';
+        } else {
+            for (var j = 0; j < recent.length; j++) {
+                var ev = recent[j]!;
+                html += "<tr" + (ev.outcome === "error" ? ' class="goproxy-row-bad"' : "") + ">";
+                html += "<td>" + h(timeAgo(ev.at)) + "</td>";
+                html += "<td><code>" + h(ev.module) + "</code></td>";
+                html += "<td>" + h(ev.version || "-") + "</td>";
+                html += "<td>" + h(ev.endpoint) + "</td>";
+                html += "<td>" + h(ev.outcome) + (ev.detail ? " (" + h(ev.detail) + ")" : "") + "</td>";
+                html += "<td>" + h(ev.status) + "</td>";
+                html += "<td>" + h(ev.duration) + "</td>";
+                html += "</tr>";
+            }
+        }
+        html += "</tbody></table></div>";
+
+        document.getElementById("content")!.innerHTML = html;
+    });
+};
+
 // --- Router ---
 
 const route = function (): void {
@@ -1136,6 +1268,7 @@ const route = function (): void {
     else if (first === "artifacts") { pages.artifacts(); }
     else if (first === "storage") { pages.storage(); }
     else if (first === "retention") { pages.retention(); }
+    else if (first === "goproxy") { pages.goproxy(); }
     else { pages.dashboard(); }
 };
 
@@ -1177,6 +1310,39 @@ const demoData: Record<string, unknown> = {
     },
     "/registries": { base_url: "https://builds.example.com", services: demoServices, projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
     "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com", services: demoServices },
+    // The demo deliberately shows an UNHEALTHY proxy: the failure mode this page
+    // exists for (a credential that cannot read private modules while public ones
+    // keep working) is the one worth showing off in a preview.
+    "/goproxy": {
+        enabled: true,
+        state: {
+            health: {
+                healthy: false,
+                reason: "the readiness module github.com/myorg/internal-lib did not resolve",
+                credential_configured: true,
+                credential_kind: "token",
+                private_prefixes: ["github.com/myorg"],
+                upstream: "",
+                readiness_module: "github.com/myorg/internal-lib",
+                probed: true,
+                probe_error_kind: "unauthorized",
+                probe_error: "unauthorized: module github.com/myorg/internal-lib: github responded 404: the proxy's credential is presented; if the repository does exist, that credential is not authorized for it",
+                checked_at: new Date(Date.now() - 120000).toISOString()
+            },
+            cache: { modules: 3, versions: 12, zips: 9, bytes: 4_200_000, failing_modules: 1 },
+            traffic: { since_start: true, cache_hits: 148, cache_misses: 12, fetches: 12, bytes_sent: 31_000_000, errors: { unauthorized: 4, not_found: 1 } },
+            modules: [
+                { path: "github.com/myorg/internal-lib", source: "github", private: true, versions: 0, bytes: 0, last_error_kind: "unauthorized", last_error: "github responded 404 for a repository the credential is not authorized for", last_error_at: "2026-01-01 00:00:00Z", last_success_at: "", last_fetched_at: "" },
+                { path: "github.com/myorg/tools", source: "github", private: true, versions: 4, bytes: 1_100_000, last_error_kind: "", last_error: "", last_success_at: "2026-01-01 00:00:00Z", last_fetched_at: "2026-01-01 00:00:00Z" },
+                { path: "github.com/myorg/agentic-loop/go", source: "github", private: true, versions: 8, bytes: 3_100_000, last_error_kind: "", last_error: "", last_success_at: "2026-01-01 00:00:00Z", last_fetched_at: "2026-01-01 00:00:00Z" }
+            ],
+            recent: [
+                { at: new Date(Date.now() - 30000).toISOString(), module: "github.com/myorg/internal-lib", version: "", endpoint: "latest", source: "github", outcome: "error", status: 403, detail: "unauthorized", duration: "212ms" },
+                { at: new Date(Date.now() - 90000).toISOString(), module: "github.com/myorg/agentic-loop/go", version: "v0.40.0", endpoint: "zip", source: "github", outcome: "hit", status: 200, detail: "", duration: "4ms" },
+                { at: new Date(Date.now() - 150000).toISOString(), module: "github.com/myorg/tools", version: "v1.4.0", endpoint: "mod", source: "github", outcome: "fetch", status: 200, detail: "", duration: "684ms" }
+            ]
+        }
+    },
     "/tokens": [{ id: 1, name: "deploy", token_prefix: "bh_abc", is_global: false, project_id: 1, project_name: "myapp", scopes: "read,write", is_expired: false, created_at: new Date(Date.now() - 864e5 * 7).toISOString(), last_used_at: new Date(Date.now() - 3600000).toISOString() }],
     "/oidc": [{ issuer: "https://token.actions.githubusercontent.com", subject_pattern: "repo:myorg/myapp:*", audience: "", project_name: "myapp", scopes: "read,write", created_at: new Date(Date.now() - 864e5 * 14).toISOString() }],
     "/artifacts": [
@@ -1221,4 +1387,4 @@ window.addEventListener("hashchange", function () {
 });
 
 // Exported == reachable as App.x from the inline onclick handlers above.
-export { copyTempLink, copyText, deleteToken, downloadArtifact, editToken, pages, reloadTokens, runRetention, saveToken };
+export { copyTempLink, copyText, deleteToken, downloadArtifact, editToken, pages, recheckGoproxy, reloadTokens, runRetention, saveToken };
