@@ -31,6 +31,11 @@ func init() {
 	})
 	auth.ServiceHandle("brew", "GET /{project}", handler.parseRoute, handler.ServeFormula)
 	auth.ServiceHandle("brew", "GET /Formula/{project}.rb", handler.parseRoute, handler.ServeFormula)
+	// A slash-namespaced name needs its own route: the {project}.rb pattern is
+	// one path segment, so "git-fixed/git-fsck" never matched it and fell
+	// through to GET /{project}, which read the whole path as a project name
+	// and answered "project not found".
+	auth.ServiceHandle("brew", "GET /Formula/{path...}", handler.parseRoute, handler.ServeFormula)
 	auth.ServiceHandleRaw("brew", "GET /tap.git", handler.RedirectTap)
 	auth.ServiceHandleRaw("brew", "GET /tap.git/{path...}", handler.RedirectTap)
 	// The authenticated tap: challenges anonymous requests (401 + Basic) so
@@ -86,6 +91,9 @@ func (h *Handler) parseRoute(r *http.Request) auth.RouteInfo {
 
 func (h *Handler) resolveFormulaProject(r *http.Request) string {
 	name := r.PathValue("project")
+	if name == "" {
+		name = strings.TrimSuffix(r.PathValue("path"), ".rb")
+	}
 	if h.DB == nil || !strings.Contains(name, "-") {
 		return name
 	}

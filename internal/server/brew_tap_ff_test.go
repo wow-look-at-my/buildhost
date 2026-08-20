@@ -162,3 +162,23 @@ func TestBrewFormula_FoldedFilenameResolvesSlashNamespacedProject(t *testing.T) 
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 	resp.Body.Close()
 }
+
+// The LITERAL slash-namespaced URL -- the form the admin dashboard linked and
+// the form a reader types from the project name -- must serve the same formula.
+// The {project}.rb pattern is one path segment, so this path used to fall
+// through to the bare GET /{project} route, which read "Formula/gcc/pgo.rb" as
+// a project name and answered "project not found".
+func TestBrewFormula_LiteralSlashNamespacedPathServesFormula(t *testing.T) {
+	env := setup(t)
+	publishBrewProject(t, env, "gcc/pgo", "pgo-binary")
+
+	for _, path := range []string{"/Formula/gcc/pgo.rb", "/Formula/gcc-pgo.rb"} {
+		resp := env.getSubdomain(t, "brew", path)
+		require.Equal(t, http.StatusOK, resp.StatusCode, path)
+		require.Contains(t, string(readBody(t, resp)), "class GccPgo < Formula", path)
+	}
+
+	resp := env.getSubdomain(t, "brew", "/Formula/gcc/nope.rb")
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	resp.Body.Close()
+}

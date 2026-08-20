@@ -151,6 +151,19 @@ const urlTpl = function (tpl: string, base: string, mid?: string, suffix?: strin
         "</span><copy-btn></copy-btn>";
 };
 
+// A Homebrew formula name cannot contain '/', so a slash-namespaced project
+// folds its namespace to '-' in the tap (repackage.BrewFormulaName). That
+// folded name is both the tap filename and what the user types after the tap.
+const brewFormulaName = function (project: string): string {
+    return project.replace(/\//g, "-");
+};
+
+// The three lines that install a project: brew 6.0 requires `brew trust`
+// before a third-party tap's formulae evaluate.
+const brewInstall = function (brewBase: string, project: string): string {
+    return "brew tap pazer/build " + brewBase + "/tap.git\nbrew trust pazer/build\nbrew install pazer/build/" + brewFormulaName(project);
+};
+
 const codeBlock = function (label: string, code: string): string {
     return '<div class="code-block"><div class="code-label">' + h(label) +
         '<copy-btn class="code-copy-btn" data-src="pre"></copy-btn></div><pre>' + h(code) + "</pre></div>";
@@ -333,7 +346,6 @@ pages.project = function (name: string): void {
         if (hasPublished) {
             var dlBase = (svc.dl || "") + "/" + p.name;
             var aptBase = (svc.apt || "") + "/" + p.name;
-            var brewU = (svc.brew || "") + "/Formula/" + p.name + ".rb";
             var npmU = (svc.npm || "") + "/@buildhost/" + p.name;
             var ociU = (svc.oci || "") + "/v2/" + p.name + "/manifests/latest";
             var npmHost = (svc.npm || "").replace(/^https?:\/\//, "");
@@ -397,14 +409,13 @@ pages.project = function (name: string): void {
                     ),
                     endpointRow("APT", aptBase, aptBase + "/dists/stable/Release", aptBase),
                     endpointRow("APT installer", aptBase + "/install.sh", aptBase + "/install.sh", null),
-                    endpointRow("Homebrew", brewU, brewU, null),
                     endpointRow("npm", npmU, npmU, null),
                     endpointRow("OCI", ociU, ociU, null)
                 ).cls("info-table"),
                 Html.raw(codeBlock("Direct download (curl)", curlCmd)),
                 Html.raw(codeBlock("APT (one-line install)", aptOneLiner)),
                 Html.raw(codeBlock("APT (manual setup)", aptCmd)),
-                Html.raw(codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "/tap.git\nbrew trust pazer/build\nbrew install pazer/build/" + p.name)),
+                Html.raw(codeBlock("Homebrew", brewInstall(svc.brew || "", p.name))),
                 Html.raw(codeBlock("npm", npmCmd)),
                 Html.raw(codeBlock("Docker", dockerCmd))
             ).cls("card");
@@ -509,7 +520,6 @@ pages.release = function (name: string, version: string): void {
         html += "</tbody></table></div>";
 
         var aptU = (svc.apt || "") + "/" + p.name;
-        var brewU = (svc.brew || "") + "/Formula/" + p.name + ".rb";
         var npmU = (svc.npm || "") + "/@buildhost/" + p.name;
         var ociU = (svc.oci || "") + "/v2/" + p.name + "/manifests/" + r.version;
         html += '<div class="card"><h2>Download Endpoints</h2><table class="info-table">';
@@ -517,7 +527,7 @@ pages.release = function (name: string, version: string): void {
         html += "<tr><td class='info-label'>Direct (version)</td><td class='endpoint-cell'>" + urlTpl(dlBase + "?v=" + r.version + "&os={os}&arch={arch}", dlBase + "?v=" + r.version + "&os=", "&arch=") + "</td></tr>";
         if (r.git_branch) html += "<tr><td class='info-label'>Direct (branch)</td><td class='endpoint-cell'>" + urlTpl(dlBase + "?branch=" + r.git_branch + "&os={os}&arch={arch}", dlBase + "?branch=" + r.git_branch + "&os=", "&arch=") + "</td></tr>";
         html += "<tr><td class='info-label'>APT</td><td class='endpoint-cell'><a href='" + h(aptU + "/dists/stable/Release") + "' data-copy='" + h(aptU) + "'>" + h(aptU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Homebrew</td><td class='endpoint-cell'><a href='" + h(brewU) + "'>" + h(brewU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>Homebrew</td><td class='endpoint-cell'><code>brew install pazer/build/" + h(brewFormulaName(p.name)) + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += "<tr><td class='info-label'>npm</td><td class='endpoint-cell'><a href='" + h(npmU) + "'>" + h(npmU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
         html += "<tr><td class='info-label'>OCI</td><td class='endpoint-cell'><a href='" + h(ociU) + "'>" + h(ociU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
         html += "</table></div>";
@@ -561,10 +571,10 @@ pages.registries = function (): void {
         html += codeBlock("Setup (private project)", 'sudo install -d -m 0755 /etc/apt/keyrings\n# the token is the HTTP Basic password (username is ignored)\ncurl -fsSL -u "token:$TOKEN" ' + apt + '/{project}/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\n# both apt (metadata) and static (the .deb download redirect) need the token\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf\nmachine ' + aptHost + ' login token password $TOKEN\nmachine ' + staticHost + ' login token password $TOKEN\nEOF\nsudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf\nsudo apt update && sudo apt install {project}');
         html += "</div>";
 
-        html += '<div class="card"><h2>Homebrew Tap</h2><p class="section-desc">Homebrew formulas are served through a generated Git tap. Formula files auto-detect macOS and Linux artifacts.</p>';
+        html += '<div class="card"><h2>Homebrew Tap</h2><p class="section-desc">Homebrew formulas are served through a generated Git tap. Formula files auto-detect macOS and Linux artifacts. A formula name cannot contain <code>/</code>, so a slash-namespaced project folds it to <code>-</code> &mdash; e.g. <code>myrepo/server</code> installs as <code>myrepo-server</code>.</p>';
         html += '<table class="info-table"><tr><td class="info-label">Tap Git URL</td><td class="endpoint-cell"><code>' + h(brew + "/tap.git") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += '<tr><td class="info-label">Formula</td><td class="endpoint-cell"><code>' + h(brew + "/Formula/{project}.rb") + "</code><copy-btn data-src='code'></copy-btn></td></tr></table>";
-        html += codeBlock("Install", "brew tap pazer/build " + brew + "/tap.git\nbrew trust pazer/build\nbrew install pazer/build/{project}");
+        html += '<tr><td class="info-label">Formula</td><td class="endpoint-cell"><code>' + h(brew + "/Formula/{formula}.rb") + "</code><copy-btn data-src='code'></copy-btn></td></tr></table>";
+        html += codeBlock("Install", "brew tap pazer/build " + brew + "/tap.git\nbrew trust pazer/build\nbrew install pazer/build/{formula}");
         html += "</div>";
 
         html += '<div class="card"><h2>npm Registry</h2><p class="section-desc">npm-compatible registry. Packages are scoped under <code>@buildhost</code>.</p>';

@@ -64,9 +64,12 @@ func TestAdminStaticHomebrewInstructionsUseTap(t *testing.T) {
 	body := readBundle(t)
 
 	require.Contains(t, body, "brew tap pazer/build")
-	require.Contains(t, body, "brew install pazer/build/{project}")
+	// A formula name cannot contain '/', so the placeholder is the FOLDED
+	// formula name, never the raw project name.
+	require.Contains(t, body, "brew install pazer/build/{formula}")
+	require.NotContains(t, body, "brew install pazer/build/{project}")
 	// The \n here are the literal two-char escapes in the bundled string.
-	require.Contains(t, body, "/tap.git\\nbrew trust pazer/build\\nbrew install pazer/build/{project}")
+	require.Contains(t, body, "/tap.git\\nbrew trust pazer/build\\nbrew install pazer/build/")
 }
 
 // Slash-namespaced projects render as a tree on the Projects page. These are the
@@ -133,4 +136,15 @@ func TestAdminStaticSiteLinksUseRefSigil(t *testing.T) {
 	// The write endpoints keep the old spelling; if they ever disappear, this
 	// test has stopped looking at the thing it thinks it is.
 	require.Contains(t, body, "/branch/{branch}", "the site write endpoints should still be documented")
+}
+
+// A project's release page must hand the reader a runnable install command.
+// It used to link the formula FILE at /Formula/{project}.rb, built from the
+// raw project name -- a URL a slash-namespaced project answered with
+// {"error":"project not found"}, and a file nobody installs from anyway.
+func TestAdminStaticReleasePageShowsBrewInstallCommand(t *testing.T) {
+	body := readBundle(t)
+
+	require.Contains(t, body, "<code>brew install pazer/build/")
+	require.NotContains(t, body, `"/Formula/"`)
 }
