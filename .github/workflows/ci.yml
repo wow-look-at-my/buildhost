@@ -29,18 +29,9 @@ jobs:
       # what makes the CLI downloadable -- the publish composites fetch it from
       # dl instead of building cmd/buildhost from a checkout that has none of
       # the generated files it embeds.
-      # One native binary per platform, NOT the fat APE the action now builds by
-      # default. buildhost cannot compile under GOOS=cosmo: it embeds SQLite
-      # through modernc.org/sqlite -> modernc.org/libc, whose ~20 subpackages
-      # carry only GOOS-suffixed filenames (errno_linux_amd64.go and siblings)
-      # and none for cosmo, so every one of them resolves to zero Go files.
-      # These values are the matrix the action itself defaulted to before the
-      # APE became the default. See docs/no-cosmo-ape.md.
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           generate: 476c7c5fc951
-          os: linux,darwin,windows
-          arch: amd64,arm64
       # The step above just ran every generate directive. If that changed a
       # TRACKED file, this repo is carrying a build artifact in git -- and a
       # tracked artifact is free to drift from the source it claims to be built

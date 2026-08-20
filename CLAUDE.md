@@ -30,10 +30,6 @@ Generated and COMMITTED: `internal/db/*.sql.go` (sqlc) -- editing a query in
 `internal/db/queries/*.sql` puts its regenerated Go in the same diff.
 Which directive lives where, and how to re-run sqlc: `docs/code-generation.md`.
 
-CI pins `os` and `arch` on the go-toolchain action: six per-platform binaries,
-never the fat APE that action now builds by default. modernc.org/libc has no
-files for `GOOS=cosmo`, so the APE cannot compile. `docs/no-cosmo-ape.md`.
-
 **Never commit a build artifact.** A committed copy of the admin JS drifted from
 its source for months. CI fails if running generate changes a TRACKED file, and
 separately if any tracked file is gitignored build output. Depth:
@@ -223,6 +219,5 @@ Reviewed items and intentional trade-offs live in `docs/security/`:
   renamed or resurrected repositories.
 - `docs/security/tokens-and-links.md` -- token scopes and the stateless,
   artifact-bound temporary download links.
-- `docs/no-cosmo-ape.md` -- why CI pins the build matrix instead of shipping an APE.
 - `docs/security/github-signin.md` -- browser sign-in with GitHub, per-repo
   authorization, the cross-domain handoff, and primary-domain scoping.
