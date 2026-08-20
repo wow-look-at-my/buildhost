@@ -20,6 +20,7 @@ import type {
     RegistriesData,
     ReleaseData,
     RetentionData,
+    ServiceURLs,
     SidebarData,
     SitesData,
     StorageData,
@@ -162,6 +163,63 @@ const brewFormulaName = function (project: string): string {
 // before a third-party tap's formulae evaluate.
 const brewInstall = function (brewBase: string, project: string): string {
     return "brew tap pazer/build " + brewBase + "/tap.git\nbrew trust pazer/build\nbrew install pazer/build/" + brewFormulaName(project);
+};
+
+// Install commands, shared by the project page (latest) and the release page
+// (one version). Each takes the services block and the project; `version` is
+// "" for latest. A private project needs its credential in the same block,
+// because a copied command that 401s teaches nothing about why.
+
+// A Debian package name folds '/' and '_' to '-' (repackage.DebPackageName),
+// so apt and dpkg agree on a slash-namespaced project.
+const debPackageName = function (project: string): string {
+    return project.replace(/[/_]/g, "-");
+};
+
+const host = function (url: string): string {
+    return url.replace(/^https?:\/\//, "");
+};
+
+// The server-generated install.sh saves the armored key, writes the signed-by
+// source, records the token for a private repo, and refreshes the index.
+const aptOneLiner = function (aptBase: string, priv: boolean): string {
+    return priv
+        ? 'curl -fsSL -H "Authorization: Bearer $TOKEN" ' + aptBase + "/install.sh \\\n  | sudo BUILDHOST_TOKEN=$TOKEN sh"
+        : "curl -fsSL " + aptBase + "/install.sh | sudo sh";
+};
+
+const aptManual = function (svc: ServiceURLs, project: string, priv: boolean): string {
+    var aptBase = (svc.apt || "") + "/" + project;
+    var pkg = debPackageName(project);
+    return priv
+        ? 'sudo install -d -m 0755 /etc/apt/keyrings\n# the token is the HTTP Basic password (username is ignored)\ncurl -fsSL -u "token:$TOKEN" ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + pkg + '.list\n# both apt (metadata) and static (the .deb download redirect) need the token\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf\nmachine ' + host(svc.apt || "") + ' login token password $TOKEN\nmachine ' + host(svc.static || "") + ' login token password $TOKEN\nEOF\nsudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf\nsudo apt update && sudo apt install ' + pkg
+        : 'sudo install -d -m 0755 /etc/apt/keyrings\ncurl -fsSL ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + pkg + '.list\nsudo apt update && sudo apt install ' + pkg;
+};
+
+// npm and the OCI tag list both carry every published release, so both pin a
+// version. A deb and an npm package drop a leading "v" from the version
+// (repackage.DebPackageName's siblings do the same), and an OCI tag does not.
+const npmInstall = function (svc: ServiceURLs, project: string, version: string, priv: boolean): string {
+    var registry = svc.npm || "";
+    var spec = "@buildhost/" + project + (version ? "@" + version.replace(/^v/, "") : "");
+    var cmd = "npm install " + spec + " --registry " + registry;
+    return priv ? "npm config set //" + host(registry) + "/:_authToken $TOKEN\n" + cmd : cmd;
+};
+
+const dockerPull = function (svc: ServiceURLs, project: string, version: string, priv: boolean): string {
+    var ociHost = host(svc.oci || "");
+    var cmd = "docker pull " + ociHost + "/" + project + ":" + (version || "latest");
+    return priv ? "echo $TOKEN | docker login " + ociHost + " -u token --password-stdin\n" + cmd : cmd;
+};
+
+// A private project's dl link redirects to the static host, and curl only
+// re-sends credentials across that hop with --location-trusted; the token is
+// the HTTP Basic password.
+const curlDownload = function (dlBase: string, version: string, priv: boolean): string {
+    var url = dlBase + (version ? "?v=" + version + "&" : "?") + "os=linux&arch=amd64";
+    return priv
+        ? 'curl -fsSL --location-trusted -u "token:$TOKEN" -O \\\n  "' + url + '"'
+        : 'curl -fsSL -O "' + url + '"';
 };
 
 const codeBlock = function (label: string, code: string): string {
@@ -346,16 +404,6 @@ pages.project = function (name: string): void {
         if (hasPublished) {
             var dlBase = (svc.dl || "") + "/" + p.name;
             var aptBase = (svc.apt || "") + "/" + p.name;
-            var npmU = (svc.npm || "") + "/@buildhost/" + p.name;
-            var ociU = (svc.oci || "") + "/v2/" + p.name + "/manifests/latest";
-            var npmHost = (svc.npm || "").replace(/^https?:\/\//, "");
-            var ociHost = (svc.oci || "").replace(/^https?:\/\//, "");
-            var aptHost = (svc.apt || "").replace(/^https?:\/\//, "");
-            var staticHost = (svc.static || "").replace(/^https?:\/\//, "");
-            // Slash-namespaced names keep their slash in the repo URL but install
-            // under a folded Debian package name (repackage.DebPackageName folds
-            // '/' and '_' to '-'), so apt and dpkg agree.
-            var aptPkg = p.name.replace(/[/_]/g, "-");
             var priv = !!p.is_private;
 
             // endpointRow: an <a> + copy-button cell for a fixed (latest)
@@ -371,33 +419,6 @@ pages.project = function (name: string): void {
                 );
             };
 
-            // curl direct download. A private project's dl link redirects to the
-            // static host, and curl only re-sends credentials across that hop
-            // with --location-trusted; the token is the HTTP Basic password.
-            var curlCmd = priv
-                ? 'curl -fsSL --location-trusted -u "token:$TOKEN" -O \\\n  "' + dlBase + '?os=linux&arch=amd64"'
-                : 'curl -fsSL -O "' + dlBase + '?os=linux&arch=amd64"';
-
-            // APT: the server-generated install.sh is the one-line path (it
-            // saves the armored key, writes the signed-by source, records the
-            // token for private repos, and refreshes the index).
-            var aptOneLiner = priv
-                ? 'curl -fsSL -H "Authorization: Bearer $TOKEN" ' + aptBase + "/install.sh \\\n  | sudo BUILDHOST_TOKEN=$TOKEN sh"
-                : "curl -fsSL " + aptBase + "/install.sh | sudo sh";
-
-            // APT manual flow: signed-by key-import + folded Debian package
-            // name, matching the Registries page and the web frontend.
-            var aptCmd = priv
-                ? 'sudo install -d -m 0755 /etc/apt/keyrings\n# the token is the HTTP Basic password (username is ignored)\ncurl -fsSL -u "token:$TOKEN" ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + aptPkg + '.list\n# both apt (metadata) and static (the .deb download redirect) need the token\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf\nmachine ' + aptHost + ' login token password $TOKEN\nmachine ' + staticHost + ' login token password $TOKEN\nEOF\nsudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf\nsudo apt update && sudo apt install ' + aptPkg
-                : 'sudo install -d -m 0755 /etc/apt/keyrings\ncurl -fsSL ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + aptPkg + '.list\nsudo apt update && sudo apt install ' + aptPkg;
-
-            var npmCmd = priv
-                ? "npm config set //" + npmHost + "/:_authToken $TOKEN\nnpm install @buildhost/" + p.name + " --registry " + (svc.npm || "")
-                : "npm install @buildhost/" + p.name + " --registry " + (svc.npm || "");
-
-            var dockerCmd = priv
-                ? "echo $TOKEN | docker login " + ociHost + " -u token --password-stdin\ndocker pull " + ociHost + "/" + p.name + ":latest"
-                : "docker pull " + ociHost + "/" + p.name + ":latest";
 
             html += Html.div(
                 Html.h2("Download & Install ", Html.span("— latest").cls("muted").style("font-weight:400")),
@@ -407,17 +428,14 @@ pages.project = function (name: string): void {
                         Html.td("Direct download").cls("info-label"),
                         Html.td(Html.raw(urlTpl(dlBase + "?os={os}&arch={arch}", dlBase + "?os=", "&arch="))).cls("endpoint-cell")
                     ),
-                    endpointRow("APT", aptBase, aptBase + "/dists/stable/Release", aptBase),
-                    endpointRow("APT installer", aptBase + "/install.sh", aptBase + "/install.sh", null),
-                    endpointRow("npm", npmU, npmU, null),
-                    endpointRow("OCI", ociU, ociU, null)
+                    endpointRow("APT repository", aptBase, aptBase + "/dists/stable/Release", aptBase)
                 ).cls("info-table"),
-                Html.raw(codeBlock("Direct download (curl)", curlCmd)),
-                Html.raw(codeBlock("APT (one-line install)", aptOneLiner)),
-                Html.raw(codeBlock("APT (manual setup)", aptCmd)),
+                Html.raw(codeBlock("Direct download (curl)", curlDownload(dlBase, "", priv))),
+                Html.raw(codeBlock("APT (one-line install)", aptOneLiner(aptBase, priv))),
+                Html.raw(codeBlock("APT (manual setup)", aptManual(svc, p.name, priv))),
                 Html.raw(codeBlock("Homebrew", brewInstall(svc.brew || "", p.name))),
-                Html.raw(codeBlock("npm", npmCmd)),
-                Html.raw(codeBlock("Docker", dockerCmd))
+                Html.raw(codeBlock("npm", npmInstall(svc, p.name, "", priv))),
+                Html.raw(codeBlock("Docker", dockerPull(svc, p.name, "", priv)))
             ).cls("card");
         }
 
@@ -520,17 +538,33 @@ pages.release = function (name: string, version: string): void {
         html += "</tbody></table></div>";
 
         var aptU = (svc.apt || "") + "/" + p.name;
-        var npmU = (svc.npm || "") + "/@buildhost/" + p.name;
-        var ociU = (svc.oci || "") + "/v2/" + p.name + "/manifests/" + r.version;
+
+        // A URL belongs here only where the URL IS the product: the direct
+        // download, and the APT repository line a reader pastes into a sources
+        // file. Everything else is a command. A registry address -- an npm
+        // packument, an OCI manifest -- is machine plumbing: pasting it into a
+        // browser answers with JSON, and it installs nothing.
         html += '<div class="card"><h2>Download Endpoints</h2><table class="info-table">';
         html += "<tr><td class='info-label'>Direct (latest)</td><td class='endpoint-cell'>" + urlTpl(dlBase + "?os={os}&arch={arch}", dlBase + "?os=", "&arch=") + "</td></tr>";
         html += "<tr><td class='info-label'>Direct (version)</td><td class='endpoint-cell'>" + urlTpl(dlBase + "?v=" + r.version + "&os={os}&arch={arch}", dlBase + "?v=" + r.version + "&os=", "&arch=") + "</td></tr>";
         if (r.git_branch) html += "<tr><td class='info-label'>Direct (branch)</td><td class='endpoint-cell'>" + urlTpl(dlBase + "?branch=" + r.git_branch + "&os={os}&arch={arch}", dlBase + "?branch=" + r.git_branch + "&os=", "&arch=") + "</td></tr>";
-        html += "<tr><td class='info-label'>APT</td><td class='endpoint-cell'><a href='" + h(aptU + "/dists/stable/Release") + "' data-copy='" + h(aptU) + "'>" + h(aptU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Homebrew</td><td class='endpoint-cell'><code>brew install pazer/build/" + h(brewFormulaName(p.name)) + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>npm</td><td class='endpoint-cell'><a href='" + h(npmU) + "'>" + h(npmU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>OCI</td><td class='endpoint-cell'><a href='" + h(ociU) + "'>" + h(ociU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>APT repository</td><td class='endpoint-cell'><a href='" + h(aptU + "/dists/stable/Release") + "' data-copy='" + h(aptU) + "'>" + h(aptU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
         html += "</table></div>";
+
+        // npm and the OCI tag list carry every published release, so both
+        // install THIS version. The APT index carries only the latest release
+        // (servePackages reads GetLatestRelease), so pinning this version there
+        // would hand out a command that fails on every older release; the apt
+        // block says plainly which version it installs. Homebrew's tap is
+        // latest-only for the same reason.
+        var relPriv = !!p.is_private;
+        html += '<div class="card"><h2>Install</h2>';
+        html += codeBlock("Direct download (curl)", curlDownload(dlBase, r.version, relPriv));
+        html += codeBlock("npm", npmInstall(svc, p.name, r.version, relPriv));
+        html += codeBlock("Docker", dockerPull(svc, p.name, r.version, relPriv));
+        html += codeBlock("APT (one-line install, always the latest release)", aptOneLiner(aptU, relPriv));
+        html += codeBlock("Homebrew (always the latest release)", brewInstall(svc.brew || "", p.name));
+        html += "</div>";
 
         document.getElementById("content")!.innerHTML = html;
     });
@@ -567,8 +601,8 @@ pages.registries = function (): void {
         html += "</table>";
         html += codeBlock("One-line install (public project)", "curl -fsSL " + apt + "/{project}/install.sh | sudo sh");
         html += codeBlock("One-line install (private project)", 'curl -fsSL -H "Authorization: Bearer $TOKEN" ' + apt + "/{project}/install.sh \\\n  | sudo BUILDHOST_TOKEN=$TOKEN sh");
-        html += codeBlock("Setup (public project)", 'sudo install -d -m 0755 /etc/apt/keyrings\ncurl -fsSL ' + apt + '/{project}/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\nsudo apt update && sudo apt install {project}');
-        html += codeBlock("Setup (private project)", 'sudo install -d -m 0755 /etc/apt/keyrings\n# the token is the HTTP Basic password (username is ignored)\ncurl -fsSL -u "token:$TOKEN" ' + apt + '/{project}/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\n# both apt (metadata) and static (the .deb download redirect) need the token\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf\nmachine ' + aptHost + ' login token password $TOKEN\nmachine ' + staticHost + ' login token password $TOKEN\nEOF\nsudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf\nsudo apt update && sudo apt install {project}');
+        html += codeBlock("Setup (public project)", 'sudo install -d -m 0755 /etc/apt/keyrings\ncurl -fsSL ' + apt + '/{project}/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{package}.list\nsudo apt update && sudo apt install {package}');
+        html += codeBlock("Setup (private project)", 'sudo install -d -m 0755 /etc/apt/keyrings\n# the token is the HTTP Basic password (username is ignored)\ncurl -fsSL -u "token:$TOKEN" ' + apt + '/{project}/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{package}.list\n# both apt (metadata) and static (the .deb download redirect) need the token\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf\nmachine ' + aptHost + ' login token password $TOKEN\nmachine ' + staticHost + ' login token password $TOKEN\nEOF\nsudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf\nsudo apt update && sudo apt install {package}');
         html += "</div>";
 
         html += '<div class="card"><h2>Homebrew Tap</h2><p class="section-desc">Homebrew formulas are served through a generated Git tap. Formula files auto-detect macOS and Linux artifacts. A formula name cannot contain <code>/</code>, so a slash-namespaced project folds it to <code>-</code> &mdash; e.g. <code>myrepo/server</code> installs as <code>myrepo-server</code>.</p>';
@@ -617,7 +651,7 @@ pages.registries = function (): void {
 
         var projects = d.projects || [];
         if (projects.length > 0) {
-            html += '<div class="card"><h2>Projects</h2><p class="section-desc">Quick links to project-specific endpoints.</p>';
+            html += '<div class="card"><h2>Projects</h2><p class="section-desc">The command that installs each project, plus its direct-download URL.</p>';
             html += '<table class="data-table"><thead><tr><th>Project</th><th>Visibility</th><th>Direct Download</th><th>APT</th><th>Brew</th><th>npm</th></tr></thead><tbody>';
             for (var k = 0; k < projects.length; k++) {
                 var pr = projects[k];
@@ -625,12 +659,9 @@ pages.registries = function (): void {
                 html += "<tr><td><a href='#/projects/" + h(pr.name) + "'>" + h(pr.name) + "</a></td>";
                 html += "<td>" + (pr.is_private ? badge("warning", "Private") : badge("success", "Public")) + "</td>";
                 html += "<td class='endpoint-cell'><span class='url-tpl' data-tpl='" + h(prDl + "?os={os}&arch={arch}") + "'><code class='truncate'>" + h(prDl + "?os=") + "</code><select class='tpl-select tpl-select-sm' data-var='os'><option value='linux'>linux</option><option value='darwin'>darwin</option><option value='windows'>windows</option><option value='freebsd'>freebsd</option></select><code>&arch=</code><select class='tpl-select tpl-select-sm' data-var='arch'><option value='amd64'>amd64</option><option value='arm64'>arm64</option><option value='386'>386</option><option value='arm'>arm</option></select></span><copy-btn></copy-btn></td>";
-                var aptOneLiner = pr.is_private
-                    ? 'curl -fsSL -H "Authorization: Bearer $TOKEN" ' + apt + "/" + pr.name + "/install.sh | sudo BUILDHOST_TOKEN=$TOKEN sh"
-                    : "curl -fsSL " + apt + "/" + pr.name + "/install.sh | sudo sh";
-                html += "<td class='endpoint-cell'><a href='" + h(apt + "/" + pr.name + "/install.sh") + "' data-copy='" + h(aptOneLiner) + "' title='Copies the one-line install command'>" + h(apt + "/" + pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
-                html += "<td class='endpoint-cell'><a href='" + h(brew + "/" + pr.name) + "'>" + h(brew + "/" + pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
-                html += "<td class='endpoint-cell'><a href='" + h(npm + "/@buildhost/" + pr.name) + "'>" + h(npm + "/@buildhost/" + pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
+                html += "<td class='endpoint-cell'><code class='truncate'>" + h(aptOneLiner(apt + "/" + pr.name, !!pr.is_private)) + "</code><copy-btn data-src='code'></copy-btn></td>";
+                html += "<td class='endpoint-cell'><code class='truncate'>brew install pazer/build/" + h(brewFormulaName(pr.name)) + "</code><copy-btn data-src='code'></copy-btn></td>";
+                html += "<td class='endpoint-cell'><code class='truncate'>" + h(npmInstall(svc, pr.name, "", !!pr.is_private)) + "</code><copy-btn data-src='code'></copy-btn></td>";
                 html += "</tr>";
             }
             html += "</tbody></table></div>";

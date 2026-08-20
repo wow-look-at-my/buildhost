@@ -145,6 +145,33 @@ func TestAdminStaticSiteLinksUseRefSigil(t *testing.T) {
 func TestAdminStaticReleasePageShowsBrewInstallCommand(t *testing.T) {
 	body := readBundle(t)
 
-	require.Contains(t, body, "<code>brew install pazer/build/")
+	require.Contains(t, body, "brew install pazer/build/")
 	require.NotContains(t, body, `"/Formula/"`)
+}
+
+// A registry ADDRESS is not an install command. The release page used to print
+// the npm packument URL and the OCI manifest URL as the whole answer for "how
+// do I get this?" -- pasting either into a browser returns JSON and installs
+// nothing. Each ecosystem gets the command that installs THIS release.
+func TestAdminStaticReleasePageShowsInstallCommands(t *testing.T) {
+	body := readBundle(t)
+
+	require.Contains(t, body, "npm install ")
+	require.Contains(t, body, "docker pull ")
+	require.Contains(t, body, "/install.sh | sudo sh")
+	// The npm packument and the OCI manifest are machine plumbing. The
+	// Registries page still documents their shape, as a reference page should,
+	// but nothing builds a per-project one and offers it as the way to install.
+	require.NotContains(t, body, `"/@buildhost/" + `)
+	require.NotContains(t, body, `"/v2/" + `)
+}
+
+// A Debian package name folds the project namespace, so every apt command --
+// including the Registries page's placeholder -- names the package, never the
+// raw project.
+func TestAdminStaticAptCommandsUseThePackageName(t *testing.T) {
+	body := readBundle(t)
+
+	require.Contains(t, body, "sudo apt install {package}")
+	require.NotContains(t, body, "sudo apt install {project}")
 }
