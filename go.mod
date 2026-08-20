@@ -11,10 +11,10 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/ulikunitz/xz v0.5.15
-	github.com/wow-look-at-my/bin-file-fmt/go v0.0.0-20260809003625-b41c22095858 // go-toolchain:branch=master
-	github.com/wow-look-at-my/go-containers v0.0.0-20260820210621-2e1261867045 // go-toolchain:branch=master
-	github.com/wow-look-at-my/go-mmap v0.0.0-20260820164452-9c1e07927997 // go-toolchain:branch=master
-	github.com/wow-look-at-my/router v0.0.0-20260816000554-e6629a27a4bd // go-toolchain:branch=master
+	github.com/wow-look-at-my/bin-file-fmt/go v0.0.0-20260809003625-b41c22095858 // go-toolchain:auto-branch
+	github.com/wow-look-at-my/go-containers v0.0.0-20260820210621-2e1261867045 // go-toolchain:auto-branch
+	github.com/wow-look-at-my/go-mmap v0.0.0-20260820164452-9c1e07927997 // go-toolchain:auto-branch
+	github.com/wow-look-at-my/router v0.0.0-20260816000554-e6629a27a4bd // go-toolchain:auto-branch
 	go.opentelemetry.io/contrib/bridges/otelslog v0.18.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.19.0
