@@ -102,6 +102,24 @@ func publishBrewProject(t *testing.T, env *testEnv, name, body string) {
 	resp.Body.Close()
 }
 
+// publishPrivateBrewProject is publishBrewProject for a project the tap only
+// shows to a request that may read it.
+func publishPrivateBrewProject(t *testing.T, env *testEnv, name, body string) {
+	t.Helper()
+	resp := env.postJSON(t, "/api/v1/projects", fmt.Sprintf(`{"name":%q,"versioning":"auto","is_private":true}`, name))
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	resp.Body.Close()
+	resp = env.postJSON(t, "/api/v1/projects/"+name+"/releases", `{"git_branch":"master","git_commit":"abc"}`)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	resp.Body.Close()
+	resp = env.putBody(t, "/api/v1/projects/"+name+"/releases/1/artifacts/linux/amd64", []byte(body))
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	resp.Body.Close()
+	resp = env.postJSON(t, "/api/v1/projects/"+name+"/releases/1/publish", `{}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+}
+
 // The tap history regression test through the REAL router: a real `git clone`
 // of the generated tap, a publish, a redeploy (fresh server.New over the same
 // data dir -- which re-runs every OnReady wiring, including the tap cache
@@ -179,6 +197,25 @@ func TestBrewFormula_LiteralSlashNamespacedPathServesFormula(t *testing.T) {
 	}
 
 	resp := env.getSubdomain(t, "brew", "/Formula/gcc/nope.rb")
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	resp.Body.Close()
+}
+
+// A private project's LITERAL formula path names the project exactly, so an
+// anonymous request gets the same 401 the legacy /{project} path gives it.
+// The FOLDED name is the guessable one, and it must stay indistinguishable
+// from a project that does not exist.
+func TestBrewFormula_PrivateSlashNamespacedPathMatchesLegacyPath(t *testing.T) {
+	env := setup(t)
+	publishPrivateBrewProject(t, env, "ns/hidden", "hidden-binary")
+
+	for _, path := range []string{"/ns/hidden", "/Formula/ns/hidden.rb"} {
+		resp := env.getSubdomain(t, "brew", path)
+		require.Equal(t, http.StatusUnauthorized, resp.StatusCode, path)
+		resp.Body.Close()
+	}
+
+	resp := env.getSubdomain(t, "brew", "/Formula/ns-hidden.rb")
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 	resp.Body.Close()
 }

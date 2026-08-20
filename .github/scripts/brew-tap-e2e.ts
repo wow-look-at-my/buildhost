@@ -208,13 +208,13 @@ function legAnonLeak(): void {
 	// formula.rb is exactly the ".rb: syntax error" failure class users hit.
 	const errorPaths: Array<[string, number]> = [
 		["/myrepo/myapp", 401], // legacy formula path, private project, anonymous
-		// The /Formula/{project}.rb route matches a single path segment, so a
-		// slash-namespaced project is not addressable there (404 regardless of
-		// auth). The FOLDED filename resolves back to its project, but only to
-		// projects the request may read (the tap-membership rule) -- so an
+		// The LITERAL slash-namespaced formula path names the project exactly,
+		// like the legacy path above, so it answers the same way: 401. The
+		// FOLDED filename is a different case. It resolves back to its project
+		// only for a request that may read it (the tap-membership rule), so an
 		// anonymous probe of a private project's folded name stays
 		// indistinguishable from nonexistent, never a 401 existence leak.
-		["/Formula/myrepo/myapp.rb", 404],
+		["/Formula/myrepo/myapp.rb", 401],
 		["/Formula/myrepo-myapp.rb", 404],
 		["/Formula/7zip.rb", 404], // digit-leading project: excluded from brew
 	];
