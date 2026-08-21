@@ -110,9 +110,9 @@ deliberately has no unit tests (adding any would pull the whole untested
 comment), so CLI behavior is guarded here, like `--manifest` mode is in
 `homebrew-tap-e2e`.
 
-## multi-platform-ape-e2e
+## dats/multi-platform-ape.dats
 
-CI job `multi-platform-ape-e2e` runs the real binary and publishes ONE APE
+`dats/multi-platform-ape.dats` runs the real binary and publishes ONE APE
 covering `linux/amd64,darwin/arm64,windows/amd64` through
 `PUT .../artifacts/ape`, then asserts the release holds exactly one artifact,
 that four request spellings (including `macOS/aarch64`) all get the SAME `dl`
@@ -120,10 +120,16 @@ redirect target and the same sha256 back, that the release page renders one
 `raw` link with an `APE: …` badge, and that a non-APE multi-platform claim is a
 400 storing nothing.
 
-The Go tests cover the same properties in process. This job exists because a
+The Go tests cover the same properties in process. This suite exists because a
 redirect that resolves per platform instead of per artifact still passes every
 in-process assertion about bytes -- the defect only shows as one URL becoming
-three, which needs the real `dl` handler behind a real Host header. Depth:
+three, which needs the real `dl` handler behind a real Host header.
+
+Each test starts its own server inside dats' sandbox, so the suite needs no CI
+job of its own: `go-toolchain` runs it on every build, and `dats
+dats/multi-platform-ape.dats` runs it from a checkout that has built a binary.
+It takes the binary from `BUILDHOST_BIN`, else whichever of
+`build/buildhost_cosmo_fat` or `build/buildhost` the build left. Depth:
 `docs/multi-platform-artifacts.md`.
 
 ## The route table golden (docs/routes.txt)

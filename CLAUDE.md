@@ -197,6 +197,9 @@ never share the service alias.
 
 ## Testing
 
+Assertions live in `dats/*.dats`, which `go-toolchain` runs on every build; a
+workflow installs and invokes, it never holds the expected value itself.
+
 CI runs the shipped fat APE, and an APE starts through its own shell
 trampoline: a bash `run:` step does that implicitly, node's `spawn` does not
 (pass `sh` the path), and the image carries one static busybox `/bin/sh` for
@@ -210,7 +213,7 @@ seldom-triggered action break in a consumer repo.
 Several end-to-end jobs in `ci.yml` are NOT part of
 it and guard defects unit tests structurally cannot catch (`synthesized-image-e2e`,
 `homebrew-tap-e2e`, `container-healthcheck`, `apt-install-e2e`,
-`upload-artifact-action-e2e`, `multi-platform-ape-e2e`). Depth: `docs/testing.md`.
+`upload-artifact-action-e2e`). Depth: `docs/testing.md`.
 
 ## Security
 
