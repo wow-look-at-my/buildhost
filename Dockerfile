@@ -1,10 +1,10 @@
 FROM busybox:musl AS dirs
 RUN mkdir -p /data && chown 65532:65532 /data
-# The APE trampoline is a shell script that runs cksum, tr and mkdir, so the
-# image needs those on PATH as well as the shell itself. One static busybox
-# answers to all four names.
-RUN mkdir -p /shell && cp /bin/busybox /shell/busybox \
-    && for a in sh cksum tr mkdir; do ln -s busybox "/shell/$a"; done
+# The APE trampoline is a shell script, and it shells out -- cksum, tr, mkdir,
+# cp so far. Installing every applet name against the one static busybox costs
+# a directory of symlinks and stops the next command it needs from being
+# another failed container start.
+RUN mkdir -p /shell && cp /bin/busybox /shell/busybox && /shell/busybox --install -s /shell
 # The trampoline unpacks itself under TMPDIR, so the image needs a writable one.
 RUN mkdir -p /tmpdir && chmod 1777 /tmpdir
 
