@@ -667,6 +667,7 @@ jobs:
       - name: Build the admin frontend
         run: ./scripts/build-admin-frontend.sh
       - name: Every link on the preview dashboard must reach a page
+        timeout-minutes: 10
         uses: wow-look-at-my/actions@typescript#latest
         with:
           file: .github/scripts/admin-demo-links-e2e.ts

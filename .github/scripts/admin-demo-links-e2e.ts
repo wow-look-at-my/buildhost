@@ -40,11 +40,32 @@ const server = http.createServer((req: any, res: any) => {
 	res.end(fs.readFileSync(file));
 });
 
-// The runner's Chrome, or playwright's own download when one is staged.
+// The same sequence sites-cors-e2e uses, in the same order: an explicit
+// binary outside a runner, then the runner's own Chrome, then a staged
+// download. A browser is REQUIRED -- no browser fails this check rather than
+// reducing it to something that cannot go red.
 const launch = async () => {
-	const explicit = process.env.CHROME_PATH;
-	if (explicit) return chromium.launch({ executablePath: explicit, args: ["--no-sandbox"] });
-	return chromium.launch({ args: ["--no-sandbox"] });
+	const attempts: Array<[string, Record<string, unknown>]> = [
+		...(process.env.PLAYWRIGHT_CHROME_PATH
+			? ([["executablePath", { executablePath: process.env.PLAYWRIGHT_CHROME_PATH, args: ["--no-sandbox"] }]] as Array<
+					[string, Record<string, unknown>]
+				>)
+			: []),
+		["channel:chrome", { channel: "chrome", args: ["--no-sandbox"] }],
+		["channel:chromium", { channel: "chromium", args: ["--no-sandbox"] }],
+		["bundled", { args: ["--no-sandbox"] }],
+	];
+	const errors: string[] = [];
+	for (const [name, opts] of attempts) {
+		try {
+			const browser = await chromium.launch(opts);
+			core.info(`browser: launched via ${name}`);
+			return browser;
+		} catch (e: any) {
+			errors.push(`${name}: ${e?.message ?? e}`);
+		}
+	}
+	throw new Error(`no browser could be launched (this check REQUIRES one):\n${errors.join("\n")}`);
 };
 
 const main = async () => {
@@ -90,6 +111,9 @@ const main = async () => {
 
 	await browser.close();
 	server.close();
+	// The browser's keep-alive sockets outlive close(); without this the
+	// process sits with a live event loop after the crawl is done.
+	server.closeAllConnections();
 
 	if (errors.length > 0) {
 		throw new Error(`the preview dashboard raised errors:\n${errors.join("\n")}`);
@@ -97,4 +121,16 @@ const main = async () => {
 	core.info(`OK: ${visited} preview pages, every in-app link rendered`);
 };
 
-await main();
+// A hang here is a job that runs until the workflow's own limit, with no
+// output to read. Fail it while the log still says what it was doing.
+const DEADLINE_MS = 5 * 60 * 1000;
+let timer: any;
+const deadline = new Promise((_resolve, reject) => {
+	timer = setTimeout(() => reject(new Error(`the crawl did not finish within ${DEADLINE_MS / 1000}s`)), DEADLINE_MS);
+});
+
+try {
+	await Promise.race([main(), deadline]);
+} finally {
+	clearTimeout(timer);
+}
