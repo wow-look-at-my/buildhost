@@ -30,8 +30,9 @@ function curl(args: string[]): string {
 	return sh("curl", ["-fsSL", ...args]);
 }
 
-// The image has no shell, so exec the binary directly.
-const token = sh("docker", [...COMPOSE, "exec", "-T", "buildhost", "buildhost", "bootstrap", "--name", "image-e2e"])
+// The binary is an APE, so it starts through the image's busybox shell -- a
+// direct exec of it answers "exec format error".
+const token = sh("docker", [...COMPOSE, "exec", "-T", "buildhost", "sh", "/usr/local/bin/buildhost", "bootstrap", "--name", "image-e2e"])
 	.trim()
 	.split("\n")
 	.pop()!
