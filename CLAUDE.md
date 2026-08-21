@@ -197,8 +197,10 @@ never share the service alias.
 
 ## Testing
 
-Assertions live in `dats/*.dats`, which `go-toolchain` runs on every build; a
-workflow installs and invokes, it never holds the expected value itself.
+Assertions live in dats suites, never in a workflow step: `dats/` is
+self-contained and `go-toolchain` runs it sandboxed on every build;
+`test/dats/` needs the host or a service a workflow set up first, and a step
+invokes it by name. Depth: `docs/testing.md`.
 
 CI runs the shipped fat APE, and an APE starts through its own shell
 trampoline: a bash `run:` step does that implicitly, node's `spawn` does not

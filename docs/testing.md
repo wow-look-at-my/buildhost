@@ -132,6 +132,18 @@ It takes the binary from `BUILDHOST_BIN`, else whichever of
 `build/buildhost_cosmo_fat` or `build/buildhost` the build left. Depth:
 `docs/multi-platform-artifacts.md`.
 
+## Where a test lives
+
+An assertion goes in a dats suite, never in a workflow step. `dats/` is the
+self-contained set: `go-toolchain` walks it on every build and runs it
+sandboxed, so it may only need what a checkout that has built a binary has.
+`test/dats/` is the rest -- a suite needing the host or a service the workflow
+set up first (brew and its prefix, a docker daemon) -- and a workflow step
+invokes it by name, usually with `--no-sandbox`.
+
+A workflow step may still DO things: install brew, start a server, run a
+composite action. What it may not do is hold the expected value.
+
 ## The route table golden (docs/routes.txt)
 
 `docs/routes.txt` is the committed route table, rendered by the program itself

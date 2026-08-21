@@ -590,53 +590,12 @@ jobs:
           LEG: public
         with:
           file: .github/scripts/brew-tap-e2e.ts
-      # The installed file must keep BOTH bits Homebrew's Cleaner would take
-      # away: executable (it chmods anything it does not recognize as a
-      # shebang/ELF/Mach-O to 0444) and writable (an APE rewrites itself in
-      # place on first run and dies with "Permission denied" at 0555). The
-      # generated formula opts out with skip_clean "bin"; these assertions are
-      # what turn a regression in that codegen red instead of shipping a
-      # binary users cannot run.
-      - name: Installed binary must stay executable and writable
-        shell: bash
-        run: |
-          set -euo pipefail
-          bin="$(brew --prefix pazer/build/go-toolchain)/bin/go-toolchain"
-          ls -l "$bin"
-          test -x "$bin" || { echo "installed binary is not executable -- Homebrew's Cleaner chmods unrecognized files 0444"; exit 1; }
-          test -w "$bin" || { echo "installed binary is not writable -- an APE binary rewrites itself on first run"; exit 1; }
-      # Running the REAL binary is the actual user-facing claim: `brew install
-      # pazer/build/go-toolchain` must produce something that executes. On
-      # Linux this is also where a Cosmopolitan APE assimilates itself (it
-      # rewrites its own file into a native ELF), which is why the write bit
-      # above is load-bearing rather than cosmetic. `version` exits 0 even when
-      # its background update check cannot reach GitHub, so this is not a
-      # network-flaky assertion.
-      - name: Execute the publicly installed binary
-        shell: bash
-        run: |
-          set -euo pipefail
-          out="$(go-toolchain version)"
-          printf '%s\n' "$out"
-          case "$out" in
-            *"Version:"*) ;;
-            *) echo "go-toolchain version did not print a version line"; exit 1 ;;
-          esac
-      # Same guarantees against the APE-SHAPED fixture, so the invariant holds
-      # on macOS too (where go-toolchain's own artifact is a Mach-O brew
-      # recognizes) and for any publisher shipping a Cosmopolitan binary. The
-      # fixture fails loudly at 0555 (its self-write) and cannot even be
-      # executed at 0444.
-      - name: Install the APE-shaped fixture and assert mode + execution
-        shell: bash
-        run: |
-          set -euo pipefail
-          brew install pazer/build/ape-fixture
-          bin="$(brew --prefix pazer/build/ape-fixture)/bin/ape-fixture"
-          ls -l "$bin"
-          test -x "$bin" || { echo "installed APE-shaped binary is not executable (Cleaner chmods unrecognized files 0444)"; exit 1; }
-          test -w "$bin" || { echo "installed APE-shaped binary is not writable (an APE rewrites itself on first run)"; exit 1; }
-          test "$(ape-fixture)" = "buildhost-homebrew-ape-ok"
+      # What the install left on disk, and that it runs: the assertions live
+      # in the suite, not here. --no-sandbox because brew's prefix is outside
+      # any sandbox and the point is what brew did to a real file.
+      - uses: wow-look-at-my/dats@master
+        with:
+          args: --no-sandbox test test/dats/homebrew-public.dats
       # Docs: the authenticated tap replaces the public tap under the same name
       # ("remove it first with brew untap --force" -- plain untap refuses while
       # formulae installed from the tap exist).
@@ -648,8 +607,9 @@ jobs:
           LEG: private
         with:
           file: .github/scripts/brew-tap-e2e.ts
-      - name: Execute the privately installed binary
-        run: test "$(myapp)" = "buildhost-homebrew-private-ok"
+      - uses: wow-look-at-my/dats@master
+        with:
+          args: --no-sandbox test test/dats/homebrew-private.dats
       - name: Anonymous tap must not leak the private project
         uses: wow-look-at-my/actions@typescript#latest
         env:
