@@ -66,13 +66,14 @@ const timeAgo = function (s: string | null | undefined): string {
     return days === 1 ? "1 day ago" : days + " days ago";
 };
 
+// The clock is the reader's own, so it carries no zone name.
 const formatTime = function (s: string | null | undefined): string {
     if (!s) return "-";
     var d = new Date(s);
     if (isNaN(d.getTime())) return "-";
     var pad = function (n: number): string { return n < 10 ? "0" + n : "" + n; };
-    return d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate()) +
-        " " + pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + " UTC";
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+        " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
 };
 
 // The demo dataset must answer every path the demo's own pages ask for. An
