@@ -110,6 +110,15 @@ deliberately has no unit tests (adding any would pull the whole untested
 comment), so CLI behavior is guarded here, like `--manifest` mode is in
 `homebrew-tap-e2e`.
 
+The job runs the composites -- an action only runs inside a workflow -- and every
+assertion above lives in a suite it invokes with the results:
+`test/dats/upload-direct.dats` (the small upload opened no session),
+`test/dats/upload-artifact.dats` (the chunked session, the hashes, the
+byte-identical download, the published release), `test/dats/site-direct.dats`
+(the small site opened none either) and `test/dats/site-publish.dats` (the big
+site's own session, the advertised URL serving with no `/branch/` in it, the
+served bytes, the legacy redirect, and the single-mode CLI publish).
+
 ## test/dats/multi-platform-ape.dats
 
 `test/dats/multi-platform-ape.dats` runs the real binary and publishes ONE APE
