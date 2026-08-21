@@ -74,9 +74,7 @@ server served a mangled tarball whose sha256 never matched the formula.
 CI job `container-healthcheck` (`ci.yml`) additionally runs
 `.github/scripts/image-strips-e2e.ts` against the **built Docker image**: it
 bootstraps a token by exec'ing the binary inside the (shell-less) container,
-publishes buildhost's own unstripped linux ELF (`build/buildhost_cosmo_fat.dbg`,
-the debug ELF beside the fat APE -- the APE itself is a PE, which the ELF
-stripper cannot read), and asserts the download comes
+publishes buildhost's own unstripped linux binary, and asserts the download comes
 back smaller than the upload with no `.symtab`/`.debug_*` sections but
 `.text`/`.rodata` intact, that `fmt=symbols` returns a file with a real
 `.debug_info` section, and that `?debug=1` returns exactly the uploaded bytes.

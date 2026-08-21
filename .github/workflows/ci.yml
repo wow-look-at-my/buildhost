@@ -43,9 +43,6 @@ jobs:
       # The path MUST match route-diff's restore path: actions/cache derives the
       # cache version from the path, so a mismatched path is a guaranteed miss
       # even for an identical key.
-      # go-toolchain builds ONE fat APE by default, so build/ carries
-      # buildhost_cosmo_fat and no per-platform binary. That one file runs on
-      # the linux runner. Every job below that consumes the hand-off uses it.
       - if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         shell: bash
         run: |
@@ -186,13 +183,13 @@ jobs:
         run: |
           go generate ./internal/api
           if [ -x scripts/build-admin-frontend.sh ]; then ./scripts/build-admin-frontend.sh; fi
-          go build -o build/buildhost_base ./cmd/buildhost
+          go build -o build/buildhost_linux_amd64 ./cmd/buildhost
       - if: steps.cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x base/build/buildhost_base
-          "$RUNNER_TEMP/render-routes.sh" ./base/build/buildhost_base base-routes.txt "base"
+          chmod +x base/build/buildhost_linux_amd64
+          "$RUNNER_TEMP/render-routes.sh" ./base/build/buildhost_linux_amd64 base-routes.txt "base"
       - if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:

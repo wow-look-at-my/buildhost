@@ -11,15 +11,6 @@ RUN mkdir -p /shell && cp /bin/busybox /shell/busybox \
 # The trampoline unpacks itself under TMPDIR, so the image needs a writable one.
 RUN mkdir -p /tmpdir && chmod 1777 /tmpdir
 
-# The image runs the linux ELF beside the fat APE, not the APE. The APE is a
-# PE that only a shell can start, and the final image has no shell. Refuse a
-# file that is not an ELF, because that failure appears at run time otherwise.
-FROM busybox:musl AS bin
-COPY --chmod=755 build/buildhost_cosmo_fat.dbg /buildhost
-RUN head -c 4 /buildhost | grep -q ELF || \
-	{ echo "build/buildhost_cosmo_fat.dbg is not an ELF; distroless cannot exec it"; exit 1; }
-RUN /buildhost version > /dev/null
-
 FROM gcr.io/distroless/static-debian12:nonroot
 
 ARG VERSION=dev
