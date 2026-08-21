@@ -613,11 +613,35 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Install crane (zstd-capable OCI client)
-        run: go install github.com/google/go-containerregistry/cmd/crane@latest
+        run: |
+          go install github.com/google/go-containerregistry/cmd/crane@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Build netcheck entrypoint (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/netcheck" ./test/e2e/testdata/netcheck
-      - name: Pull and run the synthesized OCI image
-        run: PATH="$(go env GOPATH)/bin:$PATH" bash test/e2e/run.sh build/buildhost "$RUNNER_TEMP/netcheck"
+      # The OCI endpoint is host-routed: the first Host label must be "oci".
+      - name: Map the OCI host to the local server
+        run: echo "127.0.0.1 oci.buildhost.test" | sudo tee -a /etc/hosts
+      # buildhost's layers are zstd, which Docker reads only through the
+      # containerd image store. The registry is plain HTTP here, so it also
+      # has to be an allowed insecure one.
+      - name: Turn on the containerd image store
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /etc/docker
+          existing="$(sudo cat /etc/docker/daemon.json 2>/dev/null || echo '{}')"
+          printf '%s' "$existing" | jq \
+            --arg reg "oci.buildhost.test:8088" \
+            '.features."containerd-snapshotter" = true
+             | .["insecure-registries"] = ((.["insecure-registries"] // []) + [$reg] | unique)' \
+            | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+          for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
+      - uses: wow-look-at-my/dats@master
+        env:
+          BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
+          NETCHECK_BIN: ${{ runner.temp }}/netcheck
+        with:
+          args: --no-sandbox test test/dats/synthesized-image.dats
 
   # Proves a hosted site stays loadable CROSS-ORIGIN, through its redirects, in
   # a REAL BROWSER. Guards the defect that broke every cross-origin consumer at
@@ -677,8 +701,15 @@ jobs:
           go-version-file: go.mod
       - name: Build apt test package payload (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/buildhost-apt-e2e" ./test/e2e/testdata/netcheck
-      - name: Install from the generated APT repository
-        run: bash test/e2e/apt-install.sh build/buildhost "$RUNNER_TEMP/buildhost-apt-e2e"
+      # The apt repository and the package download redirect are host-routed.
+      - name: Map the apt and static hosts to the local server
+        run: printf '127.0.0.1 apt.localhost\n127.0.0.1 static.localhost\n' | sudo tee -a /etc/hosts
+      - uses: wow-look-at-my/dats@master
+        env:
+          BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
+          ARTIFACT_BIN: ${{ runner.temp }}/buildhost-apt-e2e
+        with:
+          args: --no-sandbox test test/dats/apt-install.dats
 
   # Proves the buildhost-upload-artifact composite action's BOTH upload paths
   # against a real spawned buildhost. The server's advertised direct-upload

@@ -31,9 +31,9 @@ fails CI.
 
 ## synthesized-image-e2e
 
-`test/e2e/` is a synthesized-OCI-image end-to-end test (CI job
-`synthesized-image-e2e` in `ci.yml`, not part of `go-toolchain`). It publishes a
-tiny static binary (`test/e2e/testdata/netcheck/`; under `testdata/` so `go list
+`test/dats/synthesized-image.dats` is a synthesized-OCI-image end-to-end test
+(CI job `synthesized-image-e2e` in `ci.yml`, not part of `go-toolchain`). It
+publishes a tiny static binary (`test/e2e/testdata/netcheck/`; under `testdata/` so `go list
 ./...` -- and thus go-toolchain's build/vet/coverage -- ignores it, while the e2e
 job still builds it explicitly) to a real `buildhost serve`, then uses **crane**
 (go-containerregistry) to pull the image buildhost synthesizes, assert its config
@@ -41,8 +41,10 @@ job still builds it explicitly) to a real `buildhost serve`, then uses **crane**
 bundle, `nonroot` in `/etc/passwd`, sticky `/tmp`), and run the entrypoint --
 which does an outbound HTTPS request validated **only** against the image's
 baked-in CA bundle, proving a networked service works in the synthesized image.
-crane (not docker) because buildhost's layers are `tar+zstd`, which
-go-containerregistry pulls but the default GitHub Docker may not.
+Docker pulls and runs the same image too: "pullable" is a claim about the client
+people actually use, and buildhost's layers are `tar+zstd`, which Docker reads
+only through the containerd image store (the workflow turns it on) while crane
+reads them anywhere, daemon-free.
 
 ## homebrew-tap-e2e
 
@@ -103,11 +105,11 @@ of invisible -- and the crawl fails on it either way.
 
 ## apt-install-e2e
 
-`test/e2e/apt-install.sh` (CI job `apt-install-e2e`) covers a third case beyond
+`test/dats/apt-install.dats` (CI job `apt-install-e2e`) covers a third case beyond
 the plain and slash-namespaced packages: an **APE-shaped artifact** (no shebang,
 not an ELF, and it writes to `$0` before printing its marker). The generated
 package must install the binary under `/usr/lib` with a `/bin/sh` launcher on
-`$PATH`, and the script then runs it **as the non-root CI user** -- the exact case
+`$PATH`, and the suite then runs it **as the non-root CI user** -- the exact case
 that failed -- asserting the marker output and a writable per-user copy. Verified
 to go red without the deb fix.
 
