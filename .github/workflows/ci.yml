@@ -312,9 +312,9 @@ jobs:
 
   # Proves the DOCUMENTED Homebrew flows -- public and private -- work against a
   # real spawned buildhost with the real brew executable. The brew commands are
-  # not written here: .github/scripts/brew-tap-e2e.ts extracts them verbatim
-  # from README.md (and asserts the served llms.txt agrees), substituting only
-  # the server host. Changing what CI runs therefore REQUIRES changing the
+  # not written here: scripts/brew-doc-flows.sh extracts them verbatim from
+  # README.md (and the suite asserts the served llms.txt agrees), substituting
+  # only the server host. Changing what CI runs therefore REQUIRES changing the
   # user-facing docs -- a "fix CI only" change goes red. (That drift already
   # happened once: Homebrew 6.0 broke `brew install` and the fix landed in CI
   # only, while README/llms.txt kept documenting a flow that failed for users.)
@@ -555,16 +555,12 @@ jobs:
               > "$RUNNER_TEMP/buildhost-release-hostile.toml"
             ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-hostile.toml"
           done
-      - name: Public install flow (brew commands extracted from the docs)
-        uses: wow-look-at-my/actions@typescript#latest
-        env:
-          LEG: public
-        with:
-          file: .github/scripts/brew-tap-e2e.ts
-      # What the install left on disk, and that it runs: the assertions live
-      # in the suite, not here. --no-sandbox because brew's prefix is outside
-      # any sandbox and the point is what brew did to a real file.
+      # Each suite runs the documented flow in its own setup and then asserts
+      # what it produced. --no-sandbox because brew's prefix is outside any
+      # sandbox and the point is what brew did to a real file.
       - uses: wow-look-at-my/dats@master
+        env:
+          BREW_HOST: brew.localhost:18080
         with:
           args: --no-sandbox test test/dats/homebrew-public.dats
       # Docs: the authenticated tap replaces the public tap under the same name
@@ -572,21 +568,16 @@ jobs:
       # formulae installed from the tap exist).
       - name: Untap the public tap before the private flow (per docs)
         run: brew untap --force pazer/build
-      - name: Private install flow (brew commands extracted from the docs)
-        uses: wow-look-at-my/actions@typescript#latest
-        env:
-          LEG: private
-        with:
-          file: .github/scripts/brew-tap-e2e.ts
       - uses: wow-look-at-my/dats@master
+        env:
+          BREW_HOST: brew.localhost:18080
         with:
           args: --no-sandbox test test/dats/homebrew-private.dats
-      - name: Anonymous tap must not leak the private project
-        uses: wow-look-at-my/actions@typescript#latest
+      - uses: wow-look-at-my/dats@master
         env:
-          LEG: anon-leak
+          BREW_HOST: brew.localhost:18080
         with:
-          file: .github/scripts/brew-tap-e2e.ts
+          args: --no-sandbox test test/dats/homebrew-anon-leak.dats
       - name: Dump buildhost log
         if: failure()
         shell: bash

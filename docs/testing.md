@@ -47,7 +47,13 @@ go-containerregistry pulls but the default GitHub Docker may not.
 ## homebrew-tap-e2e
 
 CI job `homebrew-tap-e2e` (`ci.yml`) runs the README-documented brew flows against
-a real spawned buildhost, and what it INSTALLS is now the real thing: the public
+a real spawned buildhost. The commands come from `scripts/brew-doc-flows.sh`,
+which extracts the fenced blocks from `README.md` and substitutes only the host;
+`test/dats/homebrew-public.dats` executes the public flow and asserts the served
+`/llms.txt` documents the same two blocks, `homebrew-private.dats` executes the
+private flow and checks the authenticated tap, and `homebrew-anon-leak.dats`
+clones the anonymous tap and probes the unauthorized formula paths. What it
+INSTALLS is the real thing: the public
 `go-toolchain` project is seeded by downloading the live registry's own artifact
 (`dl.pazer.build/go-toolchain?branch=v1&os=&arch=`, public, no token -- the same
 registry the `build` job's go-toolchain action already depends on), so the job
@@ -72,7 +78,7 @@ server served a mangled tarball whose sha256 never matched the formula.
 ## container-healthcheck
 
 CI job `container-healthcheck` (`ci.yml`) additionally runs
-`.github/scripts/image-strips-e2e.ts` against the **built Docker image**: it
+`test/dats/image-strips.dats` against the **built Docker image**: it
 bootstraps a token by exec'ing the binary inside the (shell-less) container,
 publishes buildhost's own unstripped linux binary, and asserts the download comes
 back smaller than the upload with no `.symtab`/`.debug_*` sections but
