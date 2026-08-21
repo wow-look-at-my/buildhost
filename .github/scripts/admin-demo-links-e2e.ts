@@ -82,7 +82,9 @@ const main = async () => {
 		visited++;
 
 		const links: string[] = await page.$$eval("#content a[href^='#/'], .sidebar a[href^='#/']",
-			(as: Element[]) => as.map((a) => a.getAttribute("href")!));
+			// This callback runs in the PAGE, where DOM types exist. The action
+			// compiles this file without the DOM lib, so it cannot name them.
+			(as: any[]) => as.map((a) => a.getAttribute("href")));
 		for (const l of links) if (!seen.has(l)) queue.push(l);
 	}
 
