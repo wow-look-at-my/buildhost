@@ -102,6 +102,15 @@ const main = async () => {
 		core.info(`${hash} -> ${heading}`);
 		visited++;
 
+		// A link whose href is a bare "#" carries no target: "copy link address"
+		// yields the dashboard's own URL, hover shows nothing, and opening it in a
+		// tab reloads the page. A click handler does not make up for any of that.
+		const placeholders: string[] = await page.$$eval("#content a[href='#']",
+			(as: any[]) => as.map((a) => a.textContent.trim()));
+		if (placeholders.length > 0) {
+			throw new Error(`${hash} renders ${placeholders.length} link(s) with href="#": ${placeholders.join(", ")}`);
+		}
+
 		const links: string[] = await page.$$eval("#content a[href^='#/'], .sidebar a[href^='#/']",
 			// This callback runs in the PAGE, where DOM types exist. The action
 			// compiles this file without the DOM lib, so it cannot name them.

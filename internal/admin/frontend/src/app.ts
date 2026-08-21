@@ -525,17 +525,17 @@ pages.release = function (name: string, version: string): void {
                 html += "<td>" + a.download_count + "</td>";
                 html += '<td class="dl-links">';
                 var pkgs = a.packages || [];
+                var dlQ = "?v=" + r.version + "&os=" + a.os + "&arch=" + a.arch;
                 if (priv) {
                     // Private project: a plain dl link would 401. Each link mints a
                     // signed, single-artifact link on click, then downloads it.
-                    html += dlMintLink(p.name, r.version, a.os, a.arch, "raw", false, "raw", "Download (mints a temporary signed link)");
-                    if (a.debug_storage_key) html += " " + dlMintLink(p.name, r.version, a.os, a.arch, "raw", true, "debug", "Debug symbols");
+                    html += dlMintLink(dlBase + dlQ, p.name, r.version, a.os, a.arch, "raw", false, "raw", "Download (mints a temporary signed link)");
+                    if (a.debug_storage_key) html += " " + dlMintLink(dlBase + dlQ + "&debug=1", p.name, r.version, a.os, a.arch, "raw", true, "debug", "Debug symbols");
                     for (var j = 0; j < pkgs.length; j++) {
-                        html += " " + dlMintLink(p.name, r.version, a.os, a.arch, pkgs[j].format, false, pkgs[j].format, pkgs[j].filename + " (" + humanSize(pkgs[j].size) + ")");
+                        html += " " + dlMintLink(dlBase + dlQ + "&fmt=" + pkgs[j].format, p.name, r.version, a.os, a.arch, pkgs[j].format, false, pkgs[j].format, pkgs[j].filename + " (" + humanSize(pkgs[j].size) + ")");
                     }
                     html += ' <button type="button" class="dl-share" onclick="App.copyTempLink(this,\'' + h(p.name) + '\',\'' + h(r.version) + '\',\'' + h(a.os) + '\',\'' + h(a.arch) + '\',\'raw\')" title="Copy a temporary 1-hour shareable link">temp link</button>';
                 } else {
-                    var dlQ = "?v=" + r.version + "&os=" + a.os + "&arch=" + a.arch;
                     html += '<a href="' + h(dlBase + dlQ) + '" title="Direct download">raw</a>';
                     if (a.debug_storage_key) html += ' <a href="' + h(dlBase + dlQ + "&debug=1") + '" title="Debug symbols">debug</a>';
                     for (var j = 0; j < pkgs.length; j++) {
@@ -812,18 +812,27 @@ const copyTempLink = function (btn: HTMLButtonElement, project: string, version:
     });
 };
 
-// dlMintLink renders a download link for a private project's artifact. A plain dl
-// link would 401, so this one mints a signed single-artifact link on click and
-// downloads it. Values are safe charsets (project/version/os/arch/fmt), so they
-// embed directly in the inline handler.
-const dlMintLink = function (project: string, version: string, os: string, arch: string, fmt: string, debug: boolean, label: string, title: string): string {
+// dlMintLink renders a download link for a private project's artifact. A plain
+// dl link would 401 for the browser, so a click mints a signed single-artifact
+// link and downloads that instead.
+//
+// The href is still the artifact's REAL url, never "#": an anchor's href is what
+// the browser copies, shows on hover, and opens in a new tab, and a page-local
+// "#" makes all three useless -- "copy link address" yielded the dashboard's own
+// URL. Following it directly asks for credentials, which is the honest answer
+// for a private artifact; the temp-link button next to it is the shareable one.
+//
+// Values are safe charsets (project/version/os/arch/fmt), so they embed directly
+// in the inline handler.
+const dlMintLink = function (url: string, project: string, version: string, os: string, arch: string, fmt: string, debug: boolean, label: string, title: string): string {
     var call = "App.downloadArtifact(this,'" + project + "','" + version + "','" + os + "','" + arch + "','" + fmt + "'," + (debug ? "true" : "false") + ")";
-    return '<a href="#" class="dl-mint" onclick="return ' + h(call) + '" title="' + h(title) + '">' + h(label) + "</a>";
+    return '<a href="' + h(url) + '" class="dl-mint" onclick="return ' + h(call) + '" title="' + h(title) + '">' + h(label) + "</a>";
 };
 
 // downloadArtifact mints a temporary signed link for exactly this artifact, then
 // triggers the download by clicking a synthetic anchor (same effect as following a
-// normal download link). Returns false so the placeholder href="#" is not used.
+// normal download link). Returns false so the browser does not ALSO follow the
+// href, which points at the unsigned url and would ask for credentials.
 const downloadArtifact = function (el: HTMLElement | null, project: string, version: string, os: string, arch: string, fmt: string, debug: boolean): boolean {
     if (demo) return false;
     var orig = el ? el.textContent : "";
