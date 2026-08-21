@@ -197,6 +197,17 @@ never share the service alias.
 
 ## Testing
 
+Assertions live in dats suites under `test/dats/`, never in a workflow step; a
+step installs dats and invokes one with `--no-sandbox`, because these suites
+need the host's curl, jq or brew and the runner's fallback sandbox image has
+none. A suite needing nothing but a built binary could live in `dats/`, which
+`go-toolchain` runs sandboxed on every build. Depth: `docs/testing.md`.
+
+CI runs the shipped fat APE, and an APE starts through its own shell
+trampoline: a bash `run:` step does that implicitly, node's `spawn` does not
+(pass `sh` the path), and the image carries one static busybox `/bin/sh` for
+its entrypoint. A test that needs a real ELF compiles its own fixture.
+
 `go-toolchain` runs all tests. An inline `script:` in any action or workflow may
 not carry two or more consecutive `//` comment lines -- the typescript action
 refuses to run one, so CI checks every file up front rather than letting a
@@ -205,7 +216,7 @@ seldom-triggered action break in a consumer repo.
 Several end-to-end jobs in `ci.yml` are NOT part of
 it and guard defects unit tests structurally cannot catch (`synthesized-image-e2e`,
 `homebrew-tap-e2e`, `container-healthcheck`, `apt-install-e2e`,
-`upload-artifact-action-e2e`, `multi-platform-ape-e2e`). Depth: `docs/testing.md`.
+`upload-artifact-action-e2e`). Depth: `docs/testing.md`.
 
 ## Security
 

@@ -16,7 +16,15 @@ resolve a folded name back to its project when no project matches it literally
 restricted to projects the request may read -- `auth.TokenCanReadProject`, the
 tap-membership rule -- so an anonymous probe of a private project's folded name
 stays a 404 rather than a 401 existence leak, and requireProject still applies
-its normal auth to the resolved project).
+its normal auth to the resolved project). The `{project}.rb` pattern is ONE path
+segment, so a slash-namespaced name also gets `brew.{domain}/Formula/{path...}`:
+without it `/Formula/gcc/pgo.rb` fell through to the legacy `/{project}` route,
+which read the whole path as a project name and answered "project not found".
+
+The name a user TYPES is the folded one -- `brew install pazer/build/gcc-pgo` --
+because a Homebrew formula name cannot contain `/`. `repackage.BrewFormulaName`
+is that fold, and the admin dashboard, the web frontend, llms.txt and the README
+all install through it.
 
 ## Authenticated tap
 

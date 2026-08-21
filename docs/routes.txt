@@ -26,6 +26,7 @@
 /projects/{project}/releases/{version} {GET}
 apt.{domain}/llms.txt {GET}
 apt.{domain}/{path...} {GET}
+brew.{domain}/Formula/{path...} {GET}
 brew.{domain}/Formula/{project}.rb {GET}
 brew.{domain}/llms.txt {GET}
 brew.{domain}/private/tap.git {GET}
