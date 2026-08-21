@@ -54,6 +54,11 @@ const MARKER = "site-module-loaded";
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "buildhost-cors-e2e-"));
 const binAbs = path.resolve(BIN);
+// The server is an APE, and an APE starts through its own shell trampoline: a
+// direct execve of it fails ENOEXEC, because the runner registers no APE
+// binfmt handler. A shell reads the header and does the rest, which is what a
+// bash "run:" step does implicitly and node's spawn does not.
+const shArgs = (args: string[]) => [binAbs, ...args];
 const serverEnv = {
 	...process.env,
 	BUILDHOST_DATA_DIR: dataDir,
@@ -63,7 +68,7 @@ const serverEnv = {
 };
 
 function bootstrapToken(): string {
-	const res = child_process.spawnSync(binAbs, ["bootstrap", "--name", "cors-e2e"], {
+	const res = child_process.spawnSync("sh", shArgs(["bootstrap", "--name", "cors-e2e"]), {
 		encoding: "utf8",
 		env: serverEnv,
 	});
@@ -145,7 +150,7 @@ async function assertChainCORS(label: string, startPath: string, wantRedirect: b
 
 // ---------------------------------------------------------------------------
 
-const server = child_process.spawn(binAbs, ["serve"], { env: serverEnv, stdio: ["ignore", "pipe", "pipe"] });
+const server = child_process.spawn("sh", shArgs(["serve"]), { env: serverEnv, stdio: ["ignore", "pipe", "pipe"] });
 let serverLog = "";
 server.stdout.on("data", (d) => (serverLog += d));
 server.stderr.on("data", (d) => (serverLog += d));

@@ -84,6 +84,19 @@ Unit tests could never catch the defect this guards -- the runner has binutils a
 the container does not -- which is precisely why stripping was broken in
 production for weeks with CI green.
 
+## The preview dashboard's links
+
+`.github/scripts/admin-demo-links-e2e.ts` (a step in `sites-cors-e2e`) serves
+the built `internal/admin/static` under a path prefix -- which is what puts the
+SPA in demo mode -- and walks every `#/` link it renders, breadth-first, from the
+dashboard outward. A page must draw a heading that is not the error page.
+
+It exists because the demo dataset linked to pages it had no fixture for. The
+missing fixture resolved to `{}`, the renderer threw on it, and the previous page
+stayed on screen: a link that did nothing. `apiFetch` now throws on an unknown
+demo path and the router paints the failure, so the same defect is loud instead
+of invisible -- and the crawl fails on it either way.
+
 ## apt-install-e2e
 
 `test/e2e/apt-install.sh` (CI job `apt-install-e2e`) covers a third case beyond
@@ -112,9 +125,18 @@ deliberately has no unit tests (adding any would pull the whole untested
 comment), so CLI behavior is guarded here, like `--manifest` mode is in
 `homebrew-tap-e2e`.
 
-## multi-platform-ape-e2e
+The job runs the composites -- an action only runs inside a workflow -- and every
+assertion above lives in a suite it invokes with the results:
+`test/dats/upload-direct.dats` (the small upload opened no session),
+`test/dats/upload-artifact.dats` (the chunked session, the hashes, the
+byte-identical download, the published release), `test/dats/site-direct.dats`
+(the small site opened none either) and `test/dats/site-publish.dats` (the big
+site's own session, the advertised URL serving with no `/branch/` in it, the
+served bytes, the legacy redirect, and the single-mode CLI publish).
 
-CI job `multi-platform-ape-e2e` runs the real binary and publishes ONE APE
+## test/dats/multi-platform-ape.dats
+
+`test/dats/multi-platform-ape.dats` runs the real binary and publishes ONE APE
 covering `linux/amd64,darwin/arm64,windows/amd64` through
 `PUT .../artifacts/ape`, then asserts the release holds exactly one artifact,
 that four request spellings (including `macOS/aarch64`) all get the SAME `dl`
@@ -122,11 +144,36 @@ redirect target and the same sha256 back, that the release page renders one
 `raw` link with an `APE: …` badge, and that a non-APE multi-platform claim is a
 400 storing nothing.
 
-The Go tests cover the same properties in process. This job exists because a
+The Go tests cover the same properties in process. This suite exists because a
 redirect that resolves per platform instead of per artifact still passes every
 in-process assertion about bytes -- the defect only shows as one URL becoming
-three, which needs the real `dl` handler behind a real Host header. Depth:
+three, which needs the real `dl` handler behind a real Host header.
+
+Each test starts its own server, taking the binary from `BUILDHOST_BIN`, else
+whichever of `build/buildhost_cosmo_fat` or `build/buildhost` the build left,
+and starting an APE through a shell because the kernel cannot exec one.
+
+It drives that server with curl and jq, which the runner has and the docker
+image dats sandboxes into does not -- hence `--no-sandbox`, and hence
+`test/dats/` rather than `dats/`: everything under `dats/` runs sandboxed on
+every build. Locally, `dats test/dats/multi-platform-ape.dats` sandboxes fine
+under bwrap, which binds the host's own tools. Depth:
 `docs/multi-platform-artifacts.md`.
+
+## Where a test lives
+
+An assertion goes in a dats suite, never in a workflow step. `test/dats/` is
+where they live, and a workflow step invokes one by name with `--no-sandbox`:
+these suites need the host -- brew and its prefix, curl and jq, a service the
+workflow started first -- and the sandbox dats falls back to on a runner is a
+bare `debian:stable-slim` with none of it.
+
+`dats/` at the module root is the other option and is currently empty:
+`go-toolchain` walks it on every build and runs it sandboxed, so a suite there
+may only need what that image has.
+
+A workflow step may still DO things: install brew, start a server, run a
+composite action. What it may not do is hold the expected value.
 
 ## The route table golden (docs/routes.txt)
 

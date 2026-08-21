@@ -326,7 +326,7 @@ func tapSuffix(r *http.Request) string {
 }
 
 func tapFormulaName(project string) string {
-	return strings.ReplaceAll(project, "/", "-")
+	return repackage.BrewFormulaName(project)
 }
 
 func domainFromRequest(r *http.Request) string {
