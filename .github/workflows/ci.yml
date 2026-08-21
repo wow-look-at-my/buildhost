@@ -302,12 +302,11 @@ jobs:
           go-version-file: go.mod
       - name: Build the strip fixture
         run: go build -o "$RUNNER_TEMP/strip-fixture" ./test/e2e/testdata/netcheck
-      - name: The shipped image must actually strip on download
-        uses: wow-look-at-my/actions@typescript#latest
+      - uses: wow-look-at-my/dats@master
         env:
           STRIP_FIXTURE: ${{ runner.temp }}/strip-fixture
         with:
-          file: .github/scripts/image-strips-e2e.ts
+          args: --no-sandbox test test/dats/image-strips.dats
       - run: docker compose -f docker-compose.ci.yml logs
         if: failure()
 
