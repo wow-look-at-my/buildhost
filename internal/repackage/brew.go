@@ -388,3 +388,13 @@ func BrewClassName(name string) string {
 func BrewEligibleProjectName(name string) bool {
 	return name != "" && name[0] >= 'a' && name[0] <= 'z'
 }
+
+// BrewFormulaName is the tap filename stem, and therefore the name a user
+// types after the tap: `brew install pazer/build/<BrewFormulaName>`. A
+// Homebrew formula name cannot contain '/', which is buildhost's project
+// namespace separator, so the namespace folds to '-'. DebPackageName folds the
+// same separator for the Debian grammar. A single-segment name does not
+// change.
+func BrewFormulaName(project string) string {
+	return strings.ReplaceAll(project, "/", "-")
+}

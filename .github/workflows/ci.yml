@@ -81,8 +81,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x build/buildhost_linux_amd64
-          ./build/buildhost_linux_amd64 routes > base-routes.txt
+          chmod +x build/buildhost_cosmo_fat
+          ./build/buildhost_cosmo_fat routes > base-routes.txt
           # Never cache an empty list: every later PR would restore it and
           # report its whole route table as added.
           if [ ! -s base-routes.txt ]; then
@@ -142,8 +142,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x build/buildhost_linux_amd64
-          "$RUNNER_TEMP/render-routes.sh" ./build/buildhost_linux_amd64 pr-routes.txt "PR"
+          chmod +x build/buildhost_cosmo_fat
+          "$RUNNER_TEMP/render-routes.sh" ./build/buildhost_cosmo_fat pr-routes.txt "PR"
           # The shipped binary must enumerate its own REST API. Zero here means
           # routes regressed to registering inside auth.OnReady(), which fires
           # only at server boot -- invisible to this check, to docs/routes.txt
@@ -316,7 +316,7 @@ jobs:
         with:
           name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       # Build the image (and pull its base layers) in a separate, untimed step
       # so the --wait-timeout below budgets only container startup, not the
       # image build/pull. up then reuses this image instead of rebuilding.
@@ -328,8 +328,18 @@ jobs:
       # download went out unstripped and fmt=symbols could not work. Unit tests
       # could not see it -- the runner has binutils, the container does not --
       # so the guarantee has to be asserted against the real image.
+      # An ELF carrying debug info for the stripper to work on. The shipped
+      # binary is an APE, which is not an ELF, so the fixture is a small
+      # program of this repo's own.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build the strip fixture
+        run: go build -o "$RUNNER_TEMP/strip-fixture" ./test/e2e/testdata/netcheck
       - name: The shipped image must actually strip on download
         uses: wow-look-at-my/actions@typescript#latest
+        env:
+          STRIP_FIXTURE: ${{ runner.temp }}/strip-fixture
         with:
           file: .github/scripts/image-strips-e2e.ts
       - run: docker compose -f docker-compose.ci.yml logs
@@ -586,53 +596,12 @@ jobs:
           LEG: public
         with:
           file: .github/scripts/brew-tap-e2e.ts
-      # The installed file must keep BOTH bits Homebrew's Cleaner would take
-      # away: executable (it chmods anything it does not recognize as a
-      # shebang/ELF/Mach-O to 0444) and writable (an APE rewrites itself in
-      # place on first run and dies with "Permission denied" at 0555). The
-      # generated formula opts out with skip_clean "bin"; these assertions are
-      # what turn a regression in that codegen red instead of shipping a
-      # binary users cannot run.
-      - name: Installed binary must stay executable and writable
-        shell: bash
-        run: |
-          set -euo pipefail
-          bin="$(brew --prefix pazer/build/go-toolchain)/bin/go-toolchain"
-          ls -l "$bin"
-          test -x "$bin" || { echo "installed binary is not executable -- Homebrew's Cleaner chmods unrecognized files 0444"; exit 1; }
-          test -w "$bin" || { echo "installed binary is not writable -- an APE binary rewrites itself on first run"; exit 1; }
-      # Running the REAL binary is the actual user-facing claim: `brew install
-      # pazer/build/go-toolchain` must produce something that executes. On
-      # Linux this is also where a Cosmopolitan APE assimilates itself (it
-      # rewrites its own file into a native ELF), which is why the write bit
-      # above is load-bearing rather than cosmetic. `version` exits 0 even when
-      # its background update check cannot reach GitHub, so this is not a
-      # network-flaky assertion.
-      - name: Execute the publicly installed binary
-        shell: bash
-        run: |
-          set -euo pipefail
-          out="$(go-toolchain version)"
-          printf '%s\n' "$out"
-          case "$out" in
-            *"Version:"*) ;;
-            *) echo "go-toolchain version did not print a version line"; exit 1 ;;
-          esac
-      # Same guarantees against the APE-SHAPED fixture, so the invariant holds
-      # on macOS too (where go-toolchain's own artifact is a Mach-O brew
-      # recognizes) and for any publisher shipping a Cosmopolitan binary. The
-      # fixture fails loudly at 0555 (its self-write) and cannot even be
-      # executed at 0444.
-      - name: Install the APE-shaped fixture and assert mode + execution
-        shell: bash
-        run: |
-          set -euo pipefail
-          brew install pazer/build/ape-fixture
-          bin="$(brew --prefix pazer/build/ape-fixture)/bin/ape-fixture"
-          ls -l "$bin"
-          test -x "$bin" || { echo "installed APE-shaped binary is not executable (Cleaner chmods unrecognized files 0444)"; exit 1; }
-          test -w "$bin" || { echo "installed APE-shaped binary is not writable (an APE rewrites itself on first run)"; exit 1; }
-          test "$(ape-fixture)" = "buildhost-homebrew-ape-ok"
+      # What the install left on disk, and that it runs: the assertions live
+      # in the suite, not here. --no-sandbox because brew's prefix is outside
+      # any sandbox and the point is what brew did to a real file.
+      - uses: wow-look-at-my/dats@master
+        with:
+          args: --no-sandbox test test/dats/homebrew-public.dats
       # Docs: the authenticated tap replaces the public tap under the same name
       # ("remove it first with brew untap --force" -- plain untap refuses while
       # formulae installed from the tap exist).
@@ -644,8 +613,9 @@ jobs:
           LEG: private
         with:
           file: .github/scripts/brew-tap-e2e.ts
-      - name: Execute the privately installed binary
-        run: test "$(myapp)" = "buildhost-homebrew-private-ok"
+      - uses: wow-look-at-my/dats@master
+        with:
+          args: --no-sandbox test test/dats/homebrew-private.dats
       - name: Anonymous tap must not leak the private project
         uses: wow-look-at-my/actions@typescript#latest
         env:
@@ -682,7 +652,7 @@ jobs:
         with:
           name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -691,7 +661,7 @@ jobs:
       - name: Build netcheck entrypoint (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/netcheck" ./test/e2e/testdata/netcheck
       - name: Pull and run the synthesized OCI image
-        run: PATH="$(go env GOPATH)/bin:$PATH" bash test/e2e/run.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/netcheck"
+        run: PATH="$(go env GOPATH)/bin:$PATH" bash test/e2e/run.sh build/buildhost_cosmo_fat "$RUNNER_TEMP/netcheck"
 
   # Proves a hosted site stays loadable CROSS-ORIGIN, through its redirects, in
   # a REAL BROWSER. Guards the defect that broke every cross-origin consumer at
@@ -714,7 +684,7 @@ jobs:
         with:
           name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       # playwright-core drives the runner's preinstalled Chrome; it is a
       # package, not a third-party action, so the org's action allowlist is not
       # involved. The script FAILS if no browser can be launched -- a skip here
@@ -725,6 +695,16 @@ jobs:
         uses: wow-look-at-my/actions@typescript#latest
         with:
           file: .github/scripts/sites-cors-e2e.ts
+      # The preview publishes this same static dir with no backend behind it, so
+      # it draws from the demo dataset. Building it here keeps the crawl on the
+      # sources rather than on whatever a previous job left.
+      - name: Build the admin frontend
+        run: ./scripts/build-admin-frontend.sh
+      - name: Every link on the preview dashboard must reach a page
+        timeout-minutes: 10
+        uses: wow-look-at-my/actions@typescript#latest
+        with:
+          file: .github/scripts/admin-demo-links-e2e.ts
 
   apt-install-e2e:
     needs: build
@@ -735,14 +715,14 @@ jobs:
         with:
           name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - name: Build apt test package payload (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/buildhost-apt-e2e" ./test/e2e/testdata/netcheck
       - name: Install from the generated APT repository
-        run: bash test/e2e/apt-install.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/buildhost-apt-e2e"
+        run: bash test/e2e/apt-install.sh build/buildhost_cosmo_fat "$RUNNER_TEMP/buildhost-apt-e2e"
 
   # Proves the buildhost-upload-artifact composite action's BOTH upload paths
   # against a real spawned buildhost. The server's advertised direct-upload
@@ -775,103 +755,23 @@ jobs:
   # covers -- through the real binary, over real HTTP, from the real dl
   # redirect. A unit test cannot catch a redirect that resolves per platform
   # instead of per artifact, which is exactly how one file grows N URLs again.
+  # The assertions are the suite's; this job builds nothing and asserts
+  # nothing, it installs dats and runs it.
   multi-platform-ape-e2e:
     needs: build
     runs-on: ubuntu-latest
-    env:
-      BUILDHOST_LISTEN_ADDR: 127.0.0.1:18081
-      BUILDHOST_BASE_URL: http://localhost:18081
     steps:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
           name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
-      - name: Start local buildhost
-        shell: bash
-        env:
-          BUILDHOST_DATA_DIR: ${{ runner.temp }}/ape-data
-          BUILDHOST_DB_PATH: ${{ runner.temp }}/ape-data/buildhost.db
-          BUILDHOST_ADMIN_LISTEN_ADDR: ""
-        run: |
-          set -euo pipefail
-          TOKEN="$(./build/buildhost_linux_amd64 bootstrap --name ci)"
-          echo "::add-mask::$TOKEN"
-          echo "BUILDHOST_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-          ./build/buildhost_linux_amd64 serve > "$RUNNER_TEMP/ape.log" 2>&1 &
-          for _ in {1..60}; do
-            if curl -fsS "$BUILDHOST_BASE_URL/healthz" >/dev/null; then
-              exit 0
-            fi
-            sleep 1
-          done
-          cat "$RUNNER_TEMP/ape.log"
-          exit 1
-      - name: Publish one APE covering three platforms
-        shell: bash
-        run: |
-          set -euo pipefail
-          # MZqFpD is the magic every Actually Portable Executable opens with;
-          # the server refuses a multi-platform claim without it.
-          { printf 'MZqFpD'; head -c 4096 /dev/urandom; } > "$RUNNER_TEMP/ape.bin"
-          { printf '\177ELF'; head -c 4096 /dev/urandom; } > "$RUNNER_TEMP/plain.bin"
-          curl -fsS -X POST "$BUILDHOST_BASE_URL/api/v1/projects" \
-            -H "Authorization: Bearer $BUILDHOST_TOKEN" -H 'Content-Type: application/json' \
-            -d '{"name":"ape-e2e","versioning":"auto"}' >/dev/null
-          VERSION="$(curl -fsS -X POST "$BUILDHOST_BASE_URL/api/v1/projects/ape-e2e/releases" \
-            -H "Authorization: Bearer $BUILDHOST_TOKEN" -H 'Content-Type: application/json' \
-            -d '{"git_branch":"master"}' | jq -r .version)"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          curl -fsS -X PUT --data-binary "@$RUNNER_TEMP/ape.bin" \
-            -H "Authorization: Bearer $BUILDHOST_TOKEN" -H 'X-Artifact-Filename: ape-e2e' \
-            "$BUILDHOST_BASE_URL/api/v1/projects/ape-e2e/releases/$VERSION/artifacts/ape?platforms=linux/amd64,darwin/arm64,windows/amd64" \
-            -o "$RUNNER_TEMP/artifact.json"
-          jq -e '.platforms | length == 3' "$RUNNER_TEMP/artifact.json"
-          jq -e '.exe_format == "ape"' "$RUNNER_TEMP/artifact.json"
-          curl -fsS -X POST "$BUILDHOST_BASE_URL/api/v1/projects/ape-e2e/releases/$VERSION/publish" \
-            -H "Authorization: Bearer $BUILDHOST_TOKEN" -H 'Content-Type: application/json' -d '{}' >/dev/null
-      - name: One artifact row, one link, one URL, one digest
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(curl -fsS "$BUILDHOST_BASE_URL/api/v1/projects/ape-e2e/releases/$VERSION" | jq '.artifacts | length')" = "1"
-          want="$(sha256sum "$RUNNER_TEMP/ape.bin" | awk '{print $1}')"
-          first=""
-          for spec in linux/amd64 darwin/arm64 windows/amd64 macOS/aarch64; do
-            os="${spec%%/*}"; arch="${spec##*/}"
-            loc="$(curl -fsS -o /dev/null -w '%{redirect_url}' \
-              "http://dl.localhost:18081/ape-e2e?os=$os&arch=$arch&v=$VERSION")"
-            test -n "$loc"
-            if [ -z "$first" ]; then first="$loc"; else
-              test "$loc" = "$first" || { echo "$spec redirected to $loc, want $first"; exit 1; }
-            fi
-            got="$(curl -fsSL "$loc" | sha256sum | awk '{print $1}')"
-            test "$got" = "$want" || { echo "$spec served $got, want $want"; exit 1; }
-          done
-          echo "all platforms -> $first"
-      - name: The release page shows one link with an APE badge
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -fsS "$BUILDHOST_BASE_URL/projects/ape-e2e/releases/$VERSION" > "$RUNNER_TEMP/release.html"
-          grep -q 'badge badge-format' "$RUNNER_TEMP/release.html"
-          grep -q 'APE: ' "$RUNNER_TEMP/release.html"
-          grep -q 'linux/amd64, darwin/arm64, windows/amd64' "$RUNNER_TEMP/release.html"
-          test "$(grep -c '>raw</a>' "$RUNNER_TEMP/release.html")" = "1"
-      - name: A non-APE multi-platform claim is rejected
-        shell: bash
-        run: |
-          set -euo pipefail
-          V2="$(curl -fsS -X POST "$BUILDHOST_BASE_URL/api/v1/projects/ape-e2e/releases" \
-            -H "Authorization: Bearer $BUILDHOST_TOKEN" -H 'Content-Type: application/json' \
-            -d '{"git_branch":"master"}' | jq -r .version)"
-          code="$(curl -sS -o "$RUNNER_TEMP/reject.json" -w '%{http_code}' -X PUT \
-            --data-binary "@$RUNNER_TEMP/plain.bin" -H "Authorization: Bearer $BUILDHOST_TOKEN" \
-            "$BUILDHOST_BASE_URL/api/v1/projects/ape-e2e/releases/$V2/artifacts/ape?platforms=linux/amd64,darwin/arm64")"
-          test "$code" = "400" || { echo "want 400, got $code"; cat "$RUNNER_TEMP/reject.json"; exit 1; }
-          test "$(curl -fsS -H "Authorization: Bearer $BUILDHOST_TOKEN" \
-            "$BUILDHOST_BASE_URL/api/v1/projects/ape-e2e/releases/$V2" | jq '.artifacts | length')" = "0"
+      - run: chmod +x build/buildhost_cosmo_fat
+      # --no-sandbox: the suite drives the server with curl and jq, which the
+      # runner has and the docker sandbox image does not.
+      - uses: wow-look-at-my/dats@master
+        with:
+          args: --no-sandbox test test/dats/multi-platform-ape.dats
 
   upload-artifact-action-e2e:
     needs: build
@@ -885,7 +785,7 @@ jobs:
         with:
           name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       - name: Start local buildhost (1 MiB direct-upload limit)
         shell: bash
         env:
@@ -895,10 +795,10 @@ jobs:
           BUILDHOST_MAX_DIRECT_UPLOAD_SIZE: "1048576"
         run: |
           set -euo pipefail
-          TOKEN="$(./build/buildhost_linux_amd64 bootstrap --name ci)"
+          TOKEN="$(./build/buildhost_cosmo_fat bootstrap --name ci)"
           echo "::add-mask::$TOKEN"
           echo "BUILDHOST_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-          ./build/buildhost_linux_amd64 serve > "$RUNNER_TEMP/buildhost.log" 2>&1 &
+          ./build/buildhost_cosmo_fat serve > "$RUNNER_TEMP/buildhost.log" 2>&1 &
           echo "$!" > "$RUNNER_TEMP/buildhost.pid"
           for _ in {1..60}; do
             if curl -fsS "$BUILDHOST_BASE_URL/healthz" >/dev/null; then
@@ -912,7 +812,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./build/buildhost_linux_amd64 project create \
+          ./build/buildhost_cosmo_fat project create \
             --server "$BUILDHOST_BASE_URL" \
             --token "$BUILDHOST_TOKEN" \
             --name upload-e2e
@@ -938,15 +838,11 @@ jobs:
           arch: amd64
           path: ${{ runner.temp }}/small.bin
           filename: small.bin
-      - name: Small upload must not have used a session
-        shell: bash
-        run: |
-          set -euo pipefail
-          if grep -q "path=/api/v1/uploads" "$RUNNER_TEMP/buildhost.log"; then
-            echo "direct-path upload unexpectedly touched the session endpoints"
-            grep "path=/api/v1/uploads" "$RUNNER_TEMP/buildhost.log"
-            exit 1
-          fi
+      - uses: wow-look-at-my/dats@master
+        env:
+          LOG: ${{ runner.temp }}/buildhost.log
+        with:
+          args: --no-sandbox test test/dats/upload-direct.dats
       - name: Upload big file (chunked session path, 1 MiB chunks)
         id: big
         uses: ./.github/actions/buildhost-upload-artifact
@@ -960,15 +856,6 @@ jobs:
           path: ${{ runner.temp }}/big.bin
           filename: big.bin
           chunk_size: "1048576"
-      - name: Big upload must have gone through a session in 4 chunks
-        shell: bash
-        run: |
-          set -euo pipefail
-          creates=$(grep -c "method=POST path=/api/v1/uploads " "$RUNNER_TEMP/buildhost.log" || true)
-          chunks=$(grep -c "method=PATCH path=/api/v1/uploads/" "$RUNNER_TEMP/buildhost.log" || true)
-          echo "session creates: $creates, chunk appends: $chunks"
-          test "$creates" = "1"
-          test "$chunks" = "4"
       - name: Publish release
         uses: ./.github/actions/buildhost-publish-release
         with:
@@ -976,25 +863,21 @@ jobs:
           token: ${{ env.BUILDHOST_TOKEN }}
           project: upload-e2e
           version: ${{ steps.release.outputs.version }}
-      - name: Verify uploaded artifacts
-        shell: bash
+      # What the two upload paths did to the server -- one session for the
+      # chunked path, none for the direct one, and bytes that survive the
+      # round trip. The assertions are the suite's.
+      - uses: wow-look-at-my/dats@master
         env:
+          LOG: ${{ runner.temp }}/buildhost.log
+          SMALL_FILE: ${{ runner.temp }}/small.bin
+          BIG_FILE: ${{ runner.temp }}/big.bin
           SMALL_SHA: ${{ steps.small.outputs.sha256 }}
           BIG_SHA: ${{ steps.big.outputs.sha256 }}
           VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          set -euo pipefail
-          # The sha256 outputs come from the SERVER hashing what it received
-          # and stored -- equality with the local files proves byte integrity
-          # end to end for both paths.
-          test "$SMALL_SHA" = "$(sha256sum "$RUNNER_TEMP/small.bin" | awk '{print $1}')"
-          test "$BIG_SHA" = "$(sha256sum "$RUNNER_TEMP/big.bin" | awk '{print $1}')"
-          # And the chunk-assembled artifact downloads back byte-identical.
-          curl -fsSL -o "$RUNNER_TEMP/big.dl" \
-            "http://static.localhost:18080/file?project=upload-e2e&v=$VERSION&os=linux&arch=arm64"
-          cmp "$RUNNER_TEMP/big.bin" "$RUNNER_TEMP/big.dl"
-          # After publish, the release is visible as the apex latest.
-          curl -fsS "$BUILDHOST_BASE_URL/api/v1/projects/upload-e2e/releases/latest" | grep -q '"published":true'
+          BASE: http://localhost:18080
+          STATIC: http://static.localhost:18080
+        with:
+          args: --no-sandbox test test/dats/upload-artifact.dats
       - name: Create site fixtures (one tiny, one over the direct limit)
         shell: bash
         run: |
@@ -1014,13 +897,11 @@ jobs:
           branch: direct
           source_dir: ${{ runner.temp }}/small-site
           chunk_size: "1048576"
-      - name: Small site publish must not have opened another session
-        shell: bash
-        run: |
-          set -euo pipefail
-          creates=$(grep -c "method=POST path=/api/v1/uploads " "$RUNNER_TEMP/buildhost.log" || true)
-          echo "session creates: $creates"
-          test "$creates" = "1"
+      - uses: wow-look-at-my/dats@master
+        env:
+          LOG: ${{ runner.temp }}/buildhost.log
+        with:
+          args: --no-sandbox test test/dats/site-direct.dats
       - name: Publish big site (chunked session path, 1 MiB chunks)
         id: publish-big-site
         uses: ./.github/actions/buildhost-publish-site
@@ -1031,79 +912,19 @@ jobs:
           branch: chunked
           source_dir: ${{ runner.temp }}/big-site
           chunk_size: "1048576"
-      - name: Big site publish must have gone through its own session
-        shell: bash
-        run: |
-          set -euo pipefail
-          creates=$(grep -c "method=POST path=/api/v1/uploads " "$RUNNER_TEMP/buildhost.log" || true)
-          chunks=$(grep -c "method=PATCH path=/api/v1/uploads/" "$RUNNER_TEMP/buildhost.log" || true)
-          echo "session creates: $creates, total chunk appends: $chunks"
-          test "$creates" = "2"
-          # 4 chunks from the artifact upload + at least 3 for the ~3 MB site.
-          test "$chunks" -ge 7
-      # The advertised URL is what lands in preview comments and deployment
-      # environment_urls, so it must SERVE, not redirect. Catches the action
-      # silently falling back to a stale spelling, which is green otherwise.
-      - name: The advertised site URL must serve the bytes with no redirect
-        shell: bash
+      # What the site publishes and the CLI did to the same server. The
+      # assertions are the suite's.
+      - uses: wow-look-at-my/dats@master
         env:
+          LOG: ${{ runner.temp }}/buildhost.log
+          SITES: http://sites.localhost:18080
+          BASE: http://localhost:18080
+          TOKEN: ${{ env.BUILDHOST_TOKEN }}
+          BIN: ${{ github.workspace }}/build/buildhost_cosmo_fat
+          BIG_SITE_BLOB: ${{ runner.temp }}/big-site/blob.bin
           SITE_URL: ${{ steps.publish-big-site.outputs.site_url }}
-        run: |
-          set -euo pipefail
-          echo "site_url: $SITE_URL"
-          case "$SITE_URL" in
-            *"/branch/"*) echo "advertised the legacy /branch/ spelling" >&2; exit 1 ;;
-          esac
-          # No -L: the advertised URL must answer 200 itself.
-          test "$(curl -fsS "${SITE_URL}index.html")" = '<h1>chunked site</h1>'
-      - name: Served site files must match the source bytes
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(curl -fsSL http://sites.localhost:18080/upload-e2e/branch/direct/index.html)" = '<h1>direct site</h1>'
-          test "$(curl -fsSL http://sites.localhost:18080/upload-e2e/branch/chunked/index.html)" = '<h1>chunked site</h1>'
-          curl -fsSL -o "$RUNNER_TEMP/blob.dl" \
-            "http://sites.localhost:18080/upload-e2e/branch/chunked/blob.bin"
-          # The legacy /branch/ URL is a 302 to the canonical URL for the same
-          # file, and a real client following it lands on the bytes -- which is
-          # what the -L fetches above just proved. Pin both halves explicitly so
-          # a regression reads as a failure rather than a silent extra hop.
-          #
-          # Which canonical URL it names depends on which branch is the default,
-          # and this project has no site on main/master -- so resolveRootBranch
-          # falls back to the most recently updated, i.e. whichever of these two
-          # was deployed last. Assert the redirect and then follow the target the
-          # server actually named, rather than hard-coding one of the two forms.
-          for b in direct chunked; do
-            url="http://sites.localhost:18080/upload-e2e/branch/$b/index.html"
-            test "$(curl -fsS -o /dev/null -w '%{http_code}' "$url")" = '302'
-            loc="$(curl -fsS -o /dev/null -w '%{redirect_url}' "$url")"
-            case "$loc" in
-              http://sites.localhost:18080/upload-e2e/index.html) ;;        # the default branch
-              http://sites.localhost:18080/upload-e2e/@$b/index.html) ;;    # any other
-              *) echo "unexpected redirect target for $b: $loc" >&2; exit 1 ;;
-            esac
-            test "$(curl -fsS "$loc")" = "<h1>$b site</h1>"
-          done
-
-          cmp "$RUNNER_TEMP/big-site/blob.bin" "$RUNNER_TEMP/blob.dl"
-      - name: Single-mode CLI publish must publish the release
-        shell: bash
-        run: |
-          set -euo pipefail
-          head -c 4096 /dev/urandom > "$RUNNER_TEMP/cli.bin"
-          ./build/buildhost_linux_amd64 project create \
-            --server "$BUILDHOST_BASE_URL" \
-            --token "$BUILDHOST_TOKEN" \
-            --name cli-single-e2e
-          ./build/buildhost_linux_amd64 publish \
-            --server "$BUILDHOST_BASE_URL" \
-            --token "$BUILDHOST_TOKEN" \
-            --project cli-single-e2e \
-            --os linux --arch amd64 \
-            --git-branch master \
-            --artifact "$RUNNER_TEMP/cli.bin"
-          curl -fsS "$BUILDHOST_BASE_URL/api/v1/projects/cli-single-e2e/releases/latest" | grep -q '"published":true'
+        with:
+          args: --no-sandbox test test/dats/site-publish.dats
       - name: Dump buildhost log
         if: failure()
         shell: bash
