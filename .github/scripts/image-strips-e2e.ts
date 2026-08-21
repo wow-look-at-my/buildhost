@@ -42,9 +42,10 @@ core.setSecret(token);
 const auth = ["-H", `Authorization: Bearer ${token}`];
 const project = "image-strip-e2e";
 
-// The artifact is a real, unstripped ELF: buildhost's own linux binary, which
-// the build job produced with full debug info.
-const artifact = "build/buildhost_linux_amd64";
+// The artifact must be a real, unstripped ELF, because the stripper reads ELF
+// and nothing else. The fat APE is a PE, so use the debug ELF the same build
+// emits beside it.
+const artifact = "build/buildhost_cosmo_fat.dbg";
 const uploadedSize = fs.statSync(artifact).size;
 core.info(`uploading ${artifact} (${uploadedSize} bytes)`);
 

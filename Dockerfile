@@ -1,6 +1,15 @@
 FROM busybox:musl AS dirs
 RUN mkdir -p /data && chown 65532:65532 /data
 
+# go-toolchain ships one fat APE. A shell turns it into a native ELF on the
+# first exec. The final image has no shell, so do that here, and fail if the
+# file is still an APE.
+FROM busybox:musl AS bin
+COPY --chmod=755 build/buildhost_cosmo_fat /buildhost
+RUN /buildhost version > /dev/null && \
+	{ head -c 4 /buildhost | grep -q ELF || \
+	  { echo "buildhost did not assimilate into an ELF; distroless cannot exec an APE"; exit 1; }; }
+
 FROM gcr.io/distroless/static-debian12:nonroot
 
 ARG VERSION=dev
@@ -10,7 +19,7 @@ LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.description="Universal package registry server"
 
-COPY --chmod=755 build/buildhost_linux_amd64 /usr/local/bin/buildhost
+COPY --from=bin --chmod=755 /buildhost /usr/local/bin/buildhost
 COPY --from=dirs --chown=65532:65532 /data /var/lib/buildhost
 
 ENV BUILDHOST_DATA_DIR=/var/lib/buildhost

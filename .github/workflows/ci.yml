@@ -71,12 +71,15 @@ jobs:
       # The path MUST match route-diff's restore path: actions/cache derives the
       # cache version from the path, so a mismatched path is a guaranteed miss
       # even for an identical key.
+      # go-toolchain builds ONE fat APE by default, so build/ carries
+      # buildhost_cosmo_fat and no per-platform binary. That one file runs on
+      # the linux runner. Every job below that consumes the hand-off uses it.
       - if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x build/buildhost_linux_amd64
-          ./build/buildhost_linux_amd64 routes > base-routes.txt
+          chmod +x build/buildhost_cosmo_fat
+          ./build/buildhost_cosmo_fat routes > base-routes.txt
           # Never cache an empty list: every later PR would restore it and
           # report its whole route table as added.
           if [ ! -s base-routes.txt ]; then
@@ -136,8 +139,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x build/buildhost_linux_amd64
-          "$RUNNER_TEMP/render-routes.sh" ./build/buildhost_linux_amd64 pr-routes.txt "PR"
+          chmod +x build/buildhost_cosmo_fat
+          "$RUNNER_TEMP/render-routes.sh" ./build/buildhost_cosmo_fat pr-routes.txt "PR"
           # The shipped binary must enumerate its own REST API. Zero here means
           # routes regressed to registering inside auth.OnReady(), which fires
           # only at server boot -- invisible to this check, to docs/routes.txt
@@ -211,13 +214,13 @@ jobs:
         run: |
           go generate ./internal/api
           if [ -x scripts/build-admin-frontend.sh ]; then ./scripts/build-admin-frontend.sh; fi
-          go build -o build/buildhost_linux_amd64 ./cmd/buildhost
+          go build -o build/buildhost_base ./cmd/buildhost
       - if: steps.cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x base/build/buildhost_linux_amd64
-          "$RUNNER_TEMP/render-routes.sh" ./base/build/buildhost_linux_amd64 base-routes.txt "base"
+          chmod +x base/build/buildhost_base
+          "$RUNNER_TEMP/render-routes.sh" ./base/build/buildhost_base base-routes.txt "base"
       - if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
@@ -310,7 +313,7 @@ jobs:
         with:
           name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       # Build the image (and pull its base layers) in a separate, untimed step
       # so the --wait-timeout below budgets only container startup, not the
       # image build/pull. up then reuses this image instead of rebuilding.
@@ -676,7 +679,7 @@ jobs:
         with:
           name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -685,7 +688,7 @@ jobs:
       - name: Build netcheck entrypoint (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/netcheck" ./test/e2e/testdata/netcheck
       - name: Pull and run the synthesized OCI image
-        run: PATH="$(go env GOPATH)/bin:$PATH" bash test/e2e/run.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/netcheck"
+        run: PATH="$(go env GOPATH)/bin:$PATH" bash test/e2e/run.sh build/buildhost_cosmo_fat "$RUNNER_TEMP/netcheck"
 
   # Proves a hosted site stays loadable CROSS-ORIGIN, through its redirects, in
   # a REAL BROWSER. Guards the defect that broke every cross-origin consumer at
@@ -708,7 +711,7 @@ jobs:
         with:
           name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       # playwright-core drives the runner's preinstalled Chrome; it is a
       # package, not a third-party action, so the org's action allowlist is not
       # involved. The script FAILS if no browser can be launched -- a skip here
@@ -729,14 +732,14 @@ jobs:
         with:
           name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - name: Build apt test package payload (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/buildhost-apt-e2e" ./test/e2e/testdata/netcheck
       - name: Install from the generated APT repository
-        run: bash test/e2e/apt-install.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/buildhost-apt-e2e"
+        run: bash test/e2e/apt-install.sh build/buildhost_cosmo_fat "$RUNNER_TEMP/buildhost-apt-e2e"
 
   # Proves the buildhost-upload-artifact composite action's BOTH upload paths
   # against a real spawned buildhost. The server's advertised direct-upload
@@ -781,7 +784,7 @@ jobs:
         with:
           name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       - name: Start local buildhost
         shell: bash
         env:
@@ -790,10 +793,10 @@ jobs:
           BUILDHOST_ADMIN_LISTEN_ADDR: ""
         run: |
           set -euo pipefail
-          TOKEN="$(./build/buildhost_linux_amd64 bootstrap --name ci)"
+          TOKEN="$(./build/buildhost_cosmo_fat bootstrap --name ci)"
           echo "::add-mask::$TOKEN"
           echo "BUILDHOST_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-          ./build/buildhost_linux_amd64 serve > "$RUNNER_TEMP/ape.log" 2>&1 &
+          ./build/buildhost_cosmo_fat serve > "$RUNNER_TEMP/ape.log" 2>&1 &
           for _ in {1..60}; do
             if curl -fsS "$BUILDHOST_BASE_URL/healthz" >/dev/null; then
               exit 0
@@ -879,7 +882,7 @@ jobs:
         with:
           name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       - name: Start local buildhost (1 MiB direct-upload limit)
         shell: bash
         env:
@@ -889,10 +892,10 @@ jobs:
           BUILDHOST_MAX_DIRECT_UPLOAD_SIZE: "1048576"
         run: |
           set -euo pipefail
-          TOKEN="$(./build/buildhost_linux_amd64 bootstrap --name ci)"
+          TOKEN="$(./build/buildhost_cosmo_fat bootstrap --name ci)"
           echo "::add-mask::$TOKEN"
           echo "BUILDHOST_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-          ./build/buildhost_linux_amd64 serve > "$RUNNER_TEMP/buildhost.log" 2>&1 &
+          ./build/buildhost_cosmo_fat serve > "$RUNNER_TEMP/buildhost.log" 2>&1 &
           echo "$!" > "$RUNNER_TEMP/buildhost.pid"
           for _ in {1..60}; do
             if curl -fsS "$BUILDHOST_BASE_URL/healthz" >/dev/null; then
@@ -906,7 +909,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./build/buildhost_linux_amd64 project create \
+          ./build/buildhost_cosmo_fat project create \
             --server "$BUILDHOST_BASE_URL" \
             --token "$BUILDHOST_TOKEN" \
             --name upload-e2e
@@ -1086,11 +1089,11 @@ jobs:
         run: |
           set -euo pipefail
           head -c 4096 /dev/urandom > "$RUNNER_TEMP/cli.bin"
-          ./build/buildhost_linux_amd64 project create \
+          ./build/buildhost_cosmo_fat project create \
             --server "$BUILDHOST_BASE_URL" \
             --token "$BUILDHOST_TOKEN" \
             --name cli-single-e2e
-          ./build/buildhost_linux_amd64 publish \
+          ./build/buildhost_cosmo_fat publish \
             --server "$BUILDHOST_BASE_URL" \
             --token "$BUILDHOST_TOKEN" \
             --project cli-single-e2e \
