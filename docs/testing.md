@@ -110,9 +110,9 @@ deliberately has no unit tests (adding any would pull the whole untested
 comment), so CLI behavior is guarded here, like `--manifest` mode is in
 `homebrew-tap-e2e`.
 
-## dats/multi-platform-ape.dats
+## test/dats/multi-platform-ape.dats
 
-`dats/multi-platform-ape.dats` runs the real binary and publishes ONE APE
+`test/dats/multi-platform-ape.dats` runs the real binary and publishes ONE APE
 covering `linux/amd64,darwin/arm64,windows/amd64` through
 `PUT .../artifacts/ape`, then asserts the release holds exactly one artifact,
 that four request spellings (including `macOS/aarch64`) all get the SAME `dl`
@@ -125,21 +125,28 @@ redirect that resolves per platform instead of per artifact still passes every
 in-process assertion about bytes -- the defect only shows as one URL becoming
 three, which needs the real `dl` handler behind a real Host header.
 
-Each test starts its own server inside dats' sandbox, so the suite needs no CI
-job of its own: `go-toolchain` runs it on every build, and `dats
-dats/multi-platform-ape.dats` runs it from a checkout that has built a binary.
-It takes the binary from `BUILDHOST_BIN`, else whichever of
-`build/buildhost_cosmo_fat` or `build/buildhost` the build left. Depth:
+Each test starts its own server, taking the binary from `BUILDHOST_BIN`, else
+whichever of `build/buildhost_cosmo_fat` or `build/buildhost` the build left,
+and starting an APE through a shell because the kernel cannot exec one.
+
+It drives that server with curl and jq, which the runner has and the docker
+image dats sandboxes into does not -- hence `--no-sandbox`, and hence
+`test/dats/` rather than `dats/`: everything under `dats/` runs sandboxed on
+every build. Locally, `dats test/dats/multi-platform-ape.dats` sandboxes fine
+under bwrap, which binds the host's own tools. Depth:
 `docs/multi-platform-artifacts.md`.
 
 ## Where a test lives
 
-An assertion goes in a dats suite, never in a workflow step. `dats/` is the
-self-contained set: `go-toolchain` walks it on every build and runs it
-sandboxed, so it may only need what a checkout that has built a binary has.
-`test/dats/` is the rest -- a suite needing the host or a service the workflow
-set up first (brew and its prefix, a docker daemon) -- and a workflow step
-invokes it by name, usually with `--no-sandbox`.
+An assertion goes in a dats suite, never in a workflow step. `test/dats/` is
+where they live, and a workflow step invokes one by name with `--no-sandbox`:
+these suites need the host -- brew and its prefix, curl and jq, a service the
+workflow started first -- and the sandbox dats falls back to on a runner is a
+bare `debian:stable-slim` with none of it.
+
+`dats/` at the module root is the other option and is currently empty:
+`go-toolchain` walks it on every build and runs it sandboxed, so a suite there
+may only need what that image has.
 
 A workflow step may still DO things: install brew, start a server, run a
 composite action. What it may not do is hold the expected value.

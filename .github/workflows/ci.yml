@@ -735,6 +735,28 @@ jobs:
   # must resolve to a published release -- it used to stay unpublished
   # forever (invisible to latest/branch/brew/apt/npm/web, eventually GC'd by
   # retention as an abandoned upload, with no CLI way to publish it later).
+  # One APE, published once, must download identically for every platform it
+  # covers -- through the real binary, over real HTTP, from the real dl
+  # redirect. A unit test cannot catch a redirect that resolves per platform
+  # instead of per artifact, which is exactly how one file grows N URLs again.
+  # The assertions are the suite's; this job builds nothing and asserts
+  # nothing, it installs dats and runs it.
+  multi-platform-ape-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build
+          path: build/
+      - run: chmod +x build/buildhost_cosmo_fat
+      # --no-sandbox: the suite drives the server with curl and jq, which the
+      # runner has and the docker sandbox image does not.
+      - uses: wow-look-at-my/dats@master
+        with:
+          args: --no-sandbox test test/dats/multi-platform-ape.dats
+
   upload-artifact-action-e2e:
     needs: build
     runs-on: ubuntu-latest
