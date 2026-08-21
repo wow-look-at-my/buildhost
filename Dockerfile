@@ -4,7 +4,10 @@ RUN mkdir -p /data && chown 65532:65532 /data
 # cp so far. Installing every applet name against the one static busybox costs
 # a directory of symlinks and stops the next command it needs from being
 # another failed container start.
-RUN mkdir -p /shell && cp /bin/busybox /shell/busybox && /shell/busybox --install -s /shell
+# The links are relative, because this directory lands somewhere else in the
+# final image and an absolute link would point at a path that is not there.
+RUN mkdir -p /shell && cp /bin/busybox /shell/busybox \
+    && for a in $(/shell/busybox --list); do ln -sf busybox "/shell/$a"; done
 # The trampoline unpacks itself under TMPDIR, so the image needs a writable one.
 RUN mkdir -p /tmpdir && chmod 1777 /tmpdir
 
