@@ -15,9 +15,7 @@ shared:
 			WORK="$(dirname "$ENV_FILE")"
 			BIN="${BUILDHOST_BIN:-}"
 			if [ -z "$BIN" ]; then
-				for c in build/buildhost_cosmo_fat build/buildhost; do
-					if [ -f "$REPO/$c" ]; then BIN="$REPO/$c"; break; fi
-				done
+				if [ -f "$REPO/build/buildhost" ]; then BIN="$REPO/build/buildhost"; fi
 			fi
 			test -n "$BIN" || { echo "no buildhost binary: build one first" >&2; exit 1; }
 			# An APE cannot be exec'd: its header is a shell script, and
