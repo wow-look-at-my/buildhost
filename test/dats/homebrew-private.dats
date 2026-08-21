@@ -18,7 +18,7 @@ shared:
 			echo "--- documented private flow, executed verbatim ---"
 			sed 's|x:[^@]*@|x:***@|' "$WORK/private.sh"
 			TOKEN="$BUILDHOST_TOKEN" bash -euo pipefail "$WORK/private.sh"
-			echo "TAP=$(brew --repository pazer/build)" > "$ENV_FILE"
+			echo "TAP='$(brew --repository pazer/build)'" > "$ENV_FILE"
 
 setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
 

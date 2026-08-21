@@ -35,11 +35,14 @@ shared:
 			auth -X PUT --data-binary "@$STRIP_FIXTURE" \
 				"$BASE/api/v1/projects/image-strip-e2e/releases/$VERSION/artifacts/linux/amd64?kind=binary" >/dev/null
 			auth -X POST "$BASE/api/v1/projects/image-strip-e2e/releases/$VERSION/publish" >/dev/null
+			# Quoted, because a test SOURCES this file and the query string
+			# carries '&' -- unquoted, the shell backgrounds the assignment
+			# and every value after it is unset.
 			{
-				echo "STATIC=$STATIC"
-				echo "QUERY=project=image-strip-e2e&v=$VERSION&os=linux&arch=amd64"
-				echo "FIXTURE=$STRIP_FIXTURE"
-				echo "WORK=$WORK"
+				echo "STATIC='$STATIC'"
+				echo "QUERY='project=image-strip-e2e&v=$VERSION&os=linux&arch=amd64'"
+				echo "FIXTURE='$STRIP_FIXTURE'"
+				echo "WORK='$WORK'"
 			} > "$ENV_FILE"
 
 		# -L matters: /file canonicalizes its query with a 301, so an

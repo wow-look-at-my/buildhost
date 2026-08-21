@@ -15,7 +15,7 @@ shared:
 			set -eu
 			WORK="$(dirname "$ENV_FILE")"
 			git clone "http://$BREW_HOST/tap.git" "$WORK/tap"
-			echo "TAP=$WORK/tap" > "$ENV_FILE"
+			echo "TAP='$WORK/tap'" > "$ENV_FILE"
 
 setup: env ENV_FILE={shared.env} sh {shared.start.sh}
 

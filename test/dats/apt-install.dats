@@ -95,7 +95,7 @@ shared:
 			V3="$(publish buildhost-apt-e2e-ape '' "$WORK/ape-fixture")"
 			install buildhost-apt-e2e-ape buildhost-apt-e2e-ape
 			{
-				echo "WORK=$WORK"
+				echo "WORK='$WORK'"
 				echo "V1=$V1"
 				echo "V2=$V2"
 				echo "V3=$V3"

@@ -53,9 +53,15 @@ shared:
 			auth -X PUT --data-binary "@$NETCHECK_BIN" \
 				"$BASE/api/v1/projects/netcheck/releases/$VERSION/artifacts/linux/amd64?kind=binary" >/dev/null
 			auth -X POST "$BASE/api/v1/projects/netcheck/releases/$VERSION/publish" >/dev/null
+			# Flatten the image here rather than in a test: dats runs tests
+			# concurrently, so a test that consumed another test's output
+			# would race it.
+			REF="$HOST:$PORT/netcheck:latest"
+			mkdir -p "$WORK/rootfs"
+			crane export --insecure "$REF" - | tar -x -C "$WORK/rootfs"
 			{
-				echo "WORK=$WORK"
-				echo "REF=$HOST:$PORT/netcheck:latest"
+				echo "WORK='$WORK'"
+				echo "REF='$REF'"
 			} > "$ENV_FILE"
 
 setup: env ENV_FILE={shared.env} sh {shared.start.sh}
@@ -81,8 +87,6 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		mkdir -p "$WORK/rootfs"
-		crane export --insecure "$REF" - | tar -x -C "$WORK/rootfs"
 		test -s "$WORK/rootfs/etc/ssl/certs/ca-certificates.crt" || { echo "CA bundle missing or empty" >&2; exit 1; }
 		grep -q '^nonroot:x:65532:65532:' "$WORK/rootfs/etc/passwd" || { echo "nonroot user missing" >&2; exit 1; }
 		test -x "$WORK/rootfs/netcheck" || { echo "entrypoint binary missing" >&2; exit 1; }

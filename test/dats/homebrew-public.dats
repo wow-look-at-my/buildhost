@@ -25,7 +25,11 @@ shared:
 			echo "--- documented public flow, executed verbatim ---"
 			cat "$WORK/public.sh"
 			TOKEN="$BUILDHOST_TOKEN" bash -euo pipefail "$WORK/public.sh"
-			echo "REPO=$REPO" > "$ENV_FILE"
+			# The APE-shaped fixture installs here rather than in a test: dats
+			# runs tests concurrently, and two brew installs at once contend
+			# for the same prefix.
+			brew install pazer/build/ape-fixture
+			echo "REPO='$REPO'" > "$ENV_FILE"
 
 setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
 
@@ -110,7 +114,6 @@ tests:
 	- desc: an APE-shaped formula installs, keeps its mode, and runs
 	  cmd: |
 		set -euo pipefail
-		brew install pazer/build/ape-fixture
 		bin="$(brew --prefix pazer/build/ape-fixture)/bin/ape-fixture"
 		ls -l "$bin"
 		test -x "$bin" || { echo "not executable (Cleaner chmods unrecognized files 0444)"; exit 1; }
