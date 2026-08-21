@@ -66,28 +66,14 @@ const timeAgo = function (s: string | null | undefined): string {
     return days === 1 ? "1 day ago" : days + " days ago";
 };
 
-// The browser reports the zone, so the reader never converts a timestamp by
-// hand. Intl gives a name like "PDT". The fallback builds the offset itself.
-const zoneLabel = function (d: Date): string {
-    try {
-        const parts = new Intl.DateTimeFormat(undefined, { timeZoneName: "short" }).formatToParts(d);
-        for (const p of parts) {
-            if (p.type === "timeZoneName" && p.value) return p.value;
-        }
-    } catch (e) { /* use the offset below */ }
-    const off = -d.getTimezoneOffset();
-    const abs = Math.abs(off);
-    const mm = abs % 60;
-    return "UTC" + (off < 0 ? "-" : "+") + Math.floor(abs / 60) + (mm ? ":" + (mm < 10 ? "0" + mm : "" + mm) : "");
-};
-
+// The clock is the reader's own, so it carries no zone name.
 const formatTime = function (s: string | null | undefined): string {
     if (!s) return "-";
     var d = new Date(s);
     if (isNaN(d.getTime())) return "-";
     var pad = function (n: number): string { return n < 10 ? "0" + n : "" + n; };
     return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
-        " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + " " + zoneLabel(d);
+        " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
 };
 
 // The demo dataset must answer every path the demo's own pages ask for. An
