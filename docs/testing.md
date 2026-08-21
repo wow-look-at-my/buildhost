@@ -82,6 +82,19 @@ Unit tests could never catch the defect this guards -- the runner has binutils a
 the container does not -- which is precisely why stripping was broken in
 production for weeks with CI green.
 
+## The preview dashboard's links
+
+`.github/scripts/admin-demo-links-e2e.ts` (a step in `sites-cors-e2e`) serves
+the built `internal/admin/static` under a path prefix -- which is what puts the
+SPA in demo mode -- and walks every `#/` link it renders, breadth-first, from the
+dashboard outward. A page must draw a heading that is not the error page.
+
+It exists because the demo dataset linked to pages it had no fixture for. The
+missing fixture resolved to `{}`, the renderer threw on it, and the previous page
+stayed on screen: a link that did nothing. `apiFetch` now throws on an unknown
+demo path and the router paints the failure, so the same defect is loud instead
+of invisible -- and the crawl fails on it either way.
+
 ## apt-install-e2e
 
 `test/e2e/apt-install.sh` (CI job `apt-install-e2e`) covers a third case beyond

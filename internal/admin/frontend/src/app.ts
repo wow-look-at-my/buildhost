@@ -75,14 +75,24 @@ const formatTime = function (s: string | null | undefined): string {
         " " + pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + " UTC";
 };
 
+// The demo dataset must answer every path the demo's own pages ask for. An
+// absent fixture used to resolve to {}, which threw deep inside a renderer and
+// left the previous page on screen -- a link that looked dead.
+const demoFetch = function <T>(path: string): T {
+    if (!Object.prototype.hasOwnProperty.call(demoData, path)) {
+        throw new Error("no demo data for " + path);
+    }
+    return demoData[path] as T;
+};
+
 const apiFetch = function <T>(path: string): Promise<T> {
-    if (demo) return Promise.resolve((demoData[path] || {}) as T);
+    if (demo) return Promise.resolve().then(function () { return demoFetch<T>(path); });
     return fetch("/api" + path).then(function (r) {
         if (!r.ok) throw new Error(String(r.status));
         return r.json();
     }).catch(function () {
         demo = true;
-        return (demoData[path] || {}) as T;
+        return demoFetch<T>(path);
     });
 };
 
@@ -1288,29 +1298,40 @@ pages.goproxy = function (): void {
 
 // --- Router ---
 
+const fail = function (err: unknown): void {
+    var msg = err instanceof Error ? err.message : String(err);
+    document.getElementById("content")!.innerHTML =
+        '<h1>Error</h1><div class="card"><p>This page could not be rendered.</p><pre><code>' +
+        h(msg) + "</code></pre></div>";
+};
+
 const route = function (): void {
     var hash = window.location.hash.replace(/^#\/?/, "") || "";
 
+    var go = function (page: () => void): void {
+        try { page(); } catch (err) { fail(err); }
+    };
+
     var releaseM = hash.match(/^projects\/(.+)\/releases\/([^\/]+)$/);
-    if (releaseM) { pages.release(releaseM[1], releaseM[2]); return; }
+    if (releaseM) { go(function () { pages.release(releaseM![1], releaseM![2]); }); return; }
 
     var projectM = hash.match(/^projects\/(.+)$/);
-    if (projectM) { pages.project(projectM[1]); return; }
+    if (projectM) { go(function () { pages.project(projectM![1]); }); return; }
 
     var siteM = hash.match(/^sites\/(.+)$/);
-    if (siteM) { pages.site(siteM[1]); return; }
+    if (siteM) { go(function () { pages.site(siteM![1]); }); return; }
 
     var first = hash.split("/")[0];
-    if (first === "projects") { pages.projects(); }
-    else if (first === "registries") { pages.registries(); }
-    else if (first === "sites") { pages.sites(); }
-    else if (first === "tokens") { pages.tokens(); }
-    else if (first === "oidc") { pages.oidc(); }
-    else if (first === "artifacts") { pages.artifacts(); }
-    else if (first === "storage") { pages.storage(); }
-    else if (first === "retention") { pages.retention(); }
-    else if (first === "goproxy") { pages.goproxy(); }
-    else { pages.dashboard(); }
+    if (first === "projects") { go(pages.projects); }
+    else if (first === "registries") { go(pages.registries); }
+    else if (first === "sites") { go(pages.sites); }
+    else if (first === "tokens") { go(pages.tokens); }
+    else if (first === "oidc") { go(pages.oidc); }
+    else if (first === "artifacts") { go(pages.artifacts); }
+    else if (first === "storage") { go(pages.storage); }
+    else if (first === "retention") { go(pages.retention); }
+    else if (first === "goproxy") { go(pages.goproxy); }
+    else { go(pages.dashboard); }
 };
 
 // --- Demo data ---
@@ -1346,6 +1367,34 @@ const demoData: Record<string, unknown> = {
         project: { id: 1, name: "myapp", description: "Main application", versioning: "auto", is_private: false, created_at: new Date(Date.now() - 864e5 * 30).toISOString(), updated_at: new Date(Date.now() - 3600000).toISOString() },
         releases: [{ version: "3", git_branch: "main", git_commit: "abc123", published: true, artifact_count: 4, published_at: new Date(Date.now() - 3600000).toISOString(), created_at: new Date(Date.now() - 3600000).toISOString() }],
         sites: [{ branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }],
+        base_url: "https://builds.example.com",
+        services: demoServices
+    },
+    "/projects/cli-tool": {
+        project: { id: 2, name: "cli-tool", description: "CLI utility", versioning: "semver", is_private: true, created_at: new Date(Date.now() - 864e5 * 10).toISOString(), updated_at: new Date(Date.now() - 86400000).toISOString() },
+        releases: [{ version: "1.2.0", git_branch: "release", git_commit: "fff000", published: true, artifact_count: 1, published_at: new Date(Date.now() - 86400000).toISOString(), created_at: new Date(Date.now() - 86400000).toISOString() }],
+        sites: [{ branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }],
+        base_url: "https://builds.example.com",
+        services: demoServices
+    },
+    "/projects/myapp/releases/3": {
+        project: { id: 1, name: "myapp", description: "Main application", versioning: "auto", is_private: false, created_at: new Date(Date.now() - 864e5 * 30).toISOString(), updated_at: new Date(Date.now() - 3600000).toISOString() },
+        release: { version: "3", published: true, git_branch: "main", git_commit: "abc123", notes: "", published_at: new Date(Date.now() - 3600000).toISOString(), created_at: new Date(Date.now() - 3600000).toISOString() },
+        artifacts: [
+            { os: "linux", arch: "amd64", kind: "binary", filename: "myapp", size: 15728640, download_count: 42, debug_storage_key: "", exe_format: "elf", platforms: [], packages: [] },
+            { os: "darwin", arch: "arm64", kind: "binary", filename: "myapp", size: 14680064, download_count: 18, debug_storage_key: "", exe_format: "macho", platforms: [], packages: [] }
+        ],
+        total_downloads: 60, total_size: 30408704,
+        base_url: "https://builds.example.com",
+        services: demoServices
+    },
+    "/projects/cli-tool/releases/1.2.0": {
+        project: { id: 2, name: "cli-tool", description: "CLI utility", versioning: "semver", is_private: true, created_at: new Date(Date.now() - 864e5 * 10).toISOString(), updated_at: new Date(Date.now() - 86400000).toISOString() },
+        release: { version: "1.2.0", published: true, git_branch: "release", git_commit: "fff000", notes: "", published_at: new Date(Date.now() - 86400000).toISOString(), created_at: new Date(Date.now() - 86400000).toISOString() },
+        artifacts: [
+            { os: "linux", arch: "amd64", kind: "binary", filename: "cli-tool", size: 10485760, download_count: 7, debug_storage_key: "", exe_format: "elf", platforms: [], packages: [] }
+        ],
+        total_downloads: 7, total_size: 10485760,
         base_url: "https://builds.example.com",
         services: demoServices
     },
@@ -1425,6 +1474,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
 window.addEventListener("hashchange", function () {
     route();
+});
+
+// A renderer runs inside .then(), so its failure surfaces here, not at the
+// router's try. Without this the old page stays up and the link reads as dead.
+window.addEventListener("unhandledrejection", function (ev) {
+    fail(ev.reason);
 });
 
 // Exported == reachable as App.x from the inline onclick handlers above.

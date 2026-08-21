@@ -661,6 +661,15 @@ jobs:
         uses: wow-look-at-my/actions@typescript#latest
         with:
           file: .github/scripts/sites-cors-e2e.ts
+      # The preview publishes this same static dir with no backend behind it, so
+      # it draws from the demo dataset. Building it here keeps the crawl on the
+      # sources rather than on whatever a previous job left.
+      - name: Build the admin frontend
+        run: ./scripts/build-admin-frontend.sh
+      - name: Every link on the preview dashboard must reach a page
+        uses: wow-look-at-my/actions@typescript#latest
+        with:
+          file: .github/scripts/admin-demo-links-e2e.ts
 
   apt-install-e2e:
     needs: build
