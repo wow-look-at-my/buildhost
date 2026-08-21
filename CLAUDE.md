@@ -201,7 +201,9 @@ Assertions live in dats suites under `test/dats/`, never in a workflow step; a
 step installs dats and invokes one with `--no-sandbox`, because these suites
 need the host's curl, jq or brew and the runner's fallback sandbox image has
 none. A suite needing nothing but a built binary could live in `dats/`, which
-`go-toolchain` runs sandboxed on every build. Depth: `docs/testing.md`.
+`go-toolchain` runs sandboxed on every build. A check that needs a program --
+octokit fakes, a browser -- is a node test under `test/actions/` that a suite
+invokes. Depth: `docs/testing.md`.
 
 CI runs the shipped fat APE, and an APE starts through its own shell
 trampoline: a bash `run:` step does that implicitly, node's `spawn` does not

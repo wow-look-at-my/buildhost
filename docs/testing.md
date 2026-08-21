@@ -8,7 +8,8 @@ server.
 
 ## Inline action scripts must carry no stacked comments
 
-`.github/scripts/no-stacked-comments.ts` (a `build` step) refuses two or more
+`.github/scripts/no-stacked-comments.ts`, run by `test/dats/repo-hygiene.dats`,
+refuses two or more
 consecutive comment-only `//` lines inside an inline `script:` in any
 `.github/actions/*/action.yml` or workflow. That is the rule
 `wow-look-at-my/actions@typescript#latest` enforces at RUN time, with no opt-out
@@ -92,7 +93,7 @@ production for weeks with CI green.
 
 ## The preview dashboard's links
 
-`.github/scripts/admin-demo-links-e2e.ts` (a step in `sites-cors-e2e`) serves
+`test/dats/admin-demo-links.dats` (a step in `sites-cors-e2e`) serves
 the built `internal/admin/static` under a path prefix -- which is what puts the
 SPA in demo mode -- and walks every `#/` link it renders, breadth-first, from the
 dashboard outward. A page must draw a heading that is not the error page.
@@ -180,6 +181,13 @@ may only need what that image has.
 
 A workflow step may still DO things: install brew, start a server, run a
 composite action. What it may not do is hold the expected value.
+
+Some checks need a program rather than a shell: octokit fakes, a browser
+crawl, a manual walk of a redirect chain. Those live under `test/actions/` as
+node tests -- node runs TypeScript directly -- and a dats suite invokes each
+one and reads its output. `action-libs.dats` covers the storage-record module,
+`admin-demo-links.dats` the preview crawl, and `sites-cors.dats` the
+cross-origin import.
 
 ## The route table golden (docs/routes.txt)
 

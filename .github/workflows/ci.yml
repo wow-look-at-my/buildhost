@@ -671,9 +671,11 @@ jobs:
       - name: Install browser driver
         run: npm install --no-save --no-audit --no-fund playwright-core@1.62.1
       - name: A hosted site must load cross-origin in a real browser
-        uses: wow-look-at-my/actions@typescript#latest
+        uses: wow-look-at-my/dats@master
+        env:
+          BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
         with:
-          file: .github/scripts/sites-cors-e2e.ts
+          args: --no-sandbox test test/dats/sites-cors.dats
       # The preview publishes this same static dir with no backend behind it, so
       # it draws from the demo dataset. Building it here keeps the crawl on the
       # sources rather than on whatever a previous job left.
@@ -681,9 +683,9 @@ jobs:
         run: ./scripts/build-admin-frontend.sh
       - name: Every link on the preview dashboard must reach a page
         timeout-minutes: 10
-        uses: wow-look-at-my/actions@typescript#latest
+        uses: wow-look-at-my/dats@master
         with:
-          file: .github/scripts/admin-demo-links-e2e.ts
+          args: --no-sandbox test test/dats/admin-demo-links.dats
 
   apt-install-e2e:
     needs: build
