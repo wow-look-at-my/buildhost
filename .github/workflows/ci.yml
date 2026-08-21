@@ -36,7 +36,7 @@ jobs:
       # a tracked generated file show up to the suite as a dirty tree.
       - uses: wow-look-at-my/dats@master
         with:
-          args: --no-sandbox test test/dats/repo-hygiene.dats
+          args: --no-sandbox test test/dats/repo-hygiene.dats test/dats/compression-opts.dats
       # On the default branch, cache this commit's route list keyed by its SHA.
       # Caches created on the default branch are restorable from every branch,
       # so feature-branch route-diff runs reuse this instead of rebuilding base.
@@ -265,10 +265,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: The shared storage-record module must behave
-        uses: wow-look-at-my/actions@typescript#latest
+      - uses: wow-look-at-my/dats@master
         with:
-          file: .github/scripts/storage-record-test.ts
+          args: --no-sandbox test test/dats/action-libs.dats
 
   container-healthcheck:
     # Only meaningful if the build succeeded and saved the go-build hand-off. Without
