@@ -197,6 +197,12 @@ never share the service alias.
 
 ## Testing
 
+CI builds TWICE and the two builds are not interchangeable. `build` makes the
+fat APE that ships. `native-binary` makes a linux/amd64 ELF for every job that
+EXECUTES a server, because an APE starts through a shell trampoline: a runner
+registers no APE binfmt handler, and the distroless image has no shell at all.
+A job that runs the binary takes the `go-build-native-binary` hand-off.
+
 `go-toolchain` runs all tests. An inline `script:` in any action or workflow may
 not carry two or more consecutive `//` comment lines -- the typescript action
 refuses to run one, so CI checks every file up front rather than letting a
