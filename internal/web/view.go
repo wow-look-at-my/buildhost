@@ -224,7 +224,10 @@ func buildInstallInfo(r *http.Request, project, version string, hasBinary bool) 
 		// Keep this flow byte-for-byte in step with llms.txt / README.
 		info.Brew = "brew tap pazer/build " + serviceBase(r, "brew") + "/tap.git" +
 			"\nbrew trust pazer/build" +
-			"\nbrew install pazer/build/" + project
+			// A formula name cannot contain '/', so a slash-namespaced project
+			// installs under its folded name (repackage.BrewFormulaName), the
+			// same fold the tap filename uses.
+			"\nbrew install pazer/build/" + repackage.BrewFormulaName(project)
 		info.Npm = "npm install @buildhost/" + project + " --registry " + serviceBase(r, "npm")
 		aptURL := serviceURL(r, "apt", project)
 		// A slash-namespaced project keeps its slash in the repo URL but installs

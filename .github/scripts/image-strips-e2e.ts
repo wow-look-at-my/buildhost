@@ -30,8 +30,9 @@ function curl(args: string[]): string {
 	return sh("curl", ["-fsSL", ...args]);
 }
 
-// The image has no shell, so exec the binary directly.
-const token = sh("docker", [...COMPOSE, "exec", "-T", "buildhost", "buildhost", "bootstrap", "--name", "image-e2e"])
+// The binary is an APE, so it starts through the image's busybox shell -- a
+// direct exec of it answers "exec format error".
+const token = sh("docker", [...COMPOSE, "exec", "-T", "buildhost", "sh", "/usr/local/bin/buildhost", "bootstrap", "--name", "image-e2e"])
 	.trim()
 	.split("\n")
 	.pop()!
@@ -42,9 +43,11 @@ core.setSecret(token);
 const auth = ["-H", `Authorization: Bearer ${token}`];
 const project = "image-strip-e2e";
 
-// The artifact is a real, unstripped ELF: buildhost's own linux binary, which
-// the build job produced with full debug info.
-const artifact = "build/buildhost_linux_amd64";
+// This asserts ELF stripping, so the artifact has to BE an ELF carrying debug
+// info. The shipped binary is an APE, a polyglot that is not an ELF, so the
+// workflow compiles a small unstripped ELF and names it here.
+const artifact = process.env.STRIP_FIXTURE;
+if (!artifact) throw new Error("STRIP_FIXTURE must name an unstripped ELF to upload");
 const uploadedSize = fs.statSync(artifact).size;
 core.info(`uploading ${artifact} (${uploadedSize} bytes)`);
 

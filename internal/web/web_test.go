@@ -73,6 +73,13 @@ func seed(t *testing.T, database *db.DB) {
 
 	namespaced := &db.Project{Name: "cc-marketplace/haiku-compact", Versioning: db.VersioningAuto}
 	require.Nil(t, database.CreateProject(ctx, namespaced))
+	nsRel := &db.Release{ProjectID: namespaced.ID, Version: "1", VersionNum: 1, GitBranch: "master"}
+	require.Nil(t, database.CreateRelease(ctx, nsRel))
+	require.Nil(t, database.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: nsRel.ID, OS: db.OSLinux, Arch: db.ArchAMD64, Kind: db.KindBinary,
+		StorageKey: strings.Repeat("c", 64), Size: 2048, SHA256: strings.Repeat("d", 64), Filename: "haiku-compact",
+	}))
+	require.Nil(t, database.PublishRelease(ctx, nsRel.ID))
 
 	priv := &db.Project{Name: "secret", IsPrivate: true, Versioning: db.VersioningAuto}
 	require.Nil(t, database.CreateProject(ctx, priv))
@@ -156,6 +163,17 @@ func TestFrontend(t *testing.T) {
 		require.Contains(t, body, "brew tap pazer/build "+brewBase+"/tap.git\nbrew trust pazer/build\nbrew install pazer/build/myapp")
 		require.Contains(t, body, "docker pull oci.")
 		require.Contains(t, body, "docker pull oci."+strings.TrimPrefix(e.ts.URL, "http://")+"/myapp:1")
+	})
+
+	// A Homebrew formula name cannot carry the project namespace separator, so
+	// the tap folds it and the install command must name the FOLDED formula.
+	// The unfolded name is not a formula in the tap: brew answers "No available
+	// formula".
+	t.Run("namespaced project installs under its folded formula name", func(t *testing.T) {
+		resp, body := e.get(t, "/projects/cc-marketplace/haiku-compact", false)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Contains(t, body, "brew install pazer/build/cc-marketplace-haiku-compact")
+		require.NotContains(t, body, "brew install pazer/build/cc-marketplace/haiku-compact")
 	})
 
 	t.Run("release page lists artifacts with download links", func(t *testing.T) {
