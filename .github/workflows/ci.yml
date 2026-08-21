@@ -65,23 +65,6 @@ jobs:
             echo "drifts from its source silently. See docs/no-committed-build-artifacts.md"
             exit 1
           fi
-
-  # Every job below runs the server, and an APE needs a shell to start: the
-  # loader's trampoline is a shell script, and neither a runner nor the
-  # distroless image registers an APE binfmt handler. The distroless image has
-  # no shell at all. So the shipped artifact stays the fat APE the build job
-  # makes, and the jobs that EXECUTE a server get this native linux/amd64
-  # binary. autorelease is off here -- the APE is what publishes.
-  native-binary:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: wow-look-at-my/go-toolchain@v1
-        with:
-          generate: 476c7c5fc951
-          os: linux
-          arch: amd64
-          autorelease: 'false'
       # On the default branch, cache this commit's route list keyed by its SHA.
       # Caches created on the default branch are restorable from every branch,
       # so feature-branch route-diff runs reuse this instead of rebuilding base.
@@ -92,8 +75,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x build/buildhost_linux_amd64
-          ./build/buildhost_linux_amd64 routes > base-routes.txt
+          chmod +x build/buildhost_cosmo_fat
+          ./build/buildhost_cosmo_fat routes > base-routes.txt
           # Never cache an empty list: every later PR would restore it and
           # report its whole route table as added.
           if [ ! -s base-routes.txt ]; then
@@ -107,7 +90,7 @@ jobs:
           key: route-list-${{ github.sha }}
 
   route-diff:
-    needs: native-binary
+    needs: build
     # Only meaningful on a branch that has an open PR to comment on. The default
     # branch has no PR to diff against, and its own route list is already cached
     # by the build job above -- running here would just rebuild the base from
@@ -124,7 +107,7 @@ jobs:
       # matching cache-download action, not actions/download-artifact.
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build-native-binary
+          name: go-build
           path: build/
       # render-routes: run the binary and REFUSE an empty or failed result.
       # A silently empty render reports every route as added, which is worse
@@ -153,8 +136,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x build/buildhost_linux_amd64
-          "$RUNNER_TEMP/render-routes.sh" ./build/buildhost_linux_amd64 pr-routes.txt "PR"
+          chmod +x build/buildhost_cosmo_fat
+          "$RUNNER_TEMP/render-routes.sh" ./build/buildhost_cosmo_fat pr-routes.txt "PR"
           # The shipped binary must enumerate its own REST API. Zero here means
           # routes regressed to registering inside auth.OnReady(), which fires
           # only at server boot -- invisible to this check, to docs/routes.txt
@@ -319,15 +302,15 @@ jobs:
     # Only meaningful if the build succeeded and saved the go-build hand-off. Without
     # this, an always()-style condition makes it run on build failure and then fail on
     # the missing hand-off (a misleading second red X for one real failure).
-    needs: native-binary
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build-native-binary
+          name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       # Build the image (and pull its base layers) in a separate, untimed step
       # so the --wait-timeout below budgets only container startup, not the
       # image build/pull. up then reuses this image instead of rebuilding.
@@ -339,8 +322,18 @@ jobs:
       # download went out unstripped and fmt=symbols could not work. Unit tests
       # could not see it -- the runner has binutils, the container does not --
       # so the guarantee has to be asserted against the real image.
+      # An ELF carrying debug info for the stripper to work on. The shipped
+      # binary is an APE, which is not an ELF, so the fixture is a small
+      # program of this repo's own.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build the strip fixture
+        run: go build -o "$RUNNER_TEMP/strip-fixture" ./test/e2e/testdata/netcheck
       - name: The shipped image must actually strip on download
         uses: wow-look-at-my/actions@typescript#latest
+        env:
+          STRIP_FIXTURE: ${{ runner.temp }}/strip-fixture
         with:
           file: .github/scripts/image-strips-e2e.ts
       - run: docker compose -f docker-compose.ci.yml logs
@@ -685,15 +678,15 @@ jobs:
   # (go-containerregistry): it pulls/decompresses buildhost's zstd layers, which the
   # default GitHub Docker (no containerd image store) may not.
   synthesized-image-e2e:
-    needs: native-binary
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build-native-binary
+          name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -702,7 +695,7 @@ jobs:
       - name: Build netcheck entrypoint (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/netcheck" ./test/e2e/testdata/netcheck
       - name: Pull and run the synthesized OCI image
-        run: PATH="$(go env GOPATH)/bin:$PATH" bash test/e2e/run.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/netcheck"
+        run: PATH="$(go env GOPATH)/bin:$PATH" bash test/e2e/run.sh build/buildhost_cosmo_fat "$RUNNER_TEMP/netcheck"
 
   # Proves a hosted site stays loadable CROSS-ORIGIN, through its redirects, in
   # a REAL BROWSER. Guards the defect that broke every cross-origin consumer at
@@ -717,15 +710,15 @@ jobs:
   # That is why this job launches an actual browser and imports an actual module
   # across origins; the header assertions alongside it only name which hop broke.
   sites-cors-e2e:
-    needs: native-binary
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build-native-binary
+          name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       # playwright-core drives the runner's preinstalled Chrome; it is a
       # package, not a third-party action, so the org's action allowlist is not
       # involved. The script FAILS if no browser can be launched -- a skip here
@@ -738,22 +731,22 @@ jobs:
           file: .github/scripts/sites-cors-e2e.ts
 
   apt-install-e2e:
-    needs: native-binary
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build-native-binary
+          name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - name: Build apt test package payload (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/buildhost-apt-e2e" ./test/e2e/testdata/netcheck
       - name: Install from the generated APT repository
-        run: bash test/e2e/apt-install.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/buildhost-apt-e2e"
+        run: bash test/e2e/apt-install.sh build/buildhost_cosmo_fat "$RUNNER_TEMP/buildhost-apt-e2e"
 
   # Proves the buildhost-upload-artifact composite action's BOTH upload paths
   # against a real spawned buildhost. The server's advertised direct-upload
@@ -787,7 +780,7 @@ jobs:
   # redirect. A unit test cannot catch a redirect that resolves per platform
   # instead of per artifact, which is exactly how one file grows N URLs again.
   multi-platform-ape-e2e:
-    needs: native-binary
+    needs: build
     runs-on: ubuntu-latest
     env:
       BUILDHOST_LISTEN_ADDR: 127.0.0.1:18081
@@ -796,9 +789,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build-native-binary
+          name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       - name: Start local buildhost
         shell: bash
         env:
@@ -807,10 +800,10 @@ jobs:
           BUILDHOST_ADMIN_LISTEN_ADDR: ""
         run: |
           set -euo pipefail
-          TOKEN="$(./build/buildhost_linux_amd64 bootstrap --name ci)"
+          TOKEN="$(./build/buildhost_cosmo_fat bootstrap --name ci)"
           echo "::add-mask::$TOKEN"
           echo "BUILDHOST_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-          ./build/buildhost_linux_amd64 serve > "$RUNNER_TEMP/ape.log" 2>&1 &
+          ./build/buildhost_cosmo_fat serve > "$RUNNER_TEMP/ape.log" 2>&1 &
           for _ in {1..60}; do
             if curl -fsS "$BUILDHOST_BASE_URL/healthz" >/dev/null; then
               exit 0
@@ -885,7 +878,7 @@ jobs:
             "$BUILDHOST_BASE_URL/api/v1/projects/ape-e2e/releases/$V2" | jq '.artifacts | length')" = "0"
 
   upload-artifact-action-e2e:
-    needs: native-binary
+    needs: build
     runs-on: ubuntu-latest
     env:
       BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
@@ -894,9 +887,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build-native-binary
+          name: go-build
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost_cosmo_fat
       - name: Start local buildhost (1 MiB direct-upload limit)
         shell: bash
         env:
@@ -906,10 +899,10 @@ jobs:
           BUILDHOST_MAX_DIRECT_UPLOAD_SIZE: "1048576"
         run: |
           set -euo pipefail
-          TOKEN="$(./build/buildhost_linux_amd64 bootstrap --name ci)"
+          TOKEN="$(./build/buildhost_cosmo_fat bootstrap --name ci)"
           echo "::add-mask::$TOKEN"
           echo "BUILDHOST_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-          ./build/buildhost_linux_amd64 serve > "$RUNNER_TEMP/buildhost.log" 2>&1 &
+          ./build/buildhost_cosmo_fat serve > "$RUNNER_TEMP/buildhost.log" 2>&1 &
           echo "$!" > "$RUNNER_TEMP/buildhost.pid"
           for _ in {1..60}; do
             if curl -fsS "$BUILDHOST_BASE_URL/healthz" >/dev/null; then
@@ -923,7 +916,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./build/buildhost_linux_amd64 project create \
+          ./build/buildhost_cosmo_fat project create \
             --server "$BUILDHOST_BASE_URL" \
             --token "$BUILDHOST_TOKEN" \
             --name upload-e2e
@@ -1103,11 +1096,11 @@ jobs:
         run: |
           set -euo pipefail
           head -c 4096 /dev/urandom > "$RUNNER_TEMP/cli.bin"
-          ./build/buildhost_linux_amd64 project create \
+          ./build/buildhost_cosmo_fat project create \
             --server "$BUILDHOST_BASE_URL" \
             --token "$BUILDHOST_TOKEN" \
             --name cli-single-e2e
-          ./build/buildhost_linux_amd64 publish \
+          ./build/buildhost_cosmo_fat publish \
             --server "$BUILDHOST_BASE_URL" \
             --token "$BUILDHOST_TOKEN" \
             --project cli-single-e2e \
@@ -1135,5 +1128,3 @@ jobs:
   publish-ghcr:
     needs: container-healthcheck
     uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@master
-    with:
-      artifact-name: go-build-native-binary
