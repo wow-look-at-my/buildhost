@@ -23,6 +23,20 @@
 //      redirect chain (honest end-to-end; also covers MIME type and CSP, which
 //      layer 1 cannot see).
 
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const child_process = require("node:child_process");
+
+// Progress lines and the failure report. The suite reads stdout, so a failure
+// has to arrive as a non-zero exit, not as a label on a green run.
+const core = {
+	info: (m: string) => console.log(m),
+	error: (m: string) => console.error(m),
+	// The token never leaves this process, and nothing here prints it.
+	setSecret: (_m: string) => undefined,
+};
+
 const BIN = process.env.BUILDHOST_BIN || "build/buildhost";
 const PORT = 18080; // the sites origin
 const CONSUMER_PORT = 18081; // a DIFFERENT port == a different origin, which is all CORS needs
@@ -54,11 +68,14 @@ const MARKER = "site-module-loaded";
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "buildhost-cors-e2e-"));
 const binAbs = path.resolve(BIN);
-// The server is an APE, and an APE starts through its own shell trampoline: a
-// direct execve of it fails ENOEXEC, because the runner registers no APE
-// binfmt handler. A shell reads the header and does the rest, which is what a
-// bash "run:" step does implicitly and node's spawn does not.
-const shArgs = (args: string[]) => [binAbs, ...args];
+// An APE starts through its own shell trampoline: a direct execve of it fails
+// ENOEXEC, because nothing here registers an APE binfmt handler. A shell reads
+// the header and does the rest, which is what a bash "run:" step does
+// implicitly and node's spawn does not. A native ELF is the opposite: feeding
+// one to a shell produces a screenful of "not found".
+const isAPE = fs.readFileSync(binAbs).subarray(0, 2).toString() === "MZ";
+const runner = (args: string[]): [string, string[]] =>
+	isAPE ? ["sh", [binAbs, ...args]] : [binAbs, args];
 const serverEnv = {
 	...process.env,
 	BUILDHOST_DATA_DIR: dataDir,
@@ -68,7 +85,7 @@ const serverEnv = {
 };
 
 function bootstrapToken(): string {
-	const res = child_process.spawnSync("sh", shArgs(["bootstrap", "--name", "cors-e2e"]), {
+	const res = child_process.spawnSync(...runner(["bootstrap", "--name", "cors-e2e"]), {
 		encoding: "utf8",
 		env: serverEnv,
 	});
@@ -150,7 +167,8 @@ async function assertChainCORS(label: string, startPath: string, wantRedirect: b
 
 // ---------------------------------------------------------------------------
 
-const server = child_process.spawn("sh", shArgs(["serve"]), { env: serverEnv, stdio: ["ignore", "pipe", "pipe"] });
+async function main(): Promise<void> {
+const server = child_process.spawn(...runner(["serve"]), { env: serverEnv, stdio: ["ignore", "pipe", "pipe"] });
 let serverLog = "";
 server.stdout.on("data", (d) => (serverLog += d));
 server.stderr.on("data", (d) => (serverLog += d));
@@ -343,13 +361,18 @@ try {
 }
 
 if (failures.length) {
-	core.setFailed(
+	throw new Error(
 		"A hosted site is not loadable cross-origin. A browser enforces CORS on EVERY redirect hop, so\n" +
 			"a redirect missing the header fails the whole load even when the final 200 carries it.\n" +
 			"Site responses get their headers from sites.setSiteSecurityHeaders -- call it BEFORE writing\n" +
 			"any redirect, not after.\n\n" +
 			failures.map((f) => "  - " + f).join("\n"),
 	);
-} else {
-	core.info("hosted sites are loadable cross-origin, redirects included");
 }
+core.info("hosted sites are loadable cross-origin, redirects included");
+}
+
+main().catch((err: unknown) => {
+	console.error(err);
+	process.exit(1);
+});

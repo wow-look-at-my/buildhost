@@ -368,7 +368,7 @@ runs:
               return { status: 0, text: "unreachable" };
             };
 
-            // the ape endpoint names the served file in a header, so the download is not called <binary>_cosmo_fat
+            // the ape endpoint names the served file in a header, so the download is not named after the uploaded file
             const apiWithFilename = async (method: string, urlPath: string, body: Buffer, filename: string) => {
               const resp = await fetch(`${server}${urlPath}`, {
                 method,
