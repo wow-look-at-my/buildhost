@@ -16,9 +16,14 @@ const PREFIX = "/buildhost/@preview/";
 const PORT = 18321;
 const BASE = `http://127.0.0.1:${PORT}${PREFIX}`;
 
-// http is not one of the modules the action injects, unlike fs and path.
 const http = require("node:http");
+const fs = require("node:fs");
+const path = require("node:path");
 const { chromium } = require("playwright-core");
+
+// Progress lines, not assertions: what the crawl reached, in order, so a
+// failure reads against the pages that already rendered.
+const core = { info: (m: string) => console.log(m) };
 
 const types: Record<string, string> = {
 	".html": "text/html",
@@ -40,7 +45,7 @@ const server = http.createServer((req: any, res: any) => {
 	res.end(fs.readFileSync(file));
 });
 
-// The same sequence sites-cors-e2e uses, in the same order: an explicit
+// The same sequence sites-cors.test.ts uses, in the same order: an explicit
 // binary outside a runner, then the runner's own Chrome, then a staged
 // download. A browser is REQUIRED -- no browser fails this check rather than
 // reducing it to something that cannot go red.
@@ -112,8 +117,8 @@ const main = async () => {
 		}
 
 		const links: string[] = await page.$$eval("#content a[href^='#/'], .sidebar a[href^='#/']",
-			// This callback runs in the PAGE, where DOM types exist. The action
-			// compiles this file without the DOM lib, so it cannot name them.
+			// This callback runs in the PAGE, where DOM types exist. This file
+			// is compiled without the DOM lib, so it cannot name them.
 			(as: any[]) => as.map((a) => a.getAttribute("href")));
 		for (const l of links) if (!seen.has(l)) queue.push(l);
 	}
@@ -138,8 +143,9 @@ const deadline = new Promise((_resolve, reject) => {
 	timer = setTimeout(() => reject(new Error(`the crawl did not finish within ${DEADLINE_MS / 1000}s`)), DEADLINE_MS);
 });
 
-try {
-	await Promise.race([main(), deadline]);
-} finally {
-	clearTimeout(timer);
-}
+Promise.race([main(), deadline])
+	.finally(() => clearTimeout(timer))
+	.catch((err: unknown) => {
+		console.error(err);
+		process.exit(1);
+	});

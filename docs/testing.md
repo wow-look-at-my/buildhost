@@ -8,7 +8,8 @@ server.
 
 ## Inline action scripts must carry no stacked comments
 
-`.github/scripts/no-stacked-comments.ts` (a `build` step) refuses two or more
+`.github/scripts/no-stacked-comments.ts`, run by `test/dats/repo-hygiene.dats`,
+refuses two or more
 consecutive comment-only `//` lines inside an inline `script:` in any
 `.github/actions/*/action.yml` or workflow. That is the rule
 `wow-look-at-my/actions@typescript#latest` enforces at RUN time, with no opt-out
@@ -31,9 +32,9 @@ fails CI.
 
 ## synthesized-image-e2e
 
-`test/e2e/` is a synthesized-OCI-image end-to-end test (CI job
-`synthesized-image-e2e` in `ci.yml`, not part of `go-toolchain`). It publishes a
-tiny static binary (`test/e2e/testdata/netcheck/`; under `testdata/` so `go list
+`test/dats/synthesized-image.dats` is a synthesized-OCI-image end-to-end test
+(CI job `synthesized-image-e2e` in `ci.yml`, not part of `go-toolchain`). It
+publishes a tiny static binary (`test/e2e/testdata/netcheck/`; under `testdata/` so `go list
 ./...` -- and thus go-toolchain's build/vet/coverage -- ignores it, while the e2e
 job still builds it explicitly) to a real `buildhost serve`, then uses **crane**
 (go-containerregistry) to pull the image buildhost synthesizes, assert its config
@@ -41,13 +42,21 @@ job still builds it explicitly) to a real `buildhost serve`, then uses **crane**
 bundle, `nonroot` in `/etc/passwd`, sticky `/tmp`), and run the entrypoint --
 which does an outbound HTTPS request validated **only** against the image's
 baked-in CA bundle, proving a networked service works in the synthesized image.
-crane (not docker) because buildhost's layers are `tar+zstd`, which
-go-containerregistry pulls but the default GitHub Docker may not.
+Docker pulls and runs the same image too: "pullable" is a claim about the client
+people actually use, and buildhost's layers are `tar+zstd`, which Docker reads
+only through the containerd image store (the workflow turns it on) while crane
+reads them anywhere, daemon-free.
 
 ## homebrew-tap-e2e
 
 CI job `homebrew-tap-e2e` (`ci.yml`) runs the README-documented brew flows against
-a real spawned buildhost, and what it INSTALLS is now the real thing: the public
+a real spawned buildhost. The commands come from `scripts/brew-doc-flows.sh`,
+which extracts the fenced blocks from `README.md` and substitutes only the host;
+`test/dats/homebrew-public.dats` executes the public flow and asserts the served
+`/llms.txt` documents the same two blocks, `homebrew-private.dats` executes the
+private flow and checks the authenticated tap, and `homebrew-anon-leak.dats`
+clones the anonymous tap and probes the unauthorized formula paths. What it
+INSTALLS is the real thing: the public
 `go-toolchain` project is seeded by downloading the live registry's own artifact
 (`dl.pazer.build/go-toolchain?branch=v1&os=&arch=`, public, no token -- the same
 registry the `build` job's go-toolchain action already depends on), so the job
@@ -72,7 +81,7 @@ server served a mangled tarball whose sha256 never matched the formula.
 ## container-healthcheck
 
 CI job `container-healthcheck` (`ci.yml`) additionally runs
-`.github/scripts/image-strips-e2e.ts` against the **built Docker image**: it
+`test/dats/image-strips.dats` against the **built Docker image**: it
 bootstraps a token by exec'ing the binary inside the (shell-less) container,
 publishes buildhost's own unstripped linux binary, and asserts the download comes
 back smaller than the upload with no `.symtab`/`.debug_*` sections but
@@ -84,7 +93,7 @@ production for weeks with CI green.
 
 ## The preview dashboard's links
 
-`.github/scripts/admin-demo-links-e2e.ts` (a step in `sites-cors-e2e`) serves
+`test/dats/admin-demo-links.dats` (a step in `sites-cors-e2e`) serves
 the built `internal/admin/static` under a path prefix -- which is what puts the
 SPA in demo mode -- and walks every `#/` link it renders, breadth-first, from the
 dashboard outward. A page must draw a heading that is not the error page.
@@ -97,11 +106,11 @@ of invisible -- and the crawl fails on it either way.
 
 ## apt-install-e2e
 
-`test/e2e/apt-install.sh` (CI job `apt-install-e2e`) covers a third case beyond
+`test/dats/apt-install.dats` (CI job `apt-install-e2e`) covers a third case beyond
 the plain and slash-namespaced packages: an **APE-shaped artifact** (no shebang,
 not an ELF, and it writes to `$0` before printing its marker). The generated
 package must install the binary under `/usr/lib` with a `/bin/sh` launcher on
-`$PATH`, and the script then runs it **as the non-root CI user** -- the exact case
+`$PATH`, and the suite then runs it **as the non-root CI user** -- the exact case
 that failed -- asserting the marker output and a writable per-user copy. Verified
 to go red without the deb fix.
 
@@ -172,6 +181,13 @@ may only need what that image has.
 
 A workflow step may still DO things: install brew, start a server, run a
 composite action. What it may not do is hold the expected value.
+
+Some checks need a program rather than a shell: octokit fakes, a browser
+crawl, a manual walk of a redirect chain. Those live under `test/actions/` as
+node tests -- node runs TypeScript directly -- and a dats suite invokes each
+one and reads its output. `action-libs.dats` covers the storage-record module,
+`admin-demo-links.dats` the preview crawl, and `sites-cors.dats` the
+cross-origin import.
 
 ## The route table golden (docs/routes.txt)
 
