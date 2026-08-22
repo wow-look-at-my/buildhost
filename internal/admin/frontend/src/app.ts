@@ -20,6 +20,7 @@ import type {
     RegistriesData,
     ReleaseData,
     RetentionData,
+    RetentionInventory,
     ServiceURLs,
     SidebarData,
     SitesData,
@@ -1143,8 +1144,12 @@ const renderRetention = function (d: RetentionData): void {
     html += "</tbody></table>";
     html += '<div class="row-actions" style="margin-top:16px">';
     html += '<button class="btn" onclick="App.pages.retention()">Refresh preview</button> ';
+    html += '<button class="btn" title="' + h(INVENTORY_HINT) + '" onclick="App.copyInventory(this)">Copy file inventory (JSON)</button> ';
+    html += '<button class="btn" title="' + h(INVENTORY_HINT) + '" onclick="App.downloadInventory(this)">Download file inventory (JSON)</button> ';
     html += '<button class="btn btn-danger" onclick="App.runRetention()">Run garbage collection now</button>';
-    html += "</div></div>";
+    html += "</div>";
+    html += '<p class="muted" style="margin-top:8px">' + h(INVENTORY_HINT) + "</p>";
+    html += "</div>";
 
     document.getElementById("content")!.innerHTML = html;
 
@@ -1164,6 +1169,59 @@ const renderRetention = function (d: RetentionData): void {
             }).catch(function () { alert("Could not save policy (preview/demo mode has no backend)."); });
         });
     }
+};
+
+const INVENTORY_HINT = "Every stored file with its size, timestamp, project, version, sha256, reference count, and the reason retention keeps it — plus totals grouped by that reason.";
+
+// The inventory is a debug dump of the server's own state, so this never falls
+// back to the demo fixture on a failed request: a copied fixture would read as
+// what the server holds.
+const fetchInventory = function (): Promise<RetentionInventory> {
+    if (demo) return Promise.resolve().then(function () { return demoFetch<RetentionInventory>("/retention/inventory"); });
+    return fetch("/api/retention/inventory").then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+    });
+};
+
+// inventoryAction fetches the inventory, hands the pretty-printed JSON to run,
+// and reports the outcome on the button itself.
+const inventoryAction = function (btn: HTMLButtonElement, okLabel: string, run: (json: string, inv: RetentionInventory) => void): void {
+    var orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Collecting...";
+    fetchInventory().then(function (inv) {
+        return Promise.resolve(run(JSON.stringify(inv, null, 2), inv));
+    }).then(function () {
+        btn.textContent = okLabel;
+    }).catch(function (e: Error) {
+        btn.textContent = "Failed: " + (e && e.message ? e.message : "error");
+    }).then(function () {
+        setTimeout(function () {
+            btn.textContent = orig;
+            btn.disabled = false;
+        }, 2500);
+    });
+};
+
+const copyInventory = function (btn: HTMLButtonElement): void {
+    inventoryAction(btn, "Copied", function (json) {
+        navigator.clipboard.writeText(json);
+    });
+};
+
+const downloadInventory = function (btn: HTMLButtonElement): void {
+    inventoryAction(btn, "Downloaded", function (json, inv) {
+        var stamp = (inv.generated_at || "").replace(/[:.]/g, "-");
+        var url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "buildhost-retention-inventory-" + stamp + ".json";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    });
 };
 
 const runRetention = function (): void {
@@ -1469,6 +1527,51 @@ const demoData: Record<string, unknown> = {
                 { project_name: "cli-tool", project_id: 2, branch: "feature-x", version: "3", reason: "abandoned" }
             ]
         }
+    },
+    "/retention/inventory": {
+        generated_at: new Date().toISOString(),
+        policy: { keep_n: 10, recency_hours: 24, recency_cutoff: new Date(Date.now() - 86400000).toISOString() },
+        totals: {
+            files: 4, bytes: 60817408, blobs: 3, blob_bytes: 46137344,
+            reclaimable_blobs: 1, reclaimable_bytes: 10485760,
+            held_blobs: 2, held_bytes: 35651584,
+            releases: 5, evicted_releases: 3, hold_mismatches: 0
+        },
+        by_hold: [
+            { name: "branch-tip", files: 1, bytes: 25165824, blobs: 1, blob_bytes: 25165824 },
+            { name: "shared-blob", files: 2, bytes: 25165824, blobs: 1, blob_bytes: 10485760 },
+            { name: "reclaimable", files: 1, bytes: 10485760, blobs: 1, blob_bytes: 10485760 }
+        ],
+        by_role: [
+            { name: "artifact", files: 3, bytes: 46137344, blobs: 2, blob_bytes: 35651584 },
+            { name: "debug", files: 1, bytes: 14680064, blobs: 1, blob_bytes: 10485760 }
+        ],
+        files: [
+            {
+                storage_key: "d1e5a0c2", sha256: "d1e5a0c2", role: "artifact", size: 25165824,
+                created_at: new Date(Date.now() - 3600000).toISOString(), project: "myapp", project_id: 1,
+                release_id: 9, version: "9", branch: "main", os: "linux", arch: "amd64", kind: "binary",
+                filename: "myapp", published: true, refs: 1, reclaimable: false, hold: "branch-tip"
+            },
+            {
+                storage_key: "9f4b7712", sha256: "9f4b7712", role: "artifact", size: 14680064,
+                created_at: new Date(Date.now() - 604800000).toISOString(), project: "myapp", project_id: 1,
+                release_id: 7, version: "7", branch: "main", os: "linux", arch: "amd64", kind: "binary",
+                filename: "myapp", published: true, refs: 2, reclaimable: false, hold: "shared-blob"
+            },
+            {
+                storage_key: "9f4b7712", sha256: "9f4b7712", role: "artifact", size: 14680064,
+                created_at: new Date(Date.now() - 259200000).toISOString(), project: "cli-tool", project_id: 2,
+                release_id: 4, version: "1.2.0", branch: "release", os: "linux", arch: "amd64", kind: "binary",
+                filename: "cli-tool", published: true, refs: 2, reclaimable: false, hold: "shared-blob"
+            },
+            {
+                storage_key: "5c33ae91", role: "debug", size: 10485760,
+                created_at: new Date(Date.now() - 604800000).toISOString(), project: "myapp", project_id: 1,
+                release_id: 7, version: "7", branch: "main", os: "linux", arch: "amd64", kind: "binary",
+                filename: "myapp", published: true, refs: 1, reclaimable: true, hold: ""
+            }
+        ]
     }
 };
 
@@ -1493,4 +1596,4 @@ window.addEventListener("unhandledrejection", function (ev) {
 });
 
 // Exported == reachable as App.x from the inline onclick handlers above.
-export { copyTempLink, copyText, deleteToken, downloadArtifact, editToken, pages, recheckGoproxy, reloadTokens, runRetention, saveToken };
+export { copyInventory, copyTempLink, copyText, deleteToken, downloadArtifact, downloadInventory, editToken, pages, recheckGoproxy, reloadTokens, runRetention, saveToken };
