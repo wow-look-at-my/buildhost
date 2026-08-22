@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // Roles a stored file can have. The role says which table references the blob.
@@ -145,16 +146,16 @@ func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 	if err != nil {
 		return inv, fmt.Errorf("plan eviction: %w", err)
 	}
-	evicted := make(map[int64]bool, plan.Releases())
+	evicted := set.New[int64](plan.Releases())
 	for _, ref := range plan.EvictedReleases {
-		evicted[ref.ID] = true
+		evicted.Add(ref.ID)
 	}
 	for _, ref := range plan.AbandonedReleases {
-		evicted[ref.ID] = true
+		evicted.Add(ref.ID)
 	}
-	freed := make(map[string]bool, len(plan.FreedBlobs))
+	freed := set.New[string](len(plan.FreedBlobs))
 	for _, b := range plan.FreedBlobs {
-		freed[b.Key] = true
+		freed.Add(b.Key)
 	}
 
 	facts, err := r.db.ListReleaseRetentionFacts(ctx)
@@ -166,7 +167,7 @@ func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 		hold := releaseHold(f, r.cfg.KeepN, cutoff)
 		// The plan is the truth. When the derived reason disagrees with it, say
 		// so rather than print a reason that is wrong.
-		if (hold == HoldNone) != evicted[f.ID] {
+		if (hold == HoldNone) != evicted.Contains(f.ID) {
 			hold = HoldUnknown
 			inv.Totals.HoldMismatches++
 		}
@@ -189,13 +190,13 @@ func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 		f.Refs = refs[f.StorageKey]
 		if f.ReleaseID != 0 {
 			f.Hold = holds[f.ReleaseID]
-			if f.Hold == HoldNone && !freed[f.StorageKey] {
+			if f.Hold == HoldNone && !freed.Contains(f.StorageKey) {
 				// The release goes, but another row still references the bytes.
 				// This is the case a reclaimable total never explains.
 				f.Hold = HoldSharedBlob
 			}
 		}
-		f.Reclaimable = f.Hold == HoldNone && freed[f.StorageKey]
+		f.Reclaimable = f.Hold == HoldNone && freed.Contains(f.StorageKey)
 	}
 
 	// Biggest first: the reader is hunting for what occupies the storage.
@@ -371,7 +372,7 @@ func appendFile(out []FileEntry, base FileEntry, role, key string, size int64, s
 func groupFiles(files []FileEntry) (byHold, byRole []InventoryGroup) {
 	holds := make(map[string]*InventoryGroup)
 	roles := make(map[string]*InventoryGroup)
-	seen := make(map[string]bool, len(files))
+	seen := set.New[string](len(files))
 
 	group := func(m map[string]*InventoryGroup, name string) *InventoryGroup {
 		g, ok := m[name]
@@ -393,8 +394,7 @@ func groupFiles(files []FileEntry) (byHold, byRole []InventoryGroup) {
 		rg.Files++
 		rg.Bytes += f.Size
 		// files is sorted by size, so a blob is attributed to its first entry.
-		if !seen[f.StorageKey] {
-			seen[f.StorageKey] = true
+		if seen.Add(f.StorageKey) {
 			hg.Blobs++
 			hg.BlobBytes += f.Size
 			rg.Blobs++
@@ -421,14 +421,13 @@ func sortedGroups(m map[string]*InventoryGroup) []InventoryGroup {
 // summarize fills the whole-server counters. Blob counters count each storage
 // key once.
 func summarize(t InventoryTotals, files []FileEntry) InventoryTotals {
-	seen := make(map[string]bool, len(files))
+	seen := set.New[string](len(files))
 	for _, f := range files {
 		t.Files++
 		t.Bytes += f.Size
-		if seen[f.StorageKey] {
+		if !seen.Add(f.StorageKey) {
 			continue
 		}
-		seen[f.StorageKey] = true
 		t.Blobs++
 		t.BlobBytes += f.Size
 		if f.Reclaimable {
