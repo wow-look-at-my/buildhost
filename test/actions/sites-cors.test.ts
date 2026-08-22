@@ -36,7 +36,6 @@ const core = {
 	// The token never leaves this process, and nothing here prints it.
 	setSecret: (_m: string) => undefined,
 };
-
 const BIN = process.env.BUILDHOST_BIN || "build/buildhost";
 const PORT = 18080; // the sites origin
 const CONSUMER_PORT = 18081; // a DIFFERENT port == a different origin, which is all CORS needs

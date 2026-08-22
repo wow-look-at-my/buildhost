@@ -157,8 +157,9 @@ in-process assertion about bytes -- the defect only shows as one URL becoming
 three, which needs the real `dl` handler behind a real Host header.
 
 Each test starts its own server, taking the binary from `BUILDHOST_BIN`, else
-`build/buildhost` if the build left one, and starting an APE through a shell
-because the kernel cannot exec one.
+`build/buildhost` (a cosmo build writes the APE under that plain name) if the
+build left one, and starting an APE through a shell because the kernel cannot
+exec one.
 
 It drives that server with curl and jq, which the runner has and the docker
 image dats sandboxes into does not -- hence `--no-sandbox`, and hence
