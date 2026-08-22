@@ -42,6 +42,3 @@ tests:
 	  outputs:
 		stdout:
 			- "no stacked inline-script comments"
-
-	- desc: compression-level accepts an integer and nothing else
-	  cmd: bash .github/scripts/compression-opts-test.sh

@@ -34,7 +34,7 @@ unchanged.
 curl -fSL -X PUT \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Artifact-Filename: go-toolchain" \
-  --data-binary @build/go-toolchain_cosmo_fat \
+  --data-binary @build/go-toolchain \
   "https://pazer.build/api/v1/projects/go-toolchain/releases/v42/artifacts/ape?platforms=linux/amd64,darwin/arm64,windows/amd64"
 ```
 
@@ -54,7 +54,7 @@ and a `buildhost-artifacts.json` in that directory naming the portable files:
   "schema": 1,
   "artifacts": [
     {
-      "file": "go-toolchain_cosmo_fat",
+      "file": "go-toolchain",
       "filename": "go-toolchain",
       "platforms": ["linux/amd64", "darwin/arm64", "windows/amd64"]
     }

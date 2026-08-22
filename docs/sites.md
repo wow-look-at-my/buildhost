@@ -285,7 +285,7 @@ Two checks guard it, and both were verified to fail before the fix:
 
 - `internal/sites/cors_test.go` -- every redirect either scheme can emit must
   carry the header. Add a case here when you add a redirect.
-- CI job `sites-cors-e2e` (`.github/scripts/sites-cors-e2e.ts`) -- spawns a
+- CI job `sites-cors-e2e` (`test/dats/sites-cors.dats`) -- spawns a
   real server, walks each redirect chain asserting the header on every hop,
   then has a **real headless browser** import a module cross-origin through
   the legacy redirect. The browser layer is the point: it also covers MIME
