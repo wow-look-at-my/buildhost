@@ -36,7 +36,7 @@ jobs:
       # a tracked generated file show up to the suite as a dirty tree.
       - uses: wow-look-at-my/dats@master
         with:
-          args: --no-sandbox test test/dats/repo-hygiene.dats
+          args: --no-sandbox test test/dats/repo-hygiene.dats test/dats/compression-opts.dats
       # On the default branch, cache this commit's route list keyed by its SHA.
       # Caches created on the default branch are restorable from every branch,
       # so feature-branch route-diff runs reuse this instead of rebuilding base.
@@ -265,10 +265,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: The shared storage-record module must behave
-        uses: wow-look-at-my/actions@typescript#latest
+      - uses: wow-look-at-my/dats@master
         with:
-          file: .github/scripts/storage-record-test.ts
+          args: --no-sandbox test test/dats/action-libs.dats
 
   container-healthcheck:
     # Only meaningful if the build succeeded and saved the go-build hand-off. Without
@@ -302,20 +301,19 @@ jobs:
           go-version-file: go.mod
       - name: Build the strip fixture
         run: go build -o "$RUNNER_TEMP/strip-fixture" ./test/e2e/testdata/netcheck
-      - name: The shipped image must actually strip on download
-        uses: wow-look-at-my/actions@typescript#latest
+      - uses: wow-look-at-my/dats@master
         env:
           STRIP_FIXTURE: ${{ runner.temp }}/strip-fixture
         with:
-          file: .github/scripts/image-strips-e2e.ts
+          args: --no-sandbox test test/dats/image-strips.dats
       - run: docker compose -f docker-compose.ci.yml logs
         if: failure()
 
   # Proves the DOCUMENTED Homebrew flows -- public and private -- work against a
   # real spawned buildhost with the real brew executable. The brew commands are
-  # not written here: .github/scripts/brew-tap-e2e.ts extracts them verbatim
-  # from README.md (and asserts the served llms.txt agrees), substituting only
-  # the server host. Changing what CI runs therefore REQUIRES changing the
+  # not written here: scripts/brew-doc-flows.sh extracts them verbatim from
+  # README.md (and the suite asserts the served llms.txt agrees), substituting
+  # only the server host. Changing what CI runs therefore REQUIRES changing the
   # user-facing docs -- a "fix CI only" change goes red. (That drift already
   # happened once: Homebrew 6.0 broke `brew install` and the fix landed in CI
   # only, while README/llms.txt kept documenting a flow that failed for users.)
@@ -560,16 +558,12 @@ jobs:
               > "$RUNNER_TEMP/buildhost-release-hostile.toml"
             ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-hostile.toml"
           done
-      - name: Public install flow (brew commands extracted from the docs)
-        uses: wow-look-at-my/actions@typescript#latest
-        env:
-          LEG: public
-        with:
-          file: .github/scripts/brew-tap-e2e.ts
-      # What the install left on disk, and that it runs: the assertions live
-      # in the suite, not here. --no-sandbox because brew's prefix is outside
-      # any sandbox and the point is what brew did to a real file.
+      # Each suite runs the documented flow in its own setup and then asserts
+      # what it produced. --no-sandbox because brew's prefix is outside any
+      # sandbox and the point is what brew did to a real file.
       - uses: wow-look-at-my/dats@master
+        env:
+          BREW_HOST: brew.localhost:18080
         with:
           args: --no-sandbox test test/dats/homebrew-public.dats
       # Docs: the authenticated tap replaces the public tap under the same name
@@ -577,21 +571,16 @@ jobs:
       # formulae installed from the tap exist).
       - name: Untap the public tap before the private flow (per docs)
         run: brew untap --force pazer/build
-      - name: Private install flow (brew commands extracted from the docs)
-        uses: wow-look-at-my/actions@typescript#latest
-        env:
-          LEG: private
-        with:
-          file: .github/scripts/brew-tap-e2e.ts
       - uses: wow-look-at-my/dats@master
+        env:
+          BREW_HOST: brew.localhost:18080
         with:
           args: --no-sandbox test test/dats/homebrew-private.dats
-      - name: Anonymous tap must not leak the private project
-        uses: wow-look-at-my/actions@typescript#latest
+      - uses: wow-look-at-my/dats@master
         env:
-          LEG: anon-leak
+          BREW_HOST: brew.localhost:18080
         with:
-          file: .github/scripts/brew-tap-e2e.ts
+          args: --no-sandbox test test/dats/homebrew-anon-leak.dats
       - name: Dump buildhost log
         if: failure()
         shell: bash
@@ -627,11 +616,35 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Install crane (zstd-capable OCI client)
-        run: go install github.com/google/go-containerregistry/cmd/crane@latest
+        run: |
+          go install github.com/google/go-containerregistry/cmd/crane@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Build netcheck entrypoint (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/netcheck" ./test/e2e/testdata/netcheck
-      - name: Pull and run the synthesized OCI image
-        run: PATH="$(go env GOPATH)/bin:$PATH" bash test/e2e/run.sh build/buildhost "$RUNNER_TEMP/netcheck"
+      # The OCI endpoint is host-routed: the first Host label must be "oci".
+      - name: Map the OCI host to the local server
+        run: echo "127.0.0.1 oci.buildhost.test" | sudo tee -a /etc/hosts
+      # buildhost's layers are zstd, which Docker reads only through the
+      # containerd image store. The registry is plain HTTP here, so it also
+      # has to be an allowed insecure one.
+      - name: Turn on the containerd image store
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /etc/docker
+          existing="$(sudo cat /etc/docker/daemon.json 2>/dev/null || echo '{}')"
+          printf '%s' "$existing" | jq \
+            --arg reg "oci.buildhost.test:8088" \
+            '.features."containerd-snapshotter" = true
+             | .["insecure-registries"] = ((.["insecure-registries"] // []) + [$reg] | unique)' \
+            | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+          for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
+      - uses: wow-look-at-my/dats@master
+        env:
+          BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
+          NETCHECK_BIN: ${{ runner.temp }}/netcheck
+        with:
+          args: --no-sandbox test test/dats/synthesized-image.dats
 
   # Proves a hosted site stays loadable CROSS-ORIGIN, through its redirects, in
   # a REAL BROWSER. Guards the defect that broke every cross-origin consumer at
@@ -662,9 +675,11 @@ jobs:
       - name: Install browser driver
         run: npm install --no-save --no-audit --no-fund playwright-core@1.62.1
       - name: A hosted site must load cross-origin in a real browser
-        uses: wow-look-at-my/actions@typescript#latest
+        uses: wow-look-at-my/dats@master
+        env:
+          BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
         with:
-          file: .github/scripts/sites-cors-e2e.ts
+          args: --no-sandbox test test/dats/sites-cors.dats
       # The preview publishes this same static dir with no backend behind it, so
       # it draws from the demo dataset. Building it here keeps the crawl on the
       # sources rather than on whatever a previous job left.
@@ -672,9 +687,9 @@ jobs:
         run: ./scripts/build-admin-frontend.sh
       - name: Every link on the preview dashboard must reach a page
         timeout-minutes: 10
-        uses: wow-look-at-my/actions@typescript#latest
+        uses: wow-look-at-my/dats@master
         with:
-          file: .github/scripts/admin-demo-links-e2e.ts
+          args: --no-sandbox test test/dats/admin-demo-links.dats
 
   apt-install-e2e:
     needs: build
@@ -691,8 +706,15 @@ jobs:
           go-version-file: go.mod
       - name: Build apt test package payload (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/buildhost-apt-e2e" ./test/e2e/testdata/netcheck
-      - name: Install from the generated APT repository
-        run: bash test/e2e/apt-install.sh build/buildhost "$RUNNER_TEMP/buildhost-apt-e2e"
+      # The apt repository and the package download redirect are host-routed.
+      - name: Map the apt and static hosts to the local server
+        run: printf '127.0.0.1 apt.localhost\n127.0.0.1 static.localhost\n' | sudo tee -a /etc/hosts
+      - uses: wow-look-at-my/dats@master
+        env:
+          BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
+          ARTIFACT_BIN: ${{ runner.temp }}/buildhost-apt-e2e
+        with:
+          args: --no-sandbox test test/dats/apt-install.dats
 
   # Proves the buildhost-upload-artifact composite action's BOTH upload paths
   # against a real spawned buildhost. The server's advertised direct-upload

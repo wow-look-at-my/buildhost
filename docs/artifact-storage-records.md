@@ -67,8 +67,9 @@ or `failed, so the owner type is unknown`.
 
 ## Tests
 
-`.github/scripts/storage-record-test.ts`, run by the `storage-record` CI job. It
-needs its own job because the composites' own e2e publishes to a loopback
+`test/actions/storage-record.test.ts`, run by `test/dats/action-libs.dats` in
+the `storage-record` CI job. It needs its own job because the composites' own
+e2e publishes to a loopback
 server, where the skip returns before a record is posted -- so every branch here
 would otherwise ship untested, and a mistake fails publishing org-wide.
 
