@@ -47,6 +47,7 @@ func TestInventory_NamesTheHoldOnEveryFile(t *testing.T) {
 
 	tip := entryFor(t, inv, "v3", RoleArtifact)
 	assert.Equal(t, HoldBranchTip, tip.Hold)
+	assert.Equal(t, []string{HoldBranchTip}, tip.Holds)
 	assert.False(t, tip.Reclaimable)
 	assert.Equal(t, "proj", tip.Project)
 	assert.Equal(t, "main", tip.Branch)
@@ -111,8 +112,17 @@ func TestInventory_RecencyGuardIsItsOwnHold(t *testing.T) {
 	inv, err := New(d, store, Config{KeepN: 0, RecencyGuard: 24 * time.Hour}).Inventory(ctx)
 	require.NoError(t, err)
 
-	assert.Equal(t, HoldRecency, entryFor(t, inv, "v1", RoleArtifact).Hold)
-	assert.Equal(t, HoldBranchTip, entryFor(t, inv, "v2", RoleArtifact).Hold)
+	old := entryFor(t, inv, "v1", RoleArtifact)
+	assert.Equal(t, HoldRecency, old.Hold)
+	assert.Equal(t, []string{HoldRecency}, old.Holds)
+
+	// The tip carries both pins, and reports the one that outlives the other:
+	// lowering keep-N frees nothing here, and waiting out the guard frees
+	// nothing either.
+	tip := entryFor(t, inv, "v2", RoleArtifact)
+	assert.Equal(t, HoldBranchTip, tip.Hold)
+	assert.Equal(t, []string{HoldBranchTip, HoldRecency}, tip.Holds)
+
 	assert.Equal(t, int64(0), inv.Totals.ReclaimableBytes)
 	assert.Equal(t, 0, inv.Totals.HoldMismatches)
 }

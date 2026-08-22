@@ -70,8 +70,12 @@ type FileEntry struct {
 	Refs int `json:"refs"`
 	// Reclaimable is true when the current policy frees this blob now.
 	Reclaimable bool `json:"reclaimable"`
-	// Hold is why the file stays. It is empty when Reclaimable is true.
+	// Hold is the primary reason the file stays: the first of Holds. It is
+	// empty when Reclaimable is true.
 	Hold string `json:"hold"`
+	// Holds is every pin that applies, most permanent first. Two pins on one
+	// release mean that lifting the second one alone frees nothing.
+	Holds []string `json:"holds,omitempty"`
 }
 
 // InventoryGroup aggregates entries that share a hold reason or a role.
@@ -162,16 +166,16 @@ func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 	if err != nil {
 		return inv, fmt.Errorf("list release retention facts: %w", err)
 	}
-	holds := make(map[int64]string, len(facts))
+	holds := make(map[int64][]string, len(facts))
 	for _, f := range facts {
-		hold := releaseHold(f, r.cfg.KeepN, cutoff)
-		// The plan is the truth. When the derived reason disagrees with it, say
+		h := releaseHolds(f, r.cfg.KeepN, cutoff)
+		// The plan is the truth. When the derived reasons disagree with it, say
 		// so rather than print a reason that is wrong.
-		if (hold == HoldNone) != evicted.Contains(f.ID) {
-			hold = HoldUnknown
+		if (len(h) == 0) != evicted.Contains(f.ID) {
+			h = []string{HoldUnknown}
 			inv.Totals.HoldMismatches++
 		}
-		holds[f.ID] = hold
+		holds[f.ID] = h
 	}
 	inv.Totals.Releases = len(facts)
 	inv.Totals.EvictedReleases = plan.Releases()
@@ -189,12 +193,15 @@ func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 		f := &files[i]
 		f.Refs = refs[f.StorageKey]
 		if f.ReleaseID != 0 {
-			f.Hold = holds[f.ReleaseID]
-			if f.Hold == HoldNone && !freed.Contains(f.StorageKey) {
+			f.Holds = holds[f.ReleaseID]
+			if len(f.Holds) == 0 && !freed.Contains(f.StorageKey) {
 				// The release goes, but another row still references the bytes.
 				// This is the case a reclaimable total never explains.
-				f.Hold = HoldSharedBlob
+				f.Holds = []string{HoldSharedBlob}
 			}
+		}
+		if len(f.Holds) > 0 {
+			f.Hold = f.Holds[0]
 		}
 		f.Reclaimable = f.Hold == HoldNone && freed.Contains(f.StorageKey)
 	}
@@ -216,28 +223,34 @@ func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 	return inv, nil
 }
 
-// releaseHold gives the reason eviction keeps a release, and an empty string
-// when eviction takes it. It mirrors ListEvictableReleases and
-// ListAbandonedReleases, and it names the specific pin those queries fold into
-// one WHERE clause.
-func releaseHold(f db.ListReleaseRetentionFactsRow, keepN int, cutoff time.Time) string {
+// releaseHolds gives every pin that keeps a release, and an empty slice when
+// eviction takes it. It mirrors ListEvictableReleases and
+// ListAbandonedReleases, and it names the pins those queries fold into one
+// WHERE clause.
+//
+// Several pins can apply at once. The order is by permanence, so the first one
+// is the pin that survives longest: an operator who lowers keep-N frees
+// nothing while an OCI tag still points at the release. The recency guard is
+// last, because time alone lifts it.
+func releaseHolds(f db.ListReleaseRetentionFactsRow, keepN int, cutoff time.Time) []string {
+	var holds []string
+	inGuard := !f.CreatedAt.Before(cutoff)
+
 	if !f.Published {
 		if f.Draft {
-			return HoldDraft
+			return []string{HoldDraft}
 		}
-		if !f.CreatedAt.Before(cutoff) {
-			return HoldRecency
+		if inGuard {
+			return []string{HoldRecency}
 		}
-		return HoldNone
+		return nil
 	}
+
 	if f.OciTagCount > 0 {
-		return HoldOCITag
+		holds = append(holds, HoldOCITag)
 	}
 	if f.DockerArtifactCount > 0 {
-		return HoldDocker
-	}
-	if !f.CreatedAt.Before(cutoff) {
-		return HoldRecency
+		holds = append(holds, HoldDocker)
 	}
 	// keep_n=0 still keeps each branch tip: the query floors the window at 1.
 	keep := int64(keepN)
@@ -246,11 +259,15 @@ func releaseHold(f db.ListReleaseRetentionFactsRow, keepN int, cutoff time.Time)
 	}
 	if f.NewerPublishedOnBranch < keep {
 		if f.NewerPublishedOnBranch == 0 {
-			return HoldBranchTip
+			holds = append(holds, HoldBranchTip)
+		} else {
+			holds = append(holds, HoldKeepN)
 		}
-		return HoldKeepN
 	}
-	return HoldNone
+	if inGuard {
+		holds = append(holds, HoldRecency)
+	}
+	return holds
 }
 
 // listFiles reads every table that references a blob and returns one entry per
@@ -316,7 +333,7 @@ func (r *Retention) listFiles(ctx context.Context) ([]FileEntry, error) {
 			ProjectID: s.ProjectID,
 			Branch:    s.Branch,
 			Published: true,
-			Hold:      HoldSite,
+			Holds:     []string{HoldSite},
 		}
 		out = appendFile(out, base, RoleSite, s.StorageKey, s.Size, s.SHA256)
 	}
@@ -332,7 +349,7 @@ func (r *Retention) listFiles(ctx context.Context) ([]FileEntry, error) {
 			ProjectID: o.ProjectID,
 			MediaType: o.MediaType,
 			Published: true,
-			Hold:      HoldOCIBlob,
+			Holds:     []string{HoldOCIBlob},
 		}
 		out = appendFile(out, base, RoleOCIBlob, o.StorageKey, o.Size, "")
 	}
@@ -347,7 +364,7 @@ func (r *Retention) listFiles(ctx context.Context) ([]FileEntry, error) {
 			Module:    m.ModulePath,
 			Version:   m.Version,
 			Published: true,
-			Hold:      HoldGoproxy,
+			Holds:     []string{HoldGoproxy},
 		}
 		out = appendFile(out, base, RoleGoproxy, m.ZipStorageKey, m.ZipSize, "")
 	}
