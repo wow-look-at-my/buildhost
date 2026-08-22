@@ -1212,7 +1212,9 @@ const copyInventory = function (btn: HTMLButtonElement): void {
 
 const downloadInventory = function (btn: HTMLButtonElement): void {
     inventoryAction(btn, "Downloaded", function (json, inv) {
-        var stamp = (inv.generated_at || "").replace(/[:.]/g, "-");
+        // 2026-08-22T02:05:50.889Z -> 2026-08-22T02-05-50Z, so the name stays a
+        // legal filename and still sorts by time.
+        var stamp = (inv.generated_at || "").replace(/\.\d+/, "").replace(/:/g, "-");
         var url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
         var a = document.createElement("a");
         a.href = url;
