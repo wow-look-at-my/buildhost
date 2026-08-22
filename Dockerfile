@@ -27,7 +27,7 @@ LABEL org.opencontainers.image.description="Universal package registry server"
 # entrypoint goes through it.
 COPY --from=dirs /shell /bin
 COPY --from=dirs /tmpdir /tmp
-COPY --chmod=755 build/buildhost_cosmo_fat /usr/local/bin/buildhost
+COPY --chmod=755 build/buildhost /usr/local/bin/buildhost
 COPY --from=dirs --chown=65532:65532 /data /var/lib/buildhost
 
 ENV BUILDHOST_DATA_DIR=/var/lib/buildhost

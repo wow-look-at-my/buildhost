@@ -266,6 +266,29 @@ export interface RetentionData {
     preview: RetentionPreview;
 }
 
+// The inventory (GET /api/retention/inventory) is a debug dump: every stored
+// file, and the reason retention keeps it. The page copies or downloads it
+// verbatim, so only the fields the buttons report are named here.
+export interface RetentionInventory {
+    generated_at: string;
+    totals: {
+        files: number;
+        bytes: number;
+        blobs: number;
+        blob_bytes: number;
+        reclaimable_blobs: number;
+        reclaimable_bytes: number;
+        held_blobs: number;
+        held_bytes: number;
+        releases: number;
+        evicted_releases: number;
+        hold_mismatches: number;
+    };
+    by_hold: { name: string; files: number; bytes: number; blobs: number; blob_bytes: number }[];
+    by_role: { name: string; files: number; bytes: number; blobs: number; blob_bytes: number }[];
+    files: Record<string, unknown>[];
+}
+
 // --- Project tree (the Projects page groups slash-namespaced names) ---
 
 export interface TreeRow {

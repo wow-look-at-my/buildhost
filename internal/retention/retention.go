@@ -55,6 +55,12 @@ func ConfigFromSettings(s db.RetentionSettings, enforce bool) Config {
 	}
 }
 
+// BlobRef is one content-addressed blob a pass freed, with its recorded size.
+type BlobRef struct {
+	Key  string
+	Size int64
+}
+
 // ReleaseRef identifies a release in a Report.
 type ReleaseRef struct {
 	ID          int64
@@ -72,6 +78,7 @@ type Report struct {
 	BlobsDeleted      int          // blobs freed (enforce) or that would be freed (dry run)
 	BlobsRetained     int          // candidate blobs kept because still shared
 	ReclaimableBytes  int64        // exact bytes freed / that would be freed
+	FreedBlobs        []BlobRef    // the blobs ReclaimableBytes sums, keyed by storage key
 
 	// Artifact-metadata bookkeeping for the evicted releases. An artifact whose
 	// release is gone is no longer fetchable at the URL its storage record
@@ -138,6 +145,7 @@ func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
 
 	for _, ref := range freed {
 		rep.ReclaimableBytes += ref.Size
+		rep.FreedBlobs = append(rep.FreedBlobs, BlobRef{Key: ref.Key, Size: ref.Size})
 		if enforce {
 			if err := r.store.Delete(ctx, ref.Key); err != nil {
 				// Rows are already committed; a failed blob delete only leaks the
