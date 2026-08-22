@@ -88,8 +88,9 @@ separately if any tracked file is gitignored build output. Depth:
 - `internal/strip/` -- native-Go ELF debug stripping (no binutils in the image).
   Depth: `docs/formats/stripping.md`.
 - `internal/retention/` -- eviction policy + refcounted blob GC, shared by the
-  sweeper, the `gc` CLI and the dashboard. Depth: `docs/retention.md`,
-  `docs/eviction-policies.md`.
+  sweeper, the `gc` CLI and the dashboard. `Inventory` lists every stored file
+  with the pins that keep it, which is what a reclaimable total cannot say.
+  Depth: `docs/retention.md`, `docs/eviction-policies.md`.
 - `internal/uploads/`, `internal/uploadclient/`, `internal/ociclient/` -- chunked
   upload sessions and the two CLI engines that use them. Depth: `docs/uploads.md`.
 - `internal/buildinfo/` -- build-time VCS stamps, reported by `buildhost version`
