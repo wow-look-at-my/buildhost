@@ -15,7 +15,7 @@ shared:
 			WORK="$(dirname "$ENV_FILE")"
 			BIN="${BUILDHOST_BIN:-}"
 			if [ -z "$BIN" ]; then
-				for c in build/buildhost_cosmo_fat build/buildhost; do
+				for c in build/buildhost; do
 					if [ -f "$REPO/$c" ]; then BIN="$REPO/$c"; break; fi
 				done
 			fi

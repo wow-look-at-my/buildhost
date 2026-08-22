@@ -23,7 +23,7 @@
 //      redirect chain (honest end-to-end; also covers MIME type and CSP, which
 //      layer 1 cannot see).
 
-const BIN = process.env.BUILDHOST_BIN || "build/buildhost_cosmo_fat";
+const BIN = process.env.BUILDHOST_BIN || "build/buildhost";
 const PORT = 18080; // the sites origin
 const CONSUMER_PORT = 18081; // a DIFFERENT port == a different origin, which is all CORS needs
 const HOST = `sites.localhost:${PORT}`;
