@@ -32,11 +32,45 @@ jobs:
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           generate: 476c7c5fc951
-      # The step above just ran every generate directive, which is what makes
-      # a tracked generated file show up to the suite as a dirty tree.
-      - uses: wow-look-at-my/dats@master
+      # The step above just ran every generate directive. If that changed a
+      # TRACKED file, this repo is carrying a build artifact in git -- and a
+      # tracked artifact is free to drift from the source it claims to be built
+      # from, silently, for as long as nobody rebuilds. That is exactly how the
+      # admin dashboard shipped a bundle nothing in frontend/src produced.
+      # See docs/no-committed-build-artifacts.md.
+      - name: Inline action scripts must carry no stacked comments
+        run: node .github/scripts/no-stacked-comments.ts .github/actions/*/action.yml .github/workflows/*.yml
+
+      - name: compression-level accepts an integer and nothing else
+        run: bash .github/scripts/compression-opts-test.sh
+
+      - name: Generated output must not be tracked in git
+        run: |
+          set -eu
+          # Drift: a committed artifact whose source no longer produces it.
+          if ! git diff --quiet; then
+            echo "::error::Running generate modified files that are committed to git."
+            echo "A tracked generated file has drifted from the source it claims to"
+            echo "be built from. Gitignore it and let its //go:generate produce it."
+            git diff --stat
+            exit 1
+          fi
+          # Committed-at-all: a tracked file that .gitignore says is build output.
+          # Catches the artifact even while it still happens to match its source.
+          ignored="$(git ls-files -i -c --exclude-standard)"
+          if [ -n "$ignored" ]; then
+            echo "::error::These build artifacts are committed to git:"
+            echo "$ignored"
+            echo "Remove them from the index (git rm --cached) -- a tracked artifact"
+            echo "drifts from its source silently. See docs/no-committed-build-artifacts.md"
+            exit 1
+          fi
+      # Hand build/ to the downstream jobs via the run-scoped cache -- go-toolchain
+      # no longer uploads a go-build artifact.
+      - uses: wow-look-at-my/actions@cache-upload#latest
         with:
-          args: --no-sandbox test test/dats/repo-hygiene.dats test/dats/compression-opts.dats
+          name: go-build
+          path: build/
       # On the default branch, cache this commit's route list keyed by its SHA.
       # Caches created on the default branch are restorable from every branch,
       # so feature-branch route-diff runs reuse this instead of rebuilding base.
@@ -933,3 +967,14 @@ jobs:
   publish-ghcr:
     needs: container-healthcheck
     uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@master
+
+  # Org-standard hygiene: delete this run's cache hand-offs and sweep >12h leftovers.
+  cache-cleanup:
+    needs: [route-diff, homebrew-tap-e2e, synthesized-image-e2e, apt-install-e2e, publish-ghcr]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: wow-look-at-my/actions@cache-cleanup#latest
