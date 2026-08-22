@@ -57,6 +57,17 @@ services:
       - buildhost-data:/var/lib/buildhost
     environment:
       - BUILDHOST_BASE_URL=${BUILDHOST_BASE_URL}
+      # Dedicated domain for project static sites: each project whose name is a
+      # valid single DNS label is served at https://<project>.<domain>/ (default
+      # branch on bare paths, other branches behind the "~" sigil). Unset =>
+      # zero extra routes, routing byte-identical. See README "Project site
+      # subdomains".
+      - BUILDHOST_SITE_DOMAIN=${BUILDHOST_SITE_DOMAIN}
+      # The apex the GitHub OAuth callback lives on. Required for sign-in to a
+      # PRIVATE project site on BUILDHOST_SITE_DOMAIN (the browser authenticates
+      # here and is handed back via /__sso). Also scopes the web UI and /api/v1
+      # to this apex, so other hosts get a plain 404 instead of being served.
+      - BUILDHOST_PRIMARY_DOMAIN=${BUILDHOST_PRIMARY_DOMAIN}
     networks:
       internal:
         aliases:
