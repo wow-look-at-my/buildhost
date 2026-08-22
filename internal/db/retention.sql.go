@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 )
 
 const deleteReleaseArtifacts = `-- name: DeleteReleaseArtifacts :exec
@@ -142,6 +143,97 @@ func (q *Queries) ListAbandonedReleases(ctx context.Context, cutoff interface{})
 	return items, nil
 }
 
+const listArtifactFiles = `-- name: ListArtifactFiles :many
+SELECT a.id, a.release_id, a.os, a.arch, a.kind, a.filename, a.exe_format,
+       a.storage_key, a.size, a.sha256,
+       a.stripped_storage_key, a.stripped_size, a.stripped_sha256,
+       a.debug_storage_key, a.debug_size,
+       a.created_at,
+       r.version, r.version_num, r.git_branch, r.published, r.draft,
+       r.project_id, p.name AS project_name
+FROM artifacts a
+JOIN releases r ON r.id = a.release_id
+JOIN projects p ON p.id = r.project_id
+ORDER BY p.name, r.version_num, a.id
+`
+
+type ListArtifactFilesRow struct {
+	ID                 int64     `json:"id"`
+	ReleaseID          int64     `json:"release_id"`
+	OS                 OS        `json:"os"`
+	Arch               Arch      `json:"arch"`
+	Kind               Kind      `json:"kind"`
+	Filename           string    `json:"filename"`
+	ExeFormat          string    `json:"exe_format"`
+	StorageKey         string    `json:"storage_key"`
+	Size               int64     `json:"size"`
+	SHA256             string    `json:"sha256"`
+	StrippedStorageKey string    `json:"stripped_storage_key"`
+	StrippedSize       int64     `json:"stripped_size"`
+	StrippedSHA256     string    `json:"stripped_sha256"`
+	DebugStorageKey    string    `json:"debug_storage_key"`
+	DebugSize          int64     `json:"debug_size"`
+	CreatedAt          time.Time `json:"created_at"`
+	Version            string    `json:"version"`
+	VersionNum         int64     `json:"version_num"`
+	GitBranch          string    `json:"git_branch"`
+	Published          bool      `json:"published"`
+	Draft              bool      `json:"draft"`
+	ProjectID          int64     `json:"project_id"`
+	ProjectName        string    `json:"project_name"`
+}
+
+// Every artifact row with the up to three blobs it references (raw, stripped,
+// debug) and the release/project context needed to explain why it is kept.
+// Feeds the retention inventory; the caller expands one row into one entry per
+// non-empty storage key.
+func (q *Queries) ListArtifactFiles(ctx context.Context) ([]ListArtifactFilesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listArtifactFiles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListArtifactFilesRow{}
+	for rows.Next() {
+		var i ListArtifactFilesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReleaseID,
+			&i.OS,
+			&i.Arch,
+			&i.Kind,
+			&i.Filename,
+			&i.ExeFormat,
+			&i.StorageKey,
+			&i.Size,
+			&i.SHA256,
+			&i.StrippedStorageKey,
+			&i.StrippedSize,
+			&i.StrippedSHA256,
+			&i.DebugStorageKey,
+			&i.DebugSize,
+			&i.CreatedAt,
+			&i.Version,
+			&i.VersionNum,
+			&i.GitBranch,
+			&i.Published,
+			&i.Draft,
+			&i.ProjectID,
+			&i.ProjectName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEvictableReleases = `-- name: ListEvictableReleases :many
 SELECT r.id, r.project_id, p.name AS project_name, r.git_branch, r.version, r.version_num
 FROM releases r
@@ -213,6 +305,188 @@ func (q *Queries) ListEvictableReleases(ctx context.Context, arg ListEvictableRe
 	return items, nil
 }
 
+const listGoproxyBlobFiles = `-- name: ListGoproxyBlobFiles :many
+SELECT gv.id, gm.module_path, gv.version, gv.zip_storage_key, gv.zip_size, gv.fetched_at
+FROM goproxy_versions gv
+JOIN goproxy_modules gm ON gm.id = gv.module_id
+WHERE gv.zip_storage_key != ''
+ORDER BY gm.module_path, gv.version
+`
+
+type ListGoproxyBlobFilesRow struct {
+	ID            int64     `json:"id"`
+	ModulePath    string    `json:"module_path"`
+	Version       string    `json:"version"`
+	ZipStorageKey string    `json:"zip_storage_key"`
+	ZipSize       int64     `json:"zip_size"`
+	FetchedAt     time.Time `json:"fetched_at"`
+}
+
+// Every cached Go module zip. Cached upstream modules are not projects, so
+// release eviction never frees them either.
+func (q *Queries) ListGoproxyBlobFiles(ctx context.Context) ([]ListGoproxyBlobFilesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listGoproxyBlobFiles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListGoproxyBlobFilesRow{}
+	for rows.Next() {
+		var i ListGoproxyBlobFilesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ModulePath,
+			&i.Version,
+			&i.ZipStorageKey,
+			&i.ZipSize,
+			&i.FetchedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOCIBlobFiles = `-- name: ListOCIBlobFiles :many
+SELECT obl.id, obl.project_id, p.name AS project_name, obl.storage_key,
+       obl.media_type, obl.size, obl.is_manifest, obl.created_at
+FROM oci_blob_links obl
+JOIN projects p ON p.id = obl.project_id
+ORDER BY p.name, obl.id
+`
+
+type ListOCIBlobFilesRow struct {
+	ID          int64     `json:"id"`
+	ProjectID   int64     `json:"project_id"`
+	ProjectName string    `json:"project_name"`
+	StorageKey  string    `json:"storage_key"`
+	MediaType   string    `json:"media_type"`
+	Size        int64     `json:"size"`
+	IsManifest  int64     `json:"is_manifest"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// Every project-scoped OCI blob link. These are not release-scoped, so release
+// eviction never frees them.
+func (q *Queries) ListOCIBlobFiles(ctx context.Context) ([]ListOCIBlobFilesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOCIBlobFiles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOCIBlobFilesRow{}
+	for rows.Next() {
+		var i ListOCIBlobFilesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.ProjectName,
+			&i.StorageKey,
+			&i.MediaType,
+			&i.Size,
+			&i.IsManifest,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPackagedFiles = `-- name: ListPackagedFiles :many
+SELECT pa.id, pa.artifact_id, pa.format, pa.storage_key, pa.size, pa.sha256,
+       pa.filename, pa.created_at,
+       a.release_id, a.os, a.arch, a.kind,
+       r.version, r.version_num, r.git_branch, r.published, r.draft,
+       r.project_id, p.name AS project_name
+FROM packaged_artifacts pa
+JOIN artifacts a ON a.id = pa.artifact_id
+JOIN releases r ON r.id = a.release_id
+JOIN projects p ON p.id = r.project_id
+ORDER BY p.name, r.version_num, pa.id
+`
+
+type ListPackagedFilesRow struct {
+	ID          int64     `json:"id"`
+	ArtifactID  int64     `json:"artifact_id"`
+	Format      string    `json:"format"`
+	StorageKey  string    `json:"storage_key"`
+	Size        int64     `json:"size"`
+	SHA256      string    `json:"sha256"`
+	Filename    string    `json:"filename"`
+	CreatedAt   time.Time `json:"created_at"`
+	ReleaseID   int64     `json:"release_id"`
+	OS          OS        `json:"os"`
+	Arch        Arch      `json:"arch"`
+	Kind        Kind      `json:"kind"`
+	Version     string    `json:"version"`
+	VersionNum  int64     `json:"version_num"`
+	GitBranch   string    `json:"git_branch"`
+	Published   bool      `json:"published"`
+	Draft       bool      `json:"draft"`
+	ProjectID   int64     `json:"project_id"`
+	ProjectName string    `json:"project_name"`
+}
+
+// Every stored repackaged artifact (the OCI layers; other formats stream and
+// are never stored) with its artifact, release and project context.
+func (q *Queries) ListPackagedFiles(ctx context.Context) ([]ListPackagedFilesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPackagedFiles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPackagedFilesRow{}
+	for rows.Next() {
+		var i ListPackagedFilesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ArtifactID,
+			&i.Format,
+			&i.StorageKey,
+			&i.Size,
+			&i.SHA256,
+			&i.Filename,
+			&i.CreatedAt,
+			&i.ReleaseID,
+			&i.OS,
+			&i.Arch,
+			&i.Kind,
+			&i.Version,
+			&i.VersionNum,
+			&i.GitBranch,
+			&i.Published,
+			&i.Draft,
+			&i.ProjectID,
+			&i.ProjectName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listReleaseBlobKeys = `-- name: ListReleaseBlobKeys :many
 SELECT a.storage_key AS k, a.size AS sz FROM artifacts a WHERE a.release_id = ?1 AND a.storage_key != ''
 UNION
@@ -242,6 +516,77 @@ func (q *Queries) ListReleaseBlobKeys(ctx context.Context, releaseID int64) ([]L
 	for rows.Next() {
 		var i ListReleaseBlobKeysRow
 		if err := rows.Scan(&i.K, &i.Sz); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReleaseRetentionFacts = `-- name: ListReleaseRetentionFacts :many
+SELECT r.id, r.project_id, p.name AS project_name, r.version, r.version_num,
+       r.git_branch, r.published, r.draft, r.created_at,
+       (SELECT COUNT(*) FROM releases r2
+         WHERE r2.project_id = r.project_id
+           AND r2.git_branch = r.git_branch
+           AND r2.published = 1
+           AND r2.version_num > r.version_num) AS newer_published_on_branch,
+       (SELECT COUNT(*) FROM oci_tags t WHERE t.release_id = r.id) AS oci_tag_count,
+       (SELECT COUNT(*) FROM artifacts a WHERE a.release_id = r.id AND a.kind = 'docker') AS docker_artifact_count
+FROM releases r
+JOIN projects p ON p.id = r.project_id
+ORDER BY p.name, r.version_num
+`
+
+type ListReleaseRetentionFactsRow struct {
+	ID                     int64     `json:"id"`
+	ProjectID              int64     `json:"project_id"`
+	ProjectName            string    `json:"project_name"`
+	Version                string    `json:"version"`
+	VersionNum             int64     `json:"version_num"`
+	GitBranch              string    `json:"git_branch"`
+	Published              bool      `json:"published"`
+	Draft                  bool      `json:"draft"`
+	CreatedAt              time.Time `json:"created_at"`
+	NewerPublishedOnBranch int64     `json:"newer_published_on_branch"`
+	OciTagCount            int64     `json:"oci_tag_count"`
+	DockerArtifactCount    int64     `json:"docker_artifact_count"`
+}
+
+// One row per release with the facts the keep-N and abandoned queries decide on:
+// how many newer published releases share its branch, whether an OCI tag or a
+// docker artifact pins it, and its published/draft state. The inventory turns
+// these into a per-file hold reason, so an operator can see WHY a release is
+// kept instead of only that it is.
+func (q *Queries) ListReleaseRetentionFacts(ctx context.Context) ([]ListReleaseRetentionFactsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listReleaseRetentionFacts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListReleaseRetentionFactsRow{}
+	for rows.Next() {
+		var i ListReleaseRetentionFactsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.ProjectName,
+			&i.Version,
+			&i.VersionNum,
+			&i.GitBranch,
+			&i.Published,
+			&i.Draft,
+			&i.CreatedAt,
+			&i.NewerPublishedOnBranch,
+			&i.OciTagCount,
+			&i.DockerArtifactCount,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

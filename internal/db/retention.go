@@ -188,3 +188,31 @@ func (d *DB) SumReclaimableBytes(ctx context.Context, keepN int64, recencyCutoff
 		KeepN:         keepN,
 	})
 }
+
+// ListArtifactFiles returns every artifact row with the blobs it references and
+// its release/project context. For the retention inventory.
+func (d *DB) ListArtifactFiles(ctx context.Context) ([]ListArtifactFilesRow, error) {
+	return d.q.ListArtifactFiles(ctx)
+}
+
+// ListPackagedFiles returns every stored repackaged artifact with its context.
+func (d *DB) ListPackagedFiles(ctx context.Context) ([]ListPackagedFilesRow, error) {
+	return d.q.ListPackagedFiles(ctx)
+}
+
+// ListOCIBlobFiles returns every project-scoped OCI blob link.
+func (d *DB) ListOCIBlobFiles(ctx context.Context) ([]ListOCIBlobFilesRow, error) {
+	return d.q.ListOCIBlobFiles(ctx)
+}
+
+// ListGoproxyBlobFiles returns every cached Go module zip.
+func (d *DB) ListGoproxyBlobFiles(ctx context.Context) ([]ListGoproxyBlobFilesRow, error) {
+	return d.q.ListGoproxyBlobFiles(ctx)
+}
+
+// ListReleaseRetentionFacts returns, for every release, the facts the eviction
+// queries decide on: newer published siblings on its branch, oci tag and docker
+// artifact pins, and its published/draft state.
+func (d *DB) ListReleaseRetentionFacts(ctx context.Context) ([]ListReleaseRetentionFactsRow, error) {
+	return d.q.ListReleaseRetentionFacts(ctx)
+}

@@ -68,6 +68,25 @@ func (s *Server) apiUpdateRetention(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, s.retentionResponse(settings, preview))
 }
 
+// apiRetentionInventory (GET /api/retention/inventory) returns every stored
+// file with the reason retention keeps it. It is the debug view behind the
+// reclaimable number: a total says how little comes back, this says what holds
+// the rest. It reads only, like the preview.
+func (s *Server) apiRetentionInventory(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	settings, err := s.db.GetRetentionSettings(ctx)
+	if err != nil {
+		s.retentionError(w, r, err)
+		return
+	}
+	inv, err := retention.New(s.db, s.store, retention.ConfigFromSettings(settings, false)).Inventory(ctx)
+	if err != nil {
+		s.retentionError(w, r, err)
+		return
+	}
+	s.writeJSON(w, inv)
+}
+
 // apiRunRetention (POST /api/retention/run) runs GC now. Body {enforce: bool};
 // report-only unless enforce is true.
 func (s *Server) apiRunRetention(w http.ResponseWriter, r *http.Request) {
