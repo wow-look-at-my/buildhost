@@ -15,6 +15,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/exeformat"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -77,9 +78,48 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-layer", binKey, binSize, binKey, "layer.tar.zst", "{}")
 	}
 
+	// An APE is not a native Linux ELF: the kernel cannot exec it directly
+	// inside a scratch/distroless container, so a bare "/<project>" entrypoint
+	// dies with "exec format error". But an APE's header is itself a valid
+	// shell script, so it RUNS when exec'd through a shell (its prologue
+	// assimilates a native ELF on first run). For an APE artifact we ship a
+	// static busybox as /bin/sh in the image and set
+	// Entrypoint: ["/bin/sh", "/<project>"], exactly how buildhost's own APE
+	// binary is run in its Dockerfile. Non-APE artifacts keep today's lean
+	// image: direct exec, no shell layer.
+	isAPE := exeformat.Format(input.Artifact.ExeFormat) == exeformat.APE
+
+	diffIDs := []string{baseDiffID, binDiffID}
+	var layerDescs []ociDescriptor
+	if isAPE {
+		shellBlob, shellDiffID, err := busyboxLayer(input.Artifact.OS, input.Artifact.Arch)
+		if err != nil {
+			return nil, fmt.Errorf("busybox layer: %w", err)
+		}
+		shellKey, shellSize, err := o.Store.Put(ctx, bytes.NewReader(shellBlob))
+		if err != nil {
+			return nil, fmt.Errorf("store busybox layer: %w", err)
+		}
+		if input.Artifact.ID > 0 && o.DB != nil {
+			// Suffixed: differs per platform (its busybox is arch-specific), so
+			// an unsuffixed key would unlink one platform's shell when the next
+			// is generated -- same reason oci-config is suffixed.
+			o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-shell-layer"+input.CacheSuffix, shellKey, shellSize, shellKey, "busybox.tar.zst", "{}")
+		}
+		diffIDs = []string{baseDiffID, shellDiffID, binDiffID}
+		layerDescs = []ociDescriptor{{baseKey, baseSize}, {shellKey, shellSize}, {binKey, binSize}}
+	} else {
+		layerDescs = []ociDescriptor{{baseKey, baseSize}, {binKey, binSize}}
+	}
+
+	entrypoint := []string{"/" + input.Project.Name}
+	if isAPE {
+		entrypoint = []string{"/bin/sh", "/" + input.Project.Name}
+	}
+
 	configData := ociCreateConfig(
 		string(input.Artifact.OS), string(input.Artifact.Arch),
-		[]string{baseDiffID, binDiffID}, input.Project.Name, input.Release.OciUser,
+		diffIDs, input.Project.Name, input.Release.OciUser, entrypoint,
 	)
 
 	configKey, configSize, err := o.Store.Put(ctx, bytes.NewReader(configData))
@@ -96,7 +136,7 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 	// Base layer first -- must match the diff_ids order in the config.
 	manifestData := ociCreateManifest(
 		ociDescriptor{configKey, configSize},
-		[]ociDescriptor{{baseKey, baseSize}, {binKey, binSize}},
+		layerDescs,
 	)
 
 	// Persist the manifest document itself (alongside its config + layers above)
@@ -279,13 +319,13 @@ func writeTarEntry(tw *tar.Writer, name string, mode int64, typeflag byte, data 
 	return nil
 }
 
-func ociCreateConfig(os, arch string, diffIDs []string, name, user string) []byte {
+func ociCreateConfig(os, arch string, diffIDs []string, name, user string, entrypoint []string) []byte {
 	prefixed := make([]string, len(diffIDs))
 	for i, d := range diffIDs {
 		prefixed[i] = "sha256:" + d
 	}
 	cfg := map[string]any{
-		"Entrypoint": []string{"/" + name},
+		"Entrypoint": entrypoint,
 		"WorkingDir": "/",
 		"Env": []string{
 			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",

@@ -22,6 +22,10 @@ cmd/buildhost/gomemlimit_gen.go
 # CA bundle is fetched at build time (scripts/fetch-cacerts.sh), never committed.
 internal/repackage/cacerts/ca-certificates.crt
 
+# The static busybox shells an OCI image ships so an APE can run through /bin/sh
+# are fetched at build time (scripts/fetch-busybox.sh), never committed.
+internal/repackage/shell/*.linux.*
+
 # Admin dashboard JS is built from internal/admin/frontend/src (TypeScript) by
 # scripts/build-admin-frontend.sh, never committed. Scoped to the output dir: a
 # repo-wide *.js would also silently swallow any JS that IS source.
