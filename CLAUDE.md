@@ -11,7 +11,7 @@ instruction file costs on every request.
 ## Build
 
 ```bash
-go-toolchain --generate 476c7c5fc951
+go-toolchain --generate b12db236ac59
 ```
 
 This runs mod tidy, generate, vet, tests with coverage, and builds the binary. Do

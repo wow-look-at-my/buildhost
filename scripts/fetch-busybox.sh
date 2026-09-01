@@ -23,7 +23,9 @@ set -euo pipefail
 
 DEST_DIR="${1:-internal/repackage/shell}"
 BUSYBOX_VERSION="${BUSYBOX_VERSION:-1.37.0-r31}"
-ALPINE_URL="${ALPINE_URL:-https://dl-cdn.alpinelinux.org/alpine/latest-stable}"
+# Pinned to the Alpine release that carries BUSYBOX_VERSION: latest-stable drops
+# old package revisions on every busybox bump, which would break old checkouts.
+ALPINE_URL="${ALPINE_URL:-https://dl-cdn.alpinelinux.org/alpine/v3.24}"
 
 # The alpine main repo index for each linux arch maps the busybox-static package
 # to an <os>-<arch> filename buildhost keys the embedded shell by, so the layer

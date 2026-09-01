@@ -31,7 +31,7 @@ jobs:
       # the generated files it embeds.
       - uses: wow-look-at-my/go-toolchain@v1
         with:
-          generate: 476c7c5fc951
+          generate: b12db236ac59
       # The step above just ran every generate directive, which is what makes
       # a tracked generated file show up to the suite as a dirty tree.
       - uses: wow-look-at-my/dats@master
