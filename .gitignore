@@ -30,3 +30,7 @@ internal/repackage/shell/*.linux.*
 # scripts/build-admin-frontend.sh, never committed. Scoped to the output dir: a
 # repo-wide *.js would also silently swallow any JS that IS source.
 internal/admin/static/*.js
+
+# The brew the homebrew e2e job stages into the workspace so a sandboxed suite
+# can read it -- a copy of the runner's own install, never source.
+.brew-src/

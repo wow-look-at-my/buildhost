@@ -2,8 +2,9 @@
 # multi-platform claim without APE magic is refused. One server serves the
 # whole file: setup publishes the APE, the tests only ask questions about it.
 #
-# Needs curl and jq, which is why a workflow runs this --no-sandbox rather than
-# letting the dats phase sandbox it into an image that has neither.
+# Needs curl and jq, which is why a workflow runs it rather than the `dats/`
+# phase: the sandbox binds the host's own tool trees, and go-toolchain's
+# fallback image has neither.
 #
 # see docs/multi-platform-artifacts.md
 

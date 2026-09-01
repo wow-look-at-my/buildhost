@@ -8,8 +8,11 @@
 #
 # The workflow builds the image, starts it on port 8080, and compiles the ELF
 # fixture this uploads -- the shipped binary is an APE, and an APE is not an
-# ELF for the stripper to work on. Needs curl, jq, readelf and the docker CLI,
-# so a workflow runs it --no-sandbox.
+# ELF for the stripper to work on.
+#
+# It bootstraps its token by exec'ing into the running container, and the
+# sandbox exposes no docker socket -- by design, since reaching the daemon is
+# reaching the whole host. So a workflow runs it with --no-sandbox.
 #
 # see docs/formats/stripping.md
 

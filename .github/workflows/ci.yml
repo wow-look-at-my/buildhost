@@ -561,12 +561,20 @@ jobs:
               > "$RUNNER_TEMP/buildhost-release-hostile.toml"
             ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-hostile.toml"
           done
-      # BREW_SOURCE names the brew the suites copy into their own sandboxed
-      # prefix; each suite builds one, so the public and private taps never
-      # share a prefix and no untap is needed between them.
-      - name: Locate the runner's Homebrew
+      # Each suite copies brew into its own sandboxed prefix, so the public and
+      # private taps never share one and no untap is needed between them. The
+      # staging copy lands in the workspace because that is what a sandboxed
+      # command can read: the runner's own prefix is under /home on Linux,
+      # which the sandbox does not bind.
+      - name: Stage the runner's Homebrew where a sandboxed suite can read it
         shell: bash
-        run: echo "BREW_SOURCE=$(brew --repository)" >> "$GITHUB_ENV"
+        run: |
+          set -euo pipefail
+          src="$(brew --repository)"
+          mkdir -p .brew-src/Library
+          cp -a "$src/bin" .brew-src/bin
+          cp -a "$src/Library/Homebrew" .brew-src/Library/Homebrew
+          echo "BREW_SOURCE=$PWD/.brew-src" >> "$GITHUB_ENV"
       # Each suite runs the documented flow in its own setup and then asserts
       # what it produced: what brew did to a real file.
       - uses: wow-look-at-my/dats@master

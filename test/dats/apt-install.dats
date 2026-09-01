@@ -3,8 +3,13 @@
 # whose package must ship a launcher instead of a bare root-owned binary.
 #
 # Setup publishes and installs; the tests only ask questions about what landed.
-# It needs the real apt-get, gpg, sudo and port 80 -- buildhost derives sibling
-# service URLs without ports -- so a workflow runs this --no-sandbox.
+#
+# This one cannot be sandboxed, and the reason is the assertion itself: it
+# installs a real .deb into the real dpkg database, which means writing /etc,
+# /usr and /var as root. The sandbox unshares the user namespace and mounts
+# those read-only, so a sandboxed run could only ever test a fake install. It
+# also needs port 80, since buildhost derives sibling service URLs without
+# ports. A workflow runs it with --no-sandbox against a throwaway runner.
 #
 # $BUILDHOST_BIN and $ARTIFACT_BIN come from the workflow.
 #
