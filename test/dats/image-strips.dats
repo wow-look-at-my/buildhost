@@ -10,9 +10,8 @@
 # fixture this uploads -- the shipped binary is an APE, and an APE is not an
 # ELF for the stripper to work on.
 #
-# It bootstraps its token by exec'ing into the running container, and the
-# sandbox exposes no docker socket -- by design, since reaching the daemon is
-# reaching the whole host. So a workflow runs it with --no-sandbox.
+# It bootstraps its token by exec'ing into the running container, so it needs
+# curl, jq, readelf and the docker CLI reaching the runner's daemon.
 #
 # see docs/formats/stripping.md
 

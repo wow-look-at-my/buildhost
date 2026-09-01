@@ -4,12 +4,9 @@
 #
 # Setup publishes and installs; the tests only ask questions about what landed.
 #
-# This one cannot be sandboxed, and the reason is the assertion itself: it
-# installs a real .deb into the real dpkg database, which means writing /etc,
-# /usr and /var as root. The sandbox unshares the user namespace and mounts
-# those read-only, so a sandboxed run could only ever test a fake install. It
-# also needs port 80, since buildhost derives sibling service URLs without
-# ports. A workflow runs it with --no-sandbox against a throwaway runner.
+# The assertion is about a REAL apt install, so it needs the real apt-get, gpg
+# and dpkg database, root through sudo, and port 80 -- buildhost derives
+# sibling service URLs without ports.
 #
 # $BUILDHOST_BIN and $ARTIFACT_BIN come from the workflow.
 #

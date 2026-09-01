@@ -10,10 +10,7 @@
 # The workflow builds the netcheck entrypoint, installs crane, maps the OCI
 # host in /etc/hosts and turns on the containerd image store; $NETCHECK_BIN and
 # $BUILDHOST_BIN come from it.
-#
-# The docker half is why a workflow runs this with --no-sandbox: the sandbox
-# exposes no docker socket, by design, since reaching the daemon is reaching
-# the whole host.
+# It needs curl, crane and the docker CLI reaching the runner's daemon.
 #
 # see docs/formats/oci.md
 
