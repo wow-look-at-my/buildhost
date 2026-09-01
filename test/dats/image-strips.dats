@@ -60,9 +60,9 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		curl -fsSL -o out.bin "$STATIC/file?$QUERY&fmt=raw"
+		curl -fsSL -o {outputs.out.bin} "$STATIC/file?$QUERY&fmt=raw"
 		up="$(wc -c < "$FIXTURE")"
-		down="$(wc -c < out.bin)"
+		down="$(wc -c < {outputs.out.bin})"
 		echo "uploaded=$up downloaded=$down"
 		test "$down" -lt "$up" || { echo "the shipped image did not strip" >&2; exit 1; }
 		echo "stripped"
@@ -77,14 +77,14 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		curl -fsSL -o out.bin "$STATIC/file?$QUERY&fmt=raw"
-		test "$(head -c 4 out.bin | od -An -tx1 | tr -d ' \n')" = "7f454c46"
-		sh {shared.sections.sh} out.bin > sections.txt
+		curl -fsSL -o {outputs.out.bin} "$STATIC/file?$QUERY&fmt=raw"
+		test "$(head -c 4 {outputs.out.bin} | od -An -tx1 | tr -d ' \n')" = "7f454c46"
+		sh {shared.sections.sh} {outputs.out.bin} > {outputs.sections.txt}
 		for gone in .symtab .debug_info .debug_line; do
-			if grep -qx -- "$gone" sections.txt; then echo "still has $gone" >&2; exit 1; fi
+			if grep -qx -- "$gone" {outputs.sections.txt}; then echo "still has $gone" >&2; exit 1; fi
 		done
 		for want in .text .rodata; do
-			grep -qx -- "$want" sections.txt || { echo "lost $want -- it could not run" >&2; exit 1; }
+			grep -qx -- "$want" {outputs.sections.txt} || { echo "lost $want -- it could not run" >&2; exit 1; }
 		done
 		echo "elf-stripped-clean"
 	  outputs:

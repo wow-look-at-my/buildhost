@@ -46,19 +46,19 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		curl -fsS "$BUILDHOST_BASE_URL/llms.txt" > llms.txt
+		curl -fsS "$BUILDHOST_BASE_URL/llms.txt" > {outputs.llms.txt}
 		# The served blocks are fenced with no language tag; the brew flows are
 		# the ones that open with `brew tap`.
 		awk '/^```/ { fence = !fence; if (fence) { buf = "" } else if (buf ~ /^brew tap /) { printf "%s", buf }; next }
-			fence { buf = buf $0 "\n" }' llms.txt > llms-flows.txt
-		test "$(grep -c '^brew tap ' llms-flows.txt)" = "2" || {
+			fence { buf = buf $0 "\n" }' {outputs.llms.txt} > {outputs.llms-flows.txt}
+		test "$(grep -c '^brew tap ' {outputs.llms-flows.txt})" = "2" || {
 			echo "llms.txt: want exactly 2 brew flow blocks (public, private)" >&2; exit 1; }
 		# llms.txt names the public host, so compare it after the same
 		# substitution the extractor applies to README.md.
-		sed -e 's|https://|http://|g' -e "s|brew\.pazer\.build|$BREW_HOST|g" llms-flows.txt > llms-local.txt
-		"$REPO/scripts/brew-doc-flows.sh" public "$BREW_HOST" > readme-flows.txt
-		"$REPO/scripts/brew-doc-flows.sh" private "$BREW_HOST" >> readme-flows.txt
-		diff -u readme-flows.txt llms-local.txt
+		sed -e 's|https://|http://|g' -e "s|brew\.pazer\.build|$BREW_HOST|g" {outputs.llms-flows.txt} > {outputs.llms-local.txt}
+		"$REPO/scripts/brew-doc-flows.sh" public "$BREW_HOST" > {outputs.readme-flows.txt}
+		"$REPO/scripts/brew-doc-flows.sh" private "$BREW_HOST" >> {outputs.readme-flows.txt}
+		diff -u {outputs.readme-flows.txt} {outputs.llms-local.txt}
 		echo "docs-agree"
 	  outputs:
 		stdout:
@@ -73,12 +73,12 @@ tests:
 		. {shared.env}
 		for leg in public private; do
 			"$REPO/scripts/brew-doc-flows.sh" "$leg" "$BREW_HOST" \
-				| grep -v '^[[:space:]]*$' | grep -v '^#' > flow.txt
-			if grep -qv '^\(brew\|export\) ' flow.txt; then
-				echo "$leg flow has a non-brew/export line:" >&2; cat flow.txt >&2; exit 1
+				| grep -v '^[[:space:]]*$' | grep -v '^#' > {outputs.flow.txt}
+			if grep -qv '^\(brew\|export\) ' {outputs.flow.txt}; then
+				echo "$leg flow has a non-brew/export line:" >&2; cat {outputs.flow.txt} >&2; exit 1
 			fi
 			for want in 'brew tap ' 'brew trust ' 'brew install '; do
-				grep -q "^$want" flow.txt || { echo "$leg flow lost $want" >&2; exit 1; }
+				grep -q "^$want" {outputs.flow.txt} || { echo "$leg flow lost $want" >&2; exit 1; }
 			done
 		done
 		echo "flow-shape-ok"

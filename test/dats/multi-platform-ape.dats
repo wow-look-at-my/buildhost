@@ -79,8 +79,8 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		curl -fsS -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/projects/ape-e2e/releases/$VERSION" > rel.json
-		echo "rows=$(jq '.artifacts | length' rel.json) artifacts"
+		curl -fsS -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/projects/ape-e2e/releases/$VERSION" > {outputs.rel.json}
+		echo "rows=$(jq '.artifacts | length' {outputs.rel.json}) artifacts"
 	  outputs:
 		stdout:
 			- "rows=1 artifacts"
@@ -112,11 +112,11 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		curl -fsS "$BASE/projects/ape-e2e/releases/$VERSION" > release.html
-		grep -q 'badge badge-format' release.html
-		grep -q 'APE: ' release.html
-		grep -q 'linux/amd64, darwin/arm64, windows/amd64' release.html
-		echo "raw-links=$(grep -c '>raw</a>' release.html) found"
+		curl -fsS "$BASE/projects/ape-e2e/releases/$VERSION" > {outputs.release.html}
+		grep -q 'badge badge-format' {outputs.release.html}
+		grep -q 'APE: ' {outputs.release.html}
+		grep -q 'linux/amd64, darwin/arm64, windows/amd64' {outputs.release.html}
+		echo "raw-links=$(grep -c '>raw</a>' {outputs.release.html}) found"
 	  outputs:
 		stdout:
 			- "raw-links=1 found"

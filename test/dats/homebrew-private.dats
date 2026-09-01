@@ -65,17 +65,17 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		ls "$TAP/Formula" > formulas.txt
-		if grep -qx '7zip.rb' formulas.txt; then
+		ls "$TAP/Formula" > {outputs.formulas.txt}
+		if grep -qx '7zip.rb' {outputs.formulas.txt}; then
 			echo "digit-leading project 7zip must be excluded: brew cannot load it" >&2; exit 1
 		fi
-		grep -qx 'dotted.app.rb' formulas.txt || {
-			echo "the dotted public project is missing from the tap" >&2; cat formulas.txt >&2; exit 1; }
+		grep -qx 'dotted.app.rb' {outputs.formulas.txt} || {
+			echo "the dotted public project is missing from the tap" >&2; cat {outputs.formulas.txt} >&2; exit 1; }
 		while read -r f; do
 			brew ruby -- -c "$TAP/Formula/$f" | grep -q 'Syntax OK' \
 				|| { echo "formula $f is not valid Ruby" >&2; exit 1; }
-		done < formulas.txt
-		echo "formulas=$(wc -l < formulas.txt | tr -d ' ') all parse"
+		done < {outputs.formulas.txt}
+		echo "formulas=$(wc -l < {outputs.formulas.txt} | tr -d ' ') all parse"
 	  outputs:
 		stdout:
 			- "all parse"

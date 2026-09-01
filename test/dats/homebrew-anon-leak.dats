@@ -26,10 +26,10 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		ls "$TAP/Formula" > formulas.txt
-		grep -qx 'go-toolchain.rb' formulas.txt || {
-			echo "the public formula is missing" >&2; cat formulas.txt >&2; exit 1; }
-		if grep -qx 'myrepo-myapp.rb' formulas.txt; then
+		ls "$TAP/Formula" > {outputs.formulas.txt}
+		grep -qx 'go-toolchain.rb' {outputs.formulas.txt} || {
+			echo "the public formula is missing" >&2; cat {outputs.formulas.txt} >&2; exit 1; }
+		if grep -qx 'myrepo-myapp.rb' {outputs.formulas.txt}; then
 			echo "the anonymous tap LEAKS the private formula file" >&2; exit 1
 		fi
 		echo "public-only"

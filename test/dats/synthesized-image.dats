@@ -73,13 +73,13 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		crane config --insecure "$REF" > config.json
-		cat config.json
-		grep -q '"Entrypoint":\["/netcheck"\]' config.json || { echo "entrypoint is not /netcheck" >&2; exit 1; }
-		grep -q 'SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt' config.json || {
+		crane config --insecure "$REF" > {outputs.config.json}
+		cat {outputs.config.json}
+		grep -q '"Entrypoint":\["/netcheck"\]' {outputs.config.json} || { echo "entrypoint is not /netcheck" >&2; exit 1; }
+		grep -q 'SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt' {outputs.config.json} || {
 			echo "SSL_CERT_FILE env missing" >&2; exit 1; }
 		# The essentials base layer plus the per-binary layer, in order.
-		echo "diff_ids=$(jq '.rootfs.diff_ids | length' config.json)"
+		echo "diff_ids=$(jq '.rootfs.diff_ids | length' {outputs.config.json})"
 	  outputs:
 		stdout:
 			- "diff_ids=2"

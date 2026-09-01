@@ -88,11 +88,11 @@ tests:
 	- desc: a single-mode CLI publish leaves the release published
 	  cmd: |
 		set -eu
-		head -c 4096 /dev/urandom > cli.bin
+		head -c 4096 /dev/urandom > {outputs.cli.bin}
 		if head -c 2 "$BIN" | grep -q MZ; then RUN="sh $BIN"; else RUN="$BIN"; fi
 		$RUN project create --server "$BASE" --token "$TOKEN" --name cli-single-e2e
 		$RUN publish --server "$BASE" --token "$TOKEN" --project cli-single-e2e \
-			--os linux --arch amd64 --git-branch master --artifact cli.bin
+			--os linux --arch amd64 --git-branch master --artifact {outputs.cli.bin}
 		curl -fsS "$BASE/api/v1/projects/cli-single-e2e/releases/latest"
 	  outputs:
 		stdout:
