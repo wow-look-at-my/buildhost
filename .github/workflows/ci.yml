@@ -561,18 +561,19 @@ jobs:
               > "$RUNNER_TEMP/buildhost-release-hostile.toml"
             ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-hostile.toml"
           done
+      # BREW_SOURCE names the brew the suites copy into their own sandboxed
+      # prefix; each suite builds one, so the public and private taps never
+      # share a prefix and no untap is needed between them.
+      - name: Locate the runner's Homebrew
+        shell: bash
+        run: echo "BREW_SOURCE=$(brew --repository)" >> "$GITHUB_ENV"
       # Each suite runs the documented flow in its own setup and then asserts
-      # what it produced: what brew did to a real file on the runner.
+      # what it produced: what brew did to a real file.
       - uses: wow-look-at-my/dats@master
         env:
           BREW_HOST: brew.localhost:18080
         with:
           tests: test/dats/homebrew-public.dats
-      # Docs: the authenticated tap replaces the public tap under the same name
-      # ("remove it first with brew untap --force" -- plain untap refuses while
-      # formulae installed from the tap exist).
-      - name: Untap the public tap before the private flow (per docs)
-        run: brew untap --force pazer/build
       - uses: wow-look-at-my/dats@master
         env:
           BREW_HOST: brew.localhost:18080

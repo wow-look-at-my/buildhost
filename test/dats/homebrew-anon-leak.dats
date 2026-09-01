@@ -6,6 +6,8 @@
 # The private project here is myrepo/myapp, which folds to myrepo-myapp.
 #
 # $BREW_HOST comes from the workflow, which starts the server and publishes.
+# The clone lands in this file's temp directory, so nothing here needs brew or
+# a prefix: git and curl against the running server are the whole suite.
 #
 # see docs/formats/brew-tap.md, docs/security/tokens-and-links.md
 

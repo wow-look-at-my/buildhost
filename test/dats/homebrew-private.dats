@@ -1,10 +1,13 @@
 # The DOCUMENTED private Homebrew flow, executed verbatim, and what the
 # authenticated tap must then hold. Split from the public suite because the
-# docs say the authenticated tap REPLACES the public one, so the workflow
-# untaps between the two.
+# docs say the authenticated tap REPLACES the public one under the same name,
+# and each suite's prefix holds one tap by that name.
 #
 # The brew commands come from README.md through scripts/brew-doc-flows.sh; the
 # public suite is where the docs themselves are checked for agreement.
+#
+# The flow runs against this file's own private Homebrew prefix, built inside
+# its temp directory -- see homebrew-public.dats.
 #
 # see docs/formats/brew-tap.md
 
@@ -14,17 +17,24 @@ shared:
 			# Run the documented private flow. Writes $ENV_FILE.
 			set -eu
 			WORK="$(dirname "$ENV_FILE")"
+			"$REPO/scripts/brew-sandbox-prefix.sh" "$WORK" > "$ENV_FILE"
+			. "$ENV_FILE"
 			"$REPO/scripts/brew-doc-flows.sh" private "$BREW_HOST" > "$WORK/private.sh"
 			echo "--- documented private flow, executed verbatim ---"
 			sed 's|x:[^@]*@|x:***@|' "$WORK/private.sh"
 			TOKEN="$BUILDHOST_TOKEN" bash -euo pipefail "$WORK/private.sh"
-			echo "TAP='$(brew --repository pazer/build)'" > "$ENV_FILE"
+			echo "TAP='$(brew --repository pazer/build)'" >> "$ENV_FILE"
 
-setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
+setup:
+	- cmd: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
+	  timeout: 900s
 
 tests:
 	- desc: the privately installed binary executes
-	  cmd: myapp
+	  cmd: |
+		set -eu
+		. {shared.env}
+		myapp
 	  outputs:
 		stdout:
 			- "buildhost-homebrew-private-ok"
