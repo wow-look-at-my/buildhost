@@ -200,11 +200,15 @@ never share the service alias.
 
 Assertions live in dats suites under `test/dats/`, never in a workflow step; a
 step invokes one through the dats action's `tests` input (the action installs
-the sandbox backend itself), because these suites need the host's curl, jq or
-brew, which a sandboxed fallback image has none of. A suite needing nothing but
-a built binary could live in `dats/`, which `go-toolchain` runs sandboxed on
-every build. A check that needs a program -- octokit fakes, a browser -- is a
-node test under `test/actions/` that a suite invokes. Depth: `docs/testing.md`.
+the sandbox backend itself), because these suites need the runner's own curl,
+jq, docker or brew, which a sandboxed fallback image has none of. Every suite
+runs sandboxed -- there is no opt-out -- so anything a suite WRITES goes in its
+temp directory: the brew suites build a private Homebrew prefix there
+(`scripts/brew-sandbox-prefix.sh`) rather than installing into the runner's. A
+suite needing nothing but a built binary could live in `dats/`, which
+`go-toolchain` runs sandboxed on every build. A check that needs a program --
+octokit fakes, a browser -- is a node test under `test/actions/` that a suite
+invokes. Depth: `docs/testing.md`.
 
 CI runs the shipped fat APE, and an APE starts through its own shell
 trampoline: a bash `run:` step does that implicitly, node's `spawn` does not
