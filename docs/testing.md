@@ -160,8 +160,7 @@ Each test starts its own server, taking the binary from `BUILDHOST_BIN`, else
 `build/buildhost` (a cosmo build writes the APE under that plain name), and
 starting an APE through a shell because the kernel cannot exec one.
 
-It drives that server with curl and jq, which the runner has and the docker
-image dats sandboxes into does not -- hence `--no-sandbox`, and hence
+It drives that server with curl and jq, which the runner has. Hence
 `test/dats/` rather than `dats/`: everything under `dats/` runs sandboxed on
 every build. Locally, `dats test/dats/multi-platform-ape.dats` sandboxes fine
 under bwrap, which binds the host's own tools. Depth:
@@ -170,10 +169,10 @@ under bwrap, which binds the host's own tools. Depth:
 ## Where a test lives
 
 An assertion goes in a dats suite, never in a workflow step. `test/dats/` is
-where they live, and a workflow step invokes one by name with `--no-sandbox`:
-these suites need the host -- brew and its prefix, curl and jq, a service the
-workflow started first -- and the sandbox dats falls back to on a runner is a
-bare `debian:stable-slim` with none of it.
+where they live, and a workflow step invokes one by name (the dats action's
+`tests` input, which installs the sandbox backend itself): these suites need
+the host -- brew and its prefix, curl and jq, a service the workflow started
+first -- which the sandbox dats falls back to on a runner cannot provide.
 
 `dats/` at the module root is the other option and is currently empty:
 `go-toolchain` walks it on every build and runs it sandboxed, so a suite there

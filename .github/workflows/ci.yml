@@ -36,7 +36,7 @@ jobs:
       # a tracked generated file show up to the suite as a dirty tree.
       - uses: wow-look-at-my/dats@master
         with:
-          args: --no-sandbox test test/dats/repo-hygiene.dats test/dats/compression-opts.dats
+          tests: test/dats/repo-hygiene.dats test/dats/compression-opts.dats
       # On the default branch, cache this commit's route list keyed by its SHA.
       # Caches created on the default branch are restorable from every branch,
       # so feature-branch route-diff runs reuse this instead of rebuilding base.
@@ -178,9 +178,15 @@ jobs:
       # without this. Guarded on the script's existence: older base commits
       # shipped the JS committed and have no script to run -- same
       # works-on-older-base reasoning as the inlined cacerts fetch above.
+      # The busybox binaries embedded for APE OCI images are generated too, and
+      # embedded by a directory pattern, so a base that has them fails to
+      # compile without this. Guarded on the script's existence: older base
+      # commits have no script to run -- same works-on-older-base reasoning as
+      # the inlined cacerts fetch above.
       - if: steps.cache.outputs.cache-hit != 'true'
         working-directory: base
         run: |
+          if [ -x scripts/fetch-busybox.sh ]; then ./scripts/fetch-busybox.sh; fi
           go generate ./internal/api
           if [ -x scripts/build-admin-frontend.sh ]; then ./scripts/build-admin-frontend.sh; fi
           go build -o build/buildhost_linux_amd64 ./cmd/buildhost
@@ -267,7 +273,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/dats@master
         with:
-          args: --no-sandbox test test/dats/action-libs.dats
+          tests: test/dats/action-libs.dats
 
   container-healthcheck:
     # Only meaningful if the build succeeded and saved the go-build hand-off. Without
@@ -305,7 +311,7 @@ jobs:
         env:
           STRIP_FIXTURE: ${{ runner.temp }}/strip-fixture
         with:
-          args: --no-sandbox test test/dats/image-strips.dats
+          tests: test/dats/image-strips.dats
       - run: docker compose -f docker-compose.ci.yml logs
         if: failure()
 
@@ -350,6 +356,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: ./scripts/fetch-cacerts.sh
+      - run: ./scripts/fetch-busybox.sh
       - run: go generate ./internal/api
       # The dashboard JS is generated, not committed, and embedded by name.
       - run: ./scripts/build-admin-frontend.sh
@@ -555,13 +562,12 @@ jobs:
             ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-hostile.toml"
           done
       # Each suite runs the documented flow in its own setup and then asserts
-      # what it produced. --no-sandbox because brew's prefix is outside any
-      # sandbox and the point is what brew did to a real file.
+      # what it produced: what brew did to a real file on the runner.
       - uses: wow-look-at-my/dats@master
         env:
           BREW_HOST: brew.localhost:18080
         with:
-          args: --no-sandbox test test/dats/homebrew-public.dats
+          tests: test/dats/homebrew-public.dats
       # Docs: the authenticated tap replaces the public tap under the same name
       # ("remove it first with brew untap --force" -- plain untap refuses while
       # formulae installed from the tap exist).
@@ -571,12 +577,12 @@ jobs:
         env:
           BREW_HOST: brew.localhost:18080
         with:
-          args: --no-sandbox test test/dats/homebrew-private.dats
+          tests: test/dats/homebrew-private.dats
       - uses: wow-look-at-my/dats@master
         env:
           BREW_HOST: brew.localhost:18080
         with:
-          args: --no-sandbox test test/dats/homebrew-anon-leak.dats
+          tests: test/dats/homebrew-anon-leak.dats
       - name: Dump buildhost log
         if: failure()
         shell: bash
@@ -640,7 +646,7 @@ jobs:
           BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
           NETCHECK_BIN: ${{ runner.temp }}/netcheck
         with:
-          args: --no-sandbox test test/dats/synthesized-image.dats
+          tests: test/dats/synthesized-image.dats
 
   # Proves a hosted site stays loadable CROSS-ORIGIN, through its redirects, in
   # a REAL BROWSER. Guards the defect that broke every cross-origin consumer at
@@ -675,7 +681,7 @@ jobs:
         env:
           BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
         with:
-          args: --no-sandbox test test/dats/sites-cors.dats
+          tests: test/dats/sites-cors.dats
       # The preview publishes this same static dir with no backend behind it, so
       # it draws from the demo dataset. Building it here keeps the crawl on the
       # sources rather than on whatever a previous job left.
@@ -685,7 +691,7 @@ jobs:
         timeout-minutes: 10
         uses: wow-look-at-my/dats@master
         with:
-          args: --no-sandbox test test/dats/admin-demo-links.dats
+          tests: test/dats/admin-demo-links.dats
 
   apt-install-e2e:
     needs: build
@@ -710,7 +716,7 @@ jobs:
           BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
           ARTIFACT_BIN: ${{ runner.temp }}/buildhost-apt-e2e
         with:
-          args: --no-sandbox test test/dats/apt-install.dats
+          tests: test/dats/apt-install.dats
 
   # Proves the buildhost-upload-artifact composite action's BOTH upload paths
   # against a real spawned buildhost. The server's advertised direct-upload
@@ -755,11 +761,9 @@ jobs:
           name: go-build
           path: build/
       - run: chmod +x build/buildhost
-      # --no-sandbox: the suite drives the server with curl and jq, which the
-      # runner has and the docker sandbox image does not.
       - uses: wow-look-at-my/dats@master
         with:
-          args: --no-sandbox test test/dats/multi-platform-ape.dats
+          tests: test/dats/multi-platform-ape.dats
 
   upload-artifact-action-e2e:
     needs: build
@@ -830,7 +834,7 @@ jobs:
         env:
           LOG: ${{ runner.temp }}/buildhost.log
         with:
-          args: --no-sandbox test test/dats/upload-direct.dats
+          tests: test/dats/upload-direct.dats
       - name: Upload big file (chunked session path, 1 MiB chunks)
         id: big
         uses: ./.github/actions/buildhost-upload-artifact
@@ -865,7 +869,7 @@ jobs:
           BASE: http://localhost:18080
           STATIC: http://static.localhost:18080
         with:
-          args: --no-sandbox test test/dats/upload-artifact.dats
+          tests: test/dats/upload-artifact.dats
       - name: Create site fixtures (one tiny, one over the direct limit)
         shell: bash
         run: |
@@ -889,7 +893,7 @@ jobs:
         env:
           LOG: ${{ runner.temp }}/buildhost.log
         with:
-          args: --no-sandbox test test/dats/site-direct.dats
+          tests: test/dats/site-direct.dats
       - name: Publish big site (chunked session path, 1 MiB chunks)
         id: publish-big-site
         uses: ./.github/actions/buildhost-publish-site
@@ -912,7 +916,7 @@ jobs:
           BIG_SITE_BLOB: ${{ runner.temp }}/big-site/blob.bin
           SITE_URL: ${{ steps.publish-big-site.outputs.site_url }}
         with:
-          args: --no-sandbox test test/dats/site-publish.dats
+          tests: test/dats/site-publish.dats
       - name: Dump buildhost log
         if: failure()
         shell: bash
