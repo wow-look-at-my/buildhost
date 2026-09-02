@@ -26,6 +26,8 @@ require (
 	modernc.org/sqlite v1.50.1
 )
 
+require github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260709175026-98aa140090d9 // go-toolchain:auto-branch
+
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

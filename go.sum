@@ -74,6 +74,8 @@ github.com/wow-look-at-my/go-containers v0.0.0-20260826161058-40a3d1ef3d41 h1:mi
 github.com/wow-look-at-my/go-containers v0.0.0-20260826161058-40a3d1ef3d41/go.mod h1:7j8wbDwrqh+uJnlENqD5iwsgYkF4y3kIgremn/ctvVE=
 github.com/wow-look-at-my/go-mmap v0.0.0-20260824191519-1d122070e11e h1:44ni+7knv8NQygWCnPshQrjATPBbQ4FGODS7e43EgDU=
 github.com/wow-look-at-my/go-mmap v0.0.0-20260824191519-1d122070e11e/go.mod h1:l7DeblP9e9S8Y0NHpVHuTS5QYFgu37wIcY/lXX8lY2E=
+github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260709175026-98aa140090d9 h1:vW0fNDiaZl387wOBvMY6sisi9Neo4u0QDY54p20TsxE=
+github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260709175026-98aa140090d9/go.mod h1:EMTej8E5qYiv8JsKJ50LQBzShqC2EUi7h4sZ7/j4968=
 github.com/wow-look-at-my/router v0.0.0-20260816000554-e6629a27a4bd h1:Mtr8deY7DKfWD6RMVvbzIStUvqmxRpHI+FLM2pgpARo=
 github.com/wow-look-at-my/router v0.0.0-20260816000554-e6629a27a4bd/go.mod h1:TrDh7ypl9FwkKy1QSgrIgX2qfshzUD6FqelCf9zNiCQ=
 github.com/yaml/go-yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=
