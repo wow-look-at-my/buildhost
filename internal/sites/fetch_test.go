@@ -4,7 +4,7 @@ package sites
 // archive URL (domain allowlist, scheme and error handling).
 
 import (
-	"fmt"
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -33,7 +33,13 @@ func TestUpload_Fetch(t *testing.T) {
 	proj := seedProject(t, d, "mysite")
 	h.FetchDomains = []string{remote.Listener.Addr().(*net.TCPAddr).IP.String()}
 
-	body := fmt.Sprintf(`{"url":%q,"headers":{"Authorization":"Bearer test-token"}}`, remote.URL+"/artifact.zip")
+	// Marshalled, not formatted: %q is Go quoting, which is not JSON escaping.
+	spec, err := json.Marshal(map[string]any{
+		"url":     remote.URL + "/artifact.zip",
+		"headers": map[string]string{"Authorization": "Bearer test-token"},
+	})
+	require.NoError(t, err)
+	body := string(spec)
 	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})
@@ -127,7 +133,9 @@ func TestUpload_Fetch_NonOK(t *testing.T) {
 	proj := seedProject(t, d, "mysite")
 	h.FetchDomains = []string{remote.Listener.Addr().(*net.TCPAddr).IP.String()}
 
-	body := fmt.Sprintf(`{"url":%q}`, remote.URL+"/artifact.zip")
+	spec, err := json.Marshal(map[string]string{"url": remote.URL + "/artifact.zip"})
+	require.NoError(t, err)
+	body := string(spec)
 	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})

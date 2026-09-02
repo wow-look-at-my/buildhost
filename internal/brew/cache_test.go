@@ -5,6 +5,7 @@ import (
 	"compress/zlib"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -110,7 +111,10 @@ func TestServeFormula_CachesTarGZDigest(t *testing.T) {
 	assert.Contains(t, body, fmt.Sprintf("sha256 %q", want))
 
 	sentinel := strings.Repeat("42", 32)
-	currentMeta := fmt.Sprintf(`{"transform":%q}`, repackage.TransformVersion)
+	// Marshalled, not formatted: %q is Go quoting, which is not JSON escaping.
+	meta, err := json.Marshal(map[string]string{"transform": repackage.TransformVersion})
+	require.NoError(t, err)
+	currentMeta := string(meta)
 	require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "tar.gz", a.StorageKey, cachedSize, sentinel, "x.tar.gz", currentMeta))
 	assert.Contains(t, fetch(), fmt.Sprintf("sha256 %q", sentinel))
 }

@@ -84,10 +84,11 @@ func makeSiteTarGz(t *testing.T, files map[string]string) []byte {
 // createProject creates a project via the REST API (is_private optional).
 func (e *testEnv) createProject(t *testing.T, name string, private bool) {
 	t.Helper()
-	body := `{"name":"` + name + `","versioning":"auto"}`
+	fields := map[string]any{"name": name, "versioning": "auto"}
 	if private {
-		body = `{"name":"` + name + `","versioning":"auto","is_private":true}`
+		fields["is_private"] = true
 	}
+	body := jsonDoc(t, fields)
 	resp := e.postJSON(t, "/api/v1/projects", body)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()

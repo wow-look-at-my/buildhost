@@ -29,6 +29,16 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
+// jsonErrorDoc renders a message as a JSON error document. Marshalling is what
+// keeps a quote or a backslash in the message from breaking the document.
+func jsonErrorDoc(msg string) string {
+	doc, err := json.Marshal(map[string]string{"error": msg})
+	if err != nil {
+		return `{"error":"internal error"}`
+	}
+	return string(doc)
+}
+
 const (
 	maxSiteUploadSize       = 256 << 20
 	maxSiteDecompressedSize = 1 << 30
@@ -71,7 +81,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		fetched, fetchedCT, err := fetchFromURL(ctx, fetchReq.URL, fetchReq.Headers, h.FetchDomains)
 		if err != nil {
 			span.RecordError(err)
-			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+			http.Error(w, jsonErrorDoc(err.Error()), http.StatusBadRequest)
 			return
 		}
 		defer fetched.Close()

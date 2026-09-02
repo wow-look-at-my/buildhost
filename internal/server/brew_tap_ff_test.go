@@ -1,7 +1,6 @@
 package server_test
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -70,7 +69,7 @@ func gitRun(t *testing.T, dir string, args ...string) string {
 // linux/amd64 binary artifact + publish.
 func publishBrewProject(t *testing.T, env *testEnv, name, body string) {
 	t.Helper()
-	resp := env.postJSON(t, "/api/v1/projects", fmt.Sprintf(`{"name":%q,"versioning":"auto"}`, name))
+	resp := env.postJSON(t, "/api/v1/projects", jsonDoc(t, map[string]any{"name": name, "versioning": "auto"}))
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
 	resp = env.postJSON(t, "/api/v1/projects/"+name+"/releases", `{"git_branch":"master","git_commit":"abc"}`)
@@ -88,7 +87,8 @@ func publishBrewProject(t *testing.T, env *testEnv, name, body string) {
 // shows to a request that may read it.
 func publishPrivateBrewProject(t *testing.T, env *testEnv, name, body string) {
 	t.Helper()
-	resp := env.postJSON(t, "/api/v1/projects", fmt.Sprintf(`{"name":%q,"versioning":"auto","is_private":true}`, name))
+	resp := env.postJSON(t, "/api/v1/projects",
+		jsonDoc(t, map[string]any{"name": name, "versioning": "auto", "is_private": true}))
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
 	resp = env.postJSON(t, "/api/v1/projects/"+name+"/releases", `{"git_branch":"master","git_commit":"abc"}`)

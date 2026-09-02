@@ -28,7 +28,7 @@ func seedAPERelease(t *testing.T, env *testEnv, project string) ([]byte, db.Arti
 	t.Helper()
 	payload := apeBytes(t)
 
-	resp := env.postJSON(t, "/api/v1/projects", `{"name":"`+project+`","versioning":"auto"}`)
+	resp := env.postJSON(t, "/api/v1/projects", jsonDoc(t, map[string]any{"name": project, "versioning": "auto"}))
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
 	resp = env.postJSON(t, "/api/v1/projects/"+project+"/releases", `{"git_branch":"master"}`)

@@ -14,6 +14,15 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
+// jsonDoc renders a request body from its fields. Marshalling is what keeps a
+// quote or a backslash in a value from breaking the document.
+func jsonDoc(t *testing.T, fields map[string]any) string {
+	t.Helper()
+	doc, err := json.Marshal(fields)
+	require.NoError(t, err)
+	return string(doc)
+}
+
 func TestCreateToken_Success(t *testing.T) {
 	h := setupTestHandler(t)
 
@@ -85,7 +94,7 @@ func TestCreateToken_WithProjectID(t *testing.T) {
 	proj := &db.Project{Name: "scoped", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
-	body := `{"name":"project-token","project_id":` + strconv.FormatInt(proj.ID, 10) + `,"scopes":"read"}`
+	body := jsonDoc(t, map[string]any{"name": "project-token", "project_id": proj.ID, "scopes": "read"})
 	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader(body))
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
@@ -203,7 +212,7 @@ func TestCreateToken_ProjectScopedCannotCreateTokenForDifferentProject(t *testin
 	require.NoError(t, h.DB.CreateProject(ctx, projB))
 
 	// Token is scoped to project A, but tries to create a token for project B
-	body := `{"name":"cross-project","scopes":"read","project_id":` + strconv.FormatInt(projB.ID, 10) + `}`
+	body := jsonDoc(t, map[string]any{"name": "cross-project", "scopes": "read", "project_id": projB.ID})
 	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader(body))
 	req = req.WithContext(projectWriteToken(req.Context(), projA.ID))
 	rec := httptest.NewRecorder()
@@ -280,7 +289,7 @@ func TestCreateToken_GlobalTokenCanCreateProjectScoped(t *testing.T) {
 	proj := &db.Project{Name: "proj-global-create", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
-	body := `{"name":"project-token","scopes":"read,write","project_id":` + strconv.FormatInt(proj.ID, 10) + `}`
+	body := jsonDoc(t, map[string]any{"name": "project-token", "scopes": "read,write", "project_id": proj.ID})
 	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader(body))
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
@@ -328,7 +337,7 @@ func TestCreateToken_ProjectScopedCanCreateForSameProject(t *testing.T) {
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	// Project-scoped token CAN create a token for the same project
-	body := `{"name":"same-project-token","scopes":"read","project_id":` + strconv.FormatInt(proj.ID, 10) + `}`
+	body := jsonDoc(t, map[string]any{"name": "same-project-token", "scopes": "read", "project_id": proj.ID})
 	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader(body))
 	req = req.WithContext(projectWriteToken(req.Context(), proj.ID))
 	rec := httptest.NewRecorder()

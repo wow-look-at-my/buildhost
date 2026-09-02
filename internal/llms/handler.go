@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 //go:embed template.md
@@ -13,11 +14,13 @@ var templateMD string
 
 var handler Handler
 
-var serviceSubdomains = []string{"apt", "brew", "dl", "git", "goproxy", "npm", "oci", "sites", "static"}
+// The services that serve their own copy of the guide. Nothing here reads a
+// position, so it is a set.
+var serviceSubdomains = set.Of[string]("apt", "brew", "dl", "git", "goproxy", "npm", "oci", "sites", "static")
 
 func init() {
 	auth.HandleRaw("GET /llms.txt", handler.Serve)
-	for _, svc := range serviceSubdomains {
+	for svc := range serviceSubdomains.All() {
 		auth.ServiceHandleRaw(svc, "GET /llms.txt", handler.Serve)
 	}
 }
@@ -37,7 +40,7 @@ func render(baseURL string) []byte {
 
 	out := strings.ReplaceAll(templateMD, "__BASE_URL__", base)
 
-	for _, svc := range serviceSubdomains {
+	for svc := range serviceSubdomains.All() {
 		placeholder := "__" + strings.ToUpper(svc) + "_URL__"
 		out = strings.ReplaceAll(out, placeholder, scheme+svc+"."+host)
 	}
@@ -97,7 +100,7 @@ func apexBaseURL(r *http.Request) string {
 }
 
 func isServiceSubdomain(label string) bool {
-	for _, svc := range serviceSubdomains {
+	for svc := range serviceSubdomains.All() {
 		if label == svc {
 			return true
 		}

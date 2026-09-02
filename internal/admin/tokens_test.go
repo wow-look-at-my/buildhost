@@ -35,7 +35,10 @@ func TestAPICreateToken_ProjectScoped(t *testing.T) {
 	p, err := database.GetProject(ctx, "testproject")
 	require.NoError(t, err)
 
-	body := bytes.NewBufferString(fmt.Sprintf(`{"name":"proj-token","scopes":"read","project_id":%d}`, p.ID))
+	// Marshalled, not formatted: a quote or a backslash in a value would break a formatted document.
+	spec, err := json.Marshal(map[string]any{"name": "proj-token", "scopes": "read", "project_id": p.ID})
+	require.NoError(t, err)
+	body := bytes.NewBuffer(spec)
 	w := serve(srv, http.MethodPost, "/api/tokens", body)
 	assert.Equal(t, http.StatusOK, w.Code)
 

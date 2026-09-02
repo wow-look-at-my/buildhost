@@ -500,10 +500,10 @@ func TestCreateRelease_Draft(t *testing.T) {
 		return rel
 	}
 
-	published := create(`{"git_branch":"` + branch + `"}`)
+	published := create(jsonDoc(t, map[string]any{"git_branch": branch}))
 	require.NoError(t, h.DB.PublishRelease(ctx, published.ID))
 
-	draft := create(`{"git_branch":"` + branch + `","draft":true}`)
+	draft := create(jsonDoc(t, map[string]any{"git_branch": branch, "draft": true}))
 	assert.True(t, draft.Draft)
 	assert.False(t, draft.Published)
 
