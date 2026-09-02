@@ -128,7 +128,6 @@ func TestRequestBaseURL_PreservesHostAndPort(t *testing.T) {
 		{"pazer.build", "https://pazer.build"},
 		{"dl.pazer.build", "https://dl.pazer.build"},
 		// Local/dev and direct access: the port is part of how the client
-		// reached us and must survive into self-referential links.
 		{"localhost:8080", "http://localhost:8080"},
 		{"127.0.0.1:54321", "http://127.0.0.1:54321"},
 	}

@@ -76,14 +76,11 @@ func TestPush_ChunkOffsetMismatchIs416AndResumable(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, rec.Code)
 
 	// Re-sending the same chunk (a retry after a lost response) must be
-	// rejected without consuming bytes, and must report where the server is.
 	rec = patchChunk(t, h, proj, uuid, first, fmt.Sprintf("0-%d", len(first)-1))
 	require.Equal(t, http.StatusRequestedRangeNotSatisfiable, rec.Code)
 	assert.Equal(t, fmt.Sprintf("0-%d", len(first)-1), rec.Header().Get("Range"))
 	assert.Equal(t, uuid, rec.Header().Get("Docker-Upload-UUID"))
 
-	// The session survives the 416: appending at the right offset still works
-	// and the digest proves no duplicate bytes landed.
 	second := []byte("-second")
 	rec = patchChunk(t, h, proj, uuid, second, fmt.Sprintf("%d-%d", len(first), len(first)+len(second)-1))
 	require.Equal(t, http.StatusAccepted, rec.Code)
@@ -113,7 +110,6 @@ func TestPush_UploadStatus(t *testing.T) {
 
 	uuid := startUploadSession(t, h, proj)
 
-	// Fresh session: 0-0.
 	req := httptest.NewRequest("GET", "/v2/"+proj.Name+"/blobs/uploads/"+uuid, nil)
 	req = withRoute(req, proj, route{project: proj.Name, action: "uploads", reference: uuid})
 	rec := httptest.NewRecorder()
@@ -131,7 +127,6 @@ func TestPush_UploadStatus(t *testing.T) {
 	assert.Equal(t, "0-9", rec.Header().Get("Range"))
 	assert.Equal(t, uuid, rec.Header().Get("Docker-Upload-UUID"))
 
-	// Unknown session: 404.
 	req = httptest.NewRequest("GET", "/v2/"+proj.Name+"/blobs/uploads/nope", nil)
 	req = withRoute(req, proj, route{project: proj.Name, action: "uploads", reference: "nope"})
 	rec = httptest.NewRecorder()
@@ -163,7 +158,6 @@ func TestUploadStore_SweepGoesByActivity(t *testing.T) {
 
 func TestRoute_UploadsAlwaysWrite(t *testing.T) {
 	// The GET status read is push-flow state: it must never be reachable with
-	// a read-only credential.
 	rt := route{project: "p", action: "uploads", reference: "u", method: http.MethodGet}
 	assert.Equal(t, auth.WriteAccess, rt.Access())
 	// Pull routes stay read.

@@ -177,12 +177,10 @@ func TestParseRSAPublicKey_InvalidExponent(t *testing.T) {
 	require.NoError(t, err)
 	n := base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes())
 
-	// Exponent of 1 is invalid (< 3).
 	e1 := base64.RawURLEncoding.EncodeToString([]byte{1})
 	_, err = parseRSAPublicKey(n, e1)
 	assert.Error(t, err)
 
-	// Exponent of 2 is invalid (even).
 	e2 := base64.RawURLEncoding.EncodeToString([]byte{2})
 	_, err = parseRSAPublicKey(n, e2)
 	assert.Error(t, err)

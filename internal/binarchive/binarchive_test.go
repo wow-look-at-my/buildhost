@@ -81,12 +81,6 @@ func TestCompressionActuallyHappens(t *testing.T) {
 		"archive is %d bytes for a %d-byte payload; entries are not being compressed", len(data), len(body))
 }
 
-// TestArchiveSizeVsTarGz guards the one thing this format trades away.
-// Compressing each file on its own is what makes a single file readable
-// without touching the others, but it gives up the cross-file redundancy a
-// single gzip stream over the whole tar can exploit. For a realistic site --
-// many similar small HTML/CSS/JS files -- the archive must stay in the same
-// range as the .tar.gz it replaces, not balloon.
 func TestArchiveSizeVsTarGz(t *testing.T) {
 	files := map[string]string{}
 	for i := 0; i < 60; i++ {
@@ -107,16 +101,6 @@ func TestArchiveSizeVsTarGz(t *testing.T) {
 	archived := archive(t, files)
 	t.Logf("tar %d bytes, tar.gz %d bytes, binpazer archive %d bytes", len(raw), gzBuf.Len(), len(archived))
 
-	// The archive is allowed to be bigger than one gzip stream over everything
-	// -- that is the price of per-file access -- but not by an order of
-	// magnitude, and it must still beat the uncompressed tar comfortably.
-	//
-	// This fixture is the WORST case on purpose: 60 near-identical pages, where
-	// cross-file redundancy is nearly all the compressible information, and one
-	// gzip stream over the lot exploits every bit of it. Measured here it costs
-	// about 6x (2 KB -> 12 KB); a site with varied content costs far less. A
-	// shared zstd dictionary across entries would recover most of it while
-	// keeping random access -- see docs/site-archives.md.
 	assert.Less(t, len(archived), gzBuf.Len()*8,
 		"archive is %d bytes vs %d for tar.gz: per-file compression is costing too much", len(archived), gzBuf.Len())
 	assert.Less(t, len(archived), len(raw)/2,
@@ -124,14 +108,10 @@ func TestArchiveSizeVsTarGz(t *testing.T) {
 }
 
 // TestRandomAccessReadsOnlyItsEntry is the property a .tar.gz cannot offer:
-// reading one file touches that file's bytes, not everything before it. It is
-// asserted by COUNTING the bytes the reader pulls out of the container, so it
-// fails if the read ever degrades into a scan.
 func TestRandomAccessReadsOnlyItsEntry(t *testing.T) {
 	files := map[string]string{"target.txt": "the payload"}
 	for i := 0; i < 50; i++ {
 		// Poorly-compressible filler, so the container is genuinely large and
-		// a scan would be visible in the byte count.
 		files[fmt.Sprintf("filler/%02d.txt", i)] = randomText(i, 20000)
 	}
 	data := archive(t, files)
@@ -147,9 +127,6 @@ func TestRandomAccessReadsOnlyItsEntry(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "the payload", string(got))
 
-	// The bound is a CONSTANT -- a couple of the reader's 64 KiB buffer fills
-	// (one to parse the header and type table, one at the seek target) plus the
-	// entry itself -- not a fraction of the container, which is the whole point.
 	read := counting.bytes() - before
 	assert.Less(t, read, int64(4*64<<10),
 		"reading one small file pulled %d bytes from a %d-byte container", read, len(data))
@@ -158,15 +135,11 @@ func TestRandomAccessReadsOnlyItsEntry(t *testing.T) {
 }
 
 // TestReadCostIsIndependentOfArchiveSize pins the property a .tar.gz cannot
-// have: what it costs to read one file does not grow with the archive around
-// it. A ten-times bigger container must not make the same read ten times
-// dearer -- with a scan it would.
 func TestReadCostIsIndependentOfArchiveSize(t *testing.T) {
 	measure := func(n int) (read, container int64) {
 		files := map[string]string{"last.txt": "payload"}
 		for i := 0; i < n; i++ {
 			// Random bytes, so per-entry compression cannot collapse the
-			// container and hide a scan.
 			files[fmt.Sprintf("f%04d.txt", i)] = randomText(i, 20000)
 		}
 		data := archive(t, files)

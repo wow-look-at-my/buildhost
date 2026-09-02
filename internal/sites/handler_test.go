@@ -92,7 +92,6 @@ func TestUpload_PublicSiteFlag(t *testing.T) {
 	assert.True(t, site.IsPublic, "X-Public-Site: true should persist as public")
 
 	// The Serve route reports this branch as publicly readable; write and the
-	// branch listing never do.
 	assert.True(t, route{project: "priv", branch: "pr-1"}.AllowsPublicRead(context.Background(), d, proj))
 	assert.False(t, route{project: "priv", branch: "pr-1", write: true}.AllowsPublicRead(context.Background(), d, proj))
 	assert.False(t, route{project: "priv", branch: ""}.AllowsPublicRead(context.Background(), d, proj))
@@ -361,7 +360,6 @@ func TestUpload_ResponseCarriesCanonicalURL(t *testing.T) {
 		}
 		require.NoError(t, json.NewDecoder(rec.Body).Decode(&got))
 		// The embedded row's fields stay top-level, so an older client that
-		// decodes into db.Site reads exactly what it always did.
 		assert.Equal(t, branch, got.Branch)
 		return got.URL
 	}
@@ -369,6 +367,5 @@ func TestUpload_ResponseCarriesCanonicalURL(t *testing.T) {
 	// The default branch's deployment IS the bare project path.
 	assert.Equal(t, "https://sites.example.com/mysite/", publish("master"))
 	// Any other branch needs naming, and the "@" form is how it is named --
-	// never "/branch/", which now only redirects here.
 	assert.Equal(t, "https://sites.example.com/mysite/@pr-7/", publish("pr-7"))
 }

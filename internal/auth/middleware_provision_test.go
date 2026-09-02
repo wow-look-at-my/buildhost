@@ -14,16 +14,8 @@ import (
 )
 
 // These cover the docker push-to-create handshake. A buildkit/docker pusher
-// creating a brand-new repo sends its first POST /v2/{name}/blobs/uploads/
-// WITHOUT credentials to discover the auth scheme, and only sends the OIDC token
-// after a 401 + WWW-Authenticate challenge. requireProject must answer that
-// anonymous write to a not-yet-existing project with the challenge, never a dead
-// 404 -- otherwise the client gives up before authenticating and the project is
-// never auto-provisioned (the bug that broke `docker push` of a new project:
-// "404 Not Found: project not found" on the blob upload).
 
 // Anonymous (no token) write to a non-existent project on a /v2/ path must get
-// the OCI Basic challenge (401 + Www-Authenticate), not a 404.
 func TestRequireProject_AutoCreate_AnonymousOCIWrite_Returns401Challenge(t *testing.T) {
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
@@ -46,8 +38,6 @@ func TestRequireProject_AutoCreate_AnonymousOCIWrite_Returns401Challenge(t *test
 }
 
 // The same anonymous write on a non-/v2/ path (e.g. the REST publish API) gets a
-// plain 401 (no Basic challenge), still never a 404 -- consistent with how an
-// unauthenticated write to an *existing* project already behaves.
 func TestRequireProject_AutoCreate_AnonymousNonOCIWrite_Returns401(t *testing.T) {
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
@@ -69,9 +59,6 @@ func TestRequireProject_AutoCreate_AnonymousNonOCIWrite_Returns401(t *testing.T)
 }
 
 // A write that presented a JWT which was REJECTED (OIDC error in context, no
-// token) still gets a 401 that surfaces the rejection reason. The t == nil
-// branch subsumes the prior OIDCError-only condition, so this behavior is
-// preserved.
 func TestRequireProject_AutoCreate_RejectedJWT_Returns401WithReason(t *testing.T) {
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
@@ -97,8 +84,6 @@ func TestRequireProject_AutoCreate_RejectedJWT_Returns401WithReason(t *testing.T
 
 // With a valid OIDC token authorized for the namespace, the authenticated retry
 // (which the client makes after the challenge) provisions the project -- so
-// push-to-create completes. This is the path the docker pusher reaches once it
-// answers the 401 above with its OIDC credential.
 func TestRequireProject_AutoCreate_AuthenticatedOCIWrite_Provisions(t *testing.T) {
 	d := openTestDB(t)
 	initTestMiddleware(t, d)

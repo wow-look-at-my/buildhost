@@ -60,8 +60,6 @@ const (
 	mediaImageIndex    = "application/vnd.oci.image.index.v1+json"
 )
 
-// pushImage pushes a config blob, one layer, and a single-platform image
-// manifest (by digest), returning the manifest bytes and its digest.
 func pushImage(t *testing.T, h *Handler, proj *db.Project, osName, arch string) ([]byte, string) {
 	t.Helper()
 	config := map[string]any{
@@ -206,7 +204,6 @@ func TestPush_MultiArchIndex(t *testing.T) {
 
 	amdManifest, amdDigest := pushImage(t, h, proj, "linux", "amd64")
 	armManifest, armDigest := pushImage(t, h, proj, "linux", "arm64")
-	// Children are pushed by digest first (as docker/buildx does).
 	require.Equal(t, http.StatusCreated, putManifest(t, h, proj, amdDigest, mediaImageManifest, amdManifest).Code)
 	require.Equal(t, http.StatusCreated, putManifest(t, h, proj, armDigest, mediaImageManifest, armManifest).Code)
 
@@ -429,7 +426,6 @@ func TestPush_ManifestContentTypeParams(t *testing.T) {
 
 	manifestBytes, _ := pushImage(t, h, proj, "linux", "amd64")
 	// A Content-Type with parameters must be stored/served stripped to the bare
-	// media type, or strict OCI clients reject the manifest.
 	rec := putManifest(t, h, proj, "v1", mediaImageManifest+"; charset=utf-8", manifestBytes)
 	require.Equal(t, http.StatusCreated, rec.Code)
 
@@ -450,7 +446,6 @@ func TestPush_EmptyPatchRange(t *testing.T) {
 	uuid := rec.Header().Get("Docker-Upload-UUID")
 	require.NotEmpty(t, uuid)
 
-	// A zero-byte PATCH must report a valid range ("0-0"), never "0--1".
 	req = httptest.NewRequest("PATCH", "/v2/ollama/blobs/uploads/"+uuid, nil)
 	req = withRoute(req, proj, route{project: proj.Name, action: "uploads", reference: uuid})
 	rec = httptest.NewRecorder()

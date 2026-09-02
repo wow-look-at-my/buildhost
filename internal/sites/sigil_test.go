@@ -25,7 +25,6 @@ func TestBranchSigil_Serves(t *testing.T) {
 	env := setupEnv(t)
 	seedProject(t, env.db, "jsperf.app")
 	// master is the seed default branch, so every other branch below is a
-	// non-default ref that has no shorter URL and therefore serves in place.
 	env.uploadSite(t, "jsperf.app", "master", map[string]string{"index.html": "<h1>default</h1>"})
 	env.uploadSite(t, "jsperf.app", "pr-7", map[string]string{
 		"index.html":     "<h1>preview</h1>",
@@ -46,7 +45,6 @@ func TestBranchSigil_Serves(t *testing.T) {
 	}
 
 	// A branch root without its trailing slash canonicalizes, so relative links
-	// in index.html resolve under the branch -- same rule as the /branch/ form.
 	rec := env.do(t, "GET", "/jsperf.app/@pr-7", "", nil, false)
 	require.Equal(t, http.StatusMovedPermanently, rec.Code)
 	assert.Equal(t, "/jsperf.app/@pr-7/", rec.Header().Get("Location"))
@@ -76,8 +74,6 @@ func TestBranchSigil_DefaultBranchCollapsesToBareURL(t *testing.T) {
 		assert.Equalf(t, "no-store", rec.Header().Get("Cache-Control"), "GET %s", path)
 	}
 
-	// ...and the bare URL it points at serves the file, in one hop, with no
-	// redirect of its own back to a branch URL.
 	for path, want := range map[string]string{
 		"/p/":        "root",
 		"/p/a/x.css": "body{}",
@@ -88,16 +84,12 @@ func TestBranchSigil_DefaultBranchCollapsesToBareURL(t *testing.T) {
 	}
 
 	// The bare root without its slash canonicalizes to the slashed form only --
-	// never to a branch URL.
 	rec := env.do(t, "GET", "/p", "", nil, false)
 	require.Equal(t, http.StatusMovedPermanently, rec.Code)
 	assert.Equal(t, "/p/", rec.Header().Get("Location"))
 }
 
 // /branch/{branch}/ is what every published preview link, README and deployed
-// client already says, so it keeps working -- as a 302 to the canonical URL for
-// the same file. It stops being a second place that serves bytes, and every
-// client that follows redirects (all of them, for GET) is unaffected.
 func TestBranchSigil_LegacyFormRedirects(t *testing.T) {
 	env := setupEnv(t)
 	seedProject(t, env.db, "p")
@@ -128,7 +120,6 @@ func TestBranchSigil_LegacyFormRedirects(t *testing.T) {
 	rec = env.do(t, "GET", "/p/branch/nosuch/x.css", "", nil, false)
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 
-	// Every target it names actually serves the bytes, in one further hop.
 	for path, want := range map[string]string{
 		"/p/a/x.css":       "body{}",
 		"/p/@pr-1/a/x.css": "pv{}",
@@ -151,8 +142,6 @@ func TestBranchSigil_NamespacedProject(t *testing.T) {
 	env := setupEnv(t)
 	seedProject(t, env.db, "org")
 	seedProject(t, env.db, "org/repo")
-	// Each project gets its own default-branch site, so pr-1 stays a non-default
-	// ref in both and serves in place rather than collapsing.
 	env.uploadSite(t, "org", "master", map[string]string{"index.html": "org-default"})
 	env.uploadSite(t, "org/repo", "master", map[string]string{"index.html": "ns-default"})
 	env.uploadSite(t, "org", "pr-1", map[string]string{"index.html": "shorter"})
@@ -189,8 +178,6 @@ func TestBranchSigil_SlashNamedBranch(t *testing.T) {
 }
 
 // Deploy and remove in the "@" form. These need their own routes (the read
-// grammar rides the apex route, which is GET-only), and two patterns each,
-// because "@{branch}" is one path segment while a branch name may span several.
 func TestBranchSigil_UploadAndDelete(t *testing.T) {
 	env := setupEnv(t)
 	seedProject(t, env.db, "p")
@@ -200,8 +187,6 @@ func TestBranchSigil_UploadAndDelete(t *testing.T) {
 		makeTarGz(t, map[string]string{"index.html": "three"}), true)
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 
-	// A slash-named branch: the router splits it across two params, and a write
-	// names a branch outright, so the whole thing is the branch.
 	rec = env.do(t, "PUT", "/p/@claude/foo", "application/gzip",
 		makeTarGz(t, map[string]string{"index.html": "cf"}), true)
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
@@ -252,7 +237,6 @@ func TestSplitBranchSigil(t *testing.T) {
 		{"org/repo/inner/@v1", "org/repo/inner", "v1", true},
 		// "@" says where the ref starts; the rest stays for splitSiteBranch.
 		{"p/@claude/foo/c.html", "p", "claude/foo/c.html", true},
-		// A later "@" is part of the file path, not a second ref.
 		{"p/@main/a@b.css", "p", "main/a@b.css", true},
 		// No sigil: the apex grammar.
 		{"p", "", "", false},
@@ -314,21 +298,15 @@ func TestCommitSigil_Serves(t *testing.T) {
 	assert.Equal(t, "body{}", rec.Body.String())
 
 	// A commit ref is the MOST specific spelling there is, so it is never
-	// collapsed into the bare URL even when it resolves the default branch --
-	// that would throw the pin away.
 	rec = env.do(t, "GET", "/p/@9999999999/", "", nil, false)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Equal(t, "default", rec.Body.String())
 
-	// Too short to be a deliberate commit reference (git abbreviates to 7), and
-	// an unknown sha: both 404 rather than falling through to a file.
 	for _, ref := range []string{"0f1e2d", "abcdef1234567890"} {
 		rec := env.do(t, "GET", "/p/@"+ref+"/a/x.css", "", nil, false)
 		assert.Equalf(t, http.StatusNotFound, rec.Code, "GET @%s", ref)
 	}
 
-	// Once the branch redeploys, the old commit stops resolving -- the URL
-	// serves exactly that build or nothing, never a later one under the same sha.
 	env.uploadSiteAtCommit(t, "p", "pr-7", "1111111111111111111111111111111111111111",
 		map[string]string{"index.html": "rebuilt"})
 	rec = env.do(t, "GET", "/p/@"+sha+"/", "", nil, false)

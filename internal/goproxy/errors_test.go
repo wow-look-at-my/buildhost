@@ -11,9 +11,6 @@ import (
 )
 
 // The invariant this whole package turns on: only a genuine "upstream is
-// readable and the module is absent" may leave as a 404. `go mod download`
-// reports a 404 as a missing module, so any other failure wearing that status
-// costs every consumer the same misdiagnosis.
 func TestOnlyNotFoundBecomes404(t *testing.T) {
 	tests := []struct {
 		name string

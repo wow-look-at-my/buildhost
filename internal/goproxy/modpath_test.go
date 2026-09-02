@@ -21,7 +21,6 @@ func TestParseModulePath(t *testing.T) {
 		},
 		{
 			// A real shape in this org: the module is the "go" directory of the
-			// agentic-loop repo, so its tags are "go/vX.Y.Z".
 			name: "nested module",
 			path: "github.com/wow-look-at-my/agentic-loop/go",
 			want: []repoRef{{Owner: "wow-look-at-my", Repo: "agentic-loop", Dir: "go"}},
@@ -33,7 +32,6 @@ func TestParseModulePath(t *testing.T) {
 		},
 		{
 			// /v2 does not say where the code lives, so both layouts are candidates
-			// and the go.mod settles it. Root first: it is the common one.
 			name: "major suffix at root or in a subdirectory",
 			path: "github.com/o/r/v2",
 			want: []repoRef{
@@ -51,7 +49,6 @@ func TestParseModulePath(t *testing.T) {
 		},
 		{
 			// Go forbids a "/v1" suffix on a module path outright (v0 and v1 carry
-			// no suffix at all), so this never reaches the repo mapping.
 			name:    "v1 suffix is not a legal module path",
 			path:    "github.com/o/r/v1",
 			wantErr: true,
@@ -99,7 +96,6 @@ func TestMatchesPrefix(t *testing.T) {
 	assert.True(t, matchesPrefix("github.com/PazerOP/thing", prefixes))
 
 	// The boundary that matters: a prefix must not match a longer org name that
-	// merely starts with it.
 	assert.False(t, matchesPrefix("github.com/wow-look-at-my-evil/x", prefixes))
 	assert.False(t, matchesPrefix("github.com/other/x", prefixes))
 	assert.False(t, matchesPrefix("golang.org/x/mod", prefixes))

@@ -10,9 +10,6 @@ import (
 // apiGoproxy reports the Go module proxy's state.
 //
 // The dashboard exists because of how the previous proxy failed: with no
-// upstream credential it served every public module and no private one, and
-// nothing anywhere said so. So health, the credential, and the per-module last
-// error are all first-class here rather than derived from request counts.
 func (s *Server) apiGoproxy(w http.ResponseWriter, r *http.Request) {
 	svc := goproxy.Current()
 	if svc == nil {

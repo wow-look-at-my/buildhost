@@ -154,7 +154,6 @@ func TestNormalizeOS(t *testing.T) {
 
 	// "js" is Go's GOOS spelling of the browser wasm port, but the buildhost
 	// platform identifier is os=wasm with the arch naming the flavor -- "js"
-	// and "wasip1" must not normalize as an OS.
 	for _, in := range []string{"", "any", "android", "plan9", "js", "wasip1"} {
 		_, ok := NormalizeOS(in)
 		assert.False(t, ok, "expected %q to be unrecognized", in)
@@ -178,7 +177,6 @@ func TestNormalizeArch(t *testing.T) {
 
 	// No bare "wasi" alias: WASI snapshots are versioned (wasip1, wasip2 in
 	// the wings) and an unversioned alias would change meaning later. And
-	// "wasm" is the OS (the arch names the flavor: js/wasip1), never the arch.
 	for _, in := range []string{"", "any", "mips", "riscv64", "wasi", "wasm"} {
 		_, ok := NormalizeArch(in)
 		assert.False(t, ok, "expected %q to be unrecognized", in)

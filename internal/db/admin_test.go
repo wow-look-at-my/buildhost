@@ -78,7 +78,6 @@ func TestGetDashboardStats_DedupRatio(t *testing.T) {
 	r := &Release{ProjectID: p.ID, Version: "1.0.0", VersionNum: 1}
 	require.NoError(t, d.CreateRelease(ctx, r))
 
-	// Two artifacts sharing the same storage_key (deduplication).
 	a1 := &Artifact{
 		ReleaseID: r.ID, OS: OSLinux, Arch: ArchAMD64,
 		Kind: KindBinary, StorageKey: "aaa", Size: 1000, SHA256: "aaa",
@@ -100,9 +99,7 @@ func TestGetDashboardStats_DedupRatio(t *testing.T) {
 	stats, err := d.GetDashboardStats(ctx)
 	require.NoError(t, err)
 
-	// Logical: a1.size(1000) + a2.size(1000) + a1.stripped(800) + a1.debug(200) + pkg(800) = 3800
 	assert.Equal(t, int64(3800), stats.LogicalBytes)
-	// Physical: unique keys: "aaa"(1000) + "bbb"(800) + "ccc"(200) = 2000
 	assert.Equal(t, int64(2000), stats.PhysicalBytes)
 
 	// Components broken out individually (UI shows each as its own line).
@@ -110,7 +107,6 @@ func TestGetDashboardStats_DedupRatio(t *testing.T) {
 	assert.Equal(t, int64(800), stats.StrippedBytes)
 	assert.Equal(t, int64(200), stats.DebugBytes)
 	assert.Equal(t, int64(800), stats.PackagedBytes)
-	// The four components must sum to the logical total.
 	assert.Equal(t, stats.LogicalBytes,
 		stats.TotalStorageBytes+stats.StrippedBytes+stats.DebugBytes+stats.PackagedBytes)
 }

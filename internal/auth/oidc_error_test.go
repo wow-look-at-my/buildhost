@@ -14,8 +14,6 @@ import (
 )
 
 // TestRequireProject_WriteUnauthorized_ExplainsOIDCReason proves that when a
-// JWT was presented and rejected, the 401 carries the rejection reason rather
-// than a bare "authentication required" -- so a CI caller can see what to fix.
 func TestRequireProject_WriteUnauthorized_ExplainsOIDCReason(t *testing.T) {
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
@@ -48,7 +46,6 @@ func TestRequireProject_WriteUnauthorized_ExplainsOIDCReason(t *testing.T) {
 	assert.Contains(t, msg, "authentication required")
 	assert.Contains(t, msg, `org "evil" not in allowed list`)
 
-	// Without one, the message stays bare (no token at all).
 	req2 := httptest.NewRequest("POST", "/", nil)
 	rec2 := httptest.NewRecorder()
 	handler.ServeHTTP(rec2, req2)

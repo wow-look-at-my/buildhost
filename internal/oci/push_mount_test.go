@@ -3,7 +3,6 @@ package oci
 // Cross-repository blob mount (POST /v2/{name}/blobs/uploads/?mount=): storage
 // is content-addressed and global, so a blob another project already links is a
 // row away, not an upload away. What these pin is the authorization: the mount
-// is granted only against a project the caller may READ.
 
 import (
 	"net/http"
@@ -66,8 +65,6 @@ func TestMountBlob_LinksABlobAnotherReadableProjectAlreadyHas(t *testing.T) {
 }
 
 // The digest of a private image's layer is not a secret worth relying on, so
-// the mount cannot be the way to read one: an unreadable owner falls through to
-// an ordinary upload session, which only succeeds if the caller has the bytes.
 func TestMountBlob_RefusesAPrivateOwnerTheCallerCannotRead(t *testing.T) {
 	h, d, _ := setupTest(t)
 	secret := &db.Project{Name: "someone-elses", Versioning: db.VersioningAuto, IsPrivate: true}
@@ -102,7 +99,6 @@ func TestMountBlob_AllowsAPrivateOwnerTheTokenCanRead(t *testing.T) {
 }
 
 // `from` narrows the search rather than widening it: naming a project that does
-// not have the blob must not silently mount it from one that does.
 func TestMountBlob_HonoursFromAsARestriction(t *testing.T) {
 	h, d, _ := setupTest(t)
 	owner := &db.Project{Name: "real-owner", Versioning: db.VersioningAuto}
@@ -138,7 +134,6 @@ func TestMountBlob_RefusesWhenStorageNoLongerHasTheBytes(t *testing.T) {
 	assert.ErrorIs(t, err, db.ErrNotFound)
 }
 
-// An unknown or malformed digest is a fallback, never a 500 or a bogus link.
 func TestMountBlob_UnknownDigestFallsBackToAnUploadSession(t *testing.T) {
 	h, d, _ := setupTest(t)
 	target := &db.Project{Name: "target", Versioning: db.VersioningAuto}

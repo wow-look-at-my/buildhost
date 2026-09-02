@@ -78,7 +78,7 @@ func TestClientPush_EndToEnd(t *testing.T) {
 		Project:   proj.Name,
 		Token:     "unused-in-test",
 		PlainHTTP: true,
-		ChunkSize: 1024, // 10 chunks: exercises the sequential-append protocol
+		ChunkSize: 1024,
 	}
 	require.NoError(t, p.Push(dir, []string{"latest", "abc123"}))
 

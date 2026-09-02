@@ -64,7 +64,6 @@ func TestRenderBrewFormula_DualOS(t *testing.T) {
 	body := renderFormula(t, baseFormula(mac, linux))
 
 	// No platform gate, on_* blocks intact, and the top-level url is the
-	// canonical resource (linux/intel preferred).
 	assert.NotContains(t, body, "depends_on")
 	assert.Contains(t, body, "on_macos do")
 	assert.Contains(t, body, "on_linux do")
@@ -132,7 +131,6 @@ end
 // `successful_exit: false` renders KeepAlive {SuccessfulExit: false} in the
 // launchd plist (Homebrew service.rb KEEP_ALIVE_KEYS) -- because plain
 // `keep_alive true` would respawn a deliberately-exiting app (a single-instance
-// exit-0 handoff, a quit command) every ~10 seconds forever.
 func TestRenderBrewFormula_ServiceBlock(t *testing.T) {
 	f := baseFormula(BrewResource{OS: "macos", Arch: "arm", URL: "https://dl.example/darwin-arm64", SHA256: strings.Repeat("bb", 32)})
 	f.Service = true
@@ -179,13 +177,6 @@ func TestRenderBrewFormula_ServiceSlashNamespacedUsesBasename(t *testing.T) {
 	assert.Contains(t, body, "log_path var/\"log/myapp.log\"")
 }
 
-// Homebrew's Cleaner chmods every file under bin to 0555 (a `#!` script, an
-// ELF or a Mach-O) or 0444 (anything else), whatever mode the formula
-// installed. A Cosmopolitan/APE binary is none of the three, so it landed 0444
-// and `brew install go-toolchain` produced a file that could not be executed
-// at all -- and 0555 is no better, because an APE rewrites itself in place on
-// first run and dies with "Permission denied" without the write bit. A
-// binary-kind formula therefore installs 0755 and prunes the Cleaner for bin.
 func TestRenderBrewFormula_BinaryKeepsExecutableWritableMode(t *testing.T) {
 	body := renderFormula(t, baseFormula(
 		BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/x", SHA256: strings.Repeat("aa", 32)},
@@ -194,8 +185,6 @@ func TestRenderBrewFormula_BinaryKeepsExecutableWritableMode(t *testing.T) {
 	assert.Contains(t, body, "\n  skip_clean \"bin\"\n")
 	assert.Contains(t, body, "\n    chmod 0755, bin/\"mytool\"\n")
 	// skip_clean is a class-body call, not an install step: it must sit
-	// outside `def install` (before it), or Ruby raises NoMethodError on the
-	// formula INSTANCE at install time.
 	assert.Less(t, strings.Index(body, `skip_clean "bin"`), strings.Index(body, "def install"))
 }
 
@@ -232,7 +221,6 @@ func TestBrewCanonicalResource(t *testing.T) {
 	// linux/intel wins whenever present, regardless of input order.
 	assert.Equal(t, "li", brewCanonicalResource([]BrewResource{macArm, linuxIntel, linuxArm}).URL)
 	assert.Equal(t, "li", brewCanonicalResource([]BrewResource{linuxIntel}).URL)
-	// Otherwise the first in stable (OS, Arch) order, independent of input order.
 	assert.Equal(t, "la", brewCanonicalResource([]BrewResource{macArm, macIntel, linuxArm}).URL)
 	assert.Equal(t, "ma", brewCanonicalResource([]BrewResource{macIntel, macArm}).URL)
 

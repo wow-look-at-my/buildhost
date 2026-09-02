@@ -18,13 +18,9 @@ import (
 )
 
 // rangePattern matches the inclusive "start-end" byte range the registry
-// reports in Range headers.
 var rangePattern = regexp.MustCompile(`^([0-9]+)-([0-9]+)$`)
 
 // errSessionGone reports that the registry no longer knows the upload session
-// (it answers BLOB_UPLOAD_UNKNOWN). Sessions are server memory, so a restart or
-// a sweep takes every one of them with it; there is nothing left to resume
-// from, only a fresh session to start.
 var errSessionGone = errors.New("upload session no longer exists")
 
 // pushBlobChunked uploads a blob through the given OCI upload session, opening
@@ -49,12 +45,6 @@ func (p *Pusher) pushBlobChunked(loc, digest string, f *os.File, size int64) err
 	return fmt.Errorf("upload blob %s: the registry dropped the upload session %d times", digest, retryAttempts)
 }
 
-// uploadChunks drives one session to completion: sequential PATCH appends carry
-// chunks no bigger than the resolved limit, and a final empty PUT with ?digest=
-// verifies and stores. Every iteration trusts the server's committed size (from
-// the append's Range header, a 416's Range header, or the status endpoint after
-// a transport error), so a partially delivered chunk resumes instead of
-// restarting.
 func (p *Pusher) uploadChunks(loc, digest string, f *os.File, size int64) error {
 	totalChunks := (size + p.chunk - 1) / p.chunk
 	fmt.Fprintf(p.stdout(), "  blob %s: %d MiB in %d chunks of <=%d MiB\n", digest, size>>20, totalChunks, p.chunk>>20)
@@ -98,15 +88,6 @@ func (p *Pusher) uploadChunks(loc, digest string, f *os.File, size int64) error 
 	return nil
 }
 
-// startSession opens a blob upload session, first asking the registry to mount
-// a blob it already stores under another project when mount is a digest. It
-// returns mounted=true (with no session) if that was granted, and otherwise the
-// session's absolute URL -- a registry that will not mount answers with an
-// ordinary session, so the one request covers both outcomes.
-//
-// Retried on transport errors and 5xx: opening a session is the one step with
-// nothing yet invested, and a publish should not be lost to a single timeout at
-// the very start of a several-hundred-megabyte blob.
 func (p *Pusher) startSession(mount string) (bool, string, error) {
 	target := p.baseURL() + "/v2/" + p.Project + "/blobs/uploads/"
 	if mount != "" {
@@ -144,16 +125,11 @@ func (p *Pusher) startSession(mount string) (bool, string, error) {
 	return false, "", fmt.Errorf("start upload session: %w", lastErr)
 }
 
-// patchChunk sends one chunk and returns the server's committed size. A 416
-// (offset mismatch after a lost response) resolves from its Range header; a
-// transport error or 5xx resolves through the status endpoint. Anything else
-// unexpected is a hard error.
 func (p *Pusher) patchChunk(loc string, chunk io.Reader, offset, n int64) (int64, error) {
 	header := map[string]string{"Content-Range": fmt.Sprintf("%d-%d", offset, offset+n-1)}
 	resp, err := p.do(http.MethodPatch, loc, chunk, n, header)
 	if err != nil {
 		// The chunk may have partially landed before the connection broke; ask
-		// the server how much it has and resume from there.
 		return p.sessionStatus(loc)
 	}
 	defer resp.Body.Close()
@@ -199,9 +175,6 @@ func (p *Pusher) sessionStatus(loc string) (int64, error) {
 	return 0, fmt.Errorf("read upload status: %w", lastErr)
 }
 
-// committedFromRange converts an inclusive "0-<end>" Range header to the
-// committed byte count. "0-0" is ambiguous between zero and one byte; zero is
-// assumed (re-sending one byte is harmless, and real chunks are megabytes).
 func committedFromRange(r string) (int64, bool) {
 	m := rangePattern.FindStringSubmatch(r)
 	if m == nil || m[1] != "0" {

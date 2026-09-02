@@ -20,7 +20,7 @@ next to the `//go:embed` in `oci.go` runs `scripts/fetch-cacerts.sh`. Nothing ha
 remember a separate step:
 
 ```sh
-go-toolchain --generate 49518b2639e3   # runs every directive, this one included
+go-toolchain --generate 840cd1937fb4   # runs every directive, this one included
 ./scripts/fetch-cacerts.sh             # or fetch it alone
 ```
 

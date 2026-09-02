@@ -122,7 +122,6 @@ func (r testRoute) Access() AccessLevel { return r.access }
 func TestWithRouteInfo_RouteInfoFrom_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 
-	// Before setting, RouteInfoFrom returns nil (zero value of interface).
 	ri := RouteInfoFrom(ctx)
 	require.Nil(t, ri)
 

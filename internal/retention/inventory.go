@@ -38,12 +38,6 @@ const (
 	HoldUnknown    = "unknown"       // the plan and this reason disagree
 )
 
-// FileEntry is one stored file: one row that references one blob. Two entries
-// share a storage key when the same bytes are referenced twice, and Refs counts
-// those references.
-//
-// Size is the size the database records. It is the logical size, not the size
-// the compressed blob occupies on disk.
 type FileEntry struct {
 	StorageKey string    `json:"storage_key"`
 	SHA256     string    `json:"sha256,omitempty"`
@@ -66,23 +60,14 @@ type FileEntry struct {
 	Draft      bool      `json:"draft,omitempty"`
 
 	// Refs is how many rows reference this storage key. A blob is freed only
-	// when eviction removes every one of them.
 	Refs int `json:"refs"`
 	// Reclaimable is true when the current policy frees this blob now.
-	Reclaimable bool `json:"reclaimable"`
-	// Hold is the primary reason the file stays: the first of Holds. It is
-	// empty when Reclaimable is true.
-	Hold string `json:"hold"`
-	// Holds is every pin that applies, most permanent first. Two pins on one
-	// release mean that lifting the second one alone frees nothing.
-	Holds []string `json:"holds,omitempty"`
+	Reclaimable bool     `json:"reclaimable"`
+	Hold        string   `json:"hold"`
+	Holds       []string `json:"holds,omitempty"`
 }
 
 // InventoryGroup aggregates entries that share a hold reason or a role.
-//
-// Files and Bytes count every entry, so shared bytes are counted once per
-// reference. Blobs and BlobBytes count each storage key once: the group is the
-// hold of the first entry that keeps the blob, in descending size order.
 type InventoryGroup struct {
 	Name      string `json:"name"`
 	Files     int    `json:"files"`
@@ -104,8 +89,6 @@ type InventoryTotals struct {
 	Releases         int   `json:"releases"`
 	EvictedReleases  int   `json:"evicted_releases"`
 	// HoldMismatches counts releases whose hold reason disagrees with the plan.
-	// Those entries carry the "unknown" hold. A value above zero means this
-	// explanation drifted from the eviction queries.
 	HoldMismatches int `json:"hold_mismatches"`
 }
 
@@ -116,9 +99,6 @@ type InventoryPolicy struct {
 	RecencyCutoff time.Time `json:"recency_cutoff"`
 }
 
-// Inventory is every stored file, with the reason retention keeps each one.
-// It answers the question a reclaimable-bytes number cannot: which files hold
-// the storage, and what pins them.
 type Inventory struct {
 	GeneratedAt time.Time        `json:"generated_at"`
 	Policy      InventoryPolicy  `json:"policy"`
@@ -133,8 +113,6 @@ type Inventory struct {
 // preview shows.
 func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 	now := r.clock()
-	// The eviction queries compare a UTC timestamp with second precision. Match
-	// that here, so a release lands on the same side of the cutoff in both.
 	cutoff := now.Add(-r.cfg.RecencyGuard).UTC().Truncate(time.Second)
 
 	inv := Inventory{
@@ -196,7 +174,6 @@ func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 			f.Holds = holds[f.ReleaseID]
 			if len(f.Holds) == 0 && !freed.Contains(f.StorageKey) {
 				// The release goes, but another row still references the bytes.
-				// This is the case a reclaimable total never explains.
 				f.Holds = []string{HoldSharedBlob}
 			}
 		}
@@ -206,7 +183,6 @@ func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 		f.Reclaimable = f.Hold == HoldNone && freed.Contains(f.StorageKey)
 	}
 
-	// Biggest first: the reader is hunting for what occupies the storage.
 	sort.Slice(files, func(i, j int) bool {
 		if files[i].Size != files[j].Size {
 			return files[i].Size > files[j].Size
@@ -225,13 +201,6 @@ func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 
 // releaseHolds gives every pin that keeps a release, and an empty slice when
 // eviction takes it. It mirrors ListEvictableReleases and
-// ListAbandonedReleases, and it names the pins those queries fold into one
-// WHERE clause.
-//
-// Several pins can apply at once. The order is by permanence, so the first one
-// is the pin that survives longest: an operator who lowers keep-N frees
-// nothing while an OCI tag still points at the release. The recency guard is
-// last, because time alone lifts it.
 func releaseHolds(f db.ListReleaseRetentionFactsRow, keepN int, cutoff time.Time) []string {
 	var holds []string
 	inGuard := !f.CreatedAt.Before(cutoff)
@@ -252,7 +221,6 @@ func releaseHolds(f db.ListReleaseRetentionFactsRow, keepN int, cutoff time.Time
 	if f.DockerArtifactCount > 0 {
 		holds = append(holds, HoldDocker)
 	}
-	// keep_n=0 still keeps each branch tip: the query floors the window at 1.
 	keep := int64(keepN)
 	if keep < 1 {
 		keep = 1
@@ -270,8 +238,6 @@ func releaseHolds(f db.ListReleaseRetentionFactsRow, keepN int, cutoff time.Time
 	return holds
 }
 
-// listFiles reads every table that references a blob and returns one entry per
-// reference.
 func (r *Retention) listFiles(ctx context.Context) ([]FileEntry, error) {
 	var out []FileEntry
 
@@ -372,8 +338,6 @@ func (r *Retention) listFiles(ctx context.Context) ([]FileEntry, error) {
 	return out, nil
 }
 
-// appendFile adds one entry for a non-empty storage key. An empty key means the
-// row has no such blob: an artifact with no stripped copy, for example.
 func appendFile(out []FileEntry, base FileEntry, role, key string, size int64, sha string) []FileEntry {
 	if key == "" {
 		return out
@@ -385,7 +349,6 @@ func appendFile(out []FileEntry, base FileEntry, role, key string, size int64, s
 	return append(out, base)
 }
 
-// groupFiles aggregates by hold reason and by role, biggest group first.
 func groupFiles(files []FileEntry) (byHold, byRole []InventoryGroup) {
 	holds := make(map[string]*InventoryGroup)
 	roles := make(map[string]*InventoryGroup)
@@ -410,7 +373,6 @@ func groupFiles(files []FileEntry) (byHold, byRole []InventoryGroup) {
 		hg.Bytes += f.Size
 		rg.Files++
 		rg.Bytes += f.Size
-		// files is sorted by size, so a blob is attributed to its first entry.
 		if seen.Add(f.StorageKey) {
 			hg.Blobs++
 			hg.BlobBytes += f.Size
@@ -436,7 +398,6 @@ func sortedGroups(m map[string]*InventoryGroup) []InventoryGroup {
 }
 
 // summarize fills the whole-server counters. Blob counters count each storage
-// key once.
 func summarize(t InventoryTotals, files []FileEntry) InventoryTotals {
 	seen := set.New[string](len(files))
 	for _, f := range files {

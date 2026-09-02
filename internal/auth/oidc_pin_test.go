@@ -13,13 +13,6 @@ import (
 )
 
 // These cover the GitHub repo-identity pin (projects.github_owner_id /
-// github_repo_id). GitHub owner/repo NAMES are reusable -- delete or rename a
-// repo and a stranger can re-register the name and mint valid OIDC tokens for
-// the same "owner/repo" -- but the numeric IDs (immutable subject @id
-// suffixes, repository_id / repository_owner_id claims) are not. requireProject
-// pins the IDs at provisioning (or on the first ID-bearing publish for legacy
-// projects) and refuses tokens whose IDs disagree, so a re-created
-// ("resurrected") repo cannot take over an existing project.
 
 const (
 	pinOwnerID = "250878655"
@@ -79,7 +72,6 @@ func TestOIDCPin_ProvisionPinsIDs(t *testing.T) {
 }
 
 // A pre-existing project without pinned IDs (provisioned before the pin
-// existed) is pinned by its first ID-bearing publish -- trust on first use.
 func TestOIDCPin_LegacyProject_FirstIDPublishPins(t *testing.T) {
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
@@ -168,8 +160,6 @@ func TestOIDCPin_MismatchedIDs_ReadRejected(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "OIDC repo identity mismatch")
 }
 
-// On a hidden read the refusal keeps the canonical 404 so a private project's
-// existence never leaks, even to a mismatched OIDC identity.
 func TestOIDCPin_MismatchedIDs_HiddenReadGets404(t *testing.T) {
 	d := openTestDB(t)
 	initTestMiddleware(t, d)

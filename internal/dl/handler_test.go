@@ -83,9 +83,6 @@ func seedArtifact(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID i
 	return a
 }
 
-// seedMultiPlatformArtifact stores one blob and registers it as a single
-// artifact covering every platform in the set -- the APE shape, seeded the way
-// the /artifacts/ape endpoint writes it.
 func seedMultiPlatformArtifact(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, content string, platforms ...db.Platform) *db.Artifact {
 	t.Helper()
 	key, size, err := store.Put(context.Background(), strings.NewReader(content))
@@ -112,8 +109,6 @@ func makeRequest(project string, params url.Values) *http.Request {
 	return req
 }
 
-// requireRedirect asserts 302 or 301 with a Location containing "/file?" and returns
-// the parsed query params from the redirect URL for further assertions.
 func requireRedirect(t *testing.T, rec *httptest.ResponseRecorder) url.Values {
 	t.Helper()
 	code := rec.Code

@@ -29,14 +29,11 @@ type OIDCRepoIdentity struct {
 	RepoPath string // "owner/repo" (plain names, IDs stripped)
 	Issuer   string
 	// OwnerID / RepoID are GitHub's numeric account/repository IDs (from the
-	// dedicated repository_owner_id / repository_id claims, or an immutable
-	// subject's @id suffixes). Empty when the issuer provides none.
 	OwnerID string
 	RepoID  string
 }
 
 // WithGitHubToken stashes the signed-in user's GitHub OAuth token (from the
-// session) so requireProject can check their access to a project's repo.
 func WithGitHubToken(ctx context.Context, token string) context.Context {
 	return context.WithValue(ctx, githubTokenKey, token)
 }
@@ -47,10 +44,6 @@ func GitHubTokenFrom(ctx context.Context) string {
 }
 
 // WithSessionTokenDead marks the request's bh_session as carrying a dead GitHub
-// token: the cookie's MAC still verifies (the user counts as signed in), but
-// GitHub answered 401 to the repo-access probe, meaning the embedded token was
-// revoked or expired mid-session. unauthorizedResponse uses it to clear the
-// session and re-run sign-in instead of rendering the "no access" page.
 func WithSessionTokenDead(ctx context.Context) context.Context {
 	return context.WithValue(ctx, sessionTokenDeadKey, true)
 }
@@ -63,9 +56,6 @@ func SessionTokenDeadFrom(ctx context.Context) bool {
 }
 
 // WithUser marks the request as a signed-in human (identity is their GitHub
-// login), set from a verified bh_session cookie after a Sign in with GitHub
-// flow. A request carrying it may read a private project when the user can
-// access that project's repo. It never grants write.
 func WithUser(ctx context.Context, login string) context.Context {
 	return context.WithValue(ctx, userKey, login)
 }
@@ -123,22 +113,16 @@ func OIDCPrivateFrom(ctx context.Context) (bool, bool) {
 }
 
 // WithOIDCRepo records the GitHub repo identity (owner/repo, issuer, numeric
-// IDs) from a verified OIDC token, so the project-auth middleware can resolve
-// the repo's default branch from GitHub and pin/verify the repo identity.
 func WithOIDCRepo(ctx context.Context, identity OIDCRepoIdentity) context.Context {
 	return context.WithValue(ctx, oidcRepoKey, identity)
 }
 
-// OIDCRepoFrom returns the OIDC repo identity, or the zero value if none was
-// recorded.
 func OIDCRepoFrom(ctx context.Context) OIDCRepoIdentity {
 	v, _ := ctx.Value(oidcRepoKey).(OIDCRepoIdentity)
 	return v
 }
 
 // WithOIDCError records why OIDC verification failed for a presented JWT, so an
-// eventual 401 can explain the reason instead of a bare "authentication
-// required". It is set only when a JWT was presented and rejected.
 func WithOIDCError(ctx context.Context, err error) context.Context {
 	return context.WithValue(ctx, oidcErrorKey, err)
 }

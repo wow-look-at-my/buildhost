@@ -53,14 +53,12 @@ func TestState_RoundTrip(t *testing.T) {
 	assert.False(t, ok)
 
 	// Expired: authentic (payload still trusted) but flagged, so the callback
-	// can restart the flow to the state's own next URL.
 	st, expired, ok = parseState(signState(signinState{nonce: "n", next: "/x"}, time.Now().Add(-time.Minute)))
 	assert.True(t, ok)
 	assert.True(t, expired)
 	assert.Equal(t, "/x", st.next)
 
 	// A state minted before the retried flag existed (nonce\x00next) still
-	// parses, as a first attempt.
 	st, expired, ok = parseState(signValue("state", "old-nonce\x00/legacy", time.Now().Add(time.Minute)))
 	assert.True(t, ok)
 	assert.False(t, expired)
@@ -157,9 +155,6 @@ func TestSigninCallback_ValidLogin_SetsSession(t *testing.T) {
 }
 
 // The token exchange must speak GitHub's actual contract: Accept:
-// application/json (without it GitHub answers form-encoded) and the four form
-// fields of the web flow. Pinned against the fake so a regression cannot hide
-// behind a lenient test double.
 func TestSigninCallback_ExchangeRequestContract(t *testing.T) {
 	var accept, contentType string
 	var form url.Values
@@ -202,10 +197,6 @@ func TestSigninCallback_ExchangeRequestContract(t *testing.T) {
 	assert.Equal(t, "https://pazer.build/__signin/callback", form.Get("redirect_uri"))
 }
 
-// A nonce mismatch (cookie expired, or a second sign-in tab overwrote it) is
-// recoverable: the callback restarts the flow through /__signin -- once. The
-// restarted state carries the retried marker; if that flow mismatches again the
-// user gets a terminal page with a retry link, never a redirect loop.
 func TestSigninCallback_NonceMismatch_RestartsOnce(t *testing.T) {
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
@@ -236,9 +227,6 @@ func TestSigninCallback_NonceMismatch_RestartsOnce(t *testing.T) {
 	assert.Contains(t, body, signinStartPath+"?next="+url.QueryEscape(next))
 }
 
-// An expired state (user parked on GitHub's consent screen past the 10-minute
-// window, or reloaded a stale callback URL) restarts the flow once, then turns
-// terminal -- same loop protection as the nonce mismatch.
 func TestSigninCallback_ExpiredState_RestartsOnce(t *testing.T) {
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
@@ -265,8 +253,6 @@ func TestSigninCallback_ExpiredState_RestartsOnce(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), signinStartPath+"?next="+url.QueryEscape(next))
 }
 
-// /__signin?retry=1 (the callback's restart redirect) mints a state carrying
-// the retried marker, closing the restart loop after one automatic attempt.
 func TestSigninStart_RetryMarkerRidesState(t *testing.T) {
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
@@ -286,7 +272,6 @@ func TestSigninStart_RetryMarkerRidesState(t *testing.T) {
 	assert.True(t, st.retried)
 	assert.Equal(t, "/p/branch/b/", st.next)
 
-	// Without retry=1 the marker stays off.
 	req = httptest.NewRequest("GET", signinStartPath+"?next=%2Fp%2Fbranch%2Fb%2F", nil)
 	req.Host = "pazer.build"
 	rec = httptest.NewRecorder()

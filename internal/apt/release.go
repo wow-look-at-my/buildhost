@@ -115,8 +115,6 @@ type hashEntry struct {
 // computePackagesHashes renders each architecture's Packages index through
 // packagesEntry -- the same renderer servePackages serves -- and hashes the
 // rendered bytes, so the Release/InRelease SHA256 lines can never disagree
-// with the served index. With the deb digest cache warm this is one DB read
-// per architecture; no repackaging happens here.
 func (h *Handler) computePackagesHashes(r *http.Request, project *db.Project, release *db.Release) ([]hashEntry, error) {
 	arches := []string{"amd64", "arm64", "i386", "armhf"}
 	baseURL := auth.RequestRootURL(r)

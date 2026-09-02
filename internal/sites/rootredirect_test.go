@@ -28,8 +28,6 @@ func rootServed(t *testing.T, h *Handler, project *db.Project) string {
 // (e.g. the seed "master" while sites were only ever deployed to "main",
 // because buildhost's GitHub default-branch lookup hasn't corrected the hint)
 // must still resolve its bare root to a real site instead of serving a
-// guaranteed 404. This is the ue553 case: default_branch stuck at master,
-// site on main.
 func TestRootServe_FallsBackToExistingSite(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "ue553")
@@ -43,7 +41,6 @@ func TestRootServe_FallsBackToExistingSite(t *testing.T) {
 	proj.DefaultBranch = ""
 	assert.Equal(t, "from-main", rootServed(t, h, proj))
 
-	// Once the default branch has its own site, the root uses it unchanged.
 	uploadSite(t, h, proj, "master", map[string]string{"index.html": "from-master"})
 	proj.DefaultBranch = "master"
 	assert.Equal(t, "from-master", rootServed(t, h, proj))

@@ -16,21 +16,8 @@ const goldenPath = "../../docs/routes.txt"
 const regenHint = "regenerate with:  UPDATE_ROUTES_GOLDEN=1 go-toolchain   (or, from a built binary:  ./build/buildhost routes > docs/routes.txt)"
 
 // updateGolden rewrites the golden instead of asserting against it. The env var
-// exists so regenerating never requires a built binary -- a stale golden
-// otherwise fails the test that must pass before the binary is produced.
 func updateGolden() bool { return os.Getenv("UPDATE_ROUTES_GOLDEN") == "1" }
 
-// renderRoutes is the exact rendering `buildhost routes` prints: one route per
-// line, from auth.ListRoutes(). It must stay ListRoutes and not AllRoutes --
-// only ListRoutes renders the config-conditional site-domain families against
-// SiteDomainPlaceholder, so AllRoutes here would assert the golden against a
-// table the CLI never prints, and the two gates could never both be green.
-// Backends self-register in init(), so importing them (see routes_test.go) is
-// what populates the table.
-//
-// Callers must not have run auth.Init: ListRoutes registers into the shared
-// mux, so a configured site domain would leave real-domain routes in the table
-// (assertNotInitialized fails loudly rather than baking them into the golden).
 func renderRoutes() string {
 	var b strings.Builder
 	for _, r := range auth.ListRoutes() {
@@ -56,7 +43,6 @@ func assertNotInitialized(t *testing.T) {
 // leaves nothing route-shaped in the diff for a reviewer to look at.
 //
 // The table is rendered by the program, never parsed out of source, so it cannot
-// describe routes the binary does not actually serve.
 func TestRouteTableMatchesGolden(t *testing.T) {
 	assertNotInitialized(t)
 	got := renderRoutes()
@@ -73,8 +59,6 @@ func TestRouteTableMatchesGolden(t *testing.T) {
 }
 
 // TestGoldenRouteTableIsSorted pins the ordering the golden file relies on: a
-// stable order is what keeps an added route to a one-line diff instead of a
-// reshuffle nobody can read.
 func TestGoldenRouteTableIsSorted(t *testing.T) {
 	assertNotInitialized(t)
 	lines := strings.Split(strings.TrimSuffix(renderRoutes(), "\n"), "\n")

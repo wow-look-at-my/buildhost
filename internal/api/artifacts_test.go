@@ -294,8 +294,6 @@ func TestPublishRelease_ReturnsPublishedArtifacts(t *testing.T) {
 	for _, a := range got.Artifacts {
 		arches[a.Arch] = true
 		assert.Equal(t, db.OSLinux, a.OS)
-		// The digest is what the record is keyed by; an empty one would make
-		// every record from this path unusable.
 		assert.Equal(t, key, a.SHA256)
 	}
 	assert.True(t, arches[db.ArchAMD64] && arches[db.ArchARM64], "both uploaded slots must be reported, got %v", arches)
@@ -365,8 +363,6 @@ func TestPublishRelease_AlreadyPublished(t *testing.T) {
 }
 
 // Note: Project-scoped token isolation tests have been removed. Token scope
-// enforcement is now handled by the requireProject middleware (tested in
-// the auth package).
 
 // --- Security tests: filename sanitization ---
 
@@ -408,7 +404,6 @@ func TestSanitizeFilename_ControlCharacters(t *testing.T) {
 }
 
 func TestSanitizeFilename_TruncatesLongNames(t *testing.T) {
-	// Filenames longer than 255 should be truncated
 	longName := strings.Repeat("a", 300)
 	result := sanitizeFilename(longName)
 	assert.Equal(t, 255, len(result))

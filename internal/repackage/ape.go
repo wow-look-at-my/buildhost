@@ -7,9 +7,6 @@ import (
 	"strings"
 )
 
-// apeMagic is the first bytes of a Cosmopolitan "Actually Portable Executable".
-// The file opens with the shell assignment `MZqFpD='` -- simultaneously a DOS
-// MZ header, a valid shell script, and an ELF/Mach-O carrier.
 var apeMagic = []byte("MZqFpD='")
 
 // peekAPE reports whether r begins with the APE prologue, returning a reader
@@ -27,34 +24,11 @@ func peekAPE(r io.Reader) (bool, io.Reader, error) {
 }
 
 // debAPELauncherPath is where an APE binary is installed when the package ships
-// a launcher: /usr/bin/<pkg> becomes the launcher, so the real binary needs its
-// own home.
 func debAPELauncherTarget(pkgName string) string {
 	return fmt.Sprintf("/usr/lib/%s/%s", pkgName, pkgName)
 }
 
 // debAPELauncher is the /usr/bin entry generated for an APE binary.
-//
-// An APE assimilates itself on first run: the shell prologue opens its own file
-// read-write and overwrites the header with a native ELF (or Mach-O) one, then
-// re-executes. dpkg installs binaries root-owned 0755, so for every user who is
-// not root that first run dies with "cannot create /usr/bin/<pkg>: Permission
-// denied" -- `apt install <pkg> && <pkg>` simply does not work. Making the
-// installed file world-writable is not an option (it is a system binary), and
-// running the uploaded binary from a maintainer script to pre-assimilate it
-// would mean executing a publisher's code as root on every installing machine,
-// which a package registry must never do.
-//
-// So the package installs the artifact under /usr/lib and puts a launcher on
-// $PATH that keeps one writable copy per user. The copy is keyed by package
-// version, so an upgrade is picked up without any staleness check, and it is
-// published with a rename so two concurrent first runs cannot observe a
-// half-written binary. If the copy cannot be made (no writable HOME, full
-// disk), the launcher execs the installed file directly: that is the old
-// behavior, no worse, rather than a new failure mode.
-//
-// Non-APE binaries are installed exactly as before -- straight to /usr/bin,
-// with no launcher and no indirection.
 func debAPELauncher(pkgName, version string) string {
 	var b strings.Builder
 	b.WriteString("#!/bin/sh\n")

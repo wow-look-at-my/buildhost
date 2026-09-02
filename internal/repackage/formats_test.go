@@ -65,7 +65,6 @@ func TestTarXZRepackage(t *testing.T) {
 	require.Nil(t, err)
 
 	// The xz package is used in production; here just verify non-empty output
-	// with the correct xz magic bytes (0xFD, '7', 'z', 'X', 'Z', 0x00)
 	require.GreaterOrEqual(t, len(data), 6)
 
 	xzMagic := []byte{0xFD, '7', 'z', 'X', 'Z', 0x00}
@@ -202,8 +201,6 @@ func TestDebRepackage_NamespacedName(t *testing.T) {
 }
 
 // readArMembers parses a Unix `ar` archive (the .deb container) into a map of
-// member name -> body. Each member has a fixed 60-byte header; the body is
-// followed by a single '\n' pad byte when its length is odd.
 func readArMembers(t *testing.T, data []byte) map[string][]byte {
 	t.Helper()
 	const magic = "!<arch>\n"

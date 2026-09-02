@@ -2,14 +2,6 @@ package npm
 
 // A packument describes every published release of a project. Reflecting a
 // pre-built package's manifest means reading package/package.json out of the
-// stored tarball, so doing that per request costs one full decompression per
-// release and grows without bound as a project publishes -- the defect that
-// made the live registry take 44s (past every client timeout, with no byte
-// written until the end) for a project with 238 published 17 MB releases.
-//
-// These tests pin the fix by COUNTING BLOB READS rather than by timing, so
-// they fail deterministically if the per-request work ever becomes
-// proportional to the release count again.
 
 import (
 	"archive/tar"
@@ -31,9 +23,6 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
-// countingStore records every blob read and can slow each one down, so a test
-// can assert both how much work a request does and what happens when that work
-// cannot finish in the fill budget.
 type countingStore struct {
 	storage.Storage
 	mu    sync.Mutex
@@ -61,9 +50,6 @@ func (c *countingStore) count() int {
 	return c.gets
 }
 
-// withCountingStore swaps the package handler's storage for a counting one for
-// the duration of a test. The npm tests never run in parallel (they share one
-// router-wired handler), so the swap is safe.
 func withCountingStore(t *testing.T, delay time.Duration) *countingStore {
 	t.Helper()
 	_, store := routerEnv(t)
@@ -98,9 +84,6 @@ func npmTarball(t *testing.T, pkgJSON map[string]any) string {
 	return buf.String()
 }
 
-// seedNPMPackageReleases creates one project with n published releases, each
-// carrying a real npm-package tarball whose package.json declares a
-// version-specific optionalDependency.
 func seedNPMPackageReleases(t *testing.T, project string, n int) []string {
 	t.Helper()
 	d, store := routerEnv(t)
@@ -163,7 +146,6 @@ func TestRouter_Packument_ManifestCacheBoundsBlobReads(t *testing.T) {
 // TestRouter_Packument_SharedBlobExtractedOnce covers the other way a project
 // accumulates releases cheaply: a re-release of unchanged bytes registers the
 // SAME content-addressed blob (a hash-reference upload), so however many
-// releases point at it, a cold packument may decompress it only once.
 func TestRouter_Packument_SharedBlobExtractedOnce(t *testing.T) {
 	const releases = 6
 	d, store := routerEnv(t)
@@ -222,10 +204,6 @@ func TestRouter_Packument_UnreadableBlobIsCached(t *testing.T) {
 	assert.Equal(t, 1, store.count(), "the unreadable verdict is cached, not re-derived per request")
 }
 
-// TestRouter_Packument_FillBudgetFailsLoudly pins the second half of the bug
-// report: when the manifests cannot be resolved, the client must get an HTTP
-// error it can act on -- never a hang, and never a 200 whose version entries
-// quietly lost their dependency graph (an npm install that resolves nothing).
 func TestRouter_Packument_FillBudgetFailsLoudly(t *testing.T) {
 	seedNPMPackageReleases(t, "packument-budget", 3)
 	withCountingStore(t, 2*time.Second)

@@ -41,7 +41,6 @@ func TestParseRoute(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "/@buildhost/"+tt.pathVal, nil)
 			// The npm route captures the whole scoped segment; the router has
-			// already percent-decoded it to `@buildhost/<name>`.
 			req.SetPathValue("pkg", "@buildhost/"+tt.pathVal)
 			ri := parseRoute(req).(route)
 			assert.Equal(t, tt.wantProj, ri.project, "project")

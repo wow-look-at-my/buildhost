@@ -1,9 +1,5 @@
 package api
 
-// Tests for publishing ONE Actually Portable Executable as ONE artifact: the
-// {os}/{arch} alias spellings no longer fan an APE out into a row per platform,
-// and a declared platform is checked against the bytes that would serve it.
-
 import (
 	"context"
 	"encoding/binary"
@@ -30,8 +26,6 @@ func apeWithPESections(t *testing.T, nsect uint16) string {
 }
 
 // TestUploadArtifact_CosmoAliasAPEIsOneRow is the directive the alias predates:
-// one file that runs on N platforms is ONE artifact with N slots, not N rows
-// with N download links. The alias spelling stays; what it produces changed.
 func TestUploadArtifact_CosmoAliasAPEIsOneRow(t *testing.T) {
 	h, proj, rel := setupUploadTest(t, "cosmoapeproj")
 	counting := &countingStore{Storage: h.Store}
@@ -66,8 +60,6 @@ func TestUploadArtifact_NonAPEAliasStillFansOut(t *testing.T) {
 }
 
 // TestUploadArtifact_AliasRejectsWindowsOnStubPE covers the failure that is
-// invisible downstream: a stub PE header starts on Windows and exits 0 without
-// running, which every consumer reads as success.
 func TestUploadArtifact_AliasRejectsWindowsOnStubPE(t *testing.T) {
 	h, proj, rel := setupUploadTest(t, "stubpealiasproj")
 

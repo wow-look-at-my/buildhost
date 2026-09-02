@@ -131,7 +131,6 @@ func TestGetProject_Success(t *testing.T) {
 }
 
 // Note: GetProject auth (private project, not found) is tested via requireProject
-// middleware in the auth package.
 
 // PATCH must classify as a write verb: UpdateProjectSettings relies on the
 // centralized requireProject middleware demanding a write-scoped token

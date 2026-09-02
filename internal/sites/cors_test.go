@@ -11,10 +11,6 @@ import (
 
 // A browser re-checks CORS on EVERY hop of a cross-origin fetch, so a redirect
 // that omits the site headers fails the whole load even though its target
-// carries them. Two canonicalization redirects shipped without them and broke
-// every cross-origin consumer of a site (a dashboard importing a JS module from
-// sites.{domain} died at the 302 with "CORS header missing", never reaching the
-// 200 that had it), so this covers every redirect any site handler can emit.
 func TestSiteRedirectsCarryCORSHeaders(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "lib")
@@ -28,8 +24,6 @@ func TestSiteRedirectsCarryCORSHeaders(t *testing.T) {
 		rt      route
 		serve   func(http.ResponseWriter, *http.Request)
 	}{
-		// The one that broke production: the legacy /branch/ spelling every
-		// deployed client, README and published preview link still says.
 		{"legacy branch file", "/lib/branch/main/ui/x.js",
 			route{project: "lib", branch: "main", path: "ui/x.js"}, h.RedirectLegacyBranch},
 		{"legacy branch root", "/lib/branch/main/",

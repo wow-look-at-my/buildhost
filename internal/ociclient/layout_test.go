@@ -120,8 +120,6 @@ func TestLayoutRoot_RejectsMultiImage(t *testing.T) {
 	_, err := l.root()
 	assert.ErrorContains(t, err, "several distinct images")
 
-	// buildx writes one entry PER TAG, all naming the same digest (only the
-	// image-name annotation differs): that is ONE image and must be accepted.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.json"),
 		[]byte(`{"manifests":[{"digest":"sha256:aa","mediaType":"application/vnd.oci.image.manifest.v1+json"},{"digest":"sha256:aa","mediaType":"application/vnd.oci.image.manifest.v1+json"}]}`), 0o644))
 	root, err := l.root()

@@ -48,11 +48,6 @@ func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
 // AllowsPublicRead lets a valid signed download token (&token=) authorize this
-// one artifact even under a private project, the same way a public site bypasses
-// the private gate. The signature binds the exact (project, version, os, arch,
-// fmt, debug) tuple, so the bypass is scoped to precisely the linked file -- the
-// rest of the project stays gated. Consulted by requireProject only for a
-// private-project read.
 func (r route) AllowsPublicRead(_ context.Context, _ *db.DB, project *db.Project) bool {
 	if r.token == "" {
 		return false
@@ -165,7 +160,6 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", etag)
 	if r.URL.Query().Get("token") != "" {
 		// A token-gated (signed-link) fetch is private content: never let a shared
-		// CDN cache it, regardless of the project's visibility.
 		w.Header().Set("Cache-Control", "private, no-store")
 	} else {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
@@ -179,8 +173,6 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// A concrete artifact's bytes were just served -- record who fetched what.
-	// Best-effort: the download already succeeded, so bookkeeping never fails or
-	// slows it. The os=any/arch=any manifest path resolves no single artifact.
 	if sctx.Artifact.ID != 0 {
 		h.recordDownload(r, sctx.Artifact.ID, fmtStr)
 	}
@@ -212,9 +204,6 @@ func downloadPrincipal(ctx context.Context) string {
 	return ""
 }
 
-// clientIP extracts the originating client address, preferring the first
-// X-Forwarded-For hop (buildhost runs behind a proxy/CDN) and otherwise the
-// direct peer address with its port stripped.
 func clientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		if i := strings.IndexByte(xff, ','); i >= 0 {

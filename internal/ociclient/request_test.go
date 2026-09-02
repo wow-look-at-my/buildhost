@@ -1,6 +1,5 @@
 // Tests for newRequest (upload.go): every upload body the pusher sends must
 // carry a GetBody, or net/http declines to retry it after a mid-flight stream
-// error and one hiccup fails the publish.
 package ociclient
 
 import (
@@ -37,8 +36,6 @@ func TestNewRequestRewindsAFileBody(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(11), req.ContentLength)
 
-	// Drain it once, as a first attempt would, then prove a replay still sees
-	// the whole blob rather than nothing.
 	_, err = io.ReadAll(f)
 	require.NoError(t, err)
 	assert.Equal(t, "layer-bytes", readAllFromGetBody(t, req))

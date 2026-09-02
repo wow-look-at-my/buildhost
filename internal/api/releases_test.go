@@ -106,7 +106,6 @@ func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
 	assert.Equal(t, "v1", updated.DefaultBranch, "publish must record the repo's default branch")
 
 	// "latest" now resolves to the v1 release; under the old hardcoded "master"
-	// it would have been nothing.
 	latest, err := h.DB.GetLatestRelease(ctx, proj.ID)
 	require.NoError(t, err)
 	assert.Equal(t, rel.Version, latest.Version)
@@ -300,8 +299,6 @@ func TestGetRelease_ReturnsArtifacts(t *testing.T) {
 
 	require.Len(t, got.Artifacts, 2)
 	for _, a := range got.Artifacts {
-		// The digest is what a storage record is keyed by; an empty one would
-		// make the recovery path useless even when it fires.
 		assert.Equal(t, key, a.SHA256)
 	}
 }
@@ -330,7 +327,6 @@ func TestGetRelease_Latest(t *testing.T) {
 	proj := &db.Project{Name: "latestproj", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
-	// Two published releases; "latest" must resolve to the highest version.
 	older := &db.Release{ProjectID: proj.ID, Version: "1", VersionNum: 1, GitBranch: "master", GitCommit: "aaa111"}
 	require.NoError(t, h.DB.CreateRelease(ctx, older))
 	require.NoError(t, h.DB.PublishRelease(ctx, older.ID))
@@ -488,7 +484,6 @@ func TestCreateRelease_Draft(t *testing.T) {
 	proj := &db.Project{Name: "draftproj", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 	// The apex "latest" tracks the project's default branch; use it so the
-	// assertions below exercise the real resolution path.
 	branch := db.LatestBranch
 
 	create := func(body string) db.Release {
@@ -513,7 +508,6 @@ func TestCreateRelease_Draft(t *testing.T) {
 	assert.False(t, draft.Published)
 
 	// The apex "latest" still resolves to the published release, not the
-	// newer draft.
 	latest, err := h.DB.GetLatestRelease(ctx, proj.ID)
 	require.NoError(t, err)
 	assert.Equal(t, published.Version, latest.Version, "a draft must never become latest")

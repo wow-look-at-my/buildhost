@@ -66,7 +66,6 @@ func TestServeHTTP_Manifests_NoOCIPackage(t *testing.T) {
 	}))
 
 	// On-demand generation means a manifest is generated from the binary
-	// artifact -- no packaged_artifacts row needed.
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
 	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
 	rec := httptest.NewRecorder()
@@ -102,8 +101,6 @@ func TestServeHTTP_Manifests_Success(t *testing.T) {
 	assert.Equal(t, "application/vnd.oci.image.config.v1+json", config["mediaType"])
 	assert.Contains(t, config["digest"], "sha256:")
 
-	// Two layers: the shared essentials base layer (CA certs + minimal rootfs)
-	// followed by the per-binary layer.
 	layers := manifest["layers"].([]any)
 	require.Len(t, layers, 2)
 	for _, l := range layers {

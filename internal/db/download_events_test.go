@@ -34,7 +34,6 @@ func TestRecordAndListDownloadEvents(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, byProject, 2)
 
-	// Newest first (same-second timestamps tie-broken by id DESC).
 	first := byProject[0]
 	assert.Equal(t, "tar.gz", first.Fmt)
 	assert.Equal(t, "198.51.100.4", first.ClientIp)

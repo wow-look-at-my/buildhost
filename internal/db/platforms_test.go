@@ -151,8 +151,6 @@ func TestListArtifactsByPlatform(t *testing.T) {
 	assert.Equal(t, got[0].ID, got[1].ID)
 }
 
-// ListArtifactsWithPlatforms is the one-row-per-file view the UI and REST API
-// render; every artifact carries a non-empty set.
 func TestListArtifactsWithPlatforms_SinglePlatformStillHasASet(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()

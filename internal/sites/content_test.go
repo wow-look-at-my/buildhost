@@ -42,7 +42,6 @@ func TestServe_SetsSiteSecurityHeaders(t *testing.T) {
 	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: "assets/app.mjs"})
 	rec := httptest.NewRecorder()
 	// The global security middleware sets these strict app headers before the
-	// handler runs; serving a site must drop them so its assets can load.
 	rec.Header().Set("Content-Security-Policy", "default-src 'none'")
 	rec.Header().Set("X-Frame-Options", "DENY")
 	h.Serve(rec, req)
@@ -105,9 +104,6 @@ func TestServeRedirect(t *testing.T) {
 	uploadSite(t, h, proj, "main", map[string]string{"index.html": "<h1>hello</h1>"})
 
 	// A branch root requested without a trailing slash redirects to the slashed
-	// form (so index.html's relative links resolve under the branch). Serve --
-	// the single GET route -- handles this; there is no separate redirect route
-	// that could shadow file serving.
 	req := httptest.NewRequest("GET", "/sites/mysite/branch/main", nil)
 	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: ""})
 	rec := httptest.NewRecorder()

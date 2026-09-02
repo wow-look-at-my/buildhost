@@ -55,10 +55,6 @@ func TestRun_EnforceMarksEvictedRecordsDeleted(t *testing.T) {
 	}
 }
 
-// The load-bearing one. With no deleter wired, eviction still runs -- but the
-// report must SAY the records were left standing. A run that deletes artifacts
-// and reports nothing about their records is the silent drift this whole
-// feature exists to prevent.
 func TestRun_NoDeleterReportsUnmarkedRatherThanSilentlySkipping(t *testing.T) {
 	d, store, p := setup(t)
 	ctx := context.Background()
@@ -151,7 +147,6 @@ func TestPlan_ReportsRecordsItWouldMarkWithoutCalling(t *testing.T) {
 // useTestServer points the API base at a local httptest server and gives the
 // HTTP client a proxy-free transport: the default transport honours HTTP_PROXY
 // from the environment, which in a sandboxed dev environment can intercept even
-// a loopback address and turn these tests into a test of the proxy.
 func useTestServer(t *testing.T, url string) func() {
 	t.Helper()
 	origBase, origClient := gitHubAPIBase, metadataHTTPClient
@@ -188,13 +183,9 @@ func TestGitHubRecordDeleter_PostsDeletedStatus(t *testing.T) {
 	assert.Equal(t, "deleted", body["status"])
 	assert.Equal(t, "sha256:abc123", body["digest"])
 	assert.Equal(t, "https://pazer.build", body["registry_url"])
-	// The repo NAME only: the API pattern is ^[A-Za-z0-9.\-_]+$, so owner/repo
-	// is rejected outright -- the same trap that broke every publish once.
 	assert.Equal(t, "buildhost", body["github_repository"])
 }
 
-// A 403 is what a GitHub App without artifact-metadata write returns; the error
-// has to name that, or an operator sees only an opaque status code.
 func TestGitHubRecordDeleter_ForbiddenNamesThePermission(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -216,7 +207,6 @@ func TestGitHubRecordDeleter_ForbiddenNamesThePermission(t *testing.T) {
 
 func TestGitHubRecordDeleter_MissingConfigIsAnError(t *testing.T) {
 	// No registry URL: the record cannot be identified without the same
-	// registry_url the publishing CI recorded.
 	noURL := &GitHubRecordDeleter{Bearer: func(context.Context, string, string) string { return "tok" }}
 	err := noURL.MarkDeleted(context.Background(), "o/r", "p", "v1", "abc")
 	require.Error(t, err)

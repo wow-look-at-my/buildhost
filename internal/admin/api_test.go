@@ -146,7 +146,6 @@ func TestAPIRelease(t *testing.T) {
 
 	assert.Equal(t, float64(2048), resp["total_size"])
 	// The admin dashboard runs on its own subdomain (buildhost.example.com here);
-	// base_url is the registry root and service URLs are real per-service hosts.
 	assert.Equal(t, "https://example.com", resp["base_url"])
 	assertServiceURLs(t, resp)
 }

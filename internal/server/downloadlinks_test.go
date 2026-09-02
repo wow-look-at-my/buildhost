@@ -54,7 +54,6 @@ func TestPrivateProject_TemporaryDownloadLink(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	resp.Body.Close()
 
-	// Token bound to a different artifact (darwin) does not unlock the linux one.
 	wrongTok := auth.MintDownloadToken("secretapp", "1", "darwin", "amd64", "raw", false, time.Now().Add(time.Hour))
 	resp = env.getSubdomain(t, "static", path(wrongTok))
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)

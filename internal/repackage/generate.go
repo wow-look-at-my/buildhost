@@ -19,8 +19,6 @@ import (
 var repackTracer = otel.Tracer("buildhost.repackage")
 
 // dlServiceURL constructs the dl subdomain URL from the root domain base URL
-// (e.g. "https://pazer.build" → "https://dl.pazer.build"), or "" if baseURL is
-// not a usable scheme://host.
 func dlServiceURL(baseURL string) string {
 	u, err := serviceurl.Base(baseURL, "dl")
 	if err != nil {
@@ -39,7 +37,6 @@ type Generator struct {
 type Option func(*OCI)
 
 // WithShellCacheDir roots the shell layer cache for APE images at dir, which
-// must be durable: {DataDir}/shell in production, never the swept tmp root.
 func WithShellCacheDir(dir string) Option {
 	return func(o *OCI) { o.Shell = NewShellCache(dir) }
 }
@@ -60,9 +57,6 @@ func NewGenerator(store storage.Storage, database *db.DB, tmpDir string, opts ..
 // Generate repackages an artifact into format. baseURL is this server's own base
 // URL (derived per-request from the Host), used to build absolute download/home
 // URLs in formats like brew.
-// GenerateForPlatform repackages one artifact AS one of the platforms it
-// covers. Derived rows it caches carry the platform's suffix, so two platforms
-// of one file never overwrite each other's cached package.
 func (g *Generator) GenerateForPlatform(ctx context.Context, format Format, project db.Project, release db.Release, artifact db.PlatformArtifact, baseURL string) (*Output, error) {
 	return g.generate(ctx, format, project, release, artifact.Artifact, artifact.CacheSuffix, baseURL)
 }
@@ -136,8 +130,6 @@ func (g *Generator) generate(ctx context.Context, format Format, project db.Proj
 		return nil, err
 	}
 	// The repackager reads the input stream lazily (its output is a pipe), so the input
-	// must stay open until the caller finishes reading the output. Tie its Close to the
-	// output's Close.
 	out.Reader = ChainClose(out.Reader, reader)
 	if out.Size >= 0 {
 		convertSpan.SetAttributes(attribute.Int64("repackage.output_bytes", out.Size))
@@ -157,9 +149,6 @@ func OpenArtifactStream(ctx context.Context, store storage.Storage, artifact db.
 		return nil, 0, err
 	}
 	if (artifact.Kind == db.KindBinary || artifact.Kind == db.KindLibrary) && strip.Available() {
-		// Peek first: only an ELF can be stripped, and spooling a
-		// multi-gigabyte artifact to disk just to discover it is a Cosmopolitan
-		// APE or a Mach-O would cost a full disk round-trip on every download.
 		elf := strip.LooksELF(rc)
 		rc.Close()
 		rc, size, err = store.Get(ctx, artifact.StorageKey)
@@ -177,8 +166,6 @@ func OpenArtifactStream(ctx context.Context, store storage.Storage, artifact db.
 			return sr, ssize, nil
 		}
 		// Stripping failed on something that looked like an ELF: serve the
-		// artifact untouched, but never silently -- an unexpected failure here
-		// is exactly the kind that went unnoticed for weeks.
 		strip.LogSkipped(ctx, artifact.StorageKey, serr)
 		rc, size, err = store.Get(ctx, artifact.StorageKey)
 		if err != nil {

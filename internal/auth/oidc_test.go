@@ -189,7 +189,6 @@ func TestVerifyToken_RejectsUnsupportedAlgorithm(t *testing.T) {
 		Scopes:         "read,write",
 	}}
 	// HS256 doesn't produce valid JWTs that ParseUnverified can handle the
-	// same way, but the keyfunc will reject the algorithm during verified parse.
 	_, _, err := v.VerifyToken(context.Background(), token, policies)
 	require.Error(t, err)
 }

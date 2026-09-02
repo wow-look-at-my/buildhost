@@ -85,7 +85,6 @@ func TestRequireProject_OIDCNamespace_AutoCreatesSubProject(t *testing.T) {
 
 // TestRequireProject_OIDCNamespace_RejectsOutsideNamespace proves a repo's OIDC
 // token cannot reach a sibling-prefixed or unrelated project, and never
-// auto-creates one.
 func TestRequireProject_OIDCNamespace_RejectsOutsideNamespace(t *testing.T) {
 	for _, requested := range []string{"log-streamer-evil", "log-streamerx", "other/thing"} {
 		d := openTestDB(t)

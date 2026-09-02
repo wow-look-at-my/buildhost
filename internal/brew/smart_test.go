@@ -28,7 +28,6 @@ func smartTapServer(t *testing.T, h *Handler) *httptest.Server {
 }
 
 // lineageDirFor returns the single on-disk lineage directory (tests create
-// exactly one scope unless noted).
 func lineageDirFor(t *testing.T, h *Handler) string {
 	t.Helper()
 	entries, err := os.ReadDir(h.tapHistoryRoot())
@@ -44,7 +43,6 @@ func TestServeTapInfoRefs_AdvertisementDerivesFromLineageTip(t *testing.T) {
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "go-toolchain", "binary")
 
-	// Dumb first: pins the lineage and gives us the tip the dumb path serves.
 	dumb := getTap(t, h, "git.example.com", "info/refs")
 	require.Equal(t, http.StatusOK, dumb.Code)
 	tip := strings.Fields(dumb.Body.String())[0]
@@ -95,14 +93,12 @@ func TestServeUploadPack_FullCloneTransfersWholeHistory(t *testing.T) {
 	seedBrewProject(t, d, store, "appone", "appone-binary")
 	ts := smartTapServer(t, h)
 
-	// Build 1 (root commit), then a content change appends build 2.
 	require.Equal(t, http.StatusOK, mustGet(t, ts.URL+"/brew/tap.git/info/refs"))
 	seedBrewProject(t, d, store, "apptwo", "apptwo-binary")
 
 	dir := filepath.Join(t.TempDir(), "tap")
 	runGit(t, t.TempDir(), "clone", ts.URL+"/brew/tap.git", dir)
 
-	// Full history: two commits, root reachable, nothing shallow.
 	_, err := os.Stat(filepath.Join(dir, ".git", "shallow"))
 	require.True(t, os.IsNotExist(err), "a plain clone must not be shallow")
 	assert.Equal(t, "2", strings.TrimSpace(runGit(t, dir, "rev-list", "--count", "origin/main")))
@@ -115,10 +111,6 @@ func TestServeUploadPack_FullCloneTransfersWholeHistory(t *testing.T) {
 	}
 }
 
-// `git clone --depth 1` (and a later `git fetch --unshallow`) exercise the
-// deepen handshake: the shallow section is sent because the client asked for
-// depth, the boundary commit is reported shallow, and un-shallowing later
-// receives the cut history plus the unshallow line.
 func TestServeUploadPack_ShallowCloneAndUnshallow(t *testing.T) {
 	requireGit(t)
 
@@ -130,7 +122,6 @@ func TestServeUploadPack_ShallowCloneAndUnshallow(t *testing.T) {
 	seedBrewProject(t, d, store, "appone", "appone-binary")
 	ts := smartTapServer(t, h)
 
-	// Two commits of history, so a depth-1 tip really is shallow.
 	require.Equal(t, http.StatusOK, mustGet(t, ts.URL+"/brew/tap.git/info/refs"))
 	seedBrewProject(t, d, store, "apptwo", "apptwo-binary")
 
@@ -212,8 +203,6 @@ func TestServeUploadPack_ServesRequestedWantAfterTipAdvance(t *testing.T) {
 
 // A flush-terminated batch of haves (no "done" yet) is a negotiation round:
 // the stateless server answers NAK -- and ONLY NAK, never a pack, which would
-// corrupt the client's next round once a tap accrues enough history for git
-// to batch its haves.
 func TestServeUploadPack_NegotiationRoundAnswersNAKOnly(t *testing.T) {
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "appone", "appone-binary")
@@ -238,7 +227,6 @@ func TestServeUploadPack_NegotiationRoundAnswersNAKOnly(t *testing.T) {
 
 func TestWantsShallow(t *testing.T) {
 	// A full clone's want line echoes the advertised shallow capabilities;
-	// that must NOT read as a depth request.
 	want := pktLineString("want 9f9969e4d487c9a700c13b5a2119a09de9262f31 multi_ack_detailed side-band-64k thin-pack ofs-delta deepen-since deepen-not agent=git/2.43.0\n")
 
 	var full bytes.Buffer
@@ -256,14 +244,10 @@ func TestWantsShallow(t *testing.T) {
 
 // The smart endpoints carry each tap root's exact credential semantics: the
 // private root challenges anonymous requests, brew.{domain}/tap.git serves
-// the smart pair DIRECTLY even anonymously (it is a first-class clone URL --
-// only the bare /tap.git path and dumb file paths keep the anonymous 301),
-// and a credentialed response is never shared-cacheable.
 func TestSmartTap_CredentialGates(t *testing.T) {
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "appone", "appone-binary")
 
-	// Anonymous private info/refs: the 401 Basic challenge.
 	req := httptest.NewRequest("GET", "/private/tap.git/info/refs?service=git-upload-pack", nil)
 	req.Host = "brew.example.com"
 	rec := httptest.NewRecorder()
@@ -272,7 +256,6 @@ func TestSmartTap_CredentialGates(t *testing.T) {
 	assert.Contains(t, rec.Header().Get("Www-Authenticate"), "Basic")
 
 	// Anonymous /tap.git smart handshake on the brew host: served in place,
-	// never a redirect -- the brew-host tap URL is first-class.
 	req = httptest.NewRequest("GET", "/tap.git/info/refs?service=git-upload-pack", nil)
 	req.Host = "brew.example.com:18080"
 	rec = httptest.NewRecorder()
@@ -304,7 +287,6 @@ func TestSmartTap_CredentialGates(t *testing.T) {
 	assert.True(t, bytes.HasPrefix(rec.Body.Bytes(), []byte("0008NAK\nPACK")), "NAK + raw pack expected: %q", rec.Body.Bytes()[:min(rec.Body.Len(), 16)])
 
 	// A credentialed advertisement is served in place, scoped by the lineage
-	// key, and marked uncacheable for shared caches.
 	req = withReadToken(httptest.NewRequest("GET", "/private/tap.git/info/refs?service=git-upload-pack", nil), nil)
 	req.Host = "brew.example.com"
 	rec = httptest.NewRecorder()

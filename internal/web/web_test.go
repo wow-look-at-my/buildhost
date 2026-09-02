@@ -16,8 +16,6 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 
 	// Blank-importing the frontend is not needed (the package under test links
-	// it), but no service backends are imported here on purpose: that keeps the
-	// apt signing-key generation (its OnReady) out of the test, so setup is fast.
 	_ "github.com/wow-look-at-my/buildhost/internal/web"
 )
 
@@ -50,8 +48,6 @@ func setup(t *testing.T) *env {
 	return &env{ts: ts, token: plaintext}
 }
 
-// seed inserts a public project with one published release/artifact and a
-// private project, directly via the DB (the frontend only reads metadata).
 func seed(t *testing.T, database *db.DB) {
 	t.Helper()
 	ctx := context.Background()
@@ -155,10 +151,6 @@ func TestFrontend(t *testing.T) {
 		require.Contains(t, body, `/projects/myapp/releases/1">1</a> <span class="badge badge-latest">latest</span>`)
 		require.NotContains(t, body, `/projects/myapp/releases/2">2</a> <span class="badge badge-latest">latest</span>`)
 		// The published tap command must clone the /tap.git smart-HTTP endpoint
-		// (a bare `git clone` of the brew host 404s) and include the Homebrew
-		// 6.0+ `brew trust` step, matching llms.txt / README exactly. Asserting
-		// the whole tail catches a regression to either the bare host or a
-		// dropped trust line.
 		brewBase := "http://brew." + strings.TrimPrefix(e.ts.URL, "http://")
 		require.Contains(t, body, "brew tap pazer/build "+brewBase+"/tap.git\nbrew trust pazer/build\nbrew install pazer/build/myapp")
 		require.Contains(t, body, "docker pull oci.")
@@ -195,8 +187,6 @@ func TestFrontend(t *testing.T) {
 
 	t.Run("private project 404s for anonymous, no existence leak", func(t *testing.T) {
 		resp, body := e.get(t, "/projects/secret", false)
-		// 404 (not 401/403), and identical to an unknown project, so the
-		// response never reveals that "secret" exists -- like GitHub.
 		require.Equal(t, http.StatusNotFound, resp.StatusCode)
 		require.NotContains(t, body, "secret")
 	})

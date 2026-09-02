@@ -62,7 +62,6 @@ func TestVerifyToken_TrustedIssuer_WorkflowDispatchAccepted(t *testing.T) {
 	token := signJWT(t, key, "kid-event-dispatch", claims)
 
 	// Mirror the production default allowlist from config.Load's
-	// len(OIDCEvents)==0 branch: push, pull_request, workflow_dispatch.
 	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push", "pull_request", "workflow_dispatch"}})
 	_, oidcProject, err := v.VerifyToken(context.Background(), token, nil)
 	require.NoError(t, err)

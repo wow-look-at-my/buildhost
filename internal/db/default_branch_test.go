@@ -20,7 +20,6 @@ func mustPublishRelease(t *testing.T, d *DB, projectID int64, version string, ve
 
 // The bug: a push to a non-default branch hijacked the apex "latest". master is
 // the default value of a project's default branch, so a project that never set
-// one tracks master only.
 func TestGetLatestRelease_PrefersMaster(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -87,8 +86,6 @@ func TestGetLatestRelease_PerProjectDefaultBranch(t *testing.T) {
 	assert.Equal(t, "4", got.Version)
 }
 
-// Once a project's default branch is not master, master loses its special
-// status: a master-only release is no longer the apex "latest".
 func TestGetLatestRelease_NonMasterDefaultIgnoresMaster(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()

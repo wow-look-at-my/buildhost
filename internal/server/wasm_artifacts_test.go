@@ -2,7 +2,6 @@ package server_test
 
 // End-to-end WebAssembly artifact flow: upload a wasm module via the artifact
 // PUT (os=wasm, arch=js/wasip1), publish, then download it back through the
-// dl endpoint and the static endpoint, asserting the bytes round-trip.
 
 import (
 	"context"
@@ -30,7 +29,6 @@ func TestWasmArtifact_UploadDownloadRoundTrip(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
 
-	// Upload one artifact per Go wasm port.
 	resp = env.putBody(t, "/api/v1/projects/wasmapp/releases/1/artifacts/wasm/js", jsPayload)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
@@ -40,7 +38,6 @@ func TestWasmArtifact_UploadDownloadRoundTrip(t *testing.T) {
 	resp.Body.Close()
 
 	// An incompatible pair is rejected end to end (wasm never rides the
-	// native amd64/arm64 arches).
 	resp = env.putBody(t, "/api/v1/projects/wasmapp/releases/1/artifacts/wasm/amd64", jsPayload)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	resp.Body.Close()
@@ -176,7 +173,6 @@ func TestWasmArtifact_LegacyGoosGoarchPairEndToEnd(t *testing.T) {
 	}
 
 	// Static folds the legacy pair via its canonicalization redirect, so the
-	// CDN only ever caches the canonical URL.
 	resp = env.getSubdomain(t, "static", "/file?arch=wasm&os=js&project=wasmlegacy&v=1")
 	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
 	loc = resp.Header.Get("Location")

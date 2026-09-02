@@ -85,7 +85,6 @@ func TestGitHubApp_CachesInstallationToken(t *testing.T) {
 	ctx := context.Background()
 	assert.Equal(t, "v1", GitHubDefaultBranch(ctx, "wow-look-at-my/go-toolchain"))
 	// Force a fresh branch lookup (clear only the branch cache), so the repos call
-	// repeats but the installation token is reused.
 	branchCacheMu.Lock()
 	branchCache = map[string]branchCacheEntry{}
 	branchCacheMu.Unlock()

@@ -96,7 +96,6 @@ func TestStoreTooLargeRollsBack(t *testing.T) {
 	_, err = s.Append(sess, 0, strings.NewReader("12345"))
 	require.NoError(t, err)
 
-	// This chunk would exceed the 10-byte cap: rejected as a whole.
 	size, err := s.Append(sess, 5, strings.NewReader("6789012345"))
 	assert.ErrorIs(t, err, ErrTooLarge)
 	assert.Equal(t, int64(5), size, "over-cap chunk rolled back entirely")
@@ -125,7 +124,6 @@ func TestStoreBusyDuringFinalize(t *testing.T) {
 	require.NoError(t, err)
 	defer f.Close()
 
-	// While busy: appends and second finalizes are refused.
 	_, err = s.Append(sess, 4, strings.NewReader("more"))
 	assert.ErrorIs(t, err, ErrBusy)
 	_, _, err = s.BeginFinalize(sess)
@@ -144,8 +142,6 @@ func TestStorePartialAppendCommits(t *testing.T) {
 	require.NoError(t, err)
 
 	// A reader that delivers some bytes and then fails, like a dropped
-	// connection mid-chunk: what landed stays committed so the client can
-	// resume from the reported size.
 	failing := io.MultiReader(strings.NewReader("part"), errReader{})
 	size, err := s.Append(sess, 0, failing)
 	require.Error(t, err)

@@ -20,12 +20,8 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
-// fakeBusybox is the binary the fake image ships; a real one is never run.
 const fakeBusybox = "#!/bin/sh\necho fake busybox\n"
 
-// fakeShellRegistry serves one image shaped like busybox:musl: a single gzip
-// layer holding bin/[ as the one regular file, with bin/busybox, bin/sh and
-// bin/tr hard-linked to it. requests counts every hit.
 type fakeShellRegistry struct {
 	server   *httptest.Server
 	digest   string
@@ -138,9 +134,6 @@ func TestShellLayerBuiltFromTheImage(t *testing.T) {
 	assert.NotContains(t, entries, "etc/passwd")
 }
 
-// The upstream registry is asked once per data directory: a second call in
-// the same process and a fresh cache over the same directory both serve from
-// what the first call stored.
 func TestShellLayerIsFetchedOnce(t *testing.T) {
 	reg := newFakeShellRegistry(t)
 	dir := t.TempDir()
@@ -180,7 +173,6 @@ func TestShellLayerRefusesAnUnpinnedManifest(t *testing.T) {
 	c := reg.cache(t, t.TempDir())
 	c.Images = map[db.Arch]string{db.ArchAMD64: "sha256:" + string(bytes.Repeat([]byte("0"), 64))}
 	bogus := c.Images[db.ArchAMD64]
-	// The fake only serves its own digest, so this answers 404 before the hash check.
 	_, _, err := c.Layer(context.Background(), db.ArchAMD64)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HTTP 404")

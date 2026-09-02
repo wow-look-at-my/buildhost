@@ -19,7 +19,6 @@ import (
 
 // apeFixture is a file shaped like a Cosmopolitan APE: the MZqFpD prologue,
 // and (like the real thing) it writes to its own path before doing its job, so
-// a read-only install fails exactly the way go-toolchain did.
 func apeFixture() []byte {
 	return []byte("MZqFpD='fixture'\n" +
 		`: >> "$0" || { echo "self-write failed" >&2; exit 1; }` + "\n" +
@@ -71,14 +70,10 @@ func debEntries(t *testing.T, deb []byte) map[string]string {
 }
 
 // A Cosmopolitan APE cannot run from a root-owned /usr/bin entry: it rewrites
-// its own file on first run, so every non-root user got "Permission denied"
-// from `apt install <pkg> && <pkg>`. The package installs the binary under
-// /usr/lib and puts a launcher on $PATH that keeps a per-user writable copy.
 func TestDeb_APEBinaryGetsLauncher(t *testing.T) {
 	entries := debEntries(t, buildDeb(t, apeFixture(), db.KindBinary, "go-toolchain"))
 
 	// dpkg creates no leading directories itself: without this entry the
-	// install fails with "unable to create ... No such file or directory".
 	assert.Contains(t, entries, "./usr/lib/go-toolchain/")
 	assert.Equal(t, string(apeFixture()), entries["./usr/lib/go-toolchain/go-toolchain"])
 
@@ -121,7 +116,6 @@ func TestDeb_APELauncherRunsReadOnlyBinary(t *testing.T) {
 }
 
 // Everything that is not an APE keeps the previous layout exactly: straight to
-// /usr/bin, one entry, no launcher and no indirection.
 func TestDeb_NonAPEBinaryLayoutUnchanged(t *testing.T) {
 	entries := debEntries(t, buildDeb(t, []byte("\x7fELF plain binary"), db.KindBinary, "plain"))
 

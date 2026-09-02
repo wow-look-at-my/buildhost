@@ -1,9 +1,5 @@
 package api
 
-// Tests for the multi-platform upload fan-out: one uploaded blob published for
-// several (os, arch) combinations via a comma list or an alias (cosmo/any) in
-// the {os}/{arch} path segments.
-
 import (
 	"context"
 	"crypto/sha256"
@@ -22,7 +18,6 @@ import (
 )
 
 // countingStore wraps a Storage and counts Put calls, proving a fan-out upload
-// streams its body to storage exactly once.
 type countingStore struct {
 	storage.Storage
 	puts int
@@ -33,8 +28,6 @@ func (c *countingStore) Put(ctx context.Context, r io.Reader) (string, int64, er
 	return c.Storage.Put(ctx, r)
 }
 
-// setupUploadTest creates a handler plus a project with one unpublished
-// release ready to receive artifact uploads.
 func setupUploadTest(t *testing.T, name string) (*Handler, *db.Project, *db.Release) {
 	t.Helper()
 	h := setupTestHandler(t)
@@ -93,7 +86,6 @@ func TestUploadArtifact_CosmoAliasFanOut(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	assert.Equal(t, []string{"linux/amd64", "darwin/amd64", "windows/amd64"}, platformsOf(got))
 
-	// The blob was stored once; every row references that same blob.
 	assert.Equal(t, 1, counting.puts)
 	for _, a := range got {
 		assert.Equal(t, got[0].StorageKey, a.StorageKey)
@@ -158,8 +150,6 @@ func TestUploadArtifact_OSAnyArchAnyFullMatrix(t *testing.T) {
 	}, platformsOf(got))
 }
 
-// A single canonical os/arch keeps today's response byte-for-byte: one JSON
-// object (not a one-element array) with the same fields.
 func TestUploadArtifact_SingleOSResponseShapeUnchanged(t *testing.T) {
 	h, proj, _ := setupUploadTest(t, "singleproj")
 
@@ -235,8 +225,6 @@ func TestUploadArtifact_DuplicateListElement(t *testing.T) {
 }
 
 // A fan-out that collides with an existing row on ANY combination mirrors the
-// single re-PUT semantics (409) per row -- and creates nothing, so the client
-// can resolve the conflict and retry the identical request.
 func TestUploadArtifact_MultiConflictAtomic(t *testing.T) {
 	h, proj, rel := setupUploadTest(t, "conflictproj")
 	ctx := context.Background()
@@ -262,8 +250,6 @@ func TestUploadArtifact_MultiConflictAtomic(t *testing.T) {
 // registers artifact row(s) for a blob the project already uploaded, without
 // re-sending the bytes.
 
-// TestUploadArtifact_HashRefRegistersExistingBlob is the happy path: one full
-// upload, then a second slot registered by reference with its own filename.
 func TestUploadArtifact_HashRefRegistersExistingBlob(t *testing.T) {
 	h, proj, rel := setupUploadTest(t, "hashref")
 	counting := &countingStore{Storage: h.Store}
@@ -292,7 +278,6 @@ func TestUploadArtifact_HashRefRegistersExistingBlob(t *testing.T) {
 	assert.NotZero(t, ref.ID)
 
 	// Each slot's request carries its own filename (unlike fan-out, which
-	// stamps one header across every row).
 	assert.Equal(t, "tool_linux_amd64", full.Filename)
 	assert.Equal(t, "tool_windows_amd64.exe", ref.Filename)
 
@@ -405,8 +390,6 @@ func TestUploadArtifact_HashRefBlobGone404(t *testing.T) {
 	assert.Len(t, rows, 1, "only the original full-upload row exists")
 }
 
-// Hash-ref conflicts mirror full-upload conflicts: 409 naming the
-// combination, and a multi-combination request creates nothing.
 func TestUploadArtifact_HashRefConflictAtomic(t *testing.T) {
 	h, proj, rel := setupUploadTest(t, "hashrefconflict")
 
@@ -441,7 +424,6 @@ func TestUploadArtifact_HashRefExcludedBySessionParam(t *testing.T) {
 	require.Equal(t, http.StatusCreated, rec.Code)
 
 	// The handler stored the (empty) request body -- it did not resolve the
-	// referenced blob.
 	var got db.Artifact
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	emptySum := sha256.Sum256(nil)

@@ -19,8 +19,6 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
-// seedAptProject creates a published release with one linux/amd64 binary
-// artifact under a fresh project and returns all three rows.
 func seedAptProject(t *testing.T, d *db.DB, store *storage.Filesystem, name, body string, createService bool) (*db.Project, *db.Release, *db.Artifact) {
 	t.Helper()
 	ctx := context.Background()
@@ -56,11 +54,6 @@ func getPackages(t *testing.T, h *Handler, projectName string, proj *db.Project)
 
 // TestDebGenerationDeterministic pins the precondition the deb digest cache
 // (and apt's own hash verification of pool downloads against the signed index)
-// relies on: two independent generations of the same artifact yield identical
-// bytes, regardless of wall clock and of the request base URL. The >1s sleep
-// would expose any second-granularity timestamp leaking into the ar, tar, or
-// gzip headers. Variants cover the create_service materialization (extra
-// control/data members) and a slash-namespaced project (folded package name).
 func TestDebGenerationDeterministic(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -101,7 +94,6 @@ func TestServePackages_CachesDebDigest(t *testing.T) {
 	ctx := context.Background()
 	proj, rel, a := seedAptProject(t, d, store, "myapp", "binary-bytes", false)
 
-	// No cache row before the first fetch.
 	_, _, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "deb")
 	require.ErrorIs(t, err, db.ErrNotFound)
 
@@ -109,11 +101,6 @@ func TestServePackages_CachesDebDigest(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	body := rec.Body.String()
 
-	// The first fetch computed the digest and stored it, and the stored digest
-	// matches an independent generation of the same artifact -- i.e. the exact
-	// deb payload the pool download serves. The row records the SOURCE blob key
-	// (no deb is stored) plus the generated payload size, and its metadata
-	// carries the input fingerprint.
 	out, err := h.Gen.Generate(ctx, repackage.FormatDeb, *proj, *rel, *a, "https://elsewhere.example")
 	require.NoError(t, err)
 	payload, err := io.ReadAll(out.Reader)
@@ -130,9 +117,6 @@ func TestServePackages_CachesDebDigest(t *testing.T) {
 	assert.Contains(t, body, fmt.Sprintf("SHA256: %s\n", want))
 	assert.Contains(t, body, fmt.Sprintf("Size: %d\n", len(payload)))
 
-	// A second fetch reads the cached digest instead of regenerating: poison
-	// the row with a sentinel (keeping the fingerprint current) and the served
-	// index must carry the sentinel.
 	sentinel := strings.Repeat("42", 32)
 	meta, err := json.Marshal(debMetadata{Inputs: debDigestFingerprint(proj, a)})
 	require.NoError(t, err)
@@ -177,7 +161,6 @@ func TestServePackages_RefillsOnCreateServiceFlip(t *testing.T) {
 	require.Contains(t, first, fmt.Sprintf("SHA256: %s\n", shaOff))
 
 	// Flip the packaging-agnostic service setting (in the DB and on the
-	// context copy the middleware would reload per request).
 	require.NoError(t, d.SetProjectCreateService(ctx, proj.ID, true))
 	proj.CreateService = true
 
@@ -188,7 +171,6 @@ func TestServePackages_RefillsOnCreateServiceFlip(t *testing.T) {
 	assert.Contains(t, second, fmt.Sprintf("SHA256: %s\n", shaOn))
 	assert.Equal(t, debDigestFingerprint(proj, a), debMetadataFingerprint(metaOn))
 
-	// Stable again once refilled: the third fetch serves the refilled row.
 	assert.Equal(t, second, getPackages(t, h, "myapp", proj).Body.String())
 }
 

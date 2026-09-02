@@ -1,7 +1,6 @@
 package api
 
 // Tests for single-artifact multi-platform ingest: PUT .../artifacts/ape with
-// a platforms= set, which stores ONE row covering every platform in the set.
 
 import (
 	"context"
@@ -18,7 +17,6 @@ import (
 )
 
 // apeBody is a minimal stand-in for a real APE: the MZqFpD magic the format
-// check reads, plus filler. Nothing downstream parses further.
 const apeBody = "MZqFpD\x00\x00fake-ape-payload"
 
 // apePlatformSpec is the set gosmopolitan's fat APE covers.
@@ -74,14 +72,12 @@ func TestUploadAPE_OneRowCoversEveryPlatform(t *testing.T) {
 		{OS: db.OSDarwin, Arch: db.ArchARM64},
 		{OS: db.OSWindows, Arch: db.ArchAMD64},
 	}, got.Platforms)
-	// The first declared platform is the canonical slot.
 	assert.Equal(t, db.OSLinux, got.OS)
 	assert.Equal(t, db.ArchAMD64, got.Arch)
 	assert.Equal(t, string(exeformat.APE), got.ExeFormat)
 	assert.Equal(t, "go-toolchain", got.Filename)
 	assert.Equal(t, 1, counting.puts)
 
-	// ONE row, not three: this is the whole point.
 	rows, err := h.DB.ListArtifacts(context.Background(), rel.ID)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
@@ -89,8 +85,6 @@ func TestUploadAPE_OneRowCoversEveryPlatform(t *testing.T) {
 }
 
 // TestUploadAPE_EveryPlatformResolvesToTheSameArtifact is the resolution half:
-// the lookup every download path uses answers with the one artifact, for each
-// covered platform.
 func TestUploadAPE_EveryPlatformResolvesToTheSameArtifact(t *testing.T) {
 	h, proj, rel := setupUploadTest(t, "resolveproj")
 	rec := doAPEUpload(t, h, proj, "?platforms="+apePlatformSpec, apeBody, nil)
@@ -223,8 +217,6 @@ func TestUploadAPE_PublishedReleaseRejected(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, rec.Code)
 }
 
-// Existing per-platform artifacts keep a one-element platform set, so the API
-// shape is uniform and a consumer never special-cases.
 func TestUploadArtifact_SinglePlatformResponseCarriesItsPlatform(t *testing.T) {
 	h, proj, _ := setupUploadTest(t, "uniformproj")
 

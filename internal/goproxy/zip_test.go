@@ -12,10 +12,6 @@ import (
 	modzip "golang.org/x/mod/zip"
 )
 
-// The zip is the part with no second chance: a module zip that is merely close
-// to canonical is a checksum failure at every consumer, and nothing upstream of
-// the go command will tell you why. So the served bytes are round-tripped
-// through x/mod's own Unzip, which applies the same rules the go command does.
 func TestServedZipIsAValidModuleZip(t *testing.T) {
 	fake := newFakeGitHub(t)
 	modPath := privateOrg + "/tml"
@@ -84,8 +80,6 @@ func TestNestedModuleZipContainsOnlyItsSubtree(t *testing.T) {
 	}
 }
 
-// A repository tarball is untrusted input, and a "../" entry in one is how an
-// archive writes outside the directory it is being extracted into.
 func TestTarballCannotEscapeTheExtractionRoot(t *testing.T) {
 	dir := t.TempDir()
 	_, err := safeJoin(dir, "../escaped")

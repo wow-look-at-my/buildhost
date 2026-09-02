@@ -19,9 +19,6 @@ import (
 
 // TestOCIRepackageEssentials verifies the synthesized image carries the shared
 // essentials base layer (CA certs + minimal rootfs) in addition to the binary layer:
-// the base layer blob is registered, the manifest lists both layers base-first, and the
-// config has matching ordered diff_ids, the SSL_CERT_FILE env, the preserved entrypoint
-// and no default user.
 func TestOCIRepackageEssentials(t *testing.T) {
 	d := openTestDB(t)
 	store := openTestStore(t)
@@ -49,7 +46,6 @@ func TestOCIRepackageEssentials(t *testing.T) {
 	manifestData, err := io.ReadAll(output.Reader)
 	require.NoError(t, err)
 
-	// All three blobs are registered against this artifact so the pull gate serves them.
 	cfgKey, _, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "oci-config")
 	require.NoError(t, err)
 	baseKey, _, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "oci-base-layer")
@@ -57,7 +53,6 @@ func TestOCIRepackageEssentials(t *testing.T) {
 	_, _, _, _, _, err = d.GetPackagedArtifact(ctx, a.ID, "oci-layer")
 	require.NoError(t, err)
 
-	// Manifest references two layers; the base (essentials) layer is first.
 	var man struct {
 		Layers []struct {
 			MediaType string `json:"mediaType"`
@@ -71,8 +66,6 @@ func TestOCIRepackageEssentials(t *testing.T) {
 		assert.Equal(t, "application/vnd.oci.image.layer.v1.tar+zstd", l.MediaType)
 	}
 
-	// Config: two diff_ids (base first), Env carries SSL_CERT_FILE, Entrypoint preserved,
-	// WorkingDir set, and no default User (root) when oci_user is unset.
 	cfgRC, _, err := store.Get(ctx, cfgKey)
 	require.NoError(t, err)
 	cfgBytes, err := io.ReadAll(cfgRC)
@@ -192,8 +185,6 @@ func TestOCIRepackageAPEWithoutShellCacheFails(t *testing.T) {
 	assert.Contains(t, err.Error(), "shell")
 }
 
-// A plain binary is untouched by the APE path: two layers, a bare entrypoint,
-// and no shell cache needed.
 func TestOCIRepackageNonAPENeedsNoShell(t *testing.T) {
 	store := openTestStore(t)
 	rp := &OCI{Store: store}

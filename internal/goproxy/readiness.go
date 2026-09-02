@@ -15,17 +15,10 @@ import (
 // Health is the proxy's own readiness, independent of the registry's /healthz.
 //
 // The failure this exists for: a module proxy with no upstream credential serves
-// every PUBLIC module perfectly and no private one at all, so uptime checks,
-// dashboards and smoke tests all read green while every build that depends on a
-// private first-party module is broken. Nothing in "is the process up" can see
-// that. So readiness here is a statement about the credential, re-checked
-// periodically and reported as its own thing.
 type Health struct {
 	// Healthy is false when the proxy cannot serve the private modules it is
-	// configured to serve.
-	Healthy bool `json:"healthy"`
-	// Reason is why, in one line, when Healthy is false.
-	Reason string `json:"reason,omitempty"`
+	Healthy bool   `json:"healthy"`
+	Reason  string `json:"reason,omitempty"`
 	// CredentialConfigured reports whether a GitHub App or static token is set.
 	CredentialConfigured bool `json:"credential_configured"`
 	// CredentialKind is "github-app", "token" or "none".
@@ -35,8 +28,6 @@ type Health struct {
 	// Upstream is the configured public mirror ("" when passthrough is off).
 	Upstream string `json:"upstream"`
 	// ReadinessModule is the private module resolved as the live proof, "" when
-	// none is configured -- in which case Probed is false and the check can only
-	// report whether a credential exists.
 	ReadinessModule string    `json:"readiness_module"`
 	Probed          bool      `json:"probed"`
 	ProbeVersion    string    `json:"probe_version,omitempty"`
@@ -72,14 +63,6 @@ const readinessInterval = 15 * time.Minute
 // startReadiness evaluates readiness now and keeps it current.
 //
 // With no private prefixes there is nothing a credential is needed for, so the
-// result cannot change: the check runs once, inline, and no background loop
-// starts. That is the shape every test that calls auth.Init has -- a ticker per
-// call would leak for the life of the test binary, and a probe would reach
-// api.github.com from a unit test the moment someone passed real orgs.
-//
-// Otherwise the first run goes on its own goroutine (immediate, so a
-// misconfigured proxy says so in the startup logs rather than on the first
-// failing build) and repeats on the interval.
 func (s *Service) startReadiness(ctx context.Context) {
 	if len(s.cfg.PrivatePrefixes) == 0 {
 		s.checkHealth(ctx)
@@ -112,7 +95,6 @@ func (s *Service) checkHealth(ctx context.Context) Health {
 	switch {
 	case len(s.cfg.PrivatePrefixes) == 0:
 		// Nothing private is claimed, so there is nothing a credential is needed
-		// for; passthrough-only is a legitimate configuration.
 		h.Reason = ""
 
 	case !h.CredentialConfigured:
@@ -122,8 +104,6 @@ func (s *Service) checkHealth(ctx context.Context) Health {
 
 	case s.cfg.ReadinessModule == "":
 		// A credential that authenticates but is not authorized for the org looks
-		// identical to a working one from here. Say so rather than claiming a
-		// proof this check cannot make.
 		h.Reason = "no BUILDHOST_GOPROXY_READINESS_MODULE is set, so the credential's " +
 			"ACCESS to private modules is unproven (only its presence is checked)"
 
@@ -160,9 +140,6 @@ func (s *Service) checkHealth(ctx context.Context) Health {
 }
 
 // credentialKind reports what credential the proxy would present. It asks for a
-// bearer against a repo in the first configured private prefix, because that is
-// the question that matters -- a GitHub App only mints a token for an org it is
-// actually installed on.
 func (s *Service) credentialKind(ctx context.Context) (string, bool) {
 	owner, repo := "", ""
 	if len(s.cfg.PrivatePrefixes) > 0 {
@@ -209,8 +186,6 @@ type publicHealth struct {
 // that must authenticate is a monitor nobody wires up. Everything else needs a
 // read token: the private prefixes, the readiness module and a probe error all
 // NAME private repositories, and serve() gates even public modules so that "is
-// this module private?" is not a question anybody can ask anonymously. Handing
-// out the prefix list here would answer it for free.
 func (s *Service) serveHealth(w http.ResponseWriter, r *http.Request) {
 	h := s.Health()
 	w.Header().Set("Content-Type", "application/json")

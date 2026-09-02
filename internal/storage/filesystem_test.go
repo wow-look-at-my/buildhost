@@ -252,7 +252,6 @@ func TestGetCompressedReturnsRawZstdStream(t *testing.T) {
 	assert.Equal(t, blob.Size, int64(len(raw)), "Size must equal the bytes streamed")
 
 	// The passthrough bytes are a real zstd stream that decodes to the artifact --
-	// proving the server hands over compressed bytes without decompressing them.
 	zr, err := zstd.NewReader(bytes.NewReader(raw))
 	require.Nil(t, err)
 	defer zr.Close()

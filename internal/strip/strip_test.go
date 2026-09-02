@@ -15,15 +15,11 @@ import (
 )
 
 // Stripping is implemented in-process, so it is available wherever buildhost
-// runs -- including the distroless production image, which ships no binutils
-// and where the previous shell-out implementation silently did nothing.
 func TestAvailable(t *testing.T) {
 	assert.True(t, Available())
 }
 
 func TestAvailable_NoExternalTools(t *testing.T) {
-	// An empty PATH removes strip(1)/objcopy(1) entirely. Stripping must still
-	// be available: that is the whole point of doing it natively.
 	t.Setenv("PATH", t.TempDir())
 	assert.True(t, Available())
 
@@ -59,8 +55,6 @@ func TestStrip_NonELFFile(t *testing.T) {
 		"shell script":       []byte("#!/bin/sh\necho hi\n"),
 		"shorter than magic": []byte("MZ"),
 		// The case that actually shipped broken: BFD ACCEPTS a PE32+, so
-		// strip/objcopy returned success and rewrote the file. See
-		// buildPEFixture -- a Cosmopolitan APE is a PE32+ to BFD.
 		"PE32+ (what an APE looks like to BFD)": buildPEFixture(t),
 	}
 
@@ -74,7 +68,6 @@ func TestStrip_NonELFFile(t *testing.T) {
 			require.ErrorIs(t, err, ErrNotELF)
 
 			// The input must be left exactly as it was: the download path
-			// falls back to serving these bytes verbatim.
 			after, readErr := os.ReadFile(input)
 			require.NoError(t, readErr)
 			assert.Equal(t, content, after, "Strip must not modify a non-ELF input")
@@ -91,9 +84,6 @@ func TestStrip_NonELFFile(t *testing.T) {
 
 // buildPEFixture returns a real PE32+ binary: the file format BFD accepts but
 // this package must refuse. A hand-written MZ header is not enough -- BFD
-// rejects a malformed one, so a fake fixture cannot fail this test even with
-// the magic check removed. A Cosmopolitan APE binary is a well-formed PE32+,
-// which is why the real go-toolchain artifact was silently rewritten.
 func buildPEFixture(t *testing.T) []byte {
 	t.Helper()
 	dir := t.TempDir()
@@ -279,7 +269,6 @@ func TestStrip_SectionSelection(t *testing.T) {
 	assert.False(t, names.Contains(".debug_info"), ".debug_info must be stripped")
 
 	// Every allocated section survives, at its original file offset -- program
-	// headers address them directly, so moving one would break execution.
 	for _, s := range orig.Sections {
 		if s.Flags&elf.SHF_ALLOC == 0 {
 			continue

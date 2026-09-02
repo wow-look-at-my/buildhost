@@ -24,31 +24,22 @@ func init() {
 	RetryBaseDelay = time.Millisecond
 }
 
-// mockServer implements the session protocol plus one capture-everything
-// upload target, so tests can drive the client against realistic behavior
-// (offset checks, partial chunks, transient failures) without a real server.
 type mockServer struct {
 	t  *testing.T
 	mu sync.Mutex
 
-	maxDirect int64 // advertised by /api/v1/server-info; 0 omits the endpoint
+	maxDirect int64
 
 	// uploadBySHA256 is advertised on server-info when set (a server with
-	// hash-reference upload support).
 	uploadBySHA256 bool
 
 	sessions map[string][]byte // id -> spooled bytes
 	nextID   int
 
-	// failAppends fails this many appends with a 500 AFTER committing the
-	// chunk -- the lost-response case a resuming client must survive.
 	failAppends int
 
-	// brokenAppends fails appends with a 500 WITHOUT committing anything --
-	// a server that cannot make progress at all.
 	brokenAppends bool
 
-	// disableSessions makes POST /api/v1/uploads 404 (an old server).
 	disableSessions bool
 
 	sessionCalls int // POST /api/v1/uploads count
@@ -171,7 +162,7 @@ func tempFile(t *testing.T, size int) (string, []byte) {
 
 func TestSmallFileUploadsDirect(t *testing.T) {
 	m, ts := newMockServer(t)
-	path, data := tempFile(t, 8) // under the advertised 10-byte limit
+	path, data := tempFile(t, 8)
 
 	u := &Uploader{Server: ts.URL, Token: "tok"}
 	resp, err := u.Upload("PUT", ts.URL+"/target?kind=binary", nil, path)
@@ -187,9 +178,9 @@ func TestSmallFileUploadsDirect(t *testing.T) {
 
 func TestLargeFileChunks(t *testing.T) {
 	m, ts := newMockServer(t)
-	path, data := tempFile(t, 100) // over the advertised 10-byte limit
+	path, data := tempFile(t, 100)
 
-	u := &Uploader{Server: ts.URL, Token: "tok", ChunkSize: 7} // 15 chunks
+	u := &Uploader{Server: ts.URL, Token: "tok", ChunkSize: 7}
 	resp, err := u.Upload("PUT", ts.URL+"/target?kind=binary", map[string]string{"X-Extra": "yes"}, path)
 	require.NoError(t, err)
 	resp.Body.Close()
@@ -206,7 +197,7 @@ func TestLargeFileChunks(t *testing.T) {
 func TestChunkedResumesAfterLostResponse(t *testing.T) {
 	m, ts := newMockServer(t)
 	path, data := tempFile(t, 50)
-	m.failAppends = 2 // two chunk responses vanish after the bytes landed
+	m.failAppends = 2
 
 	u := &Uploader{Server: ts.URL, Token: "tok", ChunkSize: 8}
 	resp, err := u.Upload("PUT", ts.URL+"/target", nil, path)
@@ -235,7 +226,6 @@ func TestServerInfoUnavailableFallsBackToDefaultThreshold(t *testing.T) {
 	m.maxDirect = 0 // no server-info endpoint at all
 	path, data := tempFile(t, 100)
 
-	// Default threshold is 90 MiB, so this 100-byte file goes direct.
 	u := &Uploader{Server: ts.URL, Token: "tok", ChunkSize: 7}
 	resp, err := u.Upload("PUT", ts.URL+"/target", nil, path)
 	require.NoError(t, err)
@@ -246,9 +236,6 @@ func TestServerInfoUnavailableFallsBackToDefaultThreshold(t *testing.T) {
 }
 
 // A missing session endpoint is a broken server, not a mode to accommodate:
-// the one buildhost advertises upload_sessions, and the old fallback's real
-// effect was to send a several-hundred-megabyte single request for the proxy
-// to reject with a 413 nobody could trace back to here.
 func TestMissingSessionEndpointFailsLoudly(t *testing.T) {
 	m, ts := newMockServer(t)
 	m.disableSessions = true

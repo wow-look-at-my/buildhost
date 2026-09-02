@@ -110,7 +110,6 @@ func TestResolve_Semver_MajorPrefix(t *testing.T) {
 		{ID: 1, Version: "1.1.0", VersionNum: 1001000},
 	}
 
-	// "1" should match the first (highest) release starting with "1."
 	got, err := Resolve(nil, project, "1", releases)
 	require.Nil(t, err)
 
@@ -127,7 +126,6 @@ func TestResolve_Semver_MajorMinorPrefix(t *testing.T) {
 		{ID: 1, Version: "1.0.0", VersionNum: 1000000},
 	}
 
-	// "1.2" should match the first (highest) release starting with "1.2."
 	got, err := Resolve(nil, project, "1.2", releases)
 	require.Nil(t, err)
 
@@ -143,7 +141,6 @@ func TestResolve_Semver_SkipsPrerelease(t *testing.T) {
 		{ID: 1, Version: "1.1.0", VersionNum: 1001000},
 	}
 
-	// "1" prefix should skip the prerelease and land on 1.2.0
 	got, err := Resolve(nil, project, "1", releases)
 	require.Nil(t, err)
 

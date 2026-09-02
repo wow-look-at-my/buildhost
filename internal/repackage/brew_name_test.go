@@ -8,20 +8,16 @@ import (
 )
 
 // rubyConstant is what every emitted class name must satisfy, or brew dies
-// with a ".rb: syntax error" while parsing the formula (reproduced against
-// Homebrew 6.0.9 with `class 7zip < Formula` and `class Go1.2 < Formula`).
 var rubyConstant = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
 
 // TestBrewClassName pins the filename->class derivation to Homebrew's own
-// Formulary.class_s (measured on 6.0.9): '-', '_', '.' (and buildhost's '/')
-// separate; the following character is upcased.
 func TestBrewClassName(t *testing.T) {
 	cases := map[string]string{
 		"go-toolchain":          "GoToolchain",
 		"bin-file-fmt/binpazer": "BinFileFmtBinpazer",
 		"myrepo/myapp":          "MyrepoMyapp",
 		"a.b-c_d":               "ABCD",
-		"go1.2.3":               "Go123", // dots MUST fold: "Go1.2.3" is a Ruby syntax error
+		"go1.2.3":               "Go123",
 		"dotted.app":            "DottedApp",
 		"snake_case":            "SnakeCase",
 		"myrepo/7app":           "Myrepo7app", // digit-leading SEGMENT is fine

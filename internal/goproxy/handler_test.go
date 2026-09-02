@@ -32,7 +32,6 @@ func TestParseRequest(t *testing.T) {
 		},
 		{
 			// The wire encoding: an uppercase letter travels as "!" + lowercase, so
-			// a case-insensitive filesystem cannot collide two module paths.
 			name: "case-encoded module path", path: "/github.com/!pazer!o!p/thing/@v/list",
 			wantMod: "github.com/PazerOP/thing", wantEnd: "list",
 		},
@@ -71,9 +70,6 @@ func TestEscapeRoundTrip(t *testing.T) {
 	}
 }
 
-// The ring buffer must not lose the newest events, and must report newest first
-// -- the dashboard's recent-requests table is the only place a transient
-// failure is visible.
 func TestMetricsRingKeepsNewestFirst(t *testing.T) {
 	m := newMetrics()
 	for i := range recentEvents + 10 {

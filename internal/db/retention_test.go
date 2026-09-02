@@ -58,7 +58,6 @@ func TestListEvictableReleases_KeepNPerBranch(t *testing.T) {
 	for _, r := range got {
 		versions = append(versions, r.Version)
 	}
-	// main keeps the 2 newest (v4,v5) -> v1,v2,v3 evictable; dev (<=N) fully kept.
 	assert.ElementsMatch(t, []string{"v1", "v2", "v3"}, versions)
 
 	// A cutoff in the past excludes everything (recency guard): all rows are fresh.
@@ -76,8 +75,6 @@ func TestListEvictableReleases_KeepZeroStillKeepsTip(t *testing.T) {
 	retRelease(t, d, p.ID, "v3", 3, "main")
 	future := time.Now().Add(48 * time.Hour)
 
-	// keep_n = 0 must STILL keep each branch's tip (v3): only v1,v2 are evictable.
-	// This guarantees eviction can never remove a branch's latest published build.
 	got, err := d.ListEvictableReleases(ctx, 0, future)
 	require.NoError(t, err)
 	var versions []string
@@ -98,7 +95,6 @@ func TestListEvictableReleases_Pins(t *testing.T) {
 	retRelease(t, d, p.ID, "v4", 4, "main")
 	future := time.Now().Add(48 * time.Hour)
 
-	// keep-N=2 normally evicts v1,v2.
 	got, err := d.ListEvictableReleases(ctx, 2, future)
 	require.NoError(t, err)
 	assert.Len(t, got, 2)
@@ -193,8 +189,6 @@ func TestIsBlobReferenced_AllColumns(t *testing.T) {
 	require.NoError(t, err)
 
 	// A cached Go module zip is a reference too. It hangs off no project and no
-	// release, so without this the GC would sweep the module cache out from
-	// under a perfectly healthy proxy.
 	modID, err := d.GoproxyModuleID(ctx, "github.com/o/r", "github")
 	require.NoError(t, err)
 	require.NoError(t, d.PutGoproxyCached(ctx, modID, &GoproxyCached{
@@ -221,7 +215,6 @@ func TestSumReclaimableBytes(t *testing.T) {
 	future := time.Now().Add(48 * time.Hour)
 	sum, err := d.SumReclaimableBytes(ctx, 2, future)
 	require.NoError(t, err)
-	// Evict v1,v2,v3: each = artifact 100 + stripped 10 + debug 5 + packaged 20 = 135; x3 = 405.
 	assert.Equal(t, int64(405), sum)
 }
 
@@ -235,7 +228,6 @@ func TestRetentionSettings(t *testing.T) {
 	assert.Equal(t, 10, s.KeepN)
 	assert.Equal(t, 24, s.RecencyHours)
 
-	// Seed is INSERT OR IGNORE: the first seed wins, later ones are ignored.
 	require.NoError(t, d.SeedRetentionSettings(ctx, 5, 12))
 	require.NoError(t, d.SeedRetentionSettings(ctx, 99, 99))
 	s, err = d.GetRetentionSettings(ctx)
@@ -268,8 +260,8 @@ func TestListAbandonedReleases(t *testing.T) {
 	p := retProject(t, d, "proj")
 
 	unpub := &Release{ProjectID: p.ID, Version: "u1", VersionNum: 1, GitBranch: "main"}
-	require.NoError(t, d.CreateRelease(ctx, unpub)) // published = 0
-	retRelease(t, d, p.ID, "v1", 2, "main")         // published
+	require.NoError(t, d.CreateRelease(ctx, unpub))
+	retRelease(t, d, p.ID, "v1", 2, "main") // published
 
 	future := time.Now().Add(48 * time.Hour)
 	got, err := d.ListAbandonedReleases(ctx, future)

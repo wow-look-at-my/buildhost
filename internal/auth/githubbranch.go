@@ -11,26 +11,18 @@ import (
 )
 
 // GitHubActionsIssuer is the canonical GitHub Actions OIDC issuer. Default-branch
-// resolution is gated on it: only a token minted by GitHub Actions carries a
-// `repo:OWNER/REPO:...` subject that maps to a github.com repository, so only
-// then is a GitHub REST lookup meaningful. Other OIDC providers are left alone.
 const GitHubActionsIssuer = "https://token.actions.githubusercontent.com"
 
 // gitHubAPIBase is the GitHub REST base. A var (not const) so tests can point it
-// at a stub server instead of reaching the real api.github.com.
 var gitHubAPIBase = "https://api.github.com"
 
 // githubToken, when set (BUILDHOST_GITHUB_TOKEN), authenticates default-branch
-// lookups. Anonymous github.com is throttled to 60 requests/hour/IP, which a
-// shared egress can exhaust; an authenticated token raises that to 5000/hour.
-// Resolution still works anonymously (best-effort) when no token is configured.
 var (
 	githubToken   string
 	githubTokenMu sync.RWMutex
 )
 
 // SetGitHubToken configures the token used for default-branch lookups. Called
-// once at startup from config; empty means anonymous (best-effort) lookups.
 func SetGitHubToken(t string) {
 	githubTokenMu.Lock()
 	githubToken = t
@@ -94,14 +86,10 @@ func GitHubDefaultBranch(ctx context.Context, repoPath string) string {
 }
 
 func fetchGitHubDefaultBranch(ctx context.Context, repoPath string) string {
-	// Obtain the bearer first (a GitHub App installation token, a static PAT, or
-	// none) -- its own lookups are separately bounded, so they don't eat into the
-	// repos call's budget below.
 	owner, repo, _ := strings.Cut(repoPath, "/")
 	bearer := bearerForRepo(ctx, owner, repo)
 
 	// Bound the lookup so a slow github.com never stalls a publish for the full
-	// client timeout, and never outlives the request.
 	ctx, cancel := context.WithTimeout(ctx, branchLookupBudget)
 	defer cancel()
 
@@ -137,8 +125,6 @@ func fetchGitHubDefaultBranch(ctx context.Context, repoPath string) string {
 }
 
 // validRepoPath reports whether s is a safe "owner/repo" to interpolate into a
-// GitHub REST URL: exactly one slash, each segment a conservative subset of the
-// characters GitHub allows in owner/repo names.
 func validRepoPath(s string) bool {
 	owner, repo, ok := strings.Cut(s, "/")
 	if !ok || strings.Contains(repo, "/") {

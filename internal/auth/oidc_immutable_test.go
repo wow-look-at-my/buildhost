@@ -11,13 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// GitHub repos created after 2026-07-15 mint "immutable" OIDC subjects that
-// suffix each repo-path segment with its numeric account/repo ID --
-// `repo:OWNER@OWNERID/REPO@REPOID:ref:refs/heads/BRANCH` -- while classic
-// repos keep the bare `repo:OWNER/REPO:...` form (see
-// https://github.blog/changelog/2026-04-23-immutable-subject-claims-for-github-actions-oidc-tokens/).
-// All three subject parsers must strip the IDs and behave identically to the
-// classic form; classic subjects must pass through byte-for-byte.
 func TestSubjectParsers_ImmutableIDs(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -63,8 +56,6 @@ func TestSubjectParsers_ImmutableIDs(t *testing.T) {
 		},
 		{
 			// A non-numeric @-suffix is NOT an immutable ID: nothing is
-			// stripped, and the "@" then fails project-name validation as
-			// before.
 			name:     "non-numeric suffix not stripped",
 			subject:  "repo:myorg/bad@name:ref:refs/heads/main",
 			org:      "myorg",
@@ -73,7 +64,6 @@ func TestSubjectParsers_ImmutableIDs(t *testing.T) {
 		},
 		{
 			// Only the LAST "@" is considered, so an ID after earlier junk is
-			// still stripped -- but the leftover "@" fails validation.
 			name:     "only last at-sign considered",
 			subject:  "repo:myorg/we@ird@123:ref:refs/heads/main",
 			org:      "myorg",
@@ -88,8 +78,6 @@ func TestSubjectParsers_ImmutableIDs(t *testing.T) {
 			repoPath: "myorg@/myrepo@",
 		},
 		{
-			// "@123" would strip to an empty name; leave it alone (and let
-			// validation reject it) instead.
 			name:     "lone at-sign segment not stripped",
 			subject:  "repo:myorg/@123:ref:refs/heads/main",
 			org:      "myorg",
@@ -107,10 +95,6 @@ func TestSubjectParsers_ImmutableIDs(t *testing.T) {
 }
 
 // TestVerifyToken_TrustedIssuer_ImmutableSubject proves auto-provisioning
-// works end-to-end for a post-2026-07-15 repo: the org allowlist matches the
-// owner NAME (not "name@id"), the derived project name passes validation, and
-// VerifyResult.RepoPath is the clean "owner/repo" the GitHub REST lookups
-// need. The token name keeps the raw subject, IDs included.
 func TestVerifyToken_TrustedIssuer_ImmutableSubject(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
@@ -133,7 +117,6 @@ func TestVerifyToken_TrustedIssuer_ImmutableSubject(t *testing.T) {
 	assert.Equal(t, "tesla-wheel-data", oidcProject)
 	assert.Equal(t, "wow-look-at-my/tesla-wheel-data", vr.RepoPath)
 	// No dedicated ID claims on this token: the IDs come from the immutable
-	// subject's @id suffixes.
 	assert.Equal(t, "250878655", vr.OwnerID)
 	assert.Equal(t, "1307105896", vr.RepoID)
 	assert.Equal(t, "oidc:repo:wow-look-at-my@250878655/tesla-wheel-data@1307105896:ref:refs/heads/master", tok.Name)

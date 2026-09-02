@@ -65,27 +65,22 @@ func TestPrivateProject_DownloadWithoutAuth_Returns401(t *testing.T) {
 
 	resp.Body.Close()
 
-	// Attempt unauthenticated download -- expect 401.
 	resp = env.getSubdomain(t, "dl", "/secretapp?v=1&os=linux&arch=amd64")
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
 	resp.Body.Close()
 
-	// Attempt unauthenticated latest download -- expect 401.
 	resp = env.getSubdomain(t, "dl", "/secretapp?os=linux&arch=amd64")
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
 	resp.Body.Close()
 
-	// Attempt unauthenticated branch download -- expect 401.
 	resp = env.getSubdomain(t, "dl", "/secretapp?branch=main&os=linux&arch=amd64")
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
 	resp.Body.Close()
 
 	// Unauthenticated fetches where a FORMULA belongs must be clean HTTP
-	// errors -- never a 200 whose body is not Ruby. (A 200 JSON body saved as
-	// formula.rb is exactly the ".rb: syntax error" failure class a user hit.)
 	for _, p := range []string{"/secretapp", "/Formula/secretapp.rb"} {
 		resp = env.getSubdomain(t, "brew", p)
 		require.Equalf(t, http.StatusUnauthorized, resp.StatusCode, "GET brew%s", p)
@@ -97,9 +92,6 @@ func TestPrivateProject_DownloadWithoutAuth_Returns401(t *testing.T) {
 	}
 
 	// With auth, download redirects to the static subdomain. For a PRIVATE
-	// project the redirect is a 302 whose Location carries a short-lived
-	// signed token (clients drop the Authorization header on the cross-host
-	// follow), and it must never be cached: the Location embeds a credential.
 	resp = env.authGetSubdomain(t, "dl", "/secretapp?v=1&os=linux&arch=amd64")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
 	require.Contains(t, resp.Header.Get("Location"), "static.test.local/file?")
@@ -112,8 +104,6 @@ func TestPrivateProject_DownloadWithoutAuth_Returns401(t *testing.T) {
 	resp.Body.Close()
 
 	// Following the redirect Location anonymously must succeed: the signed
-	// token in the query authorizes exactly this artifact. This is the hop
-	// curl/brew actually perform after the header is dropped.
 	resp = env.getSubdomain(t, "static", loc.Path+"?"+loc.RawQuery)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -152,7 +142,6 @@ func TestCreateProject_Duplicate_Returns409(t *testing.T) {
 func TestUploadArtifact_NoAuth_Returns401(t *testing.T) {
 	env := setup(t)
 
-	// Create project and release first (with auth).
 	resp := env.postJSON(t, "/api/v1/projects", `{"name":"authtest","versioning":"auto"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
@@ -248,7 +237,6 @@ func TestAutoVersioning_IncrementsBeyondFirst(t *testing.T) {
 
 	resp.Body.Close()
 
-	// Create first release.
 	resp = env.postJSON(t, "/api/v1/projects/multiver/releases", `{"git_branch":"main","git_commit":"aaa"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
@@ -256,7 +244,6 @@ func TestAutoVersioning_IncrementsBeyondFirst(t *testing.T) {
 	decodeJSON(t, resp, &rel1)
 	require.Equal(t, "1", rel1.Version)
 
-	// Create second release.
 	resp = env.postJSON(t, "/api/v1/projects/multiver/releases", `{"git_branch":"main","git_commit":"bbb"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 

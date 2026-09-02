@@ -25,12 +25,6 @@ import (
 )
 
 // An Actually Portable Executable starts through the shell script in its own
-// header, so a container that runs one needs /bin/sh and the applets that
-// script calls. The synthesized image gets them as a layer built from the
-// official busybox:musl image: one static binary plus a link per applet.
-//
-// The registry never executes the busybox it fetched. The applet names are
-// read off the image's own tar, which links every applet to the binary.
 
 const (
 	shellRegistryURL = "https://registry-1.docker.io"
@@ -49,13 +43,10 @@ var shellImages = map[db.Arch]string{
 }
 
 // ShellCache serves the shell layer for an APE image. The busybox binary and
-// its applet list are fetched once per pinned image and kept under Dir, so a
-// deployment asks the upstream registry once, never once per pull.
 type ShellCache struct {
 	// Dir is the durable cache root, {DataDir}/shell in production.
 	Dir string
 	// Registry, TokenURL and Images default to Docker Hub and the pins above;
-	// tests point them at a fake.
 	Registry string
 	TokenURL string
 	Images   map[db.Arch]string
@@ -76,7 +67,6 @@ func NewShellCache(dir string) *ShellCache {
 }
 
 // Layer returns the zstd-compressed shell layer for arch and its diffID. The
-// layer is deterministic for a pinned image, so it dedupes to one stored blob.
 func (c *ShellCache) Layer(ctx context.Context, arch db.Arch) ([]byte, string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -187,9 +177,6 @@ func writeFileAtomic(name string, data []byte, mode os.FileMode) error {
 	return nil
 }
 
-// fetch downloads the pinned image's one layer and reads busybox and its
-// applets out of it. The manifest and the layer are both checked against
-// their digests before anything is used.
 func (c *ShellCache) fetch(ctx context.Context, manifestDigest string) ([]byte, []string, error) {
 	token, err := c.fetchToken(ctx)
 	if err != nil {
@@ -310,8 +297,6 @@ func sha256Digest(b []byte) string {
 }
 
 // readBusyboxLayer finds the busybox binary in an image layer and the names
-// linked to it. The image ships one regular file under bin/ and a hard link
-// per applet, so the file is the binary and the links are the applet list.
 func readBusyboxLayer(r io.Reader) ([]byte, []string, error) {
 	tr := tar.NewReader(r)
 	var (
@@ -399,8 +384,6 @@ func buildShellLayer(busybox []byte, applets []string) (*shellLayer, error) {
 	return &shellLayer{compressed: buf.Bytes(), diffID: hex.EncodeToString(tarHasher.Sum(nil))}, nil
 }
 
-// writeTarSymlink writes one pinned symlink entry, the way writeTarEntry
-// writes a file or a directory.
 func writeTarSymlink(tw *tar.Writer, name, target string) error {
 	return tw.WriteHeader(&tar.Header{
 		Name:     name,

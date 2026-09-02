@@ -79,9 +79,6 @@ func TestDebRepackage_ServiceMaintainerScripts(t *testing.T) {
 	assert.Contains(t, prerm, "systemctl --global disable testapp.service")
 }
 
-// Flag off: the data member carries EXACTLY the one binary entry and the
-// control member EXACTLY the control file -- the whole content surface of the
-// pre-setting deb, so off-state debs stay identical.
 func TestDebRepackage_ServiceOffNoUnit(t *testing.T) {
 	rp := &Deb{}
 	output, err := rp.Repackage(context.Background(), makeInput())

@@ -15,8 +15,6 @@ import (
 )
 
 // The failure readiness exists for: with no credential the proxy serves every
-// PUBLIC module perfectly and no private one at all, so nothing that only asks
-// "is the process up" can see it. Readiness must say so.
 func TestNotReadyWithoutCredential(t *testing.T) {
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "", []string{privateOrg})
@@ -44,9 +42,6 @@ func TestReadyButUnprovenWithoutReadinessModule(t *testing.T) {
 	assert.Contains(t, h.Reason, "unproven")
 }
 
-// The case the deployed proxy was actually in, one step further along: a
-// credential that authenticates but is not authorized for the org. Only
-// resolving a real private module catches it.
 func TestNotReadyWhenReadinessModuleIsUnreadable(t *testing.T) {
 	fake := newFakeGitHub(t)
 	fake.Status = http.StatusNotFound
@@ -104,8 +99,6 @@ func serveHealthAs(t *testing.T, s *Service, authed bool) *httptest.ResponseReco
 	return rec
 }
 
-// The health endpoint answers 503 when the proxy cannot serve what it claims,
-// so an external check sees the difference rather than only "the port is open".
 func TestHealthEndpointReports503WhenNotReady(t *testing.T) {
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "", []string{privateOrg})
@@ -154,7 +147,6 @@ func TestHealthEndpointRedactsPrivateNamesFromAnonymousCallers(t *testing.T) {
 	assert.NotContains(t, body, "credential_kind")
 
 	// The same request WITH a read token gets everything, so nothing an operator
-	// needs is actually hidden.
 	authed := serveHealthAs(t, s, true).Body.String()
 	assert.Contains(t, authed, privateOrg+"/tml")
 	assert.Contains(t, authed, "credential_kind")
@@ -203,9 +195,6 @@ func TestLoadConfigDefaultsPrivatePrefixesFromOIDCOrgs(t *testing.T) {
 	assert.Equal(t, []string{"github.com/wow-look-at-my", "github.com/PazerOP"}, c.PrivatePrefixes)
 }
 
-// No third-party mirror unless an operator asks for one. A mirror sees the path
-// of every dependency routed through it, so a default here would ship the org's
-// dependency graph to someone else without anyone choosing that.
 func TestLoadConfigConfiguresNoUpstreamByDefault(t *testing.T) {
 	c := loadConfig([]string{"wow-look-at-my"})
 	assert.Empty(t, c.Upstream, "buildhost must not pick a module mirror on the operator's behalf")
@@ -232,7 +221,6 @@ func TestPassthroughOnlyStartsNoBackgroundLoop(t *testing.T) {
 	s.startReadiness(context.Background())
 
 	// Health is populated by the time startReadiness returns, with no goroutine
-	// left running behind it.
 	assert.True(t, s.Health().Healthy)
 	assert.False(t, s.Health().CheckedAt.IsZero())
 	assert.LessOrEqual(t, runtime.NumGoroutine(), before)

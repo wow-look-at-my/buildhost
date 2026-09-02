@@ -78,12 +78,6 @@ func publishWithOCI(t *testing.T, ctx context.Context, d *db.DB, store *storage.
 	return rel
 }
 
-// publishMultiArch publishes a release with two binary artifacts (amd64, arm64)
-// and -- deliberately -- does NOT pre-store any OCI manifest. This is the
-// production shape for a synthesized multi-arch image: the OCI serve path must
-// generate, persist and link each platform's child manifest itself. (Contrast
-// publishWithOCI, which pre-persists the manifest and would mask the
-// dangling-index bug.)
 func publishMultiArch(t *testing.T, ctx context.Context, d *db.DB, store *storage.Filesystem, proj *db.Project, version string, versionNum int64) *db.Release {
 	t.Helper()
 
@@ -193,17 +187,12 @@ func TestParseRoute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// parseOCIPath is the pure path parser; parseRoute just trims the
-			// /v2/ prefix and stamps the HTTP method onto the result.
 			got := parseOCIPath(strings.TrimPrefix(tt.path, "/v2/"))
 			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-// An unauthenticated GET /v2/ must 401 with a Basic challenge so the Docker/OCI
-// client knows credentials are required (the auth-discovery handshake). A 200
-// here makes clients conclude no auth is needed and the subsequent manifest pull
-// 401s, killing the pull.
 func TestV2Root_Unauthenticated(t *testing.T) {
 	h, _, _ := setupTest(t)
 
@@ -229,8 +218,6 @@ func TestV2Root_HEAD_Unauthenticated(t *testing.T) {
 	assert.Equal(t, "registry/2.0", rec.Header().Get("Docker-Distribution-API-Version"))
 }
 
-// Once a valid credential is presented (the auth middleware puts the token in
-// the context), /v2/ returns the 200 base response.
 func TestV2Root_Authenticated(t *testing.T) {
 	h, _, _ := setupTest(t)
 

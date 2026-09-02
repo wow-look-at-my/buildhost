@@ -12,8 +12,6 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
-// Programmatic clients (no text/html in Accept) get the bare JSON 401 with no
-// redirect -- unchanged contract.
 func TestRequireProject_PrivateProject_Programmatic_PlainJSON401(t *testing.T) {
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
@@ -38,7 +36,6 @@ func TestRequireProject_PrivateProject_Programmatic_PlainJSON401(t *testing.T) {
 }
 
 // When Sign in with GitHub is NOT configured, even a browser request falls back
-// to the plain JSON 401 (no redirect) -- buildhost has nowhere to send them.
 func TestRequireProject_PrivateProject_Browser_NoGitHubAuth_PlainJSON401(t *testing.T) {
 	d := openTestDB(t)
 	initTestMiddleware(t, d) // mw.GitHub is nil -> disabled

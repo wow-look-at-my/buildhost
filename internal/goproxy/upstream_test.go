@@ -91,9 +91,6 @@ func TestUpstreamMissIs404(t *testing.T) {
 }
 
 // The default shape: no mirror configured, so a module outside this proxy's
-// namespace is answered 404 -- the module protocol's "try the next GOPROXY
-// entry". That is what makes `GOPROXY=<proxy>,direct` fetch the rest of the
-// world from its origin instead of through a third party.
 func TestModuleOutsideOurNamespaceIs404SoDirectCanTakeIt(t *testing.T) {
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
@@ -108,10 +105,6 @@ func TestModuleOutsideOurNamespaceIs404SoDirectCanTakeIt(t *testing.T) {
 	assert.Contains(t, body, ",direct")
 }
 
-// The counterpart, and the reason the 404 above is safe: an authorization
-// failure must NOT fall through to direct. 403 halts the go command, so a
-// credential problem is reported instead of being quietly papered over by a
-// direct fetch that happens to succeed.
 func TestAuthorizationFailureDoesNotFallThroughToDirect(t *testing.T) {
 	fake := newFakeGitHub(t)
 	fake.Private = true
@@ -141,7 +134,6 @@ func TestUpstreamServerErrorIsNotAMissingModule(t *testing.T) {
 }
 
 // A private-prefix module must never be sent to the public mirror: that would
-// leak the module path of a private repository to a third party.
 func TestPrivateModuleNeverReachesTheMirror(t *testing.T) {
 	var mirrorHits int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

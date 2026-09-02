@@ -166,7 +166,6 @@ func TestGenerator_Generate(t *testing.T) {
 	require.NotNil(t, out)
 	assert.True(t, strings.HasSuffix(out.Filename, ".tar.gz"))
 	// tar.gz streams, so its length isn't known up front (SizeUnknown); verify it
-	// produced a non-empty archive by reading it.
 	assert.Equal(t, SizeUnknown, out.Size)
 	data, err := io.ReadAll(out.Reader)
 	out.Reader.Close()

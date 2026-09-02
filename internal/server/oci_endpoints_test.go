@@ -13,13 +13,9 @@ import (
 
 // TestOCI_V2Root_AuthDiscovery_FullStack drives the OCI auth-discovery handshake
 // through the real server (auth middleware + router), reproducing the production
-// bug: an unauthenticated GET /v2/ must answer 401 with a Basic challenge so the
-// Docker/OCI client knows to send credentials. A 200 here makes clients conclude
-// no auth is needed; the first real request then 401s and the pull dies.
 func TestOCI_V2Root_AuthDiscovery_FullStack(t *testing.T) {
 	env := setup(t)
 
-	// Anonymous -> 401 + WWW-Authenticate challenge.
 	resp := env.doSubdomainRequest(t, "GET", "oci", "/v2/", "", nil, false)
 	resp.Body.Close()
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
@@ -32,7 +28,6 @@ func TestOCI_V2Root_AuthDiscovery_FullStack(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, head.StatusCode)
 	require.Equal(t, `Basic realm="buildhost"`, head.Header.Get("Www-Authenticate"))
 
-	// Authenticated (the harness sends a valid Bearer token) -> 200, no challenge.
 	ok := env.doSubdomainRequest(t, "GET", "oci", "/v2/", "", nil, true)
 	defer ok.Body.Close()
 	require.Equal(t, http.StatusOK, ok.StatusCode)
@@ -41,10 +36,6 @@ func TestOCI_V2Root_AuthDiscovery_FullStack(t *testing.T) {
 
 // TestOCI_MultiArchPull_FullStack reproduces the dangling-index bug end to end:
 // a synthesized multi-arch image serves an image index that lists per-platform
-// child manifests by digest, and every one of those digests must be retrievable
-// -- on both the manifests-by-digest and blobs-by-digest paths (the task
-// confirmed both 404'd before the fix). The release is published through the
-// real REST API and pulled through the real OCI endpoint.
 func TestOCI_MultiArchPull_FullStack(t *testing.T) {
 	env := setup(t)
 
@@ -60,7 +51,6 @@ func TestOCI_MultiArchPull_FullStack(t *testing.T) {
 		env.postJSON(t, "/api/v1/projects/multi/releases/1/publish", `{}`).StatusCode)
 
 	// Pull the index by tag. Public project => anonymous read is allowed; the
-	// /v2/ root still challenges (covered above), but the manifest read does not.
 	resp := env.doSubdomainRequest(t, "GET", "oci", "/v2/multi/manifests/latest", "", nil, false)
 	body := readBody(t, resp)
 	require.Equal(t, http.StatusOK, resp.StatusCode, "index pull: %s", body)
@@ -92,7 +82,6 @@ func TestOCI_MultiArchPull_FullStack(t *testing.T) {
 		sum := sha256.Sum256(mbody)
 		assert.Equal(t, child.Digest, "sha256:"+hex.EncodeToString(sum[:]), "served child must match advertised digest")
 
-		// And via the blobs-by-digest path (clients try both; both 404'd before).
 		bresp := env.doSubdomainRequest(t, "GET", "oci", "/v2/multi/blobs/"+child.Digest, "", nil, false)
 		bresp.Body.Close()
 		require.Equalf(t, http.StatusOK, bresp.StatusCode, "child %s must resolve as a blob too", child.Digest)

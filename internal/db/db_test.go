@@ -166,7 +166,6 @@ func TestNextVersionNum(t *testing.T) {
 	ctx := context.Background()
 	p := createTestProject(t, d)
 
-	// No releases yet -- should be 1.
 	num, err := d.NextVersionNum(ctx, p.ID)
 	require.Nil(t, err)
 

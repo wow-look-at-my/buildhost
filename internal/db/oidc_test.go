@@ -22,7 +22,6 @@ func TestOIDCPolicy_CRUD(t *testing.T) {
 	require.NoError(t, d.CreateOIDCPolicy(ctx, p))
 	assert.NotEqual(t, int64(0), p.ID)
 
-	// List policies should return the one we created.
 	policies, err := d.ListOIDCPolicies(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(policies))
@@ -115,12 +114,10 @@ func TestOIDCPolicy_ListByIssuer(t *testing.T) {
 		require.NoError(t, d.CreateOIDCPolicy(ctx, p))
 	}
 
-	// List by issuer A should return 2.
 	policiesA, err := d.ListOIDCPoliciesByIssuer(ctx, "https://issuer-a.example.com")
 	require.NoError(t, err)
 	assert.Equal(t, 2, len(policiesA))
 
-	// List by issuer B should return 1.
 	policiesB, err := d.ListOIDCPoliciesByIssuer(ctx, "https://issuer-b.example.com")
 	require.NoError(t, err)
 	assert.Equal(t, 1, len(policiesB))

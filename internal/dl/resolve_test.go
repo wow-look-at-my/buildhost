@@ -2,7 +2,6 @@ package dl
 
 // Version/branch resolution tests for the download redirect: latest and
 // per-branch resolution and cache-control semantics (the signed-token and
-// platform-alias tests live in handler_signed_test.go).
 
 import (
 	"net/http"
@@ -22,7 +21,6 @@ func TestDownload_LatestVersion(t *testing.T) {
 	seedArtifact(t, d, store, rel1.ID, "linux", "amd64", "v1-binary")
 
 	// No ?v= and no ?branch= -> resolves latest on master, not the newest
-	// feature-branch version.
 	req := makeRequest("myapp", url.Values{"os": {"linux"}, "arch": {"amd64"}})
 	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
@@ -59,7 +57,6 @@ func TestDownload_ArtifactNotFound(t *testing.T) {
 	h.Download(rec, req)
 
 	// dl handler only resolves release/version, then redirects; artifact
-	// resolution now happens at /static.
 	q := requireRedirect(t, rec)
 	assert.Equal(t, "myapp", q.Get("project"))
 	assert.Equal(t, "1.0.0", q.Get("v"))
