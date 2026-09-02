@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -93,6 +94,9 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 	for _, a := range artifacts {
 		out, err := h.Gen.GenerateForPlatform(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestRootURL(r))
 		if err != nil {
+			// The platform drops out of the index; say so, or the pull fails with "manifest unknown" and no cause anywhere.
+			slog.ErrorContext(r.Context(), "oci: cannot synthesize image for platform",
+				"project", project.Name, "version", release.Version, "os", a.OS, "arch", a.Arch, "err", err)
 			continue
 		}
 		manifestData, err := io.ReadAll(out.Reader)
@@ -188,6 +192,8 @@ func (h *Handler) serveSingleManifest(w http.ResponseWriter, r *http.Request, pr
 	for _, a := range artifacts {
 		out, err := h.Gen.GenerateForPlatform(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestRootURL(r))
 		if err != nil {
+			slog.ErrorContext(r.Context(), "oci: cannot synthesize image for platform",
+				"project", project.Name, "version", release.Version, "os", a.OS, "arch", a.Arch, "err", err)
 			continue
 		}
 		manifestData, err := io.ReadAll(out.Reader)

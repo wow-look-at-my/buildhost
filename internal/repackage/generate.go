@@ -35,12 +35,24 @@ type Generator struct {
 	repackagers map[Format]Repackager
 }
 
-func NewGenerator(store storage.Storage, database *db.DB, tmpDir string) *Generator {
+// Option configures a Generator.
+type Option func(*OCI)
+
+// WithShellCacheDir roots the shell layer cache for APE images at dir, which
+// must be durable: {DataDir}/shell in production, never the swept tmp root.
+func WithShellCacheDir(dir string) Option {
+	return func(o *OCI) { o.Shell = NewShellCache(dir) }
+}
+
+func NewGenerator(store storage.Storage, database *db.DB, tmpDir string, opts ...Option) *Generator {
 	m := make(map[Format]Repackager, len(registry)+1)
 	for f, rp := range registry {
 		m[f] = rp
 	}
 	oci := &OCI{Store: store, DB: database}
+	for _, opt := range opts {
+		opt(oci)
+	}
 	m[oci.Format()] = oci
 	return &Generator{store: store, tmpDir: tmpDir, repackagers: m}
 }

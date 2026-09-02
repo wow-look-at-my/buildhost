@@ -100,6 +100,118 @@ func TestOCIRepackageEssentials(t *testing.T) {
 	assert.Empty(t, cfg.Config.User)
 }
 
+// apeBinary opens with the APE prologue; the rest is never executed.
+var apeBinary = []byte("MZqFpD='\n#!/bin/sh\nexit 0\n'\n")
+
+// An APE image carries a shell layer between the essentials and the binary
+// and enters through /bin/sh, because the kernel cannot exec the APE's
+// shell-script header on its own.
+func TestOCIRepackageAPEGetsAShell(t *testing.T) {
+	d := openTestDB(t)
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "apeapp", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "v1.0.0", VersionNum: 1}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+	key, size, err := store.Put(ctx, bytes.NewReader(apeBinary))
+	require.NoError(t, err)
+	a := &db.Artifact{
+		ReleaseID: rel.ID, OS: db.OSLinux, Arch: db.ArchAMD64,
+		Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+	}
+	require.NoError(t, d.CreateArtifact(ctx, a))
+
+	rp := &OCI{Store: store, DB: d, Shell: newFakeShellRegistry(t).cache(t, t.TempDir())}
+	input := makeInput()
+	input.Project = *proj
+	input.Artifact = *a
+	input.Reader = bytes.NewReader(apeBinary)
+	input.Size = int64(len(apeBinary))
+
+	output, err := rp.Repackage(ctx, input)
+	require.NoError(t, err)
+	manifestData, err := io.ReadAll(output.Reader)
+	require.NoError(t, err)
+
+	var man struct {
+		Layers []struct {
+			Digest string `json:"digest"`
+		} `json:"layers"`
+	}
+	require.NoError(t, json.Unmarshal(manifestData, &man))
+	require.Len(t, man.Layers, 3)
+	shellKey, _, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "oci-shell-layer")
+	require.NoError(t, err)
+	assert.Equal(t, "sha256:"+shellKey, man.Layers[1].Digest)
+
+	rc, _, err := store.Get(ctx, shellKey)
+	require.NoError(t, err)
+	shellData, err := io.ReadAll(rc)
+	rc.Close()
+	require.NoError(t, err)
+	entries := readShellLayer(t, shellData)
+	require.Contains(t, entries, "bin/sh")
+	assert.Equal(t, "busybox", entries["bin/sh"].Linkname)
+
+	cfgKey, _, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "oci-config")
+	require.NoError(t, err)
+	cfgRC, _, err := store.Get(ctx, cfgKey)
+	require.NoError(t, err)
+	cfgBytes, err := io.ReadAll(cfgRC)
+	cfgRC.Close()
+	require.NoError(t, err)
+	var cfg struct {
+		Rootfs struct {
+			DiffIDs []string `json:"diff_ids"`
+		} `json:"rootfs"`
+		Config struct {
+			Entrypoint []string `json:"Entrypoint"`
+		} `json:"config"`
+	}
+	require.NoError(t, json.Unmarshal(cfgBytes, &cfg))
+	assert.Equal(t, []string{"/bin/sh", "/apeapp"}, cfg.Config.Entrypoint)
+	require.Len(t, cfg.Rootfs.DiffIDs, 3)
+	_, baseDiffID, err := essentialsLayer()
+	require.NoError(t, err)
+	assert.Equal(t, "sha256:"+baseDiffID, cfg.Rootfs.DiffIDs[0])
+}
+
+// Without a shell cache an APE image is refused outright: an image that
+// cannot start must not be served as if it could.
+func TestOCIRepackageAPEWithoutShellCacheFails(t *testing.T) {
+	store := openTestStore(t)
+	rp := &OCI{Store: store}
+	input := makeInput()
+	input.Reader = bytes.NewReader(apeBinary)
+	input.Size = int64(len(apeBinary))
+
+	_, err := rp.Repackage(context.Background(), input)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "shell")
+}
+
+// A plain binary is untouched by the APE path: two layers, a bare entrypoint,
+// and no shell cache needed.
+func TestOCIRepackageNonAPENeedsNoShell(t *testing.T) {
+	store := openTestStore(t)
+	rp := &OCI{Store: store}
+	input := makeInput()
+	input.Reader = bytes.NewReader(testBinary)
+	input.Size = int64(len(testBinary))
+
+	output, err := rp.Repackage(context.Background(), input)
+	require.NoError(t, err)
+	manifestData, err := io.ReadAll(output.Reader)
+	require.NoError(t, err)
+	var man struct {
+		Layers []struct{} `json:"layers"`
+	}
+	require.NoError(t, json.Unmarshal(manifestData, &man))
+	assert.Len(t, man.Layers, 2)
+}
+
 func TestEssentialsLayerContents(t *testing.T) {
 	data, diffID, err := essentialsLayer()
 	require.NoError(t, err)

@@ -8,6 +8,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -34,6 +35,9 @@ var caCertsPEM []byte
 type OCI struct {
 	Store storage.Storage
 	DB    *db.DB
+	// Shell serves the /bin/sh layer an APE image needs. Nil refuses to
+	// synthesize an APE image rather than ship one that cannot start.
+	Shell *ShellCache
 }
 
 func (o *OCI) Format() Format { return FormatOCI }
@@ -69,17 +73,50 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-base-layer", baseKey, baseSize, baseKey, "base-layer.tar.zst", "{}")
 	}
 
-	binKey, binSize, binDiffID, err := ociWriteLayer(ctx, o.Store, input.Reader, input.Size, input.Project.Name)
+	// An APE starts through the shell script in its own header, so its image
+	// carries a shell layer and enters through /bin/sh. The check reads the
+	// artifact's own bytes, the way the deb path does; nothing is executed.
+	isAPE, artifactReader, err := peekAPE(input.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("inspect artifact: %w", err)
+	}
+	entrypoint := []string{"/" + input.Project.Name}
+	layers := []ociDescriptor{{baseKey, baseSize}}
+	diffIDs := []string{baseDiffID}
+	if isAPE && input.Artifact.OS == db.OSLinux {
+		if o.Shell == nil {
+			return nil, errors.New("an APE image needs a shell layer, and no shell cache is configured")
+		}
+		shellData, shellDiffID, err := o.Shell.Layer(ctx, input.Artifact.Arch)
+		if err != nil {
+			return nil, fmt.Errorf("shell layer: %w", err)
+		}
+		shellKey, shellSize, err := o.Store.Put(ctx, bytes.NewReader(shellData))
+		if err != nil {
+			return nil, fmt.Errorf("store shell layer: %w", err)
+		}
+		if input.Artifact.ID > 0 && o.DB != nil {
+			// Suffixed like the config: the layer is per architecture.
+			o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-shell-layer"+input.CacheSuffix, shellKey, shellSize, shellKey, "shell.tar.zst", "{}")
+		}
+		layers = append(layers, ociDescriptor{shellKey, shellSize})
+		diffIDs = append(diffIDs, shellDiffID)
+		entrypoint = []string{"/bin/sh", "/" + input.Project.Name}
+	}
+
+	binKey, binSize, binDiffID, err := ociWriteLayer(ctx, o.Store, artifactReader, input.Size, input.Project.Name)
 	if err != nil {
 		return nil, fmt.Errorf("create layer: %w", err)
 	}
 	if input.Artifact.ID > 0 && o.DB != nil {
 		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-layer", binKey, binSize, binKey, "layer.tar.zst", "{}")
 	}
+	layers = append(layers, ociDescriptor{binKey, binSize})
+	diffIDs = append(diffIDs, binDiffID)
 
 	configData := ociCreateConfig(
 		string(input.Artifact.OS), string(input.Artifact.Arch),
-		[]string{baseDiffID, binDiffID}, input.Project.Name, input.Release.OciUser,
+		diffIDs, entrypoint, input.Release.OciUser,
 	)
 
 	configKey, configSize, err := o.Store.Put(ctx, bytes.NewReader(configData))
@@ -93,11 +130,8 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-config"+input.CacheSuffix, configKey, configSize, configKey, "config.json", "{}")
 	}
 
-	// Base layer first -- must match the diff_ids order in the config.
-	manifestData := ociCreateManifest(
-		ociDescriptor{configKey, configSize},
-		[]ociDescriptor{{baseKey, baseSize}, {binKey, binSize}},
-	)
+	// Same order as the diff_ids in the config: base, shell for an APE, binary.
+	manifestData := ociCreateManifest(ociDescriptor{configKey, configSize}, layers)
 
 	// Persist the manifest document itself (alongside its config + layers above)
 	// and link it to the project, so the pull path can serve it by its content
@@ -279,13 +313,13 @@ func writeTarEntry(tw *tar.Writer, name string, mode int64, typeflag byte, data 
 	return nil
 }
 
-func ociCreateConfig(os, arch string, diffIDs []string, name, user string) []byte {
+func ociCreateConfig(os, arch string, diffIDs []string, entrypoint []string, user string) []byte {
 	prefixed := make([]string, len(diffIDs))
 	for i, d := range diffIDs {
 		prefixed[i] = "sha256:" + d
 	}
 	cfg := map[string]any{
-		"Entrypoint": []string{"/" + name},
+		"Entrypoint": entrypoint,
 		"WorkingDir": "/",
 		"Env": []string{
 			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",

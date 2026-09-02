@@ -29,7 +29,7 @@ jobs:
       # what makes the CLI downloadable -- the publish composites fetch it from
       # dl instead of building cmd/buildhost from a checkout that has none of
       # the generated files it embeds.
-      - uses: wow-look-at-my/go-toolchain@v1
+      - uses: wow-look-at-my/go-toolchain@master
         with:
           generate: 476c7c5fc951
       # The step above just ran every generate directive, which is what makes
@@ -79,7 +79,7 @@ jobs:
       # matching cache-download action, not actions/download-artifact.
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
       # render-routes: run the binary and REFUSE an empty or failed result.
       # A silently empty render reports every route as added, which is worse
@@ -279,7 +279,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
       - run: chmod +x build/buildhost
       # Build the image (and pull its base layers) in a separate, untimed step
@@ -605,7 +605,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
       - run: chmod +x build/buildhost
       - uses: actions/setup-go@v5
@@ -661,7 +661,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
       - run: chmod +x build/buildhost
       # playwright-core drives the runner's preinstalled Chrome; it is a
@@ -694,7 +694,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
       - run: chmod +x build/buildhost
       - uses: actions/setup-go@v5
@@ -752,7 +752,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
       - run: chmod +x build/buildhost
       # --no-sandbox: the suite drives the server with curl and jq, which the
@@ -771,7 +771,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
       - run: chmod +x build/buildhost
       - name: Start local buildhost (1 MiB direct-upload limit)
