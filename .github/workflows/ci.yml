@@ -28,7 +28,9 @@ jobs:
       - uses: ./.github/actions/buildhost-download
         with:
           project: dats
-      - run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/repo-hygiene.dats test/dats/compression-opts.dats
+      - env:
+          BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
+        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/repo-hygiene.dats test/dats/compression-opts.dats test/dats/routes-golden.dats
       # On the default branch, cache this commit's route list keyed by its SHA.
       - if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         shell: bash
@@ -88,29 +90,7 @@ jobs:
           set -euo pipefail
           chmod +x build/buildhost
           "$RUNNER_TEMP/render-routes.sh" ./build/buildhost pr-routes.txt "PR"
-          # The shipped binary must enumerate its own REST API. Zero here means
-          if ! grep -q '^/api/v1' pr-routes.txt; then
-            echo "::error::PR route render contains no /api/v1 routes."
-            echo "::error::Routes must register in init(), never inside auth.OnReady()."
-            exit 1
-          fi
           echo "routes=$(base64 -w0 pr-routes.txt)" >> "$GITHUB_OUTPUT"
-      # The committed route table is what makes a route change reviewable: this
-      - name: docs/routes.txt matches the built binary
-        uses: actions/checkout@v4
-        with:
-          path: src
-      - shell: bash
-        run: |
-          set -euo pipefail
-          if ! diff -u --label "docs/routes.txt (committed)" --label "buildhost routes (built binary)" \
-              src/docs/routes.txt pr-routes.txt; then
-            echo
-            echo "docs/routes.txt is stale. Regenerate it and commit the result:"
-            echo "    go-toolchain && ./build/buildhost routes > docs/routes.txt"
-            echo "  (or, without a built binary:  UPDATE_ROUTES_GOLDEN=1 go-toolchain)"
-            exit 1
-          fi
       # Base routes: prefer the route list the default-branch build cached
       - id: base
         env:
