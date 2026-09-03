@@ -44,6 +44,7 @@ func withProject(r *http.Request, p *db.Project) *http.Request {
 }
 
 func TestServe_RawFormat_Success(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -72,6 +73,7 @@ func TestServe_RawFormat_Success(t *testing.T) {
 }
 
 func TestServe_RawFormat_ZstdPassthrough(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -112,6 +114,7 @@ func TestServe_RawFormat_ZstdPassthrough(t *testing.T) {
 }
 
 func TestServe_RawFormat_IdentityWhenZstdNotAccepted(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -143,6 +146,7 @@ func TestServe_RawFormat_IdentityWhenZstdNotAccepted(t *testing.T) {
 }
 
 func TestServe_DockerArtifact_NotServed(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -168,6 +172,7 @@ func TestServe_DockerArtifact_NotServed(t *testing.T) {
 }
 
 func TestServe_ETag_NotModified(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -200,6 +205,7 @@ func TestServe_ETag_NotModified(t *testing.T) {
 }
 
 func TestServe_VersionNotFound(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupIntegration(t)
 	ctx := context.Background()
 
@@ -214,6 +220,7 @@ func TestServe_VersionNotFound(t *testing.T) {
 }
 
 func TestServe_ArtifactNotFound(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupIntegration(t)
 	ctx := context.Background()
 
@@ -231,6 +238,7 @@ func TestServe_ArtifactNotFound(t *testing.T) {
 }
 
 func TestServe_VersionResolution_StripV(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -255,6 +263,7 @@ func TestServe_VersionResolution_StripV(t *testing.T) {
 }
 
 func TestServe_VersionResolution_StripDotZeroZero(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -279,6 +288,7 @@ func TestServe_VersionResolution_StripDotZeroZero(t *testing.T) {
 }
 
 func TestServe_AnyOSArch(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupIntegration(t)
 	ctx := context.Background()
 
@@ -296,6 +306,7 @@ func TestServe_AnyOSArch(t *testing.T) {
 }
 
 func TestServe_DebugSymbolsHeader(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -322,6 +333,7 @@ func TestServe_DebugSymbolsHeader(t *testing.T) {
 }
 
 func TestServe_SymbolsFormat_NoStrip(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -346,6 +358,7 @@ func TestServe_SymbolsFormat_NoStrip(t *testing.T) {
 }
 
 func TestServe_RepackageFormat(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -381,6 +394,7 @@ func TestServe_RepackageFormat(t *testing.T) {
 // go-toolchain ships on Linux -- was not rejected but rewritten: roughly half
 // the bytes, corrupt, and different on every request. That broke `brew install`
 func TestServe_NonELFBinary_ServedVerbatimAndStable(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 

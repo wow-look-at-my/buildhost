@@ -71,6 +71,7 @@ func debEntries(t *testing.T, deb []byte) map[string]string {
 
 // A Cosmopolitan APE cannot run from a root-owned /usr/bin entry: it rewrites
 func TestDeb_APEBinaryGetsLauncher(t *testing.T) {
+	t.Serial()
 	entries := debEntries(t, buildDeb(t, apeFixture(), db.KindBinary, "go-toolchain"))
 
 	// dpkg creates no leading directories itself: without this entry the
@@ -90,6 +91,7 @@ func TestDeb_APEBinaryGetsLauncher(t *testing.T) {
 // The launcher is generated shell, so run it: with the real binary read-only
 // (the dpkg install shape), a per-user copy must be made and executed.
 func TestDeb_APELauncherRunsReadOnlyBinary(t *testing.T) {
+	t.Serial()
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no shell")
 	}
@@ -119,6 +121,7 @@ func TestDeb_APELauncherRunsReadOnlyBinary(t *testing.T) {
 
 // Everything that is not an APE keeps the previous layout exactly: straight to
 func TestDeb_NonAPEBinaryLayoutUnchanged(t *testing.T) {
+	t.Serial()
 	entries := debEntries(t, buildDeb(t, []byte("\x7fELF plain binary"), db.KindBinary, "plain"))
 
 	require.Contains(t, entries, "./usr/bin/plain")
@@ -129,6 +132,7 @@ func TestDeb_NonAPEBinaryLayoutUnchanged(t *testing.T) {
 // The directory-entry fix is not APE-specific: library and assets packages
 // install outside /usr/bin too, and were equally unpackable without it.
 func TestDeb_NestedInstallDirsCarryDirectoryEntry(t *testing.T) {
+	t.Serial()
 	for _, tc := range []struct {
 		kind db.Kind
 		dir  string
@@ -147,12 +151,14 @@ func TestDeb_NestedInstallDirsCarryDirectoryEntry(t *testing.T) {
 // the package name and version, so the same inputs must produce the same deb --
 // the APT Packages index caches its sha256.
 func TestDeb_APEGenerationDeterministic(t *testing.T) {
+	t.Serial()
 	a := buildDeb(t, apeFixture(), db.KindBinary, "go-toolchain")
 	b := buildDeb(t, apeFixture(), db.KindBinary, "go-toolchain")
 	assert.Equal(t, a, b)
 }
 
 func TestPeekAPE(t *testing.T) {
+	t.Serial()
 	for name, tc := range map[string]struct {
 		in   []byte
 		want bool
@@ -178,6 +184,7 @@ func TestPeekAPE(t *testing.T) {
 }
 
 func TestDeb_APEDataTarReadableAsGzip(t *testing.T) {
+	t.Serial()
 	deb := buildDeb(t, apeFixture(), db.KindBinary, "go-toolchain")
 	i := bytes.Index(deb, []byte("data.tar.gz"))
 	require.Greater(t, i, 0)

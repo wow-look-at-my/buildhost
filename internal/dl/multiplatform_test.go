@@ -28,6 +28,7 @@ func redirectFor(t *testing.T, h *Handler, proj *db.Project, params url.Values) 
 
 // TestDownload_MultiPlatform_EveryPlatformGetsTheSameURL is the property the
 func TestDownload_MultiPlatform_EveryPlatformGetsTheSameURL(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "go-toolchain", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -51,6 +52,7 @@ func TestDownload_MultiPlatform_EveryPlatformGetsTheSameURL(t *testing.T) {
 // TestDownload_MultiPlatform_AliasSpellingsResolve proves a consumer passing
 // RUNNER_OS/uname spellings reaches the same artifact.
 func TestDownload_MultiPlatform_AliasSpellingsResolve(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "go-toolchain", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -62,6 +64,7 @@ func TestDownload_MultiPlatform_AliasSpellingsResolve(t *testing.T) {
 }
 
 func TestDownload_MultiPlatform_LatestAndBranchResolveToo(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "go-toolchain", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -81,6 +84,7 @@ func TestDownload_MultiPlatform_LatestAndBranchResolveToo(t *testing.T) {
 // TestDownload_MultiPlatform_UncoveredPlatformIsUntouched proves the fold is
 // scoped to platforms the artifact actually covers: an uncovered pair keeps its
 func TestDownload_MultiPlatform_UncoveredPlatformIsUntouched(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "go-toolchain", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -94,6 +98,7 @@ func TestDownload_MultiPlatform_UncoveredPlatformIsUntouched(t *testing.T) {
 // TestDownload_SinglePlatform_RedirectUnchanged pins that an ordinary
 // per-platform artifact still redirects to exactly its own os/arch.
 func TestDownload_SinglePlatform_RedirectUnchanged(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)

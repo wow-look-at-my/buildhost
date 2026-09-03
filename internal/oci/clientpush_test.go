@@ -40,6 +40,7 @@ func writeLayoutBlob(t *testing.T, dir string, content []byte) string {
 // with a tiny chunk size, then pulls everything back through the real serve
 // paths -- the full client/server chunk protocol round trip.
 func TestClientPush_EndToEnd(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := t.Context()
 	proj := &db.Project{Name: "pwmux/mcp", Versioning: db.VersioningAuto}

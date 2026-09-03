@@ -56,6 +56,7 @@ func getTap(t *testing.T, h *Handler, host, path string) *httptest.ResponseRecor
 // TestTarGZGenerationDeterministic pins the precondition the tar.gz digest
 // cache (and Homebrew's own checksum verification of on-demand downloads)
 func TestTarGZGenerationDeterministic(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 	proj, rel, a := seedBrewProject(t, d, store, "myapp", "deterministic-binary-bytes")
@@ -77,6 +78,7 @@ func TestTarGZGenerationDeterministic(t *testing.T) {
 }
 
 func TestServeFormula_CachesTarGZDigest(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 	proj, rel, a := seedBrewProject(t, d, store, "myapp", "binary-bytes")
@@ -122,6 +124,7 @@ func TestServeFormula_CachesTarGZDigest(t *testing.T) {
 // A cached digest describes the artifact AFTER download-time transformation
 // (stripping). If that transformation changes, every stored digest describes
 func TestServeFormula_StaleTransformDigestRecomputed(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 	proj, rel, a := seedBrewProject(t, d, store, "myapp", "binary-bytes")
@@ -160,6 +163,7 @@ func TestServeFormula_StaleTransformDigestRecomputed(t *testing.T) {
 }
 
 func TestServeTap_LineageCachedAndAppendsOnChange(t *testing.T) {
+	t.Serial()
 	oldTTL := tapCacheTTL
 	tapCacheTTL = time.Hour
 	t.Cleanup(func() { tapCacheTTL = oldTTL })
@@ -245,6 +249,7 @@ func readCommitParent(t *testing.T, dir, commitSHA string) string {
 // Rebuilding with UNCHANGED content must reuse the tip commit -- the periodic
 // TTL rebuilds may not grow the history or move the ref.
 func TestServeTap_UnchangedContentKeepsTipSHA(t *testing.T) {
+	t.Serial()
 	oldTTL := tapCacheTTL
 	tapCacheTTL = 0 // every request re-checks
 	t.Cleanup(func() { tapCacheTTL = oldTTL })
@@ -269,6 +274,7 @@ func TestServeTap_UnchangedContentKeepsTipSHA(t *testing.T) {
 }
 
 func TestServeTap_SnapshotKeyedByHost(t *testing.T) {
+	t.Serial()
 	oldTTL := tapCacheTTL
 	tapCacheTTL = time.Hour
 	t.Cleanup(func() { tapCacheTTL = oldTTL })
@@ -311,6 +317,7 @@ func TestServeTap_SnapshotKeyedByHost(t *testing.T) {
 }
 
 func TestServeTap_RejectsEscapingPaths(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "myapp", "binary-bytes")
 

@@ -26,6 +26,7 @@ func readAllFromGetBody(t *testing.T, req *http.Request) string {
 }
 
 func TestNewRequestRewindsAFileBody(t *testing.T) {
+	t.Serial()
 	path := filepath.Join(t.TempDir(), "blob")
 	require.NoError(t, os.WriteFile(path, []byte("layer-bytes"), 0o600))
 	f, err := os.Open(path)
@@ -45,6 +46,7 @@ func TestNewRequestRewindsAFileBody(t *testing.T) {
 // A chunk is a section reader anchored partway into the blob, and a replay has
 // to return that chunk -- not the start of the file.
 func TestNewRequestRewindsAChunkToItsOwnStart(t *testing.T) {
+	t.Serial()
 	path := filepath.Join(t.TempDir(), "blob")
 	require.NoError(t, os.WriteFile(path, []byte("0123456789"), 0o600))
 	f, err := os.Open(path)
@@ -61,6 +63,7 @@ func TestNewRequestRewindsAChunkToItsOwnStart(t *testing.T) {
 }
 
 func TestNewRequestLeavesABodylessRequestAlone(t *testing.T) {
+	t.Serial()
 	req, err := newRequest(http.MethodHead, "https://registry.example/v2/p/blobs/sha256:abc", nil, 0)
 	require.NoError(t, err)
 	assert.Empty(t, req.Header.Get("Content-Type"))

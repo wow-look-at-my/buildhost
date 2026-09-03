@@ -9,6 +9,7 @@ import (
 )
 
 func TestDetect(t *testing.T) {
+	t.Serial()
 	for name, tc := range map[string]struct {
 		head []byte
 		want Format
@@ -29,6 +30,7 @@ func TestDetect(t *testing.T) {
 }
 
 func TestFormatLabelAndCapability(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "APE", APE.Label())
 	assert.True(t, APE.MultiPlatformCapable())
 	assert.Empty(t, Format("").Label())
@@ -49,6 +51,7 @@ func apeWithPESections(t *testing.T, peOff int, nsect uint16) []byte {
 }
 
 func TestDetectNTBoot(t *testing.T) {
+	t.Serial()
 	for name, tc := range map[string]struct {
 		head []byte
 		want NTBoot
@@ -75,6 +78,7 @@ func TestDetectNTBoot(t *testing.T) {
 
 // TestDetectNTBootOnRealAPE pins the check against the layout a real
 func TestDetectNTBootOnRealAPE(t *testing.T) {
+	t.Serial()
 	head := apeWithPESections(t, 0x80, 3)
 	require.Equal(t, uint32(0x80), binary.LittleEndian.Uint32(head[0x3c:]))
 	require.Equal(t, uint16(3), binary.LittleEndian.Uint16(head[0x86:]))

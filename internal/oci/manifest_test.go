@@ -17,6 +17,7 @@ import (
 // TestServeHTTP_MultiArchIndex_ChildrenResolveByDigest is the regression test
 // for the dangling-index bug: a synthesized multi-arch image serves an image
 func TestServeHTTP_MultiArchIndex_ChildrenResolveByDigest(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -98,6 +99,7 @@ func TestServeHTTP_MultiArchIndex_ChildrenResolveByDigest(t *testing.T) {
 // (overlay2 / non-containerd) image store pulls a tag by reading the manifest,
 // then re-requests the *same* manifest by the advertised digest to store it
 func TestServeHTTP_MultiArchIndex_IndexResolvesByDigest(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -139,6 +141,7 @@ func TestServeHTTP_MultiArchIndex_IndexResolvesByDigest(t *testing.T) {
 }
 
 func TestBlobsReachableFromManifest(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 

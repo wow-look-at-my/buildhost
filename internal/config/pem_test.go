@@ -19,6 +19,7 @@ import (
 // newlines escaped to the literal sequence "\n" (the usual shape after a
 // multi-line secret is squeezed through an environment variable), or a file
 func TestResolvePEM(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	realPEM := string(pem.EncodeToMemory(&pem.Block{

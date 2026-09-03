@@ -10,6 +10,7 @@ import (
 )
 
 func TestOIDCPolicy_CRUD(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -41,6 +42,7 @@ func TestOIDCPolicy_CRUD(t *testing.T) {
 }
 
 func TestOIDCPolicy_CreateDuplicateReturnsErrConflict(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -62,6 +64,7 @@ func TestOIDCPolicy_CreateDuplicateReturnsErrConflict(t *testing.T) {
 }
 
 func TestOIDCPolicy_DeleteNotFoundReturnsErrNotFound(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -70,6 +73,7 @@ func TestOIDCPolicy_DeleteNotFoundReturnsErrNotFound(t *testing.T) {
 }
 
 func TestOIDCPolicy_WithProjectScope(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -95,6 +99,7 @@ func TestOIDCPolicy_WithProjectScope(t *testing.T) {
 }
 
 func TestOIDCPolicy_ListByIssuer(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -129,6 +134,7 @@ func TestOIDCPolicy_ListByIssuer(t *testing.T) {
 }
 
 func TestOIDCPolicy_GetByID_NotFound(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -137,6 +143,7 @@ func TestOIDCPolicy_GetByID_NotFound(t *testing.T) {
 }
 
 func TestOIDCPolicy_DifferentSubjectPatternAllowed(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 

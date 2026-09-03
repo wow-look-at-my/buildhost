@@ -29,6 +29,7 @@ func (f *fakeDeleter) MarkDeleted(_ context.Context, githubRepo, project, versio
 // must be retracted -- otherwise the org's linked artifacts page keeps
 // asserting buildhost holds bytes it just deleted.
 func TestRun_EnforceMarksEvictedRecordsDeleted(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 	require.NoError(t, d.SetProjectGitHubRepo(ctx, p.ID, "wow-look-at-my/proj"))
@@ -56,6 +57,7 @@ func TestRun_EnforceMarksEvictedRecordsDeleted(t *testing.T) {
 }
 
 func TestRun_NoDeleterReportsUnmarkedRatherThanSilentlySkipping(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 	require.NoError(t, d.SetProjectGitHubRepo(ctx, p.ID, "wow-look-at-my/proj"))
@@ -81,6 +83,7 @@ func TestRun_NoDeleterReportsUnmarkedRatherThanSilentlySkipping(t *testing.T) {
 // succeeds, because the bytes are already gone and refusing to GC over a
 // GitHub outage would be worse.
 func TestRun_DeleterFailureCountedAndReported(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 	require.NoError(t, d.SetProjectGitHubRepo(ctx, p.ID, "wow-look-at-my/proj"))
@@ -104,6 +107,7 @@ func TestRun_DeleterFailureCountedAndReported(t *testing.T) {
 // ever posted under a known org, so there is nothing to retract and no failure
 // to report either.
 func TestRun_ProjectWithoutGithubRepoIsNotCounted(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 
@@ -125,6 +129,7 @@ func TestRun_ProjectWithoutGithubRepoIsNotCounted(t *testing.T) {
 // A dry run must not retract anything -- it reports the work it WOULD do, so an
 // operator sees the record count before committing to the deletion.
 func TestPlan_ReportsRecordsItWouldMarkWithoutCalling(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 	require.NoError(t, d.SetProjectGitHubRepo(ctx, p.ID, "wow-look-at-my/proj"))
@@ -159,6 +164,7 @@ func useTestServer(t *testing.T, url string) func() {
 }
 
 func TestGitHubRecordDeleter_PostsDeletedStatus(t *testing.T) {
+	t.Serial()
 	var gotPath string
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -187,6 +193,7 @@ func TestGitHubRecordDeleter_PostsDeletedStatus(t *testing.T) {
 }
 
 func TestGitHubRecordDeleter_ForbiddenNamesThePermission(t *testing.T) {
+	t.Serial()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		w.Write([]byte(`{"message":"Resource not accessible by integration"}`))
@@ -206,6 +213,7 @@ func TestGitHubRecordDeleter_ForbiddenNamesThePermission(t *testing.T) {
 }
 
 func TestGitHubRecordDeleter_MissingConfigIsAnError(t *testing.T) {
+	t.Serial()
 	// No registry URL: the record cannot be identified without the same
 	noURL := &GitHubRecordDeleter{Bearer: func(context.Context, string, string) string { return "tok" }}
 	err := noURL.MarkDeleted(context.Background(), "o/r", "p", "v1", "abc")

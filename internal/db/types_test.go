@@ -7,6 +7,7 @@ import (
 )
 
 func TestValidOS(t *testing.T) {
+	t.Serial()
 	valid := []string{"linux", "darwin", "windows", "freebsd", "wasm"}
 	for _, s := range valid {
 		assert.True(t, ValidOS(s))
@@ -19,6 +20,7 @@ func TestValidOS(t *testing.T) {
 }
 
 func TestValidArch(t *testing.T) {
+	t.Serial()
 	valid := []string{"amd64", "arm64", "386", "arm", "js", "wasip1"}
 	for _, s := range valid {
 		assert.True(t, ValidArch(s))
@@ -31,6 +33,7 @@ func TestValidArch(t *testing.T) {
 }
 
 func TestCompatiblePlatform(t *testing.T) {
+	t.Serial()
 	compatible := [][2]string{
 		{"wasm", "js"}, {"wasm", "wasip1"},
 		{"linux", "amd64"}, {"darwin", "arm64"}, {"windows", "amd64"},
@@ -52,6 +55,7 @@ func TestCompatiblePlatform(t *testing.T) {
 }
 
 func TestNormalizeLegacyWasmPair(t *testing.T) {
+	t.Serial()
 	// The deprecated GOOS/GOARCH-ordered pair folds to canonical os=wasm.
 	o, a, ok := NormalizeLegacyWasmPair("js", "wasm")
 	assert.True(t, ok)
@@ -78,6 +82,7 @@ func TestNormalizeLegacyWasmPair(t *testing.T) {
 }
 
 func TestValidKind(t *testing.T) {
+	t.Serial()
 	valid := []string{"binary", "library", "assets", "archive"}
 	for _, s := range valid {
 		assert.True(t, ValidKind(s))
@@ -90,6 +95,7 @@ func TestValidKind(t *testing.T) {
 }
 
 func TestAPITokenHasScope(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name   string
 		scopes string
@@ -116,6 +122,7 @@ func TestAPITokenHasScope(t *testing.T) {
 }
 
 func TestReleaseIsPrerelease(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		version string
 		want    bool
@@ -139,6 +146,7 @@ func TestReleaseIsPrerelease(t *testing.T) {
 }
 
 func TestNormalizeOS(t *testing.T) {
+	t.Serial()
 	cases := map[string]OS{
 		"linux": OSLinux, "Linux": OSLinux,
 		"darwin": OSDarwin, "macOS": OSDarwin, "macos": OSDarwin, "osx": OSDarwin, "  MAC  ": OSDarwin,
@@ -161,6 +169,7 @@ func TestNormalizeOS(t *testing.T) {
 }
 
 func TestNormalizeArch(t *testing.T) {
+	t.Serial()
 	cases := map[string]Arch{
 		"amd64": ArchAMD64, "X64": ArchAMD64, "x86_64": ArchAMD64, "x86-64": ArchAMD64,
 		"arm64": ArchARM64, "ARM64": ArchARM64, "aarch64": ArchARM64,

@@ -11,6 +11,7 @@ import (
 // --- Download Events ---------------------------------------------------------
 
 func TestRecordAndListDownloadEvents(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p, r := createTestRelease(t, d)
@@ -59,6 +60,7 @@ func TestRecordAndListDownloadEvents(t *testing.T) {
 }
 
 func TestListDownloadEventsEmpty(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p, r := createTestRelease(t, d)

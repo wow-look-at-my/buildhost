@@ -8,6 +8,7 @@ import (
 )
 
 func TestResolve_AutoVersioned_ExactMatch(t *testing.T) {
+	t.Serial()
 	project := &db.Project{ID: 1, Versioning: db.VersioningAuto}
 	releases := []db.Release{
 		{ID: 3, VersionNum: 3, Version: "3"},
@@ -23,6 +24,7 @@ func TestResolve_AutoVersioned_ExactMatch(t *testing.T) {
 }
 
 func TestResolve_AutoVersioned_Latest(t *testing.T) {
+	t.Serial()
 	project := &db.Project{ID: 1, Versioning: db.VersioningAuto}
 	releases := []db.Release{
 		{ID: 3, VersionNum: 3, Version: "3"},
@@ -38,6 +40,7 @@ func TestResolve_AutoVersioned_Latest(t *testing.T) {
 }
 
 func TestResolve_AutoVersioned_EmptySpec(t *testing.T) {
+	t.Serial()
 	project := &db.Project{ID: 1, Versioning: db.VersioningAuto}
 	releases := []db.Release{
 		{ID: 5, VersionNum: 5, Version: "5"},
@@ -51,6 +54,7 @@ func TestResolve_AutoVersioned_EmptySpec(t *testing.T) {
 }
 
 func TestResolve_AutoVersioned_NotFound(t *testing.T) {
+	t.Serial()
 	project := &db.Project{ID: 1, Versioning: db.VersioningAuto}
 	releases := []db.Release{
 		{ID: 1, VersionNum: 1, Version: "1"},
@@ -62,6 +66,7 @@ func TestResolve_AutoVersioned_NotFound(t *testing.T) {
 }
 
 func TestResolve_AutoVersioned_InvalidSpec(t *testing.T) {
+	t.Serial()
 	project := &db.Project{ID: 1, Versioning: db.VersioningAuto}
 	releases := []db.Release{
 		{ID: 1, VersionNum: 1, Version: "1"},
@@ -73,6 +78,7 @@ func TestResolve_AutoVersioned_InvalidSpec(t *testing.T) {
 }
 
 func TestResolve_Semver_ExactMatch(t *testing.T) {
+	t.Serial()
 	project := &db.Project{ID: 1, Versioning: db.VersioningSemver}
 	releases := []db.Release{
 		{ID: 3, Version: "1.2.0", VersionNum: 1002000},
@@ -88,6 +94,7 @@ func TestResolve_Semver_ExactMatch(t *testing.T) {
 }
 
 func TestResolve_Semver_ExactMatchWithVPrefix(t *testing.T) {
+	t.Serial()
 	project := &db.Project{ID: 1, Versioning: db.VersioningSemver}
 	releases := []db.Release{
 		{ID: 2, Version: "v2.0.0", VersionNum: 2000000},
@@ -102,6 +109,7 @@ func TestResolve_Semver_ExactMatchWithVPrefix(t *testing.T) {
 }
 
 func TestResolve_Semver_MajorPrefix(t *testing.T) {
+	t.Serial()
 	project := &db.Project{ID: 1, Versioning: db.VersioningSemver}
 	releases := []db.Release{
 		{ID: 4, Version: "2.1.0", VersionNum: 2001000},
@@ -118,6 +126,7 @@ func TestResolve_Semver_MajorPrefix(t *testing.T) {
 }
 
 func TestResolve_Semver_MajorMinorPrefix(t *testing.T) {
+	t.Serial()
 	project := &db.Project{ID: 1, Versioning: db.VersioningSemver}
 	releases := []db.Release{
 		{ID: 4, Version: "1.2.3", VersionNum: 1002003},
@@ -134,6 +143,7 @@ func TestResolve_Semver_MajorMinorPrefix(t *testing.T) {
 }
 
 func TestResolve_Semver_SkipsPrerelease(t *testing.T) {
+	t.Serial()
 	project := &db.Project{ID: 1, Versioning: db.VersioningSemver}
 	releases := []db.Release{
 		{ID: 3, Version: "1.3.0-rc1", VersionNum: 1003000},
@@ -149,6 +159,7 @@ func TestResolve_Semver_SkipsPrerelease(t *testing.T) {
 }
 
 func TestResolve_Semver_NotFound(t *testing.T) {
+	t.Serial()
 	project := &db.Project{ID: 1, Versioning: db.VersioningSemver}
 	releases := []db.Release{
 		{ID: 1, Version: "1.0.0", VersionNum: 1000000},
@@ -160,6 +171,7 @@ func TestResolve_Semver_NotFound(t *testing.T) {
 }
 
 func TestResolve_Semver_Latest(t *testing.T) {
+	t.Serial()
 	project := &db.Project{ID: 1, Versioning: db.VersioningSemver}
 	releases := []db.Release{
 		{ID: 2, Version: "2.0.0", VersionNum: 2000000},
@@ -174,6 +186,7 @@ func TestResolve_Semver_Latest(t *testing.T) {
 }
 
 func TestResolve_EmptyReleases(t *testing.T) {
+	t.Serial()
 	project := &db.Project{ID: 1, Versioning: db.VersioningAuto}
 
 	_, err := Resolve(nil, project, "1", nil)
@@ -185,6 +198,7 @@ func TestResolve_EmptyReleases(t *testing.T) {
 }
 
 func TestResolve_EmptyReleases_Semver(t *testing.T) {
+	t.Serial()
 	project := &db.Project{ID: 1, Versioning: db.VersioningSemver}
 
 	_, err := Resolve(nil, project, "1.0.0", nil)

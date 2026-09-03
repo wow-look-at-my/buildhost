@@ -12,6 +12,7 @@ import (
 )
 
 func TestTrackInflight_WriteMethods(t *testing.T) {
+	t.Serial()
 	atomic.StoreInt64(&inflightWrites, 0)
 
 	var seen int64
@@ -49,6 +50,7 @@ func TestTrackInflight_WriteMethods(t *testing.T) {
 }
 
 func TestTrackInflight_GETDoesNotCount(t *testing.T) {
+	t.Serial()
 	atomic.StoreInt64(&inflightWrites, 0)
 
 	blocked := make(chan struct{})
@@ -84,6 +86,7 @@ func TestTrackInflight_GETDoesNotCount(t *testing.T) {
 }
 
 func TestTrackInflight_AllWriteMethods(t *testing.T) {
+	t.Serial()
 	for _, method := range []string{http.MethodPost, http.MethodPatch, http.MethodDelete} {
 		t.Run(method, func(t *testing.T) {
 			atomic.StoreInt64(&inflightWrites, 0)
@@ -106,6 +109,7 @@ func TestTrackInflight_AllWriteMethods(t *testing.T) {
 }
 
 func TestTrackInflight_HEADAndOPTIONS(t *testing.T) {
+	t.Serial()
 	for _, method := range []string{http.MethodHead, http.MethodOptions} {
 		t.Run(method, func(t *testing.T) {
 			atomic.StoreInt64(&inflightWrites, 0)
@@ -125,6 +129,7 @@ func TestTrackInflight_HEADAndOPTIONS(t *testing.T) {
 }
 
 func TestInflightHandler(t *testing.T) {
+	t.Serial()
 	atomic.StoreInt64(&inflightWrites, 0)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/inflight", nil)
@@ -142,6 +147,7 @@ func TestInflightHandler(t *testing.T) {
 }
 
 func TestInflightHandler_DuringWrites(t *testing.T) {
+	t.Serial()
 	atomic.StoreInt64(&inflightWrites, 0)
 
 	blocked := make(chan struct{})

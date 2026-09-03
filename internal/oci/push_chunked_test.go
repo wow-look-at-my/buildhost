@@ -40,6 +40,7 @@ func patchChunk(t *testing.T, h *Handler, proj *db.Project, uuid string, body []
 }
 
 func TestPush_ChunkedWithContentRange(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -66,6 +67,7 @@ func TestPush_ChunkedWithContentRange(t *testing.T) {
 }
 
 func TestPush_ChunkOffsetMismatchIs416AndResumable(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -94,6 +96,7 @@ func TestPush_ChunkOffsetMismatchIs416AndResumable(t *testing.T) {
 }
 
 func TestPush_MalformedContentRange(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -104,6 +107,7 @@ func TestPush_MalformedContentRange(t *testing.T) {
 }
 
 func TestPush_UploadStatus(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -135,6 +139,7 @@ func TestPush_UploadStatus(t *testing.T) {
 }
 
 func TestUploadStore_SweepGoesByActivity(t *testing.T) {
+	t.Serial()
 	h, _, _ := setupTest(t)
 
 	sess, err := h.uploads.start()
@@ -157,6 +162,7 @@ func TestUploadStore_SweepGoesByActivity(t *testing.T) {
 }
 
 func TestRoute_UploadsAlwaysWrite(t *testing.T) {
+	t.Serial()
 	// The GET status read is push-flow state: it must never be reachable with
 	rt := route{project: "p", action: "uploads", reference: "u", method: http.MethodGet}
 	assert.Equal(t, auth.WriteAccess, rt.Access())

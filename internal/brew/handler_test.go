@@ -41,6 +41,7 @@ func withProject(ctx context.Context, p *db.Project) context.Context {
 }
 
 func TestServeFormula_NotRB(t *testing.T) {
+	t.Serial()
 	h, _, _ := setupTest(t)
 
 	proj := &db.Project{Name: "myapp"}
@@ -53,6 +54,7 @@ func TestServeFormula_NotRB(t *testing.T) {
 }
 
 func TestServeFormula_NoRelease(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -68,6 +70,7 @@ func TestServeFormula_NoRelease(t *testing.T) {
 }
 
 func TestServeFormula_NoBrewPackage(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -96,6 +99,7 @@ func TestServeFormula_NoBrewPackage(t *testing.T) {
 }
 
 func TestServeFormula_Success(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -126,6 +130,7 @@ func TestServeFormula_Success(t *testing.T) {
 
 // The operator-set projects.create_service flag round-trips DB -> formula: the
 func TestServeFormula_CreateServiceFlag(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -164,6 +169,7 @@ func TestServeFormula_CreateServiceFlag(t *testing.T) {
 }
 
 func TestServeFormula_EmitsAllSupportedPlatforms(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -222,6 +228,7 @@ func TestServeFormula_EmitsAllSupportedPlatforms(t *testing.T) {
 }
 
 func TestServeTap_GeneratesDumbGitRepo(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -261,6 +268,7 @@ func TestServeTap_GeneratesDumbGitRepo(t *testing.T) {
 }
 
 func TestRedirectTap_ToGitService(t *testing.T) {
+	t.Serial()
 	h, _, _ := setupTest(t)
 	req := httptest.NewRequest("GET", "/tap.git/info/refs?service=git-upload-pack", nil)
 	req.Host = "brew.example.com:18080"
@@ -274,6 +282,7 @@ func TestRedirectTap_ToGitService(t *testing.T) {
 }
 
 func TestParseRoute(t *testing.T) {
+	t.Serial()
 	h, _, _ := setupTest(t)
 	req := httptest.NewRequest("GET", "/myapp", nil)
 	req.SetPathValue("project", "myapp")
@@ -287,6 +296,7 @@ func TestParseRoute(t *testing.T) {
 // folded name. The route must resolve it back to the real project -- while a
 // literally named project always wins over a fold match.
 func TestParseRoute_FoldedTapNameResolvesToProject(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -323,6 +333,7 @@ func TestParseRoute_FoldedTapNameResolvesToProject(t *testing.T) {
 // platform found no stable URL ("formula requires at least a URL") and the
 // failed import poisoned the whole tap for that platform.
 func TestServeFormula_LinuxOnlyCarriesTopLevelURLAndDependsOnLinux(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -365,6 +376,7 @@ func TestServeFormula_LinuxOnlyCarriesTopLevelURLAndDependsOnLinux(t *testing.T)
 }
 
 func TestServeFormula_MacOnlyDependsOnMacos(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj, _, _ := seedBrewProject(t, d, store, "mactool", "mac-binary") // darwin/arm64 only
 

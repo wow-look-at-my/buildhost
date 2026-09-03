@@ -23,6 +23,7 @@ func entryFor(t *testing.T, inv Inventory, version, role string) FileEntry {
 // The inventory must name the pin on every file it keeps, and agree with the
 // plan on what comes back. A hold reason that disagrees with the eviction
 func TestInventory_NamesTheHoldOnEveryFile(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 
@@ -68,6 +69,7 @@ func TestInventory_NamesTheHoldOnEveryFile(t *testing.T) {
 // release still references the same content-addressed blob, so nothing is
 // freed. The entry must say shared-blob, not report itself reclaimable.
 func TestInventory_SharedBlobReportsWhoStillHoldsIt(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 
@@ -97,6 +99,7 @@ func TestInventory_SharedBlobReportsWhoStillHoldsIt(t *testing.T) {
 
 // A release inside the recency guard is pinned by time, not by keep-N. The
 func TestInventory_RecencyGuardIsItsOwnHold(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 
@@ -120,6 +123,7 @@ func TestInventory_RecencyGuardIsItsOwnHold(t *testing.T) {
 }
 
 func TestInventory_GroupsBiggestHoldFirst(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 

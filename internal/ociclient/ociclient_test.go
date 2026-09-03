@@ -15,6 +15,7 @@ import (
 func init() { RetryBaseDelay = time.Millisecond }
 
 func TestPush_SmallBlobsFinalizeInOneRequest(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -34,6 +35,7 @@ func TestPush_SmallBlobsFinalizeInOneRequest(t *testing.T) {
 // Every image built FROM a published base carries that base's layers, and the
 // registry already stores them. Asking to mount before uploading is what keeps
 func TestPush_MountsBlobsTheRegistryAlreadyStores(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -58,6 +60,7 @@ func TestPush_MountsBlobsTheRegistryAlreadyStores(t *testing.T) {
 
 // TestPush_BuildxPerTagIndexEntries pushes a layout shaped the way
 func TestPush_BuildxPerTagIndexEntries(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -93,6 +96,7 @@ func TestPush_BuildxPerTagIndexEntries(t *testing.T) {
 }
 
 func TestPush_SkipsExistingBlobs(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -108,6 +112,7 @@ func TestPush_SkipsExistingBlobs(t *testing.T) {
 }
 
 func TestPush_NestedIndexWithAttestation(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -175,6 +180,7 @@ func TestPush_NestedIndexWithAttestation(t *testing.T) {
 }
 
 func TestParseRefs(t *testing.T) {
+	t.Serial()
 	reg, proj, tags, err := ParseRefs([]string{
 		"oci.pazer.build/playwright-multiplexer/playwright-mcp:abc123",
 		"oci.pazer.build/playwright-multiplexer/playwright-mcp:latest",
@@ -206,6 +212,7 @@ func TestParseRefs(t *testing.T) {
 }
 
 func TestDeriveServer(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "https://pazer.build", DeriveServer("oci.pazer.build", false))
 	assert.Equal(t, "http://pazer.build", DeriveServer("oci.pazer.build", true))
 	assert.Equal(t, "https://example.com", DeriveServer("docker.example.com", false))

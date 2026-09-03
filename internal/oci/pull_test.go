@@ -19,6 +19,7 @@ import (
 )
 
 func TestServeHTTP_Manifests_MissingRef(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -34,6 +35,7 @@ func TestServeHTTP_Manifests_MissingRef(t *testing.T) {
 }
 
 func TestServeHTTP_Manifests_NoRelease(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -49,6 +51,7 @@ func TestServeHTTP_Manifests_NoRelease(t *testing.T) {
 }
 
 func TestServeHTTP_Manifests_NoOCIPackage(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -77,6 +80,7 @@ func TestServeHTTP_Manifests_NoOCIPackage(t *testing.T) {
 }
 
 func TestServeHTTP_Manifests_Success(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -111,6 +115,7 @@ func TestServeHTTP_Manifests_Success(t *testing.T) {
 }
 
 func TestServeHTTP_Manifests_ByVersion(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -128,6 +133,7 @@ func TestServeHTTP_Manifests_ByVersion(t *testing.T) {
 }
 
 func TestServeHTTP_Manifests_ByDigest(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -155,6 +161,7 @@ func TestServeHTTP_Manifests_ByDigest(t *testing.T) {
 }
 
 func TestServeHTTP_Manifests_HEAD(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -174,6 +181,7 @@ func TestServeHTTP_Manifests_HEAD(t *testing.T) {
 }
 
 func TestServeHTTP_Blobs_MissingDigest(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -189,6 +197,7 @@ func TestServeHTTP_Blobs_MissingDigest(t *testing.T) {
 }
 
 func TestServeHTTP_Blobs_InvalidDigest(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -204,6 +213,7 @@ func TestServeHTTP_Blobs_InvalidDigest(t *testing.T) {
 }
 
 func TestServeHTTP_Blobs_NotFound(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -219,6 +229,7 @@ func TestServeHTTP_Blobs_NotFound(t *testing.T) {
 }
 
 func TestServeHTTP_Blobs_Success(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -249,6 +260,7 @@ func TestServeHTTP_Blobs_Success(t *testing.T) {
 }
 
 func TestServeHTTP_Blobs_HEAD(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -278,6 +290,7 @@ func TestServeHTTP_Blobs_HEAD(t *testing.T) {
 }
 
 func TestServeHTTP_Tags(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -306,6 +319,7 @@ func TestServeHTTP_Tags(t *testing.T) {
 }
 
 func TestServeHTTP_Tags_NoReleases(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -327,6 +341,7 @@ func TestServeHTTP_Tags_NoReleases(t *testing.T) {
 }
 
 func TestManifestDigestMatchesContent(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 

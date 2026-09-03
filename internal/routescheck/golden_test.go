@@ -44,6 +44,7 @@ func assertNotInitialized(t *testing.T) {
 //
 // The table is rendered by the program, never parsed out of source, so it cannot
 func TestRouteTableMatchesGolden(t *testing.T) {
+	t.Serial()
 	assertNotInitialized(t)
 	got := renderRoutes()
 	if updateGolden() {
@@ -60,6 +61,7 @@ func TestRouteTableMatchesGolden(t *testing.T) {
 
 // TestGoldenRouteTableIsSorted pins the ordering the golden file relies on: a
 func TestGoldenRouteTableIsSorted(t *testing.T) {
+	t.Serial()
 	assertNotInitialized(t)
 	lines := strings.Split(strings.TrimSuffix(renderRoutes(), "\n"), "\n")
 	require.NotEmpty(t, lines)

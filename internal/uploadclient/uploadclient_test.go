@@ -161,6 +161,7 @@ func tempFile(t *testing.T, size int) (string, []byte) {
 }
 
 func TestSmallFileUploadsDirect(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	path, data := tempFile(t, 8)
 
@@ -177,6 +178,7 @@ func TestSmallFileUploadsDirect(t *testing.T) {
 }
 
 func TestLargeFileChunks(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	path, data := tempFile(t, 100)
 
@@ -195,6 +197,7 @@ func TestLargeFileChunks(t *testing.T) {
 }
 
 func TestChunkedResumesAfterLostResponse(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	path, data := tempFile(t, 50)
 	m.failAppends = 2
@@ -209,6 +212,7 @@ func TestChunkedResumesAfterLostResponse(t *testing.T) {
 }
 
 func TestChunkSizeDisabledForcesDirect(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	path, data := tempFile(t, 100) // way over the advertised limit
 
@@ -222,6 +226,7 @@ func TestChunkSizeDisabledForcesDirect(t *testing.T) {
 }
 
 func TestServerInfoUnavailableFallsBackToDefaultThreshold(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	m.maxDirect = 0 // no server-info endpoint at all
 	path, data := tempFile(t, 100)
@@ -237,6 +242,7 @@ func TestServerInfoUnavailableFallsBackToDefaultThreshold(t *testing.T) {
 
 // A missing session endpoint is a broken server, not a mode to accommodate:
 func TestMissingSessionEndpointFailsLoudly(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	m.disableSessions = true
 	path, _ := tempFile(t, 100)
@@ -251,6 +257,7 @@ func TestMissingSessionEndpointFailsLoudly(t *testing.T) {
 }
 
 func TestNoProgressGivesUpAndAborts(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	path, _ := tempFile(t, 50)
 	m.brokenAppends = true // every append 500s without committing anything
@@ -263,6 +270,7 @@ func TestNoProgressGivesUpAndAborts(t *testing.T) {
 }
 
 func TestFileSHA256(t *testing.T) {
+	t.Serial()
 	path, data := tempFile(t, 33)
 	sum := sha256.Sum256(data)
 
@@ -278,6 +286,7 @@ func TestFileSHA256(t *testing.T) {
 // advertisement: a server that predates the feature ignores upload_sha256 and
 // would store the empty request body, so guessing is never safe.
 func TestSupportsUploadBySHA256(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	m.uploadBySHA256 = true
 	u := &Uploader{Server: ts.URL, Token: "tok"}
@@ -296,6 +305,7 @@ func TestSupportsUploadBySHA256(t *testing.T) {
 }
 
 func TestUploadByHash(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	u := &Uploader{Server: ts.URL, Token: "tok"}
 

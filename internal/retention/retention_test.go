@@ -52,6 +52,7 @@ func futureClock() func() time.Time {
 }
 
 func TestRun_EnforceEvictsPastKeepN(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 
@@ -88,6 +89,7 @@ func TestRun_EnforceEvictsPastKeepN(t *testing.T) {
 }
 
 func TestPlan_ReportOnlyChangesNothing(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 
@@ -117,6 +119,7 @@ func TestPlan_ReportOnlyChangesNothing(t *testing.T) {
 }
 
 func TestRun_AbandonedSweep(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 
@@ -146,6 +149,7 @@ func TestRun_AbandonedSweep(t *testing.T) {
 }
 
 func TestRun_NothingToDo(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	putRelease(t, d, store, p.ID, "v1", 1, "main", "only")
 
@@ -159,6 +163,7 @@ func TestRun_NothingToDo(t *testing.T) {
 }
 
 func TestRun_SharedBlobFreedWithLastReference(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 
@@ -210,6 +215,7 @@ func TestRun_SharedBlobFreedWithLastReference(t *testing.T) {
 }
 
 func TestDeleteBlobIfUnreferenced(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 	key := putRelease(t, d, store, p.ID, "v1", 1, "main", "data")
@@ -249,6 +255,7 @@ func TestDeleteBlobIfUnreferenced(t *testing.T) {
 // that never finished, and cannot be allowed to delete drafts -- doing so would
 // quietly delete the feature.
 func TestRun_DraftsSurviveAbandonedSweep(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 

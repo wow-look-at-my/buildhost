@@ -45,6 +45,7 @@ func archive(t *testing.T, files map[string]string) []byte {
 }
 
 func TestRoundTrip(t *testing.T) {
+	t.Serial()
 	files := map[string]string{
 		"index.html":     "<h1>hello</h1>",
 		"css/site.css":   strings.Repeat("body{margin:0}", 500),
@@ -75,6 +76,7 @@ func TestRoundTrip(t *testing.T) {
 // container of a highly repetitive site must be far smaller than its contents.
 // Without this, the archive would trade a size regression for its index.
 func TestCompressionActuallyHappens(t *testing.T) {
+	t.Serial()
 	body := strings.Repeat("the same line over and over\n", 4000)
 	data := archive(t, map[string]string{"big.txt": body})
 	assert.Less(t, len(data), len(body)/4,
@@ -82,6 +84,7 @@ func TestCompressionActuallyHappens(t *testing.T) {
 }
 
 func TestArchiveSizeVsTarGz(t *testing.T) {
+	t.Serial()
 	files := map[string]string{}
 	for i := 0; i < 60; i++ {
 		files[fmt.Sprintf("page%02d.html", i)] = fmt.Sprintf(
@@ -109,6 +112,7 @@ func TestArchiveSizeVsTarGz(t *testing.T) {
 
 // TestRandomAccessReadsOnlyItsEntry is the property a .tar.gz cannot offer:
 func TestRandomAccessReadsOnlyItsEntry(t *testing.T) {
+	t.Serial()
 	files := map[string]string{"target.txt": "the payload"}
 	for i := 0; i < 50; i++ {
 		// Poorly-compressible filler, so the container is genuinely large and
@@ -136,6 +140,7 @@ func TestRandomAccessReadsOnlyItsEntry(t *testing.T) {
 
 // TestReadCostIsIndependentOfArchiveSize pins the property a .tar.gz cannot
 func TestReadCostIsIndependentOfArchiveSize(t *testing.T) {
+	t.Serial()
 	measure := func(n int) (read, container int64) {
 		files := map[string]string{"last.txt": "payload"}
 		for i := 0; i < n; i++ {
@@ -180,6 +185,7 @@ func randomText(seed, n int) string {
 // TestWriteTarRebuildsTheOriginal pins that the archive is lossless: the
 // packaging a client expects can be regenerated from the indexed form.
 func TestWriteTarRebuildsTheOriginal(t *testing.T) {
+	t.Serial()
 	files := map[string]string{
 		"a.txt":       "alpha",
 		"dir/b.txt":   "beta",
@@ -208,6 +214,7 @@ func TestWriteTarRebuildsTheOriginal(t *testing.T) {
 }
 
 func TestLimits(t *testing.T) {
+	t.Serial()
 	f, err := os.CreateTemp(t.TempDir(), "archive-*")
 	require.NoError(t, err)
 	defer f.Close()
@@ -229,6 +236,7 @@ func TestLimits(t *testing.T) {
 // format) is refused rather than misread -- which is what lets the caller fall
 // back to the old path instead of serving garbage.
 func TestOpenRejectsNonArchive(t *testing.T) {
+	t.Serial()
 	raw := makeTar(t, map[string]string{"a.txt": "hello"})
 	assert.False(t, IsArchive(raw))
 	_, err := Open(bytes.NewReader(raw), int64(len(raw)))
@@ -238,6 +246,7 @@ func TestOpenRejectsNonArchive(t *testing.T) {
 // TestDirectoriesAreNotEntries: only regular files are servable, so directory
 // members must not become empty entries that shadow a real path.
 func TestDirectoriesAreNotEntries(t *testing.T) {
+	t.Serial()
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "dir/", Mode: 0o755, Typeflag: tar.TypeDir}))

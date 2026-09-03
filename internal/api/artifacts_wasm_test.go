@@ -16,6 +16,7 @@ import (
 )
 
 func TestUploadArtifact_WasmJS(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "wasmjs")
 
 	rec := doUpload(t, h, proj, "wasm", "js", "", "\x00asm-fake-module")
@@ -35,6 +36,7 @@ func TestUploadArtifact_WasmJS(t *testing.T) {
 }
 
 func TestUploadArtifact_WasmFlavorFanOut(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "wasmfanout")
 
 	rec := doUpload(t, h, proj, "wasm", "js,wasip1", "", "\x00asm-fake-module")
@@ -51,6 +53,7 @@ func TestUploadArtifact_WasmFlavorFanOut(t *testing.T) {
 }
 
 func TestUploadArtifact_LegacyGoosGoarchPair(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "wasmlegacy")
 
 	rec := doUpload(t, h, proj, "js", "wasm", "", "\x00asm-js-module")
@@ -93,6 +96,7 @@ func TestUploadArtifact_LegacyGoosGoarchPair(t *testing.T) {
 
 // os=wasm pairs only with the wasm flavor arches, and those arches only with
 func TestUploadArtifact_WasmIncompatiblePairs(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "wasmbadpair")
 
 	for _, c := range [][2]string{

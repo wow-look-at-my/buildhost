@@ -15,6 +15,7 @@ import (
 )
 
 func TestPush_LargeBlobChunked(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -36,6 +37,7 @@ func TestPush_LargeBlobChunked(t *testing.T) {
 }
 
 func TestPush_ChunkExactMultiple(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -51,6 +53,7 @@ func TestPush_ChunkExactMultiple(t *testing.T) {
 }
 
 func TestPush_ResumesAfterTransientPatchFailure(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -71,6 +74,7 @@ func TestPush_ResumesAfterTransientPatchFailure(t *testing.T) {
 
 // A registry keeps upload sessions in memory, so a restart mid-push forgets
 func TestPush_RestartsWhenTheRegistryForgetsTheSession(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -91,6 +95,7 @@ func TestPush_RestartsWhenTheRegistryForgetsTheSession(t *testing.T) {
 }
 
 func TestPush_NoProgressAborts(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -106,6 +111,7 @@ func TestPush_NoProgressAborts(t *testing.T) {
 }
 
 func TestPush_ServerInfoLimitRespected(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	mux := http.NewServeMux()
 	mux.Handle("/v2/", f.handler("proj"))
@@ -130,6 +136,7 @@ func TestPush_ServerInfoLimitRespected(t *testing.T) {
 }
 
 func TestPush_ChunkSizeClampedToServerLimit(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	mux := http.NewServeMux()
 	mux.Handle("/v2/", f.handler("proj"))
@@ -153,6 +160,7 @@ func TestPush_ChunkSizeClampedToServerLimit(t *testing.T) {
 }
 
 func TestCommittedFromRange(t *testing.T) {
+	t.Serial()
 	cases := []struct {
 		in   string
 		want int64

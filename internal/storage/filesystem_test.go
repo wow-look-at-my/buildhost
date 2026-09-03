@@ -16,6 +16,7 @@ import (
 )
 
 func TestPutStoresContentAndReturnsCorrectKey(t *testing.T) {
+	t.Serial()
 	fs, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
@@ -33,6 +34,7 @@ func TestPutStoresContentAndReturnsCorrectKey(t *testing.T) {
 }
 
 func TestPutDeduplicates(t *testing.T) {
+	t.Serial()
 	fs, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
@@ -51,6 +53,7 @@ func TestPutDeduplicates(t *testing.T) {
 }
 
 func TestGetReturnsStoredContent(t *testing.T) {
+	t.Serial()
 	fs, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
@@ -73,6 +76,7 @@ func TestGetReturnsStoredContent(t *testing.T) {
 }
 
 func TestGetInvalidKeyReturnsErrNotExist(t *testing.T) {
+	t.Serial()
 	store, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
@@ -81,6 +85,7 @@ func TestGetInvalidKeyReturnsErrNotExist(t *testing.T) {
 }
 
 func TestGetMissingKeyReturnsErrNotExist(t *testing.T) {
+	t.Serial()
 	fs, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
@@ -93,6 +98,7 @@ func TestGetMissingKeyReturnsErrNotExist(t *testing.T) {
 }
 
 func TestDeleteRemovesContent(t *testing.T) {
+	t.Serial()
 	fs, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
@@ -108,6 +114,7 @@ func TestDeleteRemovesContent(t *testing.T) {
 }
 
 func TestGetReadsLegacyUncompressedBlob(t *testing.T) {
+	t.Serial()
 	dir := t.TempDir()
 	store, err := NewFilesystem(dir, true)
 	require.Nil(t, err)
@@ -130,6 +137,7 @@ func TestGetReadsLegacyUncompressedBlob(t *testing.T) {
 }
 
 func TestGetTinyLegacyBlob(t *testing.T) {
+	t.Serial()
 	dir := t.TempDir()
 	store, err := NewFilesystem(dir, true)
 	require.Nil(t, err)
@@ -152,6 +160,7 @@ func TestGetTinyLegacyBlob(t *testing.T) {
 }
 
 func TestPutNoCompressRoundTrip(t *testing.T) {
+	t.Serial()
 	dir := t.TempDir()
 	store, err := NewFilesystem(dir, false)
 	require.Nil(t, err)
@@ -176,6 +185,7 @@ func TestPutNoCompressRoundTrip(t *testing.T) {
 }
 
 func TestPutCompressesOnDisk(t *testing.T) {
+	t.Serial()
 	dir := t.TempDir()
 	store, err := NewFilesystem(dir, true)
 	require.Nil(t, err)
@@ -192,6 +202,7 @@ func TestPutCompressesOnDisk(t *testing.T) {
 }
 
 func TestDeleteIdempotent(t *testing.T) {
+	t.Serial()
 	fs, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
@@ -202,6 +213,7 @@ func TestDeleteIdempotent(t *testing.T) {
 }
 
 func TestExistsReturnsCorrectBoolean(t *testing.T) {
+	t.Serial()
 	fs, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
@@ -232,6 +244,7 @@ func TestExistsReturnsCorrectBoolean(t *testing.T) {
 }
 
 func TestGetCompressedReturnsRawZstdStream(t *testing.T) {
+	t.Serial()
 	fs, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 
@@ -261,6 +274,7 @@ func TestGetCompressedReturnsRawZstdStream(t *testing.T) {
 }
 
 func TestGetCompressedUncompressedStorePassesIdentity(t *testing.T) {
+	t.Serial()
 	fs, err := NewFilesystem(t.TempDir(), false)
 	require.Nil(t, err)
 
@@ -280,6 +294,7 @@ func TestGetCompressedUncompressedStorePassesIdentity(t *testing.T) {
 }
 
 func TestGetCompressedEmptyBlob(t *testing.T) {
+	t.Serial()
 	fs, err := NewFilesystem(t.TempDir(), false)
 	require.Nil(t, err)
 
@@ -297,6 +312,7 @@ func TestGetCompressedEmptyBlob(t *testing.T) {
 }
 
 func TestGetCompressedMissingKey(t *testing.T) {
+	t.Serial()
 	fs, err := NewFilesystem(t.TempDir(), true)
 	require.Nil(t, err)
 

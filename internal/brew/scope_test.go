@@ -56,6 +56,7 @@ func tapFile(t *testing.T, serve http.HandlerFunc, urlPath, pathValue string, to
 }
 
 func TestServePrivateTap_AnonymousGetsBasicChallenge(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
 	seedPrivateBrewProject(t, d, store, "secretapp", "priv-binary")
@@ -69,6 +70,7 @@ func TestServePrivateTap_AnonymousGetsBasicChallenge(t *testing.T) {
 }
 
 func TestServePrivateTap_TokenScopedTapIncludesPrivateFormula(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
 	seedPrivateBrewProject(t, d, store, "ns/secretapp", "priv-binary")
@@ -100,6 +102,7 @@ func TestServePrivateTap_TokenScopedTapIncludesPrivateFormula(t *testing.T) {
 }
 
 func TestScopedTap_PublicFormulaStaysPlain(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
 
@@ -117,6 +120,7 @@ func TestScopedTap_PublicFormulaStaysPlain(t *testing.T) {
 }
 
 func TestScopedTap_ProjectScopedTokenCannotSeeOtherPrivateProjects(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
 	mine := seedPrivateBrewProject(t, d, store, "mine", "mine-binary")
@@ -134,6 +138,7 @@ func TestScopedTap_ProjectScopedTokenCannotSeeOtherPrivateProjects(t *testing.T)
 }
 
 func TestAnonymousTap_NeverContainsPrivateNames(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
 	seedPrivateBrewProject(t, d, store, "secretapp", "priv-binary")
@@ -151,6 +156,7 @@ func TestAnonymousTap_NeverContainsPrivateNames(t *testing.T) {
 }
 
 func TestRedirectTap_AnonymousRedirects_AuthenticatedServedInPlace(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
 	seedPrivateBrewProject(t, d, store, "secretapp", "priv-binary")
@@ -168,6 +174,7 @@ func TestRedirectTap_AnonymousRedirects_AuthenticatedServedInPlace(t *testing.T)
 }
 
 func TestTapSnapshots_KeyedByScopeWithoutThrashing(t *testing.T) {
+	t.Serial()
 	oldTTL := tapCacheTTL
 	tapCacheTTL = time.Hour
 	t.Cleanup(func() { tapCacheTTL = oldTTL })
@@ -194,6 +201,7 @@ func TestTapSnapshots_KeyedByScopeWithoutThrashing(t *testing.T) {
 }
 
 func TestServeFormula_PrivateProjectUsesTokenStrategyAndNoStore(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedPrivateBrewProject(t, d, store, "secretapp", "priv-binary")
 
@@ -229,6 +237,7 @@ func tapFilesText(files map[string][]byte) string {
 // (Homebrew scrubs everything else before formula code runs) and no token may
 // be baked in.
 func TestPrivateStrategySource(t *testing.T) {
+	t.Serial()
 	assert.Contains(t, repackage.BrewPrivateStrategy, `ENV["HOMEBREW_BUILDHOST_TOKEN"]`)
 	assert.Contains(t, repackage.BrewPrivateStrategy, "Authorization: Bearer ")
 	assert.Equal(t, "lib/buildhost_private_download.rb", repackage.BrewPrivateStrategyPath)
@@ -237,6 +246,7 @@ func TestPrivateStrategySource(t *testing.T) {
 // A digit-leading project name is structurally unloadable by Homebrew, and
 // emitting `class 7zip < Formula` is a guaranteed ".rb: syntax error" that
 func TestHostileProjectNames_NeverEmitInvalidRuby(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj, _, _ := seedBrewProject(t, d, store, "7zip", "digit-binary")
 	seedBrewProject(t, d, store, "dotted.app", "dotted-binary")

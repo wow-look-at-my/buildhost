@@ -48,6 +48,7 @@ func (m *memStorage) Exists(_ context.Context, key string) (bool, error) {
 }
 
 func TestTracedStorage(t *testing.T) {
+	t.Serial()
 	inner := newMemStorage()
 	s := storage.NewTraced(inner)
 	ctx := context.Background()
@@ -77,6 +78,7 @@ func TestTracedStorage(t *testing.T) {
 }
 
 func TestTracedStorage_GetMissing(t *testing.T) {
+	t.Serial()
 	inner := newMemStorage()
 	s := storage.NewTraced(inner)
 
@@ -85,6 +87,7 @@ func TestTracedStorage_GetMissing(t *testing.T) {
 }
 
 func TestTracedStorage_DeleteMissing(t *testing.T) {
+	t.Serial()
 	inner := newMemStorage()
 	s := storage.NewTraced(inner)
 
@@ -93,6 +96,7 @@ func TestTracedStorage_DeleteMissing(t *testing.T) {
 }
 
 func TestTracedStorage_ExistsMissing(t *testing.T) {
+	t.Serial()
 	inner := newMemStorage()
 	s := storage.NewTraced(inner)
 
