@@ -32,6 +32,7 @@ func readBundle(t *testing.T) string {
 // and the old assertions (on internal function names) passed against the stale
 // artifact while the real source could not have produced a working dashboard.
 func TestAdminStaticInlineHandlersAreExported(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	referenced := map[string]bool{}
@@ -59,16 +60,14 @@ func TestAdminStaticInlineHandlersAreExported(t *testing.T) {
 }
 
 // The Homebrew snippet must clone the /tap.git endpoint (a bare host 404s) and
-// include the Homebrew 6.0+ `brew trust` step, matching llms.txt / README.
 func TestAdminStaticHomebrewInstructionsUseTap(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	require.Contains(t, body, "brew tap pazer/build")
 	// A formula name cannot contain '/', so the placeholder is the FOLDED
-	// formula name, never the raw project name.
 	require.Contains(t, body, "brew install pazer/build/{formula}")
 	require.NotContains(t, body, "brew install pazer/build/{project}")
-	// The \n here are the literal two-char escapes in the bundled string.
 	require.Contains(t, body, "/tap.git\\nbrew trust pazer/build\\nbrew install pazer/build/")
 }
 
@@ -76,6 +75,7 @@ func TestAdminStaticHomebrewInstructionsUseTap(t *testing.T) {
 // class names the rendered markup and the stylesheet agree on, not internal
 // function names -- the rendering may be refactored, the markup contract may not.
 func TestAdminStaticProjectsRenderAsTree(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	require.Contains(t, body, "project-folder-row")
@@ -87,6 +87,7 @@ func TestAdminStaticProjectsRenderAsTree(t *testing.T) {
 // behind it. This page was missing from the TypeScript source entirely while it
 // was live in the committed bundle.
 func TestAdminStaticHasRetentionPage(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	require.Contains(t, body, `"#/retention"`)
@@ -95,9 +96,8 @@ func TestAdminStaticHasRetentionPage(t *testing.T) {
 }
 
 // Private projects mint a signed link per click rather than linking through dl
-// (which would 401). Same story: live in the committed bundle, absent from the
-// TypeScript source.
 func TestAdminStaticPrivateDownloadsMintLinks(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	require.Contains(t, body, "/download-links")
@@ -106,10 +106,8 @@ func TestAdminStaticPrivateDownloadsMintLinks(t *testing.T) {
 }
 
 // Every script the dashboard's HTML loads must be a file that actually gets
-// embedded. A <script> tag naming a file nothing produces is a 404 and a broken
-// page -- which is exactly what a stray html.js tag would be once its helper was
-// bundled into app.js.
 func TestAdminStaticScriptTagsResolve(t *testing.T) {
+	t.Serial()
 	index, err := os.ReadFile("static/index.html")
 	require.NoError(t, err)
 
@@ -122,27 +120,21 @@ func TestAdminStaticScriptTagsResolve(t *testing.T) {
 }
 
 // A site LINK the dashboard hands a user must be the read grammar ("@branch"),
-// not the "/branch/" spelling that only redirects. The two are distinguishable
-// in the bundle: a link concatenates a runtime branch value onto the path, while
-// the endpoint documentation and curl snippets carry the literal "{branch}"
-// placeholder -- and those are WRITE routes (PUT/DELETE), where "/branch/" is
-// correct and must stay.
 func TestAdminStaticSiteLinksUseRefSigil(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	require.NotContains(t, body, `/branch/" +`,
 		`a site link is built by concatenating a branch onto "/branch/"; use siteBranchURL (the "@" form) -- "/branch/" only redirects on reads`)
 	require.Contains(t, body, `"/@"`, "the canonical site-link helper is gone")
 	// The write endpoints keep the old spelling; if they ever disappear, this
-	// test has stopped looking at the thing it thinks it is.
 	require.Contains(t, body, "/branch/{branch}", "the site write endpoints should still be documented")
 }
 
 // A project's release page must hand the reader a runnable install command.
 // It used to link the formula FILE at /Formula/{project}.rb, built from the
-// raw project name -- a URL a slash-namespaced project answered with
-// {"error":"project not found"}, and a file nobody installs from anyway.
 func TestAdminStaticReleasePageShowsBrewInstallCommand(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	require.Contains(t, body, "brew install pazer/build/")
@@ -154,14 +146,13 @@ func TestAdminStaticReleasePageShowsBrewInstallCommand(t *testing.T) {
 // do I get this?" -- pasting either into a browser returns JSON and installs
 // nothing. Each ecosystem gets the command that installs THIS release.
 func TestAdminStaticReleasePageShowsInstallCommands(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	require.Contains(t, body, "npm install ")
 	require.Contains(t, body, "docker pull ")
 	require.Contains(t, body, "/install.sh | sudo sh")
 	// The npm packument and the OCI manifest are machine plumbing. The
-	// Registries page still documents their shape, as a reference page should,
-	// but nothing builds a per-project one and offers it as the way to install.
 	require.NotContains(t, body, `"/@buildhost/" + `)
 	require.NotContains(t, body, `"/v2/" + `)
 }
@@ -170,6 +161,7 @@ func TestAdminStaticReleasePageShowsInstallCommands(t *testing.T) {
 // including the Registries page's placeholder -- names the package, never the
 // raw project.
 func TestAdminStaticAptCommandsUseThePackageName(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	require.Contains(t, body, "sudo apt install {package}")

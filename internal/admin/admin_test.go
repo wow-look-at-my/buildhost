@@ -81,6 +81,7 @@ func seedData(t *testing.T, database *db.DB) {
 }
 
 func TestNewHTTPServer(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 	httpSrv := srv.NewHTTPServer()
 
@@ -95,6 +96,7 @@ func TestNewHTTPServer(t *testing.T) {
 }
 
 func TestSecurityHeaders(t *testing.T) {
+	t.Serial()
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -115,6 +117,7 @@ func TestSecurityHeaders(t *testing.T) {
 }
 
 func TestServeSPA_StaticFile(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodGet, "/style.css", nil)
@@ -123,6 +126,7 @@ func TestServeSPA_StaticFile(t *testing.T) {
 }
 
 func TestServeSPA_Fallback(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodGet, "/projects/anything", nil)
@@ -132,6 +136,7 @@ func TestServeSPA_Fallback(t *testing.T) {
 }
 
 func TestHumanSize(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		input int64
 		want  string
@@ -149,10 +154,12 @@ func TestHumanSize(t *testing.T) {
 }
 
 func TestFormatTimePtr_Nil(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "-", formatTimePtr(nil))
 }
 
 func TestBuildInfo_CommitURL(t *testing.T) {
+	t.Serial()
 	b := BuildInfo{Commit: "abc123", RepoURL: "https://github.com/org/repo"}
 	assert.Equal(t, "https://github.com/org/repo/commit/abc123", b.CommitURL())
 
@@ -162,11 +169,13 @@ func TestBuildInfo_CommitURL(t *testing.T) {
 }
 
 func TestBuildInfo_ShortCommit(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "abc123def456", BuildInfo{Commit: "abc123def456789000aabbccdd"}.ShortCommit())
 	assert.Equal(t, "short", BuildInfo{Commit: "short"}.ShortCommit())
 }
 
 func TestFormatDuration(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		input time.Duration
 		want  string
@@ -184,6 +193,7 @@ func TestFormatDuration(t *testing.T) {
 }
 
 func TestTimeAgo(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		ago  time.Duration
 		want string
@@ -203,6 +213,7 @@ func TestTimeAgo(t *testing.T) {
 }
 
 func TestGetCPUTime(t *testing.T) {
+	t.Serial()
 	d := getCPUTime()
 	assert.True(t, d >= 0, "CPU time should be non-negative")
 }

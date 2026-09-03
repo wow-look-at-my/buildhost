@@ -14,8 +14,6 @@ import (
 )
 
 // Info holds the VCS stamps embedded at build time. Its fields are empty when
-// the binary carries no VCS information (for example a `go run` outside a
-// checkout, or a build with -buildvcs=false).
 type Info struct {
 	Revision string // full git commit SHA
 	Time     string // commit time in RFC3339
@@ -27,8 +25,6 @@ var (
 	cached Info
 )
 
-// Get returns the embedded VCS metadata. It is read from the binary once and
-// cached, and is safe for concurrent use.
 func Get() Info {
 	once.Do(func() {
 		bi, ok := debug.ReadBuildInfo()
@@ -59,7 +55,6 @@ func Commit() string {
 }
 
 // Version returns a synthetic version derived from the commit time
-// ("v0.0.<unix-seconds>"), or "dev" when no commit time is available.
 func Version() string {
 	if ts := Get().Time; ts != "" {
 		if t, err := time.Parse(time.RFC3339, ts); err == nil {

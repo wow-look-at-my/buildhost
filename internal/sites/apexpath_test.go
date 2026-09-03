@@ -17,6 +17,7 @@ import (
 // knowing. These go through the REAL router: the apex route is literal-less and
 // must lose to the branch routes while still catching everything else.
 func TestApexPath_ServesFilesFromDefaultBranch(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "jsperf.app")
 	env.uploadSite(t, "jsperf.app", "main", map[string]string{
@@ -37,9 +38,6 @@ func TestApexPath_ServesFilesFromDefaultBranch(t *testing.T) {
 		assert.Equalf(t, want, rec.Body.String(), "GET %s", path)
 	}
 
-	// The bare root IS the canonical site URL: it serves, in one hop. Only the
-	// missing trailing slash is canonicalized, so relative links in index.html
-	// resolve under the project rather than the host root.
 	rec := env.do(t, "GET", "/jsperf.app/", "", nil, false)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Equal(t, "<h1>root</h1>", rec.Body.String())
@@ -49,8 +47,6 @@ func TestApexPath_ServesFilesFromDefaultBranch(t *testing.T) {
 	assert.Equal(t, "/jsperf.app/", rec.Header().Get("Location"))
 
 	// ...and the branch routes still win the routing: the apex route never
-	// shadows them. main is the default branch here, so the legacy URL 302s to
-	// the canonical apex URL for the same file.
 	rec = env.do(t, "GET", "/jsperf.app/branch/main/assets/app.js", "", nil, false)
 	require.Equal(t, http.StatusFound, rec.Code)
 	assert.Equal(t, "/jsperf.app/assets/app.js", rec.Header().Get("Location"))
@@ -66,16 +62,15 @@ func TestApexPath_ServesFilesFromDefaultBranch(t *testing.T) {
 // already resolved -- even when the shorter project genuinely holds a file at
 // that path.
 func TestApexPath_NamespacedProjectRootUnchanged(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "org")
 	seedProject(t, env.db, "org/repo")
 	// The decoy: project "org" serves a file at exactly the path the namespaced
-	// project's root occupies.
 	env.uploadSite(t, "org", "main", map[string]string{"repo": "decoy", "ok.txt": "shorter"})
 	env.uploadSite(t, "org/repo", "main", map[string]string{"index.html": "<h1>ns</h1>", "x.css": "body{}"})
 
 	// /org/repo is the namespaced project's root -> its own trailing-slash
-	// canonicalization, not the decoy file under project "org".
 	rec := env.do(t, "GET", "/org/repo", "", nil, false)
 	require.Equal(t, http.StatusMovedPermanently, rec.Code)
 	assert.Equal(t, "/org/repo/", rec.Header().Get("Location"))
@@ -94,9 +89,8 @@ func TestApexPath_NamespacedProjectRootUnchanged(t *testing.T) {
 	assert.Equal(t, "shorter", rec.Body.String())
 }
 
-// A path naming no project at all answers exactly the 404 the bare-root route
-// answered before files were served here -- resolution never invents a project.
 func TestApexPath_UnknownProjectNotFound(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "known")
 	env.uploadSite(t, "known", "main", map[string]string{"index.html": "hi"})
@@ -116,6 +110,7 @@ func TestApexPath_UnknownProjectNotFound(t *testing.T) {
 // chain the root redirect and the public-read gate use, so it lands on a branch
 // that actually has a site even when projects.default_branch lags behind.
 func TestApexPath_UsesResolvedDefaultBranch(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "ue553")
 	uploadSite(t, h, proj, "main", map[string]string{"runner.html": "<h1>runner</h1>"})
@@ -129,11 +124,11 @@ func TestApexPath_UsesResolvedDefaultBranch(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "<h1>runner</h1>", rec.Body.String())
 	// Hosted content, so the app's blocking CSP is dropped here as on every
-	// other site response.
 	assert.Empty(t, rec.Header().Get("Content-Security-Policy"))
 }
 
 func TestSplitProjectPath(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	seedProject(t, d, "app")
 	seedProject(t, d, "org")
@@ -151,7 +146,6 @@ func TestSplitProjectPath(t *testing.T) {
 		{"org/repo/x.css", "org/repo", "x.css"},
 		{"org/other/x.css", "org", "other/x.css"}, // no org/other project
 		// Nothing matches: the whole remainder stays the project name, so
-		// requireProject answers the same 404 as before.
 		{"nope/x.html", "nope/x.html", ""},
 		{"nope", "nope", ""},
 	}

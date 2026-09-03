@@ -43,6 +43,7 @@ func postDownloadLink(h *Handler, project, body string, ctxMod func(context.Cont
 }
 
 func TestCreateDownloadLink_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	seedDownloadLinkProject(t, h)
 
@@ -66,6 +67,7 @@ func TestCreateDownloadLink_Success(t *testing.T) {
 }
 
 func TestCreateDownloadLink_RequiresShareScope(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	seedDownloadLinkProject(t, h)
 	rec := postDownloadLink(h, "dlproj", `{"os":"linux","arch":"amd64","version":"1"}`, func(c context.Context) context.Context {
@@ -75,6 +77,7 @@ func TestCreateDownloadLink_RequiresShareScope(t *testing.T) {
 }
 
 func TestCreateDownloadLink_NoToken(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	seedDownloadLinkProject(t, h)
 	rec := postDownloadLink(h, "dlproj", `{"os":"linux","arch":"amd64","version":"1"}`, nil)
@@ -82,6 +85,7 @@ func TestCreateDownloadLink_NoToken(t *testing.T) {
 }
 
 func TestCreateDownloadLink_ProjectNotFound(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	rec := postDownloadLink(h, "ghost", `{"os":"linux","arch":"amd64","version":"1"}`, func(c context.Context) context.Context {
 		return shareTokenCtx(c, "share", nil)
@@ -90,6 +94,7 @@ func TestCreateDownloadLink_ProjectNotFound(t *testing.T) {
 }
 
 func TestCreateDownloadLink_TokenNotAuthorizedForProject(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	proj := seedDownloadLinkProject(t, h)
 	other := proj.ID + 999
@@ -100,6 +105,7 @@ func TestCreateDownloadLink_TokenNotAuthorizedForProject(t *testing.T) {
 }
 
 func TestCreateDownloadLink_ArtifactNotFound(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	seedDownloadLinkProject(t, h)
 	rec := postDownloadLink(h, "dlproj", `{"os":"darwin","arch":"arm64","version":"1"}`, func(c context.Context) context.Context {
@@ -109,6 +115,7 @@ func TestCreateDownloadLink_ArtifactNotFound(t *testing.T) {
 }
 
 func TestCreateDownloadLink_RejectsAny(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	seedDownloadLinkProject(t, h)
 	rec := postDownloadLink(h, "dlproj", `{"os":"any","arch":"any","version":"1"}`, func(c context.Context) context.Context {
@@ -118,6 +125,7 @@ func TestCreateDownloadLink_RejectsAny(t *testing.T) {
 }
 
 func TestCreateDownloadLink_MissingFields(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	seedDownloadLinkProject(t, h)
 	rec := postDownloadLink(h, "dlproj", `{"os":"linux"}`, func(c context.Context) context.Context {
@@ -127,6 +135,7 @@ func TestCreateDownloadLink_MissingFields(t *testing.T) {
 }
 
 func TestCreateDownloadLink_UnsupportedFmt(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	seedDownloadLinkProject(t, h)
 	rec := postDownloadLink(h, "dlproj", `{"os":"linux","arch":"amd64","version":"1","fmt":"bogus"}`, func(c context.Context) context.Context {
@@ -136,6 +145,7 @@ func TestCreateDownloadLink_UnsupportedFmt(t *testing.T) {
 }
 
 func TestClampDownloadLinkTTL(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, defaultDownloadLinkTTL, clampDownloadLinkTTL(0))
 	assert.Equal(t, minDownloadLinkTTL, clampDownloadLinkTTL(1))        // 1s clamped up to min
 	assert.Equal(t, maxDownloadLinkTTL, clampDownloadLinkTTL(99999999)) // huge clamped down to max

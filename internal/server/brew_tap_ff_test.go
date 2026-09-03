@@ -1,7 +1,6 @@
 package server_test
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -27,20 +26,6 @@ func gitOrSkip(t *testing.T) {
 //
 // A working tree is touched by a tree of git subprocesses, and on a loaded
 // runner an entry has been observed appearing inside .git between
-// t.TempDir()'s final readdir and its rmdir -- Go's RemoveAll surfaces exactly
-// that as "unlinkat ...: directory not empty" (its source returns the parent's
-// ENOTEMPTY only when every child was removed cleanly), and t.TempDir() then
-// fails a test whose every assertion passed. Which subprocess does it is not
-// established: git's auto-maintenance is the obvious suspect and is ruled out
-// -- these clones pin fetch.unpackLimit=1, so transfers stay packed, and
-// `git maintenance run --auto` spawns no gc below the 6700-loose-object
-// threshold.
-//
-// Retrying is right regardless of the culprit: this is the git CLIENT's
-// scratch space, nothing buildhost owns is written here, so no product
-// invariant can hide behind it -- a test's verdict must come from its
-// assertions, not from temp-dir hygiene. A removal that never succeeds is
-// logged rather than silently dropped.
 func gitScratchDir(t *testing.T) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "buildhost-git")
@@ -62,10 +47,6 @@ func gitScratchDir(t *testing.T) string {
 // The identity vars keep commits reproducible; the GIT_CONFIG_* pair turns OFF
 // automatic repacking, which fetch, rebase and clone all trigger. Auto-gc runs
 // detached, so it can repack and delete a pack while a later `git fsck` in the
-// same test is still enumerating -- surfacing as "packfile ... index not
-// opened" / "unable to load rev-index for pack" on a tree nothing is wrong
-// with. GIT_CONFIG_* rather than `-c` so the setting reaches the child
-// processes git spawns for itself.
 var gitTestEnv = []string{
 	"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@test", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@test",
 	"GIT_TERMINAL_PROMPT=0",
@@ -88,7 +69,7 @@ func gitRun(t *testing.T, dir string, args ...string) string {
 // linux/amd64 binary artifact + publish.
 func publishBrewProject(t *testing.T, env *testEnv, name, body string) {
 	t.Helper()
-	resp := env.postJSON(t, "/api/v1/projects", fmt.Sprintf(`{"name":%q,"versioning":"auto"}`, name))
+	resp := env.postJSON(t, "/api/v1/projects", jsonDoc(t, map[string]any{"name": name, "versioning": "auto"}))
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
 	resp = env.postJSON(t, "/api/v1/projects/"+name+"/releases", `{"git_branch":"master","git_commit":"abc"}`)
@@ -106,7 +87,8 @@ func publishBrewProject(t *testing.T, env *testEnv, name, body string) {
 // shows to a request that may read it.
 func publishPrivateBrewProject(t *testing.T, env *testEnv, name, body string) {
 	t.Helper()
-	resp := env.postJSON(t, "/api/v1/projects", fmt.Sprintf(`{"name":%q,"versioning":"auto","is_private":true}`, name))
+	resp := env.postJSON(t, "/api/v1/projects",
+		jsonDoc(t, map[string]any{"name": name, "versioning": "auto", "is_private": true}))
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
 	resp = env.postJSON(t, "/api/v1/projects/"+name+"/releases", `{"git_branch":"master","git_commit":"abc"}`)
@@ -124,10 +106,8 @@ func publishPrivateBrewProject(t *testing.T, env *testEnv, name, body string) {
 // of the generated tap, a publish, a redeploy (fresh server.New over the same
 // data dir -- which re-runs every OnReady wiring, including the tap cache
 // reset), and then exactly Homebrew's update sequence (`git fetch --force` +
-// `git rebase origin/main`). It must fast-forward with zero conflicts and the
-// new tip must descend from the old one -- the old behavior minted an
-// unrelated root commit per build and wedged every client mid-rebase.
 func TestBrewTap_GitUpdateFastForwardsAcrossPublishAndRedeploy(t *testing.T) {
+	t.Serial()
 	gitOrSkip(t)
 	env := setup(t)
 	publishBrewProject(t, env, "appone", "appone-binary")
@@ -147,7 +127,6 @@ func TestBrewTap_GitUpdateFastForwardsAcrossPublishAndRedeploy(t *testing.T) {
 	publishBrewProject(t, env, "apptwo", "apptwo-binary")
 
 	// Redeploy: re-wiring over the same data dir must preserve the persisted
-	// tap history (and clears the in-TTL cache, so the next request rebuilds).
 	server.New(env.cfg, env.database, env.store)
 
 	gitRun(t, clone, "fetch", "--force", "origin")
@@ -166,6 +145,7 @@ func TestBrewTap_GitUpdateFastForwardsAcrossPublishAndRedeploy(t *testing.T) {
 // filename (gcc/pgo -> gcc-pgo.rb); the per-formula URL users copy must
 // resolve that folded name back to the project instead of 404ing.
 func TestBrewFormula_FoldedFilenameResolvesSlashNamespacedProject(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	publishBrewProject(t, env, "gcc/pgo", "pgo-binary")
 
@@ -183,10 +163,8 @@ func TestBrewFormula_FoldedFilenameResolvesSlashNamespacedProject(t *testing.T) 
 
 // The LITERAL slash-namespaced URL -- the form the admin dashboard linked and
 // the form a reader types from the project name -- must serve the same formula.
-// The {project}.rb pattern is one path segment, so this path used to fall
-// through to the bare GET /{project} route, which read "Formula/gcc/pgo.rb" as
-// a project name and answered "project not found".
 func TestBrewFormula_LiteralSlashNamespacedPathServesFormula(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	publishBrewProject(t, env, "gcc/pgo", "pgo-binary")
 
@@ -202,10 +180,8 @@ func TestBrewFormula_LiteralSlashNamespacedPathServesFormula(t *testing.T) {
 }
 
 // A private project's LITERAL formula path names the project exactly, so an
-// anonymous request gets the same 401 the legacy /{project} path gives it.
-// The FOLDED name is the guessable one, and it must stay indistinguishable
-// from a project that does not exist.
 func TestBrewFormula_PrivateSlashNamespacedPathMatchesLegacyPath(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	publishPrivateBrewProject(t, env, "ns/hidden", "hidden-binary")
 

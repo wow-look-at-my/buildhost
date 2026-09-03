@@ -25,11 +25,6 @@ import (
 
 // manifestPassthroughFields are the package.json fields buildhost surfaces from
 // a pre-built npm-package tarball into its packument version entry. They are the
-// fields npm needs to resolve and gate a package -- its dependency graph and its
-// platform/engine constraints -- plus bin. name/version/dist stay
-// buildhost-authoritative and are never taken from the tarball; lifecycle fields
-// (scripts) are intentionally omitted so serving a packument never implies
-// running install hooks.
 var manifestPassthroughFields = []string{
 	"dependencies",
 	"optionalDependencies",
@@ -45,60 +40,28 @@ var manifestPassthroughFields = []string{
 
 const (
 	// npmManifestCacheFormat is the packaged_artifacts format under which an
-	// npm-package artifact's extracted manifest fields are cached. No packaged
-	// blob is stored: storage_key/size record the SOURCE artifact blob (as
-	// brew's tar.gz and apt's deb digest rows do), so the row rides the
-	// existing retention cascade and never adds a reference of its own.
 	npmManifestCacheFormat = "npm-manifest"
 
 	// npmManifestFieldsVersion identifies the extraction contract -- which
-	// package.json fields are surfaced (manifestPassthroughFields). Bump it
-	// when that set changes: a row written under an older contract reads as a
-	// miss and is refilled in place, so a packument can never advertise the
-	// field set of a server that no longer exists.
 	npmManifestFieldsVersion = 1
 )
 
 // npmManifestMetadata is the cached extraction result, stored in the row's
-// metadata column. Fields is the answer itself, so a warm packument needs no
-// blob read at all -- an empty map is a real answer (a blob that is not a
-// readable npm tarball), not a miss.
 type npmManifestMetadata struct {
 	FieldsVersion int            `json:"fields_version"`
 	Fields        map[string]any `json:"fields"`
 }
 
 const (
-	// manifestFillConcurrency bounds the parallel cache fills one packument
-	// performs. Each fill streams a single artifact through zstd+gzip, so
-	// memory stays bounded by the decoder windows, not the artifact size.
 	manifestFillConcurrency = 8
 
-	// manifestFillBudget caps the time one packument spends filling the
-	// manifest cache. Overrunning it fails the request rather than serving
-	// version entries stripped of their dependency graph -- an npm install
-	// that silently resolves nothing is worse than an error the client can
-	// see. Fills already committed survive, so each retry has less to do and a
-	// cold project converges instead of failing forever.
 	manifestFillBudget = 20 * time.Second
 )
 
 // errManifestFillBudget reports that a packument could not resolve every
-// version's manifest within manifestFillBudget.
 var errManifestFillBudget = errors.New("npm: manifest cache fill exceeded its budget")
 
 // resolveNPMManifestFields returns the passthrough fields for each npm-package
-// artifact of a packument, keyed by artifact ID. Cached artifacts cost one
-// indexed DB read; the rest are extracted from their stored tarballs
-// concurrently, under a hard budget.
-//
-// The cache is what makes a packument affordable. Extraction decompresses a
-// stored blob up to package/package.json -- tens of megabytes for a real
-// pre-built package -- and a packument describes EVERY published release, so an
-// uncached packument costs one full decompression per release and gets slower
-// with every publish. That is what made https://npm.pazer.build hang: 238
-// published 17 MB releases took 44s to answer, past every client timeout, with
-// no byte written until the very end.
 func (h *Handler) resolveNPMManifestFields(ctx context.Context, artifacts []db.Artifact) (map[int64]map[string]any, error) {
 	out := make(map[int64]map[string]any, len(artifacts))
 	var misses []db.Artifact
@@ -122,8 +85,6 @@ func (h *Handler) resolveNPMManifestFields(ctx context.Context, artifacts []db.A
 	defer cancel()
 
 	// Group the misses by blob. Storage is content-addressed, so a release
-	// that re-registers unchanged bytes (a hash-reference upload) shares one
-	// blob with its predecessor: extracting it once answers for all of them.
 	byBlob := map[string][]db.Artifact{}
 	var blobs []string
 	for _, a := range misses {
@@ -154,8 +115,6 @@ func (h *Handler) resolveNPMManifestFields(ctx context.Context, artifacts []db.A
 			if err != nil {
 				// The budget check below is what turns a systemic stall into
 				// an error. A single unreadable blob (evicted, storage error)
-				// is not that: it leaves a minimal-but-valid version entry,
-				// exactly as before the cache existed.
 				if ctx.Err() == nil {
 					slog.Warn("npm: read package manifest", "storage_key", key, "err", err)
 					fields = map[string]any{}
@@ -169,8 +128,6 @@ func (h *Handler) resolveNPMManifestFields(ctx context.Context, artifacts []db.A
 			}
 			mu.Unlock()
 			if cacheable {
-				// One row per artifact: the cache is keyed by artifact, so
-				// every release sharing the blob gets its own hit next time.
 				for _, a := range sharing {
 					h.cacheNPMManifestFields(ctx, a, fields)
 				}
@@ -229,8 +186,6 @@ func (h *Handler) cacheNPMManifestFields(ctx context.Context, a db.Artifact, fie
 // is readable but is not a usable npm tarball (not gzip, no package.json, bad
 // JSON) yields an empty map with cacheable=true: that verdict can never change
 // for a content-addressed blob, so caching it keeps the packument off the blob
-// forever after. A failure to read the blob at all -- storage error, cancelled
-// context -- returns an error and is never cached.
 func (h *Handler) extractNPMManifestFields(ctx context.Context, storageKey string) (fields map[string]any, cacheable bool, err error) {
 	rc, _, err := h.Store.Get(ctx, storageKey)
 	if err != nil {
@@ -295,7 +250,6 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request) {
 	filename := ri.filename
 
 	// The tarball filename embeds the npm-encoded project name (see
-	// projectToNPMName); decode happens at route parse, encode here to match.
 	prefix := projectToNPMName(project.Name) + "-"
 	if !strings.HasPrefix(filename, prefix) {
 		http.NotFound(w, r)

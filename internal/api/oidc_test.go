@@ -21,6 +21,7 @@ func globalWriteCtx() context.Context {
 }
 
 func TestCreateOIDCPolicy_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"issuer":"https://token.actions.githubusercontent.com","subject_pattern":"repo:myorg/myrepo:*","scopes":"read,write"}`
@@ -37,6 +38,7 @@ func TestCreateOIDCPolicy_Success(t *testing.T) {
 }
 
 func TestCreateOIDCPolicy_MissingFields(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"issuer":"","subject_pattern":""}`
@@ -49,6 +51,7 @@ func TestCreateOIDCPolicy_MissingFields(t *testing.T) {
 }
 
 func TestCreateOIDCPolicy_InvalidScope(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"issuer":"https://example.com","subject_pattern":"*","scopes":"admin"}`
@@ -61,6 +64,7 @@ func TestCreateOIDCPolicy_InvalidScope(t *testing.T) {
 }
 
 func TestCreateOIDCPolicy_RequiresGlobalToken(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"issuer":"https://example.com","subject_pattern":"*"}`
@@ -75,6 +79,7 @@ func TestCreateOIDCPolicy_RequiresGlobalToken(t *testing.T) {
 }
 
 func TestCreateOIDCPolicy_NoAuth(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"issuer":"https://example.com","subject_pattern":"*"}`
@@ -86,6 +91,7 @@ func TestCreateOIDCPolicy_NoAuth(t *testing.T) {
 }
 
 func TestCreateOIDCPolicy_Duplicate(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := globalWriteCtx()
 
@@ -104,6 +110,7 @@ func TestCreateOIDCPolicy_Duplicate(t *testing.T) {
 }
 
 func TestListOIDCPolicies_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -123,6 +130,7 @@ func TestListOIDCPolicies_Success(t *testing.T) {
 }
 
 func TestListOIDCPolicies_RequiresGlobalToken(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	req := httptest.NewRequest("GET", "/api/v1/oidc/policies", nil)
@@ -136,6 +144,7 @@ func TestListOIDCPolicies_RequiresGlobalToken(t *testing.T) {
 }
 
 func TestDeleteOIDCPolicy_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -152,6 +161,7 @@ func TestDeleteOIDCPolicy_Success(t *testing.T) {
 }
 
 func TestDeleteOIDCPolicy_NotFound(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	req := httptest.NewRequest("DELETE", "/api/v1/oidc/policies/9999", nil)
@@ -164,6 +174,7 @@ func TestDeleteOIDCPolicy_NotFound(t *testing.T) {
 }
 
 func TestCreateOIDCPolicy_WithAudience(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"issuer":"https://example.com","subject_pattern":"sub:*","audience":"https://buildhost.example.com","scopes":"read"}`
@@ -179,6 +190,7 @@ func TestCreateOIDCPolicy_WithAudience(t *testing.T) {
 }
 
 func TestCreateOIDCPolicy_ScopesNormalizedWithSpaces(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"issuer":"https://example.com","subject_pattern":"sub:spaced","scopes":"read, write"}`
@@ -191,6 +203,7 @@ func TestCreateOIDCPolicy_ScopesNormalizedWithSpaces(t *testing.T) {
 }
 
 func TestDeleteOIDCPolicy_InvalidID(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	req := httptest.NewRequest("DELETE", "/api/v1/oidc/policies/abc", nil)

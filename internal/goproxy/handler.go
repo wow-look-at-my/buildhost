@@ -16,20 +16,15 @@ import (
 // handler resolves it per request via withService.
 func registerRoutes() {
 	// The module path is the whole prefix of the request path, so the protocol
-	// endpoints cannot be separate route patterns -- one catch-all parses the
-	// "@v/..." / "@latest" suffix itself.
 	serve := withService((*Service).serve)
 	auth.ServiceHandleRaw(Subdomain, "GET /{path...}", serve)
 	auth.ServiceHandleRaw(Subdomain, "HEAD /{path...}", serve)
 	// A literal path outranks the catch-all, and no module request can collide
-	// with it: every one carries "/@v/" or "/@latest".
 	auth.ServiceHandleRaw(Subdomain, "GET /health", withService((*Service).serveHealth))
 }
 
 // withService adapts a Service method into a handler that resolves the running
 // Service per request. Before auth.Init there is none: the routes exist (so the
-// route table is complete) but answer 503 rather than panicking on a nil
-// receiver.
 func withService(fn func(*Service, http.ResponseWriter, *http.Request)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		s := Current()
@@ -102,12 +97,6 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A module this caller may not see is answered 404, exactly as a module that
-	// does not exist is -- never 401 or 403. Either of those confirms the module
-	// EXISTS, which is the fact a private module is keeping; a prober could walk
-	// a name list and map the org's private repositories off the status code
-	// alone. The check runs before any upstream call, so the two answers cannot
-	// drift apart, and no unauthenticated request spends GitHub API quota.
 	if !s.accessible(r, req.Module) {
 		s.fail(w, r, req, inaccessibleErr(req.Module, req.Version), started)
 		return
@@ -128,7 +117,6 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
 // operatorView reports whether this caller may see the proxy's own
 // configuration -- the private prefixes, the credential state, the readiness
 // module. Each of those names private repositories, so it takes the same
-// global credential a private module does.
 func (s *Service) operatorView(r *http.Request) bool {
 	if t := auth.TokenFrom(r.Context()); t != nil && t.ProjectID == nil &&
 		(t.HasScope("read") || t.HasScope("write")) {
@@ -141,16 +129,6 @@ func (s *Service) operatorView(r *http.Request) bool {
 // accessible reports whether this caller may see this module.
 //
 // A module outside the private namespaces is public source: it needs no
-// credential, and requiring one would only stop `GOPROXY=<proxy>,direct` working
-// for anyone without a buildhost token.
-//
-// Inside them, access is the caller's own, never the proxy's:
-//   - a GLOBAL read/write token. A PROJECT-scoped token is deliberately not
-//     enough -- it says "this job may read project X", and a Go module is not a
-//     project, so honouring it here would quietly widen a least-privilege
-//     credential to the org's whole private source tree.
-//   - a signed-in GitHub user who can read the backing repository, asked of
-//     GitHub per repo rather than assumed from the session.
 func (s *Service) accessible(r *http.Request, modPath string) bool {
 	if !s.isPrivate(modPath) {
 		return true
@@ -294,8 +272,6 @@ func (s *Service) ok(w http.ResponseWriter, r *http.Request, req request, source
 }
 
 // fail answers a failed fetch. This is the single exit for every error, and the
-// status comes from the classified Kind -- so a 403 can never leave here as a
-// 404 no matter which code path produced it.
 func (s *Service) fail(w http.ResponseWriter, r *http.Request, req request, err error, started time.Time) {
 	e := asError(req.Module, req.Version, err)
 	logFailure(e)
@@ -306,7 +282,6 @@ func (s *Service) fail(w http.ResponseWriter, r *http.Request, req request, err 
 	w.WriteHeader(status)
 	if r.Method != http.MethodHead {
 		// The body is the whole diagnosis: `go mod download` prints a proxy's
-		// response body verbatim, so whoever hits this reads it in their terminal.
 		_, _ = io.WriteString(w, e.Body())
 	}
 	s.record(req, e.Upstream, "error", status, e.Kind.String(), started)

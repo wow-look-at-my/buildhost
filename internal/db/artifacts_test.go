@@ -21,6 +21,7 @@ func createTestRelease(t *testing.T, d *DB) (*Project, *Release) {
 }
 
 func TestCreateAndGetArtifact(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)
@@ -51,6 +52,7 @@ func TestCreateAndGetArtifact(t *testing.T) {
 }
 
 func TestGetArtifactNotFound(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	_, r := createTestRelease(t, d)
 	_, err := d.GetArtifact(context.Background(), r.ID, "linux", "amd64")
@@ -59,6 +61,7 @@ func TestGetArtifactNotFound(t *testing.T) {
 }
 
 func TestListArtifacts(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)
@@ -93,6 +96,7 @@ func TestListArtifacts(t *testing.T) {
 }
 
 func TestUpdateArtifactStripped(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)
@@ -128,6 +132,7 @@ func TestUpdateArtifactStripped(t *testing.T) {
 // --- Packaged Artifacts ------------------------------------------------------
 
 func TestCreateAndGetPackagedArtifact(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)
@@ -161,6 +166,7 @@ func TestCreateAndGetPackagedArtifact(t *testing.T) {
 }
 
 func TestGetPackagedArtifactNotFound(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)
@@ -182,6 +188,7 @@ func TestGetPackagedArtifactNotFound(t *testing.T) {
 }
 
 func TestCreatePackagedArtifactUpserts(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)

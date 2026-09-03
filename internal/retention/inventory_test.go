@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// entryFor finds the inventory entry for one release and role.
 func entryFor(t *testing.T, inv Inventory, version, role string) FileEntry {
 	t.Helper()
 	for _, f := range inv.Files {
@@ -23,9 +22,8 @@ func entryFor(t *testing.T, inv Inventory, version, role string) FileEntry {
 
 // The inventory must name the pin on every file it keeps, and agree with the
 // plan on what comes back. A hold reason that disagrees with the eviction
-// queries is reported as "unknown", so a zero mismatch count is the assertion
-// that this explanation still matches them.
 func TestInventory_NamesTheHoldOnEveryFile(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 
@@ -61,7 +59,6 @@ func TestInventory_NamesTheHoldOnEveryFile(t *testing.T) {
 		assert.Equal(t, HoldNone, e.Hold)
 	}
 
-	// The dry run behind the inventory is the same one the preview reports.
 	plan, err := ret.Plan(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, plan.ReclaimableBytes, inv.Totals.ReclaimableBytes)
@@ -72,6 +69,7 @@ func TestInventory_NamesTheHoldOnEveryFile(t *testing.T) {
 // release still references the same content-addressed blob, so nothing is
 // freed. The entry must say shared-blob, not report itself reclaimable.
 func TestInventory_SharedBlobReportsWhoStillHoldsIt(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 
@@ -100,8 +98,8 @@ func TestInventory_SharedBlobReportsWhoStillHoldsIt(t *testing.T) {
 }
 
 // A release inside the recency guard is pinned by time, not by keep-N. The
-// operator reading "so little is reclaimable" needs those two told apart.
 func TestInventory_RecencyGuardIsItsOwnHold(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 
@@ -116,9 +114,6 @@ func TestInventory_RecencyGuardIsItsOwnHold(t *testing.T) {
 	assert.Equal(t, HoldRecency, old.Hold)
 	assert.Equal(t, []string{HoldRecency}, old.Holds)
 
-	// The tip carries both pins, and reports the one that outlives the other:
-	// lowering keep-N frees nothing here, and waiting out the guard frees
-	// nothing either.
 	tip := entryFor(t, inv, "v2", RoleArtifact)
 	assert.Equal(t, HoldBranchTip, tip.Hold)
 	assert.Equal(t, []string{HoldBranchTip, HoldRecency}, tip.Holds)
@@ -127,9 +122,8 @@ func TestInventory_RecencyGuardIsItsOwnHold(t *testing.T) {
 	assert.Equal(t, 0, inv.Totals.HoldMismatches)
 }
 
-// The grouped totals are what the dashboard reader looks at first: the biggest
-// hold reason is why so little comes back.
 func TestInventory_GroupsBiggestHoldFirst(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 
@@ -151,7 +145,6 @@ func TestInventory_GroupsBiggestHoldFirst(t *testing.T) {
 	assert.Equal(t, 2, inv.ByRole[0].Files)
 	assert.Equal(t, inv.Totals.Bytes, inv.ByRole[0].Bytes)
 
-	// Biggest file first: the reader is hunting for what occupies the storage.
 	require.Len(t, inv.Files, 2)
 	assert.Equal(t, "v2", inv.Files[0].Version)
 }

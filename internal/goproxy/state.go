@@ -36,9 +36,6 @@ type Traffic struct {
 	Errors     map[string]int64 `json:"errors"`
 }
 
-// Module is one cached module's row on the dashboard. LastErrorKind is the
-// field that makes a credential failure visible: a module stuck on
-// "unauthorized" is the exact state that otherwise looks like a healthy proxy.
 type Module struct {
 	Path          string `json:"path"`
 	Source        string `json:"source"`
@@ -106,8 +103,6 @@ func (s *Service) Snapshot(ctx context.Context) (State, error) {
 }
 
 // CheckHealthNow re-runs the readiness probe on demand, so the dashboard's
-// recheck button reports the credential's state right now rather than up to the
-// poll interval ago.
 func (s *Service) CheckHealthNow(ctx context.Context) Health { return s.checkHealth(ctx) }
 
 // Config exposes the resolved configuration for the dashboard.

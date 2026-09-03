@@ -13,6 +13,7 @@ import (
 )
 
 func TestAPIDashboard(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -42,6 +43,7 @@ func TestAPIDashboard(t *testing.T) {
 }
 
 func TestAPIDashboard_Empty(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodGet, "/api/dashboard", nil)
@@ -54,6 +56,7 @@ func TestAPIDashboard_Empty(t *testing.T) {
 }
 
 func TestAPIProjects(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -68,6 +71,7 @@ func TestAPIProjects(t *testing.T) {
 }
 
 func TestAPIProjects_Empty(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodGet, "/api/projects", nil)
@@ -79,6 +83,7 @@ func TestAPIProjects_Empty(t *testing.T) {
 }
 
 func TestAPIProject(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -96,6 +101,7 @@ func TestAPIProject(t *testing.T) {
 }
 
 func TestAPIProject_SlashNamespaced(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	ctx := context.Background()
 	p := &db.Project{Name: "cc-marketplace/recommend-go-toolchain", Versioning: db.VersioningAuto}
@@ -111,6 +117,7 @@ func TestAPIProject_SlashNamespaced(t *testing.T) {
 }
 
 func TestAPIProject_NotFound(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodGet, "/api/projects/nonexistent", nil)
@@ -118,6 +125,7 @@ func TestAPIProject_NotFound(t *testing.T) {
 }
 
 func TestAPIRelease(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -146,7 +154,6 @@ func TestAPIRelease(t *testing.T) {
 
 	assert.Equal(t, float64(2048), resp["total_size"])
 	// The admin dashboard runs on its own subdomain (buildhost.example.com here);
-	// base_url is the registry root and service URLs are real per-service hosts.
 	assert.Equal(t, "https://example.com", resp["base_url"])
 	assertServiceURLs(t, resp)
 }
@@ -164,6 +171,7 @@ func assertServiceURLs(t *testing.T, resp map[string]any) {
 }
 
 func TestAPIRelease_SlashNamespaced(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	ctx := context.Background()
 	p := &db.Project{Name: "cc-marketplace/recommend-go-toolchain", Versioning: db.VersioningAuto}
@@ -183,6 +191,7 @@ func TestAPIRelease_SlashNamespaced(t *testing.T) {
 }
 
 func TestAPIRelease_NotFoundProject(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodGet, "/api/projects/nope/releases/1.0.0", nil)
@@ -190,6 +199,7 @@ func TestAPIRelease_NotFoundProject(t *testing.T) {
 }
 
 func TestAPIRelease_NotFoundVersion(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -198,6 +208,7 @@ func TestAPIRelease_NotFoundVersion(t *testing.T) {
 }
 
 func TestAPIRegistries(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -219,6 +230,7 @@ func TestAPIRegistries(t *testing.T) {
 }
 
 func TestAPIOIDC(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -233,6 +245,7 @@ func TestAPIOIDC(t *testing.T) {
 }
 
 func TestAPIOIDC_Empty(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodGet, "/api/oidc", nil)
@@ -244,6 +257,7 @@ func TestAPIOIDC_Empty(t *testing.T) {
 }
 
 func TestAPISites(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -267,6 +281,7 @@ func TestAPISites(t *testing.T) {
 }
 
 func TestAPISites_Empty(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodGet, "/api/sites", nil)
@@ -279,6 +294,7 @@ func TestAPISites_Empty(t *testing.T) {
 }
 
 func TestAPIProject_IncludesSites(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -301,6 +317,7 @@ func TestAPIProject_IncludesSites(t *testing.T) {
 }
 
 func TestAPIArtifacts(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -317,6 +334,7 @@ func TestAPIArtifacts(t *testing.T) {
 }
 
 func TestAPIArtifacts_Empty(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodGet, "/api/artifacts", nil)
@@ -328,6 +346,7 @@ func TestAPIArtifacts_Empty(t *testing.T) {
 }
 
 func TestAPIStorage(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -351,6 +370,7 @@ func TestAPIStorage(t *testing.T) {
 }
 
 func TestAPIStorage_Empty(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodGet, "/api/storage", nil)
@@ -364,6 +384,7 @@ func TestAPIStorage_Empty(t *testing.T) {
 }
 
 func TestAPISidebar(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodGet, "/api/sidebar", nil)
