@@ -18,21 +18,15 @@ import (
 // private key was supplied: inline PEM with real newlines, inline PEM with the
 // newlines escaped to the literal sequence "\n" (the usual shape after a
 // multi-line secret is squeezed through an environment variable), or a file
-// path. The escaped case is the one that was silently breaking App auth -- the
-// key failed to parse, App auth was disabled, default-branch lookups fell back
-// to anonymous and 404'd on private repos, so projects.default_branch never left
-// the "master" seed.
 func TestResolvePEM(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
-	// PKCS#1 ("RSA PRIVATE KEY") is the format GitHub issues App keys in.
 	realPEM := string(pem.EncodeToMemory(&pem.Block{
 		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(key),
 	}))
 
-	// The same PEM as it commonly arrives through an env var: one line, newlines
-	// escaped as the literal two-character sequence backslash-n.
 	escaped := strings.ReplaceAll(strings.TrimRight(realPEM, "\n"), "\n", `\n`)
 	require.NotContains(t, escaped, "\n", "escaped form must be single-line")
 

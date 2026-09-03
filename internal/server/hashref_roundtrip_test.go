@@ -1,10 +1,5 @@
 package server_test
 
-// End-to-end hash-reference upload flow: upload one binary in full, register
-// it for additional exact platform slots by reference (empty-body PUT with
-// ?upload_sha256=), publish, then download every slot through dl -> static
-// and assert identical bytes with per-platform packaging semantics intact.
-
 import (
 	"archive/zip"
 	"bytes"
@@ -33,6 +28,7 @@ func zipInnerName(t *testing.T, env *testEnv, pathAndQuery string) string {
 }
 
 func TestHashRefArtifact_UploadDownloadRoundTrip(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	payload := []byte("#!/bin/sh\necho one-binary-many-slots\n")
@@ -40,7 +36,6 @@ func TestHashRefArtifact_UploadDownloadRoundTrip(t *testing.T) {
 	sumHex := hex.EncodeToString(sum[:])
 
 	// The capability is advertised on public server-info; clients gate
-	// hash-reference uploads on exactly this flag.
 	resp := env.get(t, "/api/v1/server-info")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	var info struct {
@@ -57,14 +52,12 @@ func TestHashRefArtifact_UploadDownloadRoundTrip(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
 
-	// One full upload carries the bytes...
 	resp = env.putBody(t, "/api/v1/projects/hashref/releases/1/artifacts/linux/amd64", payload)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
 
 	// ...and the remaining slots are registered by reference. This exact slot
 	// set is not a cartesian product, so the comma/alias fan-out grammar
-	// could not express it in one request.
 	for _, slot := range []string{"linux/arm64", "windows/amd64"} {
 		resp = env.doRequest(t, "PUT",
 			"/api/v1/projects/hashref/releases/1/artifacts/"+slot+"?upload_sha256="+sumHex,
@@ -74,8 +67,6 @@ func TestHashRefArtifact_UploadDownloadRoundTrip(t *testing.T) {
 	}
 
 	// Naming a session keeps finalize semantics end to end: the uploads
-	// middleware rejects the unknown session before the handler could ever
-	// misread the request as a hash-reference.
 	resp = env.doRequest(t, "PUT",
 		"/api/v1/projects/hashref/releases/1/artifacts/windows/arm64?upload_session=nope&upload_sha256="+sumHex,
 		"", nil, true)
@@ -116,7 +107,6 @@ func TestHashRefArtifact_UploadDownloadRoundTrip(t *testing.T) {
 	}
 
 	// Packaging derives from the ROW, not the shared blob: the windows slot's
-	// zip nests <project>.exe, the linux slot's nests plain <project>.
 	require.Equal(t, "hashref.exe",
 		zipInnerName(t, env, "/file?arch=amd64&fmt=zip&os=windows&project=hashref&v=1"))
 	require.Equal(t, "hashref",
@@ -127,6 +117,7 @@ func TestHashRefArtifact_UploadDownloadRoundTrip(t *testing.T) {
 // apex "latest" pointer (the default-branch guarantee, exercised end to end
 // against hash-reference rows).
 func TestHashRefArtifact_FeatureBranchDoesNotMoveLatest(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	apexPayload := []byte("apex-bytes")
@@ -138,7 +129,6 @@ func TestHashRefArtifact_FeatureBranchDoesNotMoveLatest(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
 
-	// Release 1 on the default branch (master).
 	resp = env.postJSON(t, "/api/v1/projects/hashreflatest/releases", `{"git_branch":"master","git_commit":"aaa111"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
@@ -149,7 +139,6 @@ func TestHashRefArtifact_FeatureBranchDoesNotMoveLatest(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
 
-	// Release 2 on a feature branch: one full upload plus a hash-ref slot.
 	resp = env.postJSON(t, "/api/v1/projects/hashreflatest/releases", `{"git_branch":"feature","git_commit":"bbb222"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
@@ -165,14 +154,11 @@ func TestHashRefArtifact_FeatureBranchDoesNotMoveLatest(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
 
-	// Apex latest still resolves release 1.
 	resp = env.getSubdomain(t, "dl", "/hashreflatest?os=linux&arch=amd64")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
 	require.Contains(t, resp.Header.Get("Location"), "v=1")
 	resp.Body.Close()
 
-	// The feature branch resolves release 2 for both slots, including the
-	// hash-referenced one.
 	for _, q := range []string{"os=linux&arch=amd64", "os=windows&arch=amd64"} {
 		resp = env.getSubdomain(t, "dl", "/hashreflatest?branch=feature&"+q)
 		require.Equal(t, http.StatusFound, resp.StatusCode)

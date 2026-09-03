@@ -28,9 +28,8 @@ func rootServed(t *testing.T, h *Handler, project *db.Project) string {
 // (e.g. the seed "master" while sites were only ever deployed to "main",
 // because buildhost's GitHub default-branch lookup hasn't corrected the hint)
 // must still resolve its bare root to a real site instead of serving a
-// guaranteed 404. This is the ue553 case: default_branch stuck at master,
-// site on main.
 func TestRootServe_FallsBackToExistingSite(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "ue553")
 	uploadSite(t, h, proj, "main", map[string]string{"index.html": "from-main"})
@@ -43,7 +42,6 @@ func TestRootServe_FallsBackToExistingSite(t *testing.T) {
 	proj.DefaultBranch = ""
 	assert.Equal(t, "from-main", rootServed(t, h, proj))
 
-	// Once the default branch has its own site, the root uses it unchanged.
 	uploadSite(t, h, proj, "master", map[string]string{"index.html": "from-master"})
 	proj.DefaultBranch = "master"
 	assert.Equal(t, "from-master", rootServed(t, h, proj))
@@ -53,6 +51,7 @@ func TestRootServe_FallsBackToExistingSite(t *testing.T) {
 // updated ephemeral PR-preview branch, so the canonical root never lands on a
 // transient preview even when the preview was deployed last.
 func TestRootServe_PrefersMainOverRecentPreview(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "proj")
 	uploadSite(t, h, proj, "main", map[string]string{"index.html": "main"})
@@ -65,6 +64,7 @@ func TestRootServe_PrefersMainOverRecentPreview(t *testing.T) {
 // With no sites at all the root 404s (the default branch has nothing to serve)
 // -- the fallback never invents a branch out of nothing.
 func TestRootServe_NoSitesNotFound(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "empty")
 	proj.DefaultBranch = "main"
@@ -81,6 +81,7 @@ func TestRootServe_NoSitesNotFound(t *testing.T) {
 // the host root. It must NOT redirect to a branch URL: that is the longer,
 // more fragile spelling, and pointing the short URL at it is backwards.
 func TestRootServe_TrailingSlashCanonicalization(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	for _, name := range []string{"ue553", "org/repo"} {
 		proj := seedProject(t, d, name)

@@ -8,6 +8,7 @@ import (
 )
 
 func TestParseRequest(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name     string
 		path     string
@@ -32,7 +33,6 @@ func TestParseRequest(t *testing.T) {
 		},
 		{
 			// The wire encoding: an uppercase letter travels as "!" + lowercase, so
-			// a case-insensitive filesystem cannot collide two module paths.
 			name: "case-encoded module path", path: "/github.com/!pazer!o!p/thing/@v/list",
 			wantMod: "github.com/PazerOP/thing", wantEnd: "list",
 		},
@@ -64,6 +64,7 @@ func TestParseRequest(t *testing.T) {
 }
 
 func TestEscapeRoundTrip(t *testing.T) {
+	t.Serial()
 	for _, v := range []string{"v1.2.3", "v1.0.0-RC1", "v0.0.0-20260721161008-302008ab1248", "v2.0.0+incompatible"} {
 		got, err := unescapeVersion(escapeVersion(v))
 		require.NoError(t, err, v)
@@ -71,10 +72,8 @@ func TestEscapeRoundTrip(t *testing.T) {
 	}
 }
 
-// The ring buffer must not lose the newest events, and must report newest first
-// -- the dashboard's recent-requests table is the only place a transient
-// failure is visible.
 func TestMetricsRingKeepsNewestFirst(t *testing.T) {
+	t.Serial()
 	m := newMetrics()
 	for i := range recentEvents + 10 {
 		m.record(Event{Module: "m", Version: versionFor(i), Outcome: "hit"})
@@ -87,6 +86,7 @@ func TestMetricsRingKeepsNewestFirst(t *testing.T) {
 }
 
 func TestMetricsCountsByOutcome(t *testing.T) {
+	t.Serial()
 	m := newMetrics()
 	m.record(Event{Outcome: "hit"})
 	m.record(Event{Outcome: "fetch"})

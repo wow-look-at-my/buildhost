@@ -31,6 +31,7 @@ func makeZip(t *testing.T, files map[string]string) []byte {
 }
 
 func TestUpload_Zip(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -54,6 +55,7 @@ func TestUpload_Zip(t *testing.T) {
 }
 
 func TestServe_ZipUpload(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -75,6 +77,7 @@ func TestServe_ZipUpload(t *testing.T) {
 }
 
 func TestUpload_InvalidZip(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -88,6 +91,7 @@ func TestUpload_InvalidZip(t *testing.T) {
 }
 
 func TestZipToTar_PathTraversal(t *testing.T) {
+	t.Serial()
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	w, err := zw.Create("../etc/passwd")
@@ -104,6 +108,7 @@ func TestZipToTar_PathTraversal(t *testing.T) {
 }
 
 func TestZipToTar_AbsolutePath(t *testing.T) {
+	t.Serial()
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	w, err := zw.Create("/etc/passwd")

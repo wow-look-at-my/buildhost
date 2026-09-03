@@ -9,6 +9,7 @@ import (
 )
 
 func TestDetect(t *testing.T) {
+	t.Serial()
 	for name, tc := range map[string]struct {
 		head []byte
 		want Format
@@ -29,6 +30,7 @@ func TestDetect(t *testing.T) {
 }
 
 func TestFormatLabelAndCapability(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "APE", APE.Label())
 	assert.True(t, APE.MultiPlatformCapable())
 	assert.Empty(t, Format("").Label())
@@ -49,15 +51,12 @@ func apeWithPESections(t *testing.T, peOff int, nsect uint16) []byte {
 }
 
 func TestDetectNTBoot(t *testing.T) {
+	t.Serial()
 	for name, tc := range map[string]struct {
 		head []byte
 		want NTBoot
 	}{
-		// One section is the do-nothing stub: it keeps the file parseable as a
-		// PE but maps none of the payload.
-		"stub, one section": {apeWithPESections(t, 0x80, 1), NTStub},
-		// Three is what a gosmopolitan APE's real header carries, but the check
-		// is "not exactly one", so other section counts read as real too.
+		"stub, one section":    {apeWithPESections(t, 0x80, 1), NTStub},
 		"real, three sections": {apeWithPESections(t, 0x80, 3), NTReal},
 		"real, two sections":   {apeWithPESections(t, 0x80, 2), NTReal},
 		"real, many sections":  {apeWithPESections(t, 0x80, 9), NTReal},
@@ -67,8 +66,6 @@ func TestDetectNTBoot(t *testing.T) {
 		"empty":    {nil, NTUnknown},
 		"ape only": {[]byte("MZqFpD"), NTUnknown},
 		// A PE header past the sniff window is unknown, never a rejection: the
-		// gate must not fail closed on a file it simply could not read far
-		// enough into.
 		"pe header past sniff window": {apeWithPESections(t, SniffLen*4, 1)[:SniffLen], NTUnknown},
 		// A truncated DOS header cannot even be followed.
 		"truncated before e_lfanew": {apeWithPESections(t, 0x80, 1)[:elfanewOff+2], NTUnknown},
@@ -80,8 +77,8 @@ func TestDetectNTBoot(t *testing.T) {
 }
 
 // TestDetectNTBootOnRealAPE pins the check against the layout a real
-// gosmopolitan APE has: PE header at 0x80, three sections.
 func TestDetectNTBootOnRealAPE(t *testing.T) {
+	t.Serial()
 	head := apeWithPESections(t, 0x80, 3)
 	require.Equal(t, uint32(0x80), binary.LittleEndian.Uint32(head[0x3c:]))
 	require.Equal(t, uint16(3), binary.LittleEndian.Uint16(head[0x86:]))

@@ -106,12 +106,6 @@ runs:
       uses: wow-look-at-my/actions@no-all-builds-job#latest
 
     # Registering the image publish as a GitHub Deployment is part of
-    # publishing, not an add-on: no opt-out input, and a failure fails the step.
-    # See buildhost-publish for why warn-and-continue was removed. Still skipped
-    # for build-only runs -- `push != 'true'` publishes nothing, so there is
-    # nothing to deploy; that is a property of the run, not a switch. The calling
-    # job needs `deployments: write` (ADDITIVE -- a job-level permissions block
-    # replaces the workflow-level one).
     - name: Create GitHub Deployment
       id: deployment
       if: ${{ inputs.push == 'true' }}
@@ -178,20 +172,11 @@ runs:
       uses: docker/setup-buildx-action@v3
 
     # Pushing does not need a docker login -- `buildhost docker-push` carries
-    # its own OIDC token -- but BUILDING can: a Dockerfile whose FROM is one of
-    # this registry's own images makes buildx pull that base, and an
-    # unauthenticated pull of a private project is a 401. Logging in here is
-    # what keeps "build an image FROM an image you published" a single step
-    # instead of a login every caller has to remember.
     - name: Log in to the buildhost registry (for private FROM bases)
       shell: bash
       run: bash "${{ github.action_path }}/../lib/docker-login.sh" "${{ inputs.server }}"
 
     # When `tags` is omitted, compute branch-aware defaults instead of an
-    # unconditional "SHA + latest": pushed OCI tags are mutable pointers
-    # (resolved before buildhost's default-branch fallback), so defaulting
-    # `latest` everywhere would let any feature-branch push hijack the stable
-    # :latest ref consumers track (e.g. a docker-updater re-pulling it).
     - name: Compute default tags
       id: default-tags
       if: ${{ inputs.tags == '' }}
@@ -233,7 +218,6 @@ runs:
         fi
 
         # Split references into buildhost-bound ones (pushed by the chunk-aware
-        # `buildhost docker-push` CLI) and foreign ones (pushed by buildx).
         refs=""
         buildhost_refs=""
         foreign_refs=""
@@ -283,10 +267,6 @@ runs:
         } >> "${GITHUB_OUTPUT}"
 
     # When any tag targets buildhost, the build EXPORTS an OCI layout instead of
-    # pushing: docker/buildx upload every blob as one request, which the proxy in
-    # front of a deployed buildhost rejects for layers over ~100 MB (Cloudflare
-    # edge 413). The chunk-aware CLI below pushes the layout instead. A run whose
-    # tags are all foreign (or push=false) keeps the old buildx behavior exactly.
     - name: Build and push
       id: build
       uses: docker/build-push-action@v6
@@ -312,7 +292,6 @@ runs:
         refs: ${{ steps.refs.outputs.buildhost_refs }}
 
     # Tags that reference other registries keep the old buildx push path; the
-    # rebuild is a full cache hit from the step above.
     - name: Push non-buildhost references
       id: push-foreign
       if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' && steps.refs.outputs.foreign_refs != '' }}
@@ -329,9 +308,6 @@ runs:
         cache-from: ${{ steps.refs.outputs.cache_from }}
 
     # Publishing is not finished until the image can be PULLED back. This lives
-    # here rather than in every caller's workflow: the action knows the refs it
-    # pushed, and the credential is short-lived, so the login belongs next to
-    # the pull -- a long build outlives a token minted before it.
     - name: Verify the published image pulls
       id: verify
       if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
@@ -355,8 +331,6 @@ runs:
         done <<< "${REFS}"
 
     # Terminal status for the GitHub Deployment created above; runs even when
-    # a publish step failed so the deployment is marked failure instead of
-    # dangling in_progress. Never fails the action.
     - name: Finish GitHub Deployment
       id: deployment-status
       if: ${{ always() && steps.deployment.outputs.deployment_id != '' }}

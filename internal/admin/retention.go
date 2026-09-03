@@ -45,8 +45,6 @@ func (s *Server) apiUpdateRetention(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "keep_n and recency_hours are required", http.StatusBadRequest)
 		return
 	}
-	// keep_n=0 still keeps each branch's tip (enforced in the query). Bounds keep
-	// a fat-fingered value from being absurd; recency caps at 10 years.
 	if *body.KeepN < 0 || *body.KeepN > 100000 || *body.RecencyHours < 0 || *body.RecencyHours > 87600 {
 		http.Error(w, "keep_n must be 0..100000 and recency_hours 0..87600", http.StatusBadRequest)
 		return
@@ -98,8 +96,6 @@ func (s *Server) apiRunRetention(w http.ResponseWriter, r *http.Request) {
 
 	// Same guard as the background sweeper: an enforcing run while writes are
 	// in flight could free a blob whose newest reference (e.g. a
-	// hash-reference upload that just passed its existence check) has not
-	// committed yet. Report-only runs mutate nothing and stay allowed.
 	if body.Enforce {
 		if n := InflightWrites(); n > 0 {
 			http.Error(w, fmt.Sprintf("%d write(s) in flight; retry when idle", n), http.StatusConflict)

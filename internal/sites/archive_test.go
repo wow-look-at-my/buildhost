@@ -19,8 +19,6 @@ import (
 )
 
 // countingStore records sequential Get calls, which is how these tests tell
-// the indexed read path from the tar scan it replaced: serving from an archive
-// must never fall back to streaming the blob from the start.
 type countingStore struct {
 	storage.Storage
 	mu   sync.Mutex
@@ -56,8 +54,6 @@ func (c *countingStore) count() int {
 	return c.gets
 }
 
-// withCountingStore swaps the package handler's store for a counting one. The
-// sites tests do not run in parallel, so the swap is safe.
 func withCountingStore(t *testing.T, inner storage.Storage) *countingStore {
 	t.Helper()
 	c := &countingStore{Storage: inner}
@@ -71,6 +67,7 @@ func withCountingStore(t *testing.T, inner storage.Storage) *countingStore {
 // format change: an uploaded site is stored as a binpazer archive, and serving
 // a file out of it never streams the blob from the start.
 func TestUploadStoresArchiveAndServesByIndex(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	proj := seedProject(t, env.db, "indexed")
 	counting := withCountingStore(t, env.store)
@@ -106,8 +103,6 @@ func TestUploadStoresArchiveAndServesByIndex(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "<h1>home</h1>", rec.Body.String())
 
-	// A miss still finds the site's own 404 page -- which used to mean a SECOND
-	// full scan of the archive.
 	rec = env.do(t, "GET", "/indexed/nope.html", "", nil, false)
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	assert.Equal(t, "<h1>missing</h1>", rec.Body.String())
@@ -120,6 +115,7 @@ func TestUploadStoresArchiveAndServesByIndex(t *testing.T) {
 // this format is a plain tar blob, and those must keep serving exactly as they
 // did -- through the scan, since there is no index to use.
 func TestLegacyTarSiteStillServes(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	proj := seedProject(t, env.db, "legacy")
 	counting := withCountingStore(t, env.store)

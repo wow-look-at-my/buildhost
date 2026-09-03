@@ -20,25 +20,17 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
-// fakeGitHub is enough of the GitHub REST API to drive the proxy, plus the one
-// behaviour that matters most here: when Private is set it answers 404 to an
-// unauthenticated caller, exactly as GitHub does rather than confirming a
-// private repository exists.
 type fakeGitHub struct {
 	Private       bool
 	DefaultBranch string
 	// Tags maps tag name -> commit sha.
-	Tags map[string]string
-	// Files maps "<sha>:<path>" -> contents; a missing entry is a 404.
+	Tags  map[string]string
 	Files map[string]string
 	// TreeFiles maps repo-relative path -> contents, served in the tarball.
 	TreeFiles map[string]string
-	// Status, when non-zero, is returned for every request (to drive 403/500).
-	Status int
+	Status    int
 	// Body is the response body used with Status.
-	Body string
-	// RateLimited makes the forced Status a rate-limit 403 rather than an
-	// authorization one.
+	Body        string
 	RateLimited bool
 
 	server *httptest.Server
@@ -72,8 +64,6 @@ func (f *fakeGitHub) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The behaviour under test: a private repo is a 404 to anyone unauthorized,
-	// indistinguishable from one that does not exist.
 	if f.Private && r.Header.Get("Authorization") == "" {
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 		return
@@ -132,8 +122,6 @@ func (f *fakeGitHub) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// writeTarball serves TreeFiles the way GitHub does: everything under one
-// top-level directory whose name embeds a short sha.
 func (f *fakeGitHub) writeTarball(w http.ResponseWriter) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
@@ -184,7 +172,6 @@ func newTestService(t *testing.T, fake *fakeGitHub, token string, privatePrefixe
 	return s
 }
 
-// seedModule fills the fake with a module at one tagged version.
 func seedModule(f *fakeGitHub, modPath, dir, tag, sha, goMod string) {
 	f.Tags[tag] = sha
 	p := "go.mod"

@@ -9,6 +9,7 @@ import (
 )
 
 func TestTokenCanReadProject(t *testing.T) {
+	t.Serial()
 	pub := &db.Project{ID: 1, Name: "pub"}
 	priv := &db.Project{ID: 2, Name: "secret", IsPrivate: true}
 	other := &db.Project{ID: 3, Name: "other-secret", IsPrivate: true}
@@ -41,7 +42,6 @@ func TestTokenCanReadProject(t *testing.T) {
 	})
 	t.Run("OIDC identity confined to its namespace", func(t *testing.T) {
 		// An OIDC auto-provision token is global (no ProjectID) but carries a
-		// namespace restriction in context; it must not widen reads beyond it.
 		ctx := WithOIDCProject(withTok(&db.APIToken{ID: -1, Scopes: "read,write"}), "repo")
 		assert.True(t, TokenCanReadProject(ctx, nsChild))
 		assert.False(t, TokenCanReadProject(ctx, priv))

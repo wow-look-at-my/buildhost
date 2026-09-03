@@ -25,6 +25,7 @@ func setTestSiteDomain(t *testing.T, site, primary string) {
 }
 
 func TestSiteApexOf(t *testing.T) {
+	t.Serial()
 	setTestSiteDomain(t, "pazer.site", "pazer.build")
 	assert.Equal(t, "pazer.site", siteApexOf("pazer.site"))
 	assert.Equal(t, "pazer.site", siteApexOf("myapp.pazer.site"))
@@ -40,6 +41,7 @@ func TestSiteApexOf(t *testing.T) {
 }
 
 func TestSafeNextURL_SiteDomain(t *testing.T) {
+	t.Serial()
 	setTestSiteDomain(t, "pazer.site", "pazer.build")
 	r := httptest.NewRequest("GET", "/__signin", nil)
 	r.Host = "pazer.build"
@@ -62,6 +64,7 @@ func TestSafeNextURL_SiteDomain(t *testing.T) {
 }
 
 func TestApexClassifiers_SiteDomain(t *testing.T) {
+	t.Serial()
 	setTestSiteDomain(t, "pazer.site", "pazer.build")
 
 	r := httptest.NewRequest("GET", "/x", nil)
@@ -81,6 +84,7 @@ func TestApexClassifiers_SiteDomain(t *testing.T) {
 }
 
 func TestLoginRedirectURL_SiteHost(t *testing.T) {
+	t.Serial()
 	setTestSiteDomain(t, "pazer.site", "pazer.build")
 	r := httptest.NewRequest("GET", "/secret/file.html", nil)
 	r.Host = "myapp.pazer.site"
@@ -101,11 +105,8 @@ func TestLoginRedirectURL_SiteHost(t *testing.T) {
 		loginRedirectURL(r2))
 }
 
-// A browser hitting a private resource on the site domain is 303'd to the
-// PRIMARY apex sign-in; without a configured primary domain it degrades to the
-// plain JSON 401 (never a broken redirect to an apex that cannot complete
-// OAuth).
 func TestRequireProject_SiteDomainBrowser_RedirectsToPrimary(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	mw.GitHub = NewGitHubAuth("cid", "secret")
@@ -132,7 +133,6 @@ func TestRequireProject_SiteDomainBrowser_RedirectsToPrimary(t *testing.T) {
 		"https://pazer.build"+signinStartPath+"?next="+url.QueryEscape("https://secret.pazer.site/preview/index.html"),
 		rec.Header().Get("Location"))
 
-	// Same request without a primary domain: graceful degradation to JSON 401.
 	setTestSiteDomain(t, "pazer.site", "")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -148,6 +148,7 @@ func TestRequireProject_SiteDomainBrowser_RedirectsToPrimary(t *testing.T) {
 // round trip must set the SAME session value as a site-apex cookie, and the
 // code must be single-use.
 func TestSigninStart_InstantHandoff_RoundTrip(t *testing.T) {
+	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/user" {
 			w.Write([]byte(`{"login":"alice"}`))
@@ -185,7 +186,6 @@ func TestSigninStart_InstantHandoff_RoundTrip(t *testing.T) {
 	assert.Equal(t, next, u.Query().Get("next"))
 
 	// The session token must never ride a URL: neither the raw GitHub token nor
-	// the session cookie value may appear in the Location.
 	assert.NotContains(t, loc, "gho_tok")
 	assert.NotContains(t, loc, session)
 
@@ -210,7 +210,6 @@ func TestSigninStart_InstantHandoff_RoundTrip(t *testing.T) {
 	assert.True(t, sc.HttpOnly)
 	assert.Equal(t, http.SameSiteLaxMode, sc.SameSite)
 
-	// Second redemption of the same code: single-use, must fail.
 	rec = httptest.NewRecorder()
 	handleSSORedeem(rec, redeem.Clone(context.Background()))
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
@@ -219,7 +218,6 @@ func TestSigninStart_InstantHandoff_RoundTrip(t *testing.T) {
 		assert.NotEqual(t, sessionCookieName, c.Name, "no session on a replayed code")
 	}
 	// The failure page offers a restart at the PRIMARY apex carrying the
-	// MAC-verified next.
 	assert.Contains(t, rec.Body.String(), "https://pazer.build"+signinStartPath)
 }
 
@@ -229,6 +227,7 @@ func TestSigninStart_InstantHandoff_RoundTrip(t *testing.T) {
 // dead session forever). The liveness probe fails and the flow falls through
 // to full OAuth, which mints a fresh session for the handoff.
 func TestSigninStart_InstantHandoff_DeadTokenFallsThroughToOAuth(t *testing.T) {
+	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized) // GET /user: token revoked
 	}))
@@ -260,6 +259,7 @@ func TestSigninStart_InstantHandoff_DeadTokenFallsThroughToOAuth(t *testing.T) {
 // sets the primary-apex session cookie as always AND bounces through /__sso
 // instead of redirecting to the destination directly.
 func TestSigninCallback_SiteNext_MintsHandoff(t *testing.T) {
+	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == "POST":
@@ -339,6 +339,7 @@ func TestSigninCallback_SiteNext_MintsHandoff(t *testing.T) {
 }
 
 func TestSSORedeem_ExpiredCode(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	setTestSiteDomain(t, "pazer.site", "pazer.build")
@@ -361,7 +362,6 @@ func TestSSORedeem_ExpiredCode(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Contains(t, rec.Body.String(), "expired")
 	// The next was MAC-verified, so the restart link may carry it -- at the
-	// primary apex, where a new handoff can be minted.
 	assert.Contains(t, rec.Body.String(), "https://pazer.build"+signinStartPath)
 	for _, c := range rec.Result().Cookies() {
 		assert.NotEqual(t, sessionCookieName, c.Name)
@@ -369,6 +369,7 @@ func TestSSORedeem_ExpiredCode(t *testing.T) {
 }
 
 func TestSSORedeem_TamperRejected(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	setTestSiteDomain(t, "pazer.site", "pazer.build")
@@ -381,7 +382,6 @@ func TestSSORedeem_TamperRejected(t *testing.T) {
 	code := u.Query().Get("code")
 
 	// Swapping the query next for another destination fails: the real next is
-	// bound inside the signed code.
 	req := httptest.NewRequest("GET", ssoPath+"?code="+url.QueryEscape(code)+"&next="+url.QueryEscape("https://evil.pazer.site/steal"), nil)
 	req.Host = "myapp.pazer.site"
 	rec := httptest.NewRecorder()
@@ -404,6 +404,7 @@ func TestSSORedeem_TamperRejected(t *testing.T) {
 }
 
 func TestSSORedeem_HostGate(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	setTestSiteDomain(t, "pazer.site", "pazer.build")
@@ -424,7 +425,6 @@ func TestSSORedeem_HostGate(t *testing.T) {
 	}
 
 	// The bare site apex is a valid redemption host (host-agnostic fallthrough
-	// serves it; the Domain=<site> cookie covers apex and subdomains alike).
 	req := httptest.NewRequest("GET", u.RequestURI(), nil)
 	req.Host = "pazer.site"
 	rec := httptest.NewRecorder()
@@ -435,6 +435,7 @@ func TestSSORedeem_HostGate(t *testing.T) {
 // Full flow through the real router (host dispatch included), ending with the
 // handed-over cookie authorizing a private-project read on the site domain.
 func TestSSOHandoff_EndToEnd_AuthorizesSiteDomainRead(t *testing.T) {
+	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/PazerOP/tesla-wheel-data":
@@ -458,7 +459,6 @@ func TestSSOHandoff_EndToEnd_AuthorizesSiteDomainRead(t *testing.T) {
 
 	routerHandler := mw.Authenticate(http.HandlerFunc(ServeHTTP))
 
-	// 1. Instant handoff minted through the real /__signin route.
 	session := mintSession("alice", "gho_tok", time.Now().Add(time.Hour))
 	next := "https://tesla-wheel-data.pazer.site/index.html"
 	req := httptest.NewRequest("GET", signinStartPath+"?next="+url.QueryEscape(next), nil)
@@ -471,8 +471,6 @@ func TestSSOHandoff_EndToEnd_AuthorizesSiteDomainRead(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ssoPath, u.Path)
 
-	// 2. Redemption through the real router on the project subdomain: the
-	// {project}.<site>/__sso literal must win over any catch-all.
 	req = httptest.NewRequest("GET", u.RequestURI(), nil)
 	req.Host = "tesla-wheel-data.pazer.site"
 	rec = httptest.NewRecorder()
@@ -488,9 +486,6 @@ func TestSSOHandoff_EndToEnd_AuthorizesSiteDomainRead(t *testing.T) {
 	require.NotNil(t, siteCookie)
 	require.Equal(t, "pazer.site", siteCookie.Domain)
 
-	// 3. The handed-over cookie authorizes a private read exactly like a
-	// primary-apex session would (requireProject + canAccessRepo are
-	// host-independent).
 	proj := &db.Project{Name: "tesla-wheel-data", IsPrivate: true, Versioning: "auto", GithubRepo: "PazerOP/tesla-wheel-data"}
 	require.NoError(t, d.CreateProject(context.Background(), proj))
 	parse := func(r *http.Request) RouteInfo {

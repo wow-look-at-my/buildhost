@@ -21,6 +21,7 @@ func testStore(t *testing.T, maxSize int64, ttl time.Duration) *Store {
 }
 
 func TestStoreCreateAppendFinalize(t *testing.T) {
+	t.Serial()
 	s := testStore(t, 1<<20, time.Hour)
 
 	sess, err := s.Create("owner-a")
@@ -56,6 +57,7 @@ func TestStoreCreateAppendFinalize(t *testing.T) {
 }
 
 func TestStoreOffsetMismatch(t *testing.T) {
+	t.Serial()
 	s := testStore(t, 1<<20, time.Hour)
 	sess, err := s.Create("o")
 	require.NoError(t, err)
@@ -75,6 +77,7 @@ func TestStoreOffsetMismatch(t *testing.T) {
 }
 
 func TestStoreOwnerIsolation(t *testing.T) {
+	t.Serial()
 	s := testStore(t, 1<<20, time.Hour)
 	sess, err := s.Create("owner-a")
 	require.NoError(t, err)
@@ -89,6 +92,7 @@ func TestStoreOwnerIsolation(t *testing.T) {
 }
 
 func TestStoreTooLargeRollsBack(t *testing.T) {
+	t.Serial()
 	s := testStore(t, 10, time.Hour)
 	sess, err := s.Create("o")
 	require.NoError(t, err)
@@ -96,7 +100,6 @@ func TestStoreTooLargeRollsBack(t *testing.T) {
 	_, err = s.Append(sess, 0, strings.NewReader("12345"))
 	require.NoError(t, err)
 
-	// This chunk would exceed the 10-byte cap: rejected as a whole.
 	size, err := s.Append(sess, 5, strings.NewReader("6789012345"))
 	assert.ErrorIs(t, err, ErrTooLarge)
 	assert.Equal(t, int64(5), size, "over-cap chunk rolled back entirely")
@@ -115,6 +118,7 @@ func TestStoreTooLargeRollsBack(t *testing.T) {
 }
 
 func TestStoreBusyDuringFinalize(t *testing.T) {
+	t.Serial()
 	s := testStore(t, 1<<20, time.Hour)
 	sess, err := s.Create("o")
 	require.NoError(t, err)
@@ -125,7 +129,6 @@ func TestStoreBusyDuringFinalize(t *testing.T) {
 	require.NoError(t, err)
 	defer f.Close()
 
-	// While busy: appends and second finalizes are refused.
 	_, err = s.Append(sess, 4, strings.NewReader("more"))
 	assert.ErrorIs(t, err, ErrBusy)
 	_, _, err = s.BeginFinalize(sess)
@@ -139,13 +142,12 @@ func TestStoreBusyDuringFinalize(t *testing.T) {
 }
 
 func TestStorePartialAppendCommits(t *testing.T) {
+	t.Serial()
 	s := testStore(t, 1<<20, time.Hour)
 	sess, err := s.Create("o")
 	require.NoError(t, err)
 
 	// A reader that delivers some bytes and then fails, like a dropped
-	// connection mid-chunk: what landed stays committed so the client can
-	// resume from the reported size.
 	failing := io.MultiReader(strings.NewReader("part"), errReader{})
 	size, err := s.Append(sess, 0, failing)
 	require.Error(t, err)
@@ -163,6 +165,7 @@ type errReader struct{}
 func (errReader) Read([]byte) (int, error) { return 0, errors.New("connection dropped") }
 
 func TestStoreSweepExpired(t *testing.T) {
+	t.Serial()
 	s := testStore(t, 1<<20, time.Millisecond)
 	old, err := s.Create("o")
 	require.NoError(t, err)
@@ -186,6 +189,7 @@ func TestStoreSweepExpired(t *testing.T) {
 }
 
 func TestNewStoreClearsOrphanedSpools(t *testing.T) {
+	t.Serial()
 	dir := filepath.Join(t.TempDir(), "uploads")
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 	orphan := filepath.Join(dir, "deadbeef.spool")

@@ -26,9 +26,6 @@ var (
 )
 
 // OIDCOrgs are the GitHub orgs this deployment accepts OIDC from. Other backends
-// read it as "the orgs this buildhost serves" -- internal/goproxy derives which
-// module prefixes are private from it, so a deployment that already declares its
-// orgs needs no second list.
 func OIDCOrgs() []string { return sharedOIDCOrgs }
 
 func Router() *router.Router      { return mux }
@@ -40,41 +37,23 @@ func SiteFetchDomains() []string  { return sharedFetchDomains }
 func GitHubWebhookSecret() string { return sharedGitHubWebhookSecret }
 
 // SiteDomain is the optional dedicated domain for project static sites
-// (BUILDHOST_SITE_DOMAIN); "" when the feature is off. When set, project sites
-// are also served at {project}.<SiteDomain> and the SSO handoff routes exist.
 func SiteDomain() string { return sharedSiteDomain }
 
 // PrimaryDomain is the apex carrying the GitHub OAuth callback
-// (BUILDHOST_PRIMARY_DOMAIN); "" when unset. Site-domain browser sign-ins
-// redirect to https://<PrimaryDomain>/__signin.
 func PrimaryDomain() string { return sharedPrimaryDomain }
 
-// OnReady runs fn once auth.Init has wired the shared dependencies (DB, store,
-// data dir). Use it to populate handler fields and NOTHING else: a route
-// registered from here exists only in a booted server, so it is absent from
-// `buildhost routes` and from the PR route diff built on it.
-// TestInitRegistersOnlySiteDomainRoutes enforces that.
 func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
 }
 
-// OnSiteDomain is the one sanctioned way to register a route whose pattern
-// depends on configuration. fn runs with the configured BUILDHOST_SITE_DOMAIN
-// at Init, and again with SiteDomainPlaceholder from ListRoutes, so the route
-// is enumerable without booting a server and a change to it shows up on a PR.
-// fn must be idempotent per domain.
 func OnSiteDomain(fn func(domain string)) {
 	siteDomainFuncs = append(siteDomainFuncs, fn)
 }
 
 // SiteDomainPlaceholder stands in for the configured site domain when routes
-// are enumerated rather than served.
 const SiteDomainPlaceholder = "{site-domain}"
 
 // ListRoutes returns the complete route table for enumeration, including the
-// config-conditional site-domain families rendered against
-// SiteDomainPlaceholder. It registers those routes into the shared router, so
-// it is for processes that enumerate instead of serving (`buildhost routes`).
 func ListRoutes() []router.Route {
 	for _, fn := range siteDomainFuncs {
 		fn(SiteDomainPlaceholder)
@@ -94,8 +73,6 @@ func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers
 
 	initDownloadSecret(dataDir)
 	// Config-conditional families (the /__sso handoff, the {project}.<site-domain>
-	// scheme). With BUILDHOST_SITE_DOMAIN unset the route table stays
-	// byte-identical to a build without the feature.
 	if sharedSiteDomain != "" {
 		for _, fn := range siteDomainFuncs {
 			fn(sharedSiteDomain)
@@ -130,21 +107,6 @@ func HandleHandler(pattern string, parse ParseFunc, handler http.Handler) {
 
 // HandlePrimary and HandleRawPrimary register main-domain routes that belong to
 // the registry's own UI/API surface (the web frontend and /api/v1). When
-// BUILDHOST_PRIMARY_DOMAIN is configured they answer ONLY on that apex: on any
-// other unclaimed host (a stray CNAME, the bare site apex, ...) they serve the
-// router's canonical not-found response, so an unknown domain pointed at
-// buildhost is indistinguishable from a host with no such route. With no
-// primary domain configured they are byte-identical to Handle/HandleRaw (fully
-// host-agnostic, the historical behavior), so existing deployments and tests
-// are unchanged.
-//
-// Deliberately NOT primary-scoped (must answer on any unclaimed host):
-// /healthz and /ready-to-update (container-internal probes address the server
-// by container DNS/localhost), /llms.txt, the sign-in flow (/__signin,
-// /__signin/callback, /__signout), /__sso (bare-site-apex redemption), and the
-// /npm/* -> npm.{domain} convenience redirect. Service-subdomain routes
-// (ServiceHandle*) and {project}.<site-domain> routes have host-bearing
-// patterns and are never affected.
 func HandlePrimary(pattern string, parse ParseFunc, handler http.HandlerFunc) {
 	mux.HandleFunc(pattern, router.Allow, primaryOnly(requireProjectFunc(parse, handler)))
 }
@@ -156,11 +118,6 @@ func HandleRawPrimary(pattern string, handler http.HandlerFunc) {
 // primaryOnly gates a handler to the configured primary apex (exact host match,
 // port stripped, case-folded; PrimaryDomain() is stored lowercased). The gate
 // runs BEFORE requireProject on purpose: a request on a foreign host must
-// produce exactly the router's not-found response -- http.NotFound, the same
-// call the router makes for an unregistered path -- with no auth semantics
-// (401s, sign-in redirects, OIDC auto-provisioning) that would reveal the
-// route exists. It reads PrimaryDomain() per request, not at registration
-// time, because web routes register in init() before config is known.
 func primaryOnly(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if pd := PrimaryDomain(); pd != "" && strings.ToLower(hostNoPort(r.Host)) != pd {
@@ -173,9 +130,6 @@ func primaryOnly(h http.HandlerFunc) http.HandlerFunc {
 
 // servicePattern turns a path-only service pattern into a host+path pattern
 // anchored to the service's subdomain, e.g. ("apt", "GET /{path...}") becomes
-// "GET apt.{domain}/{path...}". The router matches the host's first label
-// against the subdomain and binds {domain} to the rest of the request Host, so
-// the registered pattern is exactly what is matched -- no host dispatch table.
 func servicePattern(subdomain, pattern string) string {
 	method := ""
 	rest := pattern
@@ -189,10 +143,6 @@ func servicePattern(subdomain, pattern string) string {
 // siteDomainPattern turns a path-only pattern into a host+path pattern anchored
 // to a project label under a configured site domain, e.g. ("pazer.site",
 // "GET /{path...}") becomes "GET {project}.pazer.site/{path...}". A non-final
-// host parameter binds exactly one request-host label, so the handler reads the
-// project name via r.PathValue("project"). The pattern's two literal host
-// labels outrank every service route's one, so the site domain's whole
-// one-label-deep host space belongs to the project family.
 func siteDomainPattern(domain, pattern string) string {
 	method := ""
 	rest := pattern
@@ -205,16 +155,12 @@ func siteDomainPattern(domain, pattern string) string {
 
 // SiteDomainHandle registers a project-auth'd route on the {project}.<domain>
 // scheme, the site-domain sibling of ServiceHandle. domain must be a literal
-// (registration is per configured domain -- a {project}.{domain} form would
-// swallow every >=3-label host with zero host literals and lose to every
-// service route).
 func SiteDomainHandle(domain, pattern string, parse ParseFunc, handler http.HandlerFunc) {
 	mux.HandleFunc(siteDomainPattern(domain, pattern), router.Allow, requireProjectFunc(parse, handler))
 }
 
 // SiteDomainHandleRaw registers an unauthenticated route on the
 // {project}.<domain> scheme (the /__sso redemption endpoint -- its caller is by
-// definition unauthenticated).
 func SiteDomainHandleRaw(domain, pattern string, handler http.HandlerFunc) {
 	mux.HandleFunc(siteDomainPattern(domain, pattern), router.Allow, handler)
 }
@@ -248,8 +194,6 @@ func ServiceRedirect(from, to string, permanent bool) {
 }
 
 // ServeHTTP dispatches every request through the single router. Service
-// subdomains are matched by the host portion of their registered patterns;
-// unknown hosts fall through to the host-agnostic (main-domain) routes.
 func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mux.ServeHTTP(w, r)
 }
@@ -273,8 +217,6 @@ func DeriveServiceURL(r *http.Request, service string) *url.URL {
 
 // RequestScheme returns the scheme the client used to reach this server. We run
 // behind a TLS-terminating Cloudflare Tunnel (and an internal nginx sidecar that
-// rewrites X-Forwarded-Proto), so rather than trust a forwarded header we treat
-// loopback hosts as http and everything else as https.
 func RequestScheme(r *http.Request) string {
 	host := hostNoPort(r.Host)
 	if host == "localhost" || strings.HasSuffix(host, ".localhost") || host == "127.0.0.1" || host == "::1" {
@@ -284,14 +226,11 @@ func RequestScheme(r *http.Request) string {
 }
 
 // RequestBaseURL reconstructs this server's own base URL from the request
-// (scheme + Host), so nothing depends on a configured "this is my URL" value.
 func RequestBaseURL(r *http.Request) string {
 	return RequestScheme(r) + "://" + r.Host
 }
 
 // RequestRootURL returns the root domain URL (scheme + bare domain, no service
-// subdomain). Use this when building cross-service URLs from within a handler
-// that itself runs on a service subdomain (e.g. brew.example.com → https://example.com).
 func RequestRootURL(r *http.Request) string {
 	return RequestScheme(r) + "://" + domainFromRequest(r)
 }
@@ -304,8 +243,6 @@ func hostNoPort(host string) string {
 }
 
 // AllRoutes returns every registered route exactly as registered. Service
-// routes carry their subdomain and {domain} host token in the real pattern
-// (e.g. "apt.{domain}/{path...}"), so nothing is synthesized here.
 func AllRoutes() []router.Route {
 	return mux.Routes()
 }

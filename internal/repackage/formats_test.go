@@ -19,6 +19,7 @@ import (
 // --- Repackage tests ---
 
 func TestTarGZRepackage(t *testing.T) {
+	t.Serial()
 	rp := &TarGZ{}
 	input := makeInput()
 	ctx := context.Background()
@@ -49,6 +50,7 @@ func TestTarGZRepackage(t *testing.T) {
 }
 
 func TestTarXZRepackage(t *testing.T) {
+	t.Serial()
 	rp := &TarXZ{}
 	input := makeInput()
 	ctx := context.Background()
@@ -65,7 +67,6 @@ func TestTarXZRepackage(t *testing.T) {
 	require.Nil(t, err)
 
 	// The xz package is used in production; here just verify non-empty output
-	// with the correct xz magic bytes (0xFD, '7', 'z', 'X', 'Z', 0x00)
 	require.GreaterOrEqual(t, len(data), 6)
 
 	xzMagic := []byte{0xFD, '7', 'z', 'X', 'Z', 0x00}
@@ -74,6 +75,7 @@ func TestTarXZRepackage(t *testing.T) {
 }
 
 func TestTarZSTRepackage(t *testing.T) {
+	t.Serial()
 	rp := &TarZST{}
 	input := makeInput()
 	ctx := context.Background()
@@ -97,6 +99,7 @@ func TestTarZSTRepackage(t *testing.T) {
 }
 
 func TestZipRepackage(t *testing.T) {
+	t.Serial()
 	rp := &Zip{}
 	input := makeInput()
 	ctx := context.Background()
@@ -129,6 +132,7 @@ func TestZipRepackage(t *testing.T) {
 }
 
 func TestDebRepackage(t *testing.T) {
+	t.Serial()
 	rp := &Deb{}
 	input := makeInput()
 	ctx := context.Background()
@@ -152,6 +156,7 @@ func TestDebRepackage(t *testing.T) {
 }
 
 func TestDebPackageName(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		project string
 		want    string
@@ -174,6 +179,7 @@ func TestDebPackageName(t *testing.T) {
 // Package name containing '/', so this is what makes apt usable for namespaced
 // projects.
 func TestDebRepackage_NamespacedName(t *testing.T) {
+	t.Serial()
 	rp := &Deb{}
 	input := makeInput()
 	input.Project.Name = "pr-reviewer-agent/server"
@@ -202,8 +208,6 @@ func TestDebRepackage_NamespacedName(t *testing.T) {
 }
 
 // readArMembers parses a Unix `ar` archive (the .deb container) into a map of
-// member name -> body. Each member has a fixed 60-byte header; the body is
-// followed by a single '\n' pad byte when its length is odd.
 func readArMembers(t *testing.T, data []byte) map[string][]byte {
 	t.Helper()
 	const magic = "!<arch>\n"
@@ -248,6 +252,7 @@ func tarGzEntries(t *testing.T, gzData []byte) map[string]string {
 }
 
 func TestBrewRepackage(t *testing.T) {
+	t.Serial()
 	rp := &Brew{}
 	input := makeInput()
 	ctx := context.Background()
@@ -270,6 +275,7 @@ func TestBrewRepackage(t *testing.T) {
 }
 
 func TestNPMRepackage(t *testing.T) {
+	t.Serial()
 	rp := &NPM{}
 	input := makeInput()
 	ctx := context.Background()
@@ -307,6 +313,7 @@ func TestNPMRepackage(t *testing.T) {
 }
 
 func TestOCIRepackage(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	store := openTestStore(t)
 	ctx := context.Background()
@@ -355,6 +362,7 @@ func TestOCIRepackage(t *testing.T) {
 // --- Format tests ---
 
 func TestFormats(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		rp     Repackager
 		format Format

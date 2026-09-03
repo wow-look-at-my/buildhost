@@ -23,16 +23,8 @@ func init() {
 		handler.Store = auth.Store()
 	})
 	// npm requests a scoped package as `@buildhost/<name>` but URL-encodes the
-	// scope slash, so the path arrives as the single segment
-	// `@buildhost%2f<name>`. Per RFC 3986 a percent-encoded slash is a literal
-	// character, not a path separator, so the router keeps it in one segment
-	// (and percent-decodes the captured value). Match the whole package segment
-	// and strip the `@buildhost/` scope ourselves -- a `/@buildhost/{project}`
-	// pattern would only match the rare unencoded client.
 	auth.ServiceHandleHandler("npm", "GET /{pkg}", parseRoute, &handler)
 	// Tarball URLs are emitted by us in the packument with literal slashes (npm
-	// fetches dist.tarball verbatim, without scope-encoding), so they arrive as
-	// a normal multi-segment path and need their own route.
 	auth.ServiceHandle("npm", "GET /@buildhost/{project}/-/{filename}", parseTarballRoute, handler.serveTarball)
 }
 
@@ -72,24 +64,16 @@ func splitPlatform(name string) (project, platform string) {
 	return name, ""
 }
 
-// npm package names may contain at most one slash (the "@scope/name"
-// separator), but buildhost projects are slash-namespaced to any depth
-// (e.g. "cc-marketplace/my-plugin"). Encode the namespace separator as "__"
-// so a namespaced project maps to a single valid npm package name and back.
-// Project name segments must not themselves contain "__".
 func projectToNPMName(project string) string { return strings.ReplaceAll(project, "/", "__") }
 func npmNameToProject(name string) string    { return strings.ReplaceAll(name, "__", "/") }
 
 func parseRoute(r *http.Request) auth.RouteInfo {
 	// The router has already percent-decoded the segment, so both the encoded
-	// (`@buildhost%2ffoo`) and unencoded (`@buildhost/foo`) forms arrive here as
-	// `@buildhost/foo`. Anything without the scope is not a package request.
 	name, ok := strings.CutPrefix(r.PathValue("pkg"), "@buildhost/")
 	if !ok {
 		return route{}
 	}
 	// Slash-namespaced projects are encoded with "__" in the npm name (see
-	// projectToNPMName); decode before resolving the project.
 	projectName, platform := splitPlatform(npmNameToProject(name))
 	return route{project: projectName, platform: platform}
 }
@@ -110,11 +94,8 @@ func tarballRouteFrom(ctx context.Context) tarballRoute {
 }
 
 type Handler struct {
-	DB    *db.DB
-	Store storage.Storage
-	// fillBudget overrides manifestFillBudget for manifest cache fills; zero
-	// uses the default. Set only by tests, which need the budget to expire
-	// faster than a test run.
+	DB         *db.DB
+	Store      storage.Storage
 	fillBudget time.Duration
 }
 
@@ -162,10 +143,6 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 		return
 	}
 
-	// Pass 1 -- DB only: classify each published release as a pre-built
-	// npm-package or a binary repackage. Nothing touches a blob here, so the
-	// manifest reads the pre-built packages need can be batched below instead
-	// of running one at a time down the middle of the response.
 	type packumentRelease struct {
 		release db.Release
 		npmPkg  *db.Artifact
@@ -186,10 +163,6 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 		ordered = append(ordered, pr)
 	}
 
-	// Pass 2: resolve every pre-built package's manifest fields, from cache
-	// where possible. A packument that cannot resolve them all in time is an
-	// error, never a packument whose version entries silently lost their
-	// dependency graph.
 	manifestFields, err := h.resolveNPMManifestFields(r.Context(), npmPkgs)
 	if err != nil {
 		slog.Warn("npm: packument manifest resolution", "project", projectName, "releases", len(npmPkgs), "err", err)
@@ -218,11 +191,6 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 			}
 			// Reflect the package's own manifest (dependencies, bin, os/cpu,
 			// engines, ...) from the uploaded tarball's package.json. Without
-			// this the packument would advertise a package with no dependency
-			// graph -- e.g. a launcher whose optionalDependencies are invisible
-			// -- so npm would never install the sub-packages it needs and the
-			// artifact would install but never work. name/version/dist stay
-			// buildhost-authoritative and are not overridden.
 			for k, v := range manifestFields[pr.npmPkg.ID] {
 				if _, reserved := entry[k]; !reserved {
 					entry[k] = v
@@ -263,7 +231,6 @@ func (h *Handler) servePackageInfo(w http.ResponseWriter, r *http.Request, proje
 	}
 
 	// Point "latest" at the default-branch (apex) release, not merely the highest
-	// version number, so a feature-branch publish cannot hijack the npm latest.
 	if v := h.latestVersion(r.Context(), project); v != "" {
 		if _, ok := versions[v]; ok {
 			distTags["latest"] = v

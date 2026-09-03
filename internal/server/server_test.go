@@ -28,7 +28,6 @@ import (
 
 // testEnv bundles the objects needed by every integration test. cfg, store,
 // and handler are kept so a test can simulate a redeploy (server.New over the
-// same data dir) or serve the same router under a rewritten Host.
 type testEnv struct {
 	ts       *httptest.Server
 	database *db.DB
@@ -105,10 +104,6 @@ func (e *testEnv) doRequest(t *testing.T, method, path, contentType string, body
 	req, err := http.NewRequest(method, e.ts.URL+path, body)
 	require.Nil(t, err)
 
-	// The web frontend and /api/v1 are scoped to the primary apex when one is
-	// configured, so main-domain requests must address it (clients of such a
-	// deployment reach the API via that hostname). With no primary domain
-	// (the default env) the httptest host is used as before.
 	if e.cfg.PrimaryDomain != "" {
 		req.Host = e.cfg.PrimaryDomain
 	}
@@ -185,6 +180,7 @@ func readBody(t *testing.T, resp *http.Response) []byte {
 // ---------------------------------------------------------------------------
 
 func TestFullLifecycle(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	binaryPayload := []byte("#!/bin/sh\necho hello world\n")
@@ -280,6 +276,7 @@ func TestFullLifecycle(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHealthz(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	resp := env.get(t, "/healthz")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -297,6 +294,7 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestHealthz_DBClosed(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	// Close the database to simulate an unreachable DB.

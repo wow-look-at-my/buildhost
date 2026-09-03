@@ -35,14 +35,6 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	rt := routeFrom(ctx)
 
 	// Branch names may contain "/" (claude/foo), and neither spelling of a branch
-	// URL delimits one: on /branch/{branch}/{path...} the router bound {branch}
-	// to only the FIRST segment (with a wildcard following it tries the shortest
-	// split first and never backtracks on a DB miss, so a slash-named branch
-	// uploaded via the greedy PUT bind used to be unservable), and "@" marks
-	// where the branch STARTS, not where it ends. route.ref() hands over the raw
-	// remainder either way; re-split it by longest match against the project's
-	// site rows -- the same resolution AllowsPublicRead applies, so gate and
-	// serve always agree.
 	branch, filePath, ok := splitSiteBranch(ctx, h.DB, project.ID, rt.ref())
 	if !ok {
 		http.NotFound(w, r)
@@ -57,24 +49,14 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 			if q := r.URL.RawQuery; q != "" {
 				target += "?" + q
 			}
-			// 302 + no-store: the default branch is a mutable pointer, so which
-			// branch this URL collapses into can change with the next publish.
 			w.Header().Set("Cache-Control", "no-store")
 			http.Redirect(w, r, target, http.StatusFound)
 			return
 		}
 		// The bare URL would address a different project (a namespaced sibling
-		// shadows this file path), so there is no simpler URL for this file.
-		// Serve it here rather than redirect somewhere that means something else.
 	}
 
 	// Redirect a branch root with no trailing slash (e.g. /p/branch/main) to the
-	// slashed form so relative links in index.html resolve under the branch, not
-	// its parent. This redirect used to live on its own GET /{project}/branch/{branch}
-	// route, but that route's {branch} param greedily matched any sub-path and,
-	// scoring higher than this {path...} route, shadowed it -- so every file
-	// request hit the redirect and looped (/x -> /x/ -> /x/ ...). Folding it in
-	// here keeps a single GET route, so file requests reach Serve directly.
 	if filePath == "" && !strings.HasSuffix(r.URL.Path, "/") {
 		http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
 		return
@@ -83,17 +65,8 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	h.serveSiteFile(ctx, w, r, project, branch, filePath)
 }
 
-// serveSiteFile streams one file of a branch's site archive: the tar scan, the
-// index.html directory default, the 404.html fallback, and the content
-// headers. Shared by the classic sites.{domain} scheme (Serve) and the
-// {project}.<site-domain> scheme (ServeSubdomain), which resolve project and
-// branch differently but serve identically. rawPath is the file path within
-// the site ("" or a trailing-slash request URL means a directory).
 func (h *Handler) serveSiteFile(ctx context.Context, w http.ResponseWriter, r *http.Request, project *db.Project, branch, rawPath string) {
 	// The {path...} router value has its trailing slash stripped, so detect a
-	// directory request from the real request path -- otherwise a nested dir URL
-	// like /scratchpads/foo/ is treated as a file, never gets index.html
-	// appended, and matches the 0-byte directory entry in the tar below.
 	isDir := rawPath == "" || strings.HasSuffix(r.URL.Path, "/")
 	filePath := path.Clean(rawPath)
 	if isDir || filePath == "." {
@@ -117,9 +90,6 @@ func (h *Handler) serveSiteFile(ctx context.Context, w http.ResponseWriter, r *h
 	}
 
 	// Indexed path: a site stored as a binpazer archive answers "give me this
-	// one file" with a seek. served reports whether it handled the request; a
-	// blob that is not an archive (every site uploaded before this format) or
-	// that cannot be read at an offset falls through to the tar scan below.
 	if h.serveFromArchive(ctx, w, site.StorageKey, filePath) {
 		return
 	}
@@ -143,7 +113,7 @@ func (h *Handler) serveSiteFile(ctx context.Context, w http.ResponseWriter, r *h
 		}
 
 		if hdr.Typeflag != tar.TypeReg {
-			continue // never serve a directory entry as a file (0-byte body)
+			continue
 		}
 		name := path.Clean(hdr.Name)
 		if name == filePath {
@@ -183,18 +153,6 @@ func (h *Handler) serveSiteFile(ctx context.Context, w http.ResponseWriter, r *h
 	http.NotFound(w, r)
 }
 
-// ServeDefaultBranch serves the two grammars parseRootRoute resolves.
-// /{project}/@{ref}/<file> names a branch or commit and serves exactly like the
-// /branch/ form. /{project}/ and /{project}/<file> are the CANONICAL site URLs:
-// they serve straight from the resolved default branch, so a project's files
-// are reachable under its own root path without the caller having to know which
-// branch the site lives on -- and without a redirect hop. That is the grammar
-// the {project}.<site-domain> scheme already has for a bare path, and it uses
-// the same resolveRootBranch chain, so the two schemes address the same file.
-//
-// The bare root used to 302 to the branch URL. It no longer does: the branch
-// URL is the longer, more fragile spelling, so pointing the short URL at it was
-// backwards. Redirects now run the other way (see Serve).
 func (h *Handler) ServeDefaultBranch(w http.ResponseWriter, r *http.Request) {
 	if routeFrom(r.Context()).sigil != "" {
 		h.Serve(w, r)
@@ -206,13 +164,10 @@ func (h *Handler) ServeDefaultBranch(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(ctx)
 
 	// Set before the redirect below, not after it: a cross-origin fetch is
-	// checked at every hop, so a redirect missing these headers fails the load.
 	setSiteSecurityHeaders(w)
 
 	rt := routeFrom(ctx)
 	// The project root without its trailing slash: canonicalize so relative
-	// links in index.html resolve under the project, not the host root. Same
-	// permanent rule a branch root follows in Serve.
 	if rt.path == "" && !strings.HasSuffix(r.URL.Path, "/") {
 		http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
 		return
@@ -222,15 +177,6 @@ func (h *Handler) ServeDefaultBranch(w http.ResponseWriter, r *http.Request) {
 	h.serveSiteFile(ctx, w, r, project, resolveRootBranch(ctx, h.DB, project), rt.path)
 }
 
-// serveFromArchive serves one file out of a binpazer-archived site and reports
-// whether it handled the request. This is the whole point of storing sites in
-// an indexed container: the response costs a directory read plus one block
-// decode, instead of scanning the archive from the start -- twice, when the
-// request 404s and the not-found page has to be found too.
-//
-// It answers false only when the indexed path does not apply (legacy tar blob,
-// or a blob the backend cannot read at an offset), never when the file is
-// merely missing: a real archive answers its own 404.
 func (h *Handler) serveFromArchive(ctx context.Context, w http.ResponseWriter, storageKey, filePath string) bool {
 	rg, ok := h.Store.(storage.RandomGetter)
 	if !ok {

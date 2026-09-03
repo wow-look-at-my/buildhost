@@ -20,8 +20,6 @@ import (
 )
 
 // downloadTokenPrefix tags a signed, artifact-bound temporary download token so
-// it is unmistakable for a regular bh_ API token (LookupToken never matches it)
-// and so VerifyDownloadToken rejects anything that is not one of ours.
 const downloadTokenPrefix = "bhdl_"
 
 var (
@@ -29,9 +27,6 @@ var (
 	downloadSecret   []byte
 )
 
-// initDownloadSecret loads (or, on first start, generates) the HMAC key used to
-// sign temporary download links. It lives next to the APT signing key in the
-// data dir so links survive restarts. Called once from Init.
 func initDownloadSecret(dataDir string) {
 	setDownloadSecret(loadOrCreateDownloadSecret(filepath.Join(dataDir, "download-signing.key")))
 }
@@ -80,12 +75,6 @@ func loadOrCreateDownloadSecret(path string) []byte {
 	return b
 }
 
-// MintDownloadToken returns a signed, expiring token authorizing exactly one
-// artifact download: the (project, version, os, arch, fmt, debug) tuple. It is
-// delivered as the &token= query param on a static.{domain}/file URL and lets an
-// otherwise-private artifact be fetched until exp without a project token. The
-// resource tuple is bound by the signature, so a leaked link exposes only that
-// one file, and only until it expires.
 func MintDownloadToken(project, version, osStr, archStr, fmtStr string, debug bool, exp time.Time) string {
 	expUnix := exp.Unix()
 	mac := downloadMAC(project, version, osStr, archStr, fmtStr, debug, expUnix)
@@ -120,16 +109,12 @@ func downloadMAC(project, version, osStr, archStr, fmtStr string, debug bool, ex
 		debugStr = "1"
 	}
 	// NUL-joined: project/os/arch/fmt are charset-validated and never contain
-	// NUL, so fields cannot run together to forge a different tuple.
 	msg := strings.Join([]string{project, version, osStr, archStr, fmtStr, debugStr, strconv.FormatInt(expUnix, 10)}, "\x00")
 	h := hmac.New(sha256.New, downloadSecretBytes())
 	h.Write([]byte(msg))
 	return h.Sum(nil)
 }
 
-// knownServiceLabels are the first-Host-label names the server treats as service
-// subdomains, plus the admin dashboard host. Used to derive the registry apex
-// from any request Host.
 var knownServiceLabels = set.Of(
 	"apt", "brew", "dl", "git", "npm",
 	"oci", "sites", "static", "docker", "admin",
@@ -137,11 +122,6 @@ var knownServiceLabels = set.Of(
 
 // ApexServiceURL returns scheme://<service>.<apex>, deriving the apex from the
 // request Host by stripping a known leading service/admin label. Unlike
-// DeriveServiceURL -- which strips the first label unconditionally and is only
-// correct when called from a service subdomain -- this is also correct from the
-// apex, so it works for both the apex REST API and the admin subdomain. A host
-// on the configured site domain classifies to the site apex (its {project}
-// label is a project name, not a service).
 func ApexServiceURL(r *http.Request, service string) *url.URL {
 	host, port := r.Host, ""
 	if i := strings.LastIndex(host, ":"); i >= 0 {

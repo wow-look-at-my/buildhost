@@ -12,12 +12,10 @@ import (
 
 // upstreamSource serves modules outside the private prefixes from the public
 // module mirror. Its failures are classified with the same taxonomy as the
-// GitHub source, so a mirror outage is a 502 rather than a "module not found".
 type upstreamSource struct {
 	client *http.Client
 	base   string
 	// privatePrefixes is only for the "not served here" message, so a caller is
-	// told what this proxy DOES cover.
 	privatePrefixes []string
 }
 
@@ -31,8 +29,6 @@ func newUpstreamSource(client *http.Client, base string, privatePrefixes []strin
 
 func (u *upstreamSource) enabled() bool { return u.base != "" }
 
-// get fetches one module-proxy endpoint from the mirror. The caller closes the
-// returned body.
 func (u *upstreamSource) get(ctx context.Context, modPath, version, suffix string) (io.ReadCloser, error) {
 	if !u.enabled() {
 		return nil, notServedErr(modPath, version, u.privatePrefixes)
@@ -63,11 +59,6 @@ func (u *upstreamSource) get(ctx context.Context, modPath, version, suffix strin
 
 	switch resp.StatusCode {
 	case http.StatusNotFound, http.StatusGone:
-		// The public mirror serves only public modules and answers 404/410 for
-		// anything it cannot see. That is a genuine "not found" for the module
-		// space it covers -- but if the module looks like it should have been
-		// served privately, say so, because the likeliest cause is a missing
-		// private prefix rather than a missing module.
 		return nil, notFoundErr(modPath, version, u.base, resp.StatusCode, detail)
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return nil, unauthorizedErr(modPath, version, u.base, resp.StatusCode, detail)

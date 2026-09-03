@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -30,7 +31,6 @@ func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, referenc
 	}
 
 	// Real docker images pushed to the registry: the tag points at a stored
-	// manifest or image index, which is served verbatim.
 	tag, err := h.DB.GetOCITag(r.Context(), project.ID, reference)
 	if err == nil {
 		h.serveManifestByDigest(w, r, project, tag.ManifestDigest)
@@ -93,6 +93,9 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 	for _, a := range artifacts {
 		out, err := h.Gen.GenerateForPlatform(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestRootURL(r))
 		if err != nil {
+			// The platform drops out of the index; say so, or the pull fails with "manifest unknown" and no cause anywhere.
+			slog.ErrorContext(r.Context(), "oci: cannot synthesize image for platform",
+				"project", project.Name, "version", release.Version, "os", a.OS, "arch", a.Arch, "err", err)
 			continue
 		}
 		manifestData, err := io.ReadAll(out.Reader)
@@ -104,11 +107,6 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 		digest := "sha256:" + hex.EncodeToString(sum[:])
 
 		// Integrity check: only advertise a child the pull path can actually
-		// resolve. Generate() persisted+linked this manifest (with its config and
-		// layers), so a by-digest GET /v2/{name}/manifests/<digest> now serves it.
-		// Skip any entry that does not resolve rather than emit a dangling index
-		// -- an index that references content the registry cannot serve is an
-		// unpullable image for every client.
 		belongs, err := h.DB.BlobBelongsToProject(r.Context(), project.ID, digest[7:])
 		if err != nil || !belongs {
 			continue
@@ -150,12 +148,6 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 	// Persist the index document under its own content digest and link it to the
 	// project, exactly as Generate persisted each child manifest above. The Docker
 	// daemon's classic (non-containerd) image store pulls a tag by reading the
-	// manifest, then re-requests that same manifest *by its Docker-Content-Digest*
-	// to store the image content-addressably; for a multi-arch image that by-digest
-	// request hits serveManifestByDigest, gated on BlobBelongsToProject. Without
-	// this link the parent index -- though served fine by tag -- 404s by digest and
-	// `docker pull <repo>:<tag>` dies with "manifest unknown". Content-addressed
-	// store + INSERT OR IGNORE link, so re-persisting on every pull is idempotent.
 	if err := h.persistManifestBlob(r.Context(), project.ID, indexData, "application/vnd.oci.image.index.v1+json"); err != nil {
 		ociError(w, http.StatusInternalServerError, "UNKNOWN", "failed to persist index")
 		return
@@ -188,6 +180,8 @@ func (h *Handler) serveSingleManifest(w http.ResponseWriter, r *http.Request, pr
 	for _, a := range artifacts {
 		out, err := h.Gen.GenerateForPlatform(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestRootURL(r))
 		if err != nil {
+			slog.ErrorContext(r.Context(), "oci: cannot synthesize image for platform",
+				"project", project.Name, "version", release.Version, "os", a.OS, "arch", a.Arch, "err", err)
 			continue
 		}
 		manifestData, err := io.ReadAll(out.Reader)
@@ -242,11 +236,6 @@ func (h *Handler) serveManifestByDigest(w http.ResponseWriter, r *http.Request, 
 // persistManifestBlob stores a synthesized manifest or index document under its
 // own content digest and links it to the project, so a subsequent by-digest
 // GET/HEAD resolves via serveManifestByDigest (gated on BlobBelongsToProject).
-// This is what makes every digest the registry advertises in a Docker-Content-
-// Digest header actually retrievable -- the same guarantee Generate gives each
-// child manifest and PutManifest gives pushed content. The store is content-
-// addressed and LinkOCIBlob is INSERT OR IGNORE, so calling this on every pull is
-// idempotent; the stored key equals sha256(data), i.e. the advertised digest.
 func (h *Handler) persistManifestBlob(ctx context.Context, projectID int64, data []byte, mediaType string) error {
 	key, size, err := h.Store.Put(ctx, bytes.NewReader(data))
 	if err != nil {
@@ -319,7 +308,6 @@ func (h *Handler) serveTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Binary projects: each published release with a binary artifact is a
-	// synthesized image tagged by version, plus a "latest" alias.
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)
 	if err != nil {
 		ociError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")

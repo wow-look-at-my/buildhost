@@ -19,8 +19,6 @@ import (
 )
 
 // The {project}.<site-domain> serving scheme, end to end through the full
-// server stack: config -> auth.Init -> conditional route registration -> host
-// dispatch -> requireProject -> sites handlers.
 
 const (
 	siteTestDomain    = "site.example"
@@ -86,10 +84,11 @@ func makeSiteTarGz(t *testing.T, files map[string]string) []byte {
 // createProject creates a project via the REST API (is_private optional).
 func (e *testEnv) createProject(t *testing.T, name string, private bool) {
 	t.Helper()
-	body := `{"name":"` + name + `","versioning":"auto"}`
+	fields := map[string]any{"name": name, "versioning": "auto"}
 	if private {
-		body = `{"name":"` + name + `","versioning":"auto","is_private":true}`
+		fields["is_private"] = true
 	}
+	body := jsonDoc(t, fields)
 	resp := e.postJSON(t, "/api/v1/projects", body)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
@@ -127,14 +126,12 @@ func routePatterns() []string {
 	return out
 }
 
-// With BUILDHOST_SITE_DOMAIN unset, an Init registers ZERO new routes -- the
-// route table is byte-identical to a deployment without the feature. With it
-// set, exactly the documented routes appear.
 func TestSiteDomain_RouteTable(t *testing.T) {
+	t.Serial()
 	setup(t) // reach registration steady state (route registration is sticky per process)
 	base := routePatterns()
 
-	setup(t) // a second unset Init must add nothing
+	setup(t)
 	require.Equal(t, base, routePatterns(),
 		"an Init without BUILDHOST_SITE_DOMAIN must register zero new routes")
 
@@ -150,8 +147,6 @@ func TestSiteDomain_RouteTable(t *testing.T) {
 		}
 	}
 	// The per-domain routes are always new; the host-agnostic /__sso is shared
-	// across configured domains, so an earlier site-domain test in this process
-	// may have already registered it.
 	require.Subset(t, added, []string{
 		"{project}.routetable.example/__sso {GET}",
 		"{project}.routetable.example/{path...} {GET}",
@@ -170,6 +165,7 @@ func TestSiteDomain_RouteTable(t *testing.T) {
 }
 
 func TestSiteDomain_DispatchAndServe(t *testing.T) {
+	t.Serial()
 	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, false)
 
 	env.createProject(t, "myapp", false)
@@ -183,7 +179,6 @@ func TestSiteDomain_DispatchAndServe(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "root-master", body)
 	// Site security headers apply on the subdomain scheme: the global CSP is
-	// dropped so the site's own assets load.
 	assert.Empty(t, resp.Header.Get("Content-Security-Policy"))
 
 	resp, body = siteGet(t, env, "myapp."+siteTestDomain, "/docs/page.html")
@@ -191,23 +186,17 @@ func TestSiteDomain_DispatchAndServe(t *testing.T) {
 	assert.Equal(t, "docs-page", body)
 
 	// A project named like a service label is a PROJECT on the site domain: the
-	// {project}.<site-domain> family (2 literal host labels) claims the host
-	// over dl.{domain} (1). Only the site scheme can serve this content.
 	env.createProject(t, "dl", false)
 	env.uploadBranchSite(t, "dl", "master", false, map[string]string{"index.html": "dl-site"})
 	resp, body = siteGet(t, env, "dl."+siteTestDomain, "/")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "dl-site", body)
 
-	// The BARE site apex (2 labels) matches no host-bearing route and falls
-	// through to host-agnostic routes.
 	resp, body = siteGet(t, env, siteTestDomain, "/healthz")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Contains(t, body, `"status":"ok"`)
 
 	// /__sso on a project subdomain reaches the SSO handler (literal path beats
-	// the {path...} catch-all), not the sites handler: a bogus code gets the
-	// HTML failure page, not a JSON project-404.
 	resp, body = siteGet(t, env, "nosuch."+siteTestDomain, "/__sso?code=garbage")
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	assert.Contains(t, resp.Header.Get("Content-Type"), "text/html")
@@ -222,6 +211,7 @@ func TestSiteDomain_DispatchAndServe(t *testing.T) {
 }
 
 func TestSiteDomain_Visibility(t *testing.T) {
+	t.Serial()
 	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, true)
 
 	env.createProject(t, "secret", true)
@@ -235,12 +225,10 @@ func TestSiteDomain_Visibility(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "public-preview", body)
 
-	// A private branch: programmatic client gets the JSON 401.
 	resp, _ = siteGet(t, env, host, "/")
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
 
-	// A browser is 303'd to the PRIMARY apex sign-in with the full original URL.
 	resp = env.doFullHost(t, "GET", host, "/", "", map[string]string{"Accept": "text/html"}, nil, false)
 	resp.Body.Close()
 	require.Equal(t, http.StatusSeeOther, resp.StatusCode)
@@ -257,8 +245,6 @@ func TestSiteDomain_Visibility(t *testing.T) {
 	assert.Equal(t, "top-secret", string(b))
 
 	// Gate and serve agree on the resolved default branch: default_branch is the
-	// seed "master" but the only site lives on "main" -- resolveRootBranch falls
-	// back to it, in AllowsPublicRead and in the handler alike.
 	env.createProject(t, "agreep", true)
 	env.uploadBranchSite(t, "agreep", "main", true, map[string]string{"index.html": "main-content"})
 	resp, body = siteGet(t, env, "agreep."+siteTestDomain, "/")
@@ -267,9 +253,8 @@ func TestSiteDomain_Visibility(t *testing.T) {
 }
 
 // Without a configured primary domain the cross-domain sign-in hop does not
-// exist: a site-domain browser gets the plain JSON 401 (graceful degradation),
-// never a redirect to an apex that cannot complete OAuth.
 func TestSiteDomain_NoPrimaryDomain_Browser401(t *testing.T) {
+	t.Serial()
 	env := setupSiteDomain(t, "nopri.example", "", true)
 
 	env.createProject(t, "secret2", true)
@@ -282,25 +267,17 @@ func TestSiteDomain_NoPrimaryDomain_Browser401(t *testing.T) {
 	assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
 }
 
-// Slash-named branches on the CLASSIC scheme: {branch} binds only the first
-// path segment, so branch claude/foo uploaded fine (greedy PUT bind) but every
-// GET 404'd. Serve-side longest-match fixes fetch; both-branches-exist prefers
-// the longest.
 func TestSiteDomain_SlashBranchClassicScheme(t *testing.T) {
+	t.Serial()
 	env := setup(t) // no site domain needed: this is the classic-scheme fix
 
 	env.createProject(t, "p2", false)
 	// A site on the default branch, so the slash-named branches under test stay
-	// non-default refs and are served at their own URLs rather than collapsing
-	// into the bare project path.
 	env.uploadBranchSite(t, "p2", "master", false, map[string]string{"index.html": "default"})
 	env.uploadBranchSite(t, "p2", "claude/foo", false, map[string]string{
 		"index.html": "cf", "f.js": "cf-f",
 	})
 
-	// Regression: these were 404 before the fix. A slash-named branch is
-	// addressed with the "@" sigil, which marks where the ref STARTS -- the
-	// remainder is still split by longest match against the project's sites.
 	resp, body := siteGet(t, env, "sites.test.local", "/p2/@claude/foo/index.html")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "cf", body)
@@ -314,7 +291,6 @@ func TestSiteDomain_SlashBranchClassicScheme(t *testing.T) {
 	assert.Equal(t, "/p2/@claude/foo/", resp.Header.Get("Location"))
 
 	// The legacy spelling resolves the same slash-named branch and 302s to it,
-	// naming the branch it resolved -- in one hop, not a chain.
 	resp, _ = siteGet(t, env, "sites.test.local", "/p2/branch/claude/foo/index.html")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
 	assert.Equal(t, "/p2/@claude/foo/index.html", resp.Header.Get("Location"))
@@ -329,8 +305,6 @@ func TestSiteDomain_SlashBranchClassicScheme(t *testing.T) {
 	assert.Equal(t, "cf-f", body)
 
 	// The public-read gate resolves the same way (private project, public
-	// slash-named branch, anonymous read). claude/foo is p3's only site, so it
-	// is also its default branch -- the canonical URL is the bare project path.
 	env.createProject(t, "p3", true)
 	env.uploadBranchSite(t, "p3", "claude/foo", true, map[string]string{"index.html": "pub-cf"})
 	resp, body = siteGet(t, env, "sites.test.local", "/p3/index.html")
@@ -338,13 +312,13 @@ func TestSiteDomain_SlashBranchClassicScheme(t *testing.T) {
 	assert.Equal(t, "pub-cf", body)
 
 	// The gate opens the legacy URL for that same public branch too: it
-	// redirects rather than 401ing, so an old shared link still lands.
 	resp, _ = siteGet(t, env, "sites.test.local", "/p3/branch/claude/foo/index.html")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
 	assert.Equal(t, "/p3/index.html", resp.Header.Get("Location"))
 }
 
 func TestSiteUploadValidation(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	env.createProject(t, "p4", false)
 
@@ -355,7 +329,6 @@ func TestSiteUploadValidation(t *testing.T) {
 			nil, bytes.NewReader(payload), true)
 	}
 
-	// Characters outside [a-zA-Z0-9._/-] are rejected.
 	resp := put("bad~name")
 	resp.Body.Close()
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
@@ -377,6 +350,7 @@ func TestSiteUploadValidation(t *testing.T) {
 // v1 DNS-label gate: only names valid as a single DNS label serve on the
 // subdomain scheme; everything else stays classic-scheme-only.
 func TestSiteDomain_DNSLabelGate(t *testing.T) {
+	t.Serial()
 	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, false)
 
 	long := strings.Repeat("l", 64)
@@ -390,15 +364,11 @@ func TestSiteDomain_DNSLabelGate(t *testing.T) {
 		assert.Equal(t, "gated", body)
 	}
 
-	// One-label hosts whose label is not a valid DNS label 404 on the scheme.
 	for _, label := range []string{"x_y", "bad-", long} {
 		resp, _ := siteGet(t, env, label+"."+siteTestDomain, "/")
 		assert.Equalf(t, http.StatusNotFound, resp.StatusCode, "label %q must not serve", label)
 	}
 
-	// A dotted name is two host labels: the 3-label pattern does not match, the
-	// host stays unclaimed, and host-agnostic routes (which have no such path)
-	// answer 404. The project's site is NOT reachable there.
 	resp, _ := siteGet(t, env, "x.y."+siteTestDomain, "/index.html")
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }

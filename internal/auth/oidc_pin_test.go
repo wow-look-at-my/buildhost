@@ -13,13 +13,6 @@ import (
 )
 
 // These cover the GitHub repo-identity pin (projects.github_owner_id /
-// github_repo_id). GitHub owner/repo NAMES are reusable -- delete or rename a
-// repo and a stranger can re-register the name and mint valid OIDC tokens for
-// the same "owner/repo" -- but the numeric IDs (immutable subject @id
-// suffixes, repository_id / repository_owner_id claims) are not. requireProject
-// pins the IDs at provisioning (or on the first ID-bearing publish for legacy
-// projects) and refuses tokens whose IDs disagree, so a re-created
-// ("resurrected") repo cannot take over an existing project.
 
 const (
 	pinOwnerID = "250878655"
@@ -65,6 +58,7 @@ func pinTestRequest(t *testing.T, access AccessLevel, ownerID, repoID string) *h
 
 // Provisioning a new project from an ID-bearing token pins the IDs from birth.
 func TestOIDCPin_ProvisionPinsIDs(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -79,8 +73,8 @@ func TestOIDCPin_ProvisionPinsIDs(t *testing.T) {
 }
 
 // A pre-existing project without pinned IDs (provisioned before the pin
-// existed) is pinned by its first ID-bearing publish -- trust on first use.
 func TestOIDCPin_LegacyProject_FirstIDPublishPins(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -98,6 +92,7 @@ func TestOIDCPin_LegacyProject_FirstIDPublishPins(t *testing.T) {
 
 // A read never pins (mirrors write-only provisioning: reads don't mutate).
 func TestOIDCPin_ReadDoesNotPin(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -115,6 +110,7 @@ func TestOIDCPin_ReadDoesNotPin(t *testing.T) {
 
 // A pinned project accepts later publishes carrying the same IDs.
 func TestOIDCPin_MatchingIDs_Allowed(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -131,6 +127,7 @@ func TestOIDCPin_MatchingIDs_Allowed(t *testing.T) {
 // The resurrection case: same names, different IDs. The publish is refused
 // loudly, naming both identities and the reason.
 func TestOIDCPin_MismatchedIDs_WriteRejected(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -154,6 +151,7 @@ func TestOIDCPin_MismatchedIDs_WriteRejected(t *testing.T) {
 // Mismatched IDs are refused on reads too -- a resurrected repo must not read
 // a private predecessor's artifacts either.
 func TestOIDCPin_MismatchedIDs_ReadRejected(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -168,9 +166,8 @@ func TestOIDCPin_MismatchedIDs_ReadRejected(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "OIDC repo identity mismatch")
 }
 
-// On a hidden read the refusal keeps the canonical 404 so a private project's
-// existence never leaks, even to a mismatched OIDC identity.
 func TestOIDCPin_MismatchedIDs_HiddenReadGets404(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -190,6 +187,7 @@ func TestOIDCPin_MismatchedIDs_HiddenReadGets404(t *testing.T) {
 // controls which format a repo's tokens get, and the token already passed the
 // issuer/org/event gates. Documented allow.
 func TestOIDCPin_PinnedProject_IDLessTokenAllowed(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -206,6 +204,7 @@ func TestOIDCPin_PinnedProject_IDLessTokenAllowed(t *testing.T) {
 // An ID-less token against an unpinned legacy project keeps working and pins
 // nothing (there is nothing to pin).
 func TestOIDCPin_LegacyProject_IDLessTokenAllowed_NoPin(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 

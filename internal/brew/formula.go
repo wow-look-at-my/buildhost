@@ -18,10 +18,6 @@ import (
 
 func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, release db.Release, artifacts []db.PlatformArtifact, baseURL string) (*repackage.Output, error) {
 	// A digit-leading project name can never be a loadable Homebrew formula
-	// (see repackage.BrewEligibleProjectName); emitting one would put
-	// syntactically invalid Ruby in the tap and break evaluation of every
-	// formula in it. Treat it as not found: the formula endpoints 404 and the
-	// tap build skips it.
 	if !repackage.BrewEligibleProjectName(project.Name) {
 		return nil, db.ErrNotFound
 	}
@@ -76,11 +72,8 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 		License:     firstNonEmpty(project.License, "MIT"),
 		Kind:        kind,
 		// A private project's formula downloads through the tap's token-aware
-		// strategy (the artifact endpoints reject anonymous requests).
 		Private: project.IsPrivate,
 		// The project's packaging-agnostic create_service setting, which the
-		// brew format materializes as a `service do` block so `brew services
-		// start` manages the binary as a login service.
 		Service:   project.CreateService,
 		Resources: resources,
 	})
@@ -88,17 +81,6 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 
 // tarGZSHA256 returns the hex sha256 of the artifact's tar.gz repackage -- the
 // exact payload the formula's download URL serves via dl/static. The digest is
-// cached in packaged_artifacts under format "tar.gz" so it is computed once per
-// artifact instead of on every formula/tap request. Caching a digest for a blob
-// that is regenerated per download is sound because tar.gz generation is
-// deterministic for an artifact: the tar header carries only the immutable
-// project name, size, and kind-derived mode (zero mtimes -- archive/tar writes
-// a zero ModTime as constant epoch 0), gzip emits fixed header fields (mtime 0,
-// OS 255), and the input is the content-addressed stored blob. Homebrew's own
-// checksum verification of the on-demand download already depends on exactly
-// this stability. The row is a digest cache only: no tar.gz blob is stored, so
-// storage_key records the SOURCE artifact blob (a key the retention refcount
-// already tracks) and the row is dropped with its artifact on eviction.
 func (h *Handler) tarGZSHA256(ctx context.Context, project db.Project, release db.Release, a db.PlatformArtifact, baseURL string) (string, error) {
 	cacheFormat := a.CacheFormat(string(repackage.FormatTarGZ))
 	_, _, cached, _, metadata, err := h.DB.GetPackagedArtifact(ctx, a.ID, cacheFormat)
@@ -122,8 +104,6 @@ func (h *Handler) tarGZSHA256(ctx context.Context, project db.Project, release d
 	sum := fmt.Sprintf("%x", hsh.Sum(nil))
 
 	// Best-effort cache fill: the digest above is already correct for this
-	// response. INSERT OR REPLACE makes a concurrent double-compute benign --
-	// the value is deterministic, so both writers store the same digest.
 	metaJSON, merr := json.Marshal(tarGZMetadata{Transform: repackage.TransformVersion})
 	if merr != nil {
 		return sum, nil
@@ -185,10 +165,6 @@ func firstNonEmpty(values ...string) string {
 }
 
 // tarGZMetadata records which transformation pipeline a cached tar.gz digest
-// was computed under. A row written before the field existed (or under a
-// different pipeline) reads as a miss and is recomputed in place -- the
-// alternative is a Homebrew formula whose sha256 describes bytes the server no
-// longer produces, which fails `brew install` outright.
 type tarGZMetadata struct {
 	Transform string `json:"transform"`
 }
