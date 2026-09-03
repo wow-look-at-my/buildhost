@@ -1,8 +1,6 @@
 package auth
 
 // JWKS discovery, fetching, caching, and RSA key parsing for OIDC token
-// verification. Split from oidc.go, which holds the verification flow and
-// subject/claim parsing.
 
 import (
 	"context"
@@ -173,7 +171,6 @@ func parseRSAPublicKey(nStr, eStr string) (*rsa.PublicKey, error) {
 		return nil, errors.New("RSA exponent too large")
 	}
 	eInt := e.Int64()
-	// RSA exponents must be odd and >= 3. Standard values are 3, 17, 65537.
 	const maxValidExponent = 1<<31 - 1
 	if eInt < 3 || eInt > maxValidExponent || eInt%2 == 0 {
 		return nil, fmt.Errorf("invalid RSA exponent: %d", eInt)

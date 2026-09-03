@@ -30,8 +30,6 @@ func (d *DB) GetRetentionSettings(ctx context.Context) (RetentionSettings, error
 }
 
 // SeedRetentionSettings inserts the initial policy row if absent (INSERT OR
-// IGNORE), so env-configured defaults populate the DB on first start without
-// overwriting later UI edits.
 func (d *DB) SeedRetentionSettings(ctx context.Context, keepN, recencyHours int) error {
 	return d.q.SeedRetentionSettings(ctx, SeedRetentionSettingsParams{
 		KeepN:        int64(keepN),
@@ -48,9 +46,6 @@ func (d *DB) UpdateRetentionSettings(ctx context.Context, keepN, recencyHours in
 }
 
 // sqliteDatetime formats t to match SQLite's datetime('now') text format
-// (UTC, second precision) so a string comparison against a stored DATETIME
-// column orders chronologically. Passed through datetime(?) in the query, which
-// normalizes it to the same form the columns are stored in.
 func sqliteDatetime(t time.Time) string {
 	return t.UTC().Format("2006-01-02 15:04:05")
 }
@@ -70,13 +65,6 @@ type BlobRef struct {
 // for the caller to delete from storage. When commit is false the transaction is
 // rolled back -- a dry run that changes nothing -- and the returned blobs are
 // exactly what eviction WOULD free. Because all releases are deleted within the
-// one transaction before the reference check, a blob shared by several evicted
-// releases is correctly reported as freed once and only once.
-//
-// Child rows are deleted before parents (foreign keys are enforced). oci_blob_links
-// is intentionally left untouched: it is project-scoped, not release-scoped, and
-// pushed-docker releases are excluded from eviction. candidateCount is the number
-// of distinct blobs the releases referenced (freed + still-shared).
 func (d *DB) EvictReleases(ctx context.Context, releaseIDs []int64, commit bool) (freed []BlobRef, candidateCount int, err error) {
 	if len(releaseIDs) == 0 {
 		return nil, 0, nil
@@ -130,9 +118,6 @@ func (d *DB) EvictReleases(ctx context.Context, releaseIDs []int64, commit bool)
 	return freed, len(candidates), nil
 }
 
-// deleteReleaseRows removes one release's child rows then the release itself,
-// child-first because foreign keys are enforced. Runs on the caller's tx-bound
-// *Queries so it participates in the surrounding transaction.
 func deleteReleaseRows(ctx context.Context, q *Queries, releaseID int64) error {
 	if err := q.DeleteReleasePackagedArtifacts(ctx, releaseID); err != nil {
 		return fmt.Errorf("delete packaged artifacts: %w", err)
@@ -156,8 +141,6 @@ func deleteReleaseRows(ctx context.Context, q *Queries, releaseID int64) error {
 }
 
 // IsBlobReferenced reports whether any row in any project still references the
-// given storage key (across artifacts raw/stripped/debug, packaged artifacts,
-// sites, and oci blob links). The global generalization of BlobBelongsToProject.
 func (d *DB) IsBlobReferenced(ctx context.Context, key string) (bool, error) {
 	n, err := d.q.IsBlobReferenced(ctx, key)
 	return n != 0, err
@@ -190,7 +173,6 @@ func (d *DB) SumReclaimableBytes(ctx context.Context, keepN int64, recencyCutoff
 }
 
 // ListArtifactFiles returns every artifact row with the blobs it references and
-// its release/project context. For the retention inventory.
 func (d *DB) ListArtifactFiles(ctx context.Context) ([]ListArtifactFilesRow, error) {
 	return d.q.ListArtifactFiles(ctx)
 }
@@ -211,8 +193,6 @@ func (d *DB) ListGoproxyBlobFiles(ctx context.Context) ([]ListGoproxyBlobFilesRo
 }
 
 // ListReleaseRetentionFacts returns, for every release, the facts the eviction
-// queries decide on: newer published siblings on its branch, oci tag and docker
-// artifact pins, and its published/draft state.
 func (d *DB) ListReleaseRetentionFacts(ctx context.Context) ([]ListReleaseRetentionFactsRow, error) {
 	return d.q.ListReleaseRetentionFacts(ctx)
 }

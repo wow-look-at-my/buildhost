@@ -16,9 +16,6 @@ import (
 )
 
 // privateRedirectTTL bounds the signed token embedded in a private project's
-// redirect Location. It only needs to outlive the client's redirect follow
-// (immediate in practice); verification happens when the static request
-// starts, so a long transfer is unaffected by expiry.
 const privateRedirectTTL = 15 * time.Minute
 
 var dlTracer = otel.Tracer("buildhost.dl")
@@ -70,11 +67,6 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Accept platform-name aliases natively (RUNNER_OS "Linux"/"macOS"/"Windows",
-	// RUNNER_ARCH "X64"/"ARM64", uname's "x86_64"/"aarch64", ...) so callers can
-	// pass them through verbatim; fold them to the canonical spelling the static
-	// endpoint and stored artifacts use. Unrecognized values pass through unchanged.
-	// The deprecated GOOS/GOARCH-ordered wasm pair (os=js|wasip1, arch=wasm) is
-	// likewise folded to the canonical os=wasm form for symmetry with upload.
 	if o, a, ok := db.NormalizeLegacyWasmPair(osStr, archStr); ok {
 		osStr, archStr = string(o), string(a)
 	}
@@ -123,11 +115,6 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		resolvedVersion = fmt.Sprintf("%d", release.VersionNum)
 	}
 
-	// One file covering several platforms must hand every one of them the SAME
-	// download URL, or a CDN caches N copies of one blob and a consumer
-	// comparing two platforms' links sees two URLs for one binary. Fold the
-	// requested pair to the artifact's canonical slot. A miss leaves the pair
-	// untouched: static answers the 404, exactly as before.
 	canonOS, canonArch, err := h.DB.CanonicalPlatform(r.Context(), release.ID, osStr, archStr)
 	switch {
 	case err == nil:
@@ -144,13 +131,6 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 
 	if project.IsPrivate {
 		// The caller authenticated to reach this handler (the route is
-		// ReadAccess-gated), but clients drop the Authorization header when
-		// following a cross-host redirect -- curl does so by design, and
-		// Homebrew inherits curl semantics -- so a bare Location would 401 at
-		// the static host. Carry the authorization in the Location itself: a
-		// short-lived signed token bound to exactly this artifact tuple (the
-		// same mechanism as temporary download links). The response embeds a
-		// live credential, so it is never cacheable and never permanent.
 		w.Header().Set("Cache-Control", "private, no-store")
 		signed, _ := static.SignedURL(auth.DeriveServiceURL(r, "static"), p, time.Now().Add(privateRedirectTTL))
 		http.Redirect(w, r, signed, http.StatusFound)
@@ -160,13 +140,10 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	code := http.StatusFound
 	if immutable {
 		// An exact version is an immutable mapping -- safe to cache the redirect
-		// itself forever, just like the artifact it points at.
 		code = http.StatusMovedPermanently
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		// "latest" and branch tips are MUTABLE pointers: a new publish repoints
-		// them. Never let a CDN or browser cache this redirect, or clients would
-		// stay pinned to a stale release until the cached pointer expires.
 		w.Header().Set("Cache-Control", "no-store")
 	}
 	static.Redirect(w, r, auth.DeriveServiceURL(r, "static"), p, code)

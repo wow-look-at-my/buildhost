@@ -20,8 +20,8 @@ func mustPublishRelease(t *testing.T, d *DB, projectID int64, version string, ve
 
 // The bug: a push to a non-default branch hijacked the apex "latest". master is
 // the default value of a project's default branch, so a project that never set
-// one tracks master only.
 func TestGetLatestRelease_PrefersMaster(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createTestProject(t, d)
@@ -51,6 +51,7 @@ func TestGetLatestRelease_PrefersMaster(t *testing.T) {
 // Until master has published anything, "latest" is empty even if other
 // branches have published releases.
 func TestGetLatestRelease_NoLatestWhenNoMaster(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createTestProject(t, d)
@@ -65,6 +66,7 @@ func TestGetLatestRelease_NoLatestWhenNoMaster(t *testing.T) {
 // "v1") resolves "latest" against that branch -- the regression that left
 // go-toolchain with no build tagged "latest".
 func TestGetLatestRelease_PerProjectDefaultBranch(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createTestProject(t, d)
@@ -87,9 +89,8 @@ func TestGetLatestRelease_PerProjectDefaultBranch(t *testing.T) {
 	assert.Equal(t, "4", got.Version)
 }
 
-// Once a project's default branch is not master, master loses its special
-// status: a master-only release is no longer the apex "latest".
 func TestGetLatestRelease_NonMasterDefaultIgnoresMaster(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createTestProject(t, d)
@@ -103,6 +104,7 @@ func TestGetLatestRelease_NonMasterDefaultIgnoresMaster(t *testing.T) {
 
 // Latest considers only published releases, even on master.
 func TestGetLatestRelease_IgnoresUnpublishedMaster(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createTestProject(t, d)

@@ -17,7 +17,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
-const maxManifestSize = 4 << 20 // 4 MiB; manifests are tiny JSON documents
+const maxManifestSize = 4 << 20
 
 // descriptor is an OCI content descriptor (config, layer, or child manifest).
 type descriptor struct {
@@ -78,8 +78,6 @@ func (h *Handler) PutManifest(w http.ResponseWriter, r *http.Request, reference 
 	if contentType == "" {
 		contentType = m.MediaType
 	}
-	// Drop any media-type parameters (e.g. "; charset=utf-8"); strict OCI clients
-	// reject manifests whose stored/served media type carries parameters.
 	if i := strings.IndexByte(contentType, ';'); i >= 0 {
 		contentType = strings.TrimSpace(contentType[:i])
 	}
@@ -97,8 +95,6 @@ func (h *Handler) PutManifest(w http.ResponseWriter, r *http.Request, reference 
 	}
 
 	// Verify every referenced blob/manifest was already pushed and link it to the
-	// project so the pull path (gated on BlobBelongsToProject) will serve it. An
-	// index references child manifests; an image manifest references config+layers.
 	var refs []descriptor
 	if index {
 		refs = m.Manifests
@@ -125,7 +121,6 @@ func (h *Handler) PutManifest(w http.ResponseWriter, r *http.Request, reference 
 	}
 
 	// A push by digest (e.g. a child manifest of an index) is stored and linked
-	// but does not create a tag or release; the index push (by tag) does that.
 	if validDigest.MatchString(reference) {
 		writeManifestCreated(w, project.Name, digest)
 		return
@@ -139,7 +134,6 @@ func (h *Handler) PutManifest(w http.ResponseWriter, r *http.Request, reference 
 
 	// If this exact image (same manifest digest) is already tagged, point the
 	// new tag at the existing release rather than creating a duplicate. This is
-	// the common ":sha" + ":latest" double-tag of one build.
 	if relID := h.releaseForDigest(ctx, project.ID, digest); relID != 0 {
 		if err := h.DB.SetOCITag(ctx, project.ID, reference, digest, relID); err != nil {
 			ociError(w, http.StatusInternalServerError, "UNKNOWN", "failed to set tag")
@@ -207,7 +201,6 @@ func (h *Handler) linkReferencedBlob(ctx context.Context, projectID int64, d des
 }
 
 // releaseForDigest returns the release a manifest digest is already tagged
-// under in this project, or 0 if none. Tag counts are small, so a scan is fine.
 func (h *Handler) releaseForDigest(ctx context.Context, projectID int64, digest string) int64 {
 	tags, err := h.DB.ListOCITags(ctx, projectID)
 	if err != nil {
@@ -222,7 +215,6 @@ func (h *Handler) releaseForDigest(ctx context.Context, projectID int64, digest 
 }
 
 // createDockerRelease auto-versions a release, retrying on the rare version_num
-// race (SQLite serializes writes, but two pushes can read the same max).
 func (h *Handler) createDockerRelease(ctx context.Context, projectID int64, gitCommit, notes string) (*db.Release, error) {
 	var lastErr error
 	for range 5 {
@@ -260,7 +252,6 @@ func (h *Handler) createDockerArtifact(ctx context.Context, releaseID int64, osN
 		Size:       size,
 		SHA256:     manifestDigest[7:],
 	}
-	// Ignore conflicts: duplicate platforms within one index are harmless.
 	_ = h.DB.CreateArtifact(ctx, a)
 }
 

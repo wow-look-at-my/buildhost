@@ -27,6 +27,7 @@ func fakeMirror(t *testing.T, files map[string]string) *httptest.Server {
 }
 
 func TestUpstreamModuleIsServedAndCached(t *testing.T) {
+	t.Serial()
 	mirror := fakeMirror(t, map[string]string{
 		"golang.org/x/mod/@v/list":         "v0.39.0\nv0.40.0\n",
 		"golang.org/x/mod/@latest":         `{"Version":"v0.40.0","Time":"2026-01-02T03:04:05Z"}`,
@@ -80,6 +81,7 @@ func TestUpstreamModuleIsServedAndCached(t *testing.T) {
 }
 
 func TestUpstreamMissIs404(t *testing.T) {
+	t.Serial()
 	mirror := fakeMirror(t, nil)
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
@@ -91,10 +93,8 @@ func TestUpstreamMissIs404(t *testing.T) {
 }
 
 // The default shape: no mirror configured, so a module outside this proxy's
-// namespace is answered 404 -- the module protocol's "try the next GOPROXY
-// entry". That is what makes `GOPROXY=<proxy>,direct` fetch the rest of the
-// world from its origin instead of through a third party.
 func TestModuleOutsideOurNamespaceIs404SoDirectCanTakeIt(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
 
@@ -108,11 +108,8 @@ func TestModuleOutsideOurNamespaceIs404SoDirectCanTakeIt(t *testing.T) {
 	assert.Contains(t, body, ",direct")
 }
 
-// The counterpart, and the reason the 404 above is safe: an authorization
-// failure must NOT fall through to direct. 403 halts the go command, so a
-// credential problem is reported instead of being quietly papered over by a
-// direct fetch that happens to succeed.
 func TestAuthorizationFailureDoesNotFallThroughToDirect(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	s := newTestService(t, fake, "", []string{privateOrg})
@@ -126,6 +123,7 @@ func TestAuthorizationFailureDoesNotFallThroughToDirect(t *testing.T) {
 
 // A mirror that is up but broken is an upstream failure, not an absence.
 func TestUpstreamServerErrorIsNotAMissingModule(t *testing.T) {
+	t.Serial()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "mirror exploded", http.StatusInternalServerError)
 	}))
@@ -141,8 +139,8 @@ func TestUpstreamServerErrorIsNotAMissingModule(t *testing.T) {
 }
 
 // A private-prefix module must never be sent to the public mirror: that would
-// leak the module path of a private repository to a third party.
 func TestPrivateModuleNeverReachesTheMirror(t *testing.T) {
+	t.Serial()
 	var mirrorHits int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		mirrorHits++

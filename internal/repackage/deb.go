@@ -31,8 +31,6 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 	}
 
 	// A buildhost project name may be slash-namespaced (e.g. "myrepo/server"),
-	// which is not a legal Debian package name. Fold it to a valid one (see
-	// DebPackageName); this is also the installed binary's name on $PATH.
 	pkgName := DebPackageName(input.Project.Name)
 
 	installDir := "/usr/bin/"
@@ -52,9 +50,6 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 		sanitizeControlField(firstNonEmpty(input.Project.Description, input.Project.Name)))
 
 	// The deb materialization of the packaging-agnostic create_service
-	// project setting. Only for the binary kind (the unit's ExecStart is the
-	// /usr/bin install path); with the flag off both members are
-	// byte-identical to before the setting existed.
 	withService := input.Project.CreateService && input.Artifact.Kind == db.KindBinary
 
 	controlEntries := []tarEntry{{
@@ -87,11 +82,6 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 	}
 
 	// A Cosmopolitan APE binary cannot be run from a root-owned /usr/bin entry
-	// by a non-root user -- it assimilates itself on first run and needs the
-	// write bit. Install it under /usr/lib and put a launcher on $PATH that
-	// maintains a per-user writable copy (see debAPELauncher). Detection is a
-	// byte check on the artifact's own header; nothing is executed, and a
-	// non-APE binary keeps the previous layout byte-for-byte.
 	artifactReader := input.Reader
 	var launcher []byte
 	if input.Artifact.Kind == db.KindBinary {
@@ -102,7 +92,11 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 		artifactReader = rest
 		if isAPE {
 			installDir = fmt.Sprintf("/usr/lib/%s/", pkgName)
-			launcher = []byte(debAPELauncher(pkgName, version))
+			script, err := debAPELauncher(pkgName, version)
+			if err != nil {
+				return nil, err
+			}
+			launcher = []byte(script)
 		}
 	}
 
@@ -123,16 +117,11 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 	}
 
 	// The ar container needs each member's exact byte length in its header, before the
-	// body. The data.tar.gz member's compressed length isn't known until it's produced,
-	// so stream the artifact -> tar -> gzip into a temp file (the compressed member, far
-	// smaller than the raw input -- the decompressed input never lands in memory) and
-	// stat it for the length.
 	dataTmp, err := os.CreateTemp(input.TmpDir, "deb-data-*")
 	if err != nil {
 		return nil, fmt.Errorf("create deb temp: %w", err)
 	}
 	// dpkg creates no leading directories of its own, so a package installing
-	// outside /usr/bin must carry its directory entry (see tarEntry.Dir).
 	var preEntries []tarEntry
 	if installDir != "/usr/bin/" {
 		preEntries = append(preEntries, tarEntry{Name: "." + installDir, Mode: 0o755, Dir: true})
@@ -222,22 +211,11 @@ func streamDebData(f *os.File, r io.Reader, name string, size, mode int64, pre, 
 }
 
 // DebServiceUnitPath is where the create_service systemd USER unit lands in
-// the installed filesystem (and, "."-prefixed, in the deb's data tar).
 func DebServiceUnitPath(pkgName string) string {
 	return "/usr/lib/systemd/user/" + pkgName + ".service"
 }
 
 // DebServiceUnit renders the systemd USER unit shipped when the project
-// declares create_service. A user unit -- not a system one -- because the
-// declared binaries are per-user (often GUI) apps: it is ordered after and
-// bound to graphical-session.target (systemd.special(7): graphical user
-// services carry PartOf=graphical-session.target so they stop with the
-// session, and enablement attaches them via
-// WantedBy=graphical-session.target), and Restart=on-failure is the
-// crash-only policy (restart on non-zero exit or signal, stay stopped on a
-// clean exit -- the brew materialization's KeepAlive {SuccessfulExit:false}
-// twin). The package's postinst auto-enables it at install (debPostinst);
-// `systemctl --user enable --now <pkg>` remains the manual override.
 func DebServiceUnit(pkgName, description string) string {
 	return fmt.Sprintf(`[Unit]
 Description=%s
@@ -258,10 +236,6 @@ type tarEntry struct {
 	Data []byte
 	Mode int64
 	// Dir marks a directory entry. dpkg does not create leading directories
-	// implicitly: a data.tar that names ./usr/lib/<pkg>/<file> without also
-	// carrying ./usr/lib/<pkg>/ fails to unpack with "unable to create
-	// ... No such file or directory". Every install path below /usr/bin needs
-	// its own directory entry, written before the files inside it.
 	Dir bool
 }
 
@@ -288,8 +262,6 @@ func buildTarGZ(entries []tarEntry) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// writeArMember writes one ar member: the fixed 60-byte header (with the body size),
-// the body streamed from body, and a newline pad when the body length is odd.
 func writeArMember(w io.Writer, name string, body io.Reader, size int64) error {
 	header := fmt.Sprintf("%-16s%-12d%-6d%-6d%-8s%-10d`\n",
 		name, 0, 0, 0, "100644", size)
@@ -312,12 +284,6 @@ func writeArMember(w io.Writer, name string, body io.Reader, size int64) error {
 // manipulation under /etc/systemd/user (no running manager needed; works in
 // chroots/containers), attaching the unit to every user's
 // graphical-session.target -- so the service starts at each user's NEXT
-// graphical login. The immediate start is strictly best-effort for the
-// sudo-invoking user's already-running session (`systemctl --user -M user@`
-// needs systemd >= 248 and a live user session; apt runs as root, which has
-// no user manager of its own). Every action is guarded and ||-true'd: a
-// missing systemctl or a failed start must never leave the package
-// unconfigured.
 func debPostinst(pkgName string) string {
 	return fmt.Sprintf(`#!/bin/sh
 set -e
@@ -332,8 +298,6 @@ fi
 
 // debPrerm undoes the postinst enablement when the package is removed. The
 // unit file itself is removed by dpkg with the package; running instances end
-// with the owning session (PartOf=graphical-session.target) or at its next
-// logout -- prerm deliberately does not reach into user sessions to kill them.
 func debPrerm(pkgName string) string {
 	return fmt.Sprintf(`#!/bin/sh
 set -e
@@ -359,15 +323,6 @@ func debArch(a db.Arch) string {
 }
 
 // DebPackageName converts a buildhost project name into a valid Debian package
-// name. Project names may be slash-namespaced (e.g. "myrepo/server") and may
-// contain underscores; neither '/' nor '_' is permitted in a Debian package
-// name (Policy 5.6.7 allows only lower-case letters, digits, '+', '-' and '.'),
-// so both are folded to '-'. buildhost project names are already validated to be
-// lower-case and to start with an alphanumeric, so the result always satisfies
-// the package-name grammar. A plain single-segment name (no '/' or '_') is
-// returned unchanged, so existing packages keep their names. The same value is
-// used for the Packages index, the deb's control Package field, the pool
-// filename, and the installed binary, so apt and dpkg always agree.
 func DebPackageName(project string) string {
 	return strings.NewReplacer("/", "-", "_", "-").Replace(project)
 }

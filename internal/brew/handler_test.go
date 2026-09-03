@@ -41,6 +41,7 @@ func withProject(ctx context.Context, p *db.Project) context.Context {
 }
 
 func TestServeFormula_NotRB(t *testing.T) {
+	t.Serial()
 	h, _, _ := setupTest(t)
 
 	proj := &db.Project{Name: "myapp"}
@@ -53,6 +54,7 @@ func TestServeFormula_NotRB(t *testing.T) {
 }
 
 func TestServeFormula_NoRelease(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -68,6 +70,7 @@ func TestServeFormula_NoRelease(t *testing.T) {
 }
 
 func TestServeFormula_NoBrewPackage(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -78,7 +81,6 @@ func TestServeFormula_NoBrewPackage(t *testing.T) {
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
 	// Create artifact -- on-demand generation means brew formula is
-	// generated from the binary, no packaged_artifacts row needed.
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
@@ -97,6 +99,7 @@ func TestServeFormula_NoBrewPackage(t *testing.T) {
 }
 
 func TestServeFormula_Success(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -126,9 +129,8 @@ func TestServeFormula_Success(t *testing.T) {
 }
 
 // The operator-set projects.create_service flag round-trips DB -> formula: the
-// served formula carries the `service do` block only once the flag is on, and
-// an off-flag project's formula never mentions it.
 func TestServeFormula_CreateServiceFlag(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -167,6 +169,7 @@ func TestServeFormula_CreateServiceFlag(t *testing.T) {
 }
 
 func TestServeFormula_EmitsAllSupportedPlatforms(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -213,7 +216,6 @@ func TestServeFormula_EmitsAllSupportedPlatforms(t *testing.T) {
 	assert.Contains(t, body, "v=v1.2.3")
 	assert.NotContains(t, body, "os=windows")
 	// Dual-OS: importable everywhere as-is, so no platform gate; the top-level
-	// stable url is still present (canonical resource = linux/amd64).
 	assert.NotContains(t, body, "depends_on")
 	assert.Contains(t, body, "\n  url \"https://dl.example.com:18080/go-toolchain?arch=amd64&fmt=tar.gz&os=linux&v=v1.2.3\"\n")
 
@@ -226,6 +228,7 @@ func TestServeFormula_EmitsAllSupportedPlatforms(t *testing.T) {
 }
 
 func TestServeTap_GeneratesDumbGitRepo(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -265,6 +268,7 @@ func TestServeTap_GeneratesDumbGitRepo(t *testing.T) {
 }
 
 func TestRedirectTap_ToGitService(t *testing.T) {
+	t.Serial()
 	h, _, _ := setupTest(t)
 	req := httptest.NewRequest("GET", "/tap.git/info/refs?service=git-upload-pack", nil)
 	req.Host = "brew.example.com:18080"
@@ -278,6 +282,7 @@ func TestRedirectTap_ToGitService(t *testing.T) {
 }
 
 func TestParseRoute(t *testing.T) {
+	t.Serial()
 	h, _, _ := setupTest(t)
 	req := httptest.NewRequest("GET", "/myapp", nil)
 	req.SetPathValue("project", "myapp")
@@ -291,6 +296,7 @@ func TestParseRoute(t *testing.T) {
 // folded name. The route must resolve it back to the real project -- while a
 // literally named project always wins over a fold match.
 func TestParseRoute_FoldedTapNameResolvesToProject(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -301,15 +307,11 @@ func TestParseRoute_FoldedTapNameResolvesToProject(t *testing.T) {
 	assert.Equal(t, "gcc/pgo", h.parseRoute(req).ProjectName())
 
 	// No fold candidate: the literal name passes through untouched (404s in
-	// requireProject as before).
 	req = httptest.NewRequest("GET", "/Formula/no-such.rb", nil)
 	req.SetPathValue("project", "no-such")
 	assert.Equal(t, "no-such", h.parseRoute(req).ProjectName())
 
 	// A PRIVATE project's folded name resolves only for a request that could
-	// read it anyway (the tap-membership rule): anonymously it stays
-	// indistinguishable from a nonexistent project -- requireProject then 404s
-	// on the literal name instead of revealing existence with a 401.
 	secret := seedPrivateBrewProject(t, d, store, "ns/hidden", "hidden-binary")
 	req = httptest.NewRequest("GET", "/Formula/ns-hidden.rb", nil)
 	req.SetPathValue("project", "ns-hidden")
@@ -331,6 +333,7 @@ func TestParseRoute_FoldedTapNameResolvesToProject(t *testing.T) {
 // platform found no stable URL ("formula requires at least a URL") and the
 // failed import poisoned the whole tap for that platform.
 func TestServeFormula_LinuxOnlyCarriesTopLevelURLAndDependsOnLinux(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -359,7 +362,6 @@ func TestServeFormula_LinuxOnlyCarriesTopLevelURLAndDependsOnLinux(t *testing.T)
 	assert.NotContains(t, body, "depends_on :macos")
 
 	// The top-level (stable) url/sha256 is the canonical linux/amd64 resource
-	// -- the same url and digest the on_linux/on_intel block carries.
 	tgz, err := h.Gen.Generate(ctx, repackage.FormatTarGZ, *proj, *rel, a, "https://example.com")
 	require.NoError(t, err)
 	payload, err := io.ReadAll(tgz.Reader)
@@ -367,7 +369,6 @@ func TestServeFormula_LinuxOnlyCarriesTopLevelURLAndDependsOnLinux(t *testing.T)
 	require.NoError(t, tgz.Reader.Close())
 	wantSHA := fmt.Sprintf("%x", sha256.Sum256(payload))
 	wantURL := `url "https://dl.example.com/gcc?arch=amd64&fmt=tar.gz&os=linux&v=1.0.0"`
-	// The top-level pair sits at 2-space indent (the on_* block copy at 6).
 	assert.Contains(t, body, "\n  "+wantURL+"\n  sha256 \""+wantSHA+"\"\n")
 	assert.Equal(t, 2, strings.Count(body, wantURL), "top-level url plus the on_linux block")
 	assert.Equal(t, 2, strings.Count(body, fmt.Sprintf("sha256 %q", wantSHA)))
@@ -375,6 +376,7 @@ func TestServeFormula_LinuxOnlyCarriesTopLevelURLAndDependsOnLinux(t *testing.T)
 }
 
 func TestServeFormula_MacOnlyDependsOnMacos(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj, _, _ := seedBrewProject(t, d, store, "mactool", "mac-binary") // darwin/arm64 only
 

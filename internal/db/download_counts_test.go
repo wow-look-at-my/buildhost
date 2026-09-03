@@ -11,6 +11,7 @@ import (
 // --- Download Counts ---------------------------------------------------------
 
 func TestIncrementDownloadCount(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)
@@ -36,6 +37,7 @@ func TestIncrementDownloadCount(t *testing.T) {
 }
 
 func TestGetTotalDownloadsNoDownloads(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)
@@ -46,6 +48,7 @@ func TestGetTotalDownloadsNoDownloads(t *testing.T) {
 }
 
 func TestListArtifactDetails(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)
@@ -80,6 +83,7 @@ func TestListArtifactDetails(t *testing.T) {
 }
 
 func TestListArtifactDetailsEmpty(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	_, r := createTestRelease(t, d)

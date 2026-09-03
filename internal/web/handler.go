@@ -31,14 +31,6 @@ func init() {
 	})
 
 	// Home and the stylesheet are public (no project context). Project and
-	// release pages go through auth.HandlePrimary with HiddenReadAccess, so the
-	// shared requireProject middleware enforces visibility (the one place auth
-	// lives) and returns a 404 -- never a 401 -- for a private project the
-	// viewer may not see, and never auto-provisions on a GET. Visibility is
-	// GitHub-style: a private project is indistinguishable from one that does
-	// not exist. The whole frontend is primary-scoped: with
-	// BUILDHOST_PRIMARY_DOMAIN configured it answers only on that apex (an
-	// unknown domain pointed at buildhost gets the router's plain 404).
 	auth.HandleRawPrimary("GET /", handler.Index)
 	auth.HandleRawPrimary("GET /_ui/style.css", handler.Stylesheet)
 	auth.HandlePrimary("GET /projects/{project}", parseProjectRoute, handler.Project)
@@ -50,7 +42,6 @@ type Handler struct {
 }
 
 // route carries the project name for requireProject. HiddenReadAccess makes an
-// unauthorized view a 404 rather than a 401, so private projects do not leak.
 type route struct {
 	project string
 }
@@ -109,9 +100,6 @@ func (h *Handler) Project(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Determine install commands from the latest published release's contents.
-	// Unqualified "latest" is the latest published release on the default
-	// release branch; feature branches are available only via explicit branch
-	// resolution.
 	var latestVersion string
 	var hasBinary bool
 	if latestRel, err := h.DB.GetLatestRelease(ctx, project.ID); err == nil {
@@ -124,9 +112,6 @@ func (h *Handler) Project(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, "project", buildProjectView(r, project, rels, sites, hasBinary, latestVersion))
 }
 
-// Release renders one release's artifacts with per-format download links.
-// requireProject (HiddenReadAccess) has already enforced project visibility;
-// an unknown version within a visible project is a plain 404.
 func (h *Handler) Release(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	project := auth.ProjectFrom(ctx)
@@ -182,8 +167,6 @@ func (h *Handler) Stylesheet(w http.ResponseWriter, r *http.Request) {
 	w.Write(styleCSS)
 }
 
-// render executes a page template into a buffer first so a template error
-// surfaces as a clean 500 rather than a half-written 200.
 func (h *Handler) render(w http.ResponseWriter, r *http.Request, name string, data any) {
 	tmpl, ok := templates[name]
 	if !ok {
@@ -198,8 +181,6 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, name string, da
 	}
 
 	// The global security middleware sets a default-src 'none' CSP; relax it
-	// here just enough for our one same-origin stylesheet and inline SVG/data
-	// favicon. No scripts are ever served, so script-src stays absent.
 	w.Header().Set("Content-Security-Policy",
 		"default-src 'none'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -212,7 +193,6 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 // hasNonDockerArtifact reports whether the set contains a real binary that can
-// be downloaded or repackaged (as opposed to a docker-image-only release).
 func hasNonDockerArtifact(arts []db.Artifact) bool {
 	for _, a := range arts {
 		if !a.Kind.ServedViaDockerOnly() {

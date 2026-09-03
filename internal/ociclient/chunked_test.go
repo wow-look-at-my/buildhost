@@ -15,6 +15,7 @@ import (
 )
 
 func TestPush_LargeBlobChunked(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -28,7 +29,6 @@ func TestPush_LargeBlobChunked(t *testing.T) {
 	p := newPusher(srv, "proj", 1000)
 	require.NoError(t, p.Push(dir, []string{"latest", "v1"}))
 
-	// 2500 bytes at chunk 1000 -> 1000 + 1000 + 500.
 	assert.Equal(t, []int64{1000, 1000, 500}, f.patchSizes)
 	assert.Equal(t, []string{"0-999", "1000-1999", "2000-2499"}, f.patchRange)
 	assert.Equal(t, layer, f.blobs[digestOf(layer)], "chunks must reassemble byte-identically")
@@ -37,6 +37,7 @@ func TestPush_LargeBlobChunked(t *testing.T) {
 }
 
 func TestPush_ChunkExactMultiple(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -52,6 +53,7 @@ func TestPush_ChunkExactMultiple(t *testing.T) {
 }
 
 func TestPush_ResumesAfterTransientPatchFailure(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -61,7 +63,7 @@ func TestPush_ResumesAfterTransientPatchFailure(t *testing.T) {
 		layer[i] = byte(i * 7)
 	}
 	dir, _ := buildImageLayout(t, layer)
-	f.failPatches = 1 // first PATCH 500s after consuming the body
+	f.failPatches = 1
 
 	p := newPusher(srv, "proj", 1000)
 	require.NoError(t, p.Push(dir, []string{"latest"}))
@@ -71,10 +73,8 @@ func TestPush_ResumesAfterTransientPatchFailure(t *testing.T) {
 }
 
 // A registry keeps upload sessions in memory, so a restart mid-push forgets
-// every one of them and answers BLOB_UPLOAD_UNKNOWN. Nothing is resumable at
-// that point, so the blob starts over on a fresh session rather than failing a
-// publish that is already minutes deep.
 func TestPush_RestartsWhenTheRegistryForgetsTheSession(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -84,7 +84,7 @@ func TestPush_RestartsWhenTheRegistryForgetsTheSession(t *testing.T) {
 		layer[i] = byte(i * 3)
 	}
 	dir, _ := buildImageLayout(t, layer)
-	f.dropSessionsAfter = 2 // the second chunk lands, then the session vanishes
+	f.dropSessionsAfter = 2
 
 	p := newPusher(srv, "proj", 1000)
 	require.NoError(t, p.Push(dir, []string{"latest"}))
@@ -95,13 +95,14 @@ func TestPush_RestartsWhenTheRegistryForgetsTheSession(t *testing.T) {
 }
 
 func TestPush_NoProgressAborts(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
 
 	layer := make([]byte, 2500)
 	dir, _ := buildImageLayout(t, layer)
-	f.failPatches = 1000 // every PATCH 500s; status always reports 0
+	f.failPatches = 1000
 
 	p := newPusher(srv, "proj", 1000)
 	err := p.Push(dir, []string{"latest"})
@@ -110,6 +111,7 @@ func TestPush_NoProgressAborts(t *testing.T) {
 }
 
 func TestPush_ServerInfoLimitRespected(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	mux := http.NewServeMux()
 	mux.Handle("/v2/", f.handler("proj"))
@@ -134,6 +136,7 @@ func TestPush_ServerInfoLimitRespected(t *testing.T) {
 }
 
 func TestPush_ChunkSizeClampedToServerLimit(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	mux := http.NewServeMux()
 	mux.Handle("/v2/", f.handler("proj"))
@@ -157,6 +160,7 @@ func TestPush_ChunkSizeClampedToServerLimit(t *testing.T) {
 }
 
 func TestCommittedFromRange(t *testing.T) {
+	t.Serial()
 	cases := []struct {
 		in   string
 		want int64

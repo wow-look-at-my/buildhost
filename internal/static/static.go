@@ -53,8 +53,6 @@ type Params struct {
 	Fmt     string
 	Debug   bool
 	// Token, when set, is a signed temporary download token (see
-	// auth.MintDownloadToken) carried as &token=, authorizing this exact artifact
-	// under a private project without a project token.
 	Token string
 }
 
@@ -79,10 +77,6 @@ func Redirect(w http.ResponseWriter, r *http.Request, staticBase *url.URL, p Par
 
 // SignedURL builds a static download URL carrying a signed, expiring &token= that
 // authorizes exactly this artifact (project, version, os, arch, fmt, debug) until
-// exp. It lets the REST and admin "temporary link" endpoints share one private
-// artifact without handing out a project token. Returns the URL and the bare
-// token. The query is in canonical order, so the static handler serves it without
-// a canonicalization redirect.
 func SignedURL(staticBase *url.URL, p Params, exp time.Time) (string, string) {
 	tok := auth.MintDownloadToken(p.Project, p.Version, string(p.OS), string(p.Arch), p.Fmt, p.Debug, exp)
 	p.Token = tok
@@ -128,9 +122,6 @@ func canonicalQuery(raw url.Values) string {
 		}
 		v := vs[0]
 		// Fold platform-name aliases (e.g. RUNNER_OS "Linux", RUNNER_ARCH "X64",
-		// uname's "x86_64"/"aarch64") to their canonical spelling so every variant
-		// resolves to one canonical, cacheable URL via the canonicalization
-		// redirect. Unrecognized values (including the "any" sentinel) pass through.
 		switch k {
 		case "os":
 			if c, ok := db.NormalizeOS(v); ok {
@@ -145,8 +136,6 @@ func canonicalQuery(raw url.Values) string {
 	}
 	// The deprecated GOOS/GOARCH-ordered wasm pair (os=js|wasip1, arch=wasm)
 	// folds to the canonical os=wasm form. Pair-level, so it runs after the
-	// per-key folds above; the canonicalization redirect then ensures the CDN
-	// only ever sees one URL for the artifact ("js" is never a canonical os).
 	if o, a, ok := db.NormalizeLegacyWasmPair(clean.Get("os"), clean.Get("arch")); ok {
 		clean.Set("os", string(o))
 		clean.Set("arch", string(a))

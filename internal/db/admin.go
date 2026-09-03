@@ -48,8 +48,6 @@ type AllArtifactWithPlatforms struct {
 	Platforms []Platform `json:"platforms"`
 }
 
-// ListAllArtifactsWithPlatforms lists every artifact once, carrying its full
-// platform set, so the dashboard shows one row per FILE.
 func (d *DB) ListAllArtifactsWithPlatforms(ctx context.Context) ([]AllArtifactWithPlatforms, error) {
 	rows, err := d.q.ListAllArtifacts(ctx)
 	if err != nil {

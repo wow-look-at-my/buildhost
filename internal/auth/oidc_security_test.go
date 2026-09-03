@@ -14,6 +14,7 @@ import (
 )
 
 func TestVerifyToken_TrustedIssuer_EmptyEventRejected(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -34,6 +35,7 @@ func TestVerifyToken_TrustedIssuer_EmptyEventRejected(t *testing.T) {
 }
 
 func TestVerifyToken_TrustedIssuer_NoBaseURLStillProvisions(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -56,6 +58,7 @@ func TestVerifyToken_TrustedIssuer_NoBaseURLStillProvisions(t *testing.T) {
 }
 
 func TestParseRSAPublicKey_TooSmall(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 1024)
 	require.NoError(t, err)
 	n := base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes())

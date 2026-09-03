@@ -11,14 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// GitHub repos created after 2026-07-15 mint "immutable" OIDC subjects that
-// suffix each repo-path segment with its numeric account/repo ID --
-// `repo:OWNER@OWNERID/REPO@REPOID:ref:refs/heads/BRANCH` -- while classic
-// repos keep the bare `repo:OWNER/REPO:...` form (see
-// https://github.blog/changelog/2026-04-23-immutable-subject-claims-for-github-actions-oidc-tokens/).
-// All three subject parsers must strip the IDs and behave identically to the
-// classic form; classic subjects must pass through byte-for-byte.
 func TestSubjectParsers_ImmutableIDs(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name     string
 		subject  string
@@ -63,8 +57,6 @@ func TestSubjectParsers_ImmutableIDs(t *testing.T) {
 		},
 		{
 			// A non-numeric @-suffix is NOT an immutable ID: nothing is
-			// stripped, and the "@" then fails project-name validation as
-			// before.
 			name:     "non-numeric suffix not stripped",
 			subject:  "repo:myorg/bad@name:ref:refs/heads/main",
 			org:      "myorg",
@@ -73,7 +65,6 @@ func TestSubjectParsers_ImmutableIDs(t *testing.T) {
 		},
 		{
 			// Only the LAST "@" is considered, so an ID after earlier junk is
-			// still stripped -- but the leftover "@" fails validation.
 			name:     "only last at-sign considered",
 			subject:  "repo:myorg/we@ird@123:ref:refs/heads/main",
 			org:      "myorg",
@@ -88,8 +79,6 @@ func TestSubjectParsers_ImmutableIDs(t *testing.T) {
 			repoPath: "myorg@/myrepo@",
 		},
 		{
-			// "@123" would strip to an empty name; leave it alone (and let
-			// validation reject it) instead.
 			name:     "lone at-sign segment not stripped",
 			subject:  "repo:myorg/@123:ref:refs/heads/main",
 			org:      "myorg",
@@ -107,11 +96,8 @@ func TestSubjectParsers_ImmutableIDs(t *testing.T) {
 }
 
 // TestVerifyToken_TrustedIssuer_ImmutableSubject proves auto-provisioning
-// works end-to-end for a post-2026-07-15 repo: the org allowlist matches the
-// owner NAME (not "name@id"), the derived project name passes validation, and
-// VerifyResult.RepoPath is the clean "owner/repo" the GitHub REST lookups
-// need. The token name keeps the raw subject, IDs included.
 func TestVerifyToken_TrustedIssuer_ImmutableSubject(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -133,7 +119,6 @@ func TestVerifyToken_TrustedIssuer_ImmutableSubject(t *testing.T) {
 	assert.Equal(t, "tesla-wheel-data", oidcProject)
 	assert.Equal(t, "wow-look-at-my/tesla-wheel-data", vr.RepoPath)
 	// No dedicated ID claims on this token: the IDs come from the immutable
-	// subject's @id suffixes.
 	assert.Equal(t, "250878655", vr.OwnerID)
 	assert.Equal(t, "1307105896", vr.RepoID)
 	assert.Equal(t, "oidc:repo:wow-look-at-my@250878655/tesla-wheel-data@1307105896:ref:refs/heads/master", tok.Name)
@@ -142,6 +127,7 @@ func TestVerifyToken_TrustedIssuer_ImmutableSubject(t *testing.T) {
 // TestVerifyToken_TrustedIssuer_ImmutableSubject_OrgCaseInsensitive combines
 // the immutable-ID stripping with the case-insensitive org allowlist match.
 func TestVerifyToken_TrustedIssuer_ImmutableSubject_OrgCaseInsensitive(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -166,6 +152,7 @@ func TestVerifyToken_TrustedIssuer_ImmutableSubject_OrgCaseInsensitive(t *testin
 // subject parsing, and the numeric IDs are surfaced for pinning -- from the
 // claims when present, else from an immutable subject's @id suffixes.
 func TestVerifyToken_TrustedIssuer_DedicatedClaimsPreferred(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -197,6 +184,7 @@ func TestVerifyToken_TrustedIssuer_DedicatedClaimsPreferred(t *testing.T) {
 // A classic-era token (classic sub) that still mints the dedicated ID claims
 // -- which GitHub does for every repo -- surfaces the IDs for pinning too.
 func TestVerifyToken_TrustedIssuer_ClassicSubWithIDClaims(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -225,6 +213,7 @@ func TestVerifyToken_TrustedIssuer_ClassicSubWithIDClaims(t *testing.T) {
 }
 
 func TestOrgAllowed(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name    string
 		allowed []string
@@ -253,6 +242,7 @@ func TestOrgAllowed(t *testing.T) {
 // though the org NAME matches -- the resurrection case for the allowlist
 // itself -- and the error names the offending ID.
 func TestVerifyToken_TrustedIssuer_OrgIDPinned_Mismatch(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 

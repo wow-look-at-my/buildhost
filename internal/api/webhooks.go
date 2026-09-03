@@ -15,7 +15,7 @@ import (
 	"github.com/wow-look-at-my/go-containers/set"
 )
 
-const maxWebhookBody = 1 << 20 // 1 MiB
+const maxWebhookBody = 1 << 20
 
 func init() {
 	auth.HandleRawPrimary("POST /api/v1/webhooks/github", handler.GitHubWebhook)
