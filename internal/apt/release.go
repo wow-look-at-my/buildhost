@@ -107,8 +107,8 @@ func (h *Handler) serveKey(w http.ResponseWriter, r *http.Request) {
 	w.Write(key)
 }
 
-// hashEntry is one SHA256 line of a Release file, so releaseTemplate reads its
-// fields and they are exported.
+// hashEntry is a SHA256 line of a Release file. releaseTemplate reads the
+// fields, so they are exported.
 type hashEntry struct {
 	Path string
 	Hash string
@@ -142,7 +142,7 @@ func (h *Handler) computePackagesHashes(r *http.Request, project *db.Project, re
 }
 
 // releaseTemplate renders a Debian Release file. apt parses it as a field list,
-// so a dropped newline merges two fields and the index stops resolving.
+// so a dropped newline merges adjacent fields and the index stops resolving.
 var releaseTemplate = template.Must(template.New("apt-release").Parse(
 	`Origin: buildhost
 Label: {{.Project}}
@@ -167,9 +167,7 @@ func buildRelease(projectName string, hashes []hashEntry) string {
 		Hashes:  hashes,
 	})
 	if err != nil {
-		// The template is a constant and strings.Builder never fails a write,
-		// so reaching this means the template itself was edited wrong.
-		panic(err)
+		panic(err) // Only an edit to releaseTemplate itself can reach this.
 	}
 	return b.String()
 }
