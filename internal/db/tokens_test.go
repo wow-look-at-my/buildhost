@@ -13,6 +13,7 @@ import (
 // --- Tokens ------------------------------------------------------------------
 
 func TestCreateAndLookupToken(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -37,6 +38,7 @@ func TestCreateAndLookupToken(t *testing.T) {
 }
 
 func TestLookupTokenNotFound(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	_, err := d.LookupToken(context.Background(), "bh_bogus_token_value_here")
 	assert.True(t, errors.Is(err, ErrNotFound))
@@ -44,6 +46,7 @@ func TestLookupTokenNotFound(t *testing.T) {
 }
 
 func TestCreateTokenWithProjectScope(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -59,6 +62,7 @@ func TestCreateTokenWithProjectScope(t *testing.T) {
 }
 
 func TestListTokens(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -76,6 +80,7 @@ func TestListTokens(t *testing.T) {
 }
 
 func TestDeleteToken(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -90,12 +95,14 @@ func TestDeleteToken(t *testing.T) {
 }
 
 func TestDeleteTokenNotFound(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	err := d.DeleteToken(context.Background(), 99999)
 	assert.True(t, errors.Is(err, ErrNotFound))
 }
 
 func TestLookupToken_ExpiredTokenReturnsNotFound(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -111,6 +118,7 @@ func TestLookupToken_ExpiredTokenReturnsNotFound(t *testing.T) {
 }
 
 func TestLookupToken_FutureExpirySucceeds(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 

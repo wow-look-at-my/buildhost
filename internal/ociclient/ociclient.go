@@ -3,16 +3,6 @@
 // type=oci` or `docker save`) to a buildhost OCI registry.
 //
 // Its reason to exist is upload sizing: docker/buildx/crane push every blob as
-// ONE request, and the proxy in front of a deployed buildhost caps request
-// bodies (Cloudflare's edge 413s bodies over ~100 MB), so layers past the cap
-// can never arrive through those clients. This client asks the server for its
-// advertised safe request size (GET /api/v1/server-info,
-// max_direct_upload_bytes) and uploads every larger blob through the OCI
-// chunked upload session -- sequential PATCH appends each under the limit,
-// finalized by a digest-checked PUT -- so layers of any size pass the proxy.
-// The decision is made from the blob size up front, never by reacting to a
-// 413. Interrupted chunks resume from the server's committed size (the upload
-// status endpoint).
 package ociclient
 
 import (
@@ -33,25 +23,17 @@ const retryAttempts = 4
 // RetryBaseDelay is doubled per retry (1s, 2s, 4s). Var so tests can shorten it.
 var RetryBaseDelay = time.Second
 
-// Pusher pushes an OCI image layout to one buildhost registry project.
 type Pusher struct {
 	// Registry is the OCI registry host[:port], e.g. "oci.pazer.build".
 	Registry string
 	// Project is the image's project name on buildhost (may be slash-namespaced).
 	Project string
 	// Token authenticates every request (Bearer; a write-scoped API token or a
-	// GitHub Actions OIDC JWT).
 	Token string
 	// PlainHTTP uses http:// instead of https:// (local servers, tests).
 	PlainHTTP bool
 	// Server is the apex server URL for GET /api/v1/server-info. Empty derives
-	// it from Registry by stripping the leading service label ("oci." /
-	// "docker.").
-	Server string
-	// ChunkSize caps how much of a blob each request carries; 0 uses the
-	// server's advertised max_direct_upload_bytes (fallback 95 MiB). Values
-	// above the advertised limit are clamped down to it -- a bigger request
-	// would be exactly the 413 this client exists to avoid.
+	Server    string
 	ChunkSize int64
 	// Client defaults to http.DefaultClient.
 	Client *http.Client
@@ -63,8 +45,6 @@ type Pusher struct {
 }
 
 // ParseRefs parses full image references ("<registry>/<project>[:tag]") into
-// one registry+project and the tag set. Every ref must name the same registry
-// and project (one push, several tags); a ref without a tag means "latest".
 func ParseRefs(refs []string) (registry, project string, tags []string, err error) {
 	if len(refs) == 0 {
 		return "", "", nil, fmt.Errorf("at least one image reference is required")
@@ -84,9 +64,6 @@ func ParseRefs(refs []string) (registry, project string, tags []string, err erro
 	return registry, project, tags, nil
 }
 
-// splitRef splits "<registry>/<project>[:tag]". The first path segment must
-// look like a registry host (contain "." or ":", the docker convention), since
-// there is no default registry to assume.
 func splitRef(ref string) (registry, project, tag string, err error) {
 	slash := strings.Index(ref, "/")
 	if slash <= 0 {
@@ -191,9 +168,6 @@ func (p *Pusher) Push(layoutPath string, tags []string) error {
 	return nil
 }
 
-// pushChildren uploads everything a manifest references, depth-first: an
-// index's child manifests (each pushed by digest after its own children), an
-// image manifest's config and layer blobs.
 func (p *Pusher) pushChildren(l *layout, m *imageManifest) error {
 	if isIndexMediaType(m.MediaType) || len(m.Manifests) > 0 {
 		for _, child := range m.Manifests {
@@ -227,11 +201,6 @@ func (p *Pusher) pushChildren(l *layout, m *imageManifest) error {
 }
 
 // resolveChunkSize picks the per-request byte cap: the server's advertised
-// max_direct_upload_bytes (fallback: the built-in 95 MiB default), further
-// lowered -- never raised -- by an explicit ChunkSize. Anything above the
-// advertised limit is the 413 this client exists to avoid, so overrides only
-// clamp down. A negative ChunkSize disables chunking entirely (every blob is
-// one request -- for servers with no proxy body cap).
 func (p *Pusher) resolveChunkSize() int64 {
 	if p.ChunkSize < 0 {
 		return math.MaxInt64

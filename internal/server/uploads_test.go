@@ -67,6 +67,7 @@ func (e *testEnv) appendChunk(t *testing.T, id string, offset int, chunk []byte)
 // artifact byte-identical to a direct PUT of the same payload, and the bytes
 // round-trip through the download path.
 func TestChunkedUploadMatchesDirectUpload(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	payload := make([]byte, 300)
@@ -78,14 +79,12 @@ func TestChunkedUploadMatchesDirectUpload(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
 
-	// Release 1 receives the chunked upload, release 2 the direct control.
 	for _, body := range []string{`{"git_branch":"master"}`, `{"git_branch":"master"}`} {
 		resp = env.postJSON(t, "/api/v1/projects/chunky/releases", body)
 		require.Equal(t, http.StatusCreated, resp.StatusCode)
 		resp.Body.Close()
 	}
 
-	// Chunked: three uneven chunks through an upload session.
 	sess := env.createUploadSession(t)
 	offset := 0
 	for _, n := range []int{100, 150, 50} {
@@ -111,7 +110,6 @@ func TestChunkedUploadMatchesDirectUpload(t *testing.T) {
 	var direct db.Artifact
 	decodeJSON(t, resp, &direct)
 
-	// Byte-identical: same SHA-256, same size, same content-addressed blob.
 	assert.Equal(t, hex.EncodeToString(wantSHA[:]), chunked.SHA256)
 	assert.Equal(t, direct.SHA256, chunked.SHA256)
 	assert.Equal(t, direct.Size, chunked.Size)
@@ -132,11 +130,8 @@ func TestChunkedUploadMatchesDirectUpload(t *testing.T) {
 }
 
 // TestChunkedUploadMultiPlatformFanOut proves a chunked upload session
-// finalizes through the multi-platform fan-out unchanged: one session, one
-// assembled body, N artifact rows sharing one content-addressed blob. The
-// comma-separated {os} segment also exercises the real router (a comma is an
-// ordinary path-segment byte).
 func TestChunkedUploadMultiPlatformFanOut(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	payload := make([]byte, 200)
@@ -175,13 +170,11 @@ func TestChunkedUploadMultiPlatformFanOut(t *testing.T) {
 	assert.Equal(t, db.OSDarwin, artifacts[1].OS)
 	assert.Equal(t, db.OSWindows, artifacts[2].OS)
 
-	// The one session was consumed by the successful fan-out finalize.
 	resp = env.doRequest(t, "GET", "/api/v1/uploads/"+sess.ID, "", nil, true)
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 	resp.Body.Close()
 
 	// Every fanned-out platform serves the same bytes through the normal
-	// download path -- the read side sees ordinary per-platform artifacts.
 	resp = env.postJSON(t, "/api/v1/projects/fanout/releases/1/publish", `{}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
@@ -193,6 +186,7 @@ func TestChunkedUploadMultiPlatformFanOut(t *testing.T) {
 }
 
 func TestUploadSessionResume(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	sess := env.createUploadSession(t)
@@ -201,7 +195,6 @@ func TestUploadSessionResume(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
 
-	// Wrong offset (e.g. a lost response): 409 carries the committed size.
 	resp = env.appendChunk(t, sess.ID, 3, []byte("world"))
 	require.Equal(t, http.StatusConflict, resp.StatusCode)
 	var conflict uploadSessionJSON
@@ -223,9 +216,9 @@ func TestUploadSessionResume(t *testing.T) {
 }
 
 func TestUploadSessionOwnerIsolation(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
-	// A second, different identity with full write scope.
 	otherToken, _, err := env.database.CreateToken(context.Background(), "other", nil, "read,write")
 	require.NoError(t, err)
 
@@ -239,8 +232,6 @@ func TestUploadSessionOwnerIsolation(t *testing.T) {
 		return resp
 	}
 
-	// Every session operation is invisible to the other identity: 404, never
-	// 403, so session ids don't leak existence.
 	for _, probe := range []struct{ method, path string }{
 		{"GET", "/api/v1/uploads/" + sess.ID},
 		{"PATCH", "/api/v1/uploads/" + sess.ID + "?offset=0"},
@@ -263,6 +254,7 @@ func TestUploadSessionOwnerIsolation(t *testing.T) {
 }
 
 func TestUploadSessionSHA256Mismatch(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	resp := env.postJSON(t, "/api/v1/projects", `{"name":"shaproj","versioning":"auto"}`)
@@ -288,7 +280,6 @@ func TestUploadSessionSHA256Mismatch(t *testing.T) {
 	assert.Contains(t, body, "sha256 mismatch")
 
 	// No artifact was created and the session survives, so the client can
-	// re-check it -- a finalize with the right hash still succeeds.
 	resp = env.doRequest(t, "GET", "/api/v1/uploads/"+sess.ID, "", nil, true)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
@@ -303,6 +294,7 @@ func hexSHA256(b []byte) string {
 }
 
 func TestUploadSessionAbortAndAuth(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	// Session creation requires a credential with write scope.
@@ -336,7 +328,6 @@ func TestUploadSessionAbortAndAuth(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	resp.Body.Close()
 
-	// Unknown session id on finalize: 404.
 	resp = env.doRequest(t, "PUT", "/api/v1/projects/p/releases/1/artifacts/linux/amd64?upload_session=00000000000000000000000000000000",
 		"application/octet-stream", nil, true)
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
@@ -353,6 +344,7 @@ func TestUploadSessionAbortAndAuth(t *testing.T) {
 // TestUploadSessionTooLarge proves the total-size cap applies at append time,
 // not just at finalize.
 func TestUploadSessionTooLarge(t *testing.T) {
+	t.Serial()
 	t.Setenv("BUILDHOST_MAX_UPLOAD_SIZE", "16")
 	env := setup(t)
 
@@ -372,6 +364,7 @@ func TestUploadSessionTooLarge(t *testing.T) {
 // TestServerInfo covers the discovery endpoint clients use to choose direct
 // vs chunked BEFORE sending anything.
 func TestServerInfo(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	resp := env.get(t, "/api/v1/server-info")
@@ -387,10 +380,8 @@ func TestServerInfo(t *testing.T) {
 	assert.True(t, info.UploadSessions)
 }
 
-// TestChunkedSiteDeploy proves finalize-by-reference works on a second,
-// independent upload endpoint (the sites deploy PUT) without that endpoint
-// knowing anything about sessions.
 func TestChunkedSiteDeploy(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	resp := env.postJSON(t, "/api/v1/projects", `{"name":"sitey","versioning":"auto"}`)
@@ -411,7 +402,6 @@ func TestChunkedSiteDeploy(t *testing.T) {
 	}
 
 	// Finalize on the sites subdomain endpoint; Content-Type still selects the
-	// gzip path exactly as it would with a direct body.
 	resp = env.doSubdomainRequest(t, "PUT", "sites", "/sitey/branch/main?upload_session="+sess.ID,
 		"application/gzip", nil, true)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)

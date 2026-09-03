@@ -12,6 +12,7 @@ import (
 )
 
 func TestRequireProject_WriteAccess_NoToken_Returns401(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -36,6 +37,7 @@ func TestRequireProject_WriteAccess_NoToken_Returns401(t *testing.T) {
 }
 
 func TestRequireProject_WriteAccess_ReadOnlyToken_Returns401(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -63,6 +65,7 @@ func TestRequireProject_WriteAccess_ReadOnlyToken_Returns401(t *testing.T) {
 }
 
 func TestRequireProject_WriteAccess_WrongProject_Returns403(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -91,6 +94,7 @@ func TestRequireProject_WriteAccess_WrongProject_Returns403(t *testing.T) {
 }
 
 func TestRequireProject_WriteAccess_ValidToken_PassesThrough(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -130,6 +134,7 @@ func TestRequireProject_WriteAccess_ValidToken_PassesThrough(t *testing.T) {
 }
 
 func TestRequireProject_AutoCreate_OIDCPrivate(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -161,6 +166,7 @@ func TestRequireProject_AutoCreate_OIDCPrivate(t *testing.T) {
 }
 
 func TestRequireProject_AutoCreate_OIDCPublic(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -192,6 +198,7 @@ func TestRequireProject_AutoCreate_OIDCPublic(t *testing.T) {
 }
 
 func TestRequireProject_OIDCSyncsVisibility_PublicToPrivate(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -229,6 +236,7 @@ func TestRequireProject_OIDCSyncsVisibility_PublicToPrivate(t *testing.T) {
 }
 
 func TestRequireProject_OIDCSyncsVisibility_PrivateToPublic(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -266,6 +274,7 @@ func TestRequireProject_OIDCSyncsVisibility_PrivateToPublic(t *testing.T) {
 }
 
 func TestRequireProject_NonOIDCToken_CannotChangeVisibility(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -301,6 +310,7 @@ func TestRequireProject_NonOIDCToken_CannotChangeVisibility(t *testing.T) {
 }
 
 func TestRequireProject_WrongOIDCProject_CannotChangeVisibility(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 

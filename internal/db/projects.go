@@ -60,10 +60,6 @@ func (d *DB) SetProjectGitHubRepo(ctx context.Context, id int64, repo string) er
 
 // SetProjectGitHubIDs pins the numeric GitHub owner/repo IDs behind
 // github_repo. GitHub names are reusable (a deleted or renamed repo's name can
-// be re-registered), so the auth middleware records the IDs from the first
-// ID-bearing OIDC publish and rejects later OIDC requests whose token carries
-// different IDs -- a re-created ("resurrected") repo under the same name may
-// not take over the project.
 func (d *DB) SetProjectGitHubIDs(ctx context.Context, id int64, ownerID, repoID string) error {
 	return d.q.SetProjectGitHubIDs(ctx, SetProjectGitHubIDsParams{
 		GithubOwnerID: ownerID,
@@ -74,8 +70,6 @@ func (d *DB) SetProjectGitHubIDs(ctx context.Context, id int64, ownerID, repoID 
 
 // SetProjectDefaultBranch records the branch the apex "latest" tracks for a
 // project. Publishers supply their repo's real default branch on release-create
-// (GitHub's repository.default_branch), so a project that releases off a branch
-// other than "master" still resolves "latest".
 func (d *DB) SetProjectDefaultBranch(ctx context.Context, id int64, branch string) error {
 	return d.q.SetProjectDefaultBranch(ctx, SetProjectDefaultBranchParams{
 		DefaultBranch: branch,
@@ -85,8 +79,6 @@ func (d *DB) SetProjectDefaultBranch(ctx context.Context, id int64, branch strin
 
 // SetProjectCreateService flips the packaging-agnostic "runs as a background
 // service" project setting, which each download format materializes its own
-// way (brew: `service do` block; deb: systemd user unit). Written by the
-// release-create declaration path and the operator PATCH override.
 func (d *DB) SetProjectCreateService(ctx context.Context, id int64, enabled bool) error {
 	return d.q.SetProjectCreateService(ctx, SetProjectCreateServiceParams{
 		CreateService: enabled,

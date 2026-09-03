@@ -1,9 +1,5 @@
 package api
 
-// Tests for publishing ONE Actually Portable Executable as ONE artifact: the
-// {os}/{arch} alias spellings no longer fan an APE out into a row per platform,
-// and a declared platform is checked against the bytes that would serve it.
-
 import (
 	"context"
 	"encoding/binary"
@@ -30,9 +26,8 @@ func apeWithPESections(t *testing.T, nsect uint16) string {
 }
 
 // TestUploadArtifact_CosmoAliasAPEIsOneRow is the directive the alias predates:
-// one file that runs on N platforms is ONE artifact with N slots, not N rows
-// with N download links. The alias spelling stays; what it produces changed.
 func TestUploadArtifact_CosmoAliasAPEIsOneRow(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "cosmoapeproj")
 	counting := &countingStore{Storage: h.Store}
 	h.Store = counting
@@ -55,6 +50,7 @@ func TestUploadArtifact_CosmoAliasAPEIsOneRow(t *testing.T) {
 // combinations really are separate builds that happen to share bytes, a row
 // each is still the right answer.
 func TestUploadArtifact_NonAPEAliasStillFansOut(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "nonapealiasproj")
 
 	rec := doUpload(t, h, proj, "cosmo", "amd64", "", "not-an-ape")
@@ -66,9 +62,8 @@ func TestUploadArtifact_NonAPEAliasStillFansOut(t *testing.T) {
 }
 
 // TestUploadArtifact_AliasRejectsWindowsOnStubPE covers the failure that is
-// invisible downstream: a stub PE header starts on Windows and exits 0 without
-// running, which every consumer reads as success.
 func TestUploadArtifact_AliasRejectsWindowsOnStubPE(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "stubpealiasproj")
 
 	rec := doUpload(t, h, proj, "cosmo", "amd64", "", apeWithPESections(t, 1))
@@ -83,6 +78,7 @@ func TestUploadArtifact_AliasRejectsWindowsOnStubPE(t *testing.T) {
 // TestUploadArtifact_StubPEWithoutWindowsIsFine pins the gate's scope: the stub
 // header only falsifies a WINDOWS claim, so a linux+darwin APE publishes.
 func TestUploadArtifact_StubPEWithoutWindowsIsFine(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "stubpenowinproj")
 
 	rec := doUpload(t, h, proj, "linux,darwin", "arm64", "", apeWithPESections(t, 1))

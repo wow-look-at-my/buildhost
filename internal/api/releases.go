@@ -31,28 +31,12 @@ type createReleaseRequest struct {
 	GitBranch string `json:"git_branch"`
 	GitCommit string `json:"git_commit"`
 	// DefaultBranch is the repo's default branch (e.g. GitHub's
-	// repository.default_branch). When set, it becomes the branch the apex
-	// "latest" tracks for this project, so a project that releases off a
-	// non-master branch (e.g. go-toolchain on "v1") resolves "latest" correctly.
 	DefaultBranch string `json:"default_branch"`
 	// CreateService declares that the project's installed binary runs as a
-	// background service -- packaging-format-agnostic; each format
-	// materializes it its own way (brew formulas gain a `service do` block,
-	// on-the-fly debs ship a systemd user unit). Pointer: absent = leave the
-	// stored project setting untouched (an older CI that never sends the
-	// field can never clobber an operator-set value), present = assert that
-	// value on every publish, so the repo's CI is the declarative source of
-	// truth once it sends it.
 	CreateService *bool  `json:"create_service"`
 	Notes         string `json:"notes"`
 	OciUser       string `json:"oci_user"`
 	// Draft keeps the release out of the project's public release stream: it
-	// stays unpublished, so `latest`, per-branch downloads, Homebrew, APT, npm
-	// and OCI never see it, but it is downloadable by exact version -- a build
-	// published for yourself. Unlike an ordinary unpublished release (which is
-	// an abandoned partial upload as far as the server knows, and is swept
-	// once it ages past the retention cutoff), a draft is kept. Publishing it
-	// later clears the flag.
 	Draft bool `json:"draft"`
 }
 
@@ -119,11 +103,6 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Assert the declared create_service setting on EVERY publish attempt --
-	// including a re-publish whose release create will 409 below -- so the
-	// repo's CI declaration is idempotently enforced, not just recorded at
-	// first provisioning. Absent field = untouched (see createReleaseRequest).
-	// Best-effort like the default-branch sync: a failure must not fail the
-	// publish.
 	if req.CreateService != nil && *req.CreateService != project.CreateService {
 		if err := h.DB.SetProjectCreateService(r.Context(), project.ID, *req.CreateService); err != nil {
 			slog.WarnContext(r.Context(), "failed to update project create_service",
@@ -170,9 +149,6 @@ func (h *Handler) GetRelease(w http.ResponseWriter, r *http.Request) {
 	rt := routeFrom(r.Context())
 
 	// "latest" (and the empty spec) resolve to the apex latest release, mirroring
-	// how dl/static/web already treat "latest". Exposing it here gives clients a
-	// single, bounded request for the newest published release's metadata
-	// (version, git_commit, published_at) instead of listing every release.
 	var rel *db.Release
 	if rt.version == "" || rt.version == "latest" {
 		rel = h.getLatestRelease(w, r, project.ID)
@@ -184,9 +160,6 @@ func (h *Handler) GetRelease(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Artifacts ride along so a release's contents are readable without a
-	// publish: a publisher that published against an older container (mid
-	// rolling deploy) re-reads the release here rather than failing outright,
-	// and there is no other endpoint that enumerates them.
 	artifacts, err := h.DB.ListArtifactsWithPlatforms(r.Context(), rel.ID)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed to list artifacts")
@@ -239,10 +212,6 @@ func semverToNum(v string) int64 {
 
 // validOCIUser reports whether s is a valid run-as user for a synthesized OCI image:
 // "uid", "uid:gid", "user", or "user:group". Each component is either a numeric id
-// (1-10 digits) or a name ([a-zA-Z_][a-zA-Z0-9_-]{0,31}), matching the OCI/Docker User
-// field. The empty string ("use the image default", i.e. root) is handled by the caller.
-// A plain function (not a go-regex-compiler validator) since this is a cold publish-time
-// path and adding a //go:generate directive would invalidate the CI generate approval.
 func validOCIUser(s string) bool {
 	user, group, hasGroup := strings.Cut(s, ":")
 	if !validUserComponent(user) {

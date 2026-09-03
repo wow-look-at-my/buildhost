@@ -2,7 +2,6 @@ package dl
 
 // Version/branch resolution tests for the download redirect: latest and
 // per-branch resolution and cache-control semantics (the signed-token and
-// platform-alias tests live in handler_signed_test.go).
 
 import (
 	"net/http"
@@ -15,6 +14,7 @@ import (
 )
 
 func TestDownload_LatestVersion(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel1 := seedRelease(t, d, proj.ID, "1.0.0", "master", true)
@@ -22,7 +22,6 @@ func TestDownload_LatestVersion(t *testing.T) {
 	seedArtifact(t, d, store, rel1.ID, "linux", "amd64", "v1-binary")
 
 	// No ?v= and no ?branch= -> resolves latest on master, not the newest
-	// feature-branch version.
 	req := makeRequest("myapp", url.Values{"os": {"linux"}, "arch": {"amd64"}})
 	req = withRoute(req, proj, route{project: "myapp"})
 	rec := httptest.NewRecorder()
@@ -37,6 +36,7 @@ func TestDownload_LatestVersion(t *testing.T) {
 }
 
 func TestDownload_ReleaseNotFound(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 
@@ -49,6 +49,7 @@ func TestDownload_ReleaseNotFound(t *testing.T) {
 }
 
 func TestDownload_ArtifactNotFound(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -59,7 +60,6 @@ func TestDownload_ArtifactNotFound(t *testing.T) {
 	h.Download(rec, req)
 
 	// dl handler only resolves release/version, then redirects; artifact
-	// resolution now happens at /static.
 	q := requireRedirect(t, rec)
 	assert.Equal(t, "myapp", q.Get("project"))
 	assert.Equal(t, "1.0.0", q.Get("v"))
@@ -72,6 +72,7 @@ func TestDownload_ArtifactNotFound(t *testing.T) {
 // requireProject middleware in the auth package.
 
 func TestDownload_Latest_Success(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	seedRelease(t, d, proj.ID, "1.0.0", "master", true)
@@ -93,6 +94,7 @@ func TestDownload_Latest_Success(t *testing.T) {
 }
 
 func TestDownload_Latest_NoPublishedReleases(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	// Create an unpublished release.
@@ -108,6 +110,7 @@ func TestDownload_Latest_NoPublishedReleases(t *testing.T) {
 }
 
 func TestDownload_Branch_Success(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -128,6 +131,7 @@ func TestDownload_Branch_Success(t *testing.T) {
 }
 
 func TestDownload_Branch_BranchNotFound(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -141,6 +145,7 @@ func TestDownload_Branch_BranchNotFound(t *testing.T) {
 }
 
 func TestDownload_Branch_ResolvesLatestOnBranch(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -162,6 +167,7 @@ func TestDownload_Branch_ResolvesLatestOnBranch(t *testing.T) {
 }
 
 func TestDownload_MissingOSAndArch(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -175,6 +181,7 @@ func TestDownload_MissingOSAndArch(t *testing.T) {
 }
 
 func TestDownload_Latest_NoStore(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -191,6 +198,7 @@ func TestDownload_Latest_NoStore(t *testing.T) {
 }
 
 func TestDownload_ExactVersion_Immutable(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)

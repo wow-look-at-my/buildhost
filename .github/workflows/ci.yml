@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: ['**']
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -20,29 +21,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # A generate directive spelling `go run` builds an APE the runner cannot exec. Ported from go-toolchain's action, which will carry it; this then no-ops.
+      - name: Register the APE binfmt handler
+        shell: bash
+        run: |
+          set -eu
+          dir=/proc/sys/fs/binfmt_misc
+          if [ -e "$dir/APE" ]; then exit 0; fi
+          if [ ! -w "$dir/register" ]; then sudo mount -t binfmt_misc none "$dir" || true; fi
+          if ! printf '%s\n' ':APE:M::\x4d\x5a\x71\x46\x70\x44\x3d\x27::/bin/sh:' | sudo tee "$dir/register" > /dev/null 2>&1; then
+            echo "::warning::APE binfmt handler not registered; a bare exec of an APE still fails here"
+          fi
       # No fetch-cacerts step: the CA bundle is a generate directive
-      # (internal/repackage/oci.go), so `generate:` below fetches it. Keeping a
-      # step here would hide a broken directive from CI and leave a fresh clone
-      # unbuildable for everyone who is not this workflow. The setup-go jobs
-      # below still fetch explicitly: they run plain `go`, never generate.
-      # autorelease publishes this binary to buildhost on every push, which is
-      # what makes the CLI downloadable -- the publish composites fetch it from
-      # dl instead of building cmd/buildhost from a checkout that has none of
-      # the generated files it embeds.
-      - uses: wow-look-at-my/go-toolchain@v1
+      - uses: wow-look-at-my/go-toolchain@master
         with:
-          generate: 476c7c5fc951
+          generate: 0af38e6ba5f6
+          timeout: '25'
       # The step above just ran every generate directive, which is what makes
-      # a tracked generated file show up to the suite as a dirty tree.
-      - uses: wow-look-at-my/dats@master
+      - uses: ./.github/actions/buildhost-download
         with:
-          args: --no-sandbox test test/dats/repo-hygiene.dats test/dats/compression-opts.dats
+          project: dats
+      - env:
+          BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
+        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/repo-hygiene.dats test/dats/compression-opts.dats test/dats/routes-golden.dats
       # On the default branch, cache this commit's route list keyed by its SHA.
-      # Caches created on the default branch are restorable from every branch,
-      # so feature-branch route-diff runs reuse this instead of rebuilding base.
-      # The path MUST match route-diff's restore path: actions/cache derives the
-      # cache version from the path, so a mismatched path is a guaranteed miss
-      # even for an identical key.
       - if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         shell: bash
         run: |
@@ -50,7 +52,6 @@ jobs:
           chmod +x build/buildhost
           ./build/buildhost routes > base-routes.txt
           # Never cache an empty list: every later PR would restore it and
-          # report its whole route table as added.
           if [ ! -s base-routes.txt ]; then
             echo "::error::route render produced no output; refusing to cache an empty base list"
             exit 1
@@ -64,9 +65,6 @@ jobs:
   route-diff:
     needs: build
     # Only meaningful on a branch that has an open PR to comment on. The default
-    # branch has no PR to diff against, and its own route list is already cached
-    # by the build job above -- running here would just rebuild the base from
-    # source and throw the result away. Skip it.
     if: github.ref != format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     permissions:
@@ -74,16 +72,11 @@ jobs:
       pull-requests: write
     steps:
       # PR routes: from the go-build hand-off the build job already produced for
-      # this ref. go-toolchain@v1 saves build/ via cache-upload (run-keyed cache
-      # entry) instead of a GHA artifact, so it must be restored with the
-      # matching cache-download action, not actions/download-artifact.
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
       # render-routes: run the binary and REFUSE an empty or failed result.
-      # A silently empty render reports every route as added, which is worse
-      # than no check at all -- a reviewer who is misled once stops reading it.
       - name: Define the route renderer
         shell: bash
         run: |
@@ -110,40 +103,8 @@ jobs:
           set -euo pipefail
           chmod +x build/buildhost
           "$RUNNER_TEMP/render-routes.sh" ./build/buildhost pr-routes.txt "PR"
-          # The shipped binary must enumerate its own REST API. Zero here means
-          # routes regressed to registering inside auth.OnReady(), which fires
-          # only at server boot -- invisible to this check, to docs/routes.txt
-          # and to `buildhost routes`. See internal/routescheck.
-          if ! grep -q '^/api/v1' pr-routes.txt; then
-            echo "::error::PR route render contains no /api/v1 routes."
-            echo "::error::Routes must register in init(), never inside auth.OnReady()."
-            exit 1
-          fi
           echo "routes=$(base64 -w0 pr-routes.txt)" >> "$GITHUB_OUTPUT"
-      # The committed route table is what makes a route change reviewable: this
-      # repo has no central router file, so without it an added, removed or
-      # duplicated endpoint leaves nothing route-shaped in Files Changed. The
-      # Go test in internal/routescheck already fails on drift; this step
-      # re-checks the golden against the REAL BINARY's output, so the file can
-      # never describe routes the shipped program does not serve.
-      - name: docs/routes.txt matches the built binary
-        uses: actions/checkout@v4
-        with:
-          path: src
-      - shell: bash
-        run: |
-          set -euo pipefail
-          if ! diff -u --label "docs/routes.txt (committed)" --label "buildhost routes (built binary)" \
-              src/docs/routes.txt pr-routes.txt; then
-            echo
-            echo "docs/routes.txt is stale. Regenerate it and commit the result:"
-            echo "    go-toolchain && ./build/buildhost routes > docs/routes.txt"
-            echo "  (or, without a built binary:  UPDATE_ROUTES_GOLDEN=1 go-toolchain)"
-            exit 1
-          fi
       # Base routes: prefer the route list the default-branch build cached
-      # (keyed by the base commit SHA). Build base from source only on a cold
-      # cache -- without a real baseline the diff reports every route as added.
       - id: base
         env:
           GH_TOKEN: ${{ github.token }}
@@ -159,25 +120,16 @@ jobs:
           ref: ${{ steps.base.outputs.sha }}
           path: base
       # Base may post-date the CA-bundle change and embed it; fetch before building it.
-      # Inlined (not the script) so it works even on base commits that predate the script.
       - if: steps.cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p base/internal/repackage/cacerts
           curl -fsSL --retry 3 --proto '=https' --tlsv1.2 -o base/internal/repackage/cacerts/ca-certificates.crt https://curl.se/ca/cacert.pem
       # Build base with plain Go, NOT the go-toolchain action: go-toolchain@v1
-      # unconditionally hands off build/ under the run-unique go-build cache key,
-      # and a second same-run invocation (the build job already ran one) collides
-      # on that key and fails. Mirrors homebrew-tap-e2e's setup-go + generate +
-      # build recipe -- route-diff only needs a runnable base binary.
       - if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/setup-go@v5
         with:
           go-version-file: base/go.mod
       # The admin dashboard's JS is a generate directive too (internal/admin),
-      # and it is embedded by name, so a base that has it fails to compile
-      # without this. Guarded on the script's existence: older base commits
-      # shipped the JS committed and have no script to run -- same
-      # works-on-older-base reasoning as the inlined cacerts fetch above.
       - if: steps.cache.outputs.cache-hit != 'true'
         working-directory: base
         run: |
@@ -257,66 +209,45 @@ jobs:
               }
 
   # The publish composites all import .github/actions/lib/storage-record, and
-  # nothing else can reach it: upload-artifact-action-e2e publishes to
-  # http://localhost:18080, where the unreachable-registry skip returns before
-  # a record is posted. Untested, a mistake there fails publishing for every
-  # repo in the org at once.
   storage-record:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: wow-look-at-my/dats@master
+      - uses: ./.github/actions/buildhost-download
         with:
-          args: --no-sandbox test test/dats/action-libs.dats
+          project: dats
+      - run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/action-libs.dats
 
   container-healthcheck:
     # Only meaningful if the build succeeded and saved the go-build hand-off. Without
-    # this, an always()-style condition makes it run on build failure and then fail on
-    # the missing hand-off (a misleading second red X for one real failure).
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
       - run: chmod +x build/buildhost
       # Build the image (and pull its base layers) in a separate, untimed step
-      # so the --wait-timeout below budgets only container startup, not the
-      # image build/pull. up then reuses this image instead of rebuilding.
       - run: docker compose -f docker-compose.ci.yml build
       - run: docker compose -f docker-compose.ci.yml up -d --wait --wait-timeout 30
       # Stripping is documented to happen at download time, and it silently did
-      # NOT happen in the shipped image for weeks: it shelled out to
-      # strip(1)/objcopy(1), which the distroless image does not ship, so every
-      # download went out unstripped and fmt=symbols could not work. Unit tests
-      # could not see it -- the runner has binutils, the container does not --
-      # so the guarantee has to be asserted against the real image.
-      # An ELF carrying debug info for the stripper to work on. The shipped
-      # binary is an APE, which is not an ELF, so the fixture is a small
-      # program of this repo's own.
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - name: Build the strip fixture
         run: go build -o "$RUNNER_TEMP/strip-fixture" ./test/e2e/testdata/netcheck
-      - uses: wow-look-at-my/dats@master
-        env:
+      - env:
           STRIP_FIXTURE: ${{ runner.temp }}/strip-fixture
-        with:
-          args: --no-sandbox test test/dats/image-strips.dats
+        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/image-strips.dats
       - run: docker compose -f docker-compose.ci.yml logs
         if: failure()
 
   # Proves the DOCUMENTED Homebrew flows -- public and private -- work against a
-  # real spawned buildhost with the real brew executable. The brew commands are
-  # not written here: scripts/brew-doc-flows.sh extracts them verbatim from
-  # README.md (and the suite asserts the served llms.txt agrees), substituting
-  # only the server host. Changing what CI runs therefore REQUIRES changing the
-  # user-facing docs -- a "fix CI only" change goes red. (That drift already
-  # happened once: Homebrew 6.0 broke `brew install` and the fix landed in CI
-  # only, while README/llms.txt kept documenting a flow that failed for users.)
   homebrew-tap-e2e:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -331,20 +262,16 @@ jobs:
       # is canonical: "*" is the explicit opt-in to serving every Host.
       BUILDHOST_PRIMARY_DOMAIN: "*"
       # CI-speed hygiene only -- these do not alter whether the documented flow
-      # works (they skip brew's self-update and post-install cleanup). Every
-      # flow-affecting knob (trust, the Linux sandbox) must come from the docs.
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
       - if: runner.os == 'Linux'
         uses: Homebrew/actions/setup-homebrew@main
       # Homebrew 6's Linux build sandbox (bubblewrap) needs unprivileged user
-      # namespaces, which Ubuntu 24.04 runners restrict via AppArmor. Lift the
-      # restriction so CI runs the sandbox the way a real Linux user machine
-      # does -- the docs document this exact sysctl for hardened hosts. The
-      # HOMEBREW_NO_SANDBOX_LINUX opt-out the docs reserve for containers
-      # without user namespaces is deliberately NOT set here.
       - if: runner.os == 'Linux'
         name: Host prep for Homebrew's build sandbox (bubblewrap + user namespaces)
         run: |
@@ -394,17 +321,6 @@ jobs:
             *) echo "unsupported arch"; exit 1 ;;
           esac
           # Publish the REAL go-toolchain binary from the live registry, not a
-          # stand-in. What mode Homebrew leaves an installed file in depends on
-          # that file's TYPE (extend/os/{linux,mac}/cleaner.rb chmods a shebang
-          # script / ELF / Mach-O 0555 and everything else 0444), so a fixture
-          # that is not shaped like the real artifact tests a different code
-          # path than the one users hit. The linux artifact is a Cosmopolitan
-          # APE -- exactly the shape that used to install 0444 and could not be
-          # executed at all -- while a `#!/bin/sh` fixture is always classified
-          # executable, which is how that bug shipped while this job stayed
-          # green. The download is public (no token); the live registry is
-          # already a hard dependency of this workflow (the go-toolchain action
-          # in `build` pulls from it), so this adds no new failure mode.
           curl -fsSL --compressed \
             "https://dl.pazer.build/go-toolchain?branch=v1&os=$os&arch=$arch" \
             -o "$RUNNER_TEMP/go-toolchain"
@@ -430,16 +346,6 @@ jobs:
             > "$RUNNER_TEMP/buildhost-release.toml"
           ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release.toml"
       # go-toolchain ships an APE only on Linux; its darwin artifacts are plain
-      # Mach-O binaries, which Homebrew's Cleaner recognizes and chmods 0555 --
-      # so the macOS leg of the real-binary install cannot exercise the mode
-      # invariant at all. buildhost serves whatever publishers upload, and a
-      # Cosmopolitan binary is the same file on every OS, so this synthetic
-      # fixture keeps that invariant covered on BOTH runners (and keeps it
-      # covered if go-toolchain ever changes format). It is deliberately
-      # APE-SHAPED: no `#!` line and neither ELF nor Mach-O, so brew's Cleaner
-      # does not recognize it, and it writes to ITSELF before printing its
-      # marker -- standing in for the self-assimilation that makes a real APE
-      # need the write bit too, so a 0555 install fails here as well.
       - name: Publish ape-fixture artifact (public, APE-shaped)
         shell: bash
         run: |
@@ -479,8 +385,6 @@ jobs:
             > "$RUNNER_TEMP/buildhost-release-ape.toml"
           ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-ape.toml"
       # Slash-namespaced AND private -- the exact shape of the live project this
-      # e2e exists for. The folded formula name (myrepo-myapp) and the
-      # basename-install rule are covered end to end.
       - name: Publish myrepo/myapp artifact (private, slash-namespaced)
         shell: bash
         run: |
@@ -518,9 +422,6 @@ jobs:
             > "$RUNNER_TEMP/buildhost-release-private.toml"
           ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-private.toml"
       # Hostile-name fixtures for the formula-codegen guarantees the e2e
-      # asserts: a digit-leading name must be EXCLUDED from brew entirely
-      # (`class 7zip < Formula` is invalid Ruby and unloadable by design), and
-      # a dotted name must fold into a valid, loadable class (DottedApp).
       - name: Publish hostile-name fixtures (public)
         shell: bash
         run: |
@@ -559,28 +460,18 @@ jobs:
             ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-hostile.toml"
           done
       # Each suite runs the documented flow in its own setup and then asserts
-      # what it produced. --no-sandbox because brew's prefix is outside any
-      # sandbox and the point is what brew did to a real file.
-      - uses: wow-look-at-my/dats@master
-        env:
+      - env:
           BREW_HOST: brew.localhost:18080
-        with:
-          args: --no-sandbox test test/dats/homebrew-public.dats
+        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/homebrew-public.dats
       # Docs: the authenticated tap replaces the public tap under the same name
-      # ("remove it first with brew untap --force" -- plain untap refuses while
-      # formulae installed from the tap exist).
       - name: Untap the public tap before the private flow (per docs)
         run: brew untap --force pazer/build
-      - uses: wow-look-at-my/dats@master
-        env:
+      - env:
           BREW_HOST: brew.localhost:18080
-        with:
-          args: --no-sandbox test test/dats/homebrew-private.dats
-      - uses: wow-look-at-my/dats@master
-        env:
+        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/homebrew-private.dats
+      - env:
           BREW_HOST: brew.localhost:18080
-        with:
-          args: --no-sandbox test test/dats/homebrew-anon-leak.dats
+        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/homebrew-anon-leak.dats
       - name: Dump buildhost log
         if: failure()
         shell: bash
@@ -599,17 +490,17 @@ jobs:
           fi
 
   # Prove an image buildhost SYNTHESIZES from a plain binary is a valid, loadable
-  # container image whose baked-in CA bundle works for real outbound HTTPS. Uses crane
-  # (go-containerregistry): it pulls/decompresses buildhost's zstd layers, which the
-  # default GitHub Docker (no containerd image store) may not.
   synthesized-image-e2e:
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
       - run: chmod +x build/buildhost
       - uses: actions/setup-go@v5
@@ -625,8 +516,6 @@ jobs:
       - name: Map the OCI host to the local server
         run: echo "127.0.0.1 oci.buildhost.test" | sudo tee -a /etc/hosts
       # buildhost's layers are zstd, which Docker reads only through the
-      # containerd image store. The registry is plain HTTP here, so it also
-      # has to be an allowed insecure one.
       - name: Turn on the containerd image store
         run: |
           set -euo pipefail
@@ -639,66 +528,50 @@ jobs:
             | sudo tee /etc/docker/daemon.json
           sudo systemctl restart docker
           for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
-      - uses: wow-look-at-my/dats@master
-        env:
+      - env:
           BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
           NETCHECK_BIN: ${{ runner.temp }}/netcheck
-        with:
-          args: --no-sandbox test test/dats/synthesized-image.dats
+        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/synthesized-image.dats
 
   # Proves a hosted site stays loadable CROSS-ORIGIN, through its redirects, in
-  # a REAL BROWSER. Guards the defect that broke every cross-origin consumer at
-  # once: the legacy /{project}/branch/{branch}/ URL became a 302 to the
-  # canonical @{branch} form, and the redirect went out without the site CORS
-  # headers. Browsers enforce CORS on every hop, so the load died at the 302 and
-  # never reached the 200 that had the header.
-  #
-  # Unit tests could not catch it -- they cover the handlers that serve bytes --
-  # and neither could curl, which follows redirects without enforcing CORS at
-  # all and reported a clean 200 for the URL that was failing in production.
-  # That is why this job launches an actual browser and imports an actual module
-  # across origins; the header assertions alongside it only name which hop broke.
   sites-cors-e2e:
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
       - run: chmod +x build/buildhost
       # playwright-core drives the runner's preinstalled Chrome; it is a
-      # package, not a third-party action, so the org's action allowlist is not
-      # involved. The script FAILS if no browser can be launched -- a skip here
-      # would turn the one check that can see this class of bug into decoration.
       - name: Install browser driver
         run: npm install --no-save --no-audit --no-fund playwright-core@1.62.1
       - name: A hosted site must load cross-origin in a real browser
-        uses: wow-look-at-my/dats@master
         env:
           BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
-        with:
-          args: --no-sandbox test test/dats/sites-cors.dats
+        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/sites-cors.dats
       # The preview publishes this same static dir with no backend behind it, so
-      # it draws from the demo dataset. Building it here keeps the crawl on the
-      # sources rather than on whatever a previous job left.
       - name: Build the admin frontend
         run: ./scripts/build-admin-frontend.sh
       - name: Every link on the preview dashboard must reach a page
         timeout-minutes: 10
-        uses: wow-look-at-my/dats@master
-        with:
-          args: --no-sandbox test test/dats/admin-demo-links.dats
+        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/admin-demo-links.dats
 
   apt-install-e2e:
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
       - run: chmod +x build/buildhost
       - uses: actions/setup-go@v5
@@ -709,61 +582,27 @@ jobs:
       # The apt repository and the package download redirect are host-routed.
       - name: Map the apt and static hosts to the local server
         run: printf '127.0.0.1 apt.localhost\n127.0.0.1 static.localhost\n' | sudo tee -a /etc/hosts
-      - uses: wow-look-at-my/dats@master
-        env:
+      - env:
           BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
           ARTIFACT_BIN: ${{ runner.temp }}/buildhost-apt-e2e
-        with:
-          args: --no-sandbox test test/dats/apt-install.dats
+        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/apt-install.dats
 
   # Proves the buildhost-upload-artifact composite action's BOTH upload paths
-  # against a real spawned buildhost. The server's advertised direct-upload
-  # limit is shrunk to 1 MiB so the chunked path runs with CI-sized files: a
-  # 64 KiB file must go as one classic direct PUT (no session endpoints
-  # touched), a ~3 MiB file must be assembled from 1 MiB chunks through an
-  # upload session (create + 4 offset PATCHes + finalize), and the bytes the
-  # server stored must match the local file exactly. The create-release and
-  # publish-release composites run as part of the flow, so the whole
-  # create -> upload -> publish action chain is covered end to end.
-  #
-  # The buildhost-publish-site composite gets the same two-path treatment on
-  # the same server: a tiny site must publish as one direct PUT (no new
-  # session), and a site whose archive exceeds the direct limit must be
-  # assembled from 1 MiB chunks through an upload session and finalized on the
-  # sites endpoint by reference -- the flow that lets a site publish bigger
-  # than the fronting proxy's request-body cap (Cloudflare edge-413s single
-  # bodies over ~100 MB before the origin ever sees them) succeed on the first
-  # attempt. The served files must match the source bytes.
-  #
-  # The same spawned server also guards single-mode `buildhost publish` (no
-  # --manifest) actually PUBLISHING the release it creates. The CLI package
-  # deliberately has no unit tests (see internal/uploadclient's doc comment),
-  # so like the --manifest flavor in homebrew-tap-e2e, the real binary is
-  # exercised here: after a single-mode publish, the project's apex `latest`
-  # must resolve to a published release -- it used to stay unpublished
-  # forever (invisible to latest/branch/brew/apt/npm/web, eventually GC'd by
-  # retention as an abandoned upload, with no CLI way to publish it later).
-  # One APE, published once, must download identically for every platform it
-  # covers -- through the real binary, over real HTTP, from the real dl
-  # redirect. A unit test cannot catch a redirect that resolves per platform
-  # instead of per artifact, which is exactly how one file grows N URLs again.
-  # The assertions are the suite's; this job builds nothing and asserts
-  # nothing, it installs dats and runs it.
   multi-platform-ape-e2e:
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
       - run: chmod +x build/buildhost
       # --no-sandbox: the suite drives the server with curl and jq, which the
-      # runner has and the docker sandbox image does not.
-      - uses: wow-look-at-my/dats@master
-        with:
-          args: --no-sandbox test test/dats/multi-platform-ape.dats
+      - run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/multi-platform-ape.dats
 
   upload-artifact-action-e2e:
     needs: build
@@ -776,9 +615,12 @@ jobs:
       BUILDHOST_PRIMARY_DOMAIN: "*"
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
       - run: chmod +x build/buildhost
       - name: Start local buildhost (1 MiB direct-upload limit)
@@ -833,11 +675,9 @@ jobs:
           arch: amd64
           path: ${{ runner.temp }}/small.bin
           filename: small.bin
-      - uses: wow-look-at-my/dats@master
-        env:
+      - env:
           LOG: ${{ runner.temp }}/buildhost.log
-        with:
-          args: --no-sandbox test test/dats/upload-direct.dats
+        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/upload-direct.dats
       - name: Upload big file (chunked session path, 1 MiB chunks)
         id: big
         uses: ./.github/actions/buildhost-upload-artifact
@@ -859,10 +699,7 @@ jobs:
           project: upload-e2e
           version: ${{ steps.release.outputs.version }}
       # What the two upload paths did to the server -- one session for the
-      # chunked path, none for the direct one, and bytes that survive the
-      # round trip. The assertions are the suite's.
-      - uses: wow-look-at-my/dats@master
-        env:
+      - env:
           LOG: ${{ runner.temp }}/buildhost.log
           SMALL_FILE: ${{ runner.temp }}/small.bin
           BIG_FILE: ${{ runner.temp }}/big.bin
@@ -871,8 +708,7 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
           BASE: http://localhost:18080
           STATIC: http://static.localhost:18080
-        with:
-          args: --no-sandbox test test/dats/upload-artifact.dats
+        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/upload-artifact.dats
       - name: Create site fixtures (one tiny, one over the direct limit)
         shell: bash
         run: |
@@ -881,7 +717,6 @@ jobs:
           printf '<h1>direct site</h1>' > "$RUNNER_TEMP/small-site/index.html"
           printf '<h1>chunked site</h1>' > "$RUNNER_TEMP/big-site/index.html"
           # Incompressible payload so the tar.gz stays ~3 MB, well over the
-          # server's 1 MiB direct limit -> the action must pick the session.
           head -c 3000000 /dev/urandom > "$RUNNER_TEMP/big-site/blob.bin"
       - name: Publish small site (direct PUT path)
         uses: ./.github/actions/buildhost-publish-site
@@ -892,11 +727,9 @@ jobs:
           branch: direct
           source_dir: ${{ runner.temp }}/small-site
           chunk_size: "1048576"
-      - uses: wow-look-at-my/dats@master
-        env:
+      - env:
           LOG: ${{ runner.temp }}/buildhost.log
-        with:
-          args: --no-sandbox test test/dats/site-direct.dats
+        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/site-direct.dats
       - name: Publish big site (chunked session path, 1 MiB chunks)
         id: publish-big-site
         uses: ./.github/actions/buildhost-publish-site
@@ -908,9 +741,7 @@ jobs:
           source_dir: ${{ runner.temp }}/big-site
           chunk_size: "1048576"
       # What the site publishes and the CLI did to the same server. The
-      # assertions are the suite's.
-      - uses: wow-look-at-my/dats@master
-        env:
+      - env:
           LOG: ${{ runner.temp }}/buildhost.log
           SITES: http://sites.localhost:18080
           BASE: http://localhost:18080
@@ -918,8 +749,7 @@ jobs:
           BIN: ${{ github.workspace }}/build/buildhost
           BIG_SITE_BLOB: ${{ runner.temp }}/big-site/blob.bin
           SITE_URL: ${{ steps.publish-big-site.outputs.site_url }}
-        with:
-          args: --no-sandbox test test/dats/site-publish.dats
+        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/site-publish.dats
       - name: Dump buildhost log
         if: failure()
         shell: bash

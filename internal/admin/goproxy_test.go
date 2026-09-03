@@ -9,12 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A server whose goproxy backend is not running must say so rather than 500 or
-// render an empty dashboard that looks like a proxy with nothing cached. The
-// admin package does not import the backend's registration, so this is the
-// state under test here; the populated shape is covered in internal/goproxy's
-// own Snapshot tests.
 func TestAPIGoproxy_NotRunning(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodGet, "/api/goproxy", nil)
@@ -27,6 +23,7 @@ func TestAPIGoproxy_NotRunning(t *testing.T) {
 }
 
 func TestAPIGoproxyRecheck_NotRunning(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodPost, "/api/goproxy/recheck", nil)

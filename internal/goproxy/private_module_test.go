@@ -15,9 +15,6 @@ import (
 
 const privateOrg = "github.com/wow-look-at-my"
 
-// serveProxy drives one request through the real handler. The auth gate is
-// satisfied with a read token in the request context, which is what the global
-// Authenticate middleware puts there in production.
 func serveProxy(t *testing.T, s *Service, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -27,11 +24,8 @@ func serveProxy(t *testing.T, s *Service, path string) *httptest.ResponseRecorde
 	return rec
 }
 
-// The regression test the whole change exists for: a PRIVATE first-party module
-// must actually resolve. Every pre-existing test in the old proxy used a public
-// fixture, which is precisely why a proxy serving no private module at all
-// looked healthy.
 func TestPrivateModuleResolves(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	seedModule(fake, privateOrg+"/tml", "", "v1.2.0", "aaaa111122223333444455556666777788889999",
@@ -72,9 +66,8 @@ func TestPrivateModuleResolves(t *testing.T) {
 }
 
 // The reported defect, as a test. With no credential the proxy must NOT answer
-// 404: at the protocol level that means "this module does not exist", and it is
-// what sent people looking for a typo in go.mod instead of at the credential.
 func TestPrivateModuleWithoutCredentialIsForbiddenNotNotFound(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	seedModule(fake, privateOrg+"/tml", "", "v1.2.0", "aaaa111122223333444455556666777788889999",
@@ -105,8 +98,8 @@ func TestPrivateModuleWithoutCredentialIsForbiddenNotNotFound(t *testing.T) {
 }
 
 // A public module that genuinely is not there still 404s -- the fix must not
-// turn every miss into a 403.
 func TestGenuinelyMissingModuleStill404s(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	seedModule(fake, privateOrg+"/tml", "", "v1.2.0", "aaaa111122223333444455556666777788889999",
 		"module "+privateOrg+"/tml\n\ngo 1.25\n")
@@ -118,10 +111,8 @@ func TestGenuinelyMissingModuleStill404s(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "module not found")
 }
 
-// GitHub answers a rate limit with 403, which is not an authorization problem:
-// it clears on its own, and reporting it as one sends the reader after a
-// credential that was never at fault.
 func TestRateLimitIsUpstreamNotUnauthorized(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Status = http.StatusForbidden
 	fake.RateLimited = true
@@ -135,6 +126,7 @@ func TestRateLimitIsUpstreamNotUnauthorized(t *testing.T) {
 }
 
 func TestUpstreamServerErrorIsBadGateway(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Status = http.StatusInternalServerError
 	fake.Body = `{"message":"server error"}`
@@ -146,9 +138,8 @@ func TestUpstreamServerErrorIsBadGateway(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "upstream fetch failed")
 }
 
-// A rejected credential (401/403 proper) is an authorization failure, and it
-// must say the credential was rejected rather than that nothing was presented.
 func TestRejectedCredentialSaysSo(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Status = http.StatusUnauthorized
 	fake.Body = `{"message":"Bad credentials"}`
@@ -160,10 +151,6 @@ func TestRejectedCredentialSaysSo(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "credential was rejected")
 }
 
-// The proxy serves private source, so an unauthenticated caller gets 401 before
-// anything reaches upstream -- including for a public module, so that "is this
-// module private?" is not an oracle anybody can query anonymously.
-// serveAnon drives the proxy with no credential at all.
 func serveAnon(t *testing.T, s *Service, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()
@@ -171,9 +158,8 @@ func serveAnon(t *testing.T, s *Service, path string) *httptest.ResponseRecorder
 	return rec
 }
 
-// A module the caller may not see is 404, never 401 or 403: either of those
-// confirms it EXISTS, which is the fact a private module is keeping.
 func TestInaccessibleModuleIs404NotUnauthorized(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	seedModule(fake, privateOrg+"/tml", "", "v1.0.0", "aaaa111122223333444455556666777788889999",
@@ -190,10 +176,8 @@ func TestInaccessibleModuleIs404NotUnauthorized(t *testing.T) {
 	assert.Zero(t, fake.calls, "an unauthorized caller must not reach upstream")
 }
 
-// The property that makes the 404 worth anything: a private module that EXISTS
-// and one that does not must be answered identically, or a prober maps the org's
-// private repositories by diffing responses.
 func TestExistingAndMissingPrivateModulesAreIndistinguishable(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	seedModule(fake, privateOrg+"/tml", "", "v1.0.0", "aaaa111122223333444455556666777788889999",
@@ -215,6 +199,7 @@ func TestExistingAndMissingPrivateModulesAreIndistinguishable(t *testing.T) {
 // a project, so honouring it here would widen a least-privilege credential to
 // the org's whole private source tree.
 func TestProjectScopedTokenCannotReadPrivateModules(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	s := newTestService(t, fake, "tok", []string{privateOrg})
@@ -232,6 +217,7 @@ func TestProjectScopedTokenCannotReadPrivateModules(t *testing.T) {
 // The counterpart: gating PUBLIC modules would only stop GOPROXY=<proxy>,direct
 // working for anyone without a buildhost token, and there is nothing to hide.
 func TestPublicModuleNeedsNoCredential(t *testing.T) {
+	t.Serial()
 	mirror := fakeMirror(t, map[string]string{"golang.org/x/mod/@v/list": "v0.40.0\n"})
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
@@ -243,11 +229,8 @@ func TestPublicModuleNeedsNoCredential(t *testing.T) {
 	assert.Equal(t, "v0.40.0\n", rec.Body.String())
 }
 
-// The distinction the whole error taxonomy rests on, in one test: the caller's
-// credential missing is a 404, the PROXY's credential failing is a 403. Losing
-// the second one is the original bug -- nobody can fix a proxy credential they
-// cannot see, and 404 tells them to go hunt a typo in go.mod instead.
 func TestProxyCredentialFailureStays403WhileCallerFailureIs404(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	s := newTestService(t, fake, "", []string{privateOrg}) // proxy has NO credential
@@ -264,6 +247,7 @@ func TestProxyCredentialFailureStays403WhileCallerFailureIs404(t *testing.T) {
 // A failing module records why on its own row, so the dashboard shows a
 // credential problem instead of it living only in a log line.
 func TestFailureIsRecordedAgainstTheModule(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	s := newTestService(t, fake, "", []string{privateOrg})
@@ -279,8 +263,8 @@ func TestFailureIsRecordedAgainstTheModule(t *testing.T) {
 	assert.Contains(t, mods[0].LastError, "NO GitHub credential")
 }
 
-// A second request for a version already cached must not go upstream again.
 func TestSecondRequestIsACacheHit(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	seedModule(fake, privateOrg+"/tml", "", "v1.2.0", "aaaa111122223333444455556666777788889999",
 		"module "+privateOrg+"/tml\n\ngo 1.25\n")
@@ -300,6 +284,7 @@ func TestSecondRequestIsACacheHit(t *testing.T) {
 // A module in a repo subdirectory tags its versions "<dir>/vX.Y.Z". This is a
 // real shape in the org, and getting it wrong makes the module unresolvable.
 func TestNestedModuleUsesTagPrefix(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	modPath := privateOrg + "/agentic-loop/go"
 	seedModule(fake, modPath, "go", "go/v0.3.0", "bbbb111122223333444455556666777788889999",
@@ -318,6 +303,7 @@ func TestNestedModuleUsesTagPrefix(t *testing.T) {
 // -- @latest must resolve to a pseudo-version of the default branch head rather
 // than reporting that there is nothing there.
 func TestLatestFallsBackToPseudoVersion(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	modPath := privateOrg + "/untagged"
 	fake.Files["HEAD:go.mod"] = "module " + modPath + "\n"
@@ -334,6 +320,7 @@ func TestLatestFallsBackToPseudoVersion(t *testing.T) {
 // A go.mod that declares a different module path means this repo directory is
 // not that module.
 func TestMismatchedGoModIsNotFound(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	modPath := privateOrg + "/tml"
 	seedModule(fake, modPath, "", "v1.0.0", "aaaa111122223333444455556666777788889999",
@@ -346,10 +333,8 @@ func TestMismatchedGoModIsNotFound(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "declares module github.com/somebody/else")
 }
 
-// Pseudo-versions are how this org pins its untagged first-party modules (the
-// go-toolchain branch pins produce them), so resolving one by the commit it
-// embeds is a primary path, not an edge case.
 func TestPseudoVersionResolvesByEmbeddedRevision(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	modPath := privateOrg + "/router"
 	const sha = "302008ab124800000000000000000000000000ff"
@@ -375,6 +360,7 @@ func TestPseudoVersionResolvesByEmbeddedRevision(t *testing.T) {
 // missing module -- the caller has to fix their request, not go looking for a
 // version that was never there.
 func TestNonSemverVersionIsABadRequest(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
 
@@ -387,6 +373,7 @@ func TestNonSemverVersionIsABadRequest(t *testing.T) {
 // so it addresses no commit and is resolved as an ordinary tag -- which is
 // absent, and correctly reported as such.
 func TestTimestampPrereleaseIsResolvedAsATag(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Files["HEAD:go.mod"] = "module " + privateOrg + "/router\n"
 	s := newTestService(t, fake, "tok", []string{privateOrg})

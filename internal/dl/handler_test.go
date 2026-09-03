@@ -83,9 +83,6 @@ func seedArtifact(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID i
 	return a
 }
 
-// seedMultiPlatformArtifact stores one blob and registers it as a single
-// artifact covering every platform in the set -- the APE shape, seeded the way
-// the /artifacts/ape endpoint writes it.
 func seedMultiPlatformArtifact(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, content string, platforms ...db.Platform) *db.Artifact {
 	t.Helper()
 	key, size, err := store.Put(context.Background(), strings.NewReader(content))
@@ -112,8 +109,6 @@ func makeRequest(project string, params url.Values) *http.Request {
 	return req
 }
 
-// requireRedirect asserts 302 or 301 with a Location containing "/file?" and returns
-// the parsed query params from the redirect URL for further assertions.
 func requireRedirect(t *testing.T, rec *httptest.ResponseRecorder) url.Values {
 	t.Helper()
 	code := rec.Code
@@ -128,6 +123,7 @@ func requireRedirect(t *testing.T, rec *httptest.ResponseRecorder) url.Values {
 }
 
 func TestDownload_Success_RawBinary(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -147,6 +143,7 @@ func TestDownload_Success_RawBinary(t *testing.T) {
 }
 
 func TestDownload_Success_RawFallsBackWhenStripFails(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -164,6 +161,7 @@ func TestDownload_Success_RawFallsBackWhenStripFails(t *testing.T) {
 }
 
 func TestDownload_DebugReturns404WhenStripFails(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -181,6 +179,7 @@ func TestDownload_DebugReturns404WhenStripFails(t *testing.T) {
 }
 
 func TestDownload_DebugFlag_NoDebugAvailable(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -198,6 +197,7 @@ func TestDownload_DebugFlag_NoDebugAvailable(t *testing.T) {
 }
 
 func TestDownload_Success_TarGzFormat(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -217,6 +217,7 @@ func TestDownload_Success_TarGzFormat(t *testing.T) {
 }
 
 func TestDownload_FormatNotAvailable(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)

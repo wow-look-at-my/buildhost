@@ -27,7 +27,6 @@ import (
 // before. A request that carries a valid credential is served IN PLACE
 // instead: clients drop credentials when following a cross-host redirect (git
 // re-roots all subsequent requests on the redirect target), so redirecting an
-// authenticated tap request would silently downgrade it to the public tap.
 func (h *Handler) RedirectTap(w http.ResponseWriter, r *http.Request) {
 	if auth.TokenFrom(r.Context()) != nil {
 		h.serveTapFile(w, r)
@@ -43,12 +42,6 @@ func (h *Handler) RedirectTap(w http.ResponseWriter, r *http.Request) {
 }
 
 // ServePrivateTap handles brew.{domain}/private/tap.git -- the authenticated
-// tap. An anonymous request gets a 401 Basic challenge rather than public
-// content: git does NOT send URL-embedded credentials preemptively (it waits
-// for a challenge), so answering 200 here would make a credentialed
-// `brew tap x:TOKEN@.../private/tap.git` silently ingest the public-only tap
-// and the user would never learn their token was dropped. The challenge is
-// what makes the standard creds-in-URL private-tap pattern work at all.
 func (h *Handler) ServePrivateTap(w http.ResponseWriter, r *http.Request) {
 	if auth.TokenFrom(r.Context()) == nil {
 		w.Header().Set("Www-Authenticate", `Basic realm="buildhost"`)
@@ -59,12 +52,6 @@ func (h *Handler) ServePrivateTap(w http.ResponseWriter, r *http.Request) {
 	h.serveTapFile(w, r)
 }
 
-// ServeTap serves one file of the dumb-HTTP git tap on the git subdomain from
-// the scope's persistent lineage store (refreshed at most once per tapCacheTTL,
-// see tapcache.go/taphistory.go) by memory-mapping it -- never buffering the
-// file on the heap and never rebuilding the whole tap per object request. The
-// store is append-only with fast-forward-only refs, so a publish landing
-// mid-`brew update` can never orphan the refs a client already fetched.
 func (h *Handler) ServeTap(w http.ResponseWriter, r *http.Request) {
 	h.serveTapFile(w, r)
 }
@@ -110,8 +97,6 @@ func (h *Handler) serveTapFile(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	}
 
-	// A zero-length file (objects/info/packs) has nothing to map -- mmap
-	// rejects an empty region, same as the storage layer's empty-blob case.
 	if info.Size() == 0 {
 		w.Header().Set("Content-Length", "0")
 		return
@@ -130,14 +115,6 @@ func (h *Handler) serveTapFile(w http.ResponseWriter, r *http.Request) {
 }
 
 // tapScopeKey returns the snapshot-cache key component identifying the
-// request's credential. Every anonymous request shares one scope; a DB token
-// keys by its unique ID; an OIDC synthetic token (always ID -1) keys by its
-// subject-derived name plus its policy project and namespace restriction, so
-// two distinct OIDC identities can never collide onto one cached tap. Keying
-// by credential -- not by the resulting project set -- means a cache hit costs
-// no DB work and each scope keeps the "one consistent snapshot per TTL"
-// property the cache exists for (a publish mid-`brew update` must not swap
-// refs/objects out from under the client).
 func tapScopeKey(ctx context.Context) string {
 	t := auth.TokenFrom(ctx)
 	if t == nil {
@@ -153,10 +130,6 @@ func tapScopeKey(ctx context.Context) string {
 // tapVisibleProjects computes the projects the request may see in a tap: every
 // public project, plus -- when the request carries a credential -- the private
 // projects that credential can read. The visibility rule is
-// auth.TokenCanReadProject, the same one requireProject applies to
-// single-project reads, so a private project name can never leak into a tap
-// its token could not read directly. Evaluated once per snapshot BUILD; cached
-// snapshots are keyed by credential (tapScopeKey), never shared across scopes.
 func (h *Handler) tapVisibleProjects(r *http.Request) ([]db.Project, error) {
 	projects, err := h.DB.ListProjects(r.Context())
 	if err != nil {
@@ -172,8 +145,6 @@ func (h *Handler) tapVisibleProjects(r *http.Request) ([]db.Project, error) {
 }
 
 // buildTapFiles assembles the tap's working-tree contents for the request's
-// scope: one formula per visible project (folded filename) plus the private
-// download strategy library.
 func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 	visible, err := h.tapVisibleProjects(r)
 	if err != nil {
@@ -181,8 +152,6 @@ func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 	}
 	files := map[string][]byte{
 		// Always ship the private-download strategy so the tap layout is
-		// uniform across scopes; it contains no secrets and public-only taps
-		// simply never reference it.
 		repackage.BrewPrivateStrategyPath: []byte(repackage.BrewPrivateStrategy),
 	}
 	for _, project := range visible {
@@ -214,15 +183,6 @@ func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 	return files, nil
 }
 
-// buildGitObjects materializes files (keyed by repo-relative path, at most one
-// directory deep, e.g. "Formula/x.rb" or "lib/y.rb") as loose git objects:
-// blobs, trees, and one commit. When parent is non-empty it is recorded as the
-// commit's parent, so a lineage's history only ever grows forward -- the
-// fast-forward guarantee `brew update` depends on (its updater rebases the
-// client's clone onto origin/main; an unrelated new root commit wedges every
-// client in add/add conflicts). Object contents are deterministic (zero
-// timestamps, fixed identity), so identical (files, parent) inputs produce
-// identical SHAs across builds, restarts, and redeploys.
 func buildGitObjects(files map[string][]byte, parent string) (objects map[string][]byte, commitSHA, rootTreeSHA string) {
 	objects = map[string][]byte{}
 	byDir := map[string][]gitTreeEntry{}

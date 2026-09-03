@@ -19,6 +19,7 @@ import (
 )
 
 func TestServeHTTP_Manifests_MissingRef(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -34,6 +35,7 @@ func TestServeHTTP_Manifests_MissingRef(t *testing.T) {
 }
 
 func TestServeHTTP_Manifests_NoRelease(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -49,6 +51,7 @@ func TestServeHTTP_Manifests_NoRelease(t *testing.T) {
 }
 
 func TestServeHTTP_Manifests_NoOCIPackage(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -66,7 +69,6 @@ func TestServeHTTP_Manifests_NoOCIPackage(t *testing.T) {
 	}))
 
 	// On-demand generation means a manifest is generated from the binary
-	// artifact -- no packaged_artifacts row needed.
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
 	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
 	rec := httptest.NewRecorder()
@@ -78,6 +80,7 @@ func TestServeHTTP_Manifests_NoOCIPackage(t *testing.T) {
 }
 
 func TestServeHTTP_Manifests_Success(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -102,8 +105,6 @@ func TestServeHTTP_Manifests_Success(t *testing.T) {
 	assert.Equal(t, "application/vnd.oci.image.config.v1+json", config["mediaType"])
 	assert.Contains(t, config["digest"], "sha256:")
 
-	// Two layers: the shared essentials base layer (CA certs + minimal rootfs)
-	// followed by the per-binary layer.
 	layers := manifest["layers"].([]any)
 	require.Len(t, layers, 2)
 	for _, l := range layers {
@@ -114,6 +115,7 @@ func TestServeHTTP_Manifests_Success(t *testing.T) {
 }
 
 func TestServeHTTP_Manifests_ByVersion(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -131,6 +133,7 @@ func TestServeHTTP_Manifests_ByVersion(t *testing.T) {
 }
 
 func TestServeHTTP_Manifests_ByDigest(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -158,6 +161,7 @@ func TestServeHTTP_Manifests_ByDigest(t *testing.T) {
 }
 
 func TestServeHTTP_Manifests_HEAD(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -177,6 +181,7 @@ func TestServeHTTP_Manifests_HEAD(t *testing.T) {
 }
 
 func TestServeHTTP_Blobs_MissingDigest(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -192,6 +197,7 @@ func TestServeHTTP_Blobs_MissingDigest(t *testing.T) {
 }
 
 func TestServeHTTP_Blobs_InvalidDigest(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -207,6 +213,7 @@ func TestServeHTTP_Blobs_InvalidDigest(t *testing.T) {
 }
 
 func TestServeHTTP_Blobs_NotFound(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -222,6 +229,7 @@ func TestServeHTTP_Blobs_NotFound(t *testing.T) {
 }
 
 func TestServeHTTP_Blobs_Success(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -252,6 +260,7 @@ func TestServeHTTP_Blobs_Success(t *testing.T) {
 }
 
 func TestServeHTTP_Blobs_HEAD(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -281,6 +290,7 @@ func TestServeHTTP_Blobs_HEAD(t *testing.T) {
 }
 
 func TestServeHTTP_Tags(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -309,6 +319,7 @@ func TestServeHTTP_Tags(t *testing.T) {
 }
 
 func TestServeHTTP_Tags_NoReleases(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -330,6 +341,7 @@ func TestServeHTTP_Tags_NoReleases(t *testing.T) {
 }
 
 func TestManifestDigestMatchesContent(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 

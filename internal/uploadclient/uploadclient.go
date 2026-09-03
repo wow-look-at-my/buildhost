@@ -1,13 +1,6 @@
 // Package uploadclient uploads a file to any buildhost upload endpoint,
 // transparently switching to a chunked upload session when the file is too
 // large for a single request to pass the proxy in front of the server
-// (Cloudflare's edge rejects request bodies over ~100 MB with a 413 that
-// never reaches the origin).
-//
-// The direct/chunked decision is made purely from the local file size plus
-// the limit the server advertises on GET /api/v1/server-info -- never by
-// reacting to a failed oversized attempt. The first attempt is the one that
-// succeeds.
 package uploadclient
 
 import (
@@ -25,13 +18,9 @@ import (
 
 const (
 	// DefaultChunkThreshold mirrors the server's default
-	// max_direct_upload_bytes (95 MiB, just under Cloudflare's 100 MB edge
-	// cap): files larger than this go through a chunked upload session. The
-	// live value from /api/v1/server-info wins when reachable; this is the
-	// fallback.
-	DefaultChunkThreshold int64 = 95 << 20 // 95 MiB
+	DefaultChunkThreshold int64 = 95 << 20
 	// DefaultChunkSize is how much of the file each chunk request carries.
-	DefaultChunkSize int64 = 64 << 20 // 64 MiB
+	DefaultChunkSize int64 = 64 << 20
 	// retryAttempts bounds per-chunk retries (and no-progress loops).
 	retryAttempts = 4
 )
@@ -42,23 +31,17 @@ var RetryBaseDelay = time.Second
 // Uploader uploads files to a buildhost server's upload endpoints.
 type Uploader struct {
 	// Server is the apex server URL, hosting /api/v1/uploads and
-	// /api/v1/server-info. Upload targets may be on service subdomains.
 	Server string
 	// Token authenticates every request (Bearer).
 	Token string
 	// Client defaults to http.DefaultClient.
-	Client *http.Client
-	// ChunkSize is the per-request chunk size; 0 uses DefaultChunkSize and a
-	// negative value disables chunked uploads entirely (always direct).
+	Client    *http.Client
 	ChunkSize int64
-	// Threshold overrides the direct-upload limit; 0 asks the server (falling
-	// back to DefaultChunkThreshold on any error).
 	Threshold int64
 	// Stdout receives chunk progress lines; nil discards them.
 	Stdout io.Writer
 
 	// info caches the parsed /api/v1/server-info response (fetched at most
-	// once per Uploader; the zero value on any error).
 	info        serverInfo
 	infoFetched bool
 }
@@ -112,9 +95,6 @@ func (u *Uploader) Upload(method, target string, header map[string]string, path 
 	return u.chunked(method, target, header, f, size)
 }
 
-// directLimit resolves the largest size to send as one request: the server's
-// advertised max_direct_upload_bytes when reachable, else the built-in
-// default. Never fails -- any error just means the fallback.
 func (u *Uploader) directLimit() int64 {
 	if u.Threshold > 0 {
 		return u.Threshold
@@ -127,8 +107,6 @@ func (u *Uploader) directLimit() int64 {
 }
 
 // serverInfo fetches and caches /api/v1/server-info. Any fetch or parse
-// failure yields the zero value (built-in threshold, no optional
-// capabilities) -- never an error, since every capability has a safe fallback.
 func (u *Uploader) serverInfo() serverInfo {
 	if u.infoFetched {
 		return u.info
@@ -157,21 +135,12 @@ func (u *Uploader) serverInfo() serverInfo {
 
 // SupportsUploadBySHA256 reports whether the server advertises the
 // upload_by_sha256 capability: an empty-body artifact PUT carrying
-// ?upload_sha256=<hex> registers an already-uploaded blob for another os/arch
-// slot without re-sending the bytes. Hash-reference uploads MUST be gated on
-// this -- a server without the capability silently ignores the parameter and
-// would store the empty request body as the artifact, permanently poisoning
-// the slot. Unknown/unreachable servers report false (full uploads always
-// work).
 func (u *Uploader) SupportsUploadBySHA256() bool {
 	return u.serverInfo().UploadBySHA256
 }
 
 // UploadByHash performs a hash-reference upload: an empty-body request whose
 // upload_sha256 query parameter names a blob the project already uploaded.
-// The caller must have confirmed SupportsUploadBySHA256 first, and should
-// fall back to a full Upload on any response other than 201 (e.g. a 404 for a
-// blob the server has since garbage-collected).
 func (u *Uploader) UploadByHash(method, target string, header map[string]string, sha256hex string) (*http.Response, error) {
 	parsed, err := url.Parse(target)
 	if err != nil {
@@ -288,14 +257,10 @@ func (u *Uploader) createSession() (string, error) {
 	return sess.ID, nil
 }
 
-// appendChunk PATCHes one chunk and returns the server's committed size. A
-// 409 (offset conflict / busy) and a transport error both resolve to a status
-// read, so the caller resumes from wherever the server actually is.
 func (u *Uploader) appendChunk(id string, offset int64, chunk io.Reader) (int64, error) {
 	resp, err := u.sessionRequest(http.MethodPatch, fmt.Sprintf("/api/v1/uploads/%s?offset=%d", id, offset), chunk)
 	if err != nil {
 		// The chunk may have partially landed before the connection broke; ask
-		// the server how much it has and resume from there.
 		return u.sessionSize(id)
 	}
 	defer resp.Body.Close()
@@ -388,9 +353,6 @@ func (u *Uploader) sessionRequest(method, path string, body io.Reader) (*http.Re
 	return u.client().Do(req)
 }
 
-// FileSHA256 returns the hex SHA-256 of the file at path -- the value
-// UploadByHash sends, computed the same way the server keys its
-// content-addressed storage.
 func FileSHA256(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {

@@ -8,8 +8,6 @@ import (
 	"time"
 )
 
-// GoproxyCached is one cached module version: everything the proxy needs to
-// answer .info/.mod/.zip without going upstream.
 type GoproxyCached struct {
 	Version     string
 	CommitSHA   string
@@ -19,8 +17,6 @@ type GoproxyCached struct {
 	ZipSize     int64
 }
 
-// GoproxyModuleID returns the row id for a module path, creating it on first
-// sight. Every other call in this file keys off it.
 func (d *DB) GoproxyModuleID(ctx context.Context, modulePath, source string) (int64, error) {
 	id, err := New(d.DB).UpsertGoproxyModule(ctx, UpsertGoproxyModuleParams{
 		ModulePath: modulePath,
@@ -96,8 +92,6 @@ func (d *DB) SetGoproxyZip(ctx context.Context, moduleID int64, version, key str
 
 // MarkGoproxySuccess and MarkGoproxyFailure keep the last outcome per module, so
 // a module that is failing is visible on the dashboard rather than only in a log
-// line. Both are best-effort bookkeeping around a request that has already been
-// answered, so callers log rather than fail on their error.
 func (d *DB) MarkGoproxySuccess(ctx context.Context, moduleID int64) error {
 	if err := New(d.DB).MarkGoproxyModuleSuccess(ctx, moduleID); err != nil {
 		return fmt.Errorf("mark goproxy success: %w", err)

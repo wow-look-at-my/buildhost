@@ -6,6 +6,7 @@ import (
 )
 
 func TestRedactQuery(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		input string
 		want  string

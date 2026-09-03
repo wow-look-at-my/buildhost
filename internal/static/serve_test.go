@@ -44,6 +44,7 @@ func withProject(r *http.Request, p *db.Project) *http.Request {
 }
 
 func TestServe_RawFormat_Success(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -72,6 +73,7 @@ func TestServe_RawFormat_Success(t *testing.T) {
 }
 
 func TestServe_RawFormat_ZstdPassthrough(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -90,10 +92,6 @@ func TestServe_RawFormat_ZstdPassthrough(t *testing.T) {
 	}))
 
 	// A client that accepts zstd gets the stored blob passed through untouched.
-	// debug=1 disables stripping (shouldStrip=false) so the passthrough path is
-	// exercised deterministically even where the strip tool is installed; in the
-	// distroless production image strip is unavailable, so plain raw downloads take
-	// this same path. Query is in canonical order to avoid a 301 normalization hop.
 	req := httptest.NewRequest("GET", "/file?arch=amd64&debug=1&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req.Header.Set("Accept-Encoding", "zstd")
 	req = withProject(req, proj)
@@ -107,7 +105,6 @@ func TestServe_RawFormat_ZstdPassthrough(t *testing.T) {
 	body := rec.Body.Bytes()
 	assert.Equal(t, fmt.Sprintf("%d", len(body)), rec.Header().Get("Content-Length"))
 	// The body is a real zstd stream that decodes to the artifact: the server
-	// shipped compressed bytes without decompressing them.
 	zr, err := zstd.NewReader(bytes.NewReader(body))
 	require.NoError(t, err)
 	defer zr.Close()
@@ -117,6 +114,7 @@ func TestServe_RawFormat_ZstdPassthrough(t *testing.T) {
 }
 
 func TestServe_RawFormat_IdentityWhenZstdNotAccepted(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -135,8 +133,6 @@ func TestServe_RawFormat_IdentityWhenZstdNotAccepted(t *testing.T) {
 	}))
 
 	// A client that does not list zstd gets the decompressed bytes; Vary is still
-	// set so a shared cache keys the two representations separately. debug=1 keeps
-	// the path deterministic where strip is installed (canonical query order).
 	req := httptest.NewRequest("GET", "/file?arch=amd64&debug=1&fmt=raw&os=linux&project=myapp&v=1.0.0", nil)
 	req.Header.Set("Accept-Encoding", "gzip, deflate")
 	req = withProject(req, proj)
@@ -150,6 +146,7 @@ func TestServe_RawFormat_IdentityWhenZstdNotAccepted(t *testing.T) {
 }
 
 func TestServe_DockerArtifact_NotServed(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -175,6 +172,7 @@ func TestServe_DockerArtifact_NotServed(t *testing.T) {
 }
 
 func TestServe_ETag_NotModified(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -207,6 +205,7 @@ func TestServe_ETag_NotModified(t *testing.T) {
 }
 
 func TestServe_VersionNotFound(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupIntegration(t)
 	ctx := context.Background()
 
@@ -221,6 +220,7 @@ func TestServe_VersionNotFound(t *testing.T) {
 }
 
 func TestServe_ArtifactNotFound(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupIntegration(t)
 	ctx := context.Background()
 
@@ -238,6 +238,7 @@ func TestServe_ArtifactNotFound(t *testing.T) {
 }
 
 func TestServe_VersionResolution_StripV(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -262,6 +263,7 @@ func TestServe_VersionResolution_StripV(t *testing.T) {
 }
 
 func TestServe_VersionResolution_StripDotZeroZero(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -286,6 +288,7 @@ func TestServe_VersionResolution_StripDotZeroZero(t *testing.T) {
 }
 
 func TestServe_AnyOSArch(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupIntegration(t)
 	ctx := context.Background()
 
@@ -303,6 +306,7 @@ func TestServe_AnyOSArch(t *testing.T) {
 }
 
 func TestServe_DebugSymbolsHeader(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -329,6 +333,7 @@ func TestServe_DebugSymbolsHeader(t *testing.T) {
 }
 
 func TestServe_SymbolsFormat_NoStrip(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -353,6 +358,7 @@ func TestServe_SymbolsFormat_NoStrip(t *testing.T) {
 }
 
 func TestServe_RepackageFormat(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
@@ -387,15 +393,12 @@ func TestServe_RepackageFormat(t *testing.T) {
 // go through BFD, which accepts PE/COFF, so a Cosmopolitan APE binary -- what
 // go-toolchain ships on Linux -- was not rejected but rewritten: roughly half
 // the bytes, corrupt, and different on every request. That broke `brew install`
-// outright, since a formula's sha256 is computed from one generation of the
-// download and verified against another.
 func TestServe_NonELFBinary_ServedVerbatimAndStable(t *testing.T) {
+	t.Serial()
 	h, d, store := setupIntegration(t)
 	ctx := context.Background()
 
 	// A REAL PE32+ binary, which is what a Cosmopolitan APE looks like to BFD.
-	// A hand-written MZ header would not do: BFD rejects a malformed one, so
-	// strip would error and the fallback would hide the bug.
 	ape := buildPEArtifact(t)
 
 	proj := &db.Project{Name: "apeapp", Versioning: db.VersioningSemver}
@@ -428,8 +431,6 @@ func TestServe_NonELFBinary_ServedVerbatimAndStable(t *testing.T) {
 	assert.Equal(t, raw, get("raw"), "repeated downloads of an immutable artifact must be identical")
 
 	// The repackage path opens the same (optionally stripped) stream, so it
-	// carries the same guarantee -- and its bytes are what a Homebrew formula's
-	// sha256 is computed over.
 	assert.Equal(t, get("tar.gz"), get("tar.gz"), "tar.gz generation must be reproducible")
 }
 

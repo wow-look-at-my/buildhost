@@ -12,8 +12,6 @@ import (
 )
 
 // Config controls retention policy. KeepN published releases are kept on each
-// (project, git_branch); releases newer than RecencyGuard are never evicted; and
-// nothing is deleted unless Enforce is true (report-only by default).
 type Config struct {
 	KeepN        int
 	RecencyGuard time.Duration
@@ -35,9 +33,6 @@ func New(database *db.DB, store storage.Storage, cfg Config) *Retention {
 }
 
 // WithRecordDeleter attaches the sink that marks an org's artifact-metadata
-// storage records deleted as releases are evicted. Without one, eviction still
-// works and the report says so (RecordsUnmarked) rather than pretending the
-// org's linked artifacts page is current.
 func (r *Retention) WithRecordDeleter(d RecordDeleter) *Retention {
 	r.recordDeleter = d
 	return r
@@ -45,8 +40,6 @@ func (r *Retention) WithRecordDeleter(d RecordDeleter) *Retention {
 
 // ConfigFromSettings builds an engine Config from the stored (UI-editable) policy
 // plus a runtime enforce decision -- the policy lives in the DB, while whether a
-// given run actually deletes is decided by the caller (env for the background
-// sweeper, the request for a manual dashboard/CLI run).
 func ConfigFromSettings(s db.RetentionSettings, enforce bool) Config {
 	return Config{
 		KeepN:        s.KeepN,
@@ -55,7 +48,6 @@ func ConfigFromSettings(s db.RetentionSettings, enforce bool) Config {
 	}
 }
 
-// BlobRef is one content-addressed blob a pass freed, with its recorded size.
 type BlobRef struct {
 	Key  string
 	Size int64
@@ -81,12 +73,9 @@ type Report struct {
 	FreedBlobs        []BlobRef    // the blobs ReclaimableBytes sums, keyed by storage key
 
 	// Artifact-metadata bookkeeping for the evicted releases. An artifact whose
-	// release is gone is no longer fetchable at the URL its storage record
-	// advertises, so the record must be marked deleted or the org's linked
-	// artifacts page keeps claiming buildhost holds it.
-	RecordsMarkedDeleted int      // records successfully marked deleted
-	RecordsUnmarked      int      // records that could NOT be marked (see RecordErrors)
-	RecordErrors         []string // one line per distinct failure, deduplicated
+	RecordsMarkedDeleted int // records successfully marked deleted
+	RecordsUnmarked      int // records that could NOT be marked (see RecordErrors)
+	RecordErrors         []string
 }
 
 // Releases is the total number of releases evicted (or that would be).
@@ -96,7 +85,6 @@ func (r Report) Releases() int { return len(r.EvictedReleases) + len(r.Abandoned
 func (r *Retention) Plan(ctx context.Context) (Report, error) { return r.run(ctx, false) }
 
 // Run performs eviction, honoring the configured Enforce flag. With Enforce
-// false it behaves like Plan (report-only).
 func (r *Retention) Run(ctx context.Context) (Report, error) { return r.run(ctx, r.cfg.Enforce) }
 
 func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
@@ -129,13 +117,8 @@ func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
 	}
 
 	// Capture what each doomed release holds BEFORE the rows go: after eviction
-	// the artifacts (and their digests) are unrecoverable, so there is no later
-	// pass that could retract their storage records.
 	doomed := r.collectRecords(ctx, append(append([]ReleaseRef{}, rep.EvictedReleases...), rep.AbandonedReleases...))
 
-	// EvictReleases deletes the rows in one transaction and reports which blobs
-	// became unreferenced. With enforce=false it rolls back (a true dry run) yet
-	// still returns the exact set that WOULD be freed.
 	freed, candidates, err := r.db.EvictReleases(ctx, ids, enforce)
 	if err != nil {
 		return rep, fmt.Errorf("evict releases: %w", err)
@@ -149,7 +132,6 @@ func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
 		if enforce {
 			if err := r.store.Delete(ctx, ref.Key); err != nil {
 				// Rows are already committed; a failed blob delete only leaks the
-				// blob (recoverable by a later sweep). Log and continue.
 				slog.WarnContext(ctx, "retention: failed to delete freed blob", "key", ref.Key, "err", err)
 			}
 		}
@@ -157,7 +139,6 @@ func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
 
 	// Only a run that actually deleted has anything to retract. A dry run
 	// reports the count it WOULD mark, so an operator sees the work before
-	// committing to it.
 	if enforce {
 		r.markRecordsDeleted(ctx, &rep, doomed)
 	} else {
@@ -167,8 +148,6 @@ func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
 	return rep, nil
 }
 
-// doomedRecord is one artifact about to stop existing, captured while its rows
-// are still readable.
 type doomedRecord struct {
 	githubRepo string
 	project    string
@@ -216,8 +195,6 @@ func (r *Retention) collectRecords(ctx context.Context, refs []ReleaseRef) []doo
 // A failure here never rolls back the eviction -- the bytes are already gone,
 // and refusing to GC because GitHub is unreachable would be worse. It is
 // counted instead: RecordsUnmarked and RecordErrors travel in the Report, the
-// gc CLI exits non-zero on them, and the sweeper logs them. The gap stays
-// visible rather than becoming a page that quietly drifts.
 func (r *Retention) markRecordsDeleted(ctx context.Context, rep *Report, doomed []doomedRecord) {
 	if len(doomed) == 0 {
 		return

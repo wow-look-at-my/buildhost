@@ -11,47 +11,27 @@ import (
 
 const (
 	// defaultMaxUploadSize caps a single REST artifact upload (PUT .../artifacts).
-	// It is a disk-fill guard, not a memory limit -- uploads stream to disk.
-	defaultMaxUploadSize int64 = 2 << 30 // 2 GiB
+	defaultMaxUploadSize int64 = 2 << 30
 	// defaultMaxBlobSize caps a single OCI blob (image layer) pushed via the
-	// docker registry endpoint. Layers are streamed, so this is also just a
-	// disk-fill guard; it is far larger than the REST cap because container
-	// image layers (e.g. CUDA runtimes) routinely exceed 2 GiB.
-	defaultMaxBlobSize int64 = 10 << 30 // 10 GiB
+	defaultMaxBlobSize int64 = 10 << 30
 	// defaultMaxDirectUploadSize is the size the server ADVERTISES (via
-	// GET /api/v1/server-info) as safe for a single direct upload request.
-	// buildhost itself accepts up to MaxUploadSize in one request; this smaller
-	// value exists because the server typically sits behind a proxy that
-	// rejects large request bodies outright -- Cloudflare's edge caps request
-	// bodies at 100 MB (Free and Pro plans) with a 413 that never reaches the
-	// origin. 95 MiB (99,614,720 bytes) stays just under that cap. Clients
-	// read this value and switch to a chunked upload session for anything
-	// larger, so the first attempt always succeeds instead of discovering the
-	// cap by failing.
-	defaultMaxDirectUploadSize int64 = 95 << 20 // 95 MiB
+	defaultMaxDirectUploadSize int64 = 95 << 20
 	// defaultUploadSessionTTL is how long an in-progress chunked upload session
-	// may sit idle before its spool file is garbage-collected.
 	defaultUploadSessionTTL = 24 * time.Hour
 )
 
 // MaxUploadSize is the cap for a single REST artifact upload, overridable via
-// BUILDHOST_MAX_UPLOAD_SIZE (plain bytes, or with a K/M/G suffix).
 func MaxUploadSize() int64 { return envBytes("BUILDHOST_MAX_UPLOAD_SIZE", defaultMaxUploadSize) }
 
 // MaxBlobSize is the cap for a single OCI blob pushed to the registry endpoint,
-// overridable via BUILDHOST_MAX_BLOB_SIZE (plain bytes, or with a K/M/G suffix).
 func MaxBlobSize() int64 { return envBytes("BUILDHOST_MAX_BLOB_SIZE", defaultMaxBlobSize) }
 
 // MaxDirectUploadSize is the advertised safe size for a single direct upload
-// request body, overridable via BUILDHOST_MAX_DIRECT_UPLOAD_SIZE (plain bytes,
-// or with a K/M/G suffix). Advisory only: the server does not reject bodies
-// above it (the proxy in front of it does).
 func MaxDirectUploadSize() int64 {
 	return envBytes("BUILDHOST_MAX_DIRECT_UPLOAD_SIZE", defaultMaxDirectUploadSize)
 }
 
 // UploadSessionTTL is how long an idle chunked upload session lives before it
-// is swept, overridable via BUILDHOST_UPLOAD_SESSION_TTL (a Go duration).
 func UploadSessionTTL() time.Duration {
 	return envDuration("BUILDHOST_UPLOAD_SESSION_TTL", defaultUploadSessionTTL)
 }
@@ -72,7 +52,6 @@ func envDuration(name string, def time.Duration) time.Duration {
 
 // envBytes parses a byte size from an env var, accepting a plain integer or an
 // integer with a single-letter binary suffix (K, M, G, T). Invalid or
-// non-positive values fall back to def.
 func envBytes(name string, def int64) int64 {
 	v := strings.TrimSpace(os.Getenv(name))
 	if v == "" {
@@ -128,24 +107,14 @@ type Config struct {
 	OIDCEvents          []string
 	GitHubWebhookSecret string
 	// GitHub App credentials for buildhost's own REST lookups (resolving a repo's
-	// default branch for the apex "latest"). Preferred over GitHubToken: short-
-	// lived installation tokens, least-privilege (metadata:read), higher rate
-	// limits. From BUILDHOST_GITHUB_APP_ID and BUILDHOST_GITHUB_APP_PRIVATE_KEY
-	// (PEM contents, or a path to a PEM file). Optional.
 	GitHubAppID         string
 	GitHubAppPrivateKey string
 	// GitHubToken is a static-PAT fallback for the same lookups when no App is
-	// configured. Optional: lookups fall back to anonymous (60 req/hr/IP) when
-	// both are unset. From BUILDHOST_GITHUB_TOKEN.
 	GitHubToken      string
 	OTELEndpoint     string
 	SiteFetchDomains []string
 
 	// SiteDomain is an optional dedicated domain for project static sites: when
-	// set (BUILDHOST_SITE_DOMAIN, e.g. "pazer.site"), each project whose name is
-	// a valid single DNS label is also served at https://<project>.<SiteDomain>/.
-	// Unset (the default) registers zero extra routes -- routing is byte-identical
-	// to a deployment without the feature.
 	SiteDomain string
 	// PrimaryDomain is the apex the GitHub OAuth callback is registered on (e.g.
 	// "pazer.build"). The server otherwise derives every URL from the request
@@ -162,30 +131,18 @@ type Config struct {
 	PrimaryDomain string
 
 	// Sign in with GitHub (browser login for private resources). When the client
-	// id + secret are set, a browser hitting a private resource is redirected to
-	// GitHub to log in; a signed-in user may then read a private project if they
-	// have access to that project's GitHub repo.
 	GitHubClientID     string
 	GitHubClientSecret string
 
 	// Retention / garbage collection. Report-only by default: nothing is deleted
-	// unless RetentionEnforce is true. RetentionInterval == 0 disables the
-	// background sweeper (the gc CLI still works on demand).
-	RetentionKeepN        int           // published releases kept per (project, branch)
-	RetentionInterval     time.Duration // background sweep cadence; 0 = disabled
+	RetentionKeepN        int // published releases kept per (project, branch)
+	RetentionInterval     time.Duration
 	RetentionRecencyGuard time.Duration // never evict releases newer than this
 	RetentionEnforce      bool          // actually delete; false = report-only
 }
 
 // resolvePEM returns PEM contents from a config value that is either the PEM
 // itself (contains a BEGIN marker) or a path to a PEM file. Inline PEM passed
-// through an environment variable (Docker, docker-compose, .env) commonly
-// arrives with its newlines escaped as the two-character sequence "\n" -- a
-// multi-line value cannot survive a single-line env var otherwise -- which the
-// downstream key parser then rejects, silently disabling GitHub App auth. So an
-// escaped inline PEM is un-escaped back to real newlines. A path that cannot be
-// read falls through unchanged, so the downstream key parser reports the
-// malformed key rather than this swallowing it.
 func resolvePEM(v string) string {
 	if strings.Contains(v, "-----BEGIN") {
 		return unescapePEMNewlines(v)
@@ -198,11 +155,6 @@ func resolvePEM(v string) string {
 
 // unescapePEMNewlines turns the literal "\n" / "\r\n" escape sequences a
 // multi-line secret picks up when squeezed through an environment variable back
-// into real newlines. It only acts when the value has no real newline yet, so a
-// PEM read from a file (or supplied via a YAML block scalar / heredoc with
-// genuine newlines) is returned untouched. PEM bodies are base64, dashes and
-// newlines and never legitimately contain a backslash, so this cannot corrupt a
-// real key.
 func unescapePEMNewlines(v string) string {
 	if strings.Contains(v, "\n") {
 		return v
@@ -298,10 +250,6 @@ func Load() Config {
 	}
 	if len(c.OIDCEvents) == 0 {
 		// workflow_dispatch is in the default set because GitHub only lets users
-		// with write access to a repo trigger a manual run, and fork actors never
-		// receive an OIDC token -- so it carries the same write-access guarantee as
-		// push/pull_request, letting manual release dispatches auto-provision out
-		// of the box. The BUILDHOST_OIDC_EVENTS override above still wins.
 		c.OIDCEvents = []string{"push", "pull_request", "workflow_dispatch"}
 	}
 	if v := os.Getenv("BUILDHOST_GITHUB_WEBHOOK_SECRET"); v != "" {

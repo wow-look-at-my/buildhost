@@ -41,8 +41,6 @@ var serveCmd = &cobra.Command{
 
 		// Make the Go runtime aware of the container's memory cgroup so the GC
 		// runs harder as we approach the limit instead of letting the heap grow
-		// until the kernel OOM-kills us. No-ops if GOMEMLIMIT is already set or
-		// AUTOMEMLIMIT=off, so an operator can still override it.
 		if limit, err := memlimit.SetGoMemLimitWithOpts(
 			memlimit.WithRatio(0.9),
 			memlimit.WithProvider(memlimit.FromCgroup),
@@ -79,8 +77,6 @@ var serveCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		// Seed the UI-editable retention policy from env defaults on first start
-		// (INSERT OR IGNORE -- never clobbers later dashboard edits).
 		if err := database.SeedRetentionSettings(context.Background(), cfg.RetentionKeepN, int(cfg.RetentionRecencyGuard.Hours())); err != nil {
 			return fmt.Errorf("seed retention settings: %w", err)
 		}
@@ -180,7 +176,6 @@ func startRetentionSweeper(ctx context.Context, cfg config.Config, database *db.
 					continue
 				}
 				// Read the live (dashboard-editable) policy each cycle so edits
-				// apply without a restart. enforce stays env-gated.
 				settings, err := database.GetRetentionSettings(ctx)
 				if err != nil {
 					slog.Error("retention sweep: load settings failed", "err", err)
@@ -220,7 +215,6 @@ func logRetentionReport(rep retention.Report) {
 
 	// Every unmarked record is the org's linked artifacts page claiming
 	// buildhost still holds something it just deleted. The sweeper cannot fail
-	// a build over it, so it says so at WARN with the reason attached.
 	if rep.RecordsUnmarked > 0 {
 		slog.Warn("retention: evicted artifacts still recorded as stored",
 			"records", rep.RecordsUnmarked, "errors", strings.Join(rep.RecordErrors, "; "))

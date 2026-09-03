@@ -49,23 +49,13 @@ func sanitizeFilename(name string) string {
 	return name
 }
 
-// maxUploadSize caps a single REST artifact upload. It is read once from config
-// (BUILDHOST_MAX_UPLOAD_SIZE) so the limit is tunable rather than hardcoded.
 var maxUploadSize = config.MaxUploadSize()
 
-// validSHA256Hex mirrors the storage layer's key shape (lowercase hex SHA-256):
-// a hash-reference upload names a content-addressed storage key directly.
 var validSHA256Hex = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 // hashRefRequest reports whether this request is a hash-reference upload: an
 // upload_sha256 with no upload_session and a definitively empty body. A
 // session finalize keeps its existing meaning for upload_sha256 (integrity
-// check of the spooled bytes, enforced by the uploads middleware before this
-// handler runs -- the middleware also replaces ContentLength with the spool
-// size), and a request actually carrying bytes keeps today's behavior (the
-// parameter is ignored), so existing clients are byte-identical. Clients must
-// only send this form when server-info advertises upload_by_sha256: a server
-// without the capability ignores the parameter and stores the empty body.
 func hashRefRequest(r *http.Request) (string, bool) {
 	q := r.URL.Query()
 	ref := q.Get(uploads.SHA256Param)
@@ -76,18 +66,6 @@ func hashRefRequest(r *http.Request) (string, bool) {
 }
 
 // Multi-platform alias expansions for the {os} and {arch} upload path
-// segments. A Cosmopolitan/APE binary is one file that runs on every desktop
-// OS, so "cosmo" (and the synonyms) publishes it for the canonical
-// linux/darwin/windows set in one request; "any"/"all" in {arch} covers both
-// mainstream CPU architectures. The expansion happens entirely at publish
-// time -- each combination becomes an ordinary per-platform artifact row, all
-// sharing the same content-addressed blob -- so downloads, latest-resolution,
-// format handlers, and retention are untouched.
-//
-// The wasm platform is deliberately absent from both expansions: "any"/"all"
-// mean "runs on every native desktop platform", and a wasm module is not that
-// -- it needs a JS host or WASI runtime, and a native binary cannot run under
-// one. Publish wasm explicitly (os=wasm, arch=js/wasip1).
 var (
 	osAliasExpansion   = []db.OS{db.OSLinux, db.OSDarwin, db.OSWindows}
 	archAliasExpansion = []db.Arch{db.ArchAMD64, db.ArchARM64}
@@ -97,7 +75,6 @@ var (
 // OS name (any spelling db.NormalizeOS accepts), a comma-separated list of
 // them, or an expand-everywhere alias (cosmo/any/all/universal). It rejects
 // unknown names, empty elements, and duplicates (after normalization, so
-// "macos,darwin" is a duplicate too) with an error suitable for a 400 body.
 func expandOSSpec(spec string) ([]db.OS, error) {
 	switch strings.ToLower(strings.TrimSpace(spec)) {
 	case "cosmo", "any", "all", "universal":
@@ -188,10 +165,6 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The (os, arch) combinations this one upload publishes. An npm package
-	// keeps the literal os=any/arch=any sentinel row it has always used; every
-	// other kind goes through the multi-platform expansion (a single canonical
-	// name stays exactly one combination, today's behavior).
 	var oses []db.OS
 	var arches []db.Arch
 	if kind == string(db.KindNPMPackage) {
@@ -202,9 +175,6 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		oses, arches = []db.OS{db.OS(rt.os)}, []db.Arch{db.Arch(rt.arch)}
 	} else if o, a, ok := db.NormalizeLegacyWasmPair(rt.os, rt.arch); ok {
 		// Deprecated legacy shim: currently-released go-toolchain autoreleases
-		// name wasm artifacts GOOS_GOARCH (name_js_wasm / name_wasip1_wasm)
-		// and upload with os=js/arch=wasm. Fold the pair to the canonical
-		// os=wasm form at parse time -- "js" is never stored as an os.
 		oses, arches = []db.OS{o}, []db.Arch{a}
 	} else {
 		var err error
@@ -241,12 +211,6 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 
 	filename := sanitizeFilename(r.Header.Get("X-Artifact-Filename"))
 
-	// One APE covering several platforms is ONE artifact row, never one per
-	// platform. The alias spellings (cosmo/any/all/universal) and comma lists
-	// exist precisely to publish such a file, and they used to expand it into a
-	// row per combination -- N download links for a file that is N-way portable
-	// by construction. Fan-out is still right for a NON-APE upload, where the
-	// combinations really are separate builds that happen to share bytes.
 	if combos := platformCombos(oses, arches); len(combos) > 1 && stored.format.MultiPlatformCapable() {
 		h.publishMultiPlatform(ctx, w, publishSpec{
 			releaseID: release.ID,
@@ -277,9 +241,6 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Single combination keeps the exact pre-fan-out code path and response; a
-	// multi-combination upload creates all rows atomically (any conflicting
-	// combination fails the whole request with nothing created, so the client
-	// can resolve it and retry the identical request).
 	var err error
 	if len(artifacts) == 1 {
 		err = h.DB.CreateArtifact(ctx, artifacts[0])
@@ -293,8 +254,6 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 			msg := "artifact already exists for this os/arch"
 			if len(artifacts) > 1 {
 				// Name the conflicting combination ("artifact linux/amd64:
-				// already exists") -- a fan-out can conflict on any one of
-				// several rows and the client needs to know which.
 				msg = err.Error()
 			}
 			jsonError(w, http.StatusConflict, msg)
@@ -304,9 +263,6 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Every artifact response carries its platform set, so a consumer reads one
-	// field whether the row is an ordinary per-platform build (one entry) or a
-	// single file covering several.
 	withPlatforms := make([]db.ArtifactWithPlatforms, len(artifacts))
 	for i, a := range artifacts {
 		withPlatforms[i] = db.ArtifactWithPlatforms{
@@ -329,20 +285,14 @@ type storedUpload struct {
 	sha256hex  string
 	size       int64
 	// format is what the leading bytes say the file is. "" means unrecognized,
-	// which is normal for an ordinary per-platform binary and disqualifying for
-	// a multi-platform claim.
 	format exeformat.Format
 	// ntBoot says whether an APE's PE header can boot it on Windows, so a
-	// declared windows platform can be checked against the bytes.
 	ntBoot exeformat.NTBoot
 }
 
 // storeUpload resolves an artifact upload's bytes to a stored blob. A
 // hash-reference upload (empty body + upload_sha256) registers a blob the
 // project already has; anything else streams the body to content-addressed
-// storage exactly once, no matter how many artifact rows or platform slots it
-// ends up backing. On failure it writes the error response and returns
-// ok=false.
 func (h *Handler) storeUpload(ctx context.Context, w http.ResponseWriter, r *http.Request, projectID int64) (storedUpload, bool) {
 	if refHex, ok := hashRefRequest(r); ok {
 		key, size, head, ok := h.resolveHashRef(ctx, w, projectID, refHex)
@@ -378,9 +328,6 @@ func (h *Handler) storeUpload(ctx context.Context, w http.ResponseWriter, r *htt
 	}, true
 }
 
-// headCapture keeps the first exeformat.SniffLen bytes written through it, so
-// the format check reads the same stream that goes to storage instead of
-// re-opening the blob afterwards.
 type headCapture struct{ head []byte }
 
 func (c *headCapture) Write(p []byte) (int, error) {
@@ -397,13 +344,6 @@ func (c *headCapture) Write(p []byte) (int, error) {
 // the storage key, the blob's decompressed size for the artifact row, and its
 // leading bytes for the executable-format check; on failure it writes the error
 // response and returns ok=false.
-//
-// The same-project gate is the authorization boundary. SHA-256 values are
-// public (release JSON, checksums files), so bare knowledge of a hash must
-// never let one project mint a row that serves another project's -- possibly
-// private -- bytes. Gate failure is reported exactly like a missing blob
-// (404), so probing cannot distinguish "exists in another project" from "does
-// not exist".
 func (h *Handler) resolveHashRef(ctx context.Context, w http.ResponseWriter, projectID int64, refHex string) (string, int64, []byte, bool) {
 	if !validSHA256Hex.MatchString(refHex) {
 		jsonError(w, http.StatusBadRequest, "invalid upload_sha256: want 64 hex characters")
@@ -428,8 +368,6 @@ func (h *Handler) resolveHashRef(ctx context.Context, w http.ResponseWriter, pro
 		return "", 0, nil, false
 	}
 	// Read the decompressed size from the blob header, plus enough leading
-	// bytes to classify the executable format; the rest of the body is never
-	// decoded.
 	rc, size, err := h.Store.Get(ctx, refHex)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed to read blob")

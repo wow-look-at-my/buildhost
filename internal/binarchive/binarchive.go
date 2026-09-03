@@ -1,12 +1,3 @@
-// Package binarchive stores a directory of files as a binpazer container: one
-// block per file, each compressed on its own, plus a directory block that maps
-// path -> block offset, and binpazer's Block Index + footer to find it.
-//
-// It exists because a .tar.gz cannot answer "give me this one file". A gzip
-// stream has no index, so reaching a member means inflating everything ahead of
-// it -- which is why serving one file out of a stored site archive used to scan
-// the whole tar, per request. Here the same read is: footer -> index ->
-// directory -> seek -> decode one block.
 package binarchive
 
 import (
@@ -23,9 +14,8 @@ import (
 )
 
 // Block type ids and their global GUIDs. binpazer interns the GUIDs to these
-// small per-file ids; the GUIDs are what identify the types across programs.
 const (
-	typeEntry uint16 = 1 // one archived file
+	typeEntry uint16 = 1
 	typeDir   uint16 = 2 // the path -> offset directory
 )
 
@@ -36,7 +26,6 @@ var (
 )
 
 // Magic is the leading bytes of every binpazer file: enough to tell an archive
-// from the plain tar blobs written before this format was adopted.
 const Magic = binpazer.Magic
 
 // IsArchive reports whether a blob's leading bytes are a binpazer container.
@@ -44,13 +33,11 @@ func IsArchive(head []byte) bool {
 	return len(head) >= len(Magic) && string(head[:len(Magic)]) == Magic
 }
 
-// Entry describes one archived file.
 type Entry struct {
 	Path string `json:"path"`
 	Size int64  `json:"size"` // decompressed size
 	Mode uint32 `json:"mode"`
 	// Offset is the entry block's absolute offset in the container, which is
-	// what turns a path lookup into a seek.
 	Offset uint64 `json:"offset"`
 }
 
@@ -60,8 +47,6 @@ type directory struct {
 }
 
 // MaxEntries and MaxTotalSize bound what a single archive may hold; they mirror
-// the caller's own upload limits so a hostile tar cannot make the writer
-// allocate without end.
 type Limits struct {
 	MaxEntries   int
 	MaxTotalSize int64
@@ -74,11 +59,6 @@ type Stats struct {
 }
 
 // WriteFromTar reads a tar stream and writes a binpazer archive to w. Each
-// regular file becomes one zstd-compressed block; the directory block and the
-// Block Index are written last, so a reader finds any file with two seeks.
-//
-// w must be seekable: binpazer back-patches the file length and, because the
-// archive uses compressed blocks, the header's version_minor.
 func WriteFromTar(w io.WriteSeeker, tr *tar.Reader, lim Limits) (*Stats, error) {
 	bw, err := binpazer.NewWriter(w, writerGUID, "buildhost", []binpazer.TypeDef{
 		{TypeID: typeEntry, GUID: entryGUID, Name: "File"},
@@ -106,7 +86,7 @@ func WriteFromTar(w io.WriteSeeker, tr *tar.Reader, lim Limits) (*Stats, error) 
 		}
 		name := path.Clean(hdr.Name)
 		if seen.Contains(name) {
-			continue // last writer wins in tar; keep the first, as a scan would
+			continue
 		}
 		if lim.MaxEntries > 0 && len(dir.Entries) >= lim.MaxEntries {
 			return nil, fmt.Errorf("archive holds more than %d files", lim.MaxEntries)
@@ -116,7 +96,6 @@ func WriteFromTar(w io.WriteSeeker, tr *tar.Reader, lim Limits) (*Stats, error) 
 		}
 
 		// The payload is read whole because a block is written whole; the tar
-		// entry's own size bounds it, and the caller's limits bound that.
 		body := make([]byte, hdr.Size)
 		if _, err := io.ReadFull(tr, body); err != nil {
 			return nil, fmt.Errorf("read %s: %w", name, err)
@@ -134,7 +113,6 @@ func WriteFromTar(w io.WriteSeeker, tr *tar.Reader, lim Limits) (*Stats, error) 
 	}
 
 	// Sorted so a reader can binary-search it, and so the same input always
-	// produces the same directory bytes.
 	sort.Slice(dir.Entries, func(i, j int) bool { return dir.Entries[i].Path < dir.Entries[j].Path })
 	if _, err := bw.PutJSON(typeDir, binpazer.FlagCritical|binpazer.FlagHasCRC, binpazer.CodecZstd, dir); err != nil {
 		return nil, fmt.Errorf("write directory: %w", err)
@@ -145,10 +123,6 @@ func WriteFromTar(w io.WriteSeeker, tr *tar.Reader, lim Limits) (*Stats, error) 
 	return &stats, nil
 }
 
-// Archive is an opened archive. Its directory is read once; every file read
-// afterwards is a seek plus one block decode, so an Archive is cheap to keep
-// and safe to use from several goroutines (each read gets its own reader over
-// the shared io.ReaderAt).
 type Archive struct {
 	ra      io.ReaderAt
 	size    int64
@@ -186,9 +160,6 @@ func (a *Archive) Lookup(p string) (Entry, bool) {
 // ErrNotFound is returned by Open for a path the archive does not hold.
 var ErrNotFound = os.ErrNotExist
 
-// OpenFile returns a reader over one file's decompressed bytes. It is O(1) in
-// the number of files: the entry's offset comes from the directory, and only
-// that block is decoded.
 func (a *Archive) OpenFile(p string) (io.Reader, Entry, error) {
 	e, ok := a.Lookup(p)
 	if !ok {

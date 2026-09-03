@@ -40,8 +40,6 @@ func (d *DB) GetOCIBlobLink(ctx context.Context, projectID int64, storageKey str
 }
 
 // OCIBlobOwner is a project that already has a given blob linked, together with
-// the descriptor fields recorded for it, so a cross-repository mount can copy
-// them instead of asking the client to restate them.
 type OCIBlobOwner struct {
 	Project    Project
 	MediaType  string
@@ -50,9 +48,6 @@ type OCIBlobOwner struct {
 }
 
 // ListOCIBlobOwners returns every project holding a link to this stored blob.
-// A mount is authorized against these: a caller who may read one of them can
-// already pull those exact bytes, so linking them into a project they may write
-// discloses nothing new.
 func (d *DB) ListOCIBlobOwners(ctx context.Context, storageKey string) ([]OCIBlobOwner, error) {
 	rows, err := d.q.ListOCIBlobLinkProjects(ctx, storageKey)
 	if err != nil {
