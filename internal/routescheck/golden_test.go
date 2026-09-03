@@ -27,13 +27,14 @@ func renderRoutes() string {
 	return b.String()
 }
 
-// assertNotInitialized guards the ordering renderRoutes depends on. Test order
-// within a package follows file name, so golden_test.go currently runs before
-// routes_test.go calls auth.Init -- a fact no reader of either file can see.
-func assertNotInitialized(t *testing.T) {
-	t.Helper()
-	require.Empty(t, auth.SiteDomain(),
-		"auth.Init already ran, so ListRoutes would render real-domain routes into the golden; this test must run before any test that calls auth.Init")
+// routesAtStartup is the table as it stands before any test runs. ListRoutes
+// renders configured domains into it once auth.Init has run, and a test in this
+// package calls Init, so the golden cannot be rendered from inside a test.
+var routesAtStartup string
+
+func TestMain(m *testing.M) {
+	routesAtStartup = renderRoutes()
+	os.Exit(m.Run())
 }
 
 // TestRouteTableMatchesGolden fails when the route set drifts from
@@ -45,8 +46,7 @@ func assertNotInitialized(t *testing.T) {
 // The table is rendered by the program, never parsed out of source, so it cannot
 func TestRouteTableMatchesGolden(t *testing.T) {
 	t.Serial()
-	assertNotInitialized(t)
-	got := renderRoutes()
+	got := routesAtStartup
 	if updateGolden() {
 		require.NoError(t, os.WriteFile(goldenPath, []byte(got), 0o644))
 		t.Log("rewrote " + goldenPath)
@@ -62,8 +62,7 @@ func TestRouteTableMatchesGolden(t *testing.T) {
 // TestGoldenRouteTableIsSorted pins the ordering the golden file relies on: a
 func TestGoldenRouteTableIsSorted(t *testing.T) {
 	t.Serial()
-	assertNotInitialized(t)
-	lines := strings.Split(strings.TrimSuffix(renderRoutes(), "\n"), "\n")
+	lines := strings.Split(strings.TrimSuffix(routesAtStartup, "\n"), "\n")
 	require.NotEmpty(t, lines)
 	require.IsIncreasing(t, lines)
 }

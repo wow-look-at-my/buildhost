@@ -159,7 +159,11 @@ func TestInflightHandler_DuringWrites(t *testing.T) {
 	})
 	handler := TrackInflight(inner)
 
+	// Joined before returning: the handler decrements inflightWrites as it
+	// unwinds, and a decrement landing after the next test reset it reads -1.
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		req := httptest.NewRequest(http.MethodPut, "/upload", nil)
 		handler.ServeHTTP(httptest.NewRecorder(), req)
 	}()
@@ -173,4 +177,5 @@ func TestInflightHandler_DuringWrites(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"inflight":1`)
 
 	close(release)
+	<-done
 }
