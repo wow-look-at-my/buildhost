@@ -12,6 +12,7 @@ import (
 
 // The invariant this whole package turns on: only a genuine "upstream is
 func TestOnlyNotFoundBecomes404(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name string
 		err  *Error
@@ -36,6 +37,7 @@ func TestOnlyNotFoundBecomes404(t *testing.T) {
 // found". Guessing absence from an unrecognized failure is exactly the
 // laundering the taxonomy exists to stop.
 func TestUnclassifiedErrorIsNotNotFound(t *testing.T) {
+	t.Serial()
 	e := asError("example.com/m", "v1.0.0", errors.New("something went sideways"))
 	assert.Equal(t, KindUpstream, e.Kind)
 	assert.Equal(t, http.StatusBadGateway, e.HTTPStatus())
@@ -43,6 +45,7 @@ func TestUnclassifiedErrorIsNotNotFound(t *testing.T) {
 }
 
 func TestAsErrorPreservesClassification(t *testing.T) {
+	t.Serial()
 	orig := unauthorizedErr("example.com/m", "v1.0.0", "github", 403, "nope")
 	assert.Same(t, orig, asError("other", "other", orig))
 
@@ -54,6 +57,7 @@ func TestAsErrorPreservesClassification(t *testing.T) {
 // so an authorization failure has to say plainly that it is not a missing
 // module.
 func TestUnauthorizedBodySaysItIsNotMissing(t *testing.T) {
+	t.Serial()
 	body := unauthorizedErr("github.com/org/private", "v1.2.3", "github", 404,
 		"the proxy presented NO credential").Body()
 
@@ -65,12 +69,14 @@ func TestUnauthorizedBodySaysItIsNotMissing(t *testing.T) {
 }
 
 func TestNotFoundBodyDoesNotClaimCredentialTrouble(t *testing.T) {
+	t.Serial()
 	body := notFoundErr("github.com/org/public", "v1.2.3", "github", 404, "no such tag").Body()
 	assert.Contains(t, body, "module not found")
 	assert.NotContains(t, body, "NOT a missing module")
 }
 
 func TestErrorMessageNamesUpstreamStatus(t *testing.T) {
+	t.Serial()
 	e := upstreamErr("github.com/org/m", "v1.0.0", "github", 502, "bad gateway", nil)
 	msg := e.Error()
 	require.True(t, strings.Contains(msg, "github.com/org/m@v1.0.0"), msg)
@@ -78,6 +84,7 @@ func TestErrorMessageNamesUpstreamStatus(t *testing.T) {
 }
 
 func TestKindStrings(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "not_found", KindNotFound.String())
 	assert.Equal(t, "unauthorized", KindUnauthorized.String())
 	assert.Equal(t, "upstream", KindUpstream.String())

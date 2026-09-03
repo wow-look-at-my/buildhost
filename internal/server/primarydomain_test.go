@@ -18,6 +18,7 @@ import (
 // ONLY on that apex. On any other unclaimed host they serve the router's
 
 func TestPrimaryDomain_ScopesWebAndAPIToApex(t *testing.T) {
+	t.Serial()
 	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, true)
 
 	// API writes address the primary apex (doRequest sets the Host) -- this is
@@ -94,6 +95,7 @@ func TestPrimaryDomain_ScopesWebAndAPIToApex(t *testing.T) {
 // With no primary domain configured the main-domain surface stays fully
 // host-agnostic -- the historical behavior, pinned so the scoping is provably
 func TestPrimaryDomain_UnsetKeepsHostAgnostic(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	env.createProject(t, "anyhost-app", false)
 

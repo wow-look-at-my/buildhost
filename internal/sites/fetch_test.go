@@ -16,6 +16,7 @@ import (
 )
 
 func TestUpload_Fetch(t *testing.T) {
+	t.Serial()
 	// Serve a zip from an httptest server acting as the remote.
 	remote := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
@@ -58,6 +59,7 @@ func TestUpload_Fetch(t *testing.T) {
 }
 
 func TestUpload_Fetch_DomainNotAllowed(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	h.FetchDomains = []string{"allowed.example.com"}
@@ -74,6 +76,7 @@ func TestUpload_Fetch_DomainNotAllowed(t *testing.T) {
 }
 
 func TestUpload_Fetch_Disabled(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	// FetchDomains is empty — fetch mode disabled.
@@ -90,6 +93,7 @@ func TestUpload_Fetch_Disabled(t *testing.T) {
 }
 
 func TestUpload_Fetch_InvalidJSON(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	h.FetchDomains = []string{"example.com"}
@@ -104,6 +108,7 @@ func TestUpload_Fetch_InvalidJSON(t *testing.T) {
 }
 
 func TestUpload_Fetch_HttpURL(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	h.FetchDomains = []string{"example.com"}
@@ -120,6 +125,7 @@ func TestUpload_Fetch_HttpURL(t *testing.T) {
 }
 
 func TestUpload_Fetch_NonOK(t *testing.T) {
+	t.Serial()
 	remote := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))

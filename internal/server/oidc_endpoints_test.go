@@ -68,6 +68,7 @@ func jwksServer(t *testing.T, pub *rsa.PublicKey, kid string) *httptest.Server {
 }
 
 func TestOIDC_AutoCreateProject(t *testing.T) {
+	t.Serial()
 	dbDir := t.TempDir()
 	storeDir := t.TempDir()
 	dbPath := filepath.Join(dbDir, "test.db")

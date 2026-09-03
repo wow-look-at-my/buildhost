@@ -58,6 +58,7 @@ func pinTestRequest(t *testing.T, access AccessLevel, ownerID, repoID string) *h
 
 // Provisioning a new project from an ID-bearing token pins the IDs from birth.
 func TestOIDCPin_ProvisionPinsIDs(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -73,6 +74,7 @@ func TestOIDCPin_ProvisionPinsIDs(t *testing.T) {
 
 // A pre-existing project without pinned IDs (provisioned before the pin
 func TestOIDCPin_LegacyProject_FirstIDPublishPins(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -90,6 +92,7 @@ func TestOIDCPin_LegacyProject_FirstIDPublishPins(t *testing.T) {
 
 // A read never pins (mirrors write-only provisioning: reads don't mutate).
 func TestOIDCPin_ReadDoesNotPin(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -107,6 +110,7 @@ func TestOIDCPin_ReadDoesNotPin(t *testing.T) {
 
 // A pinned project accepts later publishes carrying the same IDs.
 func TestOIDCPin_MatchingIDs_Allowed(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -123,6 +127,7 @@ func TestOIDCPin_MatchingIDs_Allowed(t *testing.T) {
 // The resurrection case: same names, different IDs. The publish is refused
 // loudly, naming both identities and the reason.
 func TestOIDCPin_MismatchedIDs_WriteRejected(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -146,6 +151,7 @@ func TestOIDCPin_MismatchedIDs_WriteRejected(t *testing.T) {
 // Mismatched IDs are refused on reads too -- a resurrected repo must not read
 // a private predecessor's artifacts either.
 func TestOIDCPin_MismatchedIDs_ReadRejected(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -161,6 +167,7 @@ func TestOIDCPin_MismatchedIDs_ReadRejected(t *testing.T) {
 }
 
 func TestOIDCPin_MismatchedIDs_HiddenReadGets404(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -180,6 +187,7 @@ func TestOIDCPin_MismatchedIDs_HiddenReadGets404(t *testing.T) {
 // controls which format a repo's tokens get, and the token already passed the
 // issuer/org/event gates. Documented allow.
 func TestOIDCPin_PinnedProject_IDLessTokenAllowed(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -196,6 +204,7 @@ func TestOIDCPin_PinnedProject_IDLessTokenAllowed(t *testing.T) {
 // An ID-less token against an unpinned legacy project keeps working and pins
 // nothing (there is nothing to pin).
 func TestOIDCPin_LegacyProject_IDLessTokenAllowed_NoPin(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 

@@ -12,6 +12,7 @@ import (
 )
 
 func TestSiteDomain_SigilGrammar(t *testing.T) {
+	t.Serial()
 	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, false)
 
 	env.createProject(t, "sigil-p", false)
@@ -75,6 +76,7 @@ func TestSiteDomain_SigilGrammar(t *testing.T) {
 
 // A commit sha resolves on the project-subdomain scheme too: both schemes hand
 func TestSiteDomain_CommitRef(t *testing.T) {
+	t.Serial()
 	const sha = "0f1e2d3c4b5a69788796a5b4c3d2e1f001234567"
 	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, false)
 
@@ -109,6 +111,7 @@ func TestSiteDomain_CommitRef(t *testing.T) {
 // spelling of the same URL, so every published ~ link keeps working while there
 
 func TestSiteDomain_LegacySigilRedirects(t *testing.T) {
+	t.Serial()
 	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, false)
 
 	env.createProject(t, "legacy-p", false)

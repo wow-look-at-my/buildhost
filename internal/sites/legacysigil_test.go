@@ -19,6 +19,7 @@ import (
 // 302s to the canonical URL" -- which describes the classic scheme and is true
 // only of /branch/. Believing it costs real time: a live probe of
 func TestLegacySigil_ClassicSchemeTreatsTildeAsAnOrdinaryPathSegment(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "lib")
 	// master is the seed default branch, so it serves at the bare project path.
@@ -49,6 +50,7 @@ func TestLegacySigil_ClassicSchemeTreatsTildeAsAnOrdinaryPathSegment(t *testing.
 // and 301s to the "@" spelling, which is what "no published URL breaks" means
 // and where the legacy sigil actually earns its name.
 func TestLegacySigil_SubdomainSchemeRedirectsToAt(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "lib")
 	uploadSite(t, h, proj, "pr-7", map[string]string{"index.html": "preview"})

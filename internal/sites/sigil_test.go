@@ -22,6 +22,7 @@ import (
 // reads share the literal-less apex route, which must lose to /branch/ and
 // /branches while still catching everything else.
 func TestBranchSigil_Serves(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "jsperf.app")
 	// master is the seed default branch, so every other branch below is a
@@ -58,6 +59,7 @@ func TestBranchSigil_Serves(t *testing.T) {
 // says nothing extra, so "@<default>" collapses INTO the bare URL -- redirects
 // only ever run toward the shorter spelling, never away from it.
 func TestBranchSigil_DefaultBranchCollapsesToBareURL(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "p")
 	env.uploadSite(t, "p", "master", map[string]string{"index.html": "root", "a/x.css": "body{}"})
@@ -91,6 +93,7 @@ func TestBranchSigil_DefaultBranchCollapsesToBareURL(t *testing.T) {
 
 // /branch/{branch}/ is what every published preview link, README and deployed
 func TestBranchSigil_LegacyFormRedirects(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "p")
 	env.uploadSite(t, "p", "master", map[string]string{"index.html": "root", "a/x.css": "body{}"})
@@ -139,6 +142,7 @@ func TestBranchSigil_LegacyFormRedirects(t *testing.T) {
 // needs no lookup to be addressed -- and a shorter project sharing its prefix
 // can never claim the URL.
 func TestBranchSigil_NamespacedProject(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "org")
 	seedProject(t, env.db, "org/repo")
@@ -160,6 +164,7 @@ func TestBranchSigil_NamespacedProject(t *testing.T) {
 // not where it ends, so the remainder is still resolved by longest match
 // against the project's sites -- the same rule the /branch/ form uses.
 func TestBranchSigil_SlashNamedBranch(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "p")
 	env.uploadSite(t, "p", "master", map[string]string{"index.html": "default"})
@@ -179,6 +184,7 @@ func TestBranchSigil_SlashNamedBranch(t *testing.T) {
 
 // Deploy and remove in the "@" form. These need their own routes (the read
 func TestBranchSigil_UploadAndDelete(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "p")
 	env.uploadSite(t, "p", "master", map[string]string{"index.html": "default"})
@@ -226,6 +232,7 @@ func TestBranchSigil_UploadAndDelete(t *testing.T) {
 }
 
 func TestSplitBranchSigil(t *testing.T) {
+	t.Serial()
 	cases := []struct {
 		remainder, project, ref string
 		ok                      bool
@@ -273,6 +280,7 @@ func (e *testEnv) uploadSiteAtCommit(t *testing.T, project, branch, commit strin
 // moves to. Every publish already records the commit (X-Git-Commit, defaulted
 // to github.sha by the publish action), so this needs nothing new from callers.
 func TestCommitSigil_Serves(t *testing.T) {
+	t.Serial()
 	const sha = "0f1e2d3c4b5a69788796a5b4c3d2e1f001234567"
 	env := setupEnv(t)
 	seedProject(t, env.db, "p")
@@ -319,6 +327,7 @@ func TestCommitSigil_Serves(t *testing.T) {
 // A branch is always tried before a commit, so a branch whose name happens to
 // be hex keeps its URL -- no ref that resolved before can be repointed.
 func TestCommitSigil_BranchWins(t *testing.T) {
+	t.Serial()
 	const hexBranch = "abcdef0"
 	env := setupEnv(t)
 	seedProject(t, env.db, "p")
@@ -335,6 +344,7 @@ func TestCommitSigil_BranchWins(t *testing.T) {
 }
 
 func TestLooksLikeCommit(t *testing.T) {
+	t.Serial()
 	for _, s := range []string{"abcdef0", "0123456789abcdef", strings.Repeat("a", 40), "ABCDEF0"} {
 		assert.Truef(t, looksLikeCommit(s), "%q should look like a commit", s)
 	}

@@ -13,6 +13,7 @@ import (
 )
 
 func TestRequireProject_PrivateProject_Programmatic_PlainJSON401(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -37,6 +38,7 @@ func TestRequireProject_PrivateProject_Programmatic_PlainJSON401(t *testing.T) {
 
 // When Sign in with GitHub is NOT configured, even a browser request falls back
 func TestRequireProject_PrivateProject_Browser_NoGitHubAuth_PlainJSON401(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d) // mw.GitHub is nil -> disabled
 

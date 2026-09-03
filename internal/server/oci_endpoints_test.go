@@ -14,6 +14,7 @@ import (
 // TestOCI_V2Root_AuthDiscovery_FullStack drives the OCI auth-discovery handshake
 // through the real server (auth middleware + router), reproducing the production
 func TestOCI_V2Root_AuthDiscovery_FullStack(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	resp := env.doSubdomainRequest(t, "GET", "oci", "/v2/", "", nil, false)
@@ -37,6 +38,7 @@ func TestOCI_V2Root_AuthDiscovery_FullStack(t *testing.T) {
 // TestOCI_MultiArchPull_FullStack reproduces the dangling-index bug end to end:
 // a synthesized multi-arch image serves an image index that lists per-platform
 func TestOCI_MultiArchPull_FullStack(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	require.Equal(t, http.StatusCreated,

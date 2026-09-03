@@ -67,6 +67,7 @@ func (e *testEnv) appendChunk(t *testing.T, id string, offset int, chunk []byte)
 // artifact byte-identical to a direct PUT of the same payload, and the bytes
 // round-trip through the download path.
 func TestChunkedUploadMatchesDirectUpload(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	payload := make([]byte, 300)
@@ -130,6 +131,7 @@ func TestChunkedUploadMatchesDirectUpload(t *testing.T) {
 
 // TestChunkedUploadMultiPlatformFanOut proves a chunked upload session
 func TestChunkedUploadMultiPlatformFanOut(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	payload := make([]byte, 200)
@@ -184,6 +186,7 @@ func TestChunkedUploadMultiPlatformFanOut(t *testing.T) {
 }
 
 func TestUploadSessionResume(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	sess := env.createUploadSession(t)
@@ -213,6 +216,7 @@ func TestUploadSessionResume(t *testing.T) {
 }
 
 func TestUploadSessionOwnerIsolation(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	otherToken, _, err := env.database.CreateToken(context.Background(), "other", nil, "read,write")
@@ -250,6 +254,7 @@ func TestUploadSessionOwnerIsolation(t *testing.T) {
 }
 
 func TestUploadSessionSHA256Mismatch(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	resp := env.postJSON(t, "/api/v1/projects", `{"name":"shaproj","versioning":"auto"}`)
@@ -289,6 +294,7 @@ func hexSHA256(b []byte) string {
 }
 
 func TestUploadSessionAbortAndAuth(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	// Session creation requires a credential with write scope.
@@ -338,6 +344,7 @@ func TestUploadSessionAbortAndAuth(t *testing.T) {
 // TestUploadSessionTooLarge proves the total-size cap applies at append time,
 // not just at finalize.
 func TestUploadSessionTooLarge(t *testing.T) {
+	t.Serial()
 	t.Setenv("BUILDHOST_MAX_UPLOAD_SIZE", "16")
 	env := setup(t)
 
@@ -357,6 +364,7 @@ func TestUploadSessionTooLarge(t *testing.T) {
 // TestServerInfo covers the discovery endpoint clients use to choose direct
 // vs chunked BEFORE sending anything.
 func TestServerInfo(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	resp := env.get(t, "/api/v1/server-info")
@@ -373,6 +381,7 @@ func TestServerInfo(t *testing.T) {
 }
 
 func TestChunkedSiteDeploy(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	resp := env.postJSON(t, "/api/v1/projects", `{"name":"sitey","versioning":"auto"}`)

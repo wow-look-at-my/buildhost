@@ -25,6 +25,7 @@ func setTestSiteDomain(t *testing.T, site, primary string) {
 }
 
 func TestSiteApexOf(t *testing.T) {
+	t.Serial()
 	setTestSiteDomain(t, "pazer.site", "pazer.build")
 	assert.Equal(t, "pazer.site", siteApexOf("pazer.site"))
 	assert.Equal(t, "pazer.site", siteApexOf("myapp.pazer.site"))
@@ -40,6 +41,7 @@ func TestSiteApexOf(t *testing.T) {
 }
 
 func TestSafeNextURL_SiteDomain(t *testing.T) {
+	t.Serial()
 	setTestSiteDomain(t, "pazer.site", "pazer.build")
 	r := httptest.NewRequest("GET", "/__signin", nil)
 	r.Host = "pazer.build"
@@ -62,6 +64,7 @@ func TestSafeNextURL_SiteDomain(t *testing.T) {
 }
 
 func TestApexClassifiers_SiteDomain(t *testing.T) {
+	t.Serial()
 	setTestSiteDomain(t, "pazer.site", "pazer.build")
 
 	r := httptest.NewRequest("GET", "/x", nil)
@@ -81,6 +84,7 @@ func TestApexClassifiers_SiteDomain(t *testing.T) {
 }
 
 func TestLoginRedirectURL_SiteHost(t *testing.T) {
+	t.Serial()
 	setTestSiteDomain(t, "pazer.site", "pazer.build")
 	r := httptest.NewRequest("GET", "/secret/file.html", nil)
 	r.Host = "myapp.pazer.site"
@@ -102,6 +106,7 @@ func TestLoginRedirectURL_SiteHost(t *testing.T) {
 }
 
 func TestRequireProject_SiteDomainBrowser_RedirectsToPrimary(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	mw.GitHub = NewGitHubAuth("cid", "secret")
@@ -143,6 +148,7 @@ func TestRequireProject_SiteDomainBrowser_RedirectsToPrimary(t *testing.T) {
 // round trip must set the SAME session value as a site-apex cookie, and the
 // code must be single-use.
 func TestSigninStart_InstantHandoff_RoundTrip(t *testing.T) {
+	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/user" {
 			w.Write([]byte(`{"login":"alice"}`))
@@ -221,6 +227,7 @@ func TestSigninStart_InstantHandoff_RoundTrip(t *testing.T) {
 // dead session forever). The liveness probe fails and the flow falls through
 // to full OAuth, which mints a fresh session for the handoff.
 func TestSigninStart_InstantHandoff_DeadTokenFallsThroughToOAuth(t *testing.T) {
+	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized) // GET /user: token revoked
 	}))
@@ -252,6 +259,7 @@ func TestSigninStart_InstantHandoff_DeadTokenFallsThroughToOAuth(t *testing.T) {
 // sets the primary-apex session cookie as always AND bounces through /__sso
 // instead of redirecting to the destination directly.
 func TestSigninCallback_SiteNext_MintsHandoff(t *testing.T) {
+	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == "POST":
@@ -331,6 +339,7 @@ func TestSigninCallback_SiteNext_MintsHandoff(t *testing.T) {
 }
 
 func TestSSORedeem_ExpiredCode(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	setTestSiteDomain(t, "pazer.site", "pazer.build")
@@ -360,6 +369,7 @@ func TestSSORedeem_ExpiredCode(t *testing.T) {
 }
 
 func TestSSORedeem_TamperRejected(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	setTestSiteDomain(t, "pazer.site", "pazer.build")
@@ -394,6 +404,7 @@ func TestSSORedeem_TamperRejected(t *testing.T) {
 }
 
 func TestSSORedeem_HostGate(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	setTestSiteDomain(t, "pazer.site", "pazer.build")
@@ -424,6 +435,7 @@ func TestSSORedeem_HostGate(t *testing.T) {
 // Full flow through the real router (host dispatch included), ending with the
 // handed-over cookie authorizing a private-project read on the site domain.
 func TestSSOHandoff_EndToEnd_AuthorizesSiteDomainRead(t *testing.T) {
+	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/PazerOP/tesla-wheel-data":

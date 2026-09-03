@@ -17,6 +17,7 @@ import (
 
 // Anonymous (no token) write to a non-existent project on a /v2/ path must get
 func TestRequireProject_AutoCreate_AnonymousOCIWrite_Returns401Challenge(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -39,6 +40,7 @@ func TestRequireProject_AutoCreate_AnonymousOCIWrite_Returns401Challenge(t *test
 
 // The same anonymous write on a non-/v2/ path (e.g. the REST publish API) gets a
 func TestRequireProject_AutoCreate_AnonymousNonOCIWrite_Returns401(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -60,6 +62,7 @@ func TestRequireProject_AutoCreate_AnonymousNonOCIWrite_Returns401(t *testing.T)
 
 // A write that presented a JWT which was REJECTED (OIDC error in context, no
 func TestRequireProject_AutoCreate_RejectedJWT_Returns401WithReason(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -85,6 +88,7 @@ func TestRequireProject_AutoCreate_RejectedJWT_Returns401WithReason(t *testing.T
 // With a valid OIDC token authorized for the namespace, the authenticated retry
 // (which the client makes after the challenge) provisions the project -- so
 func TestRequireProject_AutoCreate_AuthenticatedOCIWrite_Provisions(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 

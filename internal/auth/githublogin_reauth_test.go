@@ -19,6 +19,7 @@ import (
 )
 
 func TestCanAccessRepo_TokenDead401_CachedPerToken(t *testing.T) {
+	t.Serial()
 	var calls int
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -54,6 +55,7 @@ func TestCanAccessRepo_TokenDead401_CachedPerToken(t *testing.T) {
 }
 
 func TestCanAccessRepo_TransientStatuses_NotTokenDead(t *testing.T) {
+	t.Serial()
 	for _, status := range []int{http.StatusForbidden, http.StatusTooManyRequests, http.StatusInternalServerError} {
 		t.Run(strconv.Itoa(status), func(t *testing.T) {
 			var calls int
@@ -85,6 +87,7 @@ func TestCanAccessRepo_TransientStatuses_NotTokenDead(t *testing.T) {
 // is cleared and the browser is transparently sent back through sign-in,
 // returning to the original URL.
 func TestRequireProject_Browser_SessionTokenDead_ClearsSessionAndReauths(t *testing.T) {
+	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized) // GitHub: bad credentials
 	}))
@@ -133,6 +136,7 @@ func TestRequireProject_Browser_SessionTokenDead_ClearsSessionAndReauths(t *test
 }
 
 func TestRequireProject_Browser_NoAccessAndTransient_NoReauth(t *testing.T) {
+	t.Serial()
 	for _, status := range []int{http.StatusNotFound, http.StatusForbidden, http.StatusTooManyRequests, http.StatusInternalServerError} {
 		t.Run(strconv.Itoa(status), func(t *testing.T) {
 			gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

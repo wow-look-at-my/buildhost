@@ -18,6 +18,7 @@ import (
 // provision: auto-provisioning is a write-only action, so a GET can never
 // materialize a project as a side effect.
 func TestRequireProject_ReadAccess_NeverAutoProvisions(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -43,6 +44,7 @@ func TestRequireProject_ReadAccess_NeverAutoProvisions(t *testing.T) {
 // TestRequireProject_WriteMissingProject_RejectedOIDC_ExplainsReason proves a
 // write to a not-yet-existing project whose JWT was rejected (e.g. org not in
 func TestRequireProject_WriteMissingProject_RejectedOIDC_ExplainsReason(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -88,6 +90,7 @@ func (r publicReadRouteInfo) AllowsPublicRead(context.Context, *db.DB, *db.Proje
 // served without a token even under a private project, while a non-public read
 // of the same project still requires auth.
 func TestRequireProject_PublicRead_ServesPrivateProjectWithoutToken(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	require.NoError(t, d.CreateProject(context.Background(),
@@ -112,6 +115,7 @@ func TestRequireProject_PublicRead_ServesPrivateProjectWithoutToken(t *testing.T
 // TestRequireProject_HiddenReadAccess_PrivateProject_Returns404 proves
 // HiddenReadAccess hides a private project from an unauthorized caller behind a
 func TestRequireProject_HiddenReadAccess_PrivateProject_Returns404(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 

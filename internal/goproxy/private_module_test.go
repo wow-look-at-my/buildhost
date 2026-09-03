@@ -25,6 +25,7 @@ func serveProxy(t *testing.T, s *Service, path string) *httptest.ResponseRecorde
 }
 
 func TestPrivateModuleResolves(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	seedModule(fake, privateOrg+"/tml", "", "v1.2.0", "aaaa111122223333444455556666777788889999",
@@ -66,6 +67,7 @@ func TestPrivateModuleResolves(t *testing.T) {
 
 // The reported defect, as a test. With no credential the proxy must NOT answer
 func TestPrivateModuleWithoutCredentialIsForbiddenNotNotFound(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	seedModule(fake, privateOrg+"/tml", "", "v1.2.0", "aaaa111122223333444455556666777788889999",
@@ -97,6 +99,7 @@ func TestPrivateModuleWithoutCredentialIsForbiddenNotNotFound(t *testing.T) {
 
 // A public module that genuinely is not there still 404s -- the fix must not
 func TestGenuinelyMissingModuleStill404s(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	seedModule(fake, privateOrg+"/tml", "", "v1.2.0", "aaaa111122223333444455556666777788889999",
 		"module "+privateOrg+"/tml\n\ngo 1.25\n")
@@ -109,6 +112,7 @@ func TestGenuinelyMissingModuleStill404s(t *testing.T) {
 }
 
 func TestRateLimitIsUpstreamNotUnauthorized(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Status = http.StatusForbidden
 	fake.RateLimited = true
@@ -122,6 +126,7 @@ func TestRateLimitIsUpstreamNotUnauthorized(t *testing.T) {
 }
 
 func TestUpstreamServerErrorIsBadGateway(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Status = http.StatusInternalServerError
 	fake.Body = `{"message":"server error"}`
@@ -134,6 +139,7 @@ func TestUpstreamServerErrorIsBadGateway(t *testing.T) {
 }
 
 func TestRejectedCredentialSaysSo(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Status = http.StatusUnauthorized
 	fake.Body = `{"message":"Bad credentials"}`
@@ -153,6 +159,7 @@ func serveAnon(t *testing.T, s *Service, path string) *httptest.ResponseRecorder
 }
 
 func TestInaccessibleModuleIs404NotUnauthorized(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	seedModule(fake, privateOrg+"/tml", "", "v1.0.0", "aaaa111122223333444455556666777788889999",
@@ -170,6 +177,7 @@ func TestInaccessibleModuleIs404NotUnauthorized(t *testing.T) {
 }
 
 func TestExistingAndMissingPrivateModulesAreIndistinguishable(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	seedModule(fake, privateOrg+"/tml", "", "v1.0.0", "aaaa111122223333444455556666777788889999",
@@ -191,6 +199,7 @@ func TestExistingAndMissingPrivateModulesAreIndistinguishable(t *testing.T) {
 // a project, so honouring it here would widen a least-privilege credential to
 // the org's whole private source tree.
 func TestProjectScopedTokenCannotReadPrivateModules(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	s := newTestService(t, fake, "tok", []string{privateOrg})
@@ -208,6 +217,7 @@ func TestProjectScopedTokenCannotReadPrivateModules(t *testing.T) {
 // The counterpart: gating PUBLIC modules would only stop GOPROXY=<proxy>,direct
 // working for anyone without a buildhost token, and there is nothing to hide.
 func TestPublicModuleNeedsNoCredential(t *testing.T) {
+	t.Serial()
 	mirror := fakeMirror(t, map[string]string{"golang.org/x/mod/@v/list": "v0.40.0\n"})
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
@@ -220,6 +230,7 @@ func TestPublicModuleNeedsNoCredential(t *testing.T) {
 }
 
 func TestProxyCredentialFailureStays403WhileCallerFailureIs404(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	s := newTestService(t, fake, "", []string{privateOrg}) // proxy has NO credential
@@ -236,6 +247,7 @@ func TestProxyCredentialFailureStays403WhileCallerFailureIs404(t *testing.T) {
 // A failing module records why on its own row, so the dashboard shows a
 // credential problem instead of it living only in a log line.
 func TestFailureIsRecordedAgainstTheModule(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	s := newTestService(t, fake, "", []string{privateOrg})
@@ -252,6 +264,7 @@ func TestFailureIsRecordedAgainstTheModule(t *testing.T) {
 }
 
 func TestSecondRequestIsACacheHit(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	seedModule(fake, privateOrg+"/tml", "", "v1.2.0", "aaaa111122223333444455556666777788889999",
 		"module "+privateOrg+"/tml\n\ngo 1.25\n")
@@ -271,6 +284,7 @@ func TestSecondRequestIsACacheHit(t *testing.T) {
 // A module in a repo subdirectory tags its versions "<dir>/vX.Y.Z". This is a
 // real shape in the org, and getting it wrong makes the module unresolvable.
 func TestNestedModuleUsesTagPrefix(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	modPath := privateOrg + "/agentic-loop/go"
 	seedModule(fake, modPath, "go", "go/v0.3.0", "bbbb111122223333444455556666777788889999",
@@ -289,6 +303,7 @@ func TestNestedModuleUsesTagPrefix(t *testing.T) {
 // -- @latest must resolve to a pseudo-version of the default branch head rather
 // than reporting that there is nothing there.
 func TestLatestFallsBackToPseudoVersion(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	modPath := privateOrg + "/untagged"
 	fake.Files["HEAD:go.mod"] = "module " + modPath + "\n"
@@ -305,6 +320,7 @@ func TestLatestFallsBackToPseudoVersion(t *testing.T) {
 // A go.mod that declares a different module path means this repo directory is
 // not that module.
 func TestMismatchedGoModIsNotFound(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	modPath := privateOrg + "/tml"
 	seedModule(fake, modPath, "", "v1.0.0", "aaaa111122223333444455556666777788889999",
@@ -318,6 +334,7 @@ func TestMismatchedGoModIsNotFound(t *testing.T) {
 }
 
 func TestPseudoVersionResolvesByEmbeddedRevision(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	modPath := privateOrg + "/router"
 	const sha = "302008ab124800000000000000000000000000ff"
@@ -343,6 +360,7 @@ func TestPseudoVersionResolvesByEmbeddedRevision(t *testing.T) {
 // missing module -- the caller has to fix their request, not go looking for a
 // version that was never there.
 func TestNonSemverVersionIsABadRequest(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
 
@@ -355,6 +373,7 @@ func TestNonSemverVersionIsABadRequest(t *testing.T) {
 // so it addresses no commit and is resolved as an ordinary tag -- which is
 // absent, and correctly reported as such.
 func TestTimestampPrereleaseIsResolvedAsATag(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Files["HEAD:go.mod"] = "module " + privateOrg + "/router\n"
 	s := newTestService(t, fake, "tok", []string{privateOrg})

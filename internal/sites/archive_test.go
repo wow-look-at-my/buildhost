@@ -67,6 +67,7 @@ func withCountingStore(t *testing.T, inner storage.Storage) *countingStore {
 // format change: an uploaded site is stored as a binpazer archive, and serving
 // a file out of it never streams the blob from the start.
 func TestUploadStoresArchiveAndServesByIndex(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	proj := seedProject(t, env.db, "indexed")
 	counting := withCountingStore(t, env.store)
@@ -114,6 +115,7 @@ func TestUploadStoresArchiveAndServesByIndex(t *testing.T) {
 // this format is a plain tar blob, and those must keep serving exactly as they
 // did -- through the scan, since there is no index to use.
 func TestLegacyTarSiteStillServes(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	proj := seedProject(t, env.db, "legacy")
 	counting := withCountingStore(t, env.store)

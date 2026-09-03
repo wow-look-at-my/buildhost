@@ -28,6 +28,7 @@ func zipInnerName(t *testing.T, env *testEnv, pathAndQuery string) string {
 }
 
 func TestHashRefArtifact_UploadDownloadRoundTrip(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	payload := []byte("#!/bin/sh\necho one-binary-many-slots\n")
@@ -116,6 +117,7 @@ func TestHashRefArtifact_UploadDownloadRoundTrip(t *testing.T) {
 // apex "latest" pointer (the default-branch guarantee, exercised end to end
 // against hash-reference rows).
 func TestHashRefArtifact_FeatureBranchDoesNotMoveLatest(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	apexPayload := []byte("apex-bytes")

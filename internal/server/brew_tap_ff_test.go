@@ -107,6 +107,7 @@ func publishPrivateBrewProject(t *testing.T, env *testEnv, name, body string) {
 // data dir -- which re-runs every OnReady wiring, including the tap cache
 // reset), and then exactly Homebrew's update sequence (`git fetch --force` +
 func TestBrewTap_GitUpdateFastForwardsAcrossPublishAndRedeploy(t *testing.T) {
+	t.Serial()
 	gitOrSkip(t)
 	env := setup(t)
 	publishBrewProject(t, env, "appone", "appone-binary")
@@ -144,6 +145,7 @@ func TestBrewTap_GitUpdateFastForwardsAcrossPublishAndRedeploy(t *testing.T) {
 // filename (gcc/pgo -> gcc-pgo.rb); the per-formula URL users copy must
 // resolve that folded name back to the project instead of 404ing.
 func TestBrewFormula_FoldedFilenameResolvesSlashNamespacedProject(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	publishBrewProject(t, env, "gcc/pgo", "pgo-binary")
 
@@ -162,6 +164,7 @@ func TestBrewFormula_FoldedFilenameResolvesSlashNamespacedProject(t *testing.T) 
 // The LITERAL slash-namespaced URL -- the form the admin dashboard linked and
 // the form a reader types from the project name -- must serve the same formula.
 func TestBrewFormula_LiteralSlashNamespacedPathServesFormula(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	publishBrewProject(t, env, "gcc/pgo", "pgo-binary")
 
@@ -178,6 +181,7 @@ func TestBrewFormula_LiteralSlashNamespacedPathServesFormula(t *testing.T) {
 
 // A private project's LITERAL formula path names the project exactly, so an
 func TestBrewFormula_PrivateSlashNamespacedPathMatchesLegacyPath(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	publishPrivateBrewProject(t, env, "ns/hidden", "hidden-binary")
 

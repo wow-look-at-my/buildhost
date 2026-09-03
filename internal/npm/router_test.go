@@ -115,6 +115,7 @@ func decodePackument(t *testing.T, rec *httptest.ResponseRecorder) map[string]an
 // blob is not a readable npm tarball, so no manifest fields can be reflected and
 // the version entry is the minimal-but-valid {name, version, dist}.
 func TestRouter_Packument_NPMPackageArtifact(t *testing.T) {
+	t.Serial()
 	seedNPMPackage(t, "router-pkg", "5.0.0", "tarball")
 
 	rec := npmGet(t, "", "/@buildhost/router-pkg")
@@ -137,6 +138,7 @@ func TestRouter_Packument_NPMPackageArtifact(t *testing.T) {
 // optionalDependencies were silently dropped -- while keeping name/version/dist
 // authoritative and never echoing lifecycle scripts.
 func TestRouter_Packument_NPMPackageReflectsManifest(t *testing.T) {
+	t.Serial()
 	seedNPMPackageTarball(t, "router-manifest", "7.0.0", map[string]any{
 		"name":                 "@buildhost/router-manifest",
 		"version":              "7.0.0",
@@ -171,6 +173,7 @@ func TestRouter_Packument_NPMPackageReflectsManifest(t *testing.T) {
 }
 
 func TestRouter_Tarball_Success(t *testing.T) {
+	t.Serial()
 	content := "fake npm tarball content"
 	seedNPMPackage(t, "router-tarball", "1.0.0", content)
 
@@ -182,6 +185,7 @@ func TestRouter_Tarball_Success(t *testing.T) {
 }
 
 func TestRouter_Tarball_NotFound(t *testing.T) {
+	t.Serial()
 	seedNPMPackage(t, "router-nf", "1.0.0", "content")
 
 	for _, p := range []string{
@@ -200,6 +204,7 @@ func TestRouter_Tarball_NotFound(t *testing.T) {
 // "cc-marketplace/my-plugin" is served as "@buildhost/cc-marketplace__my-plugin"
 // and its tarball downloads through the encoded route.
 func TestRouter_NamespacedProject(t *testing.T) {
+	t.Serial()
 	content := "namespaced tarball"
 	seedNPMPackage(t, "cc-marketplace/my-plugin", "2.0.0", content)
 
@@ -219,6 +224,7 @@ func TestRouter_NamespacedProject(t *testing.T) {
 }
 
 func TestRouter_Packument_BinaryRepackage(t *testing.T) {
+	t.Serial()
 	d, store := routerEnv(t)
 	ctx := context.Background()
 
@@ -263,6 +269,7 @@ func TestRouter_Packument_BinaryRepackage(t *testing.T) {
 }
 
 func TestRouter_UnpublishedSkipped(t *testing.T) {
+	t.Serial()
 	d, _ := routerEnv(t)
 	ctx := context.Background()
 	proj := &db.Project{Name: "router-unpub", Versioning: db.VersioningSemver}
@@ -279,6 +286,7 @@ func TestRouter_UnpublishedSkipped(t *testing.T) {
 // through the real static endpoint -- this is the launcher package the npm
 // packument points binary projects at (fmt=npm-wrapper, os=any/arch=any).
 func TestRouter_StaticNPMWrapper(t *testing.T) {
+	t.Serial()
 	d, _ := routerEnv(t)
 	ctx := context.Background()
 
@@ -302,6 +310,7 @@ func TestRouter_StaticNPMWrapper(t *testing.T) {
 // TestRouter_ScopeEncoding covers how npm addresses a scoped package: it
 // URL-encodes the scope slash, so the real-world request is
 func TestRouter_ScopeEncoding(t *testing.T) {
+	t.Serial()
 	d, _ := routerEnv(t)
 	ctx := context.Background()
 	proj := &db.Project{Name: "scope-enc", Versioning: db.VersioningSemver}
@@ -347,6 +356,7 @@ func apexReq(t *testing.T, method, target string) *httptest.ResponseRecorder {
 
 // The apex `/npm/*` registry base (used by the go-toolchain action's
 func TestRouter_NPMRedirect_EncodedScopePreservesPercent2f(t *testing.T) {
+	t.Serial()
 	rec := apexReq(t, "GET", "/npm/@buildhost%2fgo-toolchain")
 	require.Equal(t, http.StatusMovedPermanently, rec.Code)
 	loc := rec.Header().Get("Location")
@@ -356,18 +366,21 @@ func TestRouter_NPMRedirect_EncodedScopePreservesPercent2f(t *testing.T) {
 }
 
 func TestRouter_NPMRedirect_TarballPath(t *testing.T) {
+	t.Serial()
 	rec := apexReq(t, "GET", "/npm/@buildhost/foo/-/foo-1.0.0.tgz")
 	require.Equal(t, http.StatusMovedPermanently, rec.Code)
 	assert.Equal(t, "http://npm.localhost/@buildhost/foo/-/foo-1.0.0.tgz", rec.Header().Get("Location"))
 }
 
 func TestRouter_NPMRedirect_QueryPreserved(t *testing.T) {
+	t.Serial()
 	rec := apexReq(t, "GET", "/npm/whatever?write=true")
 	require.Equal(t, http.StatusMovedPermanently, rec.Code)
 	assert.Equal(t, "http://npm.localhost/whatever?write=true", rec.Header().Get("Location"))
 }
 
 func TestRouter_NPMRedirect_HEAD(t *testing.T) {
+	t.Serial()
 	rec := apexReq(t, "HEAD", "/npm/@buildhost%2fgo-toolchain")
 	require.Equal(t, http.StatusMovedPermanently, rec.Code)
 	assert.Equal(t, "http://npm.localhost/@buildhost%2fgo-toolchain", rec.Header().Get("Location"))
@@ -377,6 +390,7 @@ func TestRouter_NPMRedirect_HEAD(t *testing.T) {
 // only the /npm/ prefix and does not hijack sibling main-domain paths.
 // (server.go's /healthz is not linked into this npm unit-test binary, so it
 func TestRouter_NPMRedirect_DoesNotShadowOtherPaths(t *testing.T) {
+	t.Serial()
 	routerEnv(t)
 	for _, p := range []string{"/healthz", "/npmfoo", "/api/v1/projects"} {
 		rec := apexReq(t, "GET", p)
@@ -386,6 +400,7 @@ func TestRouter_NPMRedirect_DoesNotShadowOtherPaths(t *testing.T) {
 }
 
 func TestRouter_PrivateProject_RequiresAuth(t *testing.T) {
+	t.Serial()
 	d, _ := routerEnv(t)
 	ctx := context.Background()
 

@@ -17,6 +17,7 @@ import (
 // (correct for JSON/binary endpoints); the sites Serve handler removes it so
 // the browser can load the site's own scripts, styles, and images.
 func TestSitesServedFileCSP(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	require.Equal(t, http.StatusCreated,
@@ -50,6 +51,7 @@ func TestSitesServedFileCSP(t *testing.T) {
 // only /{project}/branch/{branch}/{path} served a file and the bare root merely
 // redirected, so every link into a site had to name a branch -- and any link
 func TestSitesApexPath(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	env.createProject(t, "apexp", false)
@@ -104,6 +106,7 @@ func TestSitesApexPath(t *testing.T) {
 // public-read bypass opens only a public site's own default branch, and the
 // gate resolves that branch through the same helper the handler does.
 func TestSitesApexPathVisibility(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	env.createProject(t, "apexpriv", true)

@@ -34,6 +34,7 @@ var (
 )
 
 func TestLLMsTxt_PublicAndRendersBaseURL(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	resp := env.get(t, "/llms.txt")
@@ -52,6 +53,7 @@ func TestLLMsTxt_PublicAndRendersBaseURL(t *testing.T) {
 var llmsTxtSubdomains = []string{"apt", "brew", "dl", "git", "npm", "oci", "sites", "static"}
 
 func TestLLMsTxt_ServedOnEverySubdomain(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	for _, sub := range llmsTxtSubdomains {
@@ -73,6 +75,7 @@ func TestLLMsTxt_ServedOnEverySubdomain(t *testing.T) {
 }
 
 func TestLLMsTxt_DockerSubdomainRedirectsToOCI(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	resp := env.getSubdomain(t, "docker", "/llms.txt")
@@ -82,6 +85,7 @@ func TestLLMsTxt_DockerSubdomainRedirectsToOCI(t *testing.T) {
 }
 
 func TestLLMsTxt_DocumentedRoutesAreRegistered(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	body := string(readBody(t, env.get(t, "/llms.txt")))
@@ -105,6 +109,7 @@ func TestLLMsTxt_DocumentedRoutesAreRegistered(t *testing.T) {
 }
 
 func TestLLMsTxt_DocumentedFlowsWork(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	seedPublishedRelease(t, env)
 
