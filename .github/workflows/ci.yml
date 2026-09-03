@@ -33,9 +33,12 @@ jobs:
             echo "::warning::APE binfmt handler not registered; a bare exec of an APE still fails here"
           fi
       # No fetch-cacerts step: the CA bundle is a generate directive
+      # Generate alone costs ~3 minutes here (sqlc, the regex compilers, an npm
+      # build and a fetched CA bundle), and the tests run serially.
       - uses: wow-look-at-my/go-toolchain@master
         with:
           generate: 0af38e6ba5f6
+          timeout: '25'
       # The step above just ran every generate directive, which is what makes
       - uses: ./.github/actions/buildhost-download
         with:
