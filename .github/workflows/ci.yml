@@ -21,6 +21,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # A generate directive spelling `go run` builds an APE the runner cannot exec. Ported from go-toolchain's action, which will carry it; this then no-ops.
+      - name: Register the APE binfmt handler
+        shell: bash
+        run: |
+          set -eu
+          dir=/proc/sys/fs/binfmt_misc
+          if [ -e "$dir/APE" ]; then exit 0; fi
+          if [ ! -w "$dir/register" ]; then sudo mount -t binfmt_misc none "$dir" || true; fi
+          if ! printf '%s\n' ':APE:M::\x4d\x5a\x71\x46\x70\x44\x3d\x27::/bin/sh:' | sudo tee "$dir/register" > /dev/null 2>&1; then
+            echo "::warning::APE binfmt handler not registered; a bare exec of an APE still fails here"
+          fi
       # No fetch-cacerts step: the CA bundle is a generate directive
       - uses: wow-look-at-my/go-toolchain@master
         with:
