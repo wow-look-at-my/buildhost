@@ -16,12 +16,8 @@ import (
 
 // TestServeHTTP_MultiArchIndex_ChildrenResolveByDigest is the regression test
 // for the dangling-index bug: a synthesized multi-arch image serves an image
-// index that lists per-platform child manifests by digest, and every one of
-// those digests MUST be retrievable -- both as a manifest and (its config +
-// layers) as blobs. Before the fix the children were generated only to compute
-// the index and never stored, so fetching a child digest 404'd and no client
-// could pull a platform image.
 func TestServeHTTP_MultiArchIndex_ChildrenResolveByDigest(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -102,11 +98,8 @@ func TestServeHTTP_MultiArchIndex_ChildrenResolveByDigest(t *testing.T) {
 // Digest, and that digest MUST itself be retrievable. The Docker daemon's classic
 // (overlay2 / non-containerd) image store pulls a tag by reading the manifest,
 // then re-requests the *same* manifest by the advertised digest to store it
-// content-addressably; for the parent index that by-digest GET previously 404'd
-// (the index was served by tag but, unlike its children, never persisted), so
-// `docker pull <repo>:<tag>` failed with "manifest unknown" even though pulling a
-// child platform image by digest worked.
 func TestServeHTTP_MultiArchIndex_IndexResolvesByDigest(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
@@ -115,7 +108,6 @@ func TestServeHTTP_MultiArchIndex_IndexResolvesByDigest(t *testing.T) {
 	publishMultiArch(t, ctx, d, store, proj, "1.0.0", 1000000)
 
 	// Fetch the index by tag (this is the request that synthesizes and now
-	// persists the index) and capture the digest it advertises.
 	req := httptest.NewRequest("GET", "/v2/myapp/manifests/latest", nil)
 	req = withRoute(req, proj, route{project: "myapp", action: "manifests", reference: "latest"})
 	rec := httptest.NewRecorder()
@@ -130,8 +122,6 @@ func TestServeHTTP_MultiArchIndex_IndexResolvesByDigest(t *testing.T) {
 	sum := sha256.Sum256(byTag)
 	require.Equal(t, indexDigest, "sha256:"+hex.EncodeToString(sum[:]), "advertised digest must match the index body")
 
-	// The index by its own digest must now resolve (was 404 before the fix), with
-	// the index media type and byte-identical content.
 	dreq := httptest.NewRequest("GET", "/v2/myapp/manifests/"+indexDigest, nil)
 	dreq = withRoute(dreq, proj, route{project: "myapp", action: "manifests", reference: indexDigest})
 	drec := httptest.NewRecorder()
@@ -142,7 +132,6 @@ func TestServeHTTP_MultiArchIndex_IndexResolvesByDigest(t *testing.T) {
 	assert.Equal(t, byTag, drec.Body.Bytes(), "index served by digest must be byte-identical to the one served by tag")
 
 	// HEAD by digest must also resolve and advertise the same digest (the daemon
-	// may HEAD a manifest before GETting it).
 	hreq := httptest.NewRequest("HEAD", "/v2/myapp/manifests/"+indexDigest, nil)
 	hreq = withRoute(hreq, proj, route{project: "myapp", action: "manifests", reference: indexDigest})
 	hrec := httptest.NewRecorder()
@@ -152,6 +141,7 @@ func TestServeHTTP_MultiArchIndex_IndexResolvesByDigest(t *testing.T) {
 }
 
 func TestBlobsReachableFromManifest(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 

@@ -1,7 +1,6 @@
 package api
 
 // Tests for single-artifact multi-platform ingest: PUT .../artifacts/ape with
-// a platforms= set, which stores ONE row covering every platform in the set.
 
 import (
 	"context"
@@ -18,7 +17,6 @@ import (
 )
 
 // apeBody is a minimal stand-in for a real APE: the MZqFpD magic the format
-// check reads, plus filler. Nothing downstream parses further.
 const apeBody = "MZqFpD\x00\x00fake-ape-payload"
 
 // apePlatformSpec is the set gosmopolitan's fat APE covers.
@@ -60,6 +58,7 @@ func decodeArtifact(t *testing.T, rec *httptest.ResponseRecorder) db.ArtifactWit
 }
 
 func TestUploadAPE_OneRowCoversEveryPlatform(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "apeproj")
 	counting := &countingStore{Storage: h.Store}
 	h.Store = counting
@@ -74,14 +73,12 @@ func TestUploadAPE_OneRowCoversEveryPlatform(t *testing.T) {
 		{OS: db.OSDarwin, Arch: db.ArchARM64},
 		{OS: db.OSWindows, Arch: db.ArchAMD64},
 	}, got.Platforms)
-	// The first declared platform is the canonical slot.
 	assert.Equal(t, db.OSLinux, got.OS)
 	assert.Equal(t, db.ArchAMD64, got.Arch)
 	assert.Equal(t, string(exeformat.APE), got.ExeFormat)
 	assert.Equal(t, "go-toolchain", got.Filename)
 	assert.Equal(t, 1, counting.puts)
 
-	// ONE row, not three: this is the whole point.
 	rows, err := h.DB.ListArtifacts(context.Background(), rel.ID)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
@@ -89,9 +86,8 @@ func TestUploadAPE_OneRowCoversEveryPlatform(t *testing.T) {
 }
 
 // TestUploadAPE_EveryPlatformResolvesToTheSameArtifact is the resolution half:
-// the lookup every download path uses answers with the one artifact, for each
-// covered platform.
 func TestUploadAPE_EveryPlatformResolvesToTheSameArtifact(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "resolveproj")
 	rec := doAPEUpload(t, h, proj, "?platforms="+apePlatformSpec, apeBody, nil)
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
@@ -113,6 +109,7 @@ func TestUploadAPE_EveryPlatformResolvesToTheSameArtifact(t *testing.T) {
 }
 
 func TestUploadAPE_RejectsNonAPEMultiPlatformDeclaration(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "notapeproj")
 
 	rec := doAPEUpload(t, h, proj, "?platforms="+apePlatformSpec, "\x7fELF-not-an-ape", nil)
@@ -127,6 +124,7 @@ func TestUploadAPE_RejectsNonAPEMultiPlatformDeclaration(t *testing.T) {
 // A single-platform declaration is not a portability claim, so any file may
 // take this path.
 func TestUploadAPE_SinglePlatformNeedsNoAPEMagic(t *testing.T) {
+	t.Serial()
 	h, proj, _ := setupUploadTest(t, "singleplatproj")
 
 	rec := doAPEUpload(t, h, proj, "?platforms=linux/amd64", "\x7fELF-plain-binary", nil)
@@ -138,6 +136,7 @@ func TestUploadAPE_SinglePlatformNeedsNoAPEMagic(t *testing.T) {
 }
 
 func TestUploadAPE_RejectsBadPlatformSpecs(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "badspecproj")
 
 	for name, tc := range map[string]struct{ query, wantIn string }{
@@ -170,6 +169,7 @@ func TestUploadAPE_RejectsBadPlatformSpecs(t *testing.T) {
 // A covered platform is a taken slot: a later per-platform upload for any of
 // them conflicts, and nothing partial is left behind.
 func TestUploadAPE_SlotConflictsBothWays(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "conflictproj")
 
 	require.Equal(t, http.StatusCreated,
@@ -184,6 +184,7 @@ func TestUploadAPE_SlotConflictsBothWays(t *testing.T) {
 }
 
 func TestUploadAPE_ConflictsWithExistingPerPlatformRow(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "reverseconflictproj")
 
 	require.Equal(t, http.StatusCreated, doUpload(t, h, proj, "windows", "amd64", "", "winbin").Code)
@@ -202,6 +203,7 @@ func TestUploadAPE_ConflictsWithExistingPerPlatformRow(t *testing.T) {
 // A hash-reference upload must reach the same format check: the referenced
 // blob's own bytes decide, not the (empty) request body.
 func TestUploadAPE_HashReferenceReadsTheStoredBytes(t *testing.T) {
+	t.Serial()
 	h, proj, _ := setupUploadTest(t, "hashrefproj")
 
 	first := doAPEUpload(t, h, proj, "?platforms=linux/amd64", apeBody, nil)
@@ -216,6 +218,7 @@ func TestUploadAPE_HashReferenceReadsTheStoredBytes(t *testing.T) {
 }
 
 func TestUploadAPE_PublishedReleaseRejected(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "publishedapeproj")
 	require.NoError(t, h.DB.PublishRelease(context.Background(), rel.ID))
 
@@ -223,9 +226,8 @@ func TestUploadAPE_PublishedReleaseRejected(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, rec.Code)
 }
 
-// Existing per-platform artifacts keep a one-element platform set, so the API
-// shape is uniform and a consumer never special-cases.
 func TestUploadArtifact_SinglePlatformResponseCarriesItsPlatform(t *testing.T) {
+	t.Serial()
 	h, proj, _ := setupUploadTest(t, "uniformproj")
 
 	rec := doUpload(t, h, proj, "linux", "amd64", "", "bin")
@@ -239,6 +241,7 @@ func TestUploadArtifact_SinglePlatformResponseCarriesItsPlatform(t *testing.T) {
 // endpoint. Both routes publish through publishMultiPlatform, so this pins that
 // neither can drift away from the check.
 func TestUploadAPE_RejectsWindowsOnStubPE(t *testing.T) {
+	t.Serial()
 	h, proj, _ := setupUploadTest(t, "apestubpeproj")
 
 	rec := doAPEUpload(t, h, proj, "?platforms=linux/amd64,windows/amd64", apeWithPESections(t, 1), nil)
@@ -252,6 +255,7 @@ func TestUploadAPE_RejectsWindowsOnStubPE(t *testing.T) {
 // upload with a real header is accepted, so the gate keys on the section count
 // rather than on the presence of windows in the set.
 func TestUploadAPE_RealPEHeaderPublishesWindows(t *testing.T) {
+	t.Serial()
 	h, proj, _ := setupUploadTest(t, "aperealpeproj")
 
 	rec := doAPEUpload(t, h, proj, "?platforms=linux/amd64,windows/amd64", apeWithPESections(t, 3), nil)

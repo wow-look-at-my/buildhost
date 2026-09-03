@@ -17,8 +17,6 @@ var apePlatforms = []db.Platform{
 	{OS: db.OSWindows, Arch: db.ArchAMD64},
 }
 
-// redirectFor drives the dl handler for one platform and returns the static
-// query it redirects to.
 func redirectFor(t *testing.T, h *Handler, proj *db.Project, params url.Values) url.Values {
 	t.Helper()
 	req := makeRequest(proj.Name, params)
@@ -29,10 +27,8 @@ func redirectFor(t *testing.T, h *Handler, proj *db.Project, params url.Values) 
 }
 
 // TestDownload_MultiPlatform_EveryPlatformGetsTheSameURL is the property the
-// whole feature exists for: one uploaded APE, asked for as three different
-// platforms, hands back one identical static URL -- so one CDN object, one
-// digest, one ETag, and one download link in any UI listing it.
 func TestDownload_MultiPlatform_EveryPlatformGetsTheSameURL(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "go-toolchain", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -44,7 +40,6 @@ func TestDownload_MultiPlatform_EveryPlatformGetsTheSameURL(t *testing.T) {
 			"v": {"1.0.0"}, "os": {string(p.OS)}, "arch": {string(p.Arch)},
 		})
 		assert.Equal(t, "go-toolchain", q.Get("project"))
-		// Every platform folds to the canonical slot, which is platforms[0].
 		assert.Equal(t, "linux", q.Get("os"), "os for %s", p)
 		assert.Equal(t, "amd64", q.Get("arch"), "arch for %s", p)
 		urls = append(urls, q.Encode())
@@ -57,6 +52,7 @@ func TestDownload_MultiPlatform_EveryPlatformGetsTheSameURL(t *testing.T) {
 // TestDownload_MultiPlatform_AliasSpellingsResolve proves a consumer passing
 // RUNNER_OS/uname spellings reaches the same artifact.
 func TestDownload_MultiPlatform_AliasSpellingsResolve(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "go-toolchain", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -67,9 +63,8 @@ func TestDownload_MultiPlatform_AliasSpellingsResolve(t *testing.T) {
 	assert.Equal(t, "amd64", q.Get("arch"))
 }
 
-// TestDownload_MultiPlatform_LatestAndBranchResolveToo covers the two mutable
-// spellings alongside the exact-version one.
 func TestDownload_MultiPlatform_LatestAndBranchResolveToo(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "go-toolchain", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -88,8 +83,8 @@ func TestDownload_MultiPlatform_LatestAndBranchResolveToo(t *testing.T) {
 
 // TestDownload_MultiPlatform_UncoveredPlatformIsUntouched proves the fold is
 // scoped to platforms the artifact actually covers: an uncovered pair keeps its
-// own spelling and static answers the 404, exactly as before.
 func TestDownload_MultiPlatform_UncoveredPlatformIsUntouched(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "go-toolchain", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -103,6 +98,7 @@ func TestDownload_MultiPlatform_UncoveredPlatformIsUntouched(t *testing.T) {
 // TestDownload_SinglePlatform_RedirectUnchanged pins that an ordinary
 // per-platform artifact still redirects to exactly its own os/arch.
 func TestDownload_SinglePlatform_RedirectUnchanged(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)

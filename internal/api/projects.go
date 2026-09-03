@@ -1,8 +1,6 @@
 package api
 
 // Project names may contain multiple `/`-separated segments. Each segment matches
-// the same alphabet as a single-segment name and must start with [a-z0-9]. No
-// leading, trailing, or consecutive slashes. Total length capped in validProjectName.
 //go:generate go run github.com/wow-look-at-my/go-regex-compiler/cmd/go-regex-compiler@latest --regex "^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$" --func validProjectNameRegex --package api --output gen_project_name.go --match full
 //go:generate go run github.com/wow-look-at-my/go-regex-compiler/cmd/go-regex-compiler@latest --regex "^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$" --func validProjectNameRegex --package api --output gen_project_name.go --match full
 //go:generate gofmt -w gen_project_name.go
@@ -33,8 +31,6 @@ type createProjectRequest struct {
 }
 
 // validProjectName enforces the structural regex (validProjectNameRegex, generated)
-// plus a total-length cap. The regex itself does not bound length, so a separate
-// check keeps multi-segment names from growing without limit.
 const maxProjectNameLen = 255
 
 func validProjectName(s string) bool {
@@ -100,10 +96,6 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 // pointer so an absent key leaves the setting unchanged (PATCH semantics).
 type updateProjectRequest struct {
 	// CreateService declares that the project's installed binary runs as a
-	// background service; each download format materializes it its own way
-	// (brew formulas gain a `service do` block, on-the-fly debs ship a
-	// systemd user unit). Operator override for the release-create
-	// declaration path.
 	CreateService *bool `json:"create_service"`
 }
 

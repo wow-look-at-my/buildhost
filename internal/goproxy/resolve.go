@@ -17,7 +17,6 @@ type resolved struct {
 	Commit  string
 	Time    time.Time
 	// GoMod is the module's go.mod at Commit (synthesized when the module has
-	// none, which the protocol still requires us to serve).
 	GoMod []byte
 }
 
@@ -38,8 +37,6 @@ func (s *Service) resolveRef(ctx context.Context, modPath, rev string) (repoRef,
 	for _, ref := range candidates {
 		content, declared, err := s.github.goModAt(ctx, ref, rev, modPath, "")
 		if err != nil {
-			// Keep the first failure: if no candidate resolves, that error is a far
-			// better report than "not found" (it may be the credential).
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -66,10 +63,6 @@ func refDesc(r repoRef) string {
 	return r.Owner + "/" + r.Repo + "/" + r.Dir
 }
 
-// versionTags returns the module's semver tags, newest first, paired with the
-// tag that carries each. Tags outside this module's directory prefix, and tags
-// whose major version disagrees with the module path's suffix, are excluded --
-// a v2 tag on the repo root is not a version of the root module.
 func (s *Service) versionTags(ctx context.Context, modPath string, ref repoRef) ([]taggedVersion, error) {
 	tags, err := s.github.listTags(ctx, ref, modPath)
 	if err != nil {
@@ -198,8 +191,6 @@ func (s *Service) pin(ctx context.Context, ref repoRef, modPath, version, sha st
 
 // latest serves @latest: the highest release version, else the highest
 // pre-release, else a pseudo-version of the default branch head. The last case
-// is the normal one for this org's untagged first-party modules, so it is a
-// first-class path rather than a fallback that reports "nothing here".
 func (s *Service) latest(ctx context.Context, modPath string) (*resolved, error) {
 	ref, _, err := s.resolveRef(ctx, modPath, "HEAD")
 	if err != nil {

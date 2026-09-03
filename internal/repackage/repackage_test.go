@@ -36,6 +36,7 @@ func makeInput() Input {
 // --- Applicability tests ---
 
 func TestTarGZApplicable(t *testing.T) {
+	t.Serial()
 	rp := &TarGZ{}
 	for _, kind := range []db.Kind{db.KindBinary, db.KindLibrary, db.KindAssets, db.KindArchive} {
 		for _, os := range []db.OS{db.OSLinux, db.OSDarwin, db.OSWindows, db.OSFreeBSD} {
@@ -47,6 +48,7 @@ func TestTarGZApplicable(t *testing.T) {
 }
 
 func TestTarXZApplicable(t *testing.T) {
+	t.Serial()
 	rp := &TarXZ{}
 	for _, kind := range []db.Kind{db.KindBinary, db.KindLibrary, db.KindAssets, db.KindArchive} {
 		for _, os := range []db.OS{db.OSLinux, db.OSDarwin, db.OSWindows, db.OSFreeBSD} {
@@ -58,6 +60,7 @@ func TestTarXZApplicable(t *testing.T) {
 }
 
 func TestTarZSTApplicable(t *testing.T) {
+	t.Serial()
 	rp := &TarZST{}
 	for _, kind := range []db.Kind{db.KindBinary, db.KindLibrary, db.KindAssets, db.KindArchive} {
 		for _, os := range []db.OS{db.OSLinux, db.OSDarwin, db.OSWindows, db.OSFreeBSD} {
@@ -69,6 +72,7 @@ func TestTarZSTApplicable(t *testing.T) {
 }
 
 func TestZipApplicable(t *testing.T) {
+	t.Serial()
 	rp := &Zip{}
 	for _, kind := range []db.Kind{db.KindBinary, db.KindLibrary, db.KindAssets, db.KindArchive} {
 		for _, os := range []db.OS{db.OSLinux, db.OSDarwin, db.OSWindows, db.OSFreeBSD} {
@@ -80,6 +84,7 @@ func TestZipApplicable(t *testing.T) {
 }
 
 func TestDebApplicable(t *testing.T) {
+	t.Serial()
 	rp := &Deb{}
 
 	linuxArtifact := db.Artifact{OS: db.OSLinux, Kind: db.KindBinary}
@@ -93,6 +98,7 @@ func TestDebApplicable(t *testing.T) {
 }
 
 func TestBrewApplicable(t *testing.T) {
+	t.Serial()
 	rp := &Brew{}
 
 	// Linux and Darwin binaries are applicable
@@ -118,6 +124,7 @@ func TestBrewApplicable(t *testing.T) {
 }
 
 func TestNPMApplicable(t *testing.T) {
+	t.Serial()
 	rp := &NPM{}
 
 	// Binary, assets, archive are applicable
@@ -134,6 +141,7 @@ func TestNPMApplicable(t *testing.T) {
 }
 
 func TestOCIApplicable(t *testing.T) {
+	t.Serial()
 	rp := &OCI{}
 
 	// Only binary is applicable

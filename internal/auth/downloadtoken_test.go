@@ -10,17 +10,20 @@ import (
 )
 
 func TestDownloadToken_RoundTrip(t *testing.T) {
+	t.Serial()
 	tok := MintDownloadToken("vega-analyzer", "5", "linux", "amd64", "raw", false, time.Now().Add(time.Hour))
 	assert.True(t, strings.HasPrefix(tok, "bhdl_"))
 	assert.True(t, VerifyDownloadToken(tok, "vega-analyzer", "5", "linux", "amd64", "raw", false))
 }
 
 func TestDownloadToken_Expired(t *testing.T) {
+	t.Serial()
 	tok := MintDownloadToken("p", "1", "linux", "amd64", "raw", false, time.Now().Add(-time.Minute))
 	assert.False(t, VerifyDownloadToken(tok, "p", "1", "linux", "amd64", "raw", false))
 }
 
 func TestDownloadToken_WrongTuple(t *testing.T) {
+	t.Serial()
 	tok := MintDownloadToken("p", "1", "linux", "amd64", "raw", false, time.Now().Add(time.Hour))
 	cases := []struct {
 		name                                     string
@@ -42,12 +45,14 @@ func TestDownloadToken_WrongTuple(t *testing.T) {
 }
 
 func TestDownloadToken_DebugBinding(t *testing.T) {
+	t.Serial()
 	tok := MintDownloadToken("p", "1", "linux", "amd64", "raw", true, time.Now().Add(time.Hour))
 	assert.True(t, VerifyDownloadToken(tok, "p", "1", "linux", "amd64", "raw", true))
 	assert.False(t, VerifyDownloadToken(tok, "p", "1", "linux", "amd64", "raw", false))
 }
 
 func TestDownloadToken_Malformed(t *testing.T) {
+	t.Serial()
 	assert.False(t, VerifyDownloadToken("", "p", "1", "linux", "amd64", "raw", false))
 	assert.False(t, VerifyDownloadToken("nope", "p", "1", "linux", "amd64", "raw", false))
 	assert.False(t, VerifyDownloadToken("bhdl_!!!", "p", "1", "linux", "amd64", "raw", false))
@@ -58,6 +63,7 @@ func TestDownloadToken_Malformed(t *testing.T) {
 }
 
 func TestApexServiceURL(t *testing.T) {
+	t.Serial()
 	cases := []struct {
 		host string
 		want string
@@ -77,6 +83,7 @@ func TestApexServiceURL(t *testing.T) {
 }
 
 func TestApexServiceURL_LocalhostScheme(t *testing.T) {
+	t.Serial()
 	req := httptest.NewRequest("GET", "/x", nil)
 	req.Host = "admin.localhost:9090"
 	u := ApexServiceURL(req, "static")

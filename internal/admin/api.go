@@ -185,10 +185,8 @@ func (s *Server) apiRelease(w http.ResponseWriter, r *http.Request) {
 
 	type artifactView struct {
 		db.ListArtifactDetailsWithDownloadsRow
-		Packages []db.ListPackagedFormatsRow `json:"packages"`
-		// Platforms is every platform this ONE file covers, so the dashboard
-		// lists one row per file instead of one per platform.
-		Platforms []db.Platform `json:"platforms"`
+		Packages  []db.ListPackagedFormatsRow `json:"packages"`
+		Platforms []db.Platform               `json:"platforms"`
 	}
 	artifacts := make([]artifactView, len(rows))
 	var totalSize int64
@@ -305,7 +303,6 @@ func (s *Server) apiStorage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Upper-bound estimate of what keep-N eviction would free (does not subtract
-	// dedup-shared blobs). Omitted on error so the endpoint still returns.
 	cutoff := time.Now().Add(-s.cfg.RetentionRecencyGuard)
 	if reclaimable, err := s.db.SumReclaimableBytes(r.Context(), int64(s.cfg.RetentionKeepN), cutoff); err == nil {
 		resp["reclaimable_bytes"] = reclaimable

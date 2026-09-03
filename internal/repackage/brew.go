@@ -35,30 +35,6 @@ func (b *Brew) Applicable(a db.Artifact) bool {
 }
 
 // brewTemplate always emits a TOP-LEVEL url/sha256 (the canonical resource,
-// see brewCanonicalResource) in addition to the per-platform on_<os>/on_<arch>
-// blocks. Homebrew's loader must find a stable URL on EVERY platform to import
-// a formula at all (determine_active_spec raises "formula requires at least a
-// URL" otherwise) -- and a formula that fails import poisons evaluation of the
-// whole tap for that platform. With only on_* stanzas, a linux-only project's
-// formula had no URL visible on macOS and broke the tap for every mac user
-// (and vice versa). The on_* blocks still override url/sha256 on platforms
-// they match, so multi-platform resolution is unchanged; on a platform with
-// no matching block the canonical resource is what a (single-OS gated, see
-// DependsOnOS) install would report. DependsOnOS is homebrew-core's
-// single-platform pattern: `depends_on :linux` makes a foreign-platform
-// install fail cleanly ("Linux is required...") instead of fetching a binary
-// that cannot run.
-//
-// A binary-kind formula also pairs `chmod 0755` with `skip_clean "bin"`.
-// Homebrew's Cleaner rewrites the mode of every installed file under bin
-// (Library/Homebrew/extend/os/{linux,mac}/cleaner.rb): 0555 when it recognizes
-// the file as executable -- a `#!` script, an ELF, or a Mach-O -- and 0444
-// otherwise, ignoring whatever mode the artifact was installed with. A
-// Cosmopolitan/APE binary is none of the three, so `brew install` left it 0444
-// (not executable at all); and 0555 would not save it either, because an APE
-// rewrites itself in place on first run and fails with "Permission denied"
-// unless it is still writable. skip_clean prunes the Cleaner for bin, so the
-// mode this formula installs is the mode that survives.
 
 var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }}require_relative "../lib/buildhost_private_download"
 
@@ -116,14 +92,6 @@ end
 `))
 
 // brewInstallName returns the path the staged download exposes for install.
-// The tar.gz artifact contains exactly one entry named after the project, so
-// for a slash-namespaced project ("myrepo/myapp") the archive's only
-// top-level entry is the "myrepo" directory -- and Homebrew's unpack step
-// strips a lone top-level directory (the same normalization it applies to
-// GitHub tarballs), leaving just "myapp" in the stage. Installing the full
-// slashed path therefore ENOENTs; the basename is what actually exists. For
-// single-segment projects the entry is a top-level file and the basename is
-// the name itself, so this is universally correct.
 func brewInstallName(project string) string {
 	if i := strings.LastIndexByte(project, '/'); i >= 0 {
 		return project[i+1:]
@@ -132,22 +100,9 @@ func brewInstallName(project string) string {
 }
 
 // BrewPrivateStrategyPath is the path inside the generated tap repository that
-// carries the download strategy for private-project formulas. Those formulas
-// require_relative it (the "lib/" companion-file layout is Homebrew's standard
-// private-tap pattern).
 const BrewPrivateStrategyPath = "lib/buildhost_private_download.rb"
 
 // BrewPrivateStrategy is the Ruby download strategy shipped in the generated
-// tap. It never contains a token: the token comes from the user's environment
-// at install time. The variable MUST be HOMEBREW_-prefixed -- Homebrew scrubs
-// every other variable from the environment before formula code runs.
-//
-// The strategy only authenticates the INITIAL download request. buildhost's dl
-// endpoint answers an authenticated private download with a redirect whose
-// Location carries a short-lived signed token bound to that one artifact, so
-// the followed cross-host redirect needs no Authorization header (curl drops
-// the header on cross-host redirects by design, and brew inherits curl
-// semantics).
 const BrewPrivateStrategy = `# frozen_string_literal: true
 
 # Download strategy for private buildhost projects: sends the token from
@@ -191,9 +146,6 @@ type brewData struct {
 
 // brewCanonicalResource picks the deterministic resource emitted as the
 // formula's top-level url/sha256: linux/intel when present (the org's default
-// platform), else the first in stable (OS, Arch) order. Deterministic choice
-// matters -- the formula bytes feed the tap's content-addressed git objects, so
-// an unstable pick would mint spurious tap commits.
 func brewCanonicalResource(resources []BrewResource) BrewResource {
 	sorted := make([]BrewResource, len(resources))
 	copy(sorted, resources)
@@ -212,9 +164,6 @@ func brewCanonicalResource(resources []BrewResource) BrewResource {
 }
 
 // brewDependsOnOS returns "linux" or "macos" when every resource targets that
-// one OS -- the formula then declares `depends_on :<os>` so installing on the
-// other platform fails with a clean requirement error instead of downloading a
-// foreign binary. Formulas spanning both OSes return "" (no gate).
 func brewDependsOnOS(resources []BrewResource) string {
 	osName := ""
 	for _, r := range resources {
@@ -242,17 +191,8 @@ type BrewFormula struct {
 	License     string
 	Kind        string
 	// Private marks a formula for a private project: it requires the tap's
-	// BuildhostCurlDownloadStrategy (BrewPrivateStrategyPath) and downloads
-	// with `using:` it, so the artifact fetch carries the user's token from
-	// HOMEBREW_BUILDHOST_TOKEN. The formula itself never embeds a token.
 	Private bool
 	// Service adds a `service do` block so `brew services start` manages the
-	// installed binary as a login service -- the brew materialization of the
-	// packaging-agnostic projects.create_service setting (a declared BOOL,
-	// never publisher strings, so no publisher-controlled Ruby can enter the
-	// template through it). Only meaningful for Kind "binary": the block runs
-	// opt_bin/<InstallName>, which only a bin.install stages, so other kinds
-	// never emit it.
 	Service   bool
 	Resources []BrewResource
 }
@@ -272,9 +212,6 @@ func RenderBrewFormula(f BrewFormula) (*Output, error) {
 		Kind:        f.Kind,
 		Private:     f.Private,
 		// The service block references opt_bin/<InstallName>, which exists
-		// only after a bin.install -- gate on the binary kind so a flagged
-		// project publishing a library/archive still renders loadable Ruby
-		// that never points brew services at a nonexistent executable.
 		Service:     f.Service && f.Kind == "binary",
 		Canonical:   brewCanonicalResource(f.Resources),
 		DependsOnOS: brewDependsOnOS(f.Resources),
@@ -354,12 +291,6 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 // It MUST match what Homebrew derives from the formula FILENAME
 // (Formulary.class_s of the folded name), or the tap's formulas fail to load
 // with "expected to find class" -- and it must always be a valid Ruby
-// constant, or brew dies with a ".rb: syntax error" while parsing the file.
-// Brew's derivation treats '-', '_', and '.' as separators: it drops them and
-// upcases the following character ("a.b-c_d" -> "ABCD", "go1.2.3" -> "Go123";
-// measured against Formulary.class_s on Homebrew 6.0.9). '/' is buildhost's
-// namespace fold (tapFormulaName turns it into '-'), so it separates the same
-// way. Callers must gate on BrewEligibleProjectName first.
 func BrewClassName(name string) string {
 	parts := strings.FieldsFunc(name, func(r rune) bool {
 		return r == '-' || r == '_' || r == '/' || r == '.'
@@ -375,26 +306,11 @@ func BrewClassName(name string) string {
 }
 
 // BrewEligibleProjectName reports whether a project name can be served as a
-// Homebrew formula AT ALL. A name starting with a digit cannot: brew derives
-// the expected class from the formula filename (Formulary.class_s("7zip") ==
-// "7zip"), and a Ruby constant cannot start with a digit, so NO declaration
-// satisfies the loader -- emitting `class 7zip < Formula` is a guaranteed
-// ".rb:1: syntax errors found" that also breaks whole-tap evaluation, and any
-// valid substitute class fails with TapFormulaClassUnavailableError (both
-// measured against Homebrew 6.0.9). Such projects are excluded from the tap
-// and 404 on the formula endpoints instead of poisoning the tap with
-// unparseable Ruby. Project names are validator-constrained to lowercase
-// [a-z0-9] starts, so checking the first byte suffices.
 func BrewEligibleProjectName(name string) bool {
 	return name != "" && name[0] >= 'a' && name[0] <= 'z'
 }
 
 // BrewFormulaName is the tap filename stem, and therefore the name a user
-// types after the tap: `brew install pazer/build/<BrewFormulaName>`. A
-// Homebrew formula name cannot contain '/', which is buildhost's project
-// namespace separator, so the namespace folds to '-'. DebPackageName folds the
-// same separator for the Debian grammar. A single-segment name does not
-// change.
 func BrewFormulaName(project string) string {
 	return strings.ReplaceAll(project, "/", "-")
 }

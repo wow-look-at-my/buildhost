@@ -20,7 +20,6 @@ var templateFS embed.FS
 
 // templates maps a page name to its parsed template. Each page is parsed
 // together with the shared base layout; the page file redefines the "title"
-// and "content" blocks that base.html renders.
 var templates = map[string]*template.Template{
 	"index":   parsePage("index.html"),
 	"project": parsePage("project.html"),

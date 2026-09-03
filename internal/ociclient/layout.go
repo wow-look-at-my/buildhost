@@ -12,8 +12,7 @@ import (
 )
 
 // maxManifestSize mirrors the server's manifest cap (manifests are tiny JSON
-// documents; anything bigger is rejected before it is sent).
-const maxManifestSize = 4 << 20 // 4 MiB
+const maxManifestSize = 4 << 20
 
 var (
 	validDigest  = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
@@ -44,7 +43,6 @@ func isIndexMediaType(mt string) bool {
 
 // layout is an OCI image layout on disk (the `docker buildx build
 // --output type=oci` / `docker save` format): an index.json entry point plus
-// content-addressed blobs under blobs/sha256/.
 type layout struct {
 	dir     string
 	cleanup func() // removes the temp extraction dir; nil when opened in place
@@ -78,9 +76,6 @@ func (l *layout) Close() {
 
 // extractLayoutTar extracts the OCI layout members of a tarball into a temp
 // directory. Entry names are matched against an exact whitelist -- index.json,
-// oci-layout, and blobs/sha256/<64-hex> -- so no path from the archive is ever
-// trusted; everything else (docker save's legacy manifest.json, repositories,
-// directory entries) is skipped.
 func extractLayoutTar(path string) (*layout, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -149,12 +144,6 @@ func writeFileFrom(dest string, r io.Reader) error {
 	return out.Close()
 }
 
-// root returns the layout's single top-level descriptor -- the one image the
-// layout holds. `docker buildx --output type=oci` writes one index.json entry
-// PER TAG, every entry referencing the same digest (only the
-// io.containerd.image.name annotation differs), so same-digest entries
-// collapse to one root. A layout whose entries reference distinct digests
-// holds several images and has no single pushable root, so it is rejected.
 func (l *layout) root() (descriptor, error) {
 	data, err := os.ReadFile(filepath.Join(l.dir, "index.json"))
 	if err != nil {
@@ -177,8 +166,6 @@ func (l *layout) root() (descriptor, error) {
 }
 
 // blobPath resolves a digest to its blob file, verifying the file exists and
-// matches the descriptor's size when one is given (a corrupt/truncated layout
-// fails here instead of mid-upload).
 func (l *layout) blobPath(digest string, wantSize int64) (string, error) {
 	if !validDigest.MatchString(digest) {
 		return "", fmt.Errorf("unsupported digest %q (only sha256 is supported)", digest)

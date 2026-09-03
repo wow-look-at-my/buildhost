@@ -12,6 +12,7 @@ import (
 )
 
 func TestClientIP(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name       string
 		remoteAddr string
@@ -37,6 +38,7 @@ func TestClientIP(t *testing.T) {
 }
 
 func TestDownloadPrincipal(t *testing.T) {
+	t.Serial()
 	// Anonymous public pull: no user, no token.
 	assert.Empty(t, downloadPrincipal(context.Background()))
 

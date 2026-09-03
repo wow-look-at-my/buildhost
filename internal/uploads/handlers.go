@@ -16,8 +16,6 @@ import (
 )
 
 // active is the wired session store. It is set by auth.OnReady (server
-// startup) and re-wired per auth.Init in tests, mirroring the api package's
-// handler singleton.
 var active atomic.Pointer[Store]
 
 func init() {
@@ -25,7 +23,6 @@ func init() {
 		store, err := NewStore(auth.DataDir()+"/tmp/uploads", config.MaxUploadSize(), config.UploadSessionTTL())
 		if err != nil {
 			// Same failure mode as an unwritable data dir anywhere else: log it;
-			// requests needing sessions get a clear 503 from activeStore.
 			slog.Error("upload session store unavailable", "err", err)
 			active.Store(nil)
 		} else {
@@ -34,8 +31,6 @@ func init() {
 	})
 
 	// Registration stays OUT of the OnReady callback: OnReady fires only from
-	// auth.Init, so a route registered there is invisible to `buildhost routes`
-	// and to the route-diff check. Only dependency wiring belongs above.
 	auth.HandleRawPrimary("POST /api/v1/uploads", handleCreate)
 	auth.HandleRawPrimary("GET /api/v1/uploads/{id}", handleStatus)
 	auth.HandleRawPrimary("PATCH /api/v1/uploads/{id}", handleAppend)
@@ -43,7 +38,6 @@ func init() {
 }
 
 // StartJanitor sweeps expired sessions in the background until ctx is done.
-// Called once from serve; tests rely on the opportunistic sweep in Create.
 func StartJanitor(ctx context.Context) {
 	go func() {
 		t := time.NewTicker(15 * time.Minute)
@@ -72,9 +66,6 @@ func jsonError(w http.ResponseWriter, status int, msg string) {
 }
 
 // ownerIdentity derives the stable identity a session is bound to. DB tokens
-// are unique by ID; OIDC-verified requests carry a synthetic token (ID -1,
-// Name "oidc:"+subject), so ID+Name distinguishes every caller. Only the
-// identity that created a session may read, append, finalize, or abort it.
 func ownerIdentity(t *db.APIToken) string {
 	return strconv.FormatInt(t.ID, 10) + ":" + t.Name
 }
@@ -91,7 +82,6 @@ func requireOwner(w http.ResponseWriter, r *http.Request) string {
 	return ownerIdentity(t)
 }
 
-// activeStore returns the wired store, or writes a 503 and returns nil.
 func activeStore(w http.ResponseWriter) *Store {
 	s := active.Load()
 	if s == nil {
@@ -129,7 +119,6 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 // getSession authenticates the caller and resolves {id} to their session,
-// writing the error response (401 or 404) when it can't.
 func getSession(w http.ResponseWriter, r *http.Request) (*Store, *Session) {
 	owner := requireOwner(w, r)
 	if owner == "" {
@@ -176,7 +165,6 @@ func handleAppend(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 		jsonResponse(w, http.StatusOK, sessionResponse{ID: sess.ID(), Size: size})
 	case errors.Is(err, ErrOffsetMismatch), errors.Is(err, ErrBusy):
-		// 409 carries the authoritative size so the client resumes from it.
 		jsonResponse(w, http.StatusConflict, map[string]any{"error": err.Error(), "size": size})
 	case errors.Is(err, ErrTooLarge):
 		jsonResponse(w, http.StatusRequestEntityTooLarge, map[string]any{

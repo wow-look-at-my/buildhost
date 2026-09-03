@@ -17,6 +17,7 @@ import (
 // that the router resolves a multi-segment {project} path value.
 
 func TestOIDCAuthorizesProject(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		oidc, requested string
 		want            bool
@@ -43,6 +44,7 @@ func TestOIDCAuthorizesProject(t *testing.T) {
 }
 
 func TestValidNamespacedProjectName(t *testing.T) {
+	t.Serial()
 	for _, s := range []string{"foo", "foo/cli", "log-streamer/client", "a/b/c", "a1.2_3-4/b5"} {
 		assert.True(t, validNamespacedProjectName(s), "expected valid: %q", s)
 	}
@@ -55,6 +57,7 @@ func TestValidNamespacedProjectName(t *testing.T) {
 // Actions OIDC token for repo "log-streamer" may auto-provision and write to
 // the per-binary project "log-streamer/client".
 func TestRequireProject_OIDCNamespace_AutoCreatesSubProject(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -85,8 +88,8 @@ func TestRequireProject_OIDCNamespace_AutoCreatesSubProject(t *testing.T) {
 
 // TestRequireProject_OIDCNamespace_RejectsOutsideNamespace proves a repo's OIDC
 // token cannot reach a sibling-prefixed or unrelated project, and never
-// auto-creates one.
 func TestRequireProject_OIDCNamespace_RejectsOutsideNamespace(t *testing.T) {
+	t.Serial()
 	for _, requested := range []string{"log-streamer-evil", "log-streamerx", "other/thing"} {
 		d := openTestDB(t)
 		initTestMiddleware(t, d)
@@ -114,6 +117,7 @@ func TestRequireProject_OIDCNamespace_RejectsOutsideNamespace(t *testing.T) {
 // TestRequireProject_OIDCNamespace_WritesExistingSubProject proves the same
 // token can write to an already-existing project in its namespace.
 func TestRequireProject_OIDCNamespace_WritesExistingSubProject(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -146,6 +150,7 @@ func TestRequireProject_OIDCNamespace_WritesExistingSubProject(t *testing.T) {
 // "releases"/"artifacts" anchors let {version}/{os}/{arch} bind correctly. The
 // OIDC token for repo "log-streamer" then auto-provisions it.
 func TestRequireProject_MultiSegmentRouting_EndToEnd(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 

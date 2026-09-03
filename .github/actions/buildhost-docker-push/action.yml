@@ -42,8 +42,6 @@ runs:
   using: composite
   steps:
     # Pinned at @master rather than a relative path: a composite step's
-    # relative uses: resolves against the CALLING repository, which is the
-    # consumer's, not this one.
     - name: Download the buildhost CLI
       id: download-cli
       uses: wow-look-at-my/buildhost/.github/actions/buildhost-download@master
@@ -59,8 +57,6 @@ runs:
       run: |
         set -uo pipefail
         # Probing docker-push covers both ways a downloaded CLI can still be
-        # unusable: a binary that will not run here, and one published before
-        # the subcommand existed.
         if [ "${{ steps.download-cli.outputs.downloaded }}" = true ] &&
            "${RUNNER_TEMP}/buildhost-cli" docker-push --help >/dev/null 2>&1; then
           echo "source_build=false" >> "${GITHUB_OUTPUT}"
@@ -70,10 +66,6 @@ runs:
         fi
 
     # The fallback. cmd/buildhost embeds files that are all gitignored (the CA
-    # bundle, the project-name matcher, the admin dashboard's JS), so a source
-    # build has to run every one of those directives -- missing one is what made
-    # the old build-only path die on "pattern static/app.js: no matching files
-    # found" for every consumer.
     - name: Set up Go (to build the CLI from source)
       if: ${{ steps.cli.outputs.source_build == 'true' }}
       uses: actions/setup-go@v5
