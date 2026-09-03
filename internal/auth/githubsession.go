@@ -15,7 +15,6 @@ import (
 // --- signed session + state (HMAC over the shared signing key) ---
 
 // mintSession signs the user's login + GitHub token into the session value. The
-// token is needed at request time to check the user's access to a project's repo.
 func mintSession(login, token string, exp time.Time) string {
 	return signValue("session", login+"\x00"+token, exp)
 }
@@ -33,8 +32,6 @@ func verifySession(value string) (login, token string, ok bool) {
 }
 
 // signinState is the payload bound into the signed OAuth state parameter: the
-// CSRF nonce, the URL to return to after sign-in, and whether this flow is
-// already an automatic retry (so a failing flow restarts at most once).
 type signinState struct {
 	nonce   string
 	next    string
@@ -65,7 +62,6 @@ func parseState(value string) (st signinState, expired, ok bool) {
 	flags, next, found := strings.Cut(rest, "\x00")
 	if !found {
 		// A state minted before the retried flag existed (nonce\x00next): still
-		// authentic; treat as a first attempt.
 		return signinState{nonce: nonce, next: rest}, expired, true
 	}
 	return signinState{nonce: nonce, next: next, retried: flags == "r"}, expired, true
@@ -168,14 +164,6 @@ func clearCookie(w http.ResponseWriter, r *http.Request, name, path string) {
 // apexHost is the registrable host the session cookie is scoped to: the request
 // Host minus port, with a known leading service label (sites/dl/...) stripped --
 // the same apex derivation as apexRootURL. On the apex, where /__signin and the
-// callback run, stripping is a no-op; it matters when the dead-session re-auth
-// (unauthorizedResponse) clears the cookie from a service subdomain, since a
-// Set-Cookie only removes the domain-wide cookie if its Domain matches the one
-// the cookie was set with. A host on the configured site domain classifies to
-// the SITE apex (myapp.pazer.site -> pazer.site) -- a different registrable
-// domain -- so a cookie minted by the /__sso redemption covers every project
-// site under the domain, and a clear from a site host removes the site-domain
-// cookie.
 func apexHost(r *http.Request) string {
 	host := hostNoPort(r.Host)
 	if sd := siteApexOf(host); sd != "" {
@@ -188,9 +176,6 @@ func apexHost(r *http.Request) string {
 }
 
 // safeNextURL keeps post-login redirects inside this deployment: it accepts an
-// absolute URL only if its host is the apex or one of its subdomains, and falls
-// back to the apex root otherwise -- so the flow can't be turned into an open
-// redirect. A relative path (leading "/") is also accepted.
 func safeNextURL(r *http.Request, next string) string {
 	// Sign-in runs on the apex, so the request Host is the apex root.
 	root := RequestBaseURL(r)
@@ -209,11 +194,6 @@ func safeNextURL(r *http.Request, next string) string {
 	if host == apex || strings.HasSuffix(host, "."+apex) {
 		return next
 	}
-	// The configured site domain (or exactly one label under it) is part of this
-	// deployment too: the cross-domain handoff signs a browser in on the primary
-	// apex and returns it to a project site. Anything else is still rejected --
-	// notably lookalikes like x.<site-domain>.evil.com, which fail siteApexOf's
-	// exact-suffix check.
 	if siteApexOf(host) != "" {
 		return next
 	}

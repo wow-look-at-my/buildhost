@@ -7,35 +7,17 @@ import (
 )
 
 // Kind classifies why a module fetch did not produce content. The distinction
-// that matters is KindNotFound versus everything else: at the module-proxy
-// protocol level a 404/410 means "this module does not exist", and `go mod
-// download` reports it as a missing module. Answering it for "I was not allowed
-// to read this module" sends every consumer hunting for a typo in go.mod
-// instead of at the proxy's credential.
 type Kind int
 
 const (
 	// KindNotFound: upstream is readable and the module genuinely is not there.
-	// The only kind that may answer 404.
 	KindNotFound Kind = iota
 	// KindUnauthorized: upstream rejected our credential, or we have none. The
-	// module may well exist. 403.
 	KindUnauthorized
 	// KindUpstream: upstream was reachable but failed (5xx, rate limit, malformed
-	// response), or was not reachable at all. 502.
 	KindUpstream
 	// KindInvalidRequest: the request itself is not a well-formed module-proxy
-	// request (bad escaping, unsupported module path). 400.
 	KindInvalidRequest
-	// KindInaccessible: the CALLER may not see this module. 404, deliberately:
-	// telling them "403, exists but not for you" confirms the module exists,
-	// which is the one fact a private module is keeping. It is answered
-	// byte-identically to a genuine absence.
-	//
-	// This is the opposite direction from KindUnauthorized and must never be
-	// confused with it. There the PROXY's credential failed, which no caller can
-	// fix and which 404 would bury; here the caller's own credential is the
-	// thing missing, and the module's existence is not theirs to learn.
 	KindInaccessible
 )
 
@@ -64,11 +46,9 @@ type Error struct {
 	Module  string
 	Version string
 	// Upstream names the system that answered (e.g. "github", a mirror's URL)
-	// and UpstreamStatus its HTTP status, 0 when the failure was not an HTTP one.
 	Upstream       string
 	UpstreamStatus int
 	// Detail is the upstream's own message, already trimmed to something a
-	// terminal can display.
 	Detail string
 	Err    error
 }
@@ -93,7 +73,6 @@ func (e *Error) Error() string {
 func (e *Error) Unwrap() error { return e.Err }
 
 // HTTPStatus is the status this failure is served as. Only a genuine
-// KindNotFound is allowed to become a 404.
 func (e *Error) HTTPStatus() int {
 	switch e.Kind {
 	case KindNotFound, KindInaccessible:
@@ -170,7 +149,6 @@ func invalidErr(mod, ver, detail string) *Error {
 // before any upstream call, so there is nothing that could differ. That is what
 // keeps a prober from mapping the org's private repositories by diffing
 // responses. The note is on both answers too, so it tells a caller who simply
-// forgot their token what to do without telling a prober which modules are real.
 func inaccessibleErr(mod, ver string) *Error {
 	return &Error{
 		Kind:    KindInaccessible,
@@ -185,14 +163,6 @@ func inaccessibleErr(mod, ver string) *Error {
 
 // notServedErr answers a module outside this proxy's namespace, with no mirror
 // configured to forward it to.
-//
-// This is a 404 on purpose, and it is NOT the laundering the taxonomy exists to
-// stop. In a GOPROXY list, 404/410 is the protocol's "try the next entry" and
-// any other status halts the whole fetch (measured, not assumed). So a 404 here
-// lets `GOPROXY=https://goproxy.{domain},direct` fetch the rest of the world
-// straight from its origin, while an authorization failure stays a 403 and
-// still halts -- a credential problem must never fall through to direct and
-// succeed, because that hides the misconfiguration instead of reporting it.
 func notServedErr(mod, ver string, servedPrefixes []string) *Error {
 	return &Error{
 		Kind:    KindNotFound,
@@ -217,8 +187,6 @@ func joinOr(items []string, empty string) string {
 
 // asError normalizes any error into an *Error so a handler never has to guess a
 // status. An unclassified error is KindUpstream, never KindNotFound: guessing
-// "does not exist" from an error we did not recognize is exactly the laundering
-// this type exists to stop.
 func asError(mod, ver string, err error) *Error {
 	var e *Error
 	if errors.As(err, &e) {

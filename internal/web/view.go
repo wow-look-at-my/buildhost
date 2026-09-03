@@ -20,7 +20,6 @@ const siteName = "buildhost"
 
 var templateFuncs = template.FuncMap{
 	// nonEmpty reports whether s is a non-blank string, for {{if}} guards on
-	// optional metadata fields.
 	"nonEmpty": func(s string) bool { return strings.TrimSpace(s) != "" },
 }
 
@@ -146,9 +145,6 @@ type siteRow struct {
 }
 
 // installInfo holds copy-pasteable commands for fetching a project. Commands
-// are gated on what the latest published release actually contains: a
-// docker-only release exposes just `docker pull`, anything with a real binary
-// exposes the download/apt/brew/npm forms too.
 type installInfo struct {
 	HasBinary bool
 	Curl      string
@@ -219,19 +215,13 @@ func buildInstallInfo(r *http.Request, project, version string, hasBinary bool) 
 	if hasBinary {
 		info.Curl = fmt.Sprintf("curl -LO %q", dlURL(r, project, "", "linux", "amd64", "raw"))
 		// The cloneable tap URL is the /tap.git smart-HTTP endpoint, never the
-		// bare host (a bare `git clone` there 404s). `brew trust` is required
-		// since Homebrew 6.0 before a third-party tap's formulae will evaluate.
-		// Keep this flow byte-for-byte in step with llms.txt / README.
 		info.Brew = "brew tap pazer/build " + serviceBase(r, "brew") + "/tap.git" +
 			"\nbrew trust pazer/build" +
 			// A formula name cannot contain '/', so a slash-namespaced project
-			// installs under its folded name (repackage.BrewFormulaName), the
-			// same fold the tap filename uses.
 			"\nbrew install pazer/build/" + repackage.BrewFormulaName(project)
 		info.Npm = "npm install @buildhost/" + project + " --registry " + serviceBase(r, "npm")
 		aptURL := serviceURL(r, "apt", project)
 		// A slash-namespaced project keeps its slash in the repo URL but installs
-		// under a folded Debian package name (see repackage.DebPackageName).
 		pkg := repackage.DebPackageName(project)
 		info.Apt = fmt.Sprintf(
 			"sudo install -d -m 0755 /etc/apt/keyrings\n"+
@@ -258,9 +248,6 @@ type releaseView struct {
 }
 
 type artifactRow struct {
-	// Platforms is every platform this ONE file runs on, rendered for display.
-	// A single-platform artifact reads "linux/amd64"; a portable one reads the
-	// whole set, and the row still offers exactly one set of download links.
 	Platforms  string
 	Kind       string
 	Filename   string
@@ -270,8 +257,6 @@ type artifactRow struct {
 	Docker     bool
 	DockerPull string
 	// FormatBadge is the executable format detected at upload ("APE"), "" when
-	// the file's format was not recognized. Together with Platforms it renders
-	// as the "APE: linux/amd64, darwin/arm64, windows/amd64" badge.
 	FormatBadge string
 }
 
@@ -281,7 +266,6 @@ type downloadLink struct {
 }
 
 // archiveFormats are the repackaged download formats offered for every
-// non-docker artifact, matching the fmt values the dl/static endpoints accept.
 var archiveFormats = []string{"tar.gz", "tar.xz", "tar.zst", "zip"}
 
 func buildReleaseView(r *http.Request, p *db.Project, rel *db.Release, arts []db.ArtifactWithPlatforms) releaseView {
@@ -329,9 +313,6 @@ func buildReleaseView(r *http.Request, p *db.Project, rel *db.Release, arts []db
 // ----- URL helpers ---------------------------------------------------------
 
 // serviceBase returns the scheme://host base for a service subdomain, derived
-// from the main-domain request (e.g. example.com -> https://dl.example.com).
-// It deliberately does not use auth.DeriveServiceURL, which is meant for
-// subdomain-origin requests and strips the first host label.
 func serviceBase(r *http.Request, service string) string {
 	return auth.RequestScheme(r) + "://" + service + "." + r.Host
 }
@@ -381,7 +362,6 @@ func releasePath(project, version string) string {
 // ----- formatting helpers --------------------------------------------------
 
 // lastSegment returns the final /-separated segment of a slash-namespaced
-// project name -- the tree label shown next to the full name on the index.
 func lastSegment(name string) string {
 	if i := strings.LastIndexByte(name, '/'); i >= 0 {
 		return name[i+1:]

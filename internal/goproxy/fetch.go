@@ -191,8 +191,6 @@ func (s *Service) openZip(ctx context.Context, key string) (io.ReadCloser, int64
 }
 
 // escapeVersion applies the module proxy's case encoding to a version. Versions
-// are almost always lowercase already, but build metadata can carry capitals and
-// the upstream mirror expects them escaped.
 func escapeVersion(v string) string {
 	e, err := module.EscapeVersion(v)
 	if err != nil {

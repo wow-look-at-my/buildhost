@@ -8,6 +8,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -20,13 +21,6 @@ import (
 )
 
 // caCertsPEM is a real public CA root bundle (Mozilla set, as published by the curl
-// project). It is placed at /etc/ssl/certs/ca-certificates.crt -- the path Go's linux
-// x509 loader checks by default -- in the shared essentials base layer, so a binary that
-// makes outbound TLS calls works inside the synthesized image. See cacerts/README.md.
-//
-// The bundle is fetched, not committed, so it is a generated build input like
-// internal/api's gen_*.go: fetching it is a generate directive, and a build that
-// runs generate needs no separate "remember to run the script" step.
 //
 //go:generate ../../scripts/fetch-cacerts.sh cacerts/ca-certificates.crt
 //go:embed cacerts/ca-certificates.crt
@@ -35,6 +29,8 @@ var caCertsPEM []byte
 type OCI struct {
 	Store storage.Storage
 	DB    *db.DB
+	// Shell serves the /bin/sh layer an APE image needs. Nil refuses to
+	Shell *ShellCache
 }
 
 func (o *OCI) Format() Format { return FormatOCI }
@@ -55,9 +51,6 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 	}
 
 	// Shared "essentials" base layer (CA certs + minimal rootfs). Memoized, so it is
-	// built once per process; the bytes are identical for every project/arch and dedupe
-	// to a single stored blob. It must still be Put (idempotent, content-addressed) and
-	// linked to THIS artifact on every pull so BlobBelongsToProject passes for it.
 	baseData, baseDiffID, err := essentialsLayer()
 	if err != nil {
 		return nil, fmt.Errorf("essentials layer: %w", err)
@@ -70,28 +63,33 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-base-layer", baseKey, baseSize, baseKey, "base-layer.tar.zst", "{}")
 	}
 
-	binKey, binSize, binDiffID, err := ociWriteLayer(ctx, o.Store, input.Reader, input.Size, input.Project.Name)
+	// An APE starts through the shell script in its own header: the kernel
+	// cannot exec an APE as a native ELF inside a scratch/distroless container,
+	// so its image must ship a static busybox as /bin/sh and run the binary
+	// through it (Entrypoint ["/bin/sh", "/<project>"]), which makes the APE's
+	// own prologue assimilate a native ELF on first run -- exactly how
+	// buildhost's own APE binary is run in its Dockerfile. Non-APE artifacts
+	// keep today's lean image: direct exec, no shell layer.
+	//
+	// Two cues identify an APE: the artifact's recorded exe format (set at
+	// upload time by exeformat detection) and the MZqFpD' byte prologue
+	// (peekAPE, used when the artifact predates exe-format detection, e.g.
+	// artifacts uploaded before the column existed). The former needs no
+	// streaming and always wins; both produce the same 3-layer image.
+	apeFormat := exeformat.Format(input.Artifact.ExeFormat) == exeformat.APE
+	apeBytes, artifactReader, err := peekAPE(input.Reader)
 	if err != nil {
-		return nil, fmt.Errorf("create layer: %w", err)
-	}
-	if input.Artifact.ID > 0 && o.DB != nil {
-		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-layer", binKey, binSize, binKey, "layer.tar.zst", "{}")
+		return nil, fmt.Errorf("inspect artifact: %w", err)
 	}
 
-	// An APE is not a native Linux ELF: the kernel cannot exec it directly
-	// inside a scratch/distroless container, so a bare "/<project>" entrypoint
-	// dies with "exec format error". But an APE's header is itself a valid
-	// shell script, so it RUNS when exec'd through a shell (its prologue
-	// assimilates a native ELF on first run). For an APE artifact we ship a
-	// static busybox as /bin/sh in the image and set
-	// Entrypoint: ["/bin/sh", "/<project>"], exactly how buildhost's own APE
-	// binary is run in its Dockerfile. Non-APE artifacts keep today's lean
-	// image: direct exec, no shell layer.
-	isAPE := exeformat.Format(input.Artifact.ExeFormat) == exeformat.APE
+	entrypoint := []string{"/" + input.Project.Name}
+	layers := []ociDescriptor{{baseKey, baseSize}}
+	diffIDs := []string{baseDiffID}
 
-	diffIDs := []string{baseDiffID, binDiffID}
-	var layerDescs []ociDescriptor
-	if isAPE {
+	switch {
+	case apeFormat:
+		// Flagged at upload: build the shell layer from the static busybox
+		// embedded in buildhost (deterministic, no network or cache needed).
 		shellBlob, shellDiffID, err := busyboxLayer(input.Artifact.OS, input.Artifact.Arch)
 		if err != nil {
 			return nil, fmt.Errorf("busybox layer: %w", err)
@@ -106,16 +104,40 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 			// is generated -- same reason oci-config is suffixed.
 			o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-shell-layer"+input.CacheSuffix, shellKey, shellSize, shellKey, "busybox.tar.zst", "{}")
 		}
-		diffIDs = []string{baseDiffID, shellDiffID, binDiffID}
-		layerDescs = []ociDescriptor{{baseKey, baseSize}, {shellKey, shellSize}, {binKey, binSize}}
-	} else {
-		layerDescs = []ociDescriptor{{baseKey, baseSize}, {binKey, binSize}}
-	}
-
-	entrypoint := []string{"/" + input.Project.Name}
-	if isAPE {
+		layers = append(layers, ociDescriptor{shellKey, shellSize})
+		diffIDs = append(diffIDs, shellDiffID)
+		entrypoint = []string{"/bin/sh", "/" + input.Project.Name}
+	case apeBytes && input.Artifact.OS == db.OSLinux:
+		// Detected from the bytes: route through the runtime shell cache.
+		if o.Shell == nil {
+			return nil, errors.New("an APE image needs a shell layer, and no shell cache is configured")
+		}
+		shellData, shellDiffID, err := o.Shell.Layer(ctx, input.Artifact.Arch)
+		if err != nil {
+			return nil, fmt.Errorf("shell layer: %w", err)
+		}
+		shellKey, shellSize, err := o.Store.Put(ctx, bytes.NewReader(shellData))
+		if err != nil {
+			return nil, fmt.Errorf("store shell layer: %w", err)
+		}
+		if input.Artifact.ID > 0 && o.DB != nil {
+			// Suffixed like the config: the layer is per architecture.
+			o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-shell-layer"+input.CacheSuffix, shellKey, shellSize, shellKey, "shell.tar.zst", "{}")
+		}
+		layers = append(layers, ociDescriptor{shellKey, shellSize})
+		diffIDs = append(diffIDs, shellDiffID)
 		entrypoint = []string{"/bin/sh", "/" + input.Project.Name}
 	}
+
+	binKey, binSize, binDiffID, err := ociWriteLayer(ctx, o.Store, artifactReader, input.Size, input.Project.Name)
+	if err != nil {
+		return nil, fmt.Errorf("create layer: %w", err)
+	}
+	if input.Artifact.ID > 0 && o.DB != nil {
+		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-layer", binKey, binSize, binKey, "layer.tar.zst", "{}")
+	}
+	layers = append(layers, ociDescriptor{binKey, binSize})
+	diffIDs = append(diffIDs, binDiffID)
 
 	configData := ociCreateConfig(
 		string(input.Artifact.OS), string(input.Artifact.Arch),
@@ -127,29 +149,17 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		return nil, fmt.Errorf("store config: %w", err)
 	}
 	if input.Artifact.ID > 0 && o.DB != nil {
-		// Suffixed: the config is the ONE derived blob that differs per
-		// platform (it names the architecture and os), so an unsuffixed key
-		// would unlink one platform's config when the next is generated.
 		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-config"+input.CacheSuffix, configKey, configSize, configKey, "config.json", "{}")
 	}
 
-	// Base layer first -- must match the diff_ids order in the config.
-	manifestData := ociCreateManifest(
-		ociDescriptor{configKey, configSize},
-		layerDescs,
-	)
+	// Same order as the diff_ids in the config: base, shell for an APE, binary.
+	manifestData := ociCreateManifest(ociDescriptor{configKey, configSize}, layers)
 
 	// Persist the manifest document itself (alongside its config + layers above)
 	// and link it to the project, so the pull path can serve it by its content
 	// digest. A multi-arch index lists each platform's image manifest by digest,
 	// and the client resolves it via GET /v2/{name}/manifests/<digest>, which is
 	// gated on BlobBelongsToProject and served straight from storage. Without
-	// this the index would reference manifests the registry never stored -- a
-	// dangling index that no client can pull. (Single-arch pulls serve the
-	// manifest inline, but storing it also lets a by-digest fetch of that single
-	// manifest resolve.) The digest is content-addressed, so this matches the
-	// digest serveIndex/serveSingleManifest compute from the same bytes. Needs a
-	// real project + DB to link against; tests without one just skip it.
 	if input.Project.ID > 0 && o.DB != nil {
 		manifestKey, manifestSize, err := o.Store.Put(ctx, bytes.NewReader(manifestData))
 		if err != nil {
@@ -173,10 +183,6 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 }
 
 // ociWriteLayer streams r -> tar -> zstd straight into store.Put while teeing the
-// uncompressed tar bytes through a sha256 for the layer's diffID. One pass, bounded
-// memory: the compressed layer is spooled+content-addressed by Put (to disk), and the
-// only RAM is the zstd window plus the hash state. The diffID is read after Put returns,
-// by which point Put has drained the pipe and the hasher has seen every uncompressed byte.
 func ociWriteLayer(ctx context.Context, store storage.Storage, r io.Reader, size int64, name string) (key string, compressedSize int64, diffID string, err error) {
 	diffHasher := sha256.New()
 	pr, pw := io.Pipe()
@@ -216,8 +222,6 @@ func ociWriteLayer(ctx context.Context, store storage.Storage, r io.Reader, size
 }
 
 // /etc/passwd and /etc/group: root, nobody and nonroot (matching gcr.io/distroless).
-// The nonroot user (65532) is always present so an image can be run with --user 65532
-// even when the publisher did not pin a default user via oci_user.
 const (
 	etcPasswd = "root:x:0:0:root:/root:/sbin/nologin\n" +
 		"nobody:x:65534:65534:nobody:/nonexistent:/sbin/nologin\n" +
@@ -234,8 +238,6 @@ type essentials struct {
 }
 
 // essentialsOnce memoizes the shared base layer: it is constant for the lifetime of the
-// process, so it is built exactly once. A build error (e.g. a corrupt embedded bundle) is
-// returned to every caller rather than panicking in the request path.
 var essentialsOnce = sync.OnceValues(buildEssentials)
 
 func essentialsLayer() ([]byte, string, error) {
@@ -288,11 +290,6 @@ func buildEssentials() (essentials, error) {
 	return essentials{compressed: buf.Bytes(), diffID: hex.EncodeToString(tarHasher.Sum(nil))}, nil
 }
 
-// writeTarEntry writes one fully-pinned, reproducible USTAR entry. Forcing FormatUSTAR
-// guarantees byte-stable output across Go toolchain versions (a field that overflowed
-// USTAR would error here rather than silently emitting version-dependent PAX/GNU extended
-// headers). The mode is written as a raw integer, so the sticky bit (0o1777 on /tmp)
-// round-trips. For directories pass typeflag=tar.TypeDir and data=nil.
 func writeTarEntry(tw *tar.Writer, name string, mode int64, typeflag byte, data []byte) error {
 	size := int64(len(data))
 	if typeflag == tar.TypeDir {

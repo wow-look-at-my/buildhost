@@ -47,14 +47,6 @@ func (h *Handler) servePackages(w http.ResponseWriter, r *http.Request, subpath 
 	w.Write([]byte(entry))
 }
 
-// packagesEntry renders the Packages stanza for one architecture, or "" when
-// the release exposes no apt package for it (no linux artifact for the arch, a
-// docker-only artifact, or a version no deb can carry). It is the SINGLE
-// renderer behind both the served Packages index (servePackages) and the
-// Release/InRelease hash computation (computePackagesHashes), so the signed
-// hashes always describe exactly the bytes the index route serves. The deb
-// Size/SHA256 come from the packaged_artifacts digest cache (debDigest): one
-// DB read once cached, a single repackage+hash on the first need.
 func (h *Handler) packagesEntry(ctx context.Context, project *db.Project, release *db.Release, debArch, baseURL string) (string, error) {
 	goArch := goArchFromDeb(debArch)
 	artifact, err := h.DB.GetPlatformArtifact(ctx, release.ID, string(db.OSLinux), goArch)
@@ -83,8 +75,6 @@ func (h *Handler) packagesEntry(ctx context.Context, project *db.Project, releas
 	}
 
 	// The project name may be slash-namespaced; fold it to a valid Debian
-	// package name (and matching pool filename). servePool resolves the project
-	// from the request path, not this filename, so the rename is safe.
 	pkgName := repackage.DebPackageName(project.Name)
 	desc := strings.NewReplacer("\n", " ", "\r", " ").Replace(project.Description)
 	return fmt.Sprintf(`Package: %s

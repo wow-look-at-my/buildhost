@@ -11,6 +11,7 @@ import (
 // The publish composites download the CLI rather than building it, so the
 // guide has to name the URL they depend on.
 func TestServe_DocumentsCLIDownload(t *testing.T) {
+	t.Serial()
 	h := &Handler{}
 
 	req := httptest.NewRequest("GET", "https://pazer.build/llms.txt", nil)
@@ -21,6 +22,7 @@ func TestServe_DocumentsCLIDownload(t *testing.T) {
 }
 
 func TestServe_RendersBaseURL(t *testing.T) {
+	t.Serial()
 	h := &Handler{}
 
 	req := httptest.NewRequest("GET", "https://pazer.build/llms.txt", nil)
@@ -39,7 +41,6 @@ func TestServe_RendersBaseURL(t *testing.T) {
 	assert.Contains(t, body, "brew trust pazer/build")
 	assert.Contains(t, body, "brew install pazer/build/go-toolchain")
 	// The authenticated-tap URL macro renders scheme + creds placeholder +
-	// brew host; "$TOKEN" stays a literal shell placeholder for the reader.
 	assert.Contains(t, body, `brew tap pazer/build "https://x:$TOKEN@brew.pazer.build/private/tap.git"`)
 	assert.Contains(t, body, "brew install pazer/build/myrepo-myapp")
 	assert.NotContains(t, body, "__BREW_TOKEN_URL__")
@@ -51,6 +52,7 @@ func TestServe_RendersBaseURL(t *testing.T) {
 }
 
 func TestServe_RendersRequestHost(t *testing.T) {
+	t.Serial()
 	h := &Handler{}
 
 	req := httptest.NewRequest("GET", "https://builds.example.com/llms.txt", nil)
@@ -63,22 +65,20 @@ func TestServe_RendersRequestHost(t *testing.T) {
 }
 
 func TestApexBaseURL_StripsServiceSubdomain(t *testing.T) {
+	t.Serial()
 	// /llms.txt is served on the apex and every service subdomain, but the
-	// rendered service URLs must always anchor to the apex. apexBaseURL strips a
-	// known leading service label so a request on oci.<apex> renders dl.<apex>
-	// rather than dl.oci.<apex>.
 	cases := []struct {
 		host string
 		want string
 	}{
-		{"pazer.build", "https://pazer.build"},               // apex: unchanged
-		{"oci.pazer.build", "https://pazer.build"},           // service label stripped
-		{"npm.pazer.build", "https://pazer.build"},           // ditto
-		{"static.pazer.build", "https://pazer.build"},        // ditto
-		{"builds.example.com", "https://builds.example.com"}, // non-service first label kept
-		{"127.0.0.1:8080", "http://127.0.0.1:8080"},          // bare IP, loopback scheme, port kept
-		{"oci.localhost:8080", "http://localhost:8080"},      // strip + .localhost scheme + port
-		{"localhost:9000", "http://localhost:9000"},          // single-label host: nothing to strip
+		{"pazer.build", "https://pazer.build"},        // apex: unchanged
+		{"oci.pazer.build", "https://pazer.build"},    // service label stripped
+		{"npm.pazer.build", "https://pazer.build"},    // ditto
+		{"static.pazer.build", "https://pazer.build"}, // ditto
+		{"builds.example.com", "https://builds.example.com"},
+		{"127.0.0.1:8080", "http://127.0.0.1:8080"},     // bare IP, loopback scheme, port kept
+		{"oci.localhost:8080", "http://localhost:8080"}, // strip + .localhost scheme + port
+		{"localhost:9000", "http://localhost:9000"},     // single-label host: nothing to strip
 	}
 	for _, tc := range cases {
 		t.Run(tc.host, func(t *testing.T) {
@@ -90,6 +90,7 @@ func TestApexBaseURL_StripsServiceSubdomain(t *testing.T) {
 }
 
 func TestServe_OnServiceSubdomain_AnchorsURLsToApex(t *testing.T) {
+	t.Serial()
 	h := &Handler{}
 
 	// A request arriving on a service subdomain still renders apex-anchored URLs.
@@ -108,18 +109,21 @@ func TestServe_OnServiceSubdomain_AnchorsURLsToApex(t *testing.T) {
 }
 
 func TestRender_TrimsTrailingSlash(t *testing.T) {
+	t.Serial()
 	body := string(render("https://pazer.build/"))
 	assert.Contains(t, body, "https://pazer.build/llms.txt")
 	assert.NotContains(t, body, "https://pazer.build//llms.txt")
 }
 
 func TestRender_OCIHostSubdomain(t *testing.T) {
+	t.Serial()
 	// __OCI_HOST__ is the oci.<host> registry subdomain (scheme stripped).
 	assert.Contains(t, string(render("http://localhost:8080")), "docker pull oci.localhost:8080/myapp")
 	assert.Contains(t, string(render("https://example.com")), "docker pull oci.example.com/myapp")
 }
 
 func TestRender_ServiceSubdomains(t *testing.T) {
+	t.Serial()
 	// Service URLs are subdomains of the base host, not paths.
 	body := string(render("https://pazer.build"))
 	assert.Contains(t, body, "https://dl.pazer.build/myapp")
@@ -131,6 +135,7 @@ func TestRender_ServiceSubdomains(t *testing.T) {
 }
 
 func TestTemplate_NoUnrenderedPlaceholdersAndASCII(t *testing.T) {
+	t.Serial()
 	for _, ph := range []string{"__BASE_URL__", "__DL_URL__", "__OCI_HOST__"} {
 		assert.True(t, contains(templateMD, ph), "template should use %s", ph)
 	}

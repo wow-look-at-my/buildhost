@@ -23,9 +23,6 @@ const (
 	OSWindows OS = "windows"
 	OSFreeBSD OS = "freebsd"
 	// OSWasm is the platform identifier for WebAssembly artifacts. The Arch
-	// distinguishes the flavor -- Go's two wasm ports are ArchJS (GOOS=js,
-	// the browser/Node port) and ArchWasip1 (GOOS=wasip1, WASI). OSWasm
-	// pairs only with those arches (and vice versa); see CompatiblePlatform.
 	OSWasm OS = "wasm"
 )
 
@@ -37,15 +34,10 @@ const (
 	Arch386   Arch = "386"
 	ArchARM   Arch = "arm"
 	// ArchJS and ArchWasip1 are the WebAssembly flavors, named after Go's
-	// GOOS for the port (js = browser/Node, wasip1 = WASI preview 1) so the
-	// publisher mapping is trivial: os is always wasm, arch is the GOOS.
-	// They only ever pair with OSWasm.
 	ArchJS     Arch = "js"
 	ArchWasip1 Arch = "wasip1"
 )
 
-// Platform is one (os, arch) slot. An artifact occupies at least one; an APE
-// occupies several with a single file.
 type Platform struct {
 	OS   OS   `json:"os"`
 	Arch Arch `json:"arch"`
@@ -53,9 +45,6 @@ type Platform struct {
 
 func (p Platform) String() string { return string(p.OS) + "/" + string(p.Arch) }
 
-// ParsePlatform reads one "os/arch" pair, accepting the same alias spellings
-// NormalizeOS/NormalizeArch accept so a publisher can pass platform names
-// through verbatim. The pair must be coherent (CompatiblePlatform).
 func ParsePlatform(s string) (Platform, error) {
 	osPart, archPart, ok := strings.Cut(strings.TrimSpace(s), "/")
 	if !ok {
@@ -113,33 +102,20 @@ func FormatPlatforms(platforms []Platform) string {
 }
 
 // ArtifactWithPlatforms is an artifact plus every platform it covers. Platforms
-// always holds at least the canonical slot, so a consumer reads one field
-// whether the artifact is an ordinary per-platform build or a single file
-// covering several.
 type ArtifactWithPlatforms struct {
 	Artifact
 	Platforms []Platform `json:"platforms"`
 }
 
-// MultiPlatform reports whether this one file covers more than one platform --
-// what makes it a single download link instead of several.
 func (a ArtifactWithPlatforms) MultiPlatform() bool { return len(a.Platforms) > 1 }
 
-// PlatformArtifact is an artifact viewed as ONE of the platforms it covers:
-// Artifact.OS/Arch are the covered platform, not necessarily the row's
-// canonical slot.
 type PlatformArtifact struct {
 	Artifact
 	// CacheSuffix distinguishes this platform's derived packages from the same
-	// artifact's other platforms in packaged_artifacts, which is keyed on
-	// (artifact_id, format). Without it a deb built for linux/arm64 would be
-	// served as the linux/amd64 deb of the same file. It is "" for the
-	// canonical slot, so every pre-existing cache row keeps its exact key.
 	CacheSuffix string
 }
 
 // CacheFormat is the packaged_artifacts format key for a derived package of
-// this artifact at this platform.
 func (p PlatformArtifact) CacheFormat(format string) string { return format + p.CacheSuffix }
 
 func newPlatformArtifact(a Artifact, p Platform) PlatformArtifact {
@@ -163,9 +139,6 @@ const (
 )
 
 // ServedViaDockerOnly reports whether artifacts of this kind are exclusively
-// served through the OCI (/v2) endpoint. A "docker build" is just a container
-// image: it has no bare binary to repackage, so apt/brew/npm/raw downloads do
-// not apply to it.
 func (k Kind) ServedViaDockerOnly() bool {
 	return k == KindDocker
 }
@@ -186,18 +159,11 @@ func ValidArch(s string) bool {
 	return false
 }
 
-// wasmFlavorArch reports whether arch is one of the WebAssembly flavor
-// architectures, which only ever pair with OSWasm.
 func wasmFlavorArch(a Arch) bool {
 	return a == ArchJS || a == ArchWasip1
 }
 
 // CompatiblePlatform reports whether the (os, arch) pair names a coherent
-// platform: OSWasm pairs only with the wasm flavor arches (ArchJS/ArchWasip1)
-// and those arches pair only with OSWasm -- a "linux/js" or "wasm/amd64"
-// artifact could never be downloaded by anything real. Every other pairing is
-// allowed (this is a coherence check, not a validity check; callers validate
-// the individual values separately).
 func CompatiblePlatform(os OS, arch Arch) bool {
 	if os == OSWasm || wasmFlavorArch(arch) {
 		return os == OSWasm && wasmFlavorArch(arch)
@@ -209,7 +175,6 @@ func CompatiblePlatform(os OS, arch Arch) bool {
 // spellings GitHub Actions' RUNNER_OS uses ("Linux", "macOS", "Windows") and
 // other common aliases so clients can pass platform names through verbatim. It
 // returns ("", false) for an unrecognized name; callers should leave such a value
-// untouched (e.g. the "any" sentinel) rather than rejecting it.
 func NormalizeOS(s string) (OS, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "linux":
@@ -228,9 +193,6 @@ func NormalizeOS(s string) (OS, bool) {
 
 // NormalizeArch maps a CPU-architecture name to its canonical db.Arch, accepting
 // GitHub Actions' RUNNER_ARCH spellings ("X64", "ARM64", "X86", "ARM"), uname's
-// ("x86_64", "aarch64", "i686", ...), and other common aliases. It returns
-// ("", false) for an unrecognized name; callers should leave such a value
-// untouched (e.g. the "any" sentinel) rather than rejecting it.
 func NormalizeArch(s string) (Arch, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "amd64", "x64", "x86_64", "x86-64", "x8664":
@@ -244,8 +206,6 @@ func NormalizeArch(s string) (Arch, bool) {
 	case "js":
 		return ArchJS, true
 	// Deliberately no bare "wasi" alias: WASI has versioned snapshots
-	// (preview 1 today, preview 2 in the wings) and an unversioned alias
-	// would silently change meaning later.
 	case "wasip1":
 		return ArchWasip1, true
 	}
@@ -256,11 +216,6 @@ func NormalizeArch(s string) (Arch, bool) {
 // WebAssembly pair -- (os=js, arch=wasm) or (os=wasip1, arch=wasm), the
 // `name_GOOS_GOARCH` filename convention currently-released go-toolchain
 // autoreleases derive upload parameters from -- to the canonical
-// (OSWasm, flavor arch) form. It is a parse-time alias only: "js" is never
-// stored or surfaced as an os in artifact rows, URLs, or canonical query
-// params. Returns ("", "", false) when the pair is not the legacy form
-// (callers then proceed with normal per-value normalization). Deprecated
-// from day one: publishers should upload os=wasm, arch=js|wasip1.
 func NormalizeLegacyWasmPair(osName, arch string) (OS, Arch, bool) {
 	if strings.ToLower(strings.TrimSpace(arch)) != "wasm" {
 		return "", "", false
@@ -296,9 +251,6 @@ type AllArtifact = ListAllArtifactsRow
 type StorageBreakdown = GetStorageBreakdownRow
 
 // share authorizes minting temporary, artifact-bound download links
-// (POST /api/v1/projects/{project}/download-links). It is deliberately
-// separate from write so a CI/deploy token cannot also hand out shareable
-// links to private artifacts.
 var ValidScopes = set.Of("read", "write", "share")
 
 func (r Release) IsPrerelease() bool {

@@ -19,6 +19,7 @@ import (
 // Nothing auto-enables it (no maintainer scripts); the documented enablement
 // is `systemctl --user enable --now <pkg>`.
 func TestDebRepackage_ServiceUnit(t *testing.T) {
+	t.Serial()
 	rp := &Deb{}
 	input := makeInput()
 	input.Project.CreateService = true
@@ -57,6 +58,7 @@ func TestDebRepackage_ServiceUnit(t *testing.T) {
 // on remove (prerm). Every action is guarded so a systemctl-less host never
 // leaves the package unconfigured.
 func TestDebRepackage_ServiceMaintainerScripts(t *testing.T) {
+	t.Serial()
 	rp := &Deb{}
 	input := makeInput()
 	input.Project.CreateService = true
@@ -79,10 +81,8 @@ func TestDebRepackage_ServiceMaintainerScripts(t *testing.T) {
 	assert.Contains(t, prerm, "systemctl --global disable testapp.service")
 }
 
-// Flag off: the data member carries EXACTLY the one binary entry and the
-// control member EXACTLY the control file -- the whole content surface of the
-// pre-setting deb, so off-state debs stay identical.
 func TestDebRepackage_ServiceOffNoUnit(t *testing.T) {
+	t.Serial()
 	rp := &Deb{}
 	output, err := rp.Repackage(context.Background(), makeInput())
 	require.NoError(t, err)
@@ -105,6 +105,7 @@ func TestDebRepackage_ServiceOffNoUnit(t *testing.T) {
 // Non-binary kinds never ship the unit: its ExecStart is the /usr/bin install
 // path, which only the binary kind stages.
 func TestDebRepackage_ServiceNonBinaryKindNoUnit(t *testing.T) {
+	t.Serial()
 	rp := &Deb{}
 	input := makeInput()
 	input.Project.CreateService = true
@@ -124,6 +125,7 @@ func TestDebRepackage_ServiceNonBinaryKindNoUnit(t *testing.T) {
 // Slash-namespaced projects fold to the deb package name everywhere the unit
 // references itself: file name and ExecStart both use the folded name.
 func TestDebRepackage_ServiceUnitNamespacedName(t *testing.T) {
+	t.Serial()
 	rp := &Deb{}
 	input := makeInput()
 	input.Project.Name = "myrepo/myapp"

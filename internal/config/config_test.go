@@ -7,6 +7,7 @@ import (
 )
 
 func TestLoad_Defaults(t *testing.T) {
+	t.Serial()
 	// Clear any env vars that could interfere.
 	for _, key := range []string{
 		"BUILDHOST_LISTEN_ADDR",
@@ -23,6 +24,7 @@ func TestLoad_Defaults(t *testing.T) {
 }
 
 func TestLoad_ListenAddrOverride(t *testing.T) {
+	t.Serial()
 	t.Setenv("BUILDHOST_LISTEN_ADDR", ":9090")
 	t.Setenv("BUILDHOST_DATA_DIR", "")
 	t.Setenv("BUILDHOST_DB_PATH", "")
@@ -33,6 +35,7 @@ func TestLoad_ListenAddrOverride(t *testing.T) {
 }
 
 func TestLoad_DataDirOverride(t *testing.T) {
+	t.Serial()
 	t.Setenv("BUILDHOST_LISTEN_ADDR", "")
 	t.Setenv("BUILDHOST_DATA_DIR", "/tmp/mydata")
 	t.Setenv("BUILDHOST_DB_PATH", "")
@@ -43,6 +46,7 @@ func TestLoad_DataDirOverride(t *testing.T) {
 }
 
 func TestLoad_DBPathOverride(t *testing.T) {
+	t.Serial()
 	t.Setenv("BUILDHOST_LISTEN_ADDR", "")
 	t.Setenv("BUILDHOST_DATA_DIR", "")
 	t.Setenv("BUILDHOST_DB_PATH", "/var/lib/buildhost.db")
@@ -52,6 +56,7 @@ func TestLoad_DBPathOverride(t *testing.T) {
 }
 
 func TestLoad_AllOverrides(t *testing.T) {
+	t.Serial()
 	t.Setenv("BUILDHOST_LISTEN_ADDR", "0.0.0.0:443")
 	t.Setenv("BUILDHOST_DATA_DIR", "/opt/data")
 	t.Setenv("BUILDHOST_DB_PATH", "/opt/data/prod.db")
@@ -63,6 +68,7 @@ func TestLoad_AllOverrides(t *testing.T) {
 }
 
 func TestLoad_OIDCIssuers(t *testing.T) {
+	t.Serial()
 	t.Setenv("BUILDHOST_OIDC_ISSUERS", "https://issuer1.example.com, https://issuer2.example.com")
 
 	c := Load()
@@ -70,6 +76,7 @@ func TestLoad_OIDCIssuers(t *testing.T) {
 }
 
 func TestLoad_OIDCOrgs(t *testing.T) {
+	t.Serial()
 	t.Setenv("BUILDHOST_OIDC_ORGS", "myorg, otherorg")
 
 	c := Load()
@@ -77,6 +84,7 @@ func TestLoad_OIDCOrgs(t *testing.T) {
 }
 
 func TestLoad_OIDCEvents_Custom(t *testing.T) {
+	t.Serial()
 	t.Setenv("BUILDHOST_OIDC_EVENTS", "push, workflow_dispatch")
 
 	c := Load()
@@ -84,6 +92,7 @@ func TestLoad_OIDCEvents_Custom(t *testing.T) {
 }
 
 func TestLoad_OIDCEvents_Default(t *testing.T) {
+	t.Serial()
 	t.Setenv("BUILDHOST_OIDC_EVENTS", "")
 
 	c := Load()
@@ -91,6 +100,7 @@ func TestLoad_OIDCEvents_Default(t *testing.T) {
 }
 
 func TestLoad_GitHubWebhookSecret(t *testing.T) {
+	t.Serial()
 	t.Setenv("BUILDHOST_GITHUB_WEBHOOK_SECRET", "secret")
 
 	c := Load()
@@ -98,23 +108,24 @@ func TestLoad_GitHubWebhookSecret(t *testing.T) {
 }
 
 func TestEnvBytes(t *testing.T) {
+	t.Serial()
 	cases := []struct {
 		in   string
 		def  int64
 		want int64
 	}{
-		{"", 100, 100},           // unset -> default
-		{"   ", 100, 100},        // blank -> default
-		{"500", 1, 500},          // plain bytes
-		{"8K", 1, 8 << 10},       // upper suffix
-		{"8k", 1, 8 << 10},       // lower suffix
-		{"4M", 1, 4 << 20},       // mega
-		{"2G", 1, 2 << 30},       // giga
-		{"1T", 1, 1 << 40},       // tera
-		{"  3G ", 1, 3 << 30},    // surrounding space
-		{"bogus", 77, 77},        // unparseable -> default
-		{"-5", 77, 77},           // non-positive -> default
-		{"0", 77, 77},            // zero -> default
+		{"", 100, 100},        // unset -> default
+		{"   ", 100, 100},     // blank -> default
+		{"500", 1, 500},       // plain bytes
+		{"8K", 1, 8 << 10},    // upper suffix
+		{"8k", 1, 8 << 10},    // lower suffix
+		{"4M", 1, 4 << 20},    // mega
+		{"2G", 1, 2 << 30},    // giga
+		{"1T", 1, 1 << 40},    // tera
+		{"  3G ", 1, 3 << 30}, // surrounding space
+		{"bogus", 77, 77},     // unparseable -> default
+		{"-5", 77, 77},        // non-positive -> default
+		{"0", 77, 77},
 		{"G", 77, 77},            // suffix only -> default
 		{"99999999999T", 77, 77}, // would overflow int64 -> default
 	}
@@ -125,6 +136,7 @@ func TestEnvBytes(t *testing.T) {
 }
 
 func TestMaxSizes(t *testing.T) {
+	t.Serial()
 	t.Setenv("BUILDHOST_MAX_BLOB_SIZE", "")
 	assert.Equal(t, defaultMaxBlobSize, MaxBlobSize())
 	t.Setenv("BUILDHOST_MAX_BLOB_SIZE", "3G")

@@ -19,6 +19,7 @@ import (
 // repo, so a trusted-issuer token of that event can create/publish projects.
 
 func TestVerifyToken_TrustedIssuer_RejectedEvent(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -47,6 +48,7 @@ func TestVerifyToken_TrustedIssuer_RejectedEvent(t *testing.T) {
 // push. Auto-provisioning must accept it out of the box, otherwise a manual
 // release/publish dispatch 401s at docker login.
 func TestVerifyToken_TrustedIssuer_WorkflowDispatchAccepted(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -62,7 +64,6 @@ func TestVerifyToken_TrustedIssuer_WorkflowDispatchAccepted(t *testing.T) {
 	token := signJWT(t, key, "kid-event-dispatch", claims)
 
 	// Mirror the production default allowlist from config.Load's
-	// len(OIDCEvents)==0 branch: push, pull_request, workflow_dispatch.
 	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{srv.URL}, AllowedOrgs: []string{"*"}, AllowedEvents: []string{"push", "pull_request", "workflow_dispatch"}})
 	_, oidcProject, err := v.VerifyToken(context.Background(), token, nil)
 	require.NoError(t, err)

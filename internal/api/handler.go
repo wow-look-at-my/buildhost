@@ -60,7 +60,7 @@ type Handler struct {
 	GitHubWebhookSecret string
 }
 
-const maxJSONBody = 1 << 20 // 1 MiB
+const maxJSONBody = 1 << 20
 
 func jsonResponse(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")

@@ -29,9 +29,19 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
+// jsonErrorDoc renders a message as a JSON error document. Marshalling is what
+// keeps a quote or a backslash in the message from breaking the document.
+func jsonErrorDoc(msg string) string {
+	doc, err := json.Marshal(map[string]string{"error": msg})
+	if err != nil {
+		return `{"error":"internal error"}`
+	}
+	return string(doc)
+}
+
 const (
-	maxSiteUploadSize       = 256 << 20 // 256 MiB
-	maxSiteDecompressedSize = 1 << 30   // 1 GiB
+	maxSiteUploadSize       = 256 << 20
+	maxSiteDecompressedSize = 1 << 30
 	maxFileCount            = 10000
 )
 
@@ -49,9 +59,6 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	// The branch was previously stored verbatim (any bytes the router decoded).
 	// Enforce the same charset the rest of the system uses for git refs
-	// (api validGitBranch / auth validRefName): serve-side longest-match
-	// resolution skips out-of-charset candidates, so an unservable branch must
-	// never be accepted in the first place.
 	if !validSiteBranch(rt.branch) {
 		http.Error(w, `{"error":"invalid branch name: 1-256 characters of [a-zA-Z0-9._/-]"}`, http.StatusBadRequest)
 		return
@@ -74,7 +81,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		fetched, fetchedCT, err := fetchFromURL(ctx, fetchReq.URL, fetchReq.Headers, h.FetchDomains)
 		if err != nil {
 			span.RecordError(err)
-			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+			http.Error(w, jsonErrorDoc(err.Error()), http.StatusBadRequest)
 			return
 		}
 		defer fetched.Close()
@@ -92,9 +99,6 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	if bodyContentType == "application/zip" {
 		// ZIP needs random access (its central directory is at the end), so it can't be
-		// read from a forward-only stream. Spool the upload to a temp file under the data
-		// volume (/tmp is read-only in the hardened image) and read it via ReaderAt --
-		// never the whole zip in memory.
 		tmp, terr := os.CreateTemp(h.TmpDir, "site-zip-*")
 		if terr != nil {
 			http.Error(w, `{"error":"failed to buffer upload"}`, http.StatusInternalServerError)
@@ -143,7 +147,6 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		span.RecordError(storeErr)
 		span.SetStatus(codes.Error, "store failed")
 		// Logged as well as traced: the client gets a generic message, so
-		// without this the reason for a failed deploy exists only in a span.
 		slog.Error("sites: store site", "project", project.Name, "branch", rt.branch, "err", storeErr)
 		http.Error(w, `{"error":"failed to store site"}`, http.StatusInternalServerError)
 		return
@@ -156,9 +159,6 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	gitCommit := r.Header.Get("X-Git-Commit")
 	// Opt-in: a site published with X-Public-Site: true is served without a
-	// token even when its project is private (e.g. a PR preview of a private
-	// repo). The project's own visibility -- and thus its release artifacts --
-	// is unaffected; only this site's read path is opened.
 	isPublic := r.Header.Get("X-Public-Site") == "true"
 
 	site := &db.Site{
@@ -183,7 +183,6 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Delete the replaced site's blob only if no other row (another branch, an
-	// artifact, an OCI image) still references that content-addressed key.
 	if oldKey != "" && oldKey != storageKey {
 		_, _ = retention.DeleteBlobIfUnreferenced(ctx, h.DB, h.Store, oldKey, true)
 	}
@@ -194,17 +193,12 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 }
 
 // publishedSite is the upload response: the stored row (embedded, so its fields
-// stay top-level for clients decoding a db.Site) plus where the site is served.
-// Publishers must not derive that URL -- see docs/sites.md.
 type publishedSite struct {
 	*db.Site
 	URL string `json:"url"`
 }
 
 // canonicalSiteURL is the absolute form of canonicalURLFor for a whole
-// deployment, so the URL a publisher advertises is the one the redirects treat
-// as canonical. Host comes from the request -- the server is never told its own
-// URL.
 func (h *Handler) canonicalSiteURL(ctx context.Context, project *db.Project, branch string, r *http.Request) string {
 	path, _ := h.canonicalURLFor(ctx, project, branch, "", r)
 	return strings.TrimSuffix(auth.ApexServiceURL(r, "sites").String(), "/") + path
@@ -218,16 +212,6 @@ var errSiteTooLarge = errors.New("decompressed archive too large")
 // validErr is a client error (invalid archive or over the cap); storeErr is a server
 // error from the storage backend.
 func (h *Handler) storeTar(ctx context.Context, writeTar func(io.Writer) (int, error)) (key string, size int64, sha string, fileCount int, validErr, storeErr error) {
-	// The stored blob is a binpazer archive, not the tar: one compressed block
-	// per file plus a path -> offset directory, so serving one file is a seek
-	// instead of a scan. sha256 still describes the CANONICAL TAR the uploader
-	// sent, so identical uploads stay identifiable; only what is stored changed.
-	//
-	// It is spooled to a temp file because binpazer back-patches the header
-	// (file length, and the version a compressed block requires), which needs a
-	// seekable destination.
-	// The tar path never needed a spool before, so it cannot assume the temp
-	// directory already exists.
 	if h.TmpDir != "" {
 		if err := os.MkdirAll(h.TmpDir, 0o755); err != nil {
 			return "", 0, "", 0, nil, fmt.Errorf("create temp dir: %w", err)
@@ -261,7 +245,6 @@ func (h *Handler) storeTar(ctx context.Context, writeTar func(io.Writer) (int, e
 		MaxTotalSize: maxSiteDecompressedSize,
 	})
 	// Unblocks the producer if the archive writer stopped early, so the
-	// goroutine below always finishes.
 	pr.CloseWithError(aerr)
 	res := <-rc
 	if res.err != nil {
@@ -283,8 +266,6 @@ func (h *Handler) storeTar(ctx context.Context, writeTar func(io.Writer) (int, e
 
 // putUncompressed stores a blob without the storage layer's whole-blob zstd
 // wrapper, so its index can be followed with seeks. A backend without the
-// capability stores it compressed; the site then still serves, through the
-// sequential fallback.
 func putUncompressed(ctx context.Context, s storage.Storage, r io.Reader) (string, int64, error) {
 	if up, ok := s.(storage.UncompressedPutter); ok {
 		return up.PutUncompressed(ctx, r)
@@ -293,7 +274,6 @@ func putUncompressed(ctx context.Context, s storage.Storage, r io.Reader) (strin
 }
 
 // cappedWriter forwards writes to w until more than max bytes have been written, then
-// fails with errSiteTooLarge so a gzip/zip bomb can't be expanded without bound.
 type cappedWriter struct {
 	w   io.Writer
 	n   int64

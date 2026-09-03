@@ -23,7 +23,6 @@ import (
 )
 
 // defaultGitHubAPI is the public API root. githubSource.api overrides it so
-// tests can drive a fake upstream and assert what each status becomes.
 const defaultGitHubAPI = "https://api.github.com"
 
 // upstreamGitHub is the Upstream name reported on an *Error from this source.
@@ -32,20 +31,15 @@ const upstreamGitHub = "github"
 // githubSource fetches module content straight from the GitHub REST API. There
 // is deliberately no `go` binary and no `git` subprocess behind this: every
 // failure is an HTTP status we can classify honestly (see errors.go), rather
-// than "exit status 128" from a child process whose credential plumbing is
-// invisible.
 type githubSource struct {
 	client *http.Client
 	// api is the GitHub API root.
 	api string
 	// tokenFor resolves the bearer for a repo; injected so tests can drive the
-	// credential without touching global auth state.
 	tokenFor func(ctx context.Context, owner, repo string) string
 	// tarballLimit caps a repository tarball read (guards a hostile or runaway
-	// upstream); 0 means modzip's own module size limit is the only bound.
 	tarballLimit int64
 	// tmpDir is where tarballs are expanded and zips assembled; "" uses the OS
-	// default.
 	tmpDir string
 }
 
@@ -62,14 +56,12 @@ func newGitHubSource(client *http.Client, tmpDir string) *githubSource {
 type tagRef struct {
 	Name string
 	// SHA is the ref's object sha. For an annotated tag that is the tag OBJECT,
-	// not the commit -- Annotated says which, and commitSHA dereferences it.
 	SHA       string
 	Annotated bool
 }
 
 // do issues an authenticated GitHub API request and classifies the response.
 // Every non-2xx becomes a typed *Error here, which is the single place upstream
-// status is interpreted -- so no caller can accidentally turn a 403 into a 404.
 func (g *githubSource) do(ctx context.Context, owner, repo, method, url, mod, ver, accept string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
@@ -98,9 +90,6 @@ func (g *githubSource) do(ctx context.Context, owner, repo, method, url, mod, ve
 			credentialNote(tok)+"; "+detail)
 
 	case resp.StatusCode == http.StatusForbidden && isRateLimited(resp, detail):
-		// A rate limit is a 403 but is emphatically not an authorization problem:
-		// it clears on its own, and reporting it as one sends whoever reads it
-		// after a credential that was never at fault.
 		return nil, upstreamErr(mod, ver, upstreamGitHub, resp.StatusCode,
 			"rate limited: "+detail+resetNote(resp), nil)
 
@@ -109,12 +98,6 @@ func (g *githubSource) do(ctx context.Context, owner, repo, method, url, mod, ve
 			credentialNote(tok)+"; "+detail)
 
 	case resp.StatusCode == http.StatusNotFound:
-		// GitHub answers 404 both for a repository that does not exist and for one
-		// the caller may not see -- it will not confirm a private repo's existence
-		// to someone unauthorized. With no credential at all the two are strictly
-		// indistinguishable, and calling it "not found" is the exact laundering
-		// that makes a credential failure look like a typo in go.mod. So: no
-		// credential means unauthorized, not missing.
 		if tok == "" {
 			return nil, unauthorizedErr(mod, ver, upstreamGitHub, resp.StatusCode,
 				"the proxy has NO GitHub credential, so a private repository is "+
@@ -137,7 +120,6 @@ func credentialNote(tok string) string {
 	return "the proxy's credential was rejected"
 }
 
-// isRateLimited distinguishes GitHub's rate-limit 403 from an authorization 403.
 func isRateLimited(resp *http.Response, detail string) bool {
 	if resp.Header.Get("X-RateLimit-Remaining") == "0" {
 		return true
@@ -185,9 +167,6 @@ func githubMessage(resp *http.Response) string {
 // caller, which knows the module's tag prefix.
 func (g *githubSource) listTags(ctx context.Context, ref repoRef, mod string) ([]tagRef, error) {
 	var out []tagRef
-	// matching-refs returns every tag with its object SHA in one paginated call,
-	// and (unlike /tags) does not resolve annotated tags for us -- which is fine,
-	// versions come from the ref names.
 	for page := 1; page <= 20; page++ {
 		url := fmt.Sprintf("%s/repos/%s/%s/git/matching-refs/tags?per_page=100&page=%d",
 			g.api, ref.Owner, ref.Repo, page)
@@ -224,7 +203,6 @@ func (g *githubSource) listTags(ctx context.Context, ref repoRef, mod string) ([
 // commitSHA resolves a tag ref to the commit it names. An annotated tag's ref
 // points at a tag object rather than a commit, and handing that sha to anything
 // expecting a commit (the tarball endpoint especially) fails -- so it is
-// dereferenced through the git tag API first.
 func (g *githubSource) commitSHA(ctx context.Context, ref repoRef, t tagRef, mod, ver string) (string, error) {
 	if !t.Annotated {
 		return t.SHA, nil
@@ -302,9 +280,6 @@ func (g *githubSource) getCommit(ctx context.Context, ref repoRef, rev, mod, ver
 	return commitInfo{SHA: payload.SHA, Time: payload.Commit.Committer.Date.UTC()}, nil
 }
 
-// getFile reads one file at a revision. Returns (nil, nil) when the file is
-// simply absent, which the caller distinguishes from a failure -- a module
-// without a go.mod is legal and gets a synthesized one.
 func (g *githubSource) getFile(ctx context.Context, ref repoRef, path, rev, mod, ver string) ([]byte, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/contents/%s?ref=%s",
 		g.api, ref.Owner, ref.Repo, path, rev)
@@ -336,8 +311,6 @@ func (g *githubSource) getFile(ctx context.Context, ref repoRef, path, rev, mod,
 }
 
 // goModAt reads the module's go.mod at a revision, returning the declared module
-// path alongside the bytes. Absent go.mod yields a synthesized one declaring
-// modPath, which is what the module protocol requires a proxy to serve.
 func (g *githubSource) goModAt(ctx context.Context, ref repoRef, rev, modPath, ver string) (content []byte, declared string, err error) {
 	p := "go.mod"
 	if ref.Dir != "" {
@@ -362,7 +335,6 @@ func (g *githubSource) goModAt(ctx context.Context, ref repoRef, rev, modPath, v
 // merely close produces a checksum mismatch at every consumer.
 //
 // The tarball is spooled to disk and expanded to a temp tree, so peak memory is
-// one buffer rather than the module's size.
 func (g *githubSource) buildZip(ctx context.Context, ref repoRef, rev string, mv module.Version) (path string, size int64, err error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/tarball/%s", g.api, ref.Owner, ref.Repo, rev)
 	resp, err := g.do(ctx, ref.Owner, ref.Repo, http.MethodGet, url, mv.Path, mv.Version, "application/vnd.github+json")
@@ -404,8 +376,6 @@ func (g *githubSource) buildZip(ctx context.Context, ref repoRef, rev string, mv
 
 // extractModuleTree writes the module directory out of a GitHub repository
 // tarball into dest. GitHub wraps the repo in a single top-level directory whose
-// name embeds a short SHA, so the first path element is stripped and only
-// entries under subdir (the module root within the repo) are kept.
 func extractModuleTree(r io.Reader, subdir, dest string) error {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
@@ -435,8 +405,6 @@ func extractModuleTree(r io.Reader, subdir, dest string) error {
 			continue
 		}
 		// modzip only reads regular files and directories; skipping everything
-		// else here also drops symlinks, which must never be followed out of the
-		// extraction root.
 		switch hdr.Typeflag {
 		case tar.TypeDir, tar.TypeReg:
 		default:
@@ -463,8 +431,6 @@ func extractModuleTree(r io.Reader, subdir, dest string) error {
 }
 
 // safeJoin resolves rel under root, refusing anything that would escape it. A
-// tarball is untrusted input; "../" entries in one are how an archive writes
-// outside its extraction directory.
 func safeJoin(root, rel string) (string, error) {
 	out := filepath.Join(root, filepath.FromSlash(rel))
 	if out != root && !strings.HasPrefix(out, root+string(os.PathSeparator)) {
