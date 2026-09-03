@@ -72,14 +72,6 @@ func (r route) Access() auth.AccessLevel {
 }
 
 // AllowsPublicRead lets requireProject serve a public site branch without a
-// token even when the project is private. A single-branch read (Serve on either
-// scheme) and the default-branch reads -- the apex root redirect, an apex file
-// path, a bare subdomain path, all of which target resolveRootBranch --
-// qualify when the branch in question is public; the /branches listing (the
-// only read naming neither a branch nor a root) stays gated, as do writes. This keeps a public site's
-// shareable URL working under a private project, mirroring the per-branch
-// Serve rule. Every case resolves the branch through the SAME helper its
-// serving handler uses, so the gate and the serve can never disagree about
 func (r route) AllowsPublicRead(ctx context.Context, database *db.DB, project *db.Project) bool {
 	if r.write {
 		return false

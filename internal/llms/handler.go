@@ -15,7 +15,6 @@ var templateMD string
 var handler Handler
 
 // The services that serve their own copy of the guide. Nothing here reads a
-// position, so it is a set.
 var serviceSubdomains = set.Of[string]("apt", "brew", "dl", "git", "goproxy", "npm", "oci", "sites", "static")
 
 func init() {

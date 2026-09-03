@@ -99,7 +99,9 @@ func TestDeb_APELauncherRunsReadOnlyBinary(t *testing.T) {
 	require.NoError(t, os.WriteFile(real, apeFixture(), 0o555)) // read-only, as installed
 
 	launcher := filepath.Join(root, "launcher")
-	script := strings.ReplaceAll(debAPELauncher("tool", "1.2.3"), "'/usr/lib/tool/tool'", "'"+real+"'")
+	rendered, err := debAPELauncher("tool", "1.2.3")
+	require.NoError(t, err)
+	script := strings.ReplaceAll(rendered, "'/usr/lib/tool/tool'", "'"+real+"'")
 	require.NoError(t, os.WriteFile(launcher, []byte(script), 0o755))
 
 	cache := filepath.Join(root, "cache")

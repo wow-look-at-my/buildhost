@@ -92,7 +92,11 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 		artifactReader = rest
 		if isAPE {
 			installDir = fmt.Sprintf("/usr/lib/%s/", pkgName)
-			launcher = []byte(debAPELauncher(pkgName, version))
+			script, err := debAPELauncher(pkgName, version)
+			if err != nil {
+				return nil, err
+			}
+			launcher = []byte(script)
 		}
 	}
 

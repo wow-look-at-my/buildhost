@@ -22,9 +22,6 @@ const (
 )
 
 // OIDCRepoIdentity carries the GitHub repo identity from a verified OIDC
-// token, so the project-auth middleware can resolve the repo's default branch
-// from GitHub, persist the repo on the project for GitHub-login authorization,
-// and pin/verify the numeric IDs against rename/resurrection takeover.
 type OIDCRepoIdentity struct {
 	RepoPath string // "owner/repo" (plain names, IDs stripped)
 	Issuer   string

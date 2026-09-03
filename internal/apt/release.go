@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -106,10 +107,12 @@ func (h *Handler) serveKey(w http.ResponseWriter, r *http.Request) {
 	w.Write(key)
 }
 
+// hashEntry is one SHA256 line of a Release file, so releaseTemplate reads its
+// fields and they are exported.
 type hashEntry struct {
-	path string
-	hash string
-	size int
+	Path string
+	Hash string
+	Size int
 }
 
 // computePackagesHashes renders each architecture's Packages index through
@@ -130,30 +133,43 @@ func (h *Handler) computePackagesHashes(r *http.Request, project *db.Project, re
 		}
 		hash := sha256.Sum256([]byte(data))
 		entries = append(entries, hashEntry{
-			path: fmt.Sprintf("main/binary-%s/Packages", arch),
-			hash: fmt.Sprintf("%x", hash),
-			size: len(data),
+			Path: fmt.Sprintf("main/binary-%s/Packages", arch),
+			Hash: fmt.Sprintf("%x", hash),
+			Size: len(data),
 		})
 	}
 	return entries, nil
 }
 
+// releaseTemplate renders a Debian Release file. apt parses it as a field list,
+// so a dropped newline merges two fields and the index stops resolving.
+var releaseTemplate = template.Must(template.New("apt-release").Parse(
+	`Origin: buildhost
+Label: {{.Project}}
+Suite: stable
+Codename: stable
+Architectures: amd64 arm64 i386 armhf
+Components: main
+Date: {{.Date}}
+{{if .Hashes}}SHA256:
+{{range .Hashes}} {{.Hash}} {{.Size}} {{.Path}}
+{{end}}{{end}}`))
+
 func buildRelease(projectName string, hashes []hashEntry) string {
 	var b strings.Builder
-	b.WriteString("Origin: buildhost\n")
-	b.WriteString(fmt.Sprintf("Label: %s\n", projectName))
-	b.WriteString("Suite: stable\n")
-	b.WriteString("Codename: stable\n")
-	b.WriteString("Architectures: amd64 arm64 i386 armhf\n")
-	b.WriteString("Components: main\n")
-	b.WriteString(fmt.Sprintf("Date: %s\n", time.Now().UTC().Format(time.RFC1123Z)))
-
-	if len(hashes) > 0 {
-		b.WriteString("SHA256:\n")
-		for _, h := range hashes {
-			b.WriteString(fmt.Sprintf(" %s %d %s\n", h.hash, h.size, h.path))
-		}
+	err := releaseTemplate.Execute(&b, struct {
+		Project string
+		Date    string
+		Hashes  []hashEntry
+	}{
+		Project: projectName,
+		Date:    time.Now().UTC().Format(time.RFC1123Z),
+		Hashes:  hashes,
+	})
+	if err != nil {
+		// The template is a constant and strings.Builder never fails a write,
+		// so reaching this means the template itself was edited wrong.
+		panic(err)
 	}
-
 	return b.String()
 }

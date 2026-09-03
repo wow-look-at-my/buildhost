@@ -240,8 +240,8 @@ func TestBuildRelease_NoHashes(t *testing.T) {
 func TestBuildRelease(t *testing.T) {
 	t.Parallel()
 	hashes := []hashEntry{
-		{path: "main/binary-amd64/Packages", hash: "abc123", size: 100},
-		{path: "main/binary-arm64/Packages", hash: "def456", size: 200},
+		{Path: "main/binary-amd64/Packages", Hash: "abc123", Size: 100},
+		{Path: "main/binary-arm64/Packages", Hash: "def456", Size: 200},
 	}
 	content := buildRelease("myproject", hashes)
 	assert.Contains(t, content, "Origin: buildhost")

@@ -129,7 +129,3 @@ func TestNormalizeVersion(t *testing.T) {
 }
 
 // TestServeHTTP_RoutedRealNpmRequest drives requests through the real subdomain
-// dispatch and router exactly as `npm install` does. npm percent-encodes the
-// scope slash, so the packument path is `/@buildhost%2f<name>`. The other
-// ServeHTTP tests inject the parsed route directly and so never exercise
-// routing -- which is why the %2f mismatch went unnoticed until production.

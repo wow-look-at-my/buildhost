@@ -16,10 +16,6 @@ var gitHubAPIBase = "https://api.github.com"
 var metadataHTTPClient = &http.Client{Timeout: 20 * time.Second}
 
 // RecordDeleter marks an org's artifact-metadata storage records deleted.
-//
-// Records are posted from CI when a publish happens, but nothing on that side
-// can retract them: eviction runs here, in a background sweeper or the gc CLI,
-// with no workflow in the picture. Without this the org's linked artifacts page
 type RecordDeleter interface {
 	// MarkDeleted reports the artifact with digest sha256Hex, published as
 	MarkDeleted(ctx context.Context, githubRepo, project, version, sha256Hex string) error
