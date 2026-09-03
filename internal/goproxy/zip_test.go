@@ -13,6 +13,7 @@ import (
 )
 
 func TestServedZipIsAValidModuleZip(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	modPath := privateOrg + "/tml"
 	seedModule(fake, modPath, "", "v1.2.0", "aaaa111122223333444455556666777788889999",
@@ -47,6 +48,7 @@ func TestServedZipIsAValidModuleZip(t *testing.T) {
 // A nested module's zip must contain that subdirectory's files at the module
 // root, with the parent repo's other directories excluded entirely.
 func TestNestedModuleZipContainsOnlyItsSubtree(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	modPath := privateOrg + "/agentic-loop/go"
 	seedModule(fake, modPath, "go", "go/v0.3.0", "bbbb111122223333444455556666777788889999",
@@ -81,6 +83,7 @@ func TestNestedModuleZipContainsOnlyItsSubtree(t *testing.T) {
 }
 
 func TestTarballCannotEscapeTheExtractionRoot(t *testing.T) {
+	t.Serial()
 	dir := t.TempDir()
 	_, err := safeJoin(dir, "../escaped")
 	require.Error(t, err)

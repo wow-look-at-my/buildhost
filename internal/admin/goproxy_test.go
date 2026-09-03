@@ -10,6 +10,7 @@ import (
 )
 
 func TestAPIGoproxy_NotRunning(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodGet, "/api/goproxy", nil)
@@ -22,6 +23,7 @@ func TestAPIGoproxy_NotRunning(t *testing.T) {
 }
 
 func TestAPIGoproxyRecheck_NotRunning(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodPost, "/api/goproxy/recheck", nil)

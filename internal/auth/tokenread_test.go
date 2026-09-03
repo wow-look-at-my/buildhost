@@ -9,6 +9,7 @@ import (
 )
 
 func TestTokenCanReadProject(t *testing.T) {
+	t.Serial()
 	pub := &db.Project{ID: 1, Name: "pub"}
 	priv := &db.Project{ID: 2, Name: "secret", IsPrivate: true}
 	other := &db.Project{ID: 3, Name: "other-secret", IsPrivate: true}

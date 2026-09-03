@@ -32,6 +32,7 @@ func readBundle(t *testing.T) string {
 // and the old assertions (on internal function names) passed against the stale
 // artifact while the real source could not have produced a working dashboard.
 func TestAdminStaticInlineHandlersAreExported(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	referenced := map[string]bool{}
@@ -60,6 +61,7 @@ func TestAdminStaticInlineHandlersAreExported(t *testing.T) {
 
 // The Homebrew snippet must clone the /tap.git endpoint (a bare host 404s) and
 func TestAdminStaticHomebrewInstructionsUseTap(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	require.Contains(t, body, "brew tap pazer/build")
@@ -73,6 +75,7 @@ func TestAdminStaticHomebrewInstructionsUseTap(t *testing.T) {
 // class names the rendered markup and the stylesheet agree on, not internal
 // function names -- the rendering may be refactored, the markup contract may not.
 func TestAdminStaticProjectsRenderAsTree(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	require.Contains(t, body, "project-folder-row")
@@ -84,6 +87,7 @@ func TestAdminStaticProjectsRenderAsTree(t *testing.T) {
 // behind it. This page was missing from the TypeScript source entirely while it
 // was live in the committed bundle.
 func TestAdminStaticHasRetentionPage(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	require.Contains(t, body, `"#/retention"`)
@@ -93,6 +97,7 @@ func TestAdminStaticHasRetentionPage(t *testing.T) {
 
 // Private projects mint a signed link per click rather than linking through dl
 func TestAdminStaticPrivateDownloadsMintLinks(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	require.Contains(t, body, "/download-links")
@@ -102,6 +107,7 @@ func TestAdminStaticPrivateDownloadsMintLinks(t *testing.T) {
 
 // Every script the dashboard's HTML loads must be a file that actually gets
 func TestAdminStaticScriptTagsResolve(t *testing.T) {
+	t.Serial()
 	index, err := os.ReadFile("static/index.html")
 	require.NoError(t, err)
 
@@ -115,6 +121,7 @@ func TestAdminStaticScriptTagsResolve(t *testing.T) {
 
 // A site LINK the dashboard hands a user must be the read grammar ("@branch"),
 func TestAdminStaticSiteLinksUseRefSigil(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	require.NotContains(t, body, `/branch/" +`,
@@ -127,6 +134,7 @@ func TestAdminStaticSiteLinksUseRefSigil(t *testing.T) {
 // A project's release page must hand the reader a runnable install command.
 // It used to link the formula FILE at /Formula/{project}.rb, built from the
 func TestAdminStaticReleasePageShowsBrewInstallCommand(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	require.Contains(t, body, "brew install pazer/build/")
@@ -138,6 +146,7 @@ func TestAdminStaticReleasePageShowsBrewInstallCommand(t *testing.T) {
 // do I get this?" -- pasting either into a browser returns JSON and installs
 // nothing. Each ecosystem gets the command that installs THIS release.
 func TestAdminStaticReleasePageShowsInstallCommands(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	require.Contains(t, body, "npm install ")
@@ -152,6 +161,7 @@ func TestAdminStaticReleasePageShowsInstallCommands(t *testing.T) {
 // including the Registries page's placeholder -- names the package, never the
 // raw project.
 func TestAdminStaticAptCommandsUseThePackageName(t *testing.T) {
+	t.Serial()
 	body := readBundle(t)
 
 	require.Contains(t, body, "sudo apt install {package}")

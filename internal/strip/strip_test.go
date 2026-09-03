@@ -16,10 +16,12 @@ import (
 
 // Stripping is implemented in-process, so it is available wherever buildhost
 func TestAvailable(t *testing.T) {
+	t.Serial()
 	assert.True(t, Available())
 }
 
 func TestAvailable_NoExternalTools(t *testing.T) {
+	t.Serial()
 	t.Setenv("PATH", t.TempDir())
 	assert.True(t, Available())
 
@@ -39,6 +41,7 @@ func TestAvailable_NoExternalTools(t *testing.T) {
 }
 
 func TestStrip_NonexistentFile(t *testing.T) {
+	t.Serial()
 	_, err := Strip("/nonexistent/file/path")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "read input")
@@ -48,6 +51,7 @@ func TestStrip_NonexistentFile(t *testing.T) {
 // all -- so the behavior no longer depends on whether BFD happens to reject the
 // format. The cases below are exactly the ones that mattered in production.
 func TestStrip_NonELFFile(t *testing.T) {
+	t.Serial()
 	cases := map[string][]byte{
 		// BFD rejects these outright; the old code relied on that happening.
 		"plain text":         []byte("this is not an ELF binary"),
@@ -105,6 +109,7 @@ func buildPEFixture(t *testing.T) []byte {
 // Strip error as "serve the artifact unstripped", so the stream entry points
 // must surface the refusal rather than emitting mangled bytes.
 func TestStripReader_NonELFRefused(t *testing.T) {
+	t.Serial()
 	pe := buildPEFixture(t)
 
 	_, _, err := StripReader(bytes.NewReader(pe), t.TempDir())
@@ -115,11 +120,13 @@ func TestStripReader_NonELFRefused(t *testing.T) {
 }
 
 func TestStripBytes_NonELF(t *testing.T) {
+	t.Serial()
 	_, err := StripBytes([]byte("not an ELF"))
 	require.Error(t, err)
 }
 
 func TestStripBytes_RealBinary(t *testing.T) {
+	t.Serial()
 	dir := t.TempDir()
 	src := filepath.Join(dir, "main.go")
 	require.NoError(t, os.WriteFile(src, []byte("package main\nfunc main() {}\n"), 0o644))
@@ -142,6 +149,7 @@ func TestStripBytes_RealBinary(t *testing.T) {
 }
 
 func TestStrip_RealELFBinary(t *testing.T) {
+	t.Serial()
 	// Build a tiny Go program to get a real ELF binary.
 	dir := t.TempDir()
 	src := filepath.Join(dir, "main.go")
@@ -204,6 +212,7 @@ func buildELFFixture(t *testing.T) []byte {
 // what a corrupting implementation (the BFD shell-out on a non-ELF, or a bad
 // rewrite of an ELF) cannot pass.
 func TestStrip_StrippedBinaryStillRuns(t *testing.T) {
+	t.Serial()
 	dir := t.TempDir()
 	input := filepath.Join(dir, "fixture")
 	require.NoError(t, os.WriteFile(input, buildELFFixture(t), 0o755))
@@ -226,6 +235,7 @@ func TestStrip_StrippedBinaryStillRuns(t *testing.T) {
 // formulas and APT indexes, so the same artifact must strip to the same bytes
 // every time.
 func TestStrip_Deterministic(t *testing.T) {
+	t.Serial()
 	dir := t.TempDir()
 	input := filepath.Join(dir, "fixture")
 	require.NoError(t, os.WriteFile(input, buildELFFixture(t), 0o755))
@@ -246,6 +256,7 @@ func TestStrip_Deterministic(t *testing.T) {
 // What gets removed and what must survive: debug and symbol-table sections go,
 // everything the loader or the Go runtime reaches stays.
 func TestStrip_SectionSelection(t *testing.T) {
+	t.Serial()
 	dir := t.TempDir()
 	input := filepath.Join(dir, "fixture")
 	require.NoError(t, os.WriteFile(input, buildELFFixture(t), 0o755))

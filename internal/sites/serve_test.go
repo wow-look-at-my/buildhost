@@ -84,6 +84,7 @@ func (e *testEnv) uploadSite(t *testing.T, project, branch string, files map[str
 // This test MUST use setupEnv (real router) -- direct handler calls cannot
 // catch routing-level bugs.
 func TestRouting(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "mysite")
 	env.uploadSite(t, "mysite", "main", map[string]string{
@@ -107,6 +108,7 @@ func TestRouting(t *testing.T) {
 
 // TestServe_NestedDirServesIndexNotDirEntry reproduces the bug where a nested
 func TestServe_NestedDirServesIndexNotDirEntry(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -140,6 +142,7 @@ func TestServe_NestedDirServesIndexNotDirEntry(t *testing.T) {
 }
 
 func TestServe_NotFound_Custom404(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	body := "<h1>missing</h1>"
@@ -160,6 +163,7 @@ func TestServe_NotFound_Custom404(t *testing.T) {
 }
 
 func TestServe_DirectCustom404File(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	body := "<h1>missing</h1>"

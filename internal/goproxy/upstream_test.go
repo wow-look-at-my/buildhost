@@ -27,6 +27,7 @@ func fakeMirror(t *testing.T, files map[string]string) *httptest.Server {
 }
 
 func TestUpstreamModuleIsServedAndCached(t *testing.T) {
+	t.Serial()
 	mirror := fakeMirror(t, map[string]string{
 		"golang.org/x/mod/@v/list":         "v0.39.0\nv0.40.0\n",
 		"golang.org/x/mod/@latest":         `{"Version":"v0.40.0","Time":"2026-01-02T03:04:05Z"}`,
@@ -80,6 +81,7 @@ func TestUpstreamModuleIsServedAndCached(t *testing.T) {
 }
 
 func TestUpstreamMissIs404(t *testing.T) {
+	t.Serial()
 	mirror := fakeMirror(t, nil)
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
@@ -92,6 +94,7 @@ func TestUpstreamMissIs404(t *testing.T) {
 
 // The default shape: no mirror configured, so a module outside this proxy's
 func TestModuleOutsideOurNamespaceIs404SoDirectCanTakeIt(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
 
@@ -106,6 +109,7 @@ func TestModuleOutsideOurNamespaceIs404SoDirectCanTakeIt(t *testing.T) {
 }
 
 func TestAuthorizationFailureDoesNotFallThroughToDirect(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	s := newTestService(t, fake, "", []string{privateOrg})
@@ -119,6 +123,7 @@ func TestAuthorizationFailureDoesNotFallThroughToDirect(t *testing.T) {
 
 // A mirror that is up but broken is an upstream failure, not an absence.
 func TestUpstreamServerErrorIsNotAMissingModule(t *testing.T) {
+	t.Serial()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "mirror exploded", http.StatusInternalServerError)
 	}))
@@ -135,6 +140,7 @@ func TestUpstreamServerErrorIsNotAMissingModule(t *testing.T) {
 
 // A private-prefix module must never be sent to the public mirror: that would
 func TestPrivateModuleNeverReachesTheMirror(t *testing.T) {
+	t.Serial()
 	var mirrorHits int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		mirrorHits++

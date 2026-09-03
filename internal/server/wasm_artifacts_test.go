@@ -15,6 +15,7 @@ import (
 )
 
 func TestWasmArtifact_UploadDownloadRoundTrip(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	// A fake wasm module (real magic bytes, fake contents).
@@ -87,6 +88,7 @@ func TestWasmArtifact_UploadDownloadRoundTrip(t *testing.T) {
 // static canonicalization -- and "js" must never surface as an os in stored
 // rows or URLs.
 func TestWasmArtifact_LegacyGoosGoarchPairEndToEnd(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	jsPayload := []byte("\x00asm\x01\x00\x00\x00legacy-js-module")

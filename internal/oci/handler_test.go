@@ -108,6 +108,7 @@ func readAll(store *storage.Filesystem, ctx context.Context, key string) ([]byte
 }
 
 func TestParseRoute(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name string
 		path string
@@ -194,6 +195,7 @@ func TestParseRoute(t *testing.T) {
 }
 
 func TestV2Root_Unauthenticated(t *testing.T) {
+	t.Serial()
 	h, _, _ := setupTest(t)
 
 	req := httptest.NewRequest("GET", "/v2/", nil)
@@ -207,6 +209,7 @@ func TestV2Root_Unauthenticated(t *testing.T) {
 }
 
 func TestV2Root_HEAD_Unauthenticated(t *testing.T) {
+	t.Serial()
 	h, _, _ := setupTest(t)
 
 	req := httptest.NewRequest("HEAD", "/v2/", nil)
@@ -219,6 +222,7 @@ func TestV2Root_HEAD_Unauthenticated(t *testing.T) {
 }
 
 func TestV2Root_Authenticated(t *testing.T) {
+	t.Serial()
 	h, _, _ := setupTest(t)
 
 	req := httptest.NewRequest("GET", "/v2/", nil)
@@ -234,6 +238,7 @@ func TestV2Root_Authenticated(t *testing.T) {
 }
 
 func TestV2Root_HEAD_Authenticated(t *testing.T) {
+	t.Serial()
 	h, _, _ := setupTest(t)
 
 	req := httptest.NewRequest("HEAD", "/v2/", nil)
@@ -246,6 +251,7 @@ func TestV2Root_HEAD_Authenticated(t *testing.T) {
 }
 
 func TestServeHTTP_UnknownAction(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 

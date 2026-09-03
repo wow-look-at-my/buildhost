@@ -45,6 +45,7 @@ func storeLinkedBlob(t *testing.T, h *Handler, owner *db.Project, content string
 }
 
 func TestMountBlob_LinksABlobAnotherReadableProjectAlreadyHas(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	base := &db.Project{Name: "agent-host-session", Versioning: db.VersioningAuto}
 	child := &db.Project{Name: "agent-host-claude", Versioning: db.VersioningAuto}
@@ -66,6 +67,7 @@ func TestMountBlob_LinksABlobAnotherReadableProjectAlreadyHas(t *testing.T) {
 
 // The digest of a private image's layer is not a secret worth relying on, so
 func TestMountBlob_RefusesAPrivateOwnerTheCallerCannotRead(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	secret := &db.Project{Name: "someone-elses", Versioning: db.VersioningAuto, IsPrivate: true}
 	mine := &db.Project{Name: "mine", Versioning: db.VersioningAuto}
@@ -84,6 +86,7 @@ func TestMountBlob_RefusesAPrivateOwnerTheCallerCannotRead(t *testing.T) {
 // A token scoped to the private owner may read it, so it may mount from it --
 // exactly what it could get by pulling.
 func TestMountBlob_AllowsAPrivateOwnerTheTokenCanRead(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	owner := &db.Project{Name: "owner", Versioning: db.VersioningAuto, IsPrivate: true}
 	target := &db.Project{Name: "target", Versioning: db.VersioningAuto}
@@ -100,6 +103,7 @@ func TestMountBlob_AllowsAPrivateOwnerTheTokenCanRead(t *testing.T) {
 
 // `from` narrows the search rather than widening it: naming a project that does
 func TestMountBlob_HonoursFromAsARestriction(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	owner := &db.Project{Name: "real-owner", Versioning: db.VersioningAuto}
 	other := &db.Project{Name: "not-the-owner", Versioning: db.VersioningAuto}
@@ -119,6 +123,7 @@ func TestMountBlob_HonoursFromAsARestriction(t *testing.T) {
 // A link row whose bytes retention has since collected must not be mountable:
 // the mount would produce a project pointing at a blob no pull can serve.
 func TestMountBlob_RefusesWhenStorageNoLongerHasTheBytes(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	owner := &db.Project{Name: "owner", Versioning: db.VersioningAuto}
 	target := &db.Project{Name: "target", Versioning: db.VersioningAuto}
@@ -135,6 +140,7 @@ func TestMountBlob_RefusesWhenStorageNoLongerHasTheBytes(t *testing.T) {
 }
 
 func TestMountBlob_UnknownDigestFallsBackToAnUploadSession(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	target := &db.Project{Name: "target", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), target))

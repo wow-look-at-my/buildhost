@@ -36,6 +36,7 @@ jobs:
       - uses: wow-look-at-my/go-toolchain@master
         with:
           generate: 0af38e6ba5f6
+          timeout: '25'
       # The step above just ran every generate directive, which is what makes
       - uses: ./.github/actions/buildhost-download
         with:

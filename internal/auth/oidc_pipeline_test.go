@@ -57,6 +57,7 @@ func jwksServer(t *testing.T, pub *rsa.PublicKey, kid string) *httptest.Server {
 }
 
 func TestVerifyToken_FullPipeline_ValidJWT(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -87,6 +88,7 @@ func TestVerifyToken_FullPipeline_ValidJWT(t *testing.T) {
 }
 
 func TestVerifyToken_FullPipeline_ExpiredJWT(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -112,6 +114,7 @@ func TestVerifyToken_FullPipeline_ExpiredJWT(t *testing.T) {
 }
 
 func TestVerifyToken_FullPipeline_WrongSignature(t *testing.T) {
+	t.Serial()
 	key1, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	key2, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -139,6 +142,7 @@ func TestVerifyToken_FullPipeline_WrongSignature(t *testing.T) {
 }
 
 func TestVerifyToken_FullPipeline_GlobalPolicy(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -165,6 +169,7 @@ func TestVerifyToken_FullPipeline_GlobalPolicy(t *testing.T) {
 }
 
 func TestParseRSAPublicKey(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -178,6 +183,7 @@ func TestParseRSAPublicKey(t *testing.T) {
 }
 
 func TestParseRSAPublicKey_InvalidExponent(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	n := base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes())
@@ -192,6 +198,7 @@ func TestParseRSAPublicKey_InvalidExponent(t *testing.T) {
 }
 
 func TestVerifyToken_RejectsTokenWithNoExpiry(t *testing.T) {
+	t.Serial()
 	v := NewOIDCVerifier(OIDCConfig{})
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
@@ -211,6 +218,7 @@ func TestVerifyToken_RejectsTokenWithNoExpiry(t *testing.T) {
 }
 
 func TestVerifyToken_FullPipeline_AudienceMatch(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -238,6 +246,7 @@ func TestVerifyToken_FullPipeline_AudienceMatch(t *testing.T) {
 }
 
 func TestVerifyToken_FullPipeline_AudienceMismatch(t *testing.T) {
+	t.Serial()
 	v := NewOIDCVerifier(OIDCConfig{})
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
@@ -260,6 +269,7 @@ func TestVerifyToken_FullPipeline_AudienceMismatch(t *testing.T) {
 }
 
 func TestVerifyToken_FullPipeline_NoAudienceInPolicy_AnyAudienceAccepted(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 

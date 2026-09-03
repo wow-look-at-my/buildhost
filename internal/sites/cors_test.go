@@ -12,6 +12,7 @@ import (
 // A browser re-checks CORS on EVERY hop of a cross-origin fetch, so a redirect
 // that omits the site headers fails the whole load even though its target
 func TestSiteRedirectsCarryCORSHeaders(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "lib")
 	uploadSite(t, h, proj, "main", map[string]string{"index.html": "root", "ui/x.js": "export {}"})
@@ -64,6 +65,7 @@ func TestSiteRedirectsCarryCORSHeaders(t *testing.T) {
 // The {project}.<site-domain> scheme emits the same canonicalizing redirects
 // and needs the same headers on each of them.
 func TestSubdomainRedirectsCarryCORSHeaders(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "lib")
 	uploadSite(t, h, proj, "main", map[string]string{"index.html": "root", "ui/x.js": "export {}"})

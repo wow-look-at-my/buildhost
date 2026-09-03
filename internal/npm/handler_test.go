@@ -15,6 +15,7 @@ import (
 // end to end. The tests here cover the pure parsing/helper functions.
 
 func TestParseRoute(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name     string
 		pathVal  string
@@ -55,6 +56,7 @@ func TestParseRoute(t *testing.T) {
 }
 
 func TestSplitPlatform(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		input    string
 		wantProj string
@@ -83,6 +85,7 @@ func TestSplitPlatform(t *testing.T) {
 }
 
 func TestWrapperRunScript(t *testing.T) {
+	t.Serial()
 	script := wrapperRunScript("mytool")
 	assert.NotEmpty(t, script)
 	assert.Contains(t, script, "mytool")
@@ -93,6 +96,7 @@ func TestWrapperRunScript(t *testing.T) {
 }
 
 func TestProjectNPMNameRoundTrip(t *testing.T) {
+	t.Serial()
 	for _, tt := range []struct{ project, npm string }{
 		{"go-toolchain", "go-toolchain"},
 		{"cc-marketplace/my-plugin", "cc-marketplace__my-plugin"},
@@ -104,6 +108,7 @@ func TestProjectNPMNameRoundTrip(t *testing.T) {
 }
 
 func TestPlatformHelpers(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "darwin", npmPlatform(db.OSDarwin))
 	assert.Equal(t, "win32", npmPlatform(db.OSWindows))
 	assert.Equal(t, "linux", npmPlatform(db.OSLinux))
@@ -122,6 +127,7 @@ func TestPlatformHelpers(t *testing.T) {
 }
 
 func TestNormalizeVersion(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "1.2.3", normalizeVersion("1.2.3"))
 	assert.Equal(t, "1.2.3", normalizeVersion("v1.2.3"))
 	assert.Equal(t, "1.0.0", normalizeVersion("1"))

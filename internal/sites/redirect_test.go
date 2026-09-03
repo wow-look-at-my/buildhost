@@ -14,6 +14,7 @@ import (
 // specific branch / branches routes. The router is best-match: more literal
 // segments win, so the literal-less apex route only catches paths that aren't
 func TestRootRedirectRouteShadowing(t *testing.T) {
+	t.Serial()
 	var hit, gotProject string
 	mk := func(name string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
@@ -58,6 +59,7 @@ func TestRootRedirectRouteShadowing(t *testing.T) {
 // it and is shorter, so an "@<default>" URL collapses INTO it. Redirects only
 // ever run toward the simpler URL -- the bare root pointing at a branch URL,
 func TestSigilDefaultBranchCollapsesToBareURL(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "ue553")
 	uploadSite(t, h, proj, "main", map[string]string{"index.html": "root", "a/x.css": "body{}"})
@@ -108,6 +110,7 @@ func TestSigilDefaultBranchCollapsesToBareURL(t *testing.T) {
 // "org" and "org/repo", /org/repo/x.css is org/repo's file. Redirecting org's
 // own repo/x.css there would silently point at another project's site.
 func TestSigilDefaultBranchKeepsShadowedFileInPlace(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	org := seedProject(t, d, "org")
 	seedProject(t, d, "org/repo")

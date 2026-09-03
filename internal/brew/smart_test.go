@@ -40,6 +40,7 @@ func lineageDirFor(t *testing.T, h *Handler) string {
 // read the lineage's persisted refs/heads/main -- and the info/refs route
 // without a service parameter must keep serving the dumb file byte-for-byte.
 func TestServeTapInfoRefs_AdvertisementDerivesFromLineageTip(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "go-toolchain", "binary")
 
@@ -83,6 +84,7 @@ func TestServeTapInfoRefs_AdvertisementDerivesFromLineageTip(t *testing.T) {
 // must not be mistaken for a shallow request (the old "expected ACK/NAK, got
 // 'shallow <sha>'" failure).
 func TestServeUploadPack_FullCloneTransfersWholeHistory(t *testing.T) {
+	t.Serial()
 	requireGit(t)
 
 	oldTTL := tapCacheTTL
@@ -112,6 +114,7 @@ func TestServeUploadPack_FullCloneTransfersWholeHistory(t *testing.T) {
 }
 
 func TestServeUploadPack_ShallowCloneAndUnshallow(t *testing.T) {
+	t.Serial()
 	requireGit(t)
 
 	oldTTL := tapCacheTTL
@@ -154,6 +157,7 @@ func mustGet(t *testing.T, url string) int {
 // it), which the append-only lineage still holds even though the tip has
 // advanced past it.
 func TestServeUploadPack_ServesRequestedWantAfterTipAdvance(t *testing.T) {
+	t.Serial()
 	requireGit(t)
 
 	oldTTL := tapCacheTTL
@@ -204,6 +208,7 @@ func TestServeUploadPack_ServesRequestedWantAfterTipAdvance(t *testing.T) {
 // A flush-terminated batch of haves (no "done" yet) is a negotiation round:
 // the stateless server answers NAK -- and ONLY NAK, never a pack, which would
 func TestServeUploadPack_NegotiationRoundAnswersNAKOnly(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "appone", "appone-binary")
 
@@ -226,6 +231,7 @@ func TestServeUploadPack_NegotiationRoundAnswersNAKOnly(t *testing.T) {
 }
 
 func TestWantsShallow(t *testing.T) {
+	t.Serial()
 	// A full clone's want line echoes the advertised shallow capabilities;
 	want := pktLineString("want 9f9969e4d487c9a700c13b5a2119a09de9262f31 multi_ack_detailed side-band-64k thin-pack ofs-delta deepen-since deepen-not agent=git/2.43.0\n")
 
@@ -245,6 +251,7 @@ func TestWantsShallow(t *testing.T) {
 // The smart endpoints carry each tap root's exact credential semantics: the
 // private root challenges anonymous requests, brew.{domain}/tap.git serves
 func TestSmartTap_CredentialGates(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "appone", "appone-binary")
 

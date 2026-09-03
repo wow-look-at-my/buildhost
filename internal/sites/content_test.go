@@ -13,6 +13,7 @@ import (
 )
 
 func TestServe_File(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
@@ -31,6 +32,7 @@ func TestServe_File(t *testing.T) {
 }
 
 func TestServe_SetsSiteSecurityHeaders(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
@@ -56,6 +58,7 @@ func TestServe_SetsSiteSecurityHeaders(t *testing.T) {
 }
 
 func TestServe_IndexFallback(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
@@ -72,6 +75,7 @@ func TestServe_IndexFallback(t *testing.T) {
 }
 
 func TestServe_NotFound_NoBranch(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -84,6 +88,7 @@ func TestServe_NotFound_NoBranch(t *testing.T) {
 }
 
 func TestServe_NotFound_NoFile(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
@@ -99,6 +104,7 @@ func TestServe_NotFound_NoFile(t *testing.T) {
 }
 
 func TestServeRedirect(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{"index.html": "<h1>hello</h1>"})
@@ -120,6 +126,7 @@ func TestServeRedirect(t *testing.T) {
 }
 
 func TestServe_SubdirIndex(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
@@ -137,6 +144,7 @@ func TestServe_SubdirIndex(t *testing.T) {
 }
 
 func TestContentType(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name string
 		want string
@@ -158,6 +166,7 @@ func TestContentType(t *testing.T) {
 }
 
 func TestServe_ContentLength(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	content := "<h1>hello world</h1>"

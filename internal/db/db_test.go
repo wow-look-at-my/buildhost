@@ -22,6 +22,7 @@ func openTestDB(t *testing.T) *DB {
 // --- Projects ----------------------------------------------------------------
 
 func TestCreateAndGetProject(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -51,6 +52,7 @@ func TestCreateAndGetProject(t *testing.T) {
 }
 
 func TestGetProjectNotFound(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	_, err := d.GetProject(context.Background(), "nope")
 	assert.True(t, errors.Is(err, ErrNotFound))
@@ -58,6 +60,7 @@ func TestGetProjectNotFound(t *testing.T) {
 }
 
 func TestCreateProjectDuplicateReturnsErrConflict(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -71,6 +74,7 @@ func TestCreateProjectDuplicateReturnsErrConflict(t *testing.T) {
 }
 
 func TestListProjects(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -101,6 +105,7 @@ func createTestProject(t *testing.T, d *DB) *Project {
 }
 
 func TestCreateAndGetRelease(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createTestProject(t, d)
@@ -129,6 +134,7 @@ func TestCreateAndGetRelease(t *testing.T) {
 }
 
 func TestGetReleaseNotFound(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	p := createTestProject(t, d)
 	_, err := d.GetRelease(context.Background(), p.ID, "9.9.9")
@@ -137,6 +143,7 @@ func TestGetReleaseNotFound(t *testing.T) {
 }
 
 func TestListReleases(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createTestProject(t, d)
@@ -162,6 +169,7 @@ func TestListReleases(t *testing.T) {
 }
 
 func TestNextVersionNum(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createTestProject(t, d)
@@ -182,6 +190,7 @@ func TestNextVersionNum(t *testing.T) {
 }
 
 func TestPublishRelease(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createTestProject(t, d)
@@ -201,6 +210,7 @@ func TestPublishRelease(t *testing.T) {
 }
 
 func TestGetLatestRelease(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createTestProject(t, d)
@@ -238,6 +248,7 @@ func TestGetLatestRelease(t *testing.T) {
 }
 
 func TestGetLatestReleaseByBranch(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createTestProject(t, d)

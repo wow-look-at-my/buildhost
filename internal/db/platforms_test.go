@@ -9,6 +9,7 @@ import (
 )
 
 func TestParsePlatformList(t *testing.T) {
+	t.Serial()
 	got, err := ParsePlatformList("linux/amd64, macOS/aarch64 ,Windows/X64")
 	require.NoError(t, err)
 	assert.Equal(t, []Platform{
@@ -20,6 +21,7 @@ func TestParsePlatformList(t *testing.T) {
 }
 
 func TestParsePlatformList_Rejects(t *testing.T) {
+	t.Serial()
 	for name, spec := range map[string]string{
 		"empty":         "",
 		"no slash":      "linux",
@@ -51,6 +53,7 @@ func seedPlatformRelease(t *testing.T, d *DB, name string) *Release {
 }
 
 func TestCreateMultiPlatformArtifact_OneRowManySlots(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	rel := seedPlatformRelease(t, d, "ape-one-row")
@@ -89,6 +92,7 @@ func TestCreateMultiPlatformArtifact_OneRowManySlots(t *testing.T) {
 }
 
 func TestCreateMultiPlatformArtifact_ConflictLeavesNothing(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	rel := seedPlatformRelease(t, d, "ape-conflict")
@@ -114,6 +118,7 @@ func TestCreateMultiPlatformArtifact_ConflictLeavesNothing(t *testing.T) {
 // A different kind may occupy the same platform, exactly as before: the slot
 // index is per (release, kind, os, arch).
 func TestCreateMultiPlatformArtifact_KindsShareAPlatform(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	rel := seedPlatformRelease(t, d, "ape-kinds")
@@ -127,6 +132,7 @@ func TestCreateMultiPlatformArtifact_KindsShareAPlatform(t *testing.T) {
 // ListArtifactsByPlatform is what apt/brew/npm/oci consume: a multi-platform
 // artifact reaches every platform it covers, each with its own cache key.
 func TestListArtifactsByPlatform(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	rel := seedPlatformRelease(t, d, "ape-flatten")
@@ -152,6 +158,7 @@ func TestListArtifactsByPlatform(t *testing.T) {
 }
 
 func TestListArtifactsWithPlatforms_SinglePlatformStillHasASet(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	rel := seedPlatformRelease(t, d, "ape-uniform")

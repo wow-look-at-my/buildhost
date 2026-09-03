@@ -16,35 +16,42 @@ import (
 // --- LooksLikeJWT tests ---
 
 func TestLooksLikeJWT_ValidThreeParts(t *testing.T) {
+	t.Serial()
 	token := strings.Repeat("a", 40) + "." + strings.Repeat("b", 40) + "." + strings.Repeat("c", 40)
 	assert.True(t, LooksLikeJWT(token))
 }
 
 func TestLooksLikeJWT_TooShort(t *testing.T) {
+	t.Serial()
 	token := "aaa.bbb.ccc"
 	assert.False(t, LooksLikeJWT(token))
 }
 
 func TestLooksLikeJWT_TwoParts(t *testing.T) {
+	t.Serial()
 	token := strings.Repeat("a", 60) + "." + strings.Repeat("b", 60)
 	assert.False(t, LooksLikeJWT(token))
 }
 
 func TestLooksLikeJWT_FourParts(t *testing.T) {
+	t.Serial()
 	token := strings.Repeat("a", 30) + "." + strings.Repeat("b", 30) + "." + strings.Repeat("c", 30) + "." + strings.Repeat("d", 30)
 	assert.False(t, LooksLikeJWT(token))
 }
 
 func TestLooksLikeJWT_OnePart(t *testing.T) {
+	t.Serial()
 	token := strings.Repeat("x", 200)
 	assert.False(t, LooksLikeJWT(token))
 }
 
 func TestLooksLikeJWT_EmptyString(t *testing.T) {
+	t.Serial()
 	assert.False(t, LooksLikeJWT(""))
 }
 
 func TestLooksLikeJWT_PlainBearerToken(t *testing.T) {
+	t.Serial()
 	token := "bh_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0"
 	assert.False(t, LooksLikeJWT(token))
 }
@@ -52,42 +59,50 @@ func TestLooksLikeJWT_PlainBearerToken(t *testing.T) {
 // --- matchSubject tests ---
 
 func TestMatchSubject_ExactMatch(t *testing.T) {
+	t.Serial()
 	assert.True(t, matchSubject("repo:org/name:ref:refs/heads/main", "repo:org/name:ref:refs/heads/main"))
 }
 
 func TestMatchSubject_ExactMismatch(t *testing.T) {
+	t.Serial()
 	assert.False(t, matchSubject("repo:org/name:ref:refs/heads/main", "repo:org/other:ref:refs/heads/main"))
 }
 
 func TestMatchSubject_Wildcard(t *testing.T) {
+	t.Serial()
 	assert.True(t, matchSubject("*", "anything-at-all"))
 	assert.True(t, matchSubject("*", ""))
 }
 
 func TestMatchSubject_PrefixStar(t *testing.T) {
+	t.Serial()
 	assert.True(t, matchSubject("repo:org/name*", "repo:org/name:ref:refs/heads/main"))
 	assert.True(t, matchSubject("repo:org/name*", "repo:org/name"))
 	assert.False(t, matchSubject("repo:org/name*", "repo:org/other"))
 }
 
 func TestMatchSubject_ColonStar(t *testing.T) {
+	t.Serial()
 	assert.True(t, matchSubject("repo:org/name:*", "repo:org/name:ref:refs/heads/main"))
 	assert.True(t, matchSubject("repo:org/name:*", "repo:org/name:anything"))
 	assert.False(t, matchSubject("repo:org/name:*", "repo:org/nameSOMETHING"))
 }
 
 func TestMatchSubject_EmptyPattern(t *testing.T) {
+	t.Serial()
 	assert.True(t, matchSubject("", ""))
 	assert.False(t, matchSubject("", "nonempty"))
 }
 
 func TestMatchSubject_PrefixStarNoMatch(t *testing.T) {
+	t.Serial()
 	assert.False(t, matchSubject("prefix*", "other"))
 }
 
 // --- base64URLDecode tests ---
 
 func TestBase64URLDecode_Standard(t *testing.T) {
+	t.Serial()
 	input := base64.RawURLEncoding.EncodeToString([]byte("hello world"))
 	decoded, err := base64URLDecode(input)
 	require.NoError(t, err)
@@ -95,6 +110,7 @@ func TestBase64URLDecode_Standard(t *testing.T) {
 }
 
 func TestBase64URLDecode_WithPadding(t *testing.T) {
+	t.Serial()
 	input := base64.URLEncoding.EncodeToString([]byte("test"))
 	decoded, err := base64URLDecode(input)
 	require.NoError(t, err)
@@ -102,6 +118,7 @@ func TestBase64URLDecode_WithPadding(t *testing.T) {
 }
 
 func TestBase64URLDecode_URLSafeCharacters(t *testing.T) {
+	t.Serial()
 	data := []byte{0xfb, 0xff, 0xfe}
 	encoded := base64.RawURLEncoding.EncodeToString(data)
 	decoded, err := base64URLDecode(encoded)
@@ -110,12 +127,14 @@ func TestBase64URLDecode_URLSafeCharacters(t *testing.T) {
 }
 
 func TestBase64URLDecode_EmptyString(t *testing.T) {
+	t.Serial()
 	decoded, err := base64URLDecode("")
 	require.NoError(t, err)
 	assert.Equal(t, []byte{}, decoded)
 }
 
 func TestBase64URLDecode_InvalidCharacters(t *testing.T) {
+	t.Serial()
 	_, err := base64URLDecode("!!!invalid!!!")
 	assert.Error(t, err)
 }
@@ -133,6 +152,7 @@ func fakeJWT(header, claims map[string]any) string {
 // --- VerifyToken tests (expired / malformed) ---
 
 func TestVerifyToken_RejectsExpiredToken(t *testing.T) {
+	t.Serial()
 	v := NewOIDCVerifier(OIDCConfig{})
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
@@ -153,6 +173,7 @@ func TestVerifyToken_RejectsExpiredToken(t *testing.T) {
 }
 
 func TestVerifyToken_RejectsNotYetValidToken(t *testing.T) {
+	t.Serial()
 	v := NewOIDCVerifier(OIDCConfig{})
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
@@ -174,6 +195,7 @@ func TestVerifyToken_RejectsNotYetValidToken(t *testing.T) {
 }
 
 func TestVerifyToken_RejectsUnsupportedAlgorithm(t *testing.T) {
+	t.Serial()
 	v := NewOIDCVerifier(OIDCConfig{})
 	token := fakeJWT(
 		map[string]any{"alg": "HS256", "kid": "key1"},
@@ -194,6 +216,7 @@ func TestVerifyToken_RejectsUnsupportedAlgorithm(t *testing.T) {
 }
 
 func TestVerifyToken_RejectsNonJWT(t *testing.T) {
+	t.Serial()
 	v := NewOIDCVerifier(OIDCConfig{})
 	policies := []db.OIDCPolicy{{
 		Issuer:         "https://example.com",
@@ -205,6 +228,7 @@ func TestVerifyToken_RejectsNonJWT(t *testing.T) {
 }
 
 func TestVerifyToken_RejectsNoMatchingPolicy(t *testing.T) {
+	t.Serial()
 	v := NewOIDCVerifier(OIDCConfig{})
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
@@ -225,6 +249,7 @@ func TestVerifyToken_RejectsNoMatchingPolicy(t *testing.T) {
 }
 
 func TestVerifyToken_RejectsNonMatchingSubject(t *testing.T) {
+	t.Serial()
 	v := NewOIDCVerifier(OIDCConfig{})
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
@@ -247,26 +272,32 @@ func TestVerifyToken_RejectsNonMatchingSubject(t *testing.T) {
 // --- projectFromSubject tests ---
 
 func TestProjectFromSubject_GHA(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "myrepo", projectFromSubject("repo:myorg/myrepo:ref:refs/heads/main"))
 }
 
 func TestProjectFromSubject_NestedOrg(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "myrepo", projectFromSubject("repo:myorg/sub/myrepo:ref:refs/heads/main"))
 }
 
 func TestProjectFromSubject_NoPrefix(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "", projectFromSubject("something:else"))
 }
 
 func TestProjectFromSubject_NoColon(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "", projectFromSubject("repo:myorg/myrepo"))
 }
 
 func TestProjectFromSubject_UppercaseNormalized(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "myrepo", projectFromSubject("repo:MyOrg/MyRepo:ref:refs/heads/main"))
 }
 
 func TestProjectFromSubject_InvalidCharsRejected(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "", projectFromSubject("repo:org/my repo:ref:refs/heads/main"))
 	assert.Equal(t, "", projectFromSubject("repo:org/@bad:ref:refs/heads/main"))
 }

@@ -119,6 +119,7 @@ func seedNPMPackageReleases(t *testing.T, project string, n int) []string {
 // releases the project has, and must serve the same manifest fields it served
 // while cold.
 func TestRouter_Packument_ManifestCacheBoundsBlobReads(t *testing.T) {
+	t.Serial()
 	const releases = 12
 	versions := seedNPMPackageReleases(t, "packument-cache", releases)
 	store := withCountingStore(t, 0)
@@ -147,6 +148,7 @@ func TestRouter_Packument_ManifestCacheBoundsBlobReads(t *testing.T) {
 // accumulates releases cheaply: a re-release of unchanged bytes registers the
 // SAME content-addressed blob (a hash-reference upload), so however many
 func TestRouter_Packument_SharedBlobExtractedOnce(t *testing.T) {
+	t.Serial()
 	const releases = 6
 	d, store := routerEnv(t)
 	ctx := context.Background()
@@ -189,6 +191,7 @@ func TestRouter_Packument_SharedBlobExtractedOnce(t *testing.T) {
 // the per-release blob read -- and the hang -- for exactly the packages whose
 // manifests can never be read.
 func TestRouter_Packument_UnreadableBlobIsCached(t *testing.T) {
+	t.Serial()
 	seedNPMPackage(t, "packument-unreadable", "1.0.0", "not a gzip tarball")
 	store := withCountingStore(t, 0)
 
@@ -205,6 +208,7 @@ func TestRouter_Packument_UnreadableBlobIsCached(t *testing.T) {
 }
 
 func TestRouter_Packument_FillBudgetFailsLoudly(t *testing.T) {
+	t.Serial()
 	seedNPMPackageReleases(t, "packument-budget", 3)
 	withCountingStore(t, 2*time.Second)
 	withFillBudget(t, 20*time.Millisecond)
@@ -223,6 +227,7 @@ func TestRouter_Packument_FillBudgetFailsLoudly(t *testing.T) {
 // to extract is committed, so a retry has less to do and the packument
 // eventually serves.
 func TestRouter_Packument_BudgetFailureConverges(t *testing.T) {
+	t.Serial()
 	const releases = 3
 	seedNPMPackageReleases(t, "packument-converge", releases)
 	store := withCountingStore(t, 0)

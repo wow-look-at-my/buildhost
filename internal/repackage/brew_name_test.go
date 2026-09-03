@@ -12,6 +12,7 @@ var rubyConstant = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
 
 // TestBrewClassName pins the filename->class derivation to Homebrew's own
 func TestBrewClassName(t *testing.T) {
+	t.Serial()
 	cases := map[string]string{
 		"go-toolchain":          "GoToolchain",
 		"bin-file-fmt/binpazer": "BinFileFmtBinpazer",
@@ -34,6 +35,7 @@ func TestBrewClassName(t *testing.T) {
 // constant, and no substitute class satisfies the loader), so they must be
 // excluded from brew entirely rather than emitted as broken Ruby.
 func TestBrewEligibleProjectName(t *testing.T) {
+	t.Serial()
 	assert.True(t, BrewEligibleProjectName("go-toolchain"))
 	assert.True(t, BrewEligibleProjectName("myrepo/7app"))
 	assert.True(t, BrewEligibleProjectName("dotted.app"))

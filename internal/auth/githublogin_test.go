@@ -13,12 +13,14 @@ import (
 )
 
 func TestGitHubAuth_Disabled(t *testing.T) {
+	t.Serial()
 	assert.Nil(t, NewGitHubAuth("", "sec"))
 	assert.Nil(t, NewGitHubAuth("id", ""))
 	assert.NotNil(t, NewGitHubAuth("id", "sec"))
 }
 
 func TestSession_RoundTrip(t *testing.T) {
+	t.Serial()
 	v := mintSession("alice", "gho_tok", time.Now().Add(time.Hour))
 	login, token, ok := verifySession(v)
 	assert.True(t, ok)
@@ -34,6 +36,7 @@ func TestSession_RoundTrip(t *testing.T) {
 }
 
 func TestState_RoundTrip(t *testing.T) {
+	t.Serial()
 	v := signState(signinState{nonce: "nonce123", next: "https://sites.x.com/p/branch/b/?a=1"}, time.Now().Add(time.Minute))
 	st, expired, ok := parseState(v)
 	assert.True(t, ok)
@@ -68,6 +71,7 @@ func TestState_RoundTrip(t *testing.T) {
 }
 
 func TestSafeNextURL(t *testing.T) {
+	t.Serial()
 	r := httptest.NewRequest("GET", "/__signin", nil)
 	r.Host = "pazer.build"
 	assert.Equal(t, "/p/branch/b/", safeNextURL(r, "/p/branch/b/"))
@@ -79,6 +83,7 @@ func TestSafeNextURL(t *testing.T) {
 }
 
 func TestSigninStart_RedirectsToGitHub(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	mw.GitHub = NewGitHubAuth("client-abc", "secret")
@@ -100,6 +105,7 @@ func TestSigninStart_RedirectsToGitHub(t *testing.T) {
 }
 
 func TestSigninStart_NotConfigured_501(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	req := httptest.NewRequest("GET", signinStartPath, nil)
@@ -109,6 +115,7 @@ func TestSigninStart_NotConfigured_501(t *testing.T) {
 }
 
 func TestSigninCallback_ValidLogin_SetsSession(t *testing.T) {
+	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == "POST":
@@ -156,6 +163,7 @@ func TestSigninCallback_ValidLogin_SetsSession(t *testing.T) {
 
 // The token exchange must speak GitHub's actual contract: Accept:
 func TestSigninCallback_ExchangeRequestContract(t *testing.T) {
+	t.Serial()
 	var accept, contentType string
 	var form url.Values
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -198,6 +206,7 @@ func TestSigninCallback_ExchangeRequestContract(t *testing.T) {
 }
 
 func TestSigninCallback_NonceMismatch_RestartsOnce(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	mw.GitHub = NewGitHubAuth("cid", "secret")
@@ -228,6 +237,7 @@ func TestSigninCallback_NonceMismatch_RestartsOnce(t *testing.T) {
 }
 
 func TestSigninCallback_ExpiredState_RestartsOnce(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	mw.GitHub = NewGitHubAuth("cid", "secret")
@@ -254,6 +264,7 @@ func TestSigninCallback_ExpiredState_RestartsOnce(t *testing.T) {
 }
 
 func TestSigninStart_RetryMarkerRidesState(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	mw.GitHub = NewGitHubAuth("cid", "secret")

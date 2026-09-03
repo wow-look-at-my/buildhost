@@ -123,6 +123,7 @@ func requireRedirect(t *testing.T, rec *httptest.ResponseRecorder) url.Values {
 }
 
 func TestDownload_Success_RawBinary(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -142,6 +143,7 @@ func TestDownload_Success_RawBinary(t *testing.T) {
 }
 
 func TestDownload_Success_RawFallsBackWhenStripFails(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -159,6 +161,7 @@ func TestDownload_Success_RawFallsBackWhenStripFails(t *testing.T) {
 }
 
 func TestDownload_DebugReturns404WhenStripFails(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -176,6 +179,7 @@ func TestDownload_DebugReturns404WhenStripFails(t *testing.T) {
 }
 
 func TestDownload_DebugFlag_NoDebugAvailable(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -193,6 +197,7 @@ func TestDownload_DebugFlag_NoDebugAvailable(t *testing.T) {
 }
 
 func TestDownload_Success_TarGzFormat(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -212,6 +217,7 @@ func TestDownload_Success_TarGzFormat(t *testing.T) {
 }
 
 func TestDownload_FormatNotAvailable(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)

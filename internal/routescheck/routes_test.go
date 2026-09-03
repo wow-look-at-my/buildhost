@@ -38,6 +38,7 @@ func patterns(routes []router.Route) []string {
 
 // TestInitRegistersOnlySiteDomainRoutes is the exhaustive form of the guard:
 func TestInitRegistersOnlySiteDomainRoutes(t *testing.T) {
+	t.Serial()
 	enumerable := patterns(auth.ListRoutes())
 	enumerableSet := set.Of(enumerable...)
 
@@ -63,6 +64,7 @@ func TestInitRegistersOnlySiteDomainRoutes(t *testing.T) {
 // future refactor cannot quietly drop them out of `buildhost routes` and leave
 // the check above trivially satisfied.
 func TestListRoutesCoversConfigConditionalFamilies(t *testing.T) {
+	t.Serial()
 	got := patterns(auth.ListRoutes())
 	for _, want := range []string{
 		"/__sso",

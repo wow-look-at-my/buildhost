@@ -8,6 +8,7 @@ import (
 )
 
 func TestParseModulePath(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name    string
 		path    string
@@ -82,12 +83,14 @@ func TestParseModulePath(t *testing.T) {
 }
 
 func TestTagPrefix(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "", repoRef{Owner: "o", Repo: "r"}.TagPrefix())
 	assert.Equal(t, "go/", repoRef{Owner: "o", Repo: "r", Dir: "go"}.TagPrefix())
 	assert.Equal(t, "a/b/", repoRef{Owner: "o", Repo: "r", Dir: "a/b"}.TagPrefix())
 }
 
 func TestMatchesPrefix(t *testing.T) {
+	t.Serial()
 	prefixes := []string{"github.com/wow-look-at-my", "github.com/PazerOP/"}
 
 	assert.True(t, matchesPrefix("github.com/wow-look-at-my/tml", prefixes))

@@ -18,6 +18,7 @@ import (
 )
 
 func TestDownload_PrivateProjectRedirectCarriesSignedToken(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "secretapp", true)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -46,6 +47,7 @@ func TestDownload_PrivateProjectRedirectCarriesSignedToken(t *testing.T) {
 }
 
 func TestDownload_PrivateLatestRedirectAlsoSigned(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "secretapp", true)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -63,6 +65,7 @@ func TestDownload_PrivateLatestRedirectAlsoSigned(t *testing.T) {
 }
 
 func TestDownload_PublicProjectRedirectStaysTokenFree(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -78,6 +81,7 @@ func TestDownload_PublicProjectRedirectStaysTokenFree(t *testing.T) {
 }
 
 func TestDownload_NormalizesPlatformAliases(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)

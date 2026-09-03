@@ -98,6 +98,7 @@ func (e *env) get(t *testing.T, path string, withAuth bool) (*http.Response, str
 }
 
 func TestFrontend(t *testing.T) {
+	t.Serial()
 	e := setup(t)
 
 	t.Run("home lists public projects, hides private", func(t *testing.T) {

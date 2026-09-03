@@ -12,6 +12,7 @@ import (
 )
 
 func TestSubjectParsers_ImmutableIDs(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name     string
 		subject  string
@@ -96,6 +97,7 @@ func TestSubjectParsers_ImmutableIDs(t *testing.T) {
 
 // TestVerifyToken_TrustedIssuer_ImmutableSubject proves auto-provisioning
 func TestVerifyToken_TrustedIssuer_ImmutableSubject(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -125,6 +127,7 @@ func TestVerifyToken_TrustedIssuer_ImmutableSubject(t *testing.T) {
 // TestVerifyToken_TrustedIssuer_ImmutableSubject_OrgCaseInsensitive combines
 // the immutable-ID stripping with the case-insensitive org allowlist match.
 func TestVerifyToken_TrustedIssuer_ImmutableSubject_OrgCaseInsensitive(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -149,6 +152,7 @@ func TestVerifyToken_TrustedIssuer_ImmutableSubject_OrgCaseInsensitive(t *testin
 // subject parsing, and the numeric IDs are surfaced for pinning -- from the
 // claims when present, else from an immutable subject's @id suffixes.
 func TestVerifyToken_TrustedIssuer_DedicatedClaimsPreferred(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -180,6 +184,7 @@ func TestVerifyToken_TrustedIssuer_DedicatedClaimsPreferred(t *testing.T) {
 // A classic-era token (classic sub) that still mints the dedicated ID claims
 // -- which GitHub does for every repo -- surfaces the IDs for pinning too.
 func TestVerifyToken_TrustedIssuer_ClassicSubWithIDClaims(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -208,6 +213,7 @@ func TestVerifyToken_TrustedIssuer_ClassicSubWithIDClaims(t *testing.T) {
 }
 
 func TestOrgAllowed(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name    string
 		allowed []string
@@ -236,6 +242,7 @@ func TestOrgAllowed(t *testing.T) {
 // though the org NAME matches -- the resurrection case for the allowlist
 // itself -- and the error names the offending ID.
 func TestVerifyToken_TrustedIssuer_OrgIDPinned_Mismatch(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 

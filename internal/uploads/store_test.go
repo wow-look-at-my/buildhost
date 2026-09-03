@@ -21,6 +21,7 @@ func testStore(t *testing.T, maxSize int64, ttl time.Duration) *Store {
 }
 
 func TestStoreCreateAppendFinalize(t *testing.T) {
+	t.Serial()
 	s := testStore(t, 1<<20, time.Hour)
 
 	sess, err := s.Create("owner-a")
@@ -56,6 +57,7 @@ func TestStoreCreateAppendFinalize(t *testing.T) {
 }
 
 func TestStoreOffsetMismatch(t *testing.T) {
+	t.Serial()
 	s := testStore(t, 1<<20, time.Hour)
 	sess, err := s.Create("o")
 	require.NoError(t, err)
@@ -75,6 +77,7 @@ func TestStoreOffsetMismatch(t *testing.T) {
 }
 
 func TestStoreOwnerIsolation(t *testing.T) {
+	t.Serial()
 	s := testStore(t, 1<<20, time.Hour)
 	sess, err := s.Create("owner-a")
 	require.NoError(t, err)
@@ -89,6 +92,7 @@ func TestStoreOwnerIsolation(t *testing.T) {
 }
 
 func TestStoreTooLargeRollsBack(t *testing.T) {
+	t.Serial()
 	s := testStore(t, 10, time.Hour)
 	sess, err := s.Create("o")
 	require.NoError(t, err)
@@ -114,6 +118,7 @@ func TestStoreTooLargeRollsBack(t *testing.T) {
 }
 
 func TestStoreBusyDuringFinalize(t *testing.T) {
+	t.Serial()
 	s := testStore(t, 1<<20, time.Hour)
 	sess, err := s.Create("o")
 	require.NoError(t, err)
@@ -137,6 +142,7 @@ func TestStoreBusyDuringFinalize(t *testing.T) {
 }
 
 func TestStorePartialAppendCommits(t *testing.T) {
+	t.Serial()
 	s := testStore(t, 1<<20, time.Hour)
 	sess, err := s.Create("o")
 	require.NoError(t, err)
@@ -159,6 +165,7 @@ type errReader struct{}
 func (errReader) Read([]byte) (int, error) { return 0, errors.New("connection dropped") }
 
 func TestStoreSweepExpired(t *testing.T) {
+	t.Serial()
 	s := testStore(t, 1<<20, time.Millisecond)
 	old, err := s.Create("o")
 	require.NoError(t, err)
@@ -182,6 +189,7 @@ func TestStoreSweepExpired(t *testing.T) {
 }
 
 func TestNewStoreClearsOrphanedSpools(t *testing.T) {
+	t.Serial()
 	dir := filepath.Join(t.TempDir(), "uploads")
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 	orphan := filepath.Join(dir, "deadbeef.spool")

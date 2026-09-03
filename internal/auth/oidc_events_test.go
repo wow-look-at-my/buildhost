@@ -19,6 +19,7 @@ import (
 // repo, so a trusted-issuer token of that event can create/publish projects.
 
 func TestVerifyToken_TrustedIssuer_RejectedEvent(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -47,6 +48,7 @@ func TestVerifyToken_TrustedIssuer_RejectedEvent(t *testing.T) {
 // push. Auto-provisioning must accept it out of the box, otherwise a manual
 // release/publish dispatch 401s at docker login.
 func TestVerifyToken_TrustedIssuer_WorkflowDispatchAccepted(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 

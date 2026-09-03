@@ -21,6 +21,7 @@ func openTestDB(t *testing.T) *db.DB {
 }
 
 func TestAuthenticate_NoToken_PassesThrough(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	m := &Middleware{DB: d}
 
@@ -43,6 +44,7 @@ func TestAuthenticate_NoToken_PassesThrough(t *testing.T) {
 }
 
 func TestAuthenticate_ValidBearerToken_SetsContext(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -72,6 +74,7 @@ func TestAuthenticate_ValidBearerToken_SetsContext(t *testing.T) {
 }
 
 func TestAuthenticate_InvalidToken_PassesThroughWithoutContext(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	m := &Middleware{DB: d}
 
@@ -94,6 +97,7 @@ func TestAuthenticate_InvalidToken_PassesThroughWithoutContext(t *testing.T) {
 }
 
 func TestRequireWrite_NoToken_Returns401(t *testing.T) {
+	t.Serial()
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler should not be called")
 	})
@@ -109,6 +113,7 @@ func TestRequireWrite_NoToken_Returns401(t *testing.T) {
 }
 
 func TestRequireWrite_TokenWithoutWriteScope_Returns401(t *testing.T) {
+	t.Serial()
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler should not be called")
 	})
@@ -128,6 +133,7 @@ func TestRequireWrite_TokenWithoutWriteScope_Returns401(t *testing.T) {
 }
 
 func TestRequireWrite_TokenWithWriteScope_PassesThrough(t *testing.T) {
+	t.Serial()
 	var called bool
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
@@ -164,6 +170,7 @@ func initTestMiddleware(t *testing.T, d *db.DB) {
 }
 
 func TestRequireProject_PublicProject_ReadAccess_PassesThrough(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -195,6 +202,7 @@ func TestRequireProject_PublicProject_ReadAccess_PassesThrough(t *testing.T) {
 }
 
 func TestRequireProject_NonexistentProject_Returns404(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -216,6 +224,7 @@ func TestRequireProject_NonexistentProject_Returns404(t *testing.T) {
 }
 
 func TestRequireProject_EmptyProjectName_Returns404(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -237,6 +246,7 @@ func TestRequireProject_EmptyProjectName_Returns404(t *testing.T) {
 }
 
 func TestRequireProject_PrivateProject_NoToken_Returns401(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -261,6 +271,7 @@ func TestRequireProject_PrivateProject_NoToken_Returns401(t *testing.T) {
 }
 
 func TestRequireProject_PrivateProject_WrongProjectToken_Returns403(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -290,6 +301,7 @@ func TestRequireProject_PrivateProject_WrongProjectToken_Returns403(t *testing.T
 }
 
 func TestRequireProject_PrivateProject_CorrectToken_PassesThrough(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -320,6 +332,7 @@ func TestRequireProject_PrivateProject_CorrectToken_PassesThrough(t *testing.T) 
 }
 
 func TestRequireProject_PrivateProject_GlobalToken_PassesThrough(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -351,6 +364,7 @@ func TestRequireProject_PrivateProject_GlobalToken_PassesThrough(t *testing.T) {
 }
 
 func TestRequireProject_PrivateProject_WriteOnlyScope_Returns401(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -379,6 +393,7 @@ func TestRequireProject_PrivateProject_WriteOnlyScope_Returns401(t *testing.T) {
 }
 
 func TestRequireProject_PrivateProject_OCI_Returns401WithWWWAuthenticate(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -405,6 +420,7 @@ func TestRequireProject_PrivateProject_OCI_Returns401WithWWWAuthenticate(t *test
 }
 
 func TestRequireProject_PrivateProject_NonOCI_NoWWWAuthenticate(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 

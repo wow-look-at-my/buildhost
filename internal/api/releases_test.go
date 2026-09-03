@@ -14,6 +14,7 @@ import (
 )
 
 func TestCreateRelease_Semver(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -36,6 +37,7 @@ func TestCreateRelease_Semver(t *testing.T) {
 }
 
 func TestCreateRelease_Auto(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -58,6 +60,7 @@ func TestCreateRelease_Auto(t *testing.T) {
 }
 
 func TestCreateRelease_AutoWithExplicitVersion(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -82,6 +85,7 @@ func TestCreateRelease_AutoWithExplicitVersion(t *testing.T) {
 // A publish that carries the repo's default branch records it on the project,
 // so the apex "latest" tracks that branch -- the go-toolchain ("v1") fix.
 func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -118,6 +122,7 @@ func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
 // never clobber an operator-set value, and a declaring CI is the source of
 // truth.
 func TestCreateRelease_CreateServiceDeclaration(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -157,6 +162,7 @@ func TestCreateRelease_CreateServiceDeclaration(t *testing.T) {
 }
 
 func TestCreateRelease_InvalidDefaultBranch(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -178,6 +184,7 @@ func TestCreateRelease_InvalidDefaultBranch(t *testing.T) {
 // requireProject middleware (tested in the auth package).
 
 func TestCreateRelease_InvalidBody(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -195,6 +202,7 @@ func TestCreateRelease_InvalidBody(t *testing.T) {
 }
 
 func TestCreateRelease_SemverMissingVersion(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -214,6 +222,7 @@ func TestCreateRelease_SemverMissingVersion(t *testing.T) {
 }
 
 func TestCreateRelease_Duplicate(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -235,6 +244,7 @@ func TestCreateRelease_Duplicate(t *testing.T) {
 }
 
 func TestGetRelease_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -262,6 +272,7 @@ func TestGetRelease_Success(t *testing.T) {
 // container -- so without this the fallback has nothing to recover and a
 // publish fails for the duration of someone else's deploy.
 func TestGetRelease_ReturnsArtifacts(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -304,6 +315,7 @@ func TestGetRelease_ReturnsArtifacts(t *testing.T) {
 }
 
 func TestGetRelease_ReleaseNotFound(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -321,6 +333,7 @@ func TestGetRelease_ReleaseNotFound(t *testing.T) {
 }
 
 func TestGetRelease_Latest(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -350,6 +363,7 @@ func TestGetRelease_Latest(t *testing.T) {
 }
 
 func TestGetRelease_LatestNoPublishedReleases(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -374,6 +388,7 @@ func TestGetRelease_LatestNoPublishedReleases(t *testing.T) {
 // requireProject middleware in the auth package.
 
 func TestListReleases_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -398,6 +413,7 @@ func TestListReleases_Success(t *testing.T) {
 // requireProject middleware in the auth package.
 
 func TestCreateRelease_OciUser(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -424,6 +440,7 @@ func TestCreateRelease_OciUser(t *testing.T) {
 }
 
 func TestCreateRelease_InvalidOciUser(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -443,6 +460,7 @@ func TestCreateRelease_InvalidOciUser(t *testing.T) {
 }
 
 func TestValidOCIUser(t *testing.T) {
+	t.Serial()
 	valid := []string{"root", "nonroot", "65532", "65532:65532", "nonroot:nonroot", "1000:1000", "app", "_svc", "a-b:c-d"}
 	for _, s := range valid {
 		assert.True(t, validOCIUser(s), "expected %q to be valid", s)
@@ -454,6 +472,7 @@ func TestValidOCIUser(t *testing.T) {
 }
 
 func TestSemverToNum(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		input    string
 		expected int64
@@ -478,6 +497,7 @@ func TestSemverToNum(t *testing.T) {
 // That is the whole point -- publishing a build for yourself without moving the
 // pointer everyone else follows.
 func TestCreateRelease_Draft(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 

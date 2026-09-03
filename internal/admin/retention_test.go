@@ -14,6 +14,7 @@ import (
 )
 
 func TestAdminRetention_GetDefaults(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	rec := serve(srv, "GET", "/api/retention", nil)
@@ -31,6 +32,7 @@ func TestAdminRetention_GetDefaults(t *testing.T) {
 }
 
 func TestAdminRetention_Update(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	rec := serve(srv, "PUT", "/api/retention", bytes.NewBufferString(`{"keep_n":3,"recency_hours":6}`))
@@ -48,6 +50,7 @@ func TestAdminRetention_Update(t *testing.T) {
 }
 
 func TestAdminRetention_UpdateValidation(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	for _, body := range []string{
@@ -68,6 +71,7 @@ func TestAdminRetention_UpdateValidation(t *testing.T) {
 // e.g. a hash-reference upload that just passed its existence check -- is
 // about to reference. Report-only runs mutate nothing and stay allowed.
 func TestAdminRetention_RunEnforceDefersOnInflightWrites(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	atomic.AddInt64(&inflightWrites, 1)
@@ -81,6 +85,7 @@ func TestAdminRetention_RunEnforceDefersOnInflightWrites(t *testing.T) {
 }
 
 func TestAdminRetention_Run(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -98,6 +103,7 @@ func TestAdminRetention_Run(t *testing.T) {
 // which files hold the storage. Every seeded file must appear, with the reason
 // retention keeps it.
 func TestAdminRetention_Inventory(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 

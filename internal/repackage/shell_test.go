@@ -115,6 +115,7 @@ func readShellLayer(t *testing.T, compressed []byte) map[string]*tar.Header {
 }
 
 func TestShellLayerBuiltFromTheImage(t *testing.T) {
+	t.Serial()
 	reg := newFakeShellRegistry(t)
 	c := reg.cache(t, t.TempDir())
 
@@ -135,6 +136,7 @@ func TestShellLayerBuiltFromTheImage(t *testing.T) {
 }
 
 func TestShellLayerIsFetchedOnce(t *testing.T) {
+	t.Serial()
 	reg := newFakeShellRegistry(t)
 	dir := t.TempDir()
 	c := reg.cache(t, dir)
@@ -169,6 +171,7 @@ func TestShellLayerIsFetchedOnce(t *testing.T) {
 // A manifest whose bytes do not hash to the pin is refused, so a registry
 // that serves something else under the pinned digest ships nothing.
 func TestShellLayerRefusesAnUnpinnedManifest(t *testing.T) {
+	t.Serial()
 	reg := newFakeShellRegistry(t)
 	c := reg.cache(t, t.TempDir())
 	c.Images = map[db.Arch]string{db.ArchAMD64: "sha256:" + string(bytes.Repeat([]byte("0"), 64))}
@@ -194,6 +197,7 @@ func TestShellLayerRefusesAnUnpinnedManifest(t *testing.T) {
 }
 
 func TestShellLayerUnknownArch(t *testing.T) {
+	t.Serial()
 	reg := newFakeShellRegistry(t)
 	c := reg.cache(t, t.TempDir())
 	_, _, err := c.Layer(context.Background(), db.Arch("mips"))

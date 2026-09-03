@@ -58,6 +58,7 @@ func hasPackFiles(t *testing.T, clone string) bool {
 // The tap-history FF regression through the SMART path: the router's
 // info/refs answers the smart content type (which is what makes real git pick
 func TestBrewTapSmart_GitUpdateFastForwardsAcrossPublishAndRedeploy(t *testing.T) {
+	t.Serial()
 	gitOrSkip(t)
 	env := setup(t)
 	publishBrewProject(t, env, "appone", "appone-binary")
@@ -99,6 +100,7 @@ func TestBrewTapSmart_GitUpdateFastForwardsAcrossPublishAndRedeploy(t *testing.T
 }
 
 func TestBrewTapSmart_DepthOneCloneThroughRouter(t *testing.T) {
+	t.Serial()
 	gitOrSkip(t)
 	env := setup(t)
 	publishBrewProject(t, env, "appone", "appone-binary")
@@ -122,6 +124,7 @@ func TestBrewTapSmart_DepthOneCloneThroughRouter(t *testing.T) {
 }
 
 func TestBrewTapSmart_BrewHostTapURLClonesDirectly(t *testing.T) {
+	t.Serial()
 	gitOrSkip(t)
 	env := setup(t)
 	publishBrewProject(t, env, "appone", "appone-binary")
@@ -150,6 +153,7 @@ func TestBrewTapSmart_BrewHostTapURLClonesDirectly(t *testing.T) {
 }
 
 func TestBrewTapDumb_StillServesLooseObjectsAndFastForwards(t *testing.T) {
+	t.Serial()
 	gitOrSkip(t)
 	env := setup(t)
 	publishBrewProject(t, env, "appone", "appone-binary")

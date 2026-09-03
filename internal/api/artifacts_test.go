@@ -14,6 +14,7 @@ import (
 )
 
 func TestUploadArtifact_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -45,6 +46,7 @@ func TestUploadArtifact_Success(t *testing.T) {
 // requireProject middleware (tested in the auth package).
 
 func TestUploadArtifact_ReleaseNotFound(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -65,6 +67,7 @@ func TestUploadArtifact_ReleaseNotFound(t *testing.T) {
 }
 
 func TestUploadArtifact_InvalidOS(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -88,6 +91,7 @@ func TestUploadArtifact_InvalidOS(t *testing.T) {
 }
 
 func TestUploadArtifact_InvalidArch(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -111,6 +115,7 @@ func TestUploadArtifact_InvalidArch(t *testing.T) {
 }
 
 func TestUploadArtifact_InvalidKind(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -134,6 +139,7 @@ func TestUploadArtifact_InvalidKind(t *testing.T) {
 }
 
 func TestUploadArtifact_PublishedRelease(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -158,6 +164,7 @@ func TestUploadArtifact_PublishedRelease(t *testing.T) {
 }
 
 func TestUploadArtifact_KindFromHeader(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -184,6 +191,7 @@ func TestUploadArtifact_KindFromHeader(t *testing.T) {
 }
 
 func TestUploadArtifact_DuplicateOSArch(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -216,6 +224,7 @@ func TestUploadArtifact_DuplicateOSArch(t *testing.T) {
 // --- Publish tests ---
 
 func TestPublishRelease_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -251,6 +260,7 @@ func TestPublishRelease_Success(t *testing.T) {
 // learn the digests it must record on the org's linked artifacts page. Drop
 // the field and that whole path silently stores artifacts and records nothing.
 func TestPublishRelease_ReturnsPublishedArtifacts(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -303,6 +313,7 @@ func TestPublishRelease_ReturnsPublishedArtifacts(t *testing.T) {
 // requireProject middleware (tested in the auth package).
 
 func TestPublishRelease_ReleaseNotFound(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -321,6 +332,7 @@ func TestPublishRelease_ReleaseNotFound(t *testing.T) {
 }
 
 func TestPublishRelease_NoArtifacts(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -342,6 +354,7 @@ func TestPublishRelease_NoArtifacts(t *testing.T) {
 }
 
 func TestPublishRelease_AlreadyPublished(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -367,6 +380,7 @@ func TestPublishRelease_AlreadyPublished(t *testing.T) {
 // --- Security tests: filename sanitization ---
 
 func TestSanitizeFilename_PathTraversal(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name     string
 		input    string
@@ -393,6 +407,7 @@ func TestSanitizeFilename_PathTraversal(t *testing.T) {
 }
 
 func TestSanitizeFilename_ControlCharacters(t *testing.T) {
+	t.Serial()
 	// Control characters should be stripped
 	input := "file\x00name\x1f.bin"
 	result := sanitizeFilename(input)
@@ -404,12 +419,14 @@ func TestSanitizeFilename_ControlCharacters(t *testing.T) {
 }
 
 func TestSanitizeFilename_TruncatesLongNames(t *testing.T) {
+	t.Serial()
 	longName := strings.Repeat("a", 300)
 	result := sanitizeFilename(longName)
 	assert.Equal(t, 255, len(result))
 }
 
 func TestUploadArtifact_FilenameHeaderSanitized(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -440,6 +457,7 @@ func TestUploadArtifact_FilenameHeaderSanitized(t *testing.T) {
 }
 
 func TestUploadArtifact_FilenameHeaderAbsolutePathSanitized(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 

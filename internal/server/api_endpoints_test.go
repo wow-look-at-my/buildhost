@@ -17,6 +17,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestCreateProject_NoAuth_Returns401(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	req, _ := http.NewRequest("POST", env.ts.URL+"/api/v1/projects", strings.NewReader(`{"name":"noauth","versioning":"auto"}`))
@@ -37,6 +38,7 @@ func TestCreateProject_NoAuth_Returns401(t *testing.T) {
 }
 
 func TestPrivateProject_DownloadWithoutAuth_Returns401(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	binaryPayload := []byte("secret-binary-data")
@@ -117,6 +119,7 @@ func TestPrivateProject_DownloadWithoutAuth_Returns401(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDownload_NonexistentProject_Returns404(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	resp := env.getSubdomain(t, "dl", "/nonexistent?v=1&os=linux&arch=amd64")
@@ -126,6 +129,7 @@ func TestDownload_NonexistentProject_Returns404(t *testing.T) {
 }
 
 func TestCreateProject_Duplicate_Returns409(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	resp := env.postJSON(t, "/api/v1/projects", `{"name":"dupapp","versioning":"auto"}`)
@@ -140,6 +144,7 @@ func TestCreateProject_Duplicate_Returns409(t *testing.T) {
 }
 
 func TestUploadArtifact_NoAuth_Returns401(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	resp := env.postJSON(t, "/api/v1/projects", `{"name":"authtest","versioning":"auto"}`)
@@ -164,6 +169,7 @@ func TestUploadArtifact_NoAuth_Returns401(t *testing.T) {
 }
 
 func TestPublishRelease_NoArtifacts_Returns400(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	resp := env.postJSON(t, "/api/v1/projects", `{"name":"emptyrel","versioning":"auto"}`)
@@ -184,6 +190,7 @@ func TestPublishRelease_NoArtifacts_Returns400(t *testing.T) {
 }
 
 func TestListProjects_HidesPrivateWithoutAuth(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	// Create a public and a private project.
@@ -230,6 +237,7 @@ func TestListProjects_HidesPrivateWithoutAuth(t *testing.T) {
 }
 
 func TestAutoVersioning_IncrementsBeyondFirst(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	resp := env.postJSON(t, "/api/v1/projects", `{"name":"multiver","versioning":"auto"}`)

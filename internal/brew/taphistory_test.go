@@ -79,6 +79,7 @@ func runGit(t *testing.T, dir string, args ...string) string {
 // `brew update`. Before tap history was persisted, every publish minted an
 // unrelated PARENTLESS root commit, and that sequence replayed the client's
 func TestTap_BrewUpdateFastForwardsAcrossPublishes(t *testing.T) {
+	t.Serial()
 	requireGit(t)
 	oldTTL := tapCacheTTL
 	tapCacheTTL = 0 // re-check content on every request
@@ -117,6 +118,7 @@ func TestTap_BrewUpdateFastForwardsAcrossPublishes(t *testing.T) {
 // survives byte-identically while content is unchanged, and a publish after
 // the restart still fast-forwards a clone taken before it.
 func TestTap_RestartPreservesHistoryAndFastForwards(t *testing.T) {
+	t.Serial()
 	requireGit(t)
 	oldTTL := tapCacheTTL
 	tapCacheTTL = 0
@@ -156,6 +158,7 @@ func TestTap_RestartPreservesHistoryAndFastForwards(t *testing.T) {
 }
 
 func TestTap_LineageCapEvictsLRU(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "appone", "appone-binary")
 

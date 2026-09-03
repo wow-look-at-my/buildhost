@@ -17,6 +17,7 @@ import (
 // test share the same signing key because server.New -> auth.Init loaded it from
 // the data dir, and auth.MintDownloadToken uses that same process-global key.
 func TestPrivateProject_TemporaryDownloadLink(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	payload := []byte("secret-binary-data-xyz")
 

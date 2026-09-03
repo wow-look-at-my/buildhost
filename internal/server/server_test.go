@@ -180,6 +180,7 @@ func readBody(t *testing.T, resp *http.Response) []byte {
 // ---------------------------------------------------------------------------
 
 func TestFullLifecycle(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	binaryPayload := []byte("#!/bin/sh\necho hello world\n")
@@ -275,6 +276,7 @@ func TestFullLifecycle(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHealthz(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	resp := env.get(t, "/healthz")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -292,6 +294,7 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestHealthz_DBClosed(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	// Close the database to simulate an unreachable DB.

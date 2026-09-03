@@ -127,6 +127,7 @@ func routePatterns() []string {
 }
 
 func TestSiteDomain_RouteTable(t *testing.T) {
+	t.Serial()
 	setup(t) // reach registration steady state (route registration is sticky per process)
 	base := routePatterns()
 
@@ -164,6 +165,7 @@ func TestSiteDomain_RouteTable(t *testing.T) {
 }
 
 func TestSiteDomain_DispatchAndServe(t *testing.T) {
+	t.Serial()
 	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, false)
 
 	env.createProject(t, "myapp", false)
@@ -209,6 +211,7 @@ func TestSiteDomain_DispatchAndServe(t *testing.T) {
 }
 
 func TestSiteDomain_Visibility(t *testing.T) {
+	t.Serial()
 	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, true)
 
 	env.createProject(t, "secret", true)
@@ -251,6 +254,7 @@ func TestSiteDomain_Visibility(t *testing.T) {
 
 // Without a configured primary domain the cross-domain sign-in hop does not
 func TestSiteDomain_NoPrimaryDomain_Browser401(t *testing.T) {
+	t.Serial()
 	env := setupSiteDomain(t, "nopri.example", "", true)
 
 	env.createProject(t, "secret2", true)
@@ -264,6 +268,7 @@ func TestSiteDomain_NoPrimaryDomain_Browser401(t *testing.T) {
 }
 
 func TestSiteDomain_SlashBranchClassicScheme(t *testing.T) {
+	t.Serial()
 	env := setup(t) // no site domain needed: this is the classic-scheme fix
 
 	env.createProject(t, "p2", false)
@@ -313,6 +318,7 @@ func TestSiteDomain_SlashBranchClassicScheme(t *testing.T) {
 }
 
 func TestSiteUploadValidation(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	env.createProject(t, "p4", false)
 
@@ -344,6 +350,7 @@ func TestSiteUploadValidation(t *testing.T) {
 // v1 DNS-label gate: only names valid as a single DNS label serve on the
 // subdomain scheme; everything else stays classic-scheme-only.
 func TestSiteDomain_DNSLabelGate(t *testing.T) {
+	t.Serial()
 	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, false)
 
 	long := strings.Repeat("l", 64)

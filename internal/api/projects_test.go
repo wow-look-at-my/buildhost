@@ -15,6 +15,7 @@ import (
 )
 
 func TestCreateProject_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":"myproject","description":"A test project","versioning":"semver"}`
@@ -32,6 +33,7 @@ func TestCreateProject_Success(t *testing.T) {
 }
 
 func TestCreateProject_NoAuth(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":"myproject"}`
@@ -43,6 +45,7 @@ func TestCreateProject_NoAuth(t *testing.T) {
 }
 
 func TestCreateProject_EmptyName(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":""}`
@@ -56,6 +59,7 @@ func TestCreateProject_EmptyName(t *testing.T) {
 }
 
 func TestCreateProject_InvalidBody(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	req := httptest.NewRequest("POST", "/api/projects", strings.NewReader("not json"))
@@ -67,6 +71,7 @@ func TestCreateProject_InvalidBody(t *testing.T) {
 }
 
 func TestCreateProject_InvalidVersioning(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":"myproject","versioning":"bogus"}`
@@ -80,6 +85,7 @@ func TestCreateProject_InvalidVersioning(t *testing.T) {
 }
 
 func TestCreateProject_DefaultVersioning(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":"autoproject"}`
@@ -96,6 +102,7 @@ func TestCreateProject_DefaultVersioning(t *testing.T) {
 }
 
 func TestCreateProject_Duplicate(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -112,6 +119,7 @@ func TestCreateProject_Duplicate(t *testing.T) {
 }
 
 func TestGetProject_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -136,12 +144,14 @@ func TestGetProject_Success(t *testing.T) {
 // centralized requireProject middleware demanding a write-scoped token
 // authorized for the project, which only happens for WriteAccess routes.
 func TestParseRoute_PATCHIsWrite(t *testing.T) {
+	t.Serial()
 	req := httptest.NewRequest("PATCH", "/api/v1/projects/x", nil)
 	req.SetPathValue("project", "x")
 	assert.Equal(t, auth.WriteAccess, parseRoute(req).Access())
 }
 
 func TestUpdateProjectSettings_CreateService(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -183,6 +193,7 @@ func TestUpdateProjectSettings_CreateService(t *testing.T) {
 }
 
 func TestUpdateProjectSettings_InvalidBody(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -199,6 +210,7 @@ func TestUpdateProjectSettings_InvalidBody(t *testing.T) {
 }
 
 func TestListProjects_FiltersPrivate(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -217,6 +229,7 @@ func TestListProjects_FiltersPrivate(t *testing.T) {
 }
 
 func TestListProjects_AuthSeesPrivate(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -235,6 +248,7 @@ func TestListProjects_AuthSeesPrivate(t *testing.T) {
 }
 
 func TestValidProjectName_SlashNamespaced(t *testing.T) {
+	t.Serial()
 	for _, name := range []string{"log-streamer", "log-streamer/client", "log-streamer/server", "foo/cli", "a/b/c", "x"} {
 		assert.True(t, validProjectName(name), "expected valid: %q", name)
 	}
@@ -244,6 +258,7 @@ func TestValidProjectName_SlashNamespaced(t *testing.T) {
 }
 
 func TestCreateProject_SlashNamespaced(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":"log-streamer/client","versioning":"auto"}`

@@ -75,6 +75,7 @@ func uploadSite(t *testing.T, h *Handler, proj *db.Project, branch string, files
 }
 
 func TestUpload_PublicSiteFlag(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "priv")
 
@@ -105,6 +106,7 @@ func TestUpload_PublicSiteFlag(t *testing.T) {
 }
 
 func TestUpload(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -126,6 +128,7 @@ func TestUpload(t *testing.T) {
 }
 
 func TestUpload_InvalidGzip(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -138,6 +141,7 @@ func TestUpload_InvalidGzip(t *testing.T) {
 }
 
 func TestUpload_EmptyArchive(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -156,6 +160,7 @@ func TestUpload_EmptyArchive(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
@@ -178,6 +183,7 @@ func TestDelete(t *testing.T) {
 }
 
 func TestDelete_NotFound(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -190,6 +196,7 @@ func TestDelete_NotFound(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{"index.html": "main"})
@@ -208,6 +215,7 @@ func TestList(t *testing.T) {
 }
 
 func TestList_Empty(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -223,6 +231,7 @@ func TestList_Empty(t *testing.T) {
 }
 
 func TestUpload_GitCommitHeader(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -241,6 +250,7 @@ func TestUpload_GitCommitHeader(t *testing.T) {
 }
 
 func TestUpload_ReplacesExisting(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{"index.html": "v1"})
@@ -257,6 +267,7 @@ func TestUpload_ReplacesExisting(t *testing.T) {
 }
 
 func TestValidateTar_PathTraversal(t *testing.T) {
+	t.Serial()
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	require.NoError(t, tw.WriteHeader(&tar.Header{
@@ -271,6 +282,7 @@ func TestValidateTar_PathTraversal(t *testing.T) {
 }
 
 func TestValidateTar_AbsolutePath(t *testing.T) {
+	t.Serial()
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	require.NoError(t, tw.WriteHeader(&tar.Header{
@@ -285,6 +297,7 @@ func TestValidateTar_AbsolutePath(t *testing.T) {
 }
 
 func TestValidateTar_Symlink(t *testing.T) {
+	t.Serial()
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	require.NoError(t, tw.WriteHeader(&tar.Header{
@@ -298,6 +311,7 @@ func TestValidateTar_Symlink(t *testing.T) {
 }
 
 func TestRouteAccess(t *testing.T) {
+	t.Serial()
 	r := route{project: "p", branch: "b", write: true}
 	assert.Equal(t, auth.WriteAccess, r.Access())
 
@@ -306,6 +320,7 @@ func TestRouteAccess(t *testing.T) {
 }
 
 func TestParseRoute(t *testing.T) {
+	t.Serial()
 	req := httptest.NewRequest("PUT", "/sites/myapp/branch/main/some/file.txt", nil)
 	req.SetPathValue("project", "myapp")
 	req.SetPathValue("branch", "main")
@@ -328,6 +343,7 @@ func TestParseRoute(t *testing.T) {
 }
 
 func TestParseRoute_BranchList(t *testing.T) {
+	t.Serial()
 	req := httptest.NewRequest("GET", "/sites/myapp/branches", nil)
 	req.SetPathValue("project", "myapp")
 
@@ -340,6 +356,7 @@ func TestParseRoute_BranchList(t *testing.T) {
 // The publish response must name the canonical URL for the branch it deployed,
 // so no publisher has to reimplement the grammar to advertise a site.
 func TestUpload_ResponseCarriesCanonicalURL(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	require.NoError(t, d.SetProjectDefaultBranch(context.Background(), proj.ID, "master"))

@@ -15,6 +15,7 @@ import (
 
 // TestRequireProject_WriteUnauthorized_ExplainsOIDCReason proves that when a
 func TestRequireProject_WriteUnauthorized_ExplainsOIDCReason(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	require.NoError(t, d.CreateProject(context.Background(), &db.Project{Name: "foo", Versioning: "auto"}))

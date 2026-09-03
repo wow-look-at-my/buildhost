@@ -20,6 +20,7 @@ import (
 // TestOCIRepackageEssentials verifies the synthesized image carries the shared
 // essentials base layer (CA certs + minimal rootfs) in addition to the binary layer:
 func TestOCIRepackageEssentials(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	store := openTestStore(t)
 	ctx := context.Background()
@@ -100,6 +101,7 @@ var apeBinary = []byte("MZqFpD='\n#!/bin/sh\nexit 0\n'\n")
 // and enters through /bin/sh, because the kernel cannot exec the APE's
 // shell-script header on its own.
 func TestOCIRepackageAPEGetsAShell(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	store := openTestStore(t)
 	ctx := context.Background()
@@ -174,6 +176,7 @@ func TestOCIRepackageAPEGetsAShell(t *testing.T) {
 // Without a shell cache an APE image is refused outright: an image that
 // cannot start must not be served as if it could.
 func TestOCIRepackageAPEWithoutShellCacheFails(t *testing.T) {
+	t.Serial()
 	store := openTestStore(t)
 	rp := &OCI{Store: store}
 	input := makeInput()
@@ -186,6 +189,7 @@ func TestOCIRepackageAPEWithoutShellCacheFails(t *testing.T) {
 }
 
 func TestOCIRepackageNonAPENeedsNoShell(t *testing.T) {
+	t.Serial()
 	store := openTestStore(t)
 	rp := &OCI{Store: store}
 	input := makeInput()
@@ -204,6 +208,7 @@ func TestOCIRepackageNonAPENeedsNoShell(t *testing.T) {
 }
 
 func TestEssentialsLayerContents(t *testing.T) {
+	t.Serial()
 	data, diffID, err := essentialsLayer()
 	require.NoError(t, err)
 	require.NotEmpty(t, data)
@@ -244,6 +249,7 @@ func TestEssentialsLayerContents(t *testing.T) {
 }
 
 func TestCACertsBundleValid(t *testing.T) {
+	t.Serial()
 	require.True(t, x509.NewCertPool().AppendCertsFromPEM(caCertsPEM), "embedded CA bundle must contain valid PEM certificates")
 
 	var n int
@@ -264,6 +270,7 @@ func TestCACertsBundleValid(t *testing.T) {
 }
 
 func TestOCIRepackageDeterministic(t *testing.T) {
+	t.Serial()
 	store := openTestStore(t)
 	ctx := context.Background()
 
@@ -287,6 +294,7 @@ func TestOCIRepackageDeterministic(t *testing.T) {
 }
 
 func TestOCIRepackageUser(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	store := openTestStore(t)
 	ctx := context.Background()

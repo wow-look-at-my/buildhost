@@ -68,6 +68,7 @@ func mustDo(t *testing.T, req *http.Request) *http.Response {
 
 // TestMultiPlatformAPE_OneUploadOneRowOneURL is the deliverable's end-to-end
 func TestMultiPlatformAPE_OneUploadOneRowOneURL(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	payload, artifact := seedAPERelease(t, env, "apehost")
 	wantSHA := sha256.Sum256(payload)
@@ -126,6 +127,7 @@ func TestMultiPlatformAPE_OneUploadOneRowOneURL(t *testing.T) {
 
 // TestMultiPlatformAPE_ReleasePageShowsOneLinkWithBadge proves the public,
 func TestMultiPlatformAPE_ReleasePageShowsOneLinkWithBadge(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	seedAPERelease(t, env, "apeweb")
 
@@ -149,6 +151,7 @@ func TestMultiPlatformAPE_ReleasePageShowsOneLinkWithBadge(t *testing.T) {
 // A non-APE upload cannot claim several platforms, and the rejection stores
 // nothing.
 func TestMultiPlatformAPE_NonAPERejectedEndToEnd(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	resp := env.postJSON(t, "/api/v1/projects", `{"name":"notape","versioning":"auto"}`)

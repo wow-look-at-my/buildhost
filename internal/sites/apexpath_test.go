@@ -17,6 +17,7 @@ import (
 // knowing. These go through the REAL router: the apex route is literal-less and
 // must lose to the branch routes while still catching everything else.
 func TestApexPath_ServesFilesFromDefaultBranch(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "jsperf.app")
 	env.uploadSite(t, "jsperf.app", "main", map[string]string{
@@ -61,6 +62,7 @@ func TestApexPath_ServesFilesFromDefaultBranch(t *testing.T) {
 // already resolved -- even when the shorter project genuinely holds a file at
 // that path.
 func TestApexPath_NamespacedProjectRootUnchanged(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "org")
 	seedProject(t, env.db, "org/repo")
@@ -88,6 +90,7 @@ func TestApexPath_NamespacedProjectRootUnchanged(t *testing.T) {
 }
 
 func TestApexPath_UnknownProjectNotFound(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "known")
 	env.uploadSite(t, "known", "main", map[string]string{"index.html": "hi"})
@@ -107,6 +110,7 @@ func TestApexPath_UnknownProjectNotFound(t *testing.T) {
 // chain the root redirect and the public-read gate use, so it lands on a branch
 // that actually has a site even when projects.default_branch lags behind.
 func TestApexPath_UsesResolvedDefaultBranch(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "ue553")
 	uploadSite(t, h, proj, "main", map[string]string{"runner.html": "<h1>runner</h1>"})
@@ -124,6 +128,7 @@ func TestApexPath_UsesResolvedDefaultBranch(t *testing.T) {
 }
 
 func TestSplitProjectPath(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	seedProject(t, d, "app")
 	seedProject(t, d, "org")

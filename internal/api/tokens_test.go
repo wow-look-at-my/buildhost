@@ -24,6 +24,7 @@ func jsonDoc(t *testing.T, fields map[string]any) string {
 }
 
 func TestCreateToken_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":"ci-token","scopes":"read,write"}`
@@ -41,6 +42,7 @@ func TestCreateToken_Success(t *testing.T) {
 }
 
 func TestCreateToken_NoAuth(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":"ci-token"}`
@@ -52,6 +54,7 @@ func TestCreateToken_NoAuth(t *testing.T) {
 }
 
 func TestCreateToken_EmptyName(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":""}`
@@ -65,6 +68,7 @@ func TestCreateToken_EmptyName(t *testing.T) {
 }
 
 func TestCreateToken_InvalidBody(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader("not json"))
@@ -76,6 +80,7 @@ func TestCreateToken_InvalidBody(t *testing.T) {
 }
 
 func TestCreateToken_DefaultScopes(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":"default-scope-token"}`
@@ -88,6 +93,7 @@ func TestCreateToken_DefaultScopes(t *testing.T) {
 }
 
 func TestCreateToken_WithProjectID(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -104,6 +110,7 @@ func TestCreateToken_WithProjectID(t *testing.T) {
 }
 
 func TestListTokens_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -122,6 +129,7 @@ func TestListTokens_Success(t *testing.T) {
 }
 
 func TestListTokens_NoAuth(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	req := httptest.NewRequest("GET", "/api/tokens", nil)
@@ -132,6 +140,7 @@ func TestListTokens_NoAuth(t *testing.T) {
 }
 
 func TestDeleteToken_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -148,6 +157,7 @@ func TestDeleteToken_Success(t *testing.T) {
 }
 
 func TestDeleteToken_NotFound(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	req := httptest.NewRequest("DELETE", "/api/tokens/9999", nil)
@@ -160,6 +170,7 @@ func TestDeleteToken_NotFound(t *testing.T) {
 }
 
 func TestDeleteToken_InvalidID(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	req := httptest.NewRequest("DELETE", "/api/tokens/abc", nil)
@@ -173,6 +184,7 @@ func TestDeleteToken_InvalidID(t *testing.T) {
 }
 
 func TestDeleteToken_NoAuth(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	req := httptest.NewRequest("DELETE", "/api/tokens/1", nil)
@@ -186,6 +198,7 @@ func TestDeleteToken_NoAuth(t *testing.T) {
 // --- Security tests: project-scoped token isolation ---
 
 func TestCreateToken_ProjectScopedCannotCreateGlobalToken(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -203,6 +216,7 @@ func TestCreateToken_ProjectScopedCannotCreateGlobalToken(t *testing.T) {
 }
 
 func TestCreateToken_ProjectScopedCannotCreateTokenForDifferentProject(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -222,6 +236,7 @@ func TestCreateToken_ProjectScopedCannotCreateTokenForDifferentProject(t *testin
 }
 
 func TestListTokens_ProjectScopedCannotList(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -237,6 +252,7 @@ func TestListTokens_ProjectScopedCannotList(t *testing.T) {
 }
 
 func TestDeleteToken_ProjectScopedCannotDelete(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -257,6 +273,7 @@ func TestDeleteToken_ProjectScopedCannotDelete(t *testing.T) {
 }
 
 func TestCreateToken_InvalidScopeRejected(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	tests := []struct {
@@ -283,6 +300,7 @@ func TestCreateToken_InvalidScopeRejected(t *testing.T) {
 }
 
 func TestCreateToken_GlobalTokenCanCreateProjectScoped(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -303,6 +321,7 @@ func TestCreateToken_GlobalTokenCanCreateProjectScoped(t *testing.T) {
 }
 
 func TestCreateToken_CannotGrantScopeNotHeld(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	// Caller only has "write" scope and tries to create a "read,write" token.
@@ -317,6 +336,7 @@ func TestCreateToken_CannotGrantScopeNotHeld(t *testing.T) {
 }
 
 func TestCreateToken_ScopesNormalizedWithSpaces(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	// "read, write" with a space should be accepted and stored as "read,write".
@@ -330,6 +350,7 @@ func TestCreateToken_ScopesNormalizedWithSpaces(t *testing.T) {
 }
 
 func TestCreateToken_ProjectScopedCanCreateForSameProject(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 

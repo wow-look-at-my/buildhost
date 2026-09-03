@@ -16,6 +16,7 @@ import (
 
 // The failure readiness exists for: with no credential the proxy serves every
 func TestNotReadyWithoutCredential(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "", []string{privateOrg})
 
@@ -31,6 +32,7 @@ func TestNotReadyWithoutCredential(t *testing.T) {
 // A credential that merely exists is not proof it can read anything. Saying so
 // out loud beats claiming a proof this check cannot make.
 func TestReadyButUnprovenWithoutReadinessModule(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
 
@@ -43,6 +45,7 @@ func TestReadyButUnprovenWithoutReadinessModule(t *testing.T) {
 }
 
 func TestNotReadyWhenReadinessModuleIsUnreadable(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Status = http.StatusNotFound
 	fake.Body = `{"message":"Not Found"}`
@@ -59,6 +62,7 @@ func TestNotReadyWhenReadinessModuleIsUnreadable(t *testing.T) {
 }
 
 func TestReadyWhenReadinessModuleResolves(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	seedModule(fake, privateOrg+"/tml", "", "v1.2.0", "aaaa111122223333444455556666777788889999",
@@ -78,6 +82,7 @@ func TestReadyWhenReadinessModuleResolves(t *testing.T) {
 // Claiming no private prefixes is a legitimate passthrough-only configuration,
 // and must not report itself broken for lacking a credential it never needs.
 func TestPassthroughOnlyIsHealthy(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "", nil)
 
@@ -100,6 +105,7 @@ func serveHealthAs(t *testing.T, s *Service, authed bool) *httptest.ResponseReco
 }
 
 func TestHealthEndpointReports503WhenNotReady(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "", []string{privateOrg})
 	s.checkHealth(context.Background())
@@ -115,6 +121,7 @@ func TestHealthEndpointReports503WhenNotReady(t *testing.T) {
 }
 
 func TestHealthEndpointReports200WhenReady(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
 	s.checkHealth(context.Background())
@@ -128,6 +135,7 @@ func TestHealthEndpointReports200WhenReady(t *testing.T) {
 // the prefixes, the readiness module and a probe error all name private repos.
 // The verdict stays public so a monitor needs no credential.
 func TestHealthEndpointRedactsPrivateNamesFromAnonymousCallers(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Status = http.StatusNotFound
 	fake.Body = `{"message":"Not Found"}`
@@ -155,6 +163,7 @@ func TestHealthEndpointRedactsPrivateNamesFromAnonymousCallers(t *testing.T) {
 // The dashboard's snapshot has to survive an empty cache: a proxy that has
 // never served anything still needs its health shown.
 func TestSnapshotOnEmptyCache(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
 	s.checkHealth(context.Background())
@@ -170,6 +179,7 @@ func TestSnapshotOnEmptyCache(t *testing.T) {
 }
 
 func TestSnapshotSurfacesAFailingModule(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
 	s := newTestService(t, fake, "", []string{privateOrg})
@@ -191,16 +201,19 @@ func TestSnapshotSurfacesAFailingModule(t *testing.T) {
 }
 
 func TestLoadConfigDefaultsPrivatePrefixesFromOIDCOrgs(t *testing.T) {
+	t.Serial()
 	c := loadConfig([]string{"wow-look-at-my", "PazerOP"})
 	assert.Equal(t, []string{"github.com/wow-look-at-my", "github.com/PazerOP"}, c.PrivatePrefixes)
 }
 
 func TestLoadConfigConfiguresNoUpstreamByDefault(t *testing.T) {
+	t.Serial()
 	c := loadConfig([]string{"wow-look-at-my"})
 	assert.Empty(t, c.Upstream, "buildhost must not pick a module mirror on the operator's behalf")
 }
 
 func TestLoadConfigExplicitPrefixesWin(t *testing.T) {
+	t.Serial()
 	t.Setenv("BUILDHOST_GOPROXY_PRIVATE_PREFIXES", "github.com/a, github.com/b/ ")
 	t.Setenv("BUILDHOST_GOPROXY_UPSTREAM", "https://mirror.example.com/")
 
@@ -214,6 +227,7 @@ func TestLoadConfigExplicitPrefixesWin(t *testing.T) {
 // is settled inline and no background loop starts. Every test in this repo that
 // calls auth.Init has that shape, and a per-call ticker would outlive the test.
 func TestPassthroughOnlyStartsNoBackgroundLoop(t *testing.T) {
+	t.Serial()
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "", nil)
 

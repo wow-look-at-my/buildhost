@@ -9,6 +9,7 @@ import (
 )
 
 func TestGetDashboardStats_Empty(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -26,6 +27,7 @@ func TestGetDashboardStats_Empty(t *testing.T) {
 }
 
 func TestGetDashboardStats_WithData(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -69,6 +71,7 @@ func TestGetDashboardStats_WithData(t *testing.T) {
 }
 
 func TestGetDashboardStats_DedupRatio(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -112,6 +115,7 @@ func TestGetDashboardStats_DedupRatio(t *testing.T) {
 }
 
 func TestListRecentReleases(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -131,6 +135,7 @@ func TestListRecentReleases(t *testing.T) {
 }
 
 func TestListRecentReleases_Empty(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	recent, err := d.ListRecentReleases(context.Background(), 10)
 	require.NoError(t, err)
@@ -138,6 +143,7 @@ func TestListRecentReleases_Empty(t *testing.T) {
 }
 
 func TestListProjectSummaries(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -170,6 +176,7 @@ func TestListProjectSummaries(t *testing.T) {
 }
 
 func TestListReleaseSummaries(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -193,6 +200,7 @@ func TestListReleaseSummaries(t *testing.T) {
 }
 
 func TestListTokenDetails(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -224,6 +232,7 @@ func TestListTokenDetails(t *testing.T) {
 }
 
 func TestListOIDCPolicyDetails(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 

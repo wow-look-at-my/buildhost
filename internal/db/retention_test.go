@@ -41,6 +41,7 @@ func keysOf(refs []BlobRef) []string {
 }
 
 func TestListEvictableReleases_KeepNPerBranch(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := retProject(t, d, "proj")
@@ -67,6 +68,7 @@ func TestListEvictableReleases_KeepNPerBranch(t *testing.T) {
 }
 
 func TestListEvictableReleases_KeepZeroStillKeepsTip(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := retProject(t, d, "proj")
@@ -86,6 +88,7 @@ func TestListEvictableReleases_KeepZeroStillKeepsTip(t *testing.T) {
 }
 
 func TestListEvictableReleases_Pins(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := retProject(t, d, "proj")
@@ -110,6 +113,7 @@ func TestListEvictableReleases_Pins(t *testing.T) {
 }
 
 func TestEvictReleases_SharedBlobAndCascade(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := retProject(t, d, "proj")
@@ -147,6 +151,7 @@ func TestEvictReleases_SharedBlobAndCascade(t *testing.T) {
 }
 
 func TestEvictReleases_DryRunChangesNothing(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := retProject(t, d, "proj")
@@ -164,6 +169,7 @@ func TestEvictReleases_DryRunChangesNothing(t *testing.T) {
 }
 
 func TestEvictReleases_Empty(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	freed, candidates, err := d.EvictReleases(context.Background(), nil, true)
 	require.NoError(t, err)
@@ -172,6 +178,7 @@ func TestEvictReleases_Empty(t *testing.T) {
 }
 
 func TestIsBlobReferenced_AllColumns(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := retProject(t, d, "proj")
@@ -203,6 +210,7 @@ func TestIsBlobReferenced_AllColumns(t *testing.T) {
 }
 
 func TestSumReclaimableBytes(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := retProject(t, d, "proj")
@@ -219,6 +227,7 @@ func TestSumReclaimableBytes(t *testing.T) {
 }
 
 func TestRetentionSettings(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -244,6 +253,7 @@ func TestRetentionSettings(t *testing.T) {
 }
 
 func TestUpdateRetentionSettings_UpsertsWhenUnseeded(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	// No prior seed: the update must insert the row (upsert), not no-op.
@@ -255,6 +265,7 @@ func TestUpdateRetentionSettings_UpsertsWhenUnseeded(t *testing.T) {
 }
 
 func TestListAbandonedReleases(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := retProject(t, d, "proj")
