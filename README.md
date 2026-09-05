@@ -638,12 +638,35 @@ branch (or commit) behind the `@` sigil: `https://myapp.pazer.site/@pr-7/`,
 - Only project names that are a single DNS label serve here (`[a-z0-9-]`, max 63,
   no leading/trailing `-`); everything else stays on `sites.<apex>/...`.
 - Reserved on this scheme: a leading `~` path segment and the literal `/__sso`.
-- Private sites sign in via the primary apex: set `BUILDHOST_PRIMARY_DOMAIN`
-  (e.g. `pazer.build`) and the browser authenticates there (same single GitHub
+- Private sites sign in via the primary apex: `BUILDHOST_PRIMARY_DOMAIN`
+  (e.g. `pazer.build`) is where the browser authenticates (same single GitHub
   OAuth app), then is handed back to the site domain -- no second OAuth app.
-- Setting `BUILDHOST_PRIMARY_DOMAIN` also scopes the web UI and `/api/v1` to
-  that apex: other hosts get a plain 404 (health, sign-in, `llms.txt` stay
-  host-agnostic). Unset, everything stays host-agnostic as before.
+  With the apex set to `*` there is no such apex to hand off to, so an
+  unauthenticated browser on a private site gets the plain JSON 401 instead.
+- `BUILDHOST_PRIMARY_DOMAIN` also scopes the web UI and `/api/v1` to that apex:
+  other hosts get a plain 404 (health, sign-in, `llms.txt` stay host-agnostic).
+
+### `BUILDHOST_PRIMARY_DOMAIN` is required
+
+The server refuses to start without it. Set it to the apex that owns the web UI,
+`/api/v1` and the GitHub OAuth callback:
+
+```
+BUILDHOST_PRIMARY_DOMAIN=example.com
+```
+
+To serve on whatever `Host` arrives -- the fully host-agnostic behavior, correct
+for a single-domain deployment that does not care which name reaches it -- opt in
+explicitly with the wildcard:
+
+```
+BUILDHOST_PRIMARY_DOMAIN=*
+```
+
+Serving every domain is a deliberate choice, so it has to be typed out. Leaving
+the variable unset is a startup error rather than a silent default, because an
+unpinned server reflects whatever `Host` it is sent into the URLs it generates
+(download links, `brew`/`apt` instructions, OAuth redirects).
 
 ## Large uploads
 
@@ -902,6 +925,8 @@ Environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `BUILDHOST_PRIMARY_DOMAIN` | **required** | Apex owning the web UI, `/api/v1` and the GitHub OAuth callback; other hosts get a plain 404. Use `*` to serve every `Host` (host-agnostic). No default -- the server refuses to start without it |
+| `BUILDHOST_SITE_DOMAIN` | (off) | Dedicated domain for project static sites: serves each DNS-label-named project at `<project>.<domain>` |
 | `BUILDHOST_LISTEN_ADDR` | `:8080` | API listen address |
 | `BUILDHOST_ADMIN_LISTEN_ADDR` | `:9090` | Admin dashboard listen address (empty to disable) |
 | `BUILDHOST_DATA_DIR` | `./data` | Data directory |

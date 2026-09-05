@@ -3,5 +3,9 @@ services:
     build: .
     environment:
       - BUILDHOST_BASE_URL=http://localhost:8080
+      # CI addresses the server by localhost and by *.localhost service
+      # subdomains, so no single host is canonical: "*" is the explicit opt-in
+      # to serving every Host (the variable is required).
+      - BUILDHOST_PRIMARY_DOMAIN=*
     ports:
       - "8080:8080"

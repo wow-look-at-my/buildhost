@@ -257,6 +257,10 @@ jobs:
     env:
       BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
       BUILDHOST_BASE_URL: http://localhost:18080
+      # Required. This e2e addresses the server as localhost AND as *.localhost
+      # service subdomains (brew.localhost, static.localhost), so no single host
+      # is canonical: "*" is the explicit opt-in to serving every Host.
+      BUILDHOST_PRIMARY_DOMAIN: "*"
       # CI-speed hygiene only -- these do not alter whether the documented flow
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
@@ -606,6 +610,9 @@ jobs:
     env:
       BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
       BUILDHOST_BASE_URL: http://localhost:18080
+      # Required; "*" = serve every Host (localhost plus the static.localhost
+      # subdomain the verify step downloads from).
+      BUILDHOST_PRIMARY_DOMAIN: "*"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/buildhost-download
