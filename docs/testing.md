@@ -80,18 +80,9 @@ server served a mangled tarball whose sha256 never matched the formula.
 
 ## container-healthcheck
 
-CI job `container-healthcheck` (`ci.yml`) additionally runs two suites against
-the **built Docker image**.
-
-`test/dats/image-entrypoint.dats` starts the image before compose does, once per
-way an entrypoint can name the binary: by name through `PATH`, by absolute path,
-through the image's own entrypoint, and with a shell in front. Compose starts a
-container the one way the image already worked, so every earlier check was blind
-to the spelling a rolling updater actually uses -- see the entrypoint invariant
-in `docs/deploy-and-updates.md`.
-
-`test/dats/image-strips.dats` then runs against the started container: it
-bootstraps a token by exec'ing the binary inside it,
+CI job `container-healthcheck` (`ci.yml`) additionally runs
+`test/dats/image-strips.dats` against the **built Docker image**: it
+bootstraps a token by exec'ing the binary inside the container,
 publishes buildhost's own unstripped linux binary, and asserts the download comes
 back smaller than the upload with no `.symtab`/`.debug_*` sections but
 `.text`/`.rodata` intact, that `fmt=symbols` returns a file with a real

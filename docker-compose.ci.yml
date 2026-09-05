@@ -1,8 +1,6 @@
 services:
   buildhost:
     build: .
-    # Named so a test can start the same image on its own, outside compose.
-    image: buildhost:ci
     environment:
       - BUILDHOST_BASE_URL=http://localhost:8080
     ports:

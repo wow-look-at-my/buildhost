@@ -201,8 +201,8 @@ never share the service alias.
 Assertions live in dats suites under `test/dats/`, never in a workflow step; a
 step installs dats and invokes one with `--no-sandbox`, because these suites
 need the host's curl, jq or brew and the runner's fallback sandbox image has
-none. A suite needing nothing but a built binary could live in `dats/`, which
-`go-toolchain` runs sandboxed on every build. A check that needs a program --
+none. A suite needing nothing but the checkout or a built binary lives in `dats/`,
+which `go-toolchain` runs sandboxed on every build. A check that needs a program --
 octokit fakes, a browser -- is a node test under `test/actions/` that a suite
 invokes. Depth: `docs/testing.md`.
 
@@ -221,7 +221,7 @@ seldom-triggered action break in a consumer repo.
 
 Several end-to-end jobs in `ci.yml` are NOT part of
 it and guard defects unit tests structurally cannot catch (`synthesized-image-e2e`,
-`homebrew-tap-e2e`, `container-healthcheck` (image entrypoint + stripping), `apt-install-e2e`,
+`homebrew-tap-e2e`, `container-healthcheck`, `apt-install-e2e`,
 `upload-artifact-action-e2e`). Depth: `docs/testing.md`.
 
 ## Security
