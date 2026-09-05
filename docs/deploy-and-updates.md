@@ -105,8 +105,24 @@ stop_grace_period: 5m
 ## Docker image
 
 The image is built from `gcr.io/distroless/static-debian12:nonroot`. It runs as
-UID 65532 (nonroot) with no shell, no package manager, and no writable paths
-except the data volume. The server handles SIGTERM for graceful shutdown.
+UID 65532 (nonroot) with no package manager. The server handles SIGTERM for
+graceful shutdown.
+
+The shipped binary is an Actually Portable Executable, so the image also carries
+one static busybox as `/bin` plus a symlink per applet: the file's header is a
+shell script, the image registers no binfmt handler, and the trampoline shells
+out while it unpacks itself under `/tmp`.
+
+**The entrypoint must never name the APE directly.** `/usr/local/lib/buildhost/
+buildhost` is the APE and `/usr/local/bin/buildhost` is a `#!/bin/sh` launcher
+that starts it -- the same shape the deb repackager gives an APE. A shebang
+script is execable, so any spelling of the entrypoint works. This is not
+cosmetic: a rolling updater creates the new container from the *old* container's
+config, which carries the entrypoint resolved from the image that container was
+created from. A container predating the APE carries `["buildhost"]`, and a bare
+exec of an APE is ENOEXEC -- exit 126, on a loop, with the old container never
+replaced and its stale config cloned onto every later image.
+`test/dats/image-entrypoint.dats` starts the built image each of those ways.
 
 The admin dashboard on `:9090` has **no built-in authentication**. It must be
 placed behind a reverse proxy with access control (e.g., Cloudflare Access on a
@@ -119,5 +135,7 @@ NOTHING there for weeks. `container-healthcheck` now asserts against the built
 image that a published ELF comes back stripped, that `fmt=symbols` serves its
 debug info, and that `?debug=1` returns the upload byte-for-byte.
 
-All temporary files are written to `BUILDHOST_DATA_DIR/tmp`, not to `/tmp`. The
-image is compatible with `read_only: true` as long as the data volume is mounted.
+The server writes its own temporary files to `BUILDHOST_DATA_DIR/tmp`, not to
+`/tmp`. `/tmp` still has to be writable, because the APE trampoline unpacks
+itself there before the server starts. `read_only: true` therefore needs a
+`tmpfs: [/tmp]` beside it as well as the data volume.

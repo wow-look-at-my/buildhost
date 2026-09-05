@@ -208,8 +208,11 @@ invokes. Depth: `docs/testing.md`.
 
 CI runs the shipped fat APE, and an APE starts through its own shell
 trampoline: a bash `run:` step does that implicitly, node's `spawn` does not
-(pass `sh` the path), and the image carries one static busybox `/bin/sh` for
-its entrypoint. A test that needs a real ELF compiles its own fixture.
+(pass `sh` the path), and the image carries one static busybox `/bin/sh`. The
+image's entrypoint is a shebang launcher, never the APE itself -- a bare exec of
+an APE is exit 126, and a rolling update runs whatever entrypoint the container
+it replaces recorded. Depth: `docs/deploy-and-updates.md`. A test that needs a
+real ELF compiles its own fixture.
 
 `go-toolchain` runs all tests. An inline `script:` in any action or workflow may
 not carry two or more consecutive `//` comment lines -- the typescript action
@@ -218,7 +221,7 @@ seldom-triggered action break in a consumer repo.
 
 Several end-to-end jobs in `ci.yml` are NOT part of
 it and guard defects unit tests structurally cannot catch (`synthesized-image-e2e`,
-`homebrew-tap-e2e`, `container-healthcheck`, `apt-install-e2e`,
+`homebrew-tap-e2e`, `container-healthcheck` (image entrypoint + stripping), `apt-install-e2e`,
 `upload-artifact-action-e2e`). Depth: `docs/testing.md`.
 
 ## Security

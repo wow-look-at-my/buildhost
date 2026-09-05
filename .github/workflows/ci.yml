@@ -234,6 +234,10 @@ jobs:
       - run: chmod +x build/buildhost
       # Build the image (and pull its base layers) in a separate, untimed step
       - run: docker compose -f docker-compose.ci.yml build
+      # Before compose starts it the one way that always worked: the image has
+      # to start however an entrypoint names its binary, or a container created
+      # from an older container's config cannot run this build.
+      - run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/image-entrypoint.dats
       - run: docker compose -f docker-compose.ci.yml up -d --wait --wait-timeout 30
       # Stripping is documented to happen at download time, and it silently did
       - uses: actions/setup-go@v5
