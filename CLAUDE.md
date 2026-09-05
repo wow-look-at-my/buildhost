@@ -11,7 +11,7 @@ instruction file costs on every request.
 ## Build
 
 ```bash
-go-toolchain --generate 0af38e6ba5f6
+go-toolchain --generate b12db236ac59
 ```
 
 This runs mod tidy, generate, vet, tests with coverage, and builds the binary. Do
@@ -200,9 +200,12 @@ never share the service alias.
 
 Assertions live in dats suites under `test/dats/`, never in a workflow step; a
 step installs dats and invokes one with `--no-sandbox`, because these suites
-need the host's curl, jq or brew and the runner's fallback sandbox image has
-none. A suite needing nothing but the checkout or a built binary lives in `dats/`,
-which `go-toolchain` runs sandboxed on every build. A check that needs a program --
+need the host's curl, jq, docker or brew, which a sandboxed fallback image has
+none of. Anything a suite WRITES goes in its temp directory: the brew suites
+build a private Homebrew prefix there (`scripts/brew-sandbox-prefix.sh`) rather
+than installing into the runner's. A suite needing nothing but the checkout or
+a built binary lives in `dats/`, which `go-toolchain` runs sandboxed on every
+build. A check that needs a program --
 octokit fakes, a browser -- is a node test under `test/actions/` that a suite
 invokes. Depth: `docs/testing.md`.
 

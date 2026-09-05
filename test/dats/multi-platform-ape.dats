@@ -2,8 +2,9 @@
 # multi-platform claim without APE magic is refused. One server serves the
 # whole file: setup publishes the APE, the tests only ask questions about it.
 #
-# Needs curl and jq, which is why a workflow runs this --no-sandbox rather than
-# letting the dats phase sandbox it into an image that has neither.
+# Needs curl and jq, which is why a workflow runs it rather than the `dats/`
+# phase: the sandbox binds the host's own tool trees, and go-toolchain's
+# fallback image has neither.
 #
 # see docs/multi-platform-artifacts.md
 
@@ -78,8 +79,8 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		curl -fsS -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/projects/ape-e2e/releases/$VERSION" > rel.json
-		echo "rows=$(jq '.artifacts | length' rel.json) artifacts"
+		curl -fsS -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/projects/ape-e2e/releases/$VERSION" > {outputs.rel.json}
+		echo "rows=$(jq '.artifacts | length' {outputs.rel.json}) artifacts"
 	  outputs:
 		stdout:
 			- "rows=1 artifacts"
@@ -111,11 +112,11 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		curl -fsS "$BASE/projects/ape-e2e/releases/$VERSION" > release.html
-		grep -q 'badge badge-format' release.html
-		grep -q 'APE: ' release.html
-		grep -q 'linux/amd64, darwin/arm64, windows/amd64' release.html
-		echo "raw-links=$(grep -c '>raw</a>' release.html) found"
+		curl -fsS "$BASE/projects/ape-e2e/releases/$VERSION" > {outputs.release.html}
+		grep -q 'badge badge-format' {outputs.release.html}
+		grep -q 'APE: ' {outputs.release.html}
+		grep -q 'linux/amd64, darwin/arm64, windows/amd64' {outputs.release.html}
+		echo "raw-links=$(grep -c '>raw</a>' {outputs.release.html}) found"
 	  outputs:
 		stdout:
 			- "raw-links=1 found"

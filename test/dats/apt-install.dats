@@ -3,8 +3,10 @@
 # whose package must ship a launcher instead of a bare root-owned binary.
 #
 # Setup publishes and installs; the tests only ask questions about what landed.
-# It needs the real apt-get, gpg, sudo and port 80 -- buildhost derives sibling
-# service URLs without ports -- so a workflow runs this --no-sandbox.
+#
+# The assertion is about a REAL apt install, so it needs the real apt-get, gpg
+# and dpkg database, root through sudo, and port 80 -- buildhost derives
+# sibling service URLs without ports.
 #
 # $BUILDHOST_BIN and $ARTIFACT_BIN come from the workflow.
 #

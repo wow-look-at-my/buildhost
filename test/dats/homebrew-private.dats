@@ -1,10 +1,13 @@
 # The DOCUMENTED private Homebrew flow, executed verbatim, and what the
 # authenticated tap must then hold. Split from the public suite because the
-# docs say the authenticated tap REPLACES the public one, so the workflow
-# untaps between the two.
+# docs say the authenticated tap REPLACES the public one under the same name,
+# and each suite's prefix holds one tap by that name.
 #
 # The brew commands come from README.md through scripts/brew-doc-flows.sh; the
 # public suite is where the docs themselves are checked for agreement.
+#
+# The flow runs against this file's own private Homebrew prefix, built inside
+# its temp directory -- see homebrew-public.dats.
 #
 # see docs/formats/brew-tap.md
 
@@ -14,17 +17,24 @@ shared:
 			# Run the documented private flow. Writes $ENV_FILE.
 			set -eu
 			WORK="$(dirname "$ENV_FILE")"
+			"$REPO/scripts/brew-sandbox-prefix.sh" "$WORK" > "$ENV_FILE"
+			. "$ENV_FILE"
 			"$REPO/scripts/brew-doc-flows.sh" private "$BREW_HOST" > "$WORK/private.sh"
 			echo "--- documented private flow, executed verbatim ---"
 			sed 's|x:[^@]*@|x:***@|' "$WORK/private.sh"
 			TOKEN="$BUILDHOST_TOKEN" bash -euo pipefail "$WORK/private.sh"
-			echo "TAP='$(brew --repository pazer/build)'" > "$ENV_FILE"
+			echo "TAP='$(brew --repository pazer/build)'" >> "$ENV_FILE"
 
-setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
+setup:
+	- cmd: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
+	  timeout: 900s
 
 tests:
 	- desc: the privately installed binary executes
-	  cmd: myapp
+	  cmd: |
+		set -eu
+		. {shared.env}
+		myapp
 	  outputs:
 		stdout:
 			- "buildhost-homebrew-private-ok"
@@ -55,17 +65,17 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		ls "$TAP/Formula" > formulas.txt
-		if grep -qx '7zip.rb' formulas.txt; then
+		ls "$TAP/Formula" > {outputs.formulas.txt}
+		if grep -qx '7zip.rb' {outputs.formulas.txt}; then
 			echo "digit-leading project 7zip must be excluded: brew cannot load it" >&2; exit 1
 		fi
-		grep -qx 'dotted.app.rb' formulas.txt || {
-			echo "the dotted public project is missing from the tap" >&2; cat formulas.txt >&2; exit 1; }
+		grep -qx 'dotted.app.rb' {outputs.formulas.txt} || {
+			echo "the dotted public project is missing from the tap" >&2; cat {outputs.formulas.txt} >&2; exit 1; }
 		while read -r f; do
 			brew ruby -- -c "$TAP/Formula/$f" | grep -q 'Syntax OK' \
 				|| { echo "formula $f is not valid Ruby" >&2; exit 1; }
-		done < formulas.txt
-		echo "formulas=$(wc -l < formulas.txt | tr -d ' ') all parse"
+		done < {outputs.formulas.txt}
+		echo "formulas=$(wc -l < {outputs.formulas.txt} | tr -d ' ') all parse"
 	  outputs:
 		stdout:
 			- "all parse"

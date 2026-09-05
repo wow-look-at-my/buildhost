@@ -48,6 +48,29 @@ Config sets `Env` (incl. `SSL_CERT_FILE`), `WorkingDir`, the `/<project>`
 entrypoint, and `User` from the release's optional `oci_user` field (empty =
 root).
 
+### APE artifacts
+
+An APE (Actually Portable Executable) is not a native Linux ELF: the kernel
+cannot exec it inside a scratch/distroless container, so a direct entrypoint dies
+with `exec format error`. But an APE's header is itself a valid shell script, so
+it runs when exec'd through a shell -- its own prologue assimilates a native ELF
+on first run (the container's writable overlayfs absorbs that self-rewrite). For
+an APE artifact the image therefore carries a third layer with a **static busybox
+at `/bin/busybox` plus applet symlinks** (`sh`, `cksum`, `tr`, `mkdir`, `cp` --
+the ones the prologue shells out to, pinned in `repackage.apeShellApplets`), and
+the entrypoint becomes `["/bin/sh", "/<project>"]`. The busybox binaries are
+fetched at build time by `scripts/fetch-busybox.sh` (Alpine's `busybox-static`,
+pinned version, one per linux arch) and embedded via the same generate-gate
+pattern as the CA bundle. The busybox layer is memoized per (os, arch) like the
+essentials base layer.
+
+The index advertises **only `linux/*` children** (`ociLinuxArtifacts` in
+`internal/oci/manifest.go`): Docker can only run linux images, so a
+`darwin/*` or `windows/*` child -- both of which an APE genuinely covers -- would
+be a manifest Docker can select but the container cannot start (`exec format
+error` / immediate exit). A release whose artifacts cover no linux platform
+serves 404 rather than an unpullable image.
+
 ## Push side
 
 Push side (`push.go`, `upload.go`, `putmanifest.go`) accepts blob uploads

@@ -50,7 +50,18 @@ reads them anywhere, daemon-free.
 ## homebrew-tap-e2e
 
 CI job `homebrew-tap-e2e` (`ci.yml`) runs the README-documented brew flows against
-a real spawned buildhost. The commands come from `scripts/brew-doc-flows.sh`,
+a real spawned buildhost.
+
+Each suite runs them against a Homebrew prefix of its own, built inside its
+sandbox temp directory by `scripts/brew-sandbox-prefix.sh` from a copy of the
+runner's brew that the job stages into the workspace (the runner's own prefix
+is under `/home` on Linux, which the sandbox does not bind). So the tap, the
+Cellar and the installed files all land somewhere a sandboxed command may
+write, and the assertions are unchanged -- still about what brew did to a real
+file. It is also why the public and private legs need no `brew untap` between
+them: they never share a prefix.
+
+The commands come from `scripts/brew-doc-flows.sh`,
 which extracts the fenced blocks from `README.md` and substitutes only the host;
 `test/dats/homebrew-public.dats` executes the public flow and asserts the served
 `/llms.txt` documents the same two blocks, `homebrew-private.dats` executes the
@@ -160,8 +171,7 @@ Each test starts its own server, taking the binary from `BUILDHOST_BIN`, else
 `build/buildhost` (a cosmo build writes the APE under that plain name), and
 starting an APE through a shell because the kernel cannot exec one.
 
-It drives that server with curl and jq, which the runner has and the docker
-image dats sandboxes into does not -- hence `--no-sandbox`, and hence
+It drives that server with curl and jq, which the runner has. Hence
 `test/dats/` rather than `dats/`: everything under `dats/` runs sandboxed on
 every build. Locally, `dats test/dats/multi-platform-ape.dats` sandboxes fine
 under bwrap, which binds the host's own tools. Depth:
@@ -170,10 +180,17 @@ under bwrap, which binds the host's own tools. Depth:
 ## Where a test lives
 
 An assertion goes in a dats suite, never in a workflow step. `test/dats/` is
-where they live, and a workflow step invokes one by name with `--no-sandbox`:
-these suites need the host -- brew and its prefix, curl and jq, a service the
-workflow started first -- and the sandbox dats falls back to on a runner is a
-bare `debian:stable-slim` with none of it.
+where they live, and a workflow step invokes one by name (the dats action's
+`tests` input, which installs the sandbox backend itself): these suites need
+the runner -- curl and jq, a docker daemon, a service the workflow started
+first -- which the image `dats` falls back to sandboxing into cannot provide.
+
+Every suite runs sandboxed; the action's `tests` input has no opt-out, and a
+`.dats` file cannot switch its own sandbox off. What the sandbox gives a
+command is the host's tool trees read-only, the working directory read-only,
+and its own temp directory to write. Anything a suite has to WRITE goes there
+-- which is why the brew suites build a private Homebrew prefix rather than
+installing into the runner's own.
 
 `dats/` at the module root is the other option and is currently empty:
 `go-toolchain` walks it on every build and runs it sandboxed, so a suite there

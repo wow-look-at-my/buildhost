@@ -33,9 +33,17 @@ jobs:
             echo "::warning::APE binfmt handler not registered; a bare exec of an APE still fails here"
           fi
       # No fetch-cacerts step: the CA bundle is a generate directive
+      # (internal/repackage/oci.go), so `generate:` below fetches it. Keeping a
+      # step here would hide a broken directive from CI and leave a fresh clone
+      # unbuildable for everyone who is not this workflow. The setup-go jobs
+      # below still fetch explicitly: they run plain `go`, never generate.
+      # autorelease publishes this binary to buildhost on every push, which is
+      # what makes the CLI downloadable -- the publish composites fetch it from
+      # dl instead of building cmd/buildhost from a checkout that has none of
+      # the generated files it embeds.
       - uses: wow-look-at-my/go-toolchain@master
         with:
-          generate: 0af38e6ba5f6
+          generate: b12db236ac59
           timeout: '25'
       # The step above just ran every generate directive, which is what makes
       - uses: ./.github/actions/buildhost-download
@@ -72,6 +80,9 @@ jobs:
       pull-requests: write
     steps:
       # PR routes: from the go-build hand-off the build job already produced for
+      # this ref. go-toolchain saves build/ via cache-upload (run-keyed cache
+      # entry) instead of a GHA artifact, so it must be restored with the
+      # matching cache-download action, not actions/download-artifact.
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
           name: go-build-build.broot
@@ -130,9 +141,19 @@ jobs:
         with:
           go-version-file: base/go.mod
       # The admin dashboard's JS is a generate directive too (internal/admin),
+      # and it is embedded by name, so a base that has it fails to compile
+      # without this. Guarded on the script's existence: older base commits
+      # shipped the JS committed and have no script to run -- same
+      # works-on-older-base reasoning as the inlined cacerts fetch above.
+      # The busybox binaries embedded for APE OCI images are generated too, and
+      # embedded by a directory pattern, so a base that has them fails to
+      # compile without this. Guarded on the script's existence: older base
+      # commits have no script to run -- same works-on-older-base reasoning as
+      # the inlined cacerts fetch above.
       - if: steps.cache.outputs.cache-hit != 'true'
         working-directory: base
         run: |
+          if [ -x scripts/fetch-busybox.sh ]; then ./scripts/fetch-busybox.sh; fi
           go generate ./internal/api
           if [ -x scripts/build-admin-frontend.sh ]; then ./scripts/build-admin-frontend.sh; fi
           go build -o build/buildhost_linux_amd64 ./cmd/buildhost
@@ -277,6 +298,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: ./scripts/fetch-cacerts.sh
+      - run: ./scripts/fetch-busybox.sh
       - run: go generate ./internal/api
       # The dashboard JS is generated, not committed, and embedded by name.
       - run: ./scripts/build-admin-frontend.sh
@@ -455,11 +477,30 @@ jobs:
               > "$RUNNER_TEMP/buildhost-release-hostile.toml"
             ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-hostile.toml"
           done
+      # Each suite copies brew into its own sandboxed prefix, so the public and
+      # private taps never share one and no untap is needed between them. The
+      # staging copy lands in the workspace because that is what a sandboxed
+      # command can read: the runner's own prefix is under /home on Linux,
+      # which the sandbox does not bind.
+      - name: Stage the runner's Homebrew where a sandboxed suite can read it
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$(brew --repository)"
+          mkdir -p .brew-src/Library
+          cp -a "$src/bin" .brew-src/bin
+          cp -a "$src/Library/Homebrew" .brew-src/Library/Homebrew
+          echo "BREW_SOURCE=$PWD/.brew-src" >> "$GITHUB_ENV"
       # Each suite runs the documented flow in its own setup and then asserts
+      # what it produced: what brew did to a real file. --no-sandbox because
+      # brew's prefix is outside any sandbox and the point is what brew did to
+      # a real file.
       - env:
           BREW_HOST: brew.localhost:18080
         run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/homebrew-public.dats
       # Docs: the authenticated tap replaces the public tap under the same name
+      # ("remove it first with brew untap --force" -- plain untap refuses while
+      # formulae installed from the tap exist).
       - name: Untap the public tap before the private flow (per docs)
         run: brew untap --force pazer/build
       - env:
@@ -598,6 +639,7 @@ jobs:
           path: build/
       - run: chmod +x build/buildhost
       # --no-sandbox: the suite drives the server with curl and jq, which the
+      # runner has and the docker sandbox image does not.
       - run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/multi-platform-ape.dats
 
   upload-artifact-action-e2e:

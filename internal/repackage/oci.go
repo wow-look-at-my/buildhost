@@ -16,6 +16,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/exeformat"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -62,15 +63,52 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-base-layer", baseKey, baseSize, baseKey, "base-layer.tar.zst", "{}")
 	}
 
-	// An APE starts through the shell script in its own header, so its image
-	isAPE, artifactReader, err := peekAPE(input.Reader)
+	// An APE starts through the shell script in its own header: the kernel
+	// cannot exec an APE as a native ELF inside a scratch/distroless container,
+	// so its image must ship a static busybox as /bin/sh and run the binary
+	// through it (Entrypoint ["/bin/sh", "/<project>"]), which makes the APE's
+	// own prologue assimilate a native ELF on first run -- exactly how
+	// buildhost's own APE binary is run in its Dockerfile. Non-APE artifacts
+	// keep today's lean image: direct exec, no shell layer.
+	//
+	// Two cues identify an APE: the artifact's recorded exe format (set at
+	// upload time by exeformat detection) and the MZqFpD' byte prologue
+	// (peekAPE, used when the artifact predates exe-format detection, e.g.
+	// artifacts uploaded before the column existed). The former needs no
+	// streaming and always wins; both produce the same 3-layer image.
+	apeFormat := exeformat.Format(input.Artifact.ExeFormat) == exeformat.APE
+	apeBytes, artifactReader, err := peekAPE(input.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("inspect artifact: %w", err)
 	}
+
 	entrypoint := []string{"/" + input.Project.Name}
 	layers := []ociDescriptor{{baseKey, baseSize}}
 	diffIDs := []string{baseDiffID}
-	if isAPE && input.Artifact.OS == db.OSLinux {
+
+	switch {
+	case apeFormat:
+		// Flagged at upload: build the shell layer from the static busybox
+		// embedded in buildhost (deterministic, no network or cache needed).
+		shellBlob, shellDiffID, err := busyboxLayer(input.Artifact.OS, input.Artifact.Arch)
+		if err != nil {
+			return nil, fmt.Errorf("busybox layer: %w", err)
+		}
+		shellKey, shellSize, err := o.Store.Put(ctx, bytes.NewReader(shellBlob))
+		if err != nil {
+			return nil, fmt.Errorf("store busybox layer: %w", err)
+		}
+		if input.Artifact.ID > 0 && o.DB != nil {
+			// Suffixed: differs per platform (its busybox is arch-specific), so
+			// an unsuffixed key would unlink one platform's shell when the next
+			// is generated -- same reason oci-config is suffixed.
+			o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-shell-layer"+input.CacheSuffix, shellKey, shellSize, shellKey, "busybox.tar.zst", "{}")
+		}
+		layers = append(layers, ociDescriptor{shellKey, shellSize})
+		diffIDs = append(diffIDs, shellDiffID)
+		entrypoint = []string{"/bin/sh", "/" + input.Project.Name}
+	case apeBytes && input.Artifact.OS == db.OSLinux:
+		// Detected from the bytes: route through the runtime shell cache.
 		if o.Shell == nil {
 			return nil, errors.New("an APE image needs a shell layer, and no shell cache is configured")
 		}
@@ -103,7 +141,7 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 
 	configData := ociCreateConfig(
 		string(input.Artifact.OS), string(input.Artifact.Arch),
-		diffIDs, entrypoint, input.Release.OciUser,
+		diffIDs, input.Project.Name, input.Release.OciUser, entrypoint,
 	)
 
 	configKey, configSize, err := o.Store.Put(ctx, bytes.NewReader(configData))
@@ -278,7 +316,7 @@ func writeTarEntry(tw *tar.Writer, name string, mode int64, typeflag byte, data 
 	return nil
 }
 
-func ociCreateConfig(os, arch string, diffIDs []string, entrypoint []string, user string) []byte {
+func ociCreateConfig(os, arch string, diffIDs []string, name, user string, entrypoint []string) []byte {
 	prefixed := make([]string, len(diffIDs))
 	for i, d := range diffIDs {
 		prefixed[i] = "sha256:" + d
