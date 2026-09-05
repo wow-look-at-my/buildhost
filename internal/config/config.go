@@ -259,5 +259,8 @@ func Load() Config {
 	if v := os.Getenv("BUILDHOST_RETENTION_ENFORCE"); v == "true" || v == "1" {
 		c.RetentionEnforce = true
 	}
+	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
+		c.OTELEndpoint = v
+	}
 	return c
 }
