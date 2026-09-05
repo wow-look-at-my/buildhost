@@ -23,11 +23,16 @@ LABEL org.opencontainers.image.description="Universal package registry server"
 # An APE starts through its own shell trampoline: the file is a polyglot whose
 # header is a shell script, and the kernel cannot exec it without either a
 # binfmt handler or a shell to interpret that header. distroless ships neither,
-# so the image carries the busybox the /data stage already pulls, and every
-# entrypoint goes through it.
+# so the image carries the busybox the /data stage already pulls.
 COPY --from=dirs /shell /bin
 COPY --from=dirs /tmpdir /tmp
-COPY --chmod=755 build/buildhost /usr/local/bin/buildhost
+# The APE sits under /usr/local/lib and a shebang launcher takes its place on
+# PATH, the same shape the deb repackager gives an APE. A launcher the kernel
+# can exec keeps the shell an implementation detail of this image: an
+# entrypoint that names the binary any other way still starts the server,
+# instead of exiting 126 on a bare exec.
+COPY --chmod=755 build/buildhost /usr/local/lib/buildhost/buildhost
+COPY --chmod=755 scripts/image-launcher.sh /usr/local/bin/buildhost
 COPY --from=dirs --chown=65532:65532 /data /var/lib/buildhost
 
 ENV BUILDHOST_DATA_DIR=/var/lib/buildhost
@@ -43,8 +48,8 @@ EXPOSE 8080
 
 STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD ["/bin/sh", "/usr/local/bin/buildhost", "healthcheck"]
+    CMD ["/usr/local/bin/buildhost", "healthcheck"]
 
 USER nonroot
-ENTRYPOINT ["/bin/sh", "/usr/local/bin/buildhost"]
+ENTRYPOINT ["/usr/local/bin/buildhost"]
 CMD ["serve"]

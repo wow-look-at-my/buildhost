@@ -22,10 +22,8 @@ shared:
 			test -n "${STRIP_FIXTURE:-}" || { echo "STRIP_FIXTURE must name an unstripped ELF" >&2; exit 1; }
 			BASE="http://localhost:8080"
 			STATIC="http://static.localhost:8080"
-			# The binary is an APE, so it starts through the image's busybox
-			# shell -- a direct exec answers "exec format error".
 			TOKEN="$(docker compose -f "$REPO/docker-compose.ci.yml" exec -T buildhost \
-				sh /usr/local/bin/buildhost bootstrap --name image-e2e | tail -1 | tr -d '\r')"
+				/usr/local/bin/buildhost bootstrap --name image-e2e | tail -1 | tr -d '\r')"
 			test -n "$TOKEN" || { echo "no token from bootstrap inside the container" >&2; exit 1; }
 			auth() { curl -fsS -H "Authorization: Bearer $TOKEN" "$@"; }
 			auth -X POST "$BASE/api/v1/projects" -H 'Content-Type: application/json' \

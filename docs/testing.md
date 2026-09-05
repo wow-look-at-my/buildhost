@@ -82,7 +82,7 @@ server served a mangled tarball whose sha256 never matched the formula.
 
 CI job `container-healthcheck` (`ci.yml`) additionally runs
 `test/dats/image-strips.dats` against the **built Docker image**: it
-bootstraps a token by exec'ing the binary inside the (shell-less) container,
+bootstraps a token by exec'ing the binary inside the container,
 publishes buildhost's own unstripped linux binary, and asserts the download comes
 back smaller than the upload with no `.symtab`/`.debug_*` sections but
 `.text`/`.rodata` intact, that `fmt=symbols` returns a file with a real
