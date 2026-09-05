@@ -199,21 +199,23 @@ never share the service alias.
 ## Testing
 
 Assertions live in dats suites under `test/dats/`, never in a workflow step; a
-step invokes one through the dats action's `tests` input (the action installs
-the sandbox backend itself), because these suites need the runner's own curl,
-jq, docker or brew, which a sandboxed fallback image has none of. Every suite
-runs sandboxed -- there is no opt-out -- so anything a suite WRITES goes in its
-temp directory: the brew suites build a private Homebrew prefix there
-(`scripts/brew-sandbox-prefix.sh`) rather than installing into the runner's. A
-suite needing nothing but a built binary could live in `dats/`, which
-`go-toolchain` runs sandboxed on every build. A check that needs a program --
+step installs dats and invokes one with `--no-sandbox`, because these suites
+need the host's curl, jq, docker or brew, which a sandboxed fallback image has
+none of. Anything a suite WRITES goes in its temp directory: the brew suites
+build a private Homebrew prefix there (`scripts/brew-sandbox-prefix.sh`) rather
+than installing into the runner's. A suite needing nothing but the checkout or
+a built binary lives in `dats/`, which `go-toolchain` runs sandboxed on every
+build. A check that needs a program --
 octokit fakes, a browser -- is a node test under `test/actions/` that a suite
 invokes. Depth: `docs/testing.md`.
 
 CI runs the shipped fat APE, and an APE starts through its own shell
 trampoline: a bash `run:` step does that implicitly, node's `spawn` does not
-(pass `sh` the path), and the image carries one static busybox `/bin/sh` for
-its entrypoint. A test that needs a real ELF compiles its own fixture.
+(pass `sh` the path), and the image carries one static busybox `/bin/sh`. The
+image's entrypoint is a shebang launcher, never the APE itself -- a bare exec of
+an APE is exit 126, and a rolling update runs whatever entrypoint the container
+it replaces recorded. Depth: `docs/deploy-and-updates.md`. A test that needs a
+real ELF compiles its own fixture.
 
 `go-toolchain` runs all tests. An inline `script:` in any action or workflow may
 not carry two or more consecutive `//` comment lines -- the typescript action
