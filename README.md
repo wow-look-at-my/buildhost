@@ -360,11 +360,14 @@ A container image is published to `ghcr.io/wow-look-at-my/buildhost:latest` on e
 
 The image is based on `gcr.io/distroless/static-debian12:nonroot` and runs as UID 65532. It contains:
 
-- `/usr/local/bin/buildhost` -- the statically linked binary
+- `/usr/local/bin/buildhost` -- a `#!/bin/sh` launcher, the entrypoint
+- `/usr/local/lib/buildhost/buildhost` -- the binary the launcher starts
+- `/bin` -- one static busybox, which the binary needs to start
 - CA certificates (from distroless base)
 - `/etc/passwd` with `nonroot` user (UID 65532)
 
-No shell, no package manager, no other binaries.
+No package manager and no other binaries. Why the launcher exists, and why the
+entrypoint must never name the binary directly: `docs/deploy-and-updates.md`.
 
 ### Recommended docker-compose configuration
 
