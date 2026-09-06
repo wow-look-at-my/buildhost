@@ -68,6 +68,7 @@ stop_grace_period: 5m
 
 The image is built from `gcr.io/distroless/static-debian12:nonroot`. It runs as UID 65532 (nonroot) with no package manager. The server handles SIGTERM for graceful shutdown.
 
+
 The shipped binary is an Actually Portable Executable. The image therefore also carries a static busybox as `/bin`, plus a symlink per applet. The file's header is a shell script. The image registers no binfmt handler. The trampoline shells out while it unpacks itself under `/tmp`.
 
 **The entrypoint must never name the APE directly.** `/usr/local/lib/buildhost/buildhost` is the APE. `/usr/local/bin/buildhost` is a `#!/bin/sh` launcher that starts it. That is the same shape the deb repackager gives an APE. A shebang script is execable, so any spelling of the entrypoint works.
