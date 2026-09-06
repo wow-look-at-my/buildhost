@@ -325,7 +325,7 @@ runs:
                 return;
               }
               const pr = context.payload.pull_request as { number?: number; head?: { ref?: string } } | undefined;
-              const refName: string = github.ref_name ?? '';
+              const refName: string = github.ref_name || '';
               await commentPreview(octokit, core, context, {
                 project, branch, siteURL,
                 prNumber: pr?.number ?? 0,
