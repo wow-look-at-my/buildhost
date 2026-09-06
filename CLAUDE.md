@@ -84,11 +84,15 @@ Deployment, graceful shutdown and the rolling-update contract: `docs/deploy-and-
 
 An assertion lives in a dats suite under `test/dats/`, never in a workflow step. A step installs dats and invokes one suite with `--no-sandbox`. These suites need the host's curl, jq or brew, and the runner's fallback sandbox image has none of them. A suite that needs nothing but the checkout or a built binary lives in `dats/`, which `go-toolchain` runs sandboxed on every build. A check that needs a program, such as an octokit fake or a browser, is a node test under `test/actions/` that a suite invokes. Depth: `docs/testing.md`.
 
-CI runs the shipped fat APE. An APE starts through its own shell trampoline. A bash `run:` step does that implicitly. Node's `spawn` does not, so pass the path to `sh`. The image carries one static busybox `/bin/sh`. The image's entrypoint is a shebang launcher, never the APE itself. A bare exec of an APE is exit 126. A rolling update runs whatever entrypoint the container it replaces recorded. Depth: `docs/deploy-and-updates.md`. A test that needs a real ELF compiles its own fixture.
+CI runs the shipped fat APE. An APE starts through its own shell trampoline. A bash `run:` step does that implicitly. Node's `spawn` does not, so pass the path to `sh`. The image carries one static busybox `/bin/sh`. A busybox that names an ELF interpreter cannot start on a base image with no `/lib`, and docker reports that ENOENT against the entrypoint path. The image's entrypoint is a shebang launcher, never the APE itself, because a bare exec of an APE is exit 126. A rolling update runs whatever entrypoint the container it replaces recorded. Depth: `docs/deploy-and-updates.md`. A test that needs a real ELF compiles its own fixture.
 
 `go-toolchain` runs all tests. An inline `script:` in any action or workflow may not carry two or more consecutive `//` comment lines. The typescript action refuses to run such a script. CI therefore checks every file up front, rather than let a seldom-triggered action break in a consumer repo.
 
 Several end-to-end jobs in `ci.yml` are NOT part of that run. They guard defects that a unit test structurally cannot catch. They are `synthesized-image-e2e`, `homebrew-tap-e2e`, `container-healthcheck`, `apt-install-e2e` and `upload-artifact-action-e2e`. Depth: `docs/testing.md`.
+
+`synthesized-image-e2e` also runs `synthesized-ape-image.dats`, which starts a synthesized APE image. `container-healthcheck` also runs `image-entrypoints.dats`, for the entrypoint spellings an old container can carry.
+
+An APE binfmt handler registered on the host makes the kernel run any APE through a shell. Every image entrypoint test then passes whatever the image ships, so those suites refuse to run when one is registered.
 
 ## Security
 
