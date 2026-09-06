@@ -40,9 +40,11 @@ shared:
 			setsid $RUN serve > "$WORK/server.log" 2>&1 &
 			echo "$!" > "$WORK/server.pid"
 			started=""
+			# A hook gets 30s in total, so a one-second poll spends the whole
+			# budget waiting and reports a timeout instead of the server log.
 			for _ in $(seq 50); do
 				if curl -fsS "$BASE/healthz" >/dev/null 2>&1; then started=yes; break; fi
-				sleep 1
+				sleep 0.2
 			done
 			test -n "$started" || { echo "server did not become healthy:" >&2; cat "$WORK/server.log" >&2; exit 1; }
 			auth() { curl -fsS -H "Authorization: Bearer $TOKEN" "$@"; }

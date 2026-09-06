@@ -39,9 +39,13 @@ shared:
 				$RUN serve > "$WORK/server.log" 2>&1 &
 			echo "$!" > "$WORK/server.pid"
 			started=""
+			# A hook gets 30s in total. A one-second poll spends the whole
+			# budget waiting, so the suite reports a timeout instead of the
+			# server log that says why. Ten seconds is the ceiling here, and a
+			# fifth-of-a-second poll still catches a healthy server at once.
 			for _ in $(seq 50); do
 				if curl -fsS "$BASE/healthz" >/dev/null 2>&1; then started=yes; break; fi
-				sleep 1
+				sleep 0.2
 			done
 			test -n "$started" || { echo "server did not become healthy:" >&2; cat "$WORK/server.log" >&2; exit 1; }
 			auth() { curl -fsS -H "Authorization: Bearer $TOKEN" "$@"; }
@@ -73,7 +77,13 @@ shared:
 				curl -fsSL "$apt_base/key.asc" | gpg --batch --yes --dearmor | sudo tee "$KEYRING" >/dev/null
 				echo "deb [signed-by=$KEYRING] $apt_base stable main" \
 					| sudo tee "/etc/apt/sources.list.d/$2.list" >/dev/null
-				sudo apt-get update
+				# Refresh THIS list only. A bare `apt-get update` re-fetches every
+				# configured source, so three installs cost three round trips to
+				# the Ubuntu archive to learn nothing this suite asks about.
+				sudo apt-get update \
+					-o Dir::Etc::sourcelist="sources.list.d/$2.list" \
+					-o Dir::Etc::sourceparts="-" \
+					-o APT::Get::List-Cleanup="0"
 				sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$2"
 			}
 
