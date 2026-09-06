@@ -256,7 +256,14 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 							// name and mint valid OIDC tokens for the same "owner/repo" --
 							// but the numeric IDs are not. A token whose IDs disagree with
 							// the pin may not act on the project, read or write.
-							if project.GithubOwnerID != repo.OwnerID || project.GithubRepoID != repo.RepoID {
+							//
+							// The REPO id identifies the repository itself. It
+							// survives a rename and a transfer to another owner, and it
+							// changes only when somebody deletes the repository and makes
+							// it again. An owner id that moves under an unchanged repo id
+							// is therefore a transfer, not a takeover. The branch below
+							// re-pins it instead of a refusal.
+							if project.GithubRepoID != repo.RepoID {
 								slog.WarnContext(r.Context(), "OIDC repo identity mismatch",
 									"project", project.Name,
 									"repo", repo.RepoPath,
@@ -278,6 +285,20 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 								body, _ := json.Marshal(map[string]string{"error": msg})
 								w.Write(body)
 								return
+							}
+							if project.GithubOwnerID != repo.OwnerID && ri.Access() == WriteAccess {
+								if updateErr := mw.DB.SetProjectGitHubIDs(r.Context(), project.ID, repo.OwnerID, repo.RepoID); updateErr == nil {
+									slog.WarnContext(r.Context(), "OIDC repo transfer re-pinned",
+										"project", project.Name,
+										"repo", repo.RepoPath,
+										"repo_id", repo.RepoID,
+										"was_owner_id", project.GithubOwnerID,
+										"now_owner_id", repo.OwnerID,
+										"oidc_subject", t.Name,
+									)
+									project.GithubOwnerID = repo.OwnerID
+									parentSpan.SetAttributes(attribute.Bool("project.github_owner_repinned", true))
+								}
 							}
 						} else if ri.Access() == WriteAccess {
 							if updateErr := mw.DB.SetProjectGitHubIDs(r.Context(), project.ID, repo.OwnerID, repo.RepoID); updateErr == nil {
