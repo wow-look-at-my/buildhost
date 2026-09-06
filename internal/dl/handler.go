@@ -1,14 +1,18 @@
 package dl
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/wow-look-at-my/go-containers/set"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -56,14 +60,37 @@ func handleDBErr(w http.ResponseWriter, r *http.Request, err error) bool {
 	return false
 }
 
+// portableMissing explains a bare request the release cannot answer, naming
+// what it does carry so the caller is not left guessing a pair.
+func portableMissing(ctx context.Context, d *db.DB, releaseID int64) string {
+	const lead = "this release has no portable build, so name os and arch"
+	arts, err := d.ListArtifactsByPlatform(ctx, releaseID)
+	if err != nil || len(arts) == 0 {
+		return lead
+	}
+	seen := set.New[string]()
+	var pairs []string
+	for _, a := range arts {
+		pair := fmt.Sprintf("%s/%s", a.OS, a.Arch)
+		if seen.Add(pair) {
+			pairs = append(pairs, pair)
+		}
+	}
+	slices.Sort(pairs)
+	return lead + ". It carries " + strings.Join(pairs, ", ")
+}
+
 func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
 	q := r.URL.Query()
 
 	osStr := q.Get("os")
 	archStr := q.Get("arch")
-	if osStr == "" || archStr == "" {
-		http.Error(w, "os and arch are required", http.StatusBadRequest)
+	// Naming neither asks for the artifact that runs anywhere, answered after
+	// the release resolves. Naming half the pair is a typo.
+	portable := osStr == "" && archStr == ""
+	if !portable && (osStr == "" || archStr == "") {
+		http.Error(w, "name both os and arch, or neither for the portable build", http.StatusBadRequest)
 		return
 	}
 	// Accept platform-name aliases natively (RUNNER_OS "Linux"/"macOS"/"Windows",
@@ -115,13 +142,26 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		resolvedVersion = fmt.Sprintf("%d", release.VersionNum)
 	}
 
-	canonOS, canonArch, err := h.DB.CanonicalPlatform(r.Context(), release.ID, osStr, archStr)
-	switch {
-	case err == nil:
-		osStr, archStr = canonOS, canonArch
-	case !errors.Is(err, db.ErrNotFound):
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+	if portable {
+		a, err := h.DB.PortableArtifact(r.Context(), release.ID)
+		if errors.Is(err, db.ErrNotFound) {
+			http.Error(w, portableMissing(r.Context(), h.DB, release.ID), http.StatusBadRequest)
+			return
+		}
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		osStr, archStr = string(a.OS), string(a.Arch)
+	} else {
+		canonOS, canonArch, err := h.DB.CanonicalPlatform(r.Context(), release.ID, osStr, archStr)
+		switch {
+		case err == nil:
+			osStr, archStr = canonOS, canonArch
+		case !errors.Is(err, db.ErrNotFound):
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	p := static.For(project.Name).WithVersion(resolvedVersion).WithOS(db.OS(osStr)).WithArch(db.Arch(archStr)).WithFmt(fmtStr)
