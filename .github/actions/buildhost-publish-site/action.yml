@@ -318,12 +318,12 @@ runs:
               core.setOutput('response', r.text);
               core.setOutput('site_url', siteURL);
               if (!await recordSite(octokit, core, context, { server, project, branch, version: gitCommit, sha256: sum })) return;
-              // every `with:` value reaches a composite action as a string, so a bool arrives spelled out
-              if ("${{ inputs.comment }}" !== 'true' && "${{ inputs.comment }}" !== 'false') {
+              // The input is substituted before tsc runs, so String() is load-bearing: a bare "${{ inputs.comment }}" is a LITERAL type, and comparing it to 'true' is TS2367 that fails this action for every consumer.
+              if (String("${{ inputs.comment }}") !== 'true' && String("${{ inputs.comment }}") !== 'false') {
                 core.setFailed(`invalid comment '${{ inputs.comment }}': expected true or false. A value that is neither would silently read as off, which hides the preview link the publish exists to hand over.`);
                 return;
               }
-              if ("${{ inputs.comment }}" === 'false') {
+              if (String("${{ inputs.comment }}") === 'false') {
                 core.info('Not commenting the preview URL: comment is false for this publish');
                 return;
               }
