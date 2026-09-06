@@ -14,3 +14,9 @@ tests:
 	  outputs:
 		stdout:
 			- "storage-record: all checks passed"
+
+	- desc: preview-comment posts one sticky comment per site, and fails loudly when refused
+	  cmd: node test/actions/preview-comment.test.ts
+	  outputs:
+		stdout:
+			- "preview-comment: all checks passed"
