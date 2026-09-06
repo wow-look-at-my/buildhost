@@ -78,11 +78,19 @@ keep matching allowlists/projects, classic subjects parse byte-identically).
 The middleware pins the IDs on the project
 (`projects.github_owner_id`/`github_repo_id`, migration 014): recorded at
 provisioning, or on the first ID-bearing PUBLISH for pre-existing projects (trust
-on first use; reads never mutate). Any later OIDC request whose token carries
-DIFFERENT IDs is refused -- 403 with an explicit "renamed or re-created
+on first use; reads never mutate). Any later OIDC request whose token carries a
+DIFFERENT REPO id is refused -- 403 with an explicit "renamed or re-created
 (resurrected) repository may not take over an existing project" error (canonical
 404 on HiddenReadAccess so existence still never leaks) -- read or write, so a
 resurrected repo can neither publish to nor read a private predecessor's project.
+
+The repo id alone decides that. It is the identifier of the repository itself: it
+survives a rename and a TRANSFER to another owner, and it changes only when
+somebody deletes the repository and makes it again. So a token whose OWNER id
+moved under an unchanged repo id is the same repository under a new owner. Such a
+request is allowed, and a write moves the owner pin with it ("OIDC repo transfer
+re-pinned"); a read is allowed and pins nothing. Refusing that case would have
+made every ordinary org transfer need a hand edit of the database.
 
 Tokens WITHOUT IDs (issuers minting neither the claims nor immutable subjects) are
 deliberately not rejected: they already passed the issuer/org/event gates, and
@@ -90,8 +98,9 @@ GitHub mints ID claims for all repos anyway. `BUILDHOST_OIDC_ORGS` entries may
 optionally pin the org's account ID as `name@id` (matches by name AND id, refusing
 ID-less tokens); plain-name entries keep matching any id, with the per-project pin
 providing the takeover protection. An operator repointing a project at a
-legitimately re-created repo must clear/re-pin the recorded IDs by hand
-(deliberate).
+legitimately RE-CREATED repo must clear/re-pin the recorded IDs by hand
+(deliberate; a re-created repo has a new repo id, which is exactly what the guard
+cannot tell apart from a takeover). A transfer needs no such edit.
 
 ## Smaller items
 
