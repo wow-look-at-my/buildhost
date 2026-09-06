@@ -10,13 +10,18 @@
 # 126, on a loop.
 #
 # The fix is a shebang launcher on PATH, which the kernel CAN exec, in front of
-# the APE. These assertions are about the Dockerfile, not a running container,
-# for two reasons. The defect is a spelling in the Dockerfile. And a bare exec
-# cannot be reproduced from a shell at all: when execve answers ENOEXEC, the
-# shell runs the file as a script instead, so the broken form looks fine.
-# Whether the launcher's target path is right is a runtime question, and
-# container-healthcheck's `compose up --wait` answers it -- the launcher is the
-# entrypoint, so a wrong path there is a container that does not start.
+# the APE.
+#
+# The base image ships no libc, so a busybox that names an ELF interpreter
+# cannot start either. Docker reports that ENOENT against the ENTRYPOINT path,
+# so the message names a file that is present. A sibling repo shipped exactly
+# that by taking its busybox from an alpine-based stage.
+#
+# These assertions read the Dockerfile, which is where both defects are
+# spelled, and go-toolchain runs them sandboxed on every build with no host and
+# no docker. test/dats/image-entrypoints.dats asks the same questions of a
+# running container and catches what a spelling cannot: whether the paths
+# resolve and whether the binary starts.
 
 tests:
 	- desc: the entrypoint and the healthcheck both name the launcher on PATH
@@ -57,3 +62,15 @@ tests:
 	  outputs:
 		stdout:
 			- 'exec /bin/sh /usr/local/lib/buildhost/buildhost "$@"'
+
+	# The shell must come from an image that ships a STATIC busybox. Alpine's is
+	# a PIE against /lib/ld-musl-x86_64.so.1, and the base image has no /lib.
+	- desc: the shell stage is the busybox image, and that is where /bin comes from
+	  cmd: |
+		set -eu
+		grep -E '^FROM busybox:[a-z-]+ AS ' Dockerfile
+		grep -E '^COPY --from=[a-z]+ /shell /bin$' Dockerfile
+	  outputs:
+		stdout:
+			- "FROM busybox:"
+			- "/shell /bin"
