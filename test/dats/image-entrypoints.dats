@@ -77,15 +77,19 @@ tests:
 		stdout:
 			- "buildhost"
 
-	- desc: the image's own entrypoint answers the healthcheck subcommand it declares
+	# The healthcheck runs the same way a container start does, so it needs the
+	# launcher too. A healthcheck that names the APE marks every container
+	# unhealthy, and a rolling update then rolls itself back.
+	- desc: the image's entrypoint, command and healthcheck all name the launcher
 	  cmd: |
 		set -eu
 		. {shared.env}
-		docker image inspect "$IMAGE" --format 'entrypoint={{ json .Config.Entrypoint }} cmd={{ json .Config.Cmd }}'
+		docker image inspect "$IMAGE" --format 'entrypoint={{ json .Config.Entrypoint }} cmd={{ json .Config.Cmd }} healthcheck={{ json .Config.Healthcheck.Test }}'
 	  outputs:
 		stdout:
 			- 'entrypoint=["/usr/local/bin/buildhost"]'
 			- 'cmd=["serve"]'
+			- 'healthcheck=["CMD","/usr/local/bin/buildhost","healthcheck"]'
 
 	# The launcher runs /bin/sh, and /bin/sh is busybox. A busybox that names an
 	# ELF interpreter cannot start on a base image with no /lib, and docker
