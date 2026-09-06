@@ -20,7 +20,10 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
-const fakeBusybox = "#!/bin/sh\necho fake busybox\n"
+const (
+	fakeBusybox = "#!/bin/sh\necho fake busybox\n"
+	fakeGetconf = "#!/bin/sh\necho fake getconf\n"
+)
 
 type fakeShellRegistry struct {
 	server   *httptest.Server
@@ -40,6 +43,10 @@ func newFakeShellRegistry(t *testing.T) *fakeShellRegistry {
 	for _, name := range []string{"bin/busybox", "bin/sh", "bin/tr"} {
 		require.NoError(t, tw.WriteHeader(&tar.Header{Name: name, Typeflag: tar.TypeLink, Linkname: "bin/[", Mode: 0o755}))
 	}
+	// The real musl image ships its own getconf beside busybox.
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "bin/getconf", Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(fakeGetconf))}))
+	_, err = tw.Write([]byte(fakeGetconf))
+	require.NoError(t, err)
 	// A file outside bin/ is not an applet.
 	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "etc/passwd", Typeflag: tar.TypeReg, Mode: 0o644, Size: 0}))
 	require.NoError(t, tw.Close())
@@ -133,6 +140,56 @@ func TestShellLayerBuiltFromTheImage(t *testing.T) {
 		assert.Equal(t, "busybox", entries[applet].Linkname, applet)
 	}
 	assert.NotContains(t, entries, "etc/passwd")
+	// Linking getconf would give the image a getconf that answers as busybox.
+	assert.NotContains(t, entries, "bin/getconf")
+}
+
+// The trampoline in an APE's own header is a shell script, so a layer with no
+// sh ships an image whose every container dies at exec.
+func TestShellLayerRefusesALayerWithNoShell(t *testing.T) {
+	t.Serial()
+	var layer bytes.Buffer
+	gz := gzip.NewWriter(&layer)
+	tw := tar.NewWriter(gz)
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "bin/", Typeflag: tar.TypeDir, Mode: 0o755}))
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "bin/busybox", Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(fakeBusybox))}))
+	_, err := tw.Write([]byte(fakeBusybox))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+	require.NoError(t, gz.Close())
+
+	gr, err := gzip.NewReader(bytes.NewReader(layer.Bytes()))
+	require.NoError(t, err)
+	_, _, err = readBusyboxLayer(gr)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no bin/sh applet")
+}
+
+// The pinned image archives the binary under an applet name and hardlinks the
+// rest to it, so bin/busybox is a link and the regular file is bin/[.
+func TestShellLayerResolvesBusyboxThroughItsLink(t *testing.T) {
+	t.Serial()
+	var layer bytes.Buffer
+	gz := gzip.NewWriter(&layer)
+	tw := tar.NewWriter(gz)
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "bin/", Typeflag: tar.TypeDir, Mode: 0o755}))
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "bin/[", Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(fakeBusybox))}))
+	_, err := tw.Write([]byte(fakeBusybox))
+	require.NoError(t, err)
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "bin/busybox", Typeflag: tar.TypeLink, Linkname: "bin/[", Mode: 0o755}))
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "bin/sh", Typeflag: tar.TypeSymlink, Linkname: "busybox", Mode: 0o777}))
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "bin/getconf", Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(fakeGetconf))}))
+	_, err = tw.Write([]byte(fakeGetconf))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+	require.NoError(t, gz.Close())
+
+	gr, err := gzip.NewReader(bytes.NewReader(layer.Bytes()))
+	require.NoError(t, err)
+	binary, applets, err := readBusyboxLayer(gr)
+	require.NoError(t, err)
+	assert.Equal(t, fakeBusybox, string(binary))
+	assert.Equal(t, []string{"[", "busybox", "sh"}, applets)
 }
 
 func TestShellLayerIsFetchedOnce(t *testing.T) {
