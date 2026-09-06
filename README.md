@@ -24,15 +24,23 @@ brew trust pazer/build
 brew install pazer/build/go-toolchain
 ```
 
-Do not install formulas with a naked remote URL such as `brew install https://brew.pazer.build/go-toolchain`; modern Homebrew treats that as a formula or tap name instead of cloning it as a formula URL.
+Do not install a formula with a naked remote URL, such as `brew install https://brew.pazer.build/go-toolchain`. Modern Homebrew reads that as a formula name or a tap name. It does not clone it as a formula URL.
 
-On Linux, these formulas have no bottles, so `brew install` runs Homebrew's build sandbox: it needs bubblewrap (`apt install bubblewrap`; Homebrew also installs its own) and unprivileged user namespaces -- hardened hosts such as Ubuntu 24.04 may need `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. In containers or CI where user namespaces are unavailable, set `HOMEBREW_NO_SANDBOX_LINUX=1` instead. macOS needs neither.
+On Linux these formulas have no bottle. `brew install` therefore runs Homebrew's build sandbox. That sandbox needs bubblewrap, from `apt install bubblewrap`, and Homebrew also installs its own. It needs an unprivileged user namespace too. A hardened host such as Ubuntu 24.04 may need `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. In a container or a CI runner with no user namespace, set `HOMEBREW_NO_SANDBOX_LINUX=1` instead. macOS needs neither.
 
-A slash-namespaced project folds `/` to `-` in its formula name (the same rule APT applies to package names): project `log-streamer/client` installs as `brew install pazer/build/log-streamer-client`. A project whose name starts with a digit cannot be served as a formula at all -- Homebrew derives the Ruby class from the formula name and a Ruby class cannot start with a digit -- so such projects are omitted from the tap.
+A slash-namespaced project folds `/` to `-` in its formula name. That is the same rule APT applies to a package name. Project `log-streamer/client` therefore installs as `brew install pazer/build/log-streamer-client`.
+
+A project whose name starts with a digit cannot be served as a formula at all. Homebrew derives the Ruby class from the formula name, and a Ruby class cannot start with a digit. Such a project is therefore omitted from the tap.
 
 ### Private projects
 
-A private project never appears in the public tap. Tap the **authenticated tap** instead: it serves every public formula plus the private projects your token can read, so it replaces the public tap under the same name (if you already added the public tap, remove it first with `brew untap --force pazer/build`). Git only transmits credentials after a 401 challenge, so the token goes in the tap URL as the HTTP Basic password (the username is ignored; `x` by convention). Artifact downloads authenticate separately through `HOMEBREW_BUILDHOST_TOKEN`, which private formulas read at install time -- the token is never written into the tap. The example below is a private project named `myrepo/myapp`; per the folding rule above it installs as `myrepo-myapp`, and the installed command keeps the binary's own name (`myapp`):
+A private project never appears in the public tap. Tap the **authenticated tap** instead. It serves every public formula, plus the private projects your token can read. It therefore replaces the public tap under the same name. Remove the public tap first, with `brew untap --force pazer/build`, when you already added it.
+
+Git transmits a credential only after a 401 challenge. The token therefore goes in the tap URL, as the HTTP Basic password. The username is ignored, and `x` is the convention.
+
+An artifact download authenticates separately, through `HOMEBREW_BUILDHOST_TOKEN`. A private formula reads that at install time. The token is never written into the tap.
+
+The example below uses a private project named `myrepo/myapp`. Under the folding rule above it installs as `myrepo-myapp`. The installed command keeps the binary's own name, `myapp`.
 
 ```bash
 brew tap pazer/build "https://x:$TOKEN@brew.pazer.build/private/tap.git"
@@ -41,21 +49,21 @@ export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
 brew install pazer/build/myrepo-myapp
 ```
 
-`brew update` refreshes the tap with the credentials stored in the tap's git remote. The `?token=` query parameter cannot be used with `brew tap`: git appends its own path segments (`/info/refs`, ...) after the query string, so the URL stops resolving as a git repository.
+`brew update` refreshes the tap with the credential stored in the tap's git remote. The `?token=` query parameter does not work with `brew tap`. git appends its own path segments after the query string, such as `/info/refs`. The URL then stops resolving as a git repository.
 
 ### Background services (create_service)
 
-A project can declare that its binary runs as a background service. Declare it in the publishing repo's CI: `create_service: 'true'` on the `buildhost-create-release` or `buildhost-publish` action (go-toolchain's composite: `autorelease_args: create_service=true`). Every publish asserts the declared value; an absent input leaves the stored setting untouched. Operators can also flip it directly: `PATCH /api/v1/projects/{project}` with `{"create_service": true}`.
+A project can declare that its binary runs as a background service. Declare it in the publishing repo's CI, with `create_service: 'true'` on the `buildhost-create-release` or `buildhost-publish` action. go-toolchain's composite spells that as `autorelease_args: create_service=true`. Every publish asserts the declared value. An absent input leaves the stored setting untouched. An operator can also flip it directly, with `PATCH /api/v1/projects/{project}` and a body of `{"create_service": true}`.
 
-Each install format materializes the setting its own way. Homebrew formulas gain a `service do` block; activating it is one one-time command, after which it starts at login and survives upgrades (the block runs the `opt` path):
+Each install format materializes the setting its own way. A Homebrew formula gains a `service do` block. One command activates it, once. It then starts at login, and it survives an upgrade, because the block runs the `opt` path.
 
 ```bash
 brew services start pazer/build/competent-search-thing
 ```
 
-Homebrew cannot run that for you at install: a formula's only install-time hook (`post_install`) runs inside brew's sandbox, whose profile denies all file writes outside build paths -- `~/Library/LaunchAgents` included -- so no formula can register a LaunchAgent. `brew uninstall` does not stop services either: run `brew services stop <tap>/<project>` before removing.
+Homebrew cannot run that for you at install. A formula's only install-time hook is `post_install`, and it runs inside brew's sandbox. That profile denies every file write outside a build path, and `~/Library/LaunchAgents` is one of them. No formula can therefore register a LaunchAgent. `brew uninstall` does not stop a service either. Run `brew services stop <tap>/<project>` before you remove it.
 
-The service restarts only after a crash (`keep_alive successful_exit: false`; a clean exit stays exited) and logs to `$(brew --prefix)/var/log/<name>.log`. On Linux prefer the APT install below -- brew's Linux units carry no graphical-session ordering. The deb materialization (which does auto-enable) is described in the APT section; other formats (raw, zip, npm, OCI) store the flag without materializing it.
+The service restarts only after a crash, through `keep_alive successful_exit: false`. A clean exit stays exited. It logs to `$(brew --prefix)/var/log/<name>.log`. On Linux prefer the APT install below, because brew's Linux units carry no graphical-session ordering. The APT section describes the deb materialization, which does auto-enable. Every other format, meaning raw, zip, npm and OCI, stores the flag and materializes nothing.
 
 ## APT (Debian / Ubuntu)
 
@@ -68,7 +76,7 @@ curl -fsSL https://apt.pazer.build/myapp/install.sh | sudo sh
 sudo apt-get install myapp
 ```
 
-For a private project, pass a read token -- the installer also records it in `/etc/apt/auth.conf.d/`, covering both the apt host and the static host the `.deb` download redirects to:
+For a private project, pass a read token. The installer also records it in `/etc/apt/auth.conf.d/`. That covers the apt host and the static host the `.deb` download redirects to.
 
 ```bash
 curl -fsSL -H "Authorization: Bearer $TOKEN" https://apt.pazer.build/myapp/install.sh \
@@ -77,9 +85,9 @@ curl -fsSL -H "Authorization: Bearer $TOKEN" https://apt.pazer.build/myapp/insta
 
 One-line install commands (and per-project copy buttons) are also available on the admin dashboard: see each project's page or the **Registries** tab.
 
-Self-modifying binaries (Cosmopolitan APEs, which rewrite their own file the first time they run) are packaged with a launcher: the binary installs under `/usr/lib/<pkg>/` and `/usr/bin/<pkg>` keeps a writable per-user copy, so an ordinary user can run it. Everything else installs straight to `/usr/bin`.
+A self-modifying binary is packaged with a launcher. A Cosmopolitan APE is such a binary, because it rewrites its own file the first time it runs. The binary installs under `/usr/lib/<pkg>/`. `/usr/bin/<pkg>` keeps a writable per-user copy. An ordinary user can therefore run it. Everything else installs straight to `/usr/bin`.
 
-Prefer to set it up by hand? Import the repository signing key once, add the source, then install. The key is served per project path but is the same server-wide key:
+To set it up by hand instead, import the repository signing key once, add the source, then install. The key is served per project path. It is the same server-wide key on every path.
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
@@ -92,7 +100,7 @@ sudo apt update && sudo apt install myapp
 
 ### Private projects
 
-A private project requires a token on every APT request. Put it in an `apt.conf.d`-style auth file so both `apt update` and the package download (which redirects to the `static` subdomain) authenticate. buildhost reads the token from the HTTP Basic **password** field (the username is ignored, so any value works -- `token` is used here by convention):
+A private project requires a token on every APT request. Put it in an `apt.conf.d`-style auth file. `apt update` and the package download then both authenticate. The package download redirects to the `static` subdomain. buildhost reads the token from the HTTP Basic **password** field. The username is ignored, so any value works, and `token` is the convention here.
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
@@ -111,7 +119,7 @@ sudo apt update && sudo apt install myapp
 
 ### Slash-namespaced projects
 
-A Debian package name cannot contain `/` (or `_`), so for a slash-namespaced project the package name folds those characters to `-`. Project `pr-reviewer-agent/server` is served at `apt.pazer.build/pr-reviewer-agent/server` (the slash stays in the repository URL) but installs as the package **`pr-reviewer-agent-server`**, and the binary lands at `/usr/bin/pr-reviewer-agent-server`:
+A Debian package name cannot contain `/` or `_`. A slash-namespaced project therefore folds those characters to `-` in its package name. Project `pr-reviewer-agent/server` is served at `apt.pazer.build/pr-reviewer-agent/server`, so the slash stays in the repository URL. It installs as the package **`pr-reviewer-agent-server`**. The binary lands at `/usr/bin/pr-reviewer-agent-server`.
 
 ```bash
 echo "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] https://apt.pazer.build/pr-reviewer-agent/server stable main" \
@@ -121,42 +129,46 @@ sudo apt update && sudo apt install pr-reviewer-agent-server
 
 ### Background services (create_service)
 
-A `create_service` project's generated deb (see the Homebrew section for the flag itself) ships a systemd user unit at `/usr/lib/systemd/user/<pkg>.service` -- crash-only `Restart=on-failure`, bound to `graphical-session.target` -- and sets it up at install: the package's postinst runs `systemctl --global enable`, so the service starts at every user's next graphical login (plus a best-effort immediate start for the installing sudo user's live session). Removing the package disables it again.
+A `create_service` project's generated deb ships a systemd user unit at `/usr/lib/systemd/user/<pkg>.service`. See the Homebrew section for the flag itself. That unit is crash-only `Restart=on-failure`, and it is bound to `graphical-session.target`.
 
-This applies to buildhost-GENERATED debs only (`fmt=deb`, i.e. this APT repository). A pre-built `.deb` uploaded as an artifact (`kind=archive`) is served byte-identical -- buildhost never injects into uploaded files.
+The package sets it up at install. Its postinst runs `systemctl --global enable`. The service therefore starts at every user's next graphical login. The postinst also makes a best-effort immediate start, for the installing sudo user's live session. A removal of the package disables it again.
+
+This applies to a buildhost-GENERATED deb only, which means `fmt=deb`, from this APT repository. A pre-built `.deb` uploaded as an artifact, with `kind=archive`, is served byte-identical. buildhost never injects anything into an uploaded file.
 
 ## Web frontend
 
-buildhost serves a public, read-only browse UI on the main domain (no subdomain). It is plain server-rendered HTML with **no JavaScript**, so it is consumable and indexable by crawlers and agents without evaluating a single-page app.
+buildhost serves a public, read-only browse UI on the main domain, and it uses no subdomain. It is plain server-rendered HTML with **no JavaScript**. A crawler or an agent can therefore consume and index it, with no single-page app to evaluate.
 
 - `GET /` &mdash; index of every public project
-- `GET /projects/{project}` &mdash; a project's metadata, published releases, deployed static sites, and copy-paste install/download commands
-- `GET /projects/{project}/releases/{version}` &mdash; a release's artifacts with per-format download links (`raw`, `tar.gz`, `tar.xz`, `tar.zst`, `zip`), or a `docker pull` for image releases
+- `GET /projects/{project}` &mdash; a project's metadata, its published releases, its deployed static sites, and copy-paste install and download commands
+- `GET /projects/{project}/releases/{version}` &mdash; a release's artifacts, with a download link per format. The formats are `raw`, `tar.gz`, `tar.xz`, `tar.zst` and `zip`. An image release gets a `docker pull` instead.
 
-Private projects are hidden: they are never listed for anonymous visitors, and visiting one's page directly returns a `404` &mdash; identical to a project that does not exist, so the frontend never reveals that a private project exists (the same way GitHub treats private repositories). A read-scoped token authorized for the project reveals it. Download links point at the `dl` subdomain; the single stylesheet is served from `/_ui/style.css` and no other assets are loaded. The authenticated admin dashboard remains a separate app on its own port (see [Container image](#container-image)).
+A private project is hidden. It is never listed for an anonymous visitor. A direct visit to its page returns a `404`, identical to the answer for a project that does not exist. The frontend therefore never reveals that a private project exists, the same way GitHub treats a private repository. A read-scoped token authorized for the project reveals it.
+
+A download link points at the `dl` subdomain. The single stylesheet is served from `/_ui/style.css`, and no other asset is loaded. The authenticated admin dashboard remains a separate app on its own port. See [Container image](#container-image).
 
 ## Synthesized container images
 
-When a project has only a plain binary (no pushed image), buildhost synthesizes an OCI image from it on demand -- `docker pull` / `crane pull` just works. The image is deliberately minimal but ships the runtime essentials of `gcr.io/distroless/static`, so a networked service works without pushing a real image:
+A project can hold only a plain binary, with no pushed image. The registry then synthesizes an OCI image from it on demand, so `docker pull` and `crane pull` both work. The image is deliberately minimal. It still ships the runtime essentials of `gcr.io/distroless/static`. A networked service therefore works with no real image pushed.
 
 - A real public **CA certificate bundle** at `/etc/ssl/certs/ca-certificates.crt` (and `SSL_CERT_FILE` pointing at it), so outbound HTTPS works -- no more `x509: certificate signed by unknown authority`.
 - `/etc/passwd` and `/etc/group` with `root`, `nobody` and `nonroot` (UID 65532), an `/etc/nsswitch.conf` (`hosts: files dns`) and a sticky `/tmp`.
 - The binary at `/<project>` as the entrypoint, a sane `PATH`, and `WorkingDir=/`.
 
-The image runs as **root** by default. To run as another user, set `oci_user` on the release (`uid[:gid]` or `name[:group]`, e.g. `65532:65532` for the bundled nonroot user); it is emitted as the image's `config.User`:
+The image runs as **root** by default. To run it as another user, set `oci_user` on the release. That field takes `uid[:gid]` or `name[:group]`, such as `65532:65532` for the bundled nonroot user. It is emitted as the image's `config.User`.
 
 ```bash
 buildhost publish --oci-user 65532:65532 ...   # or oci_user in a release manifest / the
                                                # oci_user field of the create-release JSON
 ```
 
-The synthesized image is regenerated on demand (not stored), so its digest is not pinned and may change between buildhost versions.
+The synthesized image is regenerated on demand, and nothing stores it. Its digest is therefore not pinned, and it can change between buildhost versions.
 
 ## Publishing real Docker images
 
-Some projects need to ship a real prebuilt image (custom base image, native libraries, entrypoint, exposed ports) rather than a binary wrapped in a minimal layer. buildhost is a writable OCI registry, so you can `docker push` directly:
+A project can need a real prebuilt image, rather than a binary wrapped in a minimal layer. A custom base image, a native library, an entrypoint and an exposed port are the usual reasons. buildhost is a writable OCI registry. You can therefore `docker push` directly.
 
-The OCI registry is served on the `oci.` subdomain (the apex host serves the API, not `/v2/`):
+The OCI registry is served on the `oci.` subdomain. The apex host serves the API, and not `/v2/`.
 
 ```bash
 docker login oci.builds.example.com -u oidc -p "$TOKEN"   # any username; password is a write-scoped token
@@ -164,9 +176,9 @@ docker buildx build --push -t oci.builds.example.com/myproject:v1.2.3 .
 docker pull oci.builds.example.com/myproject:v1.2.3
 ```
 
-A release that contains a pushed image is a **docker build**: it is served only through the OCI (`/v2`) endpoint. The apt/brew/npm and raw-download endpoints do not apply to it -- it is just a container image. Pushed image layers are content-addressed and deduplicated, so unchanged layers are not re-uploaded on later pushes. Per-blob size is capped by `BUILDHOST_MAX_BLOB_SIZE` (default 10 GiB).
+A release that contains a pushed image is a **docker build**. The OCI `/v2` endpoint is the only place it is served. The apt, brew, npm and raw-download endpoints do not apply to it, because it is just a container image. A pushed image layer is content-addressed and deduplicated, so an unchanged layer is not re-uploaded on a later push. `BUILDHOST_MAX_BLOB_SIZE` caps the per-blob size, and it defaults to 10 GiB.
 
-If a proxy in front of the server caps request bodies (Cloudflare's edge 413s bodies over ~100 MB), `docker push` fails on big layers -- docker/buildx send each layer as one request. Push through the CLI instead: it uploads blobs in chunks sized under the server's advertised limit, so any layer size goes through.
+A proxy in front of the server may cap a request body. Cloudflare's edge answers 413 to a body near 100 MB. `docker push` then fails on a big layer, because docker and buildx send each layer as one request. Push through the CLI instead. It uploads a blob in chunks sized under the server's advertised limit, so any layer size goes through.
 
 ```bash
 docker buildx build --output type=oci,dest=image.tar -t oci.builds.example.com/myproject:v1.2.3 .
@@ -175,7 +187,7 @@ buildhost docker-push --token "$TOKEN" --image image.tar oci.builds.example.com/
 
 ### From GitHub Actions
 
-Use the `buildhost-publish-docker` action to build and push in one step, authenticating with a GHA OIDC token (no static secret -- the project auto-provisions on first push):
+Use the `buildhost-publish-docker` action to build and push in one step. It authenticates with a GHA OIDC token, so there is no static secret. The project auto-provisions on the first push.
 
 ```yaml
 permissions:
@@ -190,11 +202,11 @@ steps:
       context: .                            # optional
 ```
 
-With `tags` omitted, pushes are tagged with the commit SHA and the sanitized branch name (`claude/foo` -> `claude-foo`); `latest` is added only on the default branch, so a feature branch never moves the `:latest` pointer.
+With `tags` omitted, a push is tagged with the commit SHA and the sanitized branch name, so `claude/foo` becomes `claude-foo`. `latest` is added only on the default branch. A feature branch therefore never moves the `:latest` pointer.
 
-Pass `tags` (newline-separated) to override: bare tags expand to `<registry>/<project>:<tag>`; references containing `/` or `:` are used as-is, so you can also push to another registry you are logged in to.
+Pass `tags`, newline-separated, to override that. A bare tag expands to `<registry>/<project>:<tag>`. A reference that contains `/` or `:` is used as-is. You can therefore also push to another registry you are logged in to.
 
-To fetch an artifact back in a workflow, `buildhost-download` resolves the same way the URL does and defaults to the runner's own platform:
+To fetch an artifact back in a workflow, use `buildhost-download`. It resolves the same way the URL does, and it defaults to the runner's own platform.
 
 ```yaml
 - uses: wow-look-at-my/buildhost/.github/actions/buildhost-download@master
@@ -203,9 +215,9 @@ To fetch an artifact back in a workflow, `buildhost-download` resolves the same 
     project: buildhost      # optional: version, branch, os, arch, format, token
 ```
 
-It outputs `path`. With `required: 'false'` a missing artifact sets `downloaded: 'false'` instead of failing, so a caller can fall back.
+It outputs `path`. With `required: 'false'` a missing artifact sets `downloaded: 'false'` instead of a failure. A caller can therefore fall back.
 
-For a build you drive yourself, `buildhost-docker-push` takes an OCI layout you already produced and pushes it in chunks, so a layer over the proxy's body cap still goes through. Obtaining a CLI that can do that is the action's problem, not yours:
+For a build you drive yourself, use `buildhost-docker-push`. It takes an OCI layout you already produced, and pushes it in chunks. A layer over the proxy's body cap therefore still goes through. To obtain a CLI that can do that is the action's problem, and not yours.
 
 ```yaml
 - run: docker buildx build --output type=oci,tar=false,dest=layout .
@@ -215,7 +227,7 @@ For a build you drive yourself, `buildhost-docker-push` takes an OCI layout you 
     refs: oci.pazer.build/myproject:v1.2.3
 ```
 
-Publishing logs docker in for you, and so does pulling. To fetch a published image -- into a nested daemon, or just onto the runner -- use `buildhost-docker-pull`; it authenticates itself, so no workflow handles a registry credential:
+A publish logs docker in for you, and so does a pull. To fetch a published image, into a nested daemon or onto the runner itself, use `buildhost-docker-pull`. It authenticates itself, so no workflow handles a registry credential.
 
 ```yaml
 - uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-pull@master
@@ -223,16 +235,16 @@ Publishing logs docker in for you, and so does pulling. To fetch a published ima
     images: oci.pazer.build/myproject:v1.2.3
 ```
 
-These actions -- `buildhost-publish-docker`, `buildhost-docker-push`, and `buildhost-docker-pull` -- are the only supported way to authenticate a CI Docker workflow to buildhost. There is no login-only action and no CLI equivalent.
+Those actions are `buildhost-publish-docker`, `buildhost-docker-push` and `buildhost-docker-pull`. They are the only supported way to authenticate a CI Docker workflow to buildhost. There is no login-only action, and no CLI equivalent.
 
 ## GitHub Deployments
 
-The top-level publish actions -- `buildhost-publish`, `buildhost-publish-site`, and `buildhost-publish-docker` -- register each publish as a GitHub Deployment in the calling repo: it appears in that repo's Environments/Deployments UI with a "View deployment" link to the live buildhost URL (the release page, the site URL, or the project page).
+The top-level publish actions are `buildhost-publish`, `buildhost-publish-site` and `buildhost-publish-docker`. Each one registers its publish as a GitHub Deployment in the calling repo. The deployment appears in that repo's Environments and Deployments UI, with a "View deployment" link to the live buildhost URL. That URL is the release page, the site URL, or the project page.
 
-- On by default (`create_deployment: 'true'`), but it needs `deployments: write` in the calling job -- without it the step warns and the publish proceeds.
-- `deployments: write` is **additive** to each action's existing permissions (keep `id-token: write` etc.). A job-level `permissions:` block replaces the workflow-level one, so list the full set wherever you declare one.
-- Environments auto-name as `buildhost/<project>` (sites: `buildhost/<project>/<branch>`); override with `deployment_environment`.
-- Set `create_deployment: 'false'` to opt out (and silence the warning).
+- It is on by default, through `create_deployment: 'true'`. It needs `deployments: write` in the calling job. Without that grant the step warns, and the publish proceeds.
+- `deployments: write` is **additive** to each action's existing permissions, so keep `id-token: write` and the rest. A job-level `permissions:` block replaces the workflow-level one. List the full set wherever you declare one.
+- An environment auto-names as `buildhost/<project>`. A site auto-names as `buildhost/<project>/<branch>`. `deployment_environment` overrides both.
+- Set `create_deployment: 'false'` to opt out. That also silences the warning.
 
 ## Container image
 
@@ -282,15 +294,15 @@ volumes:
   buildhost-data:
 ```
 
-**Note:** The server reads the container's memory cgroup at startup and sets `GOMEMLIMIT` to ~90% of it (via [automemlimit](https://github.com/KimMachineGun/automemlimit)), and all download/repackage paths stream (blob reads are mmap-backed, nothing buffers a whole artifact), so buildhost serves artifacts far larger than `mem_limit` without OOM-ing. Set `GOMEMLIMIT` yourself (or `AUTOMEMLIMIT=off`) to override.
+**Note:** the server reads the container's memory cgroup at startup. It sets `GOMEMLIMIT` to about 90% of that, through [automemlimit](https://github.com/KimMachineGun/automemlimit). Every download and repackage path streams. A blob read is mmap-backed, and nothing buffers a whole artifact. buildhost therefore serves an artifact far larger than `mem_limit` without an OOM. Set `GOMEMLIMIT` yourself, or `AUTOMEMLIMIT=off`, to override that.
 
-**Note:** ELF binaries are stripped on download and their symbols served separately at `?fmt=symbols`; `?debug=1` returns the artifact exactly as uploaded. Stripping runs in-process, so it needs no `strip`/`objcopy` in the image. Anything that is not an ELF — a Cosmopolitan APE, a Mach-O, a script — is always served byte-for-byte as uploaded.
+**Note:** an ELF binary is stripped on download. Its symbols are served separately, at `?fmt=symbols`. `?debug=1` returns the artifact exactly as uploaded. Stripping runs in-process, so it needs no `strip` and no `objcopy` in the image. Anything that is not an ELF is always served byte-for-byte as uploaded. A Cosmopolitan APE, a Mach-O and a script are all in that group.
 
-**Note:** Serving through Cloudflare's proxy caps request bodies at the edge (100 MB on the Free plan); [`deploy/DIRECT-INGRESS.md`](deploy/DIRECT-INGRESS.md) adds an opt-in direct TLS ingress so uploads of any size work in a single request.
+**Note:** service through Cloudflare's proxy caps a request body at the edge, at 100 MB on the Free plan. [`deploy/DIRECT-INGRESS.md`](deploy/DIRECT-INGRESS.md) adds an opt-in direct TLS ingress. An upload of any size then works in a single request.
 
 ## Draft releases
 
-A release you upload but do not publish is a **draft**: it is downloadable by its exact version and nothing else sees it — `latest`, per-branch downloads, Homebrew, APT, npm and OCI all resolve published releases only. Use it to put a build somewhere you can `curl` it without moving the pointer everyone follows.
+A release you upload but do not publish is a **draft**. It is downloadable by its exact version, and nothing else sees it. `latest`, a per-branch download, Homebrew, APT, npm and OCI all resolve a published release only. Use a draft to put a build somewhere you can `curl` it, without a move of the pointer everyone follows.
 
 ```bash
 buildhost publish --draft --server https://buildhost.example.com --token $TOKEN \
@@ -327,7 +339,9 @@ curl -O http://localhost:8080/dl/myapp/latest/linux/amd64
 
 ## Multi-platform binaries (Cosmopolitan / APE)
 
-A single uploaded binary can be published for several OSes/architectures in one request -- built for [Cosmopolitan/APE](https://justine.lol/ape.html) binaries that run everywhere, but usable for any platform-independent artifact. The upload endpoint's `{os}` path segment accepts a single OS (unchanged), a comma-separated list (`linux,darwin,windows`), or the alias `cosmo` (synonyms: `any`, `all`, `universal`) which expands to `linux`+`darwin`+`windows`. `{arch}` likewise accepts a list or `any`/`all` for `amd64`+`arm64`:
+A single uploaded binary can be published for several operating systems and architectures, in one request. This was built for a [Cosmopolitan APE](https://justine.lol/ape.html) binary, which runs everywhere. It is usable for any platform-independent artifact.
+
+The upload endpoint's `{os}` path segment accepts a single OS, unchanged from before. It also accepts a comma-separated list, such as `linux,darwin,windows`. It also accepts the alias `cosmo`, whose synonyms are `any`, `all` and `universal`, and which expands to `linux`, `darwin` and `windows`. The `{arch}` segment likewise accepts a list, or `any` or `all` for `amd64` and `arm64`.
 
 ```bash
 # One APE binary, published for linux, darwin, and windows in one request
@@ -340,13 +354,17 @@ buildhost publish \
 buildhost publish ... --os linux,windows --arch any --artifact ./myapp
 ```
 
-The body is streamed to content-addressed storage once; each os/arch combination becomes an ordinary per-platform artifact row referencing the same blob, so the fan-out costs database rows, not bytes. Downloads, `latest` resolution, the APT/Brew/npm/OCI format handlers, and retention are untouched -- there is no stored `os=any` value and no download-time fallback; clients still download a concrete `os`/`arch`.
+The body is streamed to content-addressed storage once. Each os/arch combination becomes an ordinary per-platform artifact row that references the same blob. The fan-out therefore costs database rows, and not bytes. Downloads, `latest` resolution, the APT, Brew, npm and OCI format handlers, and retention are all untouched. There is no stored `os=any` value, and no download-time fallback. A client still downloads a concrete `os` and `arch`.
 
-Details: each list element is normalized like download parameters (`macOS` -> `darwin`, `x86_64` -> `amd64`, ...); invalid, empty, or duplicate elements are rejected with a 400. Row creation is all-or-nothing: if any combination already exists the whole request returns 409 naming it, and nothing is created. A single-combination upload returns the artifact JSON object exactly as before; a multi-combination upload returns a JSON array of those artifact objects, in `os` list x `arch` list order. Works identically when finalizing a [chunked upload session](#large-uploads) (one session, one body, N rows). `kind=npm-package` keeps its literal `os=any`/`arch=any` sentinel row and never fans out.
+Here are the details. Each list element is normalized like a download parameter, so `macOS` becomes `darwin` and `x86_64` becomes `amd64`. An invalid, empty or duplicate element is rejected with a 400.
+
+Row creation is all-or-nothing. When any combination already exists, the whole request returns 409 and names it, and nothing is created.
+
+A single-combination upload returns the artifact JSON object exactly as before. A multi-combination upload returns a JSON array of those artifact objects, in `os` list by `arch` list order. It all works identically when you finalize a [chunked upload session](#large-uploads), with one session, one body and N rows. `kind=npm-package` keeps its literal `os=any` and `arch=any` sentinel row, and it never fans out.
 
 ### Registering more slots by hash (no re-upload)
 
-An **exact** slot set that is not an os x arch product -- say `{linux/amd64, linux/arm64, windows/amd64}`, where `windows/arm64` must stay free for a different native binary -- cannot be expressed with the fan-out grammar. For that case (and to skip re-sending a byte-identical binary entirely), upload the file once and register the remaining slots by **hash reference**: an empty-body PUT naming the stored blob's SHA-256.
+An **exact** slot set that is not an os by arch product cannot be expressed with the fan-out grammar. `{linux/amd64, linux/arm64, windows/amd64}` is such a set, where `windows/arm64` must stay free for a different native binary. For that case, upload the file once and register the remaining slots by **hash reference**. That is an empty-body PUT that names the stored blob's SHA-256. It also skips the re-send of a byte-identical binary entirely.
 
 ```bash
 SUM=$(sha256sum ./mytool | awk '{print $1}')
@@ -366,14 +384,14 @@ Semantics:
 
 - **Check the capability first.** Only send `upload_sha256` on an empty-body request when `GET /api/v1/server-info` advertises `"upload_by_sha256": true`. A server without the capability ignores the parameter and stores the empty body as the artifact.
 - The referenced blob must already belong to **this project** (uploaded for any of its releases, so re-releasing an unchanged binary is nearly free). An unknown hash, another project's blob, and a since-garbage-collected blob all return the same 404 -- fall back to a full upload.
-- The created rows are ordinary artifact rows, field-for-field identical to a full upload's, with the same 201/409 semantics; the reference composes with the `{os}`/`{arch}` fan-out grammar, and each hash-ref request carries its own optional `X-Artifact-Filename`.
-- `upload_sha256` keeps its existing meanings elsewhere: on a request **with** a body it is ignored, and combined with `upload_session=` it remains the session-finalize integrity check.
+- The created rows are ordinary artifact rows, field-for-field identical to a full upload's, with the same 201 and 409 semantics. The reference composes with the `{os}` and `{arch}` fan-out grammar. Each hash-ref request carries its own optional `X-Artifact-Filename`.
+- `upload_sha256` keeps its existing meaning elsewhere. A request **with** a body ignores it. Combined with `upload_session=` it remains the session-finalize integrity check.
 
-The in-repo publishers do this automatically when the server advertises the capability: the `buildhost-publish` GitHub action and `buildhost publish --manifest` hash the files they are about to upload, send each distinct file once, and register byte-identical slots by reference (go-toolchain's three identical APE slot copies transfer once instead of three times).
+The in-repo publishers do this automatically when the server advertises the capability. The `buildhost-publish` GitHub action and `buildhost publish --manifest` both hash the files they are about to upload. They send each distinct file once, and register every byte-identical slot by reference. go-toolchain's identical APE slot copies therefore transfer once, instead of once per slot.
 
 ## WebAssembly artifacts
 
-WebAssembly modules publish under the platform identifier `os=wasm`, with `arch` naming the flavor: `js` for Go's browser/Node port (`GOOS=js GOARCH=wasm`) and `wasip1` for the WASI port (`GOOS=wasip1 GOARCH=wasm`).
+A WebAssembly module publishes under the platform identifier `os=wasm`. `arch` names the flavor. `js` is Go's browser and Node port, from `GOOS=js GOARCH=wasm`. `wasip1` is the WASI port, from `GOOS=wasip1 GOARCH=wasm`.
 
 ```bash
 # Upload both Go wasm ports (one request each, or a comma list)

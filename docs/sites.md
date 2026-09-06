@@ -94,7 +94,7 @@ The **bare project root**, `/{project}/`, serves `index.html` straight from the 
 
 `/{project}` without the slash `301`s to `/{project}/`. A relative link in `index.html` then resolves under the project, rather than under the host root.
 
-The resolved `default_branch` can have **no published site**. That happens when the GitHub-learned default lags at the seed `master` while sites were only ever deployed to `main`. buildhost hits that case when it fails to reach a private repo to learn its real default. The root then falls back to a branch that *does* have a site. It prefers the conventional `main` and `master` names over a more-recently-updated ephemeral PR-preview branch. It takes the newest site as a last resort. The root therefore never serves a guaranteed 404. `resolveRootBranch` in `serve.go` does this. The serve, the `@{default}` collapse and the public-read gate all use it, so they stay consistent. With no sites at all it keeps the default branch unchanged.
+The resolved `default_branch` can have **no published site**. That happens when the GitHub-learned default lags at the seed `master`, while every site was deployed to `main`. The lag comes from a private repo buildhost failed to reach, which left its real default unknown. The root then falls back to a branch that *does* have a site. It prefers the conventional `main` and `master` names over a more-recently-updated ephemeral PR-preview branch. It takes the newest site as a last resort. The root therefore never serves a guaranteed 404. `resolveRootBranch` in `serve.go` does this. The serve, the `@{default}` collapse and the public-read gate all use it, so they stay consistent. With no sites at all it keeps the default branch unchanged.
 
 A **file path under the project root**, `/{project}/<file>`, serves that file from the same resolved default branch. `ServeDefaultBranch` calls `serveSiteFile` for it, which is the same tar scan, `index.html` and `404.html` handling every other site read uses.
 
@@ -155,7 +155,7 @@ A site uploaded with the header `X-Public-Site: true` is stored with `is_public=
 
 A site is uploaded as tar.gz, with `Content-Type: application/gzip`, or as zip, with `Content-Type: application/zip`. It is stored as an indexed binpazer archive, in `internal/binarchive`. To serve one file is therefore a directory lookup plus a block decode, and not a scan of the whole tar. A pre-archive blob is detected by its magic and served through the old scan. See `docs/site-archives.md`.
 
-The branch routes and the apex path both go through `serveSiteFile`, so both get the indexed read. Each branch is an independent deployment. It holds one row in the `sites` table. A re-deploy of a branch replaces the previous site atomically. The upload size is capped at 256 MiB, and a site holds at most 10,000 files. A public site does not change the project's own visibility. That visibility still comes from the OIDC `repository_visibility` claim. It is re-synced on every write.
+The branch routes and the apex path both go through `serveSiteFile`, so both get the indexed read. Each branch is an independent deployment. It holds one row in the `sites` table. A re-deploy of a branch replaces the previous site atomically. The upload size is capped at 256 MiB. A site holds at most 10,000 files. A public site does not change the project's own visibility. That visibility still comes from the OIDC `repository_visibility` claim. It is re-synced on every write.
 
 ## Fix-forwards shipped with the subdomain scheme
 
