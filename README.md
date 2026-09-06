@@ -26,13 +26,13 @@ brew install pazer/build/go-toolchain
 
 Do not install formulas with a naked remote URL such as `brew install https://brew.pazer.build/go-toolchain`. Modern Homebrew treats that as a formula or tap name instead of cloning it as a formula URL.
 
-On Linux, these formulas have no bottles, so `brew install` runs Homebrew's build sandbox: it needs bubblewrap (`apt install bubblewrap`. Homebrew also installs its own) and unprivileged user namespaces -- hardened hosts such as Ubuntu 24.04 may need `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. In containers or CI where user namespaces are unavailable, set `HOMEBREW_NO_SANDBOX_LINUX=1` instead. macOS needs neither.
+On Linux, these formulas have no bottles, so `brew install` runs Homebrew's build sandbox: it needs bubblewrap (`apt install bubblewrap`; Homebrew also installs its own) and unprivileged user namespaces -- hardened hosts such as Ubuntu 24.04 may need `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. In containers or CI where user namespaces are unavailable, set `HOMEBREW_NO_SANDBOX_LINUX=1` instead. macOS needs neither.
 
-A slash-namespaced project folds `/` to `-` in its formula name (the same rule APT applies to package names): project `log-streamer/client` installs as `brew install pazer/build/log-streamer-client`. A project whose name starts with a digit cannot be served as a formula at all -- Homebrew derives the Ruby class from the formula name.
+A slash-namespaced project folds `/` to `-` in its formula name (the same rule APT applies to package names): project `log-streamer/client` installs as `brew install pazer/build/log-streamer-client`. A project whose name starts with a digit cannot be served as a formula at all -- Homebrew derives the Ruby class from the formula name, and a Ruby class cannot start with a digit, so such projects are omitted from the tap.
 
 ### Private projects
 
-A private project never appears in the public tap. Tap the **authenticated tap** instead: it serves every public formula plus the private projects your token can read, so it replaces the public tap under. Git only transmits credentials after a 401 challenge, so the token goes in the tap URL as the HTTP Basic password (the username is ignored. `x` by convention). Artifact downloads authenticate separately through `HOMEBREW_BUILDHOST_TOKEN`, which private formulas read at install time -- the token is never written into the tap. The example below is a private project named `myrepo/myapp`. Per the folding rule above it installs as `myrepo-myapp`, and the installed command keeps the binary's own name (`myapp`):
+A private project never appears in the public tap. Tap the **authenticated tap** instead: it serves every public formula plus the private projects your token can read, so it replaces the public tap under the same name (if you already added the public tap, remove it first with `brew untap --force pazer/build`). Git only transmits credentials after a 401 challenge, so the token goes in the tap URL as the HTTP Basic password (the username is ignored; `x` by convention). Artifact downloads authenticate separately through `HOMEBREW_BUILDHOST_TOKEN`, which private formulas read at install time -- the token is never written into the tap. The example below is a private project named `myrepo/myapp`. Per the folding rule above it installs as `myrepo-myapp`, and the installed command keeps the binary's own name (`myapp`):
 
 ```bash
 brew tap pazer/build "https://x:$TOKEN@brew.pazer.build/private/tap.git"
@@ -41,7 +41,7 @@ export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
 brew install pazer/build/myrepo-myapp
 ```
 
-`brew update` refreshes the tap with the credentials stored in the tap's git remote. The `?token=` query parameter cannot be used with `brew tap`: git appends its own path segments (`/info/refs`, ...) after the query string, so the URL stops resolving.
+`brew update` refreshes the tap with the credentials stored in the tap's git remote. The `?token=` query parameter cannot be used with `brew tap`: git appends its own path segments (`/info/refs`, ...) after the query string, so the URL stops resolving as a git repository.
 
 ### Background services (create_service)
 
@@ -53,7 +53,7 @@ Each install format materializes the setting its own way. Homebrew formulas gain
 brew services start pazer/build/competent-search-thing
 ```
 
-Homebrew cannot run that for you at install: a formula's only install-time hook (`post_install`) runs inside brew's sandbox, whose profile denies all file writes outside. `brew uninstall` does not stop services either: run `brew services stop <tap>/<project>` before removing.
+Homebrew cannot run that for you at install: a formula's only install-time hook (`post_install`) runs inside brew's sandbox, whose profile denies all file writes outside build paths -- `~/Library/LaunchAgents` included -- so no formula can register a LaunchAgent. `brew uninstall` does not stop services either: run `brew services stop <tap>/<project>` before removing.
 
 The service restarts only after a crash (`keep_alive successful_exit: false`. A clean exit stays exited) and logs to `$(brew --prefix)/var/log/<name>.log`. On Linux prefer the APT install below -- brew's Linux units carry no graphical-session ordering. The deb materialization (which does auto-enable) is described in the APT section. Other formats (raw, zip, npm, OCI) store the flag without materializing it.
 
@@ -68,7 +68,7 @@ curl -fsSL https://apt.pazer.build/myapp/install.sh | sudo sh
 sudo apt-get install myapp
 ```
 
-For a private project, pass a read token -- the installer also records it in `/etc/apt/auth.conf.d/`, covering both the apt host and the static host.
+For a private project, pass a read token -- the installer also records it in `/etc/apt/auth.conf.d/`, covering both the apt host and the static host the `.deb` download redirects to:
 
 ```bash
 curl -fsSL -H "Authorization: Bearer $TOKEN" https://apt.pazer.build/myapp/install.sh \
@@ -77,7 +77,7 @@ curl -fsSL -H "Authorization: Bearer $TOKEN" https://apt.pazer.build/myapp/insta
 
 One-line install commands (and per-project copy buttons) are also available on the admin dashboard: see each project's page or the **Registries** tab.
 
-Self-modifying binaries (Cosmopolitan APEs, which rewrite their own file the first time they run) are packaged with a launcher: the binary installs under `/usr/lib/<pkg>/` and `/usr/bin/<pkg>` keeps a writable per-user copy. So an ordinary user can run it. Everything else installs straight to `/usr/bin`.
+Self-modifying binaries (Cosmopolitan APEs, which rewrite their own file the first time they run) are packaged with a launcher: the binary installs under `/usr/lib/<pkg>/` and `/usr/bin/<pkg>` keeps a writable per-user copy, so an ordinary user can run it. Everything else installs straight to `/usr/bin`.
 
 Prefer to set it up by hand? Import the repository signing key once, add the source, then install. The key is served per project path but is the same server-wide key:
 
@@ -92,7 +92,7 @@ sudo apt update && sudo apt install myapp
 
 ### Private projects
 
-A private project requires a token on every APT request. Put it in an `apt.conf.d`-style auth file so both `apt update` and the package download (which redirects to the `static` subdomain) authenticate. buildhost reads the token from the HTTP Basic.
+A private project requires a token on every APT request. Put it in an `apt.conf.d`-style auth file so both `apt update` and the package download (which redirects to the `static` subdomain) authenticate. buildhost reads the token from the HTTP Basic **password** field (the username is ignored, so any value works -- `token` is used here by convention):
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
@@ -121,7 +121,7 @@ sudo apt update && sudo apt install pr-reviewer-agent-server
 
 ### Background services (create_service)
 
-A `create_service` project's generated deb (see the Homebrew section for the flag itself) ships a systemd user unit at `/usr/lib/systemd/user/<pkg>.service` -- crash-only `Restart=on-failure`, bound to `graphical-session.target` -- and sets it up at install. Removing the package disables it again.
+A `create_service` project's generated deb (see the Homebrew section for the flag itself) ships a systemd user unit at `/usr/lib/systemd/user/<pkg>.service` -- crash-only `Restart=on-failure`, bound to `graphical-session.target` -- and sets it up at install: the package's postinst runs `systemctl --global enable`, so the service starts at every user's next graphical login (plus a best-effort immediate start for the installing sudo user's live session). Removing the package disables it again.
 
 This applies to buildhost-GENERATED debs only (`fmt=deb`, i.e. this APT repository). A pre-built `.deb` uploaded as an artifact (`kind=archive`) is served byte-identical -- buildhost never injects into uploaded files.
 
@@ -133,7 +133,7 @@ buildhost serves a public, read-only browse UI on the main domain (no subdomain)
 - `GET /projects/{project}` &mdash. A project's metadata, published releases, deployed static sites, and copy-paste install/download commands
 - `GET /projects/{project}/releases/{version}` &mdash. A release's artifacts with per-format download links (`raw`, `tar.gz`, `tar.xz`, `tar.zst`, `zip`), or a `docker pull` for image releases
 
-Private projects are hidden: they are never listed for anonymous visitors, and visiting one's page directly returns a `404` &mdash. Identical to a project that does not exist, so the frontend never reveals that a private project exists (the same way GitHub treats private repositories). A read-scoped token authorized for the project reveals it. Download links point at the `dl` subdomain. The single stylesheet is served from `/_ui/style.css` and no other assets are loaded. The authenticated admin dashboard remains a separate app on its own port (see [Container image](#container-image)).
+Private projects are hidden: they are never listed for anonymous visitors, and visiting one's page directly returns a `404` &mdash; identical to a project that does not exist, so the frontend never reveals that a private project exists (the same way GitHub treats private repositories). A read-scoped token authorized for the project reveals it. Download links point at the `dl` subdomain. The single stylesheet is served from `/_ui/style.css` and no other assets are loaded. The authenticated admin dashboard remains a separate app on its own port (see [Container image](#container-image)).
 
 ## Synthesized container images
 
@@ -154,7 +154,7 @@ The synthesized image is regenerated on demand (not stored), so its digest is no
 
 ## Publishing real Docker images
 
-Some projects need to ship a real prebuilt image (custom base image, native libraries, entrypoint, exposed ports) rather than a binary wrapped in a minimal layer. buildhost is a writable OCI registry. So you can `docker push` directly:
+Some projects need to ship a real prebuilt image (custom base image, native libraries, entrypoint, exposed ports) rather than a binary wrapped in a minimal layer. buildhost is a writable OCI registry, so you can `docker push` directly:
 
 The OCI registry is served on the `oci.` subdomain (the apex host serves the API, not `/v2/`):
 
@@ -205,7 +205,7 @@ To fetch an artifact back in a workflow, `buildhost-download` resolves the same 
 
 It outputs `path`. With `required: 'false'` a missing artifact sets `downloaded: 'false'` instead of failing, so a caller can fall back.
 
-For a build you drive yourself, `buildhost-docker-push` takes an OCI layout you already produced and pushes it in chunks, so a layer over the proxy's. Obtaining a CLI that can do that is the action's problem, not yours:
+For a build you drive yourself, `buildhost-docker-push` takes an OCI layout you already produced and pushes it in chunks, so a layer over the proxy's body cap still goes through. Obtaining a CLI that can do that is the action's problem, not yours:
 
 ```yaml
 - run: docker buildx build --output type=oci,tar=false,dest=layout .
