@@ -27,7 +27,7 @@ buildhost currently **never deletes a release or artifact**. The only `DELETE FR
 
 At the time of writing the instance holds ~35 projects / ~731 releases / ~3601 artifacts and the dashboard reports ~77.7 GiB "Storage Used". With CI pushing a new release per branch per commit, this grows without bound. We need a way to bound it.
 
-This document proposes a design. It deliberately does **not** ship code; it exists to align on the model and the safety rules first.
+This document proposes a design. It deliberately does **not** ship code. It exists to align on the model and the safety rules first.
 
 ---
 
@@ -56,7 +56,7 @@ The existing per-project gate `BlobBelongsToProject` (`internal/db/queries/artif
 
 ### 2.3 The sharpest dedup example: the OCI base layer
 
-`internal/repackage/oci.go` registers a shared "essentials" base layer (`oci-base-layer`) that is content-addressed and **deduped to a single blob server-wide**, then linked per pull. That one blob backs every synthesized OCI image across every project. Any eviction that deletes blobs by release ownership would eventually delete this blob out from under hundreds of live images.
+`internal/repackage/oci.go` registers a shared "essentials" base layer (`oci-base-layer`) that is content-addressed and **deduped to a single blob server-wide**, then linked per pull. That one blob backs every synthesized OCI image across every project. An eviction that deletes a blob by release ownership eventually deletes this blob out from under every live image that uses it.
 
 > **Takeaway:** blobs must never be deleted because "their release went away."
 > They may only be deleted when *no reference of any kind remains*.
@@ -73,7 +73,7 @@ if storageKey != "" {
 }
 ```
 
-If two site deploys (e.g. two branches at the same commit) produce byte-identical tarballs, they share one blob. Deleting one branch removes the shared blob and breaks the other. Low probability today, but it is the exact class of bug the eviction design must not repeat -- and the reference-counted approach below fixes it for free.
+Two site deploys can produce byte-identical tarballs, for example two branches at the same commit. They then share one blob. To delete one branch removes the shared blob and breaks the other. The probability is low today. It is still the exact class of bug the eviction design must not repeat. The reference-counted approach below fixes it for free.
 
 ### 2.5 Stats machinery already exists
 
@@ -89,7 +89,7 @@ If two site deploys (e.g. two branches at the same commit) produce byte-identica
 
 ## 3. The foundation: reference-counted mark-and-sweep GC
 
-Everything else depends on this. **Policy decides *what* to forget; GC decides *when a blob is safe to delete*.** Keep them separate.
+Everything else depends on this. **Policy decides *what* to forget. GC decides *when a blob is safe to delete*.** Keep them separate.
 
 ### 3.1 Two-phase deletion
 
@@ -117,11 +117,11 @@ SELECT EXISTS(
 
 - **Targeted sweep** (primary): only check the candidate keys produced by a delete. Cheap, runs right after eviction. No races because we only consider keys whose rows we just removed.
 - **Full reconciliation** (periodic safety net): walk the storage root and delete any on-disk key that `IsBlobReferenced` says is dead.
-  - **Must use a grace period.** The publish path does `Store.Put` *then* inserts the artifact row; there is a window where a blob is on disk with no DB row yet. A full sweep must skip blobs whose mtime is newer than, say, 24h to avoid deleting an in-flight upload. The targeted sweep avoids this window entirely.
+  - **A grace period is mandatory.** The publish path calls `Store.Put` and *then* inserts the artifact row. A window therefore exists where a blob is on disk with no DB row yet. A full sweep must skip a blob whose mtime is newer than about 24h. It then cannot delete an in-flight upload. The targeted sweep avoids this window entirely.
 
 ### 3.4 Fixing the sites bug
 
-`sites/delete.go` should stop calling `Store.Delete` inline and instead route the freed key through the same targeted sweep (delete the blob only if no other reference remains). This is a small, self-contained correctness fix that lands with the GC foundation.
+`sites/delete.go` must stop the inline call to `Store.Delete`. It must route the freed key through the same targeted sweep instead, which deletes the blob only when no other reference remains. This is a small, self-contained correctness fix. It lands with the GC foundation.
 
 ---
 
@@ -131,8 +131,8 @@ Any policy must treat these as hard pins, independent of age or count:
 
 1. **A project's latest published release.** Always keep at least one.
 2. **The latest published release per `git_branch`.** Branch downloads (`/dl/{project}/branch/{branch}/...`, resolved by `GetLatestPublishedReleaseByBranch`) break otherwise.
-3. **Any release referenced by `oci_tags.release_id`.** Tags are mutable pointers; deleting the backing release breaks `docker pull repo:tag`.
-4. **In-flight / very recent releases.** Don't evict something created in the last N hours (avoid racing an active publish/repackage).
+3. **Any release referenced by `oci_tags.release_id`.** A tag is a mutable pointer. To delete the backing release breaks `docker pull repo:tag`.
+4. **An in-flight or very recent release.** Do not evict something created in the last N hours. That avoids a race with an active publish or repackage.
 5. **(Implicit via GC) shared blobs** such as the OCI base layer -- never deleted while any reference remains.
 
 Unpublished releases (`published = 0`) are the opposite: they are abandoned partial uploads and are the *safest* thing to clean up (see Phase 2).
@@ -151,7 +151,7 @@ Unpublished releases (`published = 0`) are the opposite: they are abandoned part
 | Popularity | `download_counts.count` | tie-breaker / "keep if popular" |
 | **Last access time** | **(none)** | **needed for true LRU** |
 
-We track download **count** but never **when** a download happened. A genuine "evict the coldest artifacts" / LRU policy would require a new `artifacts.last_accessed_at` (or a separate access-log table) updated on the download path. This is the main schema gap that distinguishes the policy options below.
+We track a download **count**, but never **when** a download happened. A genuine LRU policy, which evicts the coldest artifact, needs a new `artifacts.last_accessed_at` column or a separate access-log table. The download path must update it. This is the main schema gap that separates the policy options below.
 
 ---
 
@@ -161,10 +161,10 @@ All three sit on top of the GC foundation and honor the Section 4 pins. They are
 
 ### Option A -- Keep last N published releases per project (recommended default)
 
-Keep the N most-recent published releases per project; evict older ones. Plus pins (latest-per-branch, tagged, recent).
+Keep the N most-recent published releases per project. Evict the older ones. The pins still apply: latest per branch, tagged, and recent.
 
-- **Pros:** predictable, easy to explain, registry-standard (npm dist-tags, ghcr retention), uses only signals we already have (`version_num`). Bounds per-project growth directly.
-- **Cons:** doesn't directly target a disk budget; a few huge projects can still dominate. N is a blunt instrument across very different projects.
+- **Pros:** predictable, easy to explain, and registry-standard, as npm dist-tags and ghcr retention are. It uses only a signal we already have, `version_num`. It bounds per-project growth directly.
+- **Cons:** it does not target a disk budget directly, so a few huge projects can still dominate. N is a blunt instrument across very different projects.
 - **Config:** `BUILDHOST_RETENTION_KEEP_N` (global default), optional per-project override column.
 
 ### Option B -- Age-based TTL
@@ -172,7 +172,7 @@ Keep the N most-recent published releases per project; evict older ones. Plus pi
 Evict published releases older than X days (plus pins).
 
 - **Pros:** simple, time-bounded, good for "previews older than a month go away".
-- **Cons:** bursty projects can still blow the budget within the window; quiet projects lose history they may still want. Doesn't bound total size.
+- **Cons:** a bursty project can still blow the budget inside the window. A quiet project loses history it may still want. This option does not bound total size.
 - **Config:** `BUILDHOST_RETENTION_MAX_AGE` (e.g. `30d`).
 
 ### Option C -- Global size watermark / LRU
@@ -180,7 +180,7 @@ Evict published releases older than X days (plus pins).
 Evict (coldest first) until total physical size is under a target.
 
 - **Pros:** directly targets the actual constraint (disk). Adaptive.
-- **Cons:** needs the missing `last_accessed_at` signal to be meaningful; otherwise "coldest" degrades to "oldest" (= a global TTL). More moving parts; eviction amount varies run to run.
+- **Cons:** it needs the missing `last_accessed_at` signal to mean anything. Without that signal "coldest" degrades to "oldest", which is a global TTL. It has more moving parts. The evicted amount varies from run to run.
 - **Config:** `BUILDHOST_RETENTION_TARGET_BYTES` (high/low watermark).
 
 ### Recommendation
@@ -191,11 +191,11 @@ Ship **Option A (keep-N) + the always-safe Phase 1/2 cleanups**, defaulting to r
 
 ## 7. Phased rollout
 
-Ordered safest-first; each phase is independently shippable and valuable.
+The phases are ordered safest first. Each phase is independently shippable and valuable.
 
-**Phase 0 -- GC foundation (Section 3).** `DeleteRelease` cascade + global `IsBlobReferenced` + targeted sweep. Also fixes the `sites/delete.go` dedup bug. No automatic eviction yet; this is the safe primitive everything else calls.
+**Phase 0 -- GC foundation (Section 3).** It adds the `DeleteRelease` cascade, the global `IsBlobReferenced`, and the targeted sweep. It also fixes the `sites/delete.go` dedup bug. There is no automatic eviction yet. This is the safe primitive that everything else calls.
 
-**Phase 1 -- Evict the regenerable cache.** `packaged_artifacts` are rebuilt on the next download, so dropping ones older than a TTL is **zero-risk** and likely the biggest immediate win (every format ever requested is cached forever right now). Exception: keep `oci-base-layer` entries (shared, cheap, hot). Config: `BUILDHOST_RETENTION_CACHE_TTL` (e.g. `30d`).
+**Phase 1 -- Evict the regenerable cache.** A `packaged_artifacts` row is rebuilt on the next download. To drop a row older than a TTL is therefore **zero-risk**. It is likely the biggest immediate win. Every format ever requested is cached forever right now. One exception applies: keep an `oci-base-layer` entry, which is shared, cheap and hot. Config: `BUILDHOST_RETENTION_CACHE_TTL`, for example `30d`.
 
 **Phase 2 -- Sweep abandoned unpublished releases.** Delete `published = 0` releases older than a few hours and their artifacts (failed/partial uploads). Safe by construction -- nothing serves an unpublished release.
 
@@ -209,10 +209,10 @@ Docker/OCI eviction is called out separately below and is **not** in Phases 0-3 
 
 ## 8. Schema / query changes (sketch, not final)
 
-Next migration number is `009` (`migrations/` is sequential `NNN_name.sql`, each applied in its own transaction; mirror into `internal/db/schema.sql` for sqlc).
+The next migration number is `009`. `migrations/` is a sequential `NNN_name.sql` set, and each file is applied in its own transaction. Mirror the change into `internal/db/schema.sql` for sqlc.
 
-- **No new tables required for Phases 0-3.** New queries only:
-  - `DeleteRelease` cascade set: delete `download_counts` and `packaged_artifacts` for the release's artifacts, delete `artifacts`, delete `oci_tags` for the release, delete the `releases` row -- all in one transaction, returning the candidate `storage_key`s.
+- **No new table is required for Phases 0-3.** Only new queries are needed.
+  - `DeleteRelease` cascade set. It deletes `download_counts` and `packaged_artifacts` for the release's artifacts. It then deletes `artifacts`, then `oci_tags` for the release, then the `releases` row. It runs in one transaction and returns the candidate `storage_key` values.
   - `IsBlobReferenced` (Section 3.2).
   - `ListEvictableReleases` per project: published releases ranked by `version_num DESC`, excluding the latest-per-branch and tagged releases, with `OFFSET N` for keep-N.
   - `ListExpiredPackagedArtifacts` (Phase 1), `ListAbandonedReleases` (Phase 2).
@@ -227,9 +227,9 @@ Next migration number is `009` (`migrations/` is sequential `NNN_name.sql`, each
 
 Three surfaces, matching existing patterns:
 
-- **Background sweeper:** a goroutine on a ticker in the server, like graceful shutdown. Must respect context cancellation on SIGTERM and should not fight the inflight-write tracking used by `/ready-to-update`. Interval via `BUILDHOST_RETENTION_INTERVAL` (e.g. `1h`); off by default.
-- **CLI subcommand:** `buildhost gc` / `buildhost evict` (cobra, one file, self-registering via `init()`, per the repo's CLI conventions) with `--dry-run` for cron/manual use. `--dry-run` reuses the report path.
-- **Admin surface:** extend `GET /api/storage` with reclaimable bytes per project; optionally a `POST /api/gc` trigger (there is precedent for admin mutations, e.g. `DELETE /api/tokens/{id}`). Admin remains behind the reverse proxy.
+- **Background sweeper:** a goroutine on a ticker in the server, like graceful shutdown. It must respect context cancellation on SIGTERM. It must not fight the inflight-write tracking that `/ready-to-update` uses. The interval comes from `BUILDHOST_RETENTION_INTERVAL`, for example `1h`. It is off by default.
+- **CLI subcommand:** `buildhost gc` or `buildhost evict`. It follows the repo's CLI conventions: cobra, one file, and self-registration through `init()`. It takes `--dry-run` for cron and manual use, and `--dry-run` reuses the report path.
+- **Admin surface:** extend `GET /api/storage` with reclaimable bytes per project. A `POST /api/gc` trigger is optional. There is precedent for an admin mutation, such as `DELETE /api/tokens/{id}`. Admin remains behind the reverse proxy.
 
 **Default posture: report-only.** Every destructive phase computes and logs/returns "what would be deleted and how many bytes" before any enforcement flag is set. Enforcement is opt-in via env.
 
@@ -237,7 +237,9 @@ Three surfaces, matching existing patterns:
 
 ## 10. Docker / OCI eviction (separate, harder -- later)
 
-`oci_blob_links` is **project-scoped, not release-scoped**: pushed docker blobs and manifests attach to the project, shared across pushes and tags (`internal/oci/*.go`). So evicting a `kind=docker` release is not a simple row cascade -- you must drop the tag/manifest, then GC blobs no longer reachable from any remaining tag/manifest in that project. This deserves its own design pass and is out of scope for the initial keep-N work. Until then, docker images are retained (and tagged releases are pinned regardless).
+`oci_blob_links` is **project-scoped, not release-scoped**. A pushed docker blob or manifest attaches to the project. It is shared across pushes and tags (`internal/oci/*.go`).
+
+To evict a `kind=docker` release is therefore not a simple row cascade. You must drop the tag and the manifest first. You must then GC each blob that no remaining tag or manifest in that project reaches. This deserves its own design pass. It is out of scope for the initial keep-N work. Until then a docker image is retained, and a tagged release is pinned regardless.
 
 ---
 
