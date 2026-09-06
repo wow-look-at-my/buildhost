@@ -20,7 +20,7 @@ All three top-level composites take an optional `deployment_ref`. Each defaults 
     deployment_ref: ${{ github.head_ref || github.ref_name }}
 ```
 
-`github.head_ref` is the PR's source branch. It is empty off `pull_request`. That expression is therefore the branch in both cases. Do NOT use `github.ref_name` alone on a `pull_request` event. There it is the synthetic merge ref (`23/merge`). `github.sha` carries the matching trap. It is the merge COMMIT. That commit is in no branch, and it stops existing when the PR closes.
+`github.head_ref` is the PR's source branch. It is empty off `pull_request`. That expression is therefore the branch in both cases. Do NOT use `github.ref_name` alone on a `pull_request` event. There it is the synthetic merge ref (`23/merge`). `github.sha` carries the matching trap. It is the merge COMMIT. That commit is in no branch. It stops existing when the PR closes.
 
 ## Registering the deployment is part of publishing, and failure is RED
 

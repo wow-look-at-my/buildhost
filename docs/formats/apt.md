@@ -16,7 +16,7 @@ ONE shared renderer produces `Packages` and the `Release` and `InRelease` SHA256
 
 ## Package naming
 
-The Debian package name is `repackage.DebPackageName(project.Name)`. It folds `/` and `_` to `-`, because neither is legal in a deb package name. The same value appears in five places. They are the served `Packages` index (`packages.go`), the InRelease hash computation (`release.go`), the deb control `Package` field, the pool filename, and the installed `/usr/bin/<pkg>` binary. apt and dpkg therefore always agree. A slash stays in the repo *URL* (`apt.{domain}/<repo>/<binary>`). `servePool` still resolves the project from the request path. Only the package *name* folds, so `pr-reviewer-agent/server` installs as `pr-reviewer-agent-server`.
+The Debian package name is `repackage.DebPackageName(project.Name)`. It folds `/` and `_` to `-`, because neither is legal in a deb package name. The same value appears in five places. Three of them are the served `Packages` index (`packages.go`), the InRelease hash computation (`release.go`), and the deb control `Package` field. The other two are the pool filename and the installed `/usr/bin/<pkg>` binary. apt and dpkg therefore always agree. A slash stays in the repo *URL* (`apt.{domain}/<repo>/<binary>`). `servePool` still resolves the project from the request path. Only the package *name* folds, so `pr-reviewer-agent/server` installs as `pr-reviewer-agent-server`.
 
 ## Release signing
 
