@@ -40,7 +40,7 @@ Git transmits a credential only after a 401 challenge. The token therefore goes 
 
 An artifact download authenticates separately, through `HOMEBREW_BUILDHOST_TOKEN`. A private formula reads that at install time. The token is never written into the tap.
 
-The example below uses a private project named `myrepo/myapp`. Under the folding rule above it installs as `myrepo-myapp`. The installed command keeps the binary's own name, `myapp`.
+The example below uses a private project named `myrepo/myapp`. Under the folding rule above it installs as `myrepo-myapp`. The installed command keeps the binary's own name, `myapp`:
 
 ```bash
 brew tap pazer/build "https://x:$TOKEN@brew.pazer.build/private/tap.git"
