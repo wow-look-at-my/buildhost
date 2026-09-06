@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -297,12 +298,18 @@ func sha256Digest(b []byte) string {
 }
 
 // readBusyboxLayer finds the busybox binary in an image layer and the names
+// that run it.
+//
+// The layer archives the binary under an applet name and hardlinks the rest to
+// it: the pinned image stores "bin/[", not "bin/busybox". bin/ also holds
+// binaries that are not busybox -- the musl image ships its own bin/getconf.
+// So busybox is the file bin/busybox resolves to, and the applets are the
+// names that resolve to that same file.
 func readBusyboxLayer(r io.Reader) ([]byte, []string, error) {
 	tr := tar.NewReader(r)
 	var (
-		binary     []byte
-		binaryName string
-		links      = map[string]string{}
+		files = map[string][]byte{}
+		links = map[string]string{}
 	)
 	for {
 		hdr, err := tr.Next()
@@ -318,33 +325,52 @@ func readBusyboxLayer(r io.Reader) ([]byte, []string, error) {
 		}
 		switch hdr.Typeflag {
 		case tar.TypeReg:
-			if binary != nil {
-				return nil, nil, fmt.Errorf("shell image has two files under bin/: %s and %s", binaryName, name)
-			}
-			binary, err = io.ReadAll(tr)
+			data, err := io.ReadAll(tr)
 			if err != nil {
 				return nil, nil, fmt.Errorf("read %s: %w", name, err)
 			}
-			binaryName = name
+			files[name] = data
 		case tar.TypeLink, tar.TypeSymlink:
 			target := hdr.Linkname
 			if !path.IsAbs(target) && hdr.Typeflag == tar.TypeSymlink {
 				target = path.Join("bin", target)
 			}
-			links[name] = path.Clean(target)
+			links[name] = path.Clean(strings.TrimPrefix(target, "/"))
 		}
 	}
-	if binary == nil {
-		return nil, nil, errors.New("shell image has no binary under bin/")
+	root, ok := resolveLayerEntry("bin/busybox", files, links)
+	if !ok {
+		return nil, nil, errors.New("shell image has no bin/busybox")
 	}
-	applets := []string{path.Base(binaryName)}
-	for name, target := range links {
-		if target == binaryName {
+	applets := []string{path.Base(root)}
+	for name := range links {
+		if target, ok := resolveLayerEntry(name, files, links); ok && target == root {
 			applets = append(applets, path.Base(name))
 		}
 	}
 	sort.Strings(applets)
-	return binary, applets, nil
+	// An APE trampoline is a shell script, so a layer with no sh applet ships
+	// an image whose every container dies at exec with the file present.
+	if !slices.Contains(applets, "sh") {
+		return nil, nil, errors.New("shell image has no bin/sh applet")
+	}
+	return files[root], applets, nil
+}
+
+// resolveLayerEntry follows name through the layer's links to the regular file
+// it names. The bound stops a link cycle from hanging the fetch.
+func resolveLayerEntry(name string, files map[string][]byte, links map[string]string) (string, bool) {
+	for range 16 {
+		if _, ok := files[name]; ok {
+			return name, true
+		}
+		next, ok := links[name]
+		if !ok {
+			return "", false
+		}
+		name = next
+	}
+	return "", false
 }
 
 // buildShellLayer writes the deterministic shell layer: /bin/busybox and a
