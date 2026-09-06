@@ -124,8 +124,14 @@ of an APE fails, on a loop. The old container is never replaced, and its stale
 config is cloned onto every later image. Docker reports the failure against the
 entrypoint path. The message therefore names a file that is present.
 
-`test/dats/image-entrypoints.dats` guards this, and `container-healthcheck` runs
-it. It starts the built image once per spelling an old container can carry. The
+Two suites guard this. `dats/image-entrypoint.dats` reads the Dockerfile, and
+`go-toolchain` runs it sandboxed on every build, with no host and no docker. It
+covers both spellings: the entrypoint must name the launcher, and the shell must
+come from an image that ships a static busybox.
+
+`test/dats/image-entrypoints.dats` is the runtime half, and
+`container-healthcheck` runs it. It starts the built image once per spelling an
+old container can carry. The
 spellings are the bare name on PATH, the absolute launcher path, and a shell in
 front of the path. It also asserts that nothing the image ships names an ELF
 interpreter, because the base image has no `/lib` to load one from.
