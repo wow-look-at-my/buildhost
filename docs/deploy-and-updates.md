@@ -119,18 +119,29 @@ that starts it -- the same shape the deb repackager gives an APE. A shebang
 script is execable, so any spelling of the entrypoint works. This is not
 cosmetic: a rolling updater creates the new container from the *old* container's
 config, which carries the entrypoint resolved from the image that container was
-created from. A container predating the APE carries `["buildhost"]`, and a bare
-exec of an APE is ENOEXEC -- exit 126, on a loop, with the old container never
-replaced and its stale config cloned onto every later image.
+created from. A container predating the APE carries `["buildhost"]`. A bare exec
+of an APE fails, on a loop. The old container is never replaced, and its stale
+config is cloned onto every later image. Docker reports the failure against the
+entrypoint path. The message therefore names a file that is present.
 
-`dats/image-entrypoint.dats` guards the spelling, and `go-toolchain` runs it
-sandboxed on every build. It reads the Dockerfile rather than starting a
-container, because a bare exec cannot be reproduced from a shell at all: when
-`execve` answers ENOEXEC the shell runs the file as a script instead, so the
-broken form looks fine. Whether the launcher's target path is right is the
-runtime question, and `container-healthcheck`'s `compose up --wait` answers it --
-the launcher is the entrypoint, so a wrong path there is a container that never
-starts.
+Two suites guard this. `dats/image-entrypoint.dats` reads the Dockerfile, and
+`go-toolchain` runs it sandboxed on every build, with no host and no docker. It
+covers both spellings: the entrypoint must name the launcher, and the shell must
+come from an image that ships a static busybox.
+
+`test/dats/image-entrypoints.dats` is the runtime half, and
+`container-healthcheck` runs it. It starts the built image once per spelling an
+old container can carry. The
+spellings are the bare name on PATH, the absolute launcher path, and a shell in
+front of the path. It also asserts that nothing the image ships names an ELF
+interpreter, because the base image has no `/lib` to load one from.
+
+A bare exec IS reproducible. `docker run --entrypoint buildhost` on an image
+whose entrypoint path is the APE fails, and docker reports it against that path.
+It reproduces only where no APE binfmt handler is registered. The handler is
+host-wide, and containers inherit it. go-toolchain registers one on the runners
+it uses. With one registered, the kernel runs any APE through a shell. These
+assertions then cannot fail. The suite refuses to run when it finds one.
 
 The admin dashboard on `:9090` has **no built-in authentication**. It must be
 placed behind a reverse proxy with access control (e.g., Cloudflare Access on a

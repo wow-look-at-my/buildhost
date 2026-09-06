@@ -234,6 +234,8 @@ jobs:
       - run: chmod +x build/buildhost
       # Build the image (and pull its base layers) in a separate, untimed step
       - run: docker compose -f docker-compose.ci.yml build
+      # Compose starts the image with its own entrypoint; a rolling update starts it with whatever the old container recorded.
+      - run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/image-entrypoints.dats
       - run: docker compose -f docker-compose.ci.yml up -d --wait --wait-timeout 30
       # Stripping is documented to happen at download time, and it silently did
       - uses: actions/setup-go@v5
@@ -532,6 +534,10 @@ jobs:
           BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
           NETCHECK_BIN: ${{ runner.temp }}/netcheck
         run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/synthesized-image.dats
+      # The suite above synthesizes from a plain ELF, which exercises none of the shell layer an APE image needs.
+      - env:
+          BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
+        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/synthesized-ape-image.dats
 
   # Proves a hosted site stays loadable CROSS-ORIGIN, through its redirects, in
   sites-cors-e2e:
