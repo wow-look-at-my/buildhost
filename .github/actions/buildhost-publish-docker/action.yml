@@ -316,9 +316,10 @@ runs:
         REFS: ${{ steps.refs.outputs.buildhost_refs }}
       run: |
         set -euo pipefail
-        bash "${{ github.action_path }}/../lib/docker-login.sh" "${{ inputs.server }}"
         while IFS= read -r ref; do
           [ -z "${ref}" ] && continue
+          # Once per ref: an OIDC token lives minutes, and one large pull outlasts it.
+          bash "${{ github.action_path }}/../lib/docker-login.sh" "${{ inputs.server }}"
           docker image rm "${ref}" >/dev/null 2>&1 || true
           docker pull "${ref}"
           revision="$(docker image inspect \

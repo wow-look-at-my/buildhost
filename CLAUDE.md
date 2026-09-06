@@ -173,10 +173,13 @@ separately if any tracked file is gitignored build output. Depth:
 - **Logging docker in is buildhost's job, never a caller's, and never a bare CLI
   command.** Actions do it inside their own steps, from the one shared
   `.github/actions/lib/docker-login.sh`: `buildhost-publish-docker` (before the
-  build and the pull-back) and **`buildhost-docker-pull`** (fetch published
-  images, e.g. into a nested daemon). There is no `docker-login` CLI subcommand,
-  no login-only action, and no other supported path -- exposing one puts the
-  credential back in a caller's hands.
+  build, and again before each pull-back) and **`buildhost-docker-pull`** (fetch
+  published images, e.g. into a nested daemon). The credential is an OIDC token
+  that lives minutes, so a loop logs in per image. One large pull outlasts it, and
+  the next reference gets a 401. `dats/docker-login-per-operation.dats` is the
+  guard. There is no `docker-login` CLI subcommand, no login-only action, and no
+  other supported path -- exposing one puts the credential back in a caller's
+  hands.
 - **`buildhost-download`** fetches one artifact from `dl`; `required: 'false'`
   reports a miss as an output instead of failing, which is what makes that
   fallback expressible.
