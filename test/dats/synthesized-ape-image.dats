@@ -2,9 +2,10 @@
 #
 # The kernel cannot exec an APE: the file's header is a shell script, and no
 # binfmt handler is registered. So the synthesized image gets a third layer
-# carrying busybox, and its entrypoint reads the APE through /bin/sh. Get any
-# part of that wrong and every container from the image dies at exec, reporting
-# "no such file or directory" against an entrypoint that is present.
+# carrying busybox, keeps the APE under /usr/local/lib, and puts a shebang
+# launcher at the entrypoint path. Get any part of that wrong and every
+# container from the image dies at exec, reporting "no such file or directory"
+# against an entrypoint that is present.
 #
 # The sibling suite synthesizes from a plain ELF, which exercises none of this.
 # The payload here is the repo's own fat APE, so the test runs a real one.
@@ -84,7 +85,7 @@ tests:
 	# A bare APE path as the entrypoint is the defect: it is what a synthesis
 	# without the shell layer produces, and no container from such an image
 	# ever starts.
-	- desc: the entrypoint reads the APE through a shell, over three layers
+	- desc: the entrypoint names a launcher, not the APE, over three layers
 	  cmd: |
 		set -eu
 		. {shared.env}
@@ -96,14 +97,14 @@ tests:
 	  outputs:
 		stdout:
 			- "diff_ids=3"
-			- 'entrypoint=["/bin/sh","/ape-image"]'
+			- 'entrypoint=["/ape-image"]'
 
 	- desc: the shell layer lands a real shell, and it needs no ELF interpreter
 	  cmd: |
 		set -eu
 		. {shared.env}
 		test -x "$WORK/rootfs/bin/sh" || { echo "no /bin/sh in the synthesized image" >&2; exit 1; }
-		test -x "$WORK/rootfs/$PROJECT" || { echo "the APE is not at the entrypoint path" >&2; exit 1; }
+		test -x "$WORK/rootfs/usr/local/lib/$PROJECT/$PROJECT" || { echo "the APE is not under /usr/local/lib" >&2; exit 1; }
 		file -b "$WORK/rootfs/bin/busybox"
 		if file -b "$WORK/rootfs/bin/busybox" | grep -q 'interpreter '; then
 			echo 'the shell layer ships a dynamically linked busybox, and the image has no /lib for its interpreter' >&2
@@ -128,3 +129,23 @@ tests:
 		stdout:
 			- "linux/amd64"
 			- "buildhost"
+
+	# A rolling updater creates the replacement from the config of the container
+	# it replaces, so the entrypoint that reaches this image is whatever the OLD
+	# one recorded. Every spelling a synthesized image ever gave must therefore
+	# still start, or the deployment is wedged on the version it already runs.
+	- desc: an entrypoint an older container recorded still starts the server
+	  cmd: |
+		set -eu
+		. {shared.env}
+		docker image inspect "$REF" >/dev/null 2>&1 || docker pull "$REF" >/dev/null
+		# The absolute path every image before the launcher carried.
+		docker run --rm --entrypoint "/$PROJECT" "$REF" version | head -n1
+		# The bare name, found on PATH.
+		docker run --rm --entrypoint "$PROJECT" "$REF" version | head -n1
+		# A shell in front of the path, which the shell-layer images used.
+		docker run --rm --entrypoint /bin/sh "$REF" "/$PROJECT" version | head -n1
+		echo "every-spelling-starts"
+	  outputs:
+		stdout:
+			- "every-spelling-starts"
