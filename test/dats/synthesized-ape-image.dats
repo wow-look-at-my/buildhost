@@ -50,9 +50,11 @@ shared:
 			setsid $RUN serve > "$WORK/server.log" 2>&1 &
 			echo "$!" > "$WORK/server.pid"
 			started=""
+			# A hook gets 30s in total, so a one-second poll spends the whole
+			# budget waiting and reports a timeout instead of the server log.
 			for _ in $(seq 50); do
 				if curl -fsS "$BASE/healthz" >/dev/null 2>&1; then started=yes; break; fi
-				sleep 1
+				sleep 0.2
 			done
 			test -n "$started" || { echo "server did not become healthy:" >&2; cat "$WORK/server.log" >&2; exit 1; }
 			auth() { curl -fsS -H "Authorization: Bearer $TOKEN" "$@"; }
@@ -75,11 +77,7 @@ shared:
 				echo "PROJECT='$PROJECT'"
 			} > "$ENV_FILE"
 
-# The poll above waits up to 50s for the server, and an unstated hook bound is
-# 30s, so a slow boot fails this suite on the clock rather than on an assertion.
-setup:
-	- cmd: env ENV_FILE={shared.env} sh {shared.start.sh}
-	  timeout: 10m
+setup: env ENV_FILE={shared.env} sh {shared.start.sh}
 teardown: sh -c '. {shared.env}; kill -- "-$(cat "$WORK/server.pid")" 2>/dev/null; true'
 
 tests:

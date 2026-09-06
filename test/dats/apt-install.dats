@@ -39,9 +39,13 @@ shared:
 				$RUN serve > "$WORK/server.log" 2>&1 &
 			echo "$!" > "$WORK/server.pid"
 			started=""
+			# A hook gets 30s in total. A one-second poll spends the whole
+			# budget waiting, so the suite reports a timeout instead of the
+			# server log that says why. Ten seconds is the ceiling here, and a
+			# fifth-of-a-second poll still catches a healthy server at once.
 			for _ in $(seq 50); do
 				if curl -fsS "$BASE/healthz" >/dev/null 2>&1; then started=yes; break; fi
-				sleep 1
+				sleep 0.2
 			done
 			test -n "$started" || { echo "server did not become healthy:" >&2; cat "$WORK/server.log" >&2; exit 1; }
 			auth() { curl -fsS -H "Authorization: Bearer $TOKEN" "$@"; }
@@ -118,16 +122,8 @@ shared:
 			sudo rm -f /etc/apt/keyrings/buildhost-apt-e2e.gpg
 			true
 
-# A hook command is always bounded, and unstated means 30s. The health poll
-# alone allows 50s, so the default could never cover a slow boot: the suite
-# reported a timeout rather than what it asserts. The bound below still catches
-# a genuine hang.
-setup:
-	- cmd: env ENV_FILE={shared.env} sh {shared.start.sh}
-	  timeout: 5m
-teardown:
-	- cmd: sh {shared.teardown.sh} {shared.env}
-	  timeout: 2m
+setup: env ENV_FILE={shared.env} sh {shared.start.sh}
+teardown: sh {shared.teardown.sh} {shared.env}
 
 tests:
 	- desc: the plain package installs at the published version and is executable
