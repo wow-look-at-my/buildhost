@@ -208,8 +208,7 @@ runs:
             if (artifactName) {
               const oct = octokit(process.env.GITHUB_TOKEN!);
               const [owner, repo] = github.repository.split('/');
-              // github.run_id reaches a script as the env var's string; octokit's run_id is a number.
-              // the github context is rebuilt from environment variables, so run_id arrives as a string
+              // The github context is rebuilt from environment variables, so run_id arrives as a string and octokit wants a number.
               const { data: { artifacts } } = await oct.rest.actions.listWorkflowRunArtifacts({ owner, repo, run_id: Number(github.run_id) });
               const artifact = artifacts.find((a: any) => a.name === artifactName);
               if (!artifact) { core.setFailed(`Artifact '${artifactName}' not found in run`); return; }
