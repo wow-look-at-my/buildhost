@@ -12,6 +12,10 @@ export interface Core { info(m: string): void; warning(m: string): void; setFail
 export interface Context { repo: { owner: string; repo: string } }
 
 interface Comment { id: number; body?: string | null }
+
+// The injected octokit is callable AND carries `rest`, so it does not match a
+// plain object interface at a call site. The narrowing happens here, once,
+// rather than at every caller.
 export interface Octokit {
 	rest: {
 		pulls: { list(p: Record<string, unknown>): Promise<{ data: readonly { number: number }[] }> };
@@ -57,9 +61,10 @@ async function resolvePR(octokit: Octokit, context: Context, params: {
  * A branch with no open pull request is a no-op, not a failure: a push to the
  * default branch previews nothing a reviewer is waiting on.
  */
-export async function commentPreview(octokit: Octokit, core: Core, context: Context, params: {
+export async function commentPreview(client: unknown, core: Core, context: Context, params: {
 	project: string; branch: string; siteURL: string; prNumber?: number; headRef?: string;
 }): Promise<boolean> {
+	const octokit = client as Octokit;
 	const { owner, repo } = context.repo;
 	let issue_number: number;
 	try {
