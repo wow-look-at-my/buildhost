@@ -111,10 +111,6 @@ func (o *Orchestrator) PublishRelease(ctx context.Context, _ db.Project, release
 	return o.DB.PublishRelease(ctx, release.ID)
 }
 
-// TransformVersion identifies the byte-level transformation buildhost applies.
-// Every cached digest carries it, so a change here refills them. It covers the
-// synthesized OCI image too: an APE image gained a shell layer and a two-part
-// entrypoint, and without a bump every digest cached before that kept serving
-// the old layout. Such an image names the APE alone, and the kernel cannot exec
-// one, so every container start is "exec /<name>: no such file or directory".
-const TransformVersion = "ape-shell-entrypoint-1"
+// TransformVersion tags every cached digest. Skip the bump and a digest cached
+// under the old layout is served forever.
+const TransformVersion = "ape-launcher-1"
