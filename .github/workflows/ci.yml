@@ -726,7 +726,6 @@ jobs:
           branch: direct
           source_dir: ${{ runner.temp }}/small-site
           chunk_size: "1048576"
-          # A throwaway site on a localhost server has a URL nobody can open.
           comment: false
       - env:
           LOG: ${{ runner.temp }}/buildhost.log
