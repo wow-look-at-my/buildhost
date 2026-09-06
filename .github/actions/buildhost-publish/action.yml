@@ -187,7 +187,9 @@ runs:
               // Download artifact via octokit
               const oct = octokit(process.env.GITHUB_TOKEN!);
               const [owner, repo] = github.repository.split("/");
+              // github.run_id reaches a script as the env var's string; octokit's run_id is a number.
               const { data: { artifacts } } = await oct.rest.actions.listWorkflowRunArtifacts({
+                // the github context is rebuilt from environment variables, so run_id arrives as a string
                 owner, repo, run_id: Number(github.run_id),
               });
               const artifact = artifacts.find((a: any) => a.name === artifactName);

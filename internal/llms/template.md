@@ -14,7 +14,7 @@ This document lives at `__BASE_URL__/llms.txt` and is written for LLMs and autom
 - **Project**: a named container for releases (for example, `myapp`). Project names match `[a-z0-9][a-z0-9._-]{0,127}` and may contain `/` for grouping.
 - **Release**: one version of a project. Versions auto-increment by default (`1`, `2`, `3`, ...) or use semver if the project opts in.
 - **Artifact**: an uploaded binary for a specific OS and architecture, such as `linux/amd64`. A release can hold many artifacts.
-- **Branch**: the git branch is a first-class field on every release. So you can always fetch the latest build of a branch.
+- **Branch**: the git branch is a first-class field on every release. You can therefore always fetch the latest build of a branch.
 - **Visibility**: projects are public or private. Private projects require an auth token on every endpoint, including the package-manager formats.
 
 ## Authentication
@@ -23,9 +23,9 @@ buildhost uses bearer tokens. Provide one in whichever way your client allows:
 
 - HTTP header: `Authorization: Bearer <token>`
 - HTTP Basic auth: send the token as the password (the username is ignored)
-- Query parameter: `?token=<token>` (for clients that cannot set headers, such as some APT flows. Git -- and therefore `brew tap` -- cannot use it, see the Homebrew section for the private-tap mechanism)
+- Query parameter: `?token=<token>`, for a client that cannot set a header, such as some APT flows. git cannot use it, and `brew tap` therefore cannot either. See the Homebrew section for the private-tap mechanism.
 
-Tokens are global or scoped to a single project, and carry `read` and/or `write` scopes. The default scope is `read` (least privilege). GitHub Actions and other OIDC providers can authenticate with a short-lived JWT instead of a static token. See the README for OIDC setup.
+A token is global or scoped to a single project. It carries a `read` scope, a `write` scope, or both. The default scope is `read`, which is least privilege. GitHub Actions and another OIDC provider can authenticate with a short-lived JWT instead of a static token. See the README for OIDC setup.
 
 ## Publishing with the CLI
 
@@ -68,21 +68,39 @@ PUT  __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{a
 POST __BASE_URL__/api/v1/projects/{project}/releases/{version}/publish
 ```
 
-The upload's `{os}` segment accepts one OS, a comma-separated list (`linux,darwin,windows`), or `cosmo` (aliases `any`/`all`/`universal`) for linux+darwin+windows. `{arch}` accepts a list or `any`/`all` for amd64+arm64. The body is stored once and one ordinary artifact row is created per os/arch combination (all-or-nothing. A conflicting combination returns 409), so downloads are unchanged -- always request a concrete os/arch. A single os/arch returns one artifact JSON object. A multi-platform upload returns a JSON array of them.
+The upload's `{os}` segment accepts one OS, a comma-separated list such as `linux,darwin,windows`, or `cosmo` for linux, darwin and windows together. The aliases `any`, `all` and `universal` mean the same as `cosmo`. The `{arch}` segment accepts a list, or `any` or `all` for amd64 and arm64.
 
-That per-combination fan-out applies to a file that is NOT an APE, where the combinations really are separate builds that happen to share bytes. When the uploaded body carries APE magic and the segments expand to more than one combination, the upload publishes ONE artifact covering them all -- exactly. A file that runs on N platforms gets one download link, never N.
+The body is stored once. One ordinary artifact row is created per os/arch combination. The set is all-or-nothing, and a conflicting combination returns 409. Downloads are therefore unchanged. Always request a concrete os/arch. A single os/arch returns one artifact JSON object. A multi-platform upload returns a JSON array of them.
 
-One binary that runs on SEVERAL platforms -- an Actually Portable Executable, which boots natively on Linux, macOS and Windows from one file -- is published as.
+That per-combination fan-out applies to a file that is NOT an APE. There the combinations really are separate builds that happen to share bytes.
+
+The uploaded body can instead carry APE magic while the segments expand to more than one combination. The upload then publishes ONE artifact that covers them all, exactly as the `/artifacts/ape` endpoint below does. It answers with that single artifact JSON object rather than an array. A file that runs on N platforms gets one download link, never N.
+
+One binary can run on SEVERAL platforms. An Actually Portable Executable is such a binary. It boots natively on Linux, macOS and Windows from one file. The registry publishes it as ONE artifact with ONE download link, and not as N rows.
 
 ```
 PUT __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/ape?platforms=linux/amd64,darwin/arm64,windows/amd64
 ```
 
-`platforms` is a comma-separated `os/arch` list. Each side accepts the same alias spellings as everywhere else (`macOS/aarch64` is `darwin/arm64`). The first entry is the artifact's canonical slot. Every listed platform then resolves to that one artifact -- `/{project}?os=darwin&arch=arm64` and `/{project}?os=linux&arch=amd64` redirect to the SAME download URL with the same digest and ETag. `?kind=`, `X-Artifact-Filename`, `upload_session=` and `upload_sha256=` work exactly as they do on the `{os}/{arch}` endpoint. `kind=docker` and `kind=npm-package` are rejected. A declaration of MORE THAN ONE platform whose uploaded bytes are not an APE (no `MZqFpD` magic) returns 400 -- publish per-platform builds to `/artifacts/{os}/{arch}` instead. A declared `windows/*` platform is checked against the bytes too: an APE whose PE header is the one-section do-nothing stub maps none of the payload. So the binary will start on Windows and exit 0 without running, and that upload returns 400 rather than publishing a download that fails silently. Every artifact in a release's JSON carries a `platforms` array (one entry for an ordinary per-platform artifact), so read that rather than `os`/`arch` alone.
+`platforms` is a comma-separated `os/arch` list. Each side accepts the same alias spellings as everywhere else, so `macOS/aarch64` is `darwin/arm64`. The first entry is the artifact's canonical slot.
 
-Hash-reference uploads: when `GET __BASE_URL__/api/v1/server-info` advertises `"upload_by_sha256": true`, a file byte-identical to one this project already uploaded (any release) can be registered for more os/arch slots without re-sending. The created rows and responses are identical to a full upload's, and the reference composes with the os/arch list grammar above. A 404 means the blob is not available to this project (unknown, another project's, or garbage-collected): fall back to a full upload. NEVER send an empty-body `upload_sha256` request to a server that does not advertise the capability -- it will store the empty body as the artifact. Together with `upload_session=` the parameter keeps its session-integrity meaning (below).
+Every listed platform then resolves to that one artifact. `/{project}?os=darwin&arch=arm64` and `/{project}?os=linux&arch=amd64` redirect to the SAME download URL, with the same digest and ETag. apt, brew, npm and oci still cover every listed platform.
 
-Large uploads: a proxy in front of the server may cap single request bodies (Cloudflare's edge rejects bodies over 100 MB). Check `GET __BASE_URL__/api/v1/server-info` for `max_direct_upload_bytes`. Anything larger must go through a chunked upload session instead of one request:
+`?kind=`, `X-Artifact-Filename`, `upload_session=` and `upload_sha256=` work exactly as they do on the `{os}/{arch}` endpoint. `kind=docker` and `kind=npm-package` are rejected.
+
+A declaration of MORE THAN ONE platform whose uploaded bytes are not an APE returns 400. Such bytes carry no `MZqFpD` magic. Publish per-platform builds to `/artifacts/{os}/{arch}` instead.
+
+A declared `windows/*` platform is checked against the bytes too. An APE whose PE header is the one-section do-nothing stub maps none of the payload. Such a binary starts on Windows and exits 0 without a run. That upload therefore returns 400, rather than a published download that fails silently.
+
+Every artifact in a release's JSON carries a `platforms` array. An ordinary per-platform artifact has one entry there. Read that array rather than `os` and `arch` alone.
+
+Hash-reference uploads work when `GET __BASE_URL__/api/v1/server-info` advertises `"upload_by_sha256": true`. A file byte-identical to one this project already uploaded, in any release, can be registered for more os/arch slots without a re-send. PUT the artifact URL with an EMPTY body and `?upload_sha256=<hex sha256 of the file>`.
+
+The created rows and responses are identical to a full upload's. The reference composes with the os/arch list grammar above. A 404 means the blob is not available to this project, because it is unknown, another project's, or garbage-collected. Fall back to a full upload then.
+
+NEVER send an empty-body `upload_sha256` request to a server that does not advertise the capability. Such a server stores the empty body as the artifact. Together with `upload_session=` the parameter keeps its session-integrity meaning, described below.
+
+A proxy in front of the server may cap a single request body. Cloudflare's edge rejects a body over 100 MB. Check `GET __BASE_URL__/api/v1/server-info` for `max_direct_upload_bytes`. Anything larger must go through a chunked upload session instead of one request.
 
 ```
 POST   __BASE_URL__/api/v1/uploads                 -> {"id": ...}
@@ -90,7 +108,7 @@ PATCH  __BASE_URL__/api/v1/uploads/{id}?offset=N   append chunk at offset (repea
 PUT    __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch}?upload_session={id}&upload_sha256={hex}
 ```
 
-The finalize step is the ORIGINAL upload endpoint with an empty body. The assembled bytes are used as the request body. Works on the site-deploy PUT too. Offsets must equal the committed size (a 409 returns the actual size to resume from). `GET __BASE_URL__/api/v1/uploads/{id}` reads it and DELETE aborts. The `buildhost publish` CLI does all of this automatically.
+The finalize step is the ORIGINAL upload endpoint with an empty body. The assembled bytes become the request body. This works on the site-deploy PUT too. An offset must equal the committed size, and a 409 returns the actual size to resume from. `GET __BASE_URL__/api/v1/uploads/{id}` reads that size, and DELETE aborts the session. The `buildhost publish` CLI does all of this automatically.
 
 ## Downloading
 
@@ -107,7 +125,7 @@ curl -LO "__DL_URL__/myapp?v=1&os=linux&arch=amd64"
 curl -LO "__DL_URL__/myapp?branch=main&os=linux&arch=amd64"
 ```
 
-The bare download URL ("latest" -- no `v=` and no `branch=`) always resolves the newest build of the project's default branch. Uploads from other branches never affect it. This is guaranteed and covered by buildhost's e2e regression tests -- do not re-verify it per project.
+The bare download URL carries no `v=` and no `branch=`. It always resolves the newest build of the project's default branch. An upload from another branch never affects it. This is guaranteed, and buildhost's e2e regression tests cover it. Do not re-verify it per project.
 
 Add `&fmt=` to repackage on the fly. Supported values: `raw`, `tar.gz`, `tar.xz`, `tar.zst`, `zip`.
 
@@ -137,9 +155,9 @@ To set it up by hand instead, see the README. APT reads the armored key at __APT
 
 For a slash-namespaced project the repository URL keeps the slash, but the Debian package name folds `/` and `_` to `-` (for example, `myrepo/server` is served at `__APT_URL__/myrepo/server` and installs as `myrepo-server`).
 
-A `create_service` project's generated deb also ships a systemd user unit (`/usr/lib/systemd/user/<pkg>.service`, crash-only restart, bound to the graphical session) that the package auto-enables at install: it starts at each user's next graphical. Pre-built `.deb` artifacts uploaded as `kind=archive` are served byte-identical -- never injected into.
+A `create_service` project's generated deb also ships a systemd user unit at `/usr/lib/systemd/user/<pkg>.service`. That unit is crash-only restart. It is bound to the graphical session. The package auto-enables it at install. It starts at each user's next graphical login. A removal disables it again. A pre-built `.deb` artifact uploaded as `kind=archive` is served byte-identical. Nothing is ever injected into it.
 
-Homebrew (tap the generated Git repository, trust it -- required since Homebrew 6.0 -- then install. On Linux the bottle-less install runs Homebrew's build sandbox, which needs bubblewrap and unprivileged user namespaces, or `HOMEBREW_NO_SANDBOX_LINUX=1` in containers/CI without them):
+Homebrew: tap the generated Git repository, trust it, then install. The trust step is required from Homebrew 6.0. On Linux the bottle-less install runs Homebrew's build sandbox. That sandbox needs bubblewrap and an unprivileged user namespace. A container or a CI runner without them needs `HOMEBREW_NO_SANDBOX_LINUX=1` instead.
 
 ```
 brew tap pazer/build __BREW_URL__/tap.git
@@ -147,7 +165,7 @@ brew trust pazer/build
 brew install pazer/build/go-toolchain
 ```
 
-For a private project, tap the authenticated tap instead: it contains every public formula plus the private projects the token can read (git transmits credentials. It replaces the public tap -- `brew untap --force pazer/build` first if that was added), and export `HOMEBREW_BUILDHOST_TOKEN` so the formula's download strategy can authenticate the artifact fetch. The `?token=` query parameter cannot be used with `brew tap` -- git appends its own path segments after the query string. Example for a private project named `myrepo/myapp`:
+For a private project, tap the authenticated tap instead. It contains every public formula, plus the private projects the token can read. A git client transmits a credential only after a challenge. The credential therefore rides the tap URL as the HTTP Basic password. The authenticated tap replaces the public one, so run `brew untap --force pazer/build` first when the public tap is already added. Also export `HOMEBREW_BUILDHOST_TOKEN`, so the formula's download strategy can authenticate the artifact fetch. The `?token=` query parameter does not work with `brew tap`, because git appends its own path segments after the query string. Here is an example for a private project named `myrepo/myapp`:
 
 ```
 brew tap pazer/build "__BREW_TOKEN_URL__/private/tap.git"
@@ -156,9 +174,11 @@ export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
 brew install pazer/build/myrepo-myapp
 ```
 
-A slash-namespaced project folds `/` to `-` in its formula name (the same rule as APT package names). And the installed command keeps the binary's own name: `myrepo/myapp` installs as `brew install pazer/build/myrepo-myapp` and puts `myapp` on PATH.
+A slash-namespaced project folds `/` to `-` in its formula name. That is the same rule as the APT package name rule. The installed command keeps the binary's own name. `myrepo/myapp` therefore installs as `brew install pazer/build/myrepo-myapp` and puts `myapp` on PATH.
 
-A project that declares its `create_service` setting (a bool its CI sends on release-create, or an operator sets via the API) is a background service, materialized per format. Its formula carries a `service do` block: activate once with `brew services start pazer/build/<project>` (user LaunchAgent at login, crash-only restart, logs under `$(brew --prefix)/var/log/`. Homebrew's sandbox makes install-time auto-start impossible for any formula, and `brew uninstall` does not stop services -- `brew services stop` first). Its generated deb ships an auto-enabled systemd user unit -- see the APT section.
+A project can declare its `create_service` setting. Its CI sends that bool on release-create, or an operator sets it through the API. Such a project is a background service, materialized per format.
+
+Its formula carries a `service do` block. Activate the service once with `brew services start pazer/build/<project>`. It becomes a user LaunchAgent at login, with crash-only restart and logs under `$(brew --prefix)/var/log/`. Homebrew's sandbox makes an install-time auto-start impossible for any formula. `brew uninstall` does not stop a service, so run `brew services stop` first. The project's generated deb ships an auto-enabled systemd user unit. See the APT section for that.
 
 npm (packages are published under the `@buildhost` scope):
 
@@ -166,7 +186,7 @@ npm (packages are published under the `@buildhost` scope):
 npm install @buildhost/myapp --registry __NPM_URL__
 ```
 
-OCI / Docker (the registry is served at `__OCI_URL__/v2/`). Public images pull anonymously. For a private project, run `docker login __OCI_HOST__` first (any valid token works as the password):
+OCI and Docker: the registry is served at `__OCI_URL__/v2/`. A public image pulls anonymously. For a private project, run `docker login __OCI_HOST__` first, where any valid token works as the password.
 
 ```
 docker pull __OCI_HOST__/myapp:latest
@@ -187,15 +207,17 @@ export GOPRIVATE='github.com/<your-org>/*'
 go mod download
 ```
 
-The trailing `,direct` is load-bearing. This proxy serves its own org's modules and answers 404 for anything else, which is the module protocol's "try the next entry" -- so everything else is fetched straight. No third-party mirror is involved unless the operator configures one, and none is configured by default: a mirror sees the module path of every dependency.
+The trailing `,direct` is load-bearing. This proxy serves its own org's modules. It answers 404 for anything else, which is the module protocol's "try the next entry". Everything else is therefore fetched straight from its origin. No third-party mirror is involved unless the operator configures one, and none is configured by default. A mirror sees the module path of every dependency routed through it.
 
-A failure of the PROXY's own credential is a 403, not a 404, so it does NOT fall through to `direct` -- an operator's credential problem.
+A failure of the PROXY's own credential is a 403, not a 404. It therefore does NOT fall through to `direct`. An operator's credential problem halts the fetch and is reported, rather than silently papered over.
 
-`GOPRIVATE` keeps your org's module paths out of the public checksum database (it sets `GONOPROXY` and `GONOSUMDB` for you).
+`GOPRIVATE` keeps your org's module paths out of the public checksum database. It sets `GONOPROXY` and `GONOSUMDB` for you.
 
-Send a read-scoped token to fetch a module in one of this proxy's private namespaces. Without one, every such module is answered 404 -- the same answer a module that does not exist gets, and deliberately so: a 401 or 403. Public modules need no credential.
+Send a read-scoped token to fetch a module in one of this proxy's private namespaces. Without one, every such module is answered 404. That is the same answer a module that does not exist gets. The match is deliberate. A 401 or 403 confirms that the module exists, which is the fact a private module is keeping. A public module needs no credential.
 
-A fetch that fails is answered with a status that says WHY: 403 when the proxy's own credential can not read the module, 502 when. A 404 never means the proxy can not read the module on your behalf -- that case is the 403. `__GOPROXY_URL__/health` reports whether the proxy can currently serve private modules at all: 200 or 503 with no credential, and the reason plus the configured prefixes.
+A fetch that fails is answered with a status that says WHY. A 403 means the proxy's own credential failed to read the module. A 502 means the upstream failed. A 404 means the module is not there, or is not visible to you. A 404 never means the proxy failed to read the module on your behalf. That case is the 403.
+
+`__GOPROXY_URL__/health` reports whether the proxy can currently serve a private module at all. It answers 200 or 503 with no credential. With a read token it also gives the reason and the configured prefixes.
 
 ## Static sites
 
@@ -207,14 +229,14 @@ buildhost publish-site --server __BASE_URL__ --token $TOKEN \
 # served at __SITES_URL__/myapp/@main/
 ```
 
-The project's own root path is the canonical URL: it serves the default branch directly, so a link into a site need not name.
+The project's own root path is the canonical URL. It serves the default branch directly. A link into a site therefore need not name a branch at all.
 
 ```
 __SITES_URL__/myapp/            -> index.html, from the default branch
 __SITES_URL__/myapp/runner.html -> that file, from the default branch
 ```
 
-Any other branch, or a specific commit, is named with the `@` sigil -- it cannot occur in a project or branch name and is vanishingly.
+Any other branch, or a specific commit, is named with the `@` sigil. That character cannot occur in a project name or a branch name. It is also very rare in a file name.
 
 ```
 __SITES_URL__/myapp/@pr-7/          -> the pr-7 preview
@@ -222,11 +244,11 @@ __SITES_URL__/myapp/@pr-7/x.css     -> x.css on that branch
 __SITES_URL__/myapp/@0f1e2d3/x.css  -> x.css from that exact commit
 ```
 
-A commit ref takes the full 40-hex sha or any abbreviation of 7+ characters. It resolves while that commit is still the live deployment of some branch, so the URL serves exactly that build or 404s -- it never quietly.
+A commit ref takes the full 40-hex sha, or any abbreviation of 7 characters or more. It resolves while that commit is still the live deployment of some branch. The URL therefore serves exactly that build, or it answers 404. It never quietly becomes a later build.
 
-Redirects only ever run toward the shorter URL: `@<default branch>` 302s to the bare path above, never the reverse. The original `/myapp/branch/main/x.css` spelling is not going away either -- it 302s to whichever of the two URLs above names the same file, so every published.
+A redirect only ever runs toward the shorter URL. `@<default branch>` 302s to the bare path above, and never the reverse. The original `/myapp/branch/main/x.css` spelling is not going away either. It 302s to whichever URL above names the same file. Every published link therefore keeps resolving.
 
-Project names are slash-namespaced, so the bare path's split is resolved by longest match: with projects `org` and `org/repo`, `__SITES_URL__/org/repo` is org/repo's root, not. The `@` form never needs the lookup -- the sigil marks exactly where the project name ends. __SITE_SECTION__
+A project name is slash-namespaced. The bare path's split is therefore resolved by longest match. With projects `org` and `org/repo`, `__SITES_URL__/org/repo` is org/repo's root. It is not the file `repo` under `org`. The `@` form never needs that lookup, because the sigil marks exactly where the project name ends. __SITE_SECTION__
 ## REST API reference
 
 API routes are on the main domain. Service-specific routes use subdomains.
@@ -251,8 +273,8 @@ GET    /healthz                                                              hea
 
 ## Notes for automated agents
 
-- Resolve to a concrete version before calling the static endpoint. It rejects `v=latest` with HTTP 400.
-- Uploads larger than server-info's `max_direct_upload_bytes` must use a chunked upload session (see "Publishing with the REST API"). A single request that big is rejected by the proxy in front of the server before it reaches buildhost.
-- For private projects, send the auth token on every request. The APT, npm, and OCI endpoints accept it directly. Homebrew needs the authenticated tap plus `HOMEBREW_BUILDHOST_TOKEN` (see "Package managers").
+- Resolve to a concrete version before you call the static endpoint. It rejects `v=latest` with HTTP 400.
+- An upload larger than server-info's `max_direct_upload_bytes` must use a chunked upload session. See "Publishing with the REST API". The proxy in front of the server rejects a single request that big before it reaches buildhost.
+- For a private project, send the auth token on every request. The APT, npm and OCI endpoints accept it directly. Homebrew needs the authenticated tap plus `HOMEBREW_BUILDHOST_TOKEN`. See "Package managers".
 - `GET __BASE_URL__/healthz` returns 200 when the server and its database are reachable.
 - The human-readable README is the authoritative reference for configuration, OIDC auto-provisioning, and deployment.

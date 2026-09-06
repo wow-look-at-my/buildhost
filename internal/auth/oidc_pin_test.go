@@ -161,9 +161,53 @@ func TestOIDCPin_MismatchedIDs_ReadRejected(t *testing.T) {
 	}
 	require.NoError(t, d.CreateProject(context.Background(), proj))
 
-	rec := pinTestRequest(t, ReadAccess, "777", pinRepoID)
+	rec := pinTestRequest(t, ReadAccess, "777", "888")
 	assert.Equal(t, http.StatusForbidden, rec.Code)
 	assert.Contains(t, rec.Body.String(), "OIDC repo identity mismatch")
+}
+
+// A transfer to another owner keeps the repo id, which is what identifies the
+// repository. The publish must succeed and must move the owner pin with it.
+func TestOIDCPin_Transfer_WriteRePinsTheOwner(t *testing.T) {
+	t.Serial()
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &db.Project{
+		Name: "tesla-wheel-data", Versioning: db.VersioningAuto,
+		GithubRepo: "old-owner/tesla-wheel-data", GithubOwnerID: "6569500", GithubRepoID: pinRepoID,
+	}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	rec := pinTestRequest(t, WriteAccess, pinOwnerID, pinRepoID)
+	assert.Equal(t, http.StatusAccepted, rec.Code, "a transfer is not a resurrection")
+
+	got, err := d.GetProject(context.Background(), "tesla-wheel-data")
+	require.NoError(t, err)
+	assert.Equal(t, pinOwnerID, got.GithubOwnerID, "the owner pin follows the transfer")
+	assert.Equal(t, pinRepoID, got.GithubRepoID)
+	assert.Equal(t, "wow-look-at-my/tesla-wheel-data", got.GithubRepo)
+}
+
+// A read after a transfer is allowed, and it re-pins nothing. Reads never
+// mutate, which is the rule the trust-on-use path follows.
+func TestOIDCPin_Transfer_ReadAllowedAndPinsNothing(t *testing.T) {
+	t.Serial()
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+
+	proj := &db.Project{
+		Name: "tesla-wheel-data", Versioning: db.VersioningAuto, IsPrivate: true,
+		GithubRepo: "old-owner/tesla-wheel-data", GithubOwnerID: "6569500", GithubRepoID: pinRepoID,
+	}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	rec := pinTestRequest(t, ReadAccess, pinOwnerID, pinRepoID)
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+
+	got, err := d.GetProject(context.Background(), "tesla-wheel-data")
+	require.NoError(t, err)
+	assert.Equal(t, "6569500", got.GithubOwnerID, "a read leaves the pin alone")
 }
 
 func TestOIDCPin_MismatchedIDs_HiddenReadGets404(t *testing.T) {

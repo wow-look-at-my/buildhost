@@ -1,6 +1,6 @@
 # One file, several platforms
 
-An Actually Portable Executable is ONE file that boots natively on Linux, macOS and Windows. Publishing it as N per-platform artifact rows -- the upload-time fan-out described in `docs/uploads.md` -- gives a consumer N download links for one binary, and gives. Single-artifact multi-platform ingest is the other answer: one blob, one artifact row, one download link, N occupied platform slots.
+An Actually Portable Executable is ONE file that boots natively on Linux, macOS and Windows. `docs/uploads.md` describes the upload-time fan-out that publishes it as N per-platform artifact rows. That fan-out gives a consumer N download links for one binary. It gives a UI N rows for one file. Single-artifact multi-platform ingest is the other answer. It stores one blob, one artifact row, one download link, and N occupied platform slots.
 
 Both remain. Fan-out is right for N genuinely separate builds that happen to share bytes. This path is right for one file that genuinely runs everywhere.
 
@@ -60,16 +60,16 @@ A file listed there is published through this endpoint and removed from the acti
 
 Every rejection is a 4xx that names the offending token, and stores nothing:
 
-- an unknown os or arch, a pair without a `/`, an empty element, an empty set, or a duplicate after normalization (`darwin/arm64,macos/aarch64`).
-- an incoherent pair (`linux/wasip1` -- `os=wasm` pairs only with `js`/`wasip1`).
-- a platform already taken in this release for this kind (409, naming it), from either direction: a per-platform upload for a covered platform conflicts too.
+- an unknown os or arch, a pair without a `/`, an empty element, an empty set, or a duplicate after normalization (`darwin/arm64,macos/aarch64`)
+- an incoherent pair, such as `linux/wasip1`. An `os=wasm` value pairs only with `js` or `wasip1`.
+- a platform already taken in this release for this kind. The answer is a 409 that names the platform. The check runs from either direction, so a per-platform upload for a covered platform conflicts too.
 - **a multi-platform set whose file is not an Actually Portable Executable.**
 
-That last one is the point of the badge. A claim that one file runs on three platforms is only true for a format that carries three platforms' code, so `internal/exeformat` reads the leading. A single-platform `platforms=` value is not a portability claim, so any file may take this path.
+That last one is the point of the badge. A claim that one file runs on several platforms is only true for a format that carries each of their code. `internal/exeformat` therefore reads the leading bytes. It requires the `MZqFpD` magic that Cosmopolitan's stub opens with. A single-platform `platforms=` value is not a portability claim, so any file may take this path.
 
 ## Storage model
 
-`artifact_platforms` (migration 017) is the authority on which slots an artifact occupies. Every artifact has at least one row there, including the single-platform ones the migration backfills, so lookup and slot-uniqueness have one code path rather than.
+`artifact_platforms` (migration 017) is the authority on which slots an artifact occupies. Every artifact has a row there, and that includes the single-platform artifacts the migration backfills. Lookup and slot-uniqueness therefore have one code path rather than two.
 
 ```sql
 CREATE TABLE artifact_platforms (
@@ -85,27 +85,27 @@ CREATE UNIQUE INDEX idx_artifact_platforms_slot
     ON artifact_platforms(release_id, kind, os, arch);
 ```
 
-The unique index enforces exactly what `artifacts.UNIQUE(release_id, os, arch, kind)` enforces for canonical slots, which is why a conflict is detected in both directions. `ordinal` is the publisher's declared order. Ordinal 0 is the **canonical slot**, mirrored into `artifacts.os`/`arch`.
+The unique index enforces exactly what `artifacts.UNIQUE(release_id, os, arch, kind)` enforces for a canonical slot. That is why a conflict is detected in both directions. `ordinal` is the publisher's declared order. Ordinal 0 is the **canonical slot**. It is mirrored into `artifacts.os` and `artifacts.arch`.
 
-`artifacts.exe_format` records what the leading bytes said the file is (`ape`, or `''` when nothing was recognized). The badge reads off this rather than assuming, so adding a second portable format later is a detector plus a label, not a schema change.
+`artifacts.exe_format` records what the leading bytes said the file is. The value is `ape`, or `''` when nothing was recognized. The badge reads that field rather than an assumption. To add another portable format later therefore needs a detector plus a label, and no schema change.
 
 ## Resolution
 
-`GetArtifactByReleaseOSArch` joins through `artifact_platforms`, so every download path -- `/dl`, `/static`, apt, signed download links -- resolves a covered platform to the one artifact with no per-caller.
+`GetArtifactByReleaseOSArch` joins through `artifact_platforms`. Every download path therefore resolves a covered platform to the one artifact, with no per-caller change. Those paths are `/dl`, `/static`, apt, and a signed download link.
 
-`/dl` additionally folds the requested pair to the artifact's canonical slot before building the `static.{domain}/file` URL. Without that fold, three platforms of one file will produce three static URLs. A CDN will cache three copies of one blob, and a UI comparing two platforms' links will show two URLs for one binary. With it, `dl/{project}?os=darwin&arch=arm64` and `dl/{project}?os=linux&arch=amd64` return the same Location, and that one object has one digest and one ETag. A pair the artifact does not cover is left untouched and `static` answers the 404 as before.
+`/dl` additionally folds the requested pair to the artifact's canonical slot. It does that before it builds the `static.{domain}/file` URL. Without that fold, each covered platform of one file produces its own static URL. A CDN then caches a separate copy of one blob per platform. A UI that compares two platforms' links then shows two URLs for one binary. With the fold, `dl/{project}?os=darwin&arch=arm64` and `dl/{project}?os=linux&arch=amd64` return the same Location. That one object has one digest and one ETag. A pair the artifact does not cover is left untouched, and `static` answers the 404 as before.
 
-`latest` and branch resolution are unchanged: the fold happens after the release is resolved, so the apex-`latest` default-branch rule (`docs/apex-latest.md`) still decides which release.
+`latest` and branch resolution are unchanged. The fold happens after the release is resolved. The apex-`latest` default-branch rule (`docs/apex-latest.md`) therefore still decides which release is served.
 
 ## What it means for apt, brew, npm and oci
 
-**A multi-platform artifact reaches exactly the platforms it will have reached as N separate rows.** Multi-platform ingest changes the row count and the number. It changes nothing about coverage. So a Homebrew formula still gets a `darwin/arm64` bottle, apt still gets a `linux/arm64` deb, and the OCI index still lists every covered platform -- all.
+**A multi-platform artifact reaches exactly the platforms that N separate rows reach.** Multi-platform ingest changes the row count and the number of download links. It changes nothing about coverage. A Homebrew formula still gets a `darwin/arm64` bottle. apt still gets a `linux/arm64` deb. The OCI index still lists every covered platform. All of them point at the same stored blob.
 
-`db.ListArtifactsByPlatform` is what those surfaces consume: one entry per covered platform, with `os`/`arch` rewritten to that platform. Each entry carries a `CacheSuffix`, because `packaged_artifacts` is keyed on `(artifact_id, format)` and two platforms of one file will otherwise share one derived package -- a `linux/arm64`. The canonical slot's suffix is `""`, so every pre-existing cache row keeps its exact key. A non-canonical platform's is `@os/arch`.
+`db.ListArtifactsByPlatform` is what those surfaces consume. It returns one entry per covered platform, with `os` and `arch` rewritten to that platform. Each entry carries a `CacheSuffix`, because `packaged_artifacts` is keyed on `(artifact_id, format)`. Without the suffix, two platforms of one file share one derived package. The result is a `linux/arm64` deb served as the `linux/amd64` deb, or one platform's OCI config unlinked when the next is generated. The canonical slot's suffix is `""`, so every pre-existing cache row keeps its exact key. A non-canonical platform's suffix is `@os/arch`.
 
 ## What a consumer sees
 
-The artifact JSON carries `platforms` on every artifact, single-platform ones included, so a consumer reads one field and never special-cases:
+The artifact JSON carries `platforms` on every artifact, and that includes a single-platform artifact. A consumer therefore reads one field and writes no special case.
 
 ```json
 {
@@ -130,5 +130,5 @@ The public release page renders one row per FILE with one set of download links 
 - `internal/exeformat` -- the magic check, including a bare `MZ` PE header and a magic that is not at offset 0.
 - `internal/db/platforms_test.go` -- set parsing, one-row-many-slots, conflicts leaving nothing behind, the per-platform flattening and its cache keys.
 - `internal/api/artifacts_ape_test.go` -- the endpoint: validation, the non-APE rejection, conflicts in both directions, hash-reference uploads.
-- `internal/dl/multiplatform_test.go` -- every covered platform folds to one static URL. An uncovered one does not.
-- `internal/server/multiplatform_test.go` -- end to end over real HTTP: one upload, five request spellings, one Location, one digest, one ETag, and the rendered badge on the release.
+- `internal/dl/multiplatform_test.go` -- every covered platform folds to one static URL. An uncovered platform does not fold.
+- `internal/server/multiplatform_test.go` -- end to end over real HTTP. One upload, several request spellings, one Location, one digest, one ETag, and the rendered badge on the release page.
