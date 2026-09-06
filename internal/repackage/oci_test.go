@@ -17,6 +17,30 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
+// readLayerFiles returns the regular files of a zstd-compressed image layer,
+// keyed by their path inside it.
+func readLayerFiles(t *testing.T, compressed []byte) map[string][]byte {
+	t.Helper()
+	zr, err := zstd.NewReader(bytes.NewReader(compressed))
+	require.NoError(t, err)
+	defer zr.Close()
+	tr := tar.NewReader(zr)
+	files := map[string][]byte{}
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return files
+		}
+		require.NoError(t, err)
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		data, err := io.ReadAll(tr)
+		require.NoError(t, err)
+		files[hdr.Name] = data
+	}
+}
+
 // TestOCIRepackageEssentials verifies the synthesized image carries the shared
 // essentials base layer (CA certs + minimal rootfs) in addition to the binary layer:
 func TestOCIRepackageEssentials(t *testing.T) {
@@ -166,11 +190,48 @@ func TestOCIRepackageAPEGetsAShell(t *testing.T) {
 		} `json:"config"`
 	}
 	require.NoError(t, json.Unmarshal(cfgBytes, &cfg))
-	assert.Equal(t, []string{"/bin/sh", "/apeapp"}, cfg.Config.Entrypoint)
+	// A rolling updater clones this string onto the replacement container.
+	assert.Equal(t, []string{"/apeapp"}, cfg.Config.Entrypoint)
 	require.Len(t, cfg.Rootfs.DiffIDs, 3)
 	_, baseDiffID, err := essentialsLayer()
 	require.NoError(t, err)
 	assert.Equal(t, "sha256:"+baseDiffID, cfg.Rootfs.DiffIDs[0])
+
+	binKey, _, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "oci-layer")
+	require.NoError(t, err)
+	binRC, _, err := store.Get(ctx, binKey)
+	require.NoError(t, err)
+	binData, err := io.ReadAll(binRC)
+	binRC.Close()
+	require.NoError(t, err)
+	files := readLayerFiles(t, binData)
+
+	// The APE lives out of the way, and each spelling reaches a launcher.
+	assert.Equal(t, apeBinary, files["usr/local/lib/apeapp/apeapp"])
+	launcher := string(apeImageLauncher("apeapp"))
+	assert.Equal(t, launcher, string(files["apeapp"]))
+	assert.Equal(t, launcher, string(files["usr/local/bin/apeapp"]))
+	assert.True(t, strings.HasPrefix(launcher, "#!/bin/sh\n"), "a launcher the kernel can exec starts with a shebang")
+	assert.Contains(t, launcher, "/usr/local/lib/apeapp/apeapp")
+}
+
+// A plain ELF keeps the single-file layout: the binary at /<name>, no launcher.
+func TestOCIRepackagePlainBinaryLayout(t *testing.T) {
+	t.Serial()
+	store := openTestStore(t)
+	body := []byte("\x7fELF not an APE")
+	key, size, diffID, err := ociWriteLayer(context.Background(), store, bytes.NewReader(body), int64(len(body)), "plainapp", false)
+	require.NoError(t, err)
+	require.NotEmpty(t, diffID)
+	require.NotZero(t, size)
+
+	rc, _, err := store.Get(context.Background(), key)
+	require.NoError(t, err)
+	data, err := io.ReadAll(rc)
+	rc.Close()
+	require.NoError(t, err)
+	files := readLayerFiles(t, data)
+	assert.Equal(t, map[string][]byte{"plainapp": body}, files)
 }
 
 // Without a shell cache an APE image is refused outright: an image that
