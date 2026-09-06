@@ -4,13 +4,12 @@ name: PR preview
 
 on:
   push:
-    branches: [master]
-  pull_request:
-    types: [opened, reopened, synchronize]
+    branches: ['**']
 
 permissions:
   contents: read
   actions: read
+  # buildhost-publish-site hands the preview URL to this branch's pull request
   pull-requests: write
   id-token: write
   checks: read
@@ -20,21 +19,14 @@ permissions:
 
 jobs:
   # internal/admin/static holds only index.html and style.css in git -- app.js and
-  build-site:
+  preview:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       # The same script the //go:generate directive runs, so the preview and the
       - run: ./scripts/build-admin-frontend.sh
-      - uses: actions/upload-artifact@v4
+      # One job, so the built site is right here: no artifact hand-off at all.
+      - uses: ./.github/actions/buildhost-publish-site
         with:
-          name: admin-static
-          path: internal/admin/static/
-          if-no-files-found: error
-
-  preview:
-    needs: build-site
-    uses: wow-look-at-my/actions/.github/workflows/buildhost-preview.yml@master
-    with:
-      artifact-name: admin-static
-    secrets: inherit
+          branch: ${{ github.ref_name }}
+          source_dir: internal/admin/static
