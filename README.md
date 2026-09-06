@@ -40,39 +40,7 @@ Git transmits a credential only after a 401 challenge. The token therefore goes 
 
 An artifact download authenticates separately, through `HOMEBREW_BUILDHOST_TOKEN`. A private formula reads that at install time. The token is never written into the tap.
 
-The example below uses a private project named `myrepo/myapp`. Under the folding rule above it installs as `myrepo-myapp`. The installed command keeps the binary's own name, `myapp`.
-Do not install formulas with a naked remote URL such as
-`brew install https://brew.pazer.build/go-toolchain`. Modern Homebrew reads that
-as a formula or tap name instead of cloning it as a formula URL.
-
-On Linux, these formulas have no bottles, so `brew install` runs Homebrew's
-build sandbox. It needs bubblewrap (`apt install bubblewrap`; Homebrew also
-installs its own) and unprivileged user namespaces. A hardened host such as
-Ubuntu 24.04 may need `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`.
-In containers or CI where user namespaces are unavailable, set
-`HOMEBREW_NO_SANDBOX_LINUX=1` instead. macOS needs neither.
-
-A slash-namespaced project folds `/` to `-` in its formula name (the same rule
-APT applies to package names): project `log-streamer/client` installs as
-`brew install pazer/build/log-streamer-client`. A project whose name starts
-with a digit cannot be served as a formula at all. Homebrew derives the Ruby
-class from the formula name, and a Ruby class cannot start with a digit. The
-tap omits such projects.
-
-### Private projects
-
-A private project never appears in the public tap. Tap the **authenticated
-tap** instead. It serves every public formula plus the private projects your
-token can read, so it replaces the public tap under the same name. If you
-already added the public tap, remove it first with
-`brew untap --force pazer/build`. Git only transmits credentials after a 401
-challenge, so the token goes in the tap URL as the HTTP Basic password (the
-username is ignored; `x` by convention). Artifact downloads authenticate
-separately through `HOMEBREW_BUILDHOST_TOKEN`, which private formulas read at
-install time. The token is never written into the tap. The example below is
-a private project named `myrepo/myapp`. Per the folding rule above it
-installs as `myrepo-myapp`, and the installed command keeps the binary's own
-name (`myapp`):
+The example below uses a private project named `myrepo/myapp`. Under the folding rule above it installs as `myrepo-myapp`. The installed command keeps the binary's own name, `myapp`:
 
 ```bash
 brew tap pazer/build "https://x:$TOKEN@brew.pazer.build/private/tap.git"
@@ -82,10 +50,6 @@ brew install pazer/build/myrepo-myapp
 ```
 
 `brew update` refreshes the tap with the credential stored in the tap's git remote. The `?token=` query parameter does not work with `brew tap`. git appends its own path segments after the query string, such as `/info/refs`. The URL then stops resolving as a git repository.
-`brew update` refreshes the tap with the credentials stored in the tap's git
-remote. The `?token=` query parameter does not work with `brew tap`. Git
-appends its own path segments (`/info/refs`, ...) after the query string, so
-the URL stops resolving as a git repository.
 
 ### Background services (create_service)
 
@@ -98,11 +62,6 @@ brew services start pazer/build/competent-search-thing
 ```
 
 Homebrew cannot run that for you at install. A formula's only install-time hook is `post_install`. That hook runs inside brew's sandbox. That profile denies every file write outside a build path, and `~/Library/LaunchAgents` is one of them. No formula can therefore register a LaunchAgent. `brew uninstall` does not stop a service either. Run `brew services stop <tap>/<project>` before you remove it.
-Homebrew cannot run that for you at install. A formula's install-time hook
-(`post_install`) runs inside brew's sandbox, whose profile denies all file
-writes outside build paths, `~/Library/LaunchAgents` included. No formula can
-register a LaunchAgent. `brew uninstall` does not stop services either: run
-`brew services stop <tap>/<project>` before removing.
 
 The service restarts only after a crash, through `keep_alive successful_exit: false`. A clean exit stays exited. It logs to `$(brew --prefix)/var/log/<name>.log`. On Linux prefer the APT install below, because brew's Linux units carry no graphical-session ordering. The APT section describes the deb materialization, which does auto-enable. Every other format, meaning raw, zip, npm and OCI, stores the flag and materializes nothing.
 
@@ -118,9 +77,6 @@ sudo apt-get install myapp
 ```
 
 For a private project, pass a read token. The installer also records it in `/etc/apt/auth.conf.d/`. That covers the apt host and the static host the `.deb` download redirects to.
-For a private project, pass a read token. The installer records it in
-`/etc/apt/auth.conf.d/`, for both the apt host and the static host the `.deb`
-download redirects to:
 
 ```bash
 curl -fsSL -H "Authorization: Bearer $TOKEN" https://apt.pazer.build/myapp/install.sh \
@@ -130,10 +86,6 @@ curl -fsSL -H "Authorization: Bearer $TOKEN" https://apt.pazer.build/myapp/insta
 One-line install commands (and per-project copy buttons) are also available on the admin dashboard: see each project's page or the **Registries** tab.
 
 A self-modifying binary is packaged with a launcher. A Cosmopolitan APE is such a binary, because it rewrites its own file the first time it runs. The binary installs under `/usr/lib/<pkg>/`. `/usr/bin/<pkg>` keeps a writable per-user copy. An ordinary user can therefore run it. Everything else installs straight to `/usr/bin`.
-A self-modifying binary (a Cosmopolitan APE rewrites its own file when it
-runs) is packaged with a launcher. The binary installs under `/usr/lib/<pkg>/`,
-and `/usr/bin/<pkg>` keeps a writable per-user copy, so an ordinary user can
-run it. Everything else installs straight to `/usr/bin`.
 
 To set it up by hand instead, import the repository signing key once, add the source, then install. The key is served per project path. It is the same server-wide key on every path.
 
@@ -149,11 +101,6 @@ sudo apt update && sudo apt install myapp
 ### Private projects
 
 A private project requires a token on every APT request. Put it in an `apt.conf.d`-style auth file. `apt update` and the package download then both authenticate. The package download redirects to the `static` subdomain. buildhost reads the token from the HTTP Basic **password** field. The username is ignored, so any value works, and `token` is the convention here.
-A private project requires a token on every APT request. Put it in an
-`apt.conf.d`-style auth file, so both `apt update` and the package download
-authenticate. That download redirects to the `static` subdomain. buildhost
-reads the token from the HTTP Basic **password** field. The username is
-ignored, so any value works -- `token` here by convention:
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
@@ -185,13 +132,6 @@ sudo apt update && sudo apt install pr-reviewer-agent-server
 A `create_service` project's generated deb ships a systemd user unit at `/usr/lib/systemd/user/<pkg>.service`. See the Homebrew section for the flag itself. That unit is crash-only `Restart=on-failure`. It is bound to `graphical-session.target`.
 
 The package sets it up at install. Its postinst runs `systemctl --global enable`. The service therefore starts at every user's next graphical login. The postinst also makes a best-effort immediate start, for the installing sudo user's live session. A removal of the package disables it again.
-A `create_service` project's generated deb ships a systemd user unit at
-`/usr/lib/systemd/user/<pkg>.service`. See the Homebrew section for the flag
-itself. The unit is crash-only (`Restart=on-failure`) and bound to
-`graphical-session.target`. The package's postinst runs `systemctl --global
-enable`, so the service starts at every user's next graphical login. The
-postinst also makes a best-effort immediate start for the installing sudo
-user's live session. Removing the package disables it again.
 
 This applies to a buildhost-GENERATED deb only, which means `fmt=deb`, from this APT repository. A pre-built `.deb` uploaded as an artifact, with `kind=archive`, is served byte-identical. buildhost never injects anything into an uploaded file.
 
@@ -206,7 +146,6 @@ buildhost serves a public, read-only browse UI on the main domain, and it uses n
 A private project is hidden. An anonymous visitor never sees it in a listing. A direct visit to its page returns a `404`, identical to the answer for a project that does not exist. The frontend therefore never reveals that a private project exists, the same way GitHub treats a private repository. A read-scoped token authorized for the project reveals it.
 
 A download link points at the `dl` subdomain. The single stylesheet is served from `/_ui/style.css`. No other asset is loaded. The authenticated admin dashboard remains a separate app on its own port. See [Container image](#container-image).
-Private projects are hidden. They are never listed for anonymous visitors, and visiting one's page directly returns a `404`. That answer is identical to a project that does not exist, so the frontend never reveals that a private project exists. GitHub treats private repositories the same way. A read-scoped token authorized for the project reveals it. Download links point at the `dl` subdomain. The stylesheet is served from `/_ui/style.css`, and no other assets are loaded. The authenticated admin dashboard remains a separate app on its own port (see [Container image](#container-image)).
 
 ## Synthesized container images
 
@@ -228,10 +167,6 @@ The synthesized image is regenerated on demand, and nothing stores it. Its diges
 ## Publishing real Docker images
 
 A project can need a real prebuilt image, rather than a binary wrapped in a minimal layer. A custom base image, a native library, an entrypoint and an exposed port are the usual reasons. buildhost is a writable OCI registry. You can therefore `docker push` directly.
-Some projects need to ship a real prebuilt image rather than a binary wrapped
-in a minimal layer. Reasons include a custom base image, native libraries, an
-entrypoint and exposed ports. buildhost is a writable OCI registry, so you can
-`docker push` directly:
 
 The OCI registry is served on the `oci.` subdomain. The apex host serves the API, and not `/v2/`.
 
@@ -270,13 +205,6 @@ steps:
 With `tags` omitted, a push is tagged with the commit SHA and the sanitized branch name, so `claude/foo` becomes `claude-foo`. `latest` is added only on the default branch. A feature branch therefore never moves the `:latest` pointer.
 
 Pass `tags`, newline-separated, to override that. A bare tag expands to `<registry>/<project>:<tag>`. A reference that contains `/` or `:` is used as-is. You can therefore also push to another registry you are logged in to.
-With `tags` omitted, a push is tagged with the commit SHA and the sanitized
-branch name (`claude/foo` -> `claude-foo`). Only the default branch adds
-`latest`, so a feature branch never moves the `:latest` pointer.
-
-Pass `tags` (newline-separated) to override. A bare tag expands to
-`<registry>/<project>:<tag>`. A reference that contains `/` or `:` is used
-as-is, so you can also push to another registry you are logged in to.
 
 To fetch an artifact back in a workflow, use `buildhost-download`. It resolves the same way the URL does, and it defaults to the runner's own platform.
 
@@ -290,10 +218,6 @@ To fetch an artifact back in a workflow, use `buildhost-download`. It resolves t
 It outputs `path`. With `required: 'false'` a missing artifact sets `downloaded: 'false'` instead of a failure. A caller can therefore fall back.
 
 For a build you drive yourself, use `buildhost-docker-push`. It takes an OCI layout you already produced, and pushes it in chunks. A layer over the proxy's body cap therefore still goes through. To obtain a CLI that can do that is the action's problem, and not yours.
-For a build you drive yourself, `buildhost-docker-push` takes an OCI layout you
-already produced. It pushes the layout in chunks, so a layer over the proxy's
-body cap still goes through. Obtaining a CLI that can do that is the action's
-problem, not yours:
 
 ```yaml
 - run: docker buildx build --output type=oci,tar=false,dest=layout .
@@ -304,10 +228,6 @@ problem, not yours:
 ```
 
 A publish logs docker in for you, and so does a pull. To fetch a published image, into a nested daemon or onto the runner itself, use `buildhost-docker-pull`. It authenticates itself, so no workflow handles a registry credential.
-Publishing logs docker in for you, and so does pulling. Use
-`buildhost-docker-pull` to fetch a published image, into a nested daemon or
-onto the runner. It authenticates itself, so no workflow handles a registry
-credential:
 
 ```yaml
 - uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-pull@master

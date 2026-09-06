@@ -733,6 +733,7 @@ jobs:
           branch: direct
           source_dir: ${{ runner.temp }}/small-site
           chunk_size: "1048576"
+          comment: false
       - env:
           LOG: ${{ runner.temp }}/buildhost.log
         run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/site-direct.dats
@@ -746,6 +747,7 @@ jobs:
           branch: chunked
           source_dir: ${{ runner.temp }}/big-site
           chunk_size: "1048576"
+          comment: false
       # What the site publishes and the CLI did to the same server. The
       - env:
           LOG: ${{ runner.temp }}/buildhost.log
