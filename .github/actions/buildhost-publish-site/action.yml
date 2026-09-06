@@ -22,7 +22,11 @@ inputs:
     required: false
     default: ''
   branch:
-    description: 'Branch name to publish the site under'
+    description: >-
+      Branch name to publish the site under. The sites router serves a site
+      under ONE path segment, so anything outside [A-Za-z0-9._-] is flattened
+      to `-` here: buildhost owns the URL grammar, and a caller passing
+      `github.ref_name` gets a working site instead of a 404.
     required: true
   source_dir:
     description: 'Local directory to publish (mutually exclusive with artifact_name)'
@@ -64,6 +68,15 @@ inputs:
       `buildhost/<project>/<branch>`).
     required: false
     default: ''
+  comment:
+    description: >-
+      Hand the published site URL to the open pull request for this branch, as
+      one sticky comment per project and site branch. On by default: a preview
+      nobody is handed is a preview nobody opens. The job must grant
+      `pull-requests: write`. Set false where a repository deliberately does
+      not want the link posted.
+    required: false
+    default: true
 
 outputs:
   response:
@@ -98,14 +111,14 @@ runs:
             try {
               const projectInput: string = "${{ inputs.project }}";
               const project: string = projectInput || github.repository.split('/').pop()!;
-              const branch: string = "${{ inputs.branch }}";
+              const branch: string = "${{ inputs.branch }}".replace(/[^A-Za-z0-9._-]/g, '-');
               const envInput: string = "${{ inputs.deployment_environment }}";
               const environment: string = envInput || `buildhost/${project}/${branch}`;
               const gitCommitInput: string = "${{ inputs.git_commit }}";
               const deploymentRefInput: string = "${{ inputs.deployment_ref }}";
               // a bare SHA belongs to no branch, so GitHub's branch/PR deployment views show it as never deployed -- pass a branch name here to fix that
               const ref: string = deploymentRefInput || gitCommitInput || context.sha;
-              // pr-<n> branches, as deployed by the buildhost-preview reusable workflow, are transient environments GitHub expects to go away again
+              // a pr-<n> site branch is a transient environment GitHub expects to go away again
               const transient = /^pr-\d+$/.test(branch);
               const defaultBranch: string = context.payload.repository?.default_branch ?? '';
               const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
@@ -152,6 +165,7 @@ runs:
       with:
         script: |
           const { recordSite } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
+          const { commentPreview } = require("${{ github.action_path }}/../lib/preview-comment.ts") as typeof import("${{ github.action_path }}/../lib/preview-comment");
           await (async () => {
             const server: string = "${{ inputs.server }}";
             const sourceDir: string = "${{ inputs.source_dir }}";
@@ -167,7 +181,7 @@ runs:
             // routed through string-typed locals: a bare input literal substituted directly into `x || y` is statically empty-or-not, which the typescript action rejects (TS2872/TS2873)
             const projectInput: string = "${{ inputs.project }}";
             const project: string = projectInput || github.repository.split('/').pop()!;
-            const branch: string = "${{ inputs.branch }}";
+            const branch: string = "${{ inputs.branch }}".replace(/[^A-Za-z0-9._-]/g, '-');
             const gitCommitInput: string = "${{ inputs.git_commit }}";
             const gitCommit: string = gitCommitInput || github.sha;
             const publicInput: string = "${{ inputs.public }}";
@@ -194,8 +208,7 @@ runs:
             if (artifactName) {
               const oct = octokit(process.env.GITHUB_TOKEN!);
               const [owner, repo] = github.repository.split('/');
-              // github.run_id reaches a script as the env var's string; octokit's run_id is a number.
-              // the github context is rebuilt from environment variables, so run_id arrives as a string
+              // The github context is rebuilt from environment variables, so run_id arrives as a string and octokit wants a number.
               const { data: { artifacts } } = await oct.rest.actions.listWorkflowRunArtifacts({ owner, repo, run_id: Number(github.run_id) });
               const artifact = artifacts.find((a: any) => a.name === artifactName);
               if (!artifact) { core.setFailed(`Artifact '${artifactName}' not found in run`); return; }
@@ -304,7 +317,23 @@ runs:
               core.info(JSON.stringify(body, null, 2));
               core.setOutput('response', r.text);
               core.setOutput('site_url', siteURL);
-              await recordSite(octokit, core, context, { server, project, branch, version: gitCommit, sha256: sum });
+              if (!await recordSite(octokit, core, context, { server, project, branch, version: gitCommit, sha256: sum })) return;
+              // every `with:` value reaches a composite action as a string, so a bool arrives spelled out
+              if ("${{ inputs.comment }}" !== 'true' && "${{ inputs.comment }}" !== 'false') {
+                core.setFailed(`invalid comment '${{ inputs.comment }}': expected true or false. A value that is neither would silently read as off, which hides the preview link the publish exists to hand over.`);
+                return;
+              }
+              if ("${{ inputs.comment }}" === 'false') {
+                core.info('Not commenting the preview URL: comment is false for this publish');
+                return;
+              }
+              const pr = context.payload.pull_request as { number?: number; head?: { ref?: string } } | undefined;
+              const refName: string = github.ref_name || '';
+              await commentPreview(octokit, core, context, {
+                project, branch, siteURL,
+                prNumber: pr?.number ?? 0,
+                headRef: pr?.head?.ref ?? refName,
+              });
             };
 
             if (chunkSize <= 0 || size <= directLimit) {
