@@ -62,7 +62,7 @@ A slash-named project calls `bin.install` on the BASENAME. The tar.gz's only top
 
 **A binary-kind formula pairs `chmod 0755, bin/"<InstallName>"` with `skip_clean "bin"`.** Homebrew's Cleaner rewrites the mode of everything under `bin`, whatever the formula installed. `Library/Homebrew/extend/os/{linux,mac}/cleaner.rb` holds it. It writes `0555` for a file it recognizes as executable, which is a `#!` script, an ELF, or a Mach-O. It writes `0444` for anything else.
 
-A Cosmopolitan APE binary such as go-toolchain was therefore installed `0444`, and could not be executed at all. `0555` is no better. An APE assimilates itself on first run, which rewrites its own file into a native ELF or Mach-O. Without the write bit it dies with "cannot create <path>: Permission denied".
+A Cosmopolitan APE binary such as go-toolchain was therefore installed `0444`. Nothing was able to execute it. `0555` is no better. An APE assimilates itself on first run, which rewrites its own file into a native ELF or Mach-O. Without the write bit it dies with "cannot create <path>: Permission denied".
 
 `skip_clean` prunes the Cleaner for `bin`, through `Formula#skip_clean?` and `Find.prune`. The installed `0755` therefore survives. The mode the tar.gz ships, which is `0755` for `kind=binary`, is irrelevant to brew either way. A non-binary kind stages nothing under `bin` and keeps the default cleanup. This was verified against Homebrew 6.x on Linux, end to end: `0444` before, and `0755` plus a successful self-assimilating run after.
 
