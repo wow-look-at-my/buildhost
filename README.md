@@ -28,12 +28,12 @@ brew install pazer/build/go-toolchain
 ```
 
 Do not install formulas with a naked remote URL such as
-`brew install https://brew.pazer.build/go-toolchain`; modern Homebrew treats that
+`brew install https://brew.pazer.build/go-toolchain`. Modern Homebrew reads that
 as a formula or tap name instead of cloning it as a formula URL.
 
 On Linux, these formulas have no bottles, so `brew install` runs Homebrew's
-build sandbox: it needs bubblewrap (`apt install bubblewrap`; Homebrew also
-installs its own) and unprivileged user namespaces -- hardened hosts such as
+build sandbox. It needs bubblewrap (`apt install bubblewrap`; Homebrew also
+installs its own) and unprivileged user namespaces. A hardened host such as
 Ubuntu 24.04 may need `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`.
 In containers or CI where user namespaces are unavailable, set
 `HOMEBREW_NO_SANDBOX_LINUX=1` instead. macOS needs neither.
@@ -41,22 +41,22 @@ In containers or CI where user namespaces are unavailable, set
 A slash-namespaced project folds `/` to `-` in its formula name (the same rule
 APT applies to package names): project `log-streamer/client` installs as
 `brew install pazer/build/log-streamer-client`. A project whose name starts
-with a digit cannot be served as a formula at all -- Homebrew derives the
-Ruby class from the formula name and a Ruby class cannot start with a digit --
-so such projects are omitted from the tap.
+with a digit cannot be served as a formula at all. Homebrew derives the Ruby
+class from the formula name, and a Ruby class cannot start with a digit. The
+tap omits such projects.
 
 ### Private projects
 
 A private project never appears in the public tap. Tap the **authenticated
-tap** instead: it serves every public formula plus the private projects your
-token can read, so it replaces the public tap under the same name (if you
+tap** instead. It serves every public formula plus the private projects your
+token can read, so it replaces the public tap under the same name. If you
 already added the public tap, remove it first with
-`brew untap --force pazer/build`). Git only transmits credentials after a 401
+`brew untap --force pazer/build`. Git only transmits credentials after a 401
 challenge, so the token goes in the tap URL as the HTTP Basic password (the
 username is ignored; `x` by convention). Artifact downloads authenticate
 separately through `HOMEBREW_BUILDHOST_TOKEN`, which private formulas read at
-install time -- the token is never written into the tap. The example below is
-a private project named `myrepo/myapp`; per the folding rule above it
+install time. The token is never written into the tap. The example below is
+a private project named `myrepo/myapp`. Per the folding rule above it
 installs as `myrepo-myapp`, and the installed command keeps the binary's own
 name (`myapp`):
 
@@ -68,7 +68,7 @@ brew install pazer/build/myrepo-myapp
 ```
 
 `brew update` refreshes the tap with the credentials stored in the tap's git
-remote. The `?token=` query parameter cannot be used with `brew tap`: git
+remote. The `?token=` query parameter does not work with `brew tap`. Git
 appends its own path segments (`/info/refs`, ...) after the query string, so
 the URL stops resolving as a git repository.
 
@@ -90,11 +90,11 @@ it starts at login and survives upgrades (the block runs the `opt` path):
 brew services start pazer/build/competent-search-thing
 ```
 
-Homebrew cannot run that for you at install: a formula's only install-time
-hook (`post_install`) runs inside brew's sandbox, whose profile denies all
-file writes outside build paths -- `~/Library/LaunchAgents` included -- so no
-formula can register a LaunchAgent. `brew uninstall` does not stop services
-either: run `brew services stop <tap>/<project>` before removing.
+Homebrew cannot run that for you at install. A formula's install-time hook
+(`post_install`) runs inside brew's sandbox, whose profile denies all file
+writes outside build paths, `~/Library/LaunchAgents` included. No formula can
+register a LaunchAgent. `brew uninstall` does not stop services either: run
+`brew services stop <tap>/<project>` before removing.
 
 The service restarts only after a crash (`keep_alive successful_exit: false`;
 a clean exit stays exited) and logs to `$(brew --prefix)/var/log/<name>.log`.
@@ -119,9 +119,9 @@ curl -fsSL https://apt.pazer.build/myapp/install.sh | sudo sh
 sudo apt-get install myapp
 ```
 
-For a private project, pass a read token -- the installer also records it in
-`/etc/apt/auth.conf.d/`, covering both the apt host and the static host the
-`.deb` download redirects to:
+For a private project, pass a read token. The installer records it in
+`/etc/apt/auth.conf.d/`, for both the apt host and the static host the `.deb`
+download redirects to:
 
 ```bash
 curl -fsSL -H "Authorization: Bearer $TOKEN" https://apt.pazer.build/myapp/install.sh \
@@ -131,10 +131,10 @@ curl -fsSL -H "Authorization: Bearer $TOKEN" https://apt.pazer.build/myapp/insta
 One-line install commands (and per-project copy buttons) are also available on
 the admin dashboard: see each project's page or the **Registries** tab.
 
-Self-modifying binaries (Cosmopolitan APEs, which rewrite their own file the
-first time they run) are packaged with a launcher: the binary installs under
-`/usr/lib/<pkg>/` and `/usr/bin/<pkg>` keeps a writable per-user copy, so an
-ordinary user can run it. Everything else installs straight to `/usr/bin`.
+A self-modifying binary (a Cosmopolitan APE rewrites its own file when it
+runs) is packaged with a launcher. The binary installs under `/usr/lib/<pkg>/`,
+and `/usr/bin/<pkg>` keeps a writable per-user copy, so an ordinary user can
+run it. Everything else installs straight to `/usr/bin`.
 
 Prefer to set it up by hand? Import the repository signing key once, add the
 source, then install. The key is served per project path but is the same
@@ -152,10 +152,10 @@ sudo apt update && sudo apt install myapp
 ### Private projects
 
 A private project requires a token on every APT request. Put it in an
-`apt.conf.d`-style auth file so both `apt update` and the package download
-(which redirects to the `static` subdomain) authenticate. buildhost reads the
-token from the HTTP Basic **password** field (the username is ignored, so any
-value works -- `token` is used here by convention):
+`apt.conf.d`-style auth file, so both `apt update` and the package download
+authenticate. That download redirects to the `static` subdomain. buildhost
+reads the token from the HTTP Basic **password** field. The username is
+ignored, so any value works -- `token` here by convention:
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
@@ -189,13 +189,13 @@ sudo apt update && sudo apt install pr-reviewer-agent-server
 
 ### Background services (create_service)
 
-A `create_service` project's generated deb (see the Homebrew section for the
-flag itself) ships a systemd user unit at
-`/usr/lib/systemd/user/<pkg>.service` -- crash-only `Restart=on-failure`,
-bound to `graphical-session.target` -- and sets it up at install: the
-package's postinst runs `systemctl --global enable`, so the service starts at
-every user's next graphical login (plus a best-effort immediate start for the
-installing sudo user's live session). Removing the package disables it again.
+A `create_service` project's generated deb ships a systemd user unit at
+`/usr/lib/systemd/user/<pkg>.service`. See the Homebrew section for the flag
+itself. The unit is crash-only (`Restart=on-failure`) and bound to
+`graphical-session.target`. The package's postinst runs `systemctl --global
+enable`, so the service starts at every user's next graphical login. The
+postinst also makes a best-effort immediate start for the installing sudo
+user's live session. Removing the package disables it again.
 
 This applies to buildhost-GENERATED debs only (`fmt=deb`, i.e. this APT
 repository). A pre-built `.deb` uploaded as an artifact (`kind=archive`) is
@@ -209,7 +209,7 @@ buildhost serves a public, read-only browse UI on the main domain (no subdomain)
 - `GET /projects/{project}` &mdash; a project's metadata, published releases, deployed static sites, and copy-paste install/download commands
 - `GET /projects/{project}/releases/{version}` &mdash; a release's artifacts with per-format download links (`raw`, `tar.gz`, `tar.xz`, `tar.zst`, `zip`), or a `docker pull` for image releases
 
-Private projects are hidden: they are never listed for anonymous visitors, and visiting one's page directly returns a `404` &mdash; identical to a project that does not exist, so the frontend never reveals that a private project exists (the same way GitHub treats private repositories). A read-scoped token authorized for the project reveals it. Download links point at the `dl` subdomain; the single stylesheet is served from `/_ui/style.css` and no other assets are loaded. The authenticated admin dashboard remains a separate app on its own port (see [Container image](#container-image)).
+Private projects are hidden. They are never listed for anonymous visitors, and visiting one's page directly returns a `404`. That answer is identical to a project that does not exist, so the frontend never reveals that a private project exists. GitHub treats private repositories the same way. A read-scoped token authorized for the project reveals it. Download links point at the `dl` subdomain. The stylesheet is served from `/_ui/style.css`, and no other assets are loaded. The authenticated admin dashboard remains a separate app on its own port (see [Container image](#container-image)).
 
 ## Synthesized container images
 
@@ -239,9 +239,10 @@ and may change between buildhost versions.
 
 ## Publishing real Docker images
 
-Some projects need to ship a real prebuilt image (custom base image, native
-libraries, entrypoint, exposed ports) rather than a binary wrapped in a minimal
-layer. buildhost is a writable OCI registry, so you can `docker push` directly:
+Some projects need to ship a real prebuilt image rather than a binary wrapped
+in a minimal layer. Reasons include a custom base image, native libraries, an
+entrypoint and exposed ports. buildhost is a writable OCI registry, so you can
+`docker push` directly:
 
 The OCI registry is served on the `oci.` subdomain (the apex host serves the
 API, not `/v2/`):
@@ -287,12 +288,12 @@ steps:
       context: .                            # optional
 ```
 
-With `tags` omitted, pushes are tagged with the commit SHA and the sanitized
-branch name (`claude/foo` -> `claude-foo`); `latest` is added only on the
-default branch, so a feature branch never moves the `:latest` pointer.
+With `tags` omitted, a push is tagged with the commit SHA and the sanitized
+branch name (`claude/foo` -> `claude-foo`). Only the default branch adds
+`latest`, so a feature branch never moves the `:latest` pointer.
 
-Pass `tags` (newline-separated) to override: bare tags expand to
-`<registry>/<project>:<tag>`; references containing `/` or `:` are used
+Pass `tags` (newline-separated) to override. A bare tag expands to
+`<registry>/<project>:<tag>`. A reference that contains `/` or `:` is used
 as-is, so you can also push to another registry you are logged in to.
 
 To fetch an artifact back in a workflow, `buildhost-download` resolves the same
@@ -309,9 +310,9 @@ It outputs `path`. With `required: 'false'` a missing artifact sets
 `downloaded: 'false'` instead of failing, so a caller can fall back.
 
 For a build you drive yourself, `buildhost-docker-push` takes an OCI layout you
-already produced and pushes it in chunks, so a layer over the proxy's body cap
-still goes through. Obtaining a CLI that can do that is the action's problem,
-not yours:
+already produced. It pushes the layout in chunks, so a layer over the proxy's
+body cap still goes through. Obtaining a CLI that can do that is the action's
+problem, not yours:
 
 ```yaml
 - run: docker buildx build --output type=oci,tar=false,dest=layout .
@@ -321,10 +322,10 @@ not yours:
     refs: oci.pazer.build/myproject:v1.2.3
 ```
 
-Publishing logs docker in for you, and so does pulling. To fetch a published
-image -- into a nested daemon, or just onto the runner -- use
-`buildhost-docker-pull`; it authenticates itself, so no workflow handles a
-registry credential:
+Publishing logs docker in for you, and so does pulling. Use
+`buildhost-docker-pull` to fetch a published image, into a nested daemon or
+onto the runner. It authenticates itself, so no workflow handles a registry
+credential:
 
 ```yaml
 - uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-pull@master
