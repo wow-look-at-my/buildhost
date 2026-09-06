@@ -73,7 +73,13 @@ shared:
 				curl -fsSL "$apt_base/key.asc" | gpg --batch --yes --dearmor | sudo tee "$KEYRING" >/dev/null
 				echo "deb [signed-by=$KEYRING] $apt_base stable main" \
 					| sudo tee "/etc/apt/sources.list.d/$2.list" >/dev/null
-				sudo apt-get update
+				# Refresh THIS list only. A bare `apt-get update` re-fetches every
+				# configured source, so three installs cost three round trips to
+				# the Ubuntu archive to learn nothing this suite asks about.
+				sudo apt-get update \
+					-o Dir::Etc::sourcelist="sources.list.d/$2.list" \
+					-o Dir::Etc::sourceparts="-" \
+					-o APT::Get::List-Cleanup="0"
 				sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$2"
 			}
 
@@ -112,8 +118,16 @@ shared:
 			sudo rm -f /etc/apt/keyrings/buildhost-apt-e2e.gpg
 			true
 
-setup: env ENV_FILE={shared.env} sh {shared.start.sh}
-teardown: sh {shared.teardown.sh} {shared.env}
+# A hook command is always bounded, and unstated means 30s. The health poll
+# alone allows 50s, so the default could never cover a slow boot: the suite
+# reported a timeout rather than what it asserts. The bound below still catches
+# a genuine hang.
+setup:
+	- cmd: env ENV_FILE={shared.env} sh {shared.start.sh}
+	  timeout: 5m
+teardown:
+	- cmd: sh {shared.teardown.sh} {shared.env}
+	  timeout: 2m
 
 tests:
 	- desc: the plain package installs at the published version and is executable

@@ -70,7 +70,11 @@ shared:
 				echo "WORK=$WORK"
 			} > "$ENV_FILE"
 
-setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
+# The poll above waits up to 30s for the server, which is the whole unstated
+# hook bound, so anything the setup does after it runs on borrowed time.
+setup:
+	- cmd: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
+	  timeout: 10m
 teardown: sh -c '. {shared.env}; kill -- "-$(cat "$WORK/server.pid")" 2>/dev/null; true'
 
 tests:

@@ -64,7 +64,11 @@ shared:
 				echo "REF='$REF'"
 			} > "$ENV_FILE"
 
-setup: env ENV_FILE={shared.env} sh {shared.start.sh}
+# The poll above waits up to 50s for the server, and an unstated hook bound is
+# 30s, so a slow boot fails this suite on the clock rather than on an assertion.
+setup:
+	- cmd: env ENV_FILE={shared.env} sh {shared.start.sh}
+	  timeout: 10m
 teardown: sh -c '. {shared.env}; kill -- "-$(cat "$WORK/server.pid")" 2>/dev/null; true'
 
 tests:
