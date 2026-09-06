@@ -73,10 +73,10 @@ inputs:
       Hand the published site URL to the open pull request for this branch, as
       one sticky comment per project and site branch. On by default: a preview
       nobody is handed is a preview nobody opens. The job must grant
-      `pull-requests: write`. Set to 'false' where a repository deliberately
-      does not want the link posted.
+      `pull-requests: write`. Set false where a repository deliberately does
+      not want the link posted.
     required: false
-    default: 'true'
+    default: true
 
 outputs:
   response:
@@ -318,9 +318,13 @@ runs:
               core.setOutput('response', r.text);
               core.setOutput('site_url', siteURL);
               if (!await recordSite(octokit, core, context, { server, project, branch, version: gitCommit, sha256: sum })) return;
-              const commentInput: string = "${{ inputs.comment }}";
-              if (commentInput !== 'true') {
-                core.info('Not commenting the preview URL: the comment input is off for this publish');
+              // every `with:` value reaches a composite action as a string, so a bool arrives spelled out
+              if ("${{ inputs.comment }}" !== 'true' && "${{ inputs.comment }}" !== 'false') {
+                core.setFailed(`invalid comment '${{ inputs.comment }}': expected true or false. A value that is neither would silently read as off, which hides the preview link the publish exists to hand over.`);
+                return;
+              }
+              if ("${{ inputs.comment }}" === 'false') {
+                core.info('Not commenting the preview URL: comment is false for this publish');
                 return;
               }
               const pr = context.payload.pull_request as { number?: number; head?: { ref?: string } } | undefined;

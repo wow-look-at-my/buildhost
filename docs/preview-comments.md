@@ -38,7 +38,12 @@ waiting on.
 
 A refused write fails the publish and names the grant. The job must declare
 `pull-requests: write`, and a job-level `permissions:` block replaces the
-workflow-level one. `comment: 'false'` is the way to publish without posting,
+workflow-level one. `comment: false` is the way to publish without posting,
 and it is a decision the workflow states rather than a permission it omits. A
 missing grant would otherwise read as a preview that quietly stopped reaching
 anybody.
+
+The input is a boolean, so `true` and `false` are the only values it takes.
+Anything else fails the publish rather than reading as off. Every `with:`
+value reaches a composite action as a string, and a typo that fell through to
+the off branch would remove the link with nothing to see it happen.
