@@ -10,6 +10,11 @@ RUN mkdir -p /shell && cp /bin/busybox /shell/busybox \
     && for a in $(/shell/busybox --list); do ln -sf busybox "/shell/$a"; done
 # The trampoline unpacks itself under TMPDIR, so the image needs a writable one.
 RUN mkdir -p /tmpdir && chmod 1777 /tmpdir
+# A directory nothing mounts over. /tmp is commonly a noexec tmpfs in a
+# deployment, and /var/lib/buildhost is a VOLUME, so both can arrive as
+# somebody else's filesystem with somebody else's rules. This one is only ever
+# the image's own layer, writable through the container's overlay.
+RUN mkdir -p /apedir && chmod 0700 /apedir
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
@@ -26,6 +31,7 @@ LABEL org.opencontainers.image.description="Universal package registry server"
 # so the image carries the busybox the /data stage already pulls.
 COPY --from=dirs /shell /bin
 COPY --from=dirs /tmpdir /tmp
+COPY --from=dirs --chown=65532:65532 /apedir /var/lib/ape
 # The APE sits under /usr/local/lib and a shebang launcher takes its place on
 # PATH, the same shape the deb repackager gives an APE. A launcher the kernel
 # can exec keeps the shell an implementation detail of this image: an

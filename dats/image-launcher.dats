@@ -51,17 +51,40 @@ tests:
 			- "/mine args=serve"
 
 	# The failure the deployment hit: TMPDIR names somewhere the copy cannot run.
+	# The directory it lands on is not pinned here, because the candidate list
+	# is what the next test covers. What matters is that it starts at all, and
+	# never from the directory that failed.
 	- desc: an unusable TMPDIR falls through instead of failing
 	  cmd: |
 		set -eu
 		WORK="$(mktemp -d)"; export WORK
 		STUB={shared.stub}; export STUB
 		sh {shared.install.sh}
-		TMPDIR=/proc/definitely-not-writable BUILDHOST_DATA_DIR="$WORK/data" sh "$WORK/launcher.sh" serve
+		out="$(TMPDIR=/proc/definitely-not-writable BUILDHOST_DATA_DIR="$WORK/data" sh "$WORK/launcher.sh" serve)"
+		echo "$out"
+		case "$out" in *definitely-not-writable*) echo 'it kept the TMPDIR it could not use' >&2; exit 1 ;; esac
 	  outputs:
 		stdout:
 			- "STARTED tmpdir="
-			- "/data/.ape args=serve"
+			- "args=serve"
+
+	# /tmp is commonly a noexec tmpfs and the data directory is a VOLUME, so a
+	# deployment can replace either. The directory the image itself ships is
+	# tried before both.
+	- desc: the image's own unpack directory is preferred over the data dir
+	  cmd: |
+		set -eu
+		grep -n '/var/lib/ape' scripts/image-launcher.sh | head -n1
+		awk '/^for candidate in/ {
+			ape = index($0, "/var/lib/ape")
+			data = index($0, "BUILDHOST_DATA_DIR")
+			tmp = index($0, " /tmp ")
+			if (ape > 0 && ape < data && ape < tmp) { print "ape-first"; exit 0 }
+			print "the launcher tries a mountable directory first"; exit 1
+		}' scripts/image-launcher.sh
+	  outputs:
+		stdout:
+			- "ape-first"
 
 	- desc: with every named directory unusable, the mount scan finds one
 	  cmd: |

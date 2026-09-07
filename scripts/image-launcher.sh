@@ -64,10 +64,13 @@ writableMounts() {
 	}' /proc/mounts 2>/dev/null
 }
 
-# The data volume leads: a deployment that cannot write there is already broken,
-# and a volume carries no noexec of its own. An operator's TMPDIR is honoured
-# first, then the usual temporary directories, then whatever is left mounted.
-for candidate in "${TMPDIR:-}" "$BUILDHOST_DATA_DIR/.ape" /tmp /var/tmp /dev/shm $(writableMounts); do
+# An operator's TMPDIR is honoured first. Then /var/lib/ape, which the image
+# ships and nothing mounts over: /tmp is commonly a noexec tmpfs and the data
+# directory is a VOLUME, so a deployment can replace either with a filesystem
+# that refuses the copy or refuses to exec it. Those follow anyway, because an
+# image built without /var/lib/ape still has to start, and the mount scan
+# follows them.
+for candidate in "${TMPDIR:-}" /var/lib/ape "$BUILDHOST_DATA_DIR/.ape" /tmp /var/tmp /dev/shm $(writableMounts); do
 	case "$candidate" in
 	"" | /proc* | /sys* | /dev/pts*) continue ;;
 	esac
