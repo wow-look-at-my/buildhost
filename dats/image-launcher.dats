@@ -95,6 +95,20 @@ tests:
 		stdout:
 			- "binary-probe"
 
+	# busybox picks its applet from argv[0]. The image's /bin/sh IS busybox, so
+	# a copy called anything else answers "applet not found" and exits 127. The
+	# probe read that as a directory that cannot exec, and the container refused
+	# every directory it was offered, the writable data volume included.
+	- desc: the probe copy keeps the name sh
+	  cmd: |
+		set -eu
+		grep -q 'probe="$dir/sh"' scripts/image-launcher.sh || {
+			echo 'the probe copy must be named sh: busybox dispatches on argv[0]' >&2; exit 1; }
+		echo named-sh
+	  outputs:
+		stdout:
+			- "named-sh"
+
 	- desc: the launcher names the directory it chose
 	  cmd: grep -c 'the APE unpacks into' scripts/image-launcher.sh
 	  outputs:

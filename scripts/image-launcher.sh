@@ -26,7 +26,8 @@ real=/usr/local/lib/buildhost/buildhost
 usable() {
 	[ -n "${1:-}" ] || return 1
 	mkdir -p "$1" 2>/dev/null || return 1
-	probe="$1/.ape-exec-probe.$$"
+	dir="$1/.ape-exec-probe.$$"
+	mkdir -p "$dir" 2>/dev/null || return 1
 	# A COPIED BINARY, not a script. A shebang script is read by its
 	# interpreter, so running one can succeed in a directory that refuses to
 	# exec a binary -- and a binary is exactly what the trampoline writes here.
@@ -35,15 +36,18 @@ usable() {
 	#
 	# /bin/sh is the binary at hand and cp follows the symlink to it, so the
 	# copy is a real executable both in this image, where it is busybox, and
-	# anywhere the suite runs.
-	cp /bin/sh "$probe" 2>/dev/null || return 1
-	chmod 0700 "$probe" 2>/dev/null || { rm -f "$probe"; return 1; }
+	# anywhere the suite runs. The copy KEEPS THE NAME sh, in a directory of
+	# its own: busybox picks its applet from argv[0], so a copy under any
+	# other name exits 127 and reads as a directory that cannot exec.
+	probe="$dir/sh"
+	cp /bin/sh "$probe" 2>/dev/null || { rm -rf "$dir"; return 1; }
+	chmod 0700 "$probe" 2>/dev/null || { rm -rf "$dir"; return 1; }
 	# Only whether EXEC succeeded matters. 126 is "cannot execute" and 127 is
 	# "not found"; any other status means the kernel ran it, which is the whole
 	# question. -c : is a no-op every POSIX shell accepts.
 	rc=0
 	"$probe" -c : 2>/dev/null || rc=$?
-	rm -f "$probe" 2>/dev/null || true
+	rm -rf "$dir" 2>/dev/null || true
 	[ "$rc" -ne 126 ] && [ "$rc" -ne 127 ]
 }
 
