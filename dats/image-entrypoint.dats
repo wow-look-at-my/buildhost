@@ -57,11 +57,26 @@ tests:
 		stdout:
 			- "#!/bin/sh"
 
+	# Both halves are read out and compared, rather than one literal line pinned
+	# here: a launcher that has to search for a usable TMPDIR cannot keep the
+	# path inline, and the property that matters is that the two agree.
 	- desc: the launcher starts the APE at the path the Dockerfile puts it
-	  cmd: grep -E '^exec ' scripts/image-launcher.sh
+	  cmd: |
+		set -eu
+		copied="$(grep -oE '/usr/local/lib/[a-z-]+/[a-z-]+' Dockerfile | head -n1)"
+		launched="$(grep -oE '^real=\S+' scripts/image-launcher.sh | cut -d= -f2)"
+		test -n "$copied" || { echo 'the Dockerfile copies the APE nowhere under /usr/local/lib' >&2; exit 1; }
+		test -n "$launched" || { echo 'the launcher names no APE to start' >&2; exit 1; }
+		if [ "$copied" != "$launched" ]; then
+			echo "the Dockerfile puts the APE at $copied and the launcher starts $launched" >&2
+			exit 1
+		fi
+		grep -qE '^\s*exec /bin/sh "\$real" "\$@"$' scripts/image-launcher.sh || {
+			echo 'the launcher must hand the APE to a shell: the kernel cannot exec it' >&2; exit 1; }
+		echo "agree: $copied"
 	  outputs:
 		stdout:
-			- 'exec /bin/sh /usr/local/lib/buildhost/buildhost "$@"'
+			- "agree: /usr/local/lib/buildhost/buildhost"
 
 	# The shell must come from an image that ships a STATIC busybox. Alpine's is
 	# a PIE against /lib/ld-musl-x86_64.so.1, and the base image has no /lib.
