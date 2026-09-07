@@ -78,6 +78,26 @@ tests:
 		stdout:
 			- "agree: /usr/local/lib/buildhost/buildhost"
 
+	# The APE unpacks itself under TMPDIR and execs the copy, so it needs a
+	# directory that is writable AND not noexec. A deployment mounts a noexec
+	# tmpfs over /tmp and a volume over the data directory, so a launcher that
+	# has only those two can be handed neither. This directory is the image's
+	# own layer. Both halves are read out, because a path in one file and not
+	# the other is the whole failure.
+	- desc: the image ships the unpack directory the launcher tries
+	  cmd: |
+		set -eu
+		grep -q '/var/lib/ape' scripts/image-launcher.sh || {
+			echo 'the launcher never tries a directory nothing mounts over' >&2; exit 1; }
+		grep -qE 'COPY .*/apedir /var/lib/ape' Dockerfile || {
+			echo 'the image never creates /var/lib/ape, so the launcher tries a path that is not there' >&2; exit 1; }
+		grep -qE 'chown=65532:65532 /apedir' Dockerfile || {
+			echo '/var/lib/ape must belong to the uid the image runs as' >&2; exit 1; }
+		echo ships-unpack-dir
+	  outputs:
+		stdout:
+			- "ships-unpack-dir"
+
 	# The shell must come from an image that ships a STATIC busybox. Alpine's is
 	# a PIE against /lib/ld-musl-x86_64.so.1, and the base image has no /lib.
 	- desc: the shell stage is the busybox image, and that is where /bin comes from
