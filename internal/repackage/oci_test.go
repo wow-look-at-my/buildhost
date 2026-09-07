@@ -41,6 +41,26 @@ func readLayerFiles(t *testing.T, compressed []byte) map[string][]byte {
 	}
 }
 
+// readLayerDirModes returns the permission bits of every directory in a layer.
+func readLayerDirModes(t *testing.T, compressed []byte) map[string]int64 {
+	t.Helper()
+	zr, err := zstd.NewReader(bytes.NewReader(compressed))
+	require.NoError(t, err)
+	defer zr.Close()
+	tr := tar.NewReader(zr)
+	modes := map[string]int64{}
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return modes
+		}
+		require.NoError(t, err)
+		if hdr.Typeflag == tar.TypeDir {
+			modes[hdr.Name] = hdr.Mode
+		}
+	}
+}
+
 // TestOCIRepackageEssentials verifies the synthesized image carries the shared
 // essentials base layer (CA certs + minimal rootfs) in addition to the binary layer:
 func TestOCIRepackageEssentials(t *testing.T) {
@@ -213,6 +233,23 @@ func TestOCIRepackageAPEGetsAShell(t *testing.T) {
 	assert.Equal(t, launcher, string(files["usr/local/bin/apeapp"]))
 	assert.True(t, strings.HasPrefix(launcher, "#!/bin/sh\n"), "a launcher the kernel can exec starts with a shebang")
 	assert.Contains(t, launcher, "/usr/local/lib/apeapp/apeapp")
+	// A deployment mounts a noexec tmpfs over /tmp, where the unpack writes
+	// fine and the exec dies.
+	assert.Contains(t, launcher, "${TMPDIR:=/var/lib/ape}",
+		"the launcher must point the unpack at a directory nothing mounts over")
+	assert.Contains(t, launcher, "export TMPDIR", "the APE reads TMPDIR from the environment")
+}
+
+// The launcher names /var/lib/ape, so the image has to ship it, writable.
+func TestEssentialsShipsTheAPEUnpackDir(t *testing.T) {
+	t.Serial()
+	e, err := buildEssentials()
+	require.NoError(t, err)
+
+	modes := readLayerDirModes(t, e.compressed)
+	mode, ok := modes["var/lib/ape/"]
+	require.True(t, ok, "the essentials layer must create the directory the launcher unpacks into")
+	assert.Equal(t, int64(0o1777), mode, "any uid the image runs as has to be able to write there")
 }
 
 // A plain ELF keeps the single-file layout: the binary at /<name>, no launcher.
