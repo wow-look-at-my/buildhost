@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -32,6 +33,24 @@ func TestLoad_ListenAddrOverride(t *testing.T) {
 	c := Load()
 	assert.Equal(t, ":9090", c.ListenAddr)
 	assert.Equal(t, "./data", c.DataDir)
+}
+
+// serve runs no admin server when this is empty. The e2e suites set it empty to
+// share a runner, got the default port anyway, and died on a bound address.
+func TestLoad_AdminListenAddrEmptyDisables(t *testing.T) {
+	t.Serial()
+	t.Setenv("BUILDHOST_ADMIN_LISTEN_ADDR", "")
+
+	c := Load()
+	assert.Empty(t, c.AdminListenAddr)
+}
+
+func TestLoad_AdminListenAddrUnsetKeepsDefault(t *testing.T) {
+	t.Serial()
+	os.Unsetenv("BUILDHOST_ADMIN_LISTEN_ADDR")
+
+	c := Load()
+	assert.Equal(t, ":9090", c.AdminListenAddr)
 }
 
 func TestLoad_DataDirOverride(t *testing.T) {
