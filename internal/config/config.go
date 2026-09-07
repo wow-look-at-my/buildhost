@@ -220,7 +220,8 @@ func Load() Config {
 	if v := os.Getenv("BUILDHOST_DB_PATH"); v != "" {
 		c.DBPath = v
 	}
-	if v := os.Getenv("BUILDHOST_ADMIN_LISTEN_ADDR"); v != "" {
+	// Empty is a decision, not an absence: serve reads it as "no admin server".
+	if v, ok := os.LookupEnv("BUILDHOST_ADMIN_LISTEN_ADDR"); ok {
 		c.AdminListenAddr = v
 	}
 	if v := os.Getenv("BUILDHOST_STORAGE_COMPRESS"); v == "false" || v == "0" {
