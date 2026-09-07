@@ -132,6 +132,22 @@ tests:
 		stdout:
 			- "named-sh"
 
+	# The trampoline stages its copy under APE_RUNDIR and ignores TMPDIR, which
+	# every process inherits and which claims nothing about running a file. The
+	# launcher probed the directory by exec'ing a binary in it, so it is the one
+	# caller entitled to make that claim. Setting only TMPDIR left the copy in
+	# /tmp, where the deployment mounts noexec, and the container died on 126
+	# while the launcher's own log line named a directory that would have worked.
+	- desc: the launcher exports the variable the trampoline reads
+	  cmd: |
+		set -eu
+		grep -q 'export APE_RUNDIR' scripts/image-launcher.sh || {
+			echo 'the launcher never exports APE_RUNDIR, so the APE still stages under /tmp' >&2; exit 1; }
+		echo exports-ape-rundir
+	  outputs:
+		stdout:
+			- "exports-ape-rundir"
+
 	- desc: the launcher names the directory it chose
 	  cmd: grep -c 'the APE unpacks into' scripts/image-launcher.sh
 	  outputs:

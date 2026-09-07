@@ -75,12 +75,18 @@ for candidate in "${TMPDIR:-}" /var/lib/ape "$BUILDHOST_DATA_DIR/.ape" /tmp /var
 	"" | /proc* | /sys* | /dev/pts*) continue ;;
 	esac
 	if usable "$candidate"; then
+		# APE_RUNDIR is what the trampoline reads. It deliberately ignores
+		# TMPDIR, which every process inherits and which says nothing about
+		# whether the directory can be run from. This one is that claim, and
+		# the probe above is what earns the right to make it. TMPDIR is set
+		# too, for anything else in the process that wants a scratch path.
+		APE_RUNDIR="$candidate"
 		TMPDIR="$candidate"
-		export TMPDIR
+		export APE_RUNDIR TMPDIR
 		# Say which one, because the trampoline's own failure names a generated
 		# path and never the directory it was given. Without this line the only
 		# way to tell a wrong choice from a wrong probe is to guess.
-		echo "buildhost: the APE unpacks into $TMPDIR" >&2
+		echo "buildhost: the APE unpacks into $APE_RUNDIR" >&2
 		exec /bin/sh "$real" "$@"
 	fi
 done
