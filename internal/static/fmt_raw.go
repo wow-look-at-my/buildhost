@@ -20,6 +20,18 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 		return fmt.Errorf("raw format requires an artifact")
 	}
 
+	// The download is served under the name the artifact was PUBLISHED with
+	// (the X-Artifact-Filename / manifest `filename` it was uploaded under),
+	// not the project name. A slash-namespaced sub-project like "log-streamer/client"
+	// otherwise serves the raw binary as "log-streamer/client" -- a path, not a
+	// filename -- even though the artifact row records "log-streamer-client". When
+	// no upload filename was provided (per-platform uploads), fall back to the
+	// project name exactly as before.
+	downloadName := ctx.Artifact.Filename
+	if downloadName == "" {
+		downloadName = ctx.Project.Name
+	}
+
 	debug := r.URL.Query().Get("debug") == "1"
 
 	// Whether this artifact can be stripped is a property of the ARTIFACT, not
@@ -55,7 +67,7 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 				if blob.Encoding == "zstd" {
 					defer blob.Close()
 					w.Header().Set("Content-Type", "application/octet-stream")
-					w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", ctx.Project.Name))
+					w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", downloadName))
 					w.Header().Set("Content-Encoding", "zstd")
 					w.Header().Set("Content-Length", fmt.Sprintf("%d", blob.Size))
 					io.Copy(w, blob)
@@ -78,7 +90,7 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 			rc.Close()
 			defer sr.Close()
 			w.Header().Set("Content-Type", "application/octet-stream")
-			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", ctx.Project.Name))
+			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", downloadName))
 			w.Header().Set("Content-Length", fmt.Sprintf("%d", ssize))
 			io.Copy(w, sr)
 			return nil
@@ -94,7 +106,7 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 
 	defer rc.Close()
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", ctx.Project.Name))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", downloadName))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
 	io.Copy(w, rc)
 	return nil
