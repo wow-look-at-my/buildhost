@@ -68,11 +68,18 @@ stop_grace_period: 5m
 
 The image is built from `gcr.io/distroless/static-debian12:nonroot`. It runs as UID 65532 (nonroot) with no package manager. The server handles SIGTERM for graceful shutdown.
 
+
 The shipped binary is an Actually Portable Executable. The image therefore also carries a static busybox as `/bin`, plus a symlink per applet. The file's header is a shell script. The image registers no binfmt handler. The trampoline shells out while it unpacks itself under `/tmp`.
 
 **The entrypoint must never name the APE directly.** `/usr/local/lib/buildhost/buildhost` is the APE. `/usr/local/bin/buildhost` is a `#!/bin/sh` launcher that starts it. That is the same shape the deb repackager gives an APE. A shebang script is execable, so any spelling of the entrypoint works.
 
-This is not cosmetic. A rolling updater creates the new container from the *old* container's config. That config carries the entrypoint resolved from the image the old container came from. A container that predates the APE carries `["buildhost"]`. A bare exec of an APE is ENOEXEC, which means exit 126, on a loop. The old container is never replaced, and its stale config is cloned onto every later image.
+This is not cosmetic. A rolling updater creates the new container from the *old* container's config. That config carries the entrypoint resolved from the image the old container came from. A container that predates the APE carries `["buildhost"]`. A bare exec of an APE is ENOEXEC, which means exit 126, on a loop. The old container is never replaced, and its stale config is cloned onto every later image. Docker reports the failure against the entrypoint path. The message therefore names a file that is present.
+
+`dats/image-entrypoint.dats` guards the spelling. `go-toolchain` runs it sandboxed on every build. It reads the Dockerfile rather than starting a container, because a bare exec cannot be reproduced from a shell at all. When `execve` answers ENOEXEC the shell runs the file as a script instead, so the broken form looks fine. It covers both spellings: the entrypoint must name the launcher, and the shell must come from an image that ships a static busybox.
+
+`test/dats/image-entrypoints.dats` is the runtime half, and `container-healthcheck` runs it. It starts the built image once per spelling an old container can carry: the bare name on PATH, the absolute launcher path, and a shell in front of the path. It also asserts that nothing the image ships names an ELF interpreter, because the base image has no `/lib` to load one from.
+
+A bare exec IS reproducible. `docker run --entrypoint buildhost` on an image whose entrypoint path is the APE fails, and docker reports it against that path. It reproduces only where no APE binfmt handler is registered. The handler is host-wide, and containers inherit it. go-toolchain registers one on the runners it uses. With one registered, the kernel runs any APE through a shell. These assertions then cannot fail. The suite refuses to run when it finds one.
 
 `dats/image-entrypoint.dats` guards the spelling. `go-toolchain` runs it sandboxed on every build. It reads the Dockerfile rather than starting a container, because a bare exec cannot be reproduced from a shell at all. When `execve` answers ENOEXEC the shell runs the file as a script instead, so the broken form looks fine.
 
@@ -83,57 +90,3 @@ The admin dashboard on `:9090` has **no built-in authentication**. It must be pl
 Binary stripping needs no tools in the image. It is implemented natively in Go (`internal/strip/elf.go`). This is a fix for a real production defect. The image ships no binutils, so the previous shell-out implementation silently stripped NOTHING there. `container-healthcheck` now asserts against the built image that a published ELF comes back stripped. It also asserts that `fmt=symbols` serves the debug info, and that `?debug=1` returns the upload byte-for-byte.
 
 The server writes its own temporary files to `BUILDHOST_DATA_DIR/tmp`, not to `/tmp`. `/tmp` still has to be writable, because the APE trampoline unpacks itself there before the server starts. `read_only: true` therefore needs a `tmpfs: [/tmp]` beside it as well as the data volume.
-The image is built from `gcr.io/distroless/static-debian12:nonroot`. It runs as
-UID 65532 (nonroot) with no package manager. The server handles SIGTERM for
-graceful shutdown.
-
-The shipped binary is an Actually Portable Executable, so the image also carries
-one static busybox as `/bin` plus a symlink per applet: the file's header is a
-shell script, the image registers no binfmt handler, and the trampoline shells
-out while it unpacks itself under `/tmp`.
-
-**The entrypoint must never name the APE directly.** `/usr/local/lib/buildhost/
-buildhost` is the APE and `/usr/local/bin/buildhost` is a `#!/bin/sh` launcher
-that starts it -- the same shape the deb repackager gives an APE. A shebang
-script is execable, so any spelling of the entrypoint works. This is not
-cosmetic: a rolling updater creates the new container from the *old* container's
-config, which carries the entrypoint resolved from the image that container was
-created from. A container predating the APE carries `["buildhost"]`. A bare exec
-of an APE fails, on a loop. The old container is never replaced, and its stale
-config is cloned onto every later image. Docker reports the failure against the
-entrypoint path. The message therefore names a file that is present.
-
-Two suites guard this. `dats/image-entrypoint.dats` reads the Dockerfile, and
-`go-toolchain` runs it sandboxed on every build, with no host and no docker. It
-covers both spellings: the entrypoint must name the launcher, and the shell must
-come from an image that ships a static busybox.
-
-`test/dats/image-entrypoints.dats` is the runtime half, and
-`container-healthcheck` runs it. It starts the built image once per spelling an
-old container can carry. The
-spellings are the bare name on PATH, the absolute launcher path, and a shell in
-front of the path. It also asserts that nothing the image ships names an ELF
-interpreter, because the base image has no `/lib` to load one from.
-
-A bare exec IS reproducible. `docker run --entrypoint buildhost` on an image
-whose entrypoint path is the APE fails, and docker reports it against that path.
-It reproduces only where no APE binfmt handler is registered. The handler is
-host-wide, and containers inherit it. go-toolchain registers one on the runners
-it uses. With one registered, the kernel runs any APE through a shell. These
-assertions then cannot fail. The suite refuses to run when it finds one.
-
-The admin dashboard on `:9090` has **no built-in authentication**. It must be
-placed behind a reverse proxy with access control (e.g., Cloudflare Access on a
-separate hostname). Never expose port 9090 to untrusted networks.
-
-Binary stripping needs no tools in the image: it is implemented natively in Go
-(`internal/strip/elf.go`). This is a fix for a real production defect -- the image
-ships no binutils, so the previous shell-out implementation silently stripped
-NOTHING there for weeks. `container-healthcheck` now asserts against the built
-image that a published ELF comes back stripped, that `fmt=symbols` serves its
-debug info, and that `?debug=1` returns the upload byte-for-byte.
-
-The server writes its own temporary files to `BUILDHOST_DATA_DIR/tmp`, not to
-`/tmp`. `/tmp` still has to be writable, because the APE trampoline unpacks
-itself there before the server starts. `read_only: true` therefore needs a
-`tmpfs: [/tmp]` beside it as well as the data volume.
