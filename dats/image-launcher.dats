@@ -76,8 +76,41 @@ tests:
 
 	# The probe has to RUN something. A directory that merely looks writable is
 	# what let the old launcher hand /tmp to a trampoline that could not use it.
-	- desc: the probe runs a program rather than trust a permission bit
-	  cmd: grep -c 'chmod 0700 "$probe" 2>/dev/null && "$probe"' scripts/image-launcher.sh
+	# The probe copies a BINARY. A shebang script is read by its interpreter, so
+	# running one can succeed where exec'ing a binary does not -- and a binary is
+	# what the trampoline writes. A script here accepted /tmp on a deployment the
+	# APE could not start in, and the launcher changed nothing.
+	- desc: the probe execs a copied binary, not a shebang script
+	  cmd: |
+		set -eu
+		grep -q 'cp /bin/sh "$probe"' scripts/image-launcher.sh || {
+			echo 'the probe must copy a real binary: running a script proves nothing about exec' >&2; exit 1; }
+		if grep -q "printf '#!/bin/sh" scripts/image-launcher.sh; then
+			echo 'the probe still writes a shebang script' >&2; exit 1
+		fi
+		grep -q '126' scripts/image-launcher.sh || {
+			echo 'the probe must judge whether exec itself succeeded' >&2; exit 1; }
+		echo binary-probe
+	  outputs:
+		stdout:
+			- "binary-probe"
+
+	# busybox picks its applet from argv[0]. The image's /bin/sh IS busybox, so
+	# a copy called anything else answers "applet not found" and exits 127. The
+	# probe read that as a directory that cannot exec, and the container refused
+	# every directory it was offered, the writable data volume included.
+	- desc: the probe copy keeps the name sh
+	  cmd: |
+		set -eu
+		grep -q 'probe="$dir/sh"' scripts/image-launcher.sh || {
+			echo 'the probe copy must be named sh: busybox dispatches on argv[0]' >&2; exit 1; }
+		echo named-sh
+	  outputs:
+		stdout:
+			- "named-sh"
+
+	- desc: the launcher names the directory it chose
+	  cmd: grep -c 'the APE unpacks into' scripts/image-launcher.sh
 	  outputs:
 		stdout:
 			- "1"
