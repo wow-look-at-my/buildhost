@@ -26,14 +26,29 @@ real=/usr/local/lib/buildhost/buildhost
 usable() {
 	[ -n "${1:-}" ] || return 1
 	mkdir -p "$1" 2>/dev/null || return 1
-	probe="$1/.ape-exec-probe.$$"
-	printf '#!/bin/sh\nexit 0\n' > "$probe" 2>/dev/null || return 1
-	if chmod 0700 "$probe" 2>/dev/null && "$probe" 2>/dev/null; then
-		rm -f "$probe"
-		return 0
-	fi
-	rm -f "$probe" 2>/dev/null || true
-	return 1
+	dir="$1/.ape-exec-probe.$$"
+	mkdir -p "$dir" 2>/dev/null || return 1
+	# A COPIED BINARY, not a script. A shebang script is read by its
+	# interpreter, so running one can succeed in a directory that refuses to
+	# exec a binary -- and a binary is exactly what the trampoline writes here.
+	# The first version of this probe wrote a script, accepted /tmp on a
+	# deployment where the APE could not run from it, and changed nothing.
+	#
+	# /bin/sh is the binary at hand and cp follows the symlink to it, so the
+	# copy is a real executable both in this image, where it is busybox, and
+	# anywhere the suite runs. The copy KEEPS THE NAME sh, in a directory of
+	# its own: busybox picks its applet from argv[0], so a copy under any
+	# other name exits 127 and reads as a directory that cannot exec.
+	probe="$dir/sh"
+	cp /bin/sh "$probe" 2>/dev/null || { rm -rf "$dir"; return 1; }
+	chmod 0700 "$probe" 2>/dev/null || { rm -rf "$dir"; return 1; }
+	# Only whether EXEC succeeded matters. 126 is "cannot execute" and 127 is
+	# "not found"; any other status means the kernel ran it, which is the whole
+	# question. -c : is a no-op every POSIX shell accepts.
+	rc=0
+	"$probe" -c : 2>/dev/null || rc=$?
+	rm -rf "$dir" 2>/dev/null || true
+	[ "$rc" -ne 126 ] && [ "$rc" -ne 127 ]
 }
 
 # writableMounts lists what the kernel says is mounted read-write without
@@ -59,6 +74,10 @@ for candidate in "${TMPDIR:-}" "$BUILDHOST_DATA_DIR/.ape" /tmp /var/tmp /dev/shm
 	if usable "$candidate"; then
 		TMPDIR="$candidate"
 		export TMPDIR
+		# Say which one, because the trampoline's own failure names a generated
+		# path and never the directory it was given. Without this line the only
+		# way to tell a wrong choice from a wrong probe is to guess.
+		echo "buildhost: the APE unpacks into $TMPDIR" >&2
 		exec /bin/sh "$real" "$@"
 	fi
 done
