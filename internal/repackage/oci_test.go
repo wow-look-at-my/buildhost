@@ -41,6 +41,24 @@ func readLayerFiles(t *testing.T, compressed []byte) map[string][]byte {
 	}
 }
 
+// readLayerHeaders decompresses a layer and indexes its entries by name.
+func readLayerHeaders(t *testing.T, compressed []byte) map[string]*tar.Header {
+	t.Helper()
+	zr, err := zstd.NewReader(bytes.NewReader(compressed))
+	require.NoError(t, err)
+	defer zr.Close()
+	tr := tar.NewReader(zr)
+	entries := map[string]*tar.Header{}
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return entries
+		}
+		require.NoError(t, err)
+		entries[hdr.Name] = hdr
+	}
+}
+
 // TestOCIRepackageEssentials verifies the synthesized image carries the shared
 // base layer (CA certs, minimal rootfs and shell) plus the binary layer.
 func TestOCIRepackageEssentials(t *testing.T) {
@@ -62,7 +80,7 @@ func TestOCIRepackageEssentials(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	rp := &OCI{Store: store, DB: d, Shell: newFakeShellRegistry(t).cache(t, t.TempDir())}
+	rp := &OCI{Store: store, DB: d}
 	input := makeInput()
 	input.Artifact = *a
 
@@ -142,7 +160,7 @@ func TestOCIRepackageAPEImageLayout(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	rp := &OCI{Store: store, DB: d, Shell: newFakeShellRegistry(t).cache(t, t.TempDir())}
+	rp := &OCI{Store: store, DB: d}
 	input := makeInput()
 	input.Project = *proj
 	input.Artifact = *a
@@ -170,7 +188,7 @@ func TestOCIRepackageAPEImageLayout(t *testing.T) {
 	baseData, err := io.ReadAll(rc)
 	rc.Close()
 	require.NoError(t, err)
-	entries := readShellLayer(t, baseData)
+	entries := readLayerHeaders(t, baseData)
 	require.Contains(t, entries, "bin/sh")
 	assert.Equal(t, "busybox", entries["bin/sh"].Linkname)
 
@@ -256,26 +274,13 @@ func TestOCIWriteLayerLayoutIsTheSameForEveryBinary(t *testing.T) {
 	}
 }
 
-// The shell is part of the base layer now, so an image of any kind is refused
-// without it: an image that cannot start must not be served as if it could.
-func TestOCIRepackageWithoutShellCacheFails(t *testing.T) {
+// The shell is baked in per architecture, so an image for one nobody baked must
+// be refused rather than served without a shell for its launcher.
+func TestShellLayerRefusesAnUnbakedArch(t *testing.T) {
 	t.Serial()
-	for name, body := range map[string][]byte{
-		"a plain ELF": testBinary,
-		"an APE":      apeBinary,
-	} {
-		t.Run(name, func(t *testing.T) {
-			store := openTestStore(t)
-			rp := &OCI{Store: store}
-			input := makeInput()
-			input.Reader = bytes.NewReader(body)
-			input.Size = int64(len(body))
-
-			_, err := rp.Repackage(context.Background(), input)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "shell")
-		})
-	}
+	_, _, err := ShellLayer(db.Arch386)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no shell is baked in")
 }
 
 // The shell rides the base layer, so an image is the base plus the binary and
@@ -283,7 +288,7 @@ func TestOCIRepackageWithoutShellCacheFails(t *testing.T) {
 func TestOCIRepackageLayersAreBaseAndBinary(t *testing.T) {
 	t.Serial()
 	store := openTestStore(t)
-	rp := &OCI{Store: store, Shell: newFakeShellRegistry(t).cache(t, t.TempDir())}
+	rp := &OCI{Store: store}
 	input := makeInput()
 	input.Reader = bytes.NewReader(testBinary)
 	input.Size = int64(len(testBinary))
@@ -303,12 +308,11 @@ func TestOCIRepackageLayersAreBaseAndBinary(t *testing.T) {
 // spelling is a script with no interpreter.
 func TestBaseLayerCarriesTheShell(t *testing.T) {
 	t.Serial()
-	rp := &OCI{Store: openTestStore(t), Shell: newFakeShellRegistry(t).cache(t, t.TempDir())}
-	base, diffID, err := rp.base(context.Background(), db.ArchAMD64)
+	base, diffID, err := imageBase(db.ArchAMD64)
 	require.NoError(t, err)
 	require.NotEmpty(t, diffID)
 
-	entries := readShellLayer(t, base)
+	entries := readLayerHeaders(t, base)
 	assert.Contains(t, entries, "bin/sh", "the launcher's interpreter")
 	assert.Contains(t, entries, "etc/ssl/certs/ca-certificates.crt", "the essentials ride the same layer")
 }
@@ -380,7 +384,7 @@ func TestOCIRepackageDeterministic(t *testing.T) {
 	store := openTestStore(t)
 	ctx := context.Background()
 
-	rp := &OCI{Store: store, Shell: newFakeShellRegistry(t).cache(t, t.TempDir())}
+	rp := &OCI{Store: store}
 	input := makeInput()
 
 	input.Reader = bytes.NewReader(testBinary)
@@ -418,7 +422,7 @@ func TestOCIRepackageUser(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	rp := &OCI{Store: store, DB: d, Shell: newFakeShellRegistry(t).cache(t, t.TempDir())}
+	rp := &OCI{Store: store, DB: d}
 	input := makeInput()
 	input.Project = *proj
 	input.Release = *rel

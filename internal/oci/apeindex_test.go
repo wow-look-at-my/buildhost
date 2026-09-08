@@ -60,23 +60,6 @@ func shellOctal(b []byte) string {
 	return out.String()
 }
 
-// apeShellCache returns a shell cache pre-seeded on disk, so an APE image
-// synthesizes with no registry reachable.
-func apeShellCache(t *testing.T) *repackage.ShellCache {
-	t.Helper()
-	dir := t.TempDir()
-	images := map[db.Arch]string{}
-	for i, arch := range []db.Arch{db.ArchAMD64, db.ArchARM64} {
-		digest := strings.Repeat(fmt.Sprintf("%d", i+1), 64)
-		images[arch] = "sha256:" + digest
-		seeded := filepath.Join(dir, string(arch), digest)
-		require.NoError(t, os.MkdirAll(seeded, 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(seeded, "busybox"), []byte("#!/bin/sh\nfake\n"), 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(seeded, "applets"), []byte("sh\nbusybox\n"), 0o644))
-	}
-	return &repackage.ShellCache{Dir: dir, Images: images}
-}
-
 // publishAPE publishes an APE artifact covering platforms, through the same
 // multi-platform path a real `PUT .../artifacts/ape?platforms=...` takes.
 func publishAPE(t *testing.T, ctx context.Context, d *db.DB, store *storage.Filesystem, proj *db.Project, platforms []db.Platform) *db.Release {
@@ -201,27 +184,24 @@ func TestAPEIndexNarrowerPlatformSets(t *testing.T) {
 // used to be silent. A platform the release covers and the registry cannot
 // serve must fail the request. A short index served as success moves the
 // failure to the client's platform matcher, which reports a platform it could
-// not match and no cause. Every image needs a shell layer, so a generator with
-// no shell cache cannot synthesize a child at all.
+// not match and no cause. The base layer carries a shell baked in per
+// architecture, so a covered platform with none is a child nothing can build.
 func TestAPEIndexFailsLoudlyWhenAChildCannotBeSynthesized(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)
 	ctx := context.Background()
 
-	// No shell cache: GenerateForPlatform fails for the linux slot alone.
-	h.Gen = repackage.NewGenerator(store, d, t.TempDir())
-
 	proj := &db.Project{Name: "apeapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 	publishAPE(t, ctx, d, store, proj, []db.Platform{
 		{OS: db.OSLinux, Arch: db.ArchAMD64},
-		{OS: db.OSLinux, Arch: db.ArchARM64},
+		{OS: db.OSLinux, Arch: db.Arch386},
 	})
 
 	rec := fetchIndex(t, h, proj)
 	require.Equal(t, http.StatusInternalServerError, rec.Code,
 		"a platform that cannot be synthesized must fail the pull, not shorten the index")
-	assert.Contains(t, rec.Body.String(), "linux/amd64", "the error must name the platform that failed")
+	assert.Contains(t, rec.Body.String(), "linux/386", "the error must name the platform that failed")
 }
 
 // TestAPEIndexFailsLoudlyWhenAChildIsNotLinked covers the other silent drop:
@@ -240,7 +220,7 @@ func TestAPEIndexFailsLoudlyWhenAChildIsNotLinked(t *testing.T) {
 	})
 
 	// Unlinked, so the membership check answers false, as a collision does.
-	h.Gen = repackage.NewGenerator(store, nil, t.TempDir(), repackage.WithShellCache(apeShellCache(t)))
+	h.Gen = repackage.NewGenerator(store, nil, t.TempDir())
 
 	rec := fetchIndex(t, h, proj)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code,

@@ -30,8 +30,6 @@ var caCertsPEM []byte
 type OCI struct {
 	Store storage.Storage
 	DB    *db.DB
-	// Shell serves the /bin/sh layer an APE image needs. Nil refuses to
-	Shell *ShellCache
 }
 
 func (o *OCI) Format() Format { return FormatOCI }
@@ -53,10 +51,7 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 	}
 
 	// Every image starts here: rootfs, CA bundle and shell, per architecture.
-	if o.Shell == nil {
-		return nil, errors.New("a synthesized image needs a shell layer, and no shell cache is configured")
-	}
-	baseData, baseDiffID, err := o.base(ctx, input.Artifact.Arch)
+	baseData, baseDiffID, err := imageBase(input.Artifact.Arch)
 	if err != nil {
 		return nil, fmt.Errorf("base layer: %w", err)
 	}
@@ -139,14 +134,14 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 	}, nil
 }
 
-// base returns the layer every synthesized image starts from: the essentials
-// rootfs with the shell appended, for arch.
-func (o *OCI) base(ctx context.Context, arch db.Arch) ([]byte, string, error) {
+// imageBase returns the layer every synthesized image starts from: the
+// essentials rootfs with the shell appended, for arch.
+func imageBase(arch db.Arch) ([]byte, string, error) {
 	essentials, _, err := essentialsLayer()
 	if err != nil {
 		return nil, "", fmt.Errorf("essentials: %w", err)
 	}
-	shell, _, err := o.Shell.Layer(ctx, arch)
+	shell, _, err := ShellLayer(arch)
 	if err != nil {
 		return nil, "", fmt.Errorf("shell for %s: %w", arch, err)
 	}

@@ -331,7 +331,7 @@ func TestOCIRepackage(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	rp := &OCI{Store: store, DB: d, Shell: newFakeShellRegistry(t).cache(t, t.TempDir())}
+	rp := &OCI{Store: store, DB: d}
 	input := makeInput()
 	input.Artifact = *a
 

@@ -35,8 +35,8 @@ shared:
 			# side. Writes $ENV_FILE.
 			set -eu
 			WORK="$(dirname "$ENV_FILE")"
-			REGISTRY="oci.buildhost.test:8080"
-			BASE="http://localhost:8080"
+			REGISTRY="oci.buildhost.test:47823"
+			BASE="http://localhost:47823"
 			PUSHED="pushed-image"
 			SYNTH="synth-image"
 			test -x "$BUILDHOST_BIN" || { echo "not executable: $BUILDHOST_BIN" >&2; exit 1; }
@@ -57,8 +57,8 @@ shared:
 				fi
 			done
 
-			TOKEN="$(docker compose -f "$REPO/docker-compose.ci.yml" exec -T buildhost \
-				/usr/local/bin/buildhost bootstrap --name oci-roundtrip | tail -1 | tr -d '\r')"
+			TOKEN="$(docker compose -f "$REPO/docker-compose.ci.yml" -f "$REPO/test/compose.oci-roundtrip.yml" \
+				exec -T buildhost /usr/local/bin/buildhost bootstrap --name oci-roundtrip | tail -1 | tr -d '\r')"
 			test -n "$TOKEN" || { echo "no token from bootstrap inside the container" >&2; exit 1; }
 			auth() { curl -fsS -H "Authorization: Bearer $TOKEN" "$@"; }
 

@@ -278,20 +278,20 @@ jobs:
           sudo mkdir -p /etc/docker
           existing="$(sudo cat /etc/docker/daemon.json 2>/dev/null || echo '{}')"
           printf '%s' "$existing" | jq \
-            --arg reg "oci.buildhost.test:8080" \
+            --arg reg "oci.buildhost.test:47823" \
             '.features."containerd-snapshotter" = true
              | .["insecure-registries"] = ((.["insecure-registries"] // []) + [$reg] | unique)' \
             | sudo tee /etc/docker/daemon.json
           sudo systemctl restart docker
           for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
-      - run: docker compose -f docker-compose.ci.yml build
-      - run: docker compose -f docker-compose.ci.yml up -d --wait --wait-timeout 30
+      - run: docker compose -f docker-compose.ci.yml -f test/compose.oci-roundtrip.yml build
+      - run: docker compose -f docker-compose.ci.yml -f test/compose.oci-roundtrip.yml up -d --wait --wait-timeout 30
       - env:
           BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
           MARKER_BIN: ${{ runner.temp }}/marker
           REPO: ${{ github.workspace }}
         run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/oci-roundtrip.dats
-      - run: docker compose -f docker-compose.ci.yml logs
+      - run: docker compose -f docker-compose.ci.yml -f test/compose.oci-roundtrip.yml logs
         if: failure()
 
   # Proves the DOCUMENTED Homebrew flows -- public and private -- work against a
