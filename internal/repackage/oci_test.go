@@ -274,6 +274,19 @@ func TestOCIWriteLayerLayoutIsTheSameForEveryBinary(t *testing.T) {
 	}
 }
 
+// A generator that skipped an architecture ships a binary that refuses to
+// synthesize for it, and nothing else reports that until a pull does.
+func TestEveryDeclaredArchHasABakedShell(t *testing.T) {
+	t.Serial()
+	for _, arch := range shellArches {
+		layer, diffID, err := ShellLayer(arch)
+		require.NoErrorf(t, err, "no shell baked in for %s", arch)
+		assert.NotEmpty(t, layer)
+		assert.NotEmpty(t, diffID)
+		assert.Contains(t, readLayerHeaders(t, layer), "bin/sh", "%s has no shell for the launcher", arch)
+	}
+}
+
 // The shell is baked in per architecture, so an image for one nobody baked must
 // be refused rather than served without a shell for its launcher.
 func TestShellLayerRefusesAnUnbakedArch(t *testing.T) {

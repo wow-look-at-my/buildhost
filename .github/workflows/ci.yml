@@ -135,7 +135,7 @@ jobs:
         run: |
           go generate ./internal/api
           if [ -x scripts/build-admin-frontend.sh ]; then ./scripts/build-admin-frontend.sh; fi
-          if [ -x scripts/fetch-shell.sh ]; then ./scripts/fetch-shell.sh; fi
+          if [ -d internal/repackage/shellgen ]; then go generate ./internal/repackage; fi
           go build -o build/buildhost_linux_amd64 ./cmd/buildhost
       - if: steps.cache.outputs.cache-hit != 'true'
         shell: bash
@@ -297,6 +297,7 @@ jobs:
 
   # Proves the DOCUMENTED Homebrew flows -- public and private -- work against a
   homebrew-tap-e2e:
+    needs: build
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -321,15 +322,12 @@ jobs:
         run: |
           sudo apt-get install -y bubblewrap
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - uses: actions/setup-go@v5
+      # The shipped APE runs on both matrix legs, and carries every generated input, so this job takes the build job's binary rather than assembling its own.
+      - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          go-version-file: go.mod
-      - run: ./scripts/fetch-cacerts.sh
-      - run: ./scripts/fetch-shell.sh
-      - run: go generate ./internal/api
-      # The dashboard JS is generated, not committed, and embedded by name.
-      - run: ./scripts/build-admin-frontend.sh
-      - run: go build -o buildhost ./cmd/buildhost
+          name: go-build-build.broot
+          path: build/
+      - run: chmod +x build/buildhost && cp build/buildhost buildhost
       - name: Start local buildhost
         shell: bash
         env:
