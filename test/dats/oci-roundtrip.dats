@@ -82,8 +82,10 @@ shared:
 				-d "{\"name\":\"$SYNTH\",\"versioning\":\"auto\",\"is_private\":false}" >/dev/null
 			VERSION="$(auth -X POST "$BASE/api/v1/projects/$SYNTH/releases" \
 				-H 'Content-Type: application/json' -d '{"git_branch":"master"}' | jq -r .version)"
+			# Published once, covering several platforms, which is the shape the
+			# index bug appeared on: the canonical slot went missing from it.
 			auth -X PUT --data-binary "@$BUILDHOST_BIN" -H "X-Artifact-Filename: $SYNTH" \
-				"$BASE/api/v1/projects/$SYNTH/releases/$VERSION/artifacts/linux/amd64?kind=binary" >/dev/null
+				"$BASE/api/v1/projects/$SYNTH/releases/$VERSION/artifacts/ape?platforms=linux/amd64,linux/arm64,darwin/arm64" >/dev/null
 			auth -X POST "$BASE/api/v1/projects/$SYNTH/releases/$VERSION/publish" >/dev/null
 
 			{
@@ -104,8 +106,10 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
+		# Not releases/latest: that resolves the apex, which is scoped to the
+		# project's default branch, and a docker push names no branch.
 		curl -fsS -H "Authorization: Bearer $TOKEN" \
-			"$BASE/api/v1/projects/$PUSHED/releases/latest" | jq -r '.artifacts[].kind'
+			"$BASE/api/v1/projects/$PUSHED/releases" | jq -r '.[].artifacts[]?.kind' | sort -u
 	  outputs:
 		stdout:
 			- "docker"
@@ -128,21 +132,22 @@ tests:
 	# omitted linux/amd64, the artifact's own canonical platform and the only
 	# one anything can run. docker reported "no matching manifest for
 	# linux/amd64 in the manifest list entries" and the cause reached nobody.
-	- desc: the synthesized image advertises the platform the host runs
+	- desc: the index carries every linux platform the APE covers
 	  cmd: |
 		set -eu
 		. {shared.env}
 		docker manifest inspect --insecure "$REGISTRY/$SYNTH:latest" \
-			| jq -r 'if .manifests then .manifests[] | "\(.platform.os)/\(.platform.architecture)" else "\(.config.digest | "single")" end' \
-			| sort
+			| jq -r '.manifests[] | "\(.platform.os)/\(.platform.architecture)"' | sort
 		echo "index-read"
 	  outputs:
 		stdout:
 			- "linux/amd64"
+			- "linux/arm64"
 			- "index-read"
+		# The image is a linux rootfs with a linux shell, so a darwin entry
+		# advertises a platform nothing can pull and run.
 		!stdout:
 			- "darwin/"
-			- "windows/"
 
 	# The whole point: an image nobody starts is what shipped the defect.
 	- desc: the synthesized image pulls and the binary inside it runs

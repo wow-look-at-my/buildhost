@@ -127,7 +127,7 @@ func TestOCIRepackageEssentials(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(cfgBytes, &cfg))
 	require.Len(t, cfg.Rootfs.DiffIDs, 2)
-	_, baseDiffID, err := rp.base(ctx, db.ArchAMD64)
+	_, baseDiffID, err := imageBase(db.ArchAMD64)
 	require.NoError(t, err)
 	assert.Equal(t, "sha256:"+baseDiffID, cfg.Rootfs.DiffIDs[0])
 	assert.Equal(t, []string{"/testapp"}, cfg.Config.Entrypoint)
@@ -211,7 +211,7 @@ func TestOCIRepackageAPEImageLayout(t *testing.T) {
 	// A rolling updater clones this string onto the replacement container.
 	assert.Equal(t, []string{"/apeapp"}, cfg.Config.Entrypoint)
 	require.Len(t, cfg.Rootfs.DiffIDs, 2)
-	_, baseDiffID, err := rp.base(ctx, db.ArchAMD64)
+	_, baseDiffID, err := imageBase(db.ArchAMD64)
 	require.NoError(t, err)
 	assert.Equal(t, "sha256:"+baseDiffID, cfg.Rootfs.DiffIDs[0])
 
