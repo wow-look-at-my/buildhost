@@ -1474,6 +1474,17 @@ const demoData: Record<string, unknown> = {
     },
     "/registries": { base_url: "https://builds.example.com", services: demoServices, projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
     "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com", services: demoServices },
+    // The demo shows a repo mid-rename, which is the state this page exists for.
+    "/duplicates": {
+        groups: [{
+            repo_id: "1287579802",
+            repo: "myorg/cli-tool",
+            projects: [
+                { name: "old-cli-name/cli-tool", root: "old-cli-name", repo: "myorg/old-cli-name", releases: 31 },
+                { name: "cli-tool", root: "cli-tool", repo: "myorg/cli-tool", releases: 19 }
+            ]
+        }]
+    },
     // The demo deliberately shows an UNHEALTHY proxy: the failure mode this page
     // exists for (a credential that cannot read private modules while public ones
     // keep working) is the one worth showing off in a preview.
