@@ -181,7 +181,19 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			parentSpan := trace.SpanFromContext(r.Context())
 			parentSpan.SetAttributes(attribute.String("project.name", ri.ProjectName()))
 
-			project, err := mw.DB.GetProject(r.Context(), ri.ProjectName())
+			// Projects follow their repo's name. Runs before resolution so a
+			// publish under the NEW name finds the renamed project instead of
+			// provisioning a duplicate.
+			if ri.Access() == WriteAccess && TokenFrom(r.Context()) != nil {
+				reconcileRepoNamespace(r.Context(), mw.DB, OIDCRepoFrom(r.Context()))
+			}
+
+			project, aliased, err := mw.DB.ResolveProject(r.Context(), ri.ProjectName())
+			if aliased {
+				// A name the project answered to before a rename.
+				parentSpan.SetAttributes(attribute.Bool("project.name_aliased", true))
+				parentSpan.SetAttributes(attribute.String("project.canonical_name", project.Name))
+			}
 			if errors.Is(err, db.ErrNotFound) {
 				t := TokenFrom(r.Context())
 				oidcProject := OIDCProjectFrom(r.Context())

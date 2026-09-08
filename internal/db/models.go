@@ -144,6 +144,12 @@ type Project struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
+type ProjectAlias struct {
+	Name      string    `json:"name"`
+	ProjectID int64     `json:"project_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Release struct {
 	ID          int64      `json:"id"`
 	ProjectID   int64      `json:"project_id"`
