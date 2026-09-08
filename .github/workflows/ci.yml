@@ -297,7 +297,6 @@ jobs:
 
   # Proves the DOCUMENTED Homebrew flows -- public and private -- work against a
   homebrew-tap-e2e:
-    needs: build
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -322,12 +321,15 @@ jobs:
         run: |
           sudo apt-get install -y bubblewrap
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      # The shipped APE runs on both matrix legs, and carries every generated input, so this job takes the build job's binary rather than assembling its own.
-      - uses: wow-look-at-my/actions@cache-download#latest
+      - uses: actions/setup-go@v5
         with:
-          name: go-build-build.broot
-          path: build/
-      - run: chmod +x build/buildhost && cp build/buildhost buildhost
+          go-version-file: go.mod
+      # Natively, never the shipped APE: SQLite's file locking fails under the APE's macOS syscall layer, and the server dies on SQLITE_IOERR_LOCK.
+      - run: go generate ./internal/repackage
+      - run: go generate ./internal/api
+      # The dashboard JS is generated, not committed, and embedded by name.
+      - run: ./scripts/build-admin-frontend.sh
+      - run: go build -o buildhost ./cmd/buildhost
       - name: Start local buildhost
         shell: bash
         env:
