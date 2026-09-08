@@ -20,8 +20,7 @@ func repoNamespaceRoot(repoPath string) string {
 }
 
 // renamedNamespaceName rewrites name's root, keeping the child path. It returns
-// "" when name already sits under root. A child repeating the root collapses
-// onto it, so a repo named after its binary avoids a redundant "lpi/lpi".
+// "" when name sits under root. A child repeating the root collapses onto it.
 func renamedNamespaceName(name, root string) string {
 	head, rest, hasChild := strings.Cut(name, "/")
 	if head == root {

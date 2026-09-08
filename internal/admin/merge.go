@@ -10,16 +10,16 @@ import (
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 const maxMergeBody = 1 << 16
 
-// DuplicateGroup is a set of projects sharing a GitHub repo id but sitting under
-// different roots. A GitHub rename produces exactly this: the release history
-// under the old name and the new publishes under the new one.
+// DuplicateGroup is a set of projects sharing a repo id across roots, which is
+// what a rename leaves behind.
 type DuplicateGroup struct {
-	RepoID   string          `json:"repo_id"`
-	Repo     string          `json:"repo"`
+	RepoID   string           `json:"repo_id"`
+	Repo     string           `json:"repo"`
 	Projects []DuplicateEntry `json:"projects"`
 }
 
@@ -30,8 +30,8 @@ type DuplicateEntry struct {
 	Releases int    `json:"releases"`
 }
 
-// apiDuplicates (GET /api/duplicates) lists the rename leftovers. Grouping is by
-// repo id, and a group with a single root is healthy and left out.
+// apiDuplicates (GET /api/duplicates) lists the rename leftovers, grouped by
+// repo id. A group confined to a shared root is healthy and left out.
 func (s *Server) apiDuplicates(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	projects, err := s.db.ListProjects(ctx)
@@ -47,11 +47,11 @@ func (s *Server) apiDuplicates(w http.ResponseWriter, r *http.Request) {
 	}
 	groups := []DuplicateGroup{}
 	for repoID, members := range byRepo {
-		roots := map[string]bool{}
+		roots := set.New[string]()
 		for _, p := range members {
-			roots[projectRoot(p.Name)] = true
+			roots.Add(projectRoot(p.Name))
 		}
-		if len(roots) < 2 {
+		if roots.Len() < 2 {
 			continue
 		}
 		g := DuplicateGroup{RepoID: repoID}
@@ -95,7 +95,7 @@ func (s *Server) apiMergePlan(w http.ResponseWriter, r *http.Request) {
 }
 
 // apiMerge (POST /api/projects/{name}/merge) applies a merge. It snapshots the
-// database first and refuses to proceed when that snapshot fails.
+// database up front and refuses to proceed when that snapshot fails.
 func (s *Server) apiMerge(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var body struct {
