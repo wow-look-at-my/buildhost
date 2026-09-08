@@ -13,7 +13,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
-// testELFHeader is a 64-byte ELF64 header for machine.
+// testELFHeader is an ELF64 header for machine.
 func testELFHeader(machine uint16) []byte {
 	h := make([]byte, apeELFHeaderSize)
 	copy(h, "\x7fELF\x02\x01\x01\x00")
@@ -22,6 +22,13 @@ func testELFHeader(machine uint16) []byte {
 	binary.LittleEndian.PutUint32(h[20:], 1) // EV_CURRENT
 	return h
 }
+
+// The e_machine values an ELF header carries for the architectures buildhost
+// synthesizes images on.
+const (
+	machineAMD64 = 0x3e
+	machineARM64 = 0xb7
+)
 
 // testPrintfOctal renders b as the escaped body of a single-quoted printf word,
 // which is how the trampoline spells a header byte.
@@ -49,14 +56,14 @@ func testAPE(machines ...uint16) []byte {
 
 func TestAPEAsELFPicksTheHeaderForTheArch(t *testing.T) {
 	t.Serial()
-	payload := testAPE(0x3e, 0xb7) // EM_X86_64, EM_AARCH64
+	payload := testAPE(machineAMD64, machineARM64)
 
 	for _, tc := range []struct {
 		arch    db.Arch
 		machine uint16
 	}{
-		{db.ArchAMD64, 0x3e},
-		{db.ArchARM64, 0xb7},
+		{db.ArchAMD64, machineAMD64},
+		{db.ArchARM64, machineARM64},
 	} {
 		r, err := apeAsELF(bytes.NewReader(payload), tc.arch)
 		require.NoError(t, err)
@@ -84,14 +91,14 @@ func TestAPEAsELFRefusesAPayloadWithNoHeader(t *testing.T) {
 // claim a platform whose binary cannot run.
 func TestAPEAsELFRefusesAMissingArch(t *testing.T) {
 	t.Serial()
-	_, err := apeAsELF(bytes.NewReader(testAPE(0x3e)), db.ArchARM64)
+	_, err := apeAsELF(bytes.NewReader(testAPE(machineAMD64)), db.ArchARM64)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "none is")
 }
 
 func TestAPEAsELFRefusesAnUnknownArch(t *testing.T) {
 	t.Serial()
-	_, err := apeAsELF(bytes.NewReader(testAPE(0x3e)), db.Arch386)
+	_, err := apeAsELF(bytes.NewReader(testAPE(machineAMD64)), db.Arch386)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no ELF machine is known")
 }

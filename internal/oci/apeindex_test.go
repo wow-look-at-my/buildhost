@@ -19,6 +19,13 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
+// The e_machine values an ELF header carries for the architectures buildhost
+// synthesizes images on.
+const (
+	machineAMD64 = 0x3e
+	machineARM64 = 0xb7
+)
+
 // fakeAPE builds a payload with the prologue an APE carries: the magic the
 // detector matches, and the printf call per architecture that the trampoline
 // uses to write a real ELF header over its own copy. Reading a header out of
@@ -26,7 +33,7 @@ import (
 func fakeAPE() []byte {
 	var b strings.Builder
 	b.WriteString("MZqFpD='\n")
-	for _, m := range []uint16{0x3e, 0xb7} { // EM_X86_64, EM_AARCH64
+	for _, m := range []uint16{machineAMD64, machineARM64} {
 		b.WriteString("    printf '" + shellOctal(elf64Header(m)) + "' >&7\n")
 	}
 	// The payload the trampoline would stage. Nothing here executes it.
@@ -113,11 +120,11 @@ func indexPlatforms(t *testing.T, body []byte) []string {
 }
 
 // TestAPEIndexCoversEveryPlatform is the regression test for the missing
-// canonical slot. An APE is published once and covers several platforms, and
-// the index dropped linux/amd64 -- the artifact's own canonical platform, the
-// only one actually uploaded, and the one every consumer on the deployment
-// needs. `docker pull` answered "no matching manifest for linux/amd64 in the
-// manifest list entries" while the release JSON listed it.
+// canonical slot. An APE covers several platforms from a single upload, and the
+// index dropped linux/amd64 -- the artifact's own canonical platform, the only
+// uploaded platform, and what every consumer on the deployment needs. `docker
+// pull` answered "no matching manifest for linux/amd64 in the manifest list
+// entries" while the release JSON listed it.
 //
 // A non-linux slot is absent from the index: the image is a linux rootfs with a
 // linux shell, and stamping it darwin advertises what nothing can run.
@@ -138,14 +145,13 @@ func TestAPEIndexCoversEveryPlatform(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body)
 	got := indexPlatforms(t, rec.Body.Bytes())
 	assert.ElementsMatch(t, []string{"linux/amd64", "linux/arm64"}, got)
-	// Named on its own, because a set mismatch would not say which entry the
-	// bug was about.
+	// Named alone: a set mismatch does not say which entry this bug was about.
 	assert.Contains(t, got, "linux/amd64", "the artifact's canonical platform must be in the index")
 }
 
 // TestAPEIndexNarrowerPlatformSets runs the same assertion for a narrower APE,
 // so a fix that appends the canonical entry unconditionally cannot pass by
-// luck: here it would list linux/amd64 more than once.
+// luck: here it would list linux/amd64 twice over.
 func TestAPEIndexNarrowerPlatformSets(t *testing.T) {
 	t.Serial()
 	for _, tc := range []struct {
@@ -180,8 +186,7 @@ func TestAPEIndexNarrowerPlatformSets(t *testing.T) {
 			rec := fetchIndex(t, h, proj)
 			require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body)
 			if len(tc.want) == 1 {
-				// A lone platform serves the image manifest itself, so there is
-				// no index. The pull-path test asserts the config's platform.
+				// A lone platform serves the image manifest, not an index.
 				assert.Equal(t, "application/vnd.oci.image.manifest.v1+json", rec.Header().Get("Content-Type"))
 				return
 			}
@@ -221,7 +226,7 @@ func TestAPEIndexFailsLoudlyWhenAChildCannotBeSynthesized(t *testing.T) {
 
 // TestAPEIndexFailsLoudlyWhenAChildIsNotLinked covers the other silent drop:
 // BlobBelongsToProject answering false left no log line at all, so a cache-key
-// collision between two platforms was invisible from every surface.
+// collision across platforms was invisible from every surface.
 func TestAPEIndexFailsLoudlyWhenAChildIsNotLinked(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)
@@ -234,8 +239,7 @@ func TestAPEIndexFailsLoudlyWhenAChildIsNotLinked(t *testing.T) {
 		{OS: db.OSLinux, Arch: db.ArchARM64},
 	})
 
-	// A generator with no database link never records what it synthesized, so
-	// the membership check answers false, as a cache-key collision does.
+	// Unlinked, so the membership check answers false, as a collision does.
 	h.Gen = repackage.NewGenerator(store, nil, t.TempDir(), repackage.WithShellCache(apeShellCache(t)))
 
 	rec := fetchIndex(t, h, proj)

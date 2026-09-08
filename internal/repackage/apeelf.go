@@ -22,9 +22,9 @@ var apeMachine = map[db.Arch]elf.Machine{
 	db.ArchARM64: elf.EM_AARCH64,
 }
 
-// apePrintfELF matches the printf call the trampoline redirects into its own
-// copy to write an architecture's ELF header. The argument is a single-quoted
-// shell word, so backslash is its only escape.
+// apePrintfELF matches the printf call the trampoline redirects into its copy
+// to write an architecture's ELF header. Backslash is the argument's only
+// escape, because it is a single-quoted shell word.
 var apePrintfELF = regexp.MustCompile(`printf '((?:[^'\\]|\\.)*)'\s*>&7`)
 
 // apeELFHeader returns the ELF header the APE's own trampoline would write for

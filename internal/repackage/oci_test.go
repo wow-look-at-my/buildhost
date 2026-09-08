@@ -118,9 +118,9 @@ func TestOCIRepackageEssentials(t *testing.T) {
 	assert.Empty(t, cfg.Config.User)
 }
 
-// apeBinary opens with the APE prologue and the ELF headers a real trampoline
-// carries per architecture; the rest is never executed.
-var apeBinary = testAPE(0x3e, 0xb7)
+// apeBinary opens with the APE prologue and a real trampoline's per-architecture
+// ELF headers; the rest is never executed.
+var apeBinary = testAPE(machineAMD64, machineARM64)
 
 // An APE image is the base layer plus the binary, the binary is the ELF the
 // trampoline would have staged, and every entrypoint spelling reaches a
@@ -219,7 +219,7 @@ func TestOCIRepackageAPEImageLayout(t *testing.T) {
 	// its own copy under a hardcoded /tmp that no variable moves, and a
 	// container's /tmp is usually a noexec tmpfs.
 	require.Len(t, binary, len(apeBinary), "staging must not change the length")
-	assert.Equal(t, testELFHeader(0x3e), binary[:apeELFHeaderSize],
+	assert.Equal(t, testELFHeader(machineAMD64), binary[:apeELFHeaderSize],
 		"the kernel loads this file directly, so it has to start with an ELF header")
 	assert.Equal(t, apeBinary[apeELFHeaderSize:], binary[apeELFHeaderSize:])
 	assert.NotContains(t, launcher, "TMPDIR", "nothing is staged at run time, so there is no TMPDIR to set")

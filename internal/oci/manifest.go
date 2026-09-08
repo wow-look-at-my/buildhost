@@ -22,7 +22,7 @@ import (
 
 var validDigest = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 
-// indexEntry is one platform's descriptor in an image index.
+// indexEntry is a platform's descriptor in an image index.
 type indexEntry struct {
 	MediaType string `json:"mediaType"`
 	Digest    string `json:"digest"`
@@ -148,7 +148,7 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 	}
 }
 
-// platformEntry synthesizes one platform's image manifest and returns the index
+// platformEntry synthesizes a platform's image manifest and returns the index
 // descriptor for it. Every way this can go wrong is an error the caller reports:
 // a platform the release covers and the registry cannot serve must fail the
 // request, because the alternative is an index the puller cannot match.
@@ -166,7 +166,7 @@ func (h *Handler) platformEntry(r *http.Request, project *db.Project, release *d
 	digest := "sha256:" + hex.EncodeToString(sum[:])
 
 	// Only advertise a child the pull path can serve. A cache-key collision
-	// between platforms lands here, and used to land silently.
+	// across platforms lands here, and used to land silently.
 	belongs, err := h.DB.BlobBelongsToProject(r.Context(), project.ID, digest[7:])
 	if err != nil {
 		return indexEntry{}, fmt.Errorf("look up the manifest blob %s: %w", digest, err)
@@ -185,9 +185,9 @@ func (h *Handler) platformEntry(r *http.Request, project *db.Project, release *d
 	return entry, nil
 }
 
-// serveSingleManifest serves the release's one image manifest directly, rather
-// than an index with a single child, so a puller with no index support still
-// resolves a single-platform project.
+// serveSingleManifest serves the release's image manifest directly, rather than
+// an index wrapping it, so a puller with no index support still resolves a
+// single-platform project.
 func (h *Handler) serveSingleManifest(w http.ResponseWriter, r *http.Request, project *db.Project, entry indexEntry) {
 	rc, size, err := h.Store.Get(r.Context(), entry.Digest[7:])
 	if err != nil {
