@@ -107,9 +107,11 @@ tests:
 		set -eu
 		. {shared.env}
 		# Not releases/latest: that resolves the apex, which is scoped to the
-		# project's default branch, and a docker push names no branch.
-		curl -fsS -H "Authorization: Bearer $TOKEN" \
-			"$BASE/api/v1/projects/$PUSHED/releases" | jq -r '.[].artifacts[]?.kind' | sort -u
+		# project's default branch, and a docker push names no branch. The list
+		# carries no artifacts either, so read the release the push created.
+		auth() { curl -fsS -H "Authorization: Bearer $TOKEN" "$@"; }
+		V="$(auth "$BASE/api/v1/projects/$PUSHED/releases" | jq -r '.[0].version')"
+		auth "$BASE/api/v1/projects/$PUSHED/releases/$V" | jq -r '.artifacts[].kind' | sort -u
 	  outputs:
 		stdout:
 			- "docker"
@@ -136,7 +138,12 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		docker manifest inspect --insecure "$REGISTRY/$SYNTH:latest" \
+		# Read over HTTP rather than through `docker manifest inspect`: that runs
+		# client-side and follows the shell's proxy, which is not the registry a
+		# pull talks to. The pull itself is the next test.
+		curl -fsS --noproxy '*' \
+			-H 'Accept: application/vnd.oci.image.index.v1+json' \
+			"http://$REGISTRY/v2/$SYNTH/manifests/latest" \
 			| jq -r '.manifests[] | "\(.platform.os)/\(.platform.architecture)"' | sort
 		echo "index-read"
 	  outputs:
