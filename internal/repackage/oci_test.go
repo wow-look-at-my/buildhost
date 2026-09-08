@@ -41,26 +41,6 @@ func readLayerFiles(t *testing.T, compressed []byte) map[string][]byte {
 	}
 }
 
-// readLayerDirModes returns the permission bits of every directory in a layer.
-func readLayerDirModes(t *testing.T, compressed []byte) map[string]int64 {
-	t.Helper()
-	zr, err := zstd.NewReader(bytes.NewReader(compressed))
-	require.NoError(t, err)
-	defer zr.Close()
-	tr := tar.NewReader(zr)
-	modes := map[string]int64{}
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			return modes
-		}
-		require.NoError(t, err)
-		if hdr.Typeflag == tar.TypeDir {
-			modes[hdr.Name] = hdr.Mode
-		}
-	}
-}
-
 // TestOCIRepackageEssentials verifies the synthesized image carries the shared
 // essentials base layer (CA certs + minimal rootfs) in addition to the binary layer:
 func TestOCIRepackageEssentials(t *testing.T) {

@@ -33,10 +33,10 @@ func testPrintfOctal(b []byte) string {
 	return out.String()
 }
 
-// testAPE builds a payload shaped like an APE: the prologue magic, one
-// `printf ... >&7` per architecture, and a body. The printf calls are what the
-// real trampoline uses to turn its own copy into an ELF, and reading one back
-// out is how the image ships a binary the kernel can exec.
+// testAPE builds a payload shaped like an APE: the prologue magic, a printf
+// call per architecture, and a body. The trampoline uses those calls to turn
+// its own copy into an ELF, and reading them back is how the image ships a
+// binary the kernel can load.
 func testAPE(machines ...uint16) []byte {
 	var b strings.Builder
 	b.WriteString("MZqFpD='\n")
@@ -80,8 +80,8 @@ func TestAPEAsELFRefusesAPayloadWithNoHeader(t *testing.T) {
 	assert.Contains(t, err.Error(), "no ELF header")
 }
 
-// An APE built for one architecture must not be handed the other one's header:
-// the image would claim a platform whose binary cannot run.
+// An APE must not be handed another architecture's header: the image would
+// claim a platform whose binary cannot run.
 func TestAPEAsELFRefusesAMissingArch(t *testing.T) {
 	t.Serial()
 	_, err := apeAsELF(bytes.NewReader(testAPE(0x3e)), db.ArchARM64)
