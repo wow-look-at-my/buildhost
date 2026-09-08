@@ -142,11 +142,10 @@ func TestAPEIndexCoversEveryPlatform(t *testing.T) {
 
 	rec := fetchIndex(t, h, proj)
 	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body)
-	got := indexPlatforms(t, rec.Body.Bytes())
-	assert.ElementsMatch(t, []string{"linux/amd64", "darwin/arm64", "windows/amd64"}, got)
-	// Named on its own: linux/amd64 is the entry that went missing, and an
-	// ElementsMatch failure alone would not say which one this bug was about.
-	assert.Contains(t, got, "linux/amd64", "the artifact's canonical platform must be in the index")
+	// linux/amd64 is the platform that went missing, and it is the only one an
+	// image can serve: a rootfs and a shell built for linux, stamped darwin or
+	// windows, is a platform entry nothing can pull and run.
+	assert.ElementsMatch(t, []string{"linux/amd64", "linux/arm64"}, indexPlatforms(t, rec.Body.Bytes()))
 }
 
 // TestAPEIndexCoversEveryPlatform_Narrower runs the same assertion for a
