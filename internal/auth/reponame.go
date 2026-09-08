@@ -8,12 +8,9 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
-// A repo owns a namespace: the root project plus every "<root>/<child>" beneath
-// it. Its name is mutable and its id is not (docs/security/oidc.md), so a rename
-// rewrites the root of every project on that id and keeps old names as aliases.
+// Depth: docs/project-repo-identity.md.
 
-// repoNamespaceRoot is the root a repo's namespace sits under, lowercased to
-// match provisioning.
+// repoNamespaceRoot is a repo's namespace root, lowercased for provisioning.
 func repoNamespaceRoot(repoPath string) string {
 	slash := strings.LastIndex(repoPath, "/")
 	if slash < 0 || slash == len(repoPath)-1 {
@@ -22,11 +19,9 @@ func repoNamespaceRoot(repoPath string) string {
 	return strings.ToLower(repoPath[slash+1:])
 }
 
-// renamedNamespaceName rewrites name's root segment, keeping the child path.
-// It returns "" when name already sits under root.
-//
-// A child whose whole path repeats the root collapses to the root: a repo named
-// after its sole binary would otherwise land on the redundant "lpi/lpi".
+// renamedNamespaceName rewrites name's root, keeping the child path. It returns
+// "" when name already sits under root. A child repeating the root collapses
+// onto it, so a repo named after its binary avoids a redundant "lpi/lpi".
 func renamedNamespaceName(name, root string) string {
 	head, rest, hasChild := strings.Cut(name, "/")
 	if head == root {

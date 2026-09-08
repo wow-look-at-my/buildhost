@@ -19,8 +19,7 @@ func TestRenamedNamespaceName(t *testing.T) {
 		{"deep child keeps its path", "old/a/b", "new", "new/a/b"},
 		{"already correct", "slopfix", "slopfix", ""},
 		{"child already correct", "slopfix/probe", "slopfix", ""},
-		// A repo named after its only binary must not land on "lpi/lpi":
-		// the child repeats the root, so the root already names it.
+		// The child repeats the root, so the root already names it.
 		{"child repeating the root collapses", "log-progress-indicator/lpi", "lpi", "lpi"},
 	}
 	for _, tc := range cases {

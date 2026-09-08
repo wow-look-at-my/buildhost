@@ -181,9 +181,8 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			parentSpan := trace.SpanFromContext(r.Context())
 			parentSpan.SetAttributes(attribute.String("project.name", ri.ProjectName()))
 
-			// Projects follow their repo's name. Runs before resolution so a
-			// publish under the NEW name finds the renamed project instead of
-			// provisioning a duplicate.
+			// Before resolution, so a publish under a repo's NEW name finds
+			// the renamed project instead of provisioning a duplicate.
 			if ri.Access() == WriteAccess && TokenFrom(r.Context()) != nil {
 				reconcileRepoNamespace(r.Context(), mw.DB, OIDCRepoFrom(r.Context()))
 			}

@@ -27,9 +27,8 @@ func mergeReleases(t *testing.T, d *DB, projectID int64, versions ...string) {
 	}
 }
 
-// A rename left the history under the old name and the new publishes under the
-// new one. The merged project must end up carrying BOTH, which is the entire
-// point of the operation.
+// A rename stranded the history under the old name while new publishes landed
+// under the new name. The merged project must carry every release from each.
 func TestProjectMerge_MovesAndRenumbersReleases(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)
@@ -81,8 +80,8 @@ func TestProjectMerge_OldNameResolvesAsAlias(t *testing.T) {
 	assert.Equal(t, "slopfix", got.Name, "the old name resolves to the survivor")
 }
 
-// Merging projects that are not the same repository would silently fuse two
-// unrelated histories, so the repo id must agree.
+// Merging projects that are not the same repository silently fuses unrelated
+// histories, so the repo id must agree.
 func TestProjectMerge_RefusesDifferentRepos(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)
@@ -97,8 +96,8 @@ func TestProjectMerge_RefusesDifferentRepos(t *testing.T) {
 	assert.ErrorContains(t, d.ApplyProjectMerge(ctx, plan), "conflict")
 }
 
-// A site deployment on the same branch in both projects has no correct winner,
-// so the merge must stop rather than drop one.
+// A site deployment on the same branch in each project has no correct winner,
+// so the merge must stop rather than discard a deployment.
 func TestProjectMerge_RefusesSiteBranchCollision(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)

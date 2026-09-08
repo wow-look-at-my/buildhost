@@ -1,7 +1,6 @@
 package api
 
-// The generated validators are gitignored, so a fresh clone runs `go mod tidy`
-// before they exist. This blank import is what keeps go.mod requiring their
-// runtime across that tidy. It carries no build tag on purpose: a tagged file
-// is unreachable to the build-check pipeline, which fails the build.
+// Keeps go.mod requiring the generated validators' runtime through the tidy
+// that a fresh clone runs before generate. Untagged: a tagged file is
+// unreachable to the build check.
 import _ "github.com/wow-look-at-my/go-regex-compiler/match"

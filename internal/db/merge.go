@@ -10,7 +10,7 @@ import (
 )
 
 // MergeRelease is a release moving to the target, with the version it takes
-// there. Un-renumbered it would collide on UNIQUE(project_id, version).
+// there. Un-renumbered it collides on UNIQUE(project_id, version).
 type MergeRelease struct {
 	ID         int64
 	OldVersion string
