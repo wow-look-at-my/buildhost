@@ -75,7 +75,7 @@ func TestAPEAsELFPicksTheHeaderForTheArch(t *testing.T) {
 // carries none must fail rather than ship an image that cannot start.
 func TestAPEAsELFRefusesAPayloadWithNoHeader(t *testing.T) {
 	t.Serial()
-	_, err := apeAsELF(strings.NewReader("MZqFpD='\nnothing here\n"), db.ArchAMD64)
+	_, err := apeAsELF(strings.NewReader("MZqFpD='\n"+strings.Repeat("nothing here\n", 16)), db.ArchAMD64)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no ELF header")
 }

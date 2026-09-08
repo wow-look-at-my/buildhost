@@ -70,14 +70,6 @@ func apeShellCache(t *testing.T) *repackage.ShellCache {
 	return &repackage.ShellCache{Dir: dir, Images: images}
 }
 
-// setupImageTest is setupTest with a shell cache, which an APE image needs.
-func setupImageTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
-	t.Helper()
-	h, d, store := setupTest(t)
-	h.Gen = repackage.NewGenerator(store, d, t.TempDir(), repackage.WithShellCache(apeShellCache(t)))
-	return h, d, store
-}
-
 // publishAPE publishes an APE artifact covering platforms, through the same
 // multi-platform path a real `PUT .../artifacts/ape?platforms=...` takes.
 func publishAPE(t *testing.T, ctx context.Context, d *db.DB, store *storage.Filesystem, proj *db.Project, platforms []db.Platform) *db.Release {
@@ -131,7 +123,7 @@ func indexPlatforms(t *testing.T, body []byte) []string {
 // linux shell, and stamping it darwin advertises what nothing can run.
 func TestAPEIndexCoversEveryPlatform(t *testing.T) {
 	t.Serial()
-	h, d, store := setupImageTest(t)
+	h, d, store := setupTest(t)
 	ctx := context.Background()
 
 	proj := &db.Project{Name: "apeapp", Versioning: db.VersioningSemver}
@@ -179,7 +171,7 @@ func TestAPEIndexNarrowerPlatformSets(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h, d, store := setupImageTest(t)
+			h, d, store := setupTest(t)
 			ctx := context.Background()
 			proj := &db.Project{Name: "apeapp", Versioning: db.VersioningSemver}
 			require.NoError(t, d.CreateProject(ctx, proj))
@@ -208,7 +200,7 @@ func TestAPEIndexNarrowerPlatformSets(t *testing.T) {
 // no shell cache cannot synthesize a child at all.
 func TestAPEIndexFailsLoudlyWhenAChildCannotBeSynthesized(t *testing.T) {
 	t.Serial()
-	h, d, store := setupImageTest(t)
+	h, d, store := setupTest(t)
 	ctx := context.Background()
 
 	// No shell cache: GenerateForPlatform fails for the linux slot alone.
@@ -232,7 +224,7 @@ func TestAPEIndexFailsLoudlyWhenAChildCannotBeSynthesized(t *testing.T) {
 // collision between two platforms was invisible from every surface.
 func TestAPEIndexFailsLoudlyWhenAChildIsNotLinked(t *testing.T) {
 	t.Serial()
-	h, d, store := setupImageTest(t)
+	h, d, store := setupTest(t)
 	ctx := context.Background()
 
 	proj := &db.Project{Name: "apeapp", Versioning: db.VersioningSemver}
@@ -258,7 +250,7 @@ func TestAPEIndexFailsLoudlyWhenAChildIsNotLinked(t *testing.T) {
 // that would have caught the missing canonical slot.
 func TestAPEPullPathResolvesLinuxAMD64(t *testing.T) {
 	t.Serial()
-	h, d, store := setupImageTest(t)
+	h, d, store := setupTest(t)
 	ctx := context.Background()
 
 	proj := &db.Project{Name: "apeapp", Versioning: db.VersioningSemver}
@@ -325,7 +317,7 @@ func getBlobbish(t *testing.T, h *Handler, proj *db.Project, action, digest stri
 // own (os, arch).
 func TestNonAPEIndexIsNotDoubleListed(t *testing.T) {
 	t.Serial()
-	h, d, store := setupImageTest(t)
+	h, d, store := setupTest(t)
 	ctx := context.Background()
 
 	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}

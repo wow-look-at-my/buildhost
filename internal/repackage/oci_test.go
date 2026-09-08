@@ -62,7 +62,7 @@ func TestOCIRepackageEssentials(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	rp := &OCI{Store: store, DB: d}
+	rp := &OCI{Store: store, DB: d, Shell: newFakeShellRegistry(t).cache(t, t.TempDir())}
 	input := makeInput()
 	input.Artifact = *a
 
@@ -382,7 +382,7 @@ func TestOCIRepackageDeterministic(t *testing.T) {
 	store := openTestStore(t)
 	ctx := context.Background()
 
-	rp := &OCI{Store: store}
+	rp := &OCI{Store: store, Shell: newFakeShellRegistry(t).cache(t, t.TempDir())}
 	input := makeInput()
 
 	input.Reader = bytes.NewReader(testBinary)
@@ -420,7 +420,7 @@ func TestOCIRepackageUser(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	rp := &OCI{Store: store, DB: d}
+	rp := &OCI{Store: store, DB: d, Shell: newFakeShellRegistry(t).cache(t, t.TempDir())}
 	input := makeInput()
 	input.Project = *proj
 	input.Release = *rel
