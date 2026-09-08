@@ -86,8 +86,7 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 
 	osStr := q.Get("os")
 	archStr := q.Get("arch")
-	// Naming neither asks for the artifact that runs anywhere, answered after
-	// the release resolves. Naming half the pair is a typo.
+	// Naming neither asks for the portable artifact; naming half is a typo.
 	portable := osStr == "" && archStr == ""
 	if !portable && (osStr == "" || archStr == "") {
 		http.Error(w, "name both os and arch, or neither for the portable build", http.StatusBadRequest)

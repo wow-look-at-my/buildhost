@@ -118,8 +118,7 @@ func TestOCIRepackageEssentials(t *testing.T) {
 	assert.Empty(t, cfg.Config.User)
 }
 
-// apeBinary opens with the APE prologue and a real trampoline's per-architecture
-// ELF headers; the rest is never executed.
+// apeBinary opens with the prologue and headers a real trampoline carries.
 var apeBinary = testAPE(machineAMD64, machineARM64)
 
 // An APE image is the base layer plus the binary, the binary is the ELF the
@@ -215,9 +214,8 @@ func TestOCIRepackageAPEImageLayout(t *testing.T) {
 	assert.True(t, strings.HasPrefix(launcher, "#!/bin/sh\n"), "a launcher the kernel can exec starts with a shebang")
 	assert.Contains(t, launcher, "/usr/local/lib/apeapp/apeapp")
 
-	// The image carries the staged ELF, not the APE: the trampoline would stage
-	// its own copy under a hardcoded /tmp that no variable moves, and a
-	// container's /tmp is usually a noexec tmpfs.
+	// The staged ELF, not the APE: the trampoline stages under a hardcoded
+	// /tmp that no variable moves, and a container's /tmp is noexec.
 	require.Len(t, binary, len(apeBinary), "staging must not change the length")
 	assert.Equal(t, testELFHeader(machineAMD64), binary[:apeELFHeaderSize],
 		"the kernel loads this file directly, so it has to start with an ELF header")

@@ -165,8 +165,7 @@ func (h *Handler) platformEntry(r *http.Request, project *db.Project, release *d
 	sum := sha256.Sum256(manifestData)
 	digest := "sha256:" + hex.EncodeToString(sum[:])
 
-	// Only advertise a child the pull path can serve. A cache-key collision
-	// across platforms lands here, and used to land silently.
+	// Only advertise a child the pull path can serve; a collision lands here.
 	belongs, err := h.DB.BlobBelongsToProject(r.Context(), project.ID, digest[7:])
 	if err != nil {
 		return indexEntry{}, fmt.Errorf("look up the manifest blob %s: %w", digest, err)

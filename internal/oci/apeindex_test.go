@@ -151,7 +151,7 @@ func TestAPEIndexCoversEveryPlatform(t *testing.T) {
 
 // TestAPEIndexNarrowerPlatformSets runs the same assertion for a narrower APE,
 // so a fix that appends the canonical entry unconditionally cannot pass by
-// luck: here it would list linux/amd64 twice over.
+// luck: here it would list linux/amd64 again.
 func TestAPEIndexNarrowerPlatformSets(t *testing.T) {
 	t.Serial()
 	for _, tc := range []struct {
