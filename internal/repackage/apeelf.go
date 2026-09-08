@@ -85,6 +85,10 @@ func shellPrintfBytes(s []byte) []byte {
 // Staging here is what keeps /tmp out of the image. The trampoline stages its
 // copy under a hardcoded /tmp path that no environment variable moves, so a
 // container whose /tmp is the usual noexec tmpfs dies on a path nobody chose.
+// StageAPE writes the ELF an APE's own trampoline would have staged for arch.
+// The container image uses it for the same reason a synthesized image does.
+func StageAPE(r io.Reader, arch db.Arch) (io.Reader, error) { return apeAsELF(r, arch) }
+
 func apeAsELF(r io.Reader, arch db.Arch) (io.Reader, error) {
 	head := make([]byte, apeHeadSize)
 	n, err := io.ReadFull(r, head)
