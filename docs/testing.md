@@ -50,6 +50,18 @@ It then asserts that the download comes back smaller than the upload. The downlo
 
 A unit test can never catch the defect this guards. The runner has binutils and the container does not. That is precisely why stripping was broken in production while CI stayed green.
 
+## oci-roundtrip-e2e
+
+`test/dats/oci-roundtrip.dats` (CI job `oci-roundtrip-e2e`) is the only place a real docker daemon talks to the **shipped image** as a registry, in both directions. Every other OCI check drives handlers through httptest, or runs the binary on the host.
+
+It logs docker in, pushes a `FROM scratch` image built around a static marker binary, and asserts the API reports the push as a `kind=docker` release. It removes the local copy, pulls it back and runs it. Then it publishes buildhost's own APE through `artifacts/ape?platforms=...`, covering several platforms, and pulls the image buildhost SYNTHESIZES for it. Nobody uploaded that image.
+
+The assertions on the synthesized side are the reported defects. The index must carry every linux platform the APE covers, and no darwin entry, because the canonical slot once went missing from it. The pulled image must RUN. It must also run with `/tmp` mounted noexec, because the APE trampoline stages into a hardcoded `/tmp` path that no variable moves.
+
+It uses its own published port, so it never contends with `container-healthcheck` on a shared host. The workflow maps the OCI host in `/etc/hosts`, marks it insecure and turns on the containerd image store, which is what reads buildhost's zstd layers.
+
+The suite refuses to run when an APE binfmt handler is registered. The kernel then runs any APE through a shell. An image whose binary was never staged therefore still starts. The suite then stops being able to fail.
+
 ## The preview dashboard's links
 
 `test/dats/admin-demo-links.dats` is a step in `sites-cors-e2e`. It serves the built `internal/admin/static` under a path prefix, which is what puts the SPA in demo mode. It then walks every `#/` link the SPA renders, breadth-first, from the dashboard outward. A page must draw a heading that is not the error page.

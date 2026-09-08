@@ -91,9 +91,9 @@ CI runs the shipped fat APE. An APE starts through its own shell trampoline. A b
 
 `go-toolchain` runs all tests. An inline `script:` in any action or workflow may not carry two or more consecutive `//` comment lines. The typescript action refuses to run such a script. CI therefore checks every file up front, rather than let a seldom-triggered action break in a consumer repo.
 
-Several end-to-end jobs in `ci.yml` are NOT part of that run. They guard defects that a unit test structurally cannot catch. They are `synthesized-image-e2e`, `homebrew-tap-e2e`, `container-healthcheck`, `apt-install-e2e` and `upload-artifact-action-e2e`. Depth: `docs/testing.md`.
+Several end-to-end jobs in `ci.yml` are NOT part of that run. They guard defects that a unit test structurally cannot catch. They are `synthesized-image-e2e`, `homebrew-tap-e2e`, `container-healthcheck`, `apt-install-e2e`, `oci-roundtrip-e2e` and `upload-artifact-action-e2e`. Depth: `docs/testing.md`.
 
-`synthesized-image-e2e` also runs `synthesized-ape-image.dats`, which starts a synthesized APE image. `container-healthcheck` also runs `image-entrypoints.dats`, for the entrypoint spellings an old container can carry.
+`synthesized-image-e2e` also runs `synthesized-ape-image.dats`, which starts a synthesized APE image. `container-healthcheck` also runs `image-entrypoints.dats`, for the entrypoint spellings an old container can carry. `oci-roundtrip-e2e` is the only job where a real docker daemon uses the SHIPPED IMAGE as a registry. It pushes an image in, pulls a synthesized one out, and runs it.
 
 An APE binfmt handler registered on the host makes the kernel run any APE through a shell. Every image entrypoint test then passes whatever the image ships, so those suites refuse to run when one is registered.
 

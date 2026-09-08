@@ -26,7 +26,11 @@ The config sets `Env`, which includes `SSL_CERT_FILE`. It also sets `WorkingDir`
 
 Every synthesized image has the same layers and the same paths. The kind of binary it was built from does not change them. A layout that varies by artifact is a layout only some images are ever tested on.
 
-The **base layer** is the minimal rootfs, the CA bundle and the shell, joined by `OCI.base`. It varies only by architecture. It is byte-identical across projects, so storage deduplicates it to a single blob per arch. The shell comes from `ShellCache`. That is one static busybox at `/bin/busybox`, plus a symlink per applet. It is pulled from a pinned `busybox:musl` image. The digest is checked against that pin. The base is registered per pull as an `oci-base-layer` packaged artifact. No shell cache means no image: `Repackage` refuses rather than serve one that cannot start.
+The **base layer** is the minimal rootfs, the CA bundle and the shell, joined by `imageBase`. It varies only by architecture. It is byte-identical across projects, so storage deduplicates it to a single blob per arch. It is registered per pull as an `oci-base-layer` packaged artifact.
+
+The shell is one static busybox at `/bin/busybox`, plus a symlink per applet. `shellgen` fetches it from a pinned `busybox:musl` image and checks the digest against that pin. Then `//go:embed` bakes it into the binary. That happens at BUILD time, exactly as `fetch-cacerts.sh` bakes in the CA bundle.
+
+**Nothing fetches a shell at pull time.** It used to. That put Docker Hub in the path of every image this server serves. A deployment that cannot reach it then answered every synthesis with a failure, and the platform needing that shell dropped out of the index. An architecture with no shell baked in is refused by name, rather than served without one.
 
 The **binary layer** puts the binary at `/usr/local/lib/<project>/<project>`. A `#!/bin/sh` launcher sits at `/<project>` and at `/usr/local/bin/<project>`, for the bare name on PATH. The entrypoint stays `/<project>`, which is what every earlier synthesized image carried.
 
