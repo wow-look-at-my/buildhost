@@ -68,9 +68,8 @@ tests:
 			- "#!/bin/sh"
 
 	# Both halves are read out and compared, rather than one literal line pinned
-	# here: a launcher that has to search for a usable TMPDIR cannot keep the
-	# path inline, and the property that matters is that the two agree.
-	- desc: the launcher starts the APE at the path the Dockerfile puts it
+	# here. The property that matters is that the two agree.
+	- desc: the launcher starts the binary at the path the Dockerfile puts it
 	  cmd: |
 		set -eu
 		copied="$(grep -oE '/usr/local/lib/[a-z-]+/[a-z-]+' Dockerfile | head -n1)"
@@ -81,32 +80,28 @@ tests:
 			echo "the Dockerfile puts the APE at $copied and the launcher starts $launched" >&2
 			exit 1
 		fi
-		grep -qE '^\s*exec /bin/sh "\$real" "\$@"$' scripts/image-launcher.sh || {
-			echo 'the launcher must hand the APE to a shell: the kernel cannot exec it' >&2; exit 1; }
+		grep -qE '^\s*exec "\$real" "\$@"$' scripts/image-launcher.sh || {
+			echo 'the launcher must exec the staged ELF, not hand it to a shell' >&2; exit 1; }
 		echo "agree: $copied"
 	  outputs:
 		stdout:
 			- "agree: /usr/local/lib/buildhost/buildhost"
 
-	# The APE unpacks itself under TMPDIR and execs the copy, so it needs a
-	# directory that is writable AND not noexec. A deployment mounts a noexec
-	# tmpfs over /tmp and a volume over the data directory, so a launcher that
-	# has only those two can be handed neither. This directory is the image's
-	# own layer. Both halves are read out, because a path in one file and not
-	# the other is the whole failure.
-	- desc: the image ships the unpack directory the launcher tries
+	# Staging at build time is what takes /tmp out of the picture. A Dockerfile
+	# that copies the APE straight in puts the trampoline back, and the
+	# trampoline unpacks under a hardcoded /tmp that a deployment mounts noexec.
+	- desc: the image stages the binary rather than shipping the APE
 	  cmd: |
 		set -eu
-		grep -q '/var/lib/ape' scripts/image-launcher.sh || {
-			echo 'the launcher never tries a directory nothing mounts over' >&2; exit 1; }
-		grep -qE 'COPY .*/apedir /var/lib/ape' Dockerfile || {
-			echo 'the image never creates /var/lib/ape, so the launcher tries a path that is not there' >&2; exit 1; }
-		grep -qE 'chown=65532:65532 /apedir' Dockerfile || {
-			echo '/var/lib/ape must belong to the uid the image runs as' >&2; exit 1; }
-		echo ships-unpack-dir
+		grep -qE '^RUN sh /in/apestage /in/buildhost /buildhost "\$TARGETARCH"$' Dockerfile || {
+			echo 'the image never stages the APE, so the trampoline runs in the container' >&2; exit 1; }
+		if grep -qE '^COPY .*build/buildhost /usr/local/lib' Dockerfile; then
+			echo 'the image copies the APE straight in, so it needs an exec-able /tmp' >&2; exit 1
+		fi
+		echo stages-the-binary
 	  outputs:
 		stdout:
-			- "ships-unpack-dir"
+			- "stages-the-binary"
 
 	# The shell must come from an image that ships a STATIC busybox. Alpine's is
 	# a PIE against /lib/ld-musl-x86_64.so.1, and the base image has no /lib.

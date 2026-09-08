@@ -9,8 +9,6 @@ RUN mkdir -p /data && chown 65532:65532 /data
 RUN mkdir -p /shell && cp /bin/busybox /shell/busybox \
     && for a in $(/shell/busybox --list); do ln -sf busybox "/shell/$a"; done
 RUN mkdir -p /tmpdir && chmod 1777 /tmpdir
-# Kept for a container that predates the staging below and still unpacks.
-RUN mkdir -p /apedir && chmod 0700 /apedir
 
 # The binary the final image runs is the ELF the APE's trampoline would have
 # staged for THIS target. The trampoline stages into a hardcoded
@@ -37,7 +35,6 @@ LABEL org.opencontainers.image.description="Universal package registry server"
 # so the image carries the busybox the /data stage already pulls.
 COPY --from=dirs /shell /bin
 COPY --from=dirs /tmpdir /tmp
-COPY --from=dirs --chown=65532:65532 /apedir /var/lib/ape
 # The APE sits under /usr/local/lib and a shebang launcher takes its place on
 # PATH, the same shape the deb repackager gives an APE. A launcher the kernel
 # can exec keeps the shell an implementation detail of this image: an
