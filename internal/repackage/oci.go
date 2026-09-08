@@ -35,8 +35,11 @@ type OCI struct {
 
 func (o *OCI) Format() Format { return FormatOCI }
 
+// Applicable gates the format to linux. Every synthesized image is a linux
+// image: it carries a linux rootfs and a linux shell. A darwin or windows entry
+// would stamp that rootfs with an OS nothing can run it on.
 func (o *OCI) Applicable(a db.Artifact) bool {
-	return a.Kind == db.KindBinary
+	return a.Kind == db.KindBinary && a.OS == db.OSLinux
 }
 
 // ociDescriptor is the (storage key, size) pair the manifest needs to reference a blob.
@@ -50,47 +53,34 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		return nil, fmt.Errorf("artifact missing os/arch")
 	}
 
-	// Shared "essentials" base layer (CA certs + minimal rootfs). Memoized, so it is
-	baseData, baseDiffID, err := essentialsLayer()
+	// One base layer for every synthesized image: the minimal rootfs, the CA
+	// bundle and the shell. It is per architecture and identical across
+	// projects, so storage deduplicates it to a single blob per arch.
+	if o.Shell == nil {
+		return nil, errors.New("a synthesized image needs a shell layer, and no shell cache is configured")
+	}
+	baseData, baseDiffID, err := o.base(ctx, input.Artifact.Arch)
 	if err != nil {
-		return nil, fmt.Errorf("essentials layer: %w", err)
+		return nil, fmt.Errorf("base layer: %w", err)
 	}
 	baseKey, baseSize, err := o.Store.Put(ctx, bytes.NewReader(baseData))
 	if err != nil {
 		return nil, fmt.Errorf("store base layer: %w", err)
 	}
 	if input.Artifact.ID > 0 && o.DB != nil {
-		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-base-layer", baseKey, baseSize, baseKey, "base-layer.tar.zst", "{}")
+		// Suffixed like the config: the layer is per architecture.
+		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-base-layer"+input.CacheSuffix, baseKey, baseSize, baseKey, "base-layer.tar.zst", "{}")
 	}
 
-	// An APE starts through the shell script in its own header, so its image
+	entrypoint := []string{"/" + input.Project.Name}
+	layers := []ociDescriptor{{baseKey, baseSize}}
+	diffIDs := []string{baseDiffID}
+
 	isAPE, artifactReader, err := peekAPE(input.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("inspect artifact: %w", err)
 	}
-	entrypoint := []string{"/" + input.Project.Name}
-	layers := []ociDescriptor{{baseKey, baseSize}}
-	diffIDs := []string{baseDiffID}
-	ape := isAPE && input.Artifact.OS == db.OSLinux
-	if ape {
-		if o.Shell == nil {
-			return nil, errors.New("an APE image needs a shell layer, and no shell cache is configured")
-		}
-		shellData, shellDiffID, err := o.Shell.Layer(ctx, input.Artifact.Arch)
-		if err != nil {
-			return nil, fmt.Errorf("shell layer: %w", err)
-		}
-		shellKey, shellSize, err := o.Store.Put(ctx, bytes.NewReader(shellData))
-		if err != nil {
-			return nil, fmt.Errorf("store shell layer: %w", err)
-		}
-		if input.Artifact.ID > 0 && o.DB != nil {
-			// Suffixed like the config: the layer is per architecture.
-			o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-shell-layer"+input.CacheSuffix, shellKey, shellSize, shellKey, "shell.tar.zst", "{}")
-		}
-		layers = append(layers, ociDescriptor{shellKey, shellSize})
-		diffIDs = append(diffIDs, shellDiffID)
-
+	if isAPE {
 		// The image carries the ELF the trampoline would have staged, not the
 		// APE. The trampoline stages into a hardcoded /tmp path that TMPDIR does
 		// not move, and a container's /tmp is usually a noexec tmpfs.
@@ -100,7 +90,7 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		}
 	}
 
-	binKey, binSize, binDiffID, err := ociWriteLayer(ctx, o.Store, artifactReader, input.Size, input.Project.Name, ape)
+	binKey, binSize, binDiffID, err := ociWriteLayer(ctx, o.Store, artifactReader, input.Size, input.Project.Name)
 	if err != nil {
 		return nil, fmt.Errorf("create layer: %w", err)
 	}
@@ -153,32 +143,99 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 	}, nil
 }
 
-// apeImagePath is where an APE image keeps the binary itself, out of the way of
-// the launcher that starts it.
-func apeImagePath(name string) string {
+// base returns the layer every synthesized image starts from: the essentials
+// rootfs with the shell appended, for arch.
+func (o *OCI) base(ctx context.Context, arch db.Arch) ([]byte, string, error) {
+	essentials, _, err := essentialsLayer()
+	if err != nil {
+		return nil, "", fmt.Errorf("essentials: %w", err)
+	}
+	shell, _, err := o.Shell.Layer(ctx, arch)
+	if err != nil {
+		return nil, "", fmt.Errorf("shell for %s: %w", arch, err)
+	}
+	return joinLayers(essentials, shell)
+}
+
+// imageBinPath is where an image keeps the binary itself, out of the way of the
+// launcher that starts it.
+func imageBinPath(name string) string {
 	return "usr/local/lib/" + name + "/" + path.Base(name)
 }
 
-// apeImageLauncher is the shebang script every entrypoint spelling reaches. A
+// imageLauncher is the shebang script every entrypoint spelling reaches. A
 // rolling updater clones the entrypoint off the container it replaces, so every
 // spelling an image ever shipped must keep starting the server.
 //
 // The path it execs holds a real ELF, so the kernel loads it directly and
 // nothing is staged at run time.
-func apeImageLauncher(name string) []byte {
+func imageLauncher(name string) []byte {
 	return fmt.Appendf(nil, "#!/bin/sh\n# Generated by buildhost.\nexec %s \"$@\"\n",
-		shellQuote("/"+apeImagePath(name)))
+		shellQuote("/"+imageBinPath(name)))
+}
+
+// joinLayers concatenates the entries of zstd-compressed tar layers into one
+// layer, returning it with the diffID of its uncompressed bytes. A duplicate
+// name keeps its first entry, so an earlier layer wins.
+func joinLayers(layers ...[]byte) ([]byte, string, error) {
+	var buf bytes.Buffer
+	zw, err := zstd.NewWriter(&buf, zstd.WithEncoderLevel(zstd.SpeedDefault))
+	if err != nil {
+		return nil, "", fmt.Errorf("create zstd writer: %w", err)
+	}
+	hasher := sha256.New()
+	tw := tar.NewWriter(io.MultiWriter(hasher, zw))
+
+	seen := map[string]bool{}
+	for _, layer := range layers {
+		zr, err := zstd.NewReader(bytes.NewReader(layer))
+		if err != nil {
+			return nil, "", fmt.Errorf("open layer: %w", err)
+		}
+		tr := tar.NewReader(zr)
+		for {
+			hdr, err := tr.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				zr.Close()
+				return nil, "", fmt.Errorf("read layer: %w", err)
+			}
+			if seen[hdr.Name] {
+				continue
+			}
+			seen[hdr.Name] = true
+			if err := tw.WriteHeader(hdr); err != nil {
+				zr.Close()
+				return nil, "", err
+			}
+			if hdr.Typeflag == tar.TypeReg {
+				if _, err := io.Copy(tw, tr); err != nil {
+					zr.Close()
+					return nil, "", err
+				}
+			}
+		}
+		zr.Close()
+	}
+
+	if err := tw.Close(); err != nil {
+		return nil, "", err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, "", err
+	}
+	return buf.Bytes(), hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
 // ociWriteLayer streams r -> tar -> zstd straight into store.Put while teeing the
-// uncompressed bytes through a hasher for the config's diff_id. A plain binary
-// lands at /<name>. An APE lands under /usr/local/lib, with a launcher at
-// /<name> and at /usr/local/bin/<name> so a bare name on PATH also starts it.
-func ociWriteLayer(ctx context.Context, store storage.Storage, r io.Reader, size int64, name string, ape bool) (key string, compressedSize int64, diffID string, err error) {
-	binPath := name
-	if ape {
-		binPath = apeImagePath(name)
-	}
+// uncompressed bytes through a hasher for the config's diff_id. The binary lands
+// under /usr/local/lib, with a launcher at /<name> and at /usr/local/bin/<name>
+// so a bare name on PATH also starts it. Every image gets that layout, so a
+// caller never has to know which kind of binary it published.
+func ociWriteLayer(ctx context.Context, store storage.Storage, r io.Reader, size int64, name string) (key string, compressedSize int64, diffID string, err error) {
+	binPath := imageBinPath(name)
 	diffHasher := sha256.New()
 	pr, pw := io.Pipe()
 	go func() {
@@ -201,13 +258,11 @@ func ociWriteLayer(ctx context.Context, store storage.Storage, r io.Reader, size
 			pw.CloseWithError(err)
 			return
 		}
-		if ape {
-			launcher := apeImageLauncher(name)
-			for _, at := range []string{name, "usr/local/bin/" + path.Base(name)} {
-				if err := writeTarEntry(tw, at, 0o755, tar.TypeReg, launcher); err != nil {
-					pw.CloseWithError(err)
-					return
-				}
+		launcher := imageLauncher(name)
+		for _, at := range []string{name, "usr/local/bin/" + path.Base(name)} {
+			if err := writeTarEntry(tw, at, 0o755, tar.TypeReg, launcher); err != nil {
+				pw.CloseWithError(err)
+				return
 			}
 		}
 		if err := tw.Close(); err != nil {
@@ -254,6 +309,7 @@ func essentialsLayer() ([]byte, string, error) {
 // a sticky /tmp). It is pure -- it reads only the embedded bundle and fixed literals,
 // emits entries in a fixed order with pinned headers -- so the output is byte-identical
 // on every call (required: the pull path regenerates and re-hashes it per request).
+// The shell is appended to it per architecture; see OCI.base.
 func buildEssentials() (essentials, error) {
 	var buf bytes.Buffer
 	zw, err := zstd.NewWriter(&buf, zstd.WithEncoderLevel(zstd.SpeedDefault))
@@ -278,9 +334,6 @@ func buildEssentials() (essentials, error) {
 		{"etc/ssl/certs/", 0o755, tar.TypeDir, nil},
 		{"etc/ssl/certs/ca-certificates.crt", 0o644, tar.TypeReg, caCertsPEM},
 		{"tmp/", 0o1777, tar.TypeDir, nil},
-		{"var/", 0o755, tar.TypeDir, nil},
-		{"var/lib/", 0o755, tar.TypeDir, nil},
-		{"var/lib/ape/", 0o1777, tar.TypeDir, nil},
 	}
 	for _, e := range entries {
 		if err := writeTarEntry(tw, e.name, e.mode, e.typeflag, e.data); err != nil {

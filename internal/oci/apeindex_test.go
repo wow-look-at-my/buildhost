@@ -71,8 +71,8 @@ func apeShellCache(t *testing.T) *repackage.ShellCache {
 	return &repackage.ShellCache{Dir: dir, Images: images}
 }
 
-// setupAPETest is setupTest with a shell cache, which an APE image needs.
-func setupAPETest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
+// setupImageTest is setupTest with a shell cache, which an APE image needs.
+func setupImageTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	t.Helper()
 	h, d, store := setupTest(t)
 	h.Gen = repackage.NewGenerator(store, d, t.TempDir(), repackage.WithShellCache(apeShellCache(t)))
@@ -129,29 +129,30 @@ func indexPlatforms(t *testing.T, body []byte) []string {
 // manifest list entries" while the release JSON listed all three.
 func TestAPEIndexCoversEveryPlatform(t *testing.T) {
 	t.Serial()
-	h, d, store := setupAPETest(t)
+	h, d, store := setupImageTest(t)
 	ctx := context.Background()
 
 	proj := &db.Project{Name: "apeapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 	publishAPE(t, ctx, d, store, proj, []db.Platform{
 		{OS: db.OSLinux, Arch: db.ArchAMD64},
+		{OS: db.OSLinux, Arch: db.ArchARM64},
 		{OS: db.OSDarwin, Arch: db.ArchARM64},
-		{OS: db.OSWindows, Arch: db.ArchAMD64},
 	})
 
 	rec := fetchIndex(t, h, proj)
 	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body)
-	// linux/amd64 is the platform that went missing, and it is the only one an
-	// image can serve: a rootfs and a shell built for linux, stamped darwin or
-	// windows, is a platform entry nothing can pull and run.
-	assert.ElementsMatch(t, []string{"linux/amd64", "linux/arm64"}, indexPlatforms(t, rec.Body.Bytes()))
+	got := indexPlatforms(t, rec.Body.Bytes())
+	assert.ElementsMatch(t, []string{"linux/amd64", "linux/arm64"}, got)
+	// Named on its own: linux/amd64 is the entry that went missing, and an
+	// ElementsMatch failure alone would not say which one this bug was about.
+	assert.Contains(t, got, "linux/amd64", "the artifact's canonical platform must be in the index")
 }
 
-// TestAPEIndexCoversEveryPlatform_Narrower runs the same assertion for a
-// two-platform and a one-platform APE, so a fix that appends the canonical
-// entry unconditionally cannot pass by luck: here it would duplicate it.
-func TestAPEIndexCoversEveryPlatform_Narrower(t *testing.T) {
+// TestAPEIndexNarrowerPlatformSets runs the same assertion for a narrower APE,
+// so a fix that appends the canonical entry unconditionally cannot pass by
+// luck: here it would list linux/amd64 twice.
+func TestAPEIndexNarrowerPlatformSets(t *testing.T) {
 	t.Serial()
 	for _, tc := range []struct {
 		name      string
@@ -159,21 +160,24 @@ func TestAPEIndexCoversEveryPlatform_Narrower(t *testing.T) {
 		want      []string
 	}{
 		{
-			name: "two platforms",
+			name: "the canonical slot and one more",
+			platforms: []db.Platform{
+				{OS: db.OSLinux, Arch: db.ArchAMD64},
+				{OS: db.OSLinux, Arch: db.ArchARM64},
+			},
+			want: []string{"linux/amd64", "linux/arm64"},
+		},
+		{
+			name: "the canonical slot alone",
 			platforms: []db.Platform{
 				{OS: db.OSLinux, Arch: db.ArchAMD64},
 				{OS: db.OSDarwin, Arch: db.ArchARM64},
 			},
-			want: []string{"linux/amd64", "darwin/arm64"},
-		},
-		{
-			name:      "one platform",
-			platforms: []db.Platform{{OS: db.OSLinux, Arch: db.ArchAMD64}},
-			want:      []string{"linux/amd64"},
+			want: []string{"linux/amd64"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h, d, store := setupAPETest(t)
+			h, d, store := setupImageTest(t)
 			ctx := context.Background()
 			proj := &db.Project{Name: "apeapp", Versioning: db.VersioningSemver}
 			require.NoError(t, d.CreateProject(ctx, proj))
@@ -182,14 +186,15 @@ func TestAPEIndexCoversEveryPlatform_Narrower(t *testing.T) {
 			rec := fetchIndex(t, h, proj)
 			require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body)
 			if len(tc.want) == 1 {
-				// A single-platform release serves the image manifest itself,
-				// so there is no index to read platforms out of. The config is
-				// where the platform lives, and the pull-path test covers it.
+				// One platform serves the image manifest itself, so there is no
+				// index to read platforms out of. The config carries the
+				// platform, and the pull-path test asserts it there.
 				assert.Equal(t, "application/vnd.oci.image.manifest.v1+json", rec.Header().Get("Content-Type"))
 				return
 			}
-			assert.ElementsMatch(t, tc.want, indexPlatforms(t, rec.Body.Bytes()))
-			assert.Contains(t, indexPlatforms(t, rec.Body.Bytes()), "linux/amd64")
+			got := indexPlatforms(t, rec.Body.Bytes())
+			assert.ElementsMatch(t, tc.want, got)
+			assert.Contains(t, got, "linux/amd64")
 		})
 	}
 }
@@ -203,7 +208,7 @@ func TestAPEIndexCoversEveryPlatform_Narrower(t *testing.T) {
 // production defect.
 func TestAPEIndexFailsLoudlyWhenAChildCannotBeSynthesized(t *testing.T) {
 	t.Serial()
-	h, d, store := setupAPETest(t)
+	h, d, store := setupImageTest(t)
 	ctx := context.Background()
 
 	// No shell cache: GenerateForPlatform fails for the linux slot alone.
@@ -213,7 +218,7 @@ func TestAPEIndexFailsLoudlyWhenAChildCannotBeSynthesized(t *testing.T) {
 	require.NoError(t, d.CreateProject(ctx, proj))
 	publishAPE(t, ctx, d, store, proj, []db.Platform{
 		{OS: db.OSLinux, Arch: db.ArchAMD64},
-		{OS: db.OSDarwin, Arch: db.ArchARM64},
+		{OS: db.OSLinux, Arch: db.ArchARM64},
 	})
 
 	rec := fetchIndex(t, h, proj)
@@ -227,14 +232,14 @@ func TestAPEIndexFailsLoudlyWhenAChildCannotBeSynthesized(t *testing.T) {
 // collision between two platforms was invisible from every surface.
 func TestAPEIndexFailsLoudlyWhenAChildIsNotLinked(t *testing.T) {
 	t.Serial()
-	h, d, store := setupAPETest(t)
+	h, d, store := setupImageTest(t)
 	ctx := context.Background()
 
 	proj := &db.Project{Name: "apeapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 	publishAPE(t, ctx, d, store, proj, []db.Platform{
 		{OS: db.OSLinux, Arch: db.ArchAMD64},
-		{OS: db.OSDarwin, Arch: db.ArchARM64},
+		{OS: db.OSLinux, Arch: db.ArchARM64},
 	})
 
 	// A generator with no database link never records the manifest it just
@@ -254,15 +259,15 @@ func TestAPEIndexFailsLoudlyWhenAChildIsNotLinked(t *testing.T) {
 // that would have caught the missing canonical slot.
 func TestAPEPullPathResolvesLinuxAMD64(t *testing.T) {
 	t.Serial()
-	h, d, store := setupAPETest(t)
+	h, d, store := setupImageTest(t)
 	ctx := context.Background()
 
 	proj := &db.Project{Name: "apeapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
 	publishAPE(t, ctx, d, store, proj, []db.Platform{
 		{OS: db.OSLinux, Arch: db.ArchAMD64},
+		{OS: db.OSLinux, Arch: db.ArchARM64},
 		{OS: db.OSDarwin, Arch: db.ArchARM64},
-		{OS: db.OSWindows, Arch: db.ArchAMD64},
 	})
 
 	rec := fetchIndex(t, h, proj)
@@ -281,7 +286,6 @@ func TestAPEPullPathResolvesLinuxAMD64(t *testing.T) {
 	}
 	require.NotEmpty(t, child.Digest, "no child matched linux/amd64, which is what the puller reports")
 
-	manifest := getBlobbish(t, h, proj, "manifests", child.Digest)
 	var m struct {
 		Config struct {
 			Digest string `json:"digest"`
@@ -290,7 +294,7 @@ func TestAPEPullPathResolvesLinuxAMD64(t *testing.T) {
 			Digest string `json:"digest"`
 		} `json:"layers"`
 	}
-	require.NoError(t, json.Unmarshal(manifest, &m))
+	require.NoError(t, json.Unmarshal(getBlobbish(t, h, proj, "manifests", child.Digest), &m))
 
 	var config struct {
 		OS           string `json:"os"`
@@ -299,7 +303,10 @@ func TestAPEPullPathResolvesLinuxAMD64(t *testing.T) {
 	require.NoError(t, json.Unmarshal(getBlobbish(t, h, proj, "blobs", m.Config.Digest), &config))
 	assert.Equal(t, "linux", config.OS)
 	assert.Equal(t, "amd64", config.Architecture)
-	assert.Len(t, m.Layers, 3, "essentials, shell and binary")
+	assert.Len(t, m.Layers, 2, "the shared base and the binary")
+	for _, l := range m.Layers {
+		getBlobbish(t, h, proj, "blobs", l.Digest)
+	}
 }
 
 // getBlobbish fetches a manifest or blob by digest and requires a 200.
@@ -319,7 +326,7 @@ func getBlobbish(t *testing.T, h *Handler, proj *db.Project, action, digest stri
 // row's own (os, arch).
 func TestNonAPEIndexIsNotDoubleListed(t *testing.T) {
 	t.Serial()
-	h, d, store := setupTest(t)
+	h, d, store := setupImageTest(t)
 	ctx := context.Background()
 
 	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
