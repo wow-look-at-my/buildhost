@@ -2,10 +2,8 @@
 // writes it into the tree for go:embed, the way fetch-cacerts.sh does for the CA
 // bundle.
 //
-// It runs at BUILD time on purpose. Fetching at pull time put a third party in
-// the path of every image buildhost serves: a registry that cannot reach Docker
-// Hub serves no images at all, and a test that synthesizes one fails whenever
-// the network does.
+// It runs at BUILD time on purpose. A pull-time fetch made every image buildhost
+// serves depend on Docker Hub, so a registry that cannot reach it served none.
 package main
 
 import (

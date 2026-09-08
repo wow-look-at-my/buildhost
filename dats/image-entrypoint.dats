@@ -44,11 +44,21 @@ tests:
 		stdout:
 			- "no-shell-prefix"
 
-	- desc: what lands on PATH is the launcher script, and the APE lands elsewhere
-	  cmd: grep -E '^COPY --chmod=755 (build/buildhost|scripts/image-launcher.sh) ' Dockerfile
+	# The binary lands from the staging stage, never from build/ directly. A
+	# COPY of the APE itself puts the trampoline back in the container, and the
+	# trampoline unpacks under a hardcoded /tmp that a deployment mounts noexec.
+	- desc: what lands on PATH is the launcher script, and the staged ELF lands elsewhere
+	  cmd: |
+		set -eu
+		grep -E '^COPY --from=staged --chmod=755 /buildhost /usr/local/lib/buildhost/buildhost$' Dockerfile
+		grep -E '^COPY --chmod=755 scripts/image-launcher.sh /usr/local/bin/buildhost$' Dockerfile
+		if grep -qE '^COPY .*build/buildhost /usr/local/lib' Dockerfile; then
+			echo 'the image copies the APE straight in, so the trampoline runs and needs /tmp' >&2
+			exit 1
+		fi
 	  outputs:
 		stdout:
-			- "COPY --chmod=755 build/buildhost /usr/local/lib/buildhost/buildhost"
+			- "COPY --from=staged --chmod=755 /buildhost /usr/local/lib/buildhost/buildhost"
 			- "COPY --chmod=755 scripts/image-launcher.sh /usr/local/bin/buildhost"
 
 	- desc: the launcher is a shebang script, which is what the kernel can exec

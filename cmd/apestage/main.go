@@ -1,10 +1,10 @@
 // apestage writes the ELF an APE's own trampoline would have staged, so a
 // container can exec the binary directly.
 //
-// The trampoline copies itself to a hardcoded /tmp/.ape-run-1-$(id -u) path and
-// overwrites the copy's header. It reads no TMPDIR, so a container whose /tmp is
-// the usual noexec tmpfs dies at exit 126 against a path nobody chose. Doing
-// that work here, once, at image build time, takes /tmp out of the picture.
+// The trampoline copies itself to a hardcoded path under /tmp and overwrites the
+// copy's header. It reads no TMPDIR, so a container whose /tmp is the usual
+// noexec tmpfs dies there against a path nobody chose. Doing the work here, at
+// image build time, takes /tmp out of the picture.
 //
 // Usage: apestage <ape> <out> <arch>
 package main

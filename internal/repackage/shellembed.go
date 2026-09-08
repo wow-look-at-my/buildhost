@@ -17,13 +17,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
-// shellFS carries the busybox every synthesized image's base layer ships, baked
-// in at build time by shellgen the way fetch-cacerts.sh bakes in the CA bundle.
-//
-// Fetching it at pull time put a third party in the path of every image this
-// server serves: a deployment that cannot reach Docker Hub answered every pull
-// with a synthesis failure, and a test that synthesized an image failed whenever
-// the network did.
+// shellFS carries the busybox every base layer ships. A pull-time fetch made every image need Docker Hub.
 //
 //go:generate go run ./shellgen shell
 //go:embed shell
@@ -37,8 +31,7 @@ type shellLayer struct {
 	diffID     string
 }
 
-// shellLayers memoizes the built layer per architecture. Each is deterministic,
-// so every server renders the same diffID for the same binary.
+// shellLayers memoizes the deterministic built layer per architecture.
 var shellLayers sync.Map
 
 // ShellLayer returns the zstd-compressed shell layer for arch and its diffID.

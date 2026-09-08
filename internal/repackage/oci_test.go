@@ -232,8 +232,7 @@ func TestOCIRepackageAPEImageLayout(t *testing.T) {
 	assert.True(t, strings.HasPrefix(launcher, "#!/bin/sh\n"), "a launcher the kernel can exec starts with a shebang")
 	assert.Contains(t, launcher, "/usr/local/lib/apeapp/apeapp")
 
-	// The staged ELF, not the APE: the trampoline stages under a hardcoded
-	// /tmp that no variable moves, and a container's /tmp is noexec.
+	// The staged ELF, not the APE, whose trampoline needs an exec-able /tmp.
 	require.Len(t, binary, len(apeBinary), "staging must not change the length")
 	assert.Equal(t, testELFHeader(machineAMD64), binary[:apeELFHeaderSize],
 		"the kernel loads this file directly, so it has to start with an ELF header")
@@ -287,8 +286,8 @@ func TestEveryDeclaredArchHasABakedShell(t *testing.T) {
 	}
 }
 
-// The shell is baked in per architecture, so an image for one nobody baked must
-// be refused rather than served without a shell for its launcher.
+// The shell is baked in per architecture. An unbaked arch must be refused,
+// rather than served an image whose launcher has no shell.
 func TestShellLayerRefusesAnUnbakedArch(t *testing.T) {
 	t.Serial()
 	_, _, err := ShellLayer(db.Arch386)

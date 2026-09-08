@@ -27,8 +27,7 @@ func renderRoutes() string {
 	return b.String()
 }
 
-// routesAtStartup is the table before any test calls auth.Init, after which
-// ListRoutes renders configured domains into it.
+// routesAtStartup is the table before any test calls auth.Init.
 var routesAtStartup string
 
 func TestMain(m *testing.M) {
