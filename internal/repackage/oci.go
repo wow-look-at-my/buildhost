@@ -18,6 +18,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // caCertsPEM is a real public CA root bundle (Mozilla set, as published by the curl
@@ -35,9 +36,8 @@ type OCI struct {
 
 func (o *OCI) Format() Format { return FormatOCI }
 
-// Applicable gates the format to linux. Every synthesized image is a linux
-// image: it carries a linux rootfs and a linux shell. A darwin or windows entry
-// would stamp that rootfs with an OS nothing can run it on.
+// Applicable gates the format to linux: the image carries a linux rootfs and a
+// linux shell, so any other OS stamp advertises what nothing can run.
 func (o *OCI) Applicable(a db.Artifact) bool {
 	return a.Kind == db.KindBinary && a.OS == db.OSLinux
 }
@@ -53,9 +53,9 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		return nil, fmt.Errorf("artifact missing os/arch")
 	}
 
-	// One base layer for every synthesized image: the minimal rootfs, the CA
-	// bundle and the shell. It is per architecture and identical across
-	// projects, so storage deduplicates it to a single blob per arch.
+	// The base layer of every synthesized image: rootfs, CA bundle and shell.
+	// It varies only by architecture, so storage deduplicates it across
+	// projects.
 	if o.Shell == nil {
 		return nil, errors.New("a synthesized image needs a shell layer, and no shell cache is configured")
 	}
@@ -81,9 +81,7 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		return nil, fmt.Errorf("inspect artifact: %w", err)
 	}
 	if isAPE {
-		// The image carries the ELF the trampoline would have staged, not the
-		// APE. The trampoline stages into a hardcoded /tmp path that TMPDIR does
-		// not move, and a container's /tmp is usually a noexec tmpfs.
+		// Ship the ELF the trampoline would have staged, so nothing is staged.
 		artifactReader, err = apeAsELF(artifactReader, input.Artifact.Arch)
 		if err != nil {
 			return nil, fmt.Errorf("stage the APE as an ELF for %s: %w", input.Artifact.Arch, err)
@@ -113,7 +111,7 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-config"+input.CacheSuffix, configKey, configSize, configKey, "config.json", "{}")
 	}
 
-	// Same order as the diff_ids in the config: base, shell for an APE, binary.
+	// Same order as the diff_ids in the config: base, then binary.
 	manifestData := ociCreateManifest(ociDescriptor{configKey, configSize}, layers)
 
 	// Persist the manifest document itself (alongside its config + layers above)
@@ -186,7 +184,7 @@ func joinLayers(layers ...[]byte) ([]byte, string, error) {
 	hasher := sha256.New()
 	tw := tar.NewWriter(io.MultiWriter(hasher, zw))
 
-	seen := map[string]bool{}
+	seen := set.New[string]()
 	for _, layer := range layers {
 		zr, err := zstd.NewReader(bytes.NewReader(layer))
 		if err != nil {
@@ -202,10 +200,10 @@ func joinLayers(layers ...[]byte) ([]byte, string, error) {
 				zr.Close()
 				return nil, "", fmt.Errorf("read layer: %w", err)
 			}
-			if seen[hdr.Name] {
+			if seen.Contains(hdr.Name) {
 				continue
 			}
-			seen[hdr.Name] = true
+			seen.Add(hdr.Name)
 			if err := tw.WriteHeader(hdr); err != nil {
 				zr.Close()
 				return nil, "", err
@@ -229,11 +227,11 @@ func joinLayers(layers ...[]byte) ([]byte, string, error) {
 	return buf.Bytes(), hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
-// ociWriteLayer streams r -> tar -> zstd straight into store.Put while teeing the
-// uncompressed bytes through a hasher for the config's diff_id. The binary lands
-// under /usr/local/lib, with a launcher at /<name> and at /usr/local/bin/<name>
-// so a bare name on PATH also starts it. Every image gets that layout, so a
-// caller never has to know which kind of binary it published.
+// ociWriteLayer streams r -> tar -> zstd straight into store.Put while teeing
+// the uncompressed bytes through a hasher for the config's diff_id. The binary
+// lands under /usr/local/lib, with a launcher at /<name> and at
+// /usr/local/bin/<name> so a bare name on PATH also starts it. Every image gets
+// that layout, whatever kind of binary it was built from.
 func ociWriteLayer(ctx context.Context, store storage.Storage, r io.Reader, size int64, name string) (key string, compressedSize int64, diffID string, err error) {
 	binPath := imageBinPath(name)
 	diffHasher := sha256.New()

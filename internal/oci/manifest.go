@@ -97,9 +97,8 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 		}
 		entry, err := h.platformEntry(r, project, release, a)
 		if err != nil {
-			// A short index is worse than no index: the puller reports "no
-			// matching manifest for linux/amd64" and the cause is only here.
-			// Every platform this release covers ships, or the pull says why.
+			// A short index is worse than no index: the puller then reports a
+			// platform it could not match, and the cause reaches nobody.
 			slog.ErrorContext(r.Context(), "oci: cannot synthesize image for platform",
 				"project", project.Name, "version", release.Version, "os", a.OS, "arch", a.Arch, "err", err)
 			ociError(w, http.StatusInternalServerError, "UNKNOWN",
@@ -166,8 +165,8 @@ func (h *Handler) platformEntry(r *http.Request, project *db.Project, release *d
 	sum := sha256.Sum256(manifestData)
 	digest := "sha256:" + hex.EncodeToString(sum[:])
 
-	// Only advertise a child the pull path can actually serve. A collision
-	// between two platforms' cache keys lands here, and used to land silently.
+	// Only advertise a child the pull path can serve. A cache-key collision
+	// between platforms lands here, and used to land silently.
 	belongs, err := h.DB.BlobBelongsToProject(r.Context(), project.ID, digest[7:])
 	if err != nil {
 		return indexEntry{}, fmt.Errorf("look up the manifest blob %s: %w", digest, err)

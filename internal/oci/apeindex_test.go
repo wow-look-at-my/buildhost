@@ -29,8 +29,7 @@ func fakeAPE() []byte {
 	for _, m := range []uint16{0x3e, 0xb7} { // EM_X86_64, EM_AARCH64
 		b.WriteString("    printf '" + shellOctal(elf64Header(m)) + "' >&7\n")
 	}
-	// The payload the trampoline would have staged. Its content is irrelevant
-	// here: nothing in these tests executes it.
+	// The payload the trampoline would stage. Nothing here executes it.
 	b.WriteString(strings.Repeat("payload\n", 64))
 	return []byte(b.String())
 }
@@ -144,8 +143,8 @@ func TestAPEIndexCoversEveryPlatform(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body)
 	got := indexPlatforms(t, rec.Body.Bytes())
 	assert.ElementsMatch(t, []string{"linux/amd64", "linux/arm64"}, got)
-	// Named on its own: linux/amd64 is the entry that went missing, and an
-	// ElementsMatch failure alone would not say which one this bug was about.
+	// Named on its own, because a set mismatch would not say which entry the
+	// bug was about.
 	assert.Contains(t, got, "linux/amd64", "the artifact's canonical platform must be in the index")
 }
 
@@ -186,9 +185,8 @@ func TestAPEIndexNarrowerPlatformSets(t *testing.T) {
 			rec := fetchIndex(t, h, proj)
 			require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body)
 			if len(tc.want) == 1 {
-				// One platform serves the image manifest itself, so there is no
-				// index to read platforms out of. The config carries the
-				// platform, and the pull-path test asserts it there.
+				// A lone platform serves the image manifest itself, so there is
+				// no index. The pull-path test asserts the config's platform.
 				assert.Equal(t, "application/vnd.oci.image.manifest.v1+json", rec.Header().Get("Content-Type"))
 				return
 			}
@@ -242,9 +240,8 @@ func TestAPEIndexFailsLoudlyWhenAChildIsNotLinked(t *testing.T) {
 		{OS: db.OSLinux, Arch: db.ArchARM64},
 	})
 
-	// A generator with no database link never records the manifest it just
-	// synthesized, so the membership check answers false for every child --
-	// the same answer a cache-key collision between two platforms produces.
+	// A generator with no database link never records what it synthesized, so
+	// the membership check answers false, as a cache-key collision does.
 	h.Gen = repackage.NewGenerator(store, nil, t.TempDir(), repackage.WithShellCache(apeShellCache(t)))
 
 	rec := fetchIndex(t, h, proj)

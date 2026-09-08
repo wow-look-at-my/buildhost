@@ -186,9 +186,9 @@ func (g *Generator) Supports(format Format) bool {
 	return ok
 }
 
-// Applicable reports whether format is one this artifact can be rendered into
-// at all. A caller that must account for every artifact of a release uses it to
-// tell "this one is not mine" from "this one failed".
+// Applicable reports whether artifact can be rendered into format at all. A
+// caller accounting for every artifact of a release uses it to tell "not mine"
+// from "failed".
 func (g *Generator) Applicable(format Format, artifact db.Artifact) bool {
 	rp, ok := g.repackagers[format]
 	return ok && rp.Applicable(artifact)
