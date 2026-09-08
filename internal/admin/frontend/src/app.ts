@@ -11,7 +11,9 @@ import type {
     AllArtifact,
     DashboardData,
     DownloadLink,
+    DuplicatesData,
     GoproxyData,
+    MergePlan,
     OIDCPolicy,
     Pages,
     Platform,
@@ -110,7 +112,8 @@ var NAV_ITEMS = [
     { id: "sites", href: "#/sites", label: "Sites", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4.083 9h1.946c.089-1.546.383-2.97.837-4.118A6.004 6.004 0 004.083 9zM10 2a8 8 0 100 16 8 8 0 000-16zm0 2c-.076 0-.232.032-.465.262-.238.234-.497.623-.737 1.182-.389.907-.673 2.142-.766 3.556h3.936c-.093-1.414-.377-2.649-.766-3.556-.24-.56-.5-.948-.737-1.182C10.232 4.032 10.076 4 10 4zm3.971 5c-.089-1.546-.383-2.97-.837-4.118A6.004 6.004 0 0115.917 9h-1.946zm-2.003 2H8.032c.093 1.414.377 2.649.766 3.556.24.56.5.948.737 1.182.233.23.389.262.465.262.076 0 .232-.032.465-.262.238-.234.497-.623.737-1.182.389-.907.673-2.142.766-3.556zm1.166 4.118c.454-1.147.748-2.572.837-4.118h1.946a6.004 6.004 0 01-2.783 4.118zm-6.268 0C6.412 13.97 6.118 12.546 6.029 11H4.083a6.004 6.004 0 002.783 4.118z" clip-rule="evenodd"/></svg>' },
     { id: "goproxy", href: "#/goproxy", label: "Go Proxy", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>' },
     { id: "oidc", href: "#/oidc", label: "OIDC Policies", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' },
-    { id: "retention", href: "#/retention", label: "Retention", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>' }
+    { id: "retention", href: "#/retention", label: "Retention", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>' },
+    { id: "duplicates", href: "#/duplicates", label: "Duplicates", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M7 3a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V5a2 2 0 00-2-2H7z"/><path d="M3 7a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>' }
 ];
 
 const renderSidebar = function (nav: string): void {
@@ -1401,6 +1404,7 @@ const route = function (): void {
     else if (first === "storage") { go(pages.storage); }
     else if (first === "retention") { go(pages.retention); }
     else if (first === "goproxy") { go(pages.goproxy); }
+    else if (first === "duplicates") { go(pages.duplicates); }
     else { go(pages.dashboard); }
 };
 
@@ -1579,6 +1583,90 @@ const demoData: Record<string, unknown> = {
 
 // --- Init ---
 
+// --- Duplicates left by a GitHub rename ---
+
+const renderMergePlan = function (p: MergePlan): string {
+    var rows = "";
+    for (var i = 0; i < p.releases.length; i++) {
+        var r = p.releases[i];
+        rows += "<tr><td>" + h(r.old_version) + "</td><td>&rarr; " + h(r.new_version) + "</td></tr>";
+    }
+    var html = "<h3>Merging " + h(p.from) + " into " + h(p.into) + "</h3>";
+    if (p.conflicts.length) {
+        html += '<div class="card"><p><strong>This merge is blocked:</strong></p><ul>';
+        for (var c = 0; c < p.conflicts.length; c++) html += "<li>" + h(p.conflicts[c]) + "</li>";
+        html += "</ul></div>";
+        return html;
+    }
+    html += "<p>" + p.releases.length + " releases move and are renumbered. " +
+        "Sites: " + p.sites + ", OCI tags: " + p.oci_tags + ", blob links: " + p.oci_blobs +
+        ", tokens: " + p.tokens + ", policies: " + p.policies + ".</p>";
+    html += "<p>Kept resolving as aliases of " + h(p.into) + ": <code>" + h(p.aliases.join(", ")) + "</code></p>";
+    if (rows) html += '<table class="table"><thead><tr><th>was</th><th>becomes</th></tr></thead><tbody>' + rows + "</tbody></table>";
+    html += '<p><button class="btn btn-danger" onclick="App.applyMerge(\'' +
+        h(p.from) + "', '" + h(p.into) + '\')">Merge ' + h(p.from) + " into " + h(p.into) + "</button></p>";
+    return html;
+};
+
+const previewMerge = function (from: string, into: string): void {
+    apiFetch<MergePlan>("/projects/" + encodeURIComponent(from) + "/merge-plan?into=" + encodeURIComponent(into))
+        .then(function (p) {
+            document.getElementById("merge-plan")!.innerHTML = renderMergePlan(p);
+        });
+};
+
+const applyMerge = function (from: string, into: string): void {
+    if (!confirm("Merge " + from + " into " + into + "? A database snapshot is written first, but the release renumbering cannot be undone without restoring it.")) return;
+    fetch("/api/projects/" + encodeURIComponent(from) + "/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ into: into })
+    }).then(function (res) {
+        return res.json().then(function (p: MergePlan) {
+            if (!res.ok || !p.applied) {
+                document.getElementById("merge-plan")!.innerHTML = renderMergePlan(p);
+                return;
+            }
+            alert("Merged " + p.from + " into " + p.into + ".\nSnapshot: " + (p.snapshot || "(none)"));
+            pages.duplicates();
+        });
+    }).catch(function () { alert("Could not merge (preview/demo mode has no backend)."); });
+};
+
+pages.duplicates = function (): void {
+    setTitle("Duplicates");
+    renderSidebar("duplicates");
+    apiFetch<DuplicatesData>("/duplicates").then(function (d) {
+        var html = "<h1>Duplicates</h1>";
+        if (!d.groups || !d.groups.length) {
+            html += '<div class="card"><p class="empty">No project is split across roots. Every GitHub repo maps to one namespace.</p></div>';
+            document.getElementById("content")!.innerHTML = html;
+            return;
+        }
+        html += "<p>These projects share a GitHub repo id but sit under different roots. " +
+            "A rename made each of them: the release history stayed under the old name and new publishes landed under the new one.</p>";
+        for (var g = 0; g < d.groups.length; g++) {
+            var grp = d.groups[g];
+            html += '<div class="card"><h2>' + h(grp.repo || grp.repo_id) + "</h2>";
+            html += '<table class="table"><thead><tr><th>Project</th><th>Root</th><th>Releases</th><th>Merge into</th></tr></thead><tbody>';
+            for (var p = 0; p < grp.projects.length; p++) {
+                var pr = grp.projects[p];
+                var opts = "";
+                for (var q = 0; q < grp.projects.length; q++) {
+                    if (grp.projects[q].name === pr.name) continue;
+                    opts += '<button class="btn" onclick="App.previewMerge(\'' + h(pr.name) + "', '" +
+                        h(grp.projects[q].name) + '\')">' + h(grp.projects[q].name) + "</button> ";
+                }
+                html += "<tr><td><code>" + h(pr.name) + "</code></td><td>" + h(pr.root) + "</td><td>" +
+                    pr.releases + "</td><td>" + opts + "</td></tr>";
+            }
+            html += "</tbody></table></div>";
+        }
+        html += '<div class="card" id="merge-plan"><p class="empty">Pick a merge target above to preview exactly what moves.</p></div>';
+        document.getElementById("content")!.innerHTML = html;
+    });
+};
+
 document.addEventListener("DOMContentLoaded", function () {
     if (window.location.pathname !== "/") demo = true;
     apiFetch<SidebarData>("/sidebar").then(function (data) {
@@ -1598,4 +1686,4 @@ window.addEventListener("unhandledrejection", function (ev) {
 });
 
 // Exported == reachable as App.x from the inline onclick handlers above.
-export { copyInventory, copyTempLink, copyText, deleteToken, downloadArtifact, downloadInventory, editToken, pages, recheckGoproxy, reloadTokens, runRetention, saveToken };
+export { applyMerge, copyInventory, copyTempLink, copyText, deleteToken, downloadArtifact, downloadInventory, editToken, pages, previewMerge, recheckGoproxy, reloadTokens, runRetention, saveToken };

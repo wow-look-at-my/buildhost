@@ -12,7 +12,7 @@ A repo's projects are its root project, named after the repo, plus every `<root>
 
 A child whose whole path repeats the root collapses onto the root. A repo named after its sole binary otherwise lands on `lpi/lpi`, which names the same thing at both levels.
 
-A target name that is already taken is NOT resolved automatically. That name is a duplicate left by a rename older than this reconcile. To fold two release histories together has no safe default. The reconcile logs the `buildhost project merge` command that does it deliberately, and moves on.
+A target name that is already taken is NOT resolved automatically. That name is a duplicate left by a rename older than this reconcile. To fold two release histories together has no safe default. The reconcile logs the duplicate and moves on. An operator resolves it from the admin dashboard.
 
 ## Old names keep resolving
 
@@ -24,7 +24,9 @@ A name is unique across `projects.name` and `project_aliases.name` together. SQL
 
 ## Merging a duplicate
 
-`buildhost project merge --from X --into Y` folds a stranded project into the survivor. `--dry-run` prints the plan and changes nothing.
+The admin dashboard's Duplicates page lists every group of projects that share a repo id under different roots. It shows each project's release count and offers the merge targets beside it. Picking a target renders the plan, and nothing changes until the operator presses the merge button. The dashboard is the operator surface here, because buildhost's own CLI runs on the server host rather than in a browser.
+
+The API behind that page is `GET /api/duplicates`, `GET /api/projects/{name}/merge-plan?into=Y` for the preview, and `POST /api/projects/{name}/merge` to apply. All are on the admin port.
 
 Both projects number their releases from v1. The source's releases are therefore renumbered onto the end of the target's sequence. A semver project keeps its version strings, and only its ordering moves. A collision there is a conflict, not a rename.
 
