@@ -42,7 +42,7 @@ func readLayerFiles(t *testing.T, compressed []byte) map[string][]byte {
 }
 
 // TestOCIRepackageEssentials verifies the synthesized image carries the shared
-// essentials base layer (CA certs + minimal rootfs) in addition to the binary layer:
+// base layer (CA certs, minimal rootfs and shell) plus the binary layer.
 func TestOCIRepackageEssentials(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)
@@ -109,7 +109,7 @@ func TestOCIRepackageEssentials(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(cfgBytes, &cfg))
 	require.Len(t, cfg.Rootfs.DiffIDs, 2)
-	_, baseDiffID, err := essentialsLayer()
+	_, baseDiffID, err := rp.base(ctx, db.ArchAMD64)
 	require.NoError(t, err)
 	assert.Equal(t, "sha256:"+baseDiffID, cfg.Rootfs.DiffIDs[0])
 	assert.Equal(t, []string{"/testapp"}, cfg.Config.Entrypoint)
