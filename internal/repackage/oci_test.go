@@ -138,8 +138,9 @@ func TestOCIRepackageEssentials(t *testing.T) {
 	assert.Empty(t, cfg.Config.User)
 }
 
-// apeBinary opens with the APE prologue; the rest is never executed.
-var apeBinary = []byte("MZqFpD='\n#!/bin/sh\nexit 0\n'\n")
+// apeBinary opens with the APE prologue and carries the per-architecture ELF
+// headers a real trampoline holds; the rest is never executed.
+var apeBinary = testAPE(0x3e, 0xb7)
 
 // An APE image carries a shell layer between the essentials and the binary
 // and enters through /bin/sh, because the kernel cannot exec the APE's
@@ -226,18 +227,23 @@ func TestOCIRepackageAPEGetsAShell(t *testing.T) {
 	require.NoError(t, err)
 	files := readLayerFiles(t, binData)
 
-	// The APE lives out of the way, and each spelling reaches a launcher.
-	assert.Equal(t, apeBinary, files["usr/local/lib/apeapp/apeapp"])
+	// The binary lives out of the way, and each spelling reaches a launcher.
+	binary := files["usr/local/lib/apeapp/apeapp"]
 	launcher := string(apeImageLauncher("apeapp"))
 	assert.Equal(t, launcher, string(files["apeapp"]))
 	assert.Equal(t, launcher, string(files["usr/local/bin/apeapp"]))
 	assert.True(t, strings.HasPrefix(launcher, "#!/bin/sh\n"), "a launcher the kernel can exec starts with a shebang")
 	assert.Contains(t, launcher, "/usr/local/lib/apeapp/apeapp")
-	// A deployment mounts a noexec tmpfs over /tmp, where the unpack writes
-	// fine and the exec dies.
-	assert.Contains(t, launcher, "${TMPDIR:=/var/lib/ape}",
-		"the launcher must point the unpack at a directory nothing mounts over")
-	assert.Contains(t, launcher, "export TMPDIR", "the APE reads TMPDIR from the environment")
+
+	// The image carries the staged ELF, not the APE. The trampoline stages its
+	// own copy under a hardcoded /tmp/.ape-run-1-$(id -u) that TMPDIR does not
+	// move, and a container's /tmp is usually a noexec tmpfs: the copy is
+	// written and the exec dies with exit 126 against a path nobody chose.
+	require.Len(t, binary, len(apeBinary), "staging must not change the length")
+	assert.Equal(t, testELFHeader(0x3e), binary[:apeELFHeaderSize],
+		"the kernel loads this file directly, so it has to start with an ELF header")
+	assert.Equal(t, apeBinary[apeELFHeaderSize:], binary[apeELFHeaderSize:])
+	assert.NotContains(t, launcher, "TMPDIR", "nothing is staged at run time, so there is no TMPDIR to set")
 }
 
 // The launcher names /var/lib/ape, so the image has to ship it, writable.

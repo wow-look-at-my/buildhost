@@ -41,6 +41,12 @@ func WithShellCacheDir(dir string) Option {
 	return func(o *OCI) { o.Shell = NewShellCache(dir) }
 }
 
+// WithShellCache serves APE image shell layers from c, for a caller that has
+// already built one.
+func WithShellCache(c *ShellCache) Option {
+	return func(o *OCI) { o.Shell = c }
+}
+
 func NewGenerator(store storage.Storage, database *db.DB, tmpDir string, opts ...Option) *Generator {
 	m := make(map[Format]Repackager, len(registry)+1)
 	for f, rp := range registry {
@@ -178,4 +184,12 @@ func OpenArtifactStream(ctx context.Context, store storage.Storage, artifact db.
 func (g *Generator) Supports(format Format) bool {
 	_, ok := g.repackagers[format]
 	return ok
+}
+
+// Applicable reports whether format is one this artifact can be rendered into
+// at all. A caller that must account for every artifact of a release uses it to
+// tell "this one is not mine" from "this one failed".
+func (g *Generator) Applicable(format Format, artifact db.Artifact) bool {
+	rp, ok := g.repackagers[format]
+	return ok && rp.Applicable(artifact)
 }
