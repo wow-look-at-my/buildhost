@@ -11,7 +11,7 @@
 A fetched bundle is a generated build input, exactly like `internal/api`'s `gen_*.go`. It is produced the same way. A `//go:generate` directive next to the `//go:embed` in `oci.go` runs `scripts/fetch-cacerts.sh`. Nobody has to remember a separate step:
 
 ```sh
-go-toolchain --generate 5f3f7e6c9924   # runs every directive, this one included
+go-toolchain --generate 330d13d506d9   # runs every directive, this one included
 ./scripts/fetch-cacerts.sh             # or fetch it alone
 ```
 

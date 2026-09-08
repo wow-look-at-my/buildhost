@@ -35,7 +35,7 @@ jobs:
       # No fetch-cacerts step: the CA bundle is a generate directive
       - uses: wow-look-at-my/go-toolchain@master
         with:
-          generate: 5f3f7e6c9924
+          generate: 330d13d506d9
           timeout: '25'
       # The step above just ran every generate directive, which is what makes
       - uses: ./.github/actions/buildhost-download

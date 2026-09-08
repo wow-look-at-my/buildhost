@@ -7,7 +7,7 @@ This file is an INDEX: what exists, the invariants one line each, and where the 
 ## Build
 
 ```bash
-go-toolchain --generate 5f3f7e6c9924
+go-toolchain --generate 330d13d506d9
 ```
 
 This runs mod tidy, generate, vet, tests with coverage, and builds the binary. Do not use a bare `go` command. The `--generate <hash>` flag is go-toolchain's approval gate over the repo's `//go:generate` directives. It is REQUIRED here. Every generated input is gitignored, so a fresh clone without generate fails to compile. Building therefore needs npm as well as Go. go-toolchain prints the current hash when this one is stale. Update it here and in `.github/workflows/ci.yml` whenever a directive changes.
