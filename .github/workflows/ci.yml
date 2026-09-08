@@ -35,7 +35,7 @@ jobs:
       # No fetch-cacerts step: the CA bundle is a generate directive
       - uses: wow-look-at-my/go-toolchain@master
         with:
-          generate: 330d13d506d9
+          generate: ad31d6838b30
           timeout: '25'
       # The step above just ran every generate directive, which is what makes
       - uses: ./.github/actions/buildhost-download
@@ -135,6 +135,7 @@ jobs:
         run: |
           go generate ./internal/api
           if [ -x scripts/build-admin-frontend.sh ]; then ./scripts/build-admin-frontend.sh; fi
+          if [ -x scripts/fetch-shell.sh ]; then ./scripts/fetch-shell.sh; fi
           go build -o build/buildhost_linux_amd64 ./cmd/buildhost
       - if: steps.cache.outputs.cache-hit != 'true'
         shell: bash
@@ -324,6 +325,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: ./scripts/fetch-cacerts.sh
+      - run: ./scripts/fetch-shell.sh
       - run: go generate ./internal/api
       # The dashboard JS is generated, not committed, and embedded by name.
       - run: ./scripts/build-admin-frontend.sh
