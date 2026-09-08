@@ -22,7 +22,7 @@ import (
 // fakeAPE builds a payload with the prologue an APE carries: the magic the
 // detector matches, and the printf call per architecture that the trampoline
 // uses to write a real ELF header over its own copy. Reading a header out of
-// that prologue is how the image ships an ELF, so the fixture has to carry one.
+// that prologue is how the image ships an ELF, so the fixture must carry them.
 func fakeAPE() []byte {
 	var b strings.Builder
 	b.WriteString("MZqFpD='\n")
@@ -34,7 +34,7 @@ func fakeAPE() []byte {
 	return []byte(b.String())
 }
 
-// elf64Header is a 64-byte ELF64 header for machine.
+// elf64Header is an ELF64 header for machine.
 func elf64Header(machine uint16) []byte {
 	h := make([]byte, 64)
 	copy(h, "\x7fELF\x02\x01\x01\x00")
@@ -78,7 +78,7 @@ func setupImageTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	return h, d, store
 }
 
-// publishAPE publishes one APE artifact covering platforms, through the same
+// publishAPE publishes an APE artifact covering platforms, through the same
 // multi-platform path a real `PUT .../artifacts/ape?platforms=...` takes.
 func publishAPE(t *testing.T, ctx context.Context, d *db.DB, store *storage.Filesystem, proj *db.Project, platforms []db.Platform) *db.Release {
 	t.Helper()
@@ -121,11 +121,14 @@ func indexPlatforms(t *testing.T, body []byte) []string {
 }
 
 // TestAPEIndexCoversEveryPlatform is the regression test for the missing
-// canonical slot: an APE covering three platforms served an index of TWO. The
-// one it dropped was linux/amd64 -- the artifact's own canonical platform, the
+// canonical slot. An APE is published once and covers several platforms, and
+// the index dropped linux/amd64 -- the artifact's own canonical platform, the
 // only one actually uploaded, and the one every consumer on the deployment
 // needs. `docker pull` answered "no matching manifest for linux/amd64 in the
-// manifest list entries" while the release JSON listed all three.
+// manifest list entries" while the release JSON listed it.
+//
+// A non-linux slot is absent from the index: the image is a linux rootfs with a
+// linux shell, and stamping it darwin advertises what nothing can run.
 func TestAPEIndexCoversEveryPlatform(t *testing.T) {
 	t.Serial()
 	h, d, store := setupImageTest(t)
@@ -150,7 +153,7 @@ func TestAPEIndexCoversEveryPlatform(t *testing.T) {
 
 // TestAPEIndexNarrowerPlatformSets runs the same assertion for a narrower APE,
 // so a fix that appends the canonical entry unconditionally cannot pass by
-// luck: here it would list linux/amd64 twice.
+// luck: here it would list linux/amd64 more than once.
 func TestAPEIndexNarrowerPlatformSets(t *testing.T) {
 	t.Serial()
 	for _, tc := range []struct {
@@ -199,11 +202,10 @@ func TestAPEIndexNarrowerPlatformSets(t *testing.T) {
 
 // TestAPEIndexFailsLoudlyWhenAChildCannotBeSynthesized covers the drop that
 // used to be silent. A platform the release covers and the registry cannot
-// serve must fail the request: a 200 carrying a short index moves the failure
-// to the client's platform matcher, which reports a missing platform and no
-// cause. An APE image needs a shell layer, so a generator with no shell cache
-// fails exactly the linux child and no other -- which is the shape of the
-// production defect.
+// serve must fail the request. A short index served as success moves the
+// failure to the client's platform matcher, which reports a platform it could
+// not match and no cause. Every image needs a shell layer, so a generator with
+// no shell cache cannot synthesize a child at all.
 func TestAPEIndexFailsLoudlyWhenAChildCannotBeSynthesized(t *testing.T) {
 	t.Serial()
 	h, d, store := setupImageTest(t)
@@ -306,7 +308,7 @@ func TestAPEPullPathResolvesLinuxAMD64(t *testing.T) {
 	}
 }
 
-// getBlobbish fetches a manifest or blob by digest and requires a 200.
+// getBlobbish fetches a manifest or blob by digest and requires it to resolve.
 func getBlobbish(t *testing.T, h *Handler, proj *db.Project, action, digest string) []byte {
 	t.Helper()
 	req := httptest.NewRequest("GET", "/v2/"+proj.Name+"/"+action+"/"+digest, nil)
@@ -317,10 +319,10 @@ func getBlobbish(t *testing.T, h *Handler, proj *db.Project, action, digest stri
 	return rec.Body.Bytes()
 }
 
-// TestNonAPEIndexIsNotDoubleListed guards the ordinary per-platform case: a
-// project that uploads a real build per platform gets one index entry per
-// artifact, and the fix for the APE case must not add a second entry for the
-// row's own (os, arch).
+// TestNonAPEIndexIsNotDoubleListed guards the ordinary per-platform case. A
+// project that uploads a real build per platform gets an index entry per
+// artifact, and the fix for the APE case must not add another for the row's
+// own (os, arch).
 func TestNonAPEIndexIsNotDoubleListed(t *testing.T) {
 	t.Serial()
 	h, d, store := setupImageTest(t)

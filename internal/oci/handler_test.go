@@ -27,7 +27,8 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, t.TempDir())}
+	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, t.TempDir(),
+		repackage.WithShellCache(apeShellCache(t)))}
 	h.uploads = newUploadStore(filepath.Join(t.TempDir(), "oci-uploads"), 10<<30)
 	return h, d, store
 }
@@ -56,7 +57,7 @@ func publishWithOCI(t *testing.T, ctx context.Context, d *db.DB, store *storage.
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	oci := &repackage.OCI{Store: store, DB: d}
+	oci := &repackage.OCI{Store: store, DB: d, Shell: apeShellCache(t)}
 	data, err := readAll(store, ctx, key)
 	require.NoError(t, err)
 

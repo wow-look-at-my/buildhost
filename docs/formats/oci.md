@@ -22,13 +22,27 @@ The Docker classic image store, which is the non-containerd overlay2 store, read
 
 The config sets `Env`, which includes `SSL_CERT_FILE`. It also sets `WorkingDir`, the `/<project>` entrypoint, and `User`. `User` comes from the release's optional `oci_user` field. An empty value means root.
 
-### An APE image
+### One layout, one base layer
 
-The kernel cannot exec an Actually Portable Executable. The file's header is a shell script, and the image registers no binfmt handler. `peekAPE` reads the first eight bytes of the artifact and looks for the APE prologue. buildhost never runs an upload to learn what it is.
+Every synthesized image has the same layers and the same paths. The kind of binary it was built from does not change them. A layout that varies by artifact is a layout only some images are ever tested on.
 
-A linux APE therefore gets a **third layer**, from `ShellCache`. That layer carries one static busybox at `/bin/busybox`, plus a symlink per applet. The trampoline shells out while it unpacks itself under `/tmp`. The layer comes from a pinned `busybox:musl` image. Its digest is checked against that pin. The layer is deterministic, so its diffID is the same on every server. It is registered per pull as an `oci-shell-layer` packaged artifact.
+The **base layer** is the minimal rootfs, the CA bundle and the shell, joined by `OCI.base`. It varies only by architecture. It is byte-identical across projects, so storage deduplicates it to a single blob per arch. The shell comes from `ShellCache`. That is one static busybox at `/bin/busybox`, plus a symlink per applet. It is pulled from a pinned `busybox:musl` image. The digest is checked against that pin. The base is registered per pull as an `oci-base-layer` packaged artifact. No shell cache means no image: `Repackage` refuses rather than serve one that cannot start.
 
-**The entrypoint must never name the APE.** The binary goes to `/usr/local/lib/<project>/<project>`. A `#!/bin/sh` launcher takes its place at `/<project>`. A copy sits at `/usr/local/bin/<project>` for the bare name on PATH. The entrypoint stays `/<project>`, which is what every earlier synthesized image carried. This is the shape the Dockerfile and the deb repackager already give an APE.
+The **binary layer** puts the binary at `/usr/local/lib/<project>/<project>`. A `#!/bin/sh` launcher sits at `/<project>` and at `/usr/local/bin/<project>`, for the bare name on PATH. The entrypoint stays `/<project>`, which is what every earlier synthesized image carried.
+
+**The entrypoint must never name the binary directly.** A rolling updater creates the replacement container from the config of the container it replaces. That config carries the entrypoint of the OLD image. An entrypoint that cannot exec wedges the deployment on the version it already runs. Its stale config is then cloned onto every later image. A shebang script is execable, so every spelling reaches the binary.
+
+### An APE ships as the ELF it would have staged
+
+The kernel cannot exec an Actually Portable Executable. The file's header is a shell script, and the image registers no binfmt handler. `peekAPE` reads the artifact's opening bytes and looks for the APE prologue. buildhost never runs an upload to learn what it is.
+
+The APE's own trampoline handles this at run time. It copies itself somewhere writable and executable, and overwrites the prologue with a real ELF header. It stages that copy under a **hardcoded** `/tmp/.ape-run-1-$(id -u)` path, and reads no `TMPDIR`. A container's `/tmp` is usually a noexec tmpfs. The copy is written and the exec dies, against a path the operator never chose and never sees again. Exporting a different `TMPDIR` from a launcher does nothing.
+
+`apeAsELF` therefore does that overwrite once, at synthesis. It reads the ELF header for the artifact's architecture out of the trampoline's own `printf` call, keyed on `e_machine`. It writes that header over the prologue, and the length does not change. The image carries a plain ELF the kernel loads directly. Nothing is staged at run time, and `/tmp` never enters the picture. A prologue carrying no header for that architecture fails the synthesis, rather than shipping an image that cannot start.
+
+### Linux only
+
+`OCI.Applicable` gates the format to `os=linux`. An APE covers several platforms from one artifact row. The image around it is still a linux rootfs with a linux shell. Stamping that `os: darwin` or `os: windows` advertises a platform nothing can pull and run. Those slots are absent from the index, rather than broken entries in it.
 
 This is not cosmetic. A rolling updater creates the replacement container from the config of the container it replaces. That config carries the entrypoint of the OLD image. An entrypoint that names an APE exits 126 on every start. The old container is never replaced. Its stale config is then cloned onto every later image. The deployment stays on the version it already runs. A shebang script is execable, so every spelling reaches the binary and no such wedge can start.
 

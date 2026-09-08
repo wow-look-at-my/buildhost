@@ -93,7 +93,10 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		return nil, fmt.Errorf("create layer: %w", err)
 	}
 	if input.Artifact.ID > 0 && o.DB != nil {
-		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-layer", binKey, binSize, binKey, "layer.tar.zst", "{}")
+		// Suffixed like the config and the base: an APE's staged ELF differs per
+		// architecture, and an unsuffixed key lets one platform's upsert
+		// overwrite another's row, which unlinks the blob it named.
+		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-layer"+input.CacheSuffix, binKey, binSize, binKey, "layer.tar.zst", "{}")
 	}
 	layers = append(layers, ociDescriptor{binKey, binSize})
 	diffIDs = append(diffIDs, binDiffID)
