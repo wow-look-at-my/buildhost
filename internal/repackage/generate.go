@@ -41,8 +41,7 @@ func WithShellCacheDir(dir string) Option {
 	return func(o *OCI) { o.Shell = NewShellCache(dir) }
 }
 
-// WithShellCache serves APE image shell layers from c, for a caller that has
-// already built one.
+// WithShellCache serves image shell layers from c, for a caller holding it.
 func WithShellCache(c *ShellCache) Option {
 	return func(o *OCI) { o.Shell = c }
 }

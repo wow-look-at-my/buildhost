@@ -44,7 +44,7 @@ func apeELFHeader(head []byte, arch db.Arch) ([]byte, error) {
 			continue
 		}
 		found++
-		// e_machine is a little-endian uint16 at offset 18 of an ELF64 header.
+		// e_machine is a little-endian uint16 in the ELF64 header.
 		if elf.Machine(uint16(hdr[18])|uint16(hdr[19])<<8) == want {
 			return hdr, nil
 		}

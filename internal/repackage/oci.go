@@ -172,9 +172,9 @@ func imageLauncher(name string) []byte {
 		shellQuote("/"+imageBinPath(name)))
 }
 
-// joinLayers concatenates the entries of zstd-compressed tar layers into one
-// layer, returning it with the diffID of its uncompressed bytes. A duplicate
-// name keeps its first entry, so an earlier layer wins.
+// joinLayers merges the entries of zstd-compressed tar layers, returning the
+// result with the diffID of its uncompressed bytes. An earlier layer wins a
+// name both carry.
 func joinLayers(layers ...[]byte) ([]byte, string, error) {
 	var buf bytes.Buffer
 	zw, err := zstd.NewWriter(&buf, zstd.WithEncoderLevel(zstd.SpeedDefault))
