@@ -27,7 +27,8 @@ func renderRoutes() string {
 	return b.String()
 }
 
-// routesAtStartup is the table before any test calls auth.Init.
+// routesAtStartup is the table before any test runs. A test here calls
+// auth.Init, which changes what ListRoutes renders.
 var routesAtStartup string
 
 func TestMain(m *testing.M) {
@@ -37,8 +38,7 @@ func TestMain(m *testing.M) {
 
 // TestRouteTableMatchesGolden fails when the route set drifts from
 // docs/routes.txt. Backends self-register from init() in their own packages, so
-// without the golden file an added, removed or duplicated endpoint leaves
-// nothing route-shaped in the diff for a reviewer to look at.
+// the golden is what puts a route change in the diff for a reviewer.
 //
 // The table is rendered by the program, never parsed out of source, so it cannot
 func TestRouteTableMatchesGolden(t *testing.T) {

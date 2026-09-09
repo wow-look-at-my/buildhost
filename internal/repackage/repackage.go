@@ -111,5 +111,5 @@ func (o *Orchestrator) PublishRelease(ctx context.Context, _ db.Project, release
 	return o.DB.PublishRelease(ctx, release.ID)
 }
 
-// TransformVersion tags every cached digest, so skipping a bump serves the old layout forever.
+// TransformVersion tags every cached digest. Skip the bump and a stale digest is served forever.
 const TransformVersion = "image-staged-elf-1"
