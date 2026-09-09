@@ -159,8 +159,7 @@ func TestInflightHandler_DuringWrites(t *testing.T) {
 	})
 	handler := TrackInflight(inner)
 
-	// Joined before returning: the handler decrements inflightWrites as it
-	// unwinds, and a decrement landing after the next test reset it reads -1.
+	// Joined before returning: a decrement landing after the next test's reset goes negative.
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

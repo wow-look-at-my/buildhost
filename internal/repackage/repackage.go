@@ -111,6 +111,5 @@ func (o *Orchestrator) PublishRelease(ctx context.Context, _ db.Project, release
 	return o.DB.PublishRelease(ctx, release.ID)
 }
 
-// TransformVersion tags every cached digest. Skip the bump and a digest cached
-// under the old layout is served forever.
+// TransformVersion tags every cached digest. Skip the bump and a stale digest is served forever.
 const TransformVersion = "ape-launcher-2"
