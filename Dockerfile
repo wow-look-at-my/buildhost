@@ -8,13 +8,17 @@ RUN mkdir -p /data && chown 65532:65532 /data
 # final image and an absolute link would point at a path that is not there.
 RUN mkdir -p /shell && cp /bin/busybox /shell/busybox \
     && for a in $(/shell/busybox --list); do ln -sf busybox "/shell/$a"; done
-# The trampoline unpacks itself under TMPDIR, so the image needs a writable one.
 RUN mkdir -p /tmpdir && chmod 1777 /tmpdir
-# A directory nothing mounts over. /tmp is commonly a noexec tmpfs in a
-# deployment, and /var/lib/buildhost is a VOLUME, so both can arrive as
-# somebody else's filesystem with somebody else's rules. This one is only ever
-# the image's own layer, writable through the container's overlay.
-RUN mkdir -p /apedir && chmod 0700 /apedir
+
+# The binary the final image runs is the ELF the APE's trampoline would have
+# staged for THIS target. The trampoline stages into a hardcoded
+# /tmp/.ape-run-1-$(id -u) that it picks itself and no variable moves, so a
+# deployment's noexec /tmp killed every container at exit 126. Staging here
+# means nothing unpacks at run time and /tmp stops mattering.
+FROM busybox:musl AS staged
+ARG TARGETARCH
+COPY build/buildhost build/apestage /in/
+RUN sh /in/apestage /in/buildhost /buildhost "$TARGETARCH"
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
@@ -31,13 +35,12 @@ LABEL org.opencontainers.image.description="Universal package registry server"
 # so the image carries the busybox the /data stage already pulls.
 COPY --from=dirs /shell /bin
 COPY --from=dirs /tmpdir /tmp
-COPY --from=dirs --chown=65532:65532 /apedir /var/lib/ape
 # The APE sits under /usr/local/lib and a shebang launcher takes its place on
 # PATH, the same shape the deb repackager gives an APE. A launcher the kernel
 # can exec keeps the shell an implementation detail of this image: an
 # entrypoint that names the binary any other way still starts the server,
 # instead of exiting 126 on a bare exec.
-COPY --chmod=755 build/buildhost /usr/local/lib/buildhost/buildhost
+COPY --from=staged --chmod=755 /buildhost /usr/local/lib/buildhost/buildhost
 COPY --chmod=755 scripts/image-launcher.sh /usr/local/bin/buildhost
 COPY --from=dirs --chown=65532:65532 /data /var/lib/buildhost
 

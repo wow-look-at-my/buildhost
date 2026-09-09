@@ -1,32 +1,30 @@
-# The launcher must hand the APE a directory it can actually exec from.
+# The launcher must exec the binary, and nothing else.
 #
-# execve loads a file whose first bytes are ELF, and an APE's are not, so the
-# trampoline in the APE's own header copies the ELF payload out under TMPDIR and
-# execs the copy. That copy needs a directory that is writable AND executable.
+# The kernel loads a file whose first bytes are ELF. An APE's are not, so its
+# own header carries a trampoline that copies the ELF payload out and execs the
+# copy. That copy needs a directory that is writable AND not noexec.
 #
-# A container's /tmp is commonly a noexec tmpfs, and compose offers the short
-# form no exec option to turn that off. The write succeeds and the exec dies:
+# The launcher used to hunt for one and export TMPDIR. That could never work:
+# the trampoline hardcodes
 #
-#   exec: line 29: /tmp/.ape-run-1-65532/153.2708.../buildhost: Permission denied
+#   c="/tmp/.ape-run-1-$(id -u 2>/dev/null || echo shared)/$k"
 #
-# The deployment spent hours restarting on exit 126 with that line, against a
-# path the operator never chose and never sees again.
+# and reads no TMPDIR. A deployment's noexec /tmp therefore killed every
+# container at exit 126, against a path nobody chose, while the launcher
+# announced a directory it had picked and changed nothing. The suite that
+# covered the probe could not see this, because it put a shell script in place
+# of the APE, and a shell script honours TMPDIR where the trampoline does not.
 #
-# The trampoline is a shell script, so it cannot reach memfd_create and
-# execveat(AT_EMPTY_PATH) -- the one way Linux runs a program with no path at
-# all, and therefore no mount to carry noexec. Choosing the directory is what is
-# left, so the launcher probes candidates by RUNNING something in each: noexec
-# belongs to the mount, not the file, so a stat under one still reports 0755.
-#
-# These run against the real script with a stub in place of the APE, sandboxed
-# by go-toolchain on every build.
+# The image now stages the ELF at build time, so nothing unpacks at run time and
+# the launcher is one exec. These run against the real script with a stub in
+# place of the binary, sandboxed by go-toolchain on every build.
 
 shared:
 	files:
 		stub: |
 			#!/bin/sh
-			echo "STARTED tmpdir=$TMPDIR args=$*"
-		# The launcher hardcodes the APE's path, so the stub takes that path.
+			echo "STARTED args=$*"
+		# The launcher hardcodes the binary's path, so the stub takes that path.
 		install.sh: |
 			set -eu
 			mkdir -p "$WORK/usr/local/lib/buildhost"
@@ -37,113 +35,65 @@ shared:
 			chmod 0755 "$WORK/launcher.sh"
 
 tests:
-	- desc: a usable TMPDIR is honoured and passed through to the binary
+	- desc: the launcher starts the binary and passes its arguments through
 	  cmd: |
 		set -eu
 		WORK="$(mktemp -d)"; export WORK
 		STUB={shared.stub}; export STUB
 		sh {shared.install.sh}
-		mkdir -p "$WORK/mine"
-		TMPDIR="$WORK/mine" BUILDHOST_DATA_DIR="$WORK/data" sh "$WORK/launcher.sh" serve
+		sh "$WORK/launcher.sh" serve --flag
 	  outputs:
 		stdout:
-			- "STARTED tmpdir="
-			- "/mine args=serve"
+			- "STARTED args=serve --flag"
 
-	# The failure the deployment hit: TMPDIR names somewhere the copy cannot run.
-	# The directory it lands on is not pinned here, because the candidate list
-	# is what the next test covers. What matters is that it starts at all, and
-	# never from the directory that failed.
-	- desc: an unusable TMPDIR falls through instead of failing
+	# TMPDIR named a directory for an unpack that no longer happens, and the
+	# trampoline never read it even when it did.
+	- desc: an unusable TMPDIR is irrelevant, because nothing unpacks
 	  cmd: |
 		set -eu
 		WORK="$(mktemp -d)"; export WORK
 		STUB={shared.stub}; export STUB
 		sh {shared.install.sh}
-		out="$(TMPDIR=/proc/definitely-not-writable BUILDHOST_DATA_DIR="$WORK/data" sh "$WORK/launcher.sh" serve)"
-		echo "$out"
-		case "$out" in *definitely-not-writable*) echo 'it kept the TMPDIR it could not use' >&2; exit 1 ;; esac
+		TMPDIR=/proc/definitely-not-writable sh "$WORK/launcher.sh" serve
 	  outputs:
 		stdout:
-			- "STARTED tmpdir="
-			- "args=serve"
+			- "STARTED args=serve"
 
-	# /tmp is commonly a noexec tmpfs and the data directory is a VOLUME, so a
-	# deployment can replace either. The directory the image itself ships is
-	# tried before both.
-	- desc: the image's own unpack directory is preferred over the data dir
+	# The probe cost a mount scan and a copied binary per start, to choose a
+	# directory nothing read. Its return was a container that died at exit 126.
+	- desc: the launcher carries no unpack-directory machinery
 	  cmd: |
 		set -eu
-		grep -n '/var/lib/ape' scripts/image-launcher.sh | head -n1
-		awk '/^for candidate in/ {
-			ape = index($0, "/var/lib/ape")
-			data = index($0, "BUILDHOST_DATA_DIR")
-			tmp = index($0, " /tmp ")
-			if (ape > 0 && ape < data && ape < tmp) { print "ape-first"; exit 0 }
-			print "the launcher tries a mountable directory first"; exit 1
-		}' scripts/image-launcher.sh
+		# Code lines only: the comment names these to say why they are gone.
+		code="$(grep -v '^[[:space:]]*#' scripts/image-launcher.sh)"
+		for pattern in TMPDIR /proc/mounts noexec /var/lib/ape; do
+			if printf '%s\n' "$code" | grep -q -- "$pattern"; then
+				echo "the launcher still carries $pattern, for an unpack that does not happen" >&2
+				exit 1
+			fi
+		done
+		echo no-probe
 	  outputs:
 		stdout:
-			- "ape-first"
+			- "no-probe"
 
-	- desc: with every named directory unusable, the mount scan finds one
+	# A shell in front of the path reads the binary as a script. That is what
+	# the launcher did while the APE shipped, and an ELF is not a script.
+	- desc: the launcher execs the binary rather than running it through a shell
 	  cmd: |
 		set -eu
-		WORK="$(mktemp -d)"; export WORK
-		STUB={shared.stub}; export STUB
-		sh {shared.install.sh}
-		TMPDIR=/proc/nope BUILDHOST_DATA_DIR=/proc/nope sh "$WORK/launcher.sh" serve
-	  outputs:
-		stdout:
-			- "STARTED tmpdir="
-
-	# The probe has to RUN something. A directory that merely looks writable is
-	# what let the old launcher hand /tmp to a trampoline that could not use it.
-	# The probe copies a BINARY. A shebang script is read by its interpreter, so
-	# running one can succeed where exec'ing a binary does not -- and a binary is
-	# what the trampoline writes. A script here accepted /tmp on a deployment the
-	# APE could not start in, and the launcher changed nothing.
-	- desc: the probe execs a copied binary, not a shebang script
-	  cmd: |
-		set -eu
-		grep -q 'cp /bin/sh "$probe"' scripts/image-launcher.sh || {
-			echo 'the probe must copy a real binary: running a script proves nothing about exec' >&2; exit 1; }
-		if grep -q "printf '#!/bin/sh" scripts/image-launcher.sh; then
-			echo 'the probe still writes a shebang script' >&2; exit 1
+		grep -q '^exec "\$real" "\$@"$' scripts/image-launcher.sh || {
+			echo 'the launcher must exec the binary directly' >&2; exit 1; }
+		if grep -qE 'exec +/bin/sh +"\$real"' scripts/image-launcher.sh; then
+			echo 'the launcher still runs the binary through a shell' >&2; exit 1
 		fi
-		grep -q '126' scripts/image-launcher.sh || {
-			echo 'the probe must judge whether exec itself succeeded' >&2; exit 1; }
-		echo binary-probe
+		echo direct-exec
 	  outputs:
 		stdout:
-			- "binary-probe"
+			- "direct-exec"
 
-	# busybox picks its applet from argv[0]. The image's /bin/sh IS busybox, so
-	# a copy called anything else answers "applet not found" and exits 127. The
-	# probe read that as a directory that cannot exec, and the container refused
-	# every directory it was offered, the writable data volume included.
-	- desc: the probe copy keeps the name sh
-	  cmd: |
-		set -eu
-		grep -q 'probe="$dir/sh"' scripts/image-launcher.sh || {
-			echo 'the probe copy must be named sh: busybox dispatches on argv[0]' >&2; exit 1; }
-		echo named-sh
+	- desc: the launcher is a shebang script, which is what the kernel can exec
+	  cmd: head -n1 scripts/image-launcher.sh
 	  outputs:
 		stdout:
-			- "named-sh"
-
-	- desc: the launcher names the directory it chose
-	  cmd: grep -c 'the APE unpacks into' scripts/image-launcher.sh
-	  outputs:
-		stdout:
-			- "1"
-
-	- desc: the candidate list asks the kernel what is mounted rw without noexec
-	  cmd: |
-		set -eu
-		grep -q '/proc/mounts' scripts/image-launcher.sh || { echo 'the launcher never reads /proc/mounts' >&2; exit 1; }
-		grep -q 'noexec' scripts/image-launcher.sh || { echo 'the launcher never excludes a noexec mount' >&2; exit 1; }
-		echo scans-mounts
-	  outputs:
-		stdout:
-			- "scans-mounts"
+			- "#!/bin/sh"
