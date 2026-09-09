@@ -62,7 +62,9 @@ It exists because the demo dataset linked to a page it had no fixture for. The m
 
 The apt client is a container, built from `test/dats/aptbox.Dockerfile` and started by the workflow in their own untimed steps. The suite installed onto the runner before this. It therefore inherited that host's apt state, and its setup hook paid for the base packages. The image bakes curl, gnupg, systemd and the non-root `aptuser`.
 
-The container runs with host networking. Curl pins a `*.localhost` name to loopback under RFC 6761. An `/etc/hosts` entry does not change that. The server must therefore sit on the loopback the container shares. Only the network is shared. The apt state stays the container's own, and nothing installs on the runner.
+The container runs on the default bridge. `host-gateway` points the `apt.localhost` and `static.localhost` entries in its hosts file at the runner. Apt reads that file and needs nothing else. Curl does not read it. Curl pins a `*.localhost` name to loopback, because that name is reserved for it. The key fetch therefore passes `--resolve`, the documented override. The suite reads the address out of the container rather than assuming one.
+
+The scheme is why these names stay under `.localhost`. `auth.RequestScheme` answers http for a loopback name. It answers https for every other name. Any other domain therefore makes the generated package URL https, and apt then fails to connect.
 
 ## upload-artifact-action-e2e
 
