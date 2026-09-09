@@ -628,12 +628,20 @@ jobs:
           go-version-file: go.mod
       - name: Build apt test package payload (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/buildhost-apt-e2e" ./test/e2e/testdata/netcheck
-      # The apt repository and the package download redirect are host-routed.
-      - name: Map the apt and static hosts to the local server
-        run: printf '127.0.0.1 apt.localhost\n127.0.0.1 static.localhost\n' | sudo tee -a /etc/hosts
+      # Untimed, so the suite's 30s setup hook pays for neither.
+      - name: Build the apt client image
+        run: docker build -t buildhost-aptbox:ci -f test/dats/aptbox.Dockerfile .
+      # host-gateway reaches the server on the runner from the container's network.
+      - name: Start the apt client
+        run: |
+          docker run -d --name buildhost-aptbox \
+            --add-host apt.localhost:host-gateway \
+            --add-host static.localhost:host-gateway \
+            buildhost-aptbox:ci sleep infinity
       - env:
           BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
           ARTIFACT_BIN: ${{ runner.temp }}/buildhost-apt-e2e
+          APTBOX: buildhost-aptbox
         run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/apt-install.dats
 
   # Proves the buildhost-upload-artifact composite action's BOTH upload paths
