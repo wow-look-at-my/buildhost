@@ -584,12 +584,12 @@ jobs:
       # Untimed, so the suite's 30s setup hook pays for neither.
       - name: Build the apt client image
         run: docker build -t buildhost-aptbox:ci -f test/dats/aptbox.Dockerfile .
-      # host-gateway is how the container reaches the server on the runner.
+      # Host networking: curl pins any *.localhost name to loopback (RFC 6761).
       - name: Start the apt client
         run: |
-          docker run -d --name buildhost-aptbox \
-            --add-host apt.localhost:host-gateway \
-            --add-host static.localhost:host-gateway \
+          docker run -d --name buildhost-aptbox --network host \
+            --add-host apt.localhost:127.0.0.1 \
+            --add-host static.localhost:127.0.0.1 \
             buildhost-aptbox:ci sleep infinity
       - env:
           BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost

@@ -58,7 +58,11 @@ It exists because the demo dataset linked to a page it had no fixture for. The m
 
 ## apt-install-e2e
 
-`test/dats/apt-install.dats` (CI job `apt-install-e2e`) covers a third case beyond the plain and slash-namespaced packages: an **APE-shaped artifact** (no shebang, not an ELF, and it writes to `$0` before printing its marker). The generated package must install the binary under `/usr/lib`, with a `/bin/sh` launcher on `$PATH`. The suite then runs it **as the non-root CI user**, which is the exact case that failed. It asserts the marker output and a writable per-user copy. The suite is verified to go red without the deb fix.
+`test/dats/apt-install.dats` (CI job `apt-install-e2e`) covers a third case beyond the plain and slash-namespaced packages: an **APE-shaped artifact** (no shebang, not an ELF, and it writes to `$0` before printing its marker). The generated package must install the binary under `/usr/lib`, with a `/bin/sh` launcher on `$PATH`. The suite then runs it **as a non-root user**, which is the exact case that failed. It asserts the marker output and a writable per-user copy. The suite is verified to go red without the deb fix.
+
+The apt client is a container, built from `test/dats/aptbox.Dockerfile` and started by the workflow in their own untimed steps. The suite installed onto the runner before this. It therefore inherited that host's apt state, and its setup hook paid for the base packages. The image bakes curl, gnupg, systemd and the non-root `aptuser`.
+
+The container runs with host networking. Curl pins a `*.localhost` name to loopback under RFC 6761. An `/etc/hosts` entry does not change that. The server must therefore sit on the loopback the container shares. Only the network is shared. The apt state stays the container's own, and nothing installs on the runner.
 
 ## upload-artifact-action-e2e
 
