@@ -151,6 +151,18 @@ CREATE TABLE oci_tags (
     UNIQUE(project_id, tag)
 );
 
+-- Every name a project answered to before a rename (mirrored from
+-- migrations/018_project_aliases.sql). A project name is a public contract, so
+-- an old dl/apt/brew/npm URL keeps resolving after the name follows its repo.
+CREATE TABLE project_aliases (
+    name       TEXT PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES projects(id),
+    created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_aliases_project ON project_aliases(project_id);
+CREATE INDEX IF NOT EXISTS idx_projects_github_repo_id ON projects(github_repo_id);
+
 CREATE TABLE retention_settings (
     id            INTEGER PRIMARY KEY CHECK (id = 1),
     keep_n        INTEGER NOT NULL DEFAULT 10,
