@@ -145,3 +145,71 @@ func TestRequestBaseURL_PreservesHostAndPort(t *testing.T) {
 		assert.Equalf(t, tc.want, RequestBaseURL(req), "host=%q", tc.host)
 	}
 }
+
+func TestRequestScheme(t *testing.T) {
+	cases := []struct {
+		host string
+		want string
+	}{
+		{"localhost", "http"},
+		{"localhost:8080", "http"},
+		{"dl.localhost:8080", "http"},
+		{"127.0.0.1", "http"},
+		{"127.0.0.1:8080", "http"},
+		{"pazer.build", "https"},
+		{"dl.pazer.build", "https"},
+		{"buildhost.example.com:8443", "https"},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Host = tc.host
+		assert.Equalf(t, tc.want, RequestScheme(req), "host=%q", tc.host)
+	}
+}
+
+func TestRequestBaseURL_PreservesHostAndPort(t *testing.T) {
+	cases := []struct {
+		host string
+		want string
+	}{
+		// Production: no port on the Host header -> clean https URL.
+		{"pazer.build", "https://pazer.build"},
+		{"dl.pazer.build", "https://dl.pazer.build"},
+		// Local/dev and direct access: the port is part of how the client
+		// reached us and must survive into self-referential links.
+		{"localhost:8080", "http://localhost:8080"},
+		{"127.0.0.1:54321", "http://127.0.0.1:54321"},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Host = tc.host
+		assert.Equalf(t, tc.want, RequestBaseURL(req), "host=%q", tc.host)
+	}
+}
+
+// TestServicePathRedirect covers the automatic main-domain -> subdomain bounce
+// that every registered service gets, so the path-style URLs documented in
+// /llms.txt (npm registry, apt repo, dl/static, ...) resolve without the caller
+// addressing the subdomain. Registering any service wires it up via svcRouter.
+func TestServicePathRedirect(t *testing.T) {
+	ServiceHandleRaw("widgets", "/{path...}", func(http.ResponseWriter, *http.Request) {})
+
+	cases := []struct {
+		name, target, wantLoc string
+	}{
+		{"bare service", "https://pazer.build/widgets", "https://widgets.pazer.build"},
+		{"nested path", "https://pazer.build/widgets/a/b/c", "https://widgets.pazer.build/a/b/c"},
+		{"encoded slash preserved", "https://pazer.build/widgets/x%2fy", "https://widgets.pazer.build/x%2fy"},
+		{"query preserved", "https://pazer.build/widgets/q?a=1&b=2", "https://widgets.pazer.build/q?a=1&b=2"},
+		{"loopback http with port", "http://localhost:8080/widgets/z", "http://widgets.localhost:8080/z"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tc.target, nil)
+			rec := httptest.NewRecorder()
+			ServeHTTP(rec, req)
+			require.Equal(t, http.StatusMovedPermanently, rec.Code, "body: %s", rec.Body.String())
+			assert.Equal(t, tc.wantLoc, rec.Header().Get("Location"))
+		})
+	}
+}
