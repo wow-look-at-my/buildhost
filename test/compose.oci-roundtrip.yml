@@ -1,0 +1,8 @@
+# The round-trip suite gets its own published port, so it never contends with
+# the container-healthcheck job's 8080 on a shared host.
+services:
+  buildhost:
+    environment:
+      - BUILDHOST_BASE_URL=http://localhost:47823
+    ports: !override
+      - "47823:8080"
