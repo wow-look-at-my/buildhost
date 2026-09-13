@@ -33,23 +33,12 @@ type Generator struct {
 	repackagers map[Format]Repackager
 }
 
-// Option configures a Generator.
-type Option func(*OCI)
-
-// WithShellCacheDir roots the shell layer cache for APE images at dir, which
-func WithShellCacheDir(dir string) Option {
-	return func(o *OCI) { o.Shell = NewShellCache(dir) }
-}
-
-func NewGenerator(store storage.Storage, database *db.DB, tmpDir string, opts ...Option) *Generator {
+func NewGenerator(store storage.Storage, database *db.DB, tmpDir string) *Generator {
 	m := make(map[Format]Repackager, len(registry)+1)
 	for f, rp := range registry {
 		m[f] = rp
 	}
 	oci := &OCI{Store: store, DB: database}
-	for _, opt := range opts {
-		opt(oci)
-	}
 	m[oci.Format()] = oci
 	return &Generator{store: store, tmpDir: tmpDir, repackagers: m}
 }
@@ -178,4 +167,11 @@ func OpenArtifactStream(ctx context.Context, store storage.Storage, artifact db.
 func (g *Generator) Supports(format Format) bool {
 	_, ok := g.repackagers[format]
 	return ok
+}
+
+// Applicable reports whether artifact renders into format at all, which
+// separates "not mine" from "failed".
+func (g *Generator) Applicable(format Format, artifact db.Artifact) bool {
+	rp, ok := g.repackagers[format]
+	return ok && rp.Applicable(artifact)
 }

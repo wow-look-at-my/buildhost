@@ -111,5 +111,5 @@ func (o *Orchestrator) PublishRelease(ctx context.Context, _ db.Project, release
 	return o.DB.PublishRelease(ctx, release.ID)
 }
 
-// TransformVersion identifies the byte-level transformation buildhost applies
-const TransformVersion = "strip-native-1"
+// TransformVersion tags every cached digest. Skip the bump and a stale digest is served forever.
+const TransformVersion = "image-staged-elf-1"

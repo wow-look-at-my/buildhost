@@ -39,9 +39,11 @@ shared:
 				# killing that shell alone orphans the server on its port.
 				setsid $RUN serve > "$WORK/server.log" 2>&1 &
 				echo "$!" > "$WORK/server.pid"
-				for _ in $(seq 30); do
+				# A hook gets 30s in total, and this loop is per attempt, so a
+				# one-second poll spends the whole budget on the first one.
+				for _ in $(seq 50); do
 					if curl -fsS "$BASE/healthz" >/dev/null 2>&1; then started=yes; break; fi
-					sleep 1
+					sleep 0.2
 				done
 				if [ -n "$started" ]; then break; fi
 				kill -- "-$(cat "$WORK/server.pid")" 2>/dev/null || true

@@ -27,9 +27,8 @@ func renderRoutes() string {
 	return b.String()
 }
 
-// routesAtStartup is the table as it stands before any test runs. ListRoutes
-// renders configured domains into it once auth.Init has run, and a test in this
-// package calls Init, so the golden cannot be rendered from inside a test.
+// routesAtStartup is the table before any test runs. A test here calls
+// auth.Init, which changes what ListRoutes renders.
 var routesAtStartup string
 
 func TestMain(m *testing.M) {
@@ -38,10 +37,8 @@ func TestMain(m *testing.M) {
 }
 
 // TestRouteTableMatchesGolden fails when the route set drifts from
-// docs/routes.txt. The golden file is what makes a route change REVIEWABLE: this
-// repo has no central route table -- backends self-register from init() in their
-// own packages -- so without it, adding, removing or duplicating an endpoint
-// leaves nothing route-shaped in the diff for a reviewer to look at.
+// docs/routes.txt. Backends self-register from init() in their own packages, so
+// the golden is what puts a route change in the diff for a reviewer.
 //
 // The table is rendered by the program, never parsed out of source, so it cannot
 func TestRouteTableMatchesGolden(t *testing.T) {

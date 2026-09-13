@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/wow-look-at-my/buildhost/internal/exeformat"
 )
 
 func (d *DB) CreateArtifact(ctx context.Context, a *Artifact) error {
@@ -174,6 +176,32 @@ func (d *DB) GetPlatformArtifact(ctx context.Context, releaseID int64, os, arch 
 	}
 	pa := newPlatformArtifact(*a, Platform{OS: OS(os), Arch: Arch(arch)})
 	return &pa, nil
+}
+
+// PortableArtifact returns the release's artifact that runs anywhere, which is
+// what a caller naming no platform is asking for.
+//
+// ErrNotFound means the release has no such artifact, or carries several. The
+// caller must then say which platform it wants, because nothing here can.
+func (d *DB) PortableArtifact(ctx context.Context, releaseID int64) (*Artifact, error) {
+	arts, err := d.ListArtifacts(ctx, releaseID)
+	if err != nil {
+		return nil, err
+	}
+	var found *Artifact
+	for i, a := range arts {
+		if a.ExeFormat != string(exeformat.APE) {
+			continue
+		}
+		if found != nil {
+			return nil, ErrNotFound
+		}
+		found = &arts[i]
+	}
+	if found == nil {
+		return nil, ErrNotFound
+	}
+	return found, nil
 }
 
 // CanonicalPlatform maps a requested (os, arch) to the canonical slot of the

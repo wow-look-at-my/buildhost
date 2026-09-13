@@ -50,6 +50,18 @@ It then asserts that the download comes back smaller than the upload. The downlo
 
 A unit test can never catch the defect this guards. The runner has binutils and the container does not. That is precisely why stripping was broken in production while CI stayed green.
 
+## oci-roundtrip-e2e
+
+`test/dats/oci-roundtrip.dats` (CI job `oci-roundtrip-e2e`) is the only place a real docker daemon talks to the **shipped image** as a registry, in both directions. Every other OCI check drives handlers through httptest, or runs the binary on the host.
+
+It logs docker in, pushes a `FROM scratch` image built around a static marker binary, and asserts the API reports the push as a `kind=docker` release. It removes the local copy, pulls it back and runs it. Then it publishes buildhost's own APE through `artifacts/ape?platforms=...`, covering several platforms, and pulls the image buildhost SYNTHESIZES for it. Nobody uploaded that image.
+
+The assertions on the synthesized side are the reported defects. The index must carry every linux platform the APE covers, and no darwin entry, because the canonical slot once went missing from it. The pulled image must RUN. It must also run with `/tmp` mounted noexec, because the APE trampoline stages into a hardcoded `/tmp` path that no variable moves.
+
+It uses its own published port, so it never contends with `container-healthcheck` on a shared host. The workflow maps the OCI host in `/etc/hosts`, marks it insecure and turns on the containerd image store, which is what reads buildhost's zstd layers.
+
+The suite refuses to run when an APE binfmt handler is registered. The kernel then runs any APE through a shell. An image whose binary was never staged therefore still starts. The suite then stops being able to fail.
+
 ## The preview dashboard's links
 
 `test/dats/admin-demo-links.dats` is a step in `sites-cors-e2e`. It serves the built `internal/admin/static` under a path prefix, which is what puts the SPA in demo mode. It then walks every `#/` link the SPA renders, breadth-first, from the dashboard outward. A page must draw a heading that is not the error page.
@@ -58,7 +70,13 @@ It exists because the demo dataset linked to a page it had no fixture for. The m
 
 ## apt-install-e2e
 
-`test/dats/apt-install.dats` (CI job `apt-install-e2e`) covers a third case beyond the plain and slash-namespaced packages: an **APE-shaped artifact** (no shebang, not an ELF, and it writes to `$0` before printing its marker). The generated package must install the binary under `/usr/lib`, with a `/bin/sh` launcher on `$PATH`. The suite then runs it **as the non-root CI user**, which is the exact case that failed. It asserts the marker output and a writable per-user copy. The suite is verified to go red without the deb fix.
+`test/dats/apt-install.dats` (CI job `apt-install-e2e`) covers a third case beyond the plain and slash-namespaced packages: an **APE-shaped artifact** (no shebang, not an ELF, and it writes to `$0` before printing its marker). The generated package must install the binary under `/usr/lib`, with a `/bin/sh` launcher on `$PATH`. The suite then runs it **as a non-root user**, which is the exact case that failed. It asserts the marker output and a writable per-user copy. The suite is verified to go red without the deb fix.
+
+The apt client is a container, built from `test/dats/aptbox.Dockerfile` and started by the workflow in their own untimed steps. The suite installed onto the runner before this. It therefore inherited that host's apt state, and its setup hook paid for the base packages. The image bakes curl, gnupg, systemd and the non-root `aptuser`.
+
+The container runs on the default bridge. `host-gateway` points the `apt.localhost` and `static.localhost` entries in its hosts file at the runner. Apt reads that file and needs nothing else. Curl does not read it. Curl pins a `*.localhost` name to loopback, because that name is reserved for it. The key fetch therefore passes `--resolve`, the documented override. The suite reads the address out of the container rather than assuming one.
+
+The scheme is why these names stay under `.localhost`. `auth.RequestScheme` answers http for a loopback name. It answers https for every other name. Any other domain therefore makes the generated package URL https, and apt then fails to connect.
 
 ## upload-artifact-action-e2e
 

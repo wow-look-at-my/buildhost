@@ -40,9 +40,11 @@ shared:
 			setsid $RUN serve > "$WORK/server.log" 2>&1 &
 			echo "$!" > "$WORK/server.pid"
 			started=""
+			# A hook gets 30s in total, so a one-second poll spends the whole
+			# budget waiting and reports a timeout instead of the server log.
 			for _ in $(seq 50); do
 				if curl -fsS "$BASE/healthz" >/dev/null 2>&1; then started=yes; break; fi
-				sleep 1
+				sleep 0.2
 			done
 			test -n "$started" || { echo "server did not become healthy:" >&2; cat "$WORK/server.log" >&2; exit 1; }
 			auth() { curl -fsS -H "Authorization: Bearer $TOKEN" "$@"; }
@@ -77,7 +79,7 @@ tests:
 		grep -q '"Entrypoint":\["/netcheck"\]' config.json || { echo "entrypoint is not /netcheck" >&2; exit 1; }
 		grep -q 'SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt' config.json || {
 			echo "SSL_CERT_FILE env missing" >&2; exit 1; }
-		# The essentials base layer plus the per-binary layer, in order.
+		# The shared base layer plus the per-binary layer, in order.
 		echo "diff_ids=$(jq '.rootfs.diff_ids | length' config.json)"
 	  outputs:
 		stdout:
@@ -89,7 +91,9 @@ tests:
 		. {shared.env}
 		test -s "$WORK/rootfs/etc/ssl/certs/ca-certificates.crt" || { echo "CA bundle missing or empty" >&2; exit 1; }
 		grep -q '^nonroot:x:65532:65532:' "$WORK/rootfs/etc/passwd" || { echo "nonroot user missing" >&2; exit 1; }
-		test -x "$WORK/rootfs/netcheck" || { echo "entrypoint binary missing" >&2; exit 1; }
+		test -x "$WORK/rootfs/netcheck" || { echo "entrypoint launcher missing" >&2; exit 1; }
+		test -x "$WORK/rootfs/usr/local/lib/netcheck/netcheck" || { echo "binary missing" >&2; exit 1; }
+		test -x "$WORK/rootfs/bin/sh" || { echo "the launcher has no interpreter" >&2; exit 1; }
 		echo "rootfs-complete"
 	  outputs:
 		stdout:
@@ -101,7 +105,7 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		SSL_CERT_FILE="$WORK/rootfs/etc/ssl/certs/ca-certificates.crt" "$WORK/rootfs/netcheck"
+		SSL_CERT_FILE="$WORK/rootfs/etc/ssl/certs/ca-certificates.crt" "$WORK/rootfs/usr/local/lib/netcheck/netcheck"
 		echo "https-ok"
 	  outputs:
 		stdout:

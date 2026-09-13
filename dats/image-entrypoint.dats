@@ -44,11 +44,21 @@ tests:
 		stdout:
 			- "no-shell-prefix"
 
-	- desc: what lands on PATH is the launcher script, and the APE lands elsewhere
-	  cmd: grep -E '^COPY --chmod=755 (build/buildhost|scripts/image-launcher.sh) ' Dockerfile
+	# The binary lands from the staging stage, never from build/ directly. A
+	# COPY of the APE itself puts the trampoline back in the container, and the
+	# trampoline unpacks under a hardcoded /tmp that a deployment mounts noexec.
+	- desc: what lands on PATH is the launcher script, and the staged ELF lands elsewhere
+	  cmd: |
+		set -eu
+		grep -E '^COPY --from=staged --chmod=755 /buildhost /usr/local/lib/buildhost/buildhost$' Dockerfile
+		grep -E '^COPY --chmod=755 scripts/image-launcher.sh /usr/local/bin/buildhost$' Dockerfile
+		if grep -qE '^COPY .*build/buildhost /usr/local/lib' Dockerfile; then
+			echo 'the image copies the APE straight in, so the trampoline runs and needs /tmp' >&2
+			exit 1
+		fi
 	  outputs:
 		stdout:
-			- "COPY --chmod=755 build/buildhost /usr/local/lib/buildhost/buildhost"
+			- "COPY --from=staged --chmod=755 /buildhost /usr/local/lib/buildhost/buildhost"
 			- "COPY --chmod=755 scripts/image-launcher.sh /usr/local/bin/buildhost"
 
 	- desc: the launcher is a shebang script, which is what the kernel can exec
@@ -57,11 +67,41 @@ tests:
 		stdout:
 			- "#!/bin/sh"
 
-	- desc: the launcher starts the APE at the path the Dockerfile puts it
-	  cmd: grep -E '^exec ' scripts/image-launcher.sh
+	# Both halves are read out and compared, rather than one literal line pinned
+	# here. The property that matters is that the two agree.
+	- desc: the launcher starts the binary at the path the Dockerfile puts it
+	  cmd: |
+		set -eu
+		copied="$(grep -oE '/usr/local/lib/[a-z-]+/[a-z-]+' Dockerfile | head -n1)"
+		launched="$(grep -oE '^real=\S+' scripts/image-launcher.sh | cut -d= -f2)"
+		test -n "$copied" || { echo 'the Dockerfile copies the APE nowhere under /usr/local/lib' >&2; exit 1; }
+		test -n "$launched" || { echo 'the launcher names no APE to start' >&2; exit 1; }
+		if [ "$copied" != "$launched" ]; then
+			echo "the Dockerfile puts the APE at $copied and the launcher starts $launched" >&2
+			exit 1
+		fi
+		grep -qE '^\s*exec "\$real" "\$@"$' scripts/image-launcher.sh || {
+			echo 'the launcher must exec the staged ELF, not hand it to a shell' >&2; exit 1; }
+		echo "agree: $copied"
 	  outputs:
 		stdout:
-			- 'exec /bin/sh /usr/local/lib/buildhost/buildhost "$@"'
+			- "agree: /usr/local/lib/buildhost/buildhost"
+
+	# Staging at build time is what takes /tmp out of the picture. A Dockerfile
+	# that copies the APE straight in puts the trampoline back, and the
+	# trampoline unpacks under a hardcoded /tmp that a deployment mounts noexec.
+	- desc: the image stages the binary rather than shipping the APE
+	  cmd: |
+		set -eu
+		grep -qE '^RUN sh /in/apestage /in/buildhost /buildhost "\$TARGETARCH"$' Dockerfile || {
+			echo 'the image never stages the APE, so the trampoline runs in the container' >&2; exit 1; }
+		if grep -qE '^COPY .*build/buildhost /usr/local/lib' Dockerfile; then
+			echo 'the image copies the APE straight in, so it needs an exec-able /tmp' >&2; exit 1
+		fi
+		echo stages-the-binary
+	  outputs:
+		stdout:
+			- "stages-the-binary"
 
 	# The shell must come from an image that ships a STATIC busybox. Alpine's is
 	# a PIE against /lib/ld-musl-x86_64.so.1, and the base image has no /lib.
