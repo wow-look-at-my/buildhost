@@ -314,6 +314,42 @@ export interface Pages {
     storage(): void;
     retention(): void;
     goproxy(): void;
+    duplicates(): void;
+}
+
+// --- Projects split by a GitHub rename (admin GET /api/duplicates) ---
+
+export interface DuplicateEntry {
+    name: string;
+    root: string;
+    repo: string;
+    releases: number;
+}
+
+export interface DuplicateGroup {
+    repo_id: string;
+    repo: string;
+    projects: DuplicateEntry[];
+}
+
+export interface DuplicatesData {
+    groups: DuplicateGroup[];
+}
+
+export interface MergePlan {
+    from: string;
+    into: string;
+    releases: { id: number; old_version: string; new_version: string }[];
+    aliases: string[];
+    sites: number;
+    oci_tags: number;
+    oci_blobs: number;
+    tokens: number;
+    policies: number;
+    conflicts: string[];
+    applicable: boolean;
+    applied: boolean;
+    snapshot?: string;
 }
 
 // --- Signed temporary download link (admin POST .../download-links) ---

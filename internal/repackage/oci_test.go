@@ -41,28 +41,26 @@ func readLayerFiles(t *testing.T, compressed []byte) map[string][]byte {
 	}
 }
 
-// readLayerDirModes returns the permission bits of every directory in a layer.
-func readLayerDirModes(t *testing.T, compressed []byte) map[string]int64 {
+// readLayerHeaders decompresses a layer and indexes its entries by name.
+func readLayerHeaders(t *testing.T, compressed []byte) map[string]*tar.Header {
 	t.Helper()
 	zr, err := zstd.NewReader(bytes.NewReader(compressed))
 	require.NoError(t, err)
 	defer zr.Close()
 	tr := tar.NewReader(zr)
-	modes := map[string]int64{}
+	entries := map[string]*tar.Header{}
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
-			return modes
+			return entries
 		}
 		require.NoError(t, err)
-		if hdr.Typeflag == tar.TypeDir {
-			modes[hdr.Name] = hdr.Mode
-		}
+		entries[hdr.Name] = hdr
 	}
 }
 
 // TestOCIRepackageEssentials verifies the synthesized image carries the shared
-// essentials base layer (CA certs + minimal rootfs) in addition to the binary layer:
+// base layer (CA certs, minimal rootfs and shell) plus the binary layer.
 func TestOCIRepackageEssentials(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)
@@ -129,7 +127,7 @@ func TestOCIRepackageEssentials(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(cfgBytes, &cfg))
 	require.Len(t, cfg.Rootfs.DiffIDs, 2)
-	_, baseDiffID, err := essentialsLayer()
+	_, baseDiffID, err := imageBase(db.ArchAMD64)
 	require.NoError(t, err)
 	assert.Equal(t, "sha256:"+baseDiffID, cfg.Rootfs.DiffIDs[0])
 	assert.Equal(t, []string{"/testapp"}, cfg.Config.Entrypoint)
@@ -138,13 +136,13 @@ func TestOCIRepackageEssentials(t *testing.T) {
 	assert.Empty(t, cfg.Config.User)
 }
 
-// apeBinary opens with the APE prologue; the rest is never executed.
-var apeBinary = []byte("MZqFpD='\n#!/bin/sh\nexit 0\n'\n")
+// apeBinary opens with the prologue and headers a real trampoline carries.
+var apeBinary = testAPE(machineAMD64, machineARM64)
 
-// An APE image carries a shell layer between the essentials and the binary
-// and enters through /bin/sh, because the kernel cannot exec the APE's
-// shell-script header on its own.
-func TestOCIRepackageAPEGetsAShell(t *testing.T) {
+// An APE image is the base layer plus the binary, the binary is the ELF the
+// trampoline would have staged, and every entrypoint spelling reaches a
+// launcher the base layer's shell can run.
+func TestOCIRepackageAPEImageLayout(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)
 	store := openTestStore(t)
@@ -162,7 +160,7 @@ func TestOCIRepackageAPEGetsAShell(t *testing.T) {
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))
 
-	rp := &OCI{Store: store, DB: d, Shell: newFakeShellRegistry(t).cache(t, t.TempDir())}
+	rp := &OCI{Store: store, DB: d}
 	input := makeInput()
 	input.Project = *proj
 	input.Artifact = *a
@@ -180,17 +178,17 @@ func TestOCIRepackageAPEGetsAShell(t *testing.T) {
 		} `json:"layers"`
 	}
 	require.NoError(t, json.Unmarshal(manifestData, &man))
-	require.Len(t, man.Layers, 3)
-	shellKey, _, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "oci-shell-layer")
+	require.Len(t, man.Layers, 2)
+	baseKey, _, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, "oci-base-layer")
 	require.NoError(t, err)
-	assert.Equal(t, "sha256:"+shellKey, man.Layers[1].Digest)
+	assert.Equal(t, "sha256:"+baseKey, man.Layers[0].Digest)
 
-	rc, _, err := store.Get(ctx, shellKey)
+	rc, _, err := store.Get(ctx, baseKey)
 	require.NoError(t, err)
-	shellData, err := io.ReadAll(rc)
+	baseData, err := io.ReadAll(rc)
 	rc.Close()
 	require.NoError(t, err)
-	entries := readShellLayer(t, shellData)
+	entries := readLayerHeaders(t, baseData)
 	require.Contains(t, entries, "bin/sh")
 	assert.Equal(t, "busybox", entries["bin/sh"].Linkname)
 
@@ -212,8 +210,8 @@ func TestOCIRepackageAPEGetsAShell(t *testing.T) {
 	require.NoError(t, json.Unmarshal(cfgBytes, &cfg))
 	// A rolling updater clones this string onto the replacement container.
 	assert.Equal(t, []string{"/apeapp"}, cfg.Config.Entrypoint)
-	require.Len(t, cfg.Rootfs.DiffIDs, 3)
-	_, baseDiffID, err := essentialsLayer()
+	require.Len(t, cfg.Rootfs.DiffIDs, 2)
+	_, baseDiffID, err := imageBase(db.ArchAMD64)
 	require.NoError(t, err)
 	assert.Equal(t, "sha256:"+baseDiffID, cfg.Rootfs.DiffIDs[0])
 
@@ -226,67 +224,80 @@ func TestOCIRepackageAPEGetsAShell(t *testing.T) {
 	require.NoError(t, err)
 	files := readLayerFiles(t, binData)
 
-	// The APE lives out of the way, and each spelling reaches a launcher.
-	assert.Equal(t, apeBinary, files["usr/local/lib/apeapp/apeapp"])
-	launcher := string(apeImageLauncher("apeapp"))
+	// The binary lives out of the way, and each spelling reaches a launcher.
+	binary := files["usr/local/lib/apeapp/apeapp"]
+	launcher := string(imageLauncher("apeapp"))
 	assert.Equal(t, launcher, string(files["apeapp"]))
 	assert.Equal(t, launcher, string(files["usr/local/bin/apeapp"]))
 	assert.True(t, strings.HasPrefix(launcher, "#!/bin/sh\n"), "a launcher the kernel can exec starts with a shebang")
 	assert.Contains(t, launcher, "/usr/local/lib/apeapp/apeapp")
-	// A deployment mounts a noexec tmpfs over /tmp, where the unpack writes
-	// fine and the exec dies.
-	assert.Contains(t, launcher, "${TMPDIR:=/var/lib/ape}",
-		"the launcher must point the unpack at a directory nothing mounts over")
-	assert.Contains(t, launcher, "export TMPDIR", "the APE reads TMPDIR from the environment")
+
+	// The staged ELF, not the APE, whose trampoline needs an exec-able /tmp.
+	require.Len(t, binary, len(apeBinary), "staging must not change the length")
+	assert.Equal(t, testELFHeader(machineAMD64), binary[:apeELFHeaderSize],
+		"the kernel loads this file directly, so it has to start with an ELF header")
+	assert.Equal(t, apeBinary[apeELFHeaderSize:], binary[apeELFHeaderSize:])
+	assert.NotContains(t, launcher, "TMPDIR", "nothing is staged at run time, so there is no TMPDIR to set")
 }
 
-// The launcher names /var/lib/ape, so the image has to ship it, writable.
-func TestEssentialsShipsTheAPEUnpackDir(t *testing.T) {
+// Every image gets the same layout, whatever kind of binary it was built from:
+// the binary out of the way under /usr/local/lib, and a launcher at each
+// spelling. A layout that varies is a layout only some images are tested on.
+func TestOCIWriteLayerLayoutIsTheSameForEveryBinary(t *testing.T) {
 	t.Serial()
-	e, err := buildEssentials()
-	require.NoError(t, err)
+	for name, body := range map[string][]byte{
+		"a plain ELF": []byte("\x7fELF not an APE"),
+		"an APE":      apeBinary,
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := openTestStore(t)
+			key, size, diffID, err := ociWriteLayer(context.Background(), store, bytes.NewReader(body), int64(len(body)), "plainapp")
+			require.NoError(t, err)
+			require.NotEmpty(t, diffID)
+			require.NotZero(t, size)
 
-	modes := readLayerDirModes(t, e.compressed)
-	mode, ok := modes["var/lib/ape/"]
-	require.True(t, ok, "the essentials layer must create the directory the launcher unpacks into")
-	assert.Equal(t, int64(0o1777), mode, "any uid the image runs as has to be able to write there")
+			rc, _, err := store.Get(context.Background(), key)
+			require.NoError(t, err)
+			data, err := io.ReadAll(rc)
+			rc.Close()
+			require.NoError(t, err)
+
+			files := readLayerFiles(t, data)
+			launcher := imageLauncher("plainapp")
+			assert.Equal(t, map[string][]byte{
+				"usr/local/lib/plainapp/plainapp": body,
+				"plainapp":                        launcher,
+				"usr/local/bin/plainapp":          launcher,
+			}, files)
+		})
+	}
 }
 
-// A plain ELF keeps the single-file layout: the binary at /<name>, no launcher.
-func TestOCIRepackagePlainBinaryLayout(t *testing.T) {
+// A generator that skipped an architecture ships a binary that refuses to
+// synthesize for it, and nothing else reports that until a pull does.
+func TestEveryDeclaredArchHasABakedShell(t *testing.T) {
 	t.Serial()
-	store := openTestStore(t)
-	body := []byte("\x7fELF not an APE")
-	key, size, diffID, err := ociWriteLayer(context.Background(), store, bytes.NewReader(body), int64(len(body)), "plainapp", false)
-	require.NoError(t, err)
-	require.NotEmpty(t, diffID)
-	require.NotZero(t, size)
-
-	rc, _, err := store.Get(context.Background(), key)
-	require.NoError(t, err)
-	data, err := io.ReadAll(rc)
-	rc.Close()
-	require.NoError(t, err)
-	files := readLayerFiles(t, data)
-	assert.Equal(t, map[string][]byte{"plainapp": body}, files)
+	for _, arch := range shellArches {
+		layer, diffID, err := ShellLayer(arch)
+		require.NoErrorf(t, err, "no shell baked in for %s", arch)
+		assert.NotEmpty(t, layer)
+		assert.NotEmpty(t, diffID)
+		assert.Contains(t, readLayerHeaders(t, layer), "bin/sh", "%s has no shell for the launcher", arch)
+	}
 }
 
-// Without a shell cache an APE image is refused outright: an image that
-// cannot start must not be served as if it could.
-func TestOCIRepackageAPEWithoutShellCacheFails(t *testing.T) {
+// The shell is baked in per architecture. An unbaked arch must be refused,
+// rather than served an image whose launcher has no shell.
+func TestShellLayerRefusesAnUnbakedArch(t *testing.T) {
 	t.Serial()
-	store := openTestStore(t)
-	rp := &OCI{Store: store}
-	input := makeInput()
-	input.Reader = bytes.NewReader(apeBinary)
-	input.Size = int64(len(apeBinary))
-
-	_, err := rp.Repackage(context.Background(), input)
+	_, _, err := ShellLayer(db.Arch386)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "shell")
+	assert.Contains(t, err.Error(), "no shell is baked in")
 }
 
-func TestOCIRepackageNonAPENeedsNoShell(t *testing.T) {
+// The shell rides the base layer, so an image is the base plus the binary and
+// nothing else. Storage deduplicates the base across every project on the arch.
+func TestOCIRepackageLayersAreBaseAndBinary(t *testing.T) {
 	t.Serial()
 	store := openTestStore(t)
 	rp := &OCI{Store: store}
@@ -303,6 +314,19 @@ func TestOCIRepackageNonAPENeedsNoShell(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(manifestData, &man))
 	assert.Len(t, man.Layers, 2)
+}
+
+// The base layer has to carry a shell, or the launcher at every entrypoint
+// spelling is a script with no interpreter.
+func TestBaseLayerCarriesTheShell(t *testing.T) {
+	t.Serial()
+	base, diffID, err := imageBase(db.ArchAMD64)
+	require.NoError(t, err)
+	require.NotEmpty(t, diffID)
+
+	entries := readLayerHeaders(t, base)
+	assert.Contains(t, entries, "bin/sh", "the launcher's interpreter")
+	assert.Contains(t, entries, "etc/ssl/certs/ca-certificates.crt", "the essentials ride the same layer")
 }
 
 func TestEssentialsLayerContents(t *testing.T) {

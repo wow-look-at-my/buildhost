@@ -58,6 +58,31 @@ tests:
 		stdout:
 			- "buildhost"
 
+	# A deployment mounts a noexec tmpfs over /tmp. The APE trampoline stages its
+	# copy under a hardcoded /tmp path that reads no TMPDIR, so an image shipping
+	# the APE itself died here at exit 126, against a path nobody chose. The
+	# launcher announced a directory it had picked and changed nothing.
+	- desc: the image starts with /tmp mounted noexec
+	  cmd: |
+		set -eu
+		. {shared.env}
+		docker run --rm --tmpfs /tmp:noexec,nosuid,nodev "$IMAGE" version
+	  outputs:
+		stdout:
+			- "buildhost"
+
+	# Nothing may unpack at run time, so the file the launcher execs is an ELF
+	# the kernel loads directly, not the APE prologue.
+	- desc: the binary behind the launcher is a real ELF
+	  cmd: |
+		set -eu
+		. {shared.env}
+		docker run --rm --entrypoint /bin/sh "$IMAGE" -c \
+			'head -c 4 /usr/local/lib/buildhost/buildhost | od -An -c | tr -d " "'
+	  outputs:
+		stdout:
+			- "177ELF"
+
 	- desc: a container that recorded the absolute launcher path still starts the server
 	  cmd: |
 		set -eu

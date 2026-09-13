@@ -1,11 +1,15 @@
 # An image buildhost synthesizes from an APE must RUN.
 #
 # The kernel cannot exec an APE: the file's header is a shell script, and no
-# binfmt handler is registered. So the synthesized image gets a third layer
-# carrying busybox, keeps the APE under /usr/local/lib, and puts a shebang
-# launcher at the entrypoint path. Get any part of that wrong and every
-# container from the image dies at exec, reporting "no such file or directory"
-# against an entrypoint that is present.
+# binfmt handler is registered. So the synthesizer writes the ELF the APE's own
+# trampoline would have staged, keeps it under /usr/local/lib, and puts a
+# shebang launcher at the entrypoint path. The base layer carries the shell that
+# launcher needs. Get any part of that wrong and every container from the image
+# dies at exec, reporting "no such file or directory" against an entrypoint that
+# is present.
+#
+# The trampoline stages into a hardcoded /tmp that TMPDIR does not move, so an
+# image that shipped the APE itself dies on a noexec /tmp instead.
 #
 # The sibling suite synthesizes from a plain ELF, which exercises none of this.
 # The payload here is the repo's own fat APE, so the test runs a real one.
@@ -85,7 +89,7 @@ tests:
 	# A bare APE path as the entrypoint is the defect: it is what a synthesis
 	# without the shell layer produces, and no container from such an image
 	# ever starts.
-	- desc: the entrypoint names a launcher, not the APE, over three layers
+	- desc: the entrypoint names a launcher, not the binary, over the two layers
 	  cmd: |
 		set -eu
 		. {shared.env}
@@ -96,15 +100,15 @@ tests:
 		echo "entrypoint=$(jq -c '.config.Entrypoint' "$WORK/config.json")"
 	  outputs:
 		stdout:
-			- "diff_ids=3"
+			- "diff_ids=2"
 			- 'entrypoint=["/ape-image"]'
 
-	- desc: the shell layer lands a real shell, and it needs no ELF interpreter
+	- desc: the base layer lands a real shell, and it needs no ELF interpreter
 	  cmd: |
 		set -eu
 		. {shared.env}
 		test -x "$WORK/rootfs/bin/sh" || { echo "no /bin/sh in the synthesized image" >&2; exit 1; }
-		test -x "$WORK/rootfs/usr/local/lib/$PROJECT/$PROJECT" || { echo "the APE is not under /usr/local/lib" >&2; exit 1; }
+		test -x "$WORK/rootfs/usr/local/lib/$PROJECT/$PROJECT" || { echo "the binary is not under /usr/local/lib" >&2; exit 1; }
 		file -b "$WORK/rootfs/bin/busybox"
 		if file -b "$WORK/rootfs/bin/busybox" | grep -q 'interpreter '; then
 			echo 'the shell layer ships a dynamically linked busybox, and the image has no /lib for its interpreter' >&2
@@ -114,6 +118,35 @@ tests:
 	  outputs:
 		stdout:
 			- "shell-static"
+
+	# The image must carry the staged ELF, not the APE. An APE here starts only
+	# where /tmp is writable and executable, which a deployment's /tmp is not.
+	- desc: the shipped binary is an ELF the kernel loads with no staging
+	  cmd: |
+		set -eu
+		. {shared.env}
+		bin="$WORK/rootfs/usr/local/lib/$PROJECT/$PROJECT"
+		if head -c 8 "$bin" | grep -q "MZqFpD='"; then
+			echo 'the image ships the APE itself, so every start stages a copy under a hardcoded /tmp' >&2
+			exit 1
+		fi
+		head -c 4 "$bin" | grep -q 'ELF' || { echo 'the shipped binary is neither an APE nor an ELF' >&2; exit 1; }
+		echo "staged-elf"
+	  outputs:
+		stdout:
+			- "staged-elf"
+
+	# The failure this whole layout exists for: a noexec /tmp is what a
+	# deployment gives a container, and the APE trampoline stages there.
+	- desc: the container starts with /tmp mounted noexec
+	  cmd: |
+		set -eu
+		. {shared.env}
+		docker image inspect "$REF" >/dev/null 2>&1 || docker pull "$REF" >/dev/null
+		docker run --rm --tmpfs /tmp:noexec,nosuid,nodev "$REF" version | head -n1
+	  outputs:
+		stdout:
+			- "buildhost"
 
 	# The whole point: an image nobody ever started is what shipped the defect
 	# this suite exists for.

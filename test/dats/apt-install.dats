@@ -3,10 +3,13 @@
 # whose package must ship a launcher instead of a bare root-owned binary.
 #
 # Setup publishes and installs; the tests only ask questions about what landed.
-# It needs the real apt-get, gpg, sudo and port 80 -- buildhost derives sibling
-# service URLs without ports -- so a workflow runs this --no-sandbox.
+# The apt client is a container the workflow builds and starts (APTBOX), so the
+# runner's own apt state is never touched and there is nothing to undo. It runs
+# on the default bridge and reaches the server through host-gateway. The server
+# still needs port 80, because buildhost derives sibling service URLs without
+# ports, so a workflow runs this --no-sandbox.
 #
-# $BUILDHOST_BIN and $ARTIFACT_BIN come from the workflow.
+# $BUILDHOST_BIN, $ARTIFACT_BIN and $APTBOX come from the workflow.
 #
 # see docs/formats/apt.md, docs/project-names.md
 
@@ -20,6 +23,17 @@ shared:
 			KEYRING="/etc/apt/keyrings/buildhost-apt-e2e.gpg"
 			test -x "$BUILDHOST_BIN" || { echo "not executable: $BUILDHOST_BIN" >&2; exit 1; }
 			test -x "$ARTIFACT_BIN" || { echo "not executable: $ARTIFACT_BIN" >&2; exit 1; }
+			test -n "${APTBOX:-}" || { echo "APTBOX is unset: the workflow must start the apt container" >&2; exit 1; }
+			docker inspect "$APTBOX" >/dev/null 2>&1 \
+				|| { echo "the apt container $APTBOX is not running" >&2; exit 1; }
+			# box runs a command as root inside that container.
+			box() { docker exec "$APTBOX" "$@"; }
+			# apt resolves apt.localhost and static.localhost through the
+			# container's hosts file, but curl pins a *.localhost name to
+			# loopback under RFC 6761 and never consults it. --resolve is the
+			# documented override, and this is the address to give it.
+			GW="$(box getent hosts apt.localhost | awk '{print $1}')"
+			test -n "$GW" || { echo "apt.localhost does not resolve inside $APTBOX" >&2; exit 1; }
 			# An APE cannot be exec'd: its header is a shell script, and
 			# nothing here registers an APE binfmt handler.
 			if head -c 2 "$BUILDHOST_BIN" | grep -q MZ; then RUN="sh $BUILDHOST_BIN"; else RUN="$BUILDHOST_BIN"; fi
@@ -69,22 +83,20 @@ shared:
 				echo "$version"
 			}
 
-			# install <project> <package>: add the project's repository and
-			# install the package apt derives from it.
+			# install <project> <package>: add the project's repository inside
+			# the container and install the package apt derives from it. The
+			# update refreshes THIS list only, so three installs do not cost
+			# three round trips to the Ubuntu archive.
 			install() {
 				apt_base="http://apt.localhost/$1"
-				sudo install -d -m 0755 /etc/apt/keyrings
-				curl -fsSL "$apt_base/key.asc" | gpg --batch --yes --dearmor | sudo tee "$KEYRING" >/dev/null
-				echo "deb [signed-by=$KEYRING] $apt_base stable main" \
-					| sudo tee "/etc/apt/sources.list.d/$2.list" >/dev/null
-				# Refresh THIS list only. A bare `apt-get update` re-fetches every
-				# configured source, so three installs cost three round trips to
-				# the Ubuntu archive to learn nothing this suite asks about.
-				sudo apt-get update \
-					-o Dir::Etc::sourcelist="sources.list.d/$2.list" \
-					-o Dir::Etc::sourceparts="-" \
-					-o APT::Get::List-Cleanup="0"
-				sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$2"
+				box sh -c "install -d -m 0755 /etc/apt/keyrings \
+					&& curl -fsSL --resolve 'apt.localhost:80:$GW' '$apt_base/key.asc' | gpg --batch --yes --dearmor > '$KEYRING' \
+					&& echo 'deb [signed-by=$KEYRING] $apt_base stable main' > '/etc/apt/sources.list.d/$2.list' \
+					&& apt-get update \
+						-o Dir::Etc::sourcelist='sources.list.d/$2.list' \
+						-o Dir::Etc::sourceparts='-' \
+						-o APT::Get::List-Cleanup='0' \
+					&& DEBIAN_FRONTEND=noninteractive apt-get install -y '$2'"
 			}
 
 			# An APE rewrites its own file the first time it runs, and dpkg
@@ -106,6 +118,7 @@ shared:
 			install buildhost-apt-e2e-ape buildhost-apt-e2e-ape
 			{
 				echo "WORK='$WORK'"
+				echo "APTBOX='$APTBOX'"
 				echo "V1=$V1"
 				echo "V2=$V2"
 				echo "V3=$V3"
@@ -115,11 +128,8 @@ shared:
 			set -eu
 			. "$1"
 			kill -- "-$(cat "$WORK/server.pid")" 2>/dev/null || true
-			for p in buildhost-apt-e2e buildhost-apt-e2e-tool buildhost-apt-e2e-ape; do
-				sudo apt-get remove -y "$p" >/dev/null 2>&1 || true
-				sudo rm -f "/etc/apt/sources.list.d/$p.list"
-			done
-			sudo rm -f /etc/apt/keyrings/buildhost-apt-e2e.gpg
+			# The container is the workflow's to remove. Nothing installed here
+			# touched the runner, so there is no apt state to undo.
 			true
 
 setup: env ENV_FILE={shared.env} sh {shared.start.sh}
@@ -130,8 +140,8 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		dpkg-query -W -f='${Status} ${Version}\n' buildhost-apt-e2e | grep -q "install ok installed $V1"
-		test -x /usr/bin/buildhost-apt-e2e
+		docker exec "$APTBOX" sh -c "dpkg-query -W -f='\${Status} \${Version}\n' buildhost-apt-e2e | grep -q 'install ok installed $V1'"
+		docker exec "$APTBOX" test -x /usr/bin/buildhost-apt-e2e
 		echo "plain-installed"
 	  outputs:
 		stdout:
@@ -143,12 +153,13 @@ tests:
 	- desc: create_service ships a user unit and enables it globally
 	  cmd: |
 		set -eu
+		. {shared.env}
 		unit=/usr/lib/systemd/user/buildhost-apt-e2e.service
-		test -f "$unit" || { echo "missing $unit" >&2; exit 1; }
-		grep -q '^ExecStart=/usr/bin/buildhost-apt-e2e$' "$unit"
-		grep -q '^Restart=on-failure$' "$unit"
-		grep -q '^WantedBy=graphical-session.target$' "$unit"
-		test -L /etc/systemd/user/graphical-session.target.wants/buildhost-apt-e2e.service \
+		docker exec "$APTBOX" test -f "$unit" || { echo "missing $unit" >&2; exit 1; }
+		docker exec "$APTBOX" grep -q '^ExecStart=/usr/bin/buildhost-apt-e2e$' "$unit"
+		docker exec "$APTBOX" grep -q '^Restart=on-failure$' "$unit"
+		docker exec "$APTBOX" grep -q '^WantedBy=graphical-session.target$' "$unit"
+		docker exec "$APTBOX" test -L /etc/systemd/user/graphical-session.target.wants/buildhost-apt-e2e.service \
 			|| { echo "postinst did not systemctl --global enable the unit" >&2; exit 1; }
 		echo "unit-enabled"
 	  outputs:
@@ -161,8 +172,8 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		dpkg-query -W -f='${Status} ${Version}\n' buildhost-apt-e2e-tool | grep -q "install ok installed $V2"
-		test -x /usr/bin/buildhost-apt-e2e-tool
+		docker exec "$APTBOX" sh -c "dpkg-query -W -f='\${Status} \${Version}\n' buildhost-apt-e2e-tool | grep -q 'install ok installed $V2'"
+		docker exec "$APTBOX" test -x /usr/bin/buildhost-apt-e2e-tool
 		echo "folded-installed"
 	  outputs:
 		stdout:
@@ -171,9 +182,10 @@ tests:
 	- desc: a project without create_service ships no unit and enables none
 	  cmd: |
 		set -eu
-		test ! -e /usr/lib/systemd/user/buildhost-apt-e2e-tool.service \
+		. {shared.env}
+		docker exec "$APTBOX" test ! -e /usr/lib/systemd/user/buildhost-apt-e2e-tool.service \
 			|| { echo "flag-off project shipped a unit" >&2; exit 1; }
-		test ! -e /etc/systemd/user/graphical-session.target.wants/buildhost-apt-e2e-tool.service \
+		docker exec "$APTBOX" test ! -e /etc/systemd/user/graphical-session.target.wants/buildhost-apt-e2e-tool.service \
 			|| { echo "flag-off project enabled a unit" >&2; exit 1; }
 		echo "no-unit"
 	  outputs:
@@ -186,24 +198,29 @@ tests:
 	- desc: an APE package installs under /usr/lib behind a launcher
 	  cmd: |
 		set -eu
-		test -f /usr/lib/buildhost-apt-e2e-ape/buildhost-apt-e2e-ape \
+		. {shared.env}
+		docker exec "$APTBOX" test -f /usr/lib/buildhost-apt-e2e-ape/buildhost-apt-e2e-ape \
 			|| { echo "the APE binary should install under /usr/lib" >&2; exit 1; }
-		head -n1 /usr/bin/buildhost-apt-e2e-ape | grep -q '^#!/bin/sh$' \
+		docker exec "$APTBOX" sh -c "head -n1 /usr/bin/buildhost-apt-e2e-ape | grep -q '^#!/bin/sh$'" \
 			|| { echo "/usr/bin/buildhost-apt-e2e-ape is not the generated launcher" >&2; exit 1; }
 		echo "launcher-installed"
 	  outputs:
 		stdout:
 			- "launcher-installed"
 
+	# aptuser is the image's non-root account: the user who cannot write
+	# /usr/bin, which is the case that was broken. Root cannot exercise it.
 	- desc: the apt-installed APE runs as a non-root user from a writable copy
 	  cmd: |
 		set -eu
 		. {shared.env}
-		test "$(id -u)" != "0" || { echo "expected a non-root user -- the case that was broken" >&2; exit 1; }
-		/usr/bin/buildhost-apt-e2e-ape
-		copy="${XDG_CACHE_HOME:-$HOME/.cache}/buildhost/buildhost-apt-e2e-ape/$V3/buildhost-apt-e2e-ape"
-		test -w "$copy" || { echo "expected a writable per-user copy at $copy" >&2; exit 1; }
-		echo "per-user-copy-ok"
+		docker exec -u aptuser -e HOME=/home/aptuser "$APTBOX" sh -c "
+			set -eu
+			test \"\$(id -u)\" != '0' || { echo 'expected a non-root user -- the case that was broken' >&2; exit 1; }
+			/usr/bin/buildhost-apt-e2e-ape
+			copy=\"\${XDG_CACHE_HOME:-\$HOME/.cache}/buildhost/buildhost-apt-e2e-ape/$V3/buildhost-apt-e2e-ape\"
+			test -w \"\$copy\" || { echo \"expected a writable per-user copy at \$copy\" >&2; exit 1; }
+			echo per-user-copy-ok"
 	  outputs:
 		stdout:
 			- "buildhost-apt-ape-ok"
