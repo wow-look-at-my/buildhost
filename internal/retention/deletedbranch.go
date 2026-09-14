@@ -11,17 +11,17 @@ import (
 // planDeletedBranch selects the releases the deleted-branch rule reclaims: a
 // published release is eligible when its age is past Config.DeletedBranchAge
 // AND the branch it was built from no longer exists on the project's origin
-// repository. Applied on every pass, it drains a deleted branch down to the one
-// build a download URL still resolves.
+// repository. Every build on such a branch goes, its tip included, so a branch
+// that was deleted upstream ages out completely instead of leaving its newest
+// build behind forever.
 //
 // Everything it cannot establish it refuses to delete. A release with no
 // recorded branch, a project with no recorded repository, and a repository
 // whose branch list could not be read all end up in the report as kept, with
 // the reason, rather than being reclaimed on an assumption.
 //
-// The candidate query has already removed every branch tip, so nothing reaching
-// this function backs a `dl` slot. The default branch is dropped here as well,
-// which makes the apex latest safe twice over.
+// The default branch is dropped here: the apex latest resolves against it, so it
+// is never treated as a dead branch however the remote answers.
 func (r *Retention) planDeletedBranch(ctx context.Context, rep *Report) ([]ReleaseRef, error) {
 	if r.cfg.DeletedBranchAge <= 0 {
 		return nil, nil // the rule is switched off
@@ -45,15 +45,27 @@ func (r *Retention) planDeletedBranch(ctx context.Context, rep *Report) ([]Relea
 	}
 
 	type lookup struct {
-		live set.Set[string]
+		live map[string]bool
 		err  error
 	}
-	byRepo := make(map[string]lookup)
-	seenErr := set.New[string]()
-	noteError := func(msg string) {
+	// One answer per repository for the whole pass, however many branches and
+	// builds of it are candidates.
+	byRepo := make(map[string]lookup, 4)
+	seenMsg := set.New[string]()
+
+	// noteFailure records that a release was KEPT because branch existence could
+	// not be established. It logs one line per distinct cause, naming the
+	// repository it could not ask about.
+	noteFailure := func(repoPath, reason string) {
 		rep.BranchLookupsFailed++
-		if seenErr.Add(msg) {
+		msg := reason
+		if repoPath != "" {
+			msg = fmt.Sprintf("%s: %s", repoPath, reason)
+		}
+		if seenMsg.Add(msg) {
 			rep.BranchLookupErrors = append(rep.BranchLookupErrors, msg)
+			slog.WarnContext(ctx, "retention: branch liveness undetermined, releases kept",
+				"repository", repoPath, "reason", reason)
 		}
 	}
 
@@ -74,20 +86,25 @@ func (r *Retention) planDeletedBranch(ctx context.Context, rep *Report) ([]Relea
 			continue // the default branch is never reclaimed
 		}
 		if row.GithubRepo == "" {
-			noteError(fmt.Sprintf("project %q records no github_repo, so the branches of %q cannot be listed", row.ProjectName, row.GitBranch))
+			noteFailure("project "+row.ProjectName,
+				"no github_repo recorded, so the branches it was built from cannot be listed")
 			continue
 		}
 
 		l, cached := byRepo[row.GithubRepo]
 		if !cached {
-			l.live, l.err = r.branches.ListBranches(ctx, row.GithubRepo)
+			names, err := r.branches.LiveBranches(ctx, row.GithubRepo)
+			l = lookup{live: make(map[string]bool, len(names)), err: err}
+			for _, name := range names {
+				l.live[name] = true
+			}
 			byRepo[row.GithubRepo] = l
 		}
 		if l.err != nil {
-			noteError(l.err.Error())
+			noteFailure(row.GithubRepo, l.err.Error())
 			continue
 		}
-		if l.live.Contains(row.GitBranch) {
+		if l.live[row.GitBranch] {
 			continue // the branch is still on the remote
 		}
 		eligible = append(eligible, ref)

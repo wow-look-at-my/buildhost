@@ -72,10 +72,10 @@ func recordDeleterFor(cfg config.Config) retention.RecordDeleter {
 }
 
 // branchListerFor builds the deleted-branch rule's source of truth: GitHub's
-// own branch list for each project's repository, authenticated the same way the
-// default-branch lookup is.
+// own branch list for each project's repository, through the same REST base,
+// client and bearer resolver the default-branch lookup uses.
 func branchListerFor() retention.BranchLister {
-	return &retention.GitHubBranchLister{Bearer: auth.BearerForRepo}
+	return auth.BranchLister{}
 }
 
 func printGCReport(rep retention.Report, settings db.RetentionSettings) {
@@ -117,6 +117,10 @@ func printGCReport(rep retention.Report, settings db.RetentionSettings) {
 		verb = "freed"
 	}
 	fmt.Printf("  blobs %s: %d (%s); %d shared blobs kept\n", verb, rep.BlobsDeleted, humanBytes(rep.ReclaimableBytes), rep.BlobsRetained)
+	// The dead-branch reason's own totals, so a pass that freed bytes because a
+	// branch is gone says so instead of folding them into the lines above.
+	fmt.Printf("  deleted-branch builds: %d (%d blobs, %s)\n",
+		len(rep.DeletedBranchReleases), rep.DeadBranchBlobs, humanBytes(rep.DeadBranchBytes))
 
 	// An evicted artifact whose storage record still says "stored" is a lie on
 	// the org's linked artifacts page, so the numbers are always printed --

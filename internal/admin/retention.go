@@ -18,7 +18,7 @@ const maxRetentionBody = 1 << 16
 // it would under-report by exactly the releases the deleted-branch rule takes.
 func (s *Server) retentionEngine(settings db.RetentionSettings, enforce bool) *retention.Retention {
 	return retention.New(s.db, s.store, retention.ConfigFromSettings(settings, enforce)).
-		WithBranchLister(&retention.GitHubBranchLister{Bearer: auth.BearerForRepo})
+		WithBranchLister(auth.BranchLister{})
 }
 
 // apiRetention (GET /api/retention) returns the current policy plus a dry-run
@@ -198,6 +198,8 @@ func reportJSON(rep retention.Report) map[string]any {
 		"keep_n_count":              len(rep.EvictedReleases),
 		"abandoned_count":           len(rep.AbandonedReleases),
 		"deleted_branch_count":      len(rep.DeletedBranchReleases),
+		"deleted_branch_blobs":      rep.DeadBranchBlobs,
+		"deleted_branch_bytes":      rep.DeadBranchBytes,
 		"blobs":                     rep.BlobsDeleted,
 		"blobs_retained":            rep.BlobsRetained,
 		"reclaimable_bytes":         rep.ReclaimableBytes,

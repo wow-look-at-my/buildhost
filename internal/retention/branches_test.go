@@ -2,135 +2,93 @@ package retention
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
-// branchAPI serves the GitHub branches endpoint over a fixed list, paginating
-// exactly as GitHub does.
-func branchAPI(t *testing.T, names []string, auth *string) *httptest.Server {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if auth != nil {
-			*auth = r.Header.Get("Authorization")
-		}
-		if r.URL.Path != "/repos/wow-look-at-my/proj/branches" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		page := 1
-		fmt.Sscanf(r.URL.Query().Get("page"), "%d", &page)
+// testRepo is the repository the fixture projects are linked to.
+const testRepo = "wow-look-at-my/proj"
 
-		start := (page - 1) * githubBranchPageSize
-		end := start + githubBranchPageSize
-		if start > len(names) {
-			start = len(names)
-		}
-		if end > len(names) {
-			end = len(names)
-		}
-		out := make([]map[string]string, 0, end-start)
-		for _, n := range names[start:end] {
-			out = append(out, map[string]string{"name": n})
-		}
-		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(out))
-	}))
-	t.Cleanup(srv.Close)
-	return srv
+// fakeBranches stands in for GitHub, so the deleted-branch rule can be driven
+// with no network. A repository named in fail answers with that error; a
+// repository in neither map also errors, so a test that forgets to describe one
+// fails closed exactly as production does.
+type fakeBranches struct {
+	live  map[string][]string
+	fail  map[string]error
+	calls map[string]int
 }
 
-func TestGitHubBranchLister_ListsEveryBranch(t *testing.T) {
-	t.Serial()
-	srv := branchAPI(t, []string{"master", "v1", "feature/x"}, nil)
-
-	lister := &GitHubBranchLister{BaseURL: srv.URL}
-	live, err := lister.ListBranches(context.Background(), testRepo)
-	require.NoError(t, err)
-
-	assert.Equal(t, 3, live.Len())
-	assert.True(t, live.ContainsAll("master", "v1", "feature/x"))
-	assert.False(t, live.Contains("deleted"))
-}
-
-func TestGitHubBranchLister_Paginates(t *testing.T) {
-	t.Serial()
-	names := make([]string, 0, githubBranchPageSize*2+7)
-	for i := range cap(names) {
-		names = append(names, fmt.Sprintf("branch-%d", i))
+func (f *fakeBranches) LiveBranches(_ context.Context, repoPath string) ([]string, error) {
+	if f.calls == nil {
+		f.calls = map[string]int{}
 	}
-	srv := branchAPI(t, names, nil)
-
-	lister := &GitHubBranchLister{BaseURL: srv.URL}
-	live, err := lister.ListBranches(context.Background(), testRepo)
-	require.NoError(t, err)
-
-	assert.Equal(t, len(names), live.Len())
-	assert.True(t, live.Contains(names[len(names)-1]), "the last page must be walked")
-}
-
-func TestGitHubBranchLister_SendsTheBearer(t *testing.T) {
-	t.Serial()
-	var seen string
-	srv := branchAPI(t, []string{"master"}, &seen)
-
-	lister := &GitHubBranchLister{
-		BaseURL: srv.URL,
-		Bearer:  func(context.Context, string, string) string { return "token-abc" },
+	f.calls[repoPath]++
+	if err, ok := f.fail[repoPath]; ok {
+		return nil, err
 	}
-	_, err := lister.ListBranches(context.Background(), testRepo)
-	require.NoError(t, err)
-	assert.Equal(t, "Bearer token-abc", seen)
+	names, ok := f.live[repoPath]
+	if !ok {
+		return nil, fmt.Errorf("unknown repository %q", repoPath)
+	}
+	return names, nil
 }
 
-// Every failure below has to be an error rather than an empty set, because an
-// empty set is indistinguishable from "every branch was deleted".
-func TestGitHubBranchLister_FailsClosed(t *testing.T) {
+// branchesLive answers for testRepo alone, with the branches named.
+func branchesLive(names ...string) *fakeBranches {
+	return &fakeBranches{live: map[string][]string{testRepo: names}}
+}
+
+// A reclaim pass asks each repository once, however many branches and builds of
+// it are candidates, and does not carry the answer into the next pass.
+func TestBranchLookup_OncePerRepositoryPerPass(t *testing.T) {
 	t.Serial()
+	d, store, p := deletedBranchSetup(t)
+	ctx := context.Background()
 
-	t.Run("non-200", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusNotFound)
-		}))
-		defer srv.Close()
+	for i := 1; i <= 3; i++ {
+		v := fmt.Sprintf("v%d", i)
+		agedRelease(t, d, store, p.ID, v, int64(i), "gone-one", 90*24*time.Hour)
+		agedRelease(t, d, store, p.ID, v+"b", int64(i)+10, "gone-two", 90*24*time.Hour)
+	}
+	agedRelease(t, d, store, p.ID, "live", 50, "master", 90*24*time.Hour)
 
-		lister := &GitHubBranchLister{BaseURL: srv.URL}
-		_, err := lister.ListBranches(context.Background(), testRepo)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "HTTP 404")
-	})
+	lister := branchesLive("master")
+	_, err := deletedBranchEngine(d, store, lister).Plan(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, lister.calls[testRepo],
+		"six candidate builds across two branches are still one lookup")
 
-	t.Run("empty branch list", func(t *testing.T) {
-		srv := branchAPI(t, nil, nil)
-		lister := &GitHubBranchLister{BaseURL: srv.URL}
-		_, err := lister.ListBranches(context.Background(), testRepo)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "reported no branches")
-	})
+	_, err = deletedBranchEngine(d, store, lister).Plan(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, lister.calls[testRepo], "a fresh pass asks again rather than trusting the last answer")
+}
 
-	t.Run("unparseable body", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			fmt.Fprint(w, "not json")
-		}))
-		defer srv.Close()
+// A second repository adds exactly one more lookup, so the cache is keyed on the
+// repository and not on the pass or the branch.
+func TestBranchLookup_OneMorePerRepository(t *testing.T) {
+	t.Serial()
+	d, store, p := deletedBranchSetup(t)
+	ctx := context.Background()
 
-		lister := &GitHubBranchLister{BaseURL: srv.URL}
-		_, err := lister.ListBranches(context.Background(), testRepo)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "decode branches")
-	})
+	second := &db.Project{Name: "other", Versioning: db.VersioningAuto, GithubRepo: "wow-look-at-my/other"}
+	require.NoError(t, d.CreateProject(ctx, second))
+	require.NoError(t, d.SetProjectDefaultBranch(ctx, second.ID, "master"))
 
-	t.Run("malformed repo path", func(t *testing.T) {
-		lister := &GitHubBranchLister{BaseURL: "http://127.0.0.1:1"}
-		for _, bad := range []string{"", "proj", "a/b/c"} {
-			_, err := lister.ListBranches(context.Background(), bad)
-			assert.Error(t, err, "repo path %q", bad)
-		}
-	})
+	agedRelease(t, d, store, p.ID, "v1", 1, "gone", 90*24*time.Hour)
+	agedRelease(t, d, store, second.ID, "v1", 1, "gone", 90*24*time.Hour)
+
+	lister := &fakeBranches{live: map[string][]string{testRepo: {"master"}, "wow-look-at-my/other": {"master"}}}
+	rep, err := deletedBranchEngine(d, store, lister).Plan(ctx)
+	require.NoError(t, err)
+
+	assert.Len(t, rep.DeletedBranchReleases, 2)
+	assert.Equal(t, 1, lister.calls[testRepo])
+	assert.Equal(t, 1, lister.calls["wow-look-at-my/other"])
 }

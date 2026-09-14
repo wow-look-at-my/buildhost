@@ -221,6 +221,8 @@ func logRetentionReport(rep retention.Report) {
 	slog.Info("retention sweep complete",
 		"enforced", rep.Enforced, "releases", rep.Releases(),
 		"blobs_freed", rep.BlobsDeleted, "blobs_kept", rep.BlobsRetained, "bytes_freed", rep.ReclaimableBytes,
+		"deleted_branch_releases", len(rep.DeletedBranchReleases),
+		"deleted_branch_blobs", rep.DeadBranchBlobs, "deleted_branch_bytes", rep.DeadBranchBytes,
 		"records_marked_deleted", rep.RecordsMarkedDeleted, "records_unmarked", rep.RecordsUnmarked)
 
 	// Every unmarked record is the org's linked artifacts page claiming

@@ -244,13 +244,6 @@ WHERE r.published = 1
   AND r.created_at < datetime(?1)
   AND r.id NOT IN (SELECT release_id FROM oci_tags)
   AND r.id NOT IN (SELECT release_id FROM artifacts WHERE kind = 'docker')
-  AND (
-      SELECT COUNT(*) FROM releases r2
-      WHERE r2.project_id = r.project_id
-        AND r2.git_branch = r.git_branch
-        AND r2.published = 1
-        AND r2.version_num > r.version_num
-  ) >= 1
 ORDER BY p.name, r.git_branch, r.version_num DESC
 `
 
@@ -272,14 +265,11 @@ type ListDeletedBranchCandidatesRow struct {
 // origin repository is resolved from GitHub by the caller, which discards every
 // row whose branch is still there.
 //
-// The `>= 1` clause is the slot guard, and it is the reason a published download
-// URL cannot break: a release with zero newer published releases on its branch
-// is that branch's tip, which is exactly what dl resolves for
-// `dl.{domain}/{project}?branch={branch}` and, on the default branch, for the
-// apex latest. Requiring at least one newer sibling keeps every tip out of the
-// candidate set at any age and whatever the branch's remote state. Tagged
-// releases and pushed-docker releases are excluded for the same reasons keep-N
-// excludes them: an OCI tag pins its release, and docker blobs live in
+// There is no tip exemption here, deliberately. A branch that is gone from the
+// remote has no tip to keep, and the point of the rule is that a dead branch's
+// builds age out completely instead of leaving its newest one behind forever.
+// Tagged releases and pushed-docker releases ARE excluded, for the same reasons
+// keep-N excludes them: an OCI tag pins its release, and docker blobs live in
 // project-scoped oci_blob_links that a release cascade does not reach.
 func (q *Queries) ListDeletedBranchCandidates(ctx context.Context, ageCutoff interface{}) ([]ListDeletedBranchCandidatesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listDeletedBranchCandidates, ageCutoff)

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,41 +18,20 @@ import (
 	"github.com/wow-look-at-my/go-containers/set"
 )
 
-const testRepo = "wow-look-at-my/proj"
-
-// fakeBranches stands in for GitHub. A repo present in live answers with its
-// branch set; a repo present in fail answers with an error; an unlisted repo
-// also errors, so a test that forgets to describe a repo fails closed exactly
-// as production does.
-type fakeBranches struct {
-	live  map[string][]string
-	fail  map[string]error
-	calls map[string]int
+// captureLogs routes slog output to a buffer for the duration of the test, so
+// the line an operator would see for a repository that could not be asked can be
+// asserted on rather than assumed.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	buf := &bytes.Buffer{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return buf
 }
 
-func (f *fakeBranches) ListBranches(_ context.Context, repoPath string) (set.Set[string], error) {
-	if f.calls == nil {
-		f.calls = map[string]int{}
-	}
-	f.calls[repoPath]++
-	if err, ok := f.fail[repoPath]; ok {
-		return set.Set[string]{}, err
-	}
-	names, ok := f.live[repoPath]
-	if !ok {
-		return set.Set[string]{}, fmt.Errorf("unknown repo %q", repoPath)
-	}
-	s := set.New[string](len(names))
-	s.AddRange(names...)
-	return s, nil
-}
-
-func branchesLive(names ...string) *fakeBranches {
-	return &fakeBranches{live: map[string][]string{testRepo: names}}
-}
-
-// deletedBranchSetup builds a project that the deleted-branch rule can act on:
-// it has a GitHub repo to ask about and 'master' as its default branch.
+// deletedBranchSetup builds a project the deleted-branch rule can act on: it is
+// linked to a GitHub repository and its default branch is 'master'.
 func deletedBranchSetup(t *testing.T) (*db.DB, *storage.Filesystem, *db.Project) {
 	t.Helper()
 	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -69,7 +50,7 @@ func deletedBranchSetup(t *testing.T) (*db.DB, *storage.Filesystem, *db.Project)
 
 // agedRelease publishes a release with one artifact and rewrites its created_at
 // to the requested age, which is the input the deleted-branch window reads.
-func agedRelease(t *testing.T, d *db.DB, store storage.Storage, projectID int64, version string, num int64, branch string, age time.Duration) (int64, string) {
+func agedRelease(t *testing.T, d *db.DB, store storage.Storage, projectID int64, version string, num int64, branch string, age time.Duration) (int64, string, int64) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -87,11 +68,12 @@ func agedRelease(t *testing.T, d *db.DB, store storage.Storage, projectID int64,
 	stamp := time.Now().Add(-age).UTC().Format("2006-01-02 15:04:05")
 	_, err = d.Exec("UPDATE releases SET created_at = ? WHERE id = ?", stamp, r.ID)
 	require.NoError(t, err)
-	return r.ID, key
+	return r.ID, key, size
 }
 
-// deletedBranchEngine isolates the new rule: keep-N is set far out of reach, so
-// anything the pass removes was removed because its branch is gone.
+// deletedBranchEngine isolates the new rule: keep-N is set far out of reach and
+// the recency guard is left at its default, so anything the pass removes was
+// removed because its branch is gone.
 func deletedBranchEngine(d *db.DB, store storage.Storage, lister BranchLister) *Retention {
 	ret := New(d, store, Config{
 		KeepN:            1000,
@@ -105,56 +87,83 @@ func deletedBranchEngine(d *db.DB, store storage.Storage, lister BranchLister) *
 	return ret
 }
 
+// The headline case: a branch that no longer exists on the remote ages out
+// completely. There is no tip exemption, so the branch's newest build goes too.
+func TestDeletedBranch_DeletedBranchAgesOutCompletely(t *testing.T) {
+	t.Serial()
+	d, store, p := deletedBranchSetup(t)
+	ctx := context.Background()
+
+	var wantBytes int64
+	var versions, keys []string
+	for i, days := range []int{40, 39, 38} {
+		v := fmt.Sprintf("v%d", i+1) // v3 is the branch tip
+		_, key, size := agedRelease(t, d, store, p.ID, v, int64(i+1), "gone", time.Duration(days)*24*time.Hour)
+		versions = append(versions, v)
+		keys = append(keys, key)
+		wantBytes += size
+	}
+
+	rep, err := deletedBranchEngine(d, store, branchesLive("master")).Run(ctx)
+	require.NoError(t, err)
+
+	require.Len(t, rep.DeletedBranchReleases, 3)
+	listed := map[string]bool{}
+	for _, ref := range rep.DeletedBranchReleases {
+		listed[ref.Version] = true
+		assert.Equal(t, "gone", ref.Branch)
+	}
+	assert.True(t, listed["v3"], "the branch tip is not exempt: a dead branch ages out completely")
+	assert.Equal(t, 3, rep.Releases())
+	assert.Empty(t, rep.EvictedReleases, "keep-N did not touch these")
+	assert.Empty(t, rep.AbandonedReleases)
+
+	// Row and blob both go, through the same eviction path keep-N uses.
+	for _, v := range versions {
+		_, err := d.GetRelease(ctx, p.ID, v)
+		assert.ErrorIs(t, err, db.ErrNotFound, "release %s must be gone", v)
+	}
+	for _, key := range keys {
+		ex, _ := store.Exists(ctx, key)
+		assert.False(t, ex, "blob %s must be gone", key)
+	}
+
+	// The reason carries its own build, blob and byte totals.
+	assert.Equal(t, 3, rep.DeadBranchBlobs)
+	assert.Equal(t, wantBytes, rep.DeadBranchBytes)
+	assert.Equal(t, 3, rep.BlobsDeleted)
+	assert.Equal(t, wantBytes, rep.ReclaimableBytes)
+}
+
+// A branch the remote still has is untouched, at any age.
 func TestDeletedBranch_LiveBranchIsKeptAtAnyAge(t *testing.T) {
 	t.Serial()
 	d, store, p := deletedBranchSetup(t)
 	ctx := context.Background()
 
-	_, oldKey := agedRelease(t, d, store, p.ID, "v1", 1, "feature", 400*24*time.Hour)
-	_, tipKey := agedRelease(t, d, store, p.ID, "v2", 2, "feature", 399*24*time.Hour)
+	_, oldKey, _ := agedRelease(t, d, store, p.ID, "v1", 1, "feature", 400*24*time.Hour)
+	_, tipKey, _ := agedRelease(t, d, store, p.ID, "v2", 2, "feature", 399*24*time.Hour)
 
 	rep, err := deletedBranchEngine(d, store, branchesLive("master", "feature")).Run(ctx)
 	require.NoError(t, err)
 
 	assert.Empty(t, rep.DeletedBranchReleases, "a build on a live branch is never eligible")
-	assert.Equal(t, 0, rep.BlobsDeleted)
+	assert.Equal(t, 0, rep.DeadBranchBlobs)
+	assert.Equal(t, int64(0), rep.DeadBranchBytes)
 	for name, key := range map[string]string{"v1": oldKey, "v2": tipKey} {
 		ex, _ := store.Exists(ctx, key)
 		assert.True(t, ex, "%s must survive", name)
 	}
 }
 
-func TestDeletedBranch_OldBuildOnDeletedBranchIsRemoved(t *testing.T) {
-	t.Serial()
-	d, store, p := deletedBranchSetup(t)
-	ctx := context.Background()
-
-	oldID, oldKey := agedRelease(t, d, store, p.ID, "v1", 1, "gone", 31*24*time.Hour)
-	_, tipKey := agedRelease(t, d, store, p.ID, "v2", 2, "gone", 31*24*time.Hour)
-
-	rep, err := deletedBranchEngine(d, store, branchesLive("master")).Run(ctx)
-	require.NoError(t, err)
-
-	require.Len(t, rep.DeletedBranchReleases, 1)
-	assert.Equal(t, oldID, rep.DeletedBranchReleases[0].ID)
-	assert.Equal(t, "gone", rep.DeletedBranchReleases[0].Branch)
-	assert.Greater(t, rep.ReclaimableBytes, int64(0))
-
-	_, err = d.GetRelease(ctx, p.ID, "v1")
-	assert.ErrorIs(t, err, db.ErrNotFound)
-	ex, _ := store.Exists(ctx, oldKey)
-	assert.False(t, ex, "the reclaimed build's bytes must be gone")
-
-	ex, _ = store.Exists(ctx, tipKey)
-	assert.True(t, ex, "the branch tip backs a dl slot and must survive")
-}
-
+// The 30-day window is its own: a build inside it survives even on a branch that
+// is gone.
 func TestDeletedBranch_BuildInsideTheWindowIsKept(t *testing.T) {
 	t.Serial()
 	d, store, p := deletedBranchSetup(t)
 	ctx := context.Background()
 
-	_, youngKey := agedRelease(t, d, store, p.ID, "v1", 1, "gone", 29*24*time.Hour)
+	_, youngKey, _ := agedRelease(t, d, store, p.ID, "v1", 1, "gone", 29*24*time.Hour)
 	agedRelease(t, d, store, p.ID, "v2", 2, "gone", 29*24*time.Hour)
 
 	rep, err := deletedBranchEngine(d, store, branchesLive("master")).Run(ctx)
@@ -167,38 +176,36 @@ func TestDeletedBranch_BuildInsideTheWindowIsKept(t *testing.T) {
 	assert.True(t, ex)
 }
 
-// The slot guard is the load-bearing one: dl.{domain}/{project} resolves the
-// newest published release on the default branch, and ?branch={branch} resolves
-// the newest on that branch. Neither may be reclaimed, whatever its age and
-// whatever became of the branch on the remote.
-func TestDeletedBranch_SlotReferencedBuildsAreKept(t *testing.T) {
+// The default branch is never dead, even if the remote's answer omits it: the
+// apex latest resolves against it.
+func TestDeletedBranch_DefaultBranchIsNeverDead(t *testing.T) {
 	t.Serial()
 	d, store, p := deletedBranchSetup(t)
 	ctx := context.Background()
 
-	// Only build on a branch that is gone: it is that branch's tip.
-	_, loneTip := agedRelease(t, d, store, p.ID, "v1", 1, "gone", 900*24*time.Hour)
-	// Two builds on the default branch, which is itself absent from the remote.
-	_, defaultOld := agedRelease(t, d, store, p.ID, "v2", 2, "master", 900*24*time.Hour)
-	_, defaultTip := agedRelease(t, d, store, p.ID, "v3", 3, "master", 900*24*time.Hour)
+	_, oldKey, _ := agedRelease(t, d, store, p.ID, "v1", 1, "master", 900*24*time.Hour)
+	_, tipKey, _ := agedRelease(t, d, store, p.ID, "v2", 2, "master", 899*24*time.Hour)
 
 	rep, err := deletedBranchEngine(d, store, branchesLive("some-other-branch")).Run(ctx)
 	require.NoError(t, err)
 
 	assert.Empty(t, rep.DeletedBranchReleases)
 	assert.Equal(t, 0, rep.BlobsDeleted)
-	for name, key := range map[string]string{"branch tip": loneTip, "default branch": defaultOld, "default tip": defaultTip} {
+	for name, key := range map[string]string{"old": oldKey, "tip": tipKey} {
 		ex, _ := store.Exists(ctx, key)
-		assert.True(t, ex, "%s must survive", name)
+		assert.True(t, ex, "the %s build on the default branch must survive", name)
 	}
 }
 
-func TestDeletedBranch_UndeterminedBranchStateIsKept(t *testing.T) {
+// A repository that cannot be asked is not a repository whose branches were
+// deleted. Everything of it is kept, and one line says why.
+func TestDeletedBranch_UnreachableRepositoryIsKeptAndLogged(t *testing.T) {
 	t.Serial()
+	logs := captureLogs(t)
 	d, store, p := deletedBranchSetup(t)
 	ctx := context.Background()
 
-	_, oldKey := agedRelease(t, d, store, p.ID, "v1", 1, "gone", 90*24*time.Hour)
+	_, oldKey, _ := agedRelease(t, d, store, p.ID, "v1", 1, "gone", 90*24*time.Hour)
 	agedRelease(t, d, store, p.ID, "v2", 2, "gone", 90*24*time.Hour)
 
 	lister := &fakeBranches{fail: map[string]error{testRepo: fmt.Errorf("HTTP 502")}}
@@ -206,14 +213,23 @@ func TestDeletedBranch_UndeterminedBranchStateIsKept(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Empty(t, rep.DeletedBranchReleases, "a failed lookup is not evidence of deletion")
-	assert.Equal(t, 1, rep.BranchLookupsFailed)
-	require.Len(t, rep.BranchLookupErrors, 1)
+	assert.Equal(t, 2, rep.BranchLookupsFailed, "both builds of the unreachable repository were kept")
+	assert.Len(t, rep.BranchLookupErrors, 1, "one cause, one message")
+	assert.Contains(t, rep.BranchLookupErrors[0], testRepo)
 	assert.Contains(t, rep.BranchLookupErrors[0], "HTTP 502")
+
+	// The log names the repository and the reason, once rather than per build.
+	out := logs.String()
+	assert.Equal(t, 1, strings.Count(out, testRepo), "one line per repository, not one per build: %s", out)
+	assert.Contains(t, out, "HTTP 502")
 
 	ex, _ := store.Exists(ctx, oldKey)
 	assert.True(t, ex)
+	_, err = d.GetRelease(ctx, p.ID, "v1")
+	assert.NoError(t, err)
 }
 
+// A project with no linked repository cannot be asked about at all.
 func TestDeletedBranch_ProjectWithoutRepoIsKeptAndReported(t *testing.T) {
 	t.Serial()
 	d, store, p := deletedBranchSetup(t)
@@ -222,7 +238,7 @@ func TestDeletedBranch_ProjectWithoutRepoIsKeptAndReported(t *testing.T) {
 	_, err := d.Exec("UPDATE projects SET github_repo = '' WHERE id = ?", p.ID)
 	require.NoError(t, err)
 
-	_, oldKey := agedRelease(t, d, store, p.ID, "v1", 1, "gone", 90*24*time.Hour)
+	_, oldKey, _ := agedRelease(t, d, store, p.ID, "v1", 1, "gone", 90*24*time.Hour)
 	agedRelease(t, d, store, p.ID, "v2", 2, "gone", 90*24*time.Hour)
 
 	lister := branchesLive("master")
@@ -230,7 +246,7 @@ func TestDeletedBranch_ProjectWithoutRepoIsKeptAndReported(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Empty(t, rep.DeletedBranchReleases)
-	assert.Equal(t, 1, rep.BranchLookupsFailed)
+	assert.Equal(t, 2, rep.BranchLookupsFailed)
 	require.Len(t, rep.BranchLookupErrors, 1)
 	assert.Contains(t, rep.BranchLookupErrors[0], "no github_repo")
 	assert.Empty(t, lister.calls, "with no repo recorded there is nothing to ask GitHub about")
@@ -239,19 +255,21 @@ func TestDeletedBranch_ProjectWithoutRepoIsKeptAndReported(t *testing.T) {
 	assert.True(t, ex)
 }
 
+// A release with no recorded branch has nothing to check, so it is reported as
+// kept rather than deleted on an assumption.
 func TestDeletedBranch_ReleaseWithNoRecordedBranchIsReportedNotDeleted(t *testing.T) {
 	t.Serial()
 	d, store, p := deletedBranchSetup(t)
 	ctx := context.Background()
 
-	id, key := agedRelease(t, d, store, p.ID, "v1", 1, "", 90*24*time.Hour)
+	id, key, _ := agedRelease(t, d, store, p.ID, "v1", 1, "", 90*24*time.Hour)
 	agedRelease(t, d, store, p.ID, "v2", 2, "", 90*24*time.Hour)
 
 	rep, err := deletedBranchEngine(d, store, branchesLive("master")).Run(ctx)
 	require.NoError(t, err)
 
 	assert.Empty(t, rep.DeletedBranchReleases)
-	require.Len(t, rep.UnknownBranchReleases, 1)
+	require.Len(t, rep.UnknownBranchReleases, 2)
 	assert.Equal(t, id, rep.UnknownBranchReleases[0].ID)
 	assert.Equal(t, 0, rep.BranchLookupsFailed, "a missing branch is its own case, not a failed lookup")
 
@@ -261,19 +279,21 @@ func TestDeletedBranch_ReleaseWithNoRecordedBranchIsReportedNotDeleted(t *testin
 	assert.True(t, ex)
 }
 
+// No source of truth for branch existence means no deletion: the rule is inert
+// and the report says so.
 func TestDeletedBranch_WithoutABranchListerNothingIsReclaimed(t *testing.T) {
 	t.Serial()
 	d, store, p := deletedBranchSetup(t)
 	ctx := context.Background()
 
-	_, oldKey := agedRelease(t, d, store, p.ID, "v1", 1, "gone", 90*24*time.Hour)
+	_, oldKey, _ := agedRelease(t, d, store, p.ID, "v1", 1, "gone", 90*24*time.Hour)
 	agedRelease(t, d, store, p.ID, "v2", 2, "gone", 90*24*time.Hour)
 
 	rep, err := deletedBranchEngine(d, store, nil).Run(ctx)
 	require.NoError(t, err)
 
 	assert.Empty(t, rep.DeletedBranchReleases)
-	assert.Equal(t, 1, rep.BranchLookupsFailed)
+	assert.Equal(t, 2, rep.BranchLookupsFailed)
 	require.Len(t, rep.BranchLookupErrors, 1)
 	assert.Contains(t, rep.BranchLookupErrors[0], "no branch lister configured")
 
@@ -281,12 +301,13 @@ func TestDeletedBranch_WithoutABranchListerNothingIsReclaimed(t *testing.T) {
 	assert.True(t, ex)
 }
 
+// A zero window switches the rule off, and it must not even ask GitHub.
 func TestDeletedBranch_ZeroWindowDisablesTheRule(t *testing.T) {
 	t.Serial()
 	d, store, p := deletedBranchSetup(t)
 	ctx := context.Background()
 
-	_, oldKey := agedRelease(t, d, store, p.ID, "v1", 1, "gone", 900*24*time.Hour)
+	_, oldKey, _ := agedRelease(t, d, store, p.ID, "v1", 1, "gone", 900*24*time.Hour)
 	agedRelease(t, d, store, p.ID, "v2", 2, "gone", 900*24*time.Hour)
 
 	lister := branchesLive("master")
@@ -303,42 +324,22 @@ func TestDeletedBranch_ZeroWindowDisablesTheRule(t *testing.T) {
 	assert.True(t, ex)
 }
 
-// One repository is asked once per pass, however many of its releases are
-// candidates, and the answer is not carried across passes.
-func TestDeletedBranch_OneLookupPerRepositoryPerPass(t *testing.T) {
-	t.Serial()
-	d, store, p := deletedBranchSetup(t)
-	ctx := context.Background()
-
-	agedRelease(t, d, store, p.ID, "v1", 1, "gone", 90*24*time.Hour)
-	agedRelease(t, d, store, p.ID, "v2", 2, "gone", 90*24*time.Hour)
-	agedRelease(t, d, store, p.ID, "v3", 3, "gone", 90*24*time.Hour)
-
-	lister := branchesLive("master")
-	_, err := deletedBranchEngine(d, store, lister).Plan(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, 1, lister.calls[testRepo])
-
-	_, err = deletedBranchEngine(d, store, lister).Plan(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, 2, lister.calls[testRepo], "a fresh pass asks again rather than trusting the last answer")
-}
-
-// The dry run must name the same releases the enforcing run removes, and leave
+// The dry run names the same releases the enforcing run removes, and leaves
 // every one of them in place.
 func TestDeletedBranch_PlanMatchesRunAndChangesNothing(t *testing.T) {
 	t.Serial()
 	d, store, p := deletedBranchSetup(t)
 	ctx := context.Background()
 
-	oldID, oldKey := agedRelease(t, d, store, p.ID, "v1", 1, "gone", 90*24*time.Hour)
+	oldID, oldKey, wantBytes := agedRelease(t, d, store, p.ID, "v1", 1, "gone", 90*24*time.Hour)
 	agedRelease(t, d, store, p.ID, "v2", 2, "gone", 90*24*time.Hour)
 
 	plan, err := deletedBranchEngine(d, store, branchesLive("master")).Plan(ctx)
 	require.NoError(t, err)
-	require.Len(t, plan.DeletedBranchReleases, 1)
+	require.Len(t, plan.DeletedBranchReleases, 2)
 	assert.Equal(t, oldID, plan.DeletedBranchReleases[0].ID)
 	assert.False(t, plan.Enforced)
+	assert.Equal(t, wantBytes, plan.DeadBranchBytes)
 
 	ex, _ := store.Exists(ctx, oldKey)
 	assert.True(t, ex, "a plan deletes nothing")
@@ -347,9 +348,10 @@ func TestDeletedBranch_PlanMatchesRunAndChangesNothing(t *testing.T) {
 
 	run, err := deletedBranchEngine(d, store, branchesLive("master")).Run(ctx)
 	require.NoError(t, err)
-	require.Len(t, run.DeletedBranchReleases, 1)
+	require.Len(t, run.DeletedBranchReleases, 2)
 	assert.Equal(t, plan.DeletedBranchReleases[0].ID, run.DeletedBranchReleases[0].ID)
 	assert.Equal(t, plan.ReclaimableBytes, run.ReclaimableBytes)
+	assert.Equal(t, plan.DeadBranchBytes, run.DeadBranchBytes)
 }
 
 // A release both past keep-N and on a deleted branch is one eviction, counted
@@ -373,10 +375,11 @@ func TestDeletedBranch_OverlapWithKeepNIsCountedOnce(t *testing.T) {
 	rep, err := ret.Plan(ctx)
 	require.NoError(t, err)
 
-	// v1 and v2 both qualify under keep-N and under the deleted-branch rule.
-	assert.Equal(t, 2, rep.Releases())
+	// v1 and v2 qualify under keep-N as well as under the dead-branch rule; the
+	// branch tip v3 qualifies only under the dead-branch rule.
+	assert.Equal(t, 3, rep.Releases())
 	assert.Len(t, rep.EvictedReleases, 2)
-	assert.Empty(t, rep.DeletedBranchReleases)
+	assert.Len(t, rep.DeletedBranchReleases, 1)
 
 	seen := set.New[int64](rep.Releases())
 	for _, ref := range rep.AllEvicted() {
@@ -392,14 +395,14 @@ func TestDeletedBranch_InventoryAgreesWithThePlan(t *testing.T) {
 	d, store, p := deletedBranchSetup(t)
 	ctx := context.Background()
 
-	_, oldKey := agedRelease(t, d, store, p.ID, "v1", 1, "gone", 90*24*time.Hour)
+	_, oldKey, _ := agedRelease(t, d, store, p.ID, "v1", 1, "gone", 90*24*time.Hour)
 	agedRelease(t, d, store, p.ID, "v2", 2, "gone", 90*24*time.Hour)
 
 	inv, err := deletedBranchEngine(d, store, branchesLive("master")).Inventory(ctx)
 	require.NoError(t, err)
 
 	assert.Equal(t, 0, inv.Totals.HoldMismatches)
-	assert.Equal(t, 1, inv.Totals.EvictedReleases)
+	assert.Equal(t, 2, inv.Totals.EvictedReleases)
 
 	var found bool
 	for _, f := range inv.Files {

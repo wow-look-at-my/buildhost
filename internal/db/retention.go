@@ -167,10 +167,9 @@ func (d *DB) ListEvictableReleases(ctx context.Context, keepN int64, recencyCuto
 }
 
 // ListDeletedBranchCandidates returns published releases older than ageCutoff
-// that are not their branch's tip and are not pinned by an oci tag or a
-// pushed-docker artifact. Each row carries the project's github_repo and
-// default_branch, which is what the caller needs to ask the origin repository
-// whether the branch still exists.
+// that are not pinned by an oci tag or a pushed-docker artifact. Each row
+// carries the project's github_repo and default_branch, which is what the caller
+// needs to ask the origin repository whether the branch still exists.
 func (d *DB) ListDeletedBranchCandidates(ctx context.Context, ageCutoff time.Time) ([]ListDeletedBranchCandidatesRow, error) {
 	return d.q.ListDeletedBranchCandidates(ctx, sqliteDatetime(ageCutoff))
 }
