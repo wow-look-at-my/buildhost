@@ -167,6 +167,7 @@ CREATE TABLE retention_settings (
     id            INTEGER PRIMARY KEY CHECK (id = 1),
     keep_n        INTEGER NOT NULL DEFAULT 10,
     recency_hours INTEGER NOT NULL DEFAULT 24,
+    deleted_branch_days INTEGER NOT NULL DEFAULT 30,
     updated_at    DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 

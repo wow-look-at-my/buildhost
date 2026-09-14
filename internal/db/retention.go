@@ -13,6 +13,10 @@ import (
 type RetentionSettings struct {
 	KeepN        int
 	RecencyHours int
+	// DeletedBranchDays is the age past which a published release whose branch
+	// no longer exists on the origin repository becomes eligible. 0 disables
+	// the rule.
+	DeletedBranchDays int
 }
 
 // GetRetentionSettings returns the current policy, falling back to built-in
@@ -21,27 +25,33 @@ type RetentionSettings struct {
 func (d *DB) GetRetentionSettings(ctx context.Context) (RetentionSettings, error) {
 	row, err := d.q.GetRetentionSettings(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
-		return RetentionSettings{KeepN: 10, RecencyHours: 24}, nil
+		return RetentionSettings{KeepN: 10, RecencyHours: 24, DeletedBranchDays: 30}, nil
 	}
 	if err != nil {
 		return RetentionSettings{}, fmt.Errorf("get retention settings: %w", err)
 	}
-	return RetentionSettings{KeepN: int(row.KeepN), RecencyHours: int(row.RecencyHours)}, nil
+	return RetentionSettings{
+		KeepN:             int(row.KeepN),
+		RecencyHours:      int(row.RecencyHours),
+		DeletedBranchDays: int(row.DeletedBranchDays),
+	}, nil
 }
 
 // SeedRetentionSettings inserts the initial policy row if absent (INSERT OR
-func (d *DB) SeedRetentionSettings(ctx context.Context, keepN, recencyHours int) error {
+func (d *DB) SeedRetentionSettings(ctx context.Context, keepN, recencyHours, deletedBranchDays int) error {
 	return d.q.SeedRetentionSettings(ctx, SeedRetentionSettingsParams{
-		KeepN:        int64(keepN),
-		RecencyHours: int64(recencyHours),
+		KeepN:             int64(keepN),
+		RecencyHours:      int64(recencyHours),
+		DeletedBranchDays: int64(deletedBranchDays),
 	})
 }
 
 // UpdateRetentionSettings persists a new policy (from the admin dashboard).
-func (d *DB) UpdateRetentionSettings(ctx context.Context, keepN, recencyHours int) error {
+func (d *DB) UpdateRetentionSettings(ctx context.Context, keepN, recencyHours, deletedBranchDays int) error {
 	return d.q.UpdateRetentionSettings(ctx, UpdateRetentionSettingsParams{
-		KeepN:        int64(keepN),
-		RecencyHours: int64(recencyHours),
+		KeepN:             int64(keepN),
+		RecencyHours:      int64(recencyHours),
+		DeletedBranchDays: int64(deletedBranchDays),
 	})
 }
 
@@ -154,6 +164,15 @@ func (d *DB) ListEvictableReleases(ctx context.Context, keepN int64, recencyCuto
 		RecencyCutoff: sqliteDatetime(recencyCutoff),
 		KeepN:         keepN,
 	})
+}
+
+// ListDeletedBranchCandidates returns published releases older than ageCutoff
+// that are not their branch's tip and are not pinned by an oci tag or a
+// pushed-docker artifact. Each row carries the project's github_repo and
+// default_branch, which is what the caller needs to ask the origin repository
+// whether the branch still exists.
+func (d *DB) ListDeletedBranchCandidates(ctx context.Context, ageCutoff time.Time) ([]ListDeletedBranchCandidatesRow, error) {
+	return d.q.ListDeletedBranchCandidates(ctx, sqliteDatetime(ageCutoff))
 }
 
 // ListAbandonedReleases returns unpublished (partial/failed upload) releases

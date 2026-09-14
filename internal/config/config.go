@@ -128,6 +128,11 @@ type Config struct {
 	RetentionInterval     time.Duration
 	RetentionRecencyGuard time.Duration // never evict releases newer than this
 	RetentionEnforce      bool          // actually delete; false = report-only
+	// RetentionDeletedBranchDays seeds the age past which a published release
+	// whose branch is gone from the origin repository is reclaimed. 0 keeps the
+	// rule off. Like the other two policy numbers it is a seed: once the row
+	// exists the dashboard owns the value.
+	RetentionDeletedBranchDays int
 }
 
 // resolvePEM returns PEM contents from a config value that is either the PEM
@@ -169,10 +174,11 @@ func Load() Config {
 		StorageCompress: true,
 		OIDCIssuers:     []string{"https://token.actions.githubusercontent.com"},
 
-		RetentionKeepN:        10,
-		RetentionInterval:     0,
-		RetentionRecencyGuard: 24 * time.Hour,
-		RetentionEnforce:      false,
+		RetentionKeepN:             10,
+		RetentionInterval:          0,
+		RetentionRecencyGuard:      24 * time.Hour,
+		RetentionEnforce:           false,
+		RetentionDeletedBranchDays: 30,
 	}
 	if v := os.Getenv("BUILDHOST_LISTEN_ADDR"); v != "" {
 		c.ListenAddr = v
@@ -253,6 +259,11 @@ func Load() Config {
 	if v := os.Getenv("BUILDHOST_RETENTION_KEEP_N"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			c.RetentionKeepN = n
+		}
+	}
+	if v := os.Getenv("BUILDHOST_RETENTION_DELETED_BRANCH_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			c.RetentionDeletedBranchDays = n
 		}
 	}
 	c.RetentionInterval = envDuration("BUILDHOST_RETENTION_INTERVAL", c.RetentionInterval)

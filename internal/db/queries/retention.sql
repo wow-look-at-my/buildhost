@@ -1,15 +1,16 @@
 -- name: GetRetentionSettings :one
-SELECT keep_n, recency_hours FROM retention_settings WHERE id = 1;
+SELECT keep_n, recency_hours, deleted_branch_days FROM retention_settings WHERE id = 1;
 
 -- name: SeedRetentionSettings :exec
-INSERT OR IGNORE INTO retention_settings (id, keep_n, recency_hours) VALUES (1, ?, ?);
+INSERT OR IGNORE INTO retention_settings (id, keep_n, recency_hours, deleted_branch_days) VALUES (1, ?, ?, ?);
 
 -- name: UpdateRetentionSettings :exec
-INSERT INTO retention_settings (id, keep_n, recency_hours, updated_at)
-VALUES (1, ?, ?, datetime('now'))
+INSERT INTO retention_settings (id, keep_n, recency_hours, deleted_branch_days, updated_at)
+VALUES (1, ?, ?, ?, datetime('now'))
 ON CONFLICT(id) DO UPDATE SET
     keep_n = excluded.keep_n,
     recency_hours = excluded.recency_hours,
+    deleted_branch_days = excluded.deleted_branch_days,
     updated_at = datetime('now');
 
 -- name: IsBlobReferenced :one
@@ -78,6 +79,39 @@ WHERE r.published = 1
         AND r2.version_num > r.version_num
   ) >= max(sqlc.arg(keep_n), 1)
 ORDER BY r.project_id, r.git_branch, r.version_num DESC;
+
+-- name: ListDeletedBranchCandidates :many
+-- Published releases old enough for the deleted-branch rule, carrying the repo
+-- identity and default branch the caller needs to decide each one. This query
+-- answers only the half SQLite can see; whether the branch still exists on the
+-- origin repository is resolved from GitHub by the caller, which discards every
+-- row whose branch is still there.
+--
+-- The `>= 1` clause is the slot guard, and it is the reason a published download
+-- URL cannot break: a release with zero newer published releases on its branch
+-- is that branch's tip, which is exactly what dl resolves for
+-- `dl.{domain}/{project}?branch={branch}` and, on the default branch, for the
+-- apex latest. Requiring at least one newer sibling keeps every tip out of the
+-- candidate set at any age and whatever the branch's remote state. Tagged
+-- releases and pushed-docker releases are excluded for the same reasons keep-N
+-- excludes them: an OCI tag pins its release, and docker blobs live in
+-- project-scoped oci_blob_links that a release cascade does not reach.
+SELECT r.id, r.project_id, p.name AS project_name, p.github_repo, p.default_branch,
+       r.git_branch, r.version, r.version_num, r.created_at
+FROM releases r
+JOIN projects p ON p.id = r.project_id
+WHERE r.published = 1
+  AND r.created_at < datetime(sqlc.arg(age_cutoff))
+  AND r.id NOT IN (SELECT release_id FROM oci_tags)
+  AND r.id NOT IN (SELECT release_id FROM artifacts WHERE kind = 'docker')
+  AND (
+      SELECT COUNT(*) FROM releases r2
+      WHERE r2.project_id = r.project_id
+        AND r2.git_branch = r.git_branch
+        AND r2.published = 1
+        AND r2.version_num > r.version_num
+  ) >= 1
+ORDER BY p.name, r.git_branch, r.version_num DESC;
 
 -- name: ListAbandonedReleases :many
 -- Unpublished (partial/failed upload) releases older than the cutoff.
