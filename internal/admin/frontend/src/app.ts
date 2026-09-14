@@ -177,7 +177,7 @@ const brewFormulaName = function (project: string): string {
 // The three lines that install a project: brew 6.0 requires `brew trust`
 // before a third-party tap's formulae evaluate.
 const brewInstall = function (brewBase: string, project: string): string {
-    return "brew tap pazer/build " + brewBase + "/tap.git\nbrew trust pazer/build\nbrew install pazer/build/" + brewFormulaName(project);
+    return "brew trust " + brewBase + "/tap.git\nbrew tap pazer/build " + brewBase + "/tap.git\nbrew install pazer/build/" + brewFormulaName(project);
 };
 
 // Install commands, shared by the project page (latest) and the release page
@@ -623,7 +623,7 @@ pages.registries = function (): void {
         html += '<div class="card"><h2>Homebrew Tap</h2><p class="section-desc">Homebrew formulas are served through a generated Git tap. Formula files auto-detect macOS and Linux artifacts. A formula name cannot contain <code>/</code>, so a slash-namespaced project folds it to <code>-</code> &mdash; e.g. <code>myrepo/server</code> installs as <code>myrepo-server</code>.</p>';
         html += '<table class="info-table"><tr><td class="info-label">Tap Git URL</td><td class="endpoint-cell"><code>' + h(brew + "/tap.git") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
         html += '<tr><td class="info-label">Formula</td><td class="endpoint-cell"><code>' + h(brew + "/Formula/{formula}.rb") + "</code><copy-btn data-src='code'></copy-btn></td></tr></table>";
-        html += codeBlock("Install", "brew tap pazer/build " + brew + "/tap.git\nbrew trust pazer/build\nbrew install pazer/build/{formula}");
+        html += codeBlock("Install", "brew trust " + brew + "/tap.git\nbrew tap pazer/build " + brew + "/tap.git\nbrew install pazer/build/{formula}");
         html += "</div>";
 
         html += '<div class="card"><h2>npm Registry</h2><p class="section-desc">npm-compatible registry. Packages are scoped under <code>@buildhost</code>.</p>';
