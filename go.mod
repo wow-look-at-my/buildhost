@@ -12,7 +12,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/ulikunitz/xz v0.5.15
 	github.com/wow-look-at-my/bin-file-fmt/go v0.0.0-20260809003625-b41c22095858 // go-toolchain:auto-branch
-	github.com/wow-look-at-my/go-containers v0.0.0-20260826161058-40a3d1ef3d41 // go-toolchain:auto-branch
+	github.com/wow-look-at-my/go-containers v0.0.0-20260913115023-d3bbbdd0286d // go-toolchain:auto-branch
 	github.com/wow-look-at-my/go-mmap v0.0.0-20260824191519-1d122070e11e // go-toolchain:auto-branch
 	github.com/wow-look-at-my/router v0.0.0-20260816000554-e6629a27a4bd // go-toolchain:auto-branch
 	go.opentelemetry.io/contrib/bridges/otelslog v0.18.0

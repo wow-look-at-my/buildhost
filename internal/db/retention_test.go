@@ -236,20 +236,23 @@ func TestRetentionSettings(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 10, s.KeepN)
 	assert.Equal(t, 24, s.RecencyHours)
+	assert.Equal(t, 30, s.DeletedBranchDays)
 
-	require.NoError(t, d.SeedRetentionSettings(ctx, 5, 12))
-	require.NoError(t, d.SeedRetentionSettings(ctx, 99, 99))
+	require.NoError(t, d.SeedRetentionSettings(ctx, 5, 12, 45))
+	require.NoError(t, d.SeedRetentionSettings(ctx, 99, 99, 99))
 	s, err = d.GetRetentionSettings(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 5, s.KeepN)
 	assert.Equal(t, 12, s.RecencyHours)
+	assert.Equal(t, 45, s.DeletedBranchDays)
 
 	// Update overwrites.
-	require.NoError(t, d.UpdateRetentionSettings(ctx, 20, 48))
+	require.NoError(t, d.UpdateRetentionSettings(ctx, 20, 48, 60))
 	s, err = d.GetRetentionSettings(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 20, s.KeepN)
 	assert.Equal(t, 48, s.RecencyHours)
+	assert.Equal(t, 60, s.DeletedBranchDays)
 }
 
 func TestUpdateRetentionSettings_UpsertsWhenUnseeded(t *testing.T) {
@@ -257,11 +260,12 @@ func TestUpdateRetentionSettings_UpsertsWhenUnseeded(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 	// No prior seed: the update must insert the row (upsert), not no-op.
-	require.NoError(t, d.UpdateRetentionSettings(ctx, 3, 6))
+	require.NoError(t, d.UpdateRetentionSettings(ctx, 3, 6, 9))
 	s, err := d.GetRetentionSettings(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 3, s.KeepN)
 	assert.Equal(t, 6, s.RecencyHours)
+	assert.Equal(t, 9, s.DeletedBranchDays)
 }
 
 func TestListAbandonedReleases(t *testing.T) {

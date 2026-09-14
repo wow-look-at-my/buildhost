@@ -72,7 +72,7 @@ var serveCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		if err := database.SeedRetentionSettings(context.Background(), cfg.RetentionKeepN, int(cfg.RetentionRecencyGuard.Hours())); err != nil {
+		if err := database.SeedRetentionSettings(context.Background(), cfg.RetentionKeepN, int(cfg.RetentionRecencyGuard.Hours()), cfg.RetentionDeletedBranchDays); err != nil {
 			return fmt.Errorf("seed retention settings: %w", err)
 		}
 
@@ -177,7 +177,8 @@ func startRetentionSweeper(ctx context.Context, cfg config.Config, database *db.
 					continue
 				}
 				ret := retention.New(database, store, retention.ConfigFromSettings(settings, cfg.RetentionEnforce)).
-					WithRecordDeleter(recordDeleterFor(cfg))
+					WithRecordDeleter(recordDeleterFor(cfg)).
+					WithBranchLister(branchListerFor())
 				rep, err := ret.Run(ctx)
 				if err != nil {
 					slog.Error("retention sweep failed", "err", err)
@@ -199,13 +200,29 @@ func logRetentionReport(rep retention.Report) {
 			slog.Warn("retention evicted release", "reason", "abandoned",
 				"project_id", r.ProjectID, "branch", r.Branch, "version", r.Version, "release_id", r.ID)
 		}
+		for _, r := range rep.DeletedBranchReleases {
+			slog.Warn("retention evicted release", "reason", "deleted-branch",
+				"project_id", r.ProjectID, "branch", r.Branch, "version", r.Version, "release_id", r.ID)
+		}
 	}
+
+	// A release the deleted-branch rule declined to judge is invisible in the
+	// counts below, so it gets its own line.
+	if len(rep.UnknownBranchReleases) > 0 || rep.BranchLookupsFailed > 0 {
+		slog.Warn("retention: deleted-branch rule kept releases it could not decide",
+			"no_branch_recorded", len(rep.UnknownBranchReleases),
+			"branch_state_undetermined", rep.BranchLookupsFailed,
+			"errors", strings.Join(rep.BranchLookupErrors, "; "))
+	}
+
 	if rep.Releases() == 0 {
 		return // nothing to report this cycle
 	}
 	slog.Info("retention sweep complete",
 		"enforced", rep.Enforced, "releases", rep.Releases(),
 		"blobs_freed", rep.BlobsDeleted, "blobs_kept", rep.BlobsRetained, "bytes_freed", rep.ReclaimableBytes,
+		"deleted_branch_releases", len(rep.DeletedBranchReleases),
+		"deleted_branch_blobs", rep.DeadBranchBlobs, "deleted_branch_bytes", rep.DeadBranchBytes,
 		"records_marked_deleted", rep.RecordsMarkedDeleted, "records_unmarked", rep.RecordsUnmarked)
 
 	// Every unmarked record is the org's linked artifacts page claiming
