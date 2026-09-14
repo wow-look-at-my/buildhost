@@ -160,16 +160,16 @@ A `create_service` project's generated deb also ships a systemd user unit at `/u
 Homebrew: tap the generated Git repository, trust it, then install. The trust step is required from Homebrew 6.0. On Linux the bottle-less install runs Homebrew's build sandbox. That sandbox needs bubblewrap and an unprivileged user namespace. A container or a CI runner without them needs `HOMEBREW_NO_SANDBOX_LINUX=1` instead.
 
 ```
+brew trust __BREW_URL__/tap.git
 brew tap pazer/build __BREW_URL__/tap.git
-brew trust pazer/build
 brew install pazer/build/go-toolchain
 ```
 
 For a private project, tap the authenticated tap instead. It contains every public formula, plus the private projects the token can read. A git client transmits a credential only after a challenge. The credential therefore rides the tap URL as the HTTP Basic password. The authenticated tap replaces the public one, so run `brew untap --force pazer/build` first when the public tap is already added. Also export `HOMEBREW_BUILDHOST_TOKEN`, so the formula's download strategy can authenticate the artifact fetch. The `?token=` query parameter does not work with `brew tap`, because git appends its own path segments after the query string. Here is an example for a private project named `myrepo/myapp`:
 
 ```
+brew trust "__BREW_TOKEN_URL__/private/tap.git"
 brew tap pazer/build "__BREW_TOKEN_URL__/private/tap.git"
-brew trust pazer/build
 export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
 brew install pazer/build/myrepo-myapp
 ```
