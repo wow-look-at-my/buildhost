@@ -153,7 +153,7 @@ func TestFrontend(t *testing.T) {
 		require.NotContains(t, body, `/projects/myapp/releases/2">2</a> <span class="badge badge-latest">latest</span>`)
 		// The published tap command must clone the /tap.git smart-HTTP endpoint
 		brewBase := "http://brew." + strings.TrimPrefix(e.ts.URL, "http://")
-		require.Contains(t, body, "brew tap pazer/build "+brewBase+"/tap.git\nbrew trust pazer/build\nbrew install pazer/build/myapp")
+		require.Contains(t, body, "brew trust "+brewBase+"/tap.git\nbrew tap pazer/build "+brewBase+"/tap.git\nbrew install pazer/build/myapp")
 		require.Contains(t, body, "docker pull oci.")
 		require.Contains(t, body, "docker pull oci."+strings.TrimPrefix(e.ts.URL, "http://")+"/myapp:1")
 	})

@@ -68,7 +68,9 @@ func TestAdminStaticHomebrewInstructionsUseTap(t *testing.T) {
 	// A formula name cannot contain '/', so the placeholder is the FOLDED
 	require.Contains(t, body, "brew install pazer/build/{formula}")
 	require.NotContains(t, body, "brew install pazer/build/{project}")
-	require.Contains(t, body, "/tap.git\\nbrew trust pazer/build\\nbrew install pazer/build/")
+	require.Contains(t, body, "brew trust ")
+	require.Contains(t, body, "/tap.git\\nbrew tap pazer/build ")
+	require.Contains(t, body, "/tap.git\\nbrew install pazer/build/")
 }
 
 // Slash-namespaced projects render as a tree on the Projects page. These are the
