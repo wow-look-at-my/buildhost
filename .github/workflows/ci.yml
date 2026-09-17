@@ -43,7 +43,7 @@ jobs:
           project: dats
       - env:
           BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
-        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/repo-hygiene.dats test/dats/compression-opts.dats test/dats/routes-golden.dats
+        run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/repo-hygiene.dats test/dats/compression-opts.dats test/dats/routes-golden.dats test/dats/gc-deleted-branch.dats
       # On the default branch, cache this commit's route list keyed by its SHA.
       - if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         shell: bash
