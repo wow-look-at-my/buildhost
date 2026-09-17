@@ -20,3 +20,9 @@ tests:
 	  outputs:
 		stdout:
 			- "preview-comment: all checks passed"
+
+	- desc: upload sends a body past the advertised direct limit through a session
+	  cmd: node test/actions/upload-chunked.test.ts
+	  outputs:
+		stdout:
+			- "upload: all checks passed"
