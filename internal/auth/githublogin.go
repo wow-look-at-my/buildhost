@@ -97,7 +97,10 @@ func loginRedirectURL(r *http.Request) string {
 	next := RequestBaseURL(r) + r.URL.RequestURI()
 	base := apexRootURL(r)
 	if requestSiteApex(r) != "" {
-		pd := PrimaryDomain()
+		// A site-domain browser must be sent to a real apex to sign in. "*"
+		// (serve every Host) pins no such apex, so it is as unavailable here as
+		// an unset value: fall back to the plain JSON 401.
+		pd := PinnedPrimaryDomain()
 		if pd == "" {
 			return ""
 		}
