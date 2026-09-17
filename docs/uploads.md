@@ -46,7 +46,17 @@ Only a ragged set falls through to an upload followed by a hash reference. `{lin
 
 `buildhost publish --manifest` still hash-refs per entry. A manifest names each slot's own `X-Artifact-Filename`, which fan-out's single shared header cannot carry.
 
-The action does NOT probe server-info for the capability first. There is one buildhost. It advertises `upload_by_sha256`. A dedicated round-trip to re-confirm a constant is a probe for a known truth. `internal/uploadclient` still exposes `SupportsUploadBySHA256()` for the CLI. Server-info is already fetched there for the chunk threshold. The answer is therefore free.
+The action does NOT probe server-info for the `upload_by_sha256` capability first. There is one buildhost. It advertises that capability. A dedicated round-trip to re-confirm a constant is a probe for a known truth. `internal/uploadclient` still exposes `SupportsUploadBySHA256()` for the CLI.
+
+Server-info IS read once per publish, for `max_direct_upload_bytes`. That value is not a constant. `BUILDHOST_MAX_DIRECT_UPLOAD_SIZE` sets it per deployment. A wrong guess is the 413 that the advertised limit exists to prevent.
+
+## The composite upload engine (.github/actions/lib/upload.ts)
+
+`buildhost-publish` sends its bodies through this module. Every other publish composite drives the CLI, which chunks already. The engine has the same shape as `internal/uploadclient`. It reads `max_direct_upload_bytes` once. It then decides direct or chunked from the file's size, BEFORE anything is sent.
+
+A body past the limit creates a session. The engine appends chunks of 64 MiB. Each append resumes from the size the server reports. The finalize request is the artifact endpoint the publish asked for, sent empty with `?upload_session=` and `?upload_sha256=`. A refused finalize deletes the session, rather than leaving it for the sweeper.
+
+The module takes a `Body` (size, sha256, `read(offset, length)`) instead of a path. It takes a `Send` instead of a client. It therefore carries no node builtins. The composite keeps ownership of authentication and of the transient-failure retries. `test/actions/upload-chunked.test.ts` drives the engine against a server that speaks the real session protocol.
 
 ## Chunked upload sessions (internal/uploads)
 
