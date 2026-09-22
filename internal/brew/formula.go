@@ -73,14 +73,14 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 		Kind:        kind,
 		// A private project's formula downloads through the tap's token-aware
 		Private: project.IsPrivate,
-		// The project's packaging-agnostic create_service setting, which the
+		// The project's packaging-agnostic create_service setting.
 		Service:   project.CreateService,
 		Resources: resources,
 	})
 }
 
 // tarGZSHA256 returns the hex sha256 of the artifact's tar.gz repackage -- the
-// exact payload the formula's download URL serves via dl/static. The digest is
+// exact payload the formula's download URL serves via dl/static.
 func (h *Handler) tarGZSHA256(ctx context.Context, project db.Project, release db.Release, a db.PlatformArtifact, baseURL string) (string, error) {
 	cacheFormat := a.CacheFormat(string(repackage.FormatTarGZ))
 	_, _, cached, _, metadata, err := h.DB.GetPackagedArtifact(ctx, a.ID, cacheFormat)

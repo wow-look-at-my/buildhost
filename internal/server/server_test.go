@@ -26,8 +26,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
-// testEnv bundles the objects needed by every integration test. cfg, store,
-// and handler are kept so a test can simulate a redeploy (server.New over the
+// testEnv bundles the objects needed by every integration test. cfg, store.
 type testEnv struct {
 	ts       *httptest.Server
 	database *db.DB

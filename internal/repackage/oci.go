@@ -282,7 +282,7 @@ type essentials struct {
 	diffID     string
 }
 
-// essentialsOnce memoizes the shared base layer: it is constant for the lifetime of the
+// essentialsOnce memoizes the shared base layer.
 var essentialsOnce = sync.OnceValues(buildEssentials)
 
 func essentialsLayer() ([]byte, string, error) {

@@ -57,7 +57,7 @@ const run = async (answers: Answer[]) => {
 		assert.match(r.warned[1], /attempt 2.*fetch failed/);
 	}
 
-	// A refusal does not change on retry, so it fails at once and says why.
+	// A refusal does not change on retry, so it fails at the same time and says why.
 	{
 		const r = await run([{ status: 403, body: '{"message":"no id-token permission"}' }]);
 		assert.ok(r.error instanceof OidcRefused, `expected OidcRefused, got ${r.error}`);

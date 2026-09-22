@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Truncate every Go comment at the first line go-toolchain's commentnumbers
-// analyzer reports. The rules here mirror that analyzer: a token is a run of
-// name characters, a digit run counts unless a letter touches it, and a word
-// counts when the whole word names a number. The exemptions it grants -- a
-// URL, a qualified name, an HTTP status code, a section sign, an amount of
-// money -- are granted here too, so this cuts what the build reports and
-// nothing else.
+// Truncate every Go comment at the earliest line go-toolchain's
+// commentnumbers analyzer reports. The rules here mirror that analyzer: a
+// token is a run of name characters, a digit run counts unless a letter
+// touches it, and a word counts when the whole word names a number. The
+// exemptions it grants -- a URL, a qualified name, an HTTP status code, a
+// section sign, an amount of money -- are granted here too, so this cuts
+// what the build reports and nothing else.
 //
 // The offending line and the rest of its comment group go; a comment trailing
 // a code line is stripped from that line. Nothing is reworded.

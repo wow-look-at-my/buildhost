@@ -200,7 +200,7 @@ func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 }
 
 // releaseHolds gives every pin that keeps a release, and an empty slice when
-// eviction takes it. It mirrors ListEvictableReleases and
+// eviction takes it.
 func releaseHolds(f db.ListReleaseRetentionFactsRow, keepN int, cutoff time.Time) []string {
 	var holds []string
 	inGuard := !f.CreatedAt.Before(cutoff)

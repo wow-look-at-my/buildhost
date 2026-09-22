@@ -38,7 +38,6 @@ func TestRequireProject_AutoCreate_AnonymousOCIWrite_Returns401Challenge(t *test
 	assert.Equal(t, `Basic realm="buildhost"`, rec.Header().Get("Www-Authenticate"))
 }
 
-// The same anonymous write on a non-/v2/ path (e.g. the REST publish API) gets a
 func TestRequireProject_AutoCreate_AnonymousNonOCIWrite_Returns401(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)
@@ -85,8 +84,7 @@ func TestRequireProject_AutoCreate_RejectedJWT_Returns401WithReason(t *testing.T
 	assert.Contains(t, rec.Body.String(), "OIDC token rejected")
 }
 
-// With a valid OIDC token authorized for the namespace, the authenticated retry
-// (which the client makes after the challenge) provisions the project -- so
+// With a valid OIDC token authorized for the namespace.
 func TestRequireProject_AutoCreate_AuthenticatedOCIWrite_Provisions(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)

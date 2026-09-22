@@ -1,15 +1,10 @@
-# The SHIPPED IMAGE must strip on download, serve symbols, and honor debug=1.
 #
-# This exists because stripping stopped happening and nobody noticed for weeks:
-# it shelled out to strip(1)/objcopy(1), which the distroless image does not
-# ship. Every download went out unstripped and fmt=symbols could not work. The
-# unit tests all passed, because the runner has binutils and the container does
-# not. Only a check against the real image sees this.
+# Every download went out unstripped and fmt=symbols could not work. The unit
+# tests all passed, because the runner has binutils and the container does not.
+# Only a check against the real image sees this.
 #
-# The workflow builds the image, starts it on port 8080, and compiles the ELF
-# fixture this uploads -- the shipped binary is an APE, and an APE is not an
-# ELF for the stripper to work on. Needs curl, jq, readelf and the docker CLI,
-# so a workflow runs it --no-sandbox.
+# Needs curl, jq, readelf and the docker CLI, so a workflow runs it
+# --no-sandbox.
 #
 # see docs/formats/stripping.md
 
@@ -43,8 +38,6 @@ shared:
 				echo "WORK='$WORK'"
 			} > "$ENV_FILE"
 
-		# -L matters: /file canonicalizes its query with a 301, so an
-		# unredirected request returns the redirect body, not the artifact.
 		sections.sh: |
 			set -eu
 			readelf -SW "$1" | sed -n 's/^[[:space:]]*\[[[:space:]]*[0-9]\+\][[:space:]]\+\([^[:space:]]\+\).*/\1/p'

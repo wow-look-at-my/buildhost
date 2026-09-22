@@ -160,7 +160,6 @@ func TestServePackages_RefillsOnCreateServiceFlip(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, first, fmt.Sprintf("SHA256: %s\n", shaOff))
 
-	// Flip the packaging-agnostic service setting (in the DB and on the
 	require.NoError(t, d.SetProjectCreateService(ctx, proj.ID, true))
 	proj.CreateService = true
 

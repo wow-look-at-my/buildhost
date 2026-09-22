@@ -30,7 +30,7 @@ func init() {
 		handler.DB = auth.DB()
 	})
 
-	// Home and the stylesheet are public (no project context). Project and
+	// Home and the stylesheet are public (no project context).
 	auth.HandleRawPrimary("GET /", handler.Index)
 	auth.HandleRawPrimary("GET /_ui/style.css", handler.Stylesheet)
 	auth.HandlePrimary("GET /projects/{project}", parseProjectRoute, handler.Project)
@@ -41,7 +41,7 @@ type Handler struct {
 	DB *db.DB
 }
 
-// route carries the project name for requireProject. HiddenReadAccess makes an
+// route carries the project name for requireProject.
 type route struct {
 	project string
 }

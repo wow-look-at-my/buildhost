@@ -2,7 +2,7 @@
 //
 // Nothing else reaches this code: a publish e2e runs against a local server with
 // no pull request to comment on. A mistake here posts the wrong link, or none,
-// on every repo in the org at once.
+// on every repo in the org at the same time.
 
 const assert = require('node:assert');
 const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/preview-comment`;
@@ -60,7 +60,7 @@ async function main(): Promise<void> {
 	assert.deepStrictEqual(listed, []);
 	assert.strictEqual(created[0].issue_number, 99);
 
-	// --- sticky: the second publish edits the first comment ---------------
+	// --- sticky: the next publish edits the earliest comment ---------------
 	reset();
 	await run(gh([{ number: 74 }], [{ id: 5, body: 'unrelated' }, { id: 8, body: `${mark}\nold` }]));
 	assert.deepStrictEqual(created, []);
@@ -79,7 +79,6 @@ async function main(): Promise<void> {
 	assert.deepStrictEqual(created, []);
 	assert.match(info[0], /No open pull request/);
 
-	// A publish with no branch to look up cannot name one either.
 	reset();
 	assert.strictEqual(await run(gh(new Error('must not be called')), { headRef: '' }), true);
 	assert.deepStrictEqual(listed, []);
@@ -101,7 +100,7 @@ async function main(): Promise<void> {
 }
 
 // Node runs this file directly, so the rejection has to become an exit code
-// here: an unhandled one prints a warning and still exits 0 on some versions.
+// here: an unhandled a single prints a warning and still exits 0 on some versions.
 main().catch((err: unknown) => {
 	console.error(err);
 	process.exit(1);

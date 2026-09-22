@@ -116,7 +116,7 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 		})
 	}
 
-	// The ar container needs each member's exact byte length in its header, before the
+	// The ar container needs each member's exact byte length in its header.
 	dataTmp, err := os.CreateTemp(input.TmpDir, "deb-data-*")
 	if err != nil {
 		return nil, fmt.Errorf("create deb temp: %w", err)
@@ -210,7 +210,6 @@ func streamDebData(f *os.File, r io.Reader, name string, size, mode int64, pre, 
 	return fi.Size(), nil
 }
 
-// DebServiceUnitPath is where the create_service systemd USER unit lands in
 func DebServiceUnitPath(pkgName string) string {
 	return "/usr/lib/systemd/user/" + pkgName + ".service"
 }

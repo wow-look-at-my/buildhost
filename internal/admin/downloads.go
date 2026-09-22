@@ -16,8 +16,6 @@ const (
 	downloadsMaxLimit     = 1000
 )
 
-// apiProjectDownloads (GET /api/projects/{name}/downloads) returns the project's
-// most recent download-attribution events -- who fetched which artifact and
 func (s *Server) apiProjectDownloads(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	name := r.PathValue("name")

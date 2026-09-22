@@ -24,7 +24,7 @@ func registerRoutes() {
 }
 
 // withService adapts a Service method into a handler that resolves the running
-// Service per request. Before auth.Init there is none: the routes exist (so the
+// Service per request. Before auth.Init there is none.
 func withService(fn func(*Service, http.ResponseWriter, *http.Request)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		s := Current()
@@ -271,7 +271,7 @@ func (s *Service) ok(w http.ResponseWriter, r *http.Request, req request, source
 	s.record(req, source, outcome, http.StatusOK, "", started)
 }
 
-// fail answers a failed fetch. This is the single exit for every error, and the
+// fail answers a failed fetch. This is the single exit for every error.
 func (s *Service) fail(w http.ResponseWriter, r *http.Request, req request, err error, started time.Time) {
 	e := asError(req.Module, req.Version, err)
 	logFailure(e)

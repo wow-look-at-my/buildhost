@@ -18,8 +18,7 @@ export const RETRY_INTERVAL_MS = 2000;
 
 // GitHub's token endpoint sometimes answers with a proxy error page, such as
 // "upstream connect error", in place of JSON. That is transient, so the mint
-// retries it on a fixed interval. A 4xx other than 429 is a refusal, and a retry
-// cannot change it.
+// retries it on a fixed interval.
 export async function mintOidcToken(o: MintOptions): Promise<string> {
 	const doFetch = o.fetchImpl ?? fetch;
 	const interval = o.intervalMs ?? RETRY_INTERVAL_MS;

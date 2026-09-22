@@ -5,8 +5,7 @@
 // clicking a release on the project page threw inside the renderer, left the
 // previous page on screen, and read as a link that does nothing.
 //
-// A unit test cannot see this. The bug is a link target with no fixture behind
-// it, and only walking the links the app itself renders finds one.
+// A unit test cannot see this.
 //
 // The preview also serves the app under a path prefix, which is what turns demo
 // mode on, so this serves it the same way.
