@@ -21,6 +21,12 @@ tests:
 		stdout:
 			- "preview-comment: all checks passed"
 
+	- desc: oidc retries a transient token failure and fails at once on a refusal
+	  cmd: node test/actions/oidc.test.ts
+	  outputs:
+		stdout:
+			- "oidc: all checks passed"
+
 	- desc: upload sends a body past the advertised direct limit through a session
 	  cmd: node test/actions/upload-chunked.test.ts
 	  outputs:

@@ -211,11 +211,8 @@ runs:
               core.setFailed("OIDC not available. Add 'permissions: { id-token: write }'.");
               return;
             }
-            const idResp = await fetch(`${idTokenUrl}&audience=${server}`, {
-              headers: { Authorization: `Bearer ${idTokenBearer}` },
-            });
-            const token: string = ((await idResp.json()) as { value: string }).value;
-            if (!token) { core.setFailed("Failed to obtain OIDC token"); return; }
+            const { mintOidcToken } = require("${{ github.action_path }}/../lib/oidc.ts") as typeof import("${{ github.action_path }}/../lib/oidc");
+            const token: string = await mintOidcToken({ url: idTokenUrl, bearer: idTokenBearer, audience: server, warning: core.warning });
 
             // artifacts accumulate here as they're accepted, posted below before this step returns
             const uploadedSlots: import("${{ github.action_path }}/../lib/storage-record").PublishedArtifact[] = [];

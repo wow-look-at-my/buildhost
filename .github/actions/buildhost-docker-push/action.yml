@@ -109,15 +109,8 @@ runs:
                 core.setFailed("No token input and OIDC is unavailable. Add 'permissions: { id-token: write }' to the job, or pass token.");
                 return;
               }
-              // mints a GHA OIDC token audience-scoped to the buildhost server URL
-              const resp = await fetch(`${url}&audience=${server}`, {
-                headers: { Authorization: `Bearer ${bearer}` },
-              });
-              token = ((await resp.json()) as { value: string }).value;
-              if (!token) {
-                core.setFailed(`Failed to obtain OIDC token for ${server}`);
-                return;
-              }
+              const { mintOidcToken } = require("${{ github.action_path }}/../lib/oidc.ts") as typeof import("${{ github.action_path }}/../lib/oidc");
+              token = await mintOidcToken({ url, bearer, audience: server, warning: core.warning });
             }
             core.setSecret(token);
 
