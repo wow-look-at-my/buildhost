@@ -70,6 +70,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     steps:
       # PR routes: from the go-build hand-off the build job already produced for
       - uses: wow-look-at-my/actions@cache-download#latest
@@ -129,10 +130,16 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: base/go.mod
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: wow-look-at-my/actions@secret-server#latest
       # The admin dashboard's JS is a generate directive too (internal/admin),
       - if: steps.cache.outputs.cache-hit != 'true'
         working-directory: base
         run: |
+          if [ -x .github/scripts/pin-org-deps.sh ]; then
+            git config --global url."https://${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+            .github/scripts/pin-org-deps.sh
+          fi
           go generate ./internal/api
           if [ -x scripts/build-admin-frontend.sh ]; then ./scripts/build-admin-frontend.sh; fi
           if [ -d internal/repackage/shellgen ]; then go generate ./internal/repackage; fi
@@ -242,6 +249,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Stock Go cannot resolve the v0.0.0 placeholders go-toolchain keeps for org modules.
+      - uses: wow-look-at-my/actions@secret-server#latest
+      - name: Pin org modules for stock Go
+        run: |
+          git config --global url."https://${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          .github/scripts/pin-org-deps.sh
       - name: Build the strip fixture
         run: go build -o "$RUNNER_TEMP/strip-fixture" ./test/e2e/testdata/netcheck
       - env:
@@ -267,6 +280,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Stock Go cannot resolve the v0.0.0 placeholders go-toolchain keeps for org modules.
+      - uses: wow-look-at-my/actions@secret-server#latest
+      - name: Pin org modules for stock Go
+        run: |
+          git config --global url."https://${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          .github/scripts/pin-org-deps.sh
       - name: Build the marker entrypoint (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/marker" ./test/e2e/testdata/marker
       # The OCI endpoint is host-routed: the first Host label must be "oci".
@@ -325,6 +344,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Stock Go cannot resolve the v0.0.0 placeholders go-toolchain keeps for org modules.
+      - uses: wow-look-at-my/actions@secret-server#latest
+      - name: Pin org modules for stock Go
+        run: |
+          git config --global url."https://${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          .github/scripts/pin-org-deps.sh
       # Natively, never the shipped APE: SQLite's file locking fails under the APE's macOS syscall layer, and the server dies on SQLITE_IOERR_LOCK.
       - run: go generate ./internal/repackage
       - run: go generate ./internal/api
@@ -552,6 +577,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Stock Go cannot resolve the v0.0.0 placeholders go-toolchain keeps for org modules.
+      - uses: wow-look-at-my/actions@secret-server#latest
+      - name: Pin org modules for stock Go
+        run: |
+          git config --global url."https://${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          .github/scripts/pin-org-deps.sh
       - name: Install crane (zstd-capable OCI client)
         run: |
           go install github.com/google/go-containerregistry/cmd/crane@latest
@@ -627,6 +658,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Stock Go cannot resolve the v0.0.0 placeholders go-toolchain keeps for org modules.
+      - uses: wow-look-at-my/actions@secret-server#latest
+      - name: Pin org modules for stock Go
+        run: |
+          git config --global url."https://${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          .github/scripts/pin-org-deps.sh
       - name: Build apt test package payload (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/buildhost-apt-e2e" ./test/e2e/testdata/netcheck
       # Untimed, so the suite's 30s setup hook pays for neither.
