@@ -48,6 +48,7 @@ git.{domain}/brew/tap.git/{path...} {GET}
 git.{domain}/llms.txt {GET}
 goproxy.{domain}/health {GET}
 goproxy.{domain}/llms.txt {GET}
+goproxy.{domain}/sumdb/{name}/{rest...} {GET}
 goproxy.{domain}/{path...} {GET,HEAD}
 npm.{domain}/@buildhost/{project}/-/{filename} {GET}
 npm.{domain}/llms.txt {GET}
