@@ -19,12 +19,7 @@ Routes are printed exactly as registered. A main-domain route is path-only (`/ap
 
 ## Backing up the database
 
-```bash
-buildhost backup                     # writes buildhost-backup-<UTC timestamp>.db beside BUILDHOST_DB_PATH
-buildhost backup /backups/bh.db      # explicit output path
-```
-
-The command copies the SQLite database with `VACUUM INTO`. It opens the source read-only and skips migrations. So a running server keeps serving and writing. The copy is consistent and compacted. It refuses to overwrite an existing file. It does NOT copy the blob store under `BUILDHOST_DATA_DIR/blobs`. Back that directory up separately. Restore by stopping the server and putting the backup at `BUILDHOST_DB_PATH`.
+The admin dashboard's Storage page has a "Download database backup" button. It calls `GET /api/backup` on the admin port. That endpoint streams a `VACUUM INTO` snapshot of the live database as `buildhost-<UTC timestamp>.db`. The server keeps serving and writing during the snapshot. The snapshot is written beside `BUILDHOST_DB_PATH` and deleted after the download. The blob store under `BUILDHOST_DATA_DIR/blobs` is NOT included. Back that directory up separately. To restore, stop the server and put the file at `BUILDHOST_DB_PATH`.
 
 ## Serving
 
