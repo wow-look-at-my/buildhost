@@ -33,7 +33,10 @@ jobs:
             echo "::warning::APE binfmt handler not registered; a bare exec of an APE still fails here"
           fi
       # No fetch-cacerts step: the CA bundle is a generate directive
+      # The org module proxy is gone, so modules come direct with sumdb off.
       - uses: wow-look-at-my/go-toolchain@master
+        env:
+          GOPROXY: direct
         with:
           generate: 365c729892bd
           timeout: '25'
