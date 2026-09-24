@@ -133,6 +133,7 @@ jobs:
       - if: steps.cache.outputs.cache-hit != 'true'
         working-directory: base
         run: |
+          if [ -x scripts/resolve-org-deps.sh ]; then ./scripts/resolve-org-deps.sh; fi
           go generate ./internal/api
           if [ -x scripts/build-admin-frontend.sh ]; then ./scripts/build-admin-frontend.sh; fi
           if [ -d internal/repackage/shellgen ]; then go generate ./internal/repackage; fi
@@ -324,6 +325,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Stock Go cannot resolve the org v0.0.0 placeholder.
+      - run: ./scripts/resolve-org-deps.sh
       # Natively, never the shipped APE: SQLite's file locking fails under the APE's macOS syscall layer, and the server dies on SQLITE_IOERR_LOCK.
       - run: go generate ./internal/repackage
       - run: go generate ./internal/api
