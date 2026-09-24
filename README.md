@@ -711,7 +711,9 @@ Environment variables:
 | `BUILDHOST_MAX_DIRECT_UPLOAD_SIZE` | `95M` | Advertised safe single-request size (`/api/v1/server-info`); keep it under any proxy body cap in front of the server (Cloudflare's edge caps at 100 MB) |
 | `BUILDHOST_UPLOAD_SESSION_TTL` | `24h` | How long an idle chunked upload session lives before its spool is swept |
 | `BUILDHOST_RETENTION_INTERVAL` | (off) | Background GC sweep cadence (e.g. `1h`); empty/`0` disables the sweeper |
-| `BUILDHOST_RETENTION_KEEP_N` | `10` | Initial published releases kept per `(project, git branch)` -- seeds the dashboard policy on first start, then managed in the UI |
+| `BUILDHOST_RETENTION_KEEP_N` | `10` | Initial published releases kept on a project's default branch -- seeds the dashboard policy on first start, then managed in the UI |
+| `BUILDHOST_RETENTION_BRANCH_KEEP_N` | `1` | Initial published releases kept on every other branch -- seeds the dashboard policy |
+| `BUILDHOST_RETENTION_BRANCH_TTL_DAYS` | `7` | Initial days a branch's releases outlive its deletion on GitHub -- seeds the dashboard policy |
 | `BUILDHOST_RETENTION_RECENCY_GUARD` | `24h` | Initial recency guard (never evict releases newer than this) -- seeds the dashboard policy, then managed in the UI |
 | `BUILDHOST_RETENTION_ENFORCE` | `false` | Whether the background sweeper actually deletes; default is report-only. Manual runs from the dashboard/CLI delete when you confirm regardless |
 
@@ -728,9 +730,9 @@ When GitHub sends a branch deletion (`delete` event with `ref_type: "branch"`), 
 
 ## Retention / garbage collection
 
-buildhost can reclaim storage by evicting old releases. Eviction keeps the latest `BUILDHOST_RETENTION_KEEP_N` published releases on each `(project, git branch)` and sweeps abandoned (never-published) uploads, then deletes any content-addressed blob no longer referenced by anything. **Pins that are never evicted:** each branch's latest published release, any release a `docker`/OCI tag points at, pushed-docker builds, and anything newer than `BUILDHOST_RETENTION_RECENCY_GUARD`.
+buildhost can reclaim storage by evicting old releases. Eviction keeps the latest `keep_n` releases on a project's default branch and the latest `branch_keep_n` on every other branch. A branch deleted on GitHub keeps its releases for `branch_ttl_days`, then loses all of them. It sweeps abandoned uploads, then deletes any blob nothing references. **Never evicted:** the default branch's latest release, the project's newest release, OCI-tagged releases, pushed-docker builds, and anything inside the recency guard. Details: `docs/retention.md`.
 
-It is **report-only by default**. Nothing is deleted automatically. Manage it from the **admin dashboard's Retention page**. There you edit the policy, which is the keep-N value and the recency guard. You also see a live preview of exactly which releases an eviction removes, and how much storage that frees. You can also click to run garbage collection on demand, behind a confirmation. The policy is stored in the database. The `BUILDHOST_RETENTION_KEEP_N` and `_RECENCY_GUARD` env vars only seed its initial values.
+It is **report-only by default**. Nothing is deleted automatically. Manage it from the **admin dashboard's Retention page**. There you edit the policy: the keep-N values, the deleted-branch TTL and the recency guard. You also see a live preview of exactly which releases an eviction removes, and how much storage that frees. You can also click to run garbage collection on demand, behind a confirmation. The policy is stored in the database. The `BUILDHOST_RETENTION_*` env vars only seed its initial values.
 
 For headless/automated use there is also a CLI and an opt-in background sweeper:
 

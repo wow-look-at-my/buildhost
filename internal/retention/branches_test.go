@@ -50,7 +50,7 @@ func TestRun_DeletedBranchKeptForTTLThenEvicted(t *testing.T) {
 	ret.clock = func() time.Time { return now.Add(6 * 24 * time.Hour) }
 	rep, err = ret.Run(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, 0, rep.BranchSync.MarkedDeleted) // the earliest sighting is
+	assert.Equal(t, 0, rep.BranchSync.MarkedDeleted)
 	assert.Empty(t, rep.EvictedReleases)
 
 	// Past the TTL the tip goes. The live branch and the default branch stay.
