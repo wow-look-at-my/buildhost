@@ -125,6 +125,7 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/sites", router.Allow, s.apiSites)
 	mux.HandleFunc("GET /api/artifacts", router.Allow, s.apiArtifacts)
 	mux.HandleFunc("GET /api/storage", router.Allow, s.apiStorage)
+	mux.HandleFunc("GET /api/backup", router.Allow, s.apiBackup)
 	mux.HandleFunc("GET /api/goproxy", router.Allow, s.apiGoproxy)
 	mux.HandleFunc("POST /api/goproxy/recheck", router.Allow, s.apiGoproxyRecheck)
 	mux.HandleFunc("GET /api/retention", router.Allow, s.apiRetention)
