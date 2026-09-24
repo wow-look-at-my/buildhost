@@ -11,10 +11,10 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/ulikunitz/xz v0.5.15
-	github.com/wow-look-at-my/bin-file-fmt/go v0.0.0
-	github.com/wow-look-at-my/go-containers v0.0.0
-	github.com/wow-look-at-my/go-mmap v0.0.0
-	github.com/wow-look-at-my/router v0.0.0
+	github.com/wow-look-at-my/bin-file-fmt/go v0.0.0-20260809003625-b41c22095858 // go-toolchain:auto-branch
+	github.com/wow-look-at-my/go-containers v0.0.0-20260826161058-40a3d1ef3d41 // go-toolchain:auto-branch
+	github.com/wow-look-at-my/go-mmap v0.0.0-20260824191519-1d122070e11e // go-toolchain:auto-branch
+	github.com/wow-look-at-my/router v0.0.0-20260816000554-e6629a27a4bd // go-toolchain:auto-branch
 	go.opentelemetry.io/contrib/bridges/otelslog v0.18.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.19.0
@@ -26,7 +26,7 @@ require (
 	modernc.org/sqlite v1.50.1
 )
 
-require github.com/wow-look-at-my/go-regex-compiler v0.0.0
+require github.com/wow-look-at-my/go-regex-compiler v0.0.0-20260902104208-38ed47ff4d77 // go-toolchain:auto-branch
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
