@@ -56,18 +56,25 @@ func (q *Queries) DeleteReleaseRow(ctx context.Context, id int64) error {
 }
 
 const getRetentionSettings = `-- name: GetRetentionSettings :one
-SELECT keep_n, recency_hours FROM retention_settings WHERE id = 1
+SELECT keep_n, recency_hours, branch_keep_n, branch_ttl_days FROM retention_settings WHERE id = 1
 `
 
 type GetRetentionSettingsRow struct {
-	KeepN        int64 `json:"keep_n"`
-	RecencyHours int64 `json:"recency_hours"`
+	KeepN         int64 `json:"keep_n"`
+	RecencyHours  int64 `json:"recency_hours"`
+	BranchKeepN   int64 `json:"branch_keep_n"`
+	BranchTtlDays int64 `json:"branch_ttl_days"`
 }
 
 func (q *Queries) GetRetentionSettings(ctx context.Context) (GetRetentionSettingsRow, error) {
 	row := q.db.QueryRowContext(ctx, getRetentionSettings)
 	var i GetRetentionSettingsRow
-	err := row.Scan(&i.KeepN, &i.RecencyHours)
+	err := row.Scan(
+		&i.KeepN,
+		&i.RecencyHours,
+		&i.BranchKeepN,
+		&i.BranchTtlDays,
+	)
 	return i, err
 }
 
@@ -242,19 +249,27 @@ WHERE r.published = 1
   AND r.created_at < datetime(?1)
   AND r.id NOT IN (SELECT release_id FROM oci_tags)
   AND r.id NOT IN (SELECT release_id FROM artifacts WHERE kind = 'docker')
-  AND (
-      SELECT COUNT(*) FROM releases r2
-      WHERE r2.project_id = r.project_id
-        AND r2.git_branch = r.git_branch
-        AND r2.published = 1
-        AND r2.version_num > r.version_num
-  ) >= max(?2, 1)
+  AND r.version_num < (SELECT MAX(r4.version_num) FROM releases r4 WHERE r4.project_id = r.project_id AND r4.published = 1)
+  AND CASE WHEN r.git_branch = p.default_branch THEN
+      (SELECT COUNT(*) FROM releases r2
+        WHERE r2.project_id = r.project_id AND r2.git_branch = r.git_branch
+          AND r2.published = 1 AND r2.version_num > r.version_num) >= max(?2, 1)
+  ELSE
+      (SELECT COUNT(*) FROM releases r2
+        WHERE r2.project_id = r.project_id AND r2.git_branch = r.git_branch
+          AND r2.published = 1 AND r2.version_num > r.version_num) >= max(?3, 1)
+      OR EXISTS (SELECT 1 FROM deleted_branches d
+        WHERE d.project_id = r.project_id AND d.branch = r.git_branch
+          AND d.deleted_at < datetime(?4))
+  END
 ORDER BY r.project_id, r.git_branch, r.version_num DESC
 `
 
 type ListEvictableReleasesParams struct {
-	RecencyCutoff interface{} `json:"recency_cutoff"`
-	KeepN         interface{} `json:"keep_n"`
+	RecencyCutoff   interface{} `json:"recency_cutoff"`
+	KeepN           interface{} `json:"keep_n"`
+	BranchKeepN     interface{} `json:"branch_keep_n"`
+	BranchTtlCutoff interface{} `json:"branch_ttl_cutoff"`
 }
 
 type ListEvictableReleasesRow struct {
@@ -266,17 +281,21 @@ type ListEvictableReleasesRow struct {
 	VersionNum  int64  `json:"version_num"`
 }
 
-// Published releases past keep-N on each (project, git_branch). A release is
-// evictable when at least max(keep_n, 1) NEWER published releases exist on the
-// same branch. The max(..., 1) floor means the per-branch tip (zero newer) is
-// ALWAYS kept, even if keep_n is set to 0 -- so eviction can never remove a
-// branch's latest published build (which /dl/.../branch/... resolves). Also
-// excludes anything newer than the recency cutoff, tagged releases, and
-// pushed-docker releases (their blobs live in project-scoped oci_blob_links, not
-// release-cascade-able). Correlated-subquery form (sqlc's SQLite analyzer does
-// not support window-fn aliases in WHERE).
+// Published releases the policy evicts. The default branch keeps
+// max(keep_n, 1) releases, so its tip is always kept. Every other branch keeps
+// max(branch_keep_n, 1), and loses all of them once GitHub deleted the branch
+// before branch_ttl_cutoff. The project's newest published
+// release, anything newer than the recency cutoff, tagged releases and
+// pushed-docker releases (their blobs live in project-scoped oci_blob_links)
+// are never evicted. ListReleaseRetentionFacts and SumReclaimableBytes repeat
+// this predicate; the three must agree.
 func (q *Queries) ListEvictableReleases(ctx context.Context, arg ListEvictableReleasesParams) ([]ListEvictableReleasesRow, error) {
-	rows, err := q.db.QueryContext(ctx, listEvictableReleases, arg.RecencyCutoff, arg.KeepN)
+	rows, err := q.db.QueryContext(ctx, listEvictableReleases,
+		arg.RecencyCutoff,
+		arg.KeepN,
+		arg.BranchKeepN,
+		arg.BranchTtlCutoff,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -537,6 +556,14 @@ SELECT r.id, r.project_id, p.name AS project_name, r.version, r.version_num,
            AND r2.git_branch = r.git_branch
            AND r2.published = 1
            AND r2.version_num > r.version_num) AS newer_published_on_branch,
+       CAST(r.git_branch = p.default_branch AS INTEGER) AS on_default_branch,
+       CAST(EXISTS (SELECT 1 FROM deleted_branches d
+         WHERE d.project_id = r.project_id AND d.branch = r.git_branch
+           AND d.deleted_at < datetime(?1)) AS INTEGER) AS branch_expired,
+       CAST(EXISTS (SELECT 1 FROM deleted_branches d
+         WHERE d.project_id = r.project_id AND d.branch = r.git_branch) AS INTEGER) AS branch_deleted,
+       CAST(r.version_num = COALESCE((SELECT MAX(r4.version_num) FROM releases r4
+         WHERE r4.project_id = r.project_id AND r4.published = 1), -1) AS INTEGER) AS project_newest,
        (SELECT COUNT(*) FROM oci_tags t WHERE t.release_id = r.id) AS oci_tag_count,
        (SELECT COUNT(*) FROM artifacts a WHERE a.release_id = r.id AND a.kind = 'docker') AS docker_artifact_count
 FROM releases r
@@ -555,17 +582,22 @@ type ListReleaseRetentionFactsRow struct {
 	Draft                  bool      `json:"draft"`
 	CreatedAt              time.Time `json:"created_at"`
 	NewerPublishedOnBranch int64     `json:"newer_published_on_branch"`
+	OnDefaultBranch        int64     `json:"on_default_branch"`
+	BranchExpired          int64     `json:"branch_expired"`
+	BranchDeleted          int64     `json:"branch_deleted"`
+	ProjectNewest          int64     `json:"project_newest"`
 	OciTagCount            int64     `json:"oci_tag_count"`
 	DockerArtifactCount    int64     `json:"docker_artifact_count"`
 }
 
 // One row per release with the facts the keep-N and abandoned queries decide on:
-// how many newer published releases share its branch, whether an OCI tag or a
-// docker artifact pins it, and its published/draft state. The inventory turns
-// these into a per-file hold reason, so an operator can see WHY a release is
-// kept instead of only that it is.
-func (q *Queries) ListReleaseRetentionFacts(ctx context.Context) ([]ListReleaseRetentionFactsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listReleaseRetentionFacts)
+// how many newer published releases share its branch, whether that branch is the
+// default one or has expired, whether it is the project's newest release,
+// whether an OCI tag or a docker artifact pins it, and its published/draft
+// state. The inventory turns these into a per-file hold reason, so an operator
+// can see WHY a release is kept instead of only that it is.
+func (q *Queries) ListReleaseRetentionFacts(ctx context.Context, branchTtlCutoff interface{}) ([]ListReleaseRetentionFactsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listReleaseRetentionFacts, branchTtlCutoff)
 	if err != nil {
 		return nil, err
 	}
@@ -584,6 +616,10 @@ func (q *Queries) ListReleaseRetentionFacts(ctx context.Context) ([]ListReleaseR
 			&i.Draft,
 			&i.CreatedAt,
 			&i.NewerPublishedOnBranch,
+			&i.OnDefaultBranch,
+			&i.BranchExpired,
+			&i.BranchDeleted,
+			&i.ProjectNewest,
 			&i.OciTagCount,
 			&i.DockerArtifactCount,
 		); err != nil {
@@ -601,33 +637,47 @@ func (q *Queries) ListReleaseRetentionFacts(ctx context.Context) ([]ListReleaseR
 }
 
 const seedRetentionSettings = `-- name: SeedRetentionSettings :exec
-INSERT OR IGNORE INTO retention_settings (id, keep_n, recency_hours) VALUES (1, ?, ?)
+INSERT OR IGNORE INTO retention_settings (id, keep_n, recency_hours, branch_keep_n, branch_ttl_days) VALUES (1, ?, ?, ?, ?)
 `
 
 type SeedRetentionSettingsParams struct {
-	KeepN        int64 `json:"keep_n"`
-	RecencyHours int64 `json:"recency_hours"`
+	KeepN         int64 `json:"keep_n"`
+	RecencyHours  int64 `json:"recency_hours"`
+	BranchKeepN   int64 `json:"branch_keep_n"`
+	BranchTtlDays int64 `json:"branch_ttl_days"`
 }
 
 func (q *Queries) SeedRetentionSettings(ctx context.Context, arg SeedRetentionSettingsParams) error {
-	_, err := q.db.ExecContext(ctx, seedRetentionSettings, arg.KeepN, arg.RecencyHours)
+	_, err := q.db.ExecContext(ctx, seedRetentionSettings,
+		arg.KeepN,
+		arg.RecencyHours,
+		arg.BranchKeepN,
+		arg.BranchTtlDays,
+	)
 	return err
 }
 
 const sumReclaimableBytes = `-- name: SumReclaimableBytes :one
 WITH evictable AS (
     SELECT r.id FROM releases r
+    JOIN projects p ON p.id = r.project_id
     WHERE r.published = 1
       AND r.created_at < datetime(?1)
       AND r.id NOT IN (SELECT release_id FROM oci_tags)
       AND r.id NOT IN (SELECT release_id FROM artifacts WHERE kind = 'docker')
-      AND (
-          SELECT COUNT(*) FROM releases r2
-          WHERE r2.project_id = r.project_id
-            AND r2.git_branch = r.git_branch
-            AND r2.published = 1
-            AND r2.version_num > r.version_num
-      ) >= max(?2, 1)
+      AND r.version_num < (SELECT MAX(r4.version_num) FROM releases r4 WHERE r4.project_id = r.project_id AND r4.published = 1)
+      AND CASE WHEN r.git_branch = p.default_branch THEN
+          (SELECT COUNT(*) FROM releases r2
+            WHERE r2.project_id = r.project_id AND r2.git_branch = r.git_branch
+              AND r2.published = 1 AND r2.version_num > r.version_num) >= max(?2, 1)
+      ELSE
+          (SELECT COUNT(*) FROM releases r2
+            WHERE r2.project_id = r.project_id AND r2.git_branch = r.git_branch
+              AND r2.published = 1 AND r2.version_num > r.version_num) >= max(?3, 1)
+          OR EXISTS (SELECT 1 FROM deleted_branches d
+            WHERE d.project_id = r.project_id AND d.branch = r.git_branch
+              AND d.deleted_at < datetime(?4))
+      END
 )
 SELECT CAST(
     COALESCE((SELECT SUM(a.size + a.stripped_size + a.debug_size)
@@ -639,8 +689,10 @@ AS INTEGER) AS reclaimable_bytes
 `
 
 type SumReclaimableBytesParams struct {
-	RecencyCutoff interface{} `json:"recency_cutoff"`
-	KeepN         interface{} `json:"keep_n"`
+	RecencyCutoff   interface{} `json:"recency_cutoff"`
+	KeepN           interface{} `json:"keep_n"`
+	BranchKeepN     interface{} `json:"branch_keep_n"`
+	BranchTtlCutoff interface{} `json:"branch_ttl_cutoff"`
 }
 
 // UPPER BOUND on bytes keep-N would free: the logical sizes of evictable releases'
@@ -648,27 +700,41 @@ type SumReclaimableBytesParams struct {
 // blobs still shared with surviving releases, so it overestimates; the gc CLI and
 // sweeper report the exact post-refcount figure.
 func (q *Queries) SumReclaimableBytes(ctx context.Context, arg SumReclaimableBytesParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, sumReclaimableBytes, arg.RecencyCutoff, arg.KeepN)
+	row := q.db.QueryRowContext(ctx, sumReclaimableBytes,
+		arg.RecencyCutoff,
+		arg.KeepN,
+		arg.BranchKeepN,
+		arg.BranchTtlCutoff,
+	)
 	var reclaimable_bytes int64
 	err := row.Scan(&reclaimable_bytes)
 	return reclaimable_bytes, err
 }
 
 const updateRetentionSettings = `-- name: UpdateRetentionSettings :exec
-INSERT INTO retention_settings (id, keep_n, recency_hours, updated_at)
-VALUES (1, ?, ?, datetime('now'))
+INSERT INTO retention_settings (id, keep_n, recency_hours, branch_keep_n, branch_ttl_days, updated_at)
+VALUES (1, ?, ?, ?, ?, datetime('now'))
 ON CONFLICT(id) DO UPDATE SET
     keep_n = excluded.keep_n,
     recency_hours = excluded.recency_hours,
+    branch_keep_n = excluded.branch_keep_n,
+    branch_ttl_days = excluded.branch_ttl_days,
     updated_at = datetime('now')
 `
 
 type UpdateRetentionSettingsParams struct {
-	KeepN        int64 `json:"keep_n"`
-	RecencyHours int64 `json:"recency_hours"`
+	KeepN         int64 `json:"keep_n"`
+	RecencyHours  int64 `json:"recency_hours"`
+	BranchKeepN   int64 `json:"branch_keep_n"`
+	BranchTtlDays int64 `json:"branch_ttl_days"`
 }
 
 func (q *Queries) UpdateRetentionSettings(ctx context.Context, arg UpdateRetentionSettingsParams) error {
-	_, err := q.db.ExecContext(ctx, updateRetentionSettings, arg.KeepN, arg.RecencyHours)
+	_, err := q.db.ExecContext(ctx, updateRetentionSettings,
+		arg.KeepN,
+		arg.RecencyHours,
+		arg.BranchKeepN,
+		arg.BranchTtlDays,
+	)
 	return err
 }

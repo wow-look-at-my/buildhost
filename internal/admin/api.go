@@ -9,6 +9,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/retention"
 )
 
 func (s *Server) apiSidebar(w http.ResponseWriter, r *http.Request) {
@@ -303,10 +304,15 @@ func (s *Server) apiStorage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Upper-bound estimate of what keep-N eviction would free (does not subtract
-	cutoff := time.Now().Add(-s.cfg.RetentionRecencyGuard)
-	if reclaimable, err := s.db.SumReclaimableBytes(r.Context(), int64(s.cfg.RetentionKeepN), cutoff); err == nil {
-		resp["reclaimable_bytes"] = reclaimable
-	} else {
+	settings, err := s.db.GetRetentionSettings(r.Context())
+	if err == nil {
+		policy := retention.ConfigFromSettings(settings, false).Policy(time.Now())
+		var reclaimable int64
+		if reclaimable, err = s.db.SumReclaimableBytes(r.Context(), policy); err == nil {
+			resp["reclaimable_bytes"] = reclaimable
+		}
+	}
+	if err != nil {
 		slog.Error("admin api error", "err", err, "path", r.URL.Path)
 	}
 

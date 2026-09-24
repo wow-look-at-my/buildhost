@@ -167,7 +167,16 @@ CREATE TABLE retention_settings (
     id            INTEGER PRIMARY KEY CHECK (id = 1),
     keep_n        INTEGER NOT NULL DEFAULT 10,
     recency_hours INTEGER NOT NULL DEFAULT 24,
-    updated_at    DATETIME NOT NULL DEFAULT (datetime('now'))
+    updated_at    DATETIME NOT NULL DEFAULT (datetime('now')),
+    branch_keep_n   INTEGER NOT NULL DEFAULT 1,
+    branch_ttl_days INTEGER NOT NULL DEFAULT 7
+);
+
+CREATE TABLE deleted_branches (
+    project_id INTEGER NOT NULL REFERENCES projects(id),
+    branch     TEXT NOT NULL,
+    deleted_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (project_id, branch)
 );
 
 -- Retention/GC indexes (mirrored from migrations/009_retention_indexes.sql).

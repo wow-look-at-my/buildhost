@@ -261,6 +261,8 @@ export interface RetentionPreview {
 export interface RetentionData {
     keep_n: number;
     recency_hours: number;
+    branch_keep_n: number;
+    branch_ttl_days: number;
     sweeper_enabled: boolean;
     sweeper_enforce: boolean;
     preview: RetentionPreview;

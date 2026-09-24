@@ -1114,11 +1114,13 @@ const renderRetention = function (d: RetentionData): void {
     }
 
     var html = "<h1>Retention &amp; Garbage Collection</h1>";
-    html += '<div class="card"><p class="muted">Eviction keeps the newest <strong>keep-N</strong> published releases on each <code>(project, branch)</code> and sweeps abandoned uploads, then deletes any blob nothing else references. Each branch&#39;s latest published build, tagged images, pushed-docker builds, and anything inside the recency guard are <strong>never</strong> deleted. Nothing happens until you run it below (or enable the background sweeper via env).</p><p>' + sweeper + "</p></div>";
+    html += '<div class="card"><p class="muted">Eviction keeps the newest <strong>keep-N</strong> published releases on each project&#39;s default branch and the newest <strong>branch keep-N</strong> on every other branch. Once GitHub deletes a branch, its releases are kept for the configured number of days and then evicted, tip included. buildhost learns of a deletion from the GitHub <code>delete</code> webhook, or when a run lists the repo&#39;s branches. Abandoned uploads are swept, then any blob nothing else references is deleted. The default branch&#39;s latest build, the project&#39;s newest release, tagged images, pushed-docker builds, and anything inside the recency guard are <strong>never</strong> deleted. Nothing happens until you run it below (or enable the background sweeper via env).</p><p>' + sweeper + "</p></div>";
 
     html += '<div class="card"><h2>Policy</h2><form id="retention-form">';
     html += '<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end">';
-    html += '<label>Keep per branch<br><input class="form-input form-input-sm" type="number" id="ret-keepn" min="0" max="100000" value="' + h(d.keep_n) + '"></label>';
+    html += '<label>Keep on default branch<br><input class="form-input form-input-sm" type="number" id="ret-keepn" min="0" max="100000" value="' + h(d.keep_n) + '"></label>';
+    html += '<label>Keep on other branches<br><input class="form-input form-input-sm" type="number" id="ret-branch-keepn" min="0" max="100000" value="' + h(d.branch_keep_n) + '"></label>';
+    html += '<label>Keep after branch deleted on GitHub (days)<br><input class="form-input form-input-sm" type="number" id="ret-branch-ttl" min="0" max="3650" value="' + h(d.branch_ttl_days) + '"></label>';
     html += '<label>Recency guard (hours)<br><input class="form-input form-input-sm" type="number" id="ret-recency" min="0" max="87600" value="' + h(d.recency_hours) + '"></label>';
     html += '<button class="btn btn-primary" type="submit">Save policy</button>';
     html += "</div></form></div>";
@@ -1162,10 +1164,12 @@ const renderRetention = function (d: RetentionData): void {
             e.preventDefault();
             var keepN = parseInt((document.getElementById("ret-keepn") as HTMLInputElement | HTMLSelectElement).value, 10);
             var recency = parseInt((document.getElementById("ret-recency") as HTMLInputElement | HTMLSelectElement).value, 10);
+            var branchKeepN = parseInt((document.getElementById("ret-branch-keepn") as HTMLInputElement).value, 10);
+            var branchTTL = parseInt((document.getElementById("ret-branch-ttl") as HTMLInputElement).value, 10);
             fetch("/api/retention", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ keep_n: keepN, recency_hours: recency })
+                body: JSON.stringify({ keep_n: keepN, recency_hours: recency, branch_keep_n: branchKeepN, branch_ttl_days: branchTTL })
             }).then(function (res) {
                 if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); });
                 return res.json().then(renderRetention);
@@ -1534,7 +1538,7 @@ const demoData: Record<string, unknown> = {
         disk_used: 120000000, disk_total: 500000000
     },
     "/retention": {
-        keep_n: 10, recency_hours: 24, sweeper_enabled: false, sweeper_enforce: false,
+        keep_n: 10, recency_hours: 24, branch_keep_n: 1, branch_ttl_days: 7, sweeper_enabled: false, sweeper_enforce: false,
         preview: {
             enforced: false, release_count: 3, keep_n_count: 2, abandoned_count: 1,
             blobs: 4, blobs_retained: 1, reclaimable_bytes: 18874368,

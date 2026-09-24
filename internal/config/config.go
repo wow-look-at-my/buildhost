@@ -124,7 +124,9 @@ type Config struct {
 	GitHubClientSecret string
 
 	// Retention / garbage collection. Report-only by default: nothing is deleted
-	RetentionKeepN        int // published releases kept per (project, branch)
+	RetentionKeepN        int // published releases kept on a project's default branch
+	RetentionBranchKeepN  int // published releases kept on every other branch
+	RetentionBranchTTL    int
 	RetentionInterval     time.Duration
 	RetentionRecencyGuard time.Duration // never evict releases newer than this
 	RetentionEnforce      bool          // actually delete; false = report-only
@@ -170,6 +172,8 @@ func Load() Config {
 		OIDCIssuers:     []string{"https://token.actions.githubusercontent.com"},
 
 		RetentionKeepN:        10,
+		RetentionBranchKeepN:  1,
+		RetentionBranchTTL:    7,
 		RetentionInterval:     0,
 		RetentionRecencyGuard: 24 * time.Hour,
 		RetentionEnforce:      false,
@@ -253,6 +257,16 @@ func Load() Config {
 	if v := os.Getenv("BUILDHOST_RETENTION_KEEP_N"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			c.RetentionKeepN = n
+		}
+	}
+	if v := os.Getenv("BUILDHOST_RETENTION_BRANCH_KEEP_N"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			c.RetentionBranchKeepN = n
+		}
+	}
+	if v := os.Getenv("BUILDHOST_RETENTION_BRANCH_TTL_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			c.RetentionBranchTTL = n
 		}
 	}
 	c.RetentionInterval = envDuration("BUILDHOST_RETENTION_INTERVAL", c.RetentionInterval)
