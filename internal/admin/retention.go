@@ -116,8 +116,7 @@ func (s *Server) apiRunRetention(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRetentionBody)).Decode(&body)
 
-	// Same guard as the background sweeper: an enforcing run while writes are
-	// in flight could free a blob whose newest reference (e.g. a
+	// Same guard as the background sweeper.
 	if body.Enforce {
 		if n := InflightWrites(); n > 0 {
 			http.Error(w, fmt.Sprintf("%d write(s) in flight; retry when idle", n), http.StatusConflict)

@@ -97,7 +97,7 @@ func TestInventory_SharedBlobReportsWhoStillHoldsIt(t *testing.T) {
 	assert.Equal(t, 0, inv.Totals.HoldMismatches)
 }
 
-// A release inside the recency guard is pinned by time, not by keep-N. The
+// A release inside the recency guard is pinned by time, not by keep-N.
 func TestInventory_RecencyGuardIsItsOwnHold(t *testing.T) {
 	t.Serial()
 	d, store, p := setup(t)

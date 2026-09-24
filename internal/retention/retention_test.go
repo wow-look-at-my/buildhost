@@ -26,6 +26,8 @@ func setup(t *testing.T) (*db.DB, *storage.Filesystem, *db.Project) {
 
 	p := &db.Project{Name: "proj", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(context.Background(), p))
+	require.NoError(t, d.SetProjectDefaultBranch(context.Background(), p.ID, "main"))
+	p.DefaultBranch = "main"
 	return d, store, p
 }
 

@@ -3,12 +3,12 @@
 // Its own job because nothing else reaches the code: upload-artifact-action-e2e
 // publishes to http://localhost:18080, where the unreachable-registry skip
 // returns before a record is posted. A mistake here fails publishing for every
-// repo in the org at once.
+// repo in the org at the same time.
 
 const assert = require('node:assert');
 const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/storage-record`;
 // Untyped on purpose: the module's types are checked where it is CALLED, in
-// the four composites; here the assertions are the contract.
+// the composites; here the assertions are the contract.
 const { recordReleaseArtifacts, recordSite, recordImage } = require(`${lib}.ts`);
 
 type Sent = Record<string, unknown>;
@@ -99,7 +99,6 @@ async function main(): Promise<void> {
 	assert.strictEqual(info[0], 'Skipping 2 storage records: PazerOP is a user account, which has no linked artifacts page');
 	assert.deepStrictEqual(failed, []);
 
-	// An organization's 404 still fails, and says what it observed.
 	reset();
 	assert.strictEqual(await release(gh(fails(404), 'Organization')), false);
 	assert.match(failed[0], /HTTP 404.*GET \/users\/PazerOP reported 'Organization'.*missing 'artifact-metadata: write'/s);
@@ -109,7 +108,6 @@ async function main(): Promise<void> {
 	assert.strictEqual(await release(gh(fails(404), new Error('network'))), false);
 	assert.match(failed[0], /GET \/users\/PazerOP failed, so the owner type is unknown/);
 
-	// A 403 is a plain refusal, and neither it nor a success costs a lookup.
 	for (const [post, refused] of [[fails(403), true], [async () => ({}), false]] as const) {
 		reset();
 		let probed = false;
@@ -135,7 +133,7 @@ async function main(): Promise<void> {
 }
 
 // Node runs this file directly, so the rejection has to become an exit code
-// here: an unhandled one prints a warning and still exits 0 on some versions.
+// here: an unhandled a single prints a warning and still exits 0 on some versions.
 main().catch((err: unknown) => {
 	console.error(err);
 	process.exit(1);

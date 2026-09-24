@@ -22,7 +22,6 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 	})
-	// npm requests a scoped package as `@buildhost/<name>` but URL-encodes the
 	auth.ServiceHandleHandler("npm", "GET /{pkg}", parseRoute, &handler)
 	// Tarball URLs are emitted by us in the packument with literal slashes (npm
 	auth.ServiceHandle("npm", "GET /@buildhost/{project}/-/{filename}", parseTarballRoute, handler.serveTarball)

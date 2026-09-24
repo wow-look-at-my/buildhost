@@ -104,7 +104,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) Handler() http.Handler {
 	var h http.Handler = http.HandlerFunc(auth.ServeHTTP)
-	// Between Authenticate (needs the token in context to bind sessions to
 	h = uploads.ResolveSessionBody(h)
 	h = auth.GetMiddleware().Authenticate(h)
 	h = admin.TrackInflight(h)

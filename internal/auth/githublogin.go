@@ -38,8 +38,7 @@ func init() {
 	HandleRaw("GET "+signoutPath, handleSignout)
 }
 
-// GitHubAuth performs the OAuth Authorization Code flow against GitHub. A
-// signed-in user is authorized for a private project by their access to that
+// GitHubAuth performs the OAuth Authorization Code flow against GitHub.
 type GitHubAuth struct {
 	clientID     string
 	clientSecret string
@@ -65,8 +64,7 @@ const (
 	repoCheckTokenDead
 )
 
-// NewGitHubAuth returns a configured GitHubAuth, or nil if either the client id
-// or secret is empty (the feature is then disabled and browsers fall back to the
+// NewGitHubAuth returns a configured GitHubAuth.
 func NewGitHubAuth(clientID, clientSecret string) *GitHubAuth {
 	clientID = strings.TrimSpace(clientID)
 	clientSecret = strings.TrimSpace(clientSecret)
@@ -114,8 +112,7 @@ func signoutURL(r *http.Request) string {
 }
 
 // apexRootURL returns scheme://<apex>, deriving the apex from the request Host by
-// stripping a known leading service label (apt/dl/sites/...). Correct whether
-// called from a service subdomain (strips it) or the apex itself (nothing to
+// stripping a known leading service label (apt/dl/sites/...).
 func apexRootURL(r *http.Request) string {
 	host, port := r.Host, ""
 	if i := strings.LastIndex(host, ":"); i >= 0 {
@@ -245,7 +242,7 @@ func handleSigninCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 // restartOrFail handles a recoverable callback failure (expired state, nonce
-// cookie lost or overwritten by a newer tab): it transparently sends the
+// cookie lost or overwritten by a newer tab).
 func restartOrFail(w http.ResponseWriter, r *http.Request, st signinState, reason string) {
 	if st.retried {
 		signinFailedHTML(w, r, http.StatusBadRequest, reason, st.next)

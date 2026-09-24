@@ -14,8 +14,8 @@ export interface Context { repo: { owner: string; repo: string } }
 interface Comment { id: number; body?: string | null }
 
 // The injected octokit is callable AND carries `rest`, so it does not match a
-// plain object interface at a call site. The narrowing happens here, once,
-// rather than at every caller.
+// plain object interface at a call site. The narrowing happens here, a single
+// time, rather than at every caller.
 export interface Octokit {
 	rest: {
 		pulls: { list(p: Record<string, unknown>): Promise<{ data: readonly { number: number }[] }> };
@@ -27,11 +27,9 @@ export interface Octokit {
 	};
 }
 
-/**
- * One sticky comment per published site. The marker carries the project and the
- * site branch, so a repo that publishes several sites off one commit keeps one
- * comment per site instead of overwriting itself.
- */
+/** A single sticky comment per published site. The marker carries the project
+ * and the site branch, so a repo that publishes several sites off a single
+ * commit keeps a single comment per site instead of overwriting itself. */
 export function marker(project: string, branch: string): string {
 	return `<!-- buildhost-preview:${project}/${branch} -->`;
 }
@@ -40,12 +38,7 @@ export function commentBody(project: string, branch: string, siteURL: string): s
 	return `${marker(project, branch)}\n**Preview of \`${project}\` (\`${branch}\`):** ${siteURL}`;
 }
 
-/**
- * Resolve the pull request this publish previews. `prNumber` is the event's own
- * number where the event has one. Otherwise the branch names it: a push event
- * carries no pull request, and the open pull request whose head is this branch
- * is the one a reviewer is reading.
- */
+/** Resolve the pull request this publish previews. */
 async function resolvePR(octokit: Octokit, context: Context, params: {
 	prNumber?: number; headRef?: string;
 }): Promise<number> {

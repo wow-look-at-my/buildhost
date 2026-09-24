@@ -1,13 +1,8 @@
-# What `apt-get install` gets from a generated APT repository: a plain project,
-# a slash-namespaced one whose Debian package name folds '/' to '-', and an APE
-# whose package must ship a launcher instead of a bare root-owned binary.
 #
 # Setup publishes and installs; the tests only ask questions about what landed.
 # The apt client is a container the workflow builds and starts (APTBOX), so the
 # runner's own apt state is never touched and there is nothing to undo. It runs
-# on the default bridge and reaches the server through host-gateway. The server
-# still needs port 80, because buildhost derives sibling service URLs without
-# ports, so a workflow runs this --no-sandbox.
+# on the default bridge and reaches the server through host-gateway.
 #
 # $BUILDHOST_BIN, $ARTIFACT_BIN and $APTBOX come from the workflow.
 #
@@ -16,7 +11,7 @@
 shared:
 	files:
 		start.sh: |
-			# Publish three projects and install all three through apt.
+			# Publish projects and install each of them through apt.
 			set -eu
 			WORK="$(dirname "$ENV_FILE")"
 			BASE="http://127.0.0.1"
@@ -28,10 +23,8 @@ shared:
 				|| { echo "the apt container $APTBOX is not running" >&2; exit 1; }
 			# box runs a command as root inside that container.
 			box() { docker exec "$APTBOX" "$@"; }
-			# apt resolves apt.localhost and static.localhost through the
-			# container's hosts file, but curl pins a *.localhost name to
-			# loopback under RFC 6761 and never consults it. --resolve is the
-			# documented override, and this is the address to give it.
+			# --resolve is the documented override, and this is the address
+			# to give it.
 			GW="$(box getent hosts apt.localhost | awk '{print $1}')"
 			test -n "$GW" || { echo "apt.localhost does not resolve inside $APTBOX" >&2; exit 1; }
 			# An APE cannot be exec'd: its header is a shell script, and
@@ -43,8 +36,8 @@ shared:
 			BUILDHOST_ADMIN_LISTEN_ADDR=""; export BUILDHOST_ADMIN_LISTEN_ADDR
 			TOKEN="$($RUN bootstrap --name apt-e2e | tail -n1)"
 			test -n "$TOKEN" || { echo "no token from bootstrap" >&2; exit 1; }
-			# Port 80 needs root. setsid keeps the server in its own process
-			# group so teardown takes the whole tree down.
+			# setsid keeps the server in its own process group so teardown
+			# takes the whole tree down.
 			setsid sudo env \
 				BUILDHOST_DATA_DIR="$BUILDHOST_DATA_DIR" \
 				BUILDHOST_DB_PATH="$BUILDHOST_DB_PATH" \
@@ -53,10 +46,7 @@ shared:
 				$RUN serve > "$WORK/server.log" 2>&1 &
 			echo "$!" > "$WORK/server.pid"
 			started=""
-			# A hook gets 30s in total. A one-second poll spends the whole
-			# budget waiting, so the suite reports a timeout instead of the
-			# server log that says why. Ten seconds is the ceiling here, and a
-			# fifth-of-a-second poll still catches a healthy server at once.
+			# A hook gets 30s in total.
 			for _ in $(seq 50); do
 				if curl -fsS "$BASE/healthz" >/dev/null 2>&1; then started=yes; break; fi
 				sleep 0.2
@@ -84,9 +74,7 @@ shared:
 			}
 
 			# install <project> <package>: add the project's repository inside
-			# the container and install the package apt derives from it. The
-			# update refreshes THIS list only, so three installs do not cost
-			# three round trips to the Ubuntu archive.
+			# the container and install the package apt derives from it.
 			install() {
 				apt_base="http://apt.localhost/$1"
 				box sh -c "install -d -m 0755 /etc/apt/keyrings \
@@ -99,10 +87,9 @@ shared:
 					&& DEBIAN_FRONTEND=noninteractive apt-get install -y '$2'"
 			}
 
-			# An APE rewrites its own file the first time it runs, and dpkg
-			# installs binaries root-owned 0755. The fixture is APE-SHAPED on
-			# purpose: no shebang, and it writes to itself before printing its
-			# marker. A normal binary cannot exercise this at all.
+			# The fixture is APE-SHAPED on purpose: no shebang, and it writes
+			# to itself before printing its marker. A normal binary cannot
+			# exercise this at all.
 			{
 				printf '%s\n' "MZqFpD='APE-shaped fixture: rewrites itself on first run'"
 				printf '%s\n' ': >> "$0" || { echo "self-write failed" >&2; exit 1; }'

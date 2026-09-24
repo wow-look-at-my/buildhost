@@ -1,6 +1,6 @@
 package sites
 
-// Ref resolution: turning the "<ref>[/<path>]" remainder of a site URL into the
+// Ref resolution.
 
 import (
 	"context"
@@ -24,7 +24,7 @@ func defaultBranch(project *db.Project) string {
 // learned from GitHub on publish; it can lag at the seed "master" -- e.g. until a
 // GitHub-OIDC publish corrects it, or when buildhost can't reach a private repo
 // to learn its real default -- in which case the sites may all live on a branch
-// (commonly "main") the hint doesn't name. Blindly trusting it then bounces the
+// (commonly "main") the hint doesn't name.
 func resolveRootBranch(ctx context.Context, database *db.DB, project *db.Project) string {
 	preferred := defaultBranch(project)
 	if database == nil || siteExists(ctx, database, project.ID, preferred) {
@@ -84,8 +84,6 @@ func refNamesBranch(ref, branch string) bool {
 // minCommitRefLen is the shortest abbreviated sha accepted as a commit ref.
 const minCommitRefLen = 7
 
-// resolveCommitRef resolves a git commit (full sha or an abbreviation of at
-// least minCommitRefLen) to the branch whose CURRENT deployment was built from
 func resolveCommitRef(ctx context.Context, database *db.DB, projectID int64, seg string) (branch string, ok bool) {
 	if database == nil || !looksLikeCommit(seg) {
 		return "", false

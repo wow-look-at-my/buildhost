@@ -16,7 +16,6 @@ import (
 	"time"
 )
 
-// tapHistoryDirName is the directory under the persistent data dir (NOT the
 const tapHistoryDirName = "brew-tap"
 
 // tapHistoryMaxLineages caps how many lineage histories are kept on disk.
@@ -36,8 +35,7 @@ func (h *Handler) tapHistoryRoot() string {
 	return filepath.Join(base, "brew-tap-history")
 }
 
-// tapLineageDir maps a tapcache key to its on-disk lineage directory. Hashing
-// keeps hostile Host headers / token names from smuggling path syntax into the
+// tapLineageDir maps a tapcache key to its on-disk lineage directory.
 func (h *Handler) tapLineageDir(key string) string {
 	sum := sha256.Sum256([]byte(key))
 	return filepath.Join(h.tapHistoryRoot(), hex.EncodeToString(sum[:]))
@@ -67,7 +65,6 @@ func (h *Handler) refreshTapLineage(r *http.Request, dir string) error {
 			touchTapLineage(dir)
 			return nil
 		}
-		// An unreadable tip OBJECT (external corruption) still keeps tip as
 	}
 	if err := writeTapObjects(dir, objects); err != nil {
 		return err
@@ -79,7 +76,7 @@ func (h *Handler) refreshTapLineage(r *http.Request, dir string) error {
 	return nil
 }
 
-// readTapTip returns the lineage's persisted tip commit sha, or "" when the
+// readTapTip returns the lineage's persisted tip commit sha.
 func readTapTip(dir string) string {
 	b, err := os.ReadFile(filepath.Join(dir, "refs", "heads", "main"))
 	if err != nil {
@@ -195,7 +192,6 @@ func writeTapFileAtomic(dir, name string, data []byte) error {
 
 const tapTempPrefix = ".tmp-"
 
-// touchTapLineage stamps the lineage directory's mtime -- the LRU recency the
 func touchTapLineage(dir string) {
 	now := time.Now()
 	_ = os.Chtimes(dir, now, now)

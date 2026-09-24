@@ -54,7 +54,7 @@ func (r *Retention) WithRecordDeleter(d RecordDeleter) *Retention {
 }
 
 // ConfigFromSettings builds an engine Config from the stored (UI-editable) policy
-// plus a runtime enforce decision -- the policy lives in the DB, while whether a
+// plus a runtime enforce decision -- the policy lives in the DB.
 func ConfigFromSettings(s db.RetentionSettings, enforce bool) Config {
 	return Config{
 		KeepN:        s.KeepN,
@@ -158,7 +158,7 @@ func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
 		rep.FreedBlobs = append(rep.FreedBlobs, BlobRef{Key: ref.Key, Size: ref.Size})
 		if enforce {
 			if err := r.store.Delete(ctx, ref.Key); err != nil {
-				// Rows are already committed; a failed blob delete only leaks the
+				// Rows are already committed.
 				slog.WarnContext(ctx, "retention: failed to delete freed blob", "key", ref.Key, "err", err)
 			}
 		}
@@ -221,7 +221,7 @@ func (r *Retention) collectRecords(ctx context.Context, refs []ReleaseRef) []doo
 //
 // A failure here never rolls back the eviction -- the bytes are already gone,
 // and refusing to GC because GitHub is unreachable would be worse. It is
-// counted instead: RecordsUnmarked and RecordErrors travel in the Report, the
+// counted instead: RecordsUnmarked and RecordErrors travel in the Report.
 func (r *Retention) markRecordsDeleted(ctx context.Context, rep *Report, doomed []doomedRecord) {
 	if len(doomed) == 0 {
 		return

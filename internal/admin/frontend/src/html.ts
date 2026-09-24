@@ -13,7 +13,7 @@ export type Node = El | Raw | string | number | null | undefined | boolean | Nod
 
 type AttrValue = string | number | boolean | null | undefined;
 
-// escape renders text HTML-safe (the five entities the DOM needs).
+// escape renders text HTML-safe (the entities the DOM needs).
 export function escape(s: unknown): string {
     if (s == null) return "";
     return String(s)
