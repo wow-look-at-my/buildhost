@@ -6,7 +6,7 @@ REST API handlers (projects, releases, artifacts, publish, tokens). Each handler
 
 ## Project settings
 
-`PATCH /api/v1/projects/{project}` (`UpdateProjectSettings`) updates the operator-set project settings. There is one field today, `create_service`. Request fields are pointer-typed. An absent one is unchanged. `parseRoute` counts PATCH as a write verb. The centralized requireProject therefore demands a write-scoped token authorized for the project. The release-create body accepts the same optional `create_service` bool, asserted on every publish, and an absent one is untouched. The publishing repo's CI is therefore the declarative surface. No documented flow has a manual API step.
+`PATCH /api/v1/projects/{project}` (`UpdateProjectSettings`) updates the operator-set project settings. It takes `create_service` and `versioning` (`auto` or `semver`). A switch to `auto` keeps the existing releases, and the next number follows the highest one. Request fields are pointer-typed. An absent one is unchanged. `parseRoute` counts PATCH as a write verb. The centralized requireProject therefore demands a write-scoped token authorized for the project. The release-create body accepts the same optional `create_service` bool, asserted on every publish, and an absent one is untouched. The publishing repo's CI is therefore the declarative surface. No documented flow has a manual API step.
 
 The setting is packaging-format-AGNOSTIC. It says "this project runs as a background service". Each format materializes it in its own way. brew emits a `service do` block. `fmt=deb` emits an auto-enabled systemd user unit. raw, zip, npm and OCI only store it.
 

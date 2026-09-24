@@ -192,6 +192,49 @@ func TestUpdateProjectSettings_CreateService(t *testing.T) {
 	assert.False(t, got.CreateService)
 }
 
+func TestUpdateProjectSettings_Versioning(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "verproj", Versioning: db.VersioningSemver}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "998.0.0", VersionNum: 998_000_000}
+	require.NoError(t, h.DB.CreateRelease(ctx, rel))
+
+	patch := func(body string, p *db.Project) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("PATCH", "/api/v1/projects/verproj", strings.NewReader(body))
+		req.SetPathValue("project", "verproj")
+		req = withProjectRoute(req, p)
+		rec := httptest.NewRecorder()
+		h.UpdateProjectSettings(rec, req)
+		return rec
+	}
+
+	rec := patch(`{"versioning":"calver"}`, proj)
+	assert.Equal(t, http.StatusBadRequest, rec.Code, "an unknown scheme is refused")
+	got, err := h.DB.GetProject(ctx, "verproj")
+	require.NoError(t, err)
+	assert.Equal(t, db.VersioningSemver, got.Versioning)
+
+	rec = patch(`{"versioning":"auto"}`, got)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	got, err = h.DB.GetProject(ctx, "verproj")
+	require.NoError(t, err)
+	assert.Equal(t, db.VersioningAuto, got.Versioning)
+
+	// The next auto number continues after the semver history.
+	next, err := h.DB.NextVersionNum(ctx, got.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(998_000_001), next)
+
+	rec = patch(`{}`, got)
+	require.Equal(t, http.StatusOK, rec.Code)
+	got, err = h.DB.GetProject(ctx, "verproj")
+	require.NoError(t, err)
+	assert.Equal(t, db.VersioningAuto, got.Versioning, "an absent key leaves the scheme unchanged")
+}
+
 func TestUpdateProjectSettings_InvalidBody(t *testing.T) {
 	t.Serial()
 	h := setupTestHandler(t)

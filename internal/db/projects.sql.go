@@ -511,6 +511,20 @@ func (q *Queries) SetProjectCreateService(ctx context.Context, arg SetProjectCre
 	return err
 }
 
+const setProjectVersioning = `-- name: SetProjectVersioning :exec
+UPDATE projects SET versioning = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type SetProjectVersioningParams struct {
+	Versioning Versioning `json:"versioning"`
+	ID         int64      `json:"id"`
+}
+
+func (q *Queries) SetProjectVersioning(ctx context.Context, arg SetProjectVersioningParams) error {
+	_, err := q.db.ExecContext(ctx, setProjectVersioning, arg.Versioning, arg.ID)
+	return err
+}
+
 const setProjectDefaultBranch = `-- name: SetProjectDefaultBranch :exec
 UPDATE projects SET default_branch = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
 `

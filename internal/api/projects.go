@@ -96,6 +96,8 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 type updateProjectRequest struct {
 	// CreateService declares that the project's installed binary runs as a
 	CreateService *bool `json:"create_service"`
+	// Versioning is "auto" or "semver". A versionless publish to a semver project fails.
+	Versioning *string `json:"versioning"`
 }
 
 // UpdateProjectSettings PATCHes operator-set project settings. Auth rides the
@@ -109,6 +111,21 @@ func (h *Handler) UpdateProjectSettings(w http.ResponseWriter, r *http.Request) 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, http.StatusBadRequest, "invalid request body")
 		return
+	}
+
+	if req.Versioning != nil {
+		v := db.Versioning(*req.Versioning)
+		if v != db.VersioningAuto && v != db.VersioningSemver {
+			jsonError(w, http.StatusBadRequest, "versioning must be 'auto' or 'semver'")
+			return
+		}
+		if v != project.Versioning {
+			if err := h.DB.SetProjectVersioning(r.Context(), project.ID, v); err != nil {
+				jsonError(w, http.StatusInternalServerError, "failed to update project")
+				return
+			}
+			project.Versioning = v
+		}
 	}
 
 	if req.CreateService != nil && *req.CreateService != project.CreateService {
