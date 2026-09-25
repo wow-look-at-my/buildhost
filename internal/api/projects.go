@@ -95,8 +95,9 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 // pointer so an absent key leaves the setting unchanged (PATCH semantics).
 type updateProjectRequest struct {
 	CreateService *bool `json:"create_service"`
-	// Versioning is "auto" or "semver". A versionless publish to a semver project fails.
-	Versioning *string `json:"versioning"`
+	// Versioning is decoded only to refuse it. A write token includes CI's OIDC
+	// token, so the admin dashboard is the single place that changes versioning.
+	Versioning json.RawMessage `json:"versioning"`
 }
 
 // UpdateProjectSettings PATCHes operator-set project settings. Auth rides the
@@ -113,18 +114,8 @@ func (h *Handler) UpdateProjectSettings(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if req.Versioning != nil {
-		v := db.Versioning(*req.Versioning)
-		if v != db.VersioningAuto && v != db.VersioningSemver {
-			jsonError(w, http.StatusBadRequest, "versioning must be 'auto' or 'semver'")
-			return
-		}
-		if v != project.Versioning {
-			if err := h.DB.SetProjectVersioning(r.Context(), project.ID, v); err != nil {
-				jsonError(w, http.StatusInternalServerError, "failed to update project")
-				return
-			}
-			project.Versioning = v
-		}
+		jsonError(w, http.StatusForbidden, "versioning is changed from the admin dashboard only")
+		return
 	}
 
 	if req.CreateService != nil && *req.CreateService != project.CreateService {
