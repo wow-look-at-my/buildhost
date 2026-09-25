@@ -113,6 +113,7 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("POST /api/projects/{name}/download-links", router.Allow, s.apiCreateDownloadLink)
 	mux.HandleFunc("GET /api/projects/{name}/merge-plan", router.Allow, s.apiMergePlan)
 	mux.HandleFunc("POST /api/projects/{name}/merge", router.Allow, s.apiMerge)
+	mux.HandleFunc("PUT /api/projects/{name}/versioning", router.Allow, s.apiSetVersioning)
 	mux.HandleFunc("GET /api/projects/{name}", router.Allow, s.apiProject)
 	mux.HandleFunc("GET /api/duplicates", router.Allow, s.apiDuplicates)
 	mux.HandleFunc("GET /api/projects", router.Allow, s.apiProjects)
@@ -191,7 +192,7 @@ func (s *Server) writeJSON(w http.ResponseWriter, v any) {
 //
 // The registry serves each format from a dedicated subdomain (dl., apt., brew.,
 // npm., oci., sites., static.) -- never from a path prefix on the main host.
-// The admin dashboard itself runs on a subdomain (e.g. admin.example.com), so
+// The admin dashboard itself runs on a subdomain (e.g. admin.example.com).
 func serviceURLs(r *http.Request) map[string]string {
 	return map[string]string{
 		"dl":     auth.DeriveServiceURL(r, "dl").String(),
