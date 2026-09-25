@@ -86,6 +86,12 @@ func (d *DB) SetProjectCreateService(ctx context.Context, id int64, enabled bool
 	})
 }
 
+// SetProjectVersioning changes how the project numbers a release. Existing
+// releases keep their numbers.
+func (d *DB) SetProjectVersioning(ctx context.Context, id int64, v Versioning) error {
+	return d.q.SetProjectVersioning(ctx, SetProjectVersioningParams{Versioning: v, ID: id})
+}
+
 func (d *DB) ListProjects(ctx context.Context) ([]Project, error) {
 	return d.q.ListAllProjects(ctx)
 }
