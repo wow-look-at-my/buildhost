@@ -94,7 +94,6 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 // updateProjectRequest carries operator-set project settings. Every field is a
 // pointer so an absent key leaves the setting unchanged (PATCH semantics).
 type updateProjectRequest struct {
-	// CreateService declares that the project's installed binary runs as a
 	CreateService *bool `json:"create_service"`
 	// Versioning is "auto" or "semver". A versionless publish to a semver project fails.
 	Versioning *string `json:"versioning"`

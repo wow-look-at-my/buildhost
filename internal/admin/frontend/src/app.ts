@@ -174,8 +174,6 @@ const brewFormulaName = function (project: string): string {
     return project.replace(/\//g, "-");
 };
 
-// The three lines that install a project: brew 6.0 requires `brew trust`
-// before a third-party tap's formulae evaluate.
 const brewInstall = function (brewBase: string, project: string): string {
     return "brew tap pazer/build " + brewBase + "/tap.git\nbrew trust pazer/build\nbrew install pazer/build/" + brewFormulaName(project);
 };
@@ -538,8 +536,8 @@ pages.release = function (name: string, version: string): void {
                 var pkgs = a.packages || [];
                 var dlQ = "?v=" + r.version + "&os=" + a.os + "&arch=" + a.arch;
                 if (priv) {
-                    // Private project: a plain dl link would 401. Each link mints a
-                    // signed, single-artifact link on click, then downloads it.
+                    // Each link mints a signed, single-artifact link on click, then
+                    // downloads it.
                     html += dlMintLink(dlBase + dlQ, p.name, r.version, a.os, a.arch, "raw", false, "raw", "Download (mints a temporary signed link)");
                     if (a.debug_storage_key) html += " " + dlMintLink(dlBase + dlQ + "&debug=1", p.name, r.version, a.os, a.arch, "raw", true, "debug", "Debug symbols");
                     for (var j = 0; j < pkgs.length; j++) {
@@ -823,15 +821,13 @@ const copyTempLink = function (btn: HTMLButtonElement, project: string, version:
     });
 };
 
-// dlMintLink renders a download link for a private project's artifact. A plain
-// dl link would 401 for the browser, so a click mints a signed single-artifact
-// link and downloads that instead.
+// dlMintLink renders a download link for a private project's artifact.
 //
 // The href is still the artifact's REAL url, never "#": an anchor's href is what
 // the browser copies, shows on hover, and opens in a new tab, and a page-local
-// "#" makes all three useless -- "copy link address" yielded the dashboard's own
-// URL. Following it directly asks for credentials, which is the honest answer
-// for a private artifact; the temp-link button next to it is the shareable one.
+// "#" makes all useless -- "copy link address" yielded the dashboard's own URL.
+// Following it directly asks for credentials, which is the honest answer for a
+// private artifact; the temp-link button next to it is the shareable one.
 //
 // Values are safe charsets (project/version/os/arch/fmt), so they embed directly
 // in the inline handler.
@@ -1221,8 +1217,6 @@ const copyInventory = function (btn: HTMLButtonElement): void {
 
 const downloadInventory = function (btn: HTMLButtonElement): void {
     inventoryAction(btn, "Downloaded", function (json, inv) {
-        // 2026-08-22T02:05:50.889Z -> 2026-08-22T02-05-50Z, so the name stays a
-        // legal filename and still sorts by time.
         var stamp = (inv.generated_at || "").replace(/\.\d+/, "").replace(/:/g, "-");
         var url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
         var a = document.createElement("a");

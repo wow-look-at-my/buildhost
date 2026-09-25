@@ -192,7 +192,7 @@ func (s *Server) writeJSON(w http.ResponseWriter, v any) {
 //
 // The registry serves each format from a dedicated subdomain (dl., apt., brew.,
 // npm., oci., sites., static.) -- never from a path prefix on the main host.
-// The admin dashboard itself runs on a subdomain (e.g. admin.example.com), so
+// The admin dashboard itself runs on a subdomain (e.g. admin.example.com).
 func serviceURLs(r *http.Request) map[string]string {
 	return map[string]string{
 		"dl":     auth.DeriveServiceURL(r, "dl").String(),
