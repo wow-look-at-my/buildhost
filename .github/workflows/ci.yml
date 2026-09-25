@@ -328,6 +328,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Stock Go cannot read the v0.0.0 placeholder on a branch-followed org module, so the job drops each one and gets it at latest. Some are private, so the checksum database skips them.
+      - env:
+          GONOSUMDB: github.com/wow-look-at-my
+        run: |
+          mods=$(awk '/go-toolchain:auto-branch/ {for (i = 1; i < NF; i++) if ($(i+1) == "v0.0.0") print $i}' go.mod)
+          for m in $mods; do go mod edit -droprequire="$m"; done
+          go get $(printf '%s@latest ' $mods)
       # Natively, never the shipped APE: SQLite's file locking fails under the APE's macOS syscall layer, and the server dies on SQLITE_IOERR_LOCK.
       - run: go generate ./internal/repackage
       - run: go generate ./internal/api
