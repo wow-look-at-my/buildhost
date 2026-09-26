@@ -6,8 +6,7 @@
 # rolling updater creates the new container from the OLD container's config,
 # which carries the entrypoint resolved from the image that container was
 # created from -- for one predating the APE, ["buildhost"]. That is a bare exec
-# of an APE, which the kernel answers with ENOEXEC and docker reports as exit,
-# on a loop.
+# of an APE, which the kernel answers with ENOEXEC. Docker then reports exit code 126 and restarts it forever.
 #
 # The fix is a shebang launcher on PATH, which the kernel CAN exec, in front of
 # the APE.

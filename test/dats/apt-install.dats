@@ -14,7 +14,7 @@
 shared:
 	files:
 		start.sh: |
-			# Publish projects and install all of them through apt.
+			# Publish projects and install each of them through apt.
 			set -eu
 			WORK="$(dirname "$ENV_FILE")"
 			BASE="http://127.0.0.1"
@@ -82,7 +82,9 @@ shared:
 			}
 
 			# install <project> <package>: add the project's repository inside
-			# the container and install the package apt derives from it.
+			# the container and install the package apt derives from it. The
+			# update refreshes THIS list only, so installs do not cost round
+			# trips to the Ubuntu archive.
 			install() {
 				apt_base="http://apt.localhost/$1"
 				box sh -c "install -d -m 0755 /etc/apt/keyrings \
