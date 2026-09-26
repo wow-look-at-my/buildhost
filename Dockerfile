@@ -38,10 +38,7 @@ LABEL org.opencontainers.image.description="Universal package registry server"
 COPY --from=dirs /shell /bin
 COPY --from=dirs /tmpdir /tmp
 # The APE sits under /usr/local/lib and a shebang launcher takes its place on
-# PATH, the same shape the deb repackager gives an APE. A launcher the kernel
-# can exec keeps the shell an implementation detail of this image: an
-# entrypoint that names the binary any other way still starts the server,
-# instead of exiting 126 on a bare exec.
+# PATH, the same shape the deb repackager gives an APE.
 COPY --from=staged --chmod=755 /buildhost /usr/local/lib/buildhost/buildhost
 COPY --chmod=755 scripts/image-launcher.sh /usr/local/bin/buildhost
 COPY --from=dirs --chown=65532:65532 /data /var/lib/buildhost
