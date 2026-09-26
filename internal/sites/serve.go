@@ -1,7 +1,6 @@
 package sites
 
 import (
-	"archive/tar"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,7 +19,6 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/binarchive"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
 const siteNotFoundPage = "404.html"
@@ -89,67 +87,22 @@ func (h *Handler) serveSiteFile(ctx context.Context, w http.ResponseWriter, r *h
 		return
 	}
 
-	// Indexed path: a site stored as a binpazer archive answers "give me this
-	if h.serveFromArchive(ctx, w, site.StorageKey, filePath) {
-		return
-	}
-
-	rc, _, err := h.Store.Get(ctx, site.StorageKey)
+	a, closer, err := openArchive(ctx, h.Store, site.StorageKey)
 	if err != nil {
-		http.Error(w, "site data not found", http.StatusInternalServerError)
+		slog.Error("sites: open site archive", "project", project.Name, "branch", branch, "err", err)
+		http.Error(w, "site data unreadable", http.StatusInternalServerError)
 		return
 	}
-	defer rc.Close()
+	defer closer.Close()
 
-	tr := tar.NewReader(rc)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			http.Error(w, "corrupt site archive", http.StatusInternalServerError)
-			return
-		}
-
-		if hdr.Typeflag != tar.TypeReg {
-			continue
-		}
-		name := path.Clean(hdr.Name)
-		if name == filePath {
-			serveTarFile(w, tr, name, hdr, http.StatusOK)
-			return
-		}
-	}
-
-	rc, _, err = h.Store.Get(ctx, site.StorageKey)
-	if err != nil {
-		http.Error(w, "site data not found", http.StatusInternalServerError)
+	if fr, e, err := a.OpenFile(filePath); err == nil {
+		serveArchiveFile(w, fr, e, http.StatusOK)
 		return
 	}
-	defer rc.Close()
-
-	tr = tar.NewReader(rc)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			http.Error(w, "corrupt site archive", http.StatusInternalServerError)
-			return
-		}
-
-		if hdr.Typeflag != tar.TypeReg {
-			continue
-		}
-		name := path.Clean(hdr.Name)
-		if name == siteNotFoundPage {
-			serveTarFile(w, tr, name, hdr, http.StatusNotFound)
-			return
-		}
+	if fr, e, err := a.OpenFile(siteNotFoundPage); err == nil {
+		serveArchiveFile(w, fr, e, http.StatusNotFound)
+		return
 	}
-
 	http.NotFound(w, r)
 }
 
@@ -177,39 +130,6 @@ func (h *Handler) ServeDefaultBranch(w http.ResponseWriter, r *http.Request) {
 	h.serveSiteFile(ctx, w, r, project, resolveRootBranch(ctx, h.DB, project), rt.path)
 }
 
-func (h *Handler) serveFromArchive(ctx context.Context, w http.ResponseWriter, storageKey, filePath string) bool {
-	rg, ok := h.Store.(storage.RandomGetter)
-	if !ok {
-		return false
-	}
-	ra, size, err := rg.OpenReaderAt(ctx, storageKey)
-	if err != nil {
-		return false // ErrRandomUnsupported for a compressed blob, or missing
-	}
-	defer ra.Close()
-
-	head := make([]byte, len(binarchive.Magic))
-	if _, err := ra.ReadAt(head, 0); err != nil || !binarchive.IsArchive(head) {
-		return false // a tar blob from before sites were archived
-	}
-	a, err := binarchive.Open(ra, size)
-	if err != nil {
-		slog.Warn("sites: opening archive", "storage_key", storageKey, "err", err)
-		return false // fall back to the scan rather than fail the request
-	}
-
-	if r, e, err := a.OpenFile(filePath); err == nil {
-		serveArchiveFile(w, r, e, http.StatusOK)
-		return true
-	}
-	if r, e, err := a.OpenFile(siteNotFoundPage); err == nil {
-		serveArchiveFile(w, r, e, http.StatusNotFound)
-		return true
-	}
-	http.Error(w, "404 page not found", http.StatusNotFound)
-	return true
-}
-
 func serveArchiveFile(w http.ResponseWriter, r io.Reader, e binarchive.Entry, status int) {
 	w.Header().Set("Content-Type", contentType(e.Path))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", e.Size))
@@ -218,16 +138,6 @@ func serveArchiveFile(w http.ResponseWriter, r io.Reader, e binarchive.Entry, st
 		w.WriteHeader(status)
 	}
 	io.Copy(w, r)
-}
-
-func serveTarFile(w http.ResponseWriter, tr *tar.Reader, name string, hdr *tar.Header, status int) {
-	w.Header().Set("Content-Type", contentType(name))
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", hdr.Size))
-	w.Header().Set("Cache-Control", "no-cache")
-	if status != http.StatusOK {
-		w.WriteHeader(status)
-	}
-	io.Copy(w, tr)
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {

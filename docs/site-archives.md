@@ -18,7 +18,7 @@ Serving a file is: footer -> index -> directory -> seek -> decode one block.
 
 **The upload contract did not change.** A publisher still sends `tar.gz` or `zip`. The same validation and the same caps run. `sites.sha256` still describes the canonical tar the uploader sent. To fix a format's shortcomings is buildhost's job, not the publisher's. Nothing about the client changed.
 
-**Nothing needs migrating.** Sites uploaded before this are plain tar blobs, and the read path sniffs the container magic (`binpazer`) and falls back to the scan for them. A blob the storage backend cannot read at an offset falls back the same way.
+**Every read goes through the index.** There is no tar scan. A blob that is not an uncompressed archive answers 500. And the error names the blob. `ConvertTarSites` runs once at server start, before traffic. It rewrites each site that is still a plain tar blob into an archive, points the row at it, and deletes the tar. A site it cannot convert is logged at error level and named in the startup log.
 
 ## Supporting storage capabilities
 

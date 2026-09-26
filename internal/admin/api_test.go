@@ -5,13 +5,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/binarchive"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
 func TestAPIDashboard(t *testing.T) {
@@ -295,7 +299,14 @@ func TestAPISiteFiles(t *testing.T) {
 	_, err := tw.Write([]byte("{}"))
 	require.NoError(t, err)
 	require.NoError(t, tw.Close())
-	key, size, err := srv.store.Put(ctx, bytes.NewReader(buf.Bytes()))
+	archive, err := os.CreateTemp(t.TempDir(), "site-*")
+	require.NoError(t, err)
+	defer archive.Close()
+	_, err = binarchive.WriteFromTar(archive, tar.NewReader(&buf), binarchive.Limits{})
+	require.NoError(t, err)
+	_, err = archive.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+	key, size, err := srv.store.(storage.UncompressedPutter).PutUncompressed(ctx, archive)
 	require.NoError(t, err)
 	_, err = database.UpsertSite(ctx, &db.Site{ProjectID: p.ID, Branch: "claude/x", StorageKey: key, Size: size, FileCount: 1})
 	require.NoError(t, err)
