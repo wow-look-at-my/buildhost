@@ -12,7 +12,7 @@ type Kind int
 const (
 	// KindNotFound: upstream is readable and the module genuinely is not there.
 	KindNotFound Kind = iota
-	// KindUnauthorized: upstream rejected our credential, or we have none. The
+	// KindUnauthorized: upstream rejected our credential, or we have none.
 	KindUnauthorized
 	// KindUpstream: upstream was reachable but failed (5xx, rate limit, malformed
 	KindUpstream
@@ -48,7 +48,7 @@ type Error struct {
 	// Upstream names the system that answered (e.g. "github", a mirror's URL)
 	Upstream       string
 	UpstreamStatus int
-	// Detail is the upstream's own message, already trimmed to something a
+	// Detail is the upstream's own message.
 	Detail string
 	Err    error
 }

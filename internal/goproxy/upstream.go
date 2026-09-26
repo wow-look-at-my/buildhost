@@ -11,7 +11,7 @@ import (
 )
 
 // upstreamSource serves modules outside the private prefixes from the public
-// module mirror. Its failures are classified with the same taxonomy as the
+// module mirror.
 type upstreamSource struct {
 	client *http.Client
 	base   string

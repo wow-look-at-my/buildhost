@@ -22,7 +22,6 @@ import (
 	modzip "golang.org/x/mod/zip"
 )
 
-// defaultGitHubAPI is the public API root. githubSource.api overrides it so
 const defaultGitHubAPI = "https://api.github.com"
 
 // upstreamGitHub is the Upstream name reported on an *Error from this source.
@@ -30,12 +29,12 @@ const upstreamGitHub = "github"
 
 // githubSource fetches module content straight from the GitHub REST API. There
 // is deliberately no `go` binary and no `git` subprocess behind this: every
-// failure is an HTTP status we can classify honestly (see errors.go), rather
+// failure is an HTTP status we can classify honestly (see errors.go).
 type githubSource struct {
 	client *http.Client
 	// api is the GitHub API root.
 	api string
-	// tokenFor resolves the bearer for a repo; injected so tests can drive the
+	// tokenFor resolves the bearer for a repo.
 	tokenFor func(ctx context.Context, owner, repo string) string
 	// tarballLimit caps a repository tarball read (guards a hostile or runaway
 	tarballLimit int64
@@ -201,8 +200,7 @@ func (g *githubSource) listTags(ctx context.Context, ref repoRef, mod string) ([
 }
 
 // commitSHA resolves a tag ref to the commit it names. An annotated tag's ref
-// points at a tag object rather than a commit, and handing that sha to anything
-// expecting a commit (the tarball endpoint especially) fails -- so it is
+// points at a tag object rather than a commit.
 func (g *githubSource) commitSHA(ctx context.Context, ref repoRef, t tagRef, mod, ver string) (string, error) {
 	if !t.Annotated {
 		return t.SHA, nil
@@ -334,7 +332,7 @@ func (g *githubSource) goModAt(ctx context.Context, ref repoRef, rev, modPath, v
 // modules and vendor directories, the size limits). A hand-built zip that is
 // merely close produces a checksum mismatch at every consumer.
 //
-// The tarball is spooled to disk and expanded to a temp tree, so peak memory is
+// The tarball is spooled to disk and expanded to a temp tree.
 func (g *githubSource) buildZip(ctx context.Context, ref repoRef, rev string, mv module.Version) (path string, size int64, err error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/tarball/%s", g.api, ref.Owner, ref.Repo, rev)
 	resp, err := g.do(ctx, ref.Owner, ref.Repo, http.MethodGet, url, mv.Path, mv.Version, "application/vnd.github+json")
@@ -376,9 +374,6 @@ func (g *githubSource) buildZip(ctx context.Context, ref repoRef, rev string, mv
 
 // extractModuleTree writes the module directory out of a GitHub repository
 // tarball into dest. GitHub wraps the repo in a single top-level directory whose
-//
-// limit bounds the DECOMPRESSED bytes read (0 is unbounded): the caller's limit
-// on the compressed stream says nothing about what it expands to.
 func extractModuleTree(r io.Reader, subdir, dest string, limit int64) error {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
@@ -438,7 +433,7 @@ func extractModuleTree(r io.Reader, subdir, dest string, limit int64) error {
 	return nil
 }
 
-// safeJoin resolves rel under root, refusing anything that would escape it. A
+// safeJoin resolves rel under root, refusing anything that would escape it.
 func safeJoin(root, rel string) (string, error) {
 	out := filepath.Join(root, filepath.FromSlash(rel))
 	if out != root && !strings.HasPrefix(out, root+string(os.PathSeparator)) {

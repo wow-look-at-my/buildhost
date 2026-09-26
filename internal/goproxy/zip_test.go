@@ -85,9 +85,7 @@ func TestNestedModuleZipContainsOnlyItsSubtree(t *testing.T) {
 	}
 }
 
-// A tarball's compressed size says nothing about what it expands to. Zeros
-// compress ~1000:1, so a small download can fill the disk unless the
-// decompressed stream is bounded too.
+// A tarball's compressed size says nothing about what it expands to.
 func TestTarballDecompressedSizeIsBounded(t *testing.T) {
 	t.Serial()
 	var buf bytes.Buffer

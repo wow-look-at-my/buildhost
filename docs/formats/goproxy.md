@@ -52,7 +52,7 @@ It reports three distinct states:
 
 The endpoint splits what it tells whom. The status code and the `healthy` flag are unauthenticated. A monitor therefore needs no credential. A monitor that needs one is a monitor nobody wires up.
 
-The reason, the credential state, the private prefixes and the readiness module are served only to a read-scoped caller. Each of them names a private repository. A private module's existence is not something an anonymous caller may learn. The admin dashboard reads the full state directly, on the admin port, so nothing is hidden from an operator.
+The reason, the credential state, the private prefixes and the readiness module are served only to a caller with a GLOBAL read or write token. A GitHub sign-in session does not count, because any GitHub account can sign in. An OIDC identity does not count either. Each of them names a private repository. A private module's existence is not something an anonymous caller may learn. The admin dashboard reads the full state directly, on the admin port, so nothing is hidden from an operator.
 
 It deliberately does NOT fail the registry's `/healthz`. A goproxy misconfiguration then takes every other buildhost service out of rotation. That outcome is worse than the one this check prevents.
 
@@ -88,7 +88,11 @@ Two different credentials meet here, and confusing them is what produced the bug
 
 A module outside the private namespaces is public source and needs no credential. To require one only stops `GOPROXY=<proxy>,direct` from working for anyone without a buildhost token.
 
-Inside those namespaces a caller needs one of two things. The first is a GLOBAL read or write token. The second is a signed-in GitHub user who can read the backing repo, which is asked of GitHub per repo. A project-scoped token is not enough. It says "this job may read project X". A Go module is not a project. To accept it widens a least-privilege credential to the org's whole private source tree.
+Inside those namespaces a caller needs one of two things. The first is a GLOBAL read or write token. The second is a signed-in GitHub user who can read the backing repo, which is asked of GitHub per repo. A project-scoped token is not enough. It says "this job may read project X". A Go module is not a project. To accept it widens a least-privilege credential to the org's whole private source tree. An auto-provisioned OIDC identity is refused for the same reason: its token row carries no project, but it speaks for the one repository whose workflow minted it.
+
+Private prefixes match case-insensitively, as GitHub names do.
+
+Every successful response for a private module is `Cache-Control: private`. It was served to an authenticated caller, so no shared cache (a CDN in front of this host) may store it and replay it to an anonymous one. Public modules stay `public, immutable`.
 
 A caller without that access gets **404**, never a 401 and never a 403. That is the same answer a module that does not exist gets. Either of the other two confirms the module EXISTS, which is the fact a private module is keeping. A prober can then walk a name list and map the org's private repositories off the status code alone.
 
