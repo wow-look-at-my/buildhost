@@ -90,7 +90,7 @@ tests:
 	- desc: the image stages the binary rather than shipping the APE
 	  cmd: |
 		set -eu
-		grep -qE '^RUN sh /in/apestage /in/buildhost /buildhost "\$TARGETARCH"$' Dockerfile || {
+		grep -qE '^RUN APE_LOADERDIR=/tmp sh /in/apestage /in/buildhost /buildhost "\$TARGETARCH"$' Dockerfile || {
 			echo 'the image never stages the APE, so the trampoline runs in the container' >&2; exit 1; }
 		if grep -qE '^COPY .*build/buildhost /usr/local/lib' Dockerfile; then
 			echo 'the image copies the APE straight in, so it needs an exec-able /tmp' >&2; exit 1

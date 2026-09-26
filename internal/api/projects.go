@@ -95,6 +95,9 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 // pointer so an absent key leaves the setting unchanged (PATCH semantics).
 type updateProjectRequest struct {
 	CreateService *bool `json:"create_service"`
+	// Versioning is decoded only to refuse it. A write token includes CI's OIDC
+	// token, so the admin dashboard is the single place that changes versioning.
+	Versioning json.RawMessage `json:"versioning"`
 }
 
 // UpdateProjectSettings PATCHes operator-set project settings. Auth rides the
@@ -107,6 +110,11 @@ func (h *Handler) UpdateProjectSettings(w http.ResponseWriter, r *http.Request) 
 	var req updateProjectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Versioning != nil {
+		jsonError(w, http.StatusForbidden, "versioning is changed from the admin dashboard only")
 		return
 	}
 
