@@ -328,8 +328,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      # Stock Go cannot resolve the org v0.0.0 placeholder.
-      - run: ./scripts/resolve-org-deps.sh
+      # Stock Go cannot resolve the org v0.0.0 placeholder. Some are private, so
+      # the checksum database skips them.
+      - env:
+          GONOSUMDB: github.com/wow-look-at-my
+        run: ./scripts/resolve-org-deps.sh
       # Natively, never the shipped APE: SQLite's file locking fails under the APE's macOS syscall layer, and the server dies on SQLITE_IOERR_LOCK.
       - run: go generate ./internal/repackage
       - run: go generate ./internal/api
