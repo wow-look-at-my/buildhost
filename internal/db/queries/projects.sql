@@ -25,6 +25,9 @@ UPDATE projects SET default_branch = ?, updated_at = CURRENT_TIMESTAMP WHERE id 
 -- name: SetProjectCreateService :exec
 UPDATE projects SET create_service = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
 
+-- name: SetProjectVersioning :exec
+UPDATE projects SET versioning = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
+
 -- name: RenameProject :exec
 UPDATE projects SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
 

@@ -35,7 +35,7 @@ shared:
 			GW="$(box getent hosts apt.localhost | awk '{print $1}')"
 			test -n "$GW" || { echo "apt.localhost does not resolve inside $APTBOX" >&2; exit 1; }
 			# An APE cannot be exec'd: its header is a shell script, and
-			# nothing here registers an APE binfmt handler.
+			# no APE binfmt handler is registered here.
 			if head -c 2 "$BUILDHOST_BIN" | grep -q MZ; then RUN="sh $BUILDHOST_BIN"; else RUN="$BUILDHOST_BIN"; fi
 			BUILDHOST_DATA_DIR="$WORK/data"; export BUILDHOST_DATA_DIR
 			BUILDHOST_DB_PATH="$WORK/data/buildhost.db"; export BUILDHOST_DB_PATH
@@ -43,9 +43,12 @@ shared:
 			BUILDHOST_ADMIN_LISTEN_ADDR=""; export BUILDHOST_ADMIN_LISTEN_ADDR
 			TOKEN="$($RUN bootstrap --name apt-e2e | tail -n1)"
 			test -n "$TOKEN" || { echo "no token from bootstrap" >&2; exit 1; }
-			# Port 80 needs root. setsid keeps the server in its own process
-			# group so teardown takes the whole tree down.
+			# setsid keeps the server in its own process group so teardown
+			# takes the whole tree down. An APE run as root registers its
+			# loader for every APE on the host. APE_NOBINFMT stops that, or
+			# the loader takes the shell-script fixture below.
 			setsid sudo env \
+				APE_NOBINFMT=1 \
 				BUILDHOST_DATA_DIR="$BUILDHOST_DATA_DIR" \
 				BUILDHOST_DB_PATH="$BUILDHOST_DB_PATH" \
 				BUILDHOST_LISTEN_ADDR="$BUILDHOST_LISTEN_ADDR" \
