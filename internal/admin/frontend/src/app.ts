@@ -400,7 +400,13 @@ pages.project = function (name: string): void {
         if (p.description) html += "<tr><td class='info-label'>Description</td><td>" + h(p.description) + "</td></tr>";
         if (p.homepage) html += "<tr><td class='info-label'>Homepage</td><td>" + h(p.homepage) + "</td></tr>";
         if (p.license) html += "<tr><td class='info-label'>License</td><td>" + h(p.license) + "</td></tr>";
-        html += "<tr><td class='info-label'>Versioning</td><td>" + badge("neutral", p.versioning) + "</td></tr>";
+        var versioningOpts = "";
+        for (var vo of ["auto", "semver"]) {
+            versioningOpts += '<option value="' + vo + '"' + (vo === p.versioning ? " selected" : "") + ">" + vo + "</option>";
+        }
+        html += "<tr><td class='info-label'>Versioning</td><td>" +
+            '<select id="versioning-select" onchange="App.setVersioning(\'' + h(p.name) + '\', this.value)">' + versioningOpts + "</select>" +
+            "</td></tr>";
         html += "<tr><td class='info-label'>Visibility</td><td>" + (p.is_private ? badge("warning", "Private") : badge("success", "Public")) + "</td></tr>";
         html += '<tr><td class="info-label">Created</td><td title="' + h(formatTime(p.created_at)) + '">' + h(timeAgo(p.created_at)) + "</td></tr>";
         html += '<tr><td class="info-label">Updated</td><td title="' + h(formatTime(p.updated_at)) + '">' + h(timeAgo(p.updated_at)) + "</td></tr>";
@@ -819,7 +825,9 @@ const copyTempLink = function (btn: HTMLButtonElement, project: string, version:
 // The href is still the artifact's REAL url, never "#": an anchor's href is what
 // the browser copies, shows on hover, and opens in a new tab, and a page-local
 // "#" makes each of them useless -- "copy link address" yielded the dashboard's
-// own URL.
+// own URL. Following it directly asks for credentials, which is the honest
+// answer for a private artifact; the temp-link button next to it is the
+// shareable one.
 //
 // Values are safe charsets (project/version/os/arch/fmt), so they embed directly
 // in the inline handler.
@@ -1638,6 +1646,21 @@ const applyMerge = function (from: string, into: string): void {
     }).catch(function () { alert("Could not merge (preview/demo mode has no backend)."); });
 };
 
+const setVersioning = function (name: string, versioning: string): void {
+    if (!confirm("Change " + name + " versioning to " + versioning + "?")) {
+        pages.project(name);
+        return;
+    }
+    fetch("/api/projects/" + encodeURIComponent(name) + "/versioning", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ versioning: versioning })
+    }).then(function (res) {
+        if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); pages.project(name); });
+        pages.project(name);
+    }).catch(function () { alert("Could not change versioning (preview/demo mode has no backend)."); pages.project(name); });
+};
+
 pages.duplicates = function (): void {
     setTitle("Duplicates");
     renderSidebar("duplicates");
@@ -1691,4 +1714,4 @@ window.addEventListener("unhandledrejection", function (ev) {
 });
 
 // Exported == reachable as App.x from the inline onclick handlers above.
-export { applyMerge, copyInventory, copyTempLink, copyText, deleteToken, downloadArtifact, downloadInventory, editToken, pages, previewMerge, recheckGoproxy, reloadTokens, runRetention, saveToken };
+export { applyMerge, copyInventory, copyTempLink, copyText, deleteToken, downloadArtifact, downloadInventory, editToken, pages, previewMerge, recheckGoproxy, reloadTokens, runRetention, saveToken, setVersioning };

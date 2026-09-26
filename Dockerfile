@@ -18,7 +18,9 @@ RUN mkdir -p /tmpdir && chmod 1777 /tmpdir
 FROM busybox:musl AS staged
 ARG TARGETARCH
 COPY build/buildhost build/apestage /in/
-RUN sh /in/apestage /in/buildhost /buildhost "$TARGETARCH"
+# A build container mounts /dev/shm noexec, and busybox as root reads it as
+# executable. The APE's own directory list starts there, so name /tmp instead.
+RUN APE_LOADERDIR=/tmp sh /in/apestage /in/buildhost /buildhost "$TARGETARCH"
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
