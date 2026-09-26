@@ -420,7 +420,7 @@ The shim is pair-level only. `os=js` with any other arch stays invalid, and so d
 
 ## Versioning
 
-Projects use auto-incrementing versions by default (v1, v2, v3...). Opt into semver with `--versioning semver` at project creation.
+Projects use auto-incrementing versions by default (v1, v2, v3...). Opt into semver with `--versioning semver` at project creation. A semver release that names no version gets the patch after the latest one.
 
 Git branch and commit are tracked on every release. Download the latest build of a branch:
 
