@@ -25,19 +25,19 @@ const (
 // the file is reclaimable: the current policy frees its blob.
 const (
 	HoldNone       = ""
-	HoldProjectNew = "project-newest" // newest published release of the project
+	HoldProjectNew = "project-newest"     // newest published release of the project
 	HoldDeletedTTL = "deleted-branch-ttl" // branch deleted on GitHub, inside the TTL
-	HoldBranchTip  = "branch-tip"    // newest published release on its branch
-	HoldKeepN      = "keep-n"        // inside the keep-N window on its branch
-	HoldRecency    = "recency-guard" // newer than the recency guard
-	HoldOCITag     = "oci-tag"       // an OCI tag points at the release
-	HoldDocker     = "docker"        // a pushed-docker release, never evicted
-	HoldDraft      = "draft"         // a deliberate draft, never swept
-	HoldSharedBlob = "shared-blob"   // release evicted, blob still referenced
-	HoldSite       = "site"          // a site deployment, not release-scoped
-	HoldOCIBlob    = "oci-blob"      // a project OCI blob, not release-scoped
-	HoldGoproxy    = "goproxy"       // a cached Go module zip, not a project
-	HoldUnknown    = "unknown"       // the plan and this reason disagree
+	HoldBranchTip  = "branch-tip"         // newest published release on its branch
+	HoldKeepN      = "keep-n"             // inside the keep-N window on its branch
+	HoldRecency    = "recency-guard"      // newer than the recency guard
+	HoldOCITag     = "oci-tag"            // an OCI tag points at the release
+	HoldDocker     = "docker"             // a pushed-docker release, never evicted
+	HoldDraft      = "draft"              // a deliberate draft, never swept
+	HoldSharedBlob = "shared-blob"        // release evicted, blob still referenced
+	HoldSite       = "site"               // a site deployment, not release-scoped
+	HoldOCIBlob    = "oci-blob"           // a project OCI blob, not release-scoped
+	HoldGoproxy    = "goproxy"            // a cached Go module zip, not a project
+	HoldUnknown    = "unknown"            // the plan and this reason disagree
 )
 
 type FileEntry struct {
@@ -124,8 +124,8 @@ func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 	inv := Inventory{
 		GeneratedAt: now.UTC(),
 		Policy: InventoryPolicy{
-			KeepN:         r.cfg.KeepN,
-			BranchKeepN:   r.cfg.BranchKeepN,
+			KeepN:           r.cfg.KeepN,
+			BranchKeepN:     r.cfg.BranchKeepN,
 			BranchTTLDays:   r.cfg.BranchTTL.Hours() / 24,
 			BranchTTLCutoff: policy.BranchTTLCutoff.UTC().Truncate(time.Second),
 			RecencyHours:    r.cfg.RecencyGuard.Hours(),

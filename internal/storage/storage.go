@@ -22,7 +22,7 @@ type CompressedBlob struct {
 	io.ReadCloser
 	// Encoding is the HTTP Content-Encoding the bytes carry: "zstd" when the blob
 	Encoding string
-	Size int64
+	Size     int64
 	// OrigSize is the decompressed length of the artifact.
 	OrigSize int64
 }

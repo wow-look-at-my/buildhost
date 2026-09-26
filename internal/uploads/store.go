@@ -21,7 +21,7 @@ var (
 	// ErrOffsetMismatch is returned when an append's offset is not the session's
 	ErrOffsetMismatch = errors.New("offset mismatch")
 	// ErrBusy is returned when the session is being finalized.
-	ErrBusy = errors.New("upload session busy")
+	ErrBusy     = errors.New("upload session busy")
 	ErrTooLarge = errors.New("upload exceeds maximum size")
 )
 

@@ -73,7 +73,7 @@ type VerifyResult struct {
 	// RepoPath is the "owner/repo" parsed from a GitHub Actions OIDC subject
 	RepoPath string
 	// Issuer is the verified token issuer, so the caller can gate
-	Issuer string
+	Issuer  string
 	OwnerID string
 	RepoID  string
 }

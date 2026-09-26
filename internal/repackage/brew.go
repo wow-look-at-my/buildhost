@@ -189,7 +189,7 @@ type BrewFormula struct {
 	License     string
 	Kind        string
 	// Private marks a formula for a private project: it requires the tap's
-	Private bool
+	Private   bool
 	Service   bool
 	Resources []BrewResource
 }

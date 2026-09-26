@@ -25,8 +25,8 @@ const (
 type OIDCRepoIdentity struct {
 	RepoPath string // "owner/repo" (plain names, IDs stripped)
 	Issuer   string
-	OwnerID string
-	RepoID  string
+	OwnerID  string
+	RepoID   string
 }
 
 func WithGitHubToken(ctx context.Context, token string) context.Context {
