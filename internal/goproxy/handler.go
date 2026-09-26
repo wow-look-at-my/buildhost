@@ -118,12 +118,32 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
 // configuration -- the private prefixes, the credential state, the readiness
 // module. Each of those names private repositories, so it takes the same
 func (s *Service) operatorView(r *http.Request) bool {
-	if t := auth.TokenFrom(r.Context()); t != nil && t.ProjectID == nil &&
-		(t.HasScope("read") || t.HasScope("write")) {
-		return true
+	return globalReader(r)
+}
+
+// globalReader reports whether the caller holds a global read or write token.
+// An auto-provisioned OIDC identity is scoped to the one repository that ran the
+// workflow, even though its token row carries no project, so it does not count.
+// A signed-in GitHub user does not count either: any GitHub account can sign in.
+func globalReader(r *http.Request) bool {
+	t := auth.TokenFrom(r.Context())
+	if t == nil || t.ProjectID != nil {
+		return false
 	}
-	_, ok := auth.UserFrom(r.Context())
-	return ok
+	if auth.OIDCProjectFrom(r.Context()) != "" {
+		return false
+	}
+	return t.HasScope("read") || t.HasScope("write")
+}
+
+// cacheControl is the Cache-Control for a successful immutable response. A
+// private module's content was served to an authenticated caller, so no shared
+// cache (the CDN in front of this host) may store it.
+func (s *Service) cacheControl(modPath string) string {
+	if s.isPrivate(modPath) {
+		return "private, max-age=31536000, immutable"
+	}
+	return "public, max-age=31536000, immutable"
 }
 
 // accessible reports whether this caller may see this module.
@@ -133,8 +153,7 @@ func (s *Service) accessible(r *http.Request, modPath string) bool {
 	if !s.isPrivate(modPath) {
 		return true
 	}
-	if t := auth.TokenFrom(r.Context()); t != nil && t.ProjectID == nil &&
-		(t.HasScope("read") || t.HasScope("write")) {
+	if globalReader(r) {
 		return true
 	}
 	refs, err := parseModulePath(modPath)
@@ -244,8 +263,7 @@ func (s *Service) serveZip(w http.ResponseWriter, r *http.Request, req request, 
 
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Length", fmt.Sprint(size))
-	// A module version is immutable, so its zip may be cached forever.
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("Cache-Control", s.cacheControl(req.Module))
 	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodHead {
 		s.record(req, source, outcome, http.StatusOK, "", started)
@@ -259,8 +277,11 @@ func (s *Service) serveZip(w http.ResponseWriter, r *http.Request, req request, 
 func (s *Service) ok(w http.ResponseWriter, r *http.Request, req request, source, outcome string, started time.Time, contentType string, body []byte) {
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", fmt.Sprint(len(body)))
-	if req.Endpoint == "info" || req.Endpoint == "mod" {
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	switch {
+	case req.Endpoint == "info" || req.Endpoint == "mod":
+		w.Header().Set("Cache-Control", s.cacheControl(req.Module))
+	case s.isPrivate(req.Module):
+		w.Header().Set("Cache-Control", "private, no-store")
 	}
 	w.WriteHeader(http.StatusOK)
 	if r.Method != http.MethodHead {

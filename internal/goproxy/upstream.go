@@ -15,15 +15,12 @@ import (
 type upstreamSource struct {
 	client *http.Client
 	base   string
-	// privatePrefixes is only for the "not served here" message, so a caller is
-	privatePrefixes []string
 }
 
-func newUpstreamSource(client *http.Client, base string, privatePrefixes []string) *upstreamSource {
+func newUpstreamSource(client *http.Client, base string) *upstreamSource {
 	return &upstreamSource{
-		client:          client,
-		base:            strings.TrimSuffix(base, "/"),
-		privatePrefixes: privatePrefixes,
+		client: client,
+		base:   strings.TrimSuffix(base, "/"),
 	}
 }
 
@@ -31,7 +28,7 @@ func (u *upstreamSource) enabled() bool { return u.base != "" }
 
 func (u *upstreamSource) get(ctx context.Context, modPath, version, suffix string) (io.ReadCloser, error) {
 	if !u.enabled() {
-		return nil, notServedErr(modPath, version, u.privatePrefixes)
+		return nil, notServedErr(modPath, version)
 	}
 	escaped, err := module.EscapePath(modPath)
 	if err != nil {

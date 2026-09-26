@@ -75,7 +75,7 @@ func newService(cfg Config, database *db.DB, store storage.Storage, dataDir stri
 		db:       database,
 		store:    store,
 		github:   newGitHubSource(client, dataDir),
-		upstream: newUpstreamSource(client, cfg.Upstream, cfg.PrivatePrefixes),
+		upstream: newUpstreamSource(client, cfg.Upstream),
 		metrics:  newMetrics(),
 		health:   newHealth(),
 	}
