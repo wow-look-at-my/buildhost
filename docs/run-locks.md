@@ -11,7 +11,7 @@ A run lock holds the first value a GitHub Actions run records under a name. Ever
 
 ## Authentication
 
-The caller presents the job's GitHub Actions OIDC token, minted with the server URL as its audience. No workflow adds a secret: `permissions: id-token: write` is enough. The token passes the same issuer, org and event checks as an auto-provisioning publish. A static API token names no run. As a result, it is refused.
+The caller presents the job's GitHub Actions OIDC token, minted with the server URL as its audience. No workflow adds a secret: `permissions: id-token: write` is enough. The token passes the same signature, issuer and org checks as an auto-provisioning publish. The event allowlist does not apply here: a scheduled run, or any run whose event the allowlist refuses, still reads and claims its own locks. The middleware records such a token's run for the run lock endpoints alone, through `auth.RunLockRepoFrom`. Every other endpoint sees no credential and keeps the allowlist. A static API token names no run. As a result, it is refused.
 
 The request also names the run as `repository`, `run_id` and `run_attempt`. A request that names another run than its token is refused with 403, rather than served from the token's run.
 
