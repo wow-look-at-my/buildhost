@@ -1637,6 +1637,24 @@ const demoData: Record<string, unknown> = {
     }
 };
 
+// Each demo site branch gets a file list, so every Files link in the preview reaches a page.
+for (const name of ["myapp", "cli-tool"]) {
+    const pd = demoData["/projects/" + name] as ProjectData;
+    for (const site of pd.sites) {
+        demoData["/projects/" + name + "/site-files?branch=" + encodeURIComponent(site.branch)] = {
+            services: demoServices,
+            project: pd.project,
+            site: site,
+            files: [
+                { path: "404.html", size: 512 },
+                { path: "assets/css/site.css", size: 2048 },
+                { path: "assets/js/app.js", size: 18432 },
+                { path: "index.html", size: 4096 }
+            ]
+        };
+    }
+}
+
 // --- Init ---
 
 // --- Duplicates left by a GitHub rename ---
