@@ -49,10 +49,12 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 						rctx = WithOIDCProject(rctx, oidcProject)
 						rctx = WithOIDCPrivate(rctx, vr.OIDCPrivate)
 						rctx = WithOIDCRepo(rctx, OIDCRepoIdentity{
-							RepoPath: vr.RepoPath,
-							Issuer:   vr.Issuer,
-							OwnerID:  vr.OwnerID,
-							RepoID:   vr.RepoID,
+							RepoPath:   vr.RepoPath,
+							Issuer:     vr.Issuer,
+							OwnerID:    vr.OwnerID,
+							RepoID:     vr.RepoID,
+							RunID:      vr.RunID,
+							RunAttempt: vr.RunAttempt,
 						})
 					}
 					r = r.WithContext(rctx)

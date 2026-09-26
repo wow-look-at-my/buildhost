@@ -43,6 +43,8 @@ type oidcClaims struct {
 	RepositoryID      string `json:"repository_id"`       // numeric repository ID
 	RepositoryOwner   string `json:"repository_owner"`    // "OWNER"
 	RepositoryOwnerID string `json:"repository_owner_id"` // numeric account ID
+	RunID             string `json:"run_id"`
+	RunAttempt        string `json:"run_attempt"`
 }
 
 const oidcLeeway = 60 * time.Second
@@ -77,6 +79,9 @@ type VerifyResult struct {
 	// OwnerID / RepoID are GitHub's numeric account/repository IDs from the
 	OwnerID string
 	RepoID  string
+	// RunID / RunAttempt name the workflow run and attempt that minted the token.
+	RunID      string
+	RunAttempt string
 }
 
 func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []db.OIDCPolicy) (*db.APIToken, string, error) {
@@ -156,6 +161,7 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 		result.Issuer = verified.Issuer
 		result.RepoPath = verified.repoPath()
 		result.OwnerID, result.RepoID = ownerID, repoID
+		result.RunID, result.RunAttempt = verified.RunID, verified.RunAttempt
 	}
 
 	if matchedPolicy != nil {

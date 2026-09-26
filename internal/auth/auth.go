@@ -28,6 +28,9 @@ type OIDCRepoIdentity struct {
 	// OwnerID / RepoID are GitHub's numeric account/repository IDs (from the
 	OwnerID string
 	RepoID  string
+	// RunID / RunAttempt name the workflow run and attempt that minted the token.
+	RunID      string
+	RunAttempt string
 }
 
 // WithGitHubToken stashes the signed-in user's GitHub OAuth token (from the
