@@ -49,7 +49,9 @@ shared:
 				$RUN serve > "$WORK/server.log" 2>&1 &
 			echo "$!" > "$WORK/server.pid"
 			started=""
-			# A hook gets 30s in total.
+			# A hook gets 30s in total. A one-second poll spends the whole
+			# budget waiting, so the suite reports a timeout instead of the
+			# server log that says why.
 			for _ in $(seq 50); do
 				if curl -fsS "$BASE/healthz" >/dev/null 2>&1; then started=yes; break; fi
 				sleep 0.2
@@ -77,7 +79,9 @@ shared:
 			}
 
 			# install <project> <package>: add the project's repository inside
-			# the container and install the package apt derives from it.
+			# the container and install the package apt derives from it. The
+			# update refreshes THIS list only, so installs do not cost round
+			# trips to the Ubuntu archive.
 			install() {
 				apt_base="http://apt.localhost/$1"
 				box sh -c "install -d -m 0755 /etc/apt/keyrings \

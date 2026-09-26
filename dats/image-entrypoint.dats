@@ -3,8 +3,8 @@
 # This exists because the deployment sat for weeks on a version it could not
 # start, while CI stayed green. The image entered through ["/bin/sh", <APE>],
 # so it started only when something spelled the entrypoint that exact way. That
-# is a bare exec of an APE, which the kernel answers with ENOEXEC and docker
-# reports as exit 126, on a loop.
+# is a bare exec of an APE, which the kernel answers with ENOEXEC. Docker then
+# reports exit code 126 and restarts it forever.
 #
 # The fix is a shebang launcher on PATH, which the kernel CAN exec, in front of
 # the APE.

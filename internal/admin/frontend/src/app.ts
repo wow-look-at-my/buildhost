@@ -8,6 +8,7 @@
 import { Html, type El } from "./html.ts";
 
 import type {
+    SiteFilesData,
     AllArtifact,
     DashboardData,
     DownloadLink,
@@ -46,6 +47,12 @@ const h = function (s: string | number | null | undefined): string {
 // a single hop, so this names the branch either way.
 const siteBranchURL = function (sitesBase: string, project: string, branch: string): string {
     return sitesBase + "/" + project + "/@" + branch + "/";
+};
+
+// siteFilesHash is the dashboard route of a single site branch's file list.
+// "/-/" ends the project name, because both the project and the branch can hold "/".
+const siteFilesHash = function (project: string, branch: string): string {
+    return "#/sites/" + project + "/-/files/" + encodeURIComponent(branch);
 };
 
 const humanSize = function (b: number): string {
@@ -485,7 +492,7 @@ pages.project = function (name: string): void {
                 html += "<td>" + h(humanSize(si.size)) + "</td>";
                 html += "<td>" + (si.git_commit ? '<code class="commit">' + h(si.git_commit.substring(0, 12)) + "</code>" : "-") + "</td>";
                 html += '<td title="' + h(formatTime(si.updated_at)) + '">' + h(timeAgo(si.updated_at)) + "</td>";
-                html += '<td><a href="' + h(siteBranchURL(sitesBase, p.name, si.branch)) + '" target="_blank">Open</a></td></tr>';
+                html += '<td><a href="' + h(siteFilesHash(p.name, si.branch)) + '">Files</a> &middot; <a href="' + h(siteBranchURL(sitesBase, p.name, si.branch)) + '" target="_blank">Open</a></td></tr>';
             }
             html += "</tbody></table></div>";
         }
@@ -975,7 +982,7 @@ pages.site = function (name: string): void {
                 html += "<td>" + h(humanSize(s.size)) + "</td>";
                 html += "<td>" + (s.git_commit ? '<code class="commit">' + h(s.git_commit.substring(0, 12)) + "</code>" : "-") + "</td>";
                 html += '<td title="' + h(formatTime(s.updated_at)) + '">' + h(timeAgo(s.updated_at)) + "</td>";
-                html += '<td><a href="' + h(siteBranchURL(sitesBase, p.name, s.branch)) + '" target="_blank">Open</a></td></tr>';
+                html += '<td><a href="' + h(siteFilesHash(p.name, s.branch)) + '">Files</a> &middot; <a href="' + h(siteBranchURL(sitesBase, p.name, s.branch)) + '" target="_blank">Open</a></td></tr>';
             }
         }
         html += "</tbody></table></div>";
@@ -984,6 +991,41 @@ pages.site = function (name: string): void {
         html += codeBlock("CLI", "buildhost publish-site \\\n  --server " + bu + " \\\n  --token $TOKEN \\\n  --project " + p.name + " \\\n  --branch {branch} \\\n  --dir ./dist");
         html += codeBlock("Delete a branch", 'curl -X DELETE \\\n  -H "Authorization: Bearer $TOKEN" \\\n  ' + bu + "/sites/" + p.name + "/branch/{branch}");
         html += "</div>";
+
+        document.getElementById("content")!.innerHTML = html;
+    });
+};
+
+pages.siteFiles = function (name: string, branch: string): void {
+    setTitle(name + "@" + branch + " - Sites");
+    renderSidebar("sites");
+    apiFetch<SiteFilesData>("/projects/" + name + "/site-files?branch=" + encodeURIComponent(branch)).then(function (d) {
+        var base = siteBranchURL((d.services || {}).sites || "", d.project.name, branch);
+        var files = d.files || [];
+
+        var html = '<h1><a href="#/sites">Sites</a> / <a href="#/sites/' + h(d.project.name) + '">' + h(d.project.name) + "</a> / <code>" + h(branch) + "</code></h1>";
+        html += '<div class="card"><table class="data-table"><thead><tr><th>Path</th><th>Size</th></tr></thead><tbody>';
+        if (files.length === 0) {
+            html += '<tr><td colspan="2" class="empty">No files</td></tr>';
+        }
+        // Files arrive sorted by path, so a directory row goes in each time the
+        // directory changes.
+        var prevDirs: string[] = [];
+        for (var i = 0; i < files.length; i++) {
+            var f = files[i]!;
+            var parts = f.path.split("/");
+            var dirs = parts.slice(0, -1);
+            var same = 0;
+            while (same < dirs.length && same < prevDirs.length && dirs[same] === prevDirs[same]) same++;
+            for (var j = same; j < dirs.length; j++) {
+                html += '<tr><td style="padding-left:' + (j * 1.25 + 0.5) + 'em"><code>' + h(dirs[j]) + "/</code></td><td></td></tr>";
+            }
+            prevDirs = dirs;
+            var url = base + parts.map(encodeURIComponent).join("/");
+            html += '<tr><td style="padding-left:' + (dirs.length * 1.25 + 0.5) + 'em"><a href="' + h(url) + '" target="_blank"><code>' + h(parts[parts.length - 1]) + "</code></a></td>";
+            html += "<td>" + h(humanSize(f.size)) + "</td></tr>";
+        }
+        html += "</tbody></table></div>";
 
         document.getElementById("content")!.innerHTML = html;
     });
@@ -1387,6 +1429,9 @@ const route = function (): void {
     var projectM = hash.match(/^projects\/(.+)$/);
     if (projectM) { go(function () { pages.project(projectM![1]); }); return; }
 
+    var siteFilesM = hash.match(/^sites\/(.+)\/-\/files\/([^\/]+)$/);
+    if (siteFilesM) { go(function () { pages.siteFiles(siteFilesM![1], decodeURIComponent(siteFilesM![2])); }); return; }
+
     var siteM = hash.match(/^sites\/(.+)$/);
     if (siteM) { go(function () { pages.site(siteM![1]); }); return; }
 
@@ -1587,6 +1632,24 @@ const demoData: Record<string, unknown> = {
         ]
     }
 };
+
+// Each demo site branch gets a file list, so every Files link in the preview reaches a page.
+for (const name of ["myapp", "cli-tool"]) {
+    const pd = demoData["/projects/" + name] as ProjectData;
+    for (const site of pd.sites) {
+        demoData["/projects/" + name + "/site-files?branch=" + encodeURIComponent(site.branch)] = {
+            services: demoServices,
+            project: pd.project,
+            site: site,
+            files: [
+                { path: "404.html", size: 512 },
+                { path: "assets/css/site.css", size: 2048 },
+                { path: "assets/js/app.js", size: 18432 },
+                { path: "index.html", size: 4096 }
+            ]
+        };
+    }
+}
 
 // --- Init ---
 
