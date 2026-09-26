@@ -114,6 +114,46 @@ func (q *Queries) GetSiteStorageKey(ctx context.Context, arg GetSiteStorageKeyPa
 	return storage_key, err
 }
 
+const listAllSites = `-- name: ListAllSites :many
+SELECT id, project_id, branch, storage_key, size, sha256, file_count, git_commit, is_public, created_at, updated_at
+FROM sites ORDER BY id
+`
+
+func (q *Queries) ListAllSites(ctx context.Context) ([]Site, error) {
+	rows, err := q.db.QueryContext(ctx, listAllSites)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Site{}
+	for rows.Next() {
+		var i Site
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.Branch,
+			&i.StorageKey,
+			&i.Size,
+			&i.SHA256,
+			&i.FileCount,
+			&i.GitCommit,
+			&i.IsPublic,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSitesByProject = `-- name: ListSitesByProject :many
 SELECT id, project_id, branch, storage_key, size, sha256, file_count, git_commit, is_public, created_at, updated_at
 FROM sites WHERE project_id = ? ORDER BY updated_at DESC
@@ -152,6 +192,30 @@ func (q *Queries) ListSitesByProject(ctx context.Context, projectID int64) ([]Si
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateSiteBlob = `-- name: UpdateSiteBlob :execrows
+UPDATE sites SET storage_key = ?, size = ? WHERE id = ? AND storage_key = ?
+`
+
+type UpdateSiteBlobParams struct {
+	StorageKey   string `json:"storage_key"`
+	Size         int64  `json:"size"`
+	ID           int64  `json:"id"`
+	StorageKey_2 string `json:"storage_key_2"`
+}
+
+func (q *Queries) UpdateSiteBlob(ctx context.Context, arg UpdateSiteBlobParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateSiteBlob,
+		arg.StorageKey,
+		arg.Size,
+		arg.ID,
+		arg.StorageKey_2,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const upsertSite = `-- name: UpsertSite :execresult
