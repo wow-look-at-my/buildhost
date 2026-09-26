@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -146,6 +147,112 @@ func validGitHubSegment(s string) bool {
 		}
 	}
 	return true
+}
+
+const (
+	// branchListPageSize is the largest page GitHub serves for a branch list.
+	branchListPageSize = 100
+	// branchListMaxPages caps one repository's pagination. Hitting the cap is an
+	// error rather than a partial list, because a truncated list makes a live
+	// branch look deleted.
+	branchListMaxPages = 40
+	// branchListBudget bounds one repository's whole paginated walk. It is
+	// larger than branchLookupBudget because it may cover several pages.
+	branchListBudget  = 30 * time.Second
+	branchListBodyCap = 4 << 20
+)
+
+// BranchLister answers branch existence from GitHub, the authoritative ref list
+// for a repository. It satisfies the retention package's branch-liveness seam,
+// so a reclaim pass asks the same client, base URL and bearer resolver the
+// default-branch lookup already uses.
+//
+// It caches nothing: a pass asks once per repository and holds that answer for
+// the pass, so no decision is ever made from a stored branch table that a push
+// or a branch deletion has moved on from.
+type BranchLister struct{}
+
+// LiveBranches implements retention's branch-liveness lookup.
+func (BranchLister) LiveBranches(ctx context.Context, repoPath string) ([]string, error) {
+	return LiveBranches(ctx, repoPath)
+}
+
+// LiveBranches returns every branch name owner/repo currently has, walking
+// every page so a branch past the first one is never mistaken for a deleted
+// branch. Any error means the answer is unknown, and the caller must not treat
+// an unknown repository as one whose branches were deleted.
+func LiveBranches(ctx context.Context, repoPath string) ([]string, error) {
+	if !validRepoPath(repoPath) {
+		return nil, fmt.Errorf("not an owner/repo path: %q", repoPath)
+	}
+	owner, repo, _ := strings.Cut(repoPath, "/")
+	bearer := bearerForRepo(ctx, owner, repo)
+
+	ctx, cancel := context.WithTimeout(ctx, branchListBudget)
+	defer cancel()
+
+	names := make([]string, 0, branchListPageSize)
+	for page := 1; page <= branchListMaxPages; page++ {
+		pageNames, entries, err := fetchBranchListPage(ctx, repoPath, bearer, page)
+		if err != nil {
+			return nil, err
+		}
+		names = append(names, pageNames...)
+		if entries < branchListPageSize {
+			if len(names) == 0 {
+				// Every repository buildhost published a release from has at
+				// least one branch, so an empty answer is a wrong answer.
+				// Acting on it would mark every branch of that project deleted
+				// at once, so it fails closed instead.
+				return nil, fmt.Errorf("%s reported no branches", repoPath)
+			}
+			return names, nil
+		}
+	}
+	return nil, fmt.Errorf("%s has more than %d branches: refusing a truncated branch list",
+		repoPath, branchListMaxPages*branchListPageSize)
+}
+
+// fetchBranchListPage returns one page's branch names plus how many entries the
+// page carried. The entry count drives pagination, so a nameless entry cannot
+// end the walk early.
+func fetchBranchListPage(ctx context.Context, repoPath, bearer string, page int) ([]string, int, error) {
+	endpoint := fmt.Sprintf("%s/repos/%s/branches?per_page=%d&page=%d",
+		gitHubAPIBase, repoPath, branchListPageSize, page)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("build branch-list request for %s: %w", repoPath, err)
+	}
+	req.Header.Set("User-Agent", "buildhost")
+	req.Header.Set("Accept", "application/vnd.github+json")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+
+	resp, err := githubBranchHTTPClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list branches for %s: %w", repoPath, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, 0, fmt.Errorf("list branches for %s: HTTP %d", repoPath, resp.StatusCode)
+	}
+
+	var payload []struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, branchListBodyCap)).Decode(&payload); err != nil {
+		return nil, 0, fmt.Errorf("decode branch list for %s: %w", repoPath, err)
+	}
+
+	names := make([]string, 0, len(payload))
+	for _, b := range payload {
+		if b.Name != "" {
+			names = append(names, b.Name)
+		}
+	}
+	return names, len(payload), nil
 }
 
 // validRefName sanity-checks a branch name returned by GitHub before it is
