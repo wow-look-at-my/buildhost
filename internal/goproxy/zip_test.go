@@ -1,6 +1,9 @@
 package goproxy
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -80,6 +83,27 @@ func TestNestedModuleZipContainsOnlyItsSubtree(t *testing.T) {
 		_, err := os.Stat(filepath.Join(dest, filepath.FromSlash(unwanted)))
 		assert.True(t, os.IsNotExist(err), "%s belongs to the repo, not this module", unwanted)
 	}
+}
+
+// A tarball's compressed size says nothing about what it expands to.
+func TestTarballDecompressedSizeIsBounded(t *testing.T) {
+	t.Serial()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	const size = 1 << 20
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "repo-abc/big.go", Mode: 0o644, Size: size, Typeflag: tar.TypeReg}))
+	_, err := tw.Write(make([]byte, size))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+	require.NoError(t, gz.Close())
+	require.Less(t, buf.Len(), 64<<10, "the fixture must be small compressed for the test to mean anything")
+
+	err = extractModuleTree(bytes.NewReader(buf.Bytes()), "", t.TempDir(), 64<<10)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "limit")
+
+	require.NoError(t, extractModuleTree(bytes.NewReader(buf.Bytes()), "", t.TempDir(), 4<<20))
 }
 
 func TestTarballCannotEscapeTheExtractionRoot(t *testing.T) {

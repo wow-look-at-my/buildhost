@@ -14,7 +14,7 @@ https://github.com/wow-look-at-my/tml in /tmp/athens399040138/...: exit status 1
         fatal: could not read Username for 'https://github.com': terminal prompts disabled
 ```
 
-That is not an unapproved token. It is **no credential at all**. Athens' `ATHENS_GITHUB_TOKEN` was unset. The `git` subprocess it shells out to therefore had nothing to present. It prompted for a username and died. Two defects compounded:
+That is not an unapproved token. It is **no credential at all**. Athens' `ATHENS_GITHUB_TOKEN` was unset. The `git` subprocess it shells out to therefore had nothing to present. It prompted for a username and died. defects compounded:
 
 1. **A subprocess turns a credential failure into an opaque exit code.** The real error sat several layers down, inside a child process's stderr.
 2. **The failure was reported as `404`.** At the protocol level that means "this module does not exist". `go mod download` therefore reports a missing module. The reader then looks for a typo in `go.mod` instead of at the credential.
@@ -35,16 +35,16 @@ Both are design properties here, not bug fixes:
 
 The response body is the whole diagnosis. `go mod download` prints a proxy's body verbatim. The body therefore names the module, the version, the upstream and its status. For an authorization failure it says outright that this is not a missing module.
 
-Two ambiguities are resolved deliberately:
+ambiguities are resolved deliberately:
 
-- **A GitHub `404` with no credential is `unauthorized`, not `not_found`.** GitHub does not confirm to an unauthorized caller that a private repository exists. With no credential the two cases are therefore strictly indistinguishable. To report absence is the exact laundering described above. With a credential present, a `404` is reported as `not_found`. The detail then says the credential was presented. A reader can therefore tell an access problem from a real absence.
+- **A GitHub `404` with no credential is `unauthorized`, not `not_found`.** GitHub does not confirm to an unauthorized caller that a private repository exists. With no credential the cases are therefore strictly indistinguishable. To report absence is the exact laundering described above. With a credential present, a `404` is reported as `not_found`. The detail then says the credential was presented. A reader can therefore tell an access problem from a real absence.
 - **A rate-limit `403` is `upstream`, not `unauthorized`.** It clears on its own. To report it as an authorization failure sends the reader after a credential that was never at fault. It is detected from `X-RateLimit-Remaining: 0`, from `Retry-After`, or from GitHub's own message.
 
 ## Readiness
 
-A module proxy with no credential serves every public module and none of the private ones. Nothing that only asks "is the process up" can see that, which is why it went unnoticed. So readiness is its own statement, re-checked every 15 minutes, reported on the admin dashboard and at `goproxy.{domain}/health` (503 when not ready), and logged at ERROR at startup.
+A module proxy with no credential serves every public module and none of the private ones. Nothing that only asks "is the process up" can see that, which is why it went unnoticed. So readiness is its own statement, re-checked every minutes, reported on the admin dashboard and at `goproxy.{domain}/health` (503 when not ready), and logged at ERROR at startup.
 
-It reports three distinct states:
+It reports distinct states:
 
 - **Not ready** -- no credential while private prefixes are configured, or the configured readiness module did not resolve.
 - **Ready but unproven** -- a credential exists, and no `BUILDHOST_GOPROXY_READINESS_MODULE` is set. A credential that authenticates but is not authorized for the org looks identical to a working one from here. The check therefore says so, rather than a claim of a proof it cannot make. **Set a private module here.** It is the only configuration that catches the failure class this package exists for.
@@ -52,7 +52,7 @@ It reports three distinct states:
 
 The endpoint splits what it tells whom. The status code and the `healthy` flag are unauthenticated. A monitor therefore needs no credential. A monitor that needs one is a monitor nobody wires up.
 
-The reason, the credential state, the private prefixes and the readiness module are served only to a read-scoped caller. Each of them names a private repository. A private module's existence is not something an anonymous caller may learn. The admin dashboard reads the full state directly, on the admin port, so nothing is hidden from an operator.
+The reason, the credential state, the private prefixes and the readiness module are served only to a caller with a GLOBAL read or write token. A GitHub sign-in session does not count, because any GitHub account can sign in. Each of them names a private repository. A private module's existence is not something an anonymous caller may learn. The admin dashboard reads the full state directly, on the admin port, so nothing is hidden from an operator.
 
 It deliberately does NOT fail the registry's `/healthz`. A goproxy misconfiguration then takes every other buildhost service out of rotation. That outcome is worse than the one this check prevents.
 
@@ -84,17 +84,21 @@ An operator who does want a mirror sets `BUILDHOST_GOPROXY_UPSTREAM` explicitly,
 
 ## Auth
 
-Two different credentials meet here, and confusing them is what produced the bug this package was written for. The PROXY's credential (a GitHub App installation token, else the static PAT, resolved per repo by `auth.BearerForRepo`) decides what the proxy can fetch. The CALLER's credential decides what they may see.
+different credentials meet here, and confusing them is what produced the bug this package was written for. The PROXY's credential (a GitHub App installation token, else the static PAT, resolved per repo by `auth.BearerForRepo`) decides what the proxy can fetch. The CALLER's credential decides what they may see.
 
 A module outside the private namespaces is public source and needs no credential. To require one only stops `GOPROXY=<proxy>,direct` from working for anyone without a buildhost token.
 
-Inside those namespaces a caller needs one of two things. The first is a GLOBAL read or write token. The second is a signed-in GitHub user who can read the backing repo, which is asked of GitHub per repo. A project-scoped token is not enough. It says "this job may read project X". A Go module is not a project. To accept it widens a least-privilege credential to the org's whole private source tree.
+Inside those namespaces a caller needs one of things. The first is a GLOBAL read or write token. The second is a signed-in GitHub user who can read the backing repo, which is asked of GitHub per repo. A project-scoped token is not enough. It says "this job may read project X". A Go module is not a project. To accept it widens a least-privilege credential to the org's whole private source tree. An auto-provisioned OIDC identity from any repository in an allowed org IS accepted, so every org workflow fetches the org's private modules with no secret provisioned.
 
-A caller without that access gets **404**, never a 401 and never a 403. That is the same answer a module that does not exist gets. Either of the other two confirms the module EXISTS, which is the fact a private module is keeping. A prober can then walk a name list and map the org's private repositories off the status code alone.
+Private prefixes match case-insensitively, as GitHub names do.
+
+Every successful response for a private module is `Cache-Control: private`. It was served to an authenticated caller, so no shared cache (a CDN in front of this host) may store it and replay it to an anonymous one. Public modules stay `public, immutable`.
+
+A caller without that access gets **404**, never a 401 and never a 403. That is the same answer a module that does not exist gets. Either of the other confirms the module EXISTS, which is the fact a private module is keeping. A prober can then walk a name list and map the org's private repositories off the status code alone.
 
 The check runs before any upstream call. The existing module and the fictional one therefore cannot drift apart in timing or in body. An unauthenticated request also never spends GitHub API quota. `TestExistingAndMissingPrivateModulesAreIndistinguishable` holds the property.
 
-This is the exact opposite of `KindUnauthorized`. The two must never merge. There the proxy's OWN credential failed. No caller can fix that, and a 404 buries it. That is how a proxy that served zero private modules looked like a typo in everybody's `go.mod`. That case stays a loud 403.
+This is the exact opposite of `KindUnauthorized`. The two must never merge. There the proxy's OWN credential failed. No caller can fix that, and a buries it. That is how a proxy that served zero private modules looked like a typo in everybody's `go.mod`. That case stays a loud 403.
 
 Point the toolchain at it with `~/.netrc`:
 
@@ -126,6 +130,6 @@ Concurrent fetches of the same version are collapsed by a single-flight, so a co
 
 The **Go Proxy** page shows health and the credential first, then the cache size. It then shows a per-module table. That table's `last_error_kind` field is what makes a credential failure visible. It then shows recent requests with their outcome.
 
-The per-module last error is persisted. The counters and the recent-request ring live in memory, and the page labels them "since start". A write per request, for a number only a dashboard reads, is not worth its cost. The one thing that must survive a restart does survive it.
+The per-module last error is persisted. The counters and the recent-request ring live in memory, and the page labels them "since start". A write per request, for a number only a dashboard reads, is not worth its cost. The thing that must survive a restart does survive it.
 
 `POST /api/goproxy/recheck` re-runs the readiness probe on demand, so an operator who just fixed a credential does not wait out the poll interval.

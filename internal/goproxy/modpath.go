@@ -75,13 +75,17 @@ func parseModulePath(path string) ([]repoRef, error) {
 	}, nil
 }
 
+// matchesPrefix compares case-insensitively because GitHub owner and repository
+// names are: github.com/ORG/x names the same repository as github.com/org/x, and
+// must get the same private handling.
 func matchesPrefix(path string, prefixes []string) bool {
+	lower := strings.ToLower(path)
 	for _, p := range prefixes {
-		p = strings.Trim(strings.TrimSpace(p), "/")
+		p = strings.ToLower(strings.Trim(strings.TrimSpace(p), "/"))
 		if p == "" {
 			continue
 		}
-		if path == p || strings.HasPrefix(path, p+"/") {
+		if lower == p || strings.HasPrefix(lower, p+"/") {
 			return true
 		}
 	}
