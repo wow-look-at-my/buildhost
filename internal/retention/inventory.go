@@ -230,9 +230,6 @@ func releaseHolds(f db.ListReleaseRetentionFactsRow, cfg Config, cutoff time.Tim
 	if f.DockerArtifactCount > 0 {
 		holds = append(holds, HoldDocker)
 	}
-	if f.ProjectNewest != 0 {
-		holds = append(holds, HoldProjectNew)
-	}
 	onDefault := f.OnDefaultBranch != 0
 	keep := int64(cfg.BranchKeepN)
 	if onDefault {
@@ -242,15 +239,16 @@ func releaseHolds(f db.ListReleaseRetentionFactsRow, cfg Config, cutoff time.Tim
 		keep = 1
 	}
 	expired := !onDefault && f.BranchExpired != 0
-	if !expired && f.NewerPublishedOnBranch < keep {
-		switch {
-		case !onDefault && f.BranchDeleted != 0:
-			holds = append(holds, HoldDeletedTTL)
-		case f.NewerPublishedOnBranch == 0:
-			holds = append(holds, HoldBranchTip)
-		default:
-			holds = append(holds, HoldKeepN)
-		}
+	switch {
+	case !expired && f.NewerPublishedOnBranch < keep && !onDefault && f.BranchDeleted != 0:
+		holds = append(holds, HoldDeletedTTL)
+	case !expired && f.NewerPublishedOnBranch < keep && f.NewerPublishedOnBranch == 0:
+		holds = append(holds, HoldBranchTip)
+	case !expired && f.NewerPublishedOnBranch < keep:
+		holds = append(holds, HoldKeepN)
+	case f.ProjectNewest != 0:
+		// Named only when no branch window keeps it, e.g. an expired deleted branch.
+		holds = append(holds, HoldProjectNew)
 	}
 	if inGuard {
 		holds = append(holds, HoldRecency)

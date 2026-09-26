@@ -67,6 +67,28 @@ func TestRun_DeletedBranchKeptForTTLThenEvicted(t *testing.T) {
 	}
 }
 
+func TestInventory_ExpiredBranchKeepsOnlyProjectNewest(t *testing.T) {
+	t.Serial()
+	d, store, p := setup(t)
+	ctx := context.Background()
+	putRelease(t, d, store, p.ID, "f1", 1, "feature", "f1")
+	putRelease(t, d, store, p.ID, "f2", 2, "feature", "f2")
+	require.NoError(t, d.RecordBranchDeleted(ctx, p.ID, "feature", time.Now()))
+
+	ret := New(d, store, Config{KeepN: 10, BranchKeepN: 5, BranchTTL: 24 * time.Hour})
+	ret.clock = futureClock()
+	inv, err := ret.Inventory(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 0, inv.Totals.HoldMismatches)
+
+	holds := map[string]string{}
+	for _, f := range inv.Files {
+		holds[f.Version] = f.Hold
+	}
+	assert.Equal(t, HoldProjectNew, holds["f2"])
+	assert.Equal(t, HoldNone, holds["f1"])
+}
+
 func TestSyncDeletedBranches_ClearsWhenBranchReturns(t *testing.T) {
 	t.Serial()
 	d, store, p := setup(t)
