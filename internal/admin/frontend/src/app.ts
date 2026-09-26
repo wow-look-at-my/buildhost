@@ -44,7 +44,7 @@ const h = function (s: string | number | null | undefined): string {
 // siteBranchURL links to a site's deployment. "@" is the read grammar; the
 // "/branch/" spelling only redirects here. The default branch's shorter bare
 // URL needs server state the admin API does not carry, and "@" reaches it in
-// one hop, so this names the branch either way.
+// a single hop, so this names the branch either way.
 const siteBranchURL = function (sitesBase: string, project: string, branch: string): string {
     return sitesBase + "/" + project + "/@" + branch + "/";
 };
@@ -148,9 +148,9 @@ const renderSidebar = function (nav: string): void {
 };
 
 const badge = function (type: string, text: string): string { return '<span class="badge badge-' + type + '">' + h(text) + "</span>"; };
-// platformBadge renders an artifact's whole platform set as ONE badge. A file
-// covering several platforms is one artifact with one download link, so listing
-// it once with "APE: linux/amd64, darwin/arm64" is the honest row.
+// platformBadge renders an artifact's whole platform set as A single badge. A
+// file covering several platforms is a single artifact with a single download
+// link, so listing it a single time with "APE: linux/amd64, darwin/arm64" is the honest row.
 const platformBadge = function (platforms: Platform[] | undefined, exeFormat: string, os: string, arch: string): string {
     var list = platforms && platforms.length > 0
         ? platforms.map(function (p) { return p.os + "/" + p.arch; }).join(", ")
@@ -185,10 +185,9 @@ const brewInstall = function (brewBase: string, project: string): string {
     return "brew tap pazer/build " + brewBase + "/tap.git\nbrew trust pazer/build\nbrew install pazer/build/" + brewFormulaName(project);
 };
 
-// Install commands, shared by the project page (latest) and the release page
-// (one version). Each takes the services block and the project; `version` is
-// "" for latest. A private project needs its credential in the same block,
-// because a copied command that 401s teaches nothing about why.
+// Each takes the services block and the project; `version` is "" for latest.
+// A private project needs its credential in the same block, because a copied
+// command that 401s teaches nothing about why.
 
 // A Debian package name folds '/' and '_' to '-' (repackage.DebPackageName),
 // so apt and dpkg agree on a slash-namespaced project.
@@ -421,10 +420,10 @@ pages.project = function (name: string): void {
         html += "</table></div>";
 
         // Download & Install (latest): non-versioned endpoints and commands so
-        // the newest build can be fetched without first opening a specific
+        // the newest build can be fetched without earliest opening a specific
         // release. Mirrors the release page's endpoint card, version-free, plus
-        // the package-manager one-liners from the Registries page. Only shown
-        // once the project has a published release ("latest" 404s otherwise).
+        // the package-manager a single liners from the Registries page. Only
+        // shown a single time the project has a published release ("latest" 404s otherwise).
         var hasPublished = false;
         for (var ri = 0; ri < rels.length; ri++) { if (rels[ri].published) { hasPublished = true; break; } }
         if (hasPublished) {
@@ -832,9 +831,8 @@ const copyTempLink = function (btn: HTMLButtonElement, project: string, version:
 //
 // The href is still the artifact's REAL url, never "#": an anchor's href is what
 // the browser copies, shows on hover, and opens in a new tab, and a page-local
-// "#" makes all useless -- "copy link address" yielded the dashboard's own URL.
-// Following it directly asks for credentials, which is the honest answer for a
-// private artifact; the temp-link button next to it is the shareable one.
+// "#" makes each of them useless -- "copy link address" yielded the dashboard's
+// own URL.
 //
 // Values are safe charsets (project/version/os/arch/fmt), so they embed directly
 // in the inline handler.
@@ -1309,9 +1307,7 @@ pages.goproxy = function (): void {
         var hl = st.health;
         var html = '<h1>Go Proxy</h1>';
 
-        // Health first, and loud. A proxy with no credential serves every public
-        // module and no private one, so "it is up" is not the question worth
-        // answering at the top of this page.
+        // Health and loud.
         var cls = hl.healthy ? (hl.reason ? "warn" : "ok") : "bad";
         var label = hl.healthy ? (hl.reason ? "Ready, but unproven" : "Ready") : "NOT serving private modules";
         html += '<div class="card goproxy-health goproxy-' + cls + '">';
@@ -1532,7 +1528,7 @@ const demoData: Record<string, unknown> = {
     },
     // The demo deliberately shows an UNHEALTHY proxy: the failure mode this page
     // exists for (a credential that cannot read private modules while public ones
-    // keep working) is the one worth showing off in a preview.
+    // keep working) is the single worth showing off in a preview.
     "/goproxy": {
         enabled: true,
         state: {

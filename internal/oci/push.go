@@ -22,7 +22,7 @@ func (h *Handler) StartBlobUpload(w http.ResponseWriter, r *http.Request) {
 		if h.mountBlob(w, r, project, mount, r.URL.Query().Get("from")) {
 			return
 		}
-		// Not mountable. The spec's fallback is a normal upload session, so the
+		// Not mountable. The spec's fallback is a normal upload session.
 	}
 
 	digest := r.URL.Query().Get("digest")
@@ -102,7 +102,7 @@ func (h *Handler) mountBlob(w http.ResponseWriter, r *http.Request, project *db.
 // PatchBlobUpload handles PATCH /v2/{name}/blobs/uploads/{uuid} (chunk append).
 //
 // A Content-Range header ("<start>-<end>", as the OCI distribution spec has
-// chunked clients send) is verified against the bytes committed so far: a
+// chunked clients send) is verified against the bytes committed so far.
 func (h *Handler) PatchBlobUpload(w http.ResponseWriter, r *http.Request, uuid string) {
 	project := auth.ProjectFrom(r.Context())
 	sess := h.uploads.get(uuid)
@@ -151,7 +151,7 @@ func (h *Handler) GetBlobUploadStatus(w http.ResponseWriter, r *http.Request, uu
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// setUploadHeaders writes the shared upload-session response headers. Range is
+// setUploadHeaders writes the shared upload-session response headers.
 func setUploadHeaders(w http.ResponseWriter, projectName, uuid string, committed int64) {
 	end := committed - 1
 	if end < 0 {

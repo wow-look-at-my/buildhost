@@ -18,7 +18,7 @@ import (
 )
 
 // apeFixture is a file shaped like a Cosmopolitan APE: the MZqFpD prologue,
-// and (like the real thing) it writes to its own path before doing its job, so
+// and (like the real thing) it writes to its own path before doing its job.
 func apeFixture() []byte {
 	return []byte("MZqFpD='fixture'\n" +
 		`: >> "$0" || { echo "self-write failed" >&2; exit 1; }` + "\n" +
@@ -74,7 +74,7 @@ func TestDeb_APEBinaryGetsLauncher(t *testing.T) {
 	t.Serial()
 	entries := debEntries(t, buildDeb(t, apeFixture(), db.KindBinary, "go-toolchain"))
 
-	// dpkg creates no leading directories itself: without this entry the
+	// dpkg creates no leading directories itself.
 	assert.Contains(t, entries, "./usr/lib/go-toolchain/")
 	assert.Equal(t, string(apeFixture()), entries["./usr/lib/go-toolchain/go-toolchain"])
 
@@ -119,7 +119,7 @@ func TestDeb_APELauncherRunsReadOnlyBinary(t *testing.T) {
 	assert.NotZero(t, fi.Mode()&0o200, "the copy must be writable: an APE rewrites itself")
 }
 
-// Everything that is not an APE keeps the previous layout exactly: straight to
+// Everything that is not an APE keeps the previous layout exactly.
 func TestDeb_NonAPEBinaryLayoutUnchanged(t *testing.T) {
 	t.Serial()
 	entries := debEntries(t, buildDeb(t, []byte("\x7fELF plain binary"), db.KindBinary, "plain"))

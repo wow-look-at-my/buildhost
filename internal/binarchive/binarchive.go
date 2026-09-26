@@ -37,7 +37,7 @@ type Entry struct {
 	Path string `json:"path"`
 	Size int64  `json:"size"` // decompressed size
 	Mode uint32 `json:"mode"`
-	// Offset is the entry block's absolute offset in the container, which is
+	// Offset is the entry block's absolute offset in the container.
 	Offset uint64 `json:"offset"`
 }
 

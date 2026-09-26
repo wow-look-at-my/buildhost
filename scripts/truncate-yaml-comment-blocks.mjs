@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Truncates every over-long `#` comment block in this repo's workflow and
-// action files to its first line, which is what
+// action files to its earliest line, which is what
 // wow-look-at-my/actions@yaml-comment-block allows.
 //
 // The block rule is copied from that action's scan.ts: a run of `#` lines ends
-// at the first line that is neither a comment nor blank, so a blank line
-// between two comment lines does NOT split them into two blocks.
+// at the earliest line that is neither a comment nor blank, so a blank line
+// between comment lines does NOT split them into blocks.
 //
 // Run it from the repo root: node scripts/truncate-yaml-comment-blocks.mjs
 
@@ -79,8 +79,8 @@ function overLongBlocks(lines) {
 	return blocks;
 }
 
-// Keeps the block's first line and drops the comment and blank lines behind it,
-// up to the block's last comment line.
+// Keeps the block's earliest line and drops the comment and blank lines behind
+// it, up to the block's last comment line.
 function truncate(content) {
 	const lines = content.split('\n');
 	const drop = new Set();

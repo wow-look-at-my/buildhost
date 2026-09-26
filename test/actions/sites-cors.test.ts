@@ -2,26 +2,10 @@
 // redirects, in a real browser.
 //
 // This check exists because that stopped being true and every cross-origin
-// consumer broke at once. The legacy /{project}/branch/{branch}/ URL -- the one
-// every deployed client, README and published preview link still says -- became
-// a 302 to the canonical @{branch} form, and the redirect went out WITHOUT the
-// site CORS headers. A browser re-checks Access-Control-Allow-Origin on every
-// hop, so the load died at the 302 and never reached the 200 that had it: a
-// dashboard importing an ES module from sites.pazer.build spent every page view
-// retrying "error loading dynamically imported module".
+// consumer broke at the same time.
 //
-// Nothing caught it. Unit tests covered the handlers that serve BYTES, and
-// `curl` -- which follows redirects without enforcing CORS at all, and does not
-// care about MIME types or CSP either -- reported a clean 200 for the same URL
-// that was failing in production. Only a real browser doing a real cross-origin
-// import can see this class of defect, which is exactly what runs below.
-//
-// Two layers, deliberately:
-//   1. every hop of every redirect shape a site URL can take must carry the
-//      CORS header (fast, precise, names the exact broken hop), and
-//   2. one real headless browser must actually import a module through the
-//      redirect chain (honest end-to-end; also covers MIME type and CSP, which
-//      layer 1 cannot see).
+// Nothing caught it. Only a real browser doing a real cross-origin import can
+// see this class of defect, which is exactly what runs below.
 
 const fs = require("node:fs");
 const os = require("node:os");
@@ -29,7 +13,7 @@ const path = require("node:path");
 const child_process = require("node:child_process");
 
 // Progress lines and the failure report. The suite reads stdout, so a failure
-// has to arrive as a non-zero exit, not as a label on a green run.
+// has to arrive as a non-exit, not as a label on a green run.
 const core = {
 	info: (m: string) => console.log(m),
 	error: (m: string) => console.error(m),
@@ -44,16 +28,16 @@ const HOST = `sites.localhost:${PORT}`;
 const SITES = `http://${HOST}`;
 const CONSUMER_ORIGIN = `http://localhost:${CONSUMER_PORT}`;
 const PROJECT = "cors-e2e";
-// The shape that actually broke: a PRIVATE project serving one public site
-// branch (X-Public-Site), which is how every PR preview and published library
-// site under a private repo is served. A public project would not exercise the
-// public-read bypass at all, so a redirect that lost either the CORS header or
-// the anonymous bypass would go unnoticed.
+// The shape that actually broke: a PRIVATE project serving a single public
+// site branch (X-Public-Site), which is how every PR preview and published
+// library site under a private repo is served. A public project would not
+// exercise the public-read bypass at all, so a redirect that lost either the
+// CORS header or the anonymous bypass would go unnoticed.
 const PRIVATE_PROJECT = "cors-e2e-private";
 const MARKER = "site-module-loaded";
 
-// The router dispatches on the Host's first label, so the sites service has to
-// be addressed by name. GitHub runners resolve *.localhost to loopback (the
+// The router dispatches on the Host's earliest label, so the sites service has
+// to be addressed by name. GitHub runners resolve *.localhost to loopback (the
 // same assumption image-strips-e2e.ts makes for static.localhost); say so
 // outright rather than letting an unrelated-looking connection error surface.
 {
@@ -71,8 +55,7 @@ const binAbs = path.resolve(BIN);
 // An APE starts through its own shell trampoline: a direct execve of it fails
 // ENOEXEC, because nothing here registers an APE binfmt handler. A shell reads
 // the header and does the rest, which is what a bash "run:" step does
-// implicitly and node's spawn does not. A native ELF is the opposite: feeding
-// one to a shell produces a screenful of "not found".
+// implicitly and node's spawn does not.
 const isAPE = fs.readFileSync(binAbs).subarray(0, 2).toString() === "MZ";
 const runner = (args: string[]): [string, string[]] =>
 	isAPE ? ["sh", [binAbs, ...args]] : [binAbs, args];
@@ -184,7 +167,7 @@ try {
 			const r = await fetch(`http://127.0.0.1:${PORT}/healthz`);
 			if (r.ok) break;
 		} catch {
-			/* not up yet */
+			/* */
 		}
 		if (i > 100) throw new Error(`buildhost never became healthy:\n${serverLog}`);
 		await new Promise((r) => setTimeout(r, 100));
@@ -196,8 +179,8 @@ try {
 
 	// The create-project field is `is_private` (bool). An unknown field is
 	// IGNORED, so a wrong name silently yields a PUBLIC project -- which is how
-	// the private-project case below spent its first life asserting nothing. Every
-	// creation here therefore reads the visibility back and fails on a mismatch.
+	// the private-project case below spent its earliest life asserting nothing.
+	// Every creation here therefore reads the visibility back and fails on a mismatch.
 	async function createProject(name: string, isPrivate: boolean) {
 		const res = await fetch(`http://localhost:${PORT}/api/v1/projects`, {
 			method: "POST",
@@ -216,8 +199,8 @@ try {
 
 	await createProject(PROJECT, false);
 
-	// Two branches so `library` is NOT the default -- the production shape,
-	// where the legacy URL redirects to the @branch form rather than collapsing
+	// Branches so `library` is NOT the default -- the production shape, where
+	// the legacy URL redirects to the @branch form rather than collapsing
 	// straight to the bare project path.
 	for (const [branch, files] of [
 		["master", { "index.html": "<h1>default</h1>" }],
@@ -264,7 +247,6 @@ try {
 	});
 	if (upPriv.status !== 201) throw new Error(`upload private site: ${upPriv.status} ${await upPriv.text()}`);
 
-	// --- Layer 1: every hop of every redirect shape -------------------------
 	core.info("CORS headers on every redirect hop:");
 	// The exact URL that broke production: legacy spelling of a NON-default
 	// branch, redirecting to the canonical @branch form.
@@ -281,18 +263,15 @@ try {
 	await assertChainCORS("canonical @branch file", `/${PROJECT}/@library/ui/mod.js`, false);
 	await assertChainCORS("bare apex file", `/${PROJECT}/index.html`, false);
 	// The production shape: private project, public site branch, ANONYMOUS (no
-	// token is ever sent above -- assertChainCORS sends only an Origin). This
-	// also pins that the public-read bypass survives the redirect, since a 401
-	// mid-chain would fail here just as loudly as a missing header.
+	// token is ever sent above -- assertChainCORS sends only an Origin).
 	await assertChainCORS("private project, public branch (legacy /branch/)", `/${PRIVATE_PROJECT}/branch/library/ui/mod.js`, true);
 
-	// --- Layer 2: a real browser, a real cross-origin import ----------------
-	// Everything above is a header assertion. This is the actual user-visible
-	// claim, and it covers what header assertions cannot: MIME type, CSP, and
-	// module specifier resolution against the post-redirect URL.
-	// The private-project/public-branch URL, because that is the production
-	// shape -- and the browser sends no credentials, so it also proves the
-	// anonymous public-read bypass holds across the redirect.
+	// This is the actual user-visible claim, and it covers what header
+	// assertions cannot: MIME type, CSP, and module specifier resolution
+	// against the post-redirect URL. The private-project/public-branch URL,
+	// because that is the production shape -- and the browser sends no
+	// credentials, so it also proves the anonymous public-read bypass holds
+	// across the redirect.
 	const MODULE_URL = `${SITES}/${PRIVATE_PROJECT}/branch/library/ui/mod.js`;
 	const page_html = `<!doctype html><meta charset=utf-8><title>consumer</title><script type="module">
   const done = (t) => { window.__result = t; };
@@ -307,9 +286,7 @@ try {
 	});
 	await new Promise<void>((r) => consumer.listen(CONSUMER_PORT, "127.0.0.1", () => r()));
 
-	// A browser is REQUIRED. Skipping when one is missing is how a check that
-	// cannot fail ends up reporting green forever -- so an unavailable browser
-	// fails this job rather than quietly reducing it to the header assertions.
+	// A browser is REQUIRED.
 	const { chromium } = require("playwright-core");
 	const launchAttempts: Array<[string, Record<string, unknown>]> = [
 		// An explicit binary wins when set (how this runs outside a GH runner).

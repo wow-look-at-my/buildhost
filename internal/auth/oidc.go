@@ -38,7 +38,7 @@ type oidcClaims struct {
 	jwt.RegisteredClaims
 	EventName            string `json:"event_name"`
 	RepositoryVisibility string `json:"repository_visibility"`
-	// Dedicated GitHub Actions repo-identity claims, preferred over parsing the
+	// Dedicated GitHub Actions repo-identity claims.
 	Repository        string `json:"repository"`          // "OWNER/REPO"
 	RepositoryID      string `json:"repository_id"`       // numeric repository ID
 	RepositoryOwner   string `json:"repository_owner"`    // "OWNER"
@@ -74,7 +74,6 @@ type VerifyResult struct {
 	RepoPath string
 	// Issuer is the verified token issuer, so the caller can gate
 	Issuer string
-	// OwnerID / RepoID are GitHub's numeric account/repository IDs from the
 	OwnerID string
 	RepoID  string
 }
@@ -151,7 +150,7 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 	verified := token.Claims.(*oidcClaims)
 	ownerID, repoID := verified.repoIDs()
 
-	// Surface the repo identity and issuer for both verification paths, so the
+	// Surface the repo identity and issuer for both verification paths.
 	if result != nil {
 		result.Issuer = verified.Issuer
 		result.RepoPath = verified.repoPath()
@@ -179,7 +178,7 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 		return nil, "", fmt.Errorf("event %q not in allowed list", verified.EventName)
 	}
 
-	// No audience gate here: auto-provisioning trusts the issuer signature, the
+	// No audience gate here: auto-provisioning trusts the issuer signature.
 
 	project := verified.projectName()
 	if project == "" {
@@ -320,8 +319,7 @@ func trimRepoPathIDs(path string) string {
 }
 
 // orgAllowed reports whether the token's org may auto-provision. "*" allows
-// all. GitHub org/user logins are case-insensitive (github.com treats
-// "PazerOP" and "pazerop" as the same account) and the token preserves the
+// all.
 func orgAllowed(allowed []string, org, ownerID string) bool {
 	if slices.Contains(allowed, "*") {
 		return true

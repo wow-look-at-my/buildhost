@@ -3,10 +3,7 @@
 #
 # Usage: brew-doc-flows.sh public|private <host:port>
 #
-# This is an extractor, not a test: it applies the ONLY rewrites allowed
-# between the docs and what CI runs -- https becomes http, and the documented
-# public host becomes the local one. The assertions about what it prints live
-# in test/dats/homebrew-*.dats.
+# The assertions about what it prints live in test/dats/homebrew-*.dats.
 set -euo pipefail
 
 leg="${1:?usage: brew-doc-flows.sh public|private <host:port>}"

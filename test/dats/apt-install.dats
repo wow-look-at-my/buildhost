@@ -1,6 +1,3 @@
-# What `apt-get install` gets from a generated APT repository: a plain project,
-# a slash-namespaced one whose Debian package name folds '/' to '-', and an APE
-# whose package must ship a launcher instead of a bare root-owned binary.
 #
 # Setup publishes and installs; the tests only ask questions about what landed.
 # The apt client is a container the workflow builds and starts (APTBOX), so the

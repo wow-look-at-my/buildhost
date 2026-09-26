@@ -163,7 +163,7 @@ func TestUploadStore_SweepGoesByActivity(t *testing.T) {
 
 func TestRoute_UploadsAlwaysWrite(t *testing.T) {
 	t.Serial()
-	// The GET status read is push-flow state: it must never be reachable with
+	// The GET status read is push-flow state.
 	rt := route{project: "p", action: "uploads", reference: "u", method: http.MethodGet}
 	assert.Equal(t, auth.WriteAccess, rt.Access())
 	// Pull routes stay read.

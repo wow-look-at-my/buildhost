@@ -1,7 +1,6 @@
 package npm
 
-// A packument describes every published release of a project. Reflecting a
-// pre-built package's manifest means reading package/package.json out of the
+// A packument describes every published release of a project.
 
 import (
 	"archive/tar"

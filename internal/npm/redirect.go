@@ -14,7 +14,7 @@ func init() {
 }
 
 func redirectToNPMSubdomain(w http.ResponseWriter, r *http.Request) {
-	// Use the raw, still-escaped path. npm addresses a scoped package as a
+	// Use the raw.
 	rest := strings.TrimPrefix(r.URL.EscapedPath(), "/npm")
 
 	// Build the target host by prepending `npm.` to the apex host. Do NOT use
@@ -32,7 +32,7 @@ func redirectToNPMSubdomain(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusMovedPermanently)
 }
 
-// hostWithoutPort strips a trailing :port from a request Host, leaving the
+// hostWithoutPort strips a trailing :port from a request Host.
 func hostWithoutPort(host string) string {
 	if i := strings.LastIndexByte(host, ':'); i >= 0 {
 		return host[:i]

@@ -1,7 +1,7 @@
 package api
 
 // Tests for WebAssembly artifact uploads: the platform identifier is os=wasm,
-// with arch distinguishing the Go wasm flavor (js for GOOS=js, wasip1 for
+// with arch distinguishing the Go wasm flavor (js for GOOS=js.
 
 import (
 	"context"
@@ -80,7 +80,7 @@ func TestUploadArtifact_LegacyGoosGoarchPair(t *testing.T) {
 		assert.Contains(t, []db.Arch{db.ArchJS, db.ArchWasip1}, row.Arch)
 	}
 
-	// The alias maps onto the SAME canonical row identity: re-uploading the
+	// The alias maps onto the SAME canonical row identity.
 	rec = doUpload(t, h, proj, "wasm", "js", "", "\x00asm-js-module")
 	assert.Equal(t, http.StatusConflict, rec.Code)
 
@@ -94,7 +94,7 @@ func TestUploadArtifact_LegacyGoosGoarchPair(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), `invalid arch \"wasm\"`)
 }
 
-// os=wasm pairs only with the wasm flavor arches, and those arches only with
+// os=wasm pairs only with the wasm flavor arches.
 func TestUploadArtifact_WasmIncompatiblePairs(t *testing.T) {
 	t.Serial()
 	h, proj, rel := setupUploadTest(t, "wasmbadpair")

@@ -1,6 +1,6 @@
 package api
 
-// Tests for single-artifact multi-platform ingest: PUT .../artifacts/ape with
+// Tests for single-artifact multi-platform ingest.
 
 import (
 	"context"

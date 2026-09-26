@@ -2,7 +2,7 @@
 // layout directory or tarball, as produced by `docker buildx build --output
 // type=oci` or `docker save`) to a buildhost OCI registry.
 //
-// Its reason to exist is upload sizing: docker/buildx/crane push every blob as
+// Its reason to exist is upload sizing.
 package ociclient
 
 import (
@@ -28,7 +28,7 @@ type Pusher struct {
 	Registry string
 	// Project is the image's project name on buildhost (may be slash-namespaced).
 	Project string
-	// Token authenticates every request (Bearer; a write-scoped API token or a
+	// Token authenticates every request (Bearer.
 	Token string
 	// PlainHTTP uses http:// instead of https:// (local servers, tests).
 	PlainHTTP bool
@@ -44,7 +44,6 @@ type Pusher struct {
 	pushed map[string]bool
 }
 
-// ParseRefs parses full image references ("<registry>/<project>[:tag]") into
 func ParseRefs(refs []string) (registry, project string, tags []string, err error) {
 	if len(refs) == 0 {
 		return "", "", nil, fmt.Errorf("at least one image reference is required")
