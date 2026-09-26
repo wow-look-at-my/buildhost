@@ -46,14 +46,14 @@ func init() {
 }
 
 type manifest struct {
-	Server    string             `toml:"server"`
-	Token     string             `toml:"token"`
-	Project   string             `toml:"project"`
-	Version   string             `toml:"version"`
-	GitBranch string             `toml:"git_branch"`
-	GitCommit string             `toml:"git_commit"`
-	Notes     string             `toml:"notes"`
-	OciUser   string             `toml:"oci_user"`
+	Server    string `toml:"server"`
+	Token     string `toml:"token"`
+	Project   string `toml:"project"`
+	Version   string `toml:"version"`
+	GitBranch string `toml:"git_branch"`
+	GitCommit string `toml:"git_commit"`
+	Notes     string `toml:"notes"`
+	OciUser   string `toml:"oci_user"`
 	// AptDepends is sent only when the manifest names it.
 	AptDepends *string            `toml:"apt_depends"`
 	Artifacts  []manifestArtifact `toml:"artifact"`

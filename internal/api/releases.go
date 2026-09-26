@@ -32,11 +32,11 @@ type createReleaseRequest struct {
 	GitCommit string `json:"git_commit"`
 	// DefaultBranch is the repo's default branch (e.g. GitHub's
 	DefaultBranch string `json:"default_branch"`
-	CreateService *bool `json:"create_service"`
+	CreateService *bool  `json:"create_service"`
 	// AptDepends declares the project's Debian Depends value. Absent leaves it untouched, and "" clears it.
 	AptDepends *string `json:"apt_depends"`
 	Notes      string  `json:"notes"`
-	OciUser       string `json:"oci_user"`
+	OciUser    string  `json:"oci_user"`
 	// Draft keeps the release out of the project's public release stream: it
 	Draft bool `json:"draft"`
 }
