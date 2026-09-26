@@ -53,7 +53,6 @@ func (h *Handler) debDigest(ctx context.Context, project *db.Project, release *d
 // debMetadata is the packaged_artifacts.metadata document stored with format
 // "deb" rows.
 type debMetadata struct {
-	// Inputs fingerprints the mutable generation inputs the cached digest was
 	Inputs string `json:"inputs_sha256"`
 }
 

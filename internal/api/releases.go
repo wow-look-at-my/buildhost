@@ -32,7 +32,6 @@ type createReleaseRequest struct {
 	GitCommit string `json:"git_commit"`
 	// DefaultBranch is the repo's default branch (e.g. GitHub's
 	DefaultBranch string `json:"default_branch"`
-	// CreateService declares that the project's installed binary runs as a
 	CreateService *bool `json:"create_service"`
 	// AptDepends declares the project's Debian Depends value. Absent leaves it untouched, and "" clears it.
 	AptDepends *string `json:"apt_depends"`
@@ -175,7 +174,6 @@ func (h *Handler) GetRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Artifacts ride along so a release's contents are readable without a
 	artifacts, err := h.DB.ListArtifactsWithPlatforms(r.Context(), rel.ID)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed to list artifacts")
