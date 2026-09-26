@@ -52,7 +52,7 @@ It reports three distinct states:
 
 The endpoint splits what it tells whom. The status code and the `healthy` flag are unauthenticated. A monitor therefore needs no credential. A monitor that needs one is a monitor nobody wires up.
 
-The reason, the credential state, the private prefixes and the readiness module are served only to a caller with a GLOBAL read or write token. A GitHub sign-in session does not count, because any GitHub account can sign in. An OIDC identity does not count either. Each of them names a private repository. A private module's existence is not something an anonymous caller may learn. The admin dashboard reads the full state directly, on the admin port, so nothing is hidden from an operator.
+The reason, the credential state, the private prefixes and the readiness module are served only to a caller with a GLOBAL read or write token. A GitHub sign-in session does not count, because any GitHub account can sign in. Each of them names a private repository. A private module's existence is not something an anonymous caller may learn. The admin dashboard reads the full state directly, on the admin port, so nothing is hidden from an operator.
 
 It deliberately does NOT fail the registry's `/healthz`. A goproxy misconfiguration then takes every other buildhost service out of rotation. That outcome is worse than the one this check prevents.
 
@@ -88,7 +88,7 @@ Two different credentials meet here, and confusing them is what produced the bug
 
 A module outside the private namespaces is public source and needs no credential. To require one only stops `GOPROXY=<proxy>,direct` from working for anyone without a buildhost token.
 
-Inside those namespaces a caller needs one of two things. The first is a GLOBAL read or write token. The second is a signed-in GitHub user who can read the backing repo, which is asked of GitHub per repo. A project-scoped token is not enough. It says "this job may read project X". A Go module is not a project. To accept it widens a least-privilege credential to the org's whole private source tree. An auto-provisioned OIDC identity is refused for the same reason: its token row carries no project, but it speaks for the one repository whose workflow minted it.
+Inside those namespaces a caller needs one of two things. The first is a GLOBAL read or write token. The second is a signed-in GitHub user who can read the backing repo, which is asked of GitHub per repo. A project-scoped token is not enough. It says "this job may read project X". A Go module is not a project. To accept it widens a least-privilege credential to the org's whole private source tree. An auto-provisioned OIDC identity from any repository in an allowed org IS accepted, so every org workflow fetches the org's private modules with no secret provisioned.
 
 Private prefixes match case-insensitively, as GitHub names do.
 

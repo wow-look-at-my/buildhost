@@ -214,22 +214,24 @@ func TestProjectScopedTokenCannotReadPrivateModules(t *testing.T) {
 	assert.Zero(t, fake.calls)
 }
 
-// An auto-provisioned OIDC identity carries no project id but is scoped to the
-// one repository whose workflow minted it, so it is not a global reader.
-func TestOIDCIdentityCannotReadPrivateModules(t *testing.T) {
+// CI in any org repository fetches the org's other private modules with the
+// workflow's own OIDC identity; no secret has to be provisioned.
+func TestOIDCIdentityReadsOtherOrgPrivateModules(t *testing.T) {
 	t.Serial()
 	fake := newFakeGitHub(t)
 	fake.Private = true
+	seedModule(fake, privateOrg+"/tml", "", "v1.2.0", "aaaa111122223333444455556666777788889999",
+		"module "+privateOrg+"/tml\n\ngo 1.25\n")
 	s := newTestService(t, fake, "tok", []string{privateOrg})
 
 	req := httptest.NewRequest(http.MethodGet, "/"+privateOrg+"/tml/@v/list", nil)
 	ctx := auth.WithToken(req.Context(), &db.ApiToken{Scopes: "read,write"})
-	ctx = auth.WithOIDCProject(ctx, "wow-look-at-my/some-other-repo")
+	ctx = auth.WithOIDCProject(ctx, "some-other-repo")
 	rec := httptest.NewRecorder()
 	s.serve(rec, req.WithContext(ctx))
 
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-	assert.Zero(t, fake.calls)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, "v1.2.0\n", rec.Body.String())
 }
 
 // A private module's content was served to an authenticated caller. A shared

@@ -121,16 +121,13 @@ func (s *Service) operatorView(r *http.Request) bool {
 	return globalReader(r)
 }
 
-// globalReader reports whether the caller holds a global read or write token.
-// An auto-provisioned OIDC identity is scoped to the one repository that ran the
-// workflow, even though its token row carries no project, so it does not count.
-// A signed-in GitHub user does not count either: any GitHub account can sign in.
+// globalReader reports whether the caller holds a read or write token that is
+// not scoped to a project. That includes an OIDC identity from any repository in
+// an allowed org, so every org workflow can fetch the org's private modules. A
+// signed-in GitHub user does not count: any GitHub account can sign in.
 func globalReader(r *http.Request) bool {
 	t := auth.TokenFrom(r.Context())
 	if t == nil || t.ProjectID != nil {
-		return false
-	}
-	if auth.OIDCProjectFrom(r.Context()) != "" {
 		return false
 	}
 	return t.HasScope("read") || t.HasScope("write")

@@ -160,32 +160,22 @@ func TestHealthEndpointRedactsPrivateNamesFromAnonymousCallers(t *testing.T) {
 	assert.Contains(t, authed, "credential_kind")
 }
 
-// Any GitHub account can sign in, and an OIDC identity is scoped to one repo, so
-// neither may see the configuration that names private repositories.
-func TestHealthEndpointRedactsForSignedInUsersAndOIDC(t *testing.T) {
+// Any GitHub account can sign in, so a session alone may not see the
+// configuration that names private repositories.
+func TestHealthEndpointRedactsForSignedInUsers(t *testing.T) {
 	t.Serial()
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
 	s.cfg.ReadinessModule = privateOrg + "/tml"
 	s.checkHealth(context.Background())
 
-	for name, ctx := range map[string]func(context.Context) context.Context{
-		"signed-in user": func(c context.Context) context.Context { return auth.WithUser(c, "some-stranger") },
-		"oidc identity": func(c context.Context) context.Context {
-			c = auth.WithToken(c, &db.ApiToken{Scopes: "read,write"})
-			return auth.WithOIDCProject(c, "wow-look-at-my/public-thing")
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/health", nil)
-			req = req.WithContext(ctx(req.Context()))
-			rec := httptest.NewRecorder()
-			s.serveHealth(rec, req)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req = req.WithContext(auth.WithUser(req.Context(), "some-stranger"))
+	rec := httptest.NewRecorder()
+	s.serveHealth(rec, req)
 
-			assert.NotContains(t, rec.Body.String(), "tml")
-			assert.NotContains(t, rec.Body.String(), "credential_kind")
-		})
-	}
+	assert.NotContains(t, rec.Body.String(), "tml")
+	assert.NotContains(t, rec.Body.String(), "credential_kind")
 }
 
 // The dashboard's snapshot has to survive an empty cache: a proxy that has
