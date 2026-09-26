@@ -114,6 +114,7 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/projects/{name}/merge-plan", router.Allow, s.apiMergePlan)
 	mux.HandleFunc("POST /api/projects/{name}/merge", router.Allow, s.apiMerge)
 	mux.HandleFunc("PUT /api/projects/{name}/versioning", router.Allow, s.apiSetVersioning)
+	mux.HandleFunc("GET /api/projects/{name}/site-files", router.Allow, s.apiSiteFiles)
 	mux.HandleFunc("GET /api/projects/{name}", router.Allow, s.apiProject)
 	mux.HandleFunc("GET /api/duplicates", router.Allow, s.apiDuplicates)
 	mux.HandleFunc("GET /api/projects", router.Allow, s.apiProjects)
