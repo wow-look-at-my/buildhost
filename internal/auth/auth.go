@@ -25,15 +25,13 @@ const (
 type OIDCRepoIdentity struct {
 	RepoPath string // "owner/repo" (plain names, IDs stripped)
 	Issuer   string
-	// OwnerID / RepoID are GitHub's numeric account/repository IDs (from the
-	OwnerID string
-	RepoID  string
+	OwnerID  string
+	RepoID   string
 	// RunID / RunAttempt name the workflow run and attempt that minted the token.
 	RunID      string
 	RunAttempt string
 }
 
-// WithGitHubToken stashes the signed-in user's GitHub OAuth token (from the
 func WithGitHubToken(ctx context.Context, token string) context.Context {
 	return context.WithValue(ctx, githubTokenKey, token)
 }
@@ -122,7 +120,7 @@ func OIDCRepoFrom(ctx context.Context) OIDCRepoIdentity {
 	return v
 }
 
-// WithOIDCError records why OIDC verification failed for a presented JWT, so an
+// WithOIDCError records why OIDC verification failed for a presented JWT.
 func WithOIDCError(ctx context.Context, err error) context.Context {
 	return context.WithValue(ctx, oidcErrorKey, err)
 }
