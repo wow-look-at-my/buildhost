@@ -215,8 +215,8 @@ func buildInstallInfo(r *http.Request, project, version string, hasBinary bool) 
 	if hasBinary {
 		info.Curl = fmt.Sprintf("curl -LO %q", dlURL(r, project, "", "linux", "amd64", "raw"))
 		// The cloneable tap URL is the /tap.git smart-HTTP endpoint, never the
-		info.Brew = "brew tap pazer/build " + serviceBase(r, "brew") + "/tap.git" +
-			"\nbrew trust pazer/build" +
+		info.Brew = "brew trust " + serviceBase(r, "brew") + "/tap.git" +
+			"\nbrew tap pazer/build " + serviceBase(r, "brew") + "/tap.git" +
 			// A formula name cannot contain '/', so a slash-namespaced project
 			"\nbrew install pazer/build/" + repackage.BrewFormulaName(project)
 		info.Npm = "npm install @buildhost/" + project + " --registry " + serviceBase(r, "npm")
