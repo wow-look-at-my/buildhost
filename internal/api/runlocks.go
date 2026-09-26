@@ -39,13 +39,12 @@ const maxRunLockField = 1024
 // runLockKey returns the key for req, from the run the request's OIDC token
 // names. It writes the error and returns false when there is none.
 func runLockKey(w http.ResponseWriter, r *http.Request, req runLockRequest) (db.RunLockKey, bool) {
-	t := auth.TokenFrom(r.Context())
-	if t == nil {
+	repo, ok := auth.RunLockRepoFrom(r.Context())
+	if !ok && auth.TokenFrom(r.Context()) == nil {
 		jsonError(w, http.StatusUnauthorized, "authentication required: present the job's GitHub Actions OIDC token")
 		return db.RunLockKey{}, false
 	}
-	repo := auth.OIDCRepoFrom(r.Context())
-	if repo.RepoID == "" || repo.RunID == "" || repo.RunAttempt == "" {
+	if !ok || repo.RunID == "" || repo.RunAttempt == "" {
 		jsonError(w, http.StatusForbidden, "a run lock needs a GitHub Actions OIDC token that names its repository id, run_id and run_attempt")
 		return db.RunLockKey{}, false
 	}
@@ -83,10 +82,6 @@ func (h *Handler) GetRunLock(w http.ResponseWriter, r *http.Request) {
 // ClaimRunLock records a value under a name for the caller's run, unless the run
 // holds one there already. It answers with the value the run now holds.
 func (h *Handler) ClaimRunLock(w http.ResponseWriter, r *http.Request) {
-	t := h.requireWrite(w, r)
-	if t == nil {
-		return
-	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
 	var req runLockRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

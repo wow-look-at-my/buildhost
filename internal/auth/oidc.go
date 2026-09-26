@@ -16,6 +16,16 @@ import (
 
 var ErrOIDCNotMatched = errors.New("no matching OIDC policy")
 
+// EventNotAllowedError rejects a verified token whose event is outside the
+// allowlist.
+type EventNotAllowedError struct {
+	Event string
+}
+
+func (e *EventNotAllowedError) Error() string {
+	return fmt.Sprintf("event %q not in allowed list", e.Event)
+}
+
 type OIDCVerifier struct {
 	mu             sync.RWMutex
 	cache          map[string]*cachedJWKS
@@ -181,7 +191,7 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 	}
 
 	if !slices.Contains(v.allowedEvents, "*") && !slices.Contains(v.allowedEvents, verified.EventName) {
-		return nil, "", fmt.Errorf("event %q not in allowed list", verified.EventName)
+		return nil, "", &EventNotAllowedError{Event: verified.EventName}
 	}
 
 	// No audience gate here: auto-provisioning trusts the issuer signature.
