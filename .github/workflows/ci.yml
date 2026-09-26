@@ -372,7 +372,7 @@ jobs:
             arm64|aarch64) arch=arm64 ;;
             *) echo "unsupported arch"; exit 1 ;;
           esac
-          # Publish the REAL go-toolchain binary from the live registry, not a
+          # Publish the REAL go-toolchain binary from the live registry.
           curl -fsSL --compressed \
             "https://dl.pazer.build/go-toolchain?branch=v1&os=$os&arch=$arch" \
             -o "$RUNNER_TEMP/go-toolchain"
@@ -567,7 +567,7 @@ jobs:
       # The OCI endpoint is host-routed: the first Host label must be "oci".
       - name: Map the OCI host to the local server
         run: echo "127.0.0.1 oci.buildhost.test" | sudo tee -a /etc/hosts
-      # buildhost's layers are zstd, which Docker reads only through the
+      # buildhost's layers are zstd.
       - name: Turn on the containerd image store
         run: |
           set -euo pipefail
@@ -589,7 +589,7 @@ jobs:
           BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
         run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/synthesized-ape-image.dats
 
-  # Proves a hosted site stays loadable CROSS-ORIGIN, through its redirects, in
+  # Proves a hosted site stays loadable CROSS-ORIGIN, through its redirects.
   sites-cors-e2e:
     needs: build
     runs-on: ubuntu-latest
@@ -603,14 +603,14 @@ jobs:
           name: go-build-build.broot
           path: build/
       - run: chmod +x build/buildhost
-      # playwright-core drives the runner's preinstalled Chrome; it is a
+      # playwright-core drives the runner's preinstalled Chrome.
       - name: Install browser driver
         run: npm install --no-save --no-audit --no-fund playwright-core@1.62.1
       - name: A hosted site must load cross-origin in a real browser
         env:
           BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
         run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/sites-cors.dats
-      # The preview publishes this same static dir with no backend behind it, so
+      # The preview publishes this same static dir with no backend behind it.
       - name: Build the admin frontend
         run: ./scripts/build-admin-frontend.sh
       - name: Every link on the preview dashboard must reach a page
@@ -665,7 +665,7 @@ jobs:
           name: go-build-build.broot
           path: build/
       - run: chmod +x build/buildhost
-      # --no-sandbox: the suite drives the server with curl and jq, which the
+      # --no-sandbox: the suite drives the server with curl and jq.
       - run: sh "$RUNNER_TEMP/dats" --no-sandbox -v test test/dats/multi-platform-ape.dats
 
   upload-artifact-action-e2e:
@@ -777,7 +777,6 @@ jobs:
           mkdir -p "$RUNNER_TEMP/small-site" "$RUNNER_TEMP/big-site"
           printf '<h1>direct site</h1>' > "$RUNNER_TEMP/small-site/index.html"
           printf '<h1>chunked site</h1>' > "$RUNNER_TEMP/big-site/index.html"
-          # Incompressible payload so the tar.gz stays ~3 MB, well over the
           head -c 3000000 /dev/urandom > "$RUNNER_TEMP/big-site/blob.bin"
       - name: Publish small site (direct PUT path)
         uses: ./.github/actions/buildhost-publish-site
@@ -803,7 +802,7 @@ jobs:
           source_dir: ${{ runner.temp }}/big-site
           chunk_size: "1048576"
           comment: false
-      # What the site publishes and the CLI did to the same server. The
+      # What the site publishes and the CLI did to the same server.
       - env:
           LOG: ${{ runner.temp }}/buildhost.log
           SITES: http://sites.localhost:18080
