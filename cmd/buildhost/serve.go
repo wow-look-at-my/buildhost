@@ -33,6 +33,11 @@ var serveCmd = &cobra.Command{
 	Short: "Start the registry server",
 	RunE: func(_ *cobra.Command, _ []string) error {
 		cfg := config.Load()
+		// Refuse to start on a configuration that cannot serve correctly, rather
+		// than degrade silently at request time.
+		if err := cfg.Validate(); err != nil {
+			return err
+		}
 
 		// Make the Go runtime aware of the container's memory cgroup so the GC
 		// runs harder as we approach the limit instead of letting the heap grow
