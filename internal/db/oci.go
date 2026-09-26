@@ -69,6 +69,7 @@ func (d *DB) ListOCIBlobOwners(ctx context.Context, storageKey string) ([]OCIBlo
 				GithubRepoID:  r.GithubRepoID,
 				DefaultBranch: r.DefaultBranch,
 				CreateService: r.CreateService,
+				AptDepends:    r.AptDepends,
 				CreatedAt:     r.CreatedAt,
 				UpdatedAt:     r.UpdatedAt,
 			},

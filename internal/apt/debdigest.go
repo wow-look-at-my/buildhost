@@ -67,19 +67,18 @@ func debMetadataFingerprint(metadata string) string {
 	return m.Inputs
 }
 
-// debDigestFingerprint hashes every deb-generation input that can change
-// WITHOUT the artifact row changing: the project name (defensive -- there is
-// no rename path today), description, homepage, and the effective
-// create_service materialization. Everything else that shapes the deb bytes
-// (release version, artifact arch/kind/filename, the content-addressed blob)
-// is immutable for a given artifact id, so (artifact_id, fingerprint) pins the
-// exact bytes the cached digest describes.
+// debDigestFingerprint hashes the deb inputs that can change while the artifact row stays the same.
 func debDigestFingerprint(project *db.Project, a *db.Artifact) string {
 	withService := project.CreateService && a.Kind == db.KindBinary
 	hsh := sha256.New()
 	// repackage.TransformVersion is part of the fingerprint because the deb's
 	// payload is the artifact AFTER download-time transformation: if stripping
-	for _, s := range []string{project.Name, project.Description, project.Homepage, fmt.Sprintf("service=%t", withService), repackage.TransformVersion} {
+	inputs := []string{project.Name, project.Description, project.Homepage, fmt.Sprintf("service=%t", withService), repackage.TransformVersion}
+	// Only a set value joins the inputs, so a project with no Depends keeps its cached digest.
+	if project.AptDepends != "" {
+		inputs = append(inputs, "depends="+project.AptDepends)
+	}
+	for _, s := range inputs {
 		hsh.Write([]byte(s))
 		hsh.Write([]byte{0})
 	}

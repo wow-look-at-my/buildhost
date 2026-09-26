@@ -157,6 +157,8 @@ For a slash-namespaced project the repository URL keeps the slash, but the Debia
 
 A `create_service` project's generated deb also ships a systemd user unit at `/usr/lib/systemd/user/<pkg>.service`. That unit is crash-only restart. It is bound to the graphical session. The package auto-enables it at install. It starts at each user's next graphical login. A removal disables it again. A pre-built `.deb` artifact uploaded as `kind=archive` is served byte-identical. Nothing is ever injected into it.
 
+A project can declare its runtime prerequisites as `apt_depends`, in Debian relationship syntax, for example `"bubblewrap | docker.io"`. The generated deb and the Packages entry then carry a `Depends:` line, so `apt-get install` pulls them in. Send the string on release-create (`"apt_depends": "..."`), or on `PATCH __BASE_URL__/api/v1/projects/{project}`. An absent field leaves the stored value untouched. An empty string clears it. A value that is not Debian relationship syntax returns 400 and changes nothing. The CLI takes `--apt-depends`, and the `buildhost-publish` and `buildhost-create-release` actions take an `apt_depends` input.
+
 Homebrew: tap the generated Git repository, trust it, then install. The trust step is required from Homebrew 6.0. On Linux the bottle-less install runs Homebrew's build sandbox. That sandbox needs bubblewrap and an unprivileged user namespace. A container or a CI runner without them needs `HOMEBREW_NO_SANDBOX_LINUX=1` instead.
 
 ```

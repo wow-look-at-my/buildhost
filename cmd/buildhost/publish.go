@@ -39,6 +39,7 @@ func init() {
 	publishCmd.Flags().String("git-branch", "", "Git branch")
 	publishCmd.Flags().String("git-commit", "", "Git commit")
 	publishCmd.Flags().String("oci-user", "", "Run-as user for synthesized OCI images (uid[:gid] or name[:group]); default is root")
+	publishCmd.Flags().String("apt-depends", "", `Debian Depends for the project's deb, e.g. "bubblewrap | docker.io". An empty value clears it. An absent flag leaves it untouched`)
 	publishCmd.Flags().String("manifest", "", "Path to release manifest (TOML)")
 	publishCmd.Flags().Bool("draft", false, "Upload without publishing: the release stays out of latest/branch resolution and every package manager, downloadable only by its exact version")
 	addChunkSizeFlag(publishCmd)
@@ -53,7 +54,9 @@ type manifest struct {
 	GitCommit string             `toml:"git_commit"`
 	Notes     string             `toml:"notes"`
 	OciUser   string             `toml:"oci_user"`
-	Artifacts []manifestArtifact `toml:"artifact"`
+	// AptDepends is sent only when the manifest names it.
+	AptDepends *string            `toml:"apt_depends"`
+	Artifacts  []manifestArtifact `toml:"artifact"`
 }
 
 type manifestArtifact struct {
@@ -90,13 +93,17 @@ func publishSingle(cmd *cobra.Command) error {
 		return fmt.Errorf("--server, --token, --project, --artifact, --os, and --arch are required")
 	}
 
-	releaseBody, _ := json.Marshal(map[string]any{
+	release := map[string]any{
 		"version":    version,
 		"git_branch": gitBranch,
 		"git_commit": gitCommit,
 		"oci_user":   ociUser,
 		"draft":      draft,
-	})
+	}
+	if cmd.Flags().Changed("apt-depends") {
+		release["apt_depends"], _ = cmd.Flags().GetString("apt-depends")
+	}
+	releaseBody, _ := json.Marshal(release)
 	resp, err := doRequest("POST", serverURL+"/api/v1/projects/"+project+"/releases", token, bytes.NewReader(releaseBody))
 	if err != nil {
 		return fmt.Errorf("create release: %w", err)
@@ -166,13 +173,17 @@ func publishFromManifest(cmd *cobra.Command, path string) error {
 		return fmt.Errorf("parse manifest: %w", err)
 	}
 
-	releaseBody, _ := json.Marshal(map[string]string{
+	release := map[string]any{
 		"version":    m.Version,
 		"git_branch": m.GitBranch,
 		"git_commit": m.GitCommit,
 		"notes":      m.Notes,
 		"oci_user":   m.OciUser,
-	})
+	}
+	if m.AptDepends != nil {
+		release["apt_depends"] = *m.AptDepends
+	}
+	releaseBody, _ := json.Marshal(release)
 	resp, err := doRequest("POST", m.Server+"/api/v1/projects/"+m.Project+"/releases", m.Token, bytes.NewReader(releaseBody))
 	if err != nil {
 		return fmt.Errorf("create release: %w", err)
@@ -180,6 +191,9 @@ func publishFromManifest(cmd *cobra.Command, path string) error {
 	var rel struct{ Version string }
 	json.NewDecoder(resp.Body).Decode(&rel)
 	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		return fmt.Errorf("create release failed: %s", resp.Status)
+	}
 	if rel.Version == "" {
 		rel.Version = m.Version
 	}

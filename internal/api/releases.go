@@ -33,8 +33,10 @@ type createReleaseRequest struct {
 	// DefaultBranch is the repo's default branch (e.g. GitHub's
 	DefaultBranch string `json:"default_branch"`
 	// CreateService declares that the project's installed binary runs as a
-	CreateService *bool  `json:"create_service"`
-	Notes         string `json:"notes"`
+	CreateService *bool `json:"create_service"`
+	// AptDepends declares the project's Debian Depends value. Absent leaves it untouched, and "" clears it.
+	AptDepends *string `json:"apt_depends"`
+	Notes      string  `json:"notes"`
 	OciUser       string `json:"oci_user"`
 	// Draft keeps the release out of the project's public release stream: it
 	Draft bool `json:"draft"`
@@ -100,6 +102,20 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 	if req.OciUser != "" && !validOCIUser(req.OciUser) {
 		jsonError(w, http.StatusBadRequest, "invalid oci_user")
 		return
+	}
+	if req.AptDepends != nil {
+		if err := db.ValidateAptDepends(*req.AptDepends); err != nil {
+			jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	// A failed write fails the publish, because a release without its declared Depends installs broken.
+	if req.AptDepends != nil && *req.AptDepends != project.AptDepends {
+		if err := h.DB.SetProjectAptDepends(r.Context(), project.ID, *req.AptDepends); err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to update project apt_depends")
+			return
+		}
 	}
 
 	// Assert the declared create_service setting on EVERY publish attempt --

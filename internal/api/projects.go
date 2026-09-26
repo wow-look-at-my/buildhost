@@ -94,7 +94,8 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 // updateProjectRequest carries operator-set project settings. Every field is a
 // pointer so an absent key leaves the setting unchanged (PATCH semantics).
 type updateProjectRequest struct {
-	CreateService *bool `json:"create_service"`
+	CreateService *bool   `json:"create_service"`
+	AptDepends    *string `json:"apt_depends"`
 	// Versioning is decoded only to refuse it. A write token includes CI's OIDC
 	// token, so the admin dashboard is the single place that changes versioning.
 	Versioning json.RawMessage `json:"versioning"`
@@ -116,6 +117,20 @@ func (h *Handler) UpdateProjectSettings(w http.ResponseWriter, r *http.Request) 
 	if req.Versioning != nil {
 		jsonError(w, http.StatusForbidden, "versioning is changed from the admin dashboard only")
 		return
+	}
+	if req.AptDepends != nil {
+		if err := db.ValidateAptDepends(*req.AptDepends); err != nil {
+			jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	if req.AptDepends != nil && *req.AptDepends != project.AptDepends {
+		if err := h.DB.SetProjectAptDepends(r.Context(), project.ID, *req.AptDepends); err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to update project")
+			return
+		}
+		project.AptDepends = *req.AptDepends
 	}
 
 	if req.CreateService != nil && *req.CreateService != project.CreateService {
