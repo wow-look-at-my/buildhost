@@ -10,9 +10,13 @@ The `Packages` index's per-artifact deb `Size` and `SHA256` are **cached in `pac
 
 The row is a digest cache only. `storage_key` records the SOURCE artifact blob. No deb is stored, and a pool download still repackages on demand. That is sound, because deb generation is deterministic per input set. The ar member headers are fixed with a zero timestamp, uid and gid. The tar mtimes are zero. The gzip header fields and the member order are fixed. The input is content-addressed. `TestDebGenerationDeterministic` pins all of it. The rows also ride the existing retention cascade (`deleteReleaseRows`).
 
-The deb bytes, unlike a tar.gz, also bake in MUTABLE project state: the control `Description` and `Homepage`, and the create_service postinst, prerm and unit members. Each row's `metadata` therefore records a fingerprint of exactly those inputs (`{"inputs_sha256": ...}`, `debDigestFingerprint`). A mismatch reads as a miss and refills the row in place. An operator who flips create_service through the project PATCH, with no new release, causes one. Without that, the row keeps a stale digest, and apt rejects every pool download against it.
+The deb bytes, unlike a tar.gz, also bake in MUTABLE project state: the control `Description`, `Homepage` and `Depends`, and the create_service postinst, prerm and unit members. Each row's `metadata` therefore records a fingerprint of exactly those inputs (`{"inputs_sha256": ...}`, `debDigestFingerprint`). A mismatch reads as a miss and refills the row in place. An operator who flips create_service through the project PATCH, with no new release, causes one. Without that, the row keeps a stale digest, and apt rejects every pool download against it.
 
 ONE shared renderer produces `Packages` and the `Release` and `InRelease` SHA256 lines. It is `packagesEntry` in `packages.go`, consumed by `computePackagesHashes` in `release.go`. The signed hashes therefore always describe exactly the served index bytes. A digest failure surfaces as a 500 on both routes. Before the cache it fell back silently to the RAW upload's size and sha, which are values apt can never verify a download against. With the cache warm, a `Packages`, `Release` or `InRelease` request costs one DB read per architecture, and no repackaging.
+
+## Depends
+
+`projects.apt_depends` holds a Debian relationship string, for example `bubblewrap | docker.io`. `repackage.DebDependsLine` renders it as the `Depends:` line of the deb control file AND of the `Packages` entry. One renderer keeps the two identical. An empty value renders no line. `db.ValidateAptDepends` checks the grammar at set time, and it refuses a line break. A value therefore cannot open another control field. The renderer checks it again, and a bad stored value is a 500, never a dropped line. A set value joins the digest fingerprint. An unset one does not, so a project with no Depends keeps its cached digest.
 
 ## Package naming
 

@@ -37,6 +37,16 @@ inputs:
       for (the repo project and any <repo>/<binary> sub-projects).
     required: false
     default: ''
+  apt_depends:
+    description: >-
+      The runtime prerequisites of the published binary, in Debian
+      relationship syntax (e.g. 'bubblewrap | docker.io'). The generated deb
+      and the APT Packages entry carry it as a Depends field. The server
+      refuses an invalid value, and the publish fails. Empty (the default)
+      sends nothing and leaves the stored value untouched. Applies to every
+      project this publish creates a release for.
+    required: false
+    default: ''
   default_branch:
     description: >-
       The repo's default branch (e.g. 'main'). When set, the apex "latest"
@@ -143,6 +153,8 @@ runs:
       env:
         # Only artifact mode (path unset) talks to the GitHub API from THIS
         GITHUB_TOKEN: ${{ inputs.path == '' && github.token || '' }}
+        # An env var carries the value, so no character in it can break the script.
+        BUILDHOST_APT_DEPENDS: ${{ inputs.apt_depends }}
       with:
         script: |
           const { recordReleaseArtifacts } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
@@ -160,6 +172,7 @@ runs:
               return;
             }
             const inputDefaultBranch: string = "${{ inputs.default_branch }}";
+            const inputAptDepends: string = process.env.BUILDHOST_APT_DEPENDS ?? "";
 
             const server = "${{ inputs.server }}";
             const project = inputProject.length > 0 ? inputProject : github.repository.split("/").pop()!;
@@ -387,6 +400,7 @@ runs:
               ...(inputBrewService.length > 0 ? { create_service: inputBrewService === 'true' } : {}),
               // an older server ignores this unknown field
               ...(inputDefaultBranch.length > 0 ? { default_branch: inputDefaultBranch } : {}),
+              ...(inputAptDepends.length > 0 ? { apt_depends: inputAptDepends } : {}),
             });
 
             // resolves a version from a create-release response (201 new, 409 existing); null and a failure on any other status

@@ -11,6 +11,7 @@ CREATE TABLE projects (
     github_repo_id TEXT NOT NULL DEFAULT '',
     default_branch TEXT NOT NULL DEFAULT 'master',
     create_service INTEGER NOT NULL DEFAULT 0,
+    apt_depends TEXT NOT NULL DEFAULT '',
     created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );

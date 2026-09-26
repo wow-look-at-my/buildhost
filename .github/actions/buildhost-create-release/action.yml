@@ -49,6 +49,15 @@ inputs:
       request to before this input existed.
     required: false
     default: ''
+  apt_depends:
+    description: >-
+      The project's runtime prerequisites in Debian relationship syntax (e.g.
+      'bubblewrap | docker.io'). The generated deb and the APT Packages entry
+      carry it as a Depends field. The server refuses an invalid value, and
+      the step fails. Empty (the default) sends nothing and leaves the stored
+      value untouched. Clear it with PATCH /api/v1/projects/{project}.
+    required: false
+    default: ''
 
 outputs:
   response:
@@ -63,6 +72,9 @@ runs:
   steps:
     - id: create
       uses: wow-look-at-my/actions@typescript#latest
+      env:
+        # An env var carries the value, so no character in it can break the script.
+        BUILDHOST_APT_DEPENDS: ${{ inputs.apt_depends }}
       with:
         script: |
           await (async () => {
@@ -95,6 +107,8 @@ runs:
             const defaultBranch: string = "${{ inputs.default_branch }}";
             // sends default_branch only when set, leaving the stored setting untouched otherwise
             if (defaultBranch) body['default_branch'] = defaultBranch;
+            const aptDepends: string = process.env.BUILDHOST_APT_DEPENDS ?? '';
+            if (aptDepends) body['apt_depends'] = aptDepends;
 
             const resp = await fetch(`${server}/api/v1/projects/${project}/releases`, {
               method: 'POST',
