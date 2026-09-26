@@ -1134,8 +1134,19 @@ pages.storage = function (): void {
             }
         }
         html += "</tbody></table></div>";
+
+        html += '<div class="card"><h2>Database Backup</h2>';
+        html += '<p>Downloads a consistent copy of the SQLite database, taken while the server keeps running. Blobs are not included.</p>';
+        html += '<button class="btn" onclick="App.downloadBackup(this)">Download database backup</button></div>';
         document.getElementById("content")!.innerHTML = html;
     });
+};
+
+const downloadBackup = function (btn: HTMLButtonElement): void {
+    if (demo) { alert("Could not back up (preview/demo mode has no backend)."); return; }
+    btn.disabled = true;
+    window.location.href = "/api/backup";
+    setTimeout(function () { btn.disabled = false; }, 2500);
 };
 
 pages.retention = function (): void {
@@ -1775,4 +1786,4 @@ window.addEventListener("unhandledrejection", function (ev) {
 });
 
 // Exported == reachable as App.x from the inline onclick handlers above.
-export { applyMerge, copyInventory, copyTempLink, copyText, deleteToken, downloadArtifact, downloadInventory, editToken, pages, previewMerge, recheckGoproxy, reloadTokens, runRetention, saveToken, setVersioning };
+export { applyMerge, copyInventory, copyTempLink, copyText, deleteToken, downloadArtifact, downloadBackup, downloadInventory, editToken, pages, previewMerge, recheckGoproxy, reloadTokens, runRetention, saveToken, setVersioning };
