@@ -12,8 +12,7 @@ import (
 const (
 	// defaultMaxUploadSize caps a single REST artifact upload (PUT .../artifacts).
 	defaultMaxUploadSize int64 = 2 << 30
-	// defaultMaxBlobSize caps a single OCI blob (image layer) pushed via the
-	defaultMaxBlobSize int64 = 10 << 30
+	defaultMaxBlobSize   int64 = 10 << 30
 	// defaultMaxDirectUploadSize is the size the server ADVERTISES (via
 	defaultMaxDirectUploadSize int64 = 95 << 20
 	// defaultUploadSessionTTL is how long an in-progress chunked upload session
@@ -51,7 +50,7 @@ func envDuration(name string, def time.Duration) time.Duration {
 }
 
 // envBytes parses a byte size from an env var, accepting a plain integer or an
-// integer with a single-letter binary suffix (K, M, G, T). Invalid or
+// integer with a single-letter binary suffix (K, M, G, T).
 func envBytes(name string, def int64) int64 {
 	v := strings.TrimSpace(os.Getenv(name))
 	if v == "" {
@@ -109,12 +108,11 @@ type Config struct {
 	// GitHub App credentials for buildhost's own REST lookups (resolving a repo's
 	GitHubAppID         string
 	GitHubAppPrivateKey string
-	// GitHubToken is a static-PAT fallback for the same lookups when no App is
-	GitHubToken      string
-	OTELEndpoint     string
-	SiteFetchDomains []string
+	GitHubToken         string
+	OTELEndpoint        string
+	SiteFetchDomains    []string
 
-	// SiteDomain is an optional dedicated domain for project static sites: when
+	// SiteDomain is an optional dedicated domain for project static sites.
 	SiteDomain string
 	// PrimaryDomain is the apex the GitHub OAuth callback is registered on (e.g.
 	PrimaryDomain string
@@ -124,7 +122,9 @@ type Config struct {
 	GitHubClientSecret string
 
 	// Retention / garbage collection. Report-only by default: nothing is deleted
-	RetentionKeepN        int // published releases kept per (project, branch)
+	RetentionKeepN        int // published releases kept on a project's default branch
+	RetentionBranchKeepN  int // published releases kept on every other branch
+	RetentionBranchTTL    int
 	RetentionInterval     time.Duration
 	RetentionRecencyGuard time.Duration // never evict releases newer than this
 	RetentionEnforce      bool          // actually delete; false = report-only
@@ -170,6 +170,8 @@ func Load() Config {
 		OIDCIssuers:     []string{"https://token.actions.githubusercontent.com"},
 
 		RetentionKeepN:        10,
+		RetentionBranchKeepN:  1,
+		RetentionBranchTTL:    7,
 		RetentionInterval:     0,
 		RetentionRecencyGuard: 24 * time.Hour,
 		RetentionEnforce:      false,
@@ -253,6 +255,16 @@ func Load() Config {
 	if v := os.Getenv("BUILDHOST_RETENTION_KEEP_N"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			c.RetentionKeepN = n
+		}
+	}
+	if v := os.Getenv("BUILDHOST_RETENTION_BRANCH_KEEP_N"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			c.RetentionBranchKeepN = n
+		}
+	}
+	if v := os.Getenv("BUILDHOST_RETENTION_BRANCH_TTL_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			c.RetentionBranchTTL = n
 		}
 	}
 	c.RetentionInterval = envDuration("BUILDHOST_RETENTION_INTERVAL", c.RetentionInterval)

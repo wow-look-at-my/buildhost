@@ -41,7 +41,6 @@ func TestTokenCanReadProject(t *testing.T) {
 		assert.False(t, TokenCanReadProject(ctx, other))
 	})
 	t.Run("OIDC identity confined to its namespace", func(t *testing.T) {
-		// An OIDC auto-provision token is global (no ProjectID) but carries a
 		ctx := WithOIDCProject(withTok(&db.APIToken{ID: -1, Scopes: "read,write"}), "repo")
 		assert.True(t, TokenCanReadProject(ctx, nsChild))
 		assert.False(t, TokenCanReadProject(ctx, priv))

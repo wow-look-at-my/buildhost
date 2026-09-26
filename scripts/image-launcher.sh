@@ -1,10 +1,8 @@
 #!/bin/sh
 # The image installs this at /usr/local/bin/buildhost, and the binary beside it
-# under /usr/local/lib. A rolling updater creates the replacement container from
-# the config of the container it replaces, so the entrypoint that reaches this
-# image is whatever the OLD one recorded. A shebang script is execable, so every
-# spelling still reaches the binary -- the image's own, a "buildhost" found on
-# PATH, and an absolute path.
+# under /usr/local/lib. A shebang script is execable, so every spelling still
+# reaches the binary -- the image's own, a "buildhost" found on PATH, and an
+# absolute path.
 #
 # The path below holds a real ELF: the image stages the APE at build time, with
 # the header its own trampoline would have written. Nothing unpacks at run time.

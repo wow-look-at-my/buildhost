@@ -19,8 +19,9 @@ func init() {
 var gcCmd = &cobra.Command{
 	Use:   "gc",
 	Short: "Garbage-collect evictable releases and unreferenced blobs",
-	Long: "Evicts published releases past keep-N on each (project, branch) and abandoned " +
-		"unpublished uploads, then deletes any content-addressed blob no longer referenced " +
+	Long: "Evicts published releases past keep-N on each project's default branch, past " +
+		"branch keep-N on every other branch, every release on a branch GitHub deleted " +
+		"more than the branch TTL ago, and abandoned unpublished uploads, then deletes any content-addressed blob no longer referenced " +
 		"by anything. Report-only by default: pass --enforce (or set " +
 		"BUILDHOST_RETENTION_ENFORCE=true) to actually delete.",
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -44,7 +45,8 @@ var gcCmd = &cobra.Command{
 			return fmt.Errorf("load retention settings: %w", err)
 		}
 		ret := retention.New(database, store, retention.ConfigFromSettings(settings, enforce || cfg.RetentionEnforce)).
-			WithRecordDeleter(recordDeleterFor(cfg))
+			WithRecordDeleter(recordDeleterFor(cfg)).
+			WithBranchLister(auth.GitHubBranches)
 
 		rep, err := ret.Run(cmd.Context())
 		if err != nil {
@@ -61,7 +63,7 @@ var gcCmd = &cobra.Command{
 // recordDeleterFor builds the sink that retracts an evicted release's
 // artifact-metadata storage records, authenticating as buildhost itself.
 //
-// RegistryURL must match the registry_url the publishing CI recorded, which is
+// RegistryURL must match the registry_url the publishing CI recorded.
 func recordDeleterFor(cfg config.Config) retention.RecordDeleter {
 	registry := ""
 	if cfg.PrimaryDomain != "" {
@@ -76,7 +78,13 @@ func printGCReport(rep retention.Report, settings db.RetentionSettings) {
 	} else {
 		fmt.Println("buildhost gc -- DRY RUN (nothing deleted; pass --enforce to apply)")
 	}
-	fmt.Printf("  keep-N per (project, branch): %d   recency guard: %dh\n", settings.KeepN, settings.RecencyHours)
+	fmt.Printf("  keep-N default branch: %d   other branches: %d   kept after branch deletion: %dd   recency guard: %dh\n",
+		settings.KeepN, settings.BranchKeepN, settings.BranchTTLDays, settings.RecencyHours)
+	bs := rep.BranchSync
+	fmt.Printf("  branch sync: %d repos listed, %d branches newly marked deleted, %d restored\n", bs.Repos, bs.MarkedDeleted, bs.Cleared)
+	for _, e := range bs.Errors {
+		fmt.Printf("    branch sync error: %s\n", e)
+	}
 	fmt.Printf("  releases: %d (%d past keep-N, %d abandoned)\n", rep.Releases(), len(rep.EvictedReleases), len(rep.AbandonedReleases))
 
 	for _, r := range rep.EvictedReleases {

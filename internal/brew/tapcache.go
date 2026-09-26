@@ -11,7 +11,6 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 )
 
-// tapSnapshotDirName is the directory under the scratch root (TmpDir) that
 const tapSnapshotDirName = "brew-tap"
 
 var tapCacheTTL = 30 * time.Second
@@ -23,13 +22,13 @@ var errTapBuild = errors.New("build tap lineage")
 type tapLineage struct {
 	dir     string
 	root    *os.Root
-	key     string // (base URL, credential scope) the contents derive from
+	key     string // (base URL.
 	builtAt time.Time
 }
 
 // openTapFile resolves the lineage for the request's (base URL, credential
 // scope) cache key -- refreshing it under the mutex when there is no live
-// entry -- and opens the requested file inside it. The base URL is part of the
+// entry -- and opens the requested file inside it.
 func (h *Handler) openTapFile(r *http.Request, path string) (*os.File, error) {
 	h.tapMu.Lock()
 	defer h.tapMu.Unlock()
@@ -120,7 +119,7 @@ func (h *Handler) sweepTapLineagesLocked() {
 
 // buildTapLineageLocked advances the request scope's persistent history (see
 // refreshTapLineage: reuse the tip when content is unchanged, else append a
-// child commit) and opens an os.Root over it for sandboxed serving. When the
+// child commit) and opens an os.Root over it for sandboxed serving.
 func (h *Handler) buildTapLineageLocked(r *http.Request, key string) (*tapLineage, error) {
 	dir := h.tapLineageDir(key)
 	if _, err := os.Stat(dir); err != nil {

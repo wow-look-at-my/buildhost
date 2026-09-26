@@ -27,7 +27,6 @@ func redirectFor(t *testing.T, h *Handler, proj *db.Project, params url.Values) 
 	return requireRedirect(t, rec)
 }
 
-// TestDownload_MultiPlatform_EveryPlatformGetsTheSameURL is the property the
 func TestDownload_MultiPlatform_EveryPlatformGetsTheSameURL(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)

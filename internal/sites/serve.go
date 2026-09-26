@@ -56,7 +56,6 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 		// The bare URL would address a different project (a namespaced sibling
 	}
 
-	// Redirect a branch root with no trailing slash (e.g. /p/branch/main) to the
 	if filePath == "" && !strings.HasSuffix(r.URL.Path, "/") {
 		http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
 		return
@@ -66,7 +65,7 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) serveSiteFile(ctx context.Context, w http.ResponseWriter, r *http.Request, project *db.Project, branch, rawPath string) {
-	// The {path...} router value has its trailing slash stripped, so detect a
+	// The {path...} router value has its trailing slash stripped.
 	isDir := rawPath == "" || strings.HasSuffix(r.URL.Path, "/")
 	filePath := path.Clean(rawPath)
 	if isDir || filePath == "." {
@@ -163,7 +162,7 @@ func (h *Handler) ServeDefaultBranch(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 	r = r.WithContext(ctx)
 
-	// Set before the redirect below, not after it: a cross-origin fetch is
+	// Set before the redirect below, not after it.
 	setSiteSecurityHeaders(w)
 
 	rt := routeFrom(ctx)

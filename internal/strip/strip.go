@@ -55,7 +55,7 @@ func StripBytes(data []byte, tmpDir ...string) (*ByteResult, error) {
 	return &ByteResult{Stripped: stripped, Debug: debug}, nil
 }
 
-// StripReader spools r to a temp file under tmpDir, runs the file-based Strip, and
+// StripReader spools r to a temp file under tmpDir, runs the file-based Strip.
 func StripReader(r io.Reader, tmpDir string) (io.ReadCloser, int64, error) {
 	return stripStream(r, tmpDir, false)
 }
@@ -121,12 +121,12 @@ func (t *tempFileReadCloser) Close() error {
 	return err
 }
 
-// ErrNotELF is returned when the input is not an ELF object file. Callers on
+// ErrNotELF is returned when the input is not an ELF object file.
 var ErrNotELF = errors.New("strip: input is not an ELF binary")
 
 // Strip splits an ELF binary into a stripped binary and its debug symbols.
 //
-// The work is done in-process (see elf.go), NOT by shelling out to
+// The work is done in-process (see elf.go).
 func Strip(inputPath string) (*Result, error) {
 	// Check the input before creating anything, so an unreadable path fails
 	if _, err := os.Stat(inputPath); err != nil {

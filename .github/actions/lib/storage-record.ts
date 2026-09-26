@@ -1,10 +1,8 @@
 // Recording what buildhost stores on GitHub's linked artifacts page.
 //
-// buildhost stores three kinds of thing, so this exports three functions and
-// each publish composite calls the one matching what it published. Callers pass
-// what they PUBLISHED; every record field, URL and message is derived here --
-// the artifact_url/digest agreement is a correctness rule, and composites
-// deriving it independently is how it drifts.
+// Callers pass what they PUBLISHED; every record field, URL and message is
+// derived here -- the artifact_url/digest agreement is a correctness rule, and
+// composites deriving it independently is how it drifts.
 //
 // Loaded by `require(".../storage-record.ts")` (node strips the types) typed as
 // `typeof import(".../storage-record")`. See docs/artifact-storage-records.md.
@@ -18,7 +16,7 @@ export interface Octokit {
 	rest: { users: { getByUsername(p: { username: string }): Promise<{ data: { type?: string } }> } };
 }
 
-/** One published slot. `project`/`version` default to the call's. */
+/*`project`/`version` default to the call's. */
 export interface PublishedArtifact {
 	os?: string; arch?: string;
 	/** Bare hex sha256 of the bytes as UPLOADED; missing = a failed publish. */
@@ -36,7 +34,7 @@ export async function recordReleaseArtifacts(octokit: Octokit, core: Core, conte
 	server: string; project?: string; version?: string; artifacts: readonly PublishedArtifact[];
 }): Promise<boolean> {
 	// Downloads live on the dl.<host> subdomain -- buildhost dispatches services
-	// by the first label of the request Host.
+	// by the earliest label of the request Host.
 	const dl = (() => { const u = new URL(params.server); u.host = `dl.${u.host}`; return u.origin; })();
 	const records: Record_[] = [];
 	for (const a of params.artifacts) {
@@ -51,8 +49,8 @@ export async function recordReleaseArtifacts(octokit: Octokit, core: Core, conte
 			name: project, version, digest: `sha256:${a.sha256}`, registry_url: params.server,
 			repository: project, path,
 			// debug=1 is the only download returning the uploaded bytes verbatim
-			// -- buildhost strips and repackages on demand -- so it is the one
-			// URL whose bytes hash to the recorded digest.
+			// -- buildhost strips and repackages on demand -- so it is the
+			// single URL whose bytes hash to the recorded digest.
 			artifact_url: `${dl}/${project}?v=${encodeURIComponent(version)}&os=${a.os ?? ''}&arch=${a.arch ?? ''}&debug=1`,
 		});
 	}
@@ -95,9 +93,7 @@ export async function recordImage(octokit: Octokit, core: Core, context: Context
 	}], (r) => r.repository);
 }
 
-// A loopback server is not a registry anything can fetch from (buildhost's own
-// e2e spawns one), so a record pointing at it would be an unreachable row. A
-// property of the target, not a caller-facing switch.
+// A property of the target, not a caller-facing switch.
 function unreachable(url: string): string {
 	let host: string;
 	try { host = new URL(url).hostname; } catch { return `${url} is not a valid URL`; }
@@ -106,9 +102,8 @@ function unreachable(url: string): string {
 		: '';
 }
 
-// What a failing POST actually tells you. A 404 is NOT proof of a missing
-// grant: the endpoint is org-scoped, so it also 404s when the owner names no
-// organization this token can see. The owner-type probe's answer separates them.
+// What a failing POST actually tells you. The owner-type probe's answer
+// separates them.
 function failureDetail(status: number | undefined, msg: string, owner: string, ownerType: string): string {
 	const cannotTurnOff = 'Recording what buildhost stores is part of publishing and cannot be turned off.';
 	if (status === 403) {
@@ -152,10 +147,7 @@ async function post(octokit: Octokit, core: Core, context: Context, records: Rec
 			const status = (e as { status?: number }).status;
 			const msg = e instanceof Error ? e.message : String(e);
 			// A personal account has no linked artifacts page, so the org-scoped
-			// endpoint 404s no matter what the token grants. Probed only on a 404
-			// (orgs pay no extra call) and fails closed: an unreadable owner type
-			// leaves the failure standing, so a genuine permissions 404 on an org
-			// still fails the publish.
+			// endpoint 404s no matter what the token grants.
 			const ownerType = status === 404
 				? await octokit.rest.users.getByUsername({ username: owner }).then((r) => r.data.type ?? '').catch(() => '')
 				: '';

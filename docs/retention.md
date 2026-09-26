@@ -2,15 +2,24 @@
 
 `internal/retention/`. Extracted verbatim from CLAUDE.md. Paragraph breaks go at the existing topic boundaries. No wording changed. See also `docs/eviction-policies.md`, on why there is no repackage-cache eviction, and `docs/artifact-storage-records.md`, on how eviction retracts what it published.
 
-Eviction policy + reference-counted garbage collection. Keeps the latest `BUILDHOST_RETENTION_KEEP_N` published releases per `(project, git_branch)` and sweeps abandoned (unpublished) uploads, then deletes content-addressed blobs no longer referenced by anything (the global `db.IsBlobReferenced`, generalizing `BlobBelongsToProject`).
+Eviction policy + reference-counted garbage collection. It keeps the latest `keep_n` published releases on a project's default branch, and the latest `branch_keep_n` (default 1) on every other branch. It sweeps abandoned (unpublished) uploads. It then deletes content-addressed blobs no longer referenced by anything (the global `db.IsBlobReferenced`, generalizing `BlobBelongsToProject`).
+
+## Deleted branches
+
+A branch deleted on GitHub keeps its releases for `branch_ttl_days` (default 7) after the deletion. After that, every release on it is evicted, tip included. `deleted_branches` records when buildhost learned of the deletion. paths write it:
+
+- The GitHub `delete` webhook records the branch on every project whose `github_repo` matches the payload's `repository.full_name`. The `create` webhook clears the record.
+- `retention.SyncDeletedBranches` runs before every gc run (sweeper, `buildhost gc`, the dashboard run button). It lists each repo's branches through the GitHub API and records every release branch GitHub no longer has. It clears a record when the branch exists again. A repo it cannot list changes nothing and is reported as an error. A branch deleted before the sync first saw it gets that first sync as its deletion time.
+
+A project with no `github_repo` never records a deletion, so its branches keep `branch_keep_n` releases indefinitely. The default branch is never marked deleted, and the project's newest published release is never evicted.
 
 The whole eviction runs in one `db.EvictReleases` transaction. It is **rolled back for a dry-run and committed for an enforce**. Report-only and enforce therefore produce identical exact results. A blob shared by several evicted releases is freed once. This is the single source of truth for the background sweeper (`cmd/buildhost/serve.go`), the `buildhost gc` CLI, and the **admin dashboard Retention page**.
 
-The policy, keep-N and the recency guard, is **DB-backed and UI-editable**. It is stored in the single-row `retention_settings` table. `SeedRetentionSettings` seeds it from the `BUILDHOST_RETENTION_*` env defaults on first start, with an INSERT OR IGNORE. The dashboard manages it after that. The sweeper and the CLI read it live on each run through `db.GetRetentionSettings` and `retention.ConfigFromSettings`.
+The policy (keep-N, branch keep-N, the deleted-branch TTL and the recency guard) is **DB-backed and UI-editable**. The env seeds are `BUILDHOST_RETENTION_KEEP_N`, `BUILDHOST_RETENTION_BRANCH_KEEP_N`, `BUILDHOST_RETENTION_BRANCH_TTL_DAYS` and `BUILDHOST_RETENTION_RECENCY_GUARD`. It is stored in the single-row `retention_settings` table. `SeedRetentionSettings` seeds it from the `BUILDHOST_RETENTION_*` env defaults on first start, with an INSERT OR IGNORE. The dashboard manages it after that. The sweeper and the CLI read it live on each run through `db.GetRetentionSettings` and `retention.ConfigFromSettings`.
 
-The admin endpoints are in `internal/admin/retention.go`: `GET/PUT /api/retention` and `POST /api/retention/run`. They expose the policy, a dry-run preview (`Plan`) and an on-demand enforce. An ENFORCING on-demand run 409s while writes are in flight. It uses the same `admin.InflightWrites` guard the background sweeper uses, so it cannot free a blob a mid-flight hash-reference upload just validated. A report-only run is always allowed. `keep_n=0` still keeps each branch tip, because the keep-N query floors at `max(keep_n, 1)`.
+The admin endpoints are in `internal/admin/retention.go`: `GET/PUT /api/retention` and `POST /api/retention/run`. They expose the policy, a dry-run preview (`Plan`) and an on-demand enforce. An ENFORCING on-demand run 409s while writes are in flight. It uses the same `admin.InflightWrites` guard the background sweeper uses, so it cannot free a blob a mid-flight hash-reference upload just validated. A report-only run is always allowed. `keep_n=0` and `branch_keep_n=0` still keep each branch tip, because the keep-N query floors both at 1. Only a branch deletion past the TTL removes a tip.
 
-**Report-only by default.** The background sweeper deletes only when `BUILDHOST_RETENTION_ENFORCE=true`. A manual dashboard or CLI run deletes when the operator confirms it with `--enforce` or the run button. Four things are pinned and never evicted: each branch's latest published release, an oci-tagged release, a `kind=docker` release, and anything newer than the recency guard. The shared `DeleteBlobIfUnreferenced` helper also fixes the sites delete and re-upload paths. Those called `Store.Delete` unconditionally, which breaks a dedup-shared blob. The background sweeper is opt-in through `BUILDHOST_RETENTION_INTERVAL`, where 0 is off. It defers while writes are in flight (`admin.InflightWrites()`).
+**Report-only by default.** The background sweeper deletes only when `BUILDHOST_RETENTION_ENFORCE=true`. A manual dashboard or CLI run deletes when the operator confirms it with `--enforce` or the run button. These are pinned and never evicted: the default branch's latest published release, the project's newest published release, an oci-tagged release, a `kind=docker` release. And anything newer than the recency guard. Every other branch's tip is kept until the branch has been deleted on GitHub for longer than the TTL. The shared `DeleteBlobIfUnreferenced` helper also fixes the sites delete and re-upload paths. Those called `Store.Delete` unconditionally, which breaks a dedup-shared blob. The background sweeper is opt-in through `BUILDHOST_RETENTION_INTERVAL`, where 0 is off. It defers while writes are in flight (`admin.InflightWrites()`).
 
 NOTE: there is no standalone repackage-cache eviction. A non-OCI format is regenerated per request and never stored. See `docs/eviction-policies.md`. A dedicated docker and OCI blob GC is deferred.
 
@@ -24,6 +33,8 @@ Each entry carries `holds`, every pin that applies, most permanent first, and `h
 
 | hold | what pins the file |
 | --- | --- |
+| `project-newest` | the project's newest published release |
+| `deleted-branch-ttl` | its branch was deleted on GitHub, inside the TTL |
 | `branch-tip` | the newest published release on its branch |
 | `keep-n` | inside the keep-N window on its branch |
 | `recency-guard` | created after the recency cutoff |

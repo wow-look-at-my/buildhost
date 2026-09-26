@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
 )
@@ -33,9 +34,16 @@ func (s *Server) apiRetention(w http.ResponseWriter, r *http.Request) {
 // with a fresh preview.
 func (s *Server) apiUpdateRetention(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	current, err := s.db.GetRetentionSettings(ctx)
+	if err != nil {
+		s.retentionError(w, r, err)
+		return
+	}
 	var body struct {
-		KeepN        *int `json:"keep_n"`
-		RecencyHours *int `json:"recency_hours"`
+		KeepN         *int `json:"keep_n"`
+		RecencyHours  *int `json:"recency_hours"`
+		BranchKeepN   *int `json:"branch_keep_n"`
+		BranchTTLDays *int `json:"branch_ttl_days"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRetentionBody)).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -45,11 +53,25 @@ func (s *Server) apiUpdateRetention(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "keep_n and recency_hours are required", http.StatusBadRequest)
 		return
 	}
-	if *body.KeepN < 0 || *body.KeepN > 100000 || *body.RecencyHours < 0 || *body.RecencyHours > 87600 {
-		http.Error(w, "keep_n must be 0..100000 and recency_hours 0..87600", http.StatusBadRequest)
+	// The branch fields are optional so an older client keeps the stored values.
+	next := db.RetentionSettings{
+		KeepN:         *body.KeepN,
+		RecencyHours:  *body.RecencyHours,
+		BranchKeepN:   current.BranchKeepN,
+		BranchTTLDays: current.BranchTTLDays,
+	}
+	if body.BranchKeepN != nil {
+		next.BranchKeepN = *body.BranchKeepN
+	}
+	if body.BranchTTLDays != nil {
+		next.BranchTTLDays = *body.BranchTTLDays
+	}
+	if next.KeepN < 0 || next.KeepN > 100000 || next.BranchKeepN < 0 || next.BranchKeepN > 100000 ||
+		next.RecencyHours < 0 || next.RecencyHours > 87600 || next.BranchTTLDays < 0 || next.BranchTTLDays > 3650 {
+		http.Error(w, "keep_n and branch_keep_n must be 0..100000, recency_hours 0..87600, branch_ttl_days 0..3650", http.StatusBadRequest)
 		return
 	}
-	if err := s.db.UpdateRetentionSettings(ctx, *body.KeepN, *body.RecencyHours); err != nil {
+	if err := s.db.UpdateRetentionSettings(ctx, next); err != nil {
 		s.retentionError(w, r, err)
 		return
 	}
@@ -94,8 +116,7 @@ func (s *Server) apiRunRetention(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRetentionBody)).Decode(&body)
 
-	// Same guard as the background sweeper: an enforcing run while writes are
-	// in flight could free a blob whose newest reference (e.g. a
+	// Same guard as the background sweeper.
 	if body.Enforce {
 		if n := InflightWrites(); n > 0 {
 			http.Error(w, fmt.Sprintf("%d write(s) in flight; retry when idle", n), http.StatusConflict)
@@ -108,7 +129,9 @@ func (s *Server) apiRunRetention(w http.ResponseWriter, r *http.Request) {
 		s.retentionError(w, r, err)
 		return
 	}
-	rep, err := retention.New(s.db, s.store, retention.ConfigFromSettings(settings, body.Enforce)).Run(ctx)
+	rep, err := retention.New(s.db, s.store, retention.ConfigFromSettings(settings, body.Enforce)).
+		WithBranchLister(auth.GitHubBranches).
+		Run(ctx)
 	if err != nil {
 		s.retentionError(w, r, err)
 		return
@@ -127,8 +150,10 @@ func (s *Server) retentionError(w http.ResponseWriter, r *http.Request, err erro
 
 func (s *Server) retentionResponse(settings db.RetentionSettings, preview retention.Report) map[string]any {
 	return map[string]any{
-		"keep_n":        settings.KeepN,
-		"recency_hours": settings.RecencyHours,
+		"keep_n":          settings.KeepN,
+		"recency_hours":   settings.RecencyHours,
+		"branch_keep_n":   settings.BranchKeepN,
+		"branch_ttl_days": settings.BranchTTLDays,
 		// The background sweeper is deploy-level config the dashboard cannot change.
 		"sweeper_enabled": s.cfg.RetentionInterval > 0,
 		"sweeper_enforce": s.cfg.RetentionEnforce,
@@ -160,5 +185,11 @@ func reportJSON(rep retention.Report) map[string]any {
 		"blobs_retained":    rep.BlobsRetained,
 		"reclaimable_bytes": rep.ReclaimableBytes,
 		"releases":          releases,
+		"branch_sync": map[string]any{
+			"repos":          rep.BranchSync.Repos,
+			"marked_deleted": rep.BranchSync.MarkedDeleted,
+			"cleared":        rep.BranchSync.Cleared,
+			"errors":         rep.BranchSync.Errors,
+		},
 	}
 }

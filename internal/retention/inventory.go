@@ -25,17 +25,19 @@ const (
 // the file is reclaimable: the current policy frees its blob.
 const (
 	HoldNone       = ""
-	HoldBranchTip  = "branch-tip"    // newest published release on its branch
-	HoldKeepN      = "keep-n"        // inside the keep-N window on its branch
-	HoldRecency    = "recency-guard" // newer than the recency guard
-	HoldOCITag     = "oci-tag"       // an OCI tag points at the release
-	HoldDocker     = "docker"        // a pushed-docker release, never evicted
-	HoldDraft      = "draft"         // a deliberate draft, never swept
-	HoldSharedBlob = "shared-blob"   // release evicted, blob still referenced
-	HoldSite       = "site"          // a site deployment, not release-scoped
-	HoldOCIBlob    = "oci-blob"      // a project OCI blob, not release-scoped
-	HoldGoproxy    = "goproxy"       // a cached Go module zip, not a project
-	HoldUnknown    = "unknown"       // the plan and this reason disagree
+	HoldProjectNew = "project-newest"     // newest published release of the project
+	HoldDeletedTTL = "deleted-branch-ttl" // branch deleted on GitHub, inside the TTL
+	HoldBranchTip  = "branch-tip"         // newest published release on its branch
+	HoldKeepN      = "keep-n"             // inside the keep-N window on its branch
+	HoldRecency    = "recency-guard"      // newer than the recency guard
+	HoldOCITag     = "oci-tag"            // an OCI tag points at the release
+	HoldDocker     = "docker"             // a pushed-docker release, never evicted
+	HoldDraft      = "draft"              // a deliberate draft, never swept
+	HoldSharedBlob = "shared-blob"        // release evicted, blob still referenced
+	HoldSite       = "site"               // a site deployment, not release-scoped
+	HoldOCIBlob    = "oci-blob"           // a project OCI blob, not release-scoped
+	HoldGoproxy    = "goproxy"            // a cached Go module zip, not a project
+	HoldUnknown    = "unknown"            // the plan and this reason disagree
 )
 
 type FileEntry struct {
@@ -94,9 +96,12 @@ type InventoryTotals struct {
 
 // InventoryPolicy is the policy the inventory was computed under.
 type InventoryPolicy struct {
-	KeepN         int       `json:"keep_n"`
-	RecencyHours  float64   `json:"recency_hours"`
-	RecencyCutoff time.Time `json:"recency_cutoff"`
+	KeepN           int       `json:"keep_n"`
+	BranchKeepN     int       `json:"branch_keep_n"`
+	BranchTTLDays   float64   `json:"branch_ttl_days"`
+	BranchTTLCutoff time.Time `json:"branch_ttl_cutoff"`
+	RecencyHours    float64   `json:"recency_hours"`
+	RecencyCutoff   time.Time `json:"recency_cutoff"`
 }
 
 type Inventory struct {
@@ -113,14 +118,18 @@ type Inventory struct {
 // preview shows.
 func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 	now := r.clock()
-	cutoff := now.Add(-r.cfg.RecencyGuard).UTC().Truncate(time.Second)
+	policy := r.cfg.Policy(now)
+	cutoff := policy.RecencyCutoff.UTC().Truncate(time.Second)
 
 	inv := Inventory{
 		GeneratedAt: now.UTC(),
 		Policy: InventoryPolicy{
-			KeepN:         r.cfg.KeepN,
-			RecencyHours:  r.cfg.RecencyGuard.Hours(),
-			RecencyCutoff: cutoff,
+			KeepN:           r.cfg.KeepN,
+			BranchKeepN:     r.cfg.BranchKeepN,
+			BranchTTLDays:   r.cfg.BranchTTL.Hours() / 24,
+			BranchTTLCutoff: policy.BranchTTLCutoff.UTC().Truncate(time.Second),
+			RecencyHours:    r.cfg.RecencyGuard.Hours(),
+			RecencyCutoff:   cutoff,
 		},
 	}
 
@@ -140,13 +149,13 @@ func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 		freed.Add(b.Key)
 	}
 
-	facts, err := r.db.ListReleaseRetentionFacts(ctx)
+	facts, err := r.db.ListReleaseRetentionFacts(ctx, policy.BranchTTLCutoff)
 	if err != nil {
 		return inv, fmt.Errorf("list release retention facts: %w", err)
 	}
 	holds := make(map[int64][]string, len(facts))
 	for _, f := range facts {
-		h := releaseHolds(f, r.cfg.KeepN, cutoff)
+		h := releaseHolds(f, r.cfg, cutoff)
 		// The plan is the truth. When the derived reasons disagree with it, say
 		// so rather than print a reason that is wrong.
 		if (len(h) == 0) != evicted.Contains(f.ID) {
@@ -200,8 +209,8 @@ func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 }
 
 // releaseHolds gives every pin that keeps a release, and an empty slice when
-// eviction takes it. It mirrors ListEvictableReleases and
-func releaseHolds(f db.ListReleaseRetentionFactsRow, keepN int, cutoff time.Time) []string {
+// eviction takes it.
+func releaseHolds(f db.ListReleaseRetentionFactsRow, cfg Config, cutoff time.Time) []string {
 	var holds []string
 	inGuard := !f.CreatedAt.Before(cutoff)
 
@@ -221,16 +230,25 @@ func releaseHolds(f db.ListReleaseRetentionFactsRow, keepN int, cutoff time.Time
 	if f.DockerArtifactCount > 0 {
 		holds = append(holds, HoldDocker)
 	}
-	keep := int64(keepN)
+	onDefault := f.OnDefaultBranch != 0
+	keep := int64(cfg.BranchKeepN)
+	if onDefault {
+		keep = int64(cfg.KeepN)
+	}
 	if keep < 1 {
 		keep = 1
 	}
-	if f.NewerPublishedOnBranch < keep {
-		if f.NewerPublishedOnBranch == 0 {
-			holds = append(holds, HoldBranchTip)
-		} else {
-			holds = append(holds, HoldKeepN)
-		}
+	expired := !onDefault && f.BranchExpired != 0
+	switch {
+	case !expired && f.NewerPublishedOnBranch < keep && !onDefault && f.BranchDeleted != 0:
+		holds = append(holds, HoldDeletedTTL)
+	case !expired && f.NewerPublishedOnBranch < keep && f.NewerPublishedOnBranch == 0:
+		holds = append(holds, HoldBranchTip)
+	case !expired && f.NewerPublishedOnBranch < keep:
+		holds = append(holds, HoldKeepN)
+	case f.ProjectNewest != 0:
+		// Named only when no branch window keeps it, e.g. an expired deleted branch.
+		holds = append(holds, HoldProjectNew)
 	}
 	if inGuard {
 		holds = append(holds, HoldRecency)

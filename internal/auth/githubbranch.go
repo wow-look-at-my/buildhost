@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -124,7 +125,55 @@ func fetchGitHubDefaultBranch(ctx context.Context, repoPath string) string {
 	return body.DefaultBranch
 }
 
-// validRepoPath reports whether s is a safe "owner/repo" to interpolate into a
+// GitHubBranches returns every branch name of "owner/repo". Any failure is an
+// error: a partial list would read as deleted branches.
+func GitHubBranches(ctx context.Context, repoPath string) ([]string, error) {
+	if !validRepoPath(repoPath) {
+		return nil, fmt.Errorf("invalid GitHub repo %q", repoPath)
+	}
+	owner, repo, _ := strings.Cut(repoPath, "/")
+	bearer := bearerForRepo(ctx, owner, repo)
+
+	const perPage = 100
+	var out []string
+	for page := 1; ; page++ {
+		url := fmt.Sprintf("%s/repos/%s/branches?per_page=%d&page=%d", gitHubAPIBase, repoPath, perPage, page)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("User-Agent", "buildhost")
+		req.Header.Set("Accept", "application/vnd.github+json")
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		resp, err := githubBranchListClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("list branches of %s: %w", repoPath, err)
+		}
+		var body []struct {
+			Name string `json:"name"`
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("list branches of %s: GitHub returned %s", repoPath, resp.Status)
+		}
+		err = json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("list branches of %s: %w", repoPath, err)
+		}
+		for _, b := range body {
+			out = append(out, b.Name)
+		}
+		if len(body) < perPage {
+			return out, nil
+		}
+	}
+}
+
+var githubBranchListClient = &http.Client{Timeout: 30 * time.Second}
+
 func validRepoPath(s string) bool {
 	owner, repo, ok := strings.Cut(s, "/")
 	if !ok || strings.Contains(repo, "/") {

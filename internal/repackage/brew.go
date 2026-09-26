@@ -99,7 +99,6 @@ func brewInstallName(project string) string {
 	return project
 }
 
-// BrewPrivateStrategyPath is the path inside the generated tap repository that
 const BrewPrivateStrategyPath = "lib/buildhost_private_download.rb"
 
 // BrewPrivateStrategy is the Ruby download strategy shipped in the generated
@@ -163,7 +162,6 @@ func brewCanonicalResource(resources []BrewResource) BrewResource {
 	return sorted[0]
 }
 
-// brewDependsOnOS returns "linux" or "macos" when every resource targets that
 func brewDependsOnOS(resources []BrewResource) string {
 	osName := ""
 	for _, r := range resources {
@@ -191,8 +189,7 @@ type BrewFormula struct {
 	License     string
 	Kind        string
 	// Private marks a formula for a private project: it requires the tap's
-	Private bool
-	// Service adds a `service do` block so `brew services start` manages the
+	Private   bool
 	Service   bool
 	Resources []BrewResource
 }
@@ -305,7 +302,6 @@ func BrewClassName(name string) string {
 	return b.String()
 }
 
-// BrewEligibleProjectName reports whether a project name can be served as a
 func BrewEligibleProjectName(name string) bool {
 	return name != "" && name[0] >= 'a' && name[0] <= 'z'
 }

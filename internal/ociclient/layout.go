@@ -165,7 +165,7 @@ func (l *layout) root() (descriptor, error) {
 	return root, nil
 }
 
-// blobPath resolves a digest to its blob file, verifying the file exists and
+// blobPath resolves a digest to its blob file.
 func (l *layout) blobPath(digest string, wantSize int64) (string, error) {
 	if !validDigest.MatchString(digest) {
 		return "", fmt.Errorf("unsupported digest %q (only sha256 is supported)", digest)

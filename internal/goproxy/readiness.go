@@ -16,7 +16,6 @@ import (
 //
 // The failure this exists for: a module proxy with no upstream credential serves
 type Health struct {
-	// Healthy is false when the proxy cannot serve the private modules it is
 	Healthy bool   `json:"healthy"`
 	Reason  string `json:"reason,omitempty"`
 	// CredentialConfigured reports whether a GitHub App or static token is set.
@@ -27,7 +26,7 @@ type Health struct {
 	PrivatePrefixes []string `json:"private_prefixes"`
 	// Upstream is the configured public mirror ("" when passthrough is off).
 	Upstream string `json:"upstream"`
-	// ReadinessModule is the private module resolved as the live proof, "" when
+	// ReadinessModule is the private module resolved as the live proof.
 	ReadinessModule string    `json:"readiness_module"`
 	Probed          bool      `json:"probed"`
 	ProbeVersion    string    `json:"probe_version,omitempty"`
@@ -62,7 +61,7 @@ const readinessInterval = 15 * time.Minute
 
 // startReadiness evaluates readiness now and keeps it current.
 //
-// With no private prefixes there is nothing a credential is needed for, so the
+// With no private prefixes there is nothing a credential is needed for.
 func (s *Service) startReadiness(ctx context.Context) {
 	if len(s.cfg.PrivatePrefixes) == 0 {
 		s.checkHealth(ctx)
@@ -139,7 +138,7 @@ func (s *Service) checkHealth(ctx context.Context) Health {
 	return h
 }
 
-// credentialKind reports what credential the proxy would present. It asks for a
+// credentialKind reports what credential the proxy would present.
 func (s *Service) credentialKind(ctx context.Context) (string, bool) {
 	owner, repo := "", ""
 	if len(s.cfg.PrivatePrefixes) > 0 {
@@ -185,7 +184,7 @@ type publicHealth struct {
 // The status code and the healthy flag are unauthenticated, because a monitor
 // that must authenticate is a monitor nobody wires up. Everything else needs a
 // read token: the private prefixes, the readiness module and a probe error all
-// NAME private repositories, and serve() gates even public modules so that "is
+// NAME private repositories.
 func (s *Service) serveHealth(w http.ResponseWriter, r *http.Request) {
 	h := s.Health()
 	w.Header().Set("Content-Type", "application/json")

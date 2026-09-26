@@ -2,11 +2,9 @@
 #
 # This exists because the deployment sat for weeks on a version it could not
 # start, while CI stayed green. The image entered through ["/bin/sh", <APE>],
-# so it started only when something spelled the entrypoint that exact way. A
-# rolling updater creates the new container from the OLD container's config,
-# which carries the entrypoint resolved from the image that container was
-# created from -- for one predating the APE, ["buildhost"]. That is a bare exec
-# of an APE, which the kernel answers with ENOEXEC. Docker then reports exit code 126 and restarts it forever.
+# so it started only when something spelled the entrypoint that exact way. That
+# is a bare exec of an APE, which the kernel answers with ENOEXEC and docker
+# reports as exit 126, on a loop.
 #
 # The fix is a shebang launcher on PATH, which the kernel CAN exec, in front of
 # the APE.
@@ -66,8 +64,8 @@ tests:
 		stdout:
 			- "#!/bin/sh"
 
-	# Both halves are read out and compared, rather than one literal line pinned
-	# here. The property that matters is that both agree.
+	# Both halves are read out and compared, rather than a single literal line
+	# pinned here. The property that matters is that both agree.
 	- desc: the launcher starts the binary at the path the Dockerfile puts it
 	  cmd: |
 		set -eu

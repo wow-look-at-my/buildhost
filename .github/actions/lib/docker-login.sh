@@ -8,17 +8,14 @@
 # credential is short-lived, so "log in once at the top" is wrong anyway. Call
 # this immediately before the docker operation that needs it.
 #
-# It lives in lib/ because more than one action does such an operation --
+# It lives in lib/ because more than a single action does such an operation --
 # buildhost-publish-docker builds and pulls back, buildhost-docker-pull pulls.
-# There is deliberately no action that only logs in: exposing one would put the
-# credential back in a caller's hands, which is the thing this file exists to
-# prevent.
 #
 # Bash rather than a buildhost CLI subcommand because this runs before the step
 # that fetches the CLI, and because there is no supported docker-login CLI path
 # for anything outside the official buildhost actions.
 #
-# Usage: docker-login.sh <server-url>   (e.g. https://pazer.build)
+# Usage: docker-login.sh <server-url> (e.g. https://pazer.build)
 set -euo pipefail
 
 server="${1:?usage: docker-login.sh <server-url>}"

@@ -1,9 +1,9 @@
-# What the upload composites must have done to a real server: one
-# session for the chunked path, bytes that survive the round trip, and a
-# release that ends up published.
-# The workflow runs the composites -- an action only runs inside a workflow --
-# and hands the results here: LOG is the server's log, BASE and STATIC its
-# two hosts, and the SHA and VERSION values are what the steps reported.
+# What the upload composites must have done to a real server: a single session
+# for the chunked path, bytes that survive the round trip, and a release that
+# ends up published. The workflow runs the composites -- an action only runs
+# inside a workflow -- and hands the results here: LOG is the server's log,
+# BASE and STATIC its hosts, and the SHA and VERSION values are what the steps
+# reported.
 #
 # This half runs after the artifact uploads and the release publish.
 #

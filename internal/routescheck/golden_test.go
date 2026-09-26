@@ -56,7 +56,7 @@ func TestRouteTableMatchesGolden(t *testing.T) {
 		"the route table changed but %s was not updated.\n%s", goldenPath, regenHint)
 }
 
-// TestGoldenRouteTableIsSorted pins the ordering the golden file relies on: a
+// TestGoldenRouteTableIsSorted pins the ordering the golden file relies on.
 func TestGoldenRouteTableIsSorted(t *testing.T) {
 	t.Serial()
 	lines := strings.Split(strings.TrimSuffix(routesAtStartup, "\n"), "\n")

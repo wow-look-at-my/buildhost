@@ -1,15 +1,17 @@
 -- name: GetRetentionSettings :one
-SELECT keep_n, recency_hours FROM retention_settings WHERE id = 1;
+SELECT keep_n, recency_hours, branch_keep_n, branch_ttl_days FROM retention_settings WHERE id = 1;
 
 -- name: SeedRetentionSettings :exec
-INSERT OR IGNORE INTO retention_settings (id, keep_n, recency_hours) VALUES (1, ?, ?);
+INSERT OR IGNORE INTO retention_settings (id, keep_n, recency_hours, branch_keep_n, branch_ttl_days) VALUES (1, ?, ?, ?, ?);
 
 -- name: UpdateRetentionSettings :exec
-INSERT INTO retention_settings (id, keep_n, recency_hours, updated_at)
-VALUES (1, ?, ?, datetime('now'))
+INSERT INTO retention_settings (id, keep_n, recency_hours, branch_keep_n, branch_ttl_days, updated_at)
+VALUES (1, ?, ?, ?, ?, datetime('now'))
 ON CONFLICT(id) DO UPDATE SET
     keep_n = excluded.keep_n,
     recency_hours = excluded.recency_hours,
+    branch_keep_n = excluded.branch_keep_n,
+    branch_ttl_days = excluded.branch_ttl_days,
     updated_at = datetime('now');
 
 -- name: IsBlobReferenced :one
@@ -54,15 +56,14 @@ DELETE FROM artifacts WHERE release_id = ?;
 DELETE FROM releases WHERE id = ?;
 
 -- name: ListEvictableReleases :many
--- Published releases past keep-N on each (project, git_branch). A release is
--- evictable when at least max(keep_n, 1) NEWER published releases exist on the
--- same branch. The max(..., 1) floor means the per-branch tip (zero newer) is
--- ALWAYS kept, even if keep_n is set to 0 -- so eviction can never remove a
--- branch's latest published build (which /dl/.../branch/... resolves). Also
--- excludes anything newer than the recency cutoff, tagged releases, and
--- pushed-docker releases (their blobs live in project-scoped oci_blob_links, not
--- release-cascade-able). Correlated-subquery form (sqlc's SQLite analyzer does
--- not support window-fn aliases in WHERE).
+-- Published releases the policy evicts. The default branch keeps
+-- max(keep_n, 1) releases, so its tip is always kept. Every other branch keeps
+-- max(branch_keep_n, 1), and loses all of them once GitHub deleted the branch
+-- before branch_ttl_cutoff. The project's newest published
+-- release, anything newer than the recency cutoff, tagged releases and
+-- pushed-docker releases (their blobs live in project-scoped oci_blob_links)
+-- are never evicted. ListReleaseRetentionFacts and SumReclaimableBytes repeat
+-- this predicate; the three must agree.
 SELECT r.id, r.project_id, p.name AS project_name, r.git_branch, r.version, r.version_num
 FROM releases r
 JOIN projects p ON p.id = r.project_id
@@ -70,13 +71,19 @@ WHERE r.published = 1
   AND r.created_at < datetime(sqlc.arg(recency_cutoff))
   AND r.id NOT IN (SELECT release_id FROM oci_tags)
   AND r.id NOT IN (SELECT release_id FROM artifacts WHERE kind = 'docker')
-  AND (
-      SELECT COUNT(*) FROM releases r2
-      WHERE r2.project_id = r.project_id
-        AND r2.git_branch = r.git_branch
-        AND r2.published = 1
-        AND r2.version_num > r.version_num
-  ) >= max(sqlc.arg(keep_n), 1)
+  AND r.version_num < (SELECT MAX(r4.version_num) FROM releases r4 WHERE r4.project_id = r.project_id AND r4.published = 1)
+  AND CASE WHEN r.git_branch = p.default_branch THEN
+      (SELECT COUNT(*) FROM releases r2
+        WHERE r2.project_id = r.project_id AND r2.git_branch = r.git_branch
+          AND r2.published = 1 AND r2.version_num > r.version_num) >= max(sqlc.arg(keep_n), 1)
+  ELSE
+      (SELECT COUNT(*) FROM releases r2
+        WHERE r2.project_id = r.project_id AND r2.git_branch = r.git_branch
+          AND r2.published = 1 AND r2.version_num > r.version_num) >= max(sqlc.arg(branch_keep_n), 1)
+      OR EXISTS (SELECT 1 FROM deleted_branches d
+        WHERE d.project_id = r.project_id AND d.branch = r.git_branch
+          AND d.deleted_at < datetime(sqlc.arg(branch_ttl_cutoff)))
+  END
 ORDER BY r.project_id, r.git_branch, r.version_num DESC;
 
 -- name: ListAbandonedReleases :many
@@ -99,17 +106,24 @@ WHERE r.published = 0 AND r.draft = 0 AND r.created_at < datetime(sqlc.arg(cutof
 -- sweeper report the exact post-refcount figure.
 WITH evictable AS (
     SELECT r.id FROM releases r
+    JOIN projects p ON p.id = r.project_id
     WHERE r.published = 1
       AND r.created_at < datetime(sqlc.arg(recency_cutoff))
       AND r.id NOT IN (SELECT release_id FROM oci_tags)
       AND r.id NOT IN (SELECT release_id FROM artifacts WHERE kind = 'docker')
-      AND (
-          SELECT COUNT(*) FROM releases r2
-          WHERE r2.project_id = r.project_id
-            AND r2.git_branch = r.git_branch
-            AND r2.published = 1
-            AND r2.version_num > r.version_num
-      ) >= max(sqlc.arg(keep_n), 1)
+      AND r.version_num < (SELECT MAX(r4.version_num) FROM releases r4 WHERE r4.project_id = r.project_id AND r4.published = 1)
+      AND CASE WHEN r.git_branch = p.default_branch THEN
+          (SELECT COUNT(*) FROM releases r2
+            WHERE r2.project_id = r.project_id AND r2.git_branch = r.git_branch
+              AND r2.published = 1 AND r2.version_num > r.version_num) >= max(sqlc.arg(keep_n), 1)
+      ELSE
+          (SELECT COUNT(*) FROM releases r2
+            WHERE r2.project_id = r.project_id AND r2.git_branch = r.git_branch
+              AND r2.published = 1 AND r2.version_num > r.version_num) >= max(sqlc.arg(branch_keep_n), 1)
+          OR EXISTS (SELECT 1 FROM deleted_branches d
+            WHERE d.project_id = r.project_id AND d.branch = r.git_branch
+              AND d.deleted_at < datetime(sqlc.arg(branch_ttl_cutoff)))
+      END
 )
 SELECT CAST(
     COALESCE((SELECT SUM(a.size + a.stripped_size + a.debug_size)
@@ -170,10 +184,11 @@ ORDER BY gm.module_path, gv.version;
 
 -- name: ListReleaseRetentionFacts :many
 -- One row per release with the facts the keep-N and abandoned queries decide on:
--- how many newer published releases share its branch, whether an OCI tag or a
--- docker artifact pins it, and its published/draft state. The inventory turns
--- these into a per-file hold reason, so an operator can see WHY a release is
--- kept instead of only that it is.
+-- how many newer published releases share its branch, whether that branch is the
+-- default one or has expired, whether it is the project's newest release,
+-- whether an OCI tag or a docker artifact pins it, and its published/draft
+-- state. The inventory turns these into a per-file hold reason, so an operator
+-- can see WHY a release is kept instead of only that it is.
 SELECT r.id, r.project_id, p.name AS project_name, r.version, r.version_num,
        r.git_branch, r.published, r.draft, r.created_at,
        (SELECT COUNT(*) FROM releases r2
@@ -181,6 +196,14 @@ SELECT r.id, r.project_id, p.name AS project_name, r.version, r.version_num,
            AND r2.git_branch = r.git_branch
            AND r2.published = 1
            AND r2.version_num > r.version_num) AS newer_published_on_branch,
+       CAST(r.git_branch = p.default_branch AS INTEGER) AS on_default_branch,
+       CAST(EXISTS (SELECT 1 FROM deleted_branches d
+         WHERE d.project_id = r.project_id AND d.branch = r.git_branch
+           AND d.deleted_at < datetime(sqlc.arg(branch_ttl_cutoff))) AS INTEGER) AS branch_expired,
+       CAST(EXISTS (SELECT 1 FROM deleted_branches d
+         WHERE d.project_id = r.project_id AND d.branch = r.git_branch) AS INTEGER) AS branch_deleted,
+       CAST(r.version_num = COALESCE((SELECT MAX(r4.version_num) FROM releases r4
+         WHERE r4.project_id = r.project_id AND r4.published = 1), -1) AS INTEGER) AS project_newest,
        (SELECT COUNT(*) FROM oci_tags t WHERE t.release_id = r.id) AS oci_tag_count,
        (SELECT COUNT(*) FROM artifacts a WHERE a.release_id = r.id AND a.kind = 'docker') AS docker_artifact_count
 FROM releases r

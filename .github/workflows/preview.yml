@@ -18,14 +18,13 @@ permissions:
   deployments: write
 
 jobs:
-  # internal/admin/static holds only index.html and style.css in git -- app.js and
   preview:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The same script the //go:generate directive runs, so the preview and the
+      # The same script the //go:generate directive runs.
       - run: ./scripts/build-admin-frontend.sh
-      # One job, so the built site is right here: no artifact hand-off at all.
+      # A single job, so the built site is right here: no artifact hand-off at all.
       - uses: ./.github/actions/buildhost-publish-site
         with:
           branch: ${{ github.ref_name }}

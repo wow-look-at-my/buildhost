@@ -12,7 +12,6 @@
 # image that shipped the APE itself dies on a noexec /tmp instead.
 #
 # The sibling suite synthesizes from a plain ELF, which exercises none of this.
-# The payload here is the repo's own fat APE, so the test runs a real one.
 #
 # The workflow installs crane, maps the OCI host in /etc/hosts, turns on the
 # containerd image store and passes $BUILDHOST_BIN. Needs curl, jq, crane and
@@ -55,8 +54,6 @@ shared:
 			setsid $RUN serve > "$WORK/server.log" 2>&1 &
 			echo "$!" > "$WORK/server.pid"
 			started=""
-			# A hook gets 30s in total, so a one-second poll spends the whole
-			# budget waiting and reports a timeout instead of the server log.
 			for _ in $(seq 50); do
 				if curl -fsS "$BASE/healthz" >/dev/null 2>&1; then started=yes; break; fi
 				sleep 0.2
@@ -163,10 +160,8 @@ tests:
 			- "linux/amd64"
 			- "buildhost"
 
-	# A rolling updater creates the replacement from the config of the container
-	# it replaces, so the entrypoint that reaches this image is whatever the OLD
-	# one recorded. Every spelling a synthesized image ever gave must therefore
-	# still start, or the deployment is wedged on the version it already runs.
+	# Every spelling a synthesized image ever gave must therefore still start,
+	# or the deployment is wedged on the version it already runs.
 	- desc: an entrypoint an older container recorded still starts the server
 	  cmd: |
 		set -eu

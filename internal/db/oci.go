@@ -39,7 +39,7 @@ func (d *DB) GetOCIBlobLink(ctx context.Context, projectID int64, storageKey str
 	return &row, nil
 }
 
-// OCIBlobOwner is a project that already has a given blob linked, together with
+// OCIBlobOwner is a project that already has a given blob linked.
 type OCIBlobOwner struct {
 	Project    Project
 	MediaType  string

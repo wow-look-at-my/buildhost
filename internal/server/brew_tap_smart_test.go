@@ -64,7 +64,7 @@ func TestBrewTapSmart_GitUpdateFastForwardsAcrossPublishAndRedeploy(t *testing.T
 	publishBrewProject(t, env, "appone", "appone-binary")
 	gitTS := gitTapServer(t, env)
 
-	// The router really negotiates smart: this is the response that flips a
+	// The router really negotiates smart.
 	resp, err := http.Get(gitTS.URL + "/brew/tap.git/info/refs?service=git-upload-pack")
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -94,7 +94,7 @@ func TestBrewTapSmart_GitUpdateFastForwardsAcrossPublishAndRedeploy(t *testing.T
 	_, err = os.Stat(filepath.Join(clone, "Formula", "apptwo.rb"))
 	require.NoError(t, err)
 
-	// The smart transfers carried the COMPLETE history (root + child), and
+	// The smart transfers carried the COMPLETE history (root + child).
 	require.Equal(t, "2", strings.TrimSpace(gitRun(t, clone, "rev-list", "--count", "origin/main")))
 	gitRun(t, clone, "fsck")
 }
