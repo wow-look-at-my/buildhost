@@ -38,7 +38,19 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 					span.SetAttributes(attribute.String("auth.result", "oidc_failed"))
 					span.End()
 					slog.Debug("OIDC verification failed", "err", err)
-					r = r.WithContext(WithOIDCError(r.Context(), err))
+					rctx := WithOIDCError(r.Context(), err)
+					var eventErr *EventNotAllowedError
+					if errors.As(err, &eventErr) {
+						rctx = withRunLockOnlyRepo(rctx, OIDCRepoIdentity{
+							RepoPath:   vr.RepoPath,
+							Issuer:     vr.Issuer,
+							OwnerID:    vr.OwnerID,
+							RepoID:     vr.RepoID,
+							RunID:      vr.RunID,
+							RunAttempt: vr.RunAttempt,
+						})
+					}
+					r = r.WithContext(rctx)
 				} else {
 					span.SetAttributes(attribute.String("auth.result", "oidc_ok"))
 					span.End()
@@ -49,10 +61,12 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 						rctx = WithOIDCProject(rctx, oidcProject)
 						rctx = WithOIDCPrivate(rctx, vr.OIDCPrivate)
 						rctx = WithOIDCRepo(rctx, OIDCRepoIdentity{
-							RepoPath: vr.RepoPath,
-							Issuer:   vr.Issuer,
-							OwnerID:  vr.OwnerID,
-							RepoID:   vr.RepoID,
+							RepoPath:   vr.RepoPath,
+							Issuer:     vr.Issuer,
+							OwnerID:    vr.OwnerID,
+							RepoID:     vr.RepoID,
+							RunID:      vr.RunID,
+							RunAttempt: vr.RunAttempt,
 						})
 					}
 					r = r.WithContext(rctx)
@@ -70,8 +84,7 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 				r = r.WithContext(WithToken(r.Context(), token))
 			}
 		}
-		// Sign in with GitHub browser session: a verified bh_session cookie
-		// (minted at the OAuth callback after the user logged in with GitHub and
+		// Sign in with GitHub browser session.
 		if m.GitHub != nil {
 			if login, ghToken, ok := sessionFromRequest(r); ok {
 				ctx := WithUser(r.Context(), login)
@@ -97,7 +110,7 @@ func RequireWrite(next http.HandlerFunc) http.HandlerFunc {
 // userCanReadProject reports whether the request's signed-in GitHub user (if
 // any) may read this private project -- i.e. they can access the project's
 // GitHub repo. allowed is false if not signed in, the project has no known
-// repo, or GitHub login is not configured. sessionTokenDead reports that the
+// repo.
 func userCanReadProject(ctx context.Context, project *db.Project) (allowed, sessionTokenDead bool) {
 	if mw == nil || mw.GitHub == nil || project.GithubRepo == "" {
 		return false, false
@@ -112,7 +125,7 @@ func userCanReadProject(ctx context.Context, project *db.Project) (allowed, sess
 // UserCanReadRepo reports whether the request's signed-in GitHub user may read
 // owner/repo, asking GitHub itself with the token in their session.
 //
-// userCanReadProject answers the same question for a buildhost project, via the
+// userCanReadProject answers the same question for a buildhost project.
 func UserCanReadRepo(ctx context.Context, ownerRepo string) bool {
 	if mw == nil || mw.GitHub == nil || ownerRepo == "" {
 		return false
@@ -201,7 +214,6 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				// create a missing project. A read never provisions -- it just
 				// 404s -- so a GET can never materialize a project as a side
 				if ri.Access() != WriteAccess || t == nil || oidcProject == "" || !oidcAuthorizesProject(oidcProject, ri.ProjectName()) || !validNamespacedProjectName(ri.ProjectName()) {
-					// A write request that arrived without a usable credential gets a
 					if ri.Access() == WriteAccess && t == nil {
 						unauthorizedResponse(w, r)
 						return
@@ -285,7 +297,6 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 									"oidc_subject", t.Name,
 								)
 								if ri.Access() == HiddenReadAccess {
-									// Hidden reads answer every unauthorized caller with the
 									projectNotFound(w)
 									return
 								}
@@ -346,7 +357,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 					}
 				}
 			}
-			// Make the resolved project available to unauthorizedResponse, so a
+			// Make the resolved project available to unauthorizedResponse.
 			r = r.WithContext(WithProject(r.Context(), project))
 
 			switch ri.Access() {
@@ -364,8 +375,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				parentSpan.SetAttributes(attribute.String("project.access", "read"))
 				if project.IsPrivate {
 					// A specific resource the route declares public (e.g. a
-					// static site published with X-Public-Site: true) is served
-					// without auth even under a private project -- the rest of
+					// static site published with X-Public-Site.
 					if pra, ok := ri.(PublicReadAuthorizer); ok && pra.AllowsPublicRead(r.Context(), mw.DB, project) {
 						parentSpan.SetAttributes(attribute.Bool("project.public_read", true))
 						break
