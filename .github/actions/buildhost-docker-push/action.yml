@@ -84,6 +84,7 @@ runs:
         repo="$(cd "${ACTION_PATH}/../../.." && pwd)"
         cd "${repo}"
         ./scripts/fetch-cacerts.sh
+        ./scripts/resolve-org-deps.sh
         go generate ./internal/api
         ./scripts/build-admin-frontend.sh
         go build -o "${RUNNER_TEMP}/buildhost-cli" ./cmd/buildhost
