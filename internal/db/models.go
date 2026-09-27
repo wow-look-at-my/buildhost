@@ -172,6 +172,15 @@ type RetentionSetting struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+type RunLock struct {
+	RepoID     string    `json:"repo_id"`
+	RunID      string    `json:"run_id"`
+	RunAttempt string    `json:"run_attempt"`
+	Name       string    `json:"name"`
+	Value      string    `json:"value"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 type Site struct {
 	ID         int64     `json:"id"`
 	ProjectID  int64     `json:"project_id"`
