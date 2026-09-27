@@ -206,6 +206,23 @@ async function main(): Promise<void> {
 		await h.close();
 	}
 
+	// --- a Body that under-delivers is refused, never appended -------------
+
+	{
+		const h = await start({ maxDirect: 1000 });
+		const f = writeFixture('short_linux_amd64', 5000);
+		// Drops the last byte of every chunk. Appending it would shift every
+		// later offset, so the spool would silently be the wrong bytes.
+		const short = { ...f.body, read: (o: number, n: number) => f.body.read(o, n).subarray(0, n - 1) };
+		await assert.rejects(
+			putFile(h.send, core, { urlPath: '/api/v1/a', body: short, chunkSize: 1024 }),
+			/read 1023 bytes at offset 0, wanted 1024/,
+		);
+		assert.strictEqual(h.requests.filter((q) => q.method === 'PATCH').length, 0, 'nothing is appended');
+		assert.strictEqual(h.spools.size, 0, 'the session is aborted');
+		await h.close();
+	}
+
 	// --- an unreadable server-info falls back, it never guesses unlimited ---
 
 	{
