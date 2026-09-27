@@ -201,24 +201,52 @@ func TestCreateRelease_InvalidBody(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
-func TestCreateRelease_SemverMissingVersion(t *testing.T) {
-	t.Serial()
-	h := setupTestHandler(t)
-	ctx := context.Background()
-
-	proj := &db.Project{Name: "semproj2", Versioning: db.VersioningSemver}
-	require.NoError(t, h.DB.CreateProject(ctx, proj))
-
-	body := `{}`
-	req := httptest.NewRequest("POST", "/api/projects/semproj2/releases", strings.NewReader(body))
-	req.SetPathValue("project", "semproj2")
+// postSemverRelease creates a release on a semver project and returns the recorder.
+func postSemverRelease(t *testing.T, h *Handler, proj *db.Project, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest("POST", "/api/projects/"+proj.Name+"/releases", strings.NewReader(body))
+	req.SetPathValue("project", proj.Name)
 	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.CreateRelease(rec, req)
+	return rec
+}
 
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Contains(t, rec.Body.String(), "version is required")
+func TestCreateRelease_SemverMissingVersionStartsAtFirstPatch(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+	proj := &db.Project{Name: "semproj2", Versioning: db.VersioningSemver}
+	require.NoError(t, h.DB.CreateProject(context.Background(), proj))
+
+	rec := postSemverRelease(t, h, proj, `{}`)
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var rel db.Release
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
+	assert.Equal(t, "0.0.1", rel.Version)
+}
+
+func TestCreateRelease_SemverMissingVersionBumpsTheLatestPatch(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+	proj := &db.Project{Name: "semproj3", Versioning: db.VersioningSemver}
+	require.NoError(t, h.DB.CreateProject(context.Background(), proj))
+	require.Equal(t, http.StatusCreated, postSemverRelease(t, h, proj, `{"version":"v1.2.3"}`).Code)
+
+	rec := postSemverRelease(t, h, proj, `{"git_branch":"main"}`)
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var rel db.Release
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
+	assert.Equal(t, "1.2.4", rel.Version)
+	assert.Equal(t, semverToNum("1.2.4"), rel.VersionNum)
+}
+
+func TestNumToSemverInvertsSemverToNum(t *testing.T) {
+	for _, v := range []string{"0.0.1", "1.2.3", "10.0.999", "3.41.0"} {
+		assert.Equal(t, v, numToSemver(semverToNum(v)))
+	}
 }
 
 func TestCreateRelease_Duplicate(t *testing.T) {
