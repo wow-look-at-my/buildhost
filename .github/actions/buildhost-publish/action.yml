@@ -370,10 +370,18 @@ runs:
               const body = {
                 size: fs.statSync(filePath).size,
                 sha256: sum,
+                // A short read leaves the tail of an allocUnsafe buffer holding whatever was in that memory, so keep reading until the chunk is whole.
                 read: (offset: number, length: number): Buffer => {
                   const buf = Buffer.allocUnsafe(length);
                   const fd = fs.openSync(filePath, "r");
-                  try { fs.readSync(fd, buf, 0, length, offset); } finally { fs.closeSync(fd); }
+                  try {
+                    let got = 0;
+                    while (got < length) {
+                      const n = fs.readSync(fd, buf, got, length - got, offset + got);
+                      if (n <= 0) throw new Error(`${filePath}: wanted ${length} bytes at ${offset}, the file ended after ${got}`);
+                      got += n;
+                    }
+                  } finally { fs.closeSync(fd); }
                   return buf;
                 },
               };
