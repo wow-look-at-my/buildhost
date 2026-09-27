@@ -207,3 +207,16 @@ CREATE TABLE goproxy_versions (
 
 CREATE INDEX IF NOT EXISTS idx_goproxy_versions_module ON goproxy_versions(module_id);
 CREATE INDEX IF NOT EXISTS idx_goproxy_versions_key    ON goproxy_versions(zip_storage_key);
+
+-- Run locks (mirrored from migrations/019_run_locks.sql).
+CREATE TABLE run_locks (
+    repo_id     TEXT NOT NULL,
+    run_id      TEXT NOT NULL,
+    run_attempt TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    value       TEXT NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (repo_id, run_id, run_attempt, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_run_locks_created ON run_locks(created_at);
