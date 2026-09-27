@@ -1,6 +1,6 @@
 # Run locks
 
-A run lock holds the first value a GitHub Actions run records under a name. Every later job of that run reads the same value. The gosmopolitan go command uses it to lock the branch head of each org module for a run. A commit that lands mid-run then reaches no job of that run.
+A run lock holds the first value a GitHub Actions run records under a name. Every later job of that run reads the same value. The gosmopolitan go command uses it to lock the branch head of each org module for a run. As a result, a commit that lands mid-run reaches no job of it.
 
 ## Contract
 
