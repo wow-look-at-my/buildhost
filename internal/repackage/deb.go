@@ -48,6 +48,11 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 		pkgName, version, arch,
 		sanitizeControlField(firstNonEmpty(input.Project.Homepage, "unknown")),
 		sanitizeControlField(firstNonEmpty(input.Project.Description, input.Project.Name)))
+	dependsLine, err := DebDependsLine(input.Project)
+	if err != nil {
+		return nil, err
+	}
+	controlContent += dependsLine
 
 	// The deb materialization of the packaging-agnostic create_service
 	withService := input.Project.CreateService && input.Artifact.Kind == db.KindBinary
@@ -116,7 +121,7 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 		})
 	}
 
-	// The ar container needs each member's exact byte length in its header, before the
+	// The ar container needs each member's exact byte length in its header.
 	dataTmp, err := os.CreateTemp(input.TmpDir, "deb-data-*")
 	if err != nil {
 		return nil, fmt.Errorf("create deb temp: %w", err)
@@ -210,7 +215,6 @@ func streamDebData(f *os.File, r io.Reader, name string, size, mode int64, pre, 
 	return fi.Size(), nil
 }
 
-// DebServiceUnitPath is where the create_service systemd USER unit lands in
 func DebServiceUnitPath(pkgName string) string {
 	return "/usr/lib/systemd/user/" + pkgName + ".service"
 }
@@ -325,6 +329,20 @@ func debArch(a db.Arch) string {
 // DebPackageName converts a buildhost project name into a valid Debian package
 func DebPackageName(project string) string {
 	return strings.NewReplacer("/", "-", "_", "-").Replace(project)
+}
+
+// DebDependsLine renders the project's apt_depends as a "Depends:" control
+// line with its newline, or "" when the project declares none. The deb and
+// the APT Packages entry both use it, so they always agree. A stored
+// value that fails validation is an error, never a dropped line.
+func DebDependsLine(p db.Project) (string, error) {
+	if p.AptDepends == "" {
+		return "", nil
+	}
+	if err := db.ValidateAptDepends(p.AptDepends); err != nil {
+		return "", fmt.Errorf("project %s: %w", p.Name, err)
+	}
+	return "Depends: " + p.AptDepends + "\n", nil
 }
 
 func sanitizeControlField(s string) string {
