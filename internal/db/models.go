@@ -140,6 +140,7 @@ type Project struct {
 	GithubRepoID  string     `json:"github_repo_id"`
 	DefaultBranch string     `json:"default_branch"`
 	CreateService bool       `json:"create_service"`
+	AptDepends    string     `json:"apt_depends"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
