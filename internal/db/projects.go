@@ -86,6 +86,18 @@ func (d *DB) SetProjectCreateService(ctx context.Context, id int64, enabled bool
 	})
 }
 
+// SetProjectAptDepends stores the project's Debian Depends value. An empty
+// value clears it. An invalid value is an error, and nothing is stored.
+func (d *DB) SetProjectAptDepends(ctx context.Context, id int64, depends string) error {
+	if err := ValidateAptDepends(depends); err != nil {
+		return err
+	}
+	return d.q.SetProjectAptDepends(ctx, SetProjectAptDependsParams{
+		AptDepends: depends,
+		ID:         id,
+	})
+}
+
 // SetProjectVersioning changes how the project numbers a release. Existing
 // releases keep their numbers.
 func (d *DB) SetProjectVersioning(ctx context.Context, id int64, v Versioning) error {
