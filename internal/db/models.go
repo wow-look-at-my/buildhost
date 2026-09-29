@@ -146,6 +146,7 @@ type Project struct {
 	GithubRepoID  string     `json:"github_repo_id"`
 	DefaultBranch string     `json:"default_branch"`
 	CreateService bool       `json:"create_service"`
+	AptDepends    string     `json:"apt_depends"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
@@ -178,6 +179,15 @@ type RetentionSetting struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 	BranchKeepN   int64     `json:"branch_keep_n"`
 	BranchTtlDays int64     `json:"branch_ttl_days"`
+}
+
+type RunLock struct {
+	RepoID     string    `json:"repo_id"`
+	RunID      string    `json:"run_id"`
+	RunAttempt string    `json:"run_attempt"`
+	Name       string    `json:"name"`
+	Value      string    `json:"value"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type Site struct {

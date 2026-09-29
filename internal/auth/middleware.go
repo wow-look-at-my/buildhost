@@ -38,7 +38,19 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 					span.SetAttributes(attribute.String("auth.result", "oidc_failed"))
 					span.End()
 					slog.Debug("OIDC verification failed", "err", err)
-					r = r.WithContext(WithOIDCError(r.Context(), err))
+					rctx := WithOIDCError(r.Context(), err)
+					var eventErr *EventNotAllowedError
+					if errors.As(err, &eventErr) {
+						rctx = withRunLockOnlyRepo(rctx, OIDCRepoIdentity{
+							RepoPath:   vr.RepoPath,
+							Issuer:     vr.Issuer,
+							OwnerID:    vr.OwnerID,
+							RepoID:     vr.RepoID,
+							RunID:      vr.RunID,
+							RunAttempt: vr.RunAttempt,
+						})
+					}
+					r = r.WithContext(rctx)
 				} else {
 					span.SetAttributes(attribute.String("auth.result", "oidc_ok"))
 					span.End()
@@ -49,10 +61,12 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 						rctx = WithOIDCProject(rctx, oidcProject)
 						rctx = WithOIDCPrivate(rctx, vr.OIDCPrivate)
 						rctx = WithOIDCRepo(rctx, OIDCRepoIdentity{
-							RepoPath: vr.RepoPath,
-							Issuer:   vr.Issuer,
-							OwnerID:  vr.OwnerID,
-							RepoID:   vr.RepoID,
+							RepoPath:   vr.RepoPath,
+							Issuer:     vr.Issuer,
+							OwnerID:    vr.OwnerID,
+							RepoID:     vr.RepoID,
+							RunID:      vr.RunID,
+							RunAttempt: vr.RunAttempt,
 						})
 					}
 					r = r.WithContext(rctx)
