@@ -77,15 +77,19 @@ func (h *Handler) packagesEntry(ctx context.Context, project *db.Project, releas
 	// The project name may be slash-namespaced; fold it to a valid Debian
 	pkgName := repackage.DebPackageName(project.Name)
 	desc := strings.NewReplacer("\n", " ", "\r", " ").Replace(project.Description)
+	dependsLine, err := repackage.DebDependsLine(*project)
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf(`Package: %s
 Version: %s
 Architecture: %s
-Filename: pool/%s_%s_%s.deb
+%sFilename: pool/%s_%s_%s.deb
 Size: %d
 SHA256: %s
 Description: %s
 
-`, pkgName, version, debArch, pkgName, version, debArch,
+`, pkgName, version, debArch, dependsLine, pkgName, version, debArch,
 		debSize, debSHA, desc), nil
 }
 
