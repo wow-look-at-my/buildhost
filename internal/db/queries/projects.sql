@@ -3,11 +3,11 @@ INSERT INTO projects (name, description, homepage, license, is_private, versioni
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetProjectByName :one
-SELECT id, name, description, homepage, license, is_private, versioning, github_repo, github_owner_id, github_repo_id, default_branch, create_service, created_at, updated_at
+SELECT id, name, description, homepage, license, is_private, versioning, github_repo, github_owner_id, github_repo_id, default_branch, create_service, apt_depends, created_at, updated_at
 FROM projects WHERE name = ?;
 
 -- name: ListAllProjects :many
-SELECT id, name, description, homepage, license, is_private, versioning, github_repo, github_owner_id, github_repo_id, default_branch, create_service, created_at, updated_at
+SELECT id, name, description, homepage, license, is_private, versioning, github_repo, github_owner_id, github_repo_id, default_branch, create_service, apt_depends, created_at, updated_at
 FROM projects ORDER BY name;
 
 -- name: SetProjectVisibility :exec
@@ -25,6 +25,9 @@ UPDATE projects SET default_branch = ?, updated_at = CURRENT_TIMESTAMP WHERE id 
 -- name: SetProjectCreateService :exec
 UPDATE projects SET create_service = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
 
+-- name: SetProjectAptDepends :exec
+UPDATE projects SET apt_depends = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
+
 -- name: SetProjectVersioning :exec
 UPDATE projects SET versioning = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
 
@@ -32,11 +35,11 @@ UPDATE projects SET versioning = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
 UPDATE projects SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
 
 -- name: ListProjectsByGitHubRepoID :many
-SELECT id, name, description, homepage, license, is_private, versioning, github_repo, github_owner_id, github_repo_id, default_branch, create_service, created_at, updated_at
+SELECT id, name, description, homepage, license, is_private, versioning, github_repo, github_owner_id, github_repo_id, default_branch, create_service, apt_depends, created_at, updated_at
 FROM projects WHERE github_repo_id = ? AND github_repo_id != '' ORDER BY name;
 
 -- name: GetProjectByAlias :one
-SELECT p.id, p.name, p.description, p.homepage, p.license, p.is_private, p.versioning, p.github_repo, p.github_owner_id, p.github_repo_id, p.default_branch, p.create_service, p.created_at, p.updated_at
+SELECT p.id, p.name, p.description, p.homepage, p.license, p.is_private, p.versioning, p.github_repo, p.github_owner_id, p.github_repo_id, p.default_branch, p.create_service, p.apt_depends, p.created_at, p.updated_at
 FROM projects p JOIN project_aliases a ON a.project_id = p.id
 WHERE a.name = ?;
 

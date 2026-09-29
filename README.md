@@ -135,6 +135,12 @@ The package sets it up at install. Its postinst runs `systemctl --global enable`
 
 This applies to a buildhost-GENERATED deb only, which means `fmt=deb`, from this APT repository. A pre-built `.deb` uploaded as an artifact, with `kind=archive`, is served byte-identical. buildhost never injects anything into an uploaded file.
 
+### Runtime dependencies (apt_depends)
+
+A project declares its runtime prerequisites in Debian relationship syntax, such as `bubblewrap | docker.io`. The generated deb and the Packages entry then carry a `Depends:` line. Set it with `apt_depends` on the `buildhost-publish` or `buildhost-create-release` action, or with `--apt-depends` on `buildhost publish`.
+
+An empty input leaves the stored value untouched. `PATCH /api/v1/projects/{project}` with `{"apt_depends": ""}` clears it. The server refuses a value that is not relationship syntax. That refusal fails the publish.
+
 ## Web frontend
 
 buildhost serves a public, read-only browse UI on the main domain, and it uses no subdomain. It is plain server-rendered HTML with **no JavaScript**. A crawler or an agent can therefore consume and index it, with no single-page app to evaluate.
