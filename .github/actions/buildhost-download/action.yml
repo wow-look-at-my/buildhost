@@ -68,18 +68,18 @@ runs:
       with:
         script: |
           await (async () => {
-            // typed :string here, else tsc narrows the interpolated literal and flags a comparison as always true/false
-            const server: string = "${{ inputs.server }}";
-            const project: string = "${{ inputs.project }}";
-            const token: string = "${{ inputs.token }}";
-            const versionInput: string = "${{ inputs.version }}";
-            const branchInput: string = "${{ inputs.branch }}";
-            const osInput: string = "${{ inputs.os }}";
-            const archInput: string = "${{ inputs.arch }}";
-            const formatInput: string = "${{ inputs.format }}";
-            const pathInput: string = "${{ inputs.path }}";
-            const executable: string = "${{ inputs.executable }}";
-            const required: string = "${{ inputs.required }}";
+            // toJSON keeps a Windows path's backslashes, which plain quotes read as escapes; the :string types stop tsc from narrowing each literal
+            const server: string = ${{ toJSON(inputs.server) }};
+            const project: string = ${{ toJSON(inputs.project) }};
+            const token: string = ${{ toJSON(inputs.token) }};
+            const versionInput: string = ${{ toJSON(inputs.version) }};
+            const branchInput: string = ${{ toJSON(inputs.branch) }};
+            const osInput: string = ${{ toJSON(inputs.os) }};
+            const archInput: string = ${{ toJSON(inputs.arch) }};
+            const formatInput: string = ${{ toJSON(inputs.format) }};
+            const pathInput: string = ${{ toJSON(inputs.path) }};
+            const executable: string = ${{ toJSON(inputs.executable) }};
+            const required: string = ${{ toJSON(inputs.required) }};
 
             // dl is a subdomain of the server's own host, so a non-default deployment needs no second input to stay in sync
             const host = new URL(server).host;
