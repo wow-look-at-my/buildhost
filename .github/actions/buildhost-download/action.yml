@@ -67,6 +67,7 @@ runs:
       uses: wow-look-at-my/actions@typescript#latest
       with:
         script: |
+          const { fetchBody } = require(${{ toJSON(format('{0}/../lib/download.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/download', github.action_path)) }});
           await (async () => {
             // toJSON keeps a Windows path's backslashes, which plain quotes read as escapes; the :string types stop tsc from narrowing each literal
             const server: string = ${{ toJSON(inputs.server) }};
@@ -97,14 +98,13 @@ runs:
             const destination: string =
               pathInput || path.join(env.RUNNER_TEMP!, project.split("/").pop()!);
 
-            // retries a registry blip up to 3 times; the timeout turns a stalled transfer into a failed attempt, so the retry can run
+            // retries a registry blip up to 3 times; a transfer that goes 30s without a byte counts as a failed attempt
             let lastError = "";
             for (let attempt = 1; attempt <= 3; attempt++) {
               try {
-                const response = await fetch(url, { headers, redirect: "follow", signal: AbortSignal.timeout(300_000) });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const body = await fetchBody(url, headers);
                 fs.mkdirSync(path.dirname(destination), { recursive: true });
-                fs.writeFileSync(destination, Buffer.from(await response.arrayBuffer()));
+                fs.writeFileSync(destination, body);
                 if (executable === "true") fs.chmodSync(destination, 0o755);
                 core.info(`Downloaded ${url} -> ${destination}`);
                 core.setOutput("path", destination);
