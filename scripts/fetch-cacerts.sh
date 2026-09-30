@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # Fetch the public CA bundle that gets embedded into the buildhost binary (and from
-# there into every OCI image buildhost synthesizes from a plain binary). It is fetched
-# at build time from a trustworthy upstream rather than committed to this repo, so the
-# repo never carries a 200 KB cert blob that a reviewer can't eyeball and that could be
-# tampered with in a PR.
+# there into every OCI image buildhost synthesizes from a plain binary).
 #
 # Run this before `go-toolchain` / `go build` locally; CI runs it in the build job.
 set -euo pipefail

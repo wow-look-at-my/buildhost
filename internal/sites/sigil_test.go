@@ -25,7 +25,7 @@ func TestBranchSigil_Serves(t *testing.T) {
 	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "jsperf.app")
-	// master is the seed default branch, so every other branch below is a
+	// master is the seed default branch.
 	env.uploadSite(t, "jsperf.app", "master", map[string]string{"index.html": "<h1>default</h1>"})
 	env.uploadSite(t, "jsperf.app", "pr-7", map[string]string{
 		"index.html":     "<h1>preview</h1>",

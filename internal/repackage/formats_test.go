@@ -207,7 +207,6 @@ func TestDebRepackage_NamespacedName(t *testing.T) {
 	assert.True(t, ok, "expected binary at ./usr/bin/pr-reviewer-agent-server, got entries: %v", dataEntries)
 }
 
-// readArMembers parses a Unix `ar` archive (the .deb container) into a map of
 func readArMembers(t *testing.T, data []byte) map[string][]byte {
 	t.Helper()
 	const magic = "!<arch>\n"

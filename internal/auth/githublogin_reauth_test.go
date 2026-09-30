@@ -122,7 +122,7 @@ func TestRequireProject_Browser_SessionTokenDead_ClearsSessionAndReauths(t *test
 	assert.True(t, strings.HasPrefix(loc, "https://pazer.build"+signinStartPath+"?next="), "got %q", loc)
 	assert.Contains(t, loc, url.QueryEscape("https://sites.pazer.build/secret/branch/pr-1/"))
 
-	// The dead session cookie is cleared, with the apex Domain it was set with
+	// The dead session cookie is cleared.
 	var cleared *http.Cookie
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == sessionCookieName {

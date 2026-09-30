@@ -371,9 +371,9 @@ export interface DownloadLink {
     url: string;
 }
 
-// serviceURLs(r) in internal/admin/admin.go: one absolute base URL per service
-// subdomain, derived per request. Present on the dashboard, project, release
-// and registries payloads.
+// serviceURLs(r) in internal/admin/admin.go: a single absolute base URL per
+// service subdomain, derived per request. Present on the dashboard, project,
+// release and registries payloads.
 export interface ServiceURLs {
     dl: string;
     apt: string;

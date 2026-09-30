@@ -61,7 +61,6 @@ func TestUploadArtifact_NonAPEAliasStillFansOut(t *testing.T) {
 	assert.Len(t, rows, 3)
 }
 
-// TestUploadArtifact_AliasRejectsWindowsOnStubPE covers the failure that is
 func TestUploadArtifact_AliasRejectsWindowsOnStubPE(t *testing.T) {
 	t.Serial()
 	h, proj, rel := setupUploadTest(t, "stubpealiasproj")

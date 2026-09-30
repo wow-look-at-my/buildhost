@@ -23,7 +23,6 @@ const defaultUpstream = ""
 
 // Config is resolved from the environment at registration time.
 type Config struct {
-	// PrivatePrefixes are module path prefixes fetched direct from GitHub with
 	PrivatePrefixes []string
 	// Upstream is the public module mirror. Empty disables passthrough, leaving
 	Upstream        string
@@ -103,7 +102,7 @@ func Current() *Service {
 
 // Routes register in init(), NOT inside the OnReady callback below. An OnReady
 // callback fires only from auth.Init (server startup), so routes registered
-// there are invisible to `buildhost routes`, to the route-diff CI check, and to
+// there are invisible to `buildhost routes`, to the route-diff CI check.
 func init() {
 	registerRoutes()
 	auth.OnReady(func() {

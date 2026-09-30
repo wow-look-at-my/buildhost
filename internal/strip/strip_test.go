@@ -58,7 +58,7 @@ func TestStrip_NonELFFile(t *testing.T) {
 		"Mach-O header":      {0xcf, 0xfa, 0xed, 0xfe, 0x0c, 0x00, 0x00, 0x01},
 		"shell script":       []byte("#!/bin/sh\necho hi\n"),
 		"shorter than magic": []byte("MZ"),
-		// The case that actually shipped broken: BFD ACCEPTS a PE32+, so
+		// The case that actually shipped broken: BFD ACCEPTS a PE32+.
 		"PE32+ (what an APE looks like to BFD)": buildPEFixture(t),
 	}
 

@@ -309,7 +309,6 @@ func (img *elfImage) writeDebug(src *os.File, dst *os.File) error {
 	})
 }
 
-// writeSectionTable appends the section header table at pos and patches the
 func (img *elfImage) writeSectionTable(dst *os.File, pos uint64, include func(*section) bool, patchHeader func([]byte), entry func(*section) (uint64, uint32)) error {
 	bo := img.bo
 	shoff := align(pos, 8)

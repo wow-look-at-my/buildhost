@@ -27,11 +27,8 @@ tests:
 		stdout:
 			- "levels-accepted"
 
-	# Out of range, including the off-by-one either side of the zstd maximum.
 	# "true" and "default" are what someone reaches for after the compression
-	# and force-compression inputs stopped existing. Leading zeros and signs
-	# are refused rather than guessed at: 022 could be decimal 22 or octal 18,
-	# and neither reading is worth publishing on.
+	# and force-compression inputs stopped existing.
 	- desc: anything that is not a canonical integer 0-22 is refused, with the reason
 	  cmd: |
 		set -eu

@@ -19,7 +19,7 @@ import (
 const siteName = "buildhost"
 
 var templateFuncs = template.FuncMap{
-	// nonEmpty reports whether s is a non-blank string, for {{if}} guards on
+	// nonEmpty reports whether s is a non-blank string.
 	"nonEmpty": func(s string) bool { return strings.TrimSpace(s) != "" },
 }
 
@@ -214,7 +214,7 @@ func buildInstallInfo(r *http.Request, project, version string, hasBinary bool) 
 	}
 	if hasBinary {
 		info.Curl = fmt.Sprintf("curl -LO %q", dlURL(r, project, "", "linux", "amd64", "raw"))
-		// The cloneable tap URL is the /tap.git smart-HTTP endpoint, never the
+		// The cloneable tap URL is the /tap.git smart-HTTP endpoint.
 		info.Brew = "brew tap pazer/build " + serviceBase(r, "brew") + "/tap.git" +
 			"\nbrew trust pazer/build" +
 			// A formula name cannot contain '/', so a slash-namespaced project
@@ -256,7 +256,7 @@ type artifactRow struct {
 	Downloads  []downloadLink
 	Docker     bool
 	DockerPull string
-	// FormatBadge is the executable format detected at upload ("APE"), "" when
+	// FormatBadge is the executable format detected at upload ("APE").
 	FormatBadge string
 }
 

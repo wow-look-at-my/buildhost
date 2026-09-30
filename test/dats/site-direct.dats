@@ -1,5 +1,5 @@
 # A tiny site fits under the server's advertised direct-upload limit, so the
-# publish composite must PUT it whole. Runs between the two site publishes, so
+# publish composite must PUT it whole. Runs between both site publishes, so
 # the only session in the log is still the artifact upload's.
 #
 # The workflow runs the composite and hands the server log here as $LOG.

@@ -3,18 +3,16 @@
 #
 # Every other OCI check stops short of this. The unit tests drive handlers
 # through httptest and never start a container. synthesized-image.dats runs the
-# buildhost BINARY on the host and pulls a synthesized image from it. This suite
-# is the only one where a real docker daemon talks to buildhost running as the
-# container it ships, over the wire, in both directions.
+# buildhost BINARY on the host and pulls a synthesized image from it.
 #
-# The two directions are different code paths and both are covered here:
+# Both directions are different code paths and both are covered here:
 #
-#   push  -- docker uploads blobs and PUTs a manifest, and buildhost records a
+#   push -- docker uploads blobs and PUTs a manifest, and buildhost records a
 #            kind=docker release. Pulling that back proves the bytes round-trip.
-#   pull  -- a release published through the REST API carries no image at all.
-#            buildhost SYNTHESIZES one per platform at pull time. That path is
-#            where a dropped platform, an unlinked layer blob or a binary the
-#            kernel cannot exec turns into a pull that fails at the client.
+#            pull -- a release published through the REST API carries no image
+#            at all. That path is where a dropped platform, an unlinked layer
+#            blob or a binary the kernel cannot exec turns into a pull that
+#            fails at the client.
 #
 # The payload for the synthesized side is the repo's own APE, so the pulled
 # image exercises the staged-ELF path and the shell in the base layer. Running
@@ -76,14 +74,13 @@ shared:
 			docker build -t "$REGISTRY/$PUSHED:v1" "$WORK/ctx"
 			docker push "$REGISTRY/$PUSHED:v1"
 
-			# PULL SIDE. No image is uploaded: buildhost synthesizes one from
-			# the published binary when a client asks for it.
+			# PULL SIDE.
 			auth -X POST "$BASE/api/v1/projects" -H 'Content-Type: application/json' \
 				-d "{\"name\":\"$SYNTH\",\"versioning\":\"auto\",\"is_private\":false}" >/dev/null
 			VERSION="$(auth -X POST "$BASE/api/v1/projects/$SYNTH/releases" \
 				-H 'Content-Type: application/json' -d '{"git_branch":"master"}' | jq -r .version)"
-			# Published once, covering several platforms, which is the shape the
-			# index bug appeared on: the canonical slot went missing from it.
+			# Published a single time, covering several platforms, which is the
+			# shape the index bug appeared on: the canonical slot went missing from it.
 			auth -X PUT --data-binary "@$BUILDHOST_BIN" -H "X-Artifact-Filename: $SYNTH" \
 				"$BASE/api/v1/projects/$SYNTH/releases/$VERSION/artifacts/ape?platforms=linux/amd64,linux/arm64,darwin/arm64" >/dev/null
 			auth -X POST "$BASE/api/v1/projects/$SYNTH/releases/$VERSION/publish" >/dev/null
@@ -116,9 +113,9 @@ tests:
 		stdout:
 			- "docker"
 
-	# The bytes have to survive the round trip. Removing the local image first
-	# is what makes the run below read from buildhost instead of the daemon's
-	# own cache, which is how a broken pull passes unnoticed.
+	# The bytes have to survive the round trip. Removing the local image
+	# earliest is what makes the run below read from buildhost instead of the
+	# daemon's own cache, which is how a broken pull passes unnoticed.
 	- desc: the pushed image pulls back out and runs
 	  cmd: |
 		set -eu
@@ -130,10 +127,8 @@ tests:
 		stdout:
 			- "MARKER-OK"
 
-	# The defect this suite was written for: the index served for an APE
-	# omitted linux/amd64, the artifact's own canonical platform and the only
-	# one anything can run. docker reported "no matching manifest for
-	# linux/amd64 in the manifest list entries" and the cause reached nobody.
+	# docker reported "no matching manifest for linux/amd64 in the manifest
+	# list entries" and the cause reached nobody.
 	- desc: the index carries every linux platform the APE covers
 	  cmd: |
 		set -eu

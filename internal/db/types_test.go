@@ -185,7 +185,7 @@ func TestNormalizeArch(t *testing.T) {
 	}
 
 	// No bare "wasi" alias: WASI snapshots are versioned (wasip1, wasip2 in
-	// the wings) and an unversioned alias would change meaning later. And
+	// the wings) and an unversioned alias would change meaning later.
 	for _, in := range []string{"", "any", "mips", "riscv64", "wasi", "wasm"} {
 		_, ok := NormalizeArch(in)
 		assert.False(t, ok, "expected %q to be unrecognized", in)

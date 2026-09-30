@@ -30,7 +30,7 @@ var RetryBaseDelay = time.Second
 
 // Uploader uploads files to a buildhost server's upload endpoints.
 type Uploader struct {
-	// Server is the apex server URL, hosting /api/v1/uploads and
+	// Server is the apex server URL.
 	Server string
 	// Token authenticates every request (Bearer).
 	Token string

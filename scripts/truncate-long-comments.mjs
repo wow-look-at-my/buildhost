@@ -1,13 +1,8 @@
 #!/usr/bin/env node
 // Truncates the Go doc comments go-toolchain's commentspan analyzer reports.
 //
-// commentspan warns when a comment group is bigger than the declaration under
-// it: more non-blank lines, or more non-whitespace characters than
-// max(120, code chars). One prose line of at most 120 non-whitespace characters
-// therefore clears both limits for any declaration at all, so that is what this
-// keeps. It truncates; it never rewords.
+// It truncates; it never rewords.
 //
-// Usage: node scripts/truncate-long-comments.mjs internal/foo/bar.go:74 ...
 // The argument is the file:line commentspan prints, which is where the comment
 // group starts.
 
@@ -19,8 +14,6 @@ const CHAR_BUDGET = 120;
 // carry no prose and are kept whole.
 const isDirective = (text) => /^\/\/(go|line|nolint|export|sys|cgo|extern):/.test(text.trim());
 
-// truncate cuts body down to CHAR_BUDGET counted the way commentspan counts:
-// whitespace is free, everything else costs one.
 function truncate(body) {
 	let kept = '';
 	let chars = 0;

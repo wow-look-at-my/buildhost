@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prints the buildx exporter's compression options for one optional level.
+# Prints the buildx exporter's compression options for a single optional level.
 #
 # Published layers are always zstd (see docs/formats/oci.md); the level is the
 # only adjustable part. buildx reads an unparseable level as no level at all and
@@ -11,9 +11,6 @@ level="${1-}"
 opts="compression=zstd,force-compression=true"
 
 if [ -n "${level}" ]; then
-	# Exactly 0-22 in canonical form. Spelling the range out beats an arithmetic
-	# comparison, which accepts "0x9", reads "007" as 7, and errors on a number
-	# too large for the shell rather than reporting it as the garbage it is.
 	case "${level}" in
 	[0-9] | 1[0-9] | 2[0-2]) ;;
 	*)

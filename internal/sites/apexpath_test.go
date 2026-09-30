@@ -145,7 +145,7 @@ func TestSplitProjectPath(t *testing.T) {
 		{"org/repo/inner/x", "org/repo/inner", "x"},
 		{"org/repo/x.css", "org/repo", "x.css"},
 		{"org/other/x.css", "org", "other/x.css"}, // no org/other project
-		// Nothing matches: the whole remainder stays the project name, so
+		// Nothing matches: the whole remainder stays the project name.
 		{"nope/x.html", "nope/x.html", ""},
 		{"nope", "nope", ""},
 	}

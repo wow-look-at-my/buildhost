@@ -22,7 +22,6 @@ var (
 	ErrOffsetMismatch = errors.New("offset mismatch")
 	// ErrBusy is returned when the session is being finalized.
 	ErrBusy = errors.New("upload session busy")
-	// ErrTooLarge is returned when an append would push the session past the
 	ErrTooLarge = errors.New("upload exceeds maximum size")
 )
 
@@ -214,7 +213,7 @@ func (s *Store) SweepExpired() {
 	}
 }
 
-// cappedReader reads from r up to a byte budget, flagging (and stopping at)
+// cappedReader reads from r up to a byte budget.
 type cappedReader struct {
 	r         io.Reader
 	remaining int64

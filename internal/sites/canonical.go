@@ -16,7 +16,7 @@ func (h *Handler) RedirectLegacyBranch(w http.ResponseWriter, r *http.Request) {
 	ctx, span := sitesTracer.Start(r.Context(), "sites.redirect_legacy_branch")
 	defer span.End()
 
-	// A cross-origin fetch is checked at EVERY hop, so a redirect without the
+	// A cross-origin fetch is checked at EVERY hop.
 	setSiteSecurityHeaders(w)
 
 	project := auth.ProjectFrom(ctx)

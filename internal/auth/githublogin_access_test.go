@@ -79,7 +79,7 @@ func TestCanAccessRepo_TransientFailureNotCached(t *testing.T) {
 
 // A user who re-signs-in with a fresh, broader-scoped token is not shadowed by a
 // negative result cached against their previous token: the cache key includes a
-// token fingerprint, so the new token is re-checked rather than inheriting the
+// token fingerprint.
 func TestCanAccessRepo_NewTokenNotShadowedByStaleNegative(t *testing.T) {
 	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -132,7 +132,7 @@ func TestRequireProject_Browser_GitHubEnabled_RedirectsToSignin(t *testing.T) {
 	assert.Contains(t, loc, url.QueryEscape("https://sites.pazer.build/secret/branch/pr-190/"))
 }
 
-// End-to-end through the middleware: a signed-in user WITH access to the
+// End-to-end through the middleware.
 func TestSessionCookie_RepoAccessGatesPrivateProject(t *testing.T) {
 	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -209,7 +209,7 @@ func TestRequireProject_Browser_SignedInButForbidden_HTMLPage(t *testing.T) {
 	assert.Empty(t, rec.Header().Get("Location"), "must not redirect a signed-in user (would loop)")
 	body := rec.Body.String()
 	assert.Contains(t, body, "Access denied")
-	assert.Contains(t, body, "bob")            // who you're signed in as
+	assert.Contains(t, body, "bob")
 	assert.Contains(t, body, "PazerOP/secret") // the repo you need
 	// Sign-out link points at the apex __signout with a next= back to the resource.
 	assert.Contains(t, body, signoutPath)

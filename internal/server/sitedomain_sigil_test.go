@@ -93,7 +93,7 @@ func TestSiteDomain_CommitRef(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "body{}", body)
 
-	// The abbreviated form, and no collapse even though this commit's site IS
+	// The abbreviated form.
 	resp, body = siteGet(t, env, host, "/@"+sha[:7]+"/")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "pinned", body)

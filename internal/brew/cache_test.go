@@ -188,7 +188,6 @@ func TestServeTap_LineageCachedAndAppendsOnChange(t *testing.T) {
 		assert.NoError(t, err, f)
 	}
 
-	// A loose object is served from the lineage via the mmap path with the
 	commitSHA := strings.Fields(body1)[0]
 	require.Equal(t, commitSHA, readTapTip(linDir))
 	recObj := getTap(t, h, "git.example.com", "objects/"+commitSHA[:2]+"/"+commitSHA[2:])
@@ -287,7 +286,7 @@ func TestServeTap_SnapshotKeyedByHost(t *testing.T) {
 	recBeta := getTap(t, h, "git.beta.test", "info/refs")
 	require.Equal(t, http.StatusOK, recBeta.Code)
 
-	// Different hosts bake different download URLs into the formulas, so the
+	// Different hosts bake different download URLs into the formulas.
 	assert.NotEqual(t, recAlpha.Body.String(), recBeta.Body.String())
 
 	// Each host gets its own persisted lineage; the served tip matches beta's

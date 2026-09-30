@@ -27,7 +27,7 @@ if [ ! -d node_modules ]; then
     npm ci --silent
 fi
 
-# `npm run build` type-checks first (tsc --noEmit), then bundles with esbuild.
+# `npm run build` type-checks earliest (tsc --noEmit), then bundles with esbuild.
 npm run build --silent
 
 for f in ../static/app.js ../static/copy.js; do

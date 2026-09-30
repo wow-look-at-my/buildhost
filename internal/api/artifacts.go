@@ -74,7 +74,7 @@ var (
 // expandOSSpec parses the {os} path segment of an artifact upload: a single
 // OS name (any spelling db.NormalizeOS accepts), a comma-separated list of
 // them, or an expand-everywhere alias (cosmo/any/all/universal). It rejects
-// unknown names, empty elements, and duplicates (after normalization, so
+// unknown names, empty elements, and duplicates (after normalization.
 func expandOSSpec(spec string) ([]db.OS, error) {
 	switch strings.ToLower(strings.TrimSpace(spec)) {
 	case "cosmo", "any", "all", "universal":
@@ -240,7 +240,7 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Single combination keeps the exact pre-fan-out code path and response; a
+	// Single combination keeps the exact pre-fan-out code path and response.
 	var err error
 	if len(artifacts) == 1 {
 		err = h.DB.CreateArtifact(ctx, artifacts[0])
@@ -286,7 +286,7 @@ type storedUpload struct {
 	size       int64
 	// format is what the leading bytes say the file is. "" means unrecognized,
 	format exeformat.Format
-	// ntBoot says whether an APE's PE header can boot it on Windows, so a
+	// ntBoot says whether an APE's PE header can boot it on Windows.
 	ntBoot exeformat.NTBoot
 }
 

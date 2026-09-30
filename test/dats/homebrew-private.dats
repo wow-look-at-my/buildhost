@@ -1,7 +1,5 @@
 # The DOCUMENTED private Homebrew flow, executed verbatim, and what the
-# authenticated tap must then hold. Split from the public suite because the
-# docs say the authenticated tap REPLACES the public one, so the workflow
-# untaps between the two.
+# authenticated tap must then hold.
 #
 # The brew commands come from README.md through scripts/brew-doc-flows.sh; the
 # public suite is where the docs themselves are checked for agreement.
@@ -47,10 +45,9 @@ tests:
 		stdout:
 			- "refetch-ok"
 
-	# One syntactically broken formula -- `class 7zip < Formula` from a
+	# A single syntactically broken formula -- `class 7zip < Formula` from a
 	# digit-leading project name -- surfaces to users as an ".rb: syntax error"
-	# and can break evaluation of the whole tap. The tap here is the superset
-	# one, so this covers every formula the server can serve.
+	# and can break evaluation of the whole tap.
 	- desc: every formula in the authenticated tap is valid Ruby
 	  cmd: |
 		set -eu

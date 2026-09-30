@@ -401,7 +401,7 @@ func TestChunkedSiteDeploy(t *testing.T) {
 		resp.Body.Close()
 	}
 
-	// Finalize on the sites subdomain endpoint; Content-Type still selects the
+	// Finalize on the sites subdomain endpoint.
 	resp = env.doSubdomainRequest(t, "PUT", "sites", "/sitey/branch/main?upload_session="+sess.ID,
 		"application/gzip", nil, true)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)

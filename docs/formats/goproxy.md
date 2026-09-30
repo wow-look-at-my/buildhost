@@ -82,6 +82,16 @@ Everything outside the org is then fetched straight from its origin, exactly as 
 
 An operator who does want a mirror sets `BUILDHOST_GOPROXY_UPSTREAM` explicitly, and can point it at a self-hosted one.
 
+## Checksum database mirror
+
+`/sumdb/sum.golang.org/...` forwards `lookup/`, `tile/` and `latest` to `https://sum.golang.org`, and answers `supported` with 200. A job whose egress reaches only this proxy can then still verify public modules:
+
+```
+GOSUMDB="sum.golang.org+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ey18htn1gj0VGAOQ https://goproxy.pazer.build/sumdb/sum.golang.org"
+```
+
+The checksum database holds public modules only. The go command skips it for every module in `GONOSUMDB`, so no private module path is forwarded. Any other database name is a 404.
+
 ## Auth
 
 Two different credentials meet here, and confusing them is what produced the bug this package was written for. The PROXY's credential (a GitHub App installation token, else the static PAT, resolved per repo by `auth.BearerForRepo`) decides what the proxy can fetch. The CALLER's credential decides what they may see.

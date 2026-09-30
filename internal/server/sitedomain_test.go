@@ -178,14 +178,14 @@ func TestSiteDomain_DispatchAndServe(t *testing.T) {
 	resp, body := siteGet(t, env, "myapp."+siteTestDomain, "/")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "root-master", body)
-	// Site security headers apply on the subdomain scheme: the global CSP is
+	// Site security headers apply on the subdomain scheme.
 	assert.Empty(t, resp.Header.Get("Content-Security-Policy"))
 
 	resp, body = siteGet(t, env, "myapp."+siteTestDomain, "/docs/page.html")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "docs-page", body)
 
-	// A project named like a service label is a PROJECT on the site domain: the
+	// A project named like a service label is a PROJECT on the site domain.
 	env.createProject(t, "dl", false)
 	env.uploadBranchSite(t, "dl", "master", false, map[string]string{"index.html": "dl-site"})
 	resp, body = siteGet(t, env, "dl."+siteTestDomain, "/")
@@ -244,7 +244,7 @@ func TestSiteDomain_Visibility(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "top-secret", string(b))
 
-	// Gate and serve agree on the resolved default branch: default_branch is the
+	// Gate and serve agree on the resolved default branch.
 	env.createProject(t, "agreep", true)
 	env.uploadBranchSite(t, "agreep", "main", true, map[string]string{"index.html": "main-content"})
 	resp, body = siteGet(t, env, "agreep."+siteTestDomain, "/")

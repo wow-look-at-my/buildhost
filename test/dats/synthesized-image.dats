@@ -1,7 +1,7 @@
 # An image buildhost SYNTHESIZES from a plain binary must be a valid, pullable
 # container image whose baked-in CA bundle works for real outbound HTTPS.
 #
-# Two clients, on purpose. crane (go-containerregistry) is daemon-free, so this
+# Clients, on purpose. crane (go-containerregistry) is daemon-free, so this
 # runs the same way locally and on a runner. Docker is exercised as well,
 # because "pullable" is a claim about the client people actually use, and
 # buildhost's layers are zstd -- which Docker reads only through the containerd
@@ -27,8 +27,7 @@ shared:
 			# An APE cannot be exec'd: its header is a shell script, and
 			# nothing here registers an APE binfmt handler.
 			if head -c 2 "$BUILDHOST_BIN" | grep -q MZ; then RUN="sh $BUILDHOST_BIN"; else RUN="$BUILDHOST_BIN"; fi
-			# DBPath is independent of DataDir. The admin server is off so this
-			# takes one port, not two.
+			# DBPath is independent of DataDir.
 			BUILDHOST_DATA_DIR="$WORK/data"; export BUILDHOST_DATA_DIR
 			BUILDHOST_DB_PATH="$WORK/data/buildhost.db"; export BUILDHOST_DB_PATH
 			BUILDHOST_LISTEN_ADDR=":$PORT"; export BUILDHOST_LISTEN_ADDR
@@ -40,8 +39,6 @@ shared:
 			setsid $RUN serve > "$WORK/server.log" 2>&1 &
 			echo "$!" > "$WORK/server.pid"
 			started=""
-			# A hook gets 30s in total, so a one-second poll spends the whole
-			# budget waiting and reports a timeout instead of the server log.
 			for _ in $(seq 50); do
 				if curl -fsS "$BASE/healthz" >/dev/null 2>&1; then started=yes; break; fi
 				sleep 0.2

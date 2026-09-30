@@ -3,9 +3,7 @@
 #
 # The brew commands are not written here: scripts/brew-doc-flows.sh extracts
 # them from README.md and substitutes only the host, and this suite asserts the
-# served /llms.txt agrees with them. A change that "fixes CI" without fixing
-# the docs goes red instead of silently diverging -- the repo lived through
-# that once, when Homebrew 6.0 broke the flow and the fix landed in CI only.
+# served /llms.txt agrees with them.
 #
 # The workflow starts the server and publishes the artifacts; $BUILDHOST_TOKEN,
 # $BUILDHOST_BASE_URL and $BREW_HOST come from it.
@@ -26,16 +24,16 @@ shared:
 			cat "$WORK/public.sh"
 			TOKEN="$BUILDHOST_TOKEN" bash -euo pipefail "$WORK/public.sh"
 			# The APE-shaped fixture installs here rather than in a test: dats
-			# runs tests concurrently, and two brew installs at once contend
-			# for the same prefix.
+			# runs tests concurrently, and brew installs at the same time
+			# contend for the same prefix.
 			brew install pazer/build/ape-fixture
 			echo "REPO='$REPO'" > "$ENV_FILE"
 
 setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
 
 tests:
-	# One flow, two documents, zero drift: the blocks the server serves in
-	# /llms.txt must be the blocks README.md documents.
+	# A single flow, documents, empty drift: the blocks the server serves
+	# in /llms.txt must be the blocks README.md documents.
 	- desc: llms.txt documents the same brew flows as README.md
 	  cmd: |
 		set -eu
@@ -80,11 +78,9 @@ tests:
 		stdout:
 			- "flow-shape-ok"
 
-	# Homebrew's Cleaner chmods anything it does not recognize as a
-	# shebang/ELF/Mach-O to 0444, and an APE rewrites itself in place on first
-	# run, so it dies with "Permission denied" at 0555. The generated formula
-	# opts out with skip_clean "bin"; this is what turns a regression in that
-	# codegen red instead of shipping a binary users cannot run.
+	# The generated formula opts out with skip_clean "bin"; this is what turns
+	# a regression in that codegen red instead of shipping a binary users
+	# cannot run.
 	- desc: the installed binary keeps both the execute and the write bit
 	  cmd: |
 		set -euo pipefail
@@ -109,8 +105,7 @@ tests:
 
 	# The same guarantees against the APE-SHAPED fixture, so the invariant
 	# holds on macOS too (where go-toolchain's own artifact is a Mach-O brew
-	# recognizes) and for anyone shipping a Cosmopolitan binary. The fixture
-	# fails loudly at 0555 and cannot be executed at all at 0444.
+	# recognizes) and for anyone shipping a Cosmopolitan binary.
 	- desc: an APE-shaped formula installs, keeps its mode, and runs
 	  cmd: |
 		set -euo pipefail

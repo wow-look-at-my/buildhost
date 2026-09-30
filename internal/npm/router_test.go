@@ -308,7 +308,7 @@ func TestRouter_StaticNPMWrapper(t *testing.T) {
 }
 
 // TestRouter_ScopeEncoding covers how npm addresses a scoped package: it
-// URL-encodes the scope slash, so the real-world request is
+// URL-encodes the scope slash.
 func TestRouter_ScopeEncoding(t *testing.T) {
 	t.Serial()
 	d, _ := routerEnv(t)

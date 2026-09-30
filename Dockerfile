@@ -1,11 +1,11 @@
 FROM busybox:musl AS dirs
 RUN mkdir -p /data && chown 65532:65532 /data
 # The APE trampoline is a shell script, and it shells out -- cksum, tr, mkdir,
-# cp so far. Installing every applet name against the one static busybox costs
-# a directory of symlinks and stops the next command it needs from being
-# another failed container start.
-# The links are relative, because this directory lands somewhere else in the
-# final image and an absolute link would point at a path that is not there.
+# cp so far. Installing every applet name against the single static busybox
+# costs a directory of symlinks and stops the next command it needs from being
+# another failed container start. The links are relative, because this
+# directory lands somewhere else in the final image and an absolute link would
+# point at a path that is not there.
 RUN mkdir -p /shell && cp /bin/busybox /shell/busybox \
     && for a in $(/shell/busybox --list); do ln -sf busybox "/shell/$a"; done
 RUN mkdir -p /tmpdir && chmod 1777 /tmpdir
@@ -50,8 +50,7 @@ VOLUME /var/lib/buildhost
 
 # Metadata only -- this publishes nothing on the host. It is what lets
 # docker-updater find the port serving /.well-known/docker-updater/ without a
-# per-deployment label. Exactly one port may be declared here or discovery has
-# to be told which one; the admin port is deliberately left undeclared.
+# per-deployment label.
 EXPOSE 8080
 
 STOPSIGNAL SIGTERM

@@ -34,7 +34,7 @@ type uploadSession struct {
 	lastActive time.Time // guarded by mu; sweep goes by activity, not creation
 }
 
-// uploadStore tracks in-progress blob uploads. Sessions live in memory plus a
+// uploadStore tracks in-progress blob uploads.
 type uploadStore struct {
 	mu       sync.Mutex
 	dir      string

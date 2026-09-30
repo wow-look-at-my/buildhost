@@ -37,7 +37,7 @@ func TestRootRedirectRouteShadowing(t *testing.T) {
 		{"/ue553", "root", "ue553"},
 		{"/ue553/", "root", "ue553"},
 		{"/org/repo", "root", "org/repo"}, // namespaced project root
-		// A file under the project root: the whole remainder arrives as
+		// A file under the project root.
 		{"/ue553/runner.html", "root", "ue553/runner.html"},
 		{"/ue553/assets/app.js", "root", "ue553/assets/app.js"},
 		{"/ue553/branches", "list", "ue553"},
@@ -96,7 +96,7 @@ func TestSigilDefaultBranchCollapsesToBareURL(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "preview", rec.Body.String())
 
-	// Neither does the legacy /branch/ spelling redirect: it is the
+	// Neither does the legacy /branch/ spelling redirect.
 	req = httptest.NewRequest("GET", "http://sites.example.com/ue553/branch/main/a/x.css", nil)
 	req = withRoute(req, proj, route{project: "ue553", branch: "main", path: "a/x.css"})
 	rec = httptest.NewRecorder()

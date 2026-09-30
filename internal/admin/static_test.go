@@ -59,7 +59,6 @@ func TestAdminStaticInlineHandlersAreExported(t *testing.T) {
 	require.Emptyf(t, dead, `inline onclick="App.x(...)" handlers with no matching export (dead buttons): %v`, dead)
 }
 
-// The Homebrew snippet must clone the /tap.git endpoint (a bare host 404s) and
 func TestAdminStaticHomebrewInstructionsUseTap(t *testing.T) {
 	t.Serial()
 	body := readBundle(t)
@@ -132,7 +131,7 @@ func TestAdminStaticSiteLinksUseRefSigil(t *testing.T) {
 }
 
 // A project's release page must hand the reader a runnable install command.
-// It used to link the formula FILE at /Formula/{project}.rb, built from the
+// It used to link the formula FILE at /Formula/{project}.rb.
 func TestAdminStaticReleasePageShowsBrewInstallCommand(t *testing.T) {
 	t.Serial()
 	body := readBundle(t)
@@ -152,7 +151,7 @@ func TestAdminStaticReleasePageShowsInstallCommands(t *testing.T) {
 	require.Contains(t, body, "npm install ")
 	require.Contains(t, body, "docker pull ")
 	require.Contains(t, body, "/install.sh | sudo sh")
-	// The npm packument and the OCI manifest are machine plumbing. The
+	// The npm packument and the OCI manifest are machine plumbing.
 	require.NotContains(t, body, `"/@buildhost/" + `)
 	require.NotContains(t, body, `"/v2/" + `)
 }

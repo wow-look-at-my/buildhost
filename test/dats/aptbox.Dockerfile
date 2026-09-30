@@ -1,11 +1,10 @@
-# syntax=docker/dockerfile:1
 
 # The apt client for test/dats/apt-install.dats.
 #
 # The suite used to install onto the runner itself, which made it depend on
 # whatever apt state that host carried and left cleanup to a teardown. A
-# container fixes both: exactly one extra source, an apt state baked at build
-# time, and nothing to undo afterwards.
+# container fixes both: exactly a single extra source, an apt state baked at
+# build time, and nothing to undo afterwards.
 #
 # Building it is the workflow's job, in its own untimed step, so the suite's
 # setup hook never pays for a base-image pull or these installs.
@@ -21,6 +20,6 @@ RUN apt-get update \
 		gnupg \
 		systemd
 
-# One test asserts the APE launcher works for a user who cannot write /usr/bin,
-# which is the case that was broken. Root cannot exercise it.
+# A single test asserts the APE launcher works for a user who cannot write
+# /usr/bin, which is the case that was broken. Root cannot exercise it.
 RUN useradd --create-home --no-log-init --uid 1001 aptuser

@@ -1,9 +1,7 @@
 // Behavior tests for .github/actions/lib/upload.ts.
 //
-// Its own job because nothing else reaches the code: the 413 it exists to
-// prevent only appears against a body over 100 MB through Cloudflare, which no
-// CI job sends. A mistake here fails publishing for every repo in the org that
-// ships a binary larger than the advertised direct limit.
+// A mistake here fails publishing for every repo in the org that ships a
+// binary larger than the advertised direct limit.
 //
 // The server here speaks the real session protocol from docs/uploads.md, so the
 // assertions are about what buildhost actually receives.
@@ -23,7 +21,7 @@ const { putFile, directLimit, DefaultDirectLimit } = require(`${lib}.ts`);
 type Req = { method: string; url: string; headers: Record<string, string>; body: Buffer };
 
 interface ServerOptions {
-	/** Advertised max_direct_upload_bytes; 0 makes server-info answer 404. */
+	/* */
 	maxDirect: number;
 	/** Bytes to drop from the Nth PATCH (1-based), simulating a cut transfer. */
 	truncateChunk?: { nth: number; keep: number };
@@ -114,8 +112,6 @@ async function start(opts: ServerOptions): Promise<Harness> {
 const warnings: string[] = [];
 const core = { info: () => {}, warning: (m: string) => warnings.push(m) };
 
-// A fixture on disk, read back through the same fd-per-chunk Body the publish
-// composite builds, so the test exercises that shape rather than a fake one.
 function writeFixture(name: string, size: number) {
 	const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'upload-test-'));
 	const bytes = crypto.randomBytes(size);

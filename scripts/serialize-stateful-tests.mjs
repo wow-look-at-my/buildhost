@@ -1,5 +1,5 @@
-// Inserts t.Serial() as the first statement of every top-level Test function in
-// the packages named on the command line.
+// Inserts t.Serial() as the earliest statement of every top-level Test function
+// in the packages named on the command line.
 //
 // The gosmopolitan fork runs tests in parallel by default; these packages boot a
 // server per test, and that rewires process-wide state (auth.Init and the

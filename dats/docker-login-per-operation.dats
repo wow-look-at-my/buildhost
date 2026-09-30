@@ -1,7 +1,5 @@
-# A docker credential here is a GitHub OIDC token, and it lives minutes. One
-# large pull outlasts it, so a step that logs in once and then loops answers the
-# second reference with a 401 on the manifest HEAD. The login belongs inside the
-# loop, immediately before each docker operation.
+# A docker credential here is a GitHub OIDC token, and it lives minutes. The
+# login belongs inside the loop, immediately before each docker operation.
 
 tests:
 	- desc: a loop that pulls or pushes logs in inside the loop

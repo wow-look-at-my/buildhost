@@ -1,7 +1,6 @@
-// The typescript action refuses to run any INLINE `script:` carrying two or
-// more consecutive comment-only `//` lines, with no opt-out. Most of these
-// actions only execute on some triggers, so without this a violation ships and
-// surfaces as a broken publish in whichever consumer repo runs it next.
+// Most of these actions only execute on some triggers, so without this a
+// violation ships and surfaces as a broken publish in whichever consumer repo
+// runs it next.
 //
 // Scans the same thing the action does, and only that: a shell `run:` block and
 // a checked-in `file:` script are both exempt.
@@ -14,7 +13,7 @@ type Run = { file: string; start: number; end: number };
 function stackedRuns(file: string): Run[] {
 	const lines = fs.readFileSync(file, "utf8").split("\n");
 	const runs: Run[] = [];
-	let scriptIndent = -1; // indentation of the `script: |` key, -1 when outside one
+	let scriptIndent = -1;
 	let start = -1;
 
 	const flush = (end: number): void => {

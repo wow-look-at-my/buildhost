@@ -52,8 +52,8 @@ runs:
               const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
               const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
               if (url && bearer) {
-                const r = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
-                token = ((await r.json()) as { value: string }).value || '';
+                const { mintOidcToken } = require("${{ github.action_path }}/../lib/oidc.ts") as typeof import("${{ github.action_path }}/../lib/oidc");
+                token = await mintOidcToken({ url, bearer, audience: server, warning: core.warning });
               }
             }
             const projectId: string = "${{ inputs.project_id }}";

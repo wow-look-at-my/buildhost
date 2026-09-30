@@ -146,7 +146,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	if storeErr != nil {
 		span.RecordError(storeErr)
 		span.SetStatus(codes.Error, "store failed")
-		// Logged as well as traced: the client gets a generic message, so
+		// Logged as well as traced: the client gets a generic message.
 		slog.Error("sites: store site", "project", project.Name, "branch", rt.branch, "err", storeErr)
 		http.Error(w, `{"error":"failed to store site"}`, http.StatusInternalServerError)
 		return
@@ -158,7 +158,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	)
 
 	gitCommit := r.Header.Get("X-Git-Commit")
-	// Opt-in: a site published with X-Public-Site: true is served without a
+	// Opt-in: a site published with X-Public-Site.
 	isPublic := r.Header.Get("X-Public-Site") == "true"
 
 	site := &db.Site{
@@ -182,7 +182,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete the replaced site's blob only if no other row (another branch, an
+	// Delete the replaced site's blob only if no other row (another branch.
 	if oldKey != "" && oldKey != storageKey {
 		_, _ = retention.DeleteBlobIfUnreferenced(ctx, h.DB, h.Store, oldKey, true)
 	}
@@ -244,7 +244,7 @@ func (h *Handler) storeTar(ctx context.Context, writeTar func(io.Writer) (int, e
 		MaxEntries:   maxFileCount,
 		MaxTotalSize: maxSiteDecompressedSize,
 	})
-	// Unblocks the producer if the archive writer stopped early, so the
+	// Unblocks the producer if the archive writer stopped early.
 	pr.CloseWithError(aerr)
 	res := <-rc
 	if res.err != nil {
@@ -265,7 +265,7 @@ func (h *Handler) storeTar(ctx context.Context, writeTar func(io.Writer) (int, e
 }
 
 // putUncompressed stores a blob without the storage layer's whole-blob zstd
-// wrapper, so its index can be followed with seeks. A backend without the
+// wrapper, so its index can be followed with seeks.
 func putUncompressed(ctx context.Context, s storage.Storage, r io.Reader) (string, int64, error) {
 	if up, ok := s.(storage.UncompressedPutter); ok {
 		return up.PutUncompressed(ctx, r)
@@ -273,7 +273,7 @@ func putUncompressed(ctx context.Context, s storage.Storage, r io.Reader) (strin
 	return s.Put(ctx, r)
 }
 
-// cappedWriter forwards writes to w until more than max bytes have been written, then
+// cappedWriter forwards writes to w until more than max bytes have been written.
 type cappedWriter struct {
 	w   io.Writer
 	n   int64

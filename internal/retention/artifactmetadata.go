@@ -17,7 +17,7 @@ var metadataHTTPClient = &http.Client{Timeout: 20 * time.Second}
 
 // RecordDeleter marks an org's artifact-metadata storage records deleted.
 type RecordDeleter interface {
-	// MarkDeleted reports the artifact with digest sha256Hex, published as
+	// MarkDeleted reports the artifact with digest sha256Hex.
 	MarkDeleted(ctx context.Context, githubRepo, project, version, sha256Hex string) error
 }
 
@@ -50,8 +50,7 @@ func (g *GitHubRecordDeleter) MarkDeleted(ctx context.Context, githubRepo, proje
 	}
 
 	// Same endpoint the publish records through: a record is identified by
-	// (name, digest, registry_url), so re-posting that triple with a new status
-	// updates it. github_repository is the repo NAME only -- its pattern is
+	// (name, digest, registry_url).
 	body, err := json.Marshal(map[string]any{
 		"name":              project,
 		"version":           version,
