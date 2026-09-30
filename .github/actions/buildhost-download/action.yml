@@ -97,11 +97,11 @@ runs:
             const destination: string =
               pathInput || path.join(env.RUNNER_TEMP!, project.split("/").pop()!);
 
-            // retries a registry blip up to 3 times; an artifact that is genuinely absent must be reported, not waited on forever
+            // retries a registry blip up to 3 times; the timeout turns a stalled transfer into a failed attempt, so the retry can run
             let lastError = "";
             for (let attempt = 1; attempt <= 3; attempt++) {
               try {
-                const response = await fetch(url, { headers, redirect: "follow" });
+                const response = await fetch(url, { headers, redirect: "follow", signal: AbortSignal.timeout(300_000) });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 fs.mkdirSync(path.dirname(destination), { recursive: true });
                 fs.writeFileSync(destination, Buffer.from(await response.arrayBuffer()));
