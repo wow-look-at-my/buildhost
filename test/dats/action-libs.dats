@@ -32,3 +32,9 @@ tests:
 	  outputs:
 		stdout:
 			- "upload: all checks passed"
+
+	- desc: download aborts a transfer that goes silent, and finishes a slow one that keeps sending
+	  cmd: node test/actions/download-stall.test.ts
+	  outputs:
+		stdout:
+			- "download: all checks passed"
