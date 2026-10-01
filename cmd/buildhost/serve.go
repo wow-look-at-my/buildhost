@@ -19,6 +19,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
 	"github.com/wow-look-at-my/buildhost/internal/server"
+	"github.com/wow-look-at-my/buildhost/internal/sites"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/buildhost/internal/telemetry"
 	"github.com/wow-look-at-my/buildhost/internal/uploads"
@@ -81,6 +82,10 @@ var serveCmd = &cobra.Command{
 			return fmt.Errorf("init storage: %w", err)
 		}
 		store := storage.NewTraced(fsStore)
+
+		if err := sites.ConvertTarSites(context.Background(), database, store, cfg.DataDir+"/tmp"); err != nil {
+			slog.Error("sites: tar conversion incomplete", "err", err)
+		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer stop()
