@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -44,8 +45,6 @@ func (s *Server) apiUpdateRetention(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "keep_n and recency_hours are required", http.StatusBadRequest)
 		return
 	}
-	// keep_n=0 still keeps each branch's tip (enforced in the query). Bounds keep
-	// a fat-fingered value from being absurd; recency caps at 10 years.
 	if *body.KeepN < 0 || *body.KeepN > 100000 || *body.RecencyHours < 0 || *body.RecencyHours > 87600 {
 		http.Error(w, "keep_n must be 0..100000 and recency_hours 0..87600", http.StatusBadRequest)
 		return
@@ -67,6 +66,25 @@ func (s *Server) apiUpdateRetention(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, s.retentionResponse(settings, preview))
 }
 
+// apiRetentionInventory (GET /api/retention/inventory) returns every stored
+// file with the reason retention keeps it. It is the debug view behind the
+// reclaimable number: a total says how little comes back, this says what holds
+// the rest. It reads only, like the preview.
+func (s *Server) apiRetentionInventory(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	settings, err := s.db.GetRetentionSettings(ctx)
+	if err != nil {
+		s.retentionError(w, r, err)
+		return
+	}
+	inv, err := retention.New(s.db, s.store, retention.ConfigFromSettings(settings, false)).Inventory(ctx)
+	if err != nil {
+		s.retentionError(w, r, err)
+		return
+	}
+	s.writeJSON(w, inv)
+}
+
 // apiRunRetention (POST /api/retention/run) runs GC now. Body {enforce: bool};
 // report-only unless enforce is true.
 func (s *Server) apiRunRetention(w http.ResponseWriter, r *http.Request) {
@@ -75,6 +93,15 @@ func (s *Server) apiRunRetention(w http.ResponseWriter, r *http.Request) {
 		Enforce bool `json:"enforce"`
 	}
 	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRetentionBody)).Decode(&body)
+
+	// Same guard as the background sweeper: an enforcing run while writes are
+	// in flight could free a blob whose newest reference (e.g. a
+	if body.Enforce {
+		if n := InflightWrites(); n > 0 {
+			http.Error(w, fmt.Sprintf("%d write(s) in flight; retry when idle", n), http.StatusConflict)
+			return
+		}
+	}
 
 	settings, err := s.db.GetRetentionSettings(ctx)
 	if err != nil {

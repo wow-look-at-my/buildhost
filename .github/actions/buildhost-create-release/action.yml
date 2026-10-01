@@ -29,6 +29,35 @@ inputs:
     description: 'Release notes'
     required: false
     default: ''
+  create_service:
+    description: >-
+      Declare that the project's installed binary runs as a background
+      service ('true' or 'false'); each download format materializes it its
+      own way (brew formulas gain a `service do` block, on-the-fly debs ship
+      a systemd user unit). Empty (the default) sends nothing, leaving the
+      stored project setting untouched -- byte-identical request to before
+      this input existed.
+    required: false
+    default: ''
+  default_branch:
+    description: >-
+      The repo's default branch (e.g. 'main'). When set, the apex "latest"
+      tracks this branch for the project -- a manual override for publishers
+      whose default branch the server cannot learn itself (private repos it
+      cannot reach, non-GitHub publishers). Empty (the default) sends
+      nothing, leaving the stored project setting untouched -- byte-identical
+      request to before this input existed.
+    required: false
+    default: ''
+  apt_depends:
+    description: >-
+      The project's runtime prerequisites in Debian relationship syntax (e.g.
+      'bubblewrap | docker.io'). The generated deb and the APT Packages entry
+      carry it as a Depends field. The server refuses an invalid value, and
+      the step fails. Empty (the default) sends nothing and leaves the stored
+      value untouched. Clear it with PATCH /api/v1/projects/{project}.
+    required: false
+    default: ''
 
 outputs:
   response:
@@ -43,6 +72,9 @@ runs:
   steps:
     - id: create
       uses: wow-look-at-my/actions@typescript#latest
+      env:
+        # An env var carries the value, so no character in it can break the script.
+        BUILDHOST_APT_DEPENDS: ${{ inputs.apt_depends }}
       with:
         script: |
           await (async () => {
@@ -63,12 +95,25 @@ runs:
             const gitBranch: string = gitBranchInput || github.ref_name;
             const gitCommit: string = gitCommitInput || github.sha;
 
-            const body: Record<string, string> = { git_branch: gitBranch, git_commit: gitCommit, notes: "${{ inputs.notes }}" };
+            const body: Record<string, string | boolean> = { git_branch: gitBranch, git_commit: gitCommit, notes: "${{ inputs.notes }}" };
             if (version) body['version'] = version;
+            const brewService: string = "${{ inputs.create_service }}";
+            if (brewService === 'true' || brewService === 'false') {
+              body['create_service'] = brewService === 'true';
+            } else if (brewService !== '') {
+              core.setFailed(`create_service must be 'true', 'false', or empty; got '${brewService}'`);
+              return;
+            }
+            const defaultBranch: string = "${{ inputs.default_branch }}";
+            // sends default_branch only when set, leaving the stored setting untouched otherwise
+            if (defaultBranch) body['default_branch'] = defaultBranch;
+            const aptDepends: string = process.env.BUILDHOST_APT_DEPENDS ?? '';
+            if (aptDepends) body['apt_depends'] = aptDepends;
 
             const resp = await fetch(`${server}/api/v1/projects/${project}/releases`, {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              // an older server ignores this field if it predates default_branch
               body: JSON.stringify(body),
             });
             const text = await resp.text();

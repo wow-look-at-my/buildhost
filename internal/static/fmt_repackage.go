@@ -52,7 +52,6 @@ func (f *repackageFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeCo
 		return err
 	}
 	// The repackager reads the input lazily, so the input must stay open until the
-	// output is fully read. Closing out.Reader closes the pipe and then the input.
 	out.Reader = repackage.ChainClose(out.Reader, reader)
 	defer out.Reader.Close()
 
@@ -65,7 +64,6 @@ func (f *repackageFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeCo
 	}
 	if _, err := io.Copy(w, out.Reader); err != nil {
 		// The (partial) body is already on the wire under chunked encoding; we can't turn
-		// this into a clean HTTP error. Log and drop -- the truncated stream signals it.
 		slog.Error("stream repackaged artifact", "format", f.format, "err", err)
 	}
 	return nil

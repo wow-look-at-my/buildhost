@@ -17,6 +17,7 @@ import (
 // it on the project -- buildhost learns "v1" from the repo identity in the token,
 // with nothing sent in the request. This is the go-toolchain fix.
 func TestRequireProject_OIDCSyncsDefaultBranch(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	withStubGitHub(t, "", func(w http.ResponseWriter, r *http.Request) {
@@ -43,7 +44,7 @@ func TestRequireProject_OIDCSyncsDefaultBranch(t *testing.T) {
 	tok := &db.APIToken{ID: -1, Scopes: "read,write"}
 	ctx := WithToken(context.Background(), tok)
 	ctx = WithOIDCProject(ctx, "go-toolchain")
-	ctx = WithOIDCRepo(ctx, "wow-look-at-my/go-toolchain", GitHubActionsIssuer)
+	ctx = WithOIDCRepo(ctx, OIDCRepoIdentity{RepoPath: "wow-look-at-my/go-toolchain", Issuer: GitHubActionsIssuer})
 	req := httptest.NewRequest("PUT", "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -60,6 +61,7 @@ func TestRequireProject_OIDCSyncsDefaultBranch(t *testing.T) {
 // A non-GitHub OIDC issuer must not trigger a github.com lookup -- the registry
 // stays provider-agnostic.
 func TestRequireProject_NonGitHubIssuer_NoDefaultBranchSync(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	var hits atomic.Int32
@@ -80,7 +82,7 @@ func TestRequireProject_NonGitHubIssuer_NoDefaultBranchSync(t *testing.T) {
 	tok := &db.APIToken{ID: -1, Scopes: "read,write"}
 	ctx := WithToken(context.Background(), tok)
 	ctx = WithOIDCProject(ctx, "gitlab-proj")
-	ctx = WithOIDCRepo(ctx, "group/proj", "https://gitlab.example.com")
+	ctx = WithOIDCRepo(ctx, OIDCRepoIdentity{RepoPath: "group/proj", Issuer: "https://gitlab.example.com"})
 	req := httptest.NewRequest("PUT", "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

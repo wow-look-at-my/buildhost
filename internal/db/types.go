@@ -1,8 +1,11 @@
 package db
 
 import (
+	"fmt"
 	"strings"
 	"time"
+
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 type Versioning string
@@ -19,6 +22,8 @@ const (
 	OSDarwin  OS = "darwin"
 	OSWindows OS = "windows"
 	OSFreeBSD OS = "freebsd"
+	// OSWasm is the platform identifier for WebAssembly artifacts. The Arch
+	OSWasm OS = "wasm"
 )
 
 type Arch string
@@ -28,7 +33,99 @@ const (
 	ArchARM64 Arch = "arm64"
 	Arch386   Arch = "386"
 	ArchARM   Arch = "arm"
+	// ArchJS and ArchWasip1 are the WebAssembly flavors, named after Go's
+	ArchJS     Arch = "js"
+	ArchWasip1 Arch = "wasip1"
 )
+
+type Platform struct {
+	OS   OS   `json:"os"`
+	Arch Arch `json:"arch"`
+}
+
+func (p Platform) String() string { return string(p.OS) + "/" + string(p.Arch) }
+
+func ParsePlatform(s string) (Platform, error) {
+	osPart, archPart, ok := strings.Cut(strings.TrimSpace(s), "/")
+	if !ok {
+		return Platform{}, fmt.Errorf("invalid platform %q: want os/arch", strings.TrimSpace(s))
+	}
+	osName, ok := NormalizeOS(osPart)
+	if !ok {
+		return Platform{}, fmt.Errorf("invalid os %q in platform %q", strings.TrimSpace(osPart), strings.TrimSpace(s))
+	}
+	arch, ok := NormalizeArch(archPart)
+	if !ok {
+		return Platform{}, fmt.Errorf("invalid arch %q in platform %q", strings.TrimSpace(archPart), strings.TrimSpace(s))
+	}
+	if !CompatiblePlatform(osName, arch) {
+		return Platform{}, fmt.Errorf("incompatible platform %q: os=wasm pairs only with arch js or wasip1 (and those arches only with os=wasm)", strings.TrimSpace(s))
+	}
+	return Platform{OS: osName, Arch: arch}, nil
+}
+
+// ParsePlatformList reads a comma-separated "os/arch,os/arch" set. An empty
+// list and a duplicate after normalization ("macos/arm64,darwin/arm64") are
+// both errors: a set that silently loses an entry would publish a binary as
+// covering less than the publisher declared.
+func ParsePlatformList(spec string) ([]Platform, error) {
+	elems := strings.Split(spec, ",")
+	out := make([]Platform, 0, len(elems))
+	seen := set.New[Platform](len(elems))
+	for _, elem := range elems {
+		if strings.TrimSpace(elem) == "" {
+			return nil, fmt.Errorf("empty platform in %q", spec)
+		}
+		p, err := ParsePlatform(elem)
+		if err != nil {
+			return nil, err
+		}
+		if !seen.Add(p) {
+			return nil, fmt.Errorf("duplicate platform %q", p)
+		}
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no platforms")
+	}
+	return out, nil
+}
+
+// FormatPlatforms renders a set as "linux/amd64, darwin/arm64" for a badge or
+// an error message.
+func FormatPlatforms(platforms []Platform) string {
+	parts := make([]string, len(platforms))
+	for i, p := range platforms {
+		parts[i] = p.String()
+	}
+	return strings.Join(parts, ", ")
+}
+
+// ArtifactWithPlatforms is an artifact plus every platform it covers. Platforms
+type ArtifactWithPlatforms struct {
+	Artifact
+	Platforms []Platform `json:"platforms"`
+}
+
+func (a ArtifactWithPlatforms) MultiPlatform() bool { return len(a.Platforms) > 1 }
+
+type PlatformArtifact struct {
+	Artifact
+	// CacheSuffix distinguishes this platform's derived packages from the same
+	CacheSuffix string
+}
+
+// CacheFormat is the packaged_artifacts format key for a derived package of
+func (p PlatformArtifact) CacheFormat(format string) string { return format + p.CacheSuffix }
+
+func newPlatformArtifact(a Artifact, p Platform) PlatformArtifact {
+	out := PlatformArtifact{Artifact: a}
+	if a.OS != p.OS || a.Arch != p.Arch {
+		out.OS, out.Arch = p.OS, p.Arch
+		out.CacheSuffix = "@" + p.String()
+	}
+	return out
+}
 
 type Kind string
 
@@ -42,16 +139,13 @@ const (
 )
 
 // ServedViaDockerOnly reports whether artifacts of this kind are exclusively
-// served through the OCI (/v2) endpoint. A "docker build" is just a container
-// image: it has no bare binary to repackage, so apt/brew/npm/raw downloads do
-// not apply to it.
 func (k Kind) ServedViaDockerOnly() bool {
 	return k == KindDocker
 }
 
 func ValidOS(s string) bool {
 	switch OS(s) {
-	case OSLinux, OSDarwin, OSWindows, OSFreeBSD:
+	case OSLinux, OSDarwin, OSWindows, OSFreeBSD, OSWasm:
 		return true
 	}
 	return false
@@ -59,17 +153,28 @@ func ValidOS(s string) bool {
 
 func ValidArch(s string) bool {
 	switch Arch(s) {
-	case ArchAMD64, ArchARM64, Arch386, ArchARM:
+	case ArchAMD64, ArchARM64, Arch386, ArchARM, ArchJS, ArchWasip1:
 		return true
 	}
 	return false
+}
+
+func wasmFlavorArch(a Arch) bool {
+	return a == ArchJS || a == ArchWasip1
+}
+
+// CompatiblePlatform reports whether the (os, arch) pair names a coherent
+func CompatiblePlatform(os OS, arch Arch) bool {
+	if os == OSWasm || wasmFlavorArch(arch) {
+		return os == OSWasm && wasmFlavorArch(arch)
+	}
+	return true
 }
 
 // NormalizeOS maps an operating-system name to its canonical db.OS, accepting the
 // spellings GitHub Actions' RUNNER_OS uses ("Linux", "macOS", "Windows") and
 // other common aliases so clients can pass platform names through verbatim. It
 // returns ("", false) for an unrecognized name; callers should leave such a value
-// untouched (e.g. the "any" sentinel) rather than rejecting it.
 func NormalizeOS(s string) (OS, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "linux":
@@ -80,15 +185,14 @@ func NormalizeOS(s string) (OS, bool) {
 		return OSWindows, true
 	case "freebsd":
 		return OSFreeBSD, true
+	case "wasm", "webassembly":
+		return OSWasm, true
 	}
 	return "", false
 }
 
 // NormalizeArch maps a CPU-architecture name to its canonical db.Arch, accepting
 // GitHub Actions' RUNNER_ARCH spellings ("X64", "ARM64", "X86", "ARM"), uname's
-// ("x86_64", "aarch64", "i686", ...), and other common aliases. It returns
-// ("", false) for an unrecognized name; callers should leave such a value
-// untouched (e.g. the "any" sentinel) rather than rejecting it.
 func NormalizeArch(s string) (Arch, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "amd64", "x64", "x86_64", "x86-64", "x8664":
@@ -99,8 +203,30 @@ func NormalizeArch(s string) (Arch, bool) {
 		return Arch386, true
 	case "arm", "armv7", "armv7l", "armv6", "armv6l", "armhf":
 		return ArchARM, true
+	case "js":
+		return ArchJS, true
+	// Deliberately no bare "wasi" alias: WASI has versioned snapshots
+	case "wasip1":
+		return ArchWasip1, true
 	}
 	return "", false
+}
+
+// NormalizeLegacyWasmPair maps the deprecated GOOS/GOARCH-ordered
+// WebAssembly pair -- (os=js, arch=wasm) or (os=wasip1, arch=wasm), the
+// `name_GOOS_GOARCH` filename convention currently-released go-toolchain
+// autoreleases derive upload parameters from -- to the canonical
+func NormalizeLegacyWasmPair(osName, arch string) (OS, Arch, bool) {
+	if strings.ToLower(strings.TrimSpace(arch)) != "wasm" {
+		return "", "", false
+	}
+	switch strings.ToLower(strings.TrimSpace(osName)) {
+	case "js":
+		return OSWasm, ArchJS, true
+	case "wasip1":
+		return OSWasm, ArchWasip1, true
+	}
+	return "", "", false
 }
 
 func ValidKind(s string) bool {
@@ -124,15 +250,8 @@ type SiteDetail = ListSiteDetailsRow
 type AllArtifact = ListAllArtifactsRow
 type StorageBreakdown = GetStorageBreakdownRow
 
-var ValidScopes = map[string]bool{
-	"read":  true,
-	"write": true,
-	// share authorizes minting temporary, artifact-bound download links
-	// (POST /api/v1/projects/{project}/download-links). It is deliberately
-	// separate from write so a CI/deploy token cannot also hand out shareable
-	// links to private artifacts.
-	"share": true,
-}
+// share authorizes minting temporary, artifact-bound download links
+var ValidScopes = set.Of("read", "write", "share")
 
 func (r Release) IsPrerelease() bool {
 	return strings.Contains(r.Version, "-")

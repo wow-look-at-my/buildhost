@@ -8,6 +8,7 @@ import (
 	"io"
 	neturl "net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -33,42 +34,145 @@ func (b *Brew) Applicable(a db.Artifact) bool {
 	return a.OS == db.OSLinux || a.OS == db.OSDarwin
 }
 
-var brewTemplate = template.Must(template.New("formula").Parse(`class {{ .ClassName }} < Formula
+// brewTemplate always emits a TOP-LEVEL url/sha256 (the canonical resource,
+
+var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }}require_relative "../lib/buildhost_private_download"
+
+{{ end }}class {{ .ClassName }} < Formula
   desc "{{ .Description }}"
   homepage "{{ .Homepage }}"
   version "{{ .Version }}"
   license "{{ .License }}"
 
+  url "{{ .Canonical.URL }}"{{ if .Private }}, using: BuildhostCurlDownloadStrategy{{ end }}
+  sha256 "{{ .Canonical.SHA256 }}"
+  {{- if .DependsOnOS }}
+  depends_on :{{ .DependsOnOS }}
+  {{- end }}
+
   {{- range .Resources }}
   on_{{ .OS }} do
     on_{{ .Arch }} do
-      url "{{ .URL }}"
+      url "{{ .URL }}"{{ if $.Private }}, using: BuildhostCurlDownloadStrategy{{ end }}
       sha256 "{{ .SHA256 }}"
     end
   end
   {{- end }}
+  {{- if eq .Kind "binary" }}
+
+  # Homebrew's Cleaner rewrites the mode of everything under bin: 0555 for a
+  # file it recognizes as executable (shebang script, ELF, Mach-O), 0444 for
+  # anything else. An Actually Portable Executable is none of those, and it
+  # rewrites itself in place on first run, so it needs both bits the Cleaner
+  # would take away. skip_clean keeps the 0755 installed below.
+  skip_clean "bin"
+  {{- end }}
 
   def install
     {{- if eq .Kind "binary" }}
-    bin.install "{{ .Name }}"
+    bin.install "{{ .InstallName }}"
+    chmod 0755, bin/"{{ .InstallName }}"
     {{- else if eq .Kind "library" }}
-    lib.install "{{ .Name }}"
+    lib.install "{{ .InstallName }}"
     {{- else }}
     prefix.install Dir["*"]
     {{- end }}
   end
+  {{- if .Service }}
+
+  service do
+    run [opt_bin/"{{ .InstallName }}"]
+    keep_alive successful_exit: false
+    log_path var/"log/{{ .InstallName }}.log"
+    error_log_path var/"log/{{ .InstallName }}.log"
+    process_type :interactive
+  end
+  {{- end }}
 end
 `))
+
+// brewInstallName returns the path the staged download exposes for install.
+func brewInstallName(project string) string {
+	if i := strings.LastIndexByte(project, '/'); i >= 0 {
+		return project[i+1:]
+	}
+	return project
+}
+
+// BrewPrivateStrategyPath is the path inside the generated tap repository that
+const BrewPrivateStrategyPath = "lib/buildhost_private_download.rb"
+
+// BrewPrivateStrategy is the Ruby download strategy shipped in the generated
+const BrewPrivateStrategy = `# frozen_string_literal: true
+
+# Download strategy for private buildhost projects: sends the token from
+# HOMEBREW_BUILDHOST_TOKEN as a Bearer Authorization header on the download
+# request. buildhost redirects private downloads with a short-lived signed
+# token in the Location, so the followed redirect needs no header.
+class BuildhostCurlDownloadStrategy < CurlDownloadStrategy
+  def initialize(url, name, version, **meta)
+    token = ENV["HOMEBREW_BUILDHOST_TOKEN"].to_s
+    unless token.empty?
+      meta = meta.merge(headers: Array(meta[:headers]) + ["Authorization: Bearer #{token}"])
+    end
+    super(url, name, version, **meta)
+  end
+
+  def fetch(timeout: nil)
+    if ENV["HOMEBREW_BUILDHOST_TOKEN"].to_s.empty?
+      raise "HOMEBREW_BUILDHOST_TOKEN is not set; export a buildhost token " \
+            "with read access to this project, then retry."
+    end
+    super
+  end
+end
+`
 
 type brewData struct {
 	ClassName   string
 	Name        string
+	InstallName string
 	Description string
 	Homepage    string
 	Version     string
 	License     string
 	Kind        string
+	Private     bool
+	Service     bool
+	Canonical   BrewResource
+	DependsOnOS string
 	Resources   []BrewResource
+}
+
+// brewCanonicalResource picks the deterministic resource emitted as the
+// formula's top-level url/sha256: linux/intel when present (the org's default
+func brewCanonicalResource(resources []BrewResource) BrewResource {
+	sorted := make([]BrewResource, len(resources))
+	copy(sorted, resources)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].OS != sorted[j].OS {
+			return sorted[i].OS < sorted[j].OS
+		}
+		return sorted[i].Arch < sorted[j].Arch
+	})
+	for _, r := range sorted {
+		if r.OS == "linux" && r.Arch == "intel" {
+			return r
+		}
+	}
+	return sorted[0]
+}
+
+// brewDependsOnOS returns "linux" or "macos" when every resource targets that
+func brewDependsOnOS(resources []BrewResource) string {
+	osName := ""
+	for _, r := range resources {
+		if osName != "" && r.OS != osName {
+			return ""
+		}
+		osName = r.OS
+	}
+	return osName
 }
 
 type BrewResource struct {
@@ -86,18 +190,31 @@ type BrewFormula struct {
 	Version     string
 	License     string
 	Kind        string
-	Resources   []BrewResource
+	// Private marks a formula for a private project: it requires the tap's
+	Private bool
+	// Service adds a `service do` block so `brew services start` manages the
+	Service   bool
+	Resources []BrewResource
 }
 
 func RenderBrewFormula(f BrewFormula) (*Output, error) {
+	if len(f.Resources) == 0 {
+		return nil, fmt.Errorf("formula %q has no resources", f.Name)
+	}
 	d := brewData{
 		ClassName:   f.ClassName,
 		Name:        sanitizeBrewString(f.Name),
+		InstallName: sanitizeBrewString(brewInstallName(f.Name)),
 		Description: sanitizeBrewString(f.Description),
 		Homepage:    sanitizeBrewString(f.Homepage),
 		Version:     sanitizeBrewString(f.Version),
 		License:     sanitizeBrewString(f.License),
 		Kind:        f.Kind,
+		Private:     f.Private,
+		// The service block references opt_bin/<InstallName>, which exists
+		Service:     f.Service && f.Kind == "binary",
+		Canonical:   brewCanonicalResource(f.Resources),
+		DependsOnOS: brewDependsOnOS(f.Resources),
 		Resources:   f.Resources,
 	}
 
@@ -115,6 +232,9 @@ func RenderBrewFormula(f BrewFormula) (*Output, error) {
 }
 
 func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
+	if !BrewEligibleProjectName(input.Project.Name) {
+		return nil, fmt.Errorf("project name %q cannot be a Homebrew formula (Ruby class names cannot start with a digit)", input.Project.Name)
+	}
 	h := sha256.New()
 	if _, err := io.Copy(h, input.Reader); err != nil {
 		return nil, fmt.Errorf("hash artifact: %w", err)
@@ -156,6 +276,8 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 		Version:     sanitizeBrewString(version),
 		License:     sanitizeBrewString(firstNonEmpty(input.Project.License, "MIT")),
 		Kind:        string(input.Artifact.Kind),
+		Private:     input.Project.IsPrivate,
+		Service:     input.Project.CreateService,
 		Resources: []BrewResource{{
 			OS:     brewOS,
 			Arch:   brewArch,
@@ -165,9 +287,13 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 	})
 }
 
+// BrewClassName derives the formula's Ruby class name from the project name.
+// It MUST match what Homebrew derives from the formula FILENAME
+// (Formulary.class_s of the folded name), or the tap's formulas fail to load
+// with "expected to find class" -- and it must always be a valid Ruby
 func BrewClassName(name string) string {
 	parts := strings.FieldsFunc(name, func(r rune) bool {
-		return r == '-' || r == '_' || r == '/'
+		return r == '-' || r == '_' || r == '/' || r == '.'
 	})
 	var b strings.Builder
 	for _, p := range parts {
@@ -177,4 +303,14 @@ func BrewClassName(name string) string {
 		}
 	}
 	return b.String()
+}
+
+// BrewEligibleProjectName reports whether a project name can be served as a
+func BrewEligibleProjectName(name string) bool {
+	return name != "" && name[0] >= 'a' && name[0] <= 'z'
+}
+
+// BrewFormulaName is the tap filename stem, and therefore the name a user
+func BrewFormulaName(project string) string {
+	return strings.ReplaceAll(project, "/", "-")
 }
