@@ -41,9 +41,9 @@ tests:
 		curl -fsS "$BUILDHOST_BASE_URL/llms.txt" > llms.txt
 		# The served blocks are fenced with no language tag; the brew flows are
 		# the ones that open with `brew tap`.
-		awk '/^```/ { fence = !fence; if (fence) { buf = "" } else if (buf ~ /^brew tap /) { printf "%s", buf }; next }
+		awk '/^```/ { fence = !fence; if (fence) { buf = "" } else if (buf ~ /^brew trust /) { printf "%s", buf }; next }
 			fence { buf = buf $0 "\n" }' llms.txt > llms-flows.txt
-		test "$(grep -c '^brew tap ' llms-flows.txt)" = "2" || {
+		test "$(grep -c '^brew trust ' llms-flows.txt)" = "2" || {
 			echo "llms.txt: want exactly 2 brew flow blocks (public, private)" >&2; exit 1; }
 		# llms.txt names the public host, so compare it after the same
 		# substitution the extractor applies to README.md.
