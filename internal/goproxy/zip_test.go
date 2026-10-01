@@ -1,0 +1,120 @@
+package goproxy
+
+import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"net/http"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/mod/module"
+	modzip "golang.org/x/mod/zip"
+)
+
+func TestServedZipIsAValidModuleZip(t *testing.T) {
+	t.Serial()
+	fake := newFakeGitHub(t)
+	modPath := privateOrg + "/tml"
+	seedModule(fake, modPath, "", "v1.2.0", "aaaa111122223333444455556666777788889999",
+		"module "+modPath+"\n\ngo 1.25\n")
+	fake.TreeFiles["README.md"] = "# tml\n"
+	fake.TreeFiles["internal/deep/file.go"] = "package deep\n"
+
+	s := newTestService(t, fake, "tok", []string{privateOrg})
+
+	rec := serveProxy(t, s, "/"+modPath+"/@v/v1.2.0.zip")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	zipPath := filepath.Join(t.TempDir(), "mod.zip")
+	require.NoError(t, os.WriteFile(zipPath, rec.Body.Bytes(), 0o644))
+
+	mv := module.Version{Path: modPath, Version: "v1.2.0"}
+
+	// CheckZip is exactly what the go command runs before trusting a zip.
+	ck, err := modzip.CheckZip(mv, zipPath)
+	require.NoError(t, err)
+	assert.Empty(t, ck.Invalid, "zip carried files the module spec rejects")
+
+	dest := filepath.Join(t.TempDir(), "unzipped")
+	require.NoError(t, modzip.Unzip(dest, mv, zipPath))
+
+	for _, want := range []string{"go.mod", "lib.go", "README.md", "internal/deep/file.go"} {
+		_, err := os.Stat(filepath.Join(dest, filepath.FromSlash(want)))
+		assert.NoError(t, err, "expected %s in the module zip", want)
+	}
+}
+
+// A nested module's zip must contain that subdirectory's files at the module
+// root, with the parent repo's other directories excluded entirely.
+func TestNestedModuleZipContainsOnlyItsSubtree(t *testing.T) {
+	t.Serial()
+	fake := newFakeGitHub(t)
+	modPath := privateOrg + "/agentic-loop/go"
+	seedModule(fake, modPath, "go", "go/v0.3.0", "bbbb111122223333444455556666777788889999",
+		"module "+modPath+"\n\ngo 1.25\n")
+	fake.TreeFiles["go/inner/thing.go"] = "package inner\n"
+	// Siblings of the module directory must not travel with it.
+	fake.TreeFiles["README.md"] = "# repo\n"
+	fake.TreeFiles["python/main.py"] = "print('no')\n"
+
+	s := newTestService(t, fake, "tok", []string{privateOrg})
+
+	rec := serveProxy(t, s, "/"+modPath+"/@v/v0.3.0.zip")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	zipPath := filepath.Join(t.TempDir(), "mod.zip")
+	require.NoError(t, os.WriteFile(zipPath, rec.Body.Bytes(), 0o644))
+
+	mv := module.Version{Path: modPath, Version: "v0.3.0"}
+	require.NoError(t, func() error { _, err := modzip.CheckZip(mv, zipPath); return err }())
+
+	dest := filepath.Join(t.TempDir(), "unzipped")
+	require.NoError(t, modzip.Unzip(dest, mv, zipPath))
+
+	for _, want := range []string{"go.mod", "lib.go", "inner/thing.go"} {
+		_, err := os.Stat(filepath.Join(dest, filepath.FromSlash(want)))
+		assert.NoError(t, err, "expected %s in the nested module zip", want)
+	}
+	for _, unwanted := range []string{"README.md", "python/main.py"} {
+		_, err := os.Stat(filepath.Join(dest, filepath.FromSlash(unwanted)))
+		assert.True(t, os.IsNotExist(err), "%s belongs to the repo, not this module", unwanted)
+	}
+}
+
+// A tarball's compressed size says nothing about what it expands to.
+func TestTarballDecompressedSizeIsBounded(t *testing.T) {
+	t.Serial()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	const size = 1 << 20
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "repo-abc/big.go", Mode: 0o644, Size: size, Typeflag: tar.TypeReg}))
+	_, err := tw.Write(make([]byte, size))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+	require.NoError(t, gz.Close())
+	require.Less(t, buf.Len(), 64<<10, "the fixture must be small compressed for the test to mean anything")
+
+	err = extractModuleTree(bytes.NewReader(buf.Bytes()), "", t.TempDir(), 64<<10)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "limit")
+
+	require.NoError(t, extractModuleTree(bytes.NewReader(buf.Bytes()), "", t.TempDir(), 4<<20))
+}
+
+func TestTarballCannotEscapeTheExtractionRoot(t *testing.T) {
+	t.Serial()
+	dir := t.TempDir()
+	_, err := safeJoin(dir, "../escaped")
+	require.Error(t, err)
+	_, err = safeJoin(dir, "a/../../escaped")
+	require.Error(t, err)
+
+	got, err := safeJoin(dir, "a/b/c.go")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(dir, "a", "b", "c.go"), got)
+}

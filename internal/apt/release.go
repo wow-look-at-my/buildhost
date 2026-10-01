@@ -4,14 +4,13 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
-	"github.com/wow-look-at-my/buildhost/internal/repackage"
 )
 
 func (h *Handler) serveRelease(w http.ResponseWriter, r *http.Request, inRelease bool) {
@@ -27,7 +26,11 @@ func (h *Handler) serveRelease(w http.ResponseWriter, r *http.Request, inRelease
 
 	var hashes []hashEntry
 	if release != nil {
-		hashes = h.computePackagesHashes(r, project, release)
+		hashes, err = h.computePackagesHashes(r, project, release)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	content := buildRelease(project.Name, hashes)
@@ -67,7 +70,11 @@ func (h *Handler) serveReleaseGPG(w http.ResponseWriter, r *http.Request) {
 
 	var hashes []hashEntry
 	if release != nil {
-		hashes = h.computePackagesHashes(r, project, release)
+		hashes, err = h.computePackagesHashes(r, project, release)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	content := buildRelease(project.Name, hashes)
@@ -100,90 +107,67 @@ func (h *Handler) serveKey(w http.ResponseWriter, r *http.Request) {
 	w.Write(key)
 }
 
+// hashEntry is a SHA256 line of a Release file. releaseTemplate reads the
+// fields, so they are exported.
 type hashEntry struct {
-	path string
-	hash string
-	size int
+	Path string
+	Hash string
+	Size int
 }
 
-func (h *Handler) computePackagesHashes(r *http.Request, project *db.Project, release *db.Release) []hashEntry {
+// computePackagesHashes renders each architecture's Packages index through
+// packagesEntry -- the same renderer servePackages serves -- and hashes the
+// rendered bytes, so the Release/InRelease SHA256 lines can never disagree
+func (h *Handler) computePackagesHashes(r *http.Request, project *db.Project, release *db.Release) ([]hashEntry, error) {
 	arches := []string{"amd64", "arm64", "i386", "armhf"}
+	baseURL := auth.RequestRootURL(r)
 	var entries []hashEntry
 
 	for _, arch := range arches {
-		data := h.renderPackagesEntry(r, project, release, arch)
+		data, err := h.packagesEntry(r.Context(), project, release, arch, baseURL)
+		if err != nil {
+			return nil, err
+		}
 		if data == "" {
 			continue
 		}
 		hash := sha256.Sum256([]byte(data))
 		entries = append(entries, hashEntry{
-			path: fmt.Sprintf("main/binary-%s/Packages", arch),
-			hash: fmt.Sprintf("%x", hash),
-			size: len(data),
+			Path: fmt.Sprintf("main/binary-%s/Packages", arch),
+			Hash: fmt.Sprintf("%x", hash),
+			Size: len(data),
 		})
 	}
-	return entries
+	return entries, nil
 }
 
-func (h *Handler) renderPackagesEntry(r *http.Request, project *db.Project, release *db.Release, debArch string) string {
-	goArch := goArchFromDeb(debArch)
-	artifact, err := h.DB.GetArtifact(r.Context(), release.ID, string(db.OSLinux), goArch)
-	if err != nil {
-		return ""
-	}
-
-	version := strings.TrimPrefix(release.Version, "v")
-	if version == "" {
-		version = fmt.Sprintf("%d", release.VersionNum)
-	}
-
-	if !validDebVersion.MatchString(version) {
-		return ""
-	}
-
-	debSize := artifact.Size
-	debSHA := artifact.SHA256
-	out, err := h.Gen.Generate(r.Context(), repackage.FormatDeb, *project, *release, *artifact, auth.RequestRootURL(r))
-	if err == nil {
-		hsh := sha256.New()
-		n, rerr := io.Copy(hsh, out.Reader)
-		out.Reader.Close()
-		if rerr == nil {
-			debSize = n
-			debSHA = fmt.Sprintf("%x", hsh.Sum(nil))
-		}
-	}
-
-	pkgName := repackage.DebPackageName(project.Name)
-	desc := strings.NewReplacer("\n", " ", "\r", " ").Replace(project.Description)
-	return fmt.Sprintf(`Package: %s
-Version: %s
-Architecture: %s
-Filename: pool/%s_%s_%s.deb
-Size: %d
-SHA256: %s
-Description: %s
-
-`, pkgName, version, debArch, pkgName, version, debArch,
-		debSize, debSHA, desc)
-}
+// releaseTemplate renders a Debian Release file. apt parses it as a field list,
+// so a dropped newline merges adjacent fields and the index stops resolving.
+var releaseTemplate = template.Must(template.New("apt-release").Parse(
+	`Origin: buildhost
+Label: {{.Project}}
+Suite: stable
+Codename: stable
+Architectures: amd64 arm64 i386 armhf
+Components: main
+Date: {{.Date}}
+{{if .Hashes}}SHA256:
+{{range .Hashes}} {{.Hash}} {{.Size}} {{.Path}}
+{{end}}{{end}}`))
 
 func buildRelease(projectName string, hashes []hashEntry) string {
 	var b strings.Builder
-	b.WriteString("Origin: buildhost\n")
-	b.WriteString(fmt.Sprintf("Label: %s\n", projectName))
-	b.WriteString("Suite: stable\n")
-	b.WriteString("Codename: stable\n")
-	b.WriteString("Architectures: amd64 arm64 i386 armhf\n")
-	b.WriteString("Components: main\n")
-	b.WriteString(fmt.Sprintf("Date: %s\n", time.Now().UTC().Format(time.RFC1123Z)))
-
-	if len(hashes) > 0 {
-		b.WriteString("SHA256:\n")
-		for _, h := range hashes {
-			b.WriteString(fmt.Sprintf(" %s %d %s\n", h.hash, h.size, h.path))
-		}
+	err := releaseTemplate.Execute(&b, struct {
+		Project string
+		Date    string
+		Hashes  []hashEntry
+	}{
+		Project: projectName,
+		Date:    time.Now().UTC().Format(time.RFC1123Z),
+		Hashes:  hashes,
+	})
+	if err != nil {
+		panic(err) // Only an edit to releaseTemplate itself can reach this.
 	}
-
 	return b.String()
 }

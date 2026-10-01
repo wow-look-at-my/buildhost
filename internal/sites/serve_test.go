@@ -19,14 +19,9 @@ import (
 )
 
 // sitesHost is the Host header used by integration tests that go through the
-// real router. The sites service is registered as a subdomain route on
-// sites.{domain}, so requests must carry this host.
 const sitesHost = "sites.test.local"
 
 // testEnv wires the real auth stack: requests are dispatched through the
-// router (host + path matching) and the auth middleware, exactly as in
-// production. Used by TestRouting to catch routing-level bugs that unit tests
-// using direct handler calls cannot detect.
 type testEnv struct {
 	handler http.Handler
 	db      *db.DB
@@ -43,7 +38,7 @@ func setupEnv(t *testing.T) *testEnv {
 	store, err := storage.NewFilesystem(t.TempDir(), true)
 	require.NoError(t, err)
 
-	auth.Init(d, store, t.TempDir(), nil, nil, nil, nil, "", "", "")
+	auth.Init(d, store, t.TempDir(), nil, nil, nil, nil, "", "", "", "", "")
 
 	plaintext, _, err := d.CreateToken(context.Background(), "test", nil, "read,write")
 	require.NoError(t, err)
@@ -89,6 +84,7 @@ func (e *testEnv) uploadSite(t *testing.T, project, branch string, files map[str
 // This test MUST use setupEnv (real router) -- direct handler calls cannot
 // catch routing-level bugs.
 func TestRouting(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "mysite")
 	env.uploadSite(t, "mysite", "main", map[string]string{
@@ -96,29 +92,27 @@ func TestRouting(t *testing.T) {
 		"style.css":  "body{}",
 	})
 
-	// A file under a branch reaches Serve and is served -- not 301-redirected
-	// into a loop (the bug). This only passes via the real router.
-	rec := env.do(t, "GET", "/mysite/branch/main/style.css", "", nil, false)
+	// A file reaches the serving handler and is served -- not redirected into a
+	rec := env.do(t, "GET", "/mysite/style.css", "", nil, false)
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "body{}", rec.Body.String())
 
+	rec = env.do(t, "GET", "/mysite/branch/main/style.css", "", nil, false)
+	require.Equal(t, http.StatusFound, rec.Code)
+	assert.Equal(t, "/mysite/style.css", rec.Header().Get("Location"))
+
 	// The service answers on the sites subdomain, not on the apex with a
-	// "/sites/..." path prefix. An apex request never reaches the handler.
-	apex := env.doHost(t, "test.local", "GET", "/sites/mysite/branch/main/style.css", "", nil, false)
+	apex := env.doHost(t, "test.local", "GET", "/sites/mysite/style.css", "", nil, false)
 	assert.Equal(t, http.StatusNotFound, apex.Code, "apex /sites path must not reach the sites handler")
 }
 
 // TestServe_NestedDirServesIndexNotDirEntry reproduces the bug where a nested
-// directory URL (e.g. /scratchpads/foo/) served the 0-byte tar directory entry
-// instead of foo/index.html: the {path...} router value drops the trailing
-// slash, so Serve must detect the directory from the request URL, and must
-// never serve a directory entry as a file.
 func TestServe_NestedDirServesIndexNotDirEntry(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
 	// A tar that, like GNU tar, carries an explicit directory entry before the
-	// nested file. The bug matched that 0-byte "sub/" entry.
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
@@ -137,7 +131,6 @@ func TestServe_NestedDirServesIndexNotDirEntry(t *testing.T) {
 	require.Equal(t, http.StatusCreated, prec.Code)
 
 	// Request the directory: the URL ends with "/" but the router strips it from
-	// {path...}, so rt.path is "sub". Serve must fall back to index.html.
 	get := httptest.NewRequest("GET", "/sites/mysite/branch/main/sub/", nil)
 	get = withRoute(get, proj, route{project: "mysite", branch: "main", path: "sub"})
 	grec := httptest.NewRecorder()
@@ -149,6 +142,7 @@ func TestServe_NestedDirServesIndexNotDirEntry(t *testing.T) {
 }
 
 func TestServe_NotFound_Custom404(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	body := "<h1>missing</h1>"
@@ -169,6 +163,7 @@ func TestServe_NotFound_Custom404(t *testing.T) {
 }
 
 func TestServe_DirectCustom404File(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	body := "<h1>missing</h1>"

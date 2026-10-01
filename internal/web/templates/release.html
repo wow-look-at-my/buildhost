@@ -17,12 +17,14 @@
   <h2>Artifacts</h2>
   {{if .Artifacts}}
   <table class="grid">
-    <thead><tr><th>OS</th><th>Arch</th><th>Kind</th><th>Size</th><th>SHA-256</th><th>Download</th></tr></thead>
+    <thead><tr><th>Platforms</th><th>Kind</th><th>Size</th><th>SHA-256</th><th>Download</th></tr></thead>
     <tbody>
     {{range .Artifacts}}
       <tr>
-        <td><code>{{.OS}}</code></td>
-        <td><code>{{.Arch}}</code></td>
+        <td>
+          {{if nonEmpty .FormatBadge}}<span class="badge badge-format">{{.FormatBadge}}: <span class="platforms">{{.Platforms}}</span></span>
+          {{else}}<code>{{.Platforms}}</code>{{end}}
+        </td>
         <td>{{.Kind}}</td>
         <td>{{.Size}}</td>
         <td>{{if nonEmpty .SHA256}}<code class="hash" title="{{.SHA256}}">{{.SHA256}}</code>{{else}}<span class="muted">&mdash;</span>{{end}}</td>

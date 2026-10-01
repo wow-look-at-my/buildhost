@@ -7,13 +7,12 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 func init() {
-	auth.OnReady(func() {
-		auth.Handle("POST /api/v1/projects/{project}/releases/{version}/publish",
-			parseRoute, handler.PublishRelease)
-	})
+	auth.HandlePrimary("POST /api/v1/projects/{project}/releases/{version}/publish",
+		parseRoute, handler.PublishRelease)
 }
 
 func (h *Handler) PublishRelease(w http.ResponseWriter, r *http.Request) {
@@ -38,7 +37,7 @@ func (h *Handler) PublishRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	artifacts, err := h.DB.ListArtifacts(ctx, release.ID)
+	artifacts, err := h.DB.ListArtifactsWithPlatforms(ctx, release.ID)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "list artifacts failed")
@@ -60,5 +59,11 @@ func (h *Handler) PublishRelease(w http.ResponseWriter, r *http.Request) {
 	}
 
 	release.Published = true
-	jsonResponse(w, http.StatusOK, release)
+	jsonResponse(w, http.StatusOK, publishedRelease{Release: *release, Artifacts: artifacts})
+}
+
+// publishedRelease carries a release plus its artifacts. Publishers assembling
+type publishedRelease struct {
+	db.Release
+	Artifacts []db.ArtifactWithPlatforms `json:"artifacts"`
 }

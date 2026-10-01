@@ -13,6 +13,7 @@ import (
 )
 
 func TestRoute_AllowsPublicRead(t *testing.T) {
+	t.Serial()
 	tok := auth.MintDownloadToken("vega", "5", "linux", "amd64", "raw", false, time.Now().Add(time.Hour))
 
 	mk := func(query string) route {
@@ -43,6 +44,7 @@ func TestRoute_AllowsPublicRead(t *testing.T) {
 }
 
 func TestSignedURL(t *testing.T) {
+	t.Serial()
 	staticBase, _ := url.Parse("https://static.example.com")
 	p := For("vega").WithVersion("5").WithOS("linux").WithArch("amd64").WithFmt("raw")
 	urlStr, tok := SignedURL(staticBase, p, time.Now().Add(time.Hour))

@@ -16,8 +16,6 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 
 	// Blank-importing the frontend is not needed (the package under test links
-	// it), but no service backends are imported here on purpose: that keeps the
-	// apt signing-key generation (its OnReady) out of the test, so setup is fast.
 	_ "github.com/wow-look-at-my/buildhost/internal/web"
 )
 
@@ -50,8 +48,6 @@ func setup(t *testing.T) *env {
 	return &env{ts: ts, token: plaintext}
 }
 
-// seed inserts a public project with one published release/artifact and a
-// private project, directly via the DB (the frontend only reads metadata).
 func seed(t *testing.T, database *db.DB) {
 	t.Helper()
 	ctx := context.Background()
@@ -70,6 +66,16 @@ func seed(t *testing.T, database *db.DB) {
 	branchRel := &db.Release{ProjectID: pub.ID, Version: "2", VersionNum: 2, GitBranch: "feature-x", GitCommit: "feedface12345678"}
 	require.Nil(t, database.CreateRelease(ctx, branchRel))
 	require.Nil(t, database.PublishRelease(ctx, branchRel.ID))
+
+	namespaced := &db.Project{Name: "cc-marketplace/haiku-compact", Versioning: db.VersioningAuto}
+	require.Nil(t, database.CreateProject(ctx, namespaced))
+	nsRel := &db.Release{ProjectID: namespaced.ID, Version: "1", VersionNum: 1, GitBranch: "master"}
+	require.Nil(t, database.CreateRelease(ctx, nsRel))
+	require.Nil(t, database.CreateArtifact(ctx, &db.Artifact{
+		ReleaseID: nsRel.ID, OS: db.OSLinux, Arch: db.ArchAMD64, Kind: db.KindBinary,
+		StorageKey: strings.Repeat("c", 64), Size: 2048, SHA256: strings.Repeat("d", 64), Filename: "haiku-compact",
+	}))
+	require.Nil(t, database.PublishRelease(ctx, nsRel.ID))
 
 	priv := &db.Project{Name: "secret", IsPrivate: true, Versioning: db.VersioningAuto}
 	require.Nil(t, database.CreateProject(ctx, priv))
@@ -92,6 +98,7 @@ func (e *env) get(t *testing.T, path string, withAuth bool) (*http.Response, str
 }
 
 func TestFrontend(t *testing.T) {
+	t.Serial()
 	e := setup(t)
 
 	t.Run("home lists public projects, hides private", func(t *testing.T) {
@@ -99,7 +106,17 @@ func TestFrontend(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		require.Equal(t, "text/html; charset=utf-8", resp.Header.Get("Content-Type"))
 		require.Contains(t, body, "myapp")
+		require.Contains(t, body, "haiku-compact")
 		require.NotContains(t, body, "secret")
+	})
+
+	t.Run("home groups slash names like folders", func(t *testing.T) {
+		_, body := e.get(t, "/", false)
+		require.Contains(t, body, `class="project-folder project-depth-0"`)
+		require.Contains(t, body, "cc-marketplace")
+		require.Contains(t, body, `href="/projects/cc-marketplace/haiku-compact"`)
+		require.Contains(t, body, "haiku-compact")
+		require.Contains(t, body, "cc-marketplace/haiku-compact")
 	})
 
 	t.Run("home is server-rendered with no script tags", func(t *testing.T) {
@@ -134,10 +151,22 @@ func TestFrontend(t *testing.T) {
 		require.Contains(t, body, "/projects/myapp/releases/1")
 		require.Contains(t, body, `/projects/myapp/releases/1">1</a> <span class="badge badge-latest">latest</span>`)
 		require.NotContains(t, body, `/projects/myapp/releases/2">2</a> <span class="badge badge-latest">latest</span>`)
-		require.Contains(t, body, "brew tap pazer/build")
-		require.Contains(t, body, "brew install pazer/build/myapp")
+		// The published tap command must clone the /tap.git smart-HTTP endpoint
+		brewBase := "http://brew." + strings.TrimPrefix(e.ts.URL, "http://")
+		require.Contains(t, body, "brew tap pazer/build "+brewBase+"/tap.git\nbrew trust pazer/build\nbrew install pazer/build/myapp")
 		require.Contains(t, body, "docker pull oci.")
 		require.Contains(t, body, "docker pull oci."+strings.TrimPrefix(e.ts.URL, "http://")+"/myapp:1")
+	})
+
+	// A Homebrew formula name cannot carry the project namespace separator, so
+	// the tap folds it and the install command must name the FOLDED formula.
+	// The unfolded name is not a formula in the tap: brew answers "No available
+	// formula".
+	t.Run("namespaced project installs under its folded formula name", func(t *testing.T) {
+		resp, body := e.get(t, "/projects/cc-marketplace/haiku-compact", false)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Contains(t, body, "brew install pazer/build/cc-marketplace-haiku-compact")
+		require.NotContains(t, body, "brew install pazer/build/cc-marketplace/haiku-compact")
 	})
 
 	t.Run("release page lists artifacts with download links", func(t *testing.T) {
@@ -159,8 +188,6 @@ func TestFrontend(t *testing.T) {
 
 	t.Run("private project 404s for anonymous, no existence leak", func(t *testing.T) {
 		resp, body := e.get(t, "/projects/secret", false)
-		// 404 (not 401/403), and identical to an unknown project, so the
-		// response never reveals that "secret" exists -- like GitHub.
 		require.Equal(t, http.StatusNotFound, resp.StatusCode)
 		require.NotContains(t, body, "secret")
 	})

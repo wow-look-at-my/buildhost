@@ -12,6 +12,7 @@ import (
 )
 
 func TestAdminCreateDownloadLink_Success(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -31,12 +32,14 @@ func TestAdminCreateDownloadLink_Success(t *testing.T) {
 }
 
 func TestAdminCreateDownloadLink_ProjectNotFound(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 	w := serve(srv, http.MethodPost, "/api/projects/ghost/download-links", bytes.NewBufferString(`{"os":"linux","arch":"amd64","version":"1"}`))
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestAdminCreateDownloadLink_MissingFields(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 	w := serve(srv, http.MethodPost, "/api/projects/testproject/download-links", bytes.NewBufferString(`{"os":"linux"}`))
@@ -44,6 +47,7 @@ func TestAdminCreateDownloadLink_MissingFields(t *testing.T) {
 }
 
 func TestAdminCreateDownloadLink_RejectsAny(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 	w := serve(srv, http.MethodPost, "/api/projects/testproject/download-links", bytes.NewBufferString(`{"os":"any","arch":"any","version":"1.0.0"}`))
@@ -51,6 +55,7 @@ func TestAdminCreateDownloadLink_RejectsAny(t *testing.T) {
 }
 
 func TestAdminCreateDownloadLink_ArtifactNotFound(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 	w := serve(srv, http.MethodPost, "/api/projects/testproject/download-links", bytes.NewBufferString(`{"os":"darwin","arch":"arm64","version":"1.0.0"}`))

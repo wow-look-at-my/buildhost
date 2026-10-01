@@ -115,7 +115,8 @@ func (s *Signer) loadKey(data []byte) error {
 
 func (s *Signer) generateAndSave(keyPath string) error {
 	entity, err := openpgp.NewEntity("Buildhost", "APT Release signing", "apt@buildhost.local", &packet.Config{
-		RSABits:     4096,
+		Algorithm:   packet.PubKeyAlgoEdDSA,
+		Curve:       packet.Curve25519,
 		DefaultHash: crypto.SHA256,
 	})
 	if err != nil {
