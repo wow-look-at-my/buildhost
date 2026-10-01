@@ -32,3 +32,9 @@ tests:
 	  outputs:
 		stdout:
 			- "download: all checks passed"
+
+	- desc: download finds its lib from a container job, where the action path names the host
+	  cmd: node test/actions/download-action-path.test.ts
+	  outputs:
+		stdout:
+			- "download-action-path: all checks passed"
