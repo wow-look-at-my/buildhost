@@ -44,11 +44,15 @@ shared:
 
 setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
 
+# dats runs these tests concurrently in the repo root. Each test therefore
+# writes its downloads into its own directory under $WORK.
+
 tests:
 	- desc: the download comes back smaller than the upload
 	  cmd: |
 		set -eu
 		. {shared.env}
+		cd "$(mktemp -d "$WORK/test.XXXXXX")"
 		curl -fsSL -o out.bin "$STATIC/file?$QUERY&fmt=raw"
 		up="$(wc -c < "$FIXTURE")"
 		down="$(wc -c < out.bin)"
@@ -66,6 +70,7 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
+		cd "$(mktemp -d "$WORK/test.XXXXXX")"
 		curl -fsSL -o out.bin "$STATIC/file?$QUERY&fmt=raw"
 		test "$(head -c 4 out.bin | od -An -tx1 | tr -d ' \n')" = "7f454c46"
 		sh {shared.sections.sh} out.bin > sections.txt
@@ -84,6 +89,7 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
+		cd "$(mktemp -d "$WORK/test.XXXXXX")"
 		curl -fsSL -D - -o /dev/null "$STATIC/file?$QUERY&fmt=raw" | tr -d '\r' | grep -i '^x-debug-symbols:'
 	  outputs:
 		stdout:
@@ -95,6 +101,7 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
+		cd "$(mktemp -d "$WORK/test.XXXXXX")"
 		curl -fsSL -o symbols.bin "$STATIC/file?$QUERY&fmt=symbols"
 		sh {shared.sections.sh} symbols.bin | grep -qx -- '.debug_info'
 		echo "symbols-served"
@@ -106,6 +113,7 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
+		cd "$(mktemp -d "$WORK/test.XXXXXX")"
 		curl -fsSL -o full.bin "$STATIC/file?$QUERY&fmt=raw&debug=1"
 		cmp "$FIXTURE" full.bin
 		echo "bytes-identical"
