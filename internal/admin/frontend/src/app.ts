@@ -8,6 +8,7 @@
 import { Html, type El } from "./html.ts";
 
 import type {
+    SiteFilesData,
     AllArtifact,
     DashboardData,
     DownloadLink,
@@ -46,6 +47,12 @@ const h = function (s: string | number | null | undefined): string {
 // one hop, so this names the branch either way.
 const siteBranchURL = function (sitesBase: string, project: string, branch: string): string {
     return sitesBase + "/" + project + "/@" + branch + "/";
+};
+
+// siteFilesHash is the dashboard route of a single site branch's file list.
+// "/-/" ends the project name, because both the project and the branch can hold "/".
+const siteFilesHash = function (project: string, branch: string): string {
+    return "#/sites/" + project + "/-/files/" + encodeURIComponent(branch);
 };
 
 const humanSize = function (b: number): string {
@@ -174,8 +181,6 @@ const brewFormulaName = function (project: string): string {
     return project.replace(/\//g, "-");
 };
 
-// The three lines that install a project: brew 6.0 requires `brew trust`
-// before a third-party tap's formulae evaluate.
 const brewInstall = function (brewBase: string, project: string): string {
     return "brew tap pazer/build " + brewBase + "/tap.git\nbrew trust pazer/build\nbrew install pazer/build/" + brewFormulaName(project);
 };
@@ -403,7 +408,13 @@ pages.project = function (name: string): void {
         if (p.description) html += "<tr><td class='info-label'>Description</td><td>" + h(p.description) + "</td></tr>";
         if (p.homepage) html += "<tr><td class='info-label'>Homepage</td><td>" + h(p.homepage) + "</td></tr>";
         if (p.license) html += "<tr><td class='info-label'>License</td><td>" + h(p.license) + "</td></tr>";
-        html += "<tr><td class='info-label'>Versioning</td><td>" + badge("neutral", p.versioning) + "</td></tr>";
+        var versioningOpts = "";
+        for (var vo of ["auto", "semver"]) {
+            versioningOpts += '<option value="' + vo + '"' + (vo === p.versioning ? " selected" : "") + ">" + vo + "</option>";
+        }
+        html += "<tr><td class='info-label'>Versioning</td><td>" +
+            '<select id="versioning-select" onchange="App.setVersioning(\'' + h(p.name) + '\', this.value)">' + versioningOpts + "</select>" +
+            "</td></tr>";
         html += "<tr><td class='info-label'>Visibility</td><td>" + (p.is_private ? badge("warning", "Private") : badge("success", "Public")) + "</td></tr>";
         html += '<tr><td class="info-label">Created</td><td title="' + h(formatTime(p.created_at)) + '">' + h(timeAgo(p.created_at)) + "</td></tr>";
         html += '<tr><td class="info-label">Updated</td><td title="' + h(formatTime(p.updated_at)) + '">' + h(timeAgo(p.updated_at)) + "</td></tr>";
@@ -482,7 +493,7 @@ pages.project = function (name: string): void {
                 html += "<td>" + h(humanSize(si.size)) + "</td>";
                 html += "<td>" + (si.git_commit ? '<code class="commit">' + h(si.git_commit.substring(0, 12)) + "</code>" : "-") + "</td>";
                 html += '<td title="' + h(formatTime(si.updated_at)) + '">' + h(timeAgo(si.updated_at)) + "</td>";
-                html += '<td><a href="' + h(siteBranchURL(sitesBase, p.name, si.branch)) + '" target="_blank">Open</a></td></tr>';
+                html += '<td><a href="' + h(siteFilesHash(p.name, si.branch)) + '">Files</a> &middot; <a href="' + h(siteBranchURL(sitesBase, p.name, si.branch)) + '" target="_blank">Open</a></td></tr>';
             }
             html += "</tbody></table></div>";
         }
@@ -532,8 +543,8 @@ pages.release = function (name: string, version: string): void {
                 var pkgs = a.packages || [];
                 var dlQ = "?v=" + r.version + "&os=" + a.os + "&arch=" + a.arch;
                 if (priv) {
-                    // Private project: a plain dl link would 401. Each link mints a
-                    // signed, single-artifact link on click, then downloads it.
+                    // Each link mints a signed, single-artifact link on click, then
+                    // downloads it.
                     html += dlMintLink(dlBase + dlQ, p.name, r.version, a.os, a.arch, "raw", false, "raw", "Download (mints a temporary signed link)");
                     if (a.debug_storage_key) html += " " + dlMintLink(dlBase + dlQ + "&debug=1", p.name, r.version, a.os, a.arch, "raw", true, "debug", "Debug symbols");
                     for (var j = 0; j < pkgs.length; j++) {
@@ -817,15 +828,13 @@ const copyTempLink = function (btn: HTMLButtonElement, project: string, version:
     });
 };
 
-// dlMintLink renders a download link for a private project's artifact. A plain
-// dl link would 401 for the browser, so a click mints a signed single-artifact
-// link and downloads that instead.
+// dlMintLink renders a download link for a private project's artifact.
 //
 // The href is still the artifact's REAL url, never "#": an anchor's href is what
 // the browser copies, shows on hover, and opens in a new tab, and a page-local
-// "#" makes all three useless -- "copy link address" yielded the dashboard's own
-// URL. Following it directly asks for credentials, which is the honest answer
-// for a private artifact; the temp-link button next to it is the shareable one.
+// "#" makes all useless -- "copy link address" yielded the dashboard's own URL.
+// Following it directly asks for credentials, which is the honest answer for a
+// private artifact; the temp-link button next to it is the shareable one.
 //
 // Values are safe charsets (project/version/os/arch/fmt), so they embed directly
 // in the inline handler.
@@ -975,7 +984,7 @@ pages.site = function (name: string): void {
                 html += "<td>" + h(humanSize(s.size)) + "</td>";
                 html += "<td>" + (s.git_commit ? '<code class="commit">' + h(s.git_commit.substring(0, 12)) + "</code>" : "-") + "</td>";
                 html += '<td title="' + h(formatTime(s.updated_at)) + '">' + h(timeAgo(s.updated_at)) + "</td>";
-                html += '<td><a href="' + h(siteBranchURL(sitesBase, p.name, s.branch)) + '" target="_blank">Open</a></td></tr>';
+                html += '<td><a href="' + h(siteFilesHash(p.name, s.branch)) + '">Files</a> &middot; <a href="' + h(siteBranchURL(sitesBase, p.name, s.branch)) + '" target="_blank">Open</a></td></tr>';
             }
         }
         html += "</tbody></table></div>";
@@ -984,6 +993,41 @@ pages.site = function (name: string): void {
         html += codeBlock("CLI", "buildhost publish-site \\\n  --server " + bu + " \\\n  --token $TOKEN \\\n  --project " + p.name + " \\\n  --branch {branch} \\\n  --dir ./dist");
         html += codeBlock("Delete a branch", 'curl -X DELETE \\\n  -H "Authorization: Bearer $TOKEN" \\\n  ' + bu + "/sites/" + p.name + "/branch/{branch}");
         html += "</div>";
+
+        document.getElementById("content")!.innerHTML = html;
+    });
+};
+
+pages.siteFiles = function (name: string, branch: string): void {
+    setTitle(name + "@" + branch + " - Sites");
+    renderSidebar("sites");
+    apiFetch<SiteFilesData>("/projects/" + name + "/site-files?branch=" + encodeURIComponent(branch)).then(function (d) {
+        var base = siteBranchURL((d.services || {}).sites || "", d.project.name, branch);
+        var files = d.files || [];
+
+        var html = '<h1><a href="#/sites">Sites</a> / <a href="#/sites/' + h(d.project.name) + '">' + h(d.project.name) + "</a> / <code>" + h(branch) + "</code></h1>";
+        html += '<div class="card"><table class="data-table"><thead><tr><th>Path</th><th>Size</th></tr></thead><tbody>';
+        if (files.length === 0) {
+            html += '<tr><td colspan="2" class="empty">No files</td></tr>';
+        }
+        // Files arrive sorted by path, so a directory row goes in each time the
+        // directory changes.
+        var prevDirs: string[] = [];
+        for (var i = 0; i < files.length; i++) {
+            var f = files[i]!;
+            var parts = f.path.split("/");
+            var dirs = parts.slice(0, -1);
+            var same = 0;
+            while (same < dirs.length && same < prevDirs.length && dirs[same] === prevDirs[same]) same++;
+            for (var j = same; j < dirs.length; j++) {
+                html += '<tr><td style="padding-left:' + (j * 1.25 + 0.5) + 'em"><code>' + h(dirs[j]) + "/</code></td><td></td></tr>";
+            }
+            prevDirs = dirs;
+            var url = base + parts.map(encodeURIComponent).join("/");
+            html += '<tr><td style="padding-left:' + (dirs.length * 1.25 + 0.5) + 'em"><a href="' + h(url) + '" target="_blank"><code>' + h(parts[parts.length - 1]) + "</code></a></td>";
+            html += "<td>" + h(humanSize(f.size)) + "</td></tr>";
+        }
+        html += "</tbody></table></div>";
 
         document.getElementById("content")!.innerHTML = html;
     });
@@ -1090,8 +1134,19 @@ pages.storage = function (): void {
             }
         }
         html += "</tbody></table></div>";
+
+        html += '<div class="card"><h2>Database Backup</h2>';
+        html += '<p>Downloads a consistent copy of the SQLite database, taken while the server keeps running. Blobs are not included.</p>';
+        html += '<button class="btn" onclick="App.downloadBackup(this)">Download database backup</button></div>';
         document.getElementById("content")!.innerHTML = html;
     });
+};
+
+const downloadBackup = function (btn: HTMLButtonElement): void {
+    if (demo) { alert("Could not back up (preview/demo mode has no backend)."); return; }
+    btn.disabled = true;
+    window.location.href = "/api/backup";
+    setTimeout(function () { btn.disabled = false; }, 2500);
 };
 
 pages.retention = function (): void {
@@ -1215,8 +1270,6 @@ const copyInventory = function (btn: HTMLButtonElement): void {
 
 const downloadInventory = function (btn: HTMLButtonElement): void {
     inventoryAction(btn, "Downloaded", function (json, inv) {
-        // 2026-08-22T02:05:50.889Z -> 2026-08-22T02-05-50Z, so the name stays a
-        // legal filename and still sorts by time.
         var stamp = (inv.generated_at || "").replace(/\.\d+/, "").replace(/:/g, "-");
         var url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
         var a = document.createElement("a");
@@ -1390,6 +1443,9 @@ const route = function (): void {
 
     var projectM = hash.match(/^projects\/(.+)$/);
     if (projectM) { go(function () { pages.project(projectM![1]); }); return; }
+
+    var siteFilesM = hash.match(/^sites\/(.+)\/-\/files\/([^\/]+)$/);
+    if (siteFilesM) { go(function () { pages.siteFiles(siteFilesM![1], decodeURIComponent(siteFilesM![2])); }); return; }
 
     var siteM = hash.match(/^sites\/(.+)$/);
     if (siteM) { go(function () { pages.site(siteM![1]); }); return; }
@@ -1592,6 +1648,24 @@ const demoData: Record<string, unknown> = {
     }
 };
 
+// Each demo site branch gets a file list, so every Files link in the preview reaches a page.
+for (const name of ["myapp", "cli-tool"]) {
+    const pd = demoData["/projects/" + name] as ProjectData;
+    for (const site of pd.sites) {
+        demoData["/projects/" + name + "/site-files?branch=" + encodeURIComponent(site.branch)] = {
+            services: demoServices,
+            project: pd.project,
+            site: site,
+            files: [
+                { path: "404.html", size: 512 },
+                { path: "assets/css/site.css", size: 2048 },
+                { path: "assets/js/app.js", size: 18432 },
+                { path: "index.html", size: 4096 }
+            ]
+        };
+    }
+}
+
 // --- Init ---
 
 // --- Duplicates left by a GitHub rename ---
@@ -1642,6 +1716,21 @@ const applyMerge = function (from: string, into: string): void {
             pages.duplicates();
         });
     }).catch(function () { alert("Could not merge (preview/demo mode has no backend)."); });
+};
+
+const setVersioning = function (name: string, versioning: string): void {
+    if (!confirm("Change " + name + " versioning to " + versioning + "?")) {
+        pages.project(name);
+        return;
+    }
+    fetch("/api/projects/" + encodeURIComponent(name) + "/versioning", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ versioning: versioning })
+    }).then(function (res) {
+        if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); pages.project(name); });
+        pages.project(name);
+    }).catch(function () { alert("Could not change versioning (preview/demo mode has no backend)."); pages.project(name); });
 };
 
 pages.duplicates = function (): void {
@@ -1697,4 +1786,4 @@ window.addEventListener("unhandledrejection", function (ev) {
 });
 
 // Exported == reachable as App.x from the inline onclick handlers above.
-export { applyMerge, copyInventory, copyTempLink, copyText, deleteToken, downloadArtifact, downloadInventory, editToken, pages, previewMerge, recheckGoproxy, reloadTokens, runRetention, saveToken };
+export { applyMerge, copyInventory, copyTempLink, copyText, deleteToken, downloadArtifact, downloadBackup, downloadInventory, editToken, pages, previewMerge, recheckGoproxy, reloadTokens, runRetention, saveToken, setVersioning };

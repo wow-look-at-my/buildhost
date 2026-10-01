@@ -173,6 +173,18 @@ export interface SiteDetail {
     updated_at: string;
 }
 
+export interface SiteFile {
+    path: string;
+    size: number;
+}
+
+export interface SiteFilesData {
+    services: ServiceURLs;
+    project: Project;
+    site: SiteInfo;
+    files: SiteFile[];
+}
+
 export interface SitesData {
     services: ServiceURLs;
     sites: SiteDetail[];
@@ -309,6 +321,7 @@ export interface Pages {
     tokens(): void;
     sites(): void;
     site(name: string): void;
+    siteFiles(name: string, branch: string): void;
     oidc(): void;
     artifacts(): void;
     storage(): void;

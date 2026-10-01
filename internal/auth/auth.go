@@ -19,18 +19,20 @@ const (
 	userKey
 	githubTokenKey
 	sessionTokenDeadKey
+	runLockRepoKey
 )
 
 // OIDCRepoIdentity carries the GitHub repo identity from a verified OIDC
 type OIDCRepoIdentity struct {
 	RepoPath string // "owner/repo" (plain names, IDs stripped)
 	Issuer   string
-	// OwnerID / RepoID are GitHub's numeric account/repository IDs (from the
-	OwnerID string
-	RepoID  string
+	OwnerID  string
+	RepoID   string
+	// RunID / RunAttempt name the workflow run and attempt that minted the token.
+	RunID      string
+	RunAttempt string
 }
 
-// WithGitHubToken stashes the signed-in user's GitHub OAuth token (from the
 func WithGitHubToken(ctx context.Context, token string) context.Context {
 	return context.WithValue(ctx, githubTokenKey, token)
 }
@@ -119,7 +121,27 @@ func OIDCRepoFrom(ctx context.Context) OIDCRepoIdentity {
 	return v
 }
 
-// WithOIDCError records why OIDC verification failed for a presented JWT, so an
+// withRunLockOnlyRepo records the identity of a verified token that the event
+// allowlist refused. Only RunLockRepoFrom reads it.
+func withRunLockOnlyRepo(ctx context.Context, identity OIDCRepoIdentity) context.Context {
+	return context.WithValue(ctx, runLockRepoKey, identity)
+}
+
+// RunLockRepoFrom returns the run identity a run lock request may act for: the
+// identity of an accepted OIDC token, or of a verified token that only the
+// event allowlist refused. A run lock grants nothing but the run's own locks,
+// so a scheduled run can use them while the rest of the API refuses it.
+func RunLockRepoFrom(ctx context.Context) (OIDCRepoIdentity, bool) {
+	if t := TokenFrom(ctx); t != nil && t.HasScope("write") {
+		if repo := OIDCRepoFrom(ctx); repo.RepoID != "" {
+			return repo, true
+		}
+	}
+	repo, ok := ctx.Value(runLockRepoKey).(OIDCRepoIdentity)
+	return repo, ok && repo.RepoID != ""
+}
+
+// WithOIDCError records why OIDC verification failed for a presented JWT.
 func WithOIDCError(ctx context.Context, err error) context.Context {
 	return context.WithValue(ctx, oidcErrorKey, err)
 }

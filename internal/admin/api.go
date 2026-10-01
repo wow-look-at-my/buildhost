@@ -9,6 +9,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/sites"
 )
 
 func (s *Server) apiSidebar(w http.ResponseWriter, r *http.Request) {
@@ -243,6 +244,53 @@ func (s *Server) apiSites(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, map[string]any{
 		"sites":    sites,
 		"base_url": auth.RequestRootURL(r),
+		"services": serviceURLs(r),
+	})
+}
+
+// apiSiteFiles lists the files of a single site branch. The branch is a
+// query parameter because a branch name can hold a slash.
+func (s *Server) apiSiteFiles(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	branch := r.URL.Query().Get("branch")
+	if branch == "" {
+		http.Error(w, "missing branch query parameter", http.StatusBadRequest)
+		return
+	}
+
+	project, err := s.db.GetProject(ctx, r.PathValue("name"))
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	site, err := s.db.GetSite(ctx, project.ID, branch)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	files, err := sites.ListFiles(ctx, s.store, site.StorageKey)
+	if err != nil {
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	s.writeJSON(w, map[string]any{
+		"project":  project,
+		"site":     site,
+		"files":    files,
 		"services": serviceURLs(r),
 	})
 }

@@ -54,7 +54,7 @@ func (q *Queries) DeleteProjectAlias(ctx context.Context, name string) error {
 }
 
 const getProjectByAlias = `-- name: GetProjectByAlias :one
-SELECT p.id, p.name, p.description, p.homepage, p.license, p.is_private, p.versioning, p.github_repo, p.github_owner_id, p.github_repo_id, p.default_branch, p.create_service, p.created_at, p.updated_at
+SELECT p.id, p.name, p.description, p.homepage, p.license, p.is_private, p.versioning, p.github_repo, p.github_owner_id, p.github_repo_id, p.default_branch, p.create_service, p.apt_depends, p.created_at, p.updated_at
 FROM projects p JOIN project_aliases a ON a.project_id = p.id
 WHERE a.name = ?
 `
@@ -75,6 +75,7 @@ func (q *Queries) GetProjectByAlias(ctx context.Context, name string) (Project, 
 		&i.GithubRepoID,
 		&i.DefaultBranch,
 		&i.CreateService,
+		&i.AptDepends,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -82,7 +83,7 @@ func (q *Queries) GetProjectByAlias(ctx context.Context, name string) (Project, 
 }
 
 const getProjectByName = `-- name: GetProjectByName :one
-SELECT id, name, description, homepage, license, is_private, versioning, github_repo, github_owner_id, github_repo_id, default_branch, create_service, created_at, updated_at
+SELECT id, name, description, homepage, license, is_private, versioning, github_repo, github_owner_id, github_repo_id, default_branch, create_service, apt_depends, created_at, updated_at
 FROM projects WHERE name = ?
 `
 
@@ -102,6 +103,7 @@ func (q *Queries) GetProjectByName(ctx context.Context, name string) (Project, e
 		&i.GithubRepoID,
 		&i.DefaultBranch,
 		&i.CreateService,
+		&i.AptDepends,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -188,7 +190,7 @@ func (q *Queries) ListAllProjectAliases(ctx context.Context) ([]ListAllProjectAl
 }
 
 const listAllProjects = `-- name: ListAllProjects :many
-SELECT id, name, description, homepage, license, is_private, versioning, github_repo, github_owner_id, github_repo_id, default_branch, create_service, created_at, updated_at
+SELECT id, name, description, homepage, license, is_private, versioning, github_repo, github_owner_id, github_repo_id, default_branch, create_service, apt_depends, created_at, updated_at
 FROM projects ORDER BY name
 `
 
@@ -214,6 +216,7 @@ func (q *Queries) ListAllProjects(ctx context.Context) ([]Project, error) {
 			&i.GithubRepoID,
 			&i.DefaultBranch,
 			&i.CreateService,
+			&i.AptDepends,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -288,7 +291,7 @@ func (q *Queries) ListProjectAliases(ctx context.Context, projectID int64) ([]st
 }
 
 const listProjectsByGitHubRepoID = `-- name: ListProjectsByGitHubRepoID :many
-SELECT id, name, description, homepage, license, is_private, versioning, github_repo, github_owner_id, github_repo_id, default_branch, create_service, created_at, updated_at
+SELECT id, name, description, homepage, license, is_private, versioning, github_repo, github_owner_id, github_repo_id, default_branch, create_service, apt_depends, created_at, updated_at
 FROM projects WHERE github_repo_id = ? AND github_repo_id != '' ORDER BY name
 `
 
@@ -314,6 +317,7 @@ func (q *Queries) ListProjectsByGitHubRepoID(ctx context.Context, githubRepoID s
 			&i.GithubRepoID,
 			&i.DefaultBranch,
 			&i.CreateService,
+			&i.AptDepends,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -497,6 +501,20 @@ func (q *Queries) RenameProject(ctx context.Context, arg RenameProjectParams) er
 	return err
 }
 
+const setProjectAptDepends = `-- name: SetProjectAptDepends :exec
+UPDATE projects SET apt_depends = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type SetProjectAptDependsParams struct {
+	AptDepends string `json:"apt_depends"`
+	ID         int64  `json:"id"`
+}
+
+func (q *Queries) SetProjectAptDepends(ctx context.Context, arg SetProjectAptDependsParams) error {
+	_, err := q.db.ExecContext(ctx, setProjectAptDepends, arg.AptDepends, arg.ID)
+	return err
+}
+
 const setProjectCreateService = `-- name: SetProjectCreateService :exec
 UPDATE projects SET create_service = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
 `
@@ -551,6 +569,20 @@ type SetProjectGitHubRepoParams struct {
 
 func (q *Queries) SetProjectGitHubRepo(ctx context.Context, arg SetProjectGitHubRepoParams) error {
 	_, err := q.db.ExecContext(ctx, setProjectGitHubRepo, arg.GithubRepo, arg.ID)
+	return err
+}
+
+const setProjectVersioning = `-- name: SetProjectVersioning :exec
+UPDATE projects SET versioning = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type SetProjectVersioningParams struct {
+	Versioning Versioning `json:"versioning"`
+	ID         int64      `json:"id"`
+}
+
+func (q *Queries) SetProjectVersioning(ctx context.Context, arg SetProjectVersioningParams) error {
+	_, err := q.db.ExecContext(ctx, setProjectVersioning, arg.Versioning, arg.ID)
 	return err
 }
 

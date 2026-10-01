@@ -6,8 +6,7 @@
 # rolling updater creates the new container from the OLD container's config,
 # which carries the entrypoint resolved from the image that container was
 # created from -- for one predating the APE, ["buildhost"]. That is a bare exec
-# of an APE, which the kernel answers with ENOEXEC and docker reports as exit
-# 126, on a loop.
+# of an APE, which the kernel answers with ENOEXEC. Docker then reports exit code 126 and restarts it forever.
 #
 # The fix is a shebang launcher on PATH, which the kernel CAN exec, in front of
 # the APE.
@@ -31,7 +30,7 @@ tests:
 			- 'ENTRYPOINT ["/usr/local/bin/buildhost"]'
 			- 'CMD ["/usr/local/bin/buildhost", "healthcheck"]'
 
-	# The failing shape, in the two places it can come back.
+	# The failing shape, in both places it can come back.
 	- desc: neither one puts a shell in front of a path
 	  cmd: |
 		set -eu
@@ -68,7 +67,7 @@ tests:
 			- "#!/bin/sh"
 
 	# Both halves are read out and compared, rather than one literal line pinned
-	# here. The property that matters is that the two agree.
+	# here. The property that matters is that both agree.
 	- desc: the launcher starts the binary at the path the Dockerfile puts it
 	  cmd: |
 		set -eu
@@ -93,7 +92,7 @@ tests:
 	- desc: the image stages the binary rather than shipping the APE
 	  cmd: |
 		set -eu
-		grep -qE '^RUN sh /in/apestage /in/buildhost /buildhost "\$TARGETARCH"$' Dockerfile || {
+		grep -qE '^RUN APE_LOADERDIR=/tmp sh /in/apestage /in/buildhost /buildhost "\$TARGETARCH"$' Dockerfile || {
 			echo 'the image never stages the APE, so the trampoline runs in the container' >&2; exit 1; }
 		if grep -qE '^COPY .*build/buildhost /usr/local/lib' Dockerfile; then
 			echo 'the image copies the APE straight in, so it needs an exec-able /tmp' >&2; exit 1
@@ -103,8 +102,7 @@ tests:
 		stdout:
 			- "stages-the-binary"
 
-	# The shell must come from an image that ships a STATIC busybox. Alpine's is
-	# a PIE against /lib/ld-musl-x86_64.so.1, and the base image has no /lib.
+	# The shell must come from an image that ships a STATIC busybox.
 	- desc: the shell stage is the busybox image, and that is where /bin comes from
 	  cmd: |
 		set -eu

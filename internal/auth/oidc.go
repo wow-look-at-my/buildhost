@@ -16,6 +16,16 @@ import (
 
 var ErrOIDCNotMatched = errors.New("no matching OIDC policy")
 
+// EventNotAllowedError rejects a verified token whose event is outside the
+// allowlist.
+type EventNotAllowedError struct {
+	Event string
+}
+
+func (e *EventNotAllowedError) Error() string {
+	return fmt.Sprintf("event %q not in allowed list", e.Event)
+}
+
 type OIDCVerifier struct {
 	mu             sync.RWMutex
 	cache          map[string]*cachedJWKS
@@ -38,11 +48,13 @@ type oidcClaims struct {
 	jwt.RegisteredClaims
 	EventName            string `json:"event_name"`
 	RepositoryVisibility string `json:"repository_visibility"`
-	// Dedicated GitHub Actions repo-identity claims, preferred over parsing the
+	// Dedicated GitHub Actions repo-identity claims.
 	Repository        string `json:"repository"`          // "OWNER/REPO"
 	RepositoryID      string `json:"repository_id"`       // numeric repository ID
 	RepositoryOwner   string `json:"repository_owner"`    // "OWNER"
 	RepositoryOwnerID string `json:"repository_owner_id"` // numeric account ID
+	RunID             string `json:"run_id"`
+	RunAttempt        string `json:"run_attempt"`
 }
 
 const oidcLeeway = 60 * time.Second
@@ -73,10 +85,12 @@ type VerifyResult struct {
 	// RepoPath is the "owner/repo" parsed from a GitHub Actions OIDC subject
 	RepoPath string
 	// Issuer is the verified token issuer, so the caller can gate
-	Issuer string
-	// OwnerID / RepoID are GitHub's numeric account/repository IDs from the
+	Issuer  string
 	OwnerID string
 	RepoID  string
+	// RunID / RunAttempt name the workflow run and attempt that minted the token.
+	RunID      string
+	RunAttempt string
 }
 
 func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []db.OIDCPolicy) (*db.APIToken, string, error) {
@@ -151,11 +165,12 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 	verified := token.Claims.(*oidcClaims)
 	ownerID, repoID := verified.repoIDs()
 
-	// Surface the repo identity and issuer for both verification paths, so the
+	// Surface the repo identity and issuer for both verification paths.
 	if result != nil {
 		result.Issuer = verified.Issuer
 		result.RepoPath = verified.repoPath()
 		result.OwnerID, result.RepoID = ownerID, repoID
+		result.RunID, result.RunAttempt = verified.RunID, verified.RunAttempt
 	}
 
 	if matchedPolicy != nil {
@@ -176,10 +191,10 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 	}
 
 	if !slices.Contains(v.allowedEvents, "*") && !slices.Contains(v.allowedEvents, verified.EventName) {
-		return nil, "", fmt.Errorf("event %q not in allowed list", verified.EventName)
+		return nil, "", &EventNotAllowedError{Event: verified.EventName}
 	}
 
-	// No audience gate here: auto-provisioning trusts the issuer signature, the
+	// No audience gate here: auto-provisioning trusts the issuer signature.
 
 	project := verified.projectName()
 	if project == "" {
@@ -320,8 +335,7 @@ func trimRepoPathIDs(path string) string {
 }
 
 // orgAllowed reports whether the token's org may auto-provision. "*" allows
-// all. GitHub org/user logins are case-insensitive (github.com treats
-// "PazerOP" and "pazerop" as the same account) and the token preserves the
+// all.
 func orgAllowed(allowed []string, org, ownerID string) bool {
 	if slices.Contains(allowed, "*") {
 		return true

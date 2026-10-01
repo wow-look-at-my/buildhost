@@ -18,7 +18,9 @@ RUN mkdir -p /tmpdir && chmod 1777 /tmpdir
 FROM busybox:musl AS staged
 ARG TARGETARCH
 COPY build/buildhost build/apestage /in/
-RUN sh /in/apestage /in/buildhost /buildhost "$TARGETARCH"
+# A build container mounts /dev/shm noexec, and busybox as root reads it as
+# executable. The APE's own directory list starts there, so name /tmp instead.
+RUN APE_LOADERDIR=/tmp sh /in/apestage /in/buildhost /buildhost "$TARGETARCH"
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
@@ -36,10 +38,7 @@ LABEL org.opencontainers.image.description="Universal package registry server"
 COPY --from=dirs /shell /bin
 COPY --from=dirs /tmpdir /tmp
 # The APE sits under /usr/local/lib and a shebang launcher takes its place on
-# PATH, the same shape the deb repackager gives an APE. A launcher the kernel
-# can exec keeps the shell an implementation detail of this image: an
-# entrypoint that names the binary any other way still starts the server,
-# instead of exiting 126 on a bare exec.
+# PATH, the same shape the deb repackager gives an APE.
 COPY --from=staged --chmod=755 /buildhost /usr/local/lib/buildhost/buildhost
 COPY --chmod=755 scripts/image-launcher.sh /usr/local/bin/buildhost
 COPY --from=dirs --chown=65532:65532 /data /var/lib/buildhost

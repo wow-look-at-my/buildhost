@@ -113,6 +113,8 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("POST /api/projects/{name}/download-links", router.Allow, s.apiCreateDownloadLink)
 	mux.HandleFunc("GET /api/projects/{name}/merge-plan", router.Allow, s.apiMergePlan)
 	mux.HandleFunc("POST /api/projects/{name}/merge", router.Allow, s.apiMerge)
+	mux.HandleFunc("PUT /api/projects/{name}/versioning", router.Allow, s.apiSetVersioning)
+	mux.HandleFunc("GET /api/projects/{name}/site-files", router.Allow, s.apiSiteFiles)
 	mux.HandleFunc("GET /api/projects/{name}", router.Allow, s.apiProject)
 	mux.HandleFunc("GET /api/duplicates", router.Allow, s.apiDuplicates)
 	mux.HandleFunc("GET /api/projects", router.Allow, s.apiProjects)
@@ -125,6 +127,7 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/sites", router.Allow, s.apiSites)
 	mux.HandleFunc("GET /api/artifacts", router.Allow, s.apiArtifacts)
 	mux.HandleFunc("GET /api/storage", router.Allow, s.apiStorage)
+	mux.HandleFunc("GET /api/backup", router.Allow, s.apiBackup)
 	mux.HandleFunc("GET /api/goproxy", router.Allow, s.apiGoproxy)
 	mux.HandleFunc("POST /api/goproxy/recheck", router.Allow, s.apiGoproxyRecheck)
 	mux.HandleFunc("GET /api/retention", router.Allow, s.apiRetention)
@@ -191,7 +194,7 @@ func (s *Server) writeJSON(w http.ResponseWriter, v any) {
 //
 // The registry serves each format from a dedicated subdomain (dl., apt., brew.,
 // npm., oci., sites., static.) -- never from a path prefix on the main host.
-// The admin dashboard itself runs on a subdomain (e.g. admin.example.com), so
+// The admin dashboard itself runs on a subdomain (e.g. admin.example.com).
 func serviceURLs(r *http.Request) map[string]string {
 	return map[string]string{
 		"dl":     auth.DeriveServiceURL(r, "dl").String(),
