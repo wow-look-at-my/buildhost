@@ -15,6 +15,7 @@ import (
 // end to end. The tests here cover the pure parsing/helper functions.
 
 func TestParseRoute(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name     string
 		pathVal  string
@@ -41,7 +42,6 @@ func TestParseRoute(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "/@buildhost/"+tt.pathVal, nil)
 			// The npm route captures the whole scoped segment; the router has
-			// already percent-decoded it to `@buildhost/<name>`.
 			req.SetPathValue("pkg", "@buildhost/"+tt.pathVal)
 			ri := parseRoute(req).(route)
 			assert.Equal(t, tt.wantProj, ri.project, "project")
@@ -56,6 +56,7 @@ func TestParseRoute(t *testing.T) {
 }
 
 func TestSplitPlatform(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		input    string
 		wantProj string
@@ -84,6 +85,7 @@ func TestSplitPlatform(t *testing.T) {
 }
 
 func TestWrapperRunScript(t *testing.T) {
+	t.Serial()
 	script := wrapperRunScript("mytool")
 	assert.NotEmpty(t, script)
 	assert.Contains(t, script, "mytool")
@@ -94,6 +96,7 @@ func TestWrapperRunScript(t *testing.T) {
 }
 
 func TestProjectNPMNameRoundTrip(t *testing.T) {
+	t.Serial()
 	for _, tt := range []struct{ project, npm string }{
 		{"go-toolchain", "go-toolchain"},
 		{"cc-marketplace/my-plugin", "cc-marketplace__my-plugin"},
@@ -105,6 +108,7 @@ func TestProjectNPMNameRoundTrip(t *testing.T) {
 }
 
 func TestPlatformHelpers(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "darwin", npmPlatform(db.OSDarwin))
 	assert.Equal(t, "win32", npmPlatform(db.OSWindows))
 	assert.Equal(t, "linux", npmPlatform(db.OSLinux))
@@ -123,6 +127,7 @@ func TestPlatformHelpers(t *testing.T) {
 }
 
 func TestNormalizeVersion(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "1.2.3", normalizeVersion("1.2.3"))
 	assert.Equal(t, "1.2.3", normalizeVersion("v1.2.3"))
 	assert.Equal(t, "1.0.0", normalizeVersion("1"))
@@ -130,7 +135,3 @@ func TestNormalizeVersion(t *testing.T) {
 }
 
 // TestServeHTTP_RoutedRealNpmRequest drives requests through the real subdomain
-// dispatch and router exactly as `npm install` does. npm percent-encodes the
-// scope slash, so the packument path is `/@buildhost%2f<name>`. The other
-// ServeHTTP tests inject the parsed route directly and so never exercise
-// routing -- which is why the %2f mismatch went unnoticed until production.

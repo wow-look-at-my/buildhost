@@ -39,8 +39,12 @@ type route struct {
 func (r route) ProjectName() string { return r.project }
 
 // Access is write for push verbs (so requireProject enforces a write-scoped
-// token authorized for the project) and read for pulls.
+// token authorized for the project) and read for pulls. Upload sessions are
+// push-flow state in every method -- the GET status read exists to resume an
 func (r route) Access() auth.AccessLevel {
+	if r.action == "uploads" {
+		return auth.WriteAccess
+	}
 	switch r.method {
 	case http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete:
 		return auth.WriteAccess
@@ -114,13 +118,6 @@ type Handler struct {
 
 // V2Root answers the OCI base endpoint GET/HEAD /v2/. The Docker/OCI client
 // begins every auth handshake with an unauthenticated request here to discover
-// the scheme: a registry that requires credentials MUST reply 401 with a
-// WWW-Authenticate challenge so the client knows to send them. Replying 200
-// anonymously makes the client conclude no auth is needed -- it never sends
-// credentials, the first real (manifest) request then 401s, and the pull dies.
-// Mirror the manifest/blob endpoints: challenge when unauthenticated, 200 once a
-// valid credential is presented (the global auth middleware has, by this point,
-// placed the verified token in the request context).
 func (h *Handler) V2Root(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
 	if auth.TokenFrom(r.Context()) == nil {
@@ -162,6 +159,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.PatchBlobUpload(w, r, rt.reference)
 		case http.MethodPut:
 			h.PutBlobUpload(w, r, rt.reference)
+		case http.MethodGet:
+			h.GetBlobUploadStatus(w, r, rt.reference)
 		default:
 			ociError(w, http.StatusMethodNotAllowed, "UNSUPPORTED", "unsupported method")
 		}

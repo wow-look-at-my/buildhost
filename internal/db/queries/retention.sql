@@ -22,6 +22,7 @@ SELECT EXISTS(
     UNION ALL SELECT 1 FROM packaged_artifacts pa WHERE pa.storage_key = sqlc.arg(key)
     UNION ALL SELECT 1 FROM sites s               WHERE s.storage_key = sqlc.arg(key)
     UNION ALL SELECT 1 FROM oci_blob_links obl    WHERE obl.storage_key = sqlc.arg(key)
+    UNION ALL SELECT 1 FROM goproxy_versions gv   WHERE gv.zip_storage_key = sqlc.arg(key)
 ) AS referenced;
 
 -- name: ListReleaseBlobKeys :many
@@ -80,10 +81,16 @@ ORDER BY r.project_id, r.git_branch, r.version_num DESC;
 
 -- name: ListAbandonedReleases :many
 -- Unpublished (partial/failed upload) releases older than the cutoff.
+--
+-- Drafts are deliberately excluded: an unpublished release used to mean only
+-- "an upload that never finished", so sweeping them was safe. A draft is an
+-- unpublished release its owner MEANT to keep (downloadable by exact version,
+-- invisible to latest/brew/apt/npm/OCI), and deleting one because it got old
+-- would be deleting the feature.
 SELECT r.id, r.project_id, p.name AS project_name, r.git_branch, r.version
 FROM releases r
 JOIN projects p ON p.id = r.project_id
-WHERE r.published = 0 AND r.created_at < datetime(sqlc.arg(cutoff));
+WHERE r.published = 0 AND r.draft = 0 AND r.created_at < datetime(sqlc.arg(cutoff));
 
 -- name: SumReclaimableBytes :one
 -- UPPER BOUND on bytes keep-N would free: the logical sizes of evictable releases'
@@ -111,3 +118,71 @@ SELECT CAST(
               JOIN artifacts a ON pa.artifact_id = a.id
               WHERE a.release_id IN (SELECT id FROM evictable)), 0)
 AS INTEGER) AS reclaimable_bytes;
+
+-- name: ListArtifactFiles :many
+-- Every artifact row with the up to three blobs it references (raw, stripped,
+-- debug) and the release/project context needed to explain why it is kept.
+-- Feeds the retention inventory; the caller expands one row into one entry per
+-- non-empty storage key.
+SELECT a.id, a.release_id, a.os, a.arch, a.kind, a.filename, a.exe_format,
+       a.storage_key, a.size, a.sha256,
+       a.stripped_storage_key, a.stripped_size, a.stripped_sha256,
+       a.debug_storage_key, a.debug_size,
+       a.created_at,
+       r.version, r.version_num, r.git_branch, r.published, r.draft,
+       r.project_id, p.name AS project_name
+FROM artifacts a
+JOIN releases r ON r.id = a.release_id
+JOIN projects p ON p.id = r.project_id
+ORDER BY p.name, r.version_num, a.id;
+
+-- name: ListPackagedFiles :many
+-- Every stored repackaged artifact (the OCI layers; other formats stream and
+-- are never stored) with its artifact, release and project context.
+SELECT pa.id, pa.artifact_id, pa.format, pa.storage_key, pa.size, pa.sha256,
+       pa.filename, pa.created_at,
+       a.release_id, a.os, a.arch, a.kind,
+       r.version, r.version_num, r.git_branch, r.published, r.draft,
+       r.project_id, p.name AS project_name
+FROM packaged_artifacts pa
+JOIN artifacts a ON a.id = pa.artifact_id
+JOIN releases r ON r.id = a.release_id
+JOIN projects p ON p.id = r.project_id
+ORDER BY p.name, r.version_num, pa.id;
+
+-- name: ListOCIBlobFiles :many
+-- Every project-scoped OCI blob link. These are not release-scoped, so release
+-- eviction never frees them.
+SELECT obl.id, obl.project_id, p.name AS project_name, obl.storage_key,
+       obl.media_type, obl.size, obl.is_manifest, obl.created_at
+FROM oci_blob_links obl
+JOIN projects p ON p.id = obl.project_id
+ORDER BY p.name, obl.id;
+
+-- name: ListGoproxyBlobFiles :many
+-- Every cached Go module zip. Cached upstream modules are not projects, so
+-- release eviction never frees them either.
+SELECT gv.id, gm.module_path, gv.version, gv.zip_storage_key, gv.zip_size, gv.fetched_at
+FROM goproxy_versions gv
+JOIN goproxy_modules gm ON gm.id = gv.module_id
+WHERE gv.zip_storage_key != ''
+ORDER BY gm.module_path, gv.version;
+
+-- name: ListReleaseRetentionFacts :many
+-- One row per release with the facts the keep-N and abandoned queries decide on:
+-- how many newer published releases share its branch, whether an OCI tag or a
+-- docker artifact pins it, and its published/draft state. The inventory turns
+-- these into a per-file hold reason, so an operator can see WHY a release is
+-- kept instead of only that it is.
+SELECT r.id, r.project_id, p.name AS project_name, r.version, r.version_num,
+       r.git_branch, r.published, r.draft, r.created_at,
+       (SELECT COUNT(*) FROM releases r2
+         WHERE r2.project_id = r.project_id
+           AND r2.git_branch = r.git_branch
+           AND r2.published = 1
+           AND r2.version_num > r.version_num) AS newer_published_on_branch,
+       (SELECT COUNT(*) FROM oci_tags t WHERE t.release_id = r.id) AS oci_tag_count,
+       (SELECT COUNT(*) FROM artifacts a WHERE a.release_id = r.id AND a.kind = 'docker') AS docker_artifact_count
+FROM releases r
+JOIN projects p ON p.id = r.project_id
+ORDER BY p.name, r.version_num;

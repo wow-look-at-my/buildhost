@@ -10,10 +10,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 func TestCreateProject_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":"myproject","description":"A test project","versioning":"semver"}`
@@ -31,6 +33,7 @@ func TestCreateProject_Success(t *testing.T) {
 }
 
 func TestCreateProject_NoAuth(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":"myproject"}`
@@ -42,6 +45,7 @@ func TestCreateProject_NoAuth(t *testing.T) {
 }
 
 func TestCreateProject_EmptyName(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":""}`
@@ -55,6 +59,7 @@ func TestCreateProject_EmptyName(t *testing.T) {
 }
 
 func TestCreateProject_InvalidBody(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	req := httptest.NewRequest("POST", "/api/projects", strings.NewReader("not json"))
@@ -66,6 +71,7 @@ func TestCreateProject_InvalidBody(t *testing.T) {
 }
 
 func TestCreateProject_InvalidVersioning(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":"myproject","versioning":"bogus"}`
@@ -79,6 +85,7 @@ func TestCreateProject_InvalidVersioning(t *testing.T) {
 }
 
 func TestCreateProject_DefaultVersioning(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":"autoproject"}`
@@ -95,6 +102,7 @@ func TestCreateProject_DefaultVersioning(t *testing.T) {
 }
 
 func TestCreateProject_Duplicate(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -111,6 +119,7 @@ func TestCreateProject_Duplicate(t *testing.T) {
 }
 
 func TestGetProject_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -130,9 +139,108 @@ func TestGetProject_Success(t *testing.T) {
 }
 
 // Note: GetProject auth (private project, not found) is tested via requireProject
-// middleware in the auth package.
+
+// PATCH must classify as a write verb: UpdateProjectSettings relies on the
+// centralized requireProject middleware demanding a write-scoped token
+// authorized for the project, which only happens for WriteAccess routes.
+func TestParseRoute_PATCHIsWrite(t *testing.T) {
+	t.Serial()
+	req := httptest.NewRequest("PATCH", "/api/v1/projects/x", nil)
+	req.SetPathValue("project", "x")
+	assert.Equal(t, auth.WriteAccess, parseRoute(req).Access())
+}
+
+func TestUpdateProjectSettings_CreateService(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "svcproj", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	patch := func(body string, p *db.Project) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("PATCH", "/api/v1/projects/svcproj", strings.NewReader(body))
+		req.SetPathValue("project", "svcproj")
+		req = withProjectRoute(req, p)
+		rec := httptest.NewRecorder()
+		h.UpdateProjectSettings(rec, req)
+		return rec
+	}
+
+	// Enable: the response and a fresh DB read both carry the flag.
+	rec := patch(`{"create_service":true}`, proj)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var p db.Project
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
+	assert.True(t, p.CreateService)
+	got, err := h.DB.GetProject(ctx, "svcproj")
+	require.NoError(t, err)
+	assert.True(t, got.CreateService)
+
+	// Absent key = unchanged (PATCH semantics).
+	rec = patch(`{}`, got)
+	require.Equal(t, http.StatusOK, rec.Code)
+	got, err = h.DB.GetProject(ctx, "svcproj")
+	require.NoError(t, err)
+	assert.True(t, got.CreateService)
+
+	// Explicit false flips it back off.
+	rec = patch(`{"create_service":false}`, got)
+	require.Equal(t, http.StatusOK, rec.Code)
+	got, err = h.DB.GetProject(ctx, "svcproj")
+	require.NoError(t, err)
+	assert.False(t, got.CreateService)
+}
+
+func TestUpdateProjectSettings_RefusesVersioning(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "verproj", Versioning: db.VersioningSemver}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	patch := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("PATCH", "/api/v1/projects/verproj", strings.NewReader(body))
+		req.SetPathValue("project", "verproj")
+		req = withProjectRoute(req, proj)
+		rec := httptest.NewRecorder()
+		h.UpdateProjectSettings(rec, req)
+		return rec
+	}
+
+	for _, body := range []string{`{"versioning":"auto"}`, `{"versioning":null}`, `{"create_service":true,"versioning":"auto"}`} {
+		rec := patch(body)
+		assert.Equal(t, http.StatusForbidden, rec.Code, "a write token must not change versioning: %s", body)
+		got, err := h.DB.GetProject(ctx, "verproj")
+		require.NoError(t, err)
+		assert.Equal(t, db.VersioningSemver, got.Versioning, body)
+		assert.False(t, got.CreateService, "a refused request changes nothing: %s", body)
+	}
+
+	rec := patch(`{"create_service":true}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+func TestUpdateProjectSettings_InvalidBody(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "badbody", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	req := httptest.NewRequest("PATCH", "/api/v1/projects/badbody", strings.NewReader("not json"))
+	req.SetPathValue("project", "badbody")
+	req = withProjectRoute(req, proj)
+	rec := httptest.NewRecorder()
+	h.UpdateProjectSettings(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
 
 func TestListProjects_FiltersPrivate(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -151,6 +259,7 @@ func TestListProjects_FiltersPrivate(t *testing.T) {
 }
 
 func TestListProjects_AuthSeesPrivate(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -169,6 +278,7 @@ func TestListProjects_AuthSeesPrivate(t *testing.T) {
 }
 
 func TestValidProjectName_SlashNamespaced(t *testing.T) {
+	t.Serial()
 	for _, name := range []string{"log-streamer", "log-streamer/client", "log-streamer/server", "foo/cli", "a/b/c", "x"} {
 		assert.True(t, validProjectName(name), "expected valid: %q", name)
 	}
@@ -178,6 +288,7 @@ func TestValidProjectName_SlashNamespaced(t *testing.T) {
 }
 
 func TestCreateProject_SlashNamespaced(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":"log-streamer/client","versioning":"auto"}`

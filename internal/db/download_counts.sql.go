@@ -37,7 +37,7 @@ func (q *Queries) IncrementDownloadCount(ctx context.Context, artifactID int64) 
 const listArtifactDetailsWithDownloads = `-- name: ListArtifactDetailsWithDownloads :many
 SELECT a.id, a.release_id, a.os, a.arch, a.kind, a.storage_key, a.size, a.sha256,
        a.stripped_storage_key, a.stripped_size, a.stripped_sha256,
-       a.debug_storage_key, a.debug_size, a.filename, a.created_at,
+       a.debug_storage_key, a.debug_size, a.filename, a.exe_format, a.created_at,
        CAST(COALESCE(dc.count, 0) AS INTEGER) AS download_count
 FROM artifacts a
 LEFT JOIN download_counts dc ON dc.artifact_id = a.id
@@ -60,6 +60,7 @@ type ListArtifactDetailsWithDownloadsRow struct {
 	DebugStorageKey    string    `json:"debug_storage_key"`
 	DebugSize          int64     `json:"debug_size"`
 	Filename           string    `json:"filename"`
+	ExeFormat          string    `json:"exe_format"`
 	CreatedAt          time.Time `json:"created_at"`
 	DownloadCount      int64     `json:"download_count"`
 }
@@ -88,6 +89,7 @@ func (q *Queries) ListArtifactDetailsWithDownloads(ctx context.Context, releaseI
 			&i.DebugStorageKey,
 			&i.DebugSize,
 			&i.Filename,
+			&i.ExeFormat,
 			&i.CreatedAt,
 			&i.DownloadCount,
 		); err != nil {

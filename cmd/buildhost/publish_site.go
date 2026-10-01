@@ -3,6 +3,7 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,6 +24,7 @@ func init() {
 	publishSiteCmd.Flags().String("branch", "", "Branch name")
 	publishSiteCmd.Flags().String("dir", "", "Directory containing site files")
 	publishSiteCmd.Flags().String("git-commit", "", "Git commit SHA")
+	addChunkSizeFlag(publishSiteCmd)
 }
 
 var publishSiteCmd = &cobra.Command{
@@ -48,42 +50,56 @@ func runPublishSite(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	pr, pw := io.Pipe()
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- createTarGz(pw, dir)
-		pw.Close()
-	}()
+	// Archive to a temp file (not a streaming pipe) so the upload knows the
+	tmp, err := os.CreateTemp("", "buildhost-site-*.tar.gz")
+	if err != nil {
+		return fmt.Errorf("create archive temp file: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+	if err := createTarGz(tmp, dir); err != nil {
+		tmp.Close()
+		return fmt.Errorf("create archive: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("create archive: %w", err)
+	}
+
+	up, err := newUploader(cmd, serverURL, token)
+	if err != nil {
+		return err
+	}
+	header := map[string]string{"Content-Type": "application/gzip"}
+	if gitCommit != "" {
+		header["X-Git-Commit"] = gitCommit
+	}
 
 	endpoint := fmt.Sprintf("%s/%s/branch/%s", sitesBase, project, branch)
-	req, err := http.NewRequest("PUT", endpoint, pr)
-	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/gzip")
-	if gitCommit != "" {
-		req.Header.Set("X-Git-Commit", gitCommit)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := up.Upload("PUT", endpoint, header, tmp.Name())
 	if err != nil {
 		return fmt.Errorf("upload site: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if tarErr := <-errCh; tarErr != nil {
-		return fmt.Errorf("create archive: %w", tarErr)
-	}
-
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("upload failed: %s: %s", resp.Status, body)
 	}
 
 	fmt.Printf("published site %s branch %s\n", project, branch)
-	fmt.Printf("  %s/%s/branch/%s/\n", sitesBase, project, branch)
+	fmt.Printf("  %s\n", publishedSiteURL(body, sitesBase, project, branch))
 	return nil
+}
+
+// publishedSiteURL is where the site is now served. Never derive it: the server
+// owns the URL grammar and reports it. The fallback is for servers predating
+func publishedSiteURL(body []byte, sitesBase, project, branch string) string {
+	var resp struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(body, &resp); err == nil && resp.URL != "" {
+		return resp.URL
+	}
+	return fmt.Sprintf("%s/%s/@%s/", sitesBase, project, branch)
 }
 
 func createTarGz(w io.Writer, dir string) error {
