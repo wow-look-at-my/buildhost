@@ -19,8 +19,8 @@ From a single uploaded binary, buildhost serves:
 buildhost exposes a generated Homebrew tap as a Git repository. Add the tap once, trust it, then install formulas through the tap name. `brew trust` is required since Homebrew 6.0, which refuses to evaluate third-party taps until they are trusted (older brews have no `trust` command and enforce nothing):
 
 ```bash
+brew trust https://brew.pazer.build/tap.git
 brew tap pazer/build https://brew.pazer.build/tap.git
-brew trust pazer/build
 brew install pazer/build/go-toolchain
 ```
 
@@ -43,8 +43,8 @@ An artifact download authenticates separately, through `HOMEBREW_BUILDHOST_TOKEN
 The example below uses a private project named `myrepo/myapp`. Under the folding rule above it installs as `myrepo-myapp`. The installed command keeps the binary's own name, `myapp`:
 
 ```bash
+brew trust "https://x:$TOKEN@brew.pazer.build/private/tap.git"
 brew tap pazer/build "https://x:$TOKEN@brew.pazer.build/private/tap.git"
-brew trust pazer/build
 export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
 brew install pazer/build/myrepo-myapp
 ```
