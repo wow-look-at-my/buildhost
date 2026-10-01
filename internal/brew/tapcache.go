@@ -12,136 +12,152 @@ import (
 )
 
 // tapSnapshotDirName is the directory under the scratch root (TmpDir) that
-// holds materialized tap snapshots, one subdirectory per build.
 const tapSnapshotDirName = "brew-tap"
 
-// tapCacheTTL bounds how long one built tap snapshot is served before the next
-// request rebuilds it. Beyond amortizing the build across the many object GETs
-// of one dumb-HTTP `brew update`, the snapshot fixes a real consistency race:
-// without it, a publish landing mid-update let a client fetch refs from build X
-// and loose objects from build Y, missing objects X referenced. Package-level
-// var so tests can shorten it.
 var tapCacheTTL = 30 * time.Second
 
-// errTapBuild marks a snapshot BUILD failure (500), as opposed to a requested
-// path simply not existing in a healthy snapshot (404).
-var errTapBuild = errors.New("build tap snapshot")
+const tapCacheMaxEntries = 32
 
-// tapSnapshot is one fully built tap, materialized on disk in the dumb-HTTP
-// git layout (HEAD, info/refs, refs/heads/main, objects/xx/yyyy...). Requests
-// are served by opening files through root -- an os.Root confined to dir, the
-// same sandbox pattern internal/storage uses -- and memory-mapping them, so a
-// request path can never escape the snapshot and serving never heap-buffers a
-// whole file.
-type tapSnapshot struct {
+var errTapBuild = errors.New("build tap lineage")
+
+type tapLineage struct {
 	dir     string
 	root    *os.Root
-	key     string // base URL the build derived its formulas from
+	key     string // (base URL, credential scope) the contents derive from
 	builtAt time.Time
 }
 
-// openTapFile resolves the current snapshot for the request -- rebuilding it
-// under the mutex when there is none, it expired, or it was built for a
-// different base URL (the host is baked into formula download URLs, so a
-// cached tap must never be served with the wrong host) -- and opens the
-// requested file inside it.
-//
-// Race handling: the open happens while tapMu is still held, and snapshot
-// removal only ever happens under the same mutex (in the swap below), so a
-// reader can never resolve a pointer and then find the directory deleted. Once
-// the fd is returned, POSIX unlink-while-open semantics keep the file (and any
-// mapping of it) readable even after a later rebuild swaps the snapshot out
-// and removes its directory. This is why the swap can delete the old snapshot
-// immediately instead of keeping previous generations around.
-//
-// A build failure is reported wrapped in errTapBuild; any other error means
-// the requested path does not exist in the (healthy) snapshot.
+// openTapFile resolves the lineage for the request's (base URL, credential
+// scope) cache key -- refreshing it under the mutex when there is no live
+// entry -- and opens the requested file inside it. The base URL is part of the
 func (h *Handler) openTapFile(r *http.Request, path string) (*os.File, error) {
-	key := auth.RequestRootURL(r)
-
 	h.tapMu.Lock()
 	defer h.tapMu.Unlock()
 
-	snap := h.tapSnap
-	if snap == nil || snap.key != key || time.Since(snap.builtAt) >= tapCacheTTL {
-		fresh, err := h.buildTapSnapshot(r, key)
+	lin, err := h.resolveTapLineageLocked(r)
+	if err != nil {
+		return nil, err
+	}
+	return lin.root.Open(path)
+}
+
+// resolveTapLineageLocked is the shared lineage resolution: sweep expired
+// entries, then return the live entry for the request's (base URL, credential
+// scope) key, refreshing/building it when there is none. Must be called with
+// tapMu held. Build failures are wrapped in errTapBuild.
+func (h *Handler) resolveTapLineageLocked(r *http.Request) (*tapLineage, error) {
+	key := auth.RequestRootURL(r) + "\x00" + tapScopeKey(r.Context())
+
+	h.sweepTapLineagesLocked()
+
+	lin := h.tapSnaps[key]
+	if lin == nil {
+		fresh, err := h.buildTapLineageLocked(r, key)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %w", errTapBuild, err)
 		}
-		h.dropTapSnapshotLocked()
-		h.tapSnap = fresh
-		snap = fresh
+		if h.tapSnaps == nil {
+			h.tapSnaps = map[string]*tapLineage{}
+		}
+		h.tapSnaps[key] = fresh
+		lin = fresh
 	}
-	return snap.root.Open(path)
+	return lin, nil
 }
 
-// buildTapSnapshot materializes one full tap build as real files under
-// {TmpDir}/brew-tap/<random>/ and returns it with an opened os.Root for
-// sandboxed serving. The caller publishes it by swapping the handler's pointer
-// under tapMu once the build has fully completed, so a half-written directory
-// is never visible to requests; a directory orphaned by a crash mid-build is
-// swept by the next process's resetTapCache.
-func (h *Handler) buildTapSnapshot(r *http.Request, key string) (*tapSnapshot, error) {
-	repo, err := h.buildTapRepo(r)
-	if err != nil {
-		return nil, err
-	}
+// acquireTapLineage resolves the request's lineage exactly like openTapFile
+// and hands back an INDEPENDENT os.Root over its directory plus a release
+func (h *Handler) acquireTapLineage(r *http.Request) (*os.Root, func(), error) {
+	h.tapMu.Lock()
+	defer h.tapMu.Unlock()
 
-	base := h.tapRoot()
-	if err := os.MkdirAll(base, 0o755); err != nil {
-		return nil, err
-	}
-	dir, err := os.MkdirTemp(base, "snap-")
+	lin, err := h.resolveTapLineageLocked(r)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	for name, data := range repo {
-		p := filepath.Join(dir, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			os.RemoveAll(dir)
-			return nil, err
+	root, err := os.OpenRoot(lin.dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	if h.tapPins == nil {
+		h.tapPins = map[string]int{}
+	}
+	dir := lin.dir
+	h.tapPins[dir]++
+	release := func() {
+		h.tapMu.Lock()
+		if h.tapPins[dir] <= 1 {
+			delete(h.tapPins, dir)
+		} else {
+			h.tapPins[dir]--
 		}
-		if err := os.WriteFile(p, data, 0o644); err != nil {
-			os.RemoveAll(dir)
-			return nil, err
+		h.tapMu.Unlock()
+		root.Close()
+	}
+	return root, release, nil
+}
+
+// sweepTapLineagesLocked drops every expired live entry (closing its os.Root;
+// the on-disk history stays), then -- should the map still exceed the cap --
+// closes the oldest entries. Must be called with tapMu held.
+func (h *Handler) sweepTapLineagesLocked() {
+	for key, lin := range h.tapSnaps {
+		if time.Since(lin.builtAt) >= tapCacheTTL {
+			h.dropTapLineageLocked(key)
 		}
+	}
+	for len(h.tapSnaps) >= tapCacheMaxEntries {
+		oldestKey := ""
+		var oldest time.Time
+		for key, lin := range h.tapSnaps {
+			if oldestKey == "" || lin.builtAt.Before(oldest) {
+				oldestKey, oldest = key, lin.builtAt
+			}
+		}
+		h.dropTapLineageLocked(oldestKey)
+	}
+}
+
+// buildTapLineageLocked advances the request scope's persistent history (see
+// refreshTapLineage: reuse the tip when content is unchanged, else append a
+// child commit) and opens an os.Root over it for sandboxed serving. When the
+func (h *Handler) buildTapLineageLocked(r *http.Request, key string) (*tapLineage, error) {
+	dir := h.tapLineageDir(key)
+	if _, err := os.Stat(dir); err != nil {
+		h.evictTapLineagesLocked()
+	}
+	if err := h.refreshTapLineage(r, dir); err != nil {
+		return nil, err
 	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
-		os.RemoveAll(dir)
 		return nil, err
 	}
-	return &tapSnapshot{dir: dir, root: root, key: key, builtAt: time.Now()}, nil
+	return &tapLineage{dir: dir, root: root, key: key, builtAt: time.Now()}, nil
 }
 
-// resetTapCache drops the cached snapshot and removes the whole snapshot root
-// on disk. Called whenever the handler is (re)wired to a data dir -- at process
-// start that doubles as the sweep of snapshot directories a previous process
-// left behind (nothing can hold them open across a restart; snapshots are pure
-// caches, rebuilt on the next tap request).
+// resetTapCache drops every live lineage entry and sweeps scratch leftovers.
+// Called whenever the handler is (re)wired to a data dir. The persistent
 func (h *Handler) resetTapCache() {
 	h.tapMu.Lock()
 	defer h.tapMu.Unlock()
-	h.dropTapSnapshotLocked()
+	for key := range h.tapSnaps {
+		h.dropTapLineageLocked(key)
+	}
 	os.RemoveAll(h.tapRoot())
+	sweepTapTempFiles(h.tapHistoryRoot())
 }
 
-// dropTapSnapshotLocked closes and deletes the current snapshot, if any. Must
-// be called with tapMu held. Deleting while requests still hold open fds or
-// mappings into the directory is safe on the platforms buildhost targets: the
-// inodes stay alive until the last close/unmap.
-func (h *Handler) dropTapSnapshotLocked() {
-	if h.tapSnap == nil {
+func (h *Handler) dropTapLineageLocked(key string) {
+	lin := h.tapSnaps[key]
+	if lin == nil {
 		return
 	}
-	h.tapSnap.root.Close()
-	os.RemoveAll(h.tapSnap.dir)
-	h.tapSnap = nil
+	lin.root.Close()
+	delete(h.tapSnaps, key)
 }
 
-// tapRoot returns the directory snapshots live under. TmpDir is always set in
-// production ({DataDir}/tmp, wired in OnReady); the OS temp dir fallback
-// mirrors repackage.Input.TmpDir's convention for bare test constructions.
+// tapRoot returns the LEGACY scratch directory old snapshots lived under, kept
 func (h *Handler) tapRoot() string {
 	base := h.TmpDir
 	if base == "" {

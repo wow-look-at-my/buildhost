@@ -10,19 +10,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path"
 	"sync"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
-// caCertsPEM is a real public CA root bundle (Mozilla set, as published by the curl
-// project). It is placed at /etc/ssl/certs/ca-certificates.crt -- the path Go's linux
-// x509 loader checks by default -- in the shared essentials base layer, so a binary that
-// makes outbound TLS calls works inside the synthesized image. See cacerts/README.md.
+// caCertsPEM is the public CA root bundle the curl project publishes.
 //
+//go:generate ../../scripts/fetch-cacerts.sh cacerts/ca-certificates.crt
 //go:embed cacerts/ca-certificates.crt
 var caCertsPEM []byte
 
@@ -33,8 +33,9 @@ type OCI struct {
 
 func (o *OCI) Format() Format { return FormatOCI }
 
+// Applicable gates the format to linux, the OS the image's rootfs and shell are.
 func (o *OCI) Applicable(a db.Artifact) bool {
-	return a.Kind == db.KindBinary
+	return a.Kind == db.KindBinary && a.OS == db.OSLinux
 }
 
 // ociDescriptor is the (storage key, size) pair the manifest needs to reference a blob.
@@ -48,33 +49,50 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		return nil, fmt.Errorf("artifact missing os/arch")
 	}
 
-	// Shared "essentials" base layer (CA certs + minimal rootfs). Memoized, so it is
-	// built once per process; the bytes are identical for every project/arch and dedupe
-	// to a single stored blob. It must still be Put (idempotent, content-addressed) and
-	// linked to THIS artifact on every pull so BlobBelongsToProject passes for it.
-	baseData, baseDiffID, err := essentialsLayer()
+	// Every image starts here: rootfs, CA bundle and shell, per architecture.
+	baseData, baseDiffID, err := imageBase(input.Artifact.Arch)
 	if err != nil {
-		return nil, fmt.Errorf("essentials layer: %w", err)
+		return nil, fmt.Errorf("base layer: %w", err)
 	}
 	baseKey, baseSize, err := o.Store.Put(ctx, bytes.NewReader(baseData))
 	if err != nil {
 		return nil, fmt.Errorf("store base layer: %w", err)
 	}
 	if input.Artifact.ID > 0 && o.DB != nil {
-		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-base-layer", baseKey, baseSize, baseKey, "base-layer.tar.zst", "{}")
+		// Suffixed like the config: the layer is per architecture.
+		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-base-layer"+input.CacheSuffix, baseKey, baseSize, baseKey, "base-layer.tar.zst", "{}")
 	}
 
-	binKey, binSize, binDiffID, err := ociWriteLayer(ctx, o.Store, input.Reader, input.Size, input.Project.Name)
+	entrypoint := []string{"/" + input.Project.Name}
+	layers := []ociDescriptor{{baseKey, baseSize}}
+	diffIDs := []string{baseDiffID}
+
+	isAPE, artifactReader, err := peekAPE(input.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("inspect artifact: %w", err)
+	}
+	if isAPE {
+		// Ship the ELF the trampoline would have staged, so nothing is staged.
+		artifactReader, err = apeAsELF(artifactReader, input.Artifact.Arch)
+		if err != nil {
+			return nil, fmt.Errorf("stage the APE as an ELF for %s: %w", input.Artifact.Arch, err)
+		}
+	}
+
+	binKey, binSize, binDiffID, err := ociWriteLayer(ctx, o.Store, artifactReader, input.Size, input.Project.Name)
 	if err != nil {
 		return nil, fmt.Errorf("create layer: %w", err)
 	}
 	if input.Artifact.ID > 0 && o.DB != nil {
-		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-layer", binKey, binSize, binKey, "layer.tar.zst", "{}")
+		// Suffixed: an unsuffixed key lets a later platform's upsert unlink this blob.
+		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-layer"+input.CacheSuffix, binKey, binSize, binKey, "layer.tar.zst", "{}")
 	}
+	layers = append(layers, ociDescriptor{binKey, binSize})
+	diffIDs = append(diffIDs, binDiffID)
 
 	configData := ociCreateConfig(
 		string(input.Artifact.OS), string(input.Artifact.Arch),
-		[]string{baseDiffID, binDiffID}, input.Project.Name, input.Release.OciUser,
+		diffIDs, entrypoint, input.Release.OciUser,
 	)
 
 	configKey, configSize, err := o.Store.Put(ctx, bytes.NewReader(configData))
@@ -82,26 +100,17 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 		return nil, fmt.Errorf("store config: %w", err)
 	}
 	if input.Artifact.ID > 0 && o.DB != nil {
-		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-config", configKey, configSize, configKey, "config.json", "{}")
+		o.DB.CreatePackagedArtifact(ctx, input.Artifact.ID, "oci-config"+input.CacheSuffix, configKey, configSize, configKey, "config.json", "{}")
 	}
 
-	// Base layer first -- must match the diff_ids order in the config.
-	manifestData := ociCreateManifest(
-		ociDescriptor{configKey, configSize},
-		[]ociDescriptor{{baseKey, baseSize}, {binKey, binSize}},
-	)
+	// Same order as the diff_ids in the config: base, then binary.
+	manifestData := ociCreateManifest(ociDescriptor{configKey, configSize}, layers)
 
 	// Persist the manifest document itself (alongside its config + layers above)
 	// and link it to the project, so the pull path can serve it by its content
 	// digest. A multi-arch index lists each platform's image manifest by digest,
 	// and the client resolves it via GET /v2/{name}/manifests/<digest>, which is
 	// gated on BlobBelongsToProject and served straight from storage. Without
-	// this the index would reference manifests the registry never stored -- a
-	// dangling index that no client can pull. (Single-arch pulls serve the
-	// manifest inline, but storing it also lets a by-digest fetch of that single
-	// manifest resolve.) The digest is content-addressed, so this matches the
-	// digest serveIndex/serveSingleManifest compute from the same bytes. Needs a
-	// real project + DB to link against; tests without one just skip it.
 	if input.Project.ID > 0 && o.DB != nil {
 		manifestKey, manifestSize, err := o.Store.Put(ctx, bytes.NewReader(manifestData))
 		if err != nil {
@@ -124,12 +133,95 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 	}, nil
 }
 
-// ociWriteLayer streams r -> tar -> zstd straight into store.Put while teeing the
-// uncompressed tar bytes through a sha256 for the layer's diffID. One pass, bounded
-// memory: the compressed layer is spooled+content-addressed by Put (to disk), and the
-// only RAM is the zstd window plus the hash state. The diffID is read after Put returns,
-// by which point Put has drained the pipe and the hasher has seen every uncompressed byte.
+// imageBase returns the layer every synthesized image starts from: the
+// essentials rootfs with the shell appended, for arch.
+func imageBase(arch db.Arch) ([]byte, string, error) {
+	essentials, _, err := essentialsLayer()
+	if err != nil {
+		return nil, "", fmt.Errorf("essentials: %w", err)
+	}
+	shell, _, err := ShellLayer(arch)
+	if err != nil {
+		return nil, "", fmt.Errorf("shell for %s: %w", arch, err)
+	}
+	return joinLayers(essentials, shell)
+}
+
+// imageBinPath is where an image keeps the binary itself, out of the way of the
+// launcher that starts it.
+func imageBinPath(name string) string {
+	return "usr/local/lib/" + name + "/" + path.Base(name)
+}
+
+// imageLauncher is the shebang script every entrypoint spelling reaches. A
+// rolling updater clones the entrypoint off the container it replaces.
+func imageLauncher(name string) []byte {
+	return fmt.Appendf(nil, "#!/bin/sh\n# Generated by buildhost.\nexec %s \"$@\"\n",
+		shellQuote("/"+imageBinPath(name)))
+}
+
+// joinLayers merges the entries of zstd-compressed tar layers, returning the
+// result with the diffID of its uncompressed bytes. An earlier layer wins a
+// name both carry.
+func joinLayers(layers ...[]byte) ([]byte, string, error) {
+	var buf bytes.Buffer
+	zw, err := zstd.NewWriter(&buf, zstd.WithEncoderLevel(zstd.SpeedDefault))
+	if err != nil {
+		return nil, "", fmt.Errorf("create zstd writer: %w", err)
+	}
+	hasher := sha256.New()
+	tw := tar.NewWriter(io.MultiWriter(hasher, zw))
+
+	seen := set.New[string]()
+	for _, layer := range layers {
+		zr, err := zstd.NewReader(bytes.NewReader(layer))
+		if err != nil {
+			return nil, "", fmt.Errorf("open layer: %w", err)
+		}
+		tr := tar.NewReader(zr)
+		for {
+			hdr, err := tr.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				zr.Close()
+				return nil, "", fmt.Errorf("read layer: %w", err)
+			}
+			if seen.Contains(hdr.Name) {
+				continue
+			}
+			seen.Add(hdr.Name)
+			if err := tw.WriteHeader(hdr); err != nil {
+				zr.Close()
+				return nil, "", err
+			}
+			if hdr.Typeflag == tar.TypeReg {
+				if _, err := io.Copy(tw, tr); err != nil {
+					zr.Close()
+					return nil, "", err
+				}
+			}
+		}
+		zr.Close()
+	}
+
+	if err := tw.Close(); err != nil {
+		return nil, "", err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, "", err
+	}
+	return buf.Bytes(), hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+// ociWriteLayer streams r -> tar -> zstd straight into store.Put while teeing
+// the uncompressed bytes through a hasher for the config's diff_id. The binary
+// lands under /usr/local/lib, with a launcher at /<name> and at
+// /usr/local/bin/<name> so a bare name on PATH also starts it. Every image gets
+// that layout, whatever kind of binary it was built from.
 func ociWriteLayer(ctx context.Context, store storage.Storage, r io.Reader, size int64, name string) (key string, compressedSize int64, diffID string, err error) {
+	binPath := imageBinPath(name)
 	diffHasher := sha256.New()
 	pr, pw := io.Pipe()
 	go func() {
@@ -140,7 +232,7 @@ func ociWriteLayer(ctx context.Context, store storage.Storage, r io.Reader, size
 		}
 		tw := tar.NewWriter(io.MultiWriter(diffHasher, zw))
 		if err := tw.WriteHeader(&tar.Header{
-			Name:     name,
+			Name:     binPath,
 			Size:     size,
 			Mode:     0o755,
 			Typeflag: tar.TypeReg,
@@ -151,6 +243,13 @@ func ociWriteLayer(ctx context.Context, store storage.Storage, r io.Reader, size
 		if _, err := io.Copy(tw, r); err != nil {
 			pw.CloseWithError(err)
 			return
+		}
+		launcher := imageLauncher(name)
+		for _, at := range []string{name, "usr/local/bin/" + path.Base(name)} {
+			if err := writeTarEntry(tw, at, 0o755, tar.TypeReg, launcher); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
 		}
 		if err := tw.Close(); err != nil {
 			pw.CloseWithError(err)
@@ -168,8 +267,6 @@ func ociWriteLayer(ctx context.Context, store storage.Storage, r io.Reader, size
 }
 
 // /etc/passwd and /etc/group: root, nobody and nonroot (matching gcr.io/distroless).
-// The nonroot user (65532) is always present so an image can be run with --user 65532
-// even when the publisher did not pin a default user via oci_user.
 const (
 	etcPasswd = "root:x:0:0:root:/root:/sbin/nologin\n" +
 		"nobody:x:65534:65534:nobody:/nonexistent:/sbin/nologin\n" +
@@ -186,8 +283,6 @@ type essentials struct {
 }
 
 // essentialsOnce memoizes the shared base layer: it is constant for the lifetime of the
-// process, so it is built exactly once. A build error (e.g. a corrupt embedded bundle) is
-// returned to every caller rather than panicking in the request path.
 var essentialsOnce = sync.OnceValues(buildEssentials)
 
 func essentialsLayer() ([]byte, string, error) {
@@ -200,6 +295,7 @@ func essentialsLayer() ([]byte, string, error) {
 // a sticky /tmp). It is pure -- it reads only the embedded bundle and fixed literals,
 // emits entries in a fixed order with pinned headers -- so the output is byte-identical
 // on every call (required: the pull path regenerates and re-hashes it per request).
+// The shell is appended to it per architecture; see OCI.base.
 func buildEssentials() (essentials, error) {
 	var buf bytes.Buffer
 	zw, err := zstd.NewWriter(&buf, zstd.WithEncoderLevel(zstd.SpeedDefault))
@@ -240,11 +336,6 @@ func buildEssentials() (essentials, error) {
 	return essentials{compressed: buf.Bytes(), diffID: hex.EncodeToString(tarHasher.Sum(nil))}, nil
 }
 
-// writeTarEntry writes one fully-pinned, reproducible USTAR entry. Forcing FormatUSTAR
-// guarantees byte-stable output across Go toolchain versions (a field that overflowed
-// USTAR would error here rather than silently emitting version-dependent PAX/GNU extended
-// headers). The mode is written as a raw integer, so the sticky bit (0o1777 on /tmp)
-// round-trips. For directories pass typeflag=tar.TypeDir and data=nil.
 func writeTarEntry(tw *tar.Writer, name string, mode int64, typeflag byte, data []byte) error {
 	size := int64(len(data))
 	if typeflag == tar.TypeDir {
@@ -271,13 +362,13 @@ func writeTarEntry(tw *tar.Writer, name string, mode int64, typeflag byte, data 
 	return nil
 }
 
-func ociCreateConfig(os, arch string, diffIDs []string, name, user string) []byte {
+func ociCreateConfig(os, arch string, diffIDs []string, entrypoint []string, user string) []byte {
 	prefixed := make([]string, len(diffIDs))
 	for i, d := range diffIDs {
 		prefixed[i] = "sha256:" + d
 	}
 	cfg := map[string]any{
-		"Entrypoint": []string{"/" + name},
+		"Entrypoint": entrypoint,
 		"WorkingDir": "/",
 		"Env": []string{
 			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",

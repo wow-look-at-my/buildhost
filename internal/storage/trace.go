@@ -52,6 +52,50 @@ func (t *TracedStorage) Get(ctx context.Context, key string) (io.ReadCloser, int
 	return rc, size, err
 }
 
+// PutUncompressed forwards to the inner backend's UncompressedPutter
+// capability, falling back to the ordinary Put when it has none (the blob is
+// then stored compressed and simply is not randomly accessible).
+func (t *TracedStorage) PutUncompressed(ctx context.Context, r io.Reader) (string, int64, error) {
+	up, ok := t.inner.(UncompressedPutter)
+	if !ok {
+		return t.Put(ctx, r)
+	}
+	ctx, span := storageTracer.Start(ctx, "storage.put_uncompressed")
+	defer span.End()
+
+	key, size, err := up.PutUncompressed(ctx, r)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	} else {
+		span.SetAttributes(attribute.String("storage.key", key), attribute.Int64("storage.size", size))
+	}
+	return key, size, err
+}
+
+// OpenReaderAt forwards to the inner backend's RandomGetter capability. It
+// returns ErrRandomUnsupported when the backend has none, so callers fall back
+// to a sequential Get.
+func (t *TracedStorage) OpenReaderAt(ctx context.Context, key string) (ReaderAtCloser, int64, error) {
+	rg, ok := t.inner.(RandomGetter)
+	if !ok {
+		return nil, 0, ErrRandomUnsupported
+	}
+	ctx, span := storageTracer.Start(ctx, "storage.open_reader_at",
+		trace.WithAttributes(attribute.String("storage.key", key)),
+	)
+	defer span.End()
+
+	ra, size, err := rg.OpenReaderAt(ctx, key)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	} else {
+		span.SetAttributes(attribute.Int64("storage.size", size))
+	}
+	return ra, size, err
+}
+
 // GetCompressed forwards to the inner backend's CompressedGetter capability (the
 // zstd-passthrough read path). It returns ErrCompressedUnsupported when the inner
 // backend does not implement it, so callers transparently fall back to Get.

@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 
@@ -46,11 +48,6 @@ func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
 // AllowsPublicRead lets a valid signed download token (&token=) authorize this
-// one artifact even under a private project, the same way a public site bypasses
-// the private gate. The signature binds the exact (project, version, os, arch,
-// fmt, debug) tuple, so the bypass is scoped to precisely the linked file -- the
-// rest of the project stays gated. Consulted by requireProject only for a
-// private-project read.
 func (r route) AllowsPublicRead(_ context.Context, _ *db.DB, project *db.Project) bool {
 	if r.token == "" {
 		return false
@@ -163,7 +160,6 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", etag)
 	if r.URL.Query().Get("token") != "" {
 		// A token-gated (signed-link) fetch is private content: never let a shared
-		// CDN cache it, regardless of the project's visibility.
 		w.Header().Set("Cache-Control", "private, no-store")
 	} else {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
@@ -173,7 +169,52 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 		if w.Header().Get("Content-Length") == "" {
 			http.Error(w, "not found", http.StatusNotFound)
 		}
+		return
 	}
+
+	// A concrete artifact's bytes were just served -- record who fetched what.
+	if sctx.Artifact.ID != 0 {
+		h.recordDownload(r, sctx.Artifact.ID, fmtStr)
+	}
+}
+
+// recordDownload appends a download-attribution row and bumps the aggregate
+// counter for a served artifact. Best-effort: failures are logged, not
+// propagated -- the bytes are already on the wire.
+func (h *staticHandler) recordDownload(r *http.Request, artifactID int64, fmtStr string) {
+	ctx := r.Context()
+	if err := h.DB.IncrementDownloadCount(ctx, artifactID); err != nil {
+		slog.WarnContext(ctx, "download count increment failed", "err", err, "artifact_id", artifactID)
+	}
+	if err := h.DB.RecordDownloadEvent(ctx, artifactID, fmtStr, clientIP(r), r.UserAgent(), downloadPrincipal(ctx)); err != nil {
+		slog.WarnContext(ctx, "download event record failed", "err", err, "artifact_id", artifactID)
+	}
+}
+
+// downloadPrincipal names the authenticated requester for the audit row: the
+// signed-in user, else the API token (as "token:<name>"), else "" for an
+// anonymous public download.
+func downloadPrincipal(ctx context.Context) string {
+	if user, ok := auth.UserFrom(ctx); ok && user != "" {
+		return user
+	}
+	if tok := auth.TokenFrom(ctx); tok != nil {
+		return "token:" + tok.Name
+	}
+	return ""
+}
+
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if i := strings.IndexByte(xff, ','); i >= 0 {
+			return strings.TrimSpace(xff[:i])
+		}
+		return strings.TrimSpace(xff)
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 func computeETag(ctx ServeContext, fmtStr string) string {
