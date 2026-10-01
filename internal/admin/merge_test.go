@@ -115,6 +115,33 @@ func TestAdminMergePlan_PreviewChangesNothing(t *testing.T) {
 	assert.Len(t, still, 2)
 }
 
+// A plan with no conflicts must still carry an ARRAY, because the dashboard
+// reads its length. Conflicts is only ever appended to, so it stayed nil and
+// marshalled as null, and the page crashed on exactly the plan worth merging:
+// "can't access property length, p.conflicts is null".
+//
+// The raw JSON is asserted, not the decoded value: null and [] both decode to
+// a nil `any`, so a decoded check passes while the browser still breaks.
+func TestAdminMergePlan_CleanPlanCarriesAnEmptyConflictArray(t *testing.T) {
+	t.Serial()
+	srv, d, _ := newMergeServer(t)
+
+	src := mergeTestProject(t, d, "slopfmt", "wow-look-at-my/slopfmt", mergeTestRepoID)
+	mergeTestProject(t, d, "slopfix", "wow-look-at-my/slopfix", mergeTestRepoID)
+	mergeTestReleases(t, d, src.ID, "1")
+
+	rec := serve(srv, "GET", "/api/projects/slopfmt/merge-plan?into=slopfix", nil)
+	require.Equal(t, 200, rec.Code)
+
+	var plan map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &plan))
+	require.Equal(t, true, plan["applicable"], "this fixture must produce a clean plan")
+
+	assert.Contains(t, rec.Body.String(), `"conflicts":[]`,
+		"a clean plan must send an empty array, never null")
+	assert.NotContains(t, rec.Body.String(), `"conflicts":null`)
+}
+
 func TestAdminMerge_AppliesAndSnapshots(t *testing.T) {
 	t.Serial()
 	srv, d, dir := newMergeServer(t)
