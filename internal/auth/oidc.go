@@ -3,14 +3,8 @@ package auth
 import (
 	"context"
 	"crypto/rsa"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"math/big"
-	"net/http"
-	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -21,6 +15,16 @@ import (
 )
 
 var ErrOIDCNotMatched = errors.New("no matching OIDC policy")
+
+// EventNotAllowedError rejects a verified token whose event is outside the
+// allowlist.
+type EventNotAllowedError struct {
+	Event string
+}
+
+func (e *EventNotAllowedError) Error() string {
+	return fmt.Sprintf("event %q not in allowed list", e.Event)
+}
 
 type OIDCVerifier struct {
 	mu             sync.RWMutex
@@ -44,6 +48,13 @@ type oidcClaims struct {
 	jwt.RegisteredClaims
 	EventName            string `json:"event_name"`
 	RepositoryVisibility string `json:"repository_visibility"`
+	// Dedicated GitHub Actions repo-identity claims.
+	Repository        string `json:"repository"`          // "OWNER/REPO"
+	RepositoryID      string `json:"repository_id"`       // numeric repository ID
+	RepositoryOwner   string `json:"repository_owner"`    // "OWNER"
+	RepositoryOwnerID string `json:"repository_owner_id"` // numeric account ID
+	RunID             string `json:"run_id"`
+	RunAttempt        string `json:"run_attempt"`
 }
 
 const oidcLeeway = 60 * time.Second
@@ -71,6 +82,15 @@ func LooksLikeJWT(token string) bool {
 // VerifyResult holds the result of OIDC verification beyond the token itself.
 type VerifyResult struct {
 	OIDCPrivate bool
+	// RepoPath is the "owner/repo" parsed from a GitHub Actions OIDC subject
+	RepoPath string
+	// Issuer is the verified token issuer, so the caller can gate
+	Issuer  string
+	OwnerID string
+	RepoID  string
+	// RunID / RunAttempt name the workflow run and attempt that minted the token.
+	RunID      string
+	RunAttempt string
 }
 
 func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []db.OIDCPolicy) (*db.APIToken, string, error) {
@@ -143,6 +163,15 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 	}
 
 	verified := token.Claims.(*oidcClaims)
+	ownerID, repoID := verified.repoIDs()
+
+	// Surface the repo identity and issuer for both verification paths.
+	if result != nil {
+		result.Issuer = verified.Issuer
+		result.RepoPath = verified.repoPath()
+		result.OwnerID, result.RepoID = ownerID, repoID
+		result.RunID, result.RunAttempt = verified.RunID, verified.RunAttempt
+	}
 
 	if matchedPolicy != nil {
 		return &db.APIToken{
@@ -153,29 +182,21 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 		}, "", nil
 	}
 
-	org := orgFromSubject(verified.Subject)
-	// GitHub org/user logins are case-insensitive (github.com treats "PazerOP"
-	// and "pazerop" as the same account), and the OIDC subject preserves the
-	// canonical casing the org was created with. Compare case-insensitively so an
-	// allowlist entry like "pazerop" still matches a "repo:PazerOP/..." subject --
-	// otherwise auto-provisioning silently fails on a pure casing mismatch. This
-	// mirrors projectFromSubject, which already lowercases the derived name.
-	if !slices.Contains(v.allowedOrgs, "*") && !slices.ContainsFunc(v.allowedOrgs, func(o string) bool { return strings.EqualFold(o, org) }) {
+	org := verified.ownerName()
+	if !orgAllowed(v.allowedOrgs, org, ownerID) {
+		if ownerID != "" {
+			return nil, "", fmt.Errorf("org %q (owner id %s) not in allowed list", org, ownerID)
+		}
 		return nil, "", fmt.Errorf("org %q not in allowed list", org)
 	}
 
 	if !slices.Contains(v.allowedEvents, "*") && !slices.Contains(v.allowedEvents, verified.EventName) {
-		return nil, "", fmt.Errorf("event %q not in allowed list", verified.EventName)
+		return nil, "", &EventNotAllowedError{Event: verified.EventName}
 	}
 
-	// No audience gate here: auto-provisioning trusts the issuer signature, the
-	// org allowlist, the event allowlist and the subject. Binding to a specific
-	// audience would require the server to know its own URL, which is a config
-	// footgun -- a wrong or missing value silently rejects every publish -- for
-	// little gain on a single-tenant build host. Policy-scoped tokens can still
-	// opt into an explicit audience via OIDCPolicy.Audience above.
+	// No audience gate here: auto-provisioning trusts the issuer signature.
 
-	project := projectFromSubject(verified.Subject)
+	project := verified.projectName()
 	if project == "" {
 		return nil, "", errors.New("cannot derive project name from OIDC subject")
 	}
@@ -189,176 +210,146 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 	}, project, nil
 }
 
-func (v *OIDCVerifier) getKeys(ctx context.Context, issuer string) ([]jwkKey, error) {
-	v.mu.RLock()
-	if c, ok := v.cache[issuer]; ok && time.Now().Before(c.expiry) {
-		keys := c.keys
-		v.mu.RUnlock()
-		return keys, nil
+func splitImmutableID(segment string) (name, id string) {
+	at := strings.LastIndexByte(segment, '@')
+	if at <= 0 || at == len(segment)-1 {
+		return segment, ""
 	}
-	v.mu.RUnlock()
-
-	v.mu.Lock()
-	defer v.mu.Unlock()
-
-	if c, ok := v.cache[issuer]; ok && time.Now().Before(c.expiry) {
-		return c.keys, nil
-	}
-
-	keys, err := fetchJWKS(ctx, issuer)
-	if err != nil {
-		return nil, err
-	}
-
-	v.cache[issuer] = &cachedJWKS{keys: keys, expiry: time.Now().Add(10 * time.Minute)}
-	return keys, nil
-}
-
-func isLoopback(host string) bool {
-	h := strings.TrimSuffix(host, ".")
-	if i := strings.LastIndex(h, ":"); i >= 0 {
-		h = h[:i]
-	}
-	return h == "127.0.0.1" || h == "::1" || h == "localhost"
-}
-
-// fetchJWKS discovers the JWKS URI from the OIDC discovery document and fetches keys.
-func fetchJWKS(ctx context.Context, issuer string) ([]jwkKey, error) {
-	parsed, err := url.Parse(issuer)
-	if err != nil {
-		return nil, fmt.Errorf("invalid issuer URL: %w", err)
-	}
-	if parsed.Scheme != "https" && !isLoopback(parsed.Host) {
-		return nil, fmt.Errorf("issuer must use HTTPS")
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-
-	// Discover the JWKS URI via the standard OIDC discovery document.
-	discoveryURL := strings.TrimSuffix(issuer, "/") + "/.well-known/openid-configuration"
-	req, err := http.NewRequestWithContext(ctx, "GET", discoveryURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch OIDC discovery: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OIDC discovery returned %d", resp.StatusCode)
-	}
-
-	var discovery struct {
-		JWKSURI string `json:"jwks_uri"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&discovery); err != nil {
-		return nil, fmt.Errorf("parse OIDC discovery: %w", err)
-	}
-	if discovery.JWKSURI == "" {
-		return nil, errors.New("OIDC discovery missing jwks_uri")
-	}
-
-	if err := validateJWKSURI(issuer, discovery.JWKSURI); err != nil {
-		return nil, err
-	}
-
-	// Fetch the JWKS.
-	req, err = http.NewRequestWithContext(ctx, "GET", discovery.JWKSURI, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err = client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch JWKS: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("JWKS endpoint returned %d", resp.StatusCode)
-	}
-
-	var raw struct {
-		Keys []json.RawMessage `json:"keys"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&raw); err != nil {
-		return nil, err
-	}
-
-	var keys []jwkKey
-	for _, rawKey := range raw.Keys {
-		var k struct {
-			Kty string `json:"kty"`
-			Kid string `json:"kid"`
-			N   string `json:"n"`
-			E   string `json:"e"`
+	for _, c := range segment[at+1:] {
+		if c < '0' || c > '9' {
+			return segment, ""
 		}
-		if err := json.Unmarshal(rawKey, &k); err != nil {
+	}
+	return segment[:at], segment[at+1:]
+}
+
+// trimImmutableID returns just the name half of splitImmutableID.
+func trimImmutableID(segment string) string {
+	name, _ := splitImmutableID(segment)
+	return name
+}
+
+// validNumericID reports whether s is a plausible GitHub numeric ID: all
+func validNumericID(s string) bool {
+	if s == "" || len(s) > 20 {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// ownerName returns the org/user owning the token's repo, preferring the
+// dedicated repository_owner claim over parsing the subject.
+func (c *oidcClaims) ownerName() string {
+	if c.RepositoryOwner != "" {
+		return trimImmutableID(c.RepositoryOwner)
+	}
+	return orgFromSubject(c.Subject)
+}
+
+// projectName derives the auto-provisioned project name (the repo name,
+// lowercased and validated), preferring the dedicated repository claim over
+// parsing the subject.
+func (c *oidcClaims) projectName() string {
+	if c.Repository != "" {
+		if _, repo, ok := strings.Cut(c.Repository, "/"); ok {
+			name := strings.ToLower(trimImmutableID(repo))
+			if validOIDCProjectName(name) {
+				return name
+			}
+		}
+	}
+	return projectFromSubject(c.Subject)
+}
+
+// repoPath returns the token's "owner/repo" (plain names, original casing --
+// it feeds GitHub REST lookups), preferring the dedicated repository claim
+// over parsing the subject.
+func (c *oidcClaims) repoPath() string {
+	if c.Repository != "" {
+		if path := trimRepoPathIDs(c.Repository); validRepoPath(path) {
+			return path
+		}
+	}
+	return repoPathFromSubject(c.Subject)
+}
+
+// repoIDs returns the numeric owner/repo IDs, preferring the dedicated
+// repository_owner_id / repository_id claims and falling back to an immutable
+// subject's @id suffixes. Either may be empty (classic-era issuers mint the
+// claims too, but non-GitHub issuers may mint neither).
+func (c *oidcClaims) repoIDs() (ownerID, repoID string) {
+	if validNumericID(c.RepositoryOwnerID) {
+		ownerID = c.RepositoryOwnerID
+	}
+	if validNumericID(c.RepositoryID) {
+		repoID = c.RepositoryID
+	}
+	if ownerID != "" && repoID != "" {
+		return ownerID, repoID
+	}
+	subOwnerID, subRepoID := idsFromSubject(c.Subject)
+	if ownerID == "" {
+		ownerID = subOwnerID
+	}
+	if repoID == "" {
+		repoID = subRepoID
+	}
+	return ownerID, repoID
+}
+
+// idsFromSubject extracts the numeric IDs from an immutable GitHub Actions
+// OIDC subject (`repo:OWNER@OWNERID/REPO@REPOID:...`). Both are empty for
+// classic subjects and non-repo subjects.
+func idsFromSubject(subject string) (ownerID, repoID string) {
+	if !strings.HasPrefix(subject, "repo:") {
+		return "", ""
+	}
+	rest := subject[len("repo:"):]
+	colon := strings.Index(rest, ":")
+	if colon < 0 {
+		return "", ""
+	}
+	repoPath := rest[:colon]
+	slash := strings.Index(repoPath, "/")
+	if slash < 0 {
+		return "", ""
+	}
+	_, ownerID = splitImmutableID(repoPath[:slash])
+	_, repoID = splitImmutableID(repoPath[strings.LastIndex(repoPath, "/")+1:])
+	return ownerID, repoID
+}
+
+// trimRepoPathIDs strips the immutable @id suffix from every "/"-separated
+// segment of an "owner/repo" path.
+func trimRepoPathIDs(path string) string {
+	segments := strings.Split(path, "/")
+	for i, s := range segments {
+		segments[i] = trimImmutableID(s)
+	}
+	return strings.Join(segments, "/")
+}
+
+// orgAllowed reports whether the token's org may auto-provision. "*" allows
+// all.
+func orgAllowed(allowed []string, org, ownerID string) bool {
+	if slices.Contains(allowed, "*") {
+		return true
+	}
+	for _, entry := range allowed {
+		name, id := splitImmutableID(entry)
+		if !strings.EqualFold(name, org) {
 			continue
 		}
-		if k.Kty != "RSA" {
-			continue
+		if id == "" || id == ownerID {
+			return true
 		}
-		pub, err := parseRSAPublicKey(k.N, k.E)
-		if err != nil {
-			continue
-		}
-		keys = append(keys, jwkKey{Kid: k.Kid, Pub: pub})
 	}
-	return keys, nil
-}
-
-func validateJWKSURI(issuer, jwksURI string) error {
-	issuerURL, err := url.Parse(issuer)
-	if err != nil {
-		return fmt.Errorf("invalid issuer URL: %w", err)
-	}
-	jwksURL, err := url.Parse(jwksURI)
-	if err != nil {
-		return fmt.Errorf("invalid jwks_uri: %w", err)
-	}
-	if jwksURL.Scheme != "https" && !isLoopback(jwksURL.Host) {
-		return fmt.Errorf("jwks_uri must use HTTPS, got %q", jwksURL.Scheme)
-	}
-	issuerHost := strings.ToLower(issuerURL.Hostname())
-	jwksHost := strings.ToLower(jwksURL.Hostname())
-	if jwksHost != issuerHost && !strings.HasSuffix(jwksHost, "."+issuerHost) {
-		return fmt.Errorf("jwks_uri host %q does not match issuer host %q", jwksHost, issuerHost)
-	}
-	return nil
-}
-
-func parseRSAPublicKey(nStr, eStr string) (*rsa.PublicKey, error) {
-	nBytes, err := base64URLDecode(nStr)
-	if err != nil {
-		return nil, err
-	}
-	eBytes, err := base64URLDecode(eStr)
-	if err != nil {
-		return nil, err
-	}
-	n := new(big.Int).SetBytes(nBytes)
-	e := new(big.Int).SetBytes(eBytes)
-
-	if !e.IsInt64() {
-		return nil, errors.New("RSA exponent too large")
-	}
-	eInt := e.Int64()
-	// RSA exponents must be odd and >= 3. Standard values are 3, 17, 65537.
-	const maxValidExponent = 1<<31 - 1
-	if eInt < 3 || eInt > maxValidExponent || eInt%2 == 0 {
-		return nil, fmt.Errorf("invalid RSA exponent: %d", eInt)
-	}
-
-	pub := &rsa.PublicKey{N: n, E: int(eInt)}
-	if pub.N.BitLen() < 2048 {
-		return nil, fmt.Errorf("RSA key too small: %d bits (minimum 2048)", pub.N.BitLen())
-	}
-	return pub, nil
-}
-
-func base64URLDecode(s string) ([]byte, error) {
-	s = strings.TrimRight(s, "=")
-	return base64.RawURLEncoding.DecodeString(s)
+	return false
 }
 
 func projectFromSubject(subject string) string {
@@ -375,7 +366,7 @@ func projectFromSubject(subject string) string {
 	if slash < 0 {
 		return ""
 	}
-	name := strings.ToLower(repoPath[slash+1:])
+	name := strings.ToLower(trimImmutableID(repoPath[slash+1:]))
 	if !validOIDCProjectName(name) {
 		return ""
 	}
@@ -398,6 +389,21 @@ func validOIDCProjectName(name string) bool {
 	return true
 }
 
+// repoPathFromSubject extracts "owner/repo" from a GitHub Actions OIDC subject
+// of the form "repo:OWNER/REPO:...". Returns "" if the subject is not in that
+// form. Unlike projectFromSubject it preserves the owner and original casing,
+func repoPathFromSubject(subject string) string {
+	if !strings.HasPrefix(subject, "repo:") {
+		return ""
+	}
+	rest := subject[len("repo:"):]
+	colon := strings.Index(rest, ":")
+	if colon < 0 {
+		return ""
+	}
+	return trimRepoPathIDs(rest[:colon])
+}
+
 func orgFromSubject(subject string) string {
 	if !strings.HasPrefix(subject, "repo:") {
 		return ""
@@ -412,7 +418,7 @@ func orgFromSubject(subject string) string {
 	if slash < 0 {
 		return ""
 	}
-	return repoPath[:slash]
+	return trimImmutableID(repoPath[:slash])
 }
 
 func matchSubject(pattern, subject string) bool {

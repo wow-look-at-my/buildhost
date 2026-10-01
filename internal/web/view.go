@@ -5,11 +5,14 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/exeformat"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 )
 
 // siteName is the product name shown in the header and titles.
@@ -17,7 +20,6 @@ const siteName = "buildhost"
 
 var templateFuncs = template.FuncMap{
 	// nonEmpty reports whether s is a non-blank string, for {{if}} guards on
-	// optional metadata fields.
 	"nonEmpty": func(s string) bool { return strings.TrimSpace(s) != "" },
 }
 
@@ -25,11 +27,12 @@ var templateFuncs = template.FuncMap{
 
 type indexView struct {
 	SiteName string
-	Projects []projectCard
+	Rows     []projectListRow
 }
 
 type projectCard struct {
 	Name          string
+	Label         string
 	URL           string
 	Description   string
 	ReleaseCount  int64
@@ -38,11 +41,19 @@ type projectCard struct {
 	Private       bool
 }
 
+type projectListRow struct {
+	Kind    string
+	Depth   int
+	Folder  string
+	Project projectCard
+}
+
 func buildIndexView(rows []db.ProjectSummary) indexView {
-	cards := make([]projectCard, 0, len(rows))
+	root := newProjectNode("")
 	for _, p := range rows {
-		cards = append(cards, projectCard{
+		root.add(projectCard{
 			Name:          p.Name,
+			Label:         lastSegment(p.Name),
 			URL:           projectPath(p.Name),
 			Description:   p.Description,
 			ReleaseCount:  p.ReleaseCount,
@@ -51,7 +62,52 @@ func buildIndexView(rows []db.ProjectSummary) indexView {
 			Private:       p.IsPrivate,
 		})
 	}
-	return indexView{SiteName: siteName, Projects: cards}
+	return indexView{SiteName: siteName, Rows: root.rows(0)}
+}
+
+type projectNode struct {
+	name     string
+	project  *projectCard
+	children map[string]*projectNode
+}
+
+func newProjectNode(name string) *projectNode {
+	return &projectNode{name: name, children: map[string]*projectNode{}}
+}
+
+func (n *projectNode) add(card projectCard) {
+	cur := n
+	for _, part := range strings.Split(card.Name, "/") {
+		child := cur.children[part]
+		if child == nil {
+			child = newProjectNode(part)
+			cur.children[part] = child
+		}
+		cur = child
+	}
+	cur.project = &card
+}
+
+func (n *projectNode) rows(depth int) []projectListRow {
+	names := make([]string, 0, len(n.children))
+	for name := range n.children {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	out := make([]projectListRow, 0, len(names))
+	for _, name := range names {
+		child := n.children[name]
+		hasChildren := len(child.children) > 0
+		if hasChildren {
+			out = append(out, projectListRow{Kind: "folder", Depth: depth, Folder: name})
+		}
+		if child.project != nil {
+			out = append(out, projectListRow{Kind: "project", Depth: depth, Project: *child.project})
+		}
+		out = append(out, child.rows(depth+1)...)
+	}
+	return out
 }
 
 // ----- project -------------------------------------------------------------
@@ -89,9 +145,6 @@ type siteRow struct {
 }
 
 // installInfo holds copy-pasteable commands for fetching a project. Commands
-// are gated on what the latest published release actually contains: a
-// docker-only release exposes just `docker pull`, anything with a real binary
-// exposes the download/apt/brew/npm forms too.
 type installInfo struct {
 	HasBinary bool
 	Curl      string
@@ -115,8 +168,8 @@ func buildProjectView(r *http.Request, p *db.Project, rels []db.ReleaseSummary, 
 	}
 
 	// Only published releases are downloadable, so only those are shown. The
-	// first published row (the list is ordered newest-first) is the latest.
-	latestShown := false
+	// "latest" badge is tied to the already-resolved latest version rather than
+	// whichever branch happens to have the highest version number.
 	for _, rel := range rels {
 		if !rel.Published {
 			continue
@@ -129,9 +182,8 @@ func buildProjectView(r *http.Request, p *db.Project, rels []db.ReleaseSummary, 
 			Published:     publishedWhen(rel.PublishedAt, rel.CreatedAt),
 			ArtifactCount: rel.ArtifactCount,
 		}
-		if !latestShown {
+		if latestVersion != "" && rel.Version == latestVersion {
 			row.Latest = true
-			latestShown = true
 		}
 		v.Releases = append(v.Releases, row)
 	}
@@ -139,7 +191,7 @@ func buildProjectView(r *http.Request, p *db.Project, rels []db.ReleaseSummary, 
 	for _, s := range sites {
 		v.Sites = append(v.Sites, siteRow{
 			Branch:  s.Branch,
-			URL:     serviceURL(r, "sites", p.Name+"/branch/"+s.Branch+"/"),
+			URL:     serviceURL(r, "sites", p.Name+"/@"+s.Branch+"/"),
 			Files:   s.FileCount,
 			Updated: timeAgo(s.UpdatedAt),
 		})
@@ -162,10 +214,21 @@ func buildInstallInfo(r *http.Request, project, version string, hasBinary bool) 
 	}
 	if hasBinary {
 		info.Curl = fmt.Sprintf("curl -LO %q", dlURL(r, project, "", "linux", "amd64", "raw"))
-		info.Brew = "brew tap pazer/build " + serviceURL(r, "brew", "tap.git") + "\nbrew install pazer/build/" + project
+		// The cloneable tap URL is the /tap.git smart-HTTP endpoint, never the
+		info.Brew = "brew tap pazer/build " + serviceBase(r, "brew") + "/tap.git" +
+			"\nbrew trust pazer/build" +
+			// A formula name cannot contain '/', so a slash-namespaced project
+			"\nbrew install pazer/build/" + repackage.BrewFormulaName(project)
 		info.Npm = "npm install @buildhost/" + project + " --registry " + serviceBase(r, "npm")
-		info.Apt = fmt.Sprintf("echo \"deb [signed-by=/etc/apt/keyrings/%s.gpg] %s stable main\" | sudo tee /etc/apt/sources.list.d/%s.list",
-			lastSegment(project), serviceURL(r, "apt", project), lastSegment(project))
+		aptURL := serviceURL(r, "apt", project)
+		// A slash-namespaced project keeps its slash in the repo URL but installs
+		pkg := repackage.DebPackageName(project)
+		info.Apt = fmt.Sprintf(
+			"sudo install -d -m 0755 /etc/apt/keyrings\n"+
+				"curl -fsSL %s/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\n"+
+				"echo \"deb [signed-by=/etc/apt/keyrings/buildhost.gpg] %s stable main\" | sudo tee /etc/apt/sources.list.d/%s.list\n"+
+				"sudo apt update && sudo apt install %s",
+			aptURL, aptURL, pkg, pkg)
 	}
 	return info
 }
@@ -185,8 +248,7 @@ type releaseView struct {
 }
 
 type artifactRow struct {
-	OS         string
-	Arch       string
+	Platforms  string
 	Kind       string
 	Filename   string
 	Size       string
@@ -194,6 +256,8 @@ type artifactRow struct {
 	Downloads  []downloadLink
 	Docker     bool
 	DockerPull string
+	// FormatBadge is the executable format detected at upload ("APE"), "" when
+	FormatBadge string
 }
 
 type downloadLink struct {
@@ -202,10 +266,9 @@ type downloadLink struct {
 }
 
 // archiveFormats are the repackaged download formats offered for every
-// non-docker artifact, matching the fmt values the dl/static endpoints accept.
 var archiveFormats = []string{"tar.gz", "tar.xz", "tar.zst", "zip"}
 
-func buildReleaseView(r *http.Request, p *db.Project, rel *db.Release, arts []db.Artifact) releaseView {
+func buildReleaseView(r *http.Request, p *db.Project, rel *db.Release, arts []db.ArtifactWithPlatforms) releaseView {
 	v := releaseView{
 		SiteName:    siteName,
 		ProjectName: p.Name,
@@ -219,12 +282,12 @@ func buildReleaseView(r *http.Request, p *db.Project, rel *db.Release, arts []db
 
 	for _, a := range arts {
 		row := artifactRow{
-			OS:       string(a.OS),
-			Arch:     string(a.Arch),
-			Kind:     string(a.Kind),
-			Filename: a.Filename,
-			Size:     humanSize(a.Size),
-			SHA256:   a.SHA256,
+			Platforms:   db.FormatPlatforms(a.Platforms),
+			Kind:        string(a.Kind),
+			Filename:    a.Filename,
+			Size:        humanSize(a.Size),
+			SHA256:      a.SHA256,
+			FormatBadge: exeformat.Format(a.ExeFormat).Label(),
 		}
 		if a.Kind.ServedViaDockerOnly() {
 			row.Docker = true
@@ -250,9 +313,6 @@ func buildReleaseView(r *http.Request, p *db.Project, rel *db.Release, arts []db
 // ----- URL helpers ---------------------------------------------------------
 
 // serviceBase returns the scheme://host base for a service subdomain, derived
-// from the main-domain request (e.g. example.com -> https://dl.example.com).
-// It deliberately does not use auth.DeriveServiceURL, which is meant for
-// subdomain-origin requests and strips the first host label.
 func serviceBase(r *http.Request, service string) string {
 	return auth.RequestScheme(r) + "://" + service + "." + r.Host
 }
@@ -301,6 +361,7 @@ func releasePath(project, version string) string {
 
 // ----- formatting helpers --------------------------------------------------
 
+// lastSegment returns the final /-separated segment of a slash-namespaced
 func lastSegment(name string) string {
 	if i := strings.LastIndexByte(name, '/'); i >= 0 {
 		return name[i+1:]

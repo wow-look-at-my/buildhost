@@ -1,10 +1,13 @@
 package strip
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
@@ -53,10 +56,6 @@ func StripBytes(data []byte, tmpDir ...string) (*ByteResult, error) {
 }
 
 // StripReader spools r to a temp file under tmpDir, runs the file-based Strip, and
-// returns a reader over the stripped binary plus its exact size. The returned ReadCloser
-// owns the stripped temp file and removes it (and the discarded debug file) on Close, so
-// the caller MUST Close it. Bounded memory: the artifact is streamed to disk, never held
-// in a []byte.
 func StripReader(r io.Reader, tmpDir string) (io.ReadCloser, int64, error) {
 	return stripStream(r, tmpDir, false)
 }
@@ -122,9 +121,15 @@ func (t *tempFileReadCloser) Close() error {
 	return err
 }
 
+// ErrNotELF is returned when the input is not an ELF object file. Callers on
+var ErrNotELF = errors.New("strip: input is not an ELF binary")
+
+// Strip splits an ELF binary into a stripped binary and its debug symbols.
+//
+// The work is done in-process (see elf.go), NOT by shelling out to
 func Strip(inputPath string) (*Result, error) {
-	data, err := os.ReadFile(inputPath)
-	if err != nil {
+	// Check the input before creating anything, so an unreadable path fails
+	if _, err := os.Stat(inputPath); err != nil {
 		return nil, fmt.Errorf("read input: %w", err)
 	}
 
@@ -145,29 +150,38 @@ func Strip(inputPath string) (*Result, error) {
 	debugPath := debugFile.Name()
 	debugFile.Close()
 
-	if err := os.WriteFile(strippedPath, data, 0o600); err != nil {
+	if err := stripELF64(inputPath, strippedPath, debugPath); err != nil {
 		os.Remove(strippedPath)
 		os.Remove(debugPath)
-		return nil, fmt.Errorf("copy for stripping: %w", err)
-	}
-
-	if err := exec.Command("objcopy", "--only-keep-debug", strippedPath, debugPath).Run(); err != nil {
-		os.Remove(strippedPath)
-		os.Remove(debugPath)
-		return nil, fmt.Errorf("extract debug info: %w", err)
-	}
-
-	if err := exec.Command("strip", "--strip-debug", "--strip-unneeded", strippedPath).Run(); err != nil {
-		os.Remove(strippedPath)
-		os.Remove(debugPath)
-		return nil, fmt.Errorf("strip binary: %w", err)
+		return nil, err
 	}
 
 	return &Result{StrippedPath: strippedPath, DebugPath: debugPath}, nil
 }
 
-func Available() bool {
-	_, err1 := exec.LookPath("strip")
-	_, err2 := exec.LookPath("objcopy")
-	return err1 == nil && err2 == nil
+// Available reports whether binary stripping can run. It is now always true:
+func Available() bool { return true }
+
+// LooksELF reports whether r begins with the ELF magic, consuming only those
+// bytes. Callers use it to decide whether stripping is worth attempting BEFORE
+func LooksELF(r io.Reader) bool {
+	var magic [4]byte
+	if _, err := io.ReadFull(r, magic[:]); err != nil {
+		return false
+	}
+	return bytes.Equal(magic[:], elfMagic)
+}
+
+// LogSkipped reports that an artifact was served unstripped, and why.
+//
+// This exists because the opposite -- swallowing the error -- is what let
+// stripping be broken in production for weeks without a trace: the shipped
+func LogSkipped(ctx context.Context, storageKey string, err error) {
+	if errors.Is(err, ErrNotELF) || errors.Is(err, ErrUnsupportedELF) {
+		slog.DebugContext(ctx, "serving artifact unstripped",
+			"storage_key", storageKey, "reason", err)
+		return
+	}
+	slog.WarnContext(ctx, "binary stripping failed; serving artifact unstripped",
+		"storage_key", storageKey, "error", err)
 }

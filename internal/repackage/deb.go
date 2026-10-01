@@ -30,36 +30,54 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 		version = fmt.Sprintf("%d", input.Release.VersionNum)
 	}
 
+	// A buildhost project name may be slash-namespaced (e.g. "myrepo/server"),
+	pkgName := DebPackageName(input.Project.Name)
+
 	installDir := "/usr/bin/"
 	switch input.Artifact.Kind {
 	case db.KindLibrary:
-		installDir = fmt.Sprintf("/usr/lib/%s/", input.Project.Name)
+		installDir = fmt.Sprintf("/usr/lib/%s/", pkgName)
 	case db.KindAssets:
-		installDir = fmt.Sprintf("/usr/share/%s/", input.Project.Name)
+		installDir = fmt.Sprintf("/usr/share/%s/", pkgName)
 	case db.KindArchive:
-		installDir = fmt.Sprintf("/usr/share/%s/", input.Project.Name)
+		installDir = fmt.Sprintf("/usr/share/%s/", pkgName)
 	}
 
 	controlContent := fmt.Sprintf(
 		"Package: %s\nVersion: %s\nArchitecture: %s\nMaintainer: %s\nDescription: %s\nSection: utils\nPriority: optional\n",
-		sanitizeControlField(input.Project.Name), version, arch,
+		pkgName, version, arch,
 		sanitizeControlField(firstNonEmpty(input.Project.Homepage, "unknown")),
 		sanitizeControlField(firstNonEmpty(input.Project.Description, input.Project.Name)))
+	dependsLine, err := DebDependsLine(input.Project)
+	if err != nil {
+		return nil, err
+	}
+	controlContent += dependsLine
 
-	controlTar, err := buildTarGZ([]tarEntry{{
+	// The deb materialization of the packaging-agnostic create_service
+	withService := input.Project.CreateService && input.Artifact.Kind == db.KindBinary
+
+	controlEntries := []tarEntry{{
 		Name: "./control",
 		Data: []byte(controlContent),
 		Mode: 0o644,
-	}})
+	}}
+	if withService {
+		controlEntries = append(controlEntries,
+			tarEntry{Name: "./postinst", Data: []byte(debPostinst(pkgName)), Mode: 0o755},
+			tarEntry{Name: "./prerm", Data: []byte(debPrerm(pkgName)), Mode: 0o755},
+		)
+	}
+	controlTar, err := buildTarGZ(controlEntries)
 	if err != nil {
 		return nil, fmt.Errorf("build control.tar.gz: %w", err)
 	}
 
-	fileName := input.Project.Name
+	fileName := pkgName
 	if input.Artifact.Kind == db.KindLibrary {
 		fileName = input.Artifact.Filename
 		if fileName == "" {
-			fileName = "lib" + input.Project.Name + ".so"
+			fileName = "lib" + pkgName + ".so"
 		}
 	}
 
@@ -68,16 +86,53 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 		mode = 0o755
 	}
 
-	// The ar container needs each member's exact byte length in its header, before the
-	// body. The data.tar.gz member's compressed length isn't known until it's produced,
-	// so stream the artifact -> tar -> gzip into a temp file (the compressed member, far
-	// smaller than the raw input -- the decompressed input never lands in memory) and
-	// stat it for the length.
+	// A Cosmopolitan APE binary cannot be run from a root-owned /usr/bin entry
+	artifactReader := input.Reader
+	var launcher []byte
+	if input.Artifact.Kind == db.KindBinary {
+		isAPE, rest, err := peekAPE(artifactReader)
+		if err != nil {
+			return nil, fmt.Errorf("inspect artifact: %w", err)
+		}
+		artifactReader = rest
+		if isAPE {
+			installDir = fmt.Sprintf("/usr/lib/%s/", pkgName)
+			script, err := debAPELauncher(pkgName, version)
+			if err != nil {
+				return nil, err
+			}
+			launcher = []byte(script)
+		}
+	}
+
+	var extraEntries []tarEntry
+	if launcher != nil {
+		extraEntries = append(extraEntries, tarEntry{
+			Name: "./usr/bin/" + pkgName,
+			Data: launcher,
+			Mode: 0o755,
+		})
+	}
+	if withService {
+		extraEntries = append(extraEntries, tarEntry{
+			Name: "." + DebServiceUnitPath(pkgName),
+			Data: []byte(DebServiceUnit(pkgName, firstNonEmpty(input.Project.Description, pkgName))),
+			Mode: 0o644,
+		})
+	}
+
+	// The ar container needs each member's exact byte length in its header.
 	dataTmp, err := os.CreateTemp(input.TmpDir, "deb-data-*")
 	if err != nil {
 		return nil, fmt.Errorf("create deb temp: %w", err)
 	}
-	dataLen, err := streamDebData(dataTmp, input.Reader, "."+installDir+fileName, input.Size, mode)
+	// dpkg creates no leading directories of its own, so a package installing
+	var preEntries []tarEntry
+	if installDir != "/usr/bin/" {
+		preEntries = append(preEntries, tarEntry{Name: "." + installDir, Mode: 0o755, Dir: true})
+	}
+
+	dataLen, err := streamDebData(dataTmp, artifactReader, "."+installDir+fileName, input.Size, mode, preEntries, extraEntries)
 	if err != nil {
 		dataTmp.Close()
 		os.Remove(dataTmp.Name())
@@ -85,7 +140,7 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 	}
 
 	debBinary := []byte("2.0\n")
-	filename := fmt.Sprintf("%s_%s_%s.deb", input.Project.Name, version, arch)
+	filename := fmt.Sprintf("%s_%s_%s.deb", pkgName, version, arch)
 
 	r := streamPipe(func(w io.Writer) error {
 		defer func() {
@@ -114,16 +169,38 @@ func (d *Deb) Repackage(_ context.Context, input Input) (*Output, error) {
 	}, nil
 }
 
-// streamDebData writes a single-entry tar.gz (the artifact, at name) to f and returns the
-// number of compressed bytes written.
-func streamDebData(f *os.File, r io.Reader, name string, size, mode int64) (int64, error) {
+// streamDebData writes the data tar.gz (the artifact at name, then any extra
+// small entries such as the create_service systemd unit) to f and returns the
+// number of compressed bytes written. An empty extra list produces the exact
+// single-entry member of before, so flag-off debs stay byte-identical.
+func streamDebData(f *os.File, r io.Reader, name string, size, mode int64, pre, extra []tarEntry) (int64, error) {
 	gw := gzip.NewWriter(f)
 	tw := tar.NewWriter(gw)
+	for _, e := range pre {
+		if err := tw.WriteHeader(debTarHeader(e)); err != nil {
+			return 0, fmt.Errorf("write data tar header %q: %w", e.Name, err)
+		}
+		if !e.Dir {
+			if _, err := tw.Write(e.Data); err != nil {
+				return 0, fmt.Errorf("write data entry %q: %w", e.Name, err)
+			}
+		}
+	}
 	if err := tw.WriteHeader(&tar.Header{Name: name, Size: size, Mode: mode}); err != nil {
 		return 0, fmt.Errorf("write data tar header: %w", err)
 	}
 	if _, err := io.Copy(tw, r); err != nil {
 		return 0, fmt.Errorf("write data: %w", err)
+	}
+	for _, e := range extra {
+		if err := tw.WriteHeader(debTarHeader(e)); err != nil {
+			return 0, fmt.Errorf("write data tar header %q: %w", e.Name, err)
+		}
+		if !e.Dir {
+			if _, err := tw.Write(e.Data); err != nil {
+				return 0, fmt.Errorf("write data entry %q: %w", e.Name, err)
+			}
+		}
 	}
 	if err := tw.Close(); err != nil {
 		return 0, err
@@ -138,10 +215,32 @@ func streamDebData(f *os.File, r io.Reader, name string, size, mode int64) (int6
 	return fi.Size(), nil
 }
 
+func DebServiceUnitPath(pkgName string) string {
+	return "/usr/lib/systemd/user/" + pkgName + ".service"
+}
+
+// DebServiceUnit renders the systemd USER unit shipped when the project
+func DebServiceUnit(pkgName, description string) string {
+	return fmt.Sprintf(`[Unit]
+Description=%s
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/%s
+Restart=on-failure
+
+[Install]
+WantedBy=graphical-session.target
+`, sanitizeControlField(description), pkgName)
+}
+
 type tarEntry struct {
 	Name string
 	Data []byte
 	Mode int64
+	// Dir marks a directory entry. dpkg does not create leading directories
+	Dir bool
 }
 
 func buildTarGZ(entries []tarEntry) ([]byte, error) {
@@ -167,8 +266,6 @@ func buildTarGZ(entries []tarEntry) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// writeArMember writes one ar member: the fixed 60-byte header (with the body size),
-// the body streamed from body, and a newline pad when the body length is odd.
 func writeArMember(w io.Writer, name string, body io.Reader, size int64) error {
 	header := fmt.Sprintf("%-16s%-12d%-6d%-6d%-8s%-10d`\n",
 		name, 0, 0, 0, "100644", size)
@@ -186,6 +283,34 @@ func writeArMember(w io.Writer, name string, body io.Reader, size int64) error {
 	return nil
 }
 
+// debPostinst is the maintainer script that sets the create_service unit up
+// automatically at install. `systemctl --global enable` is pure symlink
+// manipulation under /etc/systemd/user (no running manager needed; works in
+// chroots/containers), attaching the unit to every user's
+// graphical-session.target -- so the service starts at each user's NEXT
+func debPostinst(pkgName string) string {
+	return fmt.Sprintf(`#!/bin/sh
+set -e
+if [ "$1" = "configure" ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl --global enable %s.service >/dev/null 2>&1 || true
+    if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+        systemctl --user -M "${SUDO_USER}@" start %s.service >/dev/null 2>&1 || true
+    fi
+fi
+`, pkgName, pkgName)
+}
+
+// debPrerm undoes the postinst enablement when the package is removed. The
+// unit file itself is removed by dpkg with the package; running instances end
+func debPrerm(pkgName string) string {
+	return fmt.Sprintf(`#!/bin/sh
+set -e
+if [ "$1" = "remove" ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl --global disable %s.service >/dev/null 2>&1 || true
+fi
+`, pkgName)
+}
+
 func debArch(a db.Arch) string {
 	switch a {
 	case db.ArchAMD64:
@@ -201,6 +326,25 @@ func debArch(a db.Arch) string {
 	}
 }
 
+// DebPackageName converts a buildhost project name into a valid Debian package
+func DebPackageName(project string) string {
+	return strings.NewReplacer("/", "-", "_", "-").Replace(project)
+}
+
+// DebDependsLine renders the project's apt_depends as a "Depends:" control
+// line with its newline, or "" when the project declares none. The deb and
+// the APT Packages entry both use it, so they always agree. A stored
+// value that fails validation is an error, never a dropped line.
+func DebDependsLine(p db.Project) (string, error) {
+	if p.AptDepends == "" {
+		return "", nil
+	}
+	if err := db.ValidateAptDepends(p.AptDepends); err != nil {
+		return "", fmt.Errorf("project %s: %w", p.Name, err)
+	}
+	return "Depends: " + p.AptDepends + "\n", nil
+}
+
 func sanitizeControlField(s string) string {
 	return strings.NewReplacer("\n", " ", "\r", " ").Replace(s)
 }
@@ -212,4 +356,13 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// debTarHeader renders a tarEntry as a tar header, distinguishing directories
+// (no payload, TypeDir) from regular files.
+func debTarHeader(e tarEntry) *tar.Header {
+	if e.Dir {
+		return &tar.Header{Name: e.Name, Typeflag: tar.TypeDir, Mode: e.Mode}
+	}
+	return &tar.Header{Name: e.Name, Size: int64(len(e.Data)), Mode: e.Mode}
 }

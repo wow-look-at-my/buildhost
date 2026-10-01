@@ -17,6 +17,7 @@ import (
 )
 
 func TestGitHubWebhook_DeleteBranchDeletesRepoNamespaceSites(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	h.GitHubWebhookSecret = "secret"
 	ctx := context.Background()
@@ -57,6 +58,7 @@ func TestGitHubWebhook_DeleteBranchDeletesRepoNamespaceSites(t *testing.T) {
 }
 
 func TestGitHubWebhook_InvalidSignatureDoesNotDelete(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	h.GitHubWebhookSecret = "secret"
 	project := seedWebhookProject(t, h.DB, "myrepo")
@@ -76,6 +78,7 @@ func TestGitHubWebhook_InvalidSignatureDoesNotDelete(t *testing.T) {
 }
 
 func TestGitHubWebhook_IgnoresTagDelete(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	h.GitHubWebhookSecret = "secret"
 	project := seedWebhookProject(t, h.DB, "myrepo")
@@ -93,6 +96,7 @@ func TestGitHubWebhook_IgnoresTagDelete(t *testing.T) {
 }
 
 func TestGitHubWebhook_NotConfigured(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	payload := []byte(`{"zen":"Keep it logically awesome."}`)
 	req := signedGitHubWebhookRequest(t, "secret", payload)

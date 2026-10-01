@@ -14,6 +14,7 @@ import (
 )
 
 func TestUploadArtifact_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -45,6 +46,7 @@ func TestUploadArtifact_Success(t *testing.T) {
 // requireProject middleware (tested in the auth package).
 
 func TestUploadArtifact_ReleaseNotFound(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -65,6 +67,7 @@ func TestUploadArtifact_ReleaseNotFound(t *testing.T) {
 }
 
 func TestUploadArtifact_InvalidOS(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -88,6 +91,7 @@ func TestUploadArtifact_InvalidOS(t *testing.T) {
 }
 
 func TestUploadArtifact_InvalidArch(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -111,6 +115,7 @@ func TestUploadArtifact_InvalidArch(t *testing.T) {
 }
 
 func TestUploadArtifact_InvalidKind(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -134,6 +139,7 @@ func TestUploadArtifact_InvalidKind(t *testing.T) {
 }
 
 func TestUploadArtifact_PublishedRelease(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -158,6 +164,7 @@ func TestUploadArtifact_PublishedRelease(t *testing.T) {
 }
 
 func TestUploadArtifact_KindFromHeader(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -184,6 +191,7 @@ func TestUploadArtifact_KindFromHeader(t *testing.T) {
 }
 
 func TestUploadArtifact_DuplicateOSArch(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -216,6 +224,7 @@ func TestUploadArtifact_DuplicateOSArch(t *testing.T) {
 // --- Publish tests ---
 
 func TestPublishRelease_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -245,10 +254,66 @@ func TestPublishRelease_Success(t *testing.T) {
 	assert.True(t, got.Published)
 }
 
+// The publish response must carry the artifacts it made public. There is no
+// artifacts listing endpoint, so a publisher assembling its own
+// create/upload/publish chain (buildhost-publish-release) has no other way to
+// learn the digests it must record on the org's linked artifacts page. Drop
+// the field and that whole path silently stores artifacts and records nothing.
+func TestPublishRelease_ReturnsPublishedArtifacts(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "pubartifacts", Versioning: db.VersioningSemver}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	require.NoError(t, h.DB.CreateRelease(ctx, rel))
+
+	key, size, err := h.Store.Put(ctx, strings.NewReader("binary"))
+	require.NoError(t, err)
+	for _, arch := range []db.Arch{db.ArchAMD64, db.ArchARM64} {
+		require.NoError(t, h.DB.CreateArtifact(ctx, &db.Artifact{
+			ReleaseID: rel.ID, OS: db.OSLinux, Arch: arch,
+			Kind: db.KindBinary, StorageKey: key, Size: size, SHA256: key,
+		}))
+	}
+
+	req := httptest.NewRequest("POST", "/api/projects/pubartifacts/releases/1.0.0/publish", nil)
+	req.SetPathValue("project", "pubartifacts")
+	req.SetPathValue("version", "1.0.0")
+	req = withProjectRoute(req, proj)
+	req = req.WithContext(writeToken(req.Context(), "read,write"))
+	rec := httptest.NewRecorder()
+	h.PublishRelease(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got struct {
+		Version   string        `json:"version"`
+		Published bool          `json:"published"`
+		Artifacts []db.Artifact `json:"artifacts"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+
+	// The embedded release keeps its pre-existing top-level fields.
+	assert.Equal(t, "1.0.0", got.Version)
+	assert.True(t, got.Published)
+
+	require.Len(t, got.Artifacts, 2)
+	arches := make(map[db.Arch]bool, len(got.Artifacts))
+	for _, a := range got.Artifacts {
+		arches[a.Arch] = true
+		assert.Equal(t, db.OSLinux, a.OS)
+		assert.Equal(t, key, a.SHA256)
+	}
+	assert.True(t, arches[db.ArchAMD64] && arches[db.ArchARM64], "both uploaded slots must be reported, got %v", arches)
+}
+
 // Note: TestPublishRelease_NoAuth removed -- auth is now enforced by the
 // requireProject middleware (tested in the auth package).
 
 func TestPublishRelease_ReleaseNotFound(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -267,6 +332,7 @@ func TestPublishRelease_ReleaseNotFound(t *testing.T) {
 }
 
 func TestPublishRelease_NoArtifacts(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -288,6 +354,7 @@ func TestPublishRelease_NoArtifacts(t *testing.T) {
 }
 
 func TestPublishRelease_AlreadyPublished(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -309,12 +376,11 @@ func TestPublishRelease_AlreadyPublished(t *testing.T) {
 }
 
 // Note: Project-scoped token isolation tests have been removed. Token scope
-// enforcement is now handled by the requireProject middleware (tested in
-// the auth package).
 
 // --- Security tests: filename sanitization ---
 
 func TestSanitizeFilename_PathTraversal(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name     string
 		input    string
@@ -341,6 +407,7 @@ func TestSanitizeFilename_PathTraversal(t *testing.T) {
 }
 
 func TestSanitizeFilename_ControlCharacters(t *testing.T) {
+	t.Serial()
 	// Control characters should be stripped
 	input := "file\x00name\x1f.bin"
 	result := sanitizeFilename(input)
@@ -352,13 +419,14 @@ func TestSanitizeFilename_ControlCharacters(t *testing.T) {
 }
 
 func TestSanitizeFilename_TruncatesLongNames(t *testing.T) {
-	// Filenames longer than 255 should be truncated
+	t.Serial()
 	longName := strings.Repeat("a", 300)
 	result := sanitizeFilename(longName)
 	assert.Equal(t, 255, len(result))
 }
 
 func TestUploadArtifact_FilenameHeaderSanitized(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -389,6 +457,7 @@ func TestUploadArtifact_FilenameHeaderSanitized(t *testing.T) {
 }
 
 func TestUploadArtifact_FilenameHeaderAbsolutePathSanitized(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 

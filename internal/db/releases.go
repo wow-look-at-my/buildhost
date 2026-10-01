@@ -7,6 +7,9 @@ import (
 	"fmt"
 )
 
+// LatestBranch is the default value of projects.default_branch (see
+const LatestBranch = "master"
+
 func (d *DB) CreateRelease(ctx context.Context, r *Release) error {
 	res, err := d.q.InsertRelease(ctx, InsertReleaseParams{
 		ProjectID:  r.ProjectID,
@@ -16,6 +19,7 @@ func (d *DB) CreateRelease(ctx context.Context, r *Release) error {
 		GitCommit:  r.GitCommit,
 		Notes:      r.Notes,
 		OciUser:    r.OciUser,
+		Draft:      r.Draft,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -53,28 +57,12 @@ func (d *DB) GetRelease(ctx context.Context, projectID int64, version string) (*
 	return &row, nil
 }
 
-// defaultBranch is the branch the apex "latest" download tracks. buildhost
-// assumes every project's default branch is "master".
-const defaultBranch = "master"
-
 // GetLatestRelease resolves the apex "latest" release (no version, no explicit
-// branch): the newest published release on the default branch (master), so a
-// push to a feature branch cannot hijack "latest". When master has no published
-// release yet, it falls back to the newest release across all branches, so
-// "latest" is never empty while releases exist.
+// branch): the newest published release on the project's default branch
+// (projects.default_branch, default "master"), so a push to a feature branch
+// cannot hijack "latest". A project whose default branch has no published
 func (d *DB) GetLatestRelease(ctx context.Context, projectID int64) (*Release, error) {
-	row, err := d.q.GetLatestPublishedReleaseByBranch(ctx, GetLatestPublishedReleaseByBranchParams{
-		ProjectID: projectID,
-		GitBranch: defaultBranch,
-	})
-	if err == nil {
-		return &row, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("get latest release on %s: %w", defaultBranch, err)
-	}
-
-	row, err = d.q.GetLatestPublishedRelease(ctx, projectID)
+	row, err := d.q.GetLatestPublishedReleaseOnDefaultBranch(ctx, projectID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

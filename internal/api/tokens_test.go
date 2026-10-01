@@ -14,7 +14,17 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
+// jsonDoc renders a request body from its fields. Marshalling is what keeps a
+// quote or a backslash in a value from breaking the document.
+func jsonDoc(t *testing.T, fields map[string]any) string {
+	t.Helper()
+	doc, err := json.Marshal(fields)
+	require.NoError(t, err)
+	return string(doc)
+}
+
 func TestCreateToken_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":"ci-token","scopes":"read,write"}`
@@ -32,6 +42,7 @@ func TestCreateToken_Success(t *testing.T) {
 }
 
 func TestCreateToken_NoAuth(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":"ci-token"}`
@@ -43,6 +54,7 @@ func TestCreateToken_NoAuth(t *testing.T) {
 }
 
 func TestCreateToken_EmptyName(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":""}`
@@ -56,6 +68,7 @@ func TestCreateToken_EmptyName(t *testing.T) {
 }
 
 func TestCreateToken_InvalidBody(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader("not json"))
@@ -67,6 +80,7 @@ func TestCreateToken_InvalidBody(t *testing.T) {
 }
 
 func TestCreateToken_DefaultScopes(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	body := `{"name":"default-scope-token"}`
@@ -79,13 +93,14 @@ func TestCreateToken_DefaultScopes(t *testing.T) {
 }
 
 func TestCreateToken_WithProjectID(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
 	proj := &db.Project{Name: "scoped", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
-	body := `{"name":"project-token","project_id":` + strconv.FormatInt(proj.ID, 10) + `,"scopes":"read"}`
+	body := jsonDoc(t, map[string]any{"name": "project-token", "project_id": proj.ID, "scopes": "read"})
 	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader(body))
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
@@ -95,6 +110,7 @@ func TestCreateToken_WithProjectID(t *testing.T) {
 }
 
 func TestListTokens_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -113,6 +129,7 @@ func TestListTokens_Success(t *testing.T) {
 }
 
 func TestListTokens_NoAuth(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	req := httptest.NewRequest("GET", "/api/tokens", nil)
@@ -123,6 +140,7 @@ func TestListTokens_NoAuth(t *testing.T) {
 }
 
 func TestDeleteToken_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -139,6 +157,7 @@ func TestDeleteToken_Success(t *testing.T) {
 }
 
 func TestDeleteToken_NotFound(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	req := httptest.NewRequest("DELETE", "/api/tokens/9999", nil)
@@ -151,6 +170,7 @@ func TestDeleteToken_NotFound(t *testing.T) {
 }
 
 func TestDeleteToken_InvalidID(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	req := httptest.NewRequest("DELETE", "/api/tokens/abc", nil)
@@ -164,6 +184,7 @@ func TestDeleteToken_InvalidID(t *testing.T) {
 }
 
 func TestDeleteToken_NoAuth(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	req := httptest.NewRequest("DELETE", "/api/tokens/1", nil)
@@ -177,6 +198,7 @@ func TestDeleteToken_NoAuth(t *testing.T) {
 // --- Security tests: project-scoped token isolation ---
 
 func TestCreateToken_ProjectScopedCannotCreateGlobalToken(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -194,6 +216,7 @@ func TestCreateToken_ProjectScopedCannotCreateGlobalToken(t *testing.T) {
 }
 
 func TestCreateToken_ProjectScopedCannotCreateTokenForDifferentProject(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -203,7 +226,7 @@ func TestCreateToken_ProjectScopedCannotCreateTokenForDifferentProject(t *testin
 	require.NoError(t, h.DB.CreateProject(ctx, projB))
 
 	// Token is scoped to project A, but tries to create a token for project B
-	body := `{"name":"cross-project","scopes":"read","project_id":` + strconv.FormatInt(projB.ID, 10) + `}`
+	body := jsonDoc(t, map[string]any{"name": "cross-project", "scopes": "read", "project_id": projB.ID})
 	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader(body))
 	req = req.WithContext(projectWriteToken(req.Context(), projA.ID))
 	rec := httptest.NewRecorder()
@@ -213,6 +236,7 @@ func TestCreateToken_ProjectScopedCannotCreateTokenForDifferentProject(t *testin
 }
 
 func TestListTokens_ProjectScopedCannotList(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -228,6 +252,7 @@ func TestListTokens_ProjectScopedCannotList(t *testing.T) {
 }
 
 func TestDeleteToken_ProjectScopedCannotDelete(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -248,6 +273,7 @@ func TestDeleteToken_ProjectScopedCannotDelete(t *testing.T) {
 }
 
 func TestCreateToken_InvalidScopeRejected(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	tests := []struct {
@@ -274,13 +300,14 @@ func TestCreateToken_InvalidScopeRejected(t *testing.T) {
 }
 
 func TestCreateToken_GlobalTokenCanCreateProjectScoped(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
 	proj := &db.Project{Name: "proj-global-create", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
-	body := `{"name":"project-token","scopes":"read,write","project_id":` + strconv.FormatInt(proj.ID, 10) + `}`
+	body := jsonDoc(t, map[string]any{"name": "project-token", "scopes": "read,write", "project_id": proj.ID})
 	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader(body))
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
@@ -294,6 +321,7 @@ func TestCreateToken_GlobalTokenCanCreateProjectScoped(t *testing.T) {
 }
 
 func TestCreateToken_CannotGrantScopeNotHeld(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	// Caller only has "write" scope and tries to create a "read,write" token.
@@ -308,6 +336,7 @@ func TestCreateToken_CannotGrantScopeNotHeld(t *testing.T) {
 }
 
 func TestCreateToken_ScopesNormalizedWithSpaces(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 
 	// "read, write" with a space should be accepted and stored as "read,write".
@@ -321,6 +350,7 @@ func TestCreateToken_ScopesNormalizedWithSpaces(t *testing.T) {
 }
 
 func TestCreateToken_ProjectScopedCanCreateForSameProject(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -328,7 +358,7 @@ func TestCreateToken_ProjectScopedCanCreateForSameProject(t *testing.T) {
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
 	// Project-scoped token CAN create a token for the same project
-	body := `{"name":"same-project-token","scopes":"read","project_id":` + strconv.FormatInt(proj.ID, 10) + `}`
+	body := jsonDoc(t, map[string]any{"name": "same-project-token", "scopes": "read", "project_id": proj.ID})
 	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader(body))
 	req = req.WithContext(projectWriteToken(req.Context(), proj.ID))
 	rec := httptest.NewRecorder()

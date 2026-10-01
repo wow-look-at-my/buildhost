@@ -10,8 +10,80 @@ import (
 	"database/sql"
 )
 
+const countProjectAliasByName = `-- name: CountProjectAliasByName :one
+SELECT COUNT(*) FROM project_aliases WHERE name = ?
+`
+
+func (q *Queries) CountProjectAliasByName(ctx context.Context, name string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countProjectAliasByName, name)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const deleteOCIBlobLink = `-- name: DeleteOCIBlobLink :exec
+DELETE FROM oci_blob_links WHERE project_id = ? AND storage_key = ?
+`
+
+type DeleteOCIBlobLinkParams struct {
+	ProjectID  int64  `json:"project_id"`
+	StorageKey string `json:"storage_key"`
+}
+
+func (q *Queries) DeleteOCIBlobLink(ctx context.Context, arg DeleteOCIBlobLinkParams) error {
+	_, err := q.db.ExecContext(ctx, deleteOCIBlobLink, arg.ProjectID, arg.StorageKey)
+	return err
+}
+
+const deleteProject = `-- name: DeleteProject :exec
+DELETE FROM projects WHERE id = ?
+`
+
+func (q *Queries) DeleteProject(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteProject, id)
+	return err
+}
+
+const deleteProjectAlias = `-- name: DeleteProjectAlias :exec
+DELETE FROM project_aliases WHERE name = ?
+`
+
+func (q *Queries) DeleteProjectAlias(ctx context.Context, name string) error {
+	_, err := q.db.ExecContext(ctx, deleteProjectAlias, name)
+	return err
+}
+
+const getProjectByAlias = `-- name: GetProjectByAlias :one
+SELECT p.id, p.name, p.description, p.homepage, p.license, p.is_private, p.versioning, p.github_repo, p.github_owner_id, p.github_repo_id, p.default_branch, p.create_service, p.apt_depends, p.created_at, p.updated_at
+FROM projects p JOIN project_aliases a ON a.project_id = p.id
+WHERE a.name = ?
+`
+
+func (q *Queries) GetProjectByAlias(ctx context.Context, name string) (Project, error) {
+	row := q.db.QueryRowContext(ctx, getProjectByAlias, name)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.Homepage,
+		&i.License,
+		&i.IsPrivate,
+		&i.Versioning,
+		&i.GithubRepo,
+		&i.GithubOwnerID,
+		&i.GithubRepoID,
+		&i.DefaultBranch,
+		&i.CreateService,
+		&i.AptDepends,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getProjectByName = `-- name: GetProjectByName :one
-SELECT id, name, description, homepage, license, is_private, versioning, created_at, updated_at
+SELECT id, name, description, homepage, license, is_private, versioning, github_repo, github_owner_id, github_repo_id, default_branch, create_service, apt_depends, created_at, updated_at
 FROM projects WHERE name = ?
 `
 
@@ -26,6 +98,12 @@ func (q *Queries) GetProjectByName(ctx context.Context, name string) (Project, e
 		&i.License,
 		&i.IsPrivate,
 		&i.Versioning,
+		&i.GithubRepo,
+		&i.GithubOwnerID,
+		&i.GithubRepoID,
+		&i.DefaultBranch,
+		&i.CreateService,
+		&i.AptDepends,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -33,17 +111,20 @@ func (q *Queries) GetProjectByName(ctx context.Context, name string) (Project, e
 }
 
 const insertProject = `-- name: InsertProject :execresult
-INSERT INTO projects (name, description, homepage, license, is_private, versioning)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO projects (name, description, homepage, license, is_private, versioning, github_repo, github_owner_id, github_repo_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertProjectParams struct {
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	Homepage    string     `json:"homepage"`
-	License     string     `json:"license"`
-	IsPrivate   bool       `json:"is_private"`
-	Versioning  Versioning `json:"versioning"`
+	Name          string     `json:"name"`
+	Description   string     `json:"description"`
+	Homepage      string     `json:"homepage"`
+	License       string     `json:"license"`
+	IsPrivate     bool       `json:"is_private"`
+	Versioning    Versioning `json:"versioning"`
+	GithubRepo    string     `json:"github_repo"`
+	GithubOwnerID string     `json:"github_owner_id"`
+	GithubRepoID  string     `json:"github_repo_id"`
 }
 
 func (q *Queries) InsertProject(ctx context.Context, arg InsertProjectParams) (sql.Result, error) {
@@ -54,11 +135,62 @@ func (q *Queries) InsertProject(ctx context.Context, arg InsertProjectParams) (s
 		arg.License,
 		arg.IsPrivate,
 		arg.Versioning,
+		arg.GithubRepo,
+		arg.GithubOwnerID,
+		arg.GithubRepoID,
 	)
 }
 
+const insertProjectAlias = `-- name: InsertProjectAlias :exec
+INSERT INTO project_aliases (name, project_id) VALUES (?, ?)
+`
+
+type InsertProjectAliasParams struct {
+	Name      string `json:"name"`
+	ProjectID int64  `json:"project_id"`
+}
+
+func (q *Queries) InsertProjectAlias(ctx context.Context, arg InsertProjectAliasParams) error {
+	_, err := q.db.ExecContext(ctx, insertProjectAlias, arg.Name, arg.ProjectID)
+	return err
+}
+
+const listAllProjectAliases = `-- name: ListAllProjectAliases :many
+SELECT a.name, a.project_id, p.name AS project_name
+FROM project_aliases a JOIN projects p ON p.id = a.project_id ORDER BY a.name
+`
+
+type ListAllProjectAliasesRow struct {
+	Name        string `json:"name"`
+	ProjectID   int64  `json:"project_id"`
+	ProjectName string `json:"project_name"`
+}
+
+func (q *Queries) ListAllProjectAliases(ctx context.Context) ([]ListAllProjectAliasesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAllProjectAliases)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAllProjectAliasesRow{}
+	for rows.Next() {
+		var i ListAllProjectAliasesRow
+		if err := rows.Scan(&i.Name, &i.ProjectID, &i.ProjectName); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAllProjects = `-- name: ListAllProjects :many
-SELECT id, name, description, homepage, license, is_private, versioning, created_at, updated_at
+SELECT id, name, description, homepage, license, is_private, versioning, github_repo, github_owner_id, github_repo_id, default_branch, create_service, apt_depends, created_at, updated_at
 FROM projects ORDER BY name
 `
 
@@ -79,6 +211,12 @@ func (q *Queries) ListAllProjects(ctx context.Context) ([]Project, error) {
 			&i.License,
 			&i.IsPrivate,
 			&i.Versioning,
+			&i.GithubRepo,
+			&i.GithubOwnerID,
+			&i.GithubRepoID,
+			&i.DefaultBranch,
+			&i.CreateService,
+			&i.AptDepends,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -93,6 +231,359 @@ func (q *Queries) ListAllProjects(ctx context.Context) ([]Project, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const listOCIBlobKeys = `-- name: ListOCIBlobKeys :many
+
+SELECT storage_key FROM oci_blob_links WHERE project_id = ? ORDER BY storage_key
+`
+
+// Site-branch and OCI-tag collisions are read through the existing
+// ListSitesByProject and ListOCITags queries in sites.sql and oci.sql.
+func (q *Queries) ListOCIBlobKeys(ctx context.Context, projectID int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listOCIBlobKeys, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var storage_key string
+		if err := rows.Scan(&storage_key); err != nil {
+			return nil, err
+		}
+		items = append(items, storage_key)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectAliases = `-- name: ListProjectAliases :many
+SELECT name FROM project_aliases WHERE project_id = ? ORDER BY name
+`
+
+func (q *Queries) ListProjectAliases(ctx context.Context, projectID int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectAliases, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectsByGitHubRepoID = `-- name: ListProjectsByGitHubRepoID :many
+SELECT id, name, description, homepage, license, is_private, versioning, github_repo, github_owner_id, github_repo_id, default_branch, create_service, apt_depends, created_at, updated_at
+FROM projects WHERE github_repo_id = ? AND github_repo_id != '' ORDER BY name
+`
+
+func (q *Queries) ListProjectsByGitHubRepoID(ctx context.Context, githubRepoID string) ([]Project, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectsByGitHubRepoID, githubRepoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Project{}
+	for rows.Next() {
+		var i Project
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.Homepage,
+			&i.License,
+			&i.IsPrivate,
+			&i.Versioning,
+			&i.GithubRepo,
+			&i.GithubOwnerID,
+			&i.GithubRepoID,
+			&i.DefaultBranch,
+			&i.CreateService,
+			&i.AptDepends,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReleasesForMerge = `-- name: ListReleasesForMerge :many
+SELECT id, version, version_num FROM releases WHERE project_id = ? ORDER BY version_num
+`
+
+type ListReleasesForMergeRow struct {
+	ID         int64  `json:"id"`
+	Version    string `json:"version"`
+	VersionNum int64  `json:"version_num"`
+}
+
+func (q *Queries) ListReleasesForMerge(ctx context.Context, projectID int64) ([]ListReleasesForMergeRow, error) {
+	rows, err := q.db.QueryContext(ctx, listReleasesForMerge, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListReleasesForMergeRow{}
+	for rows.Next() {
+		var i ListReleasesForMergeRow
+		if err := rows.Scan(&i.ID, &i.Version, &i.VersionNum); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const maxReleaseVersionNum = `-- name: MaxReleaseVersionNum :one
+
+SELECT CAST(COALESCE(MAX(version_num), 0) AS INTEGER) FROM releases WHERE project_id = ?
+`
+
+// Merge reassignments. Every table carrying a project_id is repointed at the
+// surviving project inside one transaction. download_counts and download_events
+// hang off artifact_id, so they follow their releases with no statement here.
+func (q *Queries) MaxReleaseVersionNum(ctx context.Context, projectID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, maxReleaseVersionNum, projectID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const moveReleaseToProject = `-- name: MoveReleaseToProject :exec
+UPDATE releases SET project_id = ?, version = ?, version_num = ? WHERE id = ?
+`
+
+type MoveReleaseToProjectParams struct {
+	ProjectID  int64  `json:"project_id"`
+	Version    string `json:"version"`
+	VersionNum int64  `json:"version_num"`
+	ID         int64  `json:"id"`
+}
+
+func (q *Queries) MoveReleaseToProject(ctx context.Context, arg MoveReleaseToProjectParams) error {
+	_, err := q.db.ExecContext(ctx, moveReleaseToProject,
+		arg.ProjectID,
+		arg.Version,
+		arg.VersionNum,
+		arg.ID,
+	)
+	return err
+}
+
+const reassignAPITokens = `-- name: ReassignAPITokens :exec
+UPDATE api_tokens SET project_id = ? WHERE project_id = ?
+`
+
+type ReassignAPITokensParams struct {
+	ProjectID   *int64 `json:"project_id"`
+	ProjectID_2 *int64 `json:"project_id_2"`
+}
+
+func (q *Queries) ReassignAPITokens(ctx context.Context, arg ReassignAPITokensParams) error {
+	_, err := q.db.ExecContext(ctx, reassignAPITokens, arg.ProjectID, arg.ProjectID_2)
+	return err
+}
+
+const reassignOCIBlobLinks = `-- name: ReassignOCIBlobLinks :exec
+UPDATE oci_blob_links SET project_id = ? WHERE project_id = ?
+`
+
+type ReassignOCIBlobLinksParams struct {
+	ProjectID   int64 `json:"project_id"`
+	ProjectID_2 int64 `json:"project_id_2"`
+}
+
+func (q *Queries) ReassignOCIBlobLinks(ctx context.Context, arg ReassignOCIBlobLinksParams) error {
+	_, err := q.db.ExecContext(ctx, reassignOCIBlobLinks, arg.ProjectID, arg.ProjectID_2)
+	return err
+}
+
+const reassignOCITags = `-- name: ReassignOCITags :exec
+UPDATE oci_tags SET project_id = ? WHERE project_id = ?
+`
+
+type ReassignOCITagsParams struct {
+	ProjectID   int64 `json:"project_id"`
+	ProjectID_2 int64 `json:"project_id_2"`
+}
+
+func (q *Queries) ReassignOCITags(ctx context.Context, arg ReassignOCITagsParams) error {
+	_, err := q.db.ExecContext(ctx, reassignOCITags, arg.ProjectID, arg.ProjectID_2)
+	return err
+}
+
+const reassignOIDCPolicies = `-- name: ReassignOIDCPolicies :exec
+UPDATE oidc_policies SET project_id = ? WHERE project_id = ?
+`
+
+type ReassignOIDCPoliciesParams struct {
+	ProjectID   *int64 `json:"project_id"`
+	ProjectID_2 *int64 `json:"project_id_2"`
+}
+
+func (q *Queries) ReassignOIDCPolicies(ctx context.Context, arg ReassignOIDCPoliciesParams) error {
+	_, err := q.db.ExecContext(ctx, reassignOIDCPolicies, arg.ProjectID, arg.ProjectID_2)
+	return err
+}
+
+const reassignProjectAliases = `-- name: ReassignProjectAliases :exec
+UPDATE project_aliases SET project_id = ? WHERE project_id = ?
+`
+
+type ReassignProjectAliasesParams struct {
+	ProjectID   int64 `json:"project_id"`
+	ProjectID_2 int64 `json:"project_id_2"`
+}
+
+func (q *Queries) ReassignProjectAliases(ctx context.Context, arg ReassignProjectAliasesParams) error {
+	_, err := q.db.ExecContext(ctx, reassignProjectAliases, arg.ProjectID, arg.ProjectID_2)
+	return err
+}
+
+const reassignSites = `-- name: ReassignSites :exec
+UPDATE sites SET project_id = ? WHERE project_id = ?
+`
+
+type ReassignSitesParams struct {
+	ProjectID   int64 `json:"project_id"`
+	ProjectID_2 int64 `json:"project_id_2"`
+}
+
+func (q *Queries) ReassignSites(ctx context.Context, arg ReassignSitesParams) error {
+	_, err := q.db.ExecContext(ctx, reassignSites, arg.ProjectID, arg.ProjectID_2)
+	return err
+}
+
+const renameProject = `-- name: RenameProject :exec
+UPDATE projects SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type RenameProjectParams struct {
+	Name string `json:"name"`
+	ID   int64  `json:"id"`
+}
+
+func (q *Queries) RenameProject(ctx context.Context, arg RenameProjectParams) error {
+	_, err := q.db.ExecContext(ctx, renameProject, arg.Name, arg.ID)
+	return err
+}
+
+const setProjectAptDepends = `-- name: SetProjectAptDepends :exec
+UPDATE projects SET apt_depends = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type SetProjectAptDependsParams struct {
+	AptDepends string `json:"apt_depends"`
+	ID         int64  `json:"id"`
+}
+
+func (q *Queries) SetProjectAptDepends(ctx context.Context, arg SetProjectAptDependsParams) error {
+	_, err := q.db.ExecContext(ctx, setProjectAptDepends, arg.AptDepends, arg.ID)
+	return err
+}
+
+const setProjectCreateService = `-- name: SetProjectCreateService :exec
+UPDATE projects SET create_service = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type SetProjectCreateServiceParams struct {
+	CreateService bool  `json:"create_service"`
+	ID            int64 `json:"id"`
+}
+
+func (q *Queries) SetProjectCreateService(ctx context.Context, arg SetProjectCreateServiceParams) error {
+	_, err := q.db.ExecContext(ctx, setProjectCreateService, arg.CreateService, arg.ID)
+	return err
+}
+
+const setProjectDefaultBranch = `-- name: SetProjectDefaultBranch :exec
+UPDATE projects SET default_branch = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type SetProjectDefaultBranchParams struct {
+	DefaultBranch string `json:"default_branch"`
+	ID            int64  `json:"id"`
+}
+
+func (q *Queries) SetProjectDefaultBranch(ctx context.Context, arg SetProjectDefaultBranchParams) error {
+	_, err := q.db.ExecContext(ctx, setProjectDefaultBranch, arg.DefaultBranch, arg.ID)
+	return err
+}
+
+const setProjectGitHubIDs = `-- name: SetProjectGitHubIDs :exec
+UPDATE projects SET github_owner_id = ?, github_repo_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type SetProjectGitHubIDsParams struct {
+	GithubOwnerID string `json:"github_owner_id"`
+	GithubRepoID  string `json:"github_repo_id"`
+	ID            int64  `json:"id"`
+}
+
+func (q *Queries) SetProjectGitHubIDs(ctx context.Context, arg SetProjectGitHubIDsParams) error {
+	_, err := q.db.ExecContext(ctx, setProjectGitHubIDs, arg.GithubOwnerID, arg.GithubRepoID, arg.ID)
+	return err
+}
+
+const setProjectGitHubRepo = `-- name: SetProjectGitHubRepo :exec
+UPDATE projects SET github_repo = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type SetProjectGitHubRepoParams struct {
+	GithubRepo string `json:"github_repo"`
+	ID         int64  `json:"id"`
+}
+
+func (q *Queries) SetProjectGitHubRepo(ctx context.Context, arg SetProjectGitHubRepoParams) error {
+	_, err := q.db.ExecContext(ctx, setProjectGitHubRepo, arg.GithubRepo, arg.ID)
+	return err
+}
+
+const setProjectVersioning = `-- name: SetProjectVersioning :exec
+UPDATE projects SET versioning = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type SetProjectVersioningParams struct {
+	Versioning Versioning `json:"versioning"`
+	ID         int64      `json:"id"`
+}
+
+func (q *Queries) SetProjectVersioning(ctx context.Context, arg SetProjectVersioningParams) error {
+	_, err := q.db.ExecContext(ctx, setProjectVersioning, arg.Versioning, arg.ID)
+	return err
 }
 
 const setProjectVisibility = `-- name: SetProjectVisibility :exec

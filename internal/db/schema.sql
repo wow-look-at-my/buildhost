@@ -6,6 +6,12 @@ CREATE TABLE projects (
     license     TEXT NOT NULL DEFAULT '',
     is_private  INTEGER NOT NULL DEFAULT 0,
     versioning  TEXT NOT NULL DEFAULT 'auto',
+    github_repo TEXT NOT NULL DEFAULT '',
+    github_owner_id TEXT NOT NULL DEFAULT '',
+    github_repo_id TEXT NOT NULL DEFAULT '',
+    default_branch TEXT NOT NULL DEFAULT 'master',
+    create_service INTEGER NOT NULL DEFAULT 0,
+    apt_depends TEXT NOT NULL DEFAULT '',
     created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );
@@ -20,6 +26,7 @@ CREATE TABLE releases (
     notes        TEXT NOT NULL DEFAULT '',
     oci_user     TEXT NOT NULL DEFAULT '',
     published    INTEGER NOT NULL DEFAULT 0,
+    draft        INTEGER NOT NULL DEFAULT 0,
     created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
     published_at DATETIME,
     UNIQUE(project_id, version)
@@ -40,9 +47,21 @@ CREATE TABLE artifacts (
     debug_storage_key     TEXT NOT NULL DEFAULT '',
     debug_size            INTEGER NOT NULL DEFAULT 0,
     filename              TEXT NOT NULL DEFAULT '',
+    exe_format            TEXT NOT NULL DEFAULT '',
     created_at            DATETIME NOT NULL DEFAULT (datetime('now')),
     UNIQUE(release_id, os, arch, kind)
 );
+
+CREATE TABLE artifact_platforms (
+    artifact_id INTEGER NOT NULL REFERENCES artifacts(id),
+    release_id  INTEGER NOT NULL REFERENCES releases(id),
+    kind        TEXT NOT NULL,
+    os          TEXT NOT NULL,
+    arch        TEXT NOT NULL,
+    ordinal     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (artifact_id, os, arch)
+);
+CREATE UNIQUE INDEX idx_artifact_platforms_slot ON artifact_platforms(release_id, kind, os, arch);
 
 CREATE TABLE packaged_artifacts (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -85,6 +104,18 @@ CREATE TABLE download_counts (
     count       INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE download_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    artifact_id INTEGER NOT NULL REFERENCES artifacts(id),
+    fmt         TEXT NOT NULL DEFAULT 'raw',
+    client_ip   TEXT NOT NULL DEFAULT '',
+    user_agent  TEXT NOT NULL DEFAULT '',
+    principal   TEXT NOT NULL DEFAULT '',
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_download_events_artifact ON download_events(artifact_id);
+CREATE INDEX IF NOT EXISTS idx_download_events_created  ON download_events(created_at DESC);
+
 CREATE TABLE sites (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id  INTEGER NOT NULL REFERENCES projects(id),
@@ -121,6 +152,18 @@ CREATE TABLE oci_tags (
     UNIQUE(project_id, tag)
 );
 
+-- Every name a project answered to before a rename (mirrored from
+-- migrations/018_project_aliases.sql). A project name is a public contract, so
+-- an old dl/apt/brew/npm URL keeps resolving after the name follows its repo.
+CREATE TABLE project_aliases (
+    name       TEXT PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES projects(id),
+    created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_aliases_project ON project_aliases(project_id);
+CREATE INDEX IF NOT EXISTS idx_projects_github_repo_id ON projects(github_repo_id);
+
 CREATE TABLE retention_settings (
     id            INTEGER PRIMARY KEY CHECK (id = 1),
     keep_n        INTEGER NOT NULL DEFAULT 10,
@@ -135,3 +178,45 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_stripped_key ON artifacts(stripped_stor
 CREATE INDEX IF NOT EXISTS idx_artifacts_debug_key    ON artifacts(debug_storage_key);
 CREATE INDEX IF NOT EXISTS idx_packaged_storage_key   ON packaged_artifacts(storage_key);
 CREATE INDEX IF NOT EXISTS idx_oci_blob_links_skey    ON oci_blob_links(storage_key);
+
+-- Go module proxy cache (mirrored from migrations/017_goproxy.sql). Cached
+-- upstream modules are NOT projects/releases -- see that migration for why.
+CREATE TABLE goproxy_modules (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_path     TEXT NOT NULL UNIQUE,
+    source          TEXT NOT NULL DEFAULT 'github',
+    last_error_kind TEXT NOT NULL DEFAULT '',
+    last_error      TEXT NOT NULL DEFAULT '',
+    last_error_at   DATETIME,
+    last_success_at DATETIME,
+    created_at      DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE goproxy_versions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_id       INTEGER NOT NULL REFERENCES goproxy_modules(id) ON DELETE CASCADE,
+    version         TEXT NOT NULL,
+    commit_sha      TEXT NOT NULL DEFAULT '',
+    committed_at    DATETIME,
+    go_mod          TEXT NOT NULL DEFAULT '',
+    zip_storage_key TEXT NOT NULL DEFAULT '',
+    zip_size        INTEGER NOT NULL DEFAULT 0,
+    fetched_at      DATETIME NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(module_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_goproxy_versions_module ON goproxy_versions(module_id);
+CREATE INDEX IF NOT EXISTS idx_goproxy_versions_key    ON goproxy_versions(zip_storage_key);
+
+-- Run locks (mirrored from migrations/019_run_locks.sql).
+CREATE TABLE run_locks (
+    repo_id     TEXT NOT NULL,
+    run_id      TEXT NOT NULL,
+    run_attempt TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    value       TEXT NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (repo_id, run_id, run_attempt, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_run_locks_created ON run_locks(created_at);

@@ -14,6 +14,7 @@ import (
 )
 
 func TestInit(t *testing.T) {
+	t.Serial()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -29,6 +30,7 @@ func TestInit(t *testing.T) {
 }
 
 func TestFanoutHandler(t *testing.T) {
+	t.Serial()
 	var buf1, buf2 bytes.Buffer
 	h1 := slog.NewTextHandler(&buf1, nil)
 	h2 := slog.NewTextHandler(&buf2, nil)
@@ -47,6 +49,7 @@ func TestFanoutHandler(t *testing.T) {
 }
 
 func TestFanoutHandlerWithAttrs(t *testing.T) {
+	t.Serial()
 	var buf bytes.Buffer
 	h := slog.NewTextHandler(&buf, nil)
 	fh := &fanoutHandler{handlers: []slog.Handler{h}}
@@ -59,6 +62,7 @@ func TestFanoutHandlerWithAttrs(t *testing.T) {
 }
 
 func TestFanoutHandlerWithGroup(t *testing.T) {
+	t.Serial()
 	var buf bytes.Buffer
 	h := slog.NewTextHandler(&buf, nil)
 	fh := &fanoutHandler{handlers: []slog.Handler{h}}

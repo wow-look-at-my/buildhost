@@ -45,7 +45,7 @@ func parseRoute(r *http.Request) auth.RouteInfo {
 		version: r.PathValue("version"),
 		os:      r.PathValue("os"),
 		arch:    r.PathValue("arch"),
-		write:   r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE",
+		write:   r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" || r.Method == "DELETE",
 	}
 }
 
@@ -60,7 +60,7 @@ type Handler struct {
 	GitHubWebhookSecret string
 }
 
-const maxJSONBody = 1 << 20 // 1 MiB
+const maxJSONBody = 1 << 20
 
 func jsonResponse(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -103,6 +103,22 @@ func (h *Handler) getRelease(w http.ResponseWriter, r *http.Request, projectID i
 	return rel
 }
 
+// getLatestRelease resolves the apex "latest" release (newest published release
+// on the default branch, falling back to newest published overall) the same way
+// dl/static/web do. It writes the error response and returns nil on failure.
+func (h *Handler) getLatestRelease(w http.ResponseWriter, r *http.Request, projectID int64) *db.Release {
+	rel, err := h.DB.GetLatestRelease(r.Context(), projectID)
+	if err != nil {
+		if err == db.ErrNotFound {
+			jsonError(w, http.StatusNotFound, "release not found")
+		} else {
+			jsonError(w, http.StatusInternalServerError, "failed to get release")
+		}
+		return nil
+	}
+	return rel
+}
+
 func validateScopes(w http.ResponseWriter, scopes string) string {
 	if scopes == "" {
 		return "read"
@@ -110,7 +126,7 @@ func validateScopes(w http.ResponseWriter, scopes string) string {
 	var parts []string
 	for _, s := range strings.Split(scopes, ",") {
 		s = strings.TrimSpace(s)
-		if !db.ValidScopes[s] {
+		if !db.ValidScopes.Contains(s) {
 			jsonError(w, http.StatusBadRequest, "invalid scope: "+s)
 			return ""
 		}

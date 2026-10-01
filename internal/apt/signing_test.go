@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,13 +39,32 @@ func setupSigningTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 }
 
 func TestNewSigner_GeneratesKey(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	s := NewSigner(tmpDir)
 	assert.True(t, s.Available())
 	assert.NotEmpty(t, s.Fingerprint())
 }
 
+// keyBudget is what a signing key may cost to generate. Every caller
+const keyBudget = 100 * time.Millisecond
+
+func TestNewSigner_GenerationIsWithinBudget(t *testing.T) {
+	t.Parallel()
+	var worst time.Duration
+	for range 5 {
+		start := time.Now()
+		s := NewSigner(t.TempDir())
+		elapsed := time.Since(start)
+
+		require.True(t, s.Available(), "generation must have produced a usable key")
+		worst = max(worst, elapsed)
+	}
+	assert.Less(t, worst, keyBudget, "slowest of 5 key generations")
+}
+
 func TestNewSigner_LoadsExistingKey(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	s1 := NewSigner(tmpDir)
 	fp1 := s1.Fingerprint()
@@ -56,6 +76,7 @@ func TestNewSigner_LoadsExistingKey(t *testing.T) {
 }
 
 func TestSigner_PublicKeyArmored(t *testing.T) {
+	t.Parallel()
 	s := NewSigner(t.TempDir())
 	key, err := s.PublicKeyArmored()
 	require.NoError(t, err)
@@ -64,6 +85,7 @@ func TestSigner_PublicKeyArmored(t *testing.T) {
 }
 
 func TestSigner_ClearSign(t *testing.T) {
+	t.Parallel()
 	s := NewSigner(t.TempDir())
 	data := []byte("test content to sign")
 	signed, err := s.ClearSign(data)
@@ -74,6 +96,7 @@ func TestSigner_ClearSign(t *testing.T) {
 }
 
 func TestSigner_DetachedSign(t *testing.T) {
+	t.Parallel()
 	s := NewSigner(t.TempDir())
 	data := []byte("test content to sign")
 	sig, err := s.DetachedSign(data)
@@ -83,6 +106,7 @@ func TestSigner_DetachedSign(t *testing.T) {
 }
 
 func TestServeInRelease_Signed(t *testing.T) {
+	t.Parallel()
 	h, d, _ := setupSigningTest(t)
 	ctx := context.Background()
 
@@ -102,6 +126,7 @@ func TestServeInRelease_Signed(t *testing.T) {
 }
 
 func TestServeReleaseGPG(t *testing.T) {
+	t.Parallel()
 	h, d, _ := setupSigningTest(t)
 	ctx := context.Background()
 
@@ -119,6 +144,7 @@ func TestServeReleaseGPG(t *testing.T) {
 }
 
 func TestServeKeyASC(t *testing.T) {
+	t.Parallel()
 	h, d, _ := setupSigningTest(t)
 	ctx := context.Background()
 
@@ -136,12 +162,13 @@ func TestServeKeyASC(t *testing.T) {
 }
 
 func TestServeRelease_WithHashes(t *testing.T) {
+	t.Parallel()
 	h, d, store := setupSigningTest(t)
 	ctx := context.Background()
 
 	proj := &db.Project{Name: "myapp", Versioning: db.VersioningSemver}
 	require.NoError(t, d.CreateProject(ctx, proj))
-	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000}
+	rel := &db.Release{ProjectID: proj.ID, Version: "1.0.0", VersionNum: 1000000, GitBranch: db.LatestBranch}
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
@@ -164,6 +191,7 @@ func TestServeRelease_WithHashes(t *testing.T) {
 }
 
 func TestServeReleaseGPG_NoSigner(t *testing.T) {
+	t.Parallel()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -179,6 +207,7 @@ func TestServeReleaseGPG_NoSigner(t *testing.T) {
 }
 
 func TestServeKeyASC_NoSigner(t *testing.T) {
+	t.Parallel()
 	h, d, _ := setupTest(t)
 	ctx := context.Background()
 
@@ -194,12 +223,14 @@ func TestServeKeyASC_NoSigner(t *testing.T) {
 }
 
 func TestSigner_Fingerprint(t *testing.T) {
+	t.Parallel()
 	s := NewSigner(t.TempDir())
 	fp := s.Fingerprint()
 	assert.Len(t, fp, 40)
 }
 
 func TestBuildRelease_NoHashes(t *testing.T) {
+	t.Parallel()
 	content := buildRelease("myproject", nil)
 	assert.Contains(t, content, "Origin: buildhost")
 	assert.Contains(t, content, "Label: myproject")
@@ -207,9 +238,10 @@ func TestBuildRelease_NoHashes(t *testing.T) {
 }
 
 func TestBuildRelease(t *testing.T) {
+	t.Parallel()
 	hashes := []hashEntry{
-		{path: "main/binary-amd64/Packages", hash: "abc123", size: 100},
-		{path: "main/binary-arm64/Packages", hash: "def456", size: 200},
+		{Path: "main/binary-amd64/Packages", Hash: "abc123", Size: 100},
+		{Path: "main/binary-arm64/Packages", Hash: "def456", Size: 200},
 	}
 	content := buildRelease("myproject", hashes)
 	assert.Contains(t, content, "Origin: buildhost")

@@ -33,7 +33,6 @@ type createDownloadLinkRequest struct {
 // for the dashboard's "copy temporary link" button. The admin dashboard sits
 // behind a reverse proxy with access control, so this endpoint trusts the caller
 // (no buildhost token / "share" scope is required) -- unlike the public REST
-// endpoint. The returned link works for exactly one artifact until it expires.
 func (s *Server) apiCreateDownloadLink(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	project, err := s.db.GetProject(ctx, r.PathValue("name"))

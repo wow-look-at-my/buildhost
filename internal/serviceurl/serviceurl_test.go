@@ -8,6 +8,7 @@ import (
 )
 
 func TestBase(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		server  string
 		service string

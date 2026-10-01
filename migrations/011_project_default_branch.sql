@@ -1,0 +1,11 @@
+-- Per-project default release branch. The apex "latest" (a download with no
+-- ?v= and no ?branch=) resolves to the newest published release on THIS branch,
+-- so a push to a feature branch never hijacks "latest". Defaults to 'master' to
+-- preserve existing behavior for every project already in the database.
+--
+-- Publishers that know their repo's real default branch update it on
+-- release-create (the buildhost-publish / buildhost-create-release actions send
+-- GitHub's repository.default_branch). A project whose default branch is not
+-- master -- e.g. go-toolchain, which releases from 'v1' and never 'master' --
+-- then resolves "latest" correctly instead of returning nothing.
+ALTER TABLE projects ADD COLUMN default_branch TEXT NOT NULL DEFAULT 'master';
