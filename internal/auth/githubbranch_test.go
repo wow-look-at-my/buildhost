@@ -31,6 +31,7 @@ func withStubGitHub(t *testing.T, token string, h http.HandlerFunc) *httptest.Se
 }
 
 func TestGitHubDefaultBranch_Resolves(t *testing.T) {
+	t.Serial()
 	withStubGitHub(t, "", func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/repos/wow-look-at-my/go-toolchain", r.URL.Path)
 		assert.Equal(t, "buildhost", r.Header.Get("User-Agent"))
@@ -42,6 +43,7 @@ func TestGitHubDefaultBranch_Resolves(t *testing.T) {
 }
 
 func TestGitHubDefaultBranch_Caches(t *testing.T) {
+	t.Serial()
 	var hits atomic.Int32
 	withStubGitHub(t, "", func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
@@ -55,6 +57,7 @@ func TestGitHubDefaultBranch_Caches(t *testing.T) {
 }
 
 func TestGitHubDefaultBranch_SendsToken(t *testing.T) {
+	t.Serial()
 	withStubGitHub(t, "ghp_secret", func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "Bearer ghp_secret", r.Header.Get("Authorization"))
 		fmt.Fprint(w, `{"default_branch":"trunk"}`)
@@ -64,6 +67,7 @@ func TestGitHubDefaultBranch_SendsToken(t *testing.T) {
 }
 
 func TestGitHubDefaultBranch_BestEffortOnError(t *testing.T) {
+	t.Serial()
 	// A rate-limited / unavailable GitHub yields "" (caller keeps the existing
 	// default branch) rather than an error that fails the publish.
 	withStubGitHub(t, "", func(w http.ResponseWriter, r *http.Request) {
@@ -75,6 +79,7 @@ func TestGitHubDefaultBranch_BestEffortOnError(t *testing.T) {
 }
 
 func TestGitHubDefaultBranch_RejectsBadRepoPath(t *testing.T) {
+	t.Serial()
 	var hits atomic.Int32
 	withStubGitHub(t, "", func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
@@ -88,6 +93,7 @@ func TestGitHubDefaultBranch_RejectsBadRepoPath(t *testing.T) {
 }
 
 func TestRepoPathFromSubject(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "wow-look-at-my/go-toolchain",
 		repoPathFromSubject("repo:wow-look-at-my/go-toolchain:ref:refs/heads/v1"))
 	assert.Equal(t, "MyOrg/MyRepo", repoPathFromSubject("repo:MyOrg/MyRepo:pull_request"))

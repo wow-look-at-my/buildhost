@@ -69,6 +69,14 @@ func (d *DB) ListSites(ctx context.Context, projectID int64) ([]Site, error) {
 	return d.q.ListSitesByProject(ctx, projectID)
 }
 
+// SitesByCommitPrefix returns the project's sites whose recorded git_commit
+func (d *DB) SitesByCommitPrefix(ctx context.Context, projectID int64, prefix string) ([]Site, error) {
+	return d.q.GetSiteByCommitPrefix(ctx, GetSiteByCommitPrefixParams{
+		ProjectID: projectID,
+		GitCommit: prefix + "%",
+	})
+}
+
 func (d *DB) DeleteSite(ctx context.Context, projectID int64, branch string) (storageKey string, err error) {
 	tx, err := d.DB.BeginTx(ctx, nil)
 	if err != nil {

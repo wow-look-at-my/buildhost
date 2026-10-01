@@ -1,5 +1,13 @@
 name: Buildhost - Upload Artifact
-description: Uploads a binary artifact to a release in a Buildhost registry.
+description: >
+  Uploads a binary artifact to a release in a Buildhost registry. The upload
+  strategy is picked from the server's advertised limits before anything is
+  sent (GET /api/v1/server-info): files at or under max_direct_upload_bytes go
+  as the classic single PUT, larger files go through a chunked upload session
+  -- so artifacts over a proxy's request-body cap (Cloudflare's edge rejects
+  single requests over ~100 MB) publish instead of dying with a 413. Either
+  way the file is streamed from disk, never buffered whole, and transient
+  server/network errors are retried with backoff.
 
 inputs:
   server:
@@ -17,10 +25,10 @@ inputs:
     description: 'Release version'
     required: true
   os:
-    description: 'Target OS (linux, darwin, windows, freebsd)'
+    description: 'Target OS (linux, darwin, windows, freebsd, wasm)'
     required: true
   arch:
-    description: 'Target arch (amd64, arm64, 386, arm)'
+    description: 'Target arch (amd64, arm64, 386, arm; js/wasip1 with os=wasm)'
     required: true
   path:
     description: 'Path to the artifact file to upload'
@@ -31,6 +39,12 @@ inputs:
     default: 'binary'
   filename:
     description: 'Download filename hint (optional)'
+    required: false
+    default: ''
+  chunk_size:
+    description: >-
+      Chunk size in bytes for large uploads (default 64 MiB, like the CLI's
+      --chunk-size); 0 disables chunking entirely (always one direct request)
     required: false
     default: ''
 
@@ -51,40 +65,241 @@ runs:
         script: |
           await (async () => {
             const server: string = "${{ inputs.server }}";
-            let token: string = "${{ inputs.token }}";
-            if (!token) {
-              const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
-              const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
-              if (url && bearer) {
-                const r = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
-                token = ((await r.json()) as { value: string }).value ?? '';
-              }
-            }
+            const staticToken: string = "${{ inputs.token }}";
+            const idTokenURL = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+            const idTokenBearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+            const canMint = !staticToken && !!idTokenURL && !!idTokenBearer;
+
+            let token: string = staticToken;
+            // epoch seconds the current token dies at; 0 for a token with no expiry of its own
+            let tokenExpiresAt = 0;
+
+            const jwtExpiry = (jwt: string): number => {
+              const parts = jwt.split('.');
+              if (parts.length !== 3) return 0;
+              try {
+                const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString()) as { exp?: number };
+                return typeof claims.exp === 'number' ? claims.exp : 0;
+              } catch { return 0; }
+            };
+
+            const mintToken = async (): Promise<void> => {
+              const r = await fetch(`${idTokenURL}&audience=${server}`, { headers: { Authorization: `Bearer ${idTokenBearer}` } });
+              token = ((await r.json()) as { value: string }).value ?? '';
+              tokenExpiresAt = jwtExpiry(token);
+            };
+
+            // An OIDC token lives minutes and a large upload runs longer, so each request takes a bearer minted within 60s of its own exp, which is the leeway buildhost allows.
+            const bearer = async (): Promise<string> => {
+              if (!canMint) return token;
+              if (!token || tokenExpiresAt === 0 || Date.now() / 1000 > tokenExpiresAt - 60) await mintToken();
+              return token;
+            };
+
+            // A 401 says the presented token is dead, so drop it and the next bearer() mints a live one.
+            const expireToken = (): void => { if (canMint) tokenExpiresAt = 0; };
+
             const project: string = "${{ inputs.project }}";
             const version: string = "${{ inputs.version }}";
             const artifactOs: string = "${{ inputs.os }}";
             const arch: string = "${{ inputs.arch }}";
             const kind: string = "${{ inputs.kind }}";
             const filename: string = "${{ inputs.filename }}";
+            const chunkSizeInput: string = "${{ inputs.chunk_size }}";
+            const filePath: string = "${{ inputs.path }}";
 
-            const body = fs.readFileSync("${{ inputs.path }}");
-            core.info(`Uploading ${body.length} bytes (${artifactOs}/${arch})`);
+            const size = fs.statSync(filePath).size;
+            const target = `${server}/api/v1/projects/${project}/releases/${version}/artifacts/${artifactOs}/${arch}?kind=${kind}`;
 
-            const headers: Record<string, string> = {
-              'Authorization': `Bearer ${token}`,
+            const uploadHeaders: Record<string, string> = {
               'Content-Type': 'application/octet-stream',
             };
-            if (filename) headers['X-Artifact-Filename'] = filename;
+            if (filename) uploadHeaders['X-Artifact-Filename'] = filename;
 
-            const resp = await fetch(
-              `${server}/api/v1/projects/${project}/releases/${version}/artifacts/${artifactOs}/${arch}?kind=${kind}`,
-              { method: 'PUT', headers, body },
-            );
-            const text = await resp.text();
-            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
+            // mirrors internal/uploadclient's DefaultChunkSize
+            let chunkSize = 64 * 1024 * 1024;
+            if (chunkSizeInput) {
+              const n = Number(chunkSizeInput);
+              if (!Number.isInteger(n) || n < 0) {
+                core.setFailed(`invalid chunk_size '${chunkSizeInput}': expected a non-negative integer (bytes)`);
+                return;
+              }
+              // chunk_size 0 disables chunking, always direct
+              chunkSize = n === 0 ? -1 : n;
+            }
 
-            const data = JSON.parse(text);
-            core.info(JSON.stringify(data, null, 2));
-            core.setOutput('response', text);
-            core.setOutput('sha256', data.sha256);
+            // the direct/chunked decision comes purely from the local file size and the server-advertised limit, never from a failed oversized attempt -- a proxy's body cap 413 never reaches the origin
+            let directLimit = 95 * 1024 * 1024;
+            try {
+              const infoResp = await fetch(`${server}/api/v1/server-info`);
+              if (infoResp.ok) {
+                const info = (await infoResp.json()) as { max_direct_upload_bytes?: number };
+                if (typeof info.max_direct_upload_bytes === 'number' && info.max_direct_upload_bytes > 0) {
+                  directLimit = info.max_direct_upload_bytes;
+                }
+              }
+            } catch { /* capability probe only; the default always works */ }
+
+            // a Blob (unlike a Buffer) streams with a correct Content-Length instead of holding the whole artifact in memory, and can be re-read, so retried attempts are safe
+            const blob = await fs.openAsBlob(filePath);
+
+            const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+            // a transient 5xx or an empty-body proxy 404 (unlike the app's own 404, which carries JSON) gets retried; any 4xx with a body returns immediately
+            const isTransient = (status: number, text: string): boolean =>
+              status >= 500 || (status === 404 && text.trim() === "");
+
+            // retries a transient failure with backoff so a rolling buildhost deploy never hard-fails the upload
+            const api = async (method: string, url: string, body?: Blob, headers?: Record<string, string>) => {
+              const maxAttempts = 5;
+              for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                const h: Record<string, string> = { ...(headers ?? {}), Authorization: `Bearer ${await bearer()}` };
+                try {
+                  const resp = await fetch(url, { method, headers: h, body });
+                  const text = await resp.text();
+                  if (resp.status === 401 && canMint && attempt < maxAttempts) {
+                    expireToken();
+                    core.warning(`${method} ${url} -> HTTP 401 (attempt ${attempt}/${maxAttempts}); minting a fresh OIDC token and retrying`);
+                    continue;
+                  }
+                  if (attempt === maxAttempts || !isTransient(resp.status, text)) {
+                    return { status: resp.status, text };
+                  }
+                  core.warning(`${method} ${url} -> HTTP ${resp.status} (transient; attempt ${attempt}/${maxAttempts}); retrying`);
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : String(e);
+                  if (attempt === maxAttempts) {
+                    return { status: 0, text: `request failed after ${maxAttempts} attempts: ${msg}` };
+                  }
+                  core.warning(`${method} ${url} -> ${msg} (network error; attempt ${attempt}/${maxAttempts}); retrying`);
+                }
+                await sleep(1000 * 2 ** (attempt - 1));
+              }
+              return { status: 0, text: "unreachable" };
+            };
+
+            // r is the same endpoint's response either way -- the direct PUT or the session finalize
+            const finishUpload = (r: { status: number; text: string }): void => {
+              if (r.status < 200 || r.status >= 300) { core.setFailed(`HTTP ${r.status}: ${r.text}`); return; }
+              const data = JSON.parse(r.text);
+              core.info(JSON.stringify(data, null, 2));
+              core.setOutput('response', r.text);
+              // A non-APE fan-out answers with a row per platform, all sharing one blob, so any row carries the digest; an APE answers with the single row covering them all.
+              const row = Array.isArray(data) ? data[0] : data;
+              if (!row?.sha256) { core.setFailed(`upload response carried no sha256: ${r.text}`); return; }
+              core.setOutput('sha256', row.sha256);
+            };
+
+            if (chunkSize <= 0 || size <= directLimit) {
+              core.info(`Uploading ${size} bytes (${artifactOs}/${arch})`);
+              finishUpload(await api('PUT', target, blob, uploadHeaders));
+              return;
+            }
+
+            // --- Chunked upload session (mirrors internal/uploadclient) ---
+
+            // require is the documented route to node modules -- the TS action injects no crypto global
+            const crypto = require("crypto");
+            const fileSHA256 = (p: string): Promise<string> => new Promise((resolve, reject) => {
+              const hash = crypto.createHash("sha256");
+              fs.createReadStream(p)
+                .on("error", reject)
+                .on("data", (chunk: Buffer) => hash.update(chunk))
+                .on("end", () => resolve(hash.digest("hex")));
+            });
+            const sum = await fileSHA256(filePath);
+
+            const create = await api('POST', `${server}/api/v1/uploads`);
+            if (create.status !== 201) {
+              core.setFailed(`create upload session failed: HTTP ${create.status}: ${create.text}`);
+              return;
+            }
+            const sessionID = (JSON.parse(create.text) as { id?: string }).id ?? '';
+            if (!sessionID) { core.setFailed('create upload session: bad response'); return; }
+            const sessionURL = `${server}/api/v1/uploads/${sessionID}`;
+
+            const abortSession = async () => {
+              try {
+                await fetch(sessionURL, { method: 'DELETE', headers: { Authorization: `Bearer ${await bearer()}` } });
+              } catch { /* best effort */ }
+            };
+
+            // sessionSize reads the committed size for resuming after a hiccup.
+            const sessionSize = async (): Promise<number> => {
+              let lastErr = '';
+              for (let attempt = 0; attempt < 4; attempt++) {
+                if (attempt > 0) await sleep(1000 * 2 ** (attempt - 1));
+                try {
+                  const resp = await fetch(sessionURL, { headers: { Authorization: `Bearer ${await bearer()}` } });
+                  const body = (await resp.json()) as { size?: number };
+                  if (resp.status === 200 && typeof body.size === 'number') return body.size;
+                  if (resp.status === 401) expireToken();
+                  lastErr = `HTTP ${resp.status}`;
+                } catch (e) {
+                  lastErr = e instanceof Error ? e.message : String(e);
+                }
+              }
+              throw new Error(`read upload session size: ${lastErr}`);
+            };
+
+            // resumes from wherever the server actually is on conflict or transport failure, so a partially delivered chunk resumes instead of restarting
+            const appendChunk = async (offset: number, chunk: Blob): Promise<number> => {
+              let status: number;
+              let text: string;
+              try {
+                const resp = await fetch(`${sessionURL}?offset=${offset}`, {
+                  method: 'PATCH',
+                  headers: { 'Authorization': `Bearer ${await bearer()}`, 'Content-Type': 'application/octet-stream' },
+                  body: chunk,
+                });
+                status = resp.status;
+                text = await resp.text();
+              } catch {
+                // the chunk may have partially landed before the connection broke -- resume from what the server actually has
+                return sessionSize();
+              }
+              // 409 (offset conflict / busy) carries the authoritative size
+              if (status === 200 || status === 409) {
+                const body = JSON.parse(text) as { size?: number };
+                if (typeof body.size !== 'number') throw new Error(`upload chunk at ${offset}: bad response`);
+                return body.size;
+              }
+              if (status >= 500) return sessionSize();
+              // A 401 here is a token that died mid-upload: mint a live one and resume from the committed size.
+              if (status === 401) { expireToken(); return sessionSize(); }
+              throw new Error(`upload chunk at ${offset} failed: HTTP ${status}: ${text}`);
+            };
+
+            const totalChunks = Math.ceil(size / chunkSize);
+            core.info(`Uploading ${size} bytes (${artifactOs}/${arch}) in ${totalChunks} chunks of up to ${chunkSize} bytes`);
+
+            try {
+              let offset = 0;
+              let failures = 0;
+              while (offset < size) {
+                // blob.slice() gives a cheap per-chunk view without re-reading the file
+                const newOffset = await appendChunk(offset, blob.slice(offset, Math.min(offset + chunkSize, size)));
+                if (newOffset <= offset) {
+                  failures++;
+                  if (failures >= 4) throw new Error(`upload session ${sessionID} made no progress at offset ${offset}`);
+                  await sleep(1000 * 2 ** (failures - 1));
+                } else {
+                  failures = 0;
+                  core.info(`  chunk ${Math.ceil(newOffset / chunkSize)}/${totalChunks} uploaded (${newOffset}/${size} bytes)`);
+                }
+                offset = newOffset;
+              }
+            } catch (e) {
+              await abortSession();
+              core.setFailed(e instanceof Error ? e.message : String(e));
+              return;
+            }
+
+            // sha256 is verified server-side against the assembled spool before the artifact endpoint ever runs
+            const fin = await api('PUT', `${target}&upload_session=${sessionID}&upload_sha256=${sum}`, undefined, uploadHeaders);
+            if (fin.status < 200 || fin.status >= 300) {
+              // the server keeps a session after a failed finalize for retries; ours are exhausted, so don't leave the spool for the TTL sweeper
+              await abortSession();
+            }
+            finishUpload(fin);
           })();
