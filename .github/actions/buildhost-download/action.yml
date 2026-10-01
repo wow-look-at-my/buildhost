@@ -67,7 +67,13 @@ runs:
       uses: wow-look-at-my/actions@typescript#latest
       with:
         script: |
-          const { fetchBody } = require(${{ toJSON(format('{0}/../lib/download.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/download', github.action_path)) }});
+          const hostActionPath: string = ${{ toJSON(github.action_path) }};
+          // A container job gets the HOST path here. The work root two levels above GITHUB_WORKSPACE holds _actions in a container and on the host.
+          const underActions = hostActionPath.match(/[\\/]_actions[\\/].*$/);
+          const actionPath = underActions ? path.join(path.dirname(path.dirname(process.env.GITHUB_WORKSPACE!)), underActions[0]) : hostActionPath;
+          const { fetchBody } = require(path.join(actionPath, "..", "lib", "download.ts")) as {
+            fetchBody: (url: string, headers: Record<string, string>) => Promise<Buffer>;
+          };
           await (async () => {
             // toJSON keeps a Windows path's backslashes, which plain quotes read as escapes; the :string types stop tsc from narrowing each literal
             const server: string = ${{ toJSON(inputs.server) }};
