@@ -24,27 +24,22 @@ func init() {
 	RetryBaseDelay = time.Millisecond
 }
 
-// mockServer implements the session protocol plus one capture-everything
-// upload target, so tests can drive the client against realistic behavior
-// (offset checks, partial chunks, transient failures) without a real server.
 type mockServer struct {
 	t  *testing.T
 	mu sync.Mutex
 
-	maxDirect int64 // advertised by /api/v1/server-info; 0 omits the endpoint
+	maxDirect int64
+
+	// uploadBySHA256 is advertised on server-info when set (a server with
+	uploadBySHA256 bool
 
 	sessions map[string][]byte // id -> spooled bytes
 	nextID   int
 
-	// failAppends fails this many appends with a 500 AFTER committing the
-	// chunk -- the lost-response case a resuming client must survive.
 	failAppends int
 
-	// brokenAppends fails appends with a 500 WITHOUT committing anything --
-	// a server that cannot make progress at all.
 	brokenAppends bool
 
-	// disableSessions makes POST /api/v1/uploads 404 (an old server).
 	disableSessions bool
 
 	sessionCalls int // POST /api/v1/uploads count
@@ -53,6 +48,7 @@ type mockServer struct {
 	captured      []byte
 	capturedQuery map[string]string
 	capturedCT    string
+	capturedHdr   http.Header
 }
 
 func newMockServer(t *testing.T) (*mockServer, *httptest.Server) {
@@ -72,7 +68,11 @@ func (m *mockServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{"max_direct_upload_bytes": m.maxDirect, "upload_sessions": true})
+		json.NewEncoder(w).Encode(map[string]any{
+			"max_direct_upload_bytes": m.maxDirect,
+			"upload_sessions":         true,
+			"upload_by_sha256":        m.uploadBySHA256,
+		})
 
 	case r.URL.Path == "/api/v1/uploads" && r.Method == "POST":
 		m.sessionCalls++
@@ -130,6 +130,7 @@ func (m *mockServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			m.capturedQuery[k] = q.Get(k)
 		}
 		m.capturedCT = r.Header.Get("Content-Type")
+		m.capturedHdr = r.Header.Clone()
 		if id := q.Get("upload_session"); id != "" {
 			buf, ok := m.sessions[id]
 			if !ok {
@@ -160,8 +161,9 @@ func tempFile(t *testing.T, size int) (string, []byte) {
 }
 
 func TestSmallFileUploadsDirect(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
-	path, data := tempFile(t, 8) // under the advertised 10-byte limit
+	path, data := tempFile(t, 8)
 
 	u := &Uploader{Server: ts.URL, Token: "tok"}
 	resp, err := u.Upload("PUT", ts.URL+"/target?kind=binary", nil, path)
@@ -176,10 +178,11 @@ func TestSmallFileUploadsDirect(t *testing.T) {
 }
 
 func TestLargeFileChunks(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
-	path, data := tempFile(t, 100) // over the advertised 10-byte limit
+	path, data := tempFile(t, 100)
 
-	u := &Uploader{Server: ts.URL, Token: "tok", ChunkSize: 7} // 15 chunks
+	u := &Uploader{Server: ts.URL, Token: "tok", ChunkSize: 7}
 	resp, err := u.Upload("PUT", ts.URL+"/target?kind=binary", map[string]string{"X-Extra": "yes"}, path)
 	require.NoError(t, err)
 	resp.Body.Close()
@@ -194,9 +197,10 @@ func TestLargeFileChunks(t *testing.T) {
 }
 
 func TestChunkedResumesAfterLostResponse(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	path, data := tempFile(t, 50)
-	m.failAppends = 2 // two chunk responses vanish after the bytes landed
+	m.failAppends = 2
 
 	u := &Uploader{Server: ts.URL, Token: "tok", ChunkSize: 8}
 	resp, err := u.Upload("PUT", ts.URL+"/target", nil, path)
@@ -208,6 +212,7 @@ func TestChunkedResumesAfterLostResponse(t *testing.T) {
 }
 
 func TestChunkSizeDisabledForcesDirect(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	path, data := tempFile(t, 100) // way over the advertised limit
 
@@ -221,11 +226,11 @@ func TestChunkSizeDisabledForcesDirect(t *testing.T) {
 }
 
 func TestServerInfoUnavailableFallsBackToDefaultThreshold(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	m.maxDirect = 0 // no server-info endpoint at all
 	path, data := tempFile(t, 100)
 
-	// Default threshold is 90 MiB, so this 100-byte file goes direct.
 	u := &Uploader{Server: ts.URL, Token: "tok", ChunkSize: 7}
 	resp, err := u.Upload("PUT", ts.URL+"/target", nil, path)
 	require.NoError(t, err)
@@ -235,21 +240,24 @@ func TestServerInfoUnavailableFallsBackToDefaultThreshold(t *testing.T) {
 	assert.Equal(t, 0, m.sessionCalls)
 }
 
-func TestOldServerFallsBackToDirect(t *testing.T) {
+// A missing session endpoint is a broken server, not a mode to accommodate:
+func TestMissingSessionEndpointFailsLoudly(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
-	m.disableSessions = true // POST /api/v1/uploads 404s (old buildhost)
-	path, data := tempFile(t, 100)
+	m.disableSessions = true
+	path, _ := tempFile(t, 100)
 
 	u := &Uploader{Server: ts.URL, Token: "tok", ChunkSize: 7}
-	resp, err := u.Upload("PUT", ts.URL+"/target", nil, path)
-	require.NoError(t, err)
-	resp.Body.Close()
+	_, err := u.Upload("PUT", ts.URL+"/target", nil, path)
 
-	assert.Equal(t, data, m.captured, "falls back to the classic single request")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create upload session")
+	assert.Empty(t, m.captured, "nothing may be sent to the artifact endpoint instead")
 	assert.Equal(t, 1, m.sessionCalls, "tried the session endpoint once")
 }
 
 func TestNoProgressGivesUpAndAborts(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	path, _ := tempFile(t, 50)
 	m.brokenAppends = true // every append 500s without committing anything
@@ -259,4 +267,59 @@ func TestNoProgressGivesUpAndAborts(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no progress")
 	assert.Empty(t, m.sessions, "session aborted after the hard failure")
+}
+
+func TestFileSHA256(t *testing.T) {
+	t.Serial()
+	path, data := tempFile(t, 33)
+	sum := sha256.Sum256(data)
+
+	got, err := FileSHA256(path)
+	require.NoError(t, err)
+	assert.Equal(t, hex.EncodeToString(sum[:]), got)
+
+	_, err = FileSHA256(filepath.Join(t.TempDir(), "missing"))
+	require.Error(t, err)
+}
+
+// The hash-reference capability must ONLY come from an explicit server-info
+// advertisement: a server that predates the feature ignores upload_sha256 and
+// would store the empty request body, so guessing is never safe.
+func TestSupportsUploadBySHA256(t *testing.T) {
+	t.Serial()
+	m, ts := newMockServer(t)
+	m.uploadBySHA256 = true
+	u := &Uploader{Server: ts.URL, Token: "tok"}
+	assert.True(t, u.SupportsUploadBySHA256())
+
+	// Advertised absent (an older server): reported false.
+	_, ts2 := newMockServer(t)
+	u2 := &Uploader{Server: ts2.URL, Token: "tok"}
+	assert.False(t, u2.SupportsUploadBySHA256())
+
+	// server-info unreachable: reported false, never guessed.
+	m3, ts3 := newMockServer(t)
+	m3.maxDirect = 0 // 404s server-info
+	u3 := &Uploader{Server: ts3.URL, Token: "tok"}
+	assert.False(t, u3.SupportsUploadBySHA256())
+}
+
+func TestUploadByHash(t *testing.T) {
+	t.Serial()
+	m, ts := newMockServer(t)
+	u := &Uploader{Server: ts.URL, Token: "tok"}
+
+	sum := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	resp, err := u.UploadByHash("PUT", ts.URL+"/target?kind=binary",
+		map[string]string{"X-Artifact-Filename": "tool.exe"}, sum)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	assert.Empty(t, m.captured, "a hash-reference upload carries no body")
+	assert.Equal(t, sum, m.capturedQuery["upload_sha256"])
+	assert.Equal(t, "binary", m.capturedQuery["kind"], "target query preserved")
+	assert.Empty(t, m.capturedQuery["upload_session"], "never a session finalize")
+	assert.Equal(t, "tool.exe", m.capturedHdr.Get("X-Artifact-Filename"), "per-slot headers ride the reference")
+	assert.Empty(t, m.capturedCT, "no Content-Type on an empty-body reference")
 }

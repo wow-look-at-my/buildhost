@@ -14,12 +14,19 @@ var (
 	mux                       = router.New()
 	mw                        *Middleware
 	readyFuncs                []func()
+	siteDomainFuncs           []func(domain string)
 	sharedDB                  *db.DB
 	sharedStore               storage.Storage
 	sharedData                string
 	sharedFetchDomains        []string
 	sharedGitHubWebhookSecret string
+	sharedSiteDomain          string
+	sharedPrimaryDomain       string
+	sharedOIDCOrgs            []string
 )
+
+// OIDCOrgs are the GitHub orgs this deployment accepts OIDC from. Other backends
+func OIDCOrgs() []string { return sharedOIDCOrgs }
 
 func Router() *router.Router      { return mux }
 func DB() *db.DB                  { return sharedDB }
@@ -29,18 +36,48 @@ func GetMiddleware() *Middleware  { return mw }
 func SiteFetchDomains() []string  { return sharedFetchDomains }
 func GitHubWebhookSecret() string { return sharedGitHubWebhookSecret }
 
+// SiteDomain is the optional dedicated domain for project static sites
+func SiteDomain() string { return sharedSiteDomain }
+
+// PrimaryDomain is the apex carrying the GitHub OAuth callback
+func PrimaryDomain() string { return sharedPrimaryDomain }
+
 func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
 }
 
-func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string, githubWebhookSecret, githubClientID, githubClientSecret string) {
+func OnSiteDomain(fn func(domain string)) {
+	siteDomainFuncs = append(siteDomainFuncs, fn)
+}
+
+// SiteDomainPlaceholder stands in for the configured site domain when routes
+const SiteDomainPlaceholder = "{site-domain}"
+
+// ListRoutes returns the complete route table for enumeration, including the
+func ListRoutes() []router.Route {
+	for _, fn := range siteDomainFuncs {
+		fn(SiteDomainPlaceholder)
+	}
+	return mux.Routes()
+}
+
+func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers, allowedOrgs, allowedEvents, siteFetchDomains []string, githubWebhookSecret, githubClientID, githubClientSecret, siteDomain, primaryDomain string) {
 	sharedDB = database
 	sharedStore = store
 	sharedData = dataDir
 	sharedFetchDomains = siteFetchDomains
 	sharedGitHubWebhookSecret = githubWebhookSecret
+	sharedOIDCOrgs = allowedOrgs
+	sharedSiteDomain = strings.ToLower(strings.Trim(siteDomain, " ."))
+	sharedPrimaryDomain = strings.ToLower(strings.Trim(primaryDomain, " ."))
 
 	initDownloadSecret(dataDir)
+	// Config-conditional families (the /__sso handoff, the {project}.<site-domain>
+	if sharedSiteDomain != "" {
+		for _, fn := range siteDomainFuncs {
+			fn(sharedSiteDomain)
+		}
+	}
 
 	mw = &Middleware{
 		DB: database,
@@ -68,11 +105,31 @@ func HandleHandler(pattern string, parse ParseFunc, handler http.Handler) {
 	mux.Handle(pattern, router.Allow, requireProject(parse)(handler))
 }
 
+// HandlePrimary and HandleRawPrimary register main-domain routes that belong to
+// the registry's own UI/API surface (the web frontend and /api/v1). When
+func HandlePrimary(pattern string, parse ParseFunc, handler http.HandlerFunc) {
+	mux.HandleFunc(pattern, router.Allow, primaryOnly(requireProjectFunc(parse, handler)))
+}
+
+func HandleRawPrimary(pattern string, handler http.HandlerFunc) {
+	mux.HandleFunc(pattern, router.Allow, primaryOnly(handler))
+}
+
+// primaryOnly gates a handler to the configured primary apex (exact host match,
+// port stripped, case-folded; PrimaryDomain() is stored lowercased). The gate
+// runs BEFORE requireProject on purpose: a request on a foreign host must
+func primaryOnly(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if pd := PrimaryDomain(); pd != "" && strings.ToLower(hostNoPort(r.Host)) != pd {
+			http.NotFound(w, r)
+			return
+		}
+		h(w, r)
+	}
+}
+
 // servicePattern turns a path-only service pattern into a host+path pattern
 // anchored to the service's subdomain, e.g. ("apt", "GET /{path...}") becomes
-// "GET apt.{domain}/{path...}". The router matches the host's first label
-// against the subdomain and binds {domain} to the rest of the request Host, so
-// the registered pattern is exactly what is matched -- no host dispatch table.
 func servicePattern(subdomain, pattern string) string {
 	method := ""
 	rest := pattern
@@ -81,6 +138,31 @@ func servicePattern(subdomain, pattern string) string {
 		rest = pattern[i+1:]
 	}
 	return method + subdomain + ".{domain}" + rest
+}
+
+// siteDomainPattern turns a path-only pattern into a host+path pattern anchored
+// to a project label under a configured site domain, e.g. ("pazer.site",
+// "GET /{path...}") becomes "GET {project}.pazer.site/{path...}". A non-final
+func siteDomainPattern(domain, pattern string) string {
+	method := ""
+	rest := pattern
+	if i := strings.IndexByte(pattern, ' '); i >= 0 {
+		method = pattern[:i+1] // keep the trailing space
+		rest = pattern[i+1:]
+	}
+	return method + "{project}." + domain + rest
+}
+
+// SiteDomainHandle registers a project-auth'd route on the {project}.<domain>
+// scheme, the site-domain sibling of ServiceHandle. domain must be a literal
+func SiteDomainHandle(domain, pattern string, parse ParseFunc, handler http.HandlerFunc) {
+	mux.HandleFunc(siteDomainPattern(domain, pattern), router.Allow, requireProjectFunc(parse, handler))
+}
+
+// SiteDomainHandleRaw registers an unauthenticated route on the
+// {project}.<domain> scheme (the /__sso redemption endpoint -- its caller is by
+func SiteDomainHandleRaw(domain, pattern string, handler http.HandlerFunc) {
+	mux.HandleFunc(siteDomainPattern(domain, pattern), router.Allow, handler)
 }
 
 func ServiceHandle(subdomain, pattern string, parse ParseFunc, handler http.HandlerFunc) {
@@ -112,8 +194,6 @@ func ServiceRedirect(from, to string, permanent bool) {
 }
 
 // ServeHTTP dispatches every request through the single router. Service
-// subdomains are matched by the host portion of their registered patterns;
-// unknown hosts fall through to the host-agnostic (main-domain) routes.
 func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mux.ServeHTTP(w, r)
 }
@@ -137,8 +217,6 @@ func DeriveServiceURL(r *http.Request, service string) *url.URL {
 
 // RequestScheme returns the scheme the client used to reach this server. We run
 // behind a TLS-terminating Cloudflare Tunnel (and an internal nginx sidecar that
-// rewrites X-Forwarded-Proto), so rather than trust a forwarded header we treat
-// loopback hosts as http and everything else as https.
 func RequestScheme(r *http.Request) string {
 	host := hostNoPort(r.Host)
 	if host == "localhost" || strings.HasSuffix(host, ".localhost") || host == "127.0.0.1" || host == "::1" {
@@ -148,14 +226,11 @@ func RequestScheme(r *http.Request) string {
 }
 
 // RequestBaseURL reconstructs this server's own base URL from the request
-// (scheme + Host), so nothing depends on a configured "this is my URL" value.
 func RequestBaseURL(r *http.Request) string {
 	return RequestScheme(r) + "://" + r.Host
 }
 
 // RequestRootURL returns the root domain URL (scheme + bare domain, no service
-// subdomain). Use this when building cross-service URLs from within a handler
-// that itself runs on a service subdomain (e.g. brew.example.com → https://example.com).
 func RequestRootURL(r *http.Request) string {
 	return RequestScheme(r) + "://" + domainFromRequest(r)
 }
@@ -168,8 +243,6 @@ func hostNoPort(host string) string {
 }
 
 // AllRoutes returns every registered route exactly as registered. Service
-// routes carry their subdomain and {domain} host token in the real pattern
-// (e.g. "apt.{domain}/{path...}"), so nothing is synthesized here.
 func AllRoutes() []router.Route {
 	return mux.Routes()
 }

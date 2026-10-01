@@ -39,6 +39,48 @@ func (d *DB) GetOCIBlobLink(ctx context.Context, projectID int64, storageKey str
 	return &row, nil
 }
 
+// OCIBlobOwner is a project that already has a given blob linked.
+type OCIBlobOwner struct {
+	Project    Project
+	MediaType  string
+	Size       int64
+	IsManifest bool
+}
+
+// ListOCIBlobOwners returns every project holding a link to this stored blob.
+func (d *DB) ListOCIBlobOwners(ctx context.Context, storageKey string) ([]OCIBlobOwner, error) {
+	rows, err := d.q.ListOCIBlobLinkProjects(ctx, storageKey)
+	if err != nil {
+		return nil, fmt.Errorf("list oci blob owners: %w", err)
+	}
+	owners := make([]OCIBlobOwner, 0, len(rows))
+	for _, r := range rows {
+		owners = append(owners, OCIBlobOwner{
+			Project: Project{
+				ID:            r.ID,
+				Name:          r.Name,
+				Description:   r.Description,
+				Homepage:      r.Homepage,
+				License:       r.License,
+				IsPrivate:     r.IsPrivate,
+				Versioning:    r.Versioning,
+				GithubRepo:    r.GithubRepo,
+				GithubOwnerID: r.GithubOwnerID,
+				GithubRepoID:  r.GithubRepoID,
+				DefaultBranch: r.DefaultBranch,
+				CreateService: r.CreateService,
+				AptDepends:    r.AptDepends,
+				CreatedAt:     r.CreatedAt,
+				UpdatedAt:     r.UpdatedAt,
+			},
+			MediaType:  r.MediaType,
+			Size:       r.Size,
+			IsManifest: r.IsManifest != 0,
+		})
+	}
+	return owners, nil
+}
+
 // SetOCITag points a docker tag at a manifest digest + release, creating or
 // updating the tag (tags are mutable pointers).
 func (d *DB) SetOCITag(ctx context.Context, projectID int64, tag, manifestDigest string, releaseID int64) error {

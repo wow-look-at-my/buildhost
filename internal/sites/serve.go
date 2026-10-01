@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"path"
@@ -14,9 +15,12 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/binarchive"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
 const siteNotFoundPage = "404.html"
@@ -30,41 +34,63 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(ctx)
 	rt := routeFrom(ctx)
 
+	// Branch names may contain "/" (claude/foo), and neither spelling of a branch
+	branch, filePath, ok := splitSiteBranch(ctx, h.DB, project.ID, rt.ref())
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Naming the default branch is redundant: the bare project path already
+	// serves it, and it is the shorter URL. Collapse to it -- redirects always
+	// run toward the simpler form, never away from it.
+	if rt.sigil != "" && refNamesBranch(rt.sigil, branch) && branch == resolveRootBranch(ctx, h.DB, project) {
+		if target, okc := h.apexURLFor(ctx, project, filePath, r); okc {
+			if q := r.URL.RawQuery; q != "" {
+				target += "?" + q
+			}
+			w.Header().Set("Cache-Control", "no-store")
+			http.Redirect(w, r, target, http.StatusFound)
+			return
+		}
+		// The bare URL would address a different project (a namespaced sibling
+	}
+
 	// Redirect a branch root with no trailing slash (e.g. /p/branch/main) to the
-	// slashed form so relative links in index.html resolve under the branch, not
-	// its parent. This redirect used to live on its own GET /{project}/branch/{branch}
-	// route, but that route's {branch} param greedily matched any sub-path and,
-	// scoring higher than this {path...} route, shadowed it -- so every file
-	// request hit the redirect and looped (/x -> /x/ -> /x/ ...). Folding it in
-	// here keeps a single GET route, so file requests reach Serve directly.
-	if rt.path == "" && !strings.HasSuffix(r.URL.Path, "/") {
+	if filePath == "" && !strings.HasSuffix(r.URL.Path, "/") {
 		http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
 		return
 	}
 
+	h.serveSiteFile(ctx, w, r, project, branch, filePath)
+}
+
+func (h *Handler) serveSiteFile(ctx context.Context, w http.ResponseWriter, r *http.Request, project *db.Project, branch, rawPath string) {
 	// The {path...} router value has its trailing slash stripped, so detect a
-	// directory request from the real request path -- otherwise a nested dir URL
-	// like /scratchpads/foo/ is treated as a file, never gets index.html
-	// appended, and matches the 0-byte directory entry in the tar below.
-	isDir := rt.path == "" || strings.HasSuffix(r.URL.Path, "/")
-	filePath := path.Clean(rt.path)
+	isDir := rawPath == "" || strings.HasSuffix(r.URL.Path, "/")
+	filePath := path.Clean(rawPath)
 	if isDir || filePath == "." {
 		filePath = path.Join(filePath, "index.html")
 	}
 
-	span.SetAttributes(
+	trace.SpanFromContext(ctx).SetAttributes(
 		attribute.String("sites.project", project.Name),
-		attribute.String("sites.branch", rt.branch),
+		attribute.String("sites.branch", branch),
 		attribute.String("sites.path", filePath),
 	)
 
-	site, err := h.DB.GetSite(ctx, project.ID, rt.branch)
+	site, err := h.DB.GetSite(ctx, project.ID, branch)
 	if errors.Is(err, db.ErrNotFound) {
 		http.NotFound(w, r)
 		return
 	}
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Indexed path: a site stored as a binpazer archive answers "give me this
+	if h.serveFromArchive(ctx, w, site.StorageKey, filePath) {
 		return
 	}
 
@@ -87,7 +113,7 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if hdr.Typeflag != tar.TypeReg {
-			continue // never serve a directory entry as a file (0-byte body)
+			continue
 		}
 		name := path.Clean(hdr.Name)
 		if name == filePath {
@@ -127,67 +153,71 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-// defaultBranch is the branch a project's bare root resolves to: its
-// projects.default_branch (learned from GitHub on publish, e.g. "main"),
-// falling back to the schema/seed default ("master") when unset. This is the
-// same branch the apex "latest" download tracks, so the root site URL and
-// "latest" stay consistent.
-func defaultBranch(project *db.Project) string {
-	if project != nil && project.DefaultBranch != "" {
-		return project.DefaultBranch
+func (h *Handler) ServeDefaultBranch(w http.ResponseWriter, r *http.Request) {
+	if routeFrom(r.Context()).sigil != "" {
+		h.Serve(w, r)
+		return
 	}
-	return db.LatestBranch
+
+	ctx, span := sitesTracer.Start(r.Context(), "sites.serve_default_branch")
+	defer span.End()
+	r = r.WithContext(ctx)
+
+	// Set before the redirect below, not after it: a cross-origin fetch is
+	setSiteSecurityHeaders(w)
+
+	rt := routeFrom(ctx)
+	// The project root without its trailing slash: canonicalize so relative
+	if rt.path == "" && !strings.HasSuffix(r.URL.Path, "/") {
+		http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
+		return
+	}
+
+	project := auth.ProjectFrom(ctx)
+	h.serveSiteFile(ctx, w, r, project, resolveRootBranch(ctx, h.DB, project), rt.path)
 }
 
-// resolveRootBranch returns the branch the bare site root should resolve to. It
-// prefers the project's default branch (defaultBranch), but only when a site has
-// actually been published there. projects.default_branch is a best-effort hint
-// learned from GitHub on publish; it can lag at the seed "master" -- e.g. until a
-// GitHub-OIDC publish corrects it, or when buildhost can't reach a private repo
-// to learn its real default -- in which case the sites may all live on a branch
-// (commonly "main") the hint doesn't name. Blindly trusting it then bounces the
-// root to /{project}/branch/{default}/ where no site exists, a guaranteed 404.
-//
-// So when the default branch has no site, fall back to one that does: prefer the
-// conventional "main"/"master" names (so the root lands on the canonical site,
-// not a more-recently-updated ephemeral PR-preview branch), then the most
-// recently updated site as a last resort. With no DB (unit tests) or no sites at
-// all, the default branch is returned unchanged, preserving the prior behavior.
-func resolveRootBranch(ctx context.Context, database *db.DB, project *db.Project) string {
-	preferred := defaultBranch(project)
-	if database == nil || siteExists(ctx, database, project.ID, preferred) {
-		return preferred
-	}
-	for _, b := range [...]string{"main", db.LatestBranch} {
-		if b != preferred && siteExists(ctx, database, project.ID, b) {
-			return b
-		}
-	}
-	if sites, err := database.ListSites(ctx, project.ID); err == nil && len(sites) > 0 {
-		return sites[0].Branch // ListSites is ordered updated_at DESC
-	}
-	return preferred // no sites at all -- keep the default (Serve 404s as before)
-}
-
-func siteExists(ctx context.Context, database *db.DB, projectID int64, branch string) bool {
-	if branch == "" {
+func (h *Handler) serveFromArchive(ctx context.Context, w http.ResponseWriter, storageKey, filePath string) bool {
+	rg, ok := h.Store.(storage.RandomGetter)
+	if !ok {
 		return false
 	}
-	_, err := database.GetSite(ctx, projectID, branch)
-	return err == nil
+	ra, size, err := rg.OpenReaderAt(ctx, storageKey)
+	if err != nil {
+		return false // ErrRandomUnsupported for a compressed blob, or missing
+	}
+	defer ra.Close()
+
+	head := make([]byte, len(binarchive.Magic))
+	if _, err := ra.ReadAt(head, 0); err != nil || !binarchive.IsArchive(head) {
+		return false // a tar blob from before sites were archived
+	}
+	a, err := binarchive.Open(ra, size)
+	if err != nil {
+		slog.Warn("sites: opening archive", "storage_key", storageKey, "err", err)
+		return false // fall back to the scan rather than fail the request
+	}
+
+	if r, e, err := a.OpenFile(filePath); err == nil {
+		serveArchiveFile(w, r, e, http.StatusOK)
+		return true
+	}
+	if r, e, err := a.OpenFile(siteNotFoundPage); err == nil {
+		serveArchiveFile(w, r, e, http.StatusNotFound)
+		return true
+	}
+	http.Error(w, "404 page not found", http.StatusNotFound)
+	return true
 }
 
-// RedirectToDefaultBranch sends the bare site root (/{project} or /{project}/)
-// to /{project}/branch/{default}/, so a project's root URL resolves to its
-// canonical site without the caller having to know which branch it lives on.
-// The target is a mutable pointer -- the default branch can change and its site
-// updates in place -- so it is a 302 marked no-store, never cached like the
-// permanent trailing-slash canonicalization in Serve.
-func (h *Handler) RedirectToDefaultBranch(w http.ResponseWriter, r *http.Request) {
-	project := auth.ProjectFrom(r.Context())
-	target := "/" + project.Name + "/branch/" + resolveRootBranch(r.Context(), h.DB, project) + "/"
-	w.Header().Set("Cache-Control", "no-store")
-	http.Redirect(w, r, target, http.StatusFound)
+func serveArchiveFile(w http.ResponseWriter, r io.Reader, e binarchive.Entry, status int) {
+	w.Header().Set("Content-Type", contentType(e.Path))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", e.Size))
+	w.Header().Set("Cache-Control", "no-cache")
+	if status != http.StatusOK {
+		w.WriteHeader(status)
+	}
+	io.Copy(w, r)
 }
 
 func serveTarFile(w http.ResponseWriter, tr *tar.Reader, name string, hdr *tar.Header, status int) {

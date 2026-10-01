@@ -60,8 +60,6 @@ const (
 	mediaImageIndex    = "application/vnd.oci.image.index.v1+json"
 )
 
-// pushImage pushes a config blob, one layer, and a single-platform image
-// manifest (by digest), returning the manifest bytes and its digest.
 func pushImage(t *testing.T, h *Handler, proj *db.Project, osName, arch string) ([]byte, string) {
 	t.Helper()
 	config := map[string]any{
@@ -87,6 +85,7 @@ func pushImage(t *testing.T, h *Handler, proj *db.Project, osName, arch string) 
 }
 
 func TestPush_BlobMonolithicAndServe(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -111,6 +110,7 @@ func TestPush_BlobMonolithicAndServe(t *testing.T) {
 }
 
 func TestPush_BlobChunked(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -147,6 +147,7 @@ func TestPush_BlobChunked(t *testing.T) {
 }
 
 func TestPush_BlobDigestMismatch(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -160,6 +161,7 @@ func TestPush_BlobDigestMismatch(t *testing.T) {
 }
 
 func TestPush_SingleImageByTag(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := t.Context()
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
@@ -199,6 +201,7 @@ func TestPush_SingleImageByTag(t *testing.T) {
 }
 
 func TestPush_MultiArchIndex(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := t.Context()
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
@@ -206,7 +209,6 @@ func TestPush_MultiArchIndex(t *testing.T) {
 
 	amdManifest, amdDigest := pushImage(t, h, proj, "linux", "amd64")
 	armManifest, armDigest := pushImage(t, h, proj, "linux", "arm64")
-	// Children are pushed by digest first (as docker/buildx does).
 	require.Equal(t, http.StatusCreated, putManifest(t, h, proj, amdDigest, mediaImageManifest, amdManifest).Code)
 	require.Equal(t, http.StatusCreated, putManifest(t, h, proj, armDigest, mediaImageManifest, armManifest).Code)
 
@@ -244,6 +246,7 @@ func TestPush_MultiArchIndex(t *testing.T) {
 }
 
 func TestPush_RepushTag(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := t.Context()
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
@@ -271,6 +274,7 @@ func TestPush_RepushTag(t *testing.T) {
 }
 
 func TestPush_ShaAndLatestShareRelease(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := t.Context()
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
@@ -294,6 +298,7 @@ func TestPush_ShaAndLatestShareRelease(t *testing.T) {
 }
 
 func TestPush_TagsListIncludesDockerTags(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := t.Context()
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
@@ -318,6 +323,7 @@ func TestPush_TagsListIncludesDockerTags(t *testing.T) {
 }
 
 func TestPush_BlobTooLarge(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -335,6 +341,7 @@ func TestPush_BlobTooLarge(t *testing.T) {
 }
 
 func TestPush_StartInvalidDigest(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -347,6 +354,7 @@ func TestPush_StartInvalidDigest(t *testing.T) {
 }
 
 func TestPush_PatchUnknownUpload(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -359,6 +367,7 @@ func TestPush_PatchUnknownUpload(t *testing.T) {
 }
 
 func TestPush_PutUnknownUpload(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -371,6 +380,7 @@ func TestPush_PutUnknownUpload(t *testing.T) {
 }
 
 func TestPush_PutNoDigest(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -392,6 +402,7 @@ func TestPush_PutNoDigest(t *testing.T) {
 }
 
 func TestPush_ManifestMissingBlob(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -410,6 +421,7 @@ func TestPush_ManifestMissingBlob(t *testing.T) {
 }
 
 func TestPush_ManifestDigestMismatch(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -423,13 +435,13 @@ func TestPush_ManifestDigestMismatch(t *testing.T) {
 }
 
 func TestPush_ManifestContentTypeParams(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
 
 	manifestBytes, _ := pushImage(t, h, proj, "linux", "amd64")
 	// A Content-Type with parameters must be stored/served stripped to the bare
-	// media type, or strict OCI clients reject the manifest.
 	rec := putManifest(t, h, proj, "v1", mediaImageManifest+"; charset=utf-8", manifestBytes)
 	require.Equal(t, http.StatusCreated, rec.Code)
 
@@ -439,6 +451,7 @@ func TestPush_ManifestContentTypeParams(t *testing.T) {
 }
 
 func TestPush_EmptyPatchRange(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -450,7 +463,6 @@ func TestPush_EmptyPatchRange(t *testing.T) {
 	uuid := rec.Header().Get("Docker-Upload-UUID")
 	require.NotEmpty(t, uuid)
 
-	// A zero-byte PATCH must report a valid range ("0-0"), never "0--1".
 	req = httptest.NewRequest("PATCH", "/v2/ollama/blobs/uploads/"+uuid, nil)
 	req = withRoute(req, proj, route{project: proj.Name, action: "uploads", reference: uuid})
 	rec = httptest.NewRecorder()
@@ -460,6 +472,7 @@ func TestPush_EmptyPatchRange(t *testing.T) {
 }
 
 func TestPush_ManifestDBError(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -472,6 +485,7 @@ func TestPush_ManifestDBError(t *testing.T) {
 }
 
 func TestServeManifest_TagDBError(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))
@@ -482,6 +496,7 @@ func TestServeManifest_TagDBError(t *testing.T) {
 }
 
 func TestLinkReferencedBlob_DBError(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := &db.Project{Name: "ollama", Versioning: db.VersioningAuto}
 	require.NoError(t, d.CreateProject(t.Context(), proj))

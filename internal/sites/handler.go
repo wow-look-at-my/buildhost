@@ -3,6 +3,7 @@ package sites
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"go.opentelemetry.io/otel"
 
@@ -22,25 +23,44 @@ func init() {
 		handler.FetchDomains = auth.SiteFetchDomains()
 		handler.TmpDir = auth.DataDir() + "/tmp"
 	})
+	// Config-conditional {project}.<site-domain> scheme (see subdomain.go).
+	auth.OnSiteDomain(registerSiteDomainRoutes)
+	// The original /branch/{branch}/ form. Kept working forever -- it is what
 	auth.ServiceHandle("sites", "PUT /{project}/branch/{branch}", parseRoute, handler.Upload)
 	auth.ServiceHandle("sites", "DELETE /{project}/branch/{branch}", parseRoute, handler.Delete)
-	auth.ServiceHandle("sites", "GET /{project}/branch/{branch}/{path...}", parseRoute, handler.Serve)
+	auth.ServiceHandle("sites", "GET /{project}/branch/{branch}/{path...}", parseRoute, handler.RedirectLegacyBranch)
 	auth.ServiceHandle("sites", "GET /{project}/branches", parseRoute, handler.List)
-	// Bare site root: /{project} (and /{project}/) redirect to the default
-	// branch. {project} is a single param with no literal segments, so it scores
-	// below the branch/branches routes and only matches paths that aren't one of
-	// those -- it never shadows them (router best-match: more literals wins).
-	auth.ServiceHandle("sites", "GET /{project}", parseRootRoute, handler.RedirectToDefaultBranch)
+	auth.ServiceHandle("sites", "PUT /{project}/@{branch}", parseSigilRoute, handler.Upload)
+	auth.ServiceHandle("sites", "PUT /{project}/@{branch}/{rest}", parseSigilRoute, handler.Upload)
+	auth.ServiceHandle("sites", "DELETE /{project}/@{branch}", parseSigilRoute, handler.Delete)
+	auth.ServiceHandle("sites", "DELETE /{project}/@{branch}/{rest}", parseSigilRoute, handler.Delete)
+	// Every remaining GET: the apex site path (/{project} redirects to the
+	auth.ServiceHandle("sites", "GET /{project}", handler.parseRootRoute, handler.ServeDefaultBranch)
 }
+
+// branchSigil introduces the branch in a site URL:
+const branchSigil = '@'
+
+// legacyBranchSigil is the {project}.<site-domain> scheme's original branch
+const legacyBranchSigil = '~'
 
 type route struct {
 	project string
 	branch  string
 	path    string
 	write   bool
-	// root marks the bare /{project} root redirect. It distinguishes that route
-	// from the /{project}/branches listing, which also carries an empty branch.
+	// root marks a default-branch read: the apex /{project}[/<file>] path on
 	root bool
+	// sigil is set by a read that named its branch with the "@" sigil, on either
+	sigil string
+}
+
+// ref is the raw "<branch>[/<path>]" a branch read carries, whichever form
+func (r route) ref() string {
+	if r.sigil != "" {
+		return r.sigil
+	}
+	return joinPathParts(r.branch, r.path)
 }
 
 func (r route) ProjectName() string { return r.project }
@@ -52,20 +72,18 @@ func (r route) Access() auth.AccessLevel {
 }
 
 // AllowsPublicRead lets requireProject serve a public site branch without a
-// token even when the project is private. A single-branch read (Serve) and the
-// root redirect (which targets the default branch) both qualify when the branch
-// in question is public; the /branches listing (branch == "" && !root) stays
-// gated, as do writes. This keeps a public site's shareable root URL working
-// under a private project, mirroring the per-branch Serve rule.
 func (r route) AllowsPublicRead(ctx context.Context, database *db.DB, project *db.Project) bool {
 	if r.write {
 		return false
 	}
 	branch := r.branch
-	if r.root {
-		// Resolve the same branch the root redirect targets, so the public-read
-		// gate and the redirect agree on which site the bare root serves.
+	switch {
+	case r.root:
+		// Resolve the same branch the root redirect / bare subdomain path
 		branch = resolveRootBranch(ctx, database, project)
+	case r.sigil != "" || branch != "":
+		// A named branch, in either spelling: the same longest-match
+		branch, _, _ = splitSiteBranch(ctx, database, project.ID, r.ref())
 	}
 	if branch == "" {
 		return false
@@ -86,10 +104,55 @@ func parseRoute(r *http.Request) auth.RouteInfo {
 	}
 }
 
-// parseRootRoute parses the bare /{project} root. branch and path stay empty;
-// the root flag is what distinguishes it from the /{project}/branches listing.
-func parseRootRoute(r *http.Request) auth.RouteInfo {
-	return route{project: r.PathValue("project"), root: true}
+// parseRootRoute parses every sites GET that is not a /branch/ or /branches
+// URL. {project} arrives holding the WHOLE remainder (no wildcard follows it,
+func (h *Handler) parseRootRoute(r *http.Request) auth.RouteInfo {
+	remainder := joinPathParts(r.PathValue("project"), r.PathValue("path"))
+	if project, ref, ok := splitBranchSigil(remainder); ok {
+		return route{project: project, sigil: ref}
+	}
+	project, filePath := h.splitProjectPath(r.Context(), remainder)
+	return route{project: project, path: filePath, root: true}
+}
+
+// parseSigilRoute parses a write in the "@" form,
+// "/{project}/@{branch}[/<rest of a slash-named branch>]". The router binds
+func parseSigilRoute(r *http.Request) auth.RouteInfo {
+	return route{
+		project: r.PathValue("project"),
+		branch:  joinPathParts(r.PathValue("branch"), r.PathValue("rest")),
+		write:   r.Method == "PUT" || r.Method == "DELETE",
+	}
+}
+
+func splitBranchSigil(remainder string) (project, ref string, ok bool) {
+	segs := strings.Split(remainder, "/")
+	for i, s := range segs {
+		if s == "" || s[0] != branchSigil {
+			continue
+		}
+		if i == 0 || len(s) == 1 {
+			return "", "", false
+		}
+		return strings.Join(segs[:i], "/"), strings.Join(append([]string{s[1:]}, segs[i+1:]...), "/"), true
+	}
+	return "", "", false
+}
+
+// splitProjectPath splits an apex site path "<project>[/<file path>]" into the
+// project name and the file path within its default-branch site, by longest
+func (h *Handler) splitProjectPath(ctx context.Context, remainder string) (project, filePath string) {
+	if h.DB == nil {
+		return remainder, ""
+	}
+	segs := strings.Split(remainder, "/")
+	for i := len(segs); i >= 1; i-- {
+		cand := strings.Join(segs[:i], "/")
+		if _, err := h.DB.GetProject(ctx, cand); err == nil {
+			return cand, strings.Join(segs[i:], "/")
+		}
+	}
+	return remainder, ""
 }
 
 func routeFrom(ctx context.Context) route {

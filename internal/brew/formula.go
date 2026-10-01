@@ -3,6 +3,7 @@ package brew
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,7 +16,12 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 )
 
-func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, release db.Release, artifacts []db.Artifact, baseURL string) (*repackage.Output, error) {
+func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, release db.Release, artifacts []db.PlatformArtifact, baseURL string) (*repackage.Output, error) {
+	// A digit-leading project name can never be a loadable Homebrew formula
+	if !repackage.BrewEligibleProjectName(project.Name) {
+		return nil, db.ErrNotFound
+	}
+
 	resources := make([]repackage.BrewResource, 0, len(artifacts))
 	var kind string
 
@@ -27,7 +33,7 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 	})
 
 	for _, a := range artifacts {
-		osName, archName, ok := brewPlatform(a)
+		osName, archName, ok := brewPlatform(a.Artifact)
 		if !ok {
 			continue
 		}
@@ -65,33 +71,27 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 		Version:     version,
 		License:     firstNonEmpty(project.License, "MIT"),
 		Kind:        kind,
-		Resources:   resources,
+		// A private project's formula downloads through the tap's token-aware
+		Private: project.IsPrivate,
+		// The project's packaging-agnostic create_service setting, which the
+		Service:   project.CreateService,
+		Resources: resources,
 	})
 }
 
 // tarGZSHA256 returns the hex sha256 of the artifact's tar.gz repackage -- the
 // exact payload the formula's download URL serves via dl/static. The digest is
-// cached in packaged_artifacts under format "tar.gz" so it is computed once per
-// artifact instead of on every formula/tap request. Caching a digest for a blob
-// that is regenerated per download is sound because tar.gz generation is
-// deterministic for an artifact: the tar header carries only the immutable
-// project name, size, and kind-derived mode (zero mtimes -- archive/tar writes
-// a zero ModTime as constant epoch 0), gzip emits fixed header fields (mtime 0,
-// OS 255), and the input is the content-addressed stored blob. Homebrew's own
-// checksum verification of the on-demand download already depends on exactly
-// this stability. The row is a digest cache only: no tar.gz blob is stored, so
-// storage_key records the SOURCE artifact blob (a key the retention refcount
-// already tracks) and the row is dropped with its artifact on eviction.
-func (h *Handler) tarGZSHA256(ctx context.Context, project db.Project, release db.Release, a db.Artifact, baseURL string) (string, error) {
-	_, _, cached, _, err := h.DB.GetPackagedArtifact(ctx, a.ID, string(repackage.FormatTarGZ))
-	if err == nil {
+func (h *Handler) tarGZSHA256(ctx context.Context, project db.Project, release db.Release, a db.PlatformArtifact, baseURL string) (string, error) {
+	cacheFormat := a.CacheFormat(string(repackage.FormatTarGZ))
+	_, _, cached, _, metadata, err := h.DB.GetPackagedArtifact(ctx, a.ID, cacheFormat)
+	if err == nil && tarGZMetadataTransform(metadata) == repackage.TransformVersion {
 		return cached, nil
 	}
-	if !errors.Is(err, db.ErrNotFound) {
+	if err != nil && !errors.Is(err, db.ErrNotFound) {
 		return "", err
 	}
 
-	tgz, err := h.Gen.Generate(ctx, repackage.FormatTarGZ, project, release, a, baseURL)
+	tgz, err := h.Gen.GenerateForPlatform(ctx, repackage.FormatTarGZ, project, release, a, baseURL)
 	if err != nil {
 		return "", err
 	}
@@ -104,9 +104,11 @@ func (h *Handler) tarGZSHA256(ctx context.Context, project db.Project, release d
 	sum := fmt.Sprintf("%x", hsh.Sum(nil))
 
 	// Best-effort cache fill: the digest above is already correct for this
-	// response. INSERT OR REPLACE makes a concurrent double-compute benign --
-	// the value is deterministic, so both writers store the same digest.
-	if err := h.DB.CreatePackagedArtifact(ctx, a.ID, string(repackage.FormatTarGZ), a.StorageKey, size, sum, tgz.Filename, "{}"); err != nil {
+	metaJSON, merr := json.Marshal(tarGZMetadata{Transform: repackage.TransformVersion})
+	if merr != nil {
+		return sum, nil
+	}
+	if err := h.DB.CreatePackagedArtifact(ctx, a.ID, cacheFormat, a.StorageKey, size, sum, tgz.Filename, string(metaJSON)); err != nil {
 		slog.Warn("cache tar.gz digest", "artifact_id", a.ID, "err", err)
 	}
 	return sum, nil
@@ -160,4 +162,17 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// tarGZMetadata records which transformation pipeline a cached tar.gz digest
+type tarGZMetadata struct {
+	Transform string `json:"transform"`
+}
+
+func tarGZMetadataTransform(metadata string) string {
+	var m tarGZMetadata
+	if err := json.Unmarshal([]byte(metadata), &m); err != nil {
+		return ""
+	}
+	return m.Transform
 }
