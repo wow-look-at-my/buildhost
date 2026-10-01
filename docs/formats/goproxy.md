@@ -88,7 +88,7 @@ different credentials meet here, and confusing them is what produced the bug thi
 
 A module outside the private namespaces is public source and needs no credential. To require one only stops `GOPROXY=<proxy>,direct` from working for anyone without a buildhost token.
 
-Inside those namespaces a caller needs one of things. The first is a GLOBAL read or write token. The second is a signed-in GitHub user who can read the backing repo, which is asked of GitHub per repo. A project-scoped token is not enough. It says "this job may read project X". A Go module is not a project. To accept it widens a least-privilege credential to the org's whole private source tree. An auto-provisioned OIDC identity from any repository in an allowed org IS accepted, so every org workflow fetches the org's private modules with no secret provisioned.
+Inside those namespaces a caller needs one of these. The first is a GLOBAL read or write token. The second is a signed-in GitHub user who can read the backing repo, which is asked of GitHub per repo. A project-scoped token is not enough. It says "this job may read project X". A Go module is not a project. To accept it widens a least-privilege credential to the org's whole private source tree. An auto-provisioned OIDC identity from any repository in an allowed org IS accepted. Every org workflow therefore fetches the org's private modules with no secret provisioned.
 
 Private prefixes match case-insensitively, as GitHub names do.
 
