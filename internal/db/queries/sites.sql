@@ -6,6 +6,13 @@ FROM sites WHERE project_id = ? AND branch = ?;
 SELECT id, project_id, branch, storage_key, size, sha256, file_count, git_commit, is_public, created_at, updated_at
 FROM sites WHERE project_id = ? ORDER BY updated_at DESC;
 
+-- name: ListAllSites :many
+SELECT id, project_id, branch, storage_key, size, sha256, file_count, git_commit, is_public, created_at, updated_at
+FROM sites ORDER BY id;
+
+-- name: UpdateSiteBlob :execrows
+UPDATE sites SET storage_key = ?, size = ? WHERE id = ? AND storage_key = ?;
+
 -- name: UpsertSite :execresult
 INSERT INTO sites (project_id, branch, storage_key, size, sha256, file_count, git_commit, is_public, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
