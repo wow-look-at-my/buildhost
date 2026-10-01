@@ -11,9 +11,7 @@ import (
 	"github.com/wow-look-at-my/go-containers/set"
 )
 
-// Config controls retention policy. KeepN releases stay on a project's default
-// branch and BranchKeepN on every other branch. A branch that GitHub deleted
-// more than BranchTTL ago loses all its releases.
+// Config is the retention policy. docs/retention.md describes each field.
 type Config struct {
 	KeepN        int
 	BranchKeepN  int
@@ -89,9 +87,7 @@ type Report struct {
 	ReclaimableBytes  int64        // exact bytes freed / that would be freed
 	FreedBlobs        []BlobRef    // the blobs ReclaimableBytes sums, keyed by storage key
 
-	// Artifact-metadata bookkeeping for the evicted releases. An artifact whose
-	// BranchSync is what the pre-run sync of deleted branches changed.
-	BranchSync BranchSync
+	BranchSync BranchSync // what the pre-run sync of deleted branches changed
 
 	RecordsMarkedDeleted int // records successfully marked deleted
 	RecordsUnmarked      int // records that could NOT be marked (see RecordErrors)
