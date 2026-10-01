@@ -26,3 +26,15 @@ tests:
 	  outputs:
 		stdout:
 			- "upload: all checks passed"
+
+	- desc: download aborts a transfer that goes silent, and finishes a slow one that keeps sending
+	  cmd: node test/actions/download-stall.test.ts
+	  outputs:
+		stdout:
+			- "download: all checks passed"
+
+	- desc: download finds its lib from a container job, where the action path names the host
+	  cmd: node test/actions/download-action-path.test.ts
+	  outputs:
+		stdout:
+			- "download-action-path: all checks passed"
