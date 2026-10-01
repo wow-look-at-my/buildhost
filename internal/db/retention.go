@@ -9,9 +9,7 @@ import (
 	"time"
 )
 
-// RetentionSettings is the UI-editable retention policy (stored as a single row).
-// KeepN applies to a project's default branch. BranchKeepN applies to every other
-// branch, and BranchTTLDays expires such a branch whole.
+// RetentionSettings is the stored retention policy. docs/retention.md describes each field.
 type RetentionSettings struct {
 	KeepN         int
 	RecencyHours  int
