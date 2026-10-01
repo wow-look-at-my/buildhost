@@ -33,8 +33,12 @@ type healthResponse struct {
 	Commit   string `json:"commit"` // git SHA the binary was built from, or "unknown"
 	Version  string `json:"version"`
 	Modified bool   `json:"modified,omitempty"` // built from a dirty working tree
-	Error    string `json:"error,omitempty"`    // failure detail when unhealthy
+	Started  string `json:"started"`
+	Error    string `json:"error,omitempty"` // failure detail when unhealthy
 }
+
+// startedAt lets a client that saw a dropped connection tell a restart from a network fault.
+var startedAt = time.Now().UTC()
 
 type Server struct {
 	cfg config.Config
@@ -56,6 +60,7 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 			Commit:   buildinfo.Commit(),
 			Version:  buildinfo.Version(),
 			Modified: buildinfo.Get().Modified,
+			Started:  startedAt.Format(time.RFC3339),
 		}
 		code := http.StatusOK
 		if err := healthDB.PingContext(r.Context()); err != nil {
