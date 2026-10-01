@@ -12,15 +12,9 @@ import (
 )
 
 // contentRangePattern matches the OCI distribution chunk range form
-// "<start>-<end>" (inclusive byte offsets, no "bytes " prefix).
 var contentRangePattern = regexp.MustCompile(`^([0-9]+)-([0-9]+)$`)
 
 // StartBlobUpload handles POST /v2/{name}/blobs/uploads/.
-//
-// Three modes:
-//   - mount:      ?mount=sha256:... -> link a blob storage already holds, 201.
-//   - monolithic: ?digest=sha256:... with the blob as the body -> store now, 201.
-//   - session:    neither -> open an upload session, 202 + Location for PATCH/PUT.
 func (h *Handler) StartBlobUpload(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
 
@@ -29,7 +23,6 @@ func (h *Handler) StartBlobUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Not mountable. The spec's fallback is a normal upload session, so the
-		// client uploads the bytes rather than failing.
 	}
 
 	digest := r.URL.Query().Get("digest")
@@ -76,16 +69,6 @@ func (h *Handler) StartBlobUpload(w http.ResponseWriter, r *http.Request) {
 
 // mountBlob answers a cross-repository blob mount, reporting whether it wrote a
 // response. Storage is content-addressed and global, so mounting is a link row:
-// the bytes are already there, whoever pushed them first.
-//
-// Authorization is what stops that from being a way to read a private image by
-// guessing its digest: the mount is granted only when the caller may READ a
-// project that already links the blob, and then it discloses nothing they could
-// not pull directly. `from` narrows the search to one project when the client
-// names one (the spec's form); without it any readable owner will do, which is
-// what lets a pusher mount a base image's layers without being told where they
-// came from. An unmountable request is not an error -- the caller falls back to
-// uploading, which is always correct, just slower.
 func (h *Handler) mountBlob(w http.ResponseWriter, r *http.Request, project *db.Project, digest, from string) bool {
 	if !validDigest.MatchString(digest) {
 		return false
@@ -120,10 +103,6 @@ func (h *Handler) mountBlob(w http.ResponseWriter, r *http.Request, project *db.
 //
 // A Content-Range header ("<start>-<end>", as the OCI distribution spec has
 // chunked clients send) is verified against the bytes committed so far: a
-// mismatched start returns 416 with the current Range and consumes nothing, so
-// a client that lost a response can query where the server actually is and
-// resume instead of corrupting the blob. Requests without the header keep the
-// old append-only behavior (docker's single in-session PATCH sends none).
 func (h *Handler) PatchBlobUpload(w http.ResponseWriter, r *http.Request, uuid string) {
 	project := auth.ProjectFrom(r.Context())
 	sess := h.uploads.get(uuid)
@@ -173,8 +152,6 @@ func (h *Handler) GetBlobUploadStatus(w http.ResponseWriter, r *http.Request, uu
 }
 
 // setUploadHeaders writes the shared upload-session response headers. Range is
-// the inclusive byte range received so far, with the end clamped to >= 0 so an
-// empty session reports "0-0" rather than an invalid "0--1".
 func setUploadHeaders(w http.ResponseWriter, projectName, uuid string, committed int64) {
 	end := committed - 1
 	if end < 0 {

@@ -8,16 +8,23 @@
 import { Html, type El } from "./html.ts";
 
 import type {
+    SiteFilesData,
     AllArtifact,
     DashboardData,
     DownloadLink,
+    DuplicatesData,
+    GoproxyData,
+    MergePlan,
     OIDCPolicy,
     Pages,
+    Platform,
     ProjectData,
     ProjectSummary,
     RegistriesData,
     ReleaseData,
     RetentionData,
+    RetentionInventory,
+    ServiceURLs,
     SidebarData,
     SitesData,
     StorageData,
@@ -42,6 +49,12 @@ const siteBranchURL = function (sitesBase: string, project: string, branch: stri
     return sitesBase + "/" + project + "/@" + branch + "/";
 };
 
+// siteFilesHash is the dashboard route of a single site branch's file list.
+// "/-/" ends the project name, because both the project and the branch can hold "/".
+const siteFilesHash = function (project: string, branch: string): string {
+    return "#/sites/" + project + "/-/files/" + encodeURIComponent(branch);
+};
+
 const humanSize = function (b: number): string {
     if (b < 1024) return b + " B";
     var units = ["KiB", "MiB", "GiB", "TiB", "PiB"];
@@ -63,23 +76,34 @@ const timeAgo = function (s: string | null | undefined): string {
     return days === 1 ? "1 day ago" : days + " days ago";
 };
 
+// The clock is the reader's own, so it carries no zone name.
 const formatTime = function (s: string | null | undefined): string {
     if (!s) return "-";
     var d = new Date(s);
     if (isNaN(d.getTime())) return "-";
     var pad = function (n: number): string { return n < 10 ? "0" + n : "" + n; };
-    return d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate()) +
-        " " + pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + " UTC";
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+        " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+};
+
+// The demo dataset must answer every path the demo's own pages ask for. An
+// absent fixture used to resolve to {}, which threw deep inside a renderer and
+// left the previous page on screen -- a link that looked dead.
+const demoFetch = function <T>(path: string): T {
+    if (!Object.prototype.hasOwnProperty.call(demoData, path)) {
+        throw new Error("no demo data for " + path);
+    }
+    return demoData[path] as T;
 };
 
 const apiFetch = function <T>(path: string): Promise<T> {
-    if (demo) return Promise.resolve((demoData[path] || {}) as T);
+    if (demo) return Promise.resolve().then(function () { return demoFetch<T>(path); });
     return fetch("/api" + path).then(function (r) {
         if (!r.ok) throw new Error(String(r.status));
         return r.json();
     }).catch(function () {
         demo = true;
-        return (demoData[path] || {}) as T;
+        return demoFetch<T>(path);
     });
 };
 
@@ -93,8 +117,10 @@ var NAV_ITEMS = [
     { id: "registries", href: "#/registries", label: "Registries", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 0h8v3H6V4zm0 5h8v2H6V9zm0 4h5v2H6v-2z" clip-rule="evenodd"/></svg>' },
     { id: "tokens", href: "#/tokens", label: "Tokens", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/></svg>' },
     { id: "sites", href: "#/sites", label: "Sites", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4.083 9h1.946c.089-1.546.383-2.97.837-4.118A6.004 6.004 0 004.083 9zM10 2a8 8 0 100 16 8 8 0 000-16zm0 2c-.076 0-.232.032-.465.262-.238.234-.497.623-.737 1.182-.389.907-.673 2.142-.766 3.556h3.936c-.093-1.414-.377-2.649-.766-3.556-.24-.56-.5-.948-.737-1.182C10.232 4.032 10.076 4 10 4zm3.971 5c-.089-1.546-.383-2.97-.837-4.118A6.004 6.004 0 0115.917 9h-1.946zm-2.003 2H8.032c.093 1.414.377 2.649.766 3.556.24.56.5.948.737 1.182.233.23.389.262.465.262.076 0 .232-.032.465-.262.238-.234.497-.623.737-1.182.389-.907.673-2.142.766-3.556zm1.166 4.118c.454-1.147.748-2.572.837-4.118h1.946a6.004 6.004 0 01-2.783 4.118zm-6.268 0C6.412 13.97 6.118 12.546 6.029 11H4.083a6.004 6.004 0 002.783 4.118z" clip-rule="evenodd"/></svg>' },
+    { id: "goproxy", href: "#/goproxy", label: "Go Proxy", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>' },
     { id: "oidc", href: "#/oidc", label: "OIDC Policies", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' },
-    { id: "retention", href: "#/retention", label: "Retention", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>' }
+    { id: "retention", href: "#/retention", label: "Retention", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>' },
+    { id: "duplicates", href: "#/duplicates", label: "Duplicates", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M7 3a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V5a2 2 0 00-2-2H7z"/><path d="M3 7a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>' }
 ];
 
 const renderSidebar = function (nav: string): void {
@@ -122,6 +148,16 @@ const renderSidebar = function (nav: string): void {
 };
 
 const badge = function (type: string, text: string): string { return '<span class="badge badge-' + type + '">' + h(text) + "</span>"; };
+// platformBadge renders an artifact's whole platform set as ONE badge. A file
+// covering several platforms is one artifact with one download link, so listing
+// it once with "APE: linux/amd64, darwin/arm64" is the honest row.
+const platformBadge = function (platforms: Platform[] | undefined, exeFormat: string, os: string, arch: string): string {
+    var list = platforms && platforms.length > 0
+        ? platforms.map(function (p) { return p.os + "/" + p.arch; }).join(", ")
+        : os + "/" + arch;
+    if (exeFormat) return badge("info", exeFormat.toUpperCase() + ": " + list);
+    return badge("info", list);
+};
 
 // urlTpl renders a copyable URL with inline os/arch dropdowns. `base` is the
 // text before the os dropdown, `mid` the text between the os and arch dropdowns
@@ -138,9 +174,83 @@ const urlTpl = function (tpl: string, base: string, mid?: string, suffix?: strin
         "</span><copy-btn></copy-btn>";
 };
 
+// A Homebrew formula name cannot contain '/', so a slash-namespaced project
+// folds its namespace to '-' in the tap (repackage.BrewFormulaName). That
+// folded name is both the tap filename and what the user types after the tap.
+const brewFormulaName = function (project: string): string {
+    return project.replace(/\//g, "-");
+};
+
+const brewInstall = function (brewBase: string, project: string): string {
+    return "brew tap pazer/build " + brewBase + "/tap.git\nbrew trust pazer/build\nbrew install pazer/build/" + brewFormulaName(project);
+};
+
+// Install commands, shared by the project page (latest) and the release page
+// (one version). Each takes the services block and the project; `version` is
+// "" for latest. A private project needs its credential in the same block,
+// because a copied command that 401s teaches nothing about why.
+
+// A Debian package name folds '/' and '_' to '-' (repackage.DebPackageName),
+// so apt and dpkg agree on a slash-namespaced project.
+const debPackageName = function (project: string): string {
+    return project.replace(/[/_]/g, "-");
+};
+
+const host = function (url: string): string {
+    return url.replace(/^https?:\/\//, "");
+};
+
+// The server-generated install.sh saves the armored key, writes the signed-by
+// source, records the token for a private repo, and refreshes the index.
+const aptOneLiner = function (aptBase: string, priv: boolean): string {
+    return priv
+        ? 'curl -fsSL -H "Authorization: Bearer $TOKEN" ' + aptBase + "/install.sh \\\n  | sudo BUILDHOST_TOKEN=$TOKEN sh"
+        : "curl -fsSL " + aptBase + "/install.sh | sudo sh";
+};
+
+const aptManual = function (svc: ServiceURLs, project: string, priv: boolean): string {
+    var aptBase = (svc.apt || "") + "/" + project;
+    var pkg = debPackageName(project);
+    return priv
+        ? 'sudo install -d -m 0755 /etc/apt/keyrings\n# the token is the HTTP Basic password (username is ignored)\ncurl -fsSL -u "token:$TOKEN" ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + pkg + '.list\n# both apt (metadata) and static (the .deb download redirect) need the token\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf\nmachine ' + host(svc.apt || "") + ' login token password $TOKEN\nmachine ' + host(svc.static || "") + ' login token password $TOKEN\nEOF\nsudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf\nsudo apt update && sudo apt install ' + pkg
+        : 'sudo install -d -m 0755 /etc/apt/keyrings\ncurl -fsSL ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + pkg + '.list\nsudo apt update && sudo apt install ' + pkg;
+};
+
+// npm and the OCI tag list both carry every published release, so both pin a
+// version. A deb and an npm package drop a leading "v" from the version
+// (repackage.DebPackageName's siblings do the same), and an OCI tag does not.
+const npmInstall = function (svc: ServiceURLs, project: string, version: string, priv: boolean): string {
+    var registry = svc.npm || "";
+    var spec = "@buildhost/" + project + (version ? "@" + version.replace(/^v/, "") : "");
+    var cmd = "npm install " + spec + " --registry " + registry;
+    return priv ? "npm config set //" + host(registry) + "/:_authToken $TOKEN\n" + cmd : cmd;
+};
+
+const dockerPull = function (svc: ServiceURLs, project: string, version: string, priv: boolean): string {
+    var ociHost = host(svc.oci || "");
+    var cmd = "docker pull " + ociHost + "/" + project + ":" + (version || "latest");
+    return priv ? "echo $TOKEN | docker login " + ociHost + " -u token --password-stdin\n" + cmd : cmd;
+};
+
+// A private project's dl link redirects to the static host, and curl only
+// re-sends credentials across that hop with --location-trusted; the token is
+// the HTTP Basic password.
+const curlDownload = function (dlBase: string, version: string, priv: boolean): string {
+    var url = dlBase + (version ? "?v=" + version + "&" : "?") + "os=linux&arch=amd64";
+    return priv
+        ? 'curl -fsSL --location-trusted -u "token:$TOKEN" -O \\\n  "' + url + '"'
+        : 'curl -fsSL -O "' + url + '"';
+};
+
 const codeBlock = function (label: string, code: string): string {
     return '<div class="code-block"><div class="code-label">' + h(label) +
         '<copy-btn class="code-copy-btn" data-src="pre"></copy-btn></div><pre>' + h(code) + "</pre></div>";
+};
+
+// statTile is the non-linking sibling of the dashboard's stat-card anchors.
+const statTile = function (value: string | number, label: string): string {
+    return '<div class="stat-card"><div class="stat-value">' + h(value) +
+        '</div><div class="stat-label">' + h(label) + "</div></div>";
 };
 
 const projectTreeRows = function (projects: ProjectSummary[]): TreeRow[] {
@@ -298,7 +408,13 @@ pages.project = function (name: string): void {
         if (p.description) html += "<tr><td class='info-label'>Description</td><td>" + h(p.description) + "</td></tr>";
         if (p.homepage) html += "<tr><td class='info-label'>Homepage</td><td>" + h(p.homepage) + "</td></tr>";
         if (p.license) html += "<tr><td class='info-label'>License</td><td>" + h(p.license) + "</td></tr>";
-        html += "<tr><td class='info-label'>Versioning</td><td>" + badge("neutral", p.versioning) + "</td></tr>";
+        var versioningOpts = "";
+        for (var vo of ["auto", "semver"]) {
+            versioningOpts += '<option value="' + vo + '"' + (vo === p.versioning ? " selected" : "") + ">" + vo + "</option>";
+        }
+        html += "<tr><td class='info-label'>Versioning</td><td>" +
+            '<select id="versioning-select" onchange="App.setVersioning(\'' + h(p.name) + '\', this.value)">' + versioningOpts + "</select>" +
+            "</td></tr>";
         html += "<tr><td class='info-label'>Visibility</td><td>" + (p.is_private ? badge("warning", "Private") : badge("success", "Public")) + "</td></tr>";
         html += '<tr><td class="info-label">Created</td><td title="' + h(formatTime(p.created_at)) + '">' + h(timeAgo(p.created_at)) + "</td></tr>";
         html += '<tr><td class="info-label">Updated</td><td title="' + h(formatTime(p.updated_at)) + '">' + h(timeAgo(p.updated_at)) + "</td></tr>";
@@ -314,17 +430,6 @@ pages.project = function (name: string): void {
         if (hasPublished) {
             var dlBase = (svc.dl || "") + "/" + p.name;
             var aptBase = (svc.apt || "") + "/" + p.name;
-            var brewU = (svc.brew || "") + "/Formula/" + p.name + ".rb";
-            var npmU = (svc.npm || "") + "/@buildhost/" + p.name;
-            var ociU = (svc.oci || "") + "/v2/" + p.name + "/manifests/latest";
-            var npmHost = (svc.npm || "").replace(/^https?:\/\//, "");
-            var ociHost = (svc.oci || "").replace(/^https?:\/\//, "");
-            var aptHost = (svc.apt || "").replace(/^https?:\/\//, "");
-            var staticHost = (svc.static || "").replace(/^https?:\/\//, "");
-            // Slash-namespaced names keep their slash in the repo URL but install
-            // under a folded Debian package name (repackage.DebPackageName folds
-            // '/' and '_' to '-'), so apt and dpkg agree.
-            var aptPkg = p.name.replace(/[/_]/g, "-");
             var priv = !!p.is_private;
 
             // endpointRow: an <a> + copy-button cell for a fixed (latest)
@@ -340,33 +445,6 @@ pages.project = function (name: string): void {
                 );
             };
 
-            // curl direct download. A private project's dl link redirects to the
-            // static host, and curl only re-sends credentials across that hop
-            // with --location-trusted; the token is the HTTP Basic password.
-            var curlCmd = priv
-                ? 'curl -fsSL --location-trusted -u "token:$TOKEN" -O \\\n  "' + dlBase + '?os=linux&arch=amd64"'
-                : 'curl -fsSL -O "' + dlBase + '?os=linux&arch=amd64"';
-
-            // APT: the server-generated install.sh is the one-line path (it
-            // saves the armored key, writes the signed-by source, records the
-            // token for private repos, and refreshes the index).
-            var aptOneLiner = priv
-                ? 'curl -fsSL -H "Authorization: Bearer $TOKEN" ' + aptBase + "/install.sh \\\n  | sudo BUILDHOST_TOKEN=$TOKEN sh"
-                : "curl -fsSL " + aptBase + "/install.sh | sudo sh";
-
-            // APT manual flow: signed-by key-import + folded Debian package
-            // name, matching the Registries page and the web frontend.
-            var aptCmd = priv
-                ? 'sudo install -d -m 0755 /etc/apt/keyrings\n# the token is the HTTP Basic password (username is ignored)\ncurl -fsSL -u "token:$TOKEN" ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + aptPkg + '.list\n# both apt (metadata) and static (the .deb download redirect) need the token\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf\nmachine ' + aptHost + ' login token password $TOKEN\nmachine ' + staticHost + ' login token password $TOKEN\nEOF\nsudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf\nsudo apt update && sudo apt install ' + aptPkg
-                : 'sudo install -d -m 0755 /etc/apt/keyrings\ncurl -fsSL ' + aptBase + '/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + aptBase + ' stable main" \\\n  | sudo tee /etc/apt/sources.list.d/' + aptPkg + '.list\nsudo apt update && sudo apt install ' + aptPkg;
-
-            var npmCmd = priv
-                ? "npm config set //" + npmHost + "/:_authToken $TOKEN\nnpm install @buildhost/" + p.name + " --registry " + (svc.npm || "")
-                : "npm install @buildhost/" + p.name + " --registry " + (svc.npm || "");
-
-            var dockerCmd = priv
-                ? "echo $TOKEN | docker login " + ociHost + " -u token --password-stdin\ndocker pull " + ociHost + "/" + p.name + ":latest"
-                : "docker pull " + ociHost + "/" + p.name + ":latest";
 
             html += Html.div(
                 Html.h2("Download & Install ", Html.span("— latest").cls("muted").style("font-weight:400")),
@@ -376,18 +454,14 @@ pages.project = function (name: string): void {
                         Html.td("Direct download").cls("info-label"),
                         Html.td(Html.raw(urlTpl(dlBase + "?os={os}&arch={arch}", dlBase + "?os=", "&arch="))).cls("endpoint-cell")
                     ),
-                    endpointRow("APT", aptBase, aptBase + "/dists/stable/Release", aptBase),
-                    endpointRow("APT installer", aptBase + "/install.sh", aptBase + "/install.sh", null),
-                    endpointRow("Homebrew", brewU, brewU, null),
-                    endpointRow("npm", npmU, npmU, null),
-                    endpointRow("OCI", ociU, ociU, null)
+                    endpointRow("APT repository", aptBase, aptBase + "/dists/stable/Release", aptBase)
                 ).cls("info-table"),
-                Html.raw(codeBlock("Direct download (curl)", curlCmd)),
-                Html.raw(codeBlock("APT (one-line install)", aptOneLiner)),
-                Html.raw(codeBlock("APT (manual setup)", aptCmd)),
-                Html.raw(codeBlock("Homebrew", "brew tap pazer/build " + (svc.brew || "") + "/tap.git\nbrew trust pazer/build\nbrew install pazer/build/" + p.name)),
-                Html.raw(codeBlock("npm", npmCmd)),
-                Html.raw(codeBlock("Docker", dockerCmd))
+                Html.raw(codeBlock("Direct download (curl)", curlDownload(dlBase, "", priv))),
+                Html.raw(codeBlock("APT (one-line install)", aptOneLiner(aptBase, priv))),
+                Html.raw(codeBlock("APT (manual setup)", aptManual(svc, p.name, priv))),
+                Html.raw(codeBlock("Homebrew", brewInstall(svc.brew || "", p.name))),
+                Html.raw(codeBlock("npm", npmInstall(svc, p.name, "", priv))),
+                Html.raw(codeBlock("Docker", dockerPull(svc, p.name, "", priv)))
             ).cls("card");
         }
 
@@ -419,7 +493,7 @@ pages.project = function (name: string): void {
                 html += "<td>" + h(humanSize(si.size)) + "</td>";
                 html += "<td>" + (si.git_commit ? '<code class="commit">' + h(si.git_commit.substring(0, 12)) + "</code>" : "-") + "</td>";
                 html += '<td title="' + h(formatTime(si.updated_at)) + '">' + h(timeAgo(si.updated_at)) + "</td>";
-                html += '<td><a href="' + h(siteBranchURL(sitesBase, p.name, si.branch)) + '" target="_blank">Open</a></td></tr>';
+                html += '<td><a href="' + h(siteFilesHash(p.name, si.branch)) + '">Files</a> &middot; <a href="' + h(siteBranchURL(sitesBase, p.name, si.branch)) + '" target="_blank">Open</a></td></tr>';
             }
             html += "</tbody></table></div>";
         }
@@ -460,24 +534,24 @@ pages.release = function (name: string, version: string): void {
         } else {
             for (var i = 0; i < arts.length; i++) {
                 var a = arts[i];
-                html += "<tr><td>" + badge("info", a.os + "/" + a.arch) + "</td>";
+                html += "<tr><td>" + platformBadge(a.platforms, a.exe_format, a.os, a.arch) + "</td>";
                 html += "<td>" + badge("neutral", a.kind) + "</td>";
                 html += "<td>" + (a.filename ? "<code>" + h(a.filename) + "</code>" : '<span class="muted">-</span>') + "</td>";
                 html += "<td>" + h(humanSize(a.size)) + "</td>";
                 html += "<td>" + a.download_count + "</td>";
                 html += '<td class="dl-links">';
                 var pkgs = a.packages || [];
+                var dlQ = "?v=" + r.version + "&os=" + a.os + "&arch=" + a.arch;
                 if (priv) {
-                    // Private project: a plain dl link would 401. Each link mints a
-                    // signed, single-artifact link on click, then downloads it.
-                    html += dlMintLink(p.name, r.version, a.os, a.arch, "raw", false, "raw", "Download (mints a temporary signed link)");
-                    if (a.debug_storage_key) html += " " + dlMintLink(p.name, r.version, a.os, a.arch, "raw", true, "debug", "Debug symbols");
+                    // Each link mints a signed, single-artifact link on click, then
+                    // downloads it.
+                    html += dlMintLink(dlBase + dlQ, p.name, r.version, a.os, a.arch, "raw", false, "raw", "Download (mints a temporary signed link)");
+                    if (a.debug_storage_key) html += " " + dlMintLink(dlBase + dlQ + "&debug=1", p.name, r.version, a.os, a.arch, "raw", true, "debug", "Debug symbols");
                     for (var j = 0; j < pkgs.length; j++) {
-                        html += " " + dlMintLink(p.name, r.version, a.os, a.arch, pkgs[j].format, false, pkgs[j].format, pkgs[j].filename + " (" + humanSize(pkgs[j].size) + ")");
+                        html += " " + dlMintLink(dlBase + dlQ + "&fmt=" + pkgs[j].format, p.name, r.version, a.os, a.arch, pkgs[j].format, false, pkgs[j].format, pkgs[j].filename + " (" + humanSize(pkgs[j].size) + ")");
                     }
                     html += ' <button type="button" class="dl-share" onclick="App.copyTempLink(this,\'' + h(p.name) + '\',\'' + h(r.version) + '\',\'' + h(a.os) + '\',\'' + h(a.arch) + '\',\'raw\')" title="Copy a temporary 1-hour shareable link">temp link</button>';
                 } else {
-                    var dlQ = "?v=" + r.version + "&os=" + a.os + "&arch=" + a.arch;
                     html += '<a href="' + h(dlBase + dlQ) + '" title="Direct download">raw</a>';
                     if (a.debug_storage_key) html += ' <a href="' + h(dlBase + dlQ + "&debug=1") + '" title="Debug symbols">debug</a>';
                     for (var j = 0; j < pkgs.length; j++) {
@@ -490,18 +564,33 @@ pages.release = function (name: string, version: string): void {
         html += "</tbody></table></div>";
 
         var aptU = (svc.apt || "") + "/" + p.name;
-        var brewU = (svc.brew || "") + "/Formula/" + p.name + ".rb";
-        var npmU = (svc.npm || "") + "/@buildhost/" + p.name;
-        var ociU = (svc.oci || "") + "/v2/" + p.name + "/manifests/" + r.version;
+
+        // A URL belongs here only where the URL IS the product: the direct
+        // download, and the APT repository line a reader pastes into a sources
+        // file. Everything else is a command. A registry address -- an npm
+        // packument, an OCI manifest -- is machine plumbing: pasting it into a
+        // browser answers with JSON, and it installs nothing.
         html += '<div class="card"><h2>Download Endpoints</h2><table class="info-table">';
         html += "<tr><td class='info-label'>Direct (latest)</td><td class='endpoint-cell'>" + urlTpl(dlBase + "?os={os}&arch={arch}", dlBase + "?os=", "&arch=") + "</td></tr>";
         html += "<tr><td class='info-label'>Direct (version)</td><td class='endpoint-cell'>" + urlTpl(dlBase + "?v=" + r.version + "&os={os}&arch={arch}", dlBase + "?v=" + r.version + "&os=", "&arch=") + "</td></tr>";
         if (r.git_branch) html += "<tr><td class='info-label'>Direct (branch)</td><td class='endpoint-cell'>" + urlTpl(dlBase + "?branch=" + r.git_branch + "&os={os}&arch={arch}", dlBase + "?branch=" + r.git_branch + "&os=", "&arch=") + "</td></tr>";
-        html += "<tr><td class='info-label'>APT</td><td class='endpoint-cell'><a href='" + h(aptU + "/dists/stable/Release") + "' data-copy='" + h(aptU) + "'>" + h(aptU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>Homebrew</td><td class='endpoint-cell'><a href='" + h(brewU) + "'>" + h(brewU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>npm</td><td class='endpoint-cell'><a href='" + h(npmU) + "'>" + h(npmU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
-        html += "<tr><td class='info-label'>OCI</td><td class='endpoint-cell'><a href='" + h(ociU) + "'>" + h(ociU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
+        html += "<tr><td class='info-label'>APT repository</td><td class='endpoint-cell'><a href='" + h(aptU + "/dists/stable/Release") + "' data-copy='" + h(aptU) + "'>" + h(aptU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
         html += "</table></div>";
+
+        // npm and the OCI tag list carry every published release, so both
+        // install THIS version. The APT index carries only the latest release
+        // (servePackages reads GetLatestRelease), so pinning this version there
+        // would hand out a command that fails on every older release; the apt
+        // block says plainly which version it installs. Homebrew's tap is
+        // latest-only for the same reason.
+        var relPriv = !!p.is_private;
+        html += '<div class="card"><h2>Install</h2>';
+        html += codeBlock("Direct download (curl)", curlDownload(dlBase, r.version, relPriv));
+        html += codeBlock("npm", npmInstall(svc, p.name, r.version, relPriv));
+        html += codeBlock("Docker", dockerPull(svc, p.name, r.version, relPriv));
+        html += codeBlock("APT (one-line install, always the latest release)", aptOneLiner(aptU, relPriv));
+        html += codeBlock("Homebrew (always the latest release)", brewInstall(svc.brew || "", p.name));
+        html += "</div>";
 
         document.getElementById("content")!.innerHTML = html;
     });
@@ -538,14 +627,14 @@ pages.registries = function (): void {
         html += "</table>";
         html += codeBlock("One-line install (public project)", "curl -fsSL " + apt + "/{project}/install.sh | sudo sh");
         html += codeBlock("One-line install (private project)", 'curl -fsSL -H "Authorization: Bearer $TOKEN" ' + apt + "/{project}/install.sh \\\n  | sudo BUILDHOST_TOKEN=$TOKEN sh");
-        html += codeBlock("Setup (public project)", 'sudo install -d -m 0755 /etc/apt/keyrings\ncurl -fsSL ' + apt + '/{project}/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\nsudo apt update && sudo apt install {project}');
-        html += codeBlock("Setup (private project)", 'sudo install -d -m 0755 /etc/apt/keyrings\n# the token is the HTTP Basic password (username is ignored)\ncurl -fsSL -u "token:$TOKEN" ' + apt + '/{project}/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{project}.list\n# both apt (metadata) and static (the .deb download redirect) need the token\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf\nmachine ' + aptHost + ' login token password $TOKEN\nmachine ' + staticHost + ' login token password $TOKEN\nEOF\nsudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf\nsudo apt update && sudo apt install {project}');
+        html += codeBlock("Setup (public project)", 'sudo install -d -m 0755 /etc/apt/keyrings\ncurl -fsSL ' + apt + '/{project}/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{package}.list\nsudo apt update && sudo apt install {package}');
+        html += codeBlock("Setup (private project)", 'sudo install -d -m 0755 /etc/apt/keyrings\n# the token is the HTTP Basic password (username is ignored)\ncurl -fsSL -u "token:$TOKEN" ' + apt + '/{project}/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\necho "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] ' + apt + '/{project} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/{package}.list\n# both apt (metadata) and static (the .deb download redirect) need the token\ncat <<EOF | sudo tee /etc/apt/auth.conf.d/buildhost.conf\nmachine ' + aptHost + ' login token password $TOKEN\nmachine ' + staticHost + ' login token password $TOKEN\nEOF\nsudo chmod 600 /etc/apt/auth.conf.d/buildhost.conf\nsudo apt update && sudo apt install {package}');
         html += "</div>";
 
-        html += '<div class="card"><h2>Homebrew Tap</h2><p class="section-desc">Homebrew formulas are served through a generated Git tap. Formula files auto-detect macOS and Linux artifacts.</p>';
+        html += '<div class="card"><h2>Homebrew Tap</h2><p class="section-desc">Homebrew formulas are served through a generated Git tap. Formula files auto-detect macOS and Linux artifacts. A formula name cannot contain <code>/</code>, so a slash-namespaced project folds it to <code>-</code> &mdash; e.g. <code>myrepo/server</code> installs as <code>myrepo-server</code>.</p>';
         html += '<table class="info-table"><tr><td class="info-label">Tap Git URL</td><td class="endpoint-cell"><code>' + h(brew + "/tap.git") + "</code><copy-btn data-src='code'></copy-btn></td></tr>";
-        html += '<tr><td class="info-label">Formula</td><td class="endpoint-cell"><code>' + h(brew + "/Formula/{project}.rb") + "</code><copy-btn data-src='code'></copy-btn></td></tr></table>";
-        html += codeBlock("Install", "brew tap pazer/build " + brew + "/tap.git\nbrew trust pazer/build\nbrew install pazer/build/{project}");
+        html += '<tr><td class="info-label">Formula</td><td class="endpoint-cell"><code>' + h(brew + "/Formula/{formula}.rb") + "</code><copy-btn data-src='code'></copy-btn></td></tr></table>";
+        html += codeBlock("Install", "brew tap pazer/build " + brew + "/tap.git\nbrew trust pazer/build\nbrew install pazer/build/{formula}");
         html += "</div>";
 
         html += '<div class="card"><h2>npm Registry</h2><p class="section-desc">npm-compatible registry. Packages are scoped under <code>@buildhost</code>.</p>';
@@ -588,7 +677,7 @@ pages.registries = function (): void {
 
         var projects = d.projects || [];
         if (projects.length > 0) {
-            html += '<div class="card"><h2>Projects</h2><p class="section-desc">Quick links to project-specific endpoints.</p>';
+            html += '<div class="card"><h2>Projects</h2><p class="section-desc">The command that installs each project, plus its direct-download URL.</p>';
             html += '<table class="data-table"><thead><tr><th>Project</th><th>Visibility</th><th>Direct Download</th><th>APT</th><th>Brew</th><th>npm</th></tr></thead><tbody>';
             for (var k = 0; k < projects.length; k++) {
                 var pr = projects[k];
@@ -596,12 +685,9 @@ pages.registries = function (): void {
                 html += "<tr><td><a href='#/projects/" + h(pr.name) + "'>" + h(pr.name) + "</a></td>";
                 html += "<td>" + (pr.is_private ? badge("warning", "Private") : badge("success", "Public")) + "</td>";
                 html += "<td class='endpoint-cell'><span class='url-tpl' data-tpl='" + h(prDl + "?os={os}&arch={arch}") + "'><code class='truncate'>" + h(prDl + "?os=") + "</code><select class='tpl-select tpl-select-sm' data-var='os'><option value='linux'>linux</option><option value='darwin'>darwin</option><option value='windows'>windows</option><option value='freebsd'>freebsd</option></select><code>&arch=</code><select class='tpl-select tpl-select-sm' data-var='arch'><option value='amd64'>amd64</option><option value='arm64'>arm64</option><option value='386'>386</option><option value='arm'>arm</option></select></span><copy-btn></copy-btn></td>";
-                var aptOneLiner = pr.is_private
-                    ? 'curl -fsSL -H "Authorization: Bearer $TOKEN" ' + apt + "/" + pr.name + "/install.sh | sudo BUILDHOST_TOKEN=$TOKEN sh"
-                    : "curl -fsSL " + apt + "/" + pr.name + "/install.sh | sudo sh";
-                html += "<td class='endpoint-cell'><a href='" + h(apt + "/" + pr.name + "/install.sh") + "' data-copy='" + h(aptOneLiner) + "' title='Copies the one-line install command'>" + h(apt + "/" + pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
-                html += "<td class='endpoint-cell'><a href='" + h(brew + "/" + pr.name) + "'>" + h(brew + "/" + pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
-                html += "<td class='endpoint-cell'><a href='" + h(npm + "/@buildhost/" + pr.name) + "'>" + h(npm + "/@buildhost/" + pr.name) + "</a><copy-btn data-src='a'></copy-btn></td>";
+                html += "<td class='endpoint-cell'><code class='truncate'>" + h(aptOneLiner(apt + "/" + pr.name, !!pr.is_private)) + "</code><copy-btn data-src='code'></copy-btn></td>";
+                html += "<td class='endpoint-cell'><code class='truncate'>brew install pazer/build/" + h(brewFormulaName(pr.name)) + "</code><copy-btn data-src='code'></copy-btn></td>";
+                html += "<td class='endpoint-cell'><code class='truncate'>" + h(npmInstall(svc, pr.name, "", !!pr.is_private)) + "</code><copy-btn data-src='code'></copy-btn></td>";
                 html += "</tr>";
             }
             html += "</tbody></table></div>";
@@ -742,18 +828,25 @@ const copyTempLink = function (btn: HTMLButtonElement, project: string, version:
     });
 };
 
-// dlMintLink renders a download link for a private project's artifact. A plain dl
-// link would 401, so this one mints a signed single-artifact link on click and
-// downloads it. Values are safe charsets (project/version/os/arch/fmt), so they
-// embed directly in the inline handler.
-const dlMintLink = function (project: string, version: string, os: string, arch: string, fmt: string, debug: boolean, label: string, title: string): string {
+// dlMintLink renders a download link for a private project's artifact.
+//
+// The href is still the artifact's REAL url, never "#": an anchor's href is what
+// the browser copies, shows on hover, and opens in a new tab, and a page-local
+// "#" makes all useless -- "copy link address" yielded the dashboard's own URL.
+// Following it directly asks for credentials, which is the honest answer for a
+// private artifact; the temp-link button next to it is the shareable one.
+//
+// Values are safe charsets (project/version/os/arch/fmt), so they embed directly
+// in the inline handler.
+const dlMintLink = function (url: string, project: string, version: string, os: string, arch: string, fmt: string, debug: boolean, label: string, title: string): string {
     var call = "App.downloadArtifact(this,'" + project + "','" + version + "','" + os + "','" + arch + "','" + fmt + "'," + (debug ? "true" : "false") + ")";
-    return '<a href="#" class="dl-mint" onclick="return ' + h(call) + '" title="' + h(title) + '">' + h(label) + "</a>";
+    return '<a href="' + h(url) + '" class="dl-mint" onclick="return ' + h(call) + '" title="' + h(title) + '">' + h(label) + "</a>";
 };
 
 // downloadArtifact mints a temporary signed link for exactly this artifact, then
 // triggers the download by clicking a synthetic anchor (same effect as following a
-// normal download link). Returns false so the placeholder href="#" is not used.
+// normal download link). Returns false so the browser does not ALSO follow the
+// href, which points at the unsigned url and would ask for credentials.
 const downloadArtifact = function (el: HTMLElement | null, project: string, version: string, os: string, arch: string, fmt: string, debug: boolean): boolean {
     if (demo) return false;
     var orig = el ? el.textContent : "";
@@ -891,7 +984,7 @@ pages.site = function (name: string): void {
                 html += "<td>" + h(humanSize(s.size)) + "</td>";
                 html += "<td>" + (s.git_commit ? '<code class="commit">' + h(s.git_commit.substring(0, 12)) + "</code>" : "-") + "</td>";
                 html += '<td title="' + h(formatTime(s.updated_at)) + '">' + h(timeAgo(s.updated_at)) + "</td>";
-                html += '<td><a href="' + h(siteBranchURL(sitesBase, p.name, s.branch)) + '" target="_blank">Open</a></td></tr>';
+                html += '<td><a href="' + h(siteFilesHash(p.name, s.branch)) + '">Files</a> &middot; <a href="' + h(siteBranchURL(sitesBase, p.name, s.branch)) + '" target="_blank">Open</a></td></tr>';
             }
         }
         html += "</tbody></table></div>";
@@ -900,6 +993,41 @@ pages.site = function (name: string): void {
         html += codeBlock("CLI", "buildhost publish-site \\\n  --server " + bu + " \\\n  --token $TOKEN \\\n  --project " + p.name + " \\\n  --branch {branch} \\\n  --dir ./dist");
         html += codeBlock("Delete a branch", 'curl -X DELETE \\\n  -H "Authorization: Bearer $TOKEN" \\\n  ' + bu + "/sites/" + p.name + "/branch/{branch}");
         html += "</div>";
+
+        document.getElementById("content")!.innerHTML = html;
+    });
+};
+
+pages.siteFiles = function (name: string, branch: string): void {
+    setTitle(name + "@" + branch + " - Sites");
+    renderSidebar("sites");
+    apiFetch<SiteFilesData>("/projects/" + name + "/site-files?branch=" + encodeURIComponent(branch)).then(function (d) {
+        var base = siteBranchURL((d.services || {}).sites || "", d.project.name, branch);
+        var files = d.files || [];
+
+        var html = '<h1><a href="#/sites">Sites</a> / <a href="#/sites/' + h(d.project.name) + '">' + h(d.project.name) + "</a> / <code>" + h(branch) + "</code></h1>";
+        html += '<div class="card"><table class="data-table"><thead><tr><th>Path</th><th>Size</th></tr></thead><tbody>';
+        if (files.length === 0) {
+            html += '<tr><td colspan="2" class="empty">No files</td></tr>';
+        }
+        // Files arrive sorted by path, so a directory row goes in each time the
+        // directory changes.
+        var prevDirs: string[] = [];
+        for (var i = 0; i < files.length; i++) {
+            var f = files[i]!;
+            var parts = f.path.split("/");
+            var dirs = parts.slice(0, -1);
+            var same = 0;
+            while (same < dirs.length && same < prevDirs.length && dirs[same] === prevDirs[same]) same++;
+            for (var j = same; j < dirs.length; j++) {
+                html += '<tr><td style="padding-left:' + (j * 1.25 + 0.5) + 'em"><code>' + h(dirs[j]) + "/</code></td><td></td></tr>";
+            }
+            prevDirs = dirs;
+            var url = base + parts.map(encodeURIComponent).join("/");
+            html += '<tr><td style="padding-left:' + (dirs.length * 1.25 + 0.5) + 'em"><a href="' + h(url) + '" target="_blank"><code>' + h(parts[parts.length - 1]) + "</code></a></td>";
+            html += "<td>" + h(humanSize(f.size)) + "</td></tr>";
+        }
+        html += "</tbody></table></div>";
 
         document.getElementById("content")!.innerHTML = html;
     });
@@ -941,7 +1069,7 @@ pages.artifacts = function (): void {
                 var a = artifacts[i];
                 html += "<tr><td><a href='#/projects/" + h(a.project_name) + "'>" + h(a.project_name) + "</a></td>";
                 html += "<td><a href='#/projects/" + h(a.project_name) + "/releases/" + h(a.version) + "'><code>" + h(a.version) + "</code></a></td>";
-                html += "<td>" + badge("info", a.os + "/" + a.arch) + "</td>";
+                html += "<td>" + platformBadge(a.platforms, a.exe_format, a.os, a.arch) + "</td>";
                 html += "<td>" + badge("neutral", a.kind) + "</td>";
                 html += "<td>" + (a.filename ? "<code>" + h(a.filename) + "</code>" : '<span class="muted">-</span>') + "</td>";
                 html += "<td>" + h(humanSize(a.size)) + "</td>";
@@ -1006,8 +1134,19 @@ pages.storage = function (): void {
             }
         }
         html += "</tbody></table></div>";
+
+        html += '<div class="card"><h2>Database Backup</h2>';
+        html += '<p>Downloads a consistent copy of the SQLite database, taken while the server keeps running. Blobs are not included.</p>';
+        html += '<button class="btn" onclick="App.downloadBackup(this)">Download database backup</button></div>';
         document.getElementById("content")!.innerHTML = html;
     });
+};
+
+const downloadBackup = function (btn: HTMLButtonElement): void {
+    if (demo) { alert("Could not back up (preview/demo mode has no backend)."); return; }
+    btn.disabled = true;
+    window.location.href = "/api/backup";
+    setTimeout(function () { btn.disabled = false; }, 2500);
 };
 
 pages.retention = function (): void {
@@ -1063,8 +1202,12 @@ const renderRetention = function (d: RetentionData): void {
     html += "</tbody></table>";
     html += '<div class="row-actions" style="margin-top:16px">';
     html += '<button class="btn" onclick="App.pages.retention()">Refresh preview</button> ';
+    html += '<button class="btn" title="' + h(INVENTORY_HINT) + '" onclick="App.copyInventory(this)">Copy file inventory (JSON)</button> ';
+    html += '<button class="btn" title="' + h(INVENTORY_HINT) + '" onclick="App.downloadInventory(this)">Download file inventory (JSON)</button> ';
     html += '<button class="btn btn-danger" onclick="App.runRetention()">Run garbage collection now</button>';
-    html += "</div></div>";
+    html += "</div>";
+    html += '<p class="muted" style="margin-top:8px">' + h(INVENTORY_HINT) + "</p>";
+    html += "</div>";
 
     document.getElementById("content")!.innerHTML = html;
 
@@ -1086,6 +1229,59 @@ const renderRetention = function (d: RetentionData): void {
     }
 };
 
+const INVENTORY_HINT = "Every stored file with its size, timestamp, project, version, sha256, reference count, and the reason retention keeps it — plus totals grouped by that reason.";
+
+// The inventory is a debug dump of the server's own state, so this never falls
+// back to the demo fixture on a failed request: a copied fixture would read as
+// what the server holds.
+const fetchInventory = function (): Promise<RetentionInventory> {
+    if (demo) return Promise.resolve().then(function () { return demoFetch<RetentionInventory>("/retention/inventory"); });
+    return fetch("/api/retention/inventory").then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+    });
+};
+
+// inventoryAction fetches the inventory, hands the pretty-printed JSON to run,
+// and reports the outcome on the button itself.
+const inventoryAction = function (btn: HTMLButtonElement, okLabel: string, run: (json: string, inv: RetentionInventory) => void): void {
+    var orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Collecting...";
+    fetchInventory().then(function (inv) {
+        return Promise.resolve(run(JSON.stringify(inv, null, 2), inv));
+    }).then(function () {
+        btn.textContent = okLabel;
+    }).catch(function (e: Error) {
+        btn.textContent = "Failed: " + (e && e.message ? e.message : "error");
+    }).then(function () {
+        setTimeout(function () {
+            btn.textContent = orig;
+            btn.disabled = false;
+        }, 2500);
+    });
+};
+
+const copyInventory = function (btn: HTMLButtonElement): void {
+    inventoryAction(btn, "Copied", function (json) {
+        navigator.clipboard.writeText(json);
+    });
+};
+
+const downloadInventory = function (btn: HTMLButtonElement): void {
+    inventoryAction(btn, "Downloaded", function (json, inv) {
+        var stamp = (inv.generated_at || "").replace(/\.\d+/, "").replace(/:/g, "-");
+        var url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "buildhost-retention-inventory-" + stamp + ".json";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    });
+};
+
 const runRetention = function (): void {
     if (!confirm("Permanently delete the releases shown in the preview and reclaim their storage? This cannot be undone.")) return;
     fetch("/api/retention/run", {
@@ -1102,30 +1298,170 @@ const runRetention = function (): void {
     }).catch(function () { alert("Could not run GC (preview/demo mode has no backend)."); });
 };
 
+// --- Go module proxy ---
+
+const recheckGoproxy = function (): void {
+    fetch("/api/goproxy/recheck", { method: "POST" }).then(function (res) {
+        if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); });
+        return res.json().then(function () { pages.goproxy(); });
+    }).catch(function () { alert("Could not re-check (preview/demo mode has no backend)."); });
+};
+
+pages.goproxy = function (): void {
+    setTitle("Go Proxy");
+    renderSidebar("goproxy");
+    apiFetch<GoproxyData>("/goproxy").then(function (d) {
+        if (!d.enabled || !d.state) {
+            document.getElementById("content")!.innerHTML =
+                '<h1>Go Proxy</h1><div class="card"><p class="empty">The Go module proxy is not running in this server.</p></div>';
+            return;
+        }
+        var st = d.state;
+        var hl = st.health;
+        var html = '<h1>Go Proxy</h1>';
+
+        // Health first, and loud. A proxy with no credential serves every public
+        // module and no private one, so "it is up" is not the question worth
+        // answering at the top of this page.
+        var cls = hl.healthy ? (hl.reason ? "warn" : "ok") : "bad";
+        var label = hl.healthy ? (hl.reason ? "Ready, but unproven" : "Ready") : "NOT serving private modules";
+        html += '<div class="card goproxy-health goproxy-' + cls + '">';
+        html += "<h2>" + h(label) + "</h2>";
+        if (hl.reason) html += '<p class="section-desc">' + h(hl.reason) + "</p>";
+        if (hl.probe_error) {
+            html += "<p><strong>" + h(hl.probe_error_kind || "error") + "</strong></p>";
+            html += "<pre class='goproxy-error'>" + h(hl.probe_error) + "</pre>";
+        }
+        html += '<table class="data-table"><tbody>';
+        html += "<tr><td class='info-label'>Credential</td><td>" + h(hl.credential_kind) +
+            (hl.credential_configured ? "" : " <strong>(none configured)</strong>") + "</td></tr>";
+        html += "<tr><td class='info-label'>Private prefixes</td><td>" +
+            h((hl.private_prefixes || []).join(", ") || "(none)") + "</td></tr>";
+        html += "<tr><td class='info-label'>Upstream mirror</td><td>" +
+            (hl.upstream
+                ? h(hl.upstream)
+                : "<em>none &mdash; modules outside the prefixes above are 404'd so <code>GOPROXY=&hellip;,direct</code> fetches them from their origin</em>") +
+            "</td></tr>";
+        html += "<tr><td class='info-label'>Readiness module</td><td>" +
+            (hl.readiness_module
+                ? h(hl.readiness_module) + (hl.probe_version ? " &rarr; " + h(hl.probe_version) : "")
+                : "<em>not configured &mdash; the credential's ACCESS is unproven</em>") + "</td></tr>";
+        html += "<tr><td class='info-label'>Checked</td><td>" + h(timeAgo(hl.checked_at)) + "</td></tr>";
+        html += "</tbody></table>";
+        html += '<p><button class="btn" onclick="App.recheckGoproxy()">Re-check now</button></p>';
+        html += "</div>";
+
+        var c = st.cache, t = st.traffic;
+        html += '<div class="card"><h2>Cache</h2><div class="stat-grid">';
+        html += statTile(c.modules, "Modules");
+        html += statTile(c.versions, "Versions");
+        html += statTile(c.zips, "Zips stored");
+        html += statTile(humanSize(c.bytes || 0), "Cached bytes");
+        html += statTile(c.failing_modules, "Failing modules");
+        html += "</div></div>";
+
+        html += '<div class="card"><h2>Traffic</h2><p class="section-desc">Counters since this process started; the cache figures above survive a restart.</p><div class="stat-grid">';
+        html += statTile(t.cache_hits, "Cache hits");
+        html += statTile(t.cache_misses, "Misses");
+        html += statTile(t.fetches, "Upstream fetches");
+        html += statTile(humanSize(t.bytes_sent || 0), "Bytes served");
+        html += "</div>";
+        var errs = t.errors || {};
+        var kinds = Object.keys(errs);
+        if (kinds.length > 0) {
+            html += '<table class="data-table"><thead><tr><th>Failure</th><th>Count</th></tr></thead><tbody>';
+            for (var e = 0; e < kinds.length; e++) {
+                html += "<tr><td>" + h(kinds[e]!) + "</td><td>" + h(errs[kinds[e]!]!) + "</td></tr>";
+            }
+            html += "</tbody></table>";
+        }
+        html += "</div>";
+
+        var mods = st.modules || [];
+        html += '<div class="card"><h2>Modules</h2><table class="data-table"><thead><tr><th>Module</th><th>Source</th><th>Versions</th><th>Size</th><th>Last success</th><th>Last failure</th></tr></thead><tbody>';
+        if (mods.length === 0) {
+            html += '<tr><td colspan="6" class="empty">Nothing cached yet</td></tr>';
+        } else {
+            for (var i = 0; i < mods.length; i++) {
+                var m = mods[i]!;
+                html += "<tr" + (m.last_error_kind ? ' class="goproxy-row-bad"' : "") + ">";
+                html += "<td><code>" + h(m.path) + "</code></td>";
+                html += "<td>" + h(m.source) + (m.private ? " (private)" : "") + "</td>";
+                html += "<td>" + h(m.versions) + "</td>";
+                html += "<td>" + h(humanSize(m.bytes || 0)) + "</td>";
+                html += "<td>" + h(m.last_success_at || "-") + "</td>";
+                html += "<td>" + (m.last_error_kind
+                    ? "<strong>" + h(m.last_error_kind) + "</strong><br><small>" + h(m.last_error) + "</small>"
+                    : "-") + "</td>";
+                html += "</tr>";
+            }
+        }
+        html += "</tbody></table></div>";
+
+        var recent = st.recent || [];
+        html += '<div class="card"><h2>Recent requests</h2><table class="data-table"><thead><tr><th>When</th><th>Module</th><th>Version</th><th>Endpoint</th><th>Outcome</th><th>Status</th><th>Took</th></tr></thead><tbody>';
+        if (recent.length === 0) {
+            html += '<tr><td colspan="7" class="empty">No requests yet</td></tr>';
+        } else {
+            for (var j = 0; j < recent.length; j++) {
+                var ev = recent[j]!;
+                html += "<tr" + (ev.outcome === "error" ? ' class="goproxy-row-bad"' : "") + ">";
+                html += "<td>" + h(timeAgo(ev.at)) + "</td>";
+                html += "<td><code>" + h(ev.module) + "</code></td>";
+                html += "<td>" + h(ev.version || "-") + "</td>";
+                html += "<td>" + h(ev.endpoint) + "</td>";
+                html += "<td>" + h(ev.outcome) + (ev.detail ? " (" + h(ev.detail) + ")" : "") + "</td>";
+                html += "<td>" + h(ev.status) + "</td>";
+                html += "<td>" + h(ev.duration) + "</td>";
+                html += "</tr>";
+            }
+        }
+        html += "</tbody></table></div>";
+
+        document.getElementById("content")!.innerHTML = html;
+    });
+};
+
 // --- Router ---
+
+const fail = function (err: unknown): void {
+    var msg = err instanceof Error ? err.message : String(err);
+    document.getElementById("content")!.innerHTML =
+        '<h1>Error</h1><div class="card"><p>This page could not be rendered.</p><pre><code>' +
+        h(msg) + "</code></pre></div>";
+};
 
 const route = function (): void {
     var hash = window.location.hash.replace(/^#\/?/, "") || "";
 
+    var go = function (page: () => void): void {
+        try { page(); } catch (err) { fail(err); }
+    };
+
     var releaseM = hash.match(/^projects\/(.+)\/releases\/([^\/]+)$/);
-    if (releaseM) { pages.release(releaseM[1], releaseM[2]); return; }
+    if (releaseM) { go(function () { pages.release(releaseM![1], releaseM![2]); }); return; }
 
     var projectM = hash.match(/^projects\/(.+)$/);
-    if (projectM) { pages.project(projectM[1]); return; }
+    if (projectM) { go(function () { pages.project(projectM![1]); }); return; }
+
+    var siteFilesM = hash.match(/^sites\/(.+)\/-\/files\/([^\/]+)$/);
+    if (siteFilesM) { go(function () { pages.siteFiles(siteFilesM![1], decodeURIComponent(siteFilesM![2])); }); return; }
 
     var siteM = hash.match(/^sites\/(.+)$/);
-    if (siteM) { pages.site(siteM[1]); return; }
+    if (siteM) { go(function () { pages.site(siteM![1]); }); return; }
 
     var first = hash.split("/")[0];
-    if (first === "projects") { pages.projects(); }
-    else if (first === "registries") { pages.registries(); }
-    else if (first === "sites") { pages.sites(); }
-    else if (first === "tokens") { pages.tokens(); }
-    else if (first === "oidc") { pages.oidc(); }
-    else if (first === "artifacts") { pages.artifacts(); }
-    else if (first === "storage") { pages.storage(); }
-    else if (first === "retention") { pages.retention(); }
-    else { pages.dashboard(); }
+    if (first === "projects") { go(pages.projects); }
+    else if (first === "registries") { go(pages.registries); }
+    else if (first === "sites") { go(pages.sites); }
+    else if (first === "tokens") { go(pages.tokens); }
+    else if (first === "oidc") { go(pages.oidc); }
+    else if (first === "artifacts") { go(pages.artifacts); }
+    else if (first === "storage") { go(pages.storage); }
+    else if (first === "retention") { go(pages.retention); }
+    else if (first === "goproxy") { go(pages.goproxy); }
+    else if (first === "duplicates") { go(pages.duplicates); }
+    else { go(pages.dashboard); }
 };
 
 // --- Demo data ---
@@ -1164,8 +1500,80 @@ const demoData: Record<string, unknown> = {
         base_url: "https://builds.example.com",
         services: demoServices
     },
+    "/projects/cli-tool": {
+        project: { id: 2, name: "cli-tool", description: "CLI utility", versioning: "semver", is_private: true, created_at: new Date(Date.now() - 864e5 * 10).toISOString(), updated_at: new Date(Date.now() - 86400000).toISOString() },
+        releases: [{ version: "1.2.0", git_branch: "release", git_commit: "fff000", published: true, artifact_count: 1, published_at: new Date(Date.now() - 86400000).toISOString(), created_at: new Date(Date.now() - 86400000).toISOString() }],
+        sites: [{ branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }],
+        base_url: "https://builds.example.com",
+        services: demoServices
+    },
+    "/projects/myapp/releases/3": {
+        project: { id: 1, name: "myapp", description: "Main application", versioning: "auto", is_private: false, created_at: new Date(Date.now() - 864e5 * 30).toISOString(), updated_at: new Date(Date.now() - 3600000).toISOString() },
+        release: { version: "3", published: true, git_branch: "main", git_commit: "abc123", notes: "", published_at: new Date(Date.now() - 3600000).toISOString(), created_at: new Date(Date.now() - 3600000).toISOString() },
+        artifacts: [
+            { os: "linux", arch: "amd64", kind: "binary", filename: "myapp", size: 15728640, download_count: 42, debug_storage_key: "", exe_format: "elf", platforms: [], packages: [] },
+            { os: "darwin", arch: "arm64", kind: "binary", filename: "myapp", size: 14680064, download_count: 18, debug_storage_key: "", exe_format: "macho", platforms: [], packages: [] }
+        ],
+        total_downloads: 60, total_size: 30408704,
+        base_url: "https://builds.example.com",
+        services: demoServices
+    },
+    "/projects/cli-tool/releases/1.2.0": {
+        project: { id: 2, name: "cli-tool", description: "CLI utility", versioning: "semver", is_private: true, created_at: new Date(Date.now() - 864e5 * 10).toISOString(), updated_at: new Date(Date.now() - 86400000).toISOString() },
+        release: { version: "1.2.0", published: true, git_branch: "release", git_commit: "fff000", notes: "", published_at: new Date(Date.now() - 86400000).toISOString(), created_at: new Date(Date.now() - 86400000).toISOString() },
+        artifacts: [
+            { os: "linux", arch: "amd64", kind: "binary", filename: "cli-tool", size: 10485760, download_count: 7, debug_storage_key: "", exe_format: "elf", platforms: [], packages: [] }
+        ],
+        total_downloads: 7, total_size: 10485760,
+        base_url: "https://builds.example.com",
+        services: demoServices
+    },
     "/registries": { base_url: "https://builds.example.com", services: demoServices, projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
     "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com", services: demoServices },
+    // The demo shows a repo mid-rename, which is the state this page exists for.
+    "/duplicates": {
+        groups: [{
+            repo_id: "1287579802",
+            repo: "myorg/cli-tool",
+            projects: [
+                { name: "old-cli-name/cli-tool", root: "old-cli-name", repo: "myorg/old-cli-name", releases: 31 },
+                { name: "cli-tool", root: "cli-tool", repo: "myorg/cli-tool", releases: 19 }
+            ]
+        }]
+    },
+    // The demo deliberately shows an UNHEALTHY proxy: the failure mode this page
+    // exists for (a credential that cannot read private modules while public ones
+    // keep working) is the one worth showing off in a preview.
+    "/goproxy": {
+        enabled: true,
+        state: {
+            health: {
+                healthy: false,
+                reason: "the readiness module github.com/myorg/internal-lib did not resolve",
+                credential_configured: true,
+                credential_kind: "token",
+                private_prefixes: ["github.com/myorg"],
+                upstream: "",
+                readiness_module: "github.com/myorg/internal-lib",
+                probed: true,
+                probe_error_kind: "unauthorized",
+                probe_error: "unauthorized: module github.com/myorg/internal-lib: github responded 404: the proxy's credential is presented; if the repository does exist, that credential is not authorized for it",
+                checked_at: new Date(Date.now() - 120000).toISOString()
+            },
+            cache: { modules: 3, versions: 12, zips: 9, bytes: 4_200_000, failing_modules: 1 },
+            traffic: { since_start: true, cache_hits: 148, cache_misses: 12, fetches: 12, bytes_sent: 31_000_000, errors: { unauthorized: 4, not_found: 1 } },
+            modules: [
+                { path: "github.com/myorg/internal-lib", source: "github", private: true, versions: 0, bytes: 0, last_error_kind: "unauthorized", last_error: "github responded 404 for a repository the credential is not authorized for", last_error_at: "2026-01-01 00:00:00Z", last_success_at: "", last_fetched_at: "" },
+                { path: "github.com/myorg/tools", source: "github", private: true, versions: 4, bytes: 1_100_000, last_error_kind: "", last_error: "", last_success_at: "2026-01-01 00:00:00Z", last_fetched_at: "2026-01-01 00:00:00Z" },
+                { path: "github.com/myorg/agentic-loop/go", source: "github", private: true, versions: 8, bytes: 3_100_000, last_error_kind: "", last_error: "", last_success_at: "2026-01-01 00:00:00Z", last_fetched_at: "2026-01-01 00:00:00Z" }
+            ],
+            recent: [
+                { at: new Date(Date.now() - 30000).toISOString(), module: "github.com/myorg/internal-lib", version: "", endpoint: "latest", source: "github", outcome: "error", status: 403, detail: "unauthorized", duration: "212ms" },
+                { at: new Date(Date.now() - 90000).toISOString(), module: "github.com/myorg/agentic-loop/go", version: "v0.40.0", endpoint: "zip", source: "github", outcome: "hit", status: 200, detail: "", duration: "4ms" },
+                { at: new Date(Date.now() - 150000).toISOString(), module: "github.com/myorg/tools", version: "v1.4.0", endpoint: "mod", source: "github", outcome: "fetch", status: 200, detail: "", duration: "684ms" }
+            ]
+        }
+    },
     "/tokens": [{ id: 1, name: "deploy", token_prefix: "bh_abc", is_global: false, project_id: 1, project_name: "myapp", scopes: "read,write", is_expired: false, created_at: new Date(Date.now() - 864e5 * 7).toISOString(), last_used_at: new Date(Date.now() - 3600000).toISOString() }],
     "/oidc": [{ issuer: "https://token.actions.githubusercontent.com", subject_pattern: "repo:myorg/myapp:*", audience: "", project_name: "myapp", scopes: "read,write", created_at: new Date(Date.now() - 864e5 * 14).toISOString() }],
     "/artifacts": [
@@ -1192,10 +1600,172 @@ const demoData: Record<string, unknown> = {
                 { project_name: "cli-tool", project_id: 2, branch: "feature-x", version: "3", reason: "abandoned" }
             ]
         }
+    },
+    "/retention/inventory": {
+        generated_at: new Date().toISOString(),
+        policy: { keep_n: 10, recency_hours: 24, recency_cutoff: new Date(Date.now() - 86400000).toISOString() },
+        totals: {
+            files: 4, bytes: 60817408, blobs: 3, blob_bytes: 46137344,
+            reclaimable_blobs: 1, reclaimable_bytes: 10485760,
+            held_blobs: 2, held_bytes: 35651584,
+            releases: 5, evicted_releases: 3, hold_mismatches: 0
+        },
+        by_hold: [
+            { name: "branch-tip", files: 1, bytes: 25165824, blobs: 1, blob_bytes: 25165824 },
+            { name: "shared-blob", files: 2, bytes: 25165824, blobs: 1, blob_bytes: 10485760 },
+            { name: "reclaimable", files: 1, bytes: 10485760, blobs: 1, blob_bytes: 10485760 }
+        ],
+        by_role: [
+            { name: "artifact", files: 3, bytes: 46137344, blobs: 2, blob_bytes: 35651584 },
+            { name: "debug", files: 1, bytes: 14680064, blobs: 1, blob_bytes: 10485760 }
+        ],
+        files: [
+            {
+                storage_key: "d1e5a0c2", sha256: "d1e5a0c2", role: "artifact", size: 25165824,
+                created_at: new Date(Date.now() - 3600000).toISOString(), project: "myapp", project_id: 1,
+                release_id: 9, version: "9", branch: "main", os: "linux", arch: "amd64", kind: "binary",
+                filename: "myapp", published: true, refs: 1, reclaimable: false, hold: "branch-tip"
+            },
+            {
+                storage_key: "9f4b7712", sha256: "9f4b7712", role: "artifact", size: 14680064,
+                created_at: new Date(Date.now() - 604800000).toISOString(), project: "myapp", project_id: 1,
+                release_id: 7, version: "7", branch: "main", os: "linux", arch: "amd64", kind: "binary",
+                filename: "myapp", published: true, refs: 2, reclaimable: false, hold: "shared-blob"
+            },
+            {
+                storage_key: "9f4b7712", sha256: "9f4b7712", role: "artifact", size: 14680064,
+                created_at: new Date(Date.now() - 259200000).toISOString(), project: "cli-tool", project_id: 2,
+                release_id: 4, version: "1.2.0", branch: "release", os: "linux", arch: "amd64", kind: "binary",
+                filename: "cli-tool", published: true, refs: 2, reclaimable: false, hold: "shared-blob"
+            },
+            {
+                storage_key: "5c33ae91", role: "debug", size: 10485760,
+                created_at: new Date(Date.now() - 604800000).toISOString(), project: "myapp", project_id: 1,
+                release_id: 7, version: "7", branch: "main", os: "linux", arch: "amd64", kind: "binary",
+                filename: "myapp", published: true, refs: 1, reclaimable: true, hold: ""
+            }
+        ]
     }
 };
 
+// Each demo site branch gets a file list, so every Files link in the preview reaches a page.
+for (const name of ["myapp", "cli-tool"]) {
+    const pd = demoData["/projects/" + name] as ProjectData;
+    for (const site of pd.sites) {
+        demoData["/projects/" + name + "/site-files?branch=" + encodeURIComponent(site.branch)] = {
+            services: demoServices,
+            project: pd.project,
+            site: site,
+            files: [
+                { path: "404.html", size: 512 },
+                { path: "assets/css/site.css", size: 2048 },
+                { path: "assets/js/app.js", size: 18432 },
+                { path: "index.html", size: 4096 }
+            ]
+        };
+    }
+}
+
 // --- Init ---
+
+// --- Duplicates left by a GitHub rename ---
+
+const renderMergePlan = function (p: MergePlan): string {
+    var rows = "";
+    for (var i = 0; i < p.releases.length; i++) {
+        var r = p.releases[i];
+        rows += "<tr><td>" + h(r.old_version) + "</td><td>&rarr; " + h(r.new_version) + "</td></tr>";
+    }
+    var html = "<h3>Merging " + h(p.from) + " into " + h(p.into) + "</h3>";
+    if (p.conflicts.length) {
+        html += '<div class="card"><p><strong>This merge is blocked:</strong></p><ul>';
+        for (var c = 0; c < p.conflicts.length; c++) html += "<li>" + h(p.conflicts[c]) + "</li>";
+        html += "</ul></div>";
+        return html;
+    }
+    html += "<p>" + p.releases.length + " releases move and are renumbered. " +
+        "Sites: " + p.sites + ", OCI tags: " + p.oci_tags + ", blob links: " + p.oci_blobs +
+        ", tokens: " + p.tokens + ", policies: " + p.policies + ".</p>";
+    html += "<p>Kept resolving as aliases of " + h(p.into) + ": <code>" + h(p.aliases.join(", ")) + "</code></p>";
+    if (rows) html += '<table class="table"><thead><tr><th>was</th><th>becomes</th></tr></thead><tbody>' + rows + "</tbody></table>";
+    html += '<p><button class="btn btn-danger" onclick="App.applyMerge(\'' +
+        h(p.from) + "', '" + h(p.into) + '\')">Merge ' + h(p.from) + " into " + h(p.into) + "</button></p>";
+    return html;
+};
+
+const previewMerge = function (from: string, into: string): void {
+    apiFetch<MergePlan>("/projects/" + encodeURIComponent(from) + "/merge-plan?into=" + encodeURIComponent(into))
+        .then(function (p) {
+            document.getElementById("merge-plan")!.innerHTML = renderMergePlan(p);
+        });
+};
+
+const applyMerge = function (from: string, into: string): void {
+    if (!confirm("Merge " + from + " into " + into + "? A database snapshot is written first, but the release renumbering cannot be undone without restoring it.")) return;
+    fetch("/api/projects/" + encodeURIComponent(from) + "/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ into: into })
+    }).then(function (res) {
+        return res.json().then(function (p: MergePlan) {
+            if (!res.ok || !p.applied) {
+                document.getElementById("merge-plan")!.innerHTML = renderMergePlan(p);
+                return;
+            }
+            alert("Merged " + p.from + " into " + p.into + ".\nSnapshot: " + (p.snapshot || "(none)"));
+            pages.duplicates();
+        });
+    }).catch(function () { alert("Could not merge (preview/demo mode has no backend)."); });
+};
+
+const setVersioning = function (name: string, versioning: string): void {
+    if (!confirm("Change " + name + " versioning to " + versioning + "?")) {
+        pages.project(name);
+        return;
+    }
+    fetch("/api/projects/" + encodeURIComponent(name) + "/versioning", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ versioning: versioning })
+    }).then(function (res) {
+        if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); pages.project(name); });
+        pages.project(name);
+    }).catch(function () { alert("Could not change versioning (preview/demo mode has no backend)."); pages.project(name); });
+};
+
+pages.duplicates = function (): void {
+    setTitle("Duplicates");
+    renderSidebar("duplicates");
+    apiFetch<DuplicatesData>("/duplicates").then(function (d) {
+        var html = "<h1>Duplicates</h1>";
+        if (!d.groups || !d.groups.length) {
+            html += '<div class="card"><p class="empty">No project is split across roots. Every GitHub repo maps to one namespace.</p></div>';
+            document.getElementById("content")!.innerHTML = html;
+            return;
+        }
+        html += "<p>These projects share a GitHub repo id but sit under different roots. " +
+            "A rename made each of them: the release history stayed under the old name and new publishes landed under the new one.</p>";
+        for (var g = 0; g < d.groups.length; g++) {
+            var grp = d.groups[g];
+            html += '<div class="card"><h2>' + h(grp.repo || grp.repo_id) + "</h2>";
+            html += '<table class="table"><thead><tr><th>Project</th><th>Root</th><th>Releases</th><th>Merge into</th></tr></thead><tbody>';
+            for (var p = 0; p < grp.projects.length; p++) {
+                var pr = grp.projects[p];
+                var opts = "";
+                for (var q = 0; q < grp.projects.length; q++) {
+                    if (grp.projects[q].name === pr.name) continue;
+                    opts += '<button class="btn" onclick="App.previewMerge(\'' + h(pr.name) + "', '" +
+                        h(grp.projects[q].name) + '\')">' + h(grp.projects[q].name) + "</button> ";
+                }
+                html += "<tr><td><code>" + h(pr.name) + "</code></td><td>" + h(pr.root) + "</td><td>" +
+                    pr.releases + "</td><td>" + opts + "</td></tr>";
+            }
+            html += "</tbody></table></div>";
+        }
+        html += '<div class="card" id="merge-plan"><p class="empty">Pick a merge target above to preview exactly what moves.</p></div>';
+        document.getElementById("content")!.innerHTML = html;
+    });
+};
 
 document.addEventListener("DOMContentLoaded", function () {
     if (window.location.pathname !== "/") demo = true;
@@ -1209,5 +1779,11 @@ window.addEventListener("hashchange", function () {
     route();
 });
 
+// A renderer runs inside .then(), so its failure surfaces here, not at the
+// router's try. Without this the old page stays up and the link reads as dead.
+window.addEventListener("unhandledrejection", function (ev) {
+    fail(ev.reason);
+});
+
 // Exported == reachable as App.x from the inline onclick handlers above.
-export { copyTempLink, copyText, deleteToken, downloadArtifact, editToken, pages, reloadTokens, runRetention, saveToken };
+export { applyMerge, copyInventory, copyTempLink, copyText, deleteToken, downloadArtifact, downloadBackup, downloadInventory, editToken, pages, previewMerge, recheckGoproxy, reloadTokens, runRetention, saveToken, setVersioning };

@@ -2,8 +2,6 @@ package ociclient
 
 // Test harness: a minimal in-memory fake of the buildhost OCI registry (blob
 // upload sessions, mounts, manifest PUTs) plus helpers that build on-disk OCI
-// image layouts for the push tests. It serves only what the client sends, so a
-// branch here that no push reaches is dead weight rather than coverage.
 
 import (
 	"crypto/sha256"
@@ -93,18 +91,13 @@ type fakeRegistry struct {
 	patchRange  []string
 	blobUploads []string // digests that arrived as uploaded bytes, not a mount
 
-	// failPatches makes the next N PATCH requests 500 AFTER consuming the body.
 	failPatches int
 	// statusReads counts GET upload-status requests (the resume path).
 	statusReads int
 	// mountable is the set of digests this registry will grant a cross-repo
-	// mount for (in the real server: blobs storage already holds under a
-	// project the caller can read).
 	mountable map[string]bool
 	// mounts records the digests that were mounted rather than uploaded.
-	mounts []string
-	// dropSessionsAfter, once positive, deletes the session after that many
-	// PATCH appends -- what a server restart looks like to a client.
+	mounts            []string
 	dropSessionsAfter int
 	patchCount        int
 }
@@ -197,7 +190,6 @@ func (f *fakeRegistry) handler(project string) http.Handler {
 				return
 			}
 			// The real server appends the PUT body before finalizing, which is
-			// how a blob small enough for one request is sent.
 			sess = append(sess, readAll(f.t, r)...)
 			digest := r.URL.Query().Get("digest")
 			if digestOf(sess) != digest {
@@ -214,7 +206,6 @@ func (f *fakeRegistry) handler(project string) http.Handler {
 			ref := strings.TrimPrefix(path, "manifests/")
 			body := readAll(f.t, r)
 			// Mirror the real server: every referenced blob/manifest must
-			// already be present.
 			var m imageManifest
 			require.NoError(f.t, json.Unmarshal(body, &m))
 			refs := m.Manifests

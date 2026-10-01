@@ -43,6 +43,7 @@ func tarLayout(t *testing.T, dir string, extra map[string][]byte) string {
 }
 
 func TestOpenLayout_Dir(t *testing.T) {
+	t.Serial()
 	dir, manifestDigest := buildImageLayout(t, []byte("layer-bytes"))
 	l, err := openLayout(dir)
 	require.NoError(t, err)
@@ -58,6 +59,7 @@ func TestOpenLayout_Dir(t *testing.T) {
 }
 
 func TestOpenLayout_Tarball(t *testing.T) {
+	t.Serial()
 	dir, manifestDigest := buildImageLayout(t, []byte("layer-bytes"))
 	// docker save adds legacy members; hostile names must be ignored, not extracted.
 	tarball := tarLayout(t, dir, map[string][]byte{
@@ -88,6 +90,7 @@ func TestOpenLayout_Tarball(t *testing.T) {
 }
 
 func TestOpenLayout_TarballCleanup(t *testing.T) {
+	t.Serial()
 	dir, _ := buildImageLayout(t, []byte("layer-bytes"))
 	tarball := tarLayout(t, dir, nil)
 	l, err := openLayout(tarball)
@@ -99,6 +102,7 @@ func TestOpenLayout_TarballCleanup(t *testing.T) {
 }
 
 func TestOpenLayout_Errors(t *testing.T) {
+	t.Serial()
 	_, err := openLayout(filepath.Join(t.TempDir(), "missing"))
 	assert.Error(t, err)
 
@@ -113,6 +117,7 @@ func TestOpenLayout_Errors(t *testing.T) {
 }
 
 func TestLayoutRoot_RejectsMultiImage(t *testing.T) {
+	t.Serial()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.json"),
 		[]byte(`{"manifests":[{"digest":"sha256:aa"},{"digest":"sha256:bb"}]}`), 0o644))
@@ -120,8 +125,6 @@ func TestLayoutRoot_RejectsMultiImage(t *testing.T) {
 	_, err := l.root()
 	assert.ErrorContains(t, err, "several distinct images")
 
-	// buildx writes one entry PER TAG, all naming the same digest (only the
-	// image-name annotation differs): that is ONE image and must be accepted.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.json"),
 		[]byte(`{"manifests":[{"digest":"sha256:aa","mediaType":"application/vnd.oci.image.manifest.v1+json"},{"digest":"sha256:aa","mediaType":"application/vnd.oci.image.manifest.v1+json"}]}`), 0o644))
 	root, err := l.root()
@@ -134,6 +137,7 @@ func TestLayoutRoot_RejectsMultiImage(t *testing.T) {
 }
 
 func TestBlobPath_Validation(t *testing.T) {
+	t.Serial()
 	dir, _ := buildImageLayout(t, []byte("layer-bytes"))
 	l := &layout{dir: dir}
 

@@ -26,19 +26,17 @@ type Input struct {
 	Release  db.Release
 	Artifact db.Artifact
 	// Reader streams the artifact bytes (already stripped, when stripping ran). Size is
-	// the exact number of bytes Reader yields and is the source of truth for tar/ar/npm
-	// headers, which must be written before the body -- so the two MUST agree.
 	Reader io.Reader
 	Size   int64
 	// TmpDir is scratch space for formats that must spool a member to learn its size
-	// (deb). Empty means the OS temp dir.
-	TmpDir      string
-	BaseURL     string
+	TmpDir  string
+	BaseURL string
+	// CacheSuffix distinguishes derived rows this repackage writes into
+	CacheSuffix string
 	DownloadURL func(name, version string, os db.OS, arch db.Arch, format string) string
 }
 
 // SizeUnknown marks an Output whose length is not known up front because the body is
-// streamed; the handler then omits Content-Length and the response is chunk-encoded.
 const SizeUnknown int64 = -1
 
 type Output struct {
@@ -49,9 +47,6 @@ type Output struct {
 }
 
 // streamPipe runs build in a goroutine, writing the archive into the returned reader.
-// build's return value (nil on success) propagates to the reader via CloseWithError, so
-// a failure surfaces as a read error. Closing the returned reader unblocks the writer if
-// the consumer stops early (client disconnect), so the goroutine never leaks.
 func streamPipe(build func(w io.Writer) error) io.ReadCloser {
 	pr, pw := io.Pipe()
 	go func() {
@@ -61,9 +56,6 @@ func streamPipe(build func(w io.Writer) error) io.ReadCloser {
 }
 
 // ChainClose returns rc with extra appended to its Close: closing the result closes rc
-// first (unblocking any pipe-writer goroutine), then extra. It binds the lifetime of an
-// upstream resource (e.g. the input artifact stream a repackager reads lazily) to the
-// output reader, so the input stays open until the caller is done reading the output.
 func ChainClose(rc io.ReadCloser, extra io.Closer) io.ReadCloser {
 	return &chainCloser{ReadCloser: rc, extra: extra}
 }
@@ -119,15 +111,5 @@ func (o *Orchestrator) PublishRelease(ctx context.Context, _ db.Project, release
 	return o.DB.PublishRelease(ctx, release.ID)
 }
 
-// TransformVersion identifies the byte-level transformation buildhost applies
-// to an artifact on the way out -- currently binary stripping. It is mixed into
-// every cached digest's fingerprint (Homebrew formulas' tar.gz sha256, the APT
-// Packages index' deb sha256), so changing what stripping does invalidates
-// those rows instead of leaving them describing bytes the server no longer
-// sends.
-//
-// This is not optional bookkeeping. A cached digest that disagrees with the
-// served bytes is a checksum failure in the user's face: `brew install` aborts
-// and apt reports "Hash Sum mismatch". Bump this whenever the output of a
-// download-time transformation changes for input it already handled.
-const TransformVersion = "strip-native-1"
+// TransformVersion tags every cached digest. Skip the bump and a stale digest is served forever.
+const TransformVersion = "image-staged-elf-1"

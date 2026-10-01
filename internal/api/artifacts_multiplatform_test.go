@@ -1,9 +1,5 @@
 package api
 
-// Tests for the multi-platform upload fan-out: one uploaded blob published for
-// several (os, arch) combinations via a comma list or an alias (cosmo/any) in
-// the {os}/{arch} path segments.
-
 import (
 	"context"
 	"crypto/sha256"
@@ -22,7 +18,6 @@ import (
 )
 
 // countingStore wraps a Storage and counts Put calls, proving a fan-out upload
-// streams its body to storage exactly once.
 type countingStore struct {
 	storage.Storage
 	puts int
@@ -33,8 +28,6 @@ func (c *countingStore) Put(ctx context.Context, r io.Reader) (string, int64, er
 	return c.Storage.Put(ctx, r)
 }
 
-// setupUploadTest creates a handler plus a project with one unpublished
-// release ready to receive artifact uploads.
 func setupUploadTest(t *testing.T, name string) (*Handler, *db.Project, *db.Release) {
 	t.Helper()
 	h := setupTestHandler(t)
@@ -82,6 +75,7 @@ func platformsOf(artifacts []db.Artifact) []string {
 }
 
 func TestUploadArtifact_CosmoAliasFanOut(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "cosmoproj")
 	counting := &countingStore{Storage: h.Store}
 	h.Store = counting
@@ -93,7 +87,6 @@ func TestUploadArtifact_CosmoAliasFanOut(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	assert.Equal(t, []string{"linux/amd64", "darwin/amd64", "windows/amd64"}, platformsOf(got))
 
-	// The blob was stored once; every row references that same blob.
 	assert.Equal(t, 1, counting.puts)
 	for _, a := range got {
 		assert.Equal(t, got[0].StorageKey, a.StorageKey)
@@ -109,6 +102,7 @@ func TestUploadArtifact_CosmoAliasFanOut(t *testing.T) {
 }
 
 func TestUploadArtifact_CommaListFanOut(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "commaproj")
 
 	// List elements go through NormalizeOS, so alias spellings work per element.
@@ -126,6 +120,7 @@ func TestUploadArtifact_CommaListFanOut(t *testing.T) {
 }
 
 func TestUploadArtifact_ArchAnyMatrix(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "matrixproj")
 
 	rec := doUpload(t, h, proj, "linux,windows", "any", "", "bin")
@@ -144,6 +139,7 @@ func TestUploadArtifact_ArchAnyMatrix(t *testing.T) {
 }
 
 func TestUploadArtifact_OSAnyArchAnyFullMatrix(t *testing.T) {
+	t.Serial()
 	h, proj, _ := setupUploadTest(t, "fullmatrix")
 
 	rec := doUpload(t, h, proj, "any", "any", "", "bin")
@@ -158,9 +154,8 @@ func TestUploadArtifact_OSAnyArchAnyFullMatrix(t *testing.T) {
 	}, platformsOf(got))
 }
 
-// A single canonical os/arch keeps today's response byte-for-byte: one JSON
-// object (not a one-element array) with the same fields.
 func TestUploadArtifact_SingleOSResponseShapeUnchanged(t *testing.T) {
+	t.Serial()
 	h, proj, _ := setupUploadTest(t, "singleproj")
 
 	rec := doUpload(t, h, proj, "linux", "amd64", "", "bin")
@@ -178,6 +173,7 @@ func TestUploadArtifact_SingleOSResponseShapeUnchanged(t *testing.T) {
 // A single aliased element normalizes (upload now accepts the same spellings
 // the download path does) and still responds with the single-object shape.
 func TestUploadArtifact_SingleAliasNormalized(t *testing.T) {
+	t.Serial()
 	h, proj, _ := setupUploadTest(t, "aliasproj")
 
 	rec := doUpload(t, h, proj, "macos", "x86_64", "", "bin")
@@ -193,6 +189,7 @@ func TestUploadArtifact_SingleAliasNormalized(t *testing.T) {
 }
 
 func TestUploadArtifact_InvalidListElement(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "badelem")
 
 	rec := doUpload(t, h, proj, "linux,bados", "amd64", "", "bin")
@@ -214,6 +211,7 @@ func TestUploadArtifact_InvalidListElement(t *testing.T) {
 }
 
 func TestUploadArtifact_DuplicateListElement(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "dupelem")
 
 	rec := doUpload(t, h, proj, "linux,linux", "amd64", "", "bin")
@@ -235,9 +233,8 @@ func TestUploadArtifact_DuplicateListElement(t *testing.T) {
 }
 
 // A fan-out that collides with an existing row on ANY combination mirrors the
-// single re-PUT semantics (409) per row -- and creates nothing, so the client
-// can resolve the conflict and retry the identical request.
 func TestUploadArtifact_MultiConflictAtomic(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "conflictproj")
 	ctx := context.Background()
 
@@ -262,9 +259,8 @@ func TestUploadArtifact_MultiConflictAtomic(t *testing.T) {
 // registers artifact row(s) for a blob the project already uploaded, without
 // re-sending the bytes.
 
-// TestUploadArtifact_HashRefRegistersExistingBlob is the happy path: one full
-// upload, then a second slot registered by reference with its own filename.
 func TestUploadArtifact_HashRefRegistersExistingBlob(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "hashref")
 	counting := &countingStore{Storage: h.Store}
 	h.Store = counting
@@ -292,7 +288,6 @@ func TestUploadArtifact_HashRefRegistersExistingBlob(t *testing.T) {
 	assert.NotZero(t, ref.ID)
 
 	// Each slot's request carries its own filename (unlike fan-out, which
-	// stamps one header across every row).
 	assert.Equal(t, "tool_linux_amd64", full.Filename)
 	assert.Equal(t, "tool_windows_amd64.exe", ref.Filename)
 
@@ -306,6 +301,7 @@ func TestUploadArtifact_HashRefRegistersExistingBlob(t *testing.T) {
 // A hash-reference composes with the {os}/{arch} fan-out grammar: the
 // referenced blob fans out to the same combination set a full upload would.
 func TestUploadArtifact_HashRefComposesWithFanOut(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "hashreffan")
 	counting := &countingStore{Storage: h.Store}
 	h.Store = counting
@@ -332,6 +328,7 @@ func TestUploadArtifact_HashRefComposesWithFanOut(t *testing.T) {
 }
 
 func TestUploadArtifact_HashRefUnknownBlob404(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "hashrefmiss")
 
 	rec := doUpload(t, h, proj, "linux", "amd64", "?upload_sha256="+strings.Repeat("ab", 32), "")
@@ -343,6 +340,7 @@ func TestUploadArtifact_HashRefUnknownBlob404(t *testing.T) {
 }
 
 func TestUploadArtifact_HashRefMalformedHash400(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "hashrefbad")
 
 	for _, bad := range []string{"nothex", strings.Repeat("g", 64), strings.Repeat("ab", 31)} {
@@ -359,6 +357,7 @@ func TestUploadArtifact_HashRefMalformedHash400(t *testing.T) {
 // files), so knowing a hash must never let another project mint a row serving
 // the blob -- and the refusal must be indistinguishable from an unknown blob.
 func TestUploadArtifact_HashRefCrossProject404(t *testing.T) {
+	t.Serial()
 	h, projA, _ := setupUploadTest(t, "hashrefowner")
 
 	rec := doUpload(t, h, projA, "linux", "amd64", "", "private-bytes")
@@ -388,6 +387,7 @@ func TestUploadArtifact_HashRefCrossProject404(t *testing.T) {
 // A blob the store no longer holds (garbage-collected after its rows were
 // evicted) must miss cleanly instead of creating a dangling row.
 func TestUploadArtifact_HashRefBlobGone404(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "hashrefgone")
 
 	rec := doUpload(t, h, proj, "linux", "amd64", "", "ephemeral")
@@ -405,9 +405,8 @@ func TestUploadArtifact_HashRefBlobGone404(t *testing.T) {
 	assert.Len(t, rows, 1, "only the original full-upload row exists")
 }
 
-// Hash-ref conflicts mirror full-upload conflicts: 409 naming the
-// combination, and a multi-combination request creates nothing.
 func TestUploadArtifact_HashRefConflictAtomic(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "hashrefconflict")
 
 	rec := doUpload(t, h, proj, "linux", "amd64", "", "conflict-bytes")
@@ -429,6 +428,7 @@ func TestUploadArtifact_HashRefConflictAtomic(t *testing.T) {
 // uploads middleware resolves the session before routing; at the handler
 // level the session parameter must simply not trigger the hash-ref branch.)
 func TestUploadArtifact_HashRefExcludedBySessionParam(t *testing.T) {
+	t.Serial()
 	h, proj, _ := setupUploadTest(t, "hashrefsession")
 
 	rec := doUpload(t, h, proj, "linux", "amd64", "", "real-bytes")
@@ -441,7 +441,6 @@ func TestUploadArtifact_HashRefExcludedBySessionParam(t *testing.T) {
 	require.Equal(t, http.StatusCreated, rec.Code)
 
 	// The handler stored the (empty) request body -- it did not resolve the
-	// referenced blob.
 	var got db.Artifact
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	emptySum := sha256.Sum256(nil)
@@ -452,6 +451,7 @@ func TestUploadArtifact_HashRefExcludedBySessionParam(t *testing.T) {
 // A body-carrying PUT with upload_sha256 keeps today's behavior byte for
 // byte: the parameter is ignored and the body is stored as sent.
 func TestUploadArtifact_HashParamWithBodyIgnored(t *testing.T) {
+	t.Serial()
 	h, proj, _ := setupUploadTest(t, "hashrefbody")
 
 	rec := doUpload(t, h, proj, "linux", "amd64", "?upload_sha256="+strings.Repeat("ab", 32), "actual-bytes")
@@ -467,6 +467,7 @@ func TestUploadArtifact_HashParamWithBodyIgnored(t *testing.T) {
 // The npm-package sentinel row keeps its literal os=any/arch=any semantics:
 // "any" must not fan out for that kind.
 func TestUploadArtifact_NPMPackageAnySentinelUnchanged(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "npmproj")
 
 	rec := doUpload(t, h, proj, "any", "any", "?kind=npm-package", "tarball")

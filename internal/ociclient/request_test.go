@@ -1,6 +1,5 @@
 // Tests for newRequest (upload.go): every upload body the pusher sends must
 // carry a GetBody, or net/http declines to retry it after a mid-flight stream
-// error and one hiccup fails the publish.
 package ociclient
 
 import (
@@ -27,6 +26,7 @@ func readAllFromGetBody(t *testing.T, req *http.Request) string {
 }
 
 func TestNewRequestRewindsAFileBody(t *testing.T) {
+	t.Serial()
 	path := filepath.Join(t.TempDir(), "blob")
 	require.NoError(t, os.WriteFile(path, []byte("layer-bytes"), 0o600))
 	f, err := os.Open(path)
@@ -37,8 +37,6 @@ func TestNewRequestRewindsAFileBody(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(11), req.ContentLength)
 
-	// Drain it once, as a first attempt would, then prove a replay still sees
-	// the whole blob rather than nothing.
 	_, err = io.ReadAll(f)
 	require.NoError(t, err)
 	assert.Equal(t, "layer-bytes", readAllFromGetBody(t, req))
@@ -48,6 +46,7 @@ func TestNewRequestRewindsAFileBody(t *testing.T) {
 // A chunk is a section reader anchored partway into the blob, and a replay has
 // to return that chunk -- not the start of the file.
 func TestNewRequestRewindsAChunkToItsOwnStart(t *testing.T) {
+	t.Serial()
 	path := filepath.Join(t.TempDir(), "blob")
 	require.NoError(t, os.WriteFile(path, []byte("0123456789"), 0o600))
 	f, err := os.Open(path)
@@ -64,6 +63,7 @@ func TestNewRequestRewindsAChunkToItsOwnStart(t *testing.T) {
 }
 
 func TestNewRequestLeavesABodylessRequestAlone(t *testing.T) {
+	t.Serial()
 	req, err := newRequest(http.MethodHead, "https://registry.example/v2/p/blobs/sha256:abc", nil, 0)
 	require.NoError(t, err)
 	assert.Empty(t, req.Header.Get("Content-Type"))

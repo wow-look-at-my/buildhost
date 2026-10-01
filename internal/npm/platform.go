@@ -16,7 +16,6 @@ import (
 
 // latestVersion returns the version the npm "latest" dist-tag should point at:
 // the apex (default-branch-aware) latest published release. Returns "" when none
-// resolves, so callers keep their highest-version fallback.
 func (h *Handler) latestVersion(ctx context.Context, project *db.Project) string {
 	rel, err := h.DB.GetLatestRelease(ctx, project.ID)
 	if err != nil || rel == nil {

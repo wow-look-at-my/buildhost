@@ -18,6 +18,7 @@ import (
 // provision: auto-provisioning is a write-only action, so a GET can never
 // materialize a project as a side effect.
 func TestRequireProject_ReadAccess_NeverAutoProvisions(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -42,11 +43,8 @@ func TestRequireProject_ReadAccess_NeverAutoProvisions(t *testing.T) {
 
 // TestRequireProject_WriteMissingProject_RejectedOIDC_ExplainsReason proves a
 // write to a not-yet-existing project whose JWT was rejected (e.g. org not in
-// the allowlist) returns a 401 that names the reason -- not a bare "project not
-// found" 404. The 404 masked an OIDC org-allowlist rejection as a missing
-// project, which is what made the PazerOP/scratch preview failure so opaque. The
-// project must not be created.
 func TestRequireProject_WriteMissingProject_RejectedOIDC_ExplainsReason(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -92,6 +90,7 @@ func (r publicReadRouteInfo) AllowsPublicRead(context.Context, *db.DB, *db.Proje
 // served without a token even under a private project, while a non-public read
 // of the same project still requires auth.
 func TestRequireProject_PublicRead_ServesPrivateProjectWithoutToken(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	require.NoError(t, d.CreateProject(context.Background(),
@@ -115,8 +114,8 @@ func TestRequireProject_PublicRead_ServesPrivateProjectWithoutToken(t *testing.T
 
 // TestRequireProject_HiddenReadAccess_PrivateProject_Returns404 proves
 // HiddenReadAccess hides a private project from an unauthorized caller behind a
-// 404 (not the 401 ReadAccess returns), so its existence never leaks.
 func TestRequireProject_HiddenReadAccess_PrivateProject_Returns404(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 
@@ -135,6 +134,5 @@ func TestRequireProject_HiddenReadAccess_PrivateProject_Returns404(t *testing.T)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	// Identical to an unknown project: 404, not 401/403.
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }

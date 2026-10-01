@@ -18,15 +18,13 @@ import (
 )
 
 func TestDownload_PrivateProjectRedirectCarriesSignedToken(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "secretapp", true)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
 	seedArtifact(t, d, store, rel.ID, "linux", "amd64", "bin")
 
 	// The route is ReadAccess-gated, so reaching the handler means the caller
-	// authenticated. Clients drop the Authorization header on the cross-host
-	// redirect to static, so the Location must authorize itself: a signed
-	// token bound to exactly this artifact tuple.
 	req := makeRequest("secretapp", url.Values{
 		"v": {"1.0.0"}, "os": {"linux"}, "arch": {"amd64"}, "fmt": {"tar.gz"},
 	})
@@ -35,7 +33,6 @@ func TestDownload_PrivateProjectRedirectCarriesSignedToken(t *testing.T) {
 	h.Download(rec, req)
 
 	// Never a permanent, never a cacheable redirect: the Location embeds a
-	// live short-lived credential.
 	assert.Equal(t, http.StatusFound, rec.Code)
 	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
 
@@ -50,6 +47,7 @@ func TestDownload_PrivateProjectRedirectCarriesSignedToken(t *testing.T) {
 }
 
 func TestDownload_PrivateLatestRedirectAlsoSigned(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "secretapp", true)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -67,6 +65,7 @@ func TestDownload_PrivateLatestRedirectAlsoSigned(t *testing.T) {
 }
 
 func TestDownload_PublicProjectRedirectStaysTokenFree(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -82,6 +81,7 @@ func TestDownload_PublicProjectRedirectStaysTokenFree(t *testing.T) {
 }
 
 func TestDownload_NormalizesPlatformAliases(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)

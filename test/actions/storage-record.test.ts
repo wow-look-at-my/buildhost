@@ -134,4 +134,9 @@ async function main(): Promise<void> {
 	console.log('storage-record: all checks passed');
 }
 
-await main();
+// Node runs this file directly, so the rejection has to become an exit code
+// here: an unhandled one prints a warning and still exits 0 on some versions.
+main().catch((err: unknown) => {
+	console.error(err);
+	process.exit(1);
+});

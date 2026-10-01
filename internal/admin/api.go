@@ -9,6 +9,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/sites"
 )
 
 func (s *Server) apiSidebar(w http.ResponseWriter, r *http.Request) {
@@ -185,12 +186,19 @@ func (s *Server) apiRelease(w http.ResponseWriter, r *http.Request) {
 
 	type artifactView struct {
 		db.ListArtifactDetailsWithDownloadsRow
-		Packages []db.ListPackagedFormatsRow `json:"packages"`
+		Packages  []db.ListPackagedFormatsRow `json:"packages"`
+		Platforms []db.Platform               `json:"platforms"`
 	}
 	artifacts := make([]artifactView, len(rows))
 	var totalSize int64
 	for i, a := range rows {
-		artifacts[i] = artifactView{ListArtifactDetailsWithDownloadsRow: a, Packages: pkgs[i]}
+		platforms, err := s.db.ArtifactPlatforms(ctx, a.ID)
+		if err != nil {
+			slog.Error("admin api error", "err", err, "path", r.URL.Path)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		artifacts[i] = artifactView{ListArtifactDetailsWithDownloadsRow: a, Packages: pkgs[i], Platforms: platforms}
 		totalSize += a.Size
 	}
 
@@ -240,6 +248,53 @@ func (s *Server) apiSites(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// apiSiteFiles lists the files of a single site branch. The branch is a
+// query parameter because a branch name can hold a slash.
+func (s *Server) apiSiteFiles(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	branch := r.URL.Query().Get("branch")
+	if branch == "" {
+		http.Error(w, "missing branch query parameter", http.StatusBadRequest)
+		return
+	}
+
+	project, err := s.db.GetProject(ctx, r.PathValue("name"))
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	site, err := s.db.GetSite(ctx, project.ID, branch)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	files, err := sites.ListFiles(ctx, s.store, site.StorageKey)
+	if err != nil {
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	s.writeJSON(w, map[string]any{
+		"project":  project,
+		"site":     site,
+		"files":    files,
+		"services": serviceURLs(r),
+	})
+}
+
 func (s *Server) apiOIDC(w http.ResponseWriter, r *http.Request) {
 	policies, err := s.db.ListOIDCPolicyDetails(r.Context())
 	if err != nil {
@@ -254,14 +309,14 @@ func (s *Server) apiOIDC(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) apiArtifacts(w http.ResponseWriter, r *http.Request) {
-	artifacts, err := s.db.ListAllArtifacts(r.Context())
+	artifacts, err := s.db.ListAllArtifactsWithPlatforms(r.Context())
 	if err != nil {
 		slog.Error("admin api error", "err", err, "path", r.URL.Path)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if artifacts == nil {
-		artifacts = []db.AllArtifact{}
+		artifacts = []db.AllArtifactWithPlatforms{}
 	}
 	s.writeJSON(w, artifacts)
 }
@@ -296,7 +351,6 @@ func (s *Server) apiStorage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Upper-bound estimate of what keep-N eviction would free (does not subtract
-	// dedup-shared blobs). Omitted on error so the endpoint still returns.
 	cutoff := time.Now().Add(-s.cfg.RetentionRecencyGuard)
 	if reclaimable, err := s.db.SumReclaimableBytes(r.Context(), int64(s.cfg.RetentionKeepN), cutoff); err == nil {
 		resp["reclaimable_bytes"] = reclaimable

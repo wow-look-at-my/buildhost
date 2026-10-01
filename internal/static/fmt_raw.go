@@ -23,10 +23,6 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 	debug := r.URL.Query().Get("debug") == "1"
 
 	// Whether this artifact can be stripped is a property of the ARTIFACT, not
-	// of the host: stripping is in-process now, but only ELF can be stripped.
-	// Peek the magic before deciding, so a non-ELF artifact (a Cosmopolitan
-	// APE, a Mach-O, a script) skips the spool-to-disk entirely and keeps the
-	// zstd passthrough below.
 	strippable := false
 	if peek, _, err := ctx.Store.Get(r.Context(), ctx.Artifact.StorageKey); err == nil {
 		strippable = strip.LooksELF(peek)
@@ -39,8 +35,6 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 
 	// The header answers "can I fetch symbols for THIS artifact?", which is
 	// only true when it is an ELF we can split. It used to report whether the
-	// host had binutils -- which in the production image meant every download
-	// said "unavailable" and no one noticed for weeks.
 	if strippable {
 		w.Header().Set("X-Debug-Symbols", "available")
 	} else {
@@ -48,10 +42,6 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 	}
 
 	// The raw artifact can be served either decompressed (identity) or, when the
-	// client accepts it, as the stored zstd blob passed through untouched. Tell
-	// caches the body varies on Accept-Encoding so a shared CDN never hands a zstd
-	// body to a client that didn't ask for one (or an identity body to one that
-	// has only the zstd variant cached).
 	w.Header().Set("Vary", "Accept-Encoding")
 
 	// zstd passthrough: when we are not stripping (stripping needs the real ELF
@@ -94,7 +84,6 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 			return nil
 		}
 		// Stripping failed on something that looked like an ELF: serve it
-		// untouched, but log it -- silence here is what hid the breakage.
 		strip.LogSkipped(r.Context(), ctx.Artifact.StorageKey, serr)
 		rc.Close()
 		rc, size, err = ctx.Store.Get(r.Context(), ctx.Artifact.StorageKey)
@@ -112,9 +101,6 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 }
 
 // acceptsZstd reports whether an Accept-Encoding header lists zstd with a
-// non-zero q-value. A client must name zstd explicitly (we do not honor "*"), so
-// buildhost only ever sends Content-Encoding: zstd to a client that can decode
-// it -- curl --compressed names every codec it was built with.
 func acceptsZstd(accept string) bool {
 	for _, part := range strings.Split(accept, ",") {
 		name, params, _ := strings.Cut(strings.TrimSpace(part), ";")

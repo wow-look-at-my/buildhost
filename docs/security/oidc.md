@@ -1,104 +1,54 @@
 # OIDC trust model
 
-Extracted verbatim from CLAUDE.md; paragraph breaks were added at the existing
-topic boundaries, no wording changed.
+Extracted verbatim from CLAUDE.md. Paragraph breaks go at the existing topic boundaries. No wording changed.
 
-JWT-based auth for GitHub Actions (and any OIDC provider), keys fetched from the
-issuer's JWKS endpoint.
+JWT-based auth for GitHub Actions, and for any OIDC provider. The keys come from the issuer's JWKS endpoint.
 
 ## Auto-provisioning
 
-Trusted issuers (BUILDHOST_OIDC_ISSUERS) can create projects on first publish --
-project name derived from JWT subject claim; a repo's token is authorized for its
-own project and any `<repo>/<...>` sub-namespace (multi-binary repos publish each
-binary to `<repo>/<binary>`, e.g. `log-streamer/client`); org allowlist
-(BUILDHOST_OIDC_ORGS, matched case-insensitively, use `*` to allow all), event
-allowlist (BUILDHOST_OIDC_EVENTS, defaults to `push,pull_request,workflow_dispatch`
--- all three imply write access to the repo: a push/same-repo PR comes from a
-member and fork PRs get no OIDC token, and `workflow_dispatch` (a manual run) can
-only be triggered by a user with repo write access).
+A trusted issuer (`BUILDHOST_OIDC_ISSUERS`) can create a project on the first publish. The project name comes from the JWT subject claim. A repo's token is authorized for its own project and for any `<repo>/<...>` sub-namespace. A multi-binary repo therefore publishes each binary to `<repo>/<binary>`, such as `log-streamer/client`.
 
-Project name derived from subject claim (repo:org/name:* -> name), lowercased and
-validated against `[a-z0-9][a-z0-9._-]{0,127}`. Authorized for read,write on that
-repo's whole namespace -- project `R` plus any slash-namespaced `R/<...>` beneath
-it (so a multi-binary repo publishes `R/<binary>` for each binary), gated by a
-trailing-slash boundary so sibling prefixes (`R-evil`) and unrelated projects are
-refused. `requireProject` validates an auto-created namespaced name per-segment
-before creating it. Optional BUILDHOST_OIDC_ORGS allowlist restricts which orgs can
-auto-provision.
+Two allowlists gate this path. `BUILDHOST_OIDC_ORGS` is the org allowlist. It matches case-insensitively, and `*` allows every org. `BUILDHOST_OIDC_EVENTS` is the event allowlist. It defaults to `push,pull_request,workflow_dispatch`.
 
-**Provisioning is write-only**: `requireProject` only creates a missing project
-for a `WriteAccess` route (the publish POST/PUT flow, docker push, site deploy). A
-read (`ReadAccess`/`HiddenReadAccess`: dl/static/apt/brew/npm and the web
-frontend) never provisions -- a GET 404s instead, so it can never materialize a
-project as a side effect.
+All three default events imply write access to the repo. A push comes from a member. A fork PR gets no OIDC token, so `pull_request` means a same-repo PR. Only a user with repo write access can trigger a manual `workflow_dispatch` run.
 
-**OIDC_ORGS wildcard risk**: Setting `BUILDHOST_OIDC_ORGS=*` allows any GitHub org
-to auto-provision projects. Since project names are derived from repo names, any
-repo in any org with the same name as an existing project would derive the same
-project name. The first push creates the project; subsequent pushes from other
-orgs are blocked by `AuthorizedForProjectName`. However, avoid
-`BUILDHOST_OIDC_ORGS=*` in production -- scope the allowlist to trusted orgs only.
+The project name comes from the subject claim (`repo:org/name:*` gives `name`). It is lowercased and validated against `[a-z0-9][a-z0-9._-]{0,127}`. The token is authorized to read and write that repo's whole namespace. That namespace is project `R` plus any slash-namespaced `R/<...>` beneath it. A trailing-slash boundary gates the match, so a sibling prefix such as `R-evil` is refused. An unrelated project is refused too. `requireProject` validates an auto-created namespaced name per segment before it creates the project.
+
+**Provisioning is write-only.** `requireProject` creates a missing project only for a `WriteAccess` route. Those routes are the publish POST and PUT flow, the docker push, and the site deploy. A read never provisions. `ReadAccess` and `HiddenReadAccess` cover `dl`, `static`, `apt`, `brew`, `npm` and the web frontend. A GET returns 404 instead, so a read can never materialize a project as a side effect.
+
+**The `BUILDHOST_OIDC_ORGS` wildcard carries a risk.** A value of `*` lets any GitHub org auto-provision a project. Project names come from repo names. A repo in any org therefore derives the same project name as an existing project of the same name. The first push creates the project. `AuthorizedForProjectName` blocks every later push from another org. Avoid `*` in production. Scope the allowlist to trusted orgs only.
 
 ## Audience check
 
-The auto-provisioning path does NOT gate on the token's `aud` claim -- trust for a
-trusted-issuer token comes from the JWKS signature plus the org allowlist
-(`BUILDHOST_OIDC_ORGS`), the event allowlist (`BUILDHOST_OIDC_EVENTS`), and the
-subject claim. (Telling the server its own URL was never a meaningful trust
-boundary, and a stale/missing value caused a production 401 outage, so the gate
-was removed.) A per-policy `audience` field on an `OIDCPolicy` is still honored as
-an optional, opt-in restriction for explicitly configured policies. The server is
-never told its own URL: generated links are derived per request from the `Host`
-header (`auth.RequestBaseURL`).
+The auto-provisioning path does NOT gate on the token's `aud` claim. Trust for a trusted-issuer token comes from the JWKS signature, the org allowlist (`BUILDHOST_OIDC_ORGS`), the event allowlist (`BUILDHOST_OIDC_EVENTS`), and the subject claim. To tell the server its own URL was never a meaningful trust boundary. A stale or missing value also caused a production 401 outage, so the gate was removed. A per-policy `audience` field on an `OIDCPolicy` is still honored. It is an optional, opt-in restriction for an explicitly configured policy. The server is never told its own URL. Every generated link comes from the request `Host` header (`auth.RequestBaseURL`).
 
 ## Event check
 
-Tokens without an `event_name` claim are rejected when `BUILDHOST_OIDC_EVENTS` is
-configured (default: `push,pull_request,workflow_dispatch`). This prevents bypass
-via providers that omit the claim. The default set is deliberately limited to
-events that imply the actor has write access to the repo: fork PRs in GitHub
-Actions do not receive OIDC tokens (so `pull_request` means a same-repo, i.e.
-member, PR), and GitHub only lets users with write access trigger a manual
-`workflow_dispatch` run -- so `workflow_dispatch` carries the same write-access
-guarantee as `push` and is safe to include by default (it makes manual
-release/publish dispatches auto-provision out of the box).
+A token without an `event_name` claim is rejected when `BUILDHOST_OIDC_EVENTS` is configured. The default is `push,pull_request,workflow_dispatch`. This blocks a bypass through a provider that omits the claim.
+
+The default set holds only events that imply the actor has write access to the repo. A fork PR in GitHub Actions receives no OIDC token, so `pull_request` means a same-repo PR from a member. GitHub lets only a user with write access trigger a manual `workflow_dispatch` run. `workflow_dispatch` therefore carries the same write-access guarantee as `push`. It is safe to include by default. It also makes a manual release or publish dispatch auto-provision out of the box.
 
 ## Repo-identity pinning (rename/resurrection guard)
 
-GitHub owner/repo NAMES are reusable -- delete or rename a repo and a stranger can
-re-register the name and mint valid OIDC tokens for the same `owner/repo` -- but
-GitHub's numeric IDs are not, which is why immutable subject claims (repos created
-after 2026-07-15) carry them (`repo:OWNER@OWNERID/REPO@REPOID:...`) alongside the
-long-standing `repository_id`/`repository_owner_id` claims. Verification prefers
-the dedicated claims (`repository`, `repository_owner`, `*_id`) over subject
-parsing and falls back to the subject's `@id` suffixes (`splitImmutableID`; names
-keep matching allowlists/projects, classic subjects parse byte-identically).
+A GitHub owner name and repo name are reusable. A stranger can delete or rename a repo, re-register the name, and mint a valid OIDC token for the same `owner/repo`. GitHub's numeric IDs are not reusable. An immutable subject claim therefore carries them (`repo:OWNER@OWNERID/REPO@REPOID:...`), for a repo created after the immutable-subject rollout. The long-standing `repository_id` and `repository_owner_id` claims carry them too.
 
-The middleware pins the IDs on the project
-(`projects.github_owner_id`/`github_repo_id`, migration 014): recorded at
-provisioning, or on the first ID-bearing PUBLISH for pre-existing projects (trust
-on first use; reads never mutate). Any later OIDC request whose token carries
-DIFFERENT IDs is refused -- 403 with an explicit "renamed or re-created
-(resurrected) repository may not take over an existing project" error (canonical
-404 on HiddenReadAccess so existence still never leaks) -- read or write, so a
-resurrected repo can neither publish to nor read a private predecessor's project.
+Verification prefers the dedicated claims (`repository`, `repository_owner`, and the `*_id` pair) over subject parsing. It falls back to the subject's `@id` suffixes (`splitImmutableID`). A name still matches an allowlist and a project. A classic subject parses byte-identically.
 
-Tokens WITHOUT IDs (issuers minting neither the claims nor immutable subjects) are
-deliberately not rejected: they already passed the issuer/org/event gates, and
-GitHub mints ID claims for all repos anyway. `BUILDHOST_OIDC_ORGS` entries may
-optionally pin the org's account ID as `name@id` (matches by name AND id, refusing
-ID-less tokens); plain-name entries keep matching any id, with the per-project pin
-providing the takeover protection. An operator repointing a project at a
-legitimately re-created repo must clear/re-pin the recorded IDs by hand
-(deliberate).
+The middleware pins the IDs on the project (`projects.github_owner_id` and `github_repo_id`, migration 014). It records them at provisioning. For a pre-existing project it records them on the first ID-bearing PUBLISH, which is trust on first use. A read never mutates them.
+
+Any later OIDC request whose token carries a DIFFERENT REPO id is refused. The answer is a 403 with an explicit "renamed or re-created (resurrected) repository may not take over an existing project" error. A `HiddenReadAccess` route answers with the canonical 404 instead, so existence still never leaks. The refusal covers a read and a write. A resurrected repo can therefore neither publish to nor read a private predecessor's project.
+
+The repo id alone decides that. It is the identifier of the repository itself. It survives a rename and a TRANSFER to another owner. It changes only when somebody deletes the repository and makes it again. A token whose OWNER id moved under an unchanged repo id is therefore the same repository under a new owner. Such a request is allowed. A write moves the owner pin with it, and logs "OIDC repo transfer re-pinned". A read is allowed and pins nothing. To refuse that case makes every ordinary org transfer need a hand edit of the database.
+
+A token WITHOUT IDs is deliberately not rejected. Such an issuer mints neither the claims nor an immutable subject. The token already passed the issuer, org and event gates. GitHub mints ID claims for every repo anyway.
+
+A `BUILDHOST_OIDC_ORGS` entry may optionally pin the org's account ID as `name@id`. That form matches by name AND id, and it refuses an ID-less token. A plain-name entry keeps matching any id. The per-project pin provides the takeover protection there.
+
+An operator who repoints a project at a legitimately RE-CREATED repo must clear or re-pin the recorded IDs by hand. That is deliberate. A re-created repo has a new repo id, which is exactly what the guard cannot tell apart from a takeover. A transfer needs no such edit.
 
 ## Smaller items
 
-- **OIDC SSRF**: jwks_uri is validated to match the issuer's host and require
-  HTTPS (loopback exempted for tests)
-- **OIDC issuer scheme**: fetchJWKS requires HTTPS for non-loopback issuers
-- **OIDC RSA key size**: JWKS keys below 2048 bits are rejected
-- **OIDC visibility sync**: When an OIDC token's `repository_visibility` claim
-  changes project visibility, the change is logged at WARN level with project
-  name, old/new visibility, and OIDC subject
+- **OIDC SSRF**: `jwks_uri` must match the issuer's host and must use HTTPS. Loopback is exempt, for tests.
+- **OIDC issuer scheme**: `fetchJWKS` requires HTTPS for a non-loopback issuer.
+- **OIDC RSA key size**: a JWKS key below 2048 bits is rejected.
+- **OIDC visibility sync**: a change of project visibility from a token's `repository_visibility` claim is logged at WARN level. The log line carries the project name, the old and new visibility, and the OIDC subject.

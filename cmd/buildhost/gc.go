@@ -62,12 +62,6 @@ var gcCmd = &cobra.Command{
 // artifact-metadata storage records, authenticating as buildhost itself.
 //
 // RegistryURL must match the registry_url the publishing CI recorded, which is
-// buildhost's own public base URL. The server is otherwise never told its own
-// URL (every generated link is derived from the request Host), but a background
-// sweep has no request to derive one from -- so this is the one place it needs
-// configuring, and BUILDHOST_PRIMARY_DOMAIN already names that apex. When it is
-// unset the deleter still runs and fails loudly per record rather than
-// silently leaving the org's page stale.
 func recordDeleterFor(cfg config.Config) retention.RecordDeleter {
 	registry := ""
 	if cfg.PrimaryDomain != "" {
@@ -100,8 +94,6 @@ func printGCReport(rep retention.Report, settings db.RetentionSettings) {
 
 	// An evicted artifact whose storage record still says "stored" is a lie on
 	// the org's linked artifacts page, so the numbers are always printed --
-	// including the zero case, so a run that retracted nothing cannot be read
-	// as a run that had nothing to retract.
 	if rep.Enforced {
 		fmt.Printf("  storage records marked deleted: %d (%d could not be marked)\n", rep.RecordsMarkedDeleted, rep.RecordsUnmarked)
 	} else {

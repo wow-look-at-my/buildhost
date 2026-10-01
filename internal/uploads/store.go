@@ -1,18 +1,6 @@
 // Package uploads implements generic chunked upload sessions, so a client can
 // deliver an arbitrarily large request body to ANY existing upload endpoint in
 // pieces small enough to survive a proxy's request-body cap (Cloudflare's edge
-// rejects bodies over ~100 MB with a 413 that never reaches the origin).
-//
-// A session is a spool file under {DataDir}/tmp/uploads plus an in-memory
-// record bound to the identity that created it. Chunks are appended at an
-// explicit offset (verified, so uploads are resumable), and the finished spool
-// is consumed by re-issuing the original upload request with an empty body and
-// ?upload_session=<id> -- middleware swaps the spool in as the request body, so
-// every existing endpoint's routing, auth, and storage logic runs unchanged.
-//
-// Sessions live in memory (plus one spool file each), like the OCI blob upload
-// store. This is fine for the single-container deployment model; a container
-// swap mid-session fails the next chunk cleanly and the client restarts.
 package uploads
 
 import (
@@ -29,20 +17,15 @@ import (
 
 var (
 	// ErrNotFound is returned for a session id that does not exist or is not
-	// owned by the caller -- deliberately the same error for both, so session
-	// ids never leak across identities.
 	ErrNotFound = errors.New("upload session not found")
 	// ErrOffsetMismatch is returned when an append's offset is not the session's
-	// current committed size. The caller should re-read the size and resume.
 	ErrOffsetMismatch = errors.New("offset mismatch")
 	// ErrBusy is returned when the session is being finalized.
 	ErrBusy = errors.New("upload session busy")
 	// ErrTooLarge is returned when an append would push the session past the
-	// configured maximum upload size.
 	ErrTooLarge = errors.New("upload exceeds maximum size")
 )
 
-// Session is one in-progress chunked upload.
 type Session struct {
 	id      string
 	owner   string
@@ -55,7 +38,6 @@ type Session struct {
 	busy bool       // a finalize currently owns the spool
 }
 
-// ID returns the session's identifier (crypto-random 128-bit hex).
 func (s *Session) ID() string { return s.id }
 
 // Size returns the number of committed bytes.
@@ -85,7 +67,6 @@ func NewStore(dir string, maxSize int64, ttl time.Duration) (*Store, error) {
 		return nil, fmt.Errorf("create upload spool dir: %w", err)
 	}
 	// Orphan cleanup: every live spool belongs to an in-memory session, and this
-	// store starts empty, so anything already in the dir is a crashed leftover.
 	if entries, err := os.ReadDir(dir); err == nil {
 		for _, e := range entries {
 			_ = os.Remove(filepath.Join(dir, e.Name()))
@@ -176,7 +157,6 @@ func (s *Store) Append(sess *Session, offset int64, r io.Reader) (int64, error) 
 // BeginFinalize marks the session busy and returns an independent read handle
 // on the spool plus its size. The caller MUST close the handle and then call
 // either Remove (consumed) or EndFinalize (retryable failure -- the session
-// stays resumable). While busy, appends and other finalizes get ErrBusy.
 func (s *Store) BeginFinalize(sess *Session) (*os.File, int64, error) {
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
@@ -235,7 +215,6 @@ func (s *Store) SweepExpired() {
 }
 
 // cappedReader reads from r up to a byte budget, flagging (and stopping at)
-// the first read that would exceed it. Same pattern as the OCI blob cap.
 type cappedReader struct {
 	r         io.Reader
 	remaining int64

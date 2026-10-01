@@ -47,14 +47,8 @@ func TestNewSigner_GeneratesKey(t *testing.T) {
 }
 
 // keyBudget is what a signing key may cost to generate. Every caller
-// generates on demand -- each test here, every server in internal/server, and
-// a cold production start -- so this is the number that decides whether any of
-// them needs a workaround.
 const keyBudget = 100 * time.Millisecond
 
-// An RSA-4096 key cost seconds, which is what made this package and
-// internal/server share one generated key between tests to stay inside the 30s
-// package timeout. Timed over several keys because generation time varies.
 func TestNewSigner_GenerationIsWithinBudget(t *testing.T) {
 	t.Parallel()
 	var worst time.Duration
@@ -246,8 +240,8 @@ func TestBuildRelease_NoHashes(t *testing.T) {
 func TestBuildRelease(t *testing.T) {
 	t.Parallel()
 	hashes := []hashEntry{
-		{path: "main/binary-amd64/Packages", hash: "abc123", size: 100},
-		{path: "main/binary-arm64/Packages", hash: "def456", size: 200},
+		{Path: "main/binary-amd64/Packages", Hash: "abc123", Size: 100},
+		{Path: "main/binary-arm64/Packages", Hash: "def456", Size: 200},
 	}
 	content := buildRelease("myproject", hashes)
 	assert.Contains(t, content, "Origin: buildhost")

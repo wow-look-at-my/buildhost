@@ -2,7 +2,6 @@ package api
 
 // Tests for WebAssembly artifact uploads: the platform identifier is os=wasm,
 // with arch distinguishing the Go wasm flavor (js for GOOS=js, wasip1 for
-// GOOS=wasip1). os=wasm pairs only with those arches and vice versa.
 
 import (
 	"context"
@@ -17,6 +16,7 @@ import (
 )
 
 func TestUploadArtifact_WasmJS(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "wasmjs")
 
 	rec := doUpload(t, h, proj, "wasm", "js", "", "\x00asm-fake-module")
@@ -35,9 +35,8 @@ func TestUploadArtifact_WasmJS(t *testing.T) {
 	assert.Len(t, rows, 1)
 }
 
-// Both Go wasm flavors publish under os=wasm in one request via the comma
-// list, sharing the blob like any other fan-out.
 func TestUploadArtifact_WasmFlavorFanOut(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "wasmfanout")
 
 	rec := doUpload(t, h, proj, "wasm", "js,wasip1", "", "\x00asm-fake-module")
@@ -53,11 +52,8 @@ func TestUploadArtifact_WasmFlavorFanOut(t *testing.T) {
 	assert.Len(t, rows, 2)
 }
 
-// Deprecated legacy shim: pre-#305 go-toolchain autoreleases derive upload
-// parameters from GOOS_GOARCH filenames (name_js_wasm / name_wasip1_wasm) and
-// upload with os=js/arch=wasm. The pair folds to the canonical os=wasm form
-// at parse time; "js" is never stored or surfaced as an os.
 func TestUploadArtifact_LegacyGoosGoarchPair(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "wasmlegacy")
 
 	rec := doUpload(t, h, proj, "js", "wasm", "", "\x00asm-js-module")
@@ -85,12 +81,10 @@ func TestUploadArtifact_LegacyGoosGoarchPair(t *testing.T) {
 	}
 
 	// The alias maps onto the SAME canonical row identity: re-uploading the
-	// canonical form after the legacy form conflicts (and vice versa).
 	rec = doUpload(t, h, proj, "wasm", "js", "", "\x00asm-js-module")
 	assert.Equal(t, http.StatusConflict, rec.Code)
 
 	// The shim is pair-level only. os=js with any other arch stays invalid,
-	// and arch=wasm with any other os stays invalid.
 	rec = doUpload(t, h, proj, "js", "amd64", "", "bin")
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Contains(t, rec.Body.String(), `invalid os \"js\"`)
@@ -101,10 +95,8 @@ func TestUploadArtifact_LegacyGoosGoarchPair(t *testing.T) {
 }
 
 // os=wasm pairs only with the wasm flavor arches, and those arches only with
-// os=wasm -- every incompatible combination is a 400 that creates nothing,
-// including via the any/all arch alias and the cosmo os alias (neither alias
-// includes wasm: "any" means native desktop platforms).
 func TestUploadArtifact_WasmIncompatiblePairs(t *testing.T) {
+	t.Serial()
 	h, proj, rel := setupUploadTest(t, "wasmbadpair")
 
 	for _, c := range [][2]string{

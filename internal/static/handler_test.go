@@ -16,6 +16,7 @@ import (
 )
 
 func TestCanonicalQuery(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name  string
 		input string
@@ -40,24 +41,28 @@ func TestCanonicalQuery(t *testing.T) {
 }
 
 func TestURL(t *testing.T) {
+	t.Serial()
 	base, _ := url.Parse("https://example.com")
 	u := URL(base, For("myapp").WithVersion("1.0.0").WithOS("linux").WithArch("amd64").WithFmt("raw"))
 	assert.Equal(t, "https://example.com/file?arch=amd64&fmt=raw&os=linux&project=myapp&v=1.0.0", u)
 }
 
 func TestURL_WithDebug(t *testing.T) {
+	t.Serial()
 	base, _ := url.Parse("https://example.com")
 	u := URL(base, For("myapp").WithVersion("1").WithOS("linux").WithArch("amd64").WithFmt("raw").WithDebug(true))
 	assert.Equal(t, "https://example.com/file?arch=amd64&debug=1&fmt=raw&os=linux&project=myapp&v=1", u)
 }
 
 func TestURL_ParamsSorted(t *testing.T) {
+	t.Serial()
 	base, _ := url.Parse("")
 	u := URL(base, For("z-project").WithVersion("9").WithOS("darwin").WithArch("arm64").WithFmt("npm"))
 	assert.Equal(t, "/file?arch=arm64&fmt=npm&os=darwin&project=z-project&v=9", u)
 }
 
 func TestServe_MissingVersion(t *testing.T) {
+	t.Serial()
 	req := httptest.NewRequest("GET", "/file?arch=amd64&os=linux&project=myapp", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
@@ -66,6 +71,7 @@ func TestServe_MissingVersion(t *testing.T) {
 }
 
 func TestServe_LatestVersion(t *testing.T) {
+	t.Serial()
 	req := httptest.NewRequest("GET", "/file?arch=amd64&os=linux&project=myapp&v=latest", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
@@ -74,6 +80,7 @@ func TestServe_LatestVersion(t *testing.T) {
 }
 
 func TestServe_MissingOSArch(t *testing.T) {
+	t.Serial()
 	req := httptest.NewRequest("GET", "/file?project=myapp&v=1.0.0", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
@@ -82,6 +89,7 @@ func TestServe_MissingOSArch(t *testing.T) {
 }
 
 func TestServe_UnsupportedFormat(t *testing.T) {
+	t.Serial()
 	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=nonexistent&os=linux&project=myapp&v=1.0.0", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
@@ -90,6 +98,7 @@ func TestServe_UnsupportedFormat(t *testing.T) {
 }
 
 func TestServe_CanonicalRedirect(t *testing.T) {
+	t.Serial()
 	req := httptest.NewRequest("GET", "/file?v=1&project=myapp&os=linux&arch=amd64&fmt=raw", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
@@ -100,6 +109,7 @@ func TestServe_CanonicalRedirect(t *testing.T) {
 }
 
 func TestServe_StripsUnknownParams(t *testing.T) {
+	t.Serial()
 	req := httptest.NewRequest("GET", "/file?arch=amd64&fmt=raw&garbage=yes&os=linux&project=myapp&v=1", nil)
 	rec := httptest.NewRecorder()
 	h := &staticHandler{}
@@ -110,6 +120,7 @@ func TestServe_StripsUnknownParams(t *testing.T) {
 }
 
 func TestFmtRegistry(t *testing.T) {
+	t.Serial()
 	_, ok := LookupFmt("raw")
 	assert.True(t, ok)
 
@@ -121,6 +132,7 @@ func TestFmtRegistry(t *testing.T) {
 }
 
 func TestComputeETag(t *testing.T) {
+	t.Serial()
 	ctx1 := ServeContext{}
 	ctx1.Project.Name = "myapp"
 	ctx1.Release.Version = "1.0.0"
@@ -136,6 +148,7 @@ func TestComputeETag(t *testing.T) {
 }
 
 func TestRedirect(t *testing.T) {
+	t.Serial()
 	req := httptest.NewRequest("GET", "/dl/myapp/1.0.0/linux/amd64", nil)
 	rec := httptest.NewRecorder()
 	base, _ := url.Parse("https://example.com")
@@ -146,6 +159,7 @@ func TestRedirect(t *testing.T) {
 }
 
 func TestParseRoute_ExtractsID(t *testing.T) {
+	t.Serial()
 	req := httptest.NewRequest("GET", "/file?project=myapp&v=1", nil)
 	ri := parseRoute(req)
 	assert.Equal(t, "myapp", ri.ProjectName())
@@ -156,11 +170,13 @@ func TestParseRoute_ExtractsID(t *testing.T) {
 }
 
 func TestRoute_Access(t *testing.T) {
+	t.Serial()
 	r := route{project: "myapp"}
 	assert.Equal(t, auth.ReadAccess, r.Access())
 }
 
 func TestResolveVersion(t *testing.T) {
+	t.Serial()
 	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
 	require.NoError(t, err)
 	defer d.Close()
@@ -188,6 +204,7 @@ func TestResolveVersion(t *testing.T) {
 }
 
 func TestResolveVersion_AutoVersioning(t *testing.T) {
+	t.Serial()
 	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
 	require.NoError(t, err)
 	defer d.Close()
@@ -209,6 +226,7 @@ func TestResolveVersion_AutoVersioning(t *testing.T) {
 }
 
 func TestAcceptsZstd(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		accept string
 		want   bool

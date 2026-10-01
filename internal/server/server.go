@@ -19,9 +19,6 @@ import (
 var healthDB *db.DB
 
 // The update-check contract docker-updater probes on the container's own port,
-// reading only the status code. RFC 8615 reserves /.well-known/ for exactly
-// this: a path an automated client may request without prior arrangement.
-// see docs/deploy-and-updates.md
 const (
 	wellKnownHealth    = "/.well-known/docker-updater/health"
 	wellKnownPreUpdate = "/.well-known/docker-updater/pre-update"
@@ -32,9 +29,9 @@ const (
 // without a dedicated version endpoint; status is "ok" only when the database
 // is reachable.
 type healthResponse struct {
-	Status   string `json:"status"`             // "ok" when healthy, "unhealthy" otherwise
-	Commit   string `json:"commit"`             // git SHA the binary was built from, or "unknown"
-	Version  string `json:"version"`            // synthetic build version (v0.0.<unix> or "dev")
+	Status   string `json:"status"` // "ok" when healthy, "unhealthy" otherwise
+	Commit   string `json:"commit"` // git SHA the binary was built from, or "unknown"
+	Version  string `json:"version"`
 	Modified bool   `json:"modified,omitempty"` // built from a dirty working tree
 	Error    string `json:"error,omitempty"`    // failure detail when unhealthy
 }
@@ -81,17 +78,6 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 	auth.HandleRaw("GET /healthz", health)
 	auth.HandleRaw("GET /ready-to-update", readyToUpdate)
 
-	// The same two questions at the paths docker-updater discovers on its own,
-	// with no label to configure: is this container serving, and may it be
-	// replaced right now. It reads the status code and ignores the body, so
-	// these are aliases rather than new handlers -- and being aliases is the
-	// point, because a second implementation of "is it healthy" is a second
-	// answer that can disagree with the first.
-	//
-	// HandleRaw, so they skip requireProject: the prober carries no credential,
-	// and a 401 here would read as "serving but permanently unhealthy". Apex
-	// only, like the two above -- the router partitions strictly by host, and
-	// the prober addresses the container by IP, which is an unclaimed host.
 	auth.HandleRaw("GET "+wellKnownHealth, health)
 	auth.HandleRaw("GET "+wellKnownPreUpdate, readyToUpdate)
 
@@ -119,8 +105,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) Handler() http.Handler {
 	var h http.Handler = http.HandlerFunc(auth.ServeHTTP)
 	// Between Authenticate (needs the token in context to bind sessions to
-	// their creator) and routing (so every upload endpoint gets the swapped
-	// body transparently): finalize chunked upload sessions by reference.
 	h = uploads.ResolveSessionBody(h)
 	h = auth.GetMiddleware().Authenticate(h)
 	h = admin.TrackInflight(h)

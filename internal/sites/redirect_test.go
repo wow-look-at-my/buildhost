@@ -13,15 +13,8 @@ import (
 // the project root and every file path under it, yet never shadows the more
 // specific branch / branches routes. The router is best-match: more literal
 // segments win, so the literal-less apex route only catches paths that aren't
-// one of the others. This is the exact shadowing failure documented in serve.go
-// (a higher-scoring route eating the {path...} route), guarded here against
-// regression on the real router.
-//
-// It also pins WHY parseRootRoute re-splits against the DB: {project} has no
-// wildcard after it, so it binds the whole remainder greedily -- the router
-// hands over "ue553/runner.html" as one string and cannot know where the
-// project name ends and the file path begins.
 func TestRootRedirectRouteShadowing(t *testing.T) {
+	t.Serial()
 	var hit, gotProject string
 	mk := func(name string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +38,6 @@ func TestRootRedirectRouteShadowing(t *testing.T) {
 		{"/ue553/", "root", "ue553"},
 		{"/org/repo", "root", "org/repo"}, // namespaced project root
 		// A file under the project root: the whole remainder arrives as
-		// {project}, for parseRootRoute to split.
 		{"/ue553/runner.html", "root", "ue553/runner.html"},
 		{"/ue553/assets/app.js", "root", "ue553/assets/app.js"},
 		{"/ue553/branches", "list", "ue553"},
@@ -66,8 +58,8 @@ func TestRootRedirectRouteShadowing(t *testing.T) {
 // The default branch never needs naming: the bare project path already serves
 // it and is shorter, so an "@<default>" URL collapses INTO it. Redirects only
 // ever run toward the simpler URL -- the bare root pointing at a branch URL,
-// as it once did, was backwards.
 func TestSigilDefaultBranchCollapsesToBareURL(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "ue553")
 	uploadSite(t, h, proj, "main", map[string]string{"index.html": "root", "a/x.css": "body{}"})
@@ -105,8 +97,6 @@ func TestSigilDefaultBranchCollapsesToBareURL(t *testing.T) {
 	assert.Equal(t, "preview", rec.Body.String())
 
 	// Neither does the legacy /branch/ spelling redirect: it is the
-	// compatibility alias every published link already uses, so it serves the
-	// same bytes in place rather than bouncing deployed clients.
 	req = httptest.NewRequest("GET", "http://sites.example.com/ue553/branch/main/a/x.css", nil)
 	req = withRoute(req, proj, route{project: "ue553", branch: "main", path: "a/x.css"})
 	rec = httptest.NewRecorder()
@@ -120,6 +110,7 @@ func TestSigilDefaultBranchCollapsesToBareURL(t *testing.T) {
 // "org" and "org/repo", /org/repo/x.css is org/repo's file. Redirecting org's
 // own repo/x.css there would silently point at another project's site.
 func TestSigilDefaultBranchKeepsShadowedFileInPlace(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	org := seedProject(t, d, "org")
 	seedProject(t, d, "org/repo")

@@ -40,6 +40,7 @@ func writeLayoutBlob(t *testing.T, dir string, content []byte) string {
 // with a tiny chunk size, then pulls everything back through the real serve
 // paths -- the full client/server chunk protocol round trip.
 func TestClientPush_EndToEnd(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	ctx := t.Context()
 	proj := &db.Project{Name: "pwmux/mcp", Versioning: db.VersioningAuto}
@@ -78,7 +79,7 @@ func TestClientPush_EndToEnd(t *testing.T) {
 		Project:   proj.Name,
 		Token:     "unused-in-test",
 		PlainHTTP: true,
-		ChunkSize: 1024, // 10 chunks: exercises the sequential-append protocol
+		ChunkSize: 1024,
 	}
 	require.NoError(t, p.Push(dir, []string{"latest", "abc123"}))
 

@@ -13,6 +13,7 @@ import (
 )
 
 func TestServe_File(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
@@ -31,6 +32,7 @@ func TestServe_File(t *testing.T) {
 }
 
 func TestServe_SetsSiteSecurityHeaders(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
@@ -42,7 +44,6 @@ func TestServe_SetsSiteSecurityHeaders(t *testing.T) {
 	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: "assets/app.mjs"})
 	rec := httptest.NewRecorder()
 	// The global security middleware sets these strict app headers before the
-	// handler runs; serving a site must drop them so its assets can load.
 	rec.Header().Set("Content-Security-Policy", "default-src 'none'")
 	rec.Header().Set("X-Frame-Options", "DENY")
 	h.Serve(rec, req)
@@ -57,6 +58,7 @@ func TestServe_SetsSiteSecurityHeaders(t *testing.T) {
 }
 
 func TestServe_IndexFallback(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
@@ -73,6 +75,7 @@ func TestServe_IndexFallback(t *testing.T) {
 }
 
 func TestServe_NotFound_NoBranch(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -85,6 +88,7 @@ func TestServe_NotFound_NoBranch(t *testing.T) {
 }
 
 func TestServe_NotFound_NoFile(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
@@ -100,14 +104,12 @@ func TestServe_NotFound_NoFile(t *testing.T) {
 }
 
 func TestServeRedirect(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{"index.html": "<h1>hello</h1>"})
 
 	// A branch root requested without a trailing slash redirects to the slashed
-	// form (so index.html's relative links resolve under the branch). Serve --
-	// the single GET route -- handles this; there is no separate redirect route
-	// that could shadow file serving.
 	req := httptest.NewRequest("GET", "/sites/mysite/branch/main", nil)
 	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: ""})
 	rec := httptest.NewRecorder()
@@ -124,6 +126,7 @@ func TestServeRedirect(t *testing.T) {
 }
 
 func TestServe_SubdirIndex(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
@@ -141,6 +144,7 @@ func TestServe_SubdirIndex(t *testing.T) {
 }
 
 func TestContentType(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		name string
 		want string
@@ -162,6 +166,7 @@ func TestContentType(t *testing.T) {
 }
 
 func TestServe_ContentLength(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	content := "<h1>hello world</h1>"

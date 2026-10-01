@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/exeformat"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -82,29 +83,20 @@ func seedArtifact(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID i
 	return a
 }
 
-func seedArtifactWithDebug(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, os, arch, content, debugContent string) *db.Artifact {
+func seedMultiPlatformArtifact(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, content string, platforms ...db.Platform) *db.Artifact {
 	t.Helper()
-	a := seedArtifact(t, d, store, releaseID, os, arch, content)
-
-	debugKey, debugSize, err := store.Put(context.Background(), strings.NewReader(debugContent))
+	key, size, err := store.Put(context.Background(), strings.NewReader(content))
 	require.NoError(t, err)
 
-	require.NoError(t, d.UpdateArtifactStripped(context.Background(), a.ID, "", 0, "", debugKey, debugSize))
-	a.DebugStorageKey = debugKey
-	a.DebugSize = debugSize
-	return a
-}
-
-func seedArtifactWithStripped(t *testing.T, d *db.DB, store *storage.Filesystem, releaseID int64, os, arch, content, strippedContent string) *db.Artifact {
-	t.Helper()
-	a := seedArtifact(t, d, store, releaseID, os, arch, content)
-
-	strippedKey, strippedSize, err := store.Put(context.Background(), strings.NewReader(strippedContent))
-	require.NoError(t, err)
-
-	require.NoError(t, d.UpdateArtifactStripped(context.Background(), a.ID, strippedKey, strippedSize, strippedKey, "", 0))
-	a.StrippedStorageKey = strippedKey
-	a.StrippedSize = strippedSize
+	a := &db.Artifact{
+		ReleaseID:  releaseID,
+		Kind:       db.KindBinary,
+		StorageKey: key,
+		Size:       size,
+		SHA256:     key,
+		ExeFormat:  string(exeformat.APE),
+	}
+	require.NoError(t, d.CreateMultiPlatformArtifact(context.Background(), a, platforms))
 	return a
 }
 
@@ -117,8 +109,6 @@ func makeRequest(project string, params url.Values) *http.Request {
 	return req
 }
 
-// requireRedirect asserts 302 or 301 with a Location containing "/file?" and returns
-// the parsed query params from the redirect URL for further assertions.
 func requireRedirect(t *testing.T, rec *httptest.ResponseRecorder) url.Values {
 	t.Helper()
 	code := rec.Code
@@ -133,6 +123,7 @@ func requireRedirect(t *testing.T, rec *httptest.ResponseRecorder) url.Values {
 }
 
 func TestDownload_Success_RawBinary(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", db.LatestBranch, true)
@@ -152,6 +143,7 @@ func TestDownload_Success_RawBinary(t *testing.T) {
 }
 
 func TestDownload_Success_RawFallsBackWhenStripFails(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -169,6 +161,7 @@ func TestDownload_Success_RawFallsBackWhenStripFails(t *testing.T) {
 }
 
 func TestDownload_DebugReturns404WhenStripFails(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -186,6 +179,7 @@ func TestDownload_DebugReturns404WhenStripFails(t *testing.T) {
 }
 
 func TestDownload_DebugFlag_NoDebugAvailable(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -203,6 +197,7 @@ func TestDownload_DebugFlag_NoDebugAvailable(t *testing.T) {
 }
 
 func TestDownload_Success_TarGzFormat(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)
@@ -222,6 +217,7 @@ func TestDownload_Success_TarGzFormat(t *testing.T) {
 }
 
 func TestDownload_FormatNotAvailable(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedProject(t, d, "myapp", false)
 	rel := seedRelease(t, d, proj.ID, "1.0.0", "main", true)

@@ -17,6 +17,7 @@ import (
 // (correct for JSON/binary endpoints); the sites Serve handler removes it so
 // the browser can load the site's own scripts, styles, and images.
 func TestSitesServedFileCSP(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	require.Equal(t, http.StatusCreated,
@@ -42,7 +43,6 @@ func TestSitesServedFileCSP(t *testing.T) {
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	// The global "default-src 'none'" CSP must be absent on site responses so
-	// the page can load its own assets. The Serve handler removes it.
 	require.Empty(t, resp.Header.Get("Content-Security-Policy"))
 }
 
@@ -50,8 +50,8 @@ func TestSitesServedFileCSP(t *testing.T) {
 // whole stack: host dispatch -> requireProject -> sites handler. Before this,
 // only /{project}/branch/{branch}/{path} served a file and the bare root merely
 // redirected, so every link into a site had to name a branch -- and any link
-// that did not (an MCP App's declared runner origin, for one) 404'd.
 func TestSitesApexPath(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	env.createProject(t, "apexp", false)
@@ -64,11 +64,10 @@ func TestSitesApexPath(t *testing.T) {
 
 	// Files resolve under the project root, on the project's default branch
 	// (default_branch is the seed "master" here, so this also exercises
-	// resolveRootBranch's fallback to the branch that actually has a site).
 	for path, want := range map[string]string{
 		"/apexp/runner.html": "runner",
 		"/apexp/a/b.css":     "nested",
-		"/apexp/a/":          "missing", // no a/index.html -> the site's own 404
+		"/apexp/a/":          "missing",
 	} {
 		resp, body := siteGet(t, env, "sites.test.local", path)
 		require.Equalf(t, want, body, "GET %s", path)
@@ -79,8 +78,6 @@ func TestSitesApexPath(t *testing.T) {
 		}
 	}
 
-	// The bare root IS the canonical URL: it serves in one hop, and only its
-	// missing trailing slash is canonicalized -- never to a branch URL.
 	resp, body := siteGet(t, env, "sites.test.local", "/apexp/")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, "root", body)
@@ -96,7 +93,6 @@ func TestSitesApexPath(t *testing.T) {
 	require.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
 
 	// The legacy branch route is unshadowed, and 302s to the canonical URL for
-	// the same file rather than serving a second copy of it.
 	resp, _ = siteGet(t, env, "sites.test.local", "/apexp/branch/main/runner.html")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
 	require.Equal(t, "/apexp/runner.html", resp.Header.Get("Location"))
@@ -110,6 +106,7 @@ func TestSitesApexPath(t *testing.T) {
 // public-read bypass opens only a public site's own default branch, and the
 // gate resolves that branch through the same helper the handler does.
 func TestSitesApexPathVisibility(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	env.createProject(t, "apexpriv", true)
@@ -126,7 +123,6 @@ func TestSitesApexPathVisibility(t *testing.T) {
 	require.Equal(t, "top-secret", string(body))
 
 	// A public site under a private project serves its files anonymously at the
-	// apex path, the same shareable-preview rule the branch URL follows.
 	env.createProject(t, "apexpub", true)
 	env.uploadBranchSite(t, "apexpub", "main", true, map[string]string{"preview.html": "public-preview"})
 	resp, text := siteGet(t, env, "sites.test.local", "/apexpub/preview.html")
@@ -134,17 +130,11 @@ func TestSitesApexPathVisibility(t *testing.T) {
 	require.Equal(t, "public-preview", text)
 
 	// The "@" spelling is gated identically: the public branch serves
-	// anonymously, the private one does not. Both spellings resolve the branch
-	// through the same helper the gate uses, so they cannot diverge.
-	// main is apexpub's only (therefore default) branch, so the @ spelling
-	// collapses -- but the gate runs FIRST, so an anonymous request gets that
-	// redirect only because the branch is public.
 	resp, _ = siteGet(t, env, "sites.test.local", "/apexpub/@main/preview.html")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
 	require.Equal(t, "/apexpub/preview.html", resp.Header.Get("Location"))
 
 	// The private project's @ URL is gated identically to its apex path: no
-	// token, no redirect and no bytes -- just the 401.
 	resp, _ = siteGet(t, env, "sites.test.local", "/apexpriv/@master/secret.txt")
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 

@@ -51,9 +51,6 @@ func runPublishSite(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Archive to a temp file (not a streaming pipe) so the upload knows the
-	// size up front -- that is what lets it choose a chunked upload session
-	// for archives too large for a single request to pass the proxy in front
-	// of the server.
 	tmp, err := os.CreateTemp("", "buildhost-site-*.tar.gz")
 	if err != nil {
 		return fmt.Errorf("create archive temp file: %w", err)
@@ -95,8 +92,6 @@ func runPublishSite(cmd *cobra.Command, _ []string) error {
 
 // publishedSiteURL is where the site is now served. Never derive it: the server
 // owns the URL grammar and reports it. The fallback is for servers predating
-// that field -- keep it on the canonical spelling, not the /branch/ one the
-// upload endpoint uses. see docs/sites.md
 func publishedSiteURL(body []byte, sitesBase, project, branch string) string {
 	var resp struct {
 		URL string `json:"url"`

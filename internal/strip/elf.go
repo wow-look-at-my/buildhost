@@ -1,30 +1,5 @@
 package strip
 
-// Native ELF stripping: no strip(1), no objcopy(1), no BFD.
-//
-// Why this exists at all: buildhost's production image is
-// gcr.io/distroless/static-debian12, which ships no binutils, so the
-// shell-out implementation this replaces was never able to run there. The
-// feature silently no-opped in production for weeks -- `X-Debug-Symbols:
-// unavailable` on every download -- while the documented design says
-// stripping happens on demand at download time. Doing it in-process makes the
-// behavior identical everywhere buildhost runs, independent of what happens to
-// be installed on the host.
-//
-// The second reason is safety. strip/objcopy go through BFD, which accepts
-// PE/COFF and Mach-O as well as ELF and rewrites those inputs instead of
-// failing -- that is how a Cosmopolitan APE artifact (a PE32+ to BFD) was
-// served corrupted and non-reproducibly. This implementation parses ELF and
-// only ELF; anything else is refused before a byte is written, and the caller
-// serves the artifact untouched.
-//
-// What it does, matching `strip --strip-debug --strip-unneeded` closely enough
-// for a download path: drop the non-SHF_ALLOC debug and symbol-table sections,
-// keep everything a loader or the Go runtime can reach. Allocated sections are
-// never moved -- program headers address them by file offset, so relocating
-// one would break execution -- which also means the transformation is a
-// truncate-and-rewrite-the-section-table, not a general ELF rewriter.
-
 import (
 	"bytes"
 	"encoding/binary"
@@ -36,11 +11,8 @@ import (
 )
 
 // ErrUnsupportedELF is returned for ELF files this implementation deliberately
-// declines to rewrite (32-bit, or an extended section table). Like ErrNotELF it
-// means "serve the artifact unstripped".
 var ErrUnsupportedELF = errors.New("strip: unsupported ELF variant")
 
-// elfMagic is the 4-byte header every ELF file starts with.
 var elfMagic = []byte{0x7f, 'E', 'L', 'F'}
 
 const (
@@ -70,8 +42,6 @@ const (
 )
 
 // section is a raw section header plus the decoded fields this package needs.
-// The 64 header bytes are carried verbatim so fields we do not understand
-// (link, info, entsize, ...) survive the rewrite untouched.
 type section struct {
 	raw       []byte
 	name      string
@@ -135,9 +105,6 @@ func parseELF64(f *os.File, size int64) (*elfImage, error) {
 	shnum := bo.Uint16(hdr[offShnum:])
 	shstrndx := bo.Uint16(hdr[offShstrndx:])
 
-	// shnum == 0 means the real count lives in section 0 (SHN_XINDEX), and
-	// shstrndx == 0xffff means the same for the string table index. Neither is
-	// worth supporting here.
 	if shoff == 0 || shnum == 0 || shstrndx == 0xffff {
 		return nil, ErrUnsupportedELF
 	}
@@ -232,7 +199,6 @@ func (img *elfImage) plan() (prefixEnd uint64) {
 		}
 	}
 	// A kept non-allocated section that already sits inside the verbatim
-	// prefix keeps its offset; only the ones past it are relocated.
 	return prefixEnd
 }
 
@@ -329,14 +295,11 @@ func (img *elfImage) writeDebug(src *os.File, dst *os.File) error {
 
 	// The debug file carries no segments -- it is never loaded, only read by a
 	// debugger -- so the inherited program-header fields must be cleared.
-	// Leaving them in place points readers at offsets that no longer exist:
-	// debug/elf rejects the file outright ("invalid program header offset").
 	dropPhdrs := func(hdr []byte) {
 		img.bo.PutUint64(hdr[offPhoff:], 0)
 		img.bo.PutUint16(hdr[offPhnum:], 0)
 	}
 	// Every section stays in the table -- a debugger needs the full picture --
-	// but only the stripped-out ones carry bytes.
 	all := func(*section) bool { return true }
 	return img.writeSectionTable(dst, pos, all, dropPhdrs, func(s *section) (uint64, uint32) {
 		if carries(s) {
@@ -347,8 +310,6 @@ func (img *elfImage) writeDebug(src *os.File, dst *os.File) error {
 }
 
 // writeSectionTable appends the section header table at pos and patches the
-// ELF header to match. kept sections keep their raw 64-byte entry with only
-// sh_offset (and, for the debug file, sh_type) rewritten.
 func (img *elfImage) writeSectionTable(dst *os.File, pos uint64, include func(*section) bool, patchHeader func([]byte), entry func(*section) (uint64, uint32)) error {
 	bo := img.bo
 	shoff := align(pos, 8)

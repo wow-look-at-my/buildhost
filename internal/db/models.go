@@ -35,7 +35,17 @@ type Artifact struct {
 	DebugStorageKey    string    `json:"debug_storage_key"`
 	DebugSize          int64     `json:"debug_size"`
 	Filename           string    `json:"filename"`
+	ExeFormat          string    `json:"exe_format"`
 	CreatedAt          time.Time `json:"created_at"`
+}
+
+type ArtifactPlatform struct {
+	ArtifactID int64 `json:"artifact_id"`
+	ReleaseID  int64 `json:"release_id"`
+	Kind       Kind  `json:"kind"`
+	OS         OS    `json:"os"`
+	Arch       Arch  `json:"arch"`
+	Ordinal    int64 `json:"ordinal"`
 }
 
 type DownloadCount struct {
@@ -51,6 +61,29 @@ type DownloadEvent struct {
 	UserAgent  string    `json:"user_agent"`
 	Principal  string    `json:"principal"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+type GoproxyModule struct {
+	ID            int64      `json:"id"`
+	ModulePath    string     `json:"module_path"`
+	Source        string     `json:"source"`
+	LastErrorKind string     `json:"last_error_kind"`
+	LastError     string     `json:"last_error"`
+	LastErrorAt   *time.Time `json:"last_error_at"`
+	LastSuccessAt *time.Time `json:"last_success_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+}
+
+type GoproxyVersion struct {
+	ID            int64      `json:"id"`
+	ModuleID      int64      `json:"module_id"`
+	Version       string     `json:"version"`
+	CommitSha     string     `json:"commit_sha"`
+	CommittedAt   *time.Time `json:"committed_at"`
+	GoMod         string     `json:"go_mod"`
+	ZipStorageKey string     `json:"zip_storage_key"`
+	ZipSize       int64      `json:"zip_size"`
+	FetchedAt     time.Time  `json:"fetched_at"`
 }
 
 type OciBlobLink struct {
@@ -107,8 +140,15 @@ type Project struct {
 	GithubRepoID  string     `json:"github_repo_id"`
 	DefaultBranch string     `json:"default_branch"`
 	CreateService bool       `json:"create_service"`
+	AptDepends    string     `json:"apt_depends"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+type ProjectAlias struct {
+	Name      string    `json:"name"`
+	ProjectID int64     `json:"project_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Release struct {
@@ -131,6 +171,15 @@ type RetentionSetting struct {
 	KeepN        int64     `json:"keep_n"`
 	RecencyHours int64     `json:"recency_hours"`
 	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type RunLock struct {
+	RepoID     string    `json:"repo_id"`
+	RunID      string    `json:"run_id"`
+	RunAttempt string    `json:"run_attempt"`
+	Name       string    `json:"name"`
+	Value      string    `json:"value"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type Site struct {

@@ -1,9 +1,6 @@
 package auth
 
 // Responses for unauthenticated and unauthorized requests: the canonical
-// project 404, the 401 (JSON, OCI-challenge, or browser sign-in redirect),
-// and the signed-in-but-forbidden HTML page. Split from middleware.go, which
-// holds the auth middleware and the requireProject flow.
 
 import (
 	"encoding/json"
@@ -15,10 +12,6 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
-// projectNotFound writes the canonical 404 for a project that does not exist or
-// that the caller may not see. Both cases share this exact response so a hidden
-// (HiddenReadAccess) read cannot be used to probe for the existence of private
-// projects.
 func projectNotFound(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusNotFound)
@@ -29,14 +22,11 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 	msg := "authentication required"
 	if err := OIDCErrorFrom(r.Context()); err != nil {
 		// A JWT was presented and rejected -- say why (audience, org allowlist,
-		// event, expiry, signature, ...) instead of a bare message, so a CI
-		// caller can see what to fix.
 		msg += ": OIDC token rejected: " + err.Error()
 	}
 
 	if strings.HasPrefix(r.URL.Path, "/v2/") {
 		// OCI clients (docker pull/push) require the registry error envelope and
-		// a Basic challenge on /v2/ so they retry with credentials.
 		w.Header().Set("Www-Authenticate", `Basic realm="buildhost"`)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -49,16 +39,12 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 
 	// Browser handling when "Sign in with GitHub" is configured. Programmatic
 	// clients (no text/html) -- and deployments without GitHub login configured --
-	// fall through to the plain JSON 401 below, unchanged.
 	if prefersHTML(r) && githubAuthEnabled() {
 		login, signedIn := UserFrom(r.Context())
 		switch {
 		case !signedIn && TokenFrom(r.Context()) == nil:
 			// Anonymous browser: send them to GitHub to sign in, returning to the
 			// resource afterward. On a site-domain host the sign-in entrypoint is
-			// the PRIMARY apex (the OAuth callback lives there); when no primary
-			// domain is configured that hop is unavailable and loginRedirectURL
-			// returns "" -- fall through to the plain JSON 401 below.
 			if target := loginRedirectURL(r); target != "" {
 				http.Redirect(w, r, target, http.StatusSeeOther)
 				return
@@ -66,32 +52,15 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 		case signedIn:
 			if SessionTokenDeadFrom(r.Context()) {
 				// Signed in, but the GitHub token embedded in the session cookie is
-				// dead (revoked or expired mid-session) -- the 12h cookie outlived
-				// its credential. This is not "your account lacks access": the
-				// account was never checked. Clear the dead session (with the apex
-				// Domain it was set with, or browsers keep it) and transparently
-				// re-run sign-in, returning to this resource. Loop-safe: the OAuth
-				// callback mints a session only after GET /user succeeds with the
-				// fresh token, so a re-signed-in browser cannot bounce straight
-				// back here with another dead token.
 				clearCookie(w, r, sessionCookieName, "/")
 				if target := loginRedirectURL(r); target != "" {
 					http.Redirect(w, r, target, http.StatusSeeOther)
 					return
 				}
 				// Site-domain host with no primary domain configured: the
-				// cross-domain re-auth hop is unavailable. The dead cookie is
-				// cleared; fall through to the JSON 401 (never the forbidden
-				// page -- the account was never checked).
 				break
 			}
 			// Signed in with a live token, but not authorized for this resource
-			// (their GitHub account can't read the backing repo, or the project
-			// has no repo recorded). Re-redirecting to /__signin would loop --
-			// GitHub re-auths the same account and bounces straight back -- so
-			// render an actionable page (who you are, what access is needed, sign
-			// out to switch accounts) instead of the dead-end JSON 401 a browser
-			// cannot act on.
 			signedInForbiddenHTML(w, r, login, ProjectFrom(r.Context()))
 			return
 		}
@@ -105,11 +74,6 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 
 // signedInForbiddenHTML renders an actionable page for a browser that IS signed
 // in with GitHub but is not authorized to read this resource. The anonymous case
-// redirects to /__signin; this one must NOT -- the user already holds a valid
-// session, so a redirect would bounce straight back here (GitHub re-auths the
-// same account), an infinite loop. So we explain the situation and offer a
-// sign-out, letting them switch to an account that has access. It returns 403
-// (authenticated but not permitted), not 401.
 func signedInForbiddenHTML(w http.ResponseWriter, r *http.Request, login string, project *db.Project) {
 	esc := template.HTMLEscapeString
 	var detail string
@@ -122,8 +86,6 @@ func signedInForbiddenHTML(w http.ResponseWriter, r *http.Request, login string,
 			"through GitHub sign-in. Ask the owner for a project access token or a temporary download link."
 	}
 
-	// Relax the global default-src 'none' just enough for the one inline <style>;
-	// no scripts, no external resources (same approach as the web frontend).
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusForbidden)
@@ -151,9 +113,6 @@ func signedInForbiddenHTML(w http.ResponseWriter, r *http.Request, login string,
 }
 
 // prefersHTML reports whether the request came from a browser navigation (its
-// Accept header lists text/html). Used to decide whether an auth failure should
-// drive the Cloudflare Access sign-in redirect versus the raw JSON that
-// programmatic clients expect.
 func prefersHTML(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }

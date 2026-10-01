@@ -9,9 +9,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/wow-look-at-my/buildhost/internal/retention"
 )
 
 func TestAdminRetention_GetDefaults(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	rec := serve(srv, "GET", "/api/retention", nil)
@@ -29,6 +32,7 @@ func TestAdminRetention_GetDefaults(t *testing.T) {
 }
 
 func TestAdminRetention_Update(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	rec := serve(srv, "PUT", "/api/retention", bytes.NewBufferString(`{"keep_n":3,"recency_hours":6}`))
@@ -46,6 +50,7 @@ func TestAdminRetention_Update(t *testing.T) {
 }
 
 func TestAdminRetention_UpdateValidation(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	for _, body := range []string{
@@ -66,6 +71,7 @@ func TestAdminRetention_UpdateValidation(t *testing.T) {
 // e.g. a hash-reference upload that just passed its existence check -- is
 // about to reference. Report-only runs mutate nothing and stay allowed.
 func TestAdminRetention_RunEnforceDefersOnInflightWrites(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	atomic.AddInt64(&inflightWrites, 1)
@@ -79,6 +85,7 @@ func TestAdminRetention_RunEnforceDefersOnInflightWrites(t *testing.T) {
 }
 
 func TestAdminRetention_Run(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -90,4 +97,43 @@ func TestAdminRetention_Run(t *testing.T) {
 	assert.Equal(t, false, rep["enforced"])
 	assert.Contains(t, rep, "reclaimable_bytes")
 	assert.Contains(t, rep, "release_count")
+}
+
+// The inventory endpoint answers the question the reclaimable number cannot:
+// which files hold the storage. Every seeded file must appear, with the reason
+// retention keeps it.
+func TestAdminRetention_Inventory(t *testing.T) {
+	t.Serial()
+	srv, database := newTestServer(t)
+	seedData(t, database)
+
+	rec := serve(srv, "GET", "/api/retention/inventory", nil)
+	require.Equal(t, 200, rec.Code)
+
+	var inv retention.Inventory
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &inv))
+
+	assert.Equal(t, 1, inv.Totals.Files)
+	assert.Equal(t, 1, inv.Totals.Releases)
+	assert.Equal(t, 0, inv.Totals.HoldMismatches)
+	assert.Equal(t, 10, inv.Policy.KeepN)
+
+	require.Len(t, inv.Files, 1)
+	f := inv.Files[0]
+	assert.Equal(t, "abc123", f.StorageKey)
+	assert.Equal(t, "deadbeef", f.SHA256)
+	assert.Equal(t, retention.RoleArtifact, f.Role)
+	assert.Equal(t, int64(2048), f.Size)
+	assert.Equal(t, "testproject", f.Project)
+	assert.Equal(t, "1.0.0", f.Version)
+	assert.Equal(t, "main", f.Branch)
+	assert.Equal(t, "linux", f.OS)
+	assert.Equal(t, "amd64", f.Arch)
+	assert.False(t, f.Reclaimable)
+	// The only release on its branch, and seconds old: both pins apply.
+	assert.Equal(t, []string{retention.HoldBranchTip, retention.HoldRecency}, f.Holds)
+
+	require.Len(t, inv.ByRole, 1)
+	assert.Equal(t, retention.RoleArtifact, inv.ByRole[0].Name)
+	assert.Equal(t, int64(2048), inv.ByHold[0].Bytes)
 }

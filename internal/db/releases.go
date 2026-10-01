@@ -8,9 +8,6 @@ import (
 )
 
 // LatestBranch is the default value of projects.default_branch (see
-// migrations/011_project_default_branch.sql): the branch the apex "latest"
-// tracks for a project that has never told buildhost its real default branch.
-// It must stay in sync with that migration's column default.
 const LatestBranch = "master"
 
 func (d *DB) CreateRelease(ctx context.Context, r *Release) error {
@@ -64,9 +61,6 @@ func (d *DB) GetRelease(ctx context.Context, projectID int64, version string) (*
 // branch): the newest published release on the project's default branch
 // (projects.default_branch, default "master"), so a push to a feature branch
 // cannot hijack "latest". A project whose default branch has no published
-// release yet (the common case right after provisioning) has no apex latest and
-// returns ErrNotFound -- there is deliberately no fallback to "newest across all
-// branches", which would let a feature-branch build become "latest".
 func (d *DB) GetLatestRelease(ctx context.Context, projectID int64) (*Release, error) {
 	row, err := d.q.GetLatestPublishedReleaseOnDefaultBranch(ctx, projectID)
 	if errors.Is(err, sql.ErrNoRows) {

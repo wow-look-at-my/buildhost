@@ -12,11 +12,9 @@ import (
 )
 
 func init() {
-	auth.OnReady(func() {
-		auth.HandleRawPrimary("POST /api/v1/tokens", handler.CreateToken)
-		auth.HandleRawPrimary("GET /api/v1/tokens", handler.ListTokens)
-		auth.HandleRawPrimary("DELETE /api/v1/tokens/{id}", handler.DeleteToken)
-	})
+	auth.HandleRawPrimary("POST /api/v1/tokens", handler.CreateToken)
+	auth.HandleRawPrimary("GET /api/v1/tokens", handler.ListTokens)
+	auth.HandleRawPrimary("DELETE /api/v1/tokens/{id}", handler.DeleteToken)
 }
 
 type createTokenRequest struct {

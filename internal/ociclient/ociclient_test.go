@@ -15,6 +15,7 @@ import (
 func init() { RetryBaseDelay = time.Millisecond }
 
 func TestPush_SmallBlobsFinalizeInOneRequest(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -33,8 +34,8 @@ func TestPush_SmallBlobsFinalizeInOneRequest(t *testing.T) {
 
 // Every image built FROM a published base carries that base's layers, and the
 // registry already stores them. Asking to mount before uploading is what keeps
-// a fan-out of N images layered on one base from re-sending the base N times.
 func TestPush_MountsBlobsTheRegistryAlreadyStores(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -58,11 +59,8 @@ func TestPush_MountsBlobsTheRegistryAlreadyStores(t *testing.T) {
 }
 
 // TestPush_BuildxPerTagIndexEntries pushes a layout shaped the way
-// `docker buildx --output type=oci` writes it for a MULTI-TAG build: one
-// index.json entry per tag, all referencing the same digest with only the
-// io.containerd.image.name annotation differing. (Regression: this shape was
-// once rejected as "2 top-level manifests".)
 func TestPush_BuildxPerTagIndexEntries(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -70,7 +68,6 @@ func TestPush_BuildxPerTagIndexEntries(t *testing.T) {
 	layer := []byte("per-tag-layer")
 	dir, manifestDigest := buildImageLayout(t, layer)
 
-	// Rewrite index.json with two per-tag entries for the same manifest.
 	entry := func(name string) map[string]any {
 		return map[string]any{
 			"mediaType":   "application/vnd.oci.image.manifest.v1+json",
@@ -99,6 +96,7 @@ func TestPush_BuildxPerTagIndexEntries(t *testing.T) {
 }
 
 func TestPush_SkipsExistingBlobs(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
@@ -114,12 +112,12 @@ func TestPush_SkipsExistingBlobs(t *testing.T) {
 }
 
 func TestPush_NestedIndexWithAttestation(t *testing.T) {
+	t.Serial()
 	f := newFakeRegistry(t)
 	srv := httptest.NewServer(f.handler("proj"))
 	defer srv.Close()
 
 	// Build a buildx-shaped layout: index.json -> nested index -> {image
-	// manifest (platform), attestation manifest (unknown/unknown)}.
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "blobs", "sha256"), 0o755))
 
@@ -182,6 +180,7 @@ func TestPush_NestedIndexWithAttestation(t *testing.T) {
 }
 
 func TestParseRefs(t *testing.T) {
+	t.Serial()
 	reg, proj, tags, err := ParseRefs([]string{
 		"oci.pazer.build/playwright-multiplexer/playwright-mcp:abc123",
 		"oci.pazer.build/playwright-multiplexer/playwright-mcp:latest",
@@ -213,6 +212,7 @@ func TestParseRefs(t *testing.T) {
 }
 
 func TestDeriveServer(t *testing.T) {
+	t.Serial()
 	assert.Equal(t, "https://pazer.build", DeriveServer("oci.pazer.build", false))
 	assert.Equal(t, "http://pazer.build", DeriveServer("oci.pazer.build", true))
 	assert.Equal(t, "https://example.com", DeriveServer("docker.example.com", false))

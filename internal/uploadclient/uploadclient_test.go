@@ -24,31 +24,22 @@ func init() {
 	RetryBaseDelay = time.Millisecond
 }
 
-// mockServer implements the session protocol plus one capture-everything
-// upload target, so tests can drive the client against realistic behavior
-// (offset checks, partial chunks, transient failures) without a real server.
 type mockServer struct {
 	t  *testing.T
 	mu sync.Mutex
 
-	maxDirect int64 // advertised by /api/v1/server-info; 0 omits the endpoint
+	maxDirect int64
 
 	// uploadBySHA256 is advertised on server-info when set (a server with
-	// hash-reference upload support).
 	uploadBySHA256 bool
 
 	sessions map[string][]byte // id -> spooled bytes
 	nextID   int
 
-	// failAppends fails this many appends with a 500 AFTER committing the
-	// chunk -- the lost-response case a resuming client must survive.
 	failAppends int
 
-	// brokenAppends fails appends with a 500 WITHOUT committing anything --
-	// a server that cannot make progress at all.
 	brokenAppends bool
 
-	// disableSessions makes POST /api/v1/uploads 404 (an old server).
 	disableSessions bool
 
 	sessionCalls int // POST /api/v1/uploads count
@@ -170,8 +161,9 @@ func tempFile(t *testing.T, size int) (string, []byte) {
 }
 
 func TestSmallFileUploadsDirect(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
-	path, data := tempFile(t, 8) // under the advertised 10-byte limit
+	path, data := tempFile(t, 8)
 
 	u := &Uploader{Server: ts.URL, Token: "tok"}
 	resp, err := u.Upload("PUT", ts.URL+"/target?kind=binary", nil, path)
@@ -186,10 +178,11 @@ func TestSmallFileUploadsDirect(t *testing.T) {
 }
 
 func TestLargeFileChunks(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
-	path, data := tempFile(t, 100) // over the advertised 10-byte limit
+	path, data := tempFile(t, 100)
 
-	u := &Uploader{Server: ts.URL, Token: "tok", ChunkSize: 7} // 15 chunks
+	u := &Uploader{Server: ts.URL, Token: "tok", ChunkSize: 7}
 	resp, err := u.Upload("PUT", ts.URL+"/target?kind=binary", map[string]string{"X-Extra": "yes"}, path)
 	require.NoError(t, err)
 	resp.Body.Close()
@@ -204,9 +197,10 @@ func TestLargeFileChunks(t *testing.T) {
 }
 
 func TestChunkedResumesAfterLostResponse(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	path, data := tempFile(t, 50)
-	m.failAppends = 2 // two chunk responses vanish after the bytes landed
+	m.failAppends = 2
 
 	u := &Uploader{Server: ts.URL, Token: "tok", ChunkSize: 8}
 	resp, err := u.Upload("PUT", ts.URL+"/target", nil, path)
@@ -218,6 +212,7 @@ func TestChunkedResumesAfterLostResponse(t *testing.T) {
 }
 
 func TestChunkSizeDisabledForcesDirect(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	path, data := tempFile(t, 100) // way over the advertised limit
 
@@ -231,11 +226,11 @@ func TestChunkSizeDisabledForcesDirect(t *testing.T) {
 }
 
 func TestServerInfoUnavailableFallsBackToDefaultThreshold(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	m.maxDirect = 0 // no server-info endpoint at all
 	path, data := tempFile(t, 100)
 
-	// Default threshold is 90 MiB, so this 100-byte file goes direct.
 	u := &Uploader{Server: ts.URL, Token: "tok", ChunkSize: 7}
 	resp, err := u.Upload("PUT", ts.URL+"/target", nil, path)
 	require.NoError(t, err)
@@ -246,10 +241,8 @@ func TestServerInfoUnavailableFallsBackToDefaultThreshold(t *testing.T) {
 }
 
 // A missing session endpoint is a broken server, not a mode to accommodate:
-// the one buildhost advertises upload_sessions, and the old fallback's real
-// effect was to send a several-hundred-megabyte single request for the proxy
-// to reject with a 413 nobody could trace back to here.
 func TestMissingSessionEndpointFailsLoudly(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	m.disableSessions = true
 	path, _ := tempFile(t, 100)
@@ -264,6 +257,7 @@ func TestMissingSessionEndpointFailsLoudly(t *testing.T) {
 }
 
 func TestNoProgressGivesUpAndAborts(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	path, _ := tempFile(t, 50)
 	m.brokenAppends = true // every append 500s without committing anything
@@ -276,6 +270,7 @@ func TestNoProgressGivesUpAndAborts(t *testing.T) {
 }
 
 func TestFileSHA256(t *testing.T) {
+	t.Serial()
 	path, data := tempFile(t, 33)
 	sum := sha256.Sum256(data)
 
@@ -291,6 +286,7 @@ func TestFileSHA256(t *testing.T) {
 // advertisement: a server that predates the feature ignores upload_sha256 and
 // would store the empty request body, so guessing is never safe.
 func TestSupportsUploadBySHA256(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	m.uploadBySHA256 = true
 	u := &Uploader{Server: ts.URL, Token: "tok"}
@@ -309,6 +305,7 @@ func TestSupportsUploadBySHA256(t *testing.T) {
 }
 
 func TestUploadByHash(t *testing.T) {
+	t.Serial()
 	m, ts := newMockServer(t)
 	u := &Uploader{Server: ts.URL, Token: "tok"}
 

@@ -125,8 +125,41 @@ func (q *Queries) GetStorageBreakdown(ctx context.Context) ([]GetStorageBreakdow
 	return items, nil
 }
 
+const listAllArtifactPlatforms = `-- name: ListAllArtifactPlatforms :many
+SELECT artifact_id, os, arch FROM artifact_platforms ORDER BY artifact_id, ordinal
+`
+
+type ListAllArtifactPlatformsRow struct {
+	ArtifactID int64 `json:"artifact_id"`
+	OS         OS    `json:"os"`
+	Arch       Arch  `json:"arch"`
+}
+
+func (q *Queries) ListAllArtifactPlatforms(ctx context.Context) ([]ListAllArtifactPlatformsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAllArtifactPlatforms)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAllArtifactPlatformsRow{}
+	for rows.Next() {
+		var i ListAllArtifactPlatformsRow
+		if err := rows.Scan(&i.ArtifactID, &i.OS, &i.Arch); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAllArtifacts = `-- name: ListAllArtifacts :many
-SELECT a.id, a.os, a.arch, a.kind, a.size, a.filename, a.created_at,
+SELECT a.id, a.os, a.arch, a.kind, a.size, a.filename, a.exe_format, a.created_at,
        r.version, r.git_branch,
        p.name AS project_name,
        CAST(COALESCE(dc.count, 0) AS INTEGER) AS download_count
@@ -144,6 +177,7 @@ type ListAllArtifactsRow struct {
 	Kind          Kind      `json:"kind"`
 	Size          int64     `json:"size"`
 	Filename      string    `json:"filename"`
+	ExeFormat     string    `json:"exe_format"`
 	CreatedAt     time.Time `json:"created_at"`
 	Version       string    `json:"version"`
 	GitBranch     string    `json:"git_branch"`
@@ -167,6 +201,7 @@ func (q *Queries) ListAllArtifacts(ctx context.Context) ([]ListAllArtifactsRow, 
 			&i.Kind,
 			&i.Size,
 			&i.Filename,
+			&i.ExeFormat,
 			&i.CreatedAt,
 			&i.Version,
 			&i.GitBranch,

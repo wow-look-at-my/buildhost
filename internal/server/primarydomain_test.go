@@ -10,23 +10,18 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/config"
 
 	// The web frontend registers its routes (GET /, /projects/*, /_ui/...) in
-	// its init(); the rest of this package's tests never exercise them, so the
-	// backend is imported only here.
 	_ "github.com/wow-look-at-my/buildhost/internal/web"
 )
 
 // Primary-apex scoping of the main-domain UI/API surface: with
 // BUILDHOST_PRIMARY_DOMAIN configured, the web frontend and /api/v1 answer
 // ONLY on that apex. On any other unclaimed host they serve the router's
-// canonical 404, indistinguishable from a route that does not exist, while the
-// deliberately host-agnostic set (/healthz, /ready-to-update, /llms.txt,
-// /__signin, /__sso) keeps answering everywhere.
 
 func TestPrimaryDomain_ScopesWebAndAPIToApex(t *testing.T) {
+	t.Serial()
 	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, true)
 
 	// API writes address the primary apex (doRequest sets the Host) -- this is
-	// the served-on-primary write case.
 	env.createProject(t, "scoped-app", false)
 
 	// Web + API are served on the primary apex.
@@ -45,8 +40,6 @@ func TestPrimaryDomain_ScopesWebAndAPIToApex(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Contains(t, body, "scoped-app")
 
-	// The SAME paths on an unknown host, and on the bare site apex, are 404:
-	// the UI/API does not exist off the primary apex.
 	for _, host := range []string{"evil.example", siteTestDomain} {
 		for _, path := range []string{"/", "/projects/scoped-app", "/_ui/style.css", "/api/v1/projects"} {
 			resp, _ := siteGet(t, env, host, path)
@@ -55,9 +48,6 @@ func TestPrimaryDomain_ScopesWebAndAPIToApex(t *testing.T) {
 		}
 	}
 
-	// The off-apex 404 is byte-identical to the router's 404 for a path that
-	// was never registered, so a probe cannot tell "wrong host" from "no such
-	// route".
 	respScoped, bodyScoped := siteGet(t, env, "evil.example", "/")
 	respNoRoute, bodyNoRoute := siteGet(t, env, "evil.example", "/definitely/not/registered")
 	require.Equal(t, http.StatusNotFound, respScoped.StatusCode)
@@ -65,8 +55,6 @@ func TestPrimaryDomain_ScopesWebAndAPIToApex(t *testing.T) {
 	assert.Equal(t, bodyNoRoute, bodyScoped)
 	assert.Equal(t, respNoRoute.Header.Get("Content-Type"), respScoped.Header.Get("Content-Type"))
 
-	// An authenticated API write off-apex gets the same plain 404 before any
-	// auth semantics run -- nothing is created.
 	resp = env.doFullHost(t, "POST", "evil.example", "/api/v1/projects", "application/json",
 		nil, strings.NewReader(`{"name":"evil-made","versioning":"auto"}`), true)
 	resp.Body.Close()
@@ -81,10 +69,6 @@ func TestPrimaryDomain_ScopesWebAndAPIToApex(t *testing.T) {
 	resp, _ = siteGet(t, env, "evil.example", "/ready-to-update")
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	// docker-updater probes the container by IP, i.e. on an unclaimed host, and
-	// carries no credential: both standard endpoints have to answer there. The
-	// paths are spelled out rather than taken from the server package's consts
-	// -- they are an external contract, and a rename that silently moved them
-	// would be exactly the regression this pins.
 	resp, _ = siteGet(t, env, "evil.example", "/.well-known/docker-updater/health")
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	resp, _ = siteGet(t, env, "evil.example", "/.well-known/docker-updater/pre-update")
@@ -97,7 +81,6 @@ func TestPrimaryDomain_ScopesWebAndAPIToApex(t *testing.T) {
 	assert.Contains(t, resp.Header.Get("Location"), "github.com/login/oauth/authorize")
 
 	// The bare site apex loses web/API (asserted above) but keeps the
-	// fallthrough the sign-in flow relies on: /healthz and /__sso redemption.
 	resp, _ = siteGet(t, env, siteTestDomain, "/healthz")
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	resp, body = siteGet(t, env, siteTestDomain, "/__sso?code=garbage")
@@ -105,16 +88,14 @@ func TestPrimaryDomain_ScopesWebAndAPIToApex(t *testing.T) {
 	assert.Contains(t, body, "Sign-in failed")
 
 	// Service subdomains ride host-bearing routes and are unaffected on any
-	// domain.
 	resp, _ = siteGet(t, env, "oci.evil.example", "/llms.txt")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 // With no primary domain configured the main-domain surface stays fully
 // host-agnostic -- the historical behavior, pinned so the scoping is provably
-// opt-in -- and configuring one changes serve-time behavior only, never the
-// route table.
 func TestPrimaryDomain_UnsetKeepsHostAgnostic(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	env.createProject(t, "anyhost-app", false)
 
@@ -129,7 +110,6 @@ func TestPrimaryDomain_UnsetKeepsHostAgnostic(t *testing.T) {
 	}
 
 	// Primary scoping is a serve-time gate on existing registrations: an Init
-	// WITH a primary domain registers zero new routes.
 	base := routePatterns()
 	setupWith(t, func(cfg *config.Config) { cfg.PrimaryDomain = "route-pin.example" })
 	require.Equal(t, base, routePatterns(),

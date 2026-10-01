@@ -1,27 +1,6 @@
 package brew
 
 // Smart-HTTP git serving (protocol v0 upload-pack) for the generated Homebrew
-// tap, layered on the SAME per-lineage history store the dumb-HTTP path serves
-// (taphistory.go): the advertisement reads the lineage's refs/heads/main tip,
-// and the pack is assembled on the fly by walking parent/tree links through
-// the lineage's loose objects. Nothing is materialized per build -- the
-// append-only store IS the source of truth for both protocols, so they can
-// never describe different repositories.
-//
-// Consistency across a publish landing mid-clone: the client names the commit
-// it wants ("want <sha>" -- the sha the advertisement gave it), and the store
-// is append-only, so even after the tip advances the wanted commit's whole
-// closure is still on disk and is exactly what gets packed. While a smart
-// request is streaming, its lineage directory is additionally pinned against
-// the disk-cap eviction (acquireTapLineage), so a pack can never be truncated
-// by a concurrent RemoveAll.
-//
-// Negotiation is deliberately stateless and minimal: the server never ACKs a
-// common commit -- each flush-terminated batch of haves is answered with NAK
-// (the client keeps negotiating until it sends "done"), and the final response
-// is NAK plus a self-contained pack of every object reachable from the want
-// (bounded by the requested deepen depth). Correct first; the objects are
-// KB-scale formula texts, so the redundancy is noise.
 
 import (
 	"bufio"
@@ -38,34 +17,20 @@ import (
 )
 
 // ServeTapInfoRefs handles GET .../info/refs on both cloneable tap URLs --
-// git.{domain}/brew/tap.git AND brew.{domain}/tap.git -- as the literal route
-// that outscores each host's {path...} dumb file route. With
-// ?service=git-upload-pack it answers the smart ref advertisement; without a
-// service parameter it falls through to the exact dumb-HTTP file serving
-// (#159's deployed behavior, byte-for-byte), so dumb clients are untouched.
-// On the brew host the smart pair is served DIRECTLY (no anonymous redirect):
-// brew.{domain}/tap.git is a first-class clone URL, and the lineage key's
-// (base URL, credential scope) already gives each host and each credential
-// its own consistent tap -- only the bare /tap.git path and the dumb file
-// paths keep RedirectTap's anonymous 301.
 func (h *Handler) ServeTapInfoRefs(w http.ResponseWriter, r *http.Request) {
 	h.serveTapInfoRefs(w, r)
 }
 
 // ServeTapUploadPack handles POST .../git-upload-pack -- the smart fetch --
-// on the same two tap roots ServeTapInfoRefs advertises for.
 func (h *Handler) ServeTapUploadPack(w http.ResponseWriter, r *http.Request) {
 	h.serveTapUploadPack(w, r)
 }
 
 // ServePrivateTapInfoRefs / ServePrivateTapUploadPack are the smart endpoints
 // under brew.{domain}/private/tap.git, with ServePrivateTap's exact credential
-// semantics: anonymous requests get the 401 Basic challenge (git only sends
-// URL-embedded credentials after a challenge), credentialed ones are served a
-// tap scoped to the credential -- the lineage key already carries the scope.
 func (h *Handler) ServePrivateTapInfoRefs(w http.ResponseWriter, r *http.Request) {
 	if auth.TokenFrom(r.Context()) == nil {
-		h.ServePrivateTap(w, r) // the 401 Basic challenge
+		h.ServePrivateTap(w, r)
 		return
 	}
 	h.serveTapInfoRefs(w, r)
@@ -82,7 +47,6 @@ func (h *Handler) ServePrivateTapUploadPack(w http.ResponseWriter, r *http.Reque
 // serveTapInfoRefs dispatches an info/refs request by its service parameter:
 // none means the dumb protocol (served exactly like every other tap file),
 // git-upload-pack means the smart advertisement, anything else is refused
-// (there is no receive-pack -- the tap is read-only by construction).
 func (h *Handler) serveTapInfoRefs(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Query().Get("service") {
 	case "":
@@ -96,7 +60,6 @@ func (h *Handler) serveTapInfoRefs(w http.ResponseWriter, r *http.Request) {
 
 // serveUploadPackAdvertisement answers the smart ref advertisement from the
 // lineage's persisted tip -- the SAME refs/heads/main the dumb path serves, so
-// smart and dumb clients always see one repository.
 func (h *Handler) serveUploadPackAdvertisement(w http.ResponseWriter, r *http.Request) {
 	root, release, err := h.acquireTapLineage(r)
 	if err != nil {
@@ -121,8 +84,6 @@ func (h *Handler) serveUploadPackAdvertisement(w http.ResponseWriter, r *http.Re
 // a publish that advances the tip between the advertisement and this POST can
 // never produce a ref/pack mismatch: the append-only store still holds the
 // wanted commit's entire closure. An unknown or non-commit want falls back to
-// the current tip rather than erroring -- the tap advertises exactly one ref,
-// so that is the only thing a well-formed client can mean.
 func (h *Handler) serveTapUploadPack(w http.ResponseWriter, r *http.Request) {
 	body, err := readUploadPackRequest(r)
 	if err != nil {
@@ -154,7 +115,6 @@ func (h *Handler) serveTapUploadPack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Walk the commit graph up front (it also computes the shallow boundary),
-	// so every failure happens before headers are written.
 	commits, shallow, unshallow, err := walkCommits(root, target, req.depth, req.clientShallow)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -166,22 +126,14 @@ func (h *Handler) serveTapUploadPack(w http.ResponseWriter, r *http.Request) {
 
 	// A response to a deepen request always carries the shallow section (the
 	// exchange is stateless, so it is repeated on the final round too); a
-	// request WITHOUT deepen must never see one -- a plain clone's want line
-	// merely echoing shallow capabilities used to be mistaken for a depth
-	// request, and git died with "expected ACK/NAK, got 'shallow <sha>'".
 	if req.hasDeepen {
 		writeShallowSection(w, shallow, unshallow)
 		if !req.done {
 			// The depth negotiation round: the client sends wants + deepen
-			// first and expects only the shallow section back.
 			return
 		}
 	} else if !req.done {
 		// A flush-terminated batch of haves mid-negotiation: we never ACK
-		// (stateless NAK negotiation), so answer NAK and let the client keep
-		// going until it sends done. Appending the pack here would corrupt
-		// the next round once a client has >1 batch of haves to advertise --
-		// which real history now makes possible.
 		w.Write(pktLineString("NAK\n"))
 		return
 	}
@@ -191,7 +143,6 @@ func (h *Handler) serveTapUploadPack(w http.ResponseWriter, r *http.Request) {
 	entries, err := collectPackEntries(root, commits)
 	if err != nil {
 		// Headers are sent; abandoning the body fails the client's pack
-		// checksum, the same contract the dumb path has for mid-stream errors.
 		return
 	}
 	var dst io.Writer = w
@@ -214,8 +165,6 @@ func (h *Handler) serveTapUploadPack(w http.ResponseWriter, r *http.Request) {
 }
 
 // setTapCacheControl applies the tap's credential-dependent caching rule (the
-// same one serveTapFile applies): a credentialed response depends on the
-// Authorization header and must never be shared-cached.
 func setTapCacheControl(w http.ResponseWriter, r *http.Request) {
 	if auth.TokenFrom(r.Context()) != nil {
 		w.Header().Set("Cache-Control", "private, no-store")
@@ -250,8 +199,6 @@ func tapTipFromRoot(root *os.Root) (string, error) {
 // modern clients negotiate normally (we still always answer NAK and send full
 // packs with no deltas -- advertising them only widens what we ACCEPT).
 // deepen-since/deepen-not are deliberately NOT advertised: the lineage's
-// commits carry zero timestamps, so time-based deepening would be nonsense,
-// and a capability we do not advertise is one a compliant client never sends.
 func uploadPackAdvertisement(commitSHA string) []byte {
 	var buf bytes.Buffer
 	buf.Write(pktLineString("# service=git-upload-pack\n"))
@@ -280,14 +227,12 @@ func readUploadPackRequest(r *http.Request) ([]byte, error) {
 }
 
 // maxUploadPackRefs caps how many want/shallow lines are honored per request.
-// The tap advertises exactly one ref, so anything beyond a handful is a
-// hostile body; the cap bounds the per-want disk probes.
 const maxUploadPackRefs = 32
 
 type uploadPackRequest struct {
 	wants         []string
 	clientShallow []string
-	depth         int  // parsed "deepen <n>"; 0 = unbounded
+	depth         int
 	hasDeepen     bool // any deepen* pkt-line was present
 	done          bool
 	sideBand      bool
@@ -306,8 +251,6 @@ func parseUploadPackRequest(body []byte) uploadPackRequest {
 			if len(fields) > 0 && validLooseSHA(fields[0]) && len(req.wants) < maxUploadPackRefs {
 				req.wants = append(req.wants, fields[0])
 			}
-			// Capabilities ride the first want line's tail; scanning every
-			// want line is harmless (shas are hex and can't collide).
 			for _, c := range fields[1:] {
 				if c == "side-band" || c == "side-band-64k" {
 					req.sideBand = true
@@ -330,21 +273,11 @@ func parseUploadPackRequest(body []byte) uploadPackRequest {
 }
 
 // wantsShallow reports whether the request carries an actual depth request --
-// a "deepen <n>", "deepen-since <timestamp>", or "deepen-not <ref>" pkt-line.
-// Per the pack protocol the shallow section is sent ONLY in answer to such a
-// request; a client that sent none expects ACK/NAK immediately. This must
-// inspect whole pkt-lines: a plain (full) clone's want line ECHOES advertised
-// deepen-* capability tokens, so a raw substring match mistook every full
-// clone for a shallow one and git died with "fatal: git fetch-pack: expected
-// ACK/NAK, got 'shallow <sha>'".
 func wantsShallow(body []byte) bool {
 	return parseUploadPackRequest(body).hasDeepen
 }
 
 // pktLines splits a pkt-line stream into its payload lines, skipping
-// flush-pkts (0000) and the other zero-payload special packets; parsing
-// stops at the first malformed length. Trailing newlines are kept --
-// callers prefix-match.
 func pktLines(body []byte) [][]byte {
 	var lines [][]byte
 	for len(body) >= 4 {
@@ -353,7 +286,6 @@ func pktLines(body []byte) [][]byte {
 			break
 		}
 		if n < 4 {
-			// flush-pkt (0000), delim-pkt (0001), response-end (0002).
 			body = body[4:]
 			continue
 		}
@@ -369,7 +301,6 @@ func pktLines(body []byte) [][]byte {
 // writeShallowSection emits the deepen response: the commits that became
 // shallow (their parents were cut by the requested depth), the client-shallow
 // commits this pack un-shallows (their parents ARE included now, e.g. a
-// --depth increase or --unshallow), then the section's flush.
 func writeShallowSection(w io.Writer, shallow, unshallow []string) {
 	for _, sha := range shallow {
 		w.Write(pktLineString("shallow " + sha + "\n"))
@@ -380,12 +311,8 @@ func writeShallowSection(w io.Writer, shallow, unshallow []string) {
 	io.WriteString(w, "0000")
 }
 
-// commitNode is one walked commit and its root tree.
-
 const sideBandMaxData = 65515
 
-// sideBandWriter frames raw pack bytes into side-band-64k band-1 data packets.
-// The caller terminates the stream with a flush-pkt after the last write.
 type sideBandWriter struct {
 	w io.Writer
 }

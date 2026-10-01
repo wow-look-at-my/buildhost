@@ -47,12 +47,12 @@ func putRelease(t *testing.T, d *db.DB, store storage.Storage, projectID int64, 
 }
 
 // futureClock makes every existing release look "old" relative to the recency
-// guard, so eviction is exercised deterministically without sleeping.
 func futureClock() func() time.Time {
 	return func() time.Time { return time.Now().Add(365 * 24 * time.Hour) }
 }
 
 func TestRun_EnforceEvictsPastKeepN(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 
@@ -89,6 +89,7 @@ func TestRun_EnforceEvictsPastKeepN(t *testing.T) {
 }
 
 func TestPlan_ReportOnlyChangesNothing(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 
@@ -118,6 +119,7 @@ func TestPlan_ReportOnlyChangesNothing(t *testing.T) {
 }
 
 func TestRun_AbandonedSweep(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 
@@ -138,7 +140,7 @@ func TestRun_AbandonedSweep(t *testing.T) {
 	rep, err := ret.Run(ctx)
 	require.NoError(t, err)
 	assert.Len(t, rep.AbandonedReleases, 1)
-	assert.Empty(t, rep.EvictedReleases) // only one published release, under keep-N
+	assert.Empty(t, rep.EvictedReleases)
 
 	ex, _ := store.Exists(ctx, key)
 	assert.False(t, ex)
@@ -147,6 +149,7 @@ func TestRun_AbandonedSweep(t *testing.T) {
 }
 
 func TestRun_NothingToDo(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	putRelease(t, d, store, p.ID, "v1", 1, "main", "only")
 
@@ -159,10 +162,8 @@ func TestRun_NothingToDo(t *testing.T) {
 	assert.Equal(t, 0, rep.BlobsDeleted)
 }
 
-// Hash-reference uploads let several releases (and slots) share one blob:
-// the blob must survive until the LAST referencing release is evicted, then
-// be freed exactly once.
 func TestRun_SharedBlobFreedWithLastReference(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 
@@ -183,8 +184,6 @@ func TestRun_SharedBlobFreedWithLastReference(t *testing.T) {
 	}
 
 	// v1 uploaded the blob; v2's rows reference the same blob (hash-reference
-	// uploads: several slots, zero new store puts); v3 is unrelated content
-	// and stays the branch tip.
 	v1 := addRelease("v1", 1)
 	addRow(v1, db.OSLinux, db.ArchAMD64)
 	v2 := addRelease("v2", 2)
@@ -203,8 +202,6 @@ func TestRun_SharedBlobFreedWithLastReference(t *testing.T) {
 	ex, _ := store.Exists(ctx, key)
 	assert.True(t, ex, "blob shared with a live release must survive")
 
-	// Evict v2, the last reference: the blob is freed (once, despite two
-	// referencing rows).
 	ret = New(d, store, Config{KeepN: 1, RecencyGuard: 24 * time.Hour, Enforce: true})
 	ret.clock = futureClock()
 	rep, err = ret.Run(ctx)
@@ -218,6 +215,7 @@ func TestRun_SharedBlobFreedWithLastReference(t *testing.T) {
 }
 
 func TestDeleteBlobIfUnreferenced(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 	key := putRelease(t, d, store, p.ID, "v1", 1, "main", "data")
@@ -257,6 +255,7 @@ func TestDeleteBlobIfUnreferenced(t *testing.T) {
 // that never finished, and cannot be allowed to delete drafts -- doing so would
 // quietly delete the feature.
 func TestRun_DraftsSurviveAbandonedSweep(t *testing.T) {
+	t.Serial()
 	d, store, p := setup(t)
 	ctx := context.Background()
 

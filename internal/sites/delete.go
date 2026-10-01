@@ -34,8 +34,6 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Delete the blob only if no other row (another branch, an artifact, an OCI
-	// image) still references that content-addressed key. A naive unconditional
-	// delete would break a dedup-shared blob.
 	if storageKey != "" {
 		_, _ = retention.DeleteBlobIfUnreferenced(ctx, h.DB, h.Store, storageKey, true)
 	}

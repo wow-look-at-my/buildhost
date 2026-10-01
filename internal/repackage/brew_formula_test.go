@@ -38,6 +38,7 @@ func baseFormula(resources ...BrewResource) BrewFormula {
 // single-OS formula declares depends_on so a foreign-platform install fails
 // cleanly instead of fetching a binary that cannot run.
 func TestRenderBrewFormula_LinuxOnly(t *testing.T) {
+	t.Serial()
 	body := renderFormula(t, baseFormula(
 		BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/linux-amd64", SHA256: strings.Repeat("aa", 32)},
 	))
@@ -49,6 +50,7 @@ func TestRenderBrewFormula_LinuxOnly(t *testing.T) {
 }
 
 func TestRenderBrewFormula_MacOnly(t *testing.T) {
+	t.Serial()
 	body := renderFormula(t, baseFormula(
 		BrewResource{OS: "macos", Arch: "arm", URL: "https://dl.example/darwin-arm64", SHA256: strings.Repeat("bb", 32)},
 	))
@@ -59,12 +61,12 @@ func TestRenderBrewFormula_MacOnly(t *testing.T) {
 }
 
 func TestRenderBrewFormula_DualOS(t *testing.T) {
+	t.Serial()
 	linux := BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/linux-amd64", SHA256: strings.Repeat("cc", 32)}
 	mac := BrewResource{OS: "macos", Arch: "arm", URL: "https://dl.example/darwin-arm64", SHA256: strings.Repeat("dd", 32)}
 	body := renderFormula(t, baseFormula(mac, linux))
 
 	// No platform gate, on_* blocks intact, and the top-level url is the
-	// canonical resource (linux/intel preferred).
 	assert.NotContains(t, body, "depends_on")
 	assert.Contains(t, body, "on_macos do")
 	assert.Contains(t, body, "on_linux do")
@@ -72,6 +74,7 @@ func TestRenderBrewFormula_DualOS(t *testing.T) {
 }
 
 func TestRenderBrewFormula_PrivateTopLevelURLUsesStrategy(t *testing.T) {
+	t.Serial()
 	f := baseFormula(BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/x", SHA256: strings.Repeat("ee", 32)})
 	f.Private = true
 	body := renderFormula(t, f)
@@ -81,6 +84,7 @@ func TestRenderBrewFormula_PrivateTopLevelURLUsesStrategy(t *testing.T) {
 }
 
 func TestRenderBrewFormula_NoResourcesErrors(t *testing.T) {
+	t.Serial()
 	_, err := RenderBrewFormula(baseFormula())
 	require.Error(t, err)
 }
@@ -90,6 +94,7 @@ func TestRenderBrewFormula_NoResourcesErrors(t *testing.T) {
 // commit for every project on deploy. Any deliberate change to the formula
 // (e.g. the skip_clean/chmod mode fix) belongs in this golden.
 func TestRenderBrewFormula_ServiceOffByteIdentical(t *testing.T) {
+	t.Serial()
 	body := renderFormula(t, baseFormula(
 		BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/linux-amd64", SHA256: strings.Repeat("aa", 32)},
 	))
@@ -132,8 +137,8 @@ end
 // `successful_exit: false` renders KeepAlive {SuccessfulExit: false} in the
 // launchd plist (Homebrew service.rb KEEP_ALIVE_KEYS) -- because plain
 // `keep_alive true` would respawn a deliberately-exiting app (a single-instance
-// exit-0 handoff, a quit command) every ~10 seconds forever.
 func TestRenderBrewFormula_ServiceBlock(t *testing.T) {
+	t.Serial()
 	f := baseFormula(BrewResource{OS: "macos", Arch: "arm", URL: "https://dl.example/darwin-arm64", SHA256: strings.Repeat("bb", 32)})
 	f.Service = true
 	body := renderFormula(t, f)
@@ -158,6 +163,7 @@ end
 // The service block runs opt_bin/<InstallName>, which only a bin.install
 // stages -- non-binary kinds must never emit it, flag or no flag.
 func TestRenderBrewFormula_ServiceNonBinaryKindOmitsBlock(t *testing.T) {
+	t.Serial()
 	f := baseFormula(BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/lib", SHA256: strings.Repeat("cc", 32)})
 	f.Kind = "library"
 	f.Service = true
@@ -170,6 +176,7 @@ func TestRenderBrewFormula_ServiceNonBinaryKindOmitsBlock(t *testing.T) {
 // Slash-namespaced projects install (and therefore run) the BASENAME -- the
 // service block must reference the same staged name bin.install produces.
 func TestRenderBrewFormula_ServiceSlashNamespacedUsesBasename(t *testing.T) {
+	t.Serial()
 	f := baseFormula(BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/x", SHA256: strings.Repeat("dd", 32)})
 	f.Name = "myrepo/myapp"
 	f.Service = true
@@ -179,14 +186,8 @@ func TestRenderBrewFormula_ServiceSlashNamespacedUsesBasename(t *testing.T) {
 	assert.Contains(t, body, "log_path var/\"log/myapp.log\"")
 }
 
-// Homebrew's Cleaner chmods every file under bin to 0555 (a `#!` script, an
-// ELF or a Mach-O) or 0444 (anything else), whatever mode the formula
-// installed. A Cosmopolitan/APE binary is none of the three, so it landed 0444
-// and `brew install go-toolchain` produced a file that could not be executed
-// at all -- and 0555 is no better, because an APE rewrites itself in place on
-// first run and dies with "Permission denied" without the write bit. A
-// binary-kind formula therefore installs 0755 and prunes the Cleaner for bin.
 func TestRenderBrewFormula_BinaryKeepsExecutableWritableMode(t *testing.T) {
+	t.Serial()
 	body := renderFormula(t, baseFormula(
 		BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/x", SHA256: strings.Repeat("aa", 32)},
 	))
@@ -194,14 +195,13 @@ func TestRenderBrewFormula_BinaryKeepsExecutableWritableMode(t *testing.T) {
 	assert.Contains(t, body, "\n  skip_clean \"bin\"\n")
 	assert.Contains(t, body, "\n    chmod 0755, bin/\"mytool\"\n")
 	// skip_clean is a class-body call, not an install step: it must sit
-	// outside `def install` (before it), or Ruby raises NoMethodError on the
-	// formula INSTANCE at install time.
 	assert.Less(t, strings.Index(body, `skip_clean "bin"`), strings.Index(body, "def install"))
 }
 
 // The Cleaner opt-out exists for the bin.install path; other kinds stage
 // nothing under bin, so they keep Homebrew's default cleanup.
 func TestRenderBrewFormula_NonBinaryKindHasNoSkipClean(t *testing.T) {
+	t.Serial()
 	for _, kind := range []string{"library", "archive"} {
 		f := baseFormula(BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/x", SHA256: strings.Repeat("bb", 32)})
 		f.Kind = kind
@@ -216,6 +216,7 @@ func TestRenderBrewFormula_NonBinaryKindHasNoSkipClean(t *testing.T) {
 // top-level directory when unpacking), so the chmod must name the same file
 // bin.install staged -- chmod'ing the slashed path would ENOENT the install.
 func TestRenderBrewFormula_SlashNamespacedChmodsBasename(t *testing.T) {
+	t.Serial()
 	f := baseFormula(BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example/x", SHA256: strings.Repeat("cc", 32)})
 	f.Name = "myrepo/myapp"
 	body := renderFormula(t, f)
@@ -224,6 +225,7 @@ func TestRenderBrewFormula_SlashNamespacedChmodsBasename(t *testing.T) {
 }
 
 func TestBrewCanonicalResource(t *testing.T) {
+	t.Serial()
 	linuxIntel := BrewResource{OS: "linux", Arch: "intel", URL: "li"}
 	linuxArm := BrewResource{OS: "linux", Arch: "arm", URL: "la"}
 	macIntel := BrewResource{OS: "macos", Arch: "intel", URL: "mi"}
@@ -232,7 +234,6 @@ func TestBrewCanonicalResource(t *testing.T) {
 	// linux/intel wins whenever present, regardless of input order.
 	assert.Equal(t, "li", brewCanonicalResource([]BrewResource{macArm, linuxIntel, linuxArm}).URL)
 	assert.Equal(t, "li", brewCanonicalResource([]BrewResource{linuxIntel}).URL)
-	// Otherwise the first in stable (OS, Arch) order, independent of input order.
 	assert.Equal(t, "la", brewCanonicalResource([]BrewResource{macArm, macIntel, linuxArm}).URL)
 	assert.Equal(t, "ma", brewCanonicalResource([]BrewResource{macIntel, macArm}).URL)
 

@@ -25,16 +25,12 @@ runs:
   using: composite
   steps:
     # Login and pull are one step on purpose: the OIDC credential is
-    # short-lived, and splitting them is how a caller ends up owning the gap
-    # between them.
     - id: pull
       shell: bash
       env:
         IMAGES: ${{ inputs.images }}
       run: |
         set -euo pipefail
-        bash "${{ github.action_path }}/../lib/docker-login.sh" "${{ inputs.server }}"
-
         host="${{ inputs.server }}"; host="${host#*://}"
         echo "registry=oci.${host%%/*}" >> "${GITHUB_OUTPUT}"
 
@@ -43,6 +39,8 @@ runs:
           image="${image#"${image%%[![:space:]]*}"}"
           image="${image%"${image##*[![:space:]]}"}"
           [ -z "${image}" ] && continue
+          # Once per image: an OIDC token lives minutes, and one large pull outlasts it.
+          bash "${{ github.action_path }}/../lib/docker-login.sh" "${{ inputs.server }}"
           docker pull "${image}"
           pulled=$((pulled + 1))
         done <<< "${IMAGES}"

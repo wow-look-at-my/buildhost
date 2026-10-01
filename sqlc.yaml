@@ -38,5 +38,14 @@ sql:
           - column: "artifacts.kind"
             go_type:
               type: "Kind"
+          - column: "artifact_platforms.os"
+            go_type:
+              type: "OS"
+          - column: "artifact_platforms.arch"
+            go_type:
+              type: "Arch"
+          - column: "artifact_platforms.kind"
+            go_type:
+              type: "Kind"
           - column: "api_tokens.token_hash"
             go_struct_tag: 'json:"-"'

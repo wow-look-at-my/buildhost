@@ -2,8 +2,6 @@ package brew
 
 // Packfile assembly for the smart-HTTP tap (smart.go): the response pack is
 // built on the fly by walking parent/tree links from the wanted commit
-// through the lineage's loose objects -- see smart.go for the protocol layer
-// and the consistency story.
 
 import (
 	"bytes"
@@ -16,6 +14,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 type commitNode struct {
@@ -24,19 +24,14 @@ type commitNode struct {
 }
 
 // walkCommits walks the lineage's commit graph from tip, bounded by depth
-// (0 = every commit reachable -- the full-history clone). It returns the
-// included commits, the shallow boundary (included commits whose parents the
-// depth cut off), and which of the client's shallow points this response
-// un-shallows. The lineage's history is a single-parent chain in practice,
-// but the walk is a general BFS so nothing breaks if that ever changes.
 func walkCommits(root *os.Root, tip string, depth int, clientShallow []string) (commits []commitNode, shallow, unshallow []string, err error) {
 	type qnode struct {
 		sha  string
 		dist int
 	}
 	queue := []qnode{{sha: tip, dist: 1}}
-	seen := map[string]bool{tip: true}
-	inShallow := map[string]bool{}
+	seen := set.Of(tip)
+	inShallow := set.New[string]()
 
 	for len(queue) > 0 {
 		c := queue[0]
@@ -58,20 +53,19 @@ func walkCommits(root *os.Root, tip string, depth int, clientShallow []string) (
 		if depth > 0 && c.dist >= depth {
 			if len(parents) > 0 {
 				shallow = append(shallow, c.sha)
-				inShallow[c.sha] = true
+				inShallow.Add(c.sha)
 			}
 			continue
 		}
 		for _, p := range parents {
-			if !seen[p] {
-				seen[p] = true
+			if seen.Add(p) {
 				queue = append(queue, qnode{sha: p, dist: c.dist + 1})
 			}
 		}
 	}
 
 	for _, cs := range clientShallow {
-		if seen[cs] && !inShallow[cs] {
+		if seen.Contains(cs) && !inShallow.Contains(cs) {
 			unshallow = append(unshallow, cs)
 		}
 	}
@@ -81,13 +75,11 @@ func walkCommits(root *os.Root, tip string, depth int, clientShallow []string) (
 // collectPackEntries expands the walked commits into the full object list for
 // the pack: every commit, then each commit's tree closure, deduplicated -- the
 // lineage reuses unchanged trees and blobs across commits, so shared objects
-// are packed once. Every object is verified readable here, BEFORE the pack
-// header is on the wire.
 func collectPackEntries(root *os.Root, commits []commitNode) ([]string, error) {
-	seen := make(map[string]bool, len(commits)*4)
+	seen := set.New[string](len(commits) * 4)
 	var entries []string
 	add := func(sha string) {
-		seen[sha] = true
+		seen.Add(sha)
 		entries = append(entries, sha)
 	}
 	for _, c := range commits {
@@ -98,7 +90,7 @@ func collectPackEntries(root *os.Root, commits []commitNode) ([]string, error) {
 		for len(stack) > 0 {
 			treeSHA := stack[len(stack)-1]
 			stack = stack[:len(stack)-1]
-			if seen[treeSHA] {
+			if seen.Contains(treeSHA) {
 				continue
 			}
 			kind, body, err := readLooseObject(root, treeSHA)
@@ -114,7 +106,7 @@ func collectPackEntries(root *os.Root, commits []commitNode) ([]string, error) {
 				return nil, err
 			}
 			for _, ref := range refs {
-				if seen[ref.sha] {
+				if seen.Contains(ref.sha) {
 					continue
 				}
 				if ref.isTree {
@@ -131,10 +123,6 @@ func collectPackEntries(root *os.Root, commits []commitNode) ([]string, error) {
 	return entries, nil
 }
 
-// writePack streams a version-2 packfile of the given loose objects: header,
-// one non-delta zlib entry per object (each read from the lineage and
-// re-deflated one at a time -- per-request memory stays bounded by the
-// largest single object, KB-scale formula text), then the SHA-1 trailer.
 func writePack(dst io.Writer, root *os.Root, entries []string) error {
 	sum := sha1.New()
 	w := io.MultiWriter(dst, sum)
@@ -170,7 +158,6 @@ func writePack(dst io.Writer, root *os.Root, entries []string) error {
 		}
 	}
 	// The trailer is the digest of everything before it -- written to dst
-	// only, never back through the hash.
 	_, err := dst.Write(sum.Sum(nil))
 	return err
 }
@@ -191,8 +178,6 @@ func packTypeCode(kind string) (byte, error) {
 	}
 }
 
-// packObjectHeader encodes a pack entry header: type in bits 4-6 of the first
-// byte, the uncompressed size in little-endian base-128 varint form.
 func packObjectHeader(typeCode byte, size int) []byte {
 	first := byte(size&0x0f) | typeCode<<4
 	size >>= 4
@@ -211,10 +196,6 @@ func packObjectHeader(typeCode byte, size int) []byte {
 	return out
 }
 
-// readLooseObject reads one loose object from the lineage through the
-// sandboxed root and returns its kind and decompressed body. Tap objects are
-// KB-scale (formula texts and ~200-byte commits/trees), so whole-body reads
-// are the bounded case here.
 func readLooseObject(root *os.Root, sha string) (kind string, body []byte, err error) {
 	f, err := root.Open(looseObjectPath(sha))
 	if err != nil {
@@ -280,7 +261,6 @@ type treeEntryRef struct {
 }
 
 // parseTreeEntries decodes a tree object body: "<mode> <name>\x00" followed by
-// the 20 raw sha bytes, repeated.
 func parseTreeEntries(body []byte) ([]treeEntryRef, error) {
 	var out []treeEntryRef
 	rest := body
@@ -301,6 +281,3 @@ func parseTreeEntries(body []byte) ([]treeEntryRef, error) {
 	}
 	return out, nil
 }
-
-// sideBandMaxData is the largest payload of one side-band-64k data packet:
-// the 65520-byte pkt-line ceiling minus the 4-byte length and 1-byte band.

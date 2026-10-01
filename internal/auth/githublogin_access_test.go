@@ -16,6 +16,7 @@ import (
 )
 
 func TestCanAccessRepo(t *testing.T) {
+	t.Serial()
 	var calls int
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -50,11 +51,8 @@ func canAccess(t *testing.T, g *GitHubAuth, login, token, repo string) bool {
 	return allowed
 }
 
-// A transient GitHub failure (5xx/429/network/rate-limit 403) must NOT be cached
-// as a hard denial. Regression: a momentary blip on the first check after
-// sign-in pinned an authorized repo owner to "Access denied" for the whole cache
-// TTL, even though GitHub would have returned 200 on the very next call.
 func TestCanAccessRepo_TransientFailureNotCached(t *testing.T) {
+	t.Serial()
 	status := http.StatusInternalServerError
 	var calls int
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,13 +66,10 @@ func TestCanAccessRepo_TransientFailureNotCached(t *testing.T) {
 
 	g := NewGitHubAuth("cid", "secret")
 
-	// First check hits a transient 500 -> denied, but the non-answer is not
-	// cached -- and is NOT classified as a dead token.
 	allowed, tokenDead := g.canAccessRepo(context.Background(), "matt", "tok", "PazerOP/UE553")
 	assert.False(t, allowed)
 	assert.False(t, tokenDead, "a transient failure must not be classified token-dead")
 	// GitHub recovers; the next check must re-hit GitHub (not the cache) and now
-	// succeed -- the owner is not locked out by the earlier blip.
 	status = http.StatusOK
 	before := calls
 	assert.True(t, canAccess(t, g, "matt", "tok", "PazerOP/UE553"),
@@ -85,8 +80,8 @@ func TestCanAccessRepo_TransientFailureNotCached(t *testing.T) {
 // A user who re-signs-in with a fresh, broader-scoped token is not shadowed by a
 // negative result cached against their previous token: the cache key includes a
 // token fingerprint, so the new token is re-checked rather than inheriting the
-// old token's authoritative 404.
 func TestCanAccessRepo_NewTokenNotShadowedByStaleNegative(t *testing.T) {
+	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") == "Bearer good" {
 			w.WriteHeader(http.StatusOK)
@@ -101,10 +96,8 @@ func TestCanAccessRepo_NewTokenNotShadowedByStaleNegative(t *testing.T) {
 
 	g := NewGitHubAuth("cid", "secret")
 
-	// Old, insufficient token: authoritative 404 -> denied (and cached for it).
 	assert.False(t, canAccess(t, g, "matt", "scopeless", "PazerOP/UE553"))
 	// Re-auth yields a new token with access; it must be re-checked, not shadowed
-	// by the cached deny keyed to the previous token.
 	assert.True(t, canAccess(t, g, "matt", "good", "PazerOP/UE553"),
 		"a new token must be re-checked, not shadowed by the previous token's cached deny")
 }
@@ -112,6 +105,7 @@ func TestCanAccessRepo_NewTokenNotShadowedByStaleNegative(t *testing.T) {
 // A browser hitting a private resource with no session, when GitHub login is
 // configured, is redirected to /__signin (off to GitHub) on the apex.
 func TestRequireProject_Browser_GitHubEnabled_RedirectsToSignin(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	mw.GitHub = NewGitHubAuth("cid", "secret")
@@ -139,9 +133,8 @@ func TestRequireProject_Browser_GitHubEnabled_RedirectsToSignin(t *testing.T) {
 }
 
 // End-to-end through the middleware: a signed-in user WITH access to the
-// project's repo is allowed; one WITHOUT access is denied -- repo access is the
-// gate, no org allowlist.
 func TestSessionCookie_RepoAccessGatesPrivateProject(t *testing.T) {
+	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/repos/PazerOP/allowed" {
 			w.WriteHeader(http.StatusOK)
@@ -181,9 +174,8 @@ func TestSessionCookie_RepoAccessGatesPrivateProject(t *testing.T) {
 }
 
 // A signed-in browser that lacks access to the project's repo gets an actionable
-// HTML page (403) -- NOT a redirect (which would loop) and NOT the dead-end JSON
-// 401 a browser cannot act on. The page names the repo and offers a sign-out.
 func TestRequireProject_Browser_SignedInButForbidden_HTMLPage(t *testing.T) {
+	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound) // user can't see any repo
 	}))
@@ -227,6 +219,7 @@ func TestRequireProject_Browser_SignedInButForbidden_HTMLPage(t *testing.T) {
 
 // A project with no recorded GitHub repo cannot be opened via GitHub login.
 func TestUserCanReadProject_NoRepo_Denied(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	mw.GitHub = NewGitHubAuth("cid", "secret")

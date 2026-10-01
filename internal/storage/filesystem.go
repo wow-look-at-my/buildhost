@@ -120,8 +120,6 @@ func (fs *Filesystem) Put(_ context.Context, r io.Reader) (string, int64, error)
 // PutUncompressed stores a blob without the storage layer's zstd wrapper, so
 // it can be read at an offset later (see OpenReaderAt). The key is unchanged --
 // it is the sha256 of the same bytes -- so a blob already stored compressed
-// dedups to that copy and simply keeps its compressed form; OpenReaderAt then
-// reports ErrRandomUnsupported and the caller falls back to a sequential read.
 func (fs *Filesystem) PutUncompressed(ctx context.Context, r io.Reader) (string, int64, error) {
 	if !fs.compress {
 		return fs.Put(ctx, r) // already the uncompressed path
@@ -162,7 +160,6 @@ func (fs *Filesystem) OpenReaderAt(_ context.Context, key string) (ReaderAtClose
 		return nil, 0, fmt.Errorf("mmap blob: %w", err)
 	}
 	// Random access, so the kernel must not drop pages behind a cursor that
-	// does not exist.
 	_ = m.Advise(mmap.AdvRandom)
 
 	if len(m) >= 12 && bytes.Equal(m[:4], compressedMagic[:]) {
@@ -173,7 +170,6 @@ func (fs *Filesystem) OpenReaderAt(_ context.Context, key string) (ReaderAtClose
 }
 
 // mmapReaderAt serves ReadAt straight out of a blob's mapping: no copy beyond
-// the caller's buffer, and no per-read syscall.
 type mmapReaderAt struct{ m mmap.MMap }
 
 func (r *mmapReaderAt) ReadAt(p []byte, off int64) (int, error) {
@@ -212,16 +208,12 @@ func (fs *Filesystem) Get(_ context.Context, key string) (io.ReadCloser, int64, 
 	}
 	size := info.Size()
 
-	// An empty blob has nothing to map (mmap rejects a zero-length region).
 	if size == 0 {
 		f.Close()
 		return io.NopCloser(bytes.NewReader(nil)), 0, nil
 	}
 
 	// Memory-map the (compressed) blob and read through the mapping. The fd may be
-	// closed once mapped -- the mapping keeps the file alive until Unmap. Sequential
-	// advice lets the kernel read ahead and drop pages behind the cursor, so even a
-	// huge blob streams from a reclaimable mapping instead of being read into the heap.
 	m, err := mmap.MapRegion(int(f.Fd()), size, mmap.ProtRead, mmap.MapShared, 0)
 	f.Close()
 	if err != nil {
@@ -229,9 +221,6 @@ func (fs *Filesystem) Get(_ context.Context, key string) (io.ReadCloser, int64, 
 	}
 	_ = m.Advise(mmap.AdvSequential)
 
-	// Compressed blobs carry a 4-byte magic + 8-byte little-endian original-size
-	// header, then a zstd stream. Decode straight off the mapping: the decoder pulls
-	// compressed pages on demand and emits decompressed chunks as the caller reads.
 	if len(m) >= 12 && bytes.Equal(m[:4], compressedMagic[:]) {
 		origSize := int64(binary.LittleEndian.Uint64(m[4:12]))
 		zr, err := zstd.NewReader(bytes.NewReader(m[12:]))
@@ -247,7 +236,6 @@ func (fs *Filesystem) Get(_ context.Context, key string) (io.ReadCloser, int64, 
 }
 
 // mmapZstdReadCloser streams a zstd-compressed blob straight off its memory mapping.
-// Close releases the decoder and unmaps the original region.
 type mmapZstdReadCloser struct {
 	dec *zstd.Decoder
 	m   mmap.MMap
@@ -264,9 +252,6 @@ func (z *mmapZstdReadCloser) Close() error {
 // caller can pass a zstd-compressed blob straight through to a client that
 // accepts zstd (Content-Encoding: zstd) instead of decompressing it server-side.
 // A blob stored compressed yields the raw zstd stream (Encoding "zstd", Size =
-// the compressed length); one stored uncompressed yields its raw bytes (Encoding
-// "", Size = the identity length). The caller inspects Encoding to decide whether
-// passthrough applies.
 func (fs *Filesystem) GetCompressed(_ context.Context, key string) (*CompressedBlob, error) {
 	if !validStorageKey.MatchString(key) {
 		return nil, os.ErrNotExist
@@ -298,9 +283,6 @@ func (fs *Filesystem) GetCompressed(_ context.Context, key string) (*CompressedB
 	}
 	_ = m.Advise(mmap.AdvSequential)
 
-	// Compressed blob: hand back the raw zstd stream (skip the 4-byte magic +
-	// 8-byte original-size header). Close unmaps the original region -- not the
-	// m[12:] sub-slice, whose base would not be page-aligned for munmap.
 	if len(m) >= 12 && bytes.Equal(m[:4], compressedMagic[:]) {
 		origSize := int64(binary.LittleEndian.Uint64(m[4:12]))
 		return &CompressedBlob{
@@ -321,8 +303,6 @@ func (fs *Filesystem) GetCompressed(_ context.Context, key string) (*CompressedB
 }
 
 // mmapByteReadCloser serves a byte slice that lives inside a memory mapping and
-// unmaps the (whole) mapping on Close. Used to stream a still-compressed blob's
-// raw bytes for Content-Encoding passthrough.
 type mmapByteReadCloser struct {
 	*bytes.Reader
 	m mmap.MMap

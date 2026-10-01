@@ -14,6 +14,7 @@ import (
 // there is no automatic redirect -- but the page still offers a fresh sign-in
 // (to the apex root), not a bare dead end.
 func TestSigninCallback_ForgedState_TerminalPage(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	mw.GitHub = NewGitHubAuth("cid", "secret")
@@ -36,6 +37,7 @@ func TestSigninCallback_ForgedState_TerminalPage(t *testing.T) {
 // bodies with its own bare error page, which used to strand the user at the
 // callback URL with no way forward. Instead: a 4xx page with a retry link.
 func TestSigninCallback_ExchangeFailure_RecoverablePage(t *testing.T) {
+	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// GitHub's real shape: HTTP 200 with an error JSON body.
 		w.Write([]byte(`{"error":"incorrect_client_credentials","error_description":"The client_id and/or client_secret passed are incorrect."}`))
@@ -71,6 +73,7 @@ func TestSigninCallback_ExchangeFailure_RecoverablePage(t *testing.T) {
 // Same recoverable treatment when the code exchange succeeds but reading the
 // user's identity (GET /user) fails.
 func TestSigninCallback_UserFetchFailure_RecoverablePage(t *testing.T) {
+	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
 			w.Write([]byte(`{"access_token":"gho_test"}`))
@@ -102,6 +105,7 @@ func TestSigninCallback_UserFetchFailure_RecoverablePage(t *testing.T) {
 // The user cancelling on GitHub (?error=access_denied) gets the same actionable
 // page -- the state is signature-verified, so the retry link keeps their next.
 func TestSigninCallback_GitHubErrorParam_Page(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	mw.GitHub = NewGitHubAuth("cid", "secret")
@@ -121,6 +125,7 @@ func TestSigninCallback_GitHubErrorParam_Page(t *testing.T) {
 // Every failure path answers with something a browser (behind Cloudflare) can
 // act on: a redirect or a 4xx page. Never a 5xx.
 func TestSigninCallback_NoFailurePathReturns5xx(t *testing.T) {
+	t.Serial()
 	// The fake GitHub accepts only code=good (whose /user then fails); any other
 	// code gets GitHub's real failure shape, HTTP 200 with an error JSON body.
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
