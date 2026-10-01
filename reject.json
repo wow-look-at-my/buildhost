@@ -1,0 +1,1 @@
+{"error":"upload declares 2 platforms but is not an Actually Portable Executable (no MZqFpD magic); publish per-platform builds to /artifacts/{os}/{arch} instead"}

@@ -68,6 +68,7 @@ func goToolchainAppMux(reposAuth *string, tokenMints, repoCalls *atomic.Int32) *
 }
 
 func TestGitHubApp_UsesInstallationToken(t *testing.T) {
+	t.Serial()
 	var reposAuth string
 	var mints, calls atomic.Int32
 	withStubGitHubApp(t, goToolchainAppMux(&reposAuth, &mints, &calls))
@@ -79,13 +80,13 @@ func TestGitHubApp_UsesInstallationToken(t *testing.T) {
 }
 
 func TestGitHubApp_CachesInstallationToken(t *testing.T) {
+	t.Serial()
 	var mints, calls atomic.Int32
 	withStubGitHubApp(t, goToolchainAppMux(nil, &mints, &calls))
 
 	ctx := context.Background()
 	assert.Equal(t, "v1", GitHubDefaultBranch(ctx, "wow-look-at-my/go-toolchain"))
 	// Force a fresh branch lookup (clear only the branch cache), so the repos call
-	// repeats but the installation token is reused.
 	branchCacheMu.Lock()
 	branchCache = map[string]branchCacheEntry{}
 	branchCacheMu.Unlock()
@@ -98,6 +99,7 @@ func TestGitHubApp_CachesInstallationToken(t *testing.T) {
 // When the app is not installed on the repo (installation discovery 404s), the
 // lookup falls back to the static PAT.
 func TestGitHubApp_FallsBackToPATWhenNotInstalled(t *testing.T) {
+	t.Serial()
 	var reposAuth string
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /repos/acme/widget/installation", func(w http.ResponseWriter, r *http.Request) {
