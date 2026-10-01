@@ -38,7 +38,7 @@ func TestUpstreamModuleIsServedAndCached(t *testing.T) {
 
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
-	s.upstream = newUpstreamSource(s.github.client, mirror.URL, []string{privateOrg})
+	s.upstream = newUpstreamSource(s.github.client, mirror.URL)
 
 	t.Run("list", func(t *testing.T) {
 		rec := serveProxy(t, s, "/golang.org/x/mod/@v/list")
@@ -85,7 +85,7 @@ func TestUpstreamMissIs404(t *testing.T) {
 	mirror := fakeMirror(t, nil)
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
-	s.upstream = newUpstreamSource(s.github.client, mirror.URL, []string{privateOrg})
+	s.upstream = newUpstreamSource(s.github.client, mirror.URL)
 
 	rec := serveProxy(t, s, "/example.com/nope/@v/list")
 	assert.Equal(t, http.StatusNotFound, rec.Code)
@@ -98,13 +98,13 @@ func TestModuleOutsideOurNamespaceIs404SoDirectCanTakeIt(t *testing.T) {
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
 
-	rec := serveProxy(t, s, "/golang.org/x/mod/@v/list")
+	rec := serveAnon(t, s, "/golang.org/x/mod/@v/list")
 
 	require.Equal(t, http.StatusNotFound, rec.Code,
 		"only 404/410 make the go command advance to the next GOPROXY entry")
 	body := rec.Body.String()
 	assert.Contains(t, body, "not served by this proxy")
-	assert.Contains(t, body, privateOrg, "the body should say what this proxy does serve")
+	assert.NotContains(t, body, privateOrg, "an anonymous caller must not learn the private prefixes")
 	assert.Contains(t, body, ",direct")
 }
 
@@ -131,7 +131,7 @@ func TestUpstreamServerErrorIsNotAMissingModule(t *testing.T) {
 
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
-	s.upstream = newUpstreamSource(s.github.client, srv.URL, []string{privateOrg})
+	s.upstream = newUpstreamSource(s.github.client, srv.URL)
 
 	rec := serveProxy(t, s, "/golang.org/x/mod/@v/list")
 	assert.Equal(t, http.StatusBadGateway, rec.Code)
@@ -152,7 +152,7 @@ func TestPrivateModuleNeverReachesTheMirror(t *testing.T) {
 	seedModule(fake, privateOrg+"/tml", "", "v1.0.0", "aaaa111122223333444455556666777788889999",
 		"module "+privateOrg+"/tml\n")
 	s := newTestService(t, fake, "tok", []string{privateOrg})
-	s.upstream = newUpstreamSource(s.github.client, srv.URL, []string{privateOrg})
+	s.upstream = newUpstreamSource(s.github.client, srv.URL)
 
 	require.Equal(t, http.StatusOK, serveProxy(t, s, "/"+privateOrg+"/tml/@v/list").Code)
 	assert.Zero(t, mirrorHits, "a private module path must not be sent to the public mirror")
