@@ -34,7 +34,7 @@ type healthResponse struct {
 	Version  string `json:"version"`
 	Modified bool   `json:"modified,omitempty"` // built from a dirty working tree
 	Started  string `json:"started"`
-	Error    string `json:"error,omitempty"`    // failure detail when unhealthy
+	Error    string `json:"error,omitempty"` // failure detail when unhealthy
 }
 
 // startedAt lets a client that saw a dropped connection tell a restart from a network fault.
