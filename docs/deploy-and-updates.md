@@ -22,7 +22,7 @@ The same two handlers also answer at the paths docker-updater discovers by itsel
 
 | Path | Same as | Answers |
 |---|---|---|
-| `/.well-known/docker-updater/health` | `/healthz` | 200 while the database pings, 503 otherwise |
+| `/.well-known/docker-updater/health` | `/healthz` | 200 while the database pings, 503 otherwise. The body carries `started`, the process start time, so a client can tell a restart from a network fault. |
 | `/.well-known/docker-updater/pre-update` | `/ready-to-update` | 200 when idle, 503 with writes in flight |
 
 They are aliases on purpose. A second implementation of "is it healthy" is a second answer that can disagree with the first. Both are registered with `HandleRaw`, so they carry no project auth. The prober carries no credential. A 401 reads as "serving but permanently unhealthy". Both are apex-only, because the prober addresses the container by IP. The router treats such a host as unclaimed.
