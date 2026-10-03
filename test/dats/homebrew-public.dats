@@ -28,8 +28,20 @@ shared:
 			# contend for the same prefix.
 			brew install pazer/build/ape-fixture
 			brew install pazer/build/versioned-fixture
+			TAP="$(brew --repository pazer/build)"
+			# Pull until the tap history holds that release.
+			for _ in $(seq 60); do
+				git -C "$TAP" pull -q --ff-only
+				[ "$(git -C "$TAP" log --format=%H -- Formula/versioned-fixture.rb | wc -l)" -ge 2 ] && break
+				sleep 1
+			done
+			"$REPO/scripts/brew-doc-flows.sh" version "$BREW_HOST" > "$WORK/version.sh"
+			echo "--- documented version flow, executed verbatim ---"
+			cat "$WORK/version.sh"
+			HOMEBREW_NO_GITHUB_API=1 bash -euo pipefail "$WORK/version.sh"
+			HOMEBREW_NO_GITHUB_API=1 brew version-install pazer/build/versioned-fixture@1.0.0
 			echo "REPO='$REPO'" > "$ENV_FILE"
-			echo "TAP='$(brew --repository pazer/build)'" >> "$ENV_FILE"
+			echo "TAP='$TAP'" >> "$ENV_FILE"
 
 setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
 
@@ -112,6 +124,21 @@ tests:
 	  cmd: versioned-fixture
 	  outputs:
 		stdout:
+			- "versioned-fixture-2.0.0"
+
+	# brew version-install extracts the release from the tap history into the
+	# user's versions tap. The pin is keg-only, so the latest one keeps PATH.
+	- desc: brew version-install installs an older release beside the latest
+	  cmd: |
+		set -euo pipefail
+		bin="$(brew --prefix versioned-fixture@1.0.0)/bin/versioned-fixture"
+		brew info --json=v2 versioned-fixture@1.0.0 | grep -q '"keg_only": *true' \
+			|| { echo "versioned-fixture@1.0.0 must be keg-only" >&2; exit 1; }
+		"$bin"
+		versioned-fixture
+	  outputs:
+		stdout:
+			- "versioned-fixture-1.0.0"
 			- "versioned-fixture-2.0.0"
 
 	# brew lists every formula file in a tap as a formula of its own, so a

@@ -18,7 +18,14 @@ shared:
 			echo "--- documented private flow, executed verbatim ---"
 			sed 's|x:[^@]*@|x:***@|' "$WORK/private.sh"
 			TOKEN="$BUILDHOST_TOKEN" bash -euo pipefail "$WORK/private.sh"
-			echo "TAP='$(brew --repository pazer/build)'" > "$ENV_FILE"
+			TAP="$(brew --repository pazer/build)"
+			for _ in $(seq 60); do
+				git -C "$TAP" pull -q --ff-only
+				[ "$(git -C "$TAP" log --format=%H -- Formula/myrepo-myapp.rb | wc -l)" -ge 2 ] && break
+				sleep 1
+			done
+			HOMEBREW_NO_GITHUB_API=1 HOMEBREW_BUILDHOST_TOKEN="$BUILDHOST_TOKEN" brew version-install pazer/build/myrepo-myapp@0.9.0
+			echo "TAP='$TAP'" > "$ENV_FILE"
 
 setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
 
@@ -28,6 +35,14 @@ tests:
 	  outputs:
 		stdout:
 			- "buildhost-homebrew-private-ok"
+
+	# The extracted formula lands in the user's versions tap, which has no lib/,
+	# so its download strategy must ride inside the formula.
+	- desc: brew version-install installs an older private release through the token strategy
+	  cmd: '"$(brew --prefix myrepo-myapp@0.9.0)/bin/myapp"'
+	  outputs:
+		stdout:
+			- "buildhost-homebrew-private-0.9.0"
 
 	# `brew update` refreshes a tap by fetching its git remote, and for the
 	# authenticated tap the credentials live in that stored URL. Proving the

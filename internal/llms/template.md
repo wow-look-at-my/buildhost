@@ -176,7 +176,11 @@ export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
 brew install pazer/build/myrepo-myapp
 ```
 
-The tap carries one formula per project, at the latest default-branch release. It holds no formula per release, because brew lists each one as a separate formula.
+The tap carries one formula per project, at the latest default-branch release. Its git history holds every published release. Install an older one with `brew version-install`, without a leading `v` on the version. Homebrew extracts it into a personal `<user>/versions` tap as a keg-only `<formula>@<version>`:
+
+```
+brew version-install pazer/build/go-toolchain@1.0.0
+```
 
 A slash-namespaced project folds `/` to `-` in its formula name. That is the same rule as the APT package name rule. The installed command keeps the binary's own name. `myrepo/myapp` therefore installs as `brew install pazer/build/myrepo-myapp` and puts `myapp` on PATH.
 

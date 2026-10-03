@@ -37,9 +37,15 @@ brew install pazer/build/myrepo-myapp
 
 ## Specific versions
 
-The tap carries one formula per project, at the latest release on the default branch. Homebrew lists every formula file in a tap as a formula of its own. As a result, the tap holds no file per release.
+The tap carries one formula per project, at the latest release on the default branch, so `brew update` lists no versions. Its git history holds every published release. Install one with `brew version-install`, without a leading `v` on the version:
 
-A keg-only formula for one release is served at `https://brew.pazer.build/Formula/<formula>@<version>.rb`, without a leading `v` on the version.
+```bash
+brew version-install pazer/build/go-toolchain@1.0.0
+```
+
+Homebrew copies that release's formula out of the tap history into a personal `<user>/versions` tap, as `<formula>@<version>`, and installs it from there. A pinned version is keg-only, so it installs beside the latest one without a link conflict. Run it from `$(brew --prefix go-toolchain@1.0.0)/bin/go-toolchain`, or `brew link --force` it after `brew unlink go-toolchain`. When the version asked for is the latest one, `brew version-install` installs the ordinary formula instead.
+
+A private project works the same way through the authenticated tap, with `HOMEBREW_BUILDHOST_TOKEN` set as above. A release appears in the history once buildhost has hashed its download. A background worker does that at start and whenever a tap refresh finds a release it lacks.
 
 ## Background services (create_service)
 
