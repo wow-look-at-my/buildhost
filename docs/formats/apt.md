@@ -16,7 +16,7 @@ ONE shared renderer produces `Packages` and the `Release` and `InRelease` SHA256
 
 ## Depends
 
-`projects.apt_depends` holds a Debian relationship string, for example `bubblewrap | docker.io`. `repackage.DebDependsLine` renders it as the `Depends:` line of the deb control file AND of the `Packages` entry. One renderer keeps the two identical. An empty value renders no line. `db.ValidateAptDepends` checks the grammar at set time, and it refuses a line break. A value therefore cannot open another control field. The renderer checks it again, and a bad stored value is a 500, never a dropped line. A set value joins the digest fingerprint. An unset one does not, so a project with no Depends keeps its cached digest.
+`projects.apt_depends` holds a Debian relationship string, for example `bubblewrap | docker.io`. `repackage.DebDependsLine` renders it as the `Depends:` line of the deb control file AND of the `Packages` entry. One renderer keeps the two identical. An empty value renders no line. `db.ValidateAptDepends` checks the grammar at set time, and it refuses a line break. A value therefore cannot open another control field. The renderer checks it again, and a bad stored value is a 500, not a dropped line. A set value joins the digest fingerprint. An unset one does not, so a project with no Depends keeps its cached digest.
 
 ## Package naming
 
