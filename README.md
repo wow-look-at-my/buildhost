@@ -237,7 +237,11 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 
 ### Project site subdomains (optional)
 
+<<<<<<< HEAD
 Set `BUILDHOST_SITE_DOMAIN` (e.g. `pazer.site`) to also serve each project's site at `https://<project>.<domain>/` -- the default branch on bare paths. This is any other branch (or commit) behind the `@` sigil: `https://myapp.pazer.site/@pr-7/`, `https://myapp.pazer.site/@0f1e2d3/`.
+=======
+Set `BUILDHOST_SITE_DOMAIN` (e.g. `pazer.site`) to also serve each project's site at `https://<project>.<domain>/`. Bare paths serve the default branch. Any other branch or commit sits behind the `@` sigil: `https://myapp.pazer.site/@pr-7/`, `https://myapp.pazer.site/@0f1e2d3/`.
+>>>>>>> origin/master
 
 - A slash-named branch, such as `claude/foo`, resolves by longest match. An `@<default-branch>` URL 302s to the canonical bare form. The `~` sigil this scheme launched with still works, and it 301s to the `@` form.
 - Only a project name that is a single DNS label serves here. That means `[a-z0-9-]`, a bounded number of characters, with no leading or trailing `-`. Every other name stays on `sites.<apex>/...`.
@@ -440,7 +444,11 @@ When GitHub sends a branch deletion (`delete` event with `ref_type: "branch"`), 
 
 ## Retention / garbage collection
 
+<<<<<<< HEAD
 buildhost can reclaim storage by evicting old releases. Eviction keeps the latest `BUILDHOST_RETENTION_KEEP_N` published releases on each `(project, git branch)` and sweeps abandoned (never-published) uploads. This is then deletes any content-addressed blob no longer referenced by anything. **Pins that are never evicted:** each branch's latest published release, any release a `docker`/OCI tag points at, pushed-docker builds. This is anything newer than `BUILDHOST_RETENTION_RECENCY_GUARD`.
+=======
+buildhost can reclaim storage by evicting old releases. Eviction keeps the latest `BUILDHOST_RETENTION_KEEP_N` published releases on each `(project, git branch)`. It sweeps abandoned (never-published) uploads, then deletes any content-addressed blob that nothing references. **Pins that are never evicted:** each branch's latest published release, any release a `docker`/OCI tag points at, and pushed-docker builds. Anything newer than `BUILDHOST_RETENTION_RECENCY_GUARD` is pinned too.
+>>>>>>> origin/master
 
 It is **report-only by default**. Nothing is deleted automatically. Manage it from the **admin dashboard's Retention page**. There you edit the policy, which is the keep-N value and the recency guard. You also see a live preview of exactly which releases an eviction removes, and how much storage that frees. You can also click to run garbage collection on demand, behind a confirmation. The policy is stored in the database. The `BUILDHOST_RETENTION_KEEP_N` and `_RECENCY_GUARD` env vars only seed its initial values.
 
@@ -471,7 +479,11 @@ No manual project creation or OIDC policy setup needed.
 
 A project name may contain `/`, and it nests to any depth, as `log-streamer/client` does. A repository's OIDC token owns its whole namespace. Repo `R` may create and publish `R`, and any `R/<...>` beneath it. It may never touch a sibling such as `R-evil`, and never an unrelated project.
 
+<<<<<<< HEAD
 That is what lets a repo that ships several binaries publish each one to its own project. Go-toolchain's autorelease maps every built binary to `<repo>/<binary>`. It strips a redundant leading `<repo>-`. A single binary named after the repo stays flat, as `<repo>`.
+=======
+A repo that ships several binaries can therefore publish each to its own project. go-toolchain's autorelease maps every built binary to `<repo>/<binary>`. It strips a redundant leading `<repo>-`. A single binary named after the repo stays flat, as `<repo>`.
+>>>>>>> origin/master
 
 | repo | binary | project |
 |------|--------|---------|

@@ -34,7 +34,11 @@ A session works with **every** upload endpoint. An artifact PUT and a site deplo
 
 A session expires after 24h, per `BUILDHOST_UPLOAD_SESSION_TTL`. It counts against the normal 2 GiB upload cap, at append time. Only the identity that created a session can touch it. A successful finalize consumes the session.
 
+<<<<<<< HEAD
 From GitHub Actions, the `wow-look-at-my/buildhost/.github/actions/buildhost-upload-artifact@master` composite does all of this automatically. It checks the advertised limit. It sends a small file as the classic direct PUT, streamed from disk. It assembles a larger file through a session, in 64 MiB chunks by default, which its optional `chunk_size` input tunes. It resumes from the server's committed size on a hiccup. It finalizes with the file's SHA-256. It retries a transient server or network error, with backoff.
+=======
+From GitHub Actions, the `wow-look-at-my/buildhost/.github/actions/buildhost-upload-artifact@master` composite does all of this automatically. It checks the advertised limit. It sends a small file as the classic direct PUT, streamed from disk. It assembles a larger file through a session, in chunks by default, which its optional `chunk_size` input tunes. It resumes from the server's committed size on a hiccup. It finalizes with the file's SHA-256. It retries a transient server or network error, with backoff.
+>>>>>>> origin/master
 
 From other CI without the CLI (uploading a >100 MB artifact through the proxied hostname), the same protocol is a short curl loop:
 
