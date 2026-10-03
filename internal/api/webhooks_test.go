@@ -57,6 +57,24 @@ func TestGitHubWebhook_DeleteBranchDeletesRepoNamespaceSites(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestGitHubWebhook_DeleteBranchOfDotRepository(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+	h.GitHubWebhookSecret = "secret"
+	ctx := context.Background()
+
+	root := seedWebhookProject(t, h.DB, "github")
+	upsertWebhookSite(t, h.DB, root.ID, "feature-x", putWebhookBlob(t, h, "dot"))
+
+	payload := []byte(`{"ref":"feature-x","ref_type":"branch","repository":{"name":".github"}}`)
+	rec := httptest.NewRecorder()
+	h.GitHubWebhook(rec, signedGitHubWebhookRequest(t, h.GitHubWebhookSecret, payload))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	_, err := h.DB.GetSite(ctx, root.ID, "feature-x")
+	require.True(t, errors.Is(err, db.ErrNotFound))
+}
+
 func TestGitHubWebhook_InvalidSignatureDoesNotDelete(t *testing.T) {
 	t.Serial()
 	h := setupTestHandler(t)
