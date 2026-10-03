@@ -1,7 +1,7 @@
 package server_test
 
 // End-to-end WebAssembly artifact flow: upload a wasm module via the artifact
-// PUT (os=wasm, arch=js/wasip1), publish, then download it back through the
+// PUT (os=wasm, arch=js/wasip1), publish.
 
 import (
 	"context"
@@ -38,7 +38,6 @@ func TestWasmArtifact_UploadDownloadRoundTrip(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
 
-	// An incompatible pair is rejected end to end (wasm never rides the
 	resp = env.putBody(t, "/api/v1/projects/wasmapp/releases/1/artifacts/wasm/amd64", jsPayload)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	resp.Body.Close()
@@ -81,8 +80,8 @@ func TestWasmArtifact_UploadDownloadRoundTrip(t *testing.T) {
 	resp.Body.Close()
 }
 
-// Deprecated legacy shim: the currently-released go-toolchain autorelease
-// derives upload parameters from GOOS_GOARCH filenames (name_js_wasm /
+// Deprecated legacy shim: the-released go-toolchain autorelease derives
+// upload parameters from GOOS_GOARCH filenames (name_js_wasm /
 // name_wasip1_wasm), so it uploads with os=js/arch=wasm. That pair must fold
 // to the canonical os=wasm form at every ingestion point -- upload, dl, and
 // static canonicalization -- and "js" must never surface as an os in stored
@@ -102,7 +101,7 @@ func TestWasmArtifact_LegacyGoosGoarchPairEndToEnd(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
 
-	// Upload with the legacy GOOS/GOARCH order.
+	// Upload with the GOOS/GOARCH order.
 	resp = env.putBody(t, "/api/v1/projects/wasmlegacy/releases/1/artifacts/js/wasm", jsPayload)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	body := readBody(t, resp)
@@ -146,8 +145,8 @@ func TestWasmArtifact_LegacyGoosGoarchPairEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, jsPayload, got)
 
-	// The legacy pair works on dl too, and the redirect URL is canonical:
-	// os=wasm, never os=js.
+	// The pair works on dl too, and the redirect URL is canonical: os=wasm,
+	// never os=js.
 	for _, tc := range []struct {
 		legacyOS string
 		arch     string
@@ -174,7 +173,7 @@ func TestWasmArtifact_LegacyGoosGoarchPairEndToEnd(t *testing.T) {
 		require.Equal(t, tc.payload, got)
 	}
 
-	// Static folds the legacy pair via its canonicalization redirect, so the
+	// Static folds the pair via its canonicalization redirect.
 	resp = env.getSubdomain(t, "static", "/file?arch=wasm&os=js&project=wasmlegacy&v=1")
 	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
 	loc = resp.Header.Get("Location")

@@ -52,7 +52,7 @@ func TestOCI_MultiArchPull_FullStack(t *testing.T) {
 	require.Equal(t, http.StatusOK,
 		env.postJSON(t, "/api/v1/projects/multi/releases/1/publish", `{}`).StatusCode)
 
-	// Pull the index by tag. Public project => anonymous read is allowed; the
+	// Pull the index by tag. Public project => anonymous read is allowed.
 	resp := env.doSubdomainRequest(t, "GET", "oci", "/v2/multi/manifests/latest", "", nil, false)
 	body := readBody(t, resp)
 	require.Equal(t, http.StatusOK, resp.StatusCode, "index pull: %s", body)

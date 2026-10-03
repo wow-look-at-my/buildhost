@@ -52,7 +52,7 @@ func (r *Retention) WithBranchLister(b BranchLister) *Retention {
 }
 
 // ConfigFromSettings builds an engine Config from the stored (UI-editable) policy
-// plus a runtime enforce decision -- the policy lives in the DB, while whether a
+// plus a runtime enforce decision -- the policy lives in the DB.
 func ConfigFromSettings(s db.RetentionSettings, enforce bool) Config {
 	return Config{
 		KeepN:            s.KeepN,
@@ -203,8 +203,8 @@ func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
 		r.recordFreed(&rep, deadFreed)
 	}
 
-	// Only a run that actually deleted has anything to retract. A dry run
-	// reports the count it WOULD mark, so an operator sees the work before
+	// Only a run that deleted has anything to retract. A dry run reports the
+	// count it WOULD mark, so an operator sees the work before
 	if enforce {
 		r.markRecordsDeleted(ctx, &rep, doomed)
 	} else {
@@ -288,11 +288,11 @@ func (r *Retention) collectRecords(ctx context.Context, refs []ReleaseRef) []doo
 	return out
 }
 
-// markRecordsDeleted retracts the storage records of everything just evicted.
+// markRecordsDeleted retracts the storage records of everything evicted.
 //
 // A failure here never rolls back the eviction -- the bytes are already gone,
 // and refusing to GC because GitHub is unreachable would be worse. It is
-// counted instead: RecordsUnmarked and RecordErrors travel in the Report, the
+// counted instead: RecordsUnmarked and RecordErrors travel in the Report.
 func (r *Retention) markRecordsDeleted(ctx context.Context, rep *Report, doomed []doomedRecord) {
 	if len(doomed) == 0 {
 		return

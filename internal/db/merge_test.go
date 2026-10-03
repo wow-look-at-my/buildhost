@@ -27,7 +27,7 @@ func mergeReleases(t *testing.T, d *DB, projectID int64, versions ...string) {
 	}
 }
 
-// A rename stranded the history under the old name while new publishes landed
+// A rename stranded the history under the name while new publishes landed
 // under the new name. The merged project must carry every release from each.
 func TestProjectMerge_MovesAndRenumbersReleases(t *testing.T) {
 	t.Serial()
@@ -59,8 +59,8 @@ func TestProjectMerge_MovesAndRenumbersReleases(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNotFound, "the merged-away project row is gone")
 }
 
-// The whole reason a rename is survivable: a published URL naming the old
-// project keeps resolving after the merge.
+// The whole reason a rename is survivable: a published URL naming the project
+// keeps resolving after the merge.
 func TestProjectMerge_OldNameResolvesAsAlias(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)

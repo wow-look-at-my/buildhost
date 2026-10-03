@@ -1,27 +1,4 @@
-// Asserts that a hosted site stays loadable CROSS-ORIGIN -- through its
-// redirects, in a real browser.
-//
-// This check exists because that stopped being true and every cross-origin
-// consumer broke at once. The legacy /{project}/branch/{branch}/ URL -- the one
-// every deployed client, README and published preview link still says -- became
-// a 302 to the canonical @{branch} form, and the redirect went out WITHOUT the
-// site CORS headers. A browser re-checks Access-Control-Allow-Origin on every
-// hop, so the load died at the 302 and never reached the 200 that had it: a
-// dashboard importing an ES module from sites.pazer.build spent every page view
-// retrying "error loading dynamically imported module".
-//
-// Nothing caught it. Unit tests covered the handlers that serve BYTES, and
-// `curl` -- which follows redirects without enforcing CORS at all, and does not
-// care about MIME types or CSP either -- reported a clean 200 for the same URL
-// that was failing in production. Only a real browser doing a real cross-origin
-// import can see this class of defect, which is exactly what runs below.
-//
-// Two layers, deliberately:
-//   1. every hop of every redirect shape a site URL can take must carry the
-//      CORS header (fast, precise, names the exact broken hop), and
-//   2. one real headless browser must actually import a module through the
-//      redirect chain (honest end-to-end; also covers MIME type and CSP, which
-//      layer 1 cannot see).
+// Asserts that a hosted site stays loadable CROSS-ORIGIN -- through its redirects, in a real browser.
 
 const fs = require("node:fs");
 const os = require("node:os");
@@ -44,11 +21,7 @@ const HOST = `sites.localhost:${PORT}`;
 const SITES = `http://${HOST}`;
 const CONSUMER_ORIGIN = `http://localhost:${CONSUMER_PORT}`;
 const PROJECT = "cors-e2e";
-// The shape that actually broke: a PRIVATE project serving one public site
-// branch (X-Public-Site), which is how every PR preview and published library
-// site under a private repo is served. A public project would not exercise the
-// public-read bypass at all, so a redirect that lost either the CORS header or
-// the anonymous bypass would go unnoticed.
+// The shape that broke: a PRIVATE project serving one public site branch (X-Public-Site).
 const PRIVATE_PROJECT = "cors-e2e-private";
 const MARKER = "site-module-loaded";
 
@@ -68,11 +41,7 @@ const MARKER = "site-module-loaded";
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "buildhost-cors-e2e-"));
 const binAbs = path.resolve(BIN);
-// An APE starts through its own shell trampoline: a direct execve of it fails
-// ENOEXEC, because nothing here registers an APE binfmt handler. A shell reads
-// the header and does the rest, which is what a bash "run:" step does
-// implicitly and node's spawn does not. A native ELF is the opposite: feeding
-// one to a shell produces a screenful of "not found".
+// An APE starts through its own shell trampoline: a direct execve of it fails ENOEXEC.
 const isAPE = fs.readFileSync(binAbs).subarray(0, 2).toString() === "MZ";
 const runner = (args: string[]): [string, string[]] =>
 	isAPE ? ["sh", [binAbs, ...args]] : [binAbs, args];
@@ -111,9 +80,7 @@ function tarGz(files: Record<string, string>): Buffer {
 // A manual, NON-following fetch so each hop can be inspected on its own. This is
 // the whole point: the bug was invisible to anything that auto-followed.
 async function hop(url: string): Promise<{ status: number; acao: string | null; location: string | null; type: string | null }> {
-	// sites.localhost resolves to loopback on the runner, so the service label
-	// the router dispatches on rides the URL -- no Host header override, which
-	// undici may refuse to set.
+	// sites.localhost resolves to loopback on the runner, so the service label the router dispatches on rides the URL -- no Host header override.
 	const res = await fetch(url, { redirect: "manual", headers: { Origin: CONSUMER_ORIGIN } });
 	// Drain so the connection can be reused.
 	await res.arrayBuffer().catch(() => undefined);
@@ -127,8 +94,8 @@ async function hop(url: string): Promise<{ status: number; acao: string | null; 
 
 const failures: string[] = [];
 
-// Walks a URL's whole redirect chain and requires the CORS header on EVERY hop,
-// redirects included -- the invariant a browser actually enforces.
+// Walks a URL's whole redirect chain and requires the CORS header on EVERY
+// hop, redirects included -- the invariant a browser enforces.
 async function assertChainCORS(label: string, startPath: string, wantRedirect: boolean) {
 	let url = SITES + startPath;
 	let hops = 0;
@@ -158,14 +125,12 @@ async function assertChainCORS(label: string, startPath: string, wantRedirect: b
 		break;
 	}
 	if (wantRedirect && !sawRedirect) {
-		// The shape being guarded no longer redirects, so this case silently
-		// stopped covering anything. That is a finding, not a pass.
+		// The shape being guarded no longer redirects, so this case silently stopped covering anything.
 		failures.push(`${label}: expected a redirect in the chain from ${startPath}, got none -- this case no longer guards what it claims`);
 	}
 	core.info(`  ok  ${label} (${hops} hop(s), CORS on each)`);
 }
 
-// ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
 const server = child_process.spawn(...runner(["serve"]), { env: serverEnv, stdio: ["ignore", "pipe", "pipe"] });
@@ -184,7 +149,6 @@ try {
 			const r = await fetch(`http://127.0.0.1:${PORT}/healthz`);
 			if (r.ok) break;
 		} catch {
-			/* not up yet */
 		}
 		if (i > 100) throw new Error(`buildhost never became healthy:\n${serverLog}`);
 		await new Promise((r) => setTimeout(r, 100));
@@ -216,8 +180,8 @@ try {
 
 	await createProject(PROJECT, false);
 
-	// Two branches so `library` is NOT the default -- the production shape,
-	// where the legacy URL redirects to the @branch form rather than collapsing
+	// Branches so `library` is NOT the default -- the production shape,
+	// where the URL redirects to the @branch form rather than collapsing
 	// straight to the bare project path.
 	for (const [branch, files] of [
 		["master", { "index.html": "<h1>default</h1>" }],
@@ -231,11 +195,7 @@ try {
 		if (up.status !== 201) throw new Error(`upload ${branch}: ${up.status} ${await up.text()}`);
 	}
 
-	// A private project whose `library` branch is published public -- the
-	// production shape. Its `master` branch is published WITHOUT the flag, and
-	// asserted below to be refused anonymously: without that, "the public-read
-	// bypass survives the redirect" would be an untested claim, since a project
-	// that was accidentally public serves every branch anyway.
+	// A private project whose `library` branch is published public -- the production shape.
 	await createProject(PRIVATE_PROJECT, true);
 	const upGated = await fetch(`${SITES}/${PRIVATE_PROJECT}/branch/master`, {
 		method: "PUT",
@@ -264,10 +224,8 @@ try {
 	});
 	if (upPriv.status !== 201) throw new Error(`upload private site: ${upPriv.status} ${await upPriv.text()}`);
 
-	// --- Layer 1: every hop of every redirect shape -------------------------
 	core.info("CORS headers on every redirect hop:");
-	// The exact URL that broke production: legacy spelling of a NON-default
-	// branch, redirecting to the canonical @branch form.
+	// The exact URL that broke production: legacy spelling of a NON-default branch.
 	await assertChainCORS("legacy /branch/ (non-default branch)", `/${PROJECT}/branch/library/ui/mod.js`, true);
 	// Legacy spelling of the DEFAULT branch: collapses to the bare project path.
 	await assertChainCORS("legacy /branch/ (default branch)", `/${PROJECT}/branch/master/index.html`, true);
@@ -280,19 +238,9 @@ try {
 	// Plain serves, which were never broken -- so a regression here is caught too.
 	await assertChainCORS("canonical @branch file", `/${PROJECT}/@library/ui/mod.js`, false);
 	await assertChainCORS("bare apex file", `/${PROJECT}/index.html`, false);
-	// The production shape: private project, public site branch, ANONYMOUS (no
-	// token is ever sent above -- assertChainCORS sends only an Origin). This
-	// also pins that the public-read bypass survives the redirect, since a 401
-	// mid-chain would fail here just as loudly as a missing header.
+	// The production shape: private project, public site branch, ANONYMOUS.
 	await assertChainCORS("private project, public branch (legacy /branch/)", `/${PRIVATE_PROJECT}/branch/library/ui/mod.js`, true);
 
-	// --- Layer 2: a real browser, a real cross-origin import ----------------
-	// Everything above is a header assertion. This is the actual user-visible
-	// claim, and it covers what header assertions cannot: MIME type, CSP, and
-	// module specifier resolution against the post-redirect URL.
-	// The private-project/public-branch URL, because that is the production
-	// shape -- and the browser sends no credentials, so it also proves the
-	// anonymous public-read bypass holds across the redirect.
 	const MODULE_URL = `${SITES}/${PRIVATE_PROJECT}/branch/library/ui/mod.js`;
 	const page_html = `<!doctype html><meta charset=utf-8><title>consumer</title><script type="module">
   const done = (t) => { window.__result = t; };
@@ -307,9 +255,7 @@ try {
 	});
 	await new Promise<void>((r) => consumer.listen(CONSUMER_PORT, "127.0.0.1", () => r()));
 
-	// A browser is REQUIRED. Skipping when one is missing is how a check that
-	// cannot fail ends up reporting green forever -- so an unavailable browser
-	// fails this job rather than quietly reducing it to the header assertions.
+	// A browser is REQUIRED.
 	const { chromium } = require("playwright-core");
 	const launchAttempts: Array<[string, Record<string, unknown>]> = [
 		// An explicit binary wins when set (how this runs outside a GH runner).

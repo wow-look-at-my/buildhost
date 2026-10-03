@@ -8,7 +8,7 @@ Content-addressed blob storage (filesystem backend, zstd-compressed, key validat
 
 `GetCompressed` returns the stored bytes **without** a decompression step. It is the optional `CompressedGetter` capability, implemented by `Filesystem` and forwarded by `TracedStorage`. For a compressed blob that is the raw zstd stream (Encoding `zstd`). For one stored raw it is the identity bytes. A handler can therefore pass `Content-Encoding: zstd` straight through to a zstd-accepting client and skip server-side decompression entirely.
 
-Two further optional capabilities serve indexed containers. `PutUncompressed` (`UncompressedPutter`) stores a blob without the whole-blob zstd wrapper, because content that compresses itself per block must stay seekable. `OpenReaderAt` (`RandomGetter`) mmaps a blob for reads at an offset. It reports `ErrRandomUnsupported` for a compressed blob, and the caller falls back to `Get`.
+Further optional capabilities serve indexed containers. `PutUncompressed` (`UncompressedPutter`) stores a blob without the whole-blob zstd wrapper, because content that compresses itself per block must stay seekable. `OpenReaderAt` (`RandomGetter`) mmaps a blob for reads at an offset. It reports `ErrRandomUnsupported` for a compressed blob, and the caller falls back to `Get`.
 
 Storage keys are validated as hex SHA-256 to prevent path traversal. The storage layer rejects symlinks via an Lstat check.
 
