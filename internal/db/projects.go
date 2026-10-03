@@ -146,8 +146,10 @@ func (d *DB) NameAvailable(ctx context.Context, name string) (bool, error) {
 	return n == 0, nil
 }
 
-// NameAvailableTo reports whether project id may take a name: the name is free,
-// or it is an alias id itself carries from an earlier rename.
+// NameAvailableTo reports whether project id may take a name: the name is
+// free, or it is an alias id itself carries from an earlier rename. It is
+// NameAvailable, except that an alias of project id counts as free: a project
+// can move back onto a name it held before.
 func (d *DB) NameAvailableTo(ctx context.Context, name string, id int64) (bool, error) {
 	p, aliased, err := d.ResolveProject(ctx, name)
 	if errors.Is(err, ErrNotFound) {

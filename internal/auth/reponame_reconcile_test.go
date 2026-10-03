@@ -75,7 +75,7 @@ func TestReconcileRepoNamespace_LeavesADuplicateAlone(t *testing.T) {
 	assert.Equal(t, current.ID, kept.ID, "the live project keeps its releases")
 }
 
-// `.github` provisions `github`.
+// `.github` provisions `github`, so a publish from it must leave `github` alone.
 func TestReconcileRepoNamespace_KeepsTheProvisionedNameOfADotRepo(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)
@@ -114,6 +114,30 @@ func TestReconcileRepoNamespace_ReclaimsItsOwnAlias(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, aliased, "the stray name still resolves")
 	assert.Equal(t, p.ID, old.ID)
+	assert.Equal(t, "github", old.Name)
+}
+
+// A name that another project holds as an alias stays taken.
+func TestReconcileRepoNamespace_LeavesAnotherProjectsAliasAlone(t *testing.T) {
+	t.Serial()
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	other := reconcileProject(t, d, "slopfix", "wow-look-at-my/slopfix", "999")
+	require.NoError(t, d.RenameProject(ctx, other.ID, "slopfix", "slopfix2"))
+	stranded := reconcileProject(t, d, "slopfmt", "wow-look-at-my/slopfmt", reconcileRepoID)
+
+	reconcileRepoNamespace(ctx, d, OIDCRepoIdentity{
+		RepoPath: "wow-look-at-my/slopfix", RepoID: reconcileRepoID, OwnerID: "42",
+	})
+
+	still, err := d.GetProject(ctx, "slopfmt")
+	require.NoError(t, err)
+	assert.Equal(t, stranded.ID, still.ID)
+	owner, aliased, err := d.ResolveProject(ctx, "slopfix")
+	require.NoError(t, err)
+	assert.True(t, aliased)
+	assert.Equal(t, other.ID, owner.ID)
 }
 
 // Another project's alias is never free, so a reconcile cannot take it.
