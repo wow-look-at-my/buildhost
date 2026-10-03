@@ -75,6 +75,24 @@ func TestReconcileRepoNamespace_LeavesADuplicateAlone(t *testing.T) {
 	assert.Equal(t, current.ID, kept.ID, "the live project keeps its releases")
 }
 
+// A project made under the raw `.github` name moves to `github`, the only name its token may write.
+func TestReconcileRepoNamespace_MovesAPunctuatedNameToTheDerivedOne(t *testing.T) {
+	t.Serial()
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	p := reconcileProject(t, d, ".github", "wow-look-at-my/.github", reconcileRepoID)
+	reconcileRepoNamespace(ctx, d, OIDCRepoIdentity{
+		RepoPath: "wow-look-at-my/.github", RepoID: reconcileRepoID, OwnerID: "42",
+	})
+
+	moved, aliased, err := d.ResolveProject(ctx, "github")
+	require.NoError(t, err)
+	assert.False(t, aliased)
+	assert.Equal(t, p.ID, moved.ID)
+	assert.True(t, oidcAuthorizesProject(RepoProjectName(".github"), moved.Name))
+}
+
 // A repo carrying no id cannot be identified across a rename, so nothing moves.
 func TestReconcileRepoNamespace_IgnoresAnIDLessToken(t *testing.T) {
 	t.Serial()

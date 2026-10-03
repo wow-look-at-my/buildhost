@@ -10,13 +10,14 @@ import (
 
 // Depth: docs/project-repo-identity.md.
 
-// repoNamespaceRoot is a repo's namespace root, lowercased for provisioning.
+// repoNamespaceRoot is the root project name that a token for the repo derives.
+// It must equal RepoProjectName, or the reconcile keeps a name the token cannot write.
 func repoNamespaceRoot(repoPath string) string {
 	slash := strings.LastIndex(repoPath, "/")
 	if slash < 0 || slash == len(repoPath)-1 {
 		return ""
 	}
-	return strings.ToLower(repoPath[slash+1:])
+	return RepoProjectName(repoPath[slash+1:])
 }
 
 // renamedNamespaceName rewrites name's root, keeping the child path. It returns
