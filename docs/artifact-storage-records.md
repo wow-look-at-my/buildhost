@@ -10,7 +10,7 @@ Composites record the same kind, for one reason. `buildhost-publish` is the whol
 
 The pipeline cannot be built from those components. A composite action has no loop. It therefore cannot invoke `upload-artifact` once per file. It therefore reimplements the chain inline. That is why the record derivation was a second copy, with its own `dl.<host>` origin, `debug=1` URL and `sha256:` digest.
 
-**A caller passes what it published, never a record.** The module derives every field, URL, label and message. The whole per-composite footprint is therefore this:
+**A caller passes what it published, not a record.** The module derives every field, URL, label and message. The whole per-composite footprint is therefore this:
 
 ```ts
 const { recordSite } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
