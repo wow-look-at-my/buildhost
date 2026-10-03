@@ -14,7 +14,6 @@ import (
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/buildhost/internal/admin"
-	"github.com/wow-look-at-my/buildhost/internal/brew"
 	"github.com/wow-look-at-my/buildhost/internal/buildinfo"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
