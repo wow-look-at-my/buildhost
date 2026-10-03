@@ -22,7 +22,7 @@ A section count of one is Cosmopolitan's do-nothing stub header. It maps none of
 
 Another section count reads as a real boot header. An APE from another Cosmopolitan toolchain is therefore not rejected for a different section layout. A PE header past the sniff window (`exeformat.SniffLen`) reads as unknown, rather than as a rejection.
 
-Multi-platform publish fan-out happens at upload time, never at download time. One uploaded blob becomes N ordinary per-platform artifact rows. A comma list, or the `cosmo` or `any` alias, in the upload URL's `{os}` and `{arch}` segments asks for it, for a non-APE upload. An APE takes the one-row path above instead.
+Multi-platform publish fan-out happens at upload time, not at download time. One uploaded blob becomes N ordinary per-platform artifact rows. A comma list, or the `cosmo` or `any` alias, in the upload URL's `{os}` and `{arch}` segments asks for it, for a non-APE upload. An APE takes the one-row path above instead.
 
 There is deliberately no stored `os=any` value and no download-time fallback. Downloads, `latest` resolution, the format handlers, retention refcounting and CDN caching therefore all see plain per-platform artifacts. `IsBlobReferenced` counts the shared blob until the last row goes.
 
