@@ -56,7 +56,7 @@ The bug cuts both ways. The committed bundle is what shipped, so anything writte
 - **`encodeURIComponent` on an admin API path.** A running server answers `200` to both `GET /api/projects/repo%2Fbinary` and `GET /api/projects/repo/binary` for a slash-namespaced project. That was verified. The change is therefore safe for the namespace feature, not merely untested.
 - **A decode of the route segments.** Kept, and guarded by `decodeSegment`. A malformed `%` sequence falls back to the raw text instead of a throw. The old router cannot do that, because it never decoded at all.
 
-Everything else in the TypeScript was a strict subset of the old bundle. `copy.js` builds byte-identical. The types are a superset. Every rendering difference was a loss, never an addition.
+Everything else in the TypeScript was a strict subset of the old bundle. `copy.js` builds byte-identical. The types are a superset. Every rendering difference was a loss, not an addition.
 
 ## When a test must assert on built output
 
