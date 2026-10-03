@@ -35,4 +35,5 @@ func TestRepoNamespaceRoot(t *testing.T) {
 	assert.Equal(t, "mixedcase", repoNamespaceRoot("wow-look-at-my/MixedCase"))
 	assert.Equal(t, "", repoNamespaceRoot("no-slash"))
 	assert.Equal(t, "", repoNamespaceRoot("trailing/"))
+	assert.Equal(t, "github", repoNamespaceRoot("wow-look-at-my/.github"), "the root is the name OIDC provisions")
 }

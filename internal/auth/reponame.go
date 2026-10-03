@@ -10,13 +10,14 @@ import (
 
 // Depth: docs/project-repo-identity.md.
 
-// repoNamespaceRoot is a repo's namespace root, lowercased for provisioning.
+// repoNamespaceRoot is a repo's namespace root. It must equal the name OIDC
+// provisions, or every write renames the project out of the token's namespace.
 func repoNamespaceRoot(repoPath string) string {
 	slash := strings.LastIndex(repoPath, "/")
 	if slash < 0 || slash == len(repoPath)-1 {
 		return ""
 	}
-	return strings.ToLower(repoPath[slash+1:])
+	return RepoProjectName(repoPath[slash+1:])
 }
 
 // renamedNamespaceName rewrites name's root, keeping the child path. It returns
@@ -59,7 +60,7 @@ func reconcileRepoNamespace(ctx context.Context, database *db.DB, repo OIDCRepoI
 		if newName == "" {
 			continue
 		}
-		available, err := database.NameAvailable(ctx, newName)
+		available, err := database.NameAvailableTo(ctx, newName, p.ID)
 		if err != nil {
 			slog.ErrorContext(ctx, "repo namespace reconcile: name probe failed",
 				"project", p.Name, "want", newName, "error", err)

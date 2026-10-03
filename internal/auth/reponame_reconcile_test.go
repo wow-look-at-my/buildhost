@@ -75,6 +75,66 @@ func TestReconcileRepoNamespace_LeavesADuplicateAlone(t *testing.T) {
 	assert.Equal(t, current.ID, kept.ID, "the live project keeps its releases")
 }
 
+// `.github` provisions `github`.
+func TestReconcileRepoNamespace_KeepsTheProvisionedNameOfADotRepo(t *testing.T) {
+	t.Serial()
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	p := reconcileProject(t, d, "github", "wow-look-at-my/.github", reconcileRepoID)
+	reconcileRepoNamespace(ctx, d, OIDCRepoIdentity{
+		RepoPath: "wow-look-at-my/.github", RepoID: reconcileRepoID, OwnerID: "42",
+	})
+
+	still, err := d.GetProject(ctx, "github")
+	require.NoError(t, err)
+	assert.Equal(t, p.ID, still.ID)
+}
+
+// A project an earlier reconcile renamed to `.github` comes back to `github`,
+// although `github` is its own alias by then.
+func TestReconcileRepoNamespace_ReclaimsItsOwnAlias(t *testing.T) {
+	t.Serial()
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	p := reconcileProject(t, d, "github", "wow-look-at-my/.github", reconcileRepoID)
+	require.NoError(t, d.RenameProject(ctx, p.ID, "github", ".github"))
+
+	reconcileRepoNamespace(ctx, d, OIDCRepoIdentity{
+		RepoPath: "wow-look-at-my/.github", RepoID: reconcileRepoID, OwnerID: "42",
+	})
+
+	back, aliased, err := d.ResolveProject(ctx, "github")
+	require.NoError(t, err)
+	assert.False(t, aliased, "github is the project's name again, not an alias")
+	assert.Equal(t, p.ID, back.ID)
+
+	old, aliased, err := d.ResolveProject(ctx, ".github")
+	require.NoError(t, err)
+	assert.True(t, aliased, "the stray name still resolves")
+	assert.Equal(t, p.ID, old.ID)
+}
+
+// Another project's alias is never free, so a reconcile cannot take it.
+func TestNameAvailableTo_RefusesAnotherProjectsAlias(t *testing.T) {
+	t.Serial()
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	owner := reconcileProject(t, d, "first", "wow-look-at-my/first", "1")
+	other := reconcileProject(t, d, "second", "wow-look-at-my/second", "2")
+	require.NoError(t, d.RenameProject(ctx, owner.ID, "first", "renamed"))
+
+	free, err := d.NameAvailableTo(ctx, "first", other.ID)
+	require.NoError(t, err)
+	assert.False(t, free)
+
+	free, err = d.NameAvailableTo(ctx, "first", owner.ID)
+	require.NoError(t, err)
+	assert.True(t, free)
+}
+
 // A repo carrying no id cannot be identified across a rename, so nothing moves.
 func TestReconcileRepoNamespace_IgnoresAnIDLessToken(t *testing.T) {
 	t.Serial()
