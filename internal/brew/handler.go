@@ -28,7 +28,7 @@ func init() {
 	})
 	auth.ServiceHandle("brew", "GET /{project}", handler.parseRoute, handler.ServeFormula)
 	auth.ServiceHandle("brew", "GET /Formula/{project}.rb", handler.parseRoute, handler.ServeFormula)
-	// A slash-namespaced name needs its own route: the {project}.rb pattern is
+	// A slash-namespaced name needs its own route.
 	auth.ServiceHandle("brew", "GET /Formula/{path...}", handler.parseRoute, handler.ServeFormula)
 	auth.ServiceHandleRaw("brew", "GET /tap.git", handler.RedirectTap)
 	auth.ServiceHandleRaw("brew", "GET /tap.git/{path...}", handler.RedirectTap)
@@ -36,7 +36,7 @@ func init() {
 	auth.ServiceHandleRaw("brew", "GET /private/tap.git/{path...}", handler.ServePrivateTap)
 	auth.ServiceHandleRaw("git", "GET /brew/tap.git", handler.ServeTap)
 	auth.ServiceHandleRaw("git", "GET /brew/tap.git/{path...}", handler.ServeTap)
-	// Smart-HTTP git endpoints (see smart.go), always the same pair UNDER a
+	// Smart-HTTP git endpoints (see smart.go).
 	auth.ServiceHandleRaw("brew", "GET /tap.git/info/refs", handler.ServeTapInfoRefs)
 	auth.ServiceHandleRaw("brew", "POST /tap.git/git-upload-pack", handler.ServeTapUploadPack)
 	auth.ServiceHandleRaw("brew", "GET /private/tap.git/info/refs", handler.ServePrivateTapInfoRefs)

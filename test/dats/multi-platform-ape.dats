@@ -28,8 +28,6 @@ shared:
 			for off in 0 1 2 3 4 5 6 7 8 9; do
 				PORT=$(( 18100 + 2 * off ))
 				BUILDHOST_LISTEN_ADDR="127.0.0.1:$PORT"; export BUILDHOST_LISTEN_ADDR
-				# An empty value means the default :9090, shared with whatever
-				# else is on this host.
 				BUILDHOST_ADMIN_LISTEN_ADDR="127.0.0.1:$(( PORT + 1 ))"; export BUILDHOST_ADMIN_LISTEN_ADDR
 				BASE="http://localhost:$PORT"
 				rm -rf "$BUILDHOST_DATA_DIR"

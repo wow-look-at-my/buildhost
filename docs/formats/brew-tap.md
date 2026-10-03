@@ -44,7 +44,7 @@ An `on_*` block still overrides `url` and `sha256` on a platform it matches. A f
 
 Only a BOOL crosses the wire either way. No publisher-controlled Ruby can therefore enter the template.
 
-A flagged binary-kind project's formula gains a `service do` block. It carries `run [opt_bin/"<InstallName>"]`, and the opt path survives an upgrade. It carries `keep_alive successful_exit: false`, which is launchd's `KeepAlive {SuccessfulExit: false}`, and means CRASH-ONLY restart. A plain `keep_alive true` respawns a deliberately-exiting app about every 10 seconds, such as a single-instance exit-0 handoff. It carries `log_path` and `error_log_path` under `var/"log/"`, and brew services mkpaths the log parents itself before load, through `Service#path_dirs`. It carries `process_type :interactive`.
+A flagged binary-kind project's formula gains a `service do` block. It carries `run [opt_bin/"<InstallName>"]`, and the opt path survives an upgrade. It carries `keep_alive successful_exit: false`, which is launchd's `KeepAlive {SuccessfulExit: false}`, and means CRASH-ONLY restart. A plain `keep_alive true` respawns a deliberately-exiting app about every few seconds, such as a single-instance exit-0 handoff. It carries `log_path` and `error_log_path` under `var/"log/"`, and brew services mkpaths the log parents itself before load, through `Service#path_dirs`. It carries `process_type :interactive`.
 
 ONE `brew services start <tap>/<project>` then manages the binary as a login service. On macOS that is a user LaunchAgent in the gui domain. An upgrade keeps it running, through opt_bin.
 
@@ -82,13 +82,13 @@ There is one lineage per **(request-derived base URL, credential scope)** key. T
 
 Each lineage is a bare dumb-HTTP layout, with loose `objects/`, `refs/heads/main`, `info/refs` and `HEAD`. It is served by mmap through an `os.Root`. That is the storage-layer pattern, with no heap buffering and no path escape.
 
-**A ref only ever fast-forwards.** A rebuild reads the persisted tip. It REUSES that tip when the new content's tree is unchanged, so a periodic rebuild adds no growth. The commit sha is deterministic, from zero timestamps, a fixed identity, and content. A rebuild otherwise appends a commit with `parent <tip>`.
+**A ref only ever fast-forwards.** A rebuild reads the persisted tip. It REUSES that tip when the new content's tree is unchanged. As a result, a periodic rebuild adds no growth. The commit sha is deterministic, from zero timestamps, a fixed identity, and content. A rebuild otherwise appends a commit with `parent <tip>`.
 
 Objects are written BEFORE the ref advances, content-addressed, by temp file and rename. A reader therefore never sees a ref that names a missing object. A crash leaves a consistent store.
 
 This is what keeps Homebrew's updater working. `brew update` runs `git fetch --force` and `git rebase origin/main` per tap. The old throwaway-snapshot design minted an unrelated PARENTLESS root per build. That wedged every client mid-rebase, in add/add conflicts, after every publish. An already-wedged clone recovers once, with `brew update-reset`. Append-only objects also fix the dumb-HTTP consistency race. A publish mid-`brew update` can no longer orphan a ref a client already fetched.
 
-The in-memory layer, in `tapcache.go`, is now a rebuild-rate gate plus an open `os.Root` cache. It allows at most one content re-check per `tapCacheTTL`, about 30 seconds, per lineage. It sweeps an expired entry on access. The map is capped by `tapCacheMaxEntries`, and eviction closes file descriptors only, so the history stays.
+The in-memory layer, in `tapcache.go`, is now a rebuild-rate gate plus an open `os.Root` cache. It allows at most one content re-check per `tapCacheTTL`, many seconds, per lineage. It sweeps an expired entry on access. The map is capped by `tapCacheMaxEntries`, and eviction closes file descriptors only. As a result, the history stays.
 
 The DISK store is capped too, by `tapHistoryMaxLineages`. It evicts a whole lineage, LRU by directory mtime. A junk Host header or a deleted token is therefore unable to grow it without bound. `resetTapCache`, which runs from OnReady, deliberately does NOT remove the history root. It sweeps only a crash orphan, meaning a temp file, and the legacy `{TmpDir}/brew-tap` snapshot root. The cost is a handful of new small objects per content-changing publish per lineage.
 
@@ -108,4 +108,4 @@ The final pack is self-contained from the client's WANT, which is the sha the ad
 
 Real git prefers smart automatically. `brew tap` and `brew update` now transfer one pack, instead of several loose GETs per past publish. A dumb client, which sends no service parameter, is byte-for-byte unchanged.
 
-`ServeFormula` serves a single project, and it is uncached. It is cheap once the digests are cached. The package self-registers through init().
+`ServeFormula` serves a single project. It is uncached. It is cheap once the digests are cached. The package self-registers through init().

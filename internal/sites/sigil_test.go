@@ -25,7 +25,7 @@ func TestBranchSigil_Serves(t *testing.T) {
 	t.Serial()
 	env := setupEnv(t)
 	seedProject(t, env.db, "jsperf.app")
-	// master is the seed default branch, so every other branch below is a
+	// master is the seed default branch.
 	env.uploadSite(t, "jsperf.app", "master", map[string]string{"index.html": "<h1>default</h1>"})
 	env.uploadSite(t, "jsperf.app", "pr-7", map[string]string{
 		"index.html":     "<h1>preview</h1>",
@@ -207,7 +207,7 @@ func TestBranchSigil_UploadAndDelete(t *testing.T) {
 		assert.Equalf(t, want, rec.Body.String(), "GET %s", path)
 	}
 
-	// ...and the legacy URL for each 302s there, slash-named branch included.
+	// ...and the URL for each 302s there, slash-named branch included.
 	for path, want := range map[string]string{
 		"/p/branch/pr-3/":       "/p/@pr-3/",
 		"/p/branch/claude/foo/": "/p/@claude/foo/",

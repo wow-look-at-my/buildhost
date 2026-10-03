@@ -30,7 +30,6 @@ type mockServer struct {
 
 	maxDirect int64
 
-	// uploadBySHA256 is advertised on server-info when set (a server with
 	uploadBySHA256 bool
 
 	sessions map[string][]byte // id -> spooled bytes

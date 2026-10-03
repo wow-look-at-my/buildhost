@@ -1,14 +1,5 @@
 #!/usr/bin/env bash
 # Build the admin dashboard's TypeScript into the JS that internal/admin embeds.
-#
-# The outputs (internal/admin/static/*.js) are gitignored BUILD ARTIFACTS: the
-# TypeScript under internal/admin/frontend/src is the only source. This script is
-# the //go:generate directive beside that embed, so `go-toolchain --generate`
-# materializes them exactly like the CA bundle and the sqlc/regex code.
-#
-# It fails loudly rather than skipping: a dashboard that ships without its JS is
-# a blank page, and that is precisely the failure that went unnoticed when the
-# artifacts were committed instead of generated.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

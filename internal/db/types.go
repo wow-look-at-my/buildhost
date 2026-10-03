@@ -115,7 +115,6 @@ type PlatformArtifact struct {
 	CacheSuffix string
 }
 
-// CacheFormat is the packaged_artifacts format key for a derived package of
 func (p PlatformArtifact) CacheFormat(format string) string { return format + p.CacheSuffix }
 
 func newPlatformArtifact(a Artifact, p Platform) PlatformArtifact {

@@ -33,7 +33,7 @@ A `static/*` wildcard still matches `index.html` and `style.css`. A build that s
 
 A conversion to TypeScript never took effect. It added a partial `src/app.ts` while the hand-written `static/app.js` kept shipping. Both were committed. The two then diverged for months. The live bundle grew the Retention page, the project tree, token CRUD, temp download links and the `/tap.git` fix. The TypeScript source had none of them. The documented "edit the TS, rebuild, commit" workflow cannot reproduce the shipped artifact. A generate from that source silently regresses the dashboard.
 
-Two properties keep it from recurring, and both are load-bearing:
+Properties keep it from recurring, and both are load-bearing:
 
 - **The output is generated, never committed.** There is no second copy to drift from. `internal/admin/static/*.js` is in `.gitignore`.
 - **The tests read the generated bundle**, not the source (`internal/admin/static_test.go`). Chief among them is `TestAdminStaticInlineHandlersAreExported`. It reads every `onclick="App.x(...)"` reference in the rendered markup. It cross-checks each one against the bundle's export table. esbuild runs with `--global-name=App`, so `App.x` exists only for a name `app.ts` EXPORTS. A handler that is referenced but not exported is a silently dead button. There is no build error and nothing red, only a control that does nothing when clicked. This test also caught `dlMintLink`, which built its handler as a string literal during the conversion.

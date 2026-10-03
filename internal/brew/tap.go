@@ -26,7 +26,7 @@ import (
 // permanently redirected to the public tap on the git subdomain, exactly as
 // before. A request that carries a valid credential is served IN PLACE
 // instead: clients drop credentials when following a cross-host redirect (git
-// re-roots all subsequent requests on the redirect target), so redirecting an
+// re-roots all subsequent requests on the redirect target).
 func (h *Handler) RedirectTap(w http.ResponseWriter, r *http.Request) {
 	if auth.TokenFrom(r.Context()) != nil {
 		h.serveTapFile(w, r)
@@ -114,7 +114,6 @@ func (h *Handler) serveTapFile(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, rc)
 }
 
-// tapScopeKey returns the snapshot-cache key component identifying the
 func tapScopeKey(ctx context.Context) string {
 	t := auth.TokenFrom(ctx)
 	if t == nil {
@@ -129,7 +128,7 @@ func tapScopeKey(ctx context.Context) string {
 
 // tapVisibleProjects computes the projects the request may see in a tap: every
 // public project, plus -- when the request carries a credential -- the private
-// projects that credential can read. The visibility rule is
+// projects that credential can read.
 func (h *Handler) tapVisibleProjects(r *http.Request) ([]db.Project, error) {
 	projects, err := h.DB.ListProjects(r.Context())
 	if err != nil {
@@ -151,7 +150,6 @@ func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 		return nil, err
 	}
 	files := map[string][]byte{
-		// Always ship the private-download strategy so the tap layout is
 		repackage.BrewPrivateStrategyPath: []byte(repackage.BrewPrivateStrategy),
 	}
 	for _, project := range visible {

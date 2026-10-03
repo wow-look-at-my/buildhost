@@ -1,8 +1,6 @@
 # The ANONYMOUS tap must not know a private project exists, and an
 # unauthorized formula request must be a clean HTTP error.
 #
-# A 200 with a JSON body saved as formula.rb is exactly the ".rb: syntax error"
-# class of failure users hit, so the content type matters as much as the code.
 # The private project here is myrepo/myapp, which folds to myrepo-myapp.
 #
 # $BREW_HOST comes from the workflow, which starts the server and publishes.
@@ -49,11 +47,10 @@ tests:
 		stdout:
 			- "no-leak"
 
-	# The literal slash-namespaced path names the project exactly, so it
-	# answers 401 like the legacy path. The FOLDED name is different: it
-	# resolves back to its project only for a request that may read it, so an
-	# anonymous probe stays indistinguishable from nonexistent rather than
-	# confirming a private project exists.
+	# The FOLDED name is different: it resolves back to its project only for
+	# a request that may read it, so an anonymous probe stays
+	# indistinguishable from nonexistent rather than confirming a private
+	# project exists.
 	- desc: unauthorized formula paths return clean errors, never a fake formula body
 	  cmd: |
 		set -eu

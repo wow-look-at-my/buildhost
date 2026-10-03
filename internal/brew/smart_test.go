@@ -190,7 +190,7 @@ func TestServeUploadPack_ServesRequestedWantAfterTipAdvance(t *testing.T) {
 	pack := resp[len("0008NAK\n"):]
 	require.True(t, bytes.HasPrefix(pack, []byte("PACK")))
 
-	// The tip really advanced underneath the fetch.
+	// The tip advanced underneath the fetch.
 	newTip := readTapTip(lineageDirFor(t, h))
 	require.NotEqual(t, tip1, newTip)
 
