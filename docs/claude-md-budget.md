@@ -33,7 +33,7 @@ A third check, **unwrapped**, covers any line many columns that has room to wrap
 
 ## How the file was brought back
 
-By extraction, never summarization. The prose moved into `docs/` VERBATIM. CLAUDE.md kept a one-line pointer to each file. Paragraph breaks go at the existing topic boundaries. No wording changed. 120,754 characters became 9,299, which is 23% of budget. Every backticked identifier in the old file was checked, and each one still exists somewhere in the tree.
+By extraction, not summarization. The prose moved into `docs/` VERBATIM. CLAUDE.md kept a one-line pointer to each file. Paragraph breaks go at the existing topic boundaries. No wording changed. 120,754 characters became 9,299, which is 23% of budget. Every backticked identifier in the old file was checked, and each one still exists somewhere in the tree.
 
 Things surfaced during the extraction that are worth recording, because both are symptoms of the same disease:
 
