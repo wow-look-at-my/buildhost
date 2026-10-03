@@ -1,5 +1,4 @@
 // Recording what buildhost stores on GitHub's linked artifacts page.
- origin/master
 
 const MAX_ARTIFACT_URL = 152;
 

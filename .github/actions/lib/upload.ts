@@ -1,5 +1,4 @@
 // Delivering an artifact body from a composite action.
- origin/master
 
 /* */
 export const DefaultChunkSize = 64 << 20;
