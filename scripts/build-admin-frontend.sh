@@ -18,12 +18,7 @@ if [ ! -d node_modules ]; then
     npm ci --silent
 fi
 
-<<<<<<< HEAD
-# Type-check first, then bundle.
-bin=node_modules/.bin
-=======
 bin="$frontend/node_modules/.bin"
->>>>>>> origin/master
 "$bin/tsc" --noEmit
 "$bin/esbuild" src/app.ts --bundle --outfile=../static/app.js --format=iife --global-name=App --target=es2020
 "$bin/esbuild" src/copy.ts --bundle --outfile=../static/copy.js --format=iife --target=es2020

@@ -34,11 +34,7 @@ git diff --quiet                      # 1. drift
 git ls-files -i -c --exclude-standard # 2. committed at all
 ```
 
-<<<<<<< HEAD
-1. **Drift** — a committed artifact whose source no longer produces it. A regenerate rewrites the file. As a result, the working tree is dirty. This assertion goes red the first time the TypeScript and the committed bundle disagree. The arrangement went red months later, when the file was deleted.
-=======
 1. **Drift** — a committed artifact whose source no longer produces it. A regenerate rewrites the file. As a result, the working tree is dirty. This assertion goes red the first time the TypeScript and the committed bundle disagree. the arrangement went red months later, when the file was deleted.
->>>>>>> origin/master
 2. **Committed at all** — a tracked file that `.gitignore` says is build output. Needed because a deterministic build (esbuild is one) regenerates a *byte-identical* artifact, leaving check 1 green while the artifact sits in git waiting to drift. This one flags it immediately, in sync or not.
 
 ## How the restored bundle was verified

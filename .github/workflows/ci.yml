@@ -450,33 +450,12 @@ jobs:
             arm64|aarch64) arch=arm64 ;;
             *) echo "unsupported arch"; exit 1 ;;
           esac
-<<<<<<< HEAD
-          printf '%s\n' '#!/bin/sh' 'echo buildhost-homebrew-private-ok' > "${{ runner.temp }}/myapp"
-          chmod +x "${{ runner.temp }}/myapp"
-=======
->>>>>>> origin/master
           ./buildhost project create \
             --server "$BUILDHOST_BASE_URL" \
             --token "$BUILDHOST_TOKEN" \
             --name myrepo/myapp \
             --versioning semver \
             --private
-<<<<<<< HEAD
-          printf '%s\n' \
-            "server = \"$BUILDHOST_BASE_URL\"" \
-            "token = \"$BUILDHOST_TOKEN\"" \
-            'project = "myrepo/myapp"' \
-            'version = "1.0.0"' \
-            'git_branch = "master"' \
-            "" \
-            "[[artifact]]" \
-            "path = \"${{ runner.temp }}/myapp\"" \
-            "os = \"$os\"" \
-            "arch = \"$arch\"" \
-            'kind = "binary"' \
-            > "${{ runner.temp }}/buildhost-release-private.toml"
-          ./buildhost publish --manifest "${{ runner.temp }}/buildhost-release-private.toml"
-=======
           # 0.9.0 is the pinned private version homebrew-private.dats installs; 1.0.0 is the latest.
           for spec in 0.9.0:buildhost-homebrew-private-0.9.0 1.0.0:buildhost-homebrew-private-ok; do
             version="${spec%%:*}"
@@ -536,7 +515,6 @@ jobs:
               > "${{ runner.temp }}/buildhost-release-versioned.toml"
             ./buildhost publish --manifest "${{ runner.temp }}/buildhost-release-versioned.toml"
           done
->>>>>>> origin/master
       # Hostile-name fixtures for the formula-codegen guarantees the e2e
       - name: Publish hostile-name fixtures (public)
         shell: bash

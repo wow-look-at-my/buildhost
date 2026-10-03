@@ -112,11 +112,7 @@ Some checks need a program rather than a shell: octokit fakes, a browser crawl, 
 
 ## The route table golden (docs/routes.golden)
 
-<<<<<<< HEAD
-`docs/routes.txt` is the committed route table, rendered by the program itself (`auth.AllRoutes()`, the same enumeration `buildhost routes` prints) and never parsed out of source. Gates keep it honest, both fail-on-drift:
-=======
 `docs/routes.golden` is the committed route table, rendered by the program itself (`auth.AllRoutes()`, the same enumeration `buildhost routes` prints) and never parsed out of source. Gates keep it honest, both fail-on-drift:
->>>>>>> origin/master
 
 - `internal/routescheck/golden_test.go` fails the ordinary build when the route set differs from the file, naming the regeneration command.
 - The `route-diff` CI job re-checks the file against the REAL BINARY's `routes` output. The golden can therefore never describe a route the shipped program does not serve.
@@ -125,8 +121,4 @@ Regenerate with `go-toolchain && ./build/buildhost routes > docs/routes.golden`,
 
 It exists because this repo has no central router file. Every backend self-registers from its own `init()`. Before the golden, an added endpoint therefore left nothing route-shaped in Files Changed for a reviewer to look at. The golden turns a new route into an ordinary one-line diff. It also makes a duplicated or unintended route impossible to land unnoticed.
 
-<<<<<<< HEAD
-`internal/routescheck/routes_test.go` guards the mechanism the golden depends on: routes must register in `init()`, not inside an `auth.OnReady()` callback. OnReady fires only from `auth.Init()` at server boot, so a route registered there is invisible to `buildhost routes`, to the golden. This is to the route-diff check. Its `want` list covers every backend including `/api/v1`.
-=======
 `internal/routescheck/routes_test.go` guards the mechanism the golden depends on: routes must register in `init()`, not inside an `auth.OnReady()` callback. OnReady fires only from `auth.Init()` at server boot. A route registered there is invisible to `buildhost routes`, to the golden, and to the route-diff check. Its `want` list covers every backend including `/api/v1`.
->>>>>>> origin/master

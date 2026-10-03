@@ -48,11 +48,7 @@ The APE's own trampoline handles this at run time. It copies itself somewhere wr
 
 `OCI.Applicable` gates the format to `os=linux`. An APE covers several platforms from one artifact row. The image around it is still a linux rootfs with a linux shell. Stamping that `os: darwin` or `os: windows` advertises a platform nothing can pull and run. Those slots are absent from the index, rather than broken entries in it.
 
-<<<<<<< HEAD
-. A rolling updater creates the replacement container from the config of the container it replaces. That config carries the entrypoint of the image. An entrypoint that names an APE exits 126 on every start. The container is never replaced. Its stale config is then cloned onto every later image. The deployment stays on the version it already runs. A shebang script is execable, so every spelling reaches the binary and no such wedge can start.
-=======
 . A rolling updater creates the replacement container from the config of the container it replaces. That config carries the entrypoint of the image. An entrypoint that names an APE exits 126 on every start. the container is never replaced. Its stale config is then cloned onto every later image. The deployment stays on the version it already runs. A shebang script is execable, so every spelling reaches the binary and no such wedge can start.
->>>>>>> origin/master
 
 `test/dats/synthesized-ape-image.dats` starts a real synthesized APE image. It also starts one under each entrypoint spelling an older container can carry.
 

@@ -121,12 +121,8 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 		License:     firstNonEmpty(project.License, "MIT"),
 		Kind:        kind,
 		// A private project's formula downloads through the tap's token-aware
-<<<<<<< HEAD
-		Private: project.IsPrivate,
-=======
 		Private:   project.IsPrivate,
 		Versioned: mode != formulaLatest,
->>>>>>> origin/master
 		// The project's packaging-agnostic create_service setting.
 		Service:   project.CreateService,
 		Resources: resources,

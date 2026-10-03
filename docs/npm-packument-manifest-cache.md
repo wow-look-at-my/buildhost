@@ -30,11 +30,7 @@ Cache the extracted fields per artifact in `packaged_artifacts` under format `np
 Cold requests are bounded ways:
 
 - **Blob grouping.** Storage is content-addressed. Releases that re-register unchanged bytes, through a hash-reference upload, therefore share a blob. It is decompressed once, and every sharing artifact gets its own cache row.
-<<<<<<< HEAD
-- **Bounded concurrency** (`manifestFillConcurrency = 8`). Each fill streams one artifact through zstd+gzip, so memory stays bounded by the decoder windows. The work is CPU-bound. On a 4-core box multiple workers give ~3.2x, and raising the bound past the core count buys nothing but memory pressure.
-=======
 - **Bounded concurrency** (`manifestFillConcurrency = 8`). Each fill streams one artifact through zstd+gzip, so memory stays bounded by the decoder windows. The work is CPU-bound: on a 4-core box multiple workers give ~3.2x. Raising the bound past the core count buys nothing but memory pressure.
->>>>>>> origin/master
 - **A hard budget** (`manifestFillBudget = 20s`). Overrunning it returns `503` + `Retry-After: 5`, never a `200` whose version entries quietly lost their dependency graph. Fills already committed survive, so each retry has less to do and a cold project converges instead of failing forever.
 
 ## Measured

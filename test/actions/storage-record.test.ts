@@ -41,11 +41,7 @@ async function main(): Promise<void> {
 	assert.deepStrictEqual(sent[0], {
 		org: 'PazerOP', name: 'ue553', version: 'v7', digest: `sha256:${SHA}`,
 		registry_url: SERVER, repository: 'ue553', path: 'linux/amd64',
-<<<<<<< HEAD
-		artifact_url: `${DL}/ue553?v=v7&os=linux&arch=amd64&debug=1`,
-=======
 		artifact_url: dlURL('ue553', 'v7', 'amd64'),
->>>>>>> origin/master
 		github_repository: 'UE553', status: 'active', return_records: false,
 	});
 	assert.match(info[0], /^Recorded ue553 linux\/amd64 sha256:a{64} on PazerOP's linked artifacts page$/);
@@ -54,11 +50,7 @@ async function main(): Promise<void> {
 	reset();
 	await release(gh(), { artifacts: [slot({ project: 'repo/client', version: 'v1' }), slot({ project: 'repo/server', version: 'v2', arch: 'arm64' })] });
 	assert.deepStrictEqual(sent.map((r) => [r.name, r.version, r.path]), [['repo/client', 'v1', 'linux/amd64'], ['repo/server', 'v2', 'linux/arm64']]);
-<<<<<<< HEAD
-	assert.strictEqual(sent[1].artifact_url, `${DL}/repo/server?v=v2&os=linux&arch=arm64&debug=1`);
-=======
 	assert.strictEqual(sent[1].artifact_url, dlURL('repo/server', 'v2', 'arm64'));
->>>>>>> origin/master
 
 	// A published artifact with no sha256 is a failed publish, not a record.
 	reset();

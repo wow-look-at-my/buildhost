@@ -202,7 +202,6 @@ type BrewFormula struct {
 	Private bool
 	// Versioned renders the keg-only formula at BrewVersionedFormulaPath.
 	Versioned bool
->>>>>>> origin/master
 	Service   bool
 	Resources []BrewResource
 }
