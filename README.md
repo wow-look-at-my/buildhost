@@ -463,7 +463,7 @@ Set `BUILDHOST_OIDC_ISSUERS` to a comma-separated list of trusted OIDC issuers (
 
 1. Fetches the issuer's JWKS keys (via OIDC discovery) and verifies the JWT signature
 2. Checks the org (from subject) and event type (from `event_name` claim) against the allowlists
-3. Derives the repo's project name from the subject claim (`repo:org/name:*` -> `name`)
+3. Derives the repo's project name from the subject claim (`repo:org/name:*` -> `name`). A leading `.`, `_` or `-` is dropped, so `.github` -> `github`.
 4. Auto-creates the project, or any project slash-namespaced beneath it, when that project does not exist. Such a project gets auto-versioning.
 5. Grants `read,write` scoped to that repo's namespace: project `name` and any `name/<...>` beneath it, but nothing else
 

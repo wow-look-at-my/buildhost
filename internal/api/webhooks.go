@@ -72,7 +72,7 @@ func (h *Handler) handleGitHubDelete(w http.ResponseWriter, r *http.Request, bod
 		return
 	}
 
-	repoName := strings.ToLower(strings.TrimSpace(event.Repository.Name))
+	repoName := auth.RepoProjectName(strings.TrimSpace(event.Repository.Name))
 	branch := strings.TrimSpace(event.Ref)
 	if repoName == "" || branch == "" {
 		jsonError(w, http.StatusBadRequest, "repository.name and ref are required")
