@@ -561,9 +561,7 @@ jobs:
       - env:
           BREW_HOST: brew.localhost:18080
         run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/homebrew-public.dats
-      # Docs: the authenticated tap replaces the public tap under the same name
-      - name: Untap the public tap before the private flow (per docs)
-        run: brew untap --force pazer/build
+      # The private flow repoints the public tap the previous suite left installed
       - env:
           BREW_HOST: brew.localhost:18080
         run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/homebrew-private.dats
