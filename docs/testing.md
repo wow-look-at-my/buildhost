@@ -82,7 +82,7 @@ The scheme is why these names stay under `.localhost`. `auth.RequestScheme` answ
 
 CI job `upload-artifact-action-e2e` (`ci.yml`) exercises the `.github/actions/buildhost-upload-artifact` composite. It runs against a real spawned buildhost whose advertised `max_direct_upload_bytes` is shrunk to 1 MiB.
 
-A small file must upload as one classic direct PUT. The server log must show no session-endpoint traffic. A file of about 3 MiB must assemble through a chunked upload session, with one create and four MiB `?offset=` PATCH requests. Each server-computed sha256 must equal the local file's own. The chunk-assembled artifact must download back byte-identical. The create-release and publish-release composites run as part of the flow.
+A small file must upload as one classic direct PUT. The server log must show no session-endpoint traffic. A file of about 3 MiB must assemble through a chunked upload session, with one create and MiB `?offset=` PATCH requests. Each server-computed sha256 must equal the local file's own. The chunk-assembled artifact must download back byte-identical. The create-release and publish-release composites run as part of the flow.
 
 The same job runs single-mode `buildhost publish`, with no `--manifest`, against the real binary. It then asserts that the project's apex `latest` resolves published. The CLI package deliberately has no unit test. Any such test pulls the whole untested `cmd/buildhost` into the coverage denominator. See `internal/uploadclient`'s doc comment. CLI behavior is therefore guarded here, as `--manifest` mode is guarded in `homebrew-tap-e2e`.
 
