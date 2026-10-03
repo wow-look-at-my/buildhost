@@ -206,17 +206,6 @@ func (h *Handler) queueDigestFill(project db.Project, release db.Release, a db.P
 func (h *Handler) fillDigests() {
 	for {
 		h.fillMu.Lock()
-		if len(h.fillQueue) == 0 {
-			h.fillRunning = false
-			h.fillMu.Unlock()
-			// The live lineages were built without these versions; the next fetch rebuilds instead of waiting out tapCacheTTL.
-			h.tapMu.Lock()
-			for key := range h.tapSnaps {
-				h.dropTapLineageLocked(key)
-			}
-			h.tapMu.Unlock()
-			return
-		}
 		job := h.fillQueue[0]
 		h.fillQueue = h.fillQueue[1:]
 		h.fillMu.Unlock()
@@ -227,8 +216,24 @@ func (h *Handler) fillDigests() {
 
 		h.fillMu.Lock()
 		delete(h.filling, job.artifact.ID)
+		drained := len(h.fillQueue) == 0
+		if drained {
+			h.fillRunning = false
+		}
 		h.fillMu.Unlock()
+
+		if drained {
+			// The live lineages were built without these versions.
+			h.tapMu.Lock()
+			for key := range h.tapSnaps {
+				h.dropTapLineageLocked(key)
+			}
+			h.tapMu.Unlock()
+		}
 		h.fillWG.Done()
+		if drained {
+			return
+		}
 	}
 }
 
