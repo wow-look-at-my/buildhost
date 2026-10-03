@@ -1,9 +1,7 @@
 #
-# This exists because stripping stopped happening and nobody noticed for weeks:
-# it shelled out to strip(1)/objcopy(1), which the distroless image does not
-# ship. Every download went out unstripped and fmt=symbols could not work. The
-# unit tests all passed, because the runner has binutils and the container does
-# not. Only a check against the real image sees this.
+# Every download went out unstripped and fmt=symbols could not work. The unit
+# tests all passed, because the runner has binutils and the container does not.
+# Only a check against the real image sees this.
 #
 # Needs curl, jq, readelf and the docker CLI, so a workflow runs it
 # --no-sandbox.
@@ -46,11 +44,15 @@ shared:
 
 setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
 
+# dats runs these tests concurrently in the repo root. Each test therefore
+# writes its downloads into its own directory under $WORK.
+
 tests:
 	- desc: the download comes back smaller than the upload
 	  cmd: |
 		set -eu
 		. {shared.env}
+		cd "$(mktemp -d "$WORK/test.XXXXXX")"
 		curl -fsSL -o out.bin "$STATIC/file?$QUERY&fmt=raw"
 		up="$(wc -c < "$FIXTURE")"
 		down="$(wc -c < out.bin)"
@@ -68,6 +70,7 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
+		cd "$(mktemp -d "$WORK/test.XXXXXX")"
 		curl -fsSL -o out.bin "$STATIC/file?$QUERY&fmt=raw"
 		test "$(head -c 4 out.bin | od -An -tx1 | tr -d ' \n')" = "7f454c46"
 		sh {shared.sections.sh} out.bin > sections.txt
@@ -86,6 +89,7 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
+		cd "$(mktemp -d "$WORK/test.XXXXXX")"
 		curl -fsSL -D - -o /dev/null "$STATIC/file?$QUERY&fmt=raw" | tr -d '\r' | grep -i '^x-debug-symbols:'
 	  outputs:
 		stdout:
@@ -97,6 +101,7 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
+		cd "$(mktemp -d "$WORK/test.XXXXXX")"
 		curl -fsSL -o symbols.bin "$STATIC/file?$QUERY&fmt=symbols"
 		sh {shared.sections.sh} symbols.bin | grep -qx -- '.debug_info'
 		echo "symbols-served"
@@ -108,6 +113,7 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
+		cd "$(mktemp -d "$WORK/test.XXXXXX")"
 		curl -fsSL -o full.bin "$STATIC/file?$QUERY&fmt=raw&debug=1"
 		cmp "$FIXTURE" full.bin
 		echo "bytes-identical"

@@ -6,7 +6,7 @@ const path = require("node:path");
 const child_process = require("node:child_process");
 
 // Progress lines and the failure report. The suite reads stdout, so a failure
-// has to arrive as a non-zero exit, not as a label on a green run.
+// has to arrive as a non-exit, not as a label on a green run.
 const core = {
 	info: (m: string) => console.log(m),
 	error: (m: string) => console.error(m),
@@ -25,8 +25,8 @@ const PROJECT = "cors-e2e";
 const PRIVATE_PROJECT = "cors-e2e-private";
 const MARKER = "site-module-loaded";
 
-// The router dispatches on the Host's first label, so the sites service has to
-// be addressed by name. GitHub runners resolve *.localhost to loopback (the
+// The router dispatches on the Host's earliest label, so the sites service has
+// to be addressed by name. GitHub runners resolve *.localhost to loopback (the
 // same assumption image-strips-e2e.ts makes for static.localhost); say so
 // outright rather than letting an unrelated-looking connection error surface.
 {
@@ -160,8 +160,8 @@ try {
 
 	// The create-project field is `is_private` (bool). An unknown field is
 	// IGNORED, so a wrong name silently yields a PUBLIC project -- which is how
-	// the private-project case below spent its first life asserting nothing. Every
-	// creation here therefore reads the visibility back and fails on a mismatch.
+	// the private-project case below spent its earliest life asserting nothing.
+	// Every creation here therefore reads the visibility back and fails on a mismatch.
 	async function createProject(name: string, isPrivate: boolean) {
 		const res = await fetch(`http://localhost:${PORT}/api/v1/projects`, {
 			method: "POST",
@@ -240,6 +240,7 @@ try {
 	await assertChainCORS("bare apex file", `/${PROJECT}/index.html`, false);
 	// The production shape: private project, public site branch, ANONYMOUS.
 	await assertChainCORS("private project, public branch (legacy /branch/)", `/${PRIVATE_PROJECT}/branch/library/ui/mod.js`, true);
+
 
 	const MODULE_URL = `${SITES}/${PRIVATE_PROJECT}/branch/library/ui/mod.js`;
 	const page_html = `<!doctype html><meta charset=utf-8><title>consumer</title><script type="module">

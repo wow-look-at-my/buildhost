@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
@@ -25,7 +26,8 @@ type githubDeleteEvent struct {
 	Ref        string `json:"ref"`
 	RefType    string `json:"ref_type"`
 	Repository struct {
-		Name string `json:"name"`
+		Name     string `json:"name"`
+		FullName string `json:"full_name"`
 	} `json:"repository"`
 }
 
@@ -51,6 +53,8 @@ func (h *Handler) GitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, http.StatusOK, map[string]any{"ok": true})
 	case "delete":
 		h.handleGitHubDelete(w, r, body)
+	case "create":
+		h.handleGitHubCreate(w, r, body)
 	default:
 		jsonResponse(w, http.StatusOK, map[string]any{"ok": true, "ignored": true})
 	}
@@ -77,6 +81,14 @@ func (h *Handler) handleGitHubDelete(w http.ResponseWriter, r *http.Request, bod
 	if !validProjectName(repoName) || !validGitBranch(branch) {
 		jsonError(w, http.StatusBadRequest, "invalid repository or branch name")
 		return
+	}
+
+	// Starts the retention TTL on the branch's releases.
+	if event.Repository.FullName != "" {
+		if err := h.DB.RecordBranchDeletedForRepo(r.Context(), event.Repository.FullName, branch, time.Now()); err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to record the deleted branch")
+			return
+		}
 	}
 
 	deleted, err := h.DB.DeleteSitesByRepositoryBranch(r.Context(), repoName, branch)
@@ -113,6 +125,25 @@ func (h *Handler) handleGitHubDelete(w http.ResponseWriter, r *http.Request, bod
 		"sites_deleted": len(deleted),
 		"blobs_deleted": blobsDeleted,
 	})
+}
+
+// handleGitHubCreate forgets a recorded deletion when the branch comes back.
+func (h *Handler) handleGitHubCreate(w http.ResponseWriter, r *http.Request, body []byte) {
+	var event githubDeleteEvent
+	if err := json.Unmarshal(body, &event); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid create payload")
+		return
+	}
+	branch := strings.TrimSpace(event.Ref)
+	if event.RefType != "branch" || event.Repository.FullName == "" || branch == "" {
+		jsonResponse(w, http.StatusOK, map[string]any{"ok": true, "ignored": true})
+		return
+	}
+	if err := h.DB.ClearBranchDeletedForRepo(r.Context(), event.Repository.FullName, branch); err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to clear the deleted branch")
+		return
+	}
+	jsonResponse(w, http.StatusOK, map[string]any{"ok": true, "repository": event.Repository.FullName, "branch": branch})
 }
 
 func validGitHubSignature(header string, body []byte, secret string) bool {

@@ -1,5 +1,6 @@
 // Behavior tests for .github/actions/lib/storage-record.ts.
 
+
 const assert = require('node:assert');
 const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/storage-record`;
 // Untyped on purpose: the module's types are checked where it is CALLED, in the composites.

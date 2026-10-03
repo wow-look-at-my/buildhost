@@ -13,10 +13,8 @@ export interface Core { info(m: string): void; warning(m: string): void }
 
 export interface Response { status: number; text: string }
 
-/**
- * Send one request. The caller owns authentication, retries and base URL, so
- * this module carries only the session protocol.
- */
+/** Send a single request. The caller owns authentication, retries and base
+ * URL, so this module carries only the session protocol. */
 export type Send = (
 	method: string,
 	urlPath: string,
@@ -24,10 +22,8 @@ export type Send = (
 	headers?: Record<string, string>,
 ) => Promise<Response>;
 
-/**
- * The bytes to send. The caller owns the filesystem, so this module needs no
- * node builtins of its own and stays one file of protocol.
- */
+/** The bytes to send. The caller owns the filesystem, so this module needs
+ * no node builtins of its own and stays a single file of protocol. */
 export interface Body {
 	size: number;
 	/** Bare hex sha256 of the whole body, used as the finalize integrity check. */
@@ -160,8 +156,6 @@ async function sessionSize(send: Send, id: string): Promise<number> {
 	return size;
 }
 
-// Best-effort: a session left behind is swept after BUILDHOST_UPLOAD_SESSION_TTL
-// anyway, so a failure here must not mask the real one.
 async function abortSession(send: Send, id: string): Promise<void> {
 	try {
 		await send('DELETE', `/api/v1/uploads/${encodeURIComponent(id)}`);

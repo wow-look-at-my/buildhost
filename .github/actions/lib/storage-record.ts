@@ -9,7 +9,7 @@ export interface Octokit {
 	rest: { users: { getByUsername(p: { username: string }): Promise<{ data: { type?: string } }> } };
 }
 
-/** One published slot. `project`/`version` default to the call's. */
+/*`project`/`version` default to the call's. */
 export interface PublishedArtifact {
 	os?: string; arch?: string;
 	/** Bare hex sha256 of the bytes as UPLOADED; missing = a failed publish. */
@@ -26,7 +26,7 @@ interface Record_ {
 export async function recordReleaseArtifacts(octokit: Octokit, core: Core, context: Context, params: {
 	server: string; project?: string; version?: string; artifacts: readonly PublishedArtifact[];
 }): Promise<boolean> {
-	// Downloads live on the dl.<host> subdomain -- buildhost dispatches services by the first label of the request Host.
+	// Downloads live on the dl.<host> subdomain -- buildhost dispatches services by the earliest label of the request Host. origin/master
 	const dl = (() => { const u = new URL(params.server); u.host = `dl.${u.host}`; return u.origin; })();
 	const records: Record_[] = [];
 	for (const a of params.artifacts) {
@@ -40,7 +40,7 @@ export async function recordReleaseArtifacts(octokit: Octokit, core: Core, conte
 		records.push({
 			name: project, version, digest: `sha256:${a.sha256}`, registry_url: params.server,
 			repository: project, path,
-			// debug=1 is the only download returning the uploaded bytes verbatim -- buildhost strips and repackages on demand.
+			// debug=1 is the only download returning the uploaded bytes verbatim -- buildhost strips and repackages on demand. origin/master
 			artifact_url: `${dl}/${project}?v=${encodeURIComponent(version)}&os=${a.os ?? ''}&arch=${a.arch ?? ''}&debug=1`,
 		});
 	}
@@ -83,9 +83,7 @@ export async function recordImage(octokit: Octokit, core: Core, context: Context
 	}], (r) => r.repository);
 }
 
-// A loopback server is not a registry anything can fetch from (buildhost's own
-// e2e spawns one), so a record pointing at it would be an unreachable row. A
-// property of the target, not a caller-facing switch.
+// A property of the target, not a caller-facing switch.
 function unreachable(url: string): string {
 	let host: string;
 	try { host = new URL(url).hostname; } catch { return `${url} is not a valid URL`; }

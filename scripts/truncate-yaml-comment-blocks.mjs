@@ -71,8 +71,8 @@ function overLongBlocks(lines) {
 	return blocks;
 }
 
-// Keeps the block's first line and drops the comment and blank lines behind it,
-// up to the block's last comment line.
+// Keeps the block's earliest line and drops the comment and blank lines behind
+// it, up to the block's last comment line.
 function truncate(content) {
 	const lines = content.split('\n');
 	const drop = new Set();

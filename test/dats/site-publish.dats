@@ -1,7 +1,3 @@
-# What the upload composites and the CLI must have done to a real server: one
-# session for the chunked path and none for the direct one, bytes that survive
-# the round trip, a release that ends up published, and an advertised site URL
-# that serves rather than redirects.
 #
 # The workflow runs the composites -- an action only runs inside a workflow --
 # and hands the results here: LOG is the server's log, BASE and SITES its

@@ -1,5 +1,6 @@
 // Behavior tests for .github/actions/lib/upload.ts.
 
+
 const assert = require('node:assert');
 const http = require('node:http') as typeof import('node:http');
 const fs = require('node:fs') as typeof import('node:fs');
@@ -105,8 +106,6 @@ async function start(opts: ServerOptions): Promise<Harness> {
 const warnings: string[] = [];
 const core = { info: () => {}, warning: (m: string) => warnings.push(m) };
 
-// A fixture on disk, read back through the same fd-per-chunk Body the publish
-// composite builds, so the test exercises that shape rather than a fake one.
 function writeFixture(name: string, size: number) {
 	const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'upload-test-'));
 	const bytes = crypto.randomBytes(size);

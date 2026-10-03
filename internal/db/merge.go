@@ -271,6 +271,10 @@ func (d *DB) ApplyProjectMerge(ctx context.Context, confirmed *ProjectMergePlan)
 	if err := q.InsertProjectAlias(ctx, InsertProjectAliasParams{Name: src.Name, ProjectID: dst.ID}); err != nil {
 		return fmt.Errorf("alias %q -> %q: %w", src.Name, dst.Name, err)
 	}
+	// The branch sync records these again for the surviving project.
+	if err := q.DeleteProjectDeletedBranches(ctx, src.ID); err != nil {
+		return fmt.Errorf("drop deleted-branch records of %q: %w", src.Name, err)
+	}
 	if err := q.DeleteProject(ctx, src.ID); err != nil {
 		return fmt.Errorf("delete merged project %q: %w", src.Name, err)
 	}
@@ -287,7 +291,7 @@ func (d *DB) ApplyProjectMerge(ctx context.Context, confirmed *ProjectMergePlan)
 // assertProjectDrained fails the transaction if anything still points at the
 // merged-away project, so a table added later cannot leave orphans behind.
 func assertProjectDrained(ctx context.Context, tx *sql.Tx, projectID int64) error {
-	for _, table := range []string{"releases", "api_tokens", "oidc_policies", "sites", "oci_blob_links", "oci_tags", "project_aliases"} {
+	for _, table := range []string{"releases", "api_tokens", "oidc_policies", "sites", "oci_blob_links", "oci_tags", "project_aliases", "deleted_branches"} {
 		var n int
 		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table+" WHERE project_id = ?", projectID).Scan(&n); err != nil {
 			return fmt.Errorf("drain check %s: %w", table, err)
