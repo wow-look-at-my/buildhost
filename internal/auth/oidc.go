@@ -257,13 +257,23 @@ func (c *oidcClaims) ownerName() string {
 func (c *oidcClaims) projectName() string {
 	if c.Repository != "" {
 		if _, repo, ok := strings.Cut(c.Repository, "/"); ok {
-			name := strings.ToLower(trimImmutableID(repo))
-			if validOIDCProjectName(name) {
+			if name := RepoProjectName(trimImmutableID(repo)); name != "" {
 				return name
 			}
 		}
 	}
 	return projectFromSubject(c.Subject)
+}
+
+// RepoProjectName maps a GitHub repository name to the root project it owns,
+// or "" when none can be named.
+func RepoProjectName(repo string) string {
+	// A project name opens with a letter or digit, so `.github` owns `github`.
+	name := strings.TrimLeft(strings.ToLower(repo), "._-")
+	if !validOIDCProjectName(name) {
+		return ""
+	}
+	return name
 }
 
 // repoPath returns the token's "owner/repo" (plain names, original casing --
@@ -366,11 +376,7 @@ func projectFromSubject(subject string) string {
 	if slash < 0 {
 		return ""
 	}
-	name := strings.ToLower(trimImmutableID(repoPath[slash+1:]))
-	if !validOIDCProjectName(name) {
-		return ""
-	}
-	return name
+	return RepoProjectName(trimImmutableID(repoPath[slash+1:]))
 }
 
 func validOIDCProjectName(name string) bool {
