@@ -32,7 +32,7 @@ func TestParseRequest(t *testing.T) {
 			wantMod: "github.com/o/r", wantVer: "v0.0.0-20260721161008-302008ab1248", wantEnd: "info",
 		},
 		{
-			// The wire encoding: an uppercase letter travels as "!" + lowercase, so
+			// The wire encoding: an uppercase letter travels as "!" + lowercase.
 			name: "case-encoded module path", path: "/github.com/!pazer!o!p/thing/@v/list",
 			wantMod: "github.com/PazerOP/thing", wantEnd: "list",
 		},

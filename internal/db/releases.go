@@ -86,6 +86,12 @@ func (d *DB) GetLatestReleaseByBranch(ctx context.Context, projectID int64, bran
 	return &row, nil
 }
 
+// ListPublishedReleasesOnDefaultBranch returns every published release on the
+// project's default branch, newest first: the set GetLatestRelease picks from.
+func (d *DB) ListPublishedReleasesOnDefaultBranch(ctx context.Context, projectID int64) ([]Release, error) {
+	return d.q.ListPublishedReleasesOnDefaultBranch(ctx, projectID)
+}
+
 func (d *DB) ListReleases(ctx context.Context, projectID int64) ([]Release, error) {
 	return d.q.ListReleasesByProject(ctx, projectID)
 }

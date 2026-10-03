@@ -25,7 +25,7 @@ func init() {
 	})
 	// Config-conditional {project}.<site-domain> scheme (see subdomain.go).
 	auth.OnSiteDomain(registerSiteDomainRoutes)
-	// The original /branch/{branch}/ form. Kept working forever -- it is what
+	// The /branch/{branch}/ form. Kept working forever -- it is what
 	auth.ServiceHandle("sites", "PUT /{project}/branch/{branch}", parseRoute, handler.Upload)
 	auth.ServiceHandle("sites", "DELETE /{project}/branch/{branch}", parseRoute, handler.Delete)
 	auth.ServiceHandle("sites", "GET /{project}/branch/{branch}/{path...}", parseRoute, handler.RedirectLegacyBranch)
@@ -34,7 +34,7 @@ func init() {
 	auth.ServiceHandle("sites", "PUT /{project}/@{branch}/{rest}", parseSigilRoute, handler.Upload)
 	auth.ServiceHandle("sites", "DELETE /{project}/@{branch}", parseSigilRoute, handler.Delete)
 	auth.ServiceHandle("sites", "DELETE /{project}/@{branch}/{rest}", parseSigilRoute, handler.Delete)
-	// Every remaining GET: the apex site path (/{project} redirects to the
+	// Every remaining GET.
 	auth.ServiceHandle("sites", "GET /{project}", handler.parseRootRoute, handler.ServeDefaultBranch)
 }
 
@@ -49,7 +49,7 @@ type route struct {
 	branch  string
 	path    string
 	write   bool
-	// root marks a default-branch read: the apex /{project}[/<file>] path on
+	// root marks a default-branch read.
 	root bool
 	// sigil is set by a read that named its branch with the "@" sigil, on either
 	sigil string
@@ -71,7 +71,6 @@ func (r route) Access() auth.AccessLevel {
 	return auth.ReadAccess
 }
 
-// AllowsPublicRead lets requireProject serve a public site branch without a
 func (r route) AllowsPublicRead(ctx context.Context, database *db.DB, project *db.Project) bool {
 	if r.write {
 		return false

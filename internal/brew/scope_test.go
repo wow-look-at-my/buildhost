@@ -106,7 +106,7 @@ func TestScopedTap_PublicFormulaStaysPlain(t *testing.T) {
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
 
-	// Even through the authenticated tap, a PUBLIC project's formula keeps the
+	// Even through the authenticated tap.
 	req := withReadToken(httptest.NewRequest("GET", "/private/tap.git", nil), nil)
 	req.Host = "brew.example.com"
 	files, err := h.buildTapFiles(req)
@@ -115,7 +115,6 @@ func TestScopedTap_PublicFormulaStaysPlain(t *testing.T) {
 	all := tapFilesText(files)
 	assert.Contains(t, all, "class Pubapp < Formula")
 	assert.NotContains(t, all, "using: BuildhostCurlDownloadStrategy\n      sha256")
-	// The only require_relative in the tap text is inside no formula -- the
 	assert.NotContains(t, all, "require_relative")
 }
 
@@ -165,7 +164,7 @@ func TestRedirectTap_AnonymousRedirects_AuthenticatedServedInPlace(t *testing.T)
 	require.Equal(t, http.StatusMovedPermanently, anon.Code)
 	assert.Equal(t, "https://git.example.com/brew/tap.git/info/refs", anon.Header().Get("Location"))
 
-	// A credentialed request must NOT be redirected: the client would drop the
+	// A credentialed request must NOT be redirected.
 	authed := tapFile(t, h.RedirectTap, "/tap.git/info/refs", "info/refs", nil, true)
 	require.Equal(t, http.StatusOK, authed.Code)
 	assert.Equal(t, "private, no-store", authed.Header().Get("Cache-Control"))
@@ -216,12 +215,12 @@ func TestServeFormula_PrivateProjectUsesTokenStrategyAndNoStore(t *testing.T) {
 	body := rec.Body.String()
 	assert.Contains(t, body, `require_relative "../lib/buildhost_private_download"`)
 	assert.Contains(t, body, "using: BuildhostCurlDownloadStrategy")
-	// The formula must never embed the caller's token; auth comes from
+	// The formula must never embed the caller's token.
 	assert.NotContains(t, body, "token=")
 }
 
 // tapFilesText concatenates every tap file path and its content, so tests can
-// assert on tap contents (formula filenames live in the paths, formula text in
+// assert on tap contents (formula filenames live in the paths.
 func tapFilesText(files map[string][]byte) string {
 	var b strings.Builder
 	for path, data := range files {
@@ -244,7 +243,7 @@ func TestPrivateStrategySource(t *testing.T) {
 }
 
 // A digit-leading project name is structurally unloadable by Homebrew, and
-// emitting `class 7zip < Formula` is a guaranteed ".rb: syntax error" that
+// emitting `class 7zip < Formula` is a guaranteed ".rb.
 func TestHostileProjectNames_NeverEmitInvalidRuby(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)

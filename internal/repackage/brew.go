@@ -36,13 +36,17 @@ func (b *Brew) Applicable(a db.Artifact) bool {
 
 // brewTemplate always emits a TOP-LEVEL url/sha256 (the canonical resource,
 
-var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }}require_relative "../lib/buildhost_private_download"
+var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }}require_relative "{{ .StrategyRequire }}"
 
 {{ end }}class {{ .ClassName }} < Formula
   desc "{{ .Description }}"
   homepage "{{ .Homepage }}"
   version "{{ .Version }}"
   license "{{ .License }}"
+  {{- if .Versioned }}
+
+  keg_only "it pins one release, and the unversioned formula links the same command"
+  {{- end }}
 
   url "{{ .Canonical.URL }}"{{ if .Private }}, using: BuildhostCurlDownloadStrategy{{ end }}
   sha256 "{{ .Canonical.SHA256 }}"
@@ -99,7 +103,6 @@ func brewInstallName(project string) string {
 	return project
 }
 
-// BrewPrivateStrategyPath is the path inside the generated tap repository that
 const BrewPrivateStrategyPath = "lib/buildhost_private_download.rb"
 
 // BrewPrivateStrategy is the Ruby download strategy shipped in the generated
@@ -138,10 +141,13 @@ type brewData struct {
 	License     string
 	Kind        string
 	Private     bool
-	Service     bool
-	Canonical   BrewResource
-	DependsOnOS string
-	Resources   []BrewResource
+	// StrategyRequire is the require_relative path from the formula file to BrewPrivateStrategyPath.
+	StrategyRequire string
+	Versioned       bool
+	Service         bool
+	Canonical       BrewResource
+	DependsOnOS     string
+	Resources       []BrewResource
 }
 
 // brewCanonicalResource picks the deterministic resource emitted as the
@@ -163,7 +169,6 @@ func brewCanonicalResource(resources []BrewResource) BrewResource {
 	return sorted[0]
 }
 
-// brewDependsOnOS returns "linux" or "macos" when every resource targets that
 func brewDependsOnOS(resources []BrewResource) string {
 	osName := ""
 	for _, r := range resources {
@@ -192,7 +197,8 @@ type BrewFormula struct {
 	Kind        string
 	// Private marks a formula for a private project: it requires the tap's
 	Private bool
-	// Service adds a `service do` block so `brew services start` manages the
+	// Versioned renders the keg-only formula at BrewVersionedFormulaPath.
+	Versioned bool
 	Service   bool
 	Resources []BrewResource
 }
@@ -202,15 +208,17 @@ func RenderBrewFormula(f BrewFormula) (*Output, error) {
 		return nil, fmt.Errorf("formula %q has no resources", f.Name)
 	}
 	d := brewData{
-		ClassName:   f.ClassName,
-		Name:        sanitizeBrewString(f.Name),
-		InstallName: sanitizeBrewString(brewInstallName(f.Name)),
-		Description: sanitizeBrewString(f.Description),
-		Homepage:    sanitizeBrewString(f.Homepage),
-		Version:     sanitizeBrewString(f.Version),
-		License:     sanitizeBrewString(f.License),
-		Kind:        f.Kind,
-		Private:     f.Private,
+		ClassName:       f.ClassName,
+		Name:            sanitizeBrewString(f.Name),
+		InstallName:     sanitizeBrewString(brewInstallName(f.Name)),
+		Description:     sanitizeBrewString(f.Description),
+		Homepage:        sanitizeBrewString(f.Homepage),
+		Version:         sanitizeBrewString(f.Version),
+		License:         sanitizeBrewString(f.License),
+		Kind:            f.Kind,
+		Private:         f.Private,
+		StrategyRequire: brewStrategyRequire(f.Versioned),
+		Versioned:       f.Versioned,
 		// The service block references opt_bin/<InstallName>, which exists
 		Service:     f.Service && f.Kind == "binary",
 		Canonical:   brewCanonicalResource(f.Resources),
@@ -305,7 +313,6 @@ func BrewClassName(name string) string {
 	return b.String()
 }
 
-// BrewEligibleProjectName reports whether a project name can be served as a
 func BrewEligibleProjectName(name string) bool {
 	return name != "" && name[0] >= 'a' && name[0] <= 'z'
 }
@@ -313,4 +320,77 @@ func BrewEligibleProjectName(name string) bool {
 // BrewFormulaName is the tap filename stem, and therefore the name a user
 func BrewFormulaName(project string) string {
 	return strings.ReplaceAll(project, "/", "-")
+}
+
+// BrewFormulaPath is the tap path of a project's unversioned formula.
+func BrewFormulaPath(project string) string {
+	return "Formula/" + BrewFormulaName(project) + ".rb"
+}
+
+// BrewVersionedFormulaName is the name a user types to install one release:
+// "<formula>@<version>".
+func BrewVersionedFormulaName(project, version string) string {
+	return BrewFormulaName(project) + "@" + version
+}
+
+// BrewVersionedFormulaPath shards a project's versioned formulas into their
+// own directory, so a publish rewrites only that project's tree object.
+func BrewVersionedFormulaPath(project, version string) string {
+	return "Formula/" + BrewFormulaName(project) + "/" + BrewVersionedFormulaName(project, version) + ".rb"
+}
+
+func brewStrategyRequire(versioned bool) string {
+	up := "../"
+	if versioned {
+		up = "../../"
+	}
+	return up + strings.TrimSuffix(BrewPrivateStrategyPath, ".rb")
+}
+
+var brewVersionChars = regexp.MustCompile(`^[0-9][0-9A-Za-z.+_-]*$`)
+
+var brewClassConstant = regexp.MustCompile(`^[A-Z][A-Za-z0-9_]*$`)
+
+// BrewVersionedClassName returns the class Homebrew expects in the versioned
+// formula file, and false when that class cannot be a Ruby constant. A
+// version must start with a digit: Homebrew turns "@<digit>" into "AT", and
+// any other "@" stays in the class name.
+func BrewVersionedClassName(project, version string) (string, bool) {
+	if !BrewEligibleProjectName(project) || !brewVersionChars.MatchString(version) {
+		return "", false
+	}
+	name := brewClassS(BrewVersionedFormulaName(project, version))
+	return name, brewClassConstant.MatchString(name)
+}
+
+// brewClassS ports Homebrew's Formulary.class_s (Library/Homebrew/formulary.rb)
+// step for step: capitalize, upcase the alphanumeric after each separator and
+// drop the separator, turn "+" into "x", then turn the first "@" followed by a
+// digit into "AT".
+func brewClassS(name string) string {
+	if name == "" {
+		return ""
+	}
+	s := strings.ToUpper(name[:1]) + strings.ToLower(name[1:])
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if strings.IndexByte("-_. \t\n\r\f\v", c) >= 0 && i+1 < len(s) && isASCIIAlnum(s[i+1]) {
+			b.WriteString(strings.ToUpper(s[i+1 : i+2]))
+			i++
+			continue
+		}
+		b.WriteByte(c)
+	}
+	s = strings.ReplaceAll(b.String(), "+", "x")
+	for i := 1; i+1 < len(s); i++ {
+		if s[i] == '@' && s[i+1] >= '0' && s[i+1] <= '9' {
+			return s[:i] + "AT" + s[i+1:]
+		}
+	}
+	return s
+}
+
+func isASCIIAlnum(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }

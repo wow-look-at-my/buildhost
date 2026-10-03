@@ -17,7 +17,7 @@ import (
 // This is pinned because the top-level CLAUDE.md claimed the opposite -- that
 // "the older /branch/{branch}/ and ~ spellings still serve the same files, as
 // 302s to the canonical URL" -- which describes the classic scheme and is true
-// only of /branch/. Believing it costs real time: a live probe of
+// only of /branch/. Believing it costs real time.
 func TestLegacySigil_ClassicSchemeTreatsTildeAsAnOrdinaryPathSegment(t *testing.T) {
 	t.Serial()
 	env := setupEnv(t)
@@ -30,7 +30,7 @@ func TestLegacySigil_ClassicSchemeTreatsTildeAsAnOrdinaryPathSegment(t *testing.
 	})
 	env.uploadSite(t, "lib", "library", map[string]string{"ui/mod.js": "// LIBRARY BRANCH module"})
 
-	// The decisive assertion: "~library/..." resolves as a PATH, serving the
+	// The decisive assertion: "~library/..." resolves as a PATH.
 	rec := env.do(t, "GET", "/lib/~library/ui/mod.js", "", nil, false)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Equal(t, "// a real file that merely looks like a sigil", rec.Body.String(),
@@ -48,7 +48,7 @@ func TestLegacySigil_ClassicSchemeTreatsTildeAsAnOrdinaryPathSegment(t *testing.
 
 // The other half of the asymmetry: on {project}.<site-domain>, "~" IS a sigil
 // and 301s to the "@" spelling, which is what "no published URL breaks" means
-// and where the legacy sigil actually earns its name.
+// and where the sigil earns its name.
 func TestLegacySigil_SubdomainSchemeRedirectsToAt(t *testing.T) {
 	t.Serial()
 	h, d, _ := setupTest(t)
