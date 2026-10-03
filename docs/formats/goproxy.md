@@ -94,7 +94,7 @@ Private prefixes match case-insensitively, as GitHub names do.
 
 Every successful response for a private module is `Cache-Control: private`. It was served to an authenticated caller, so no shared cache (a CDN in front of this host) may store it and replay it to an anonymous one. Public modules stay `public, immutable`.
 
-A caller without that access gets **404**, never a 401 and never a 403. That is the same answer a module that does not exist gets. Either of the other confirms the module EXISTS, which is the fact a private module is keeping. A prober can then walk a name list and map the org's private repositories off the status code alone.
+A caller without that access gets **404**, not a 401 and never a 403. That is the same answer a module that does not exist gets. Either of the other confirms the module EXISTS, which is the fact a private module is keeping. A prober can then walk a name list and map the org's private repositories off the status code alone.
 
 The check runs before any upstream call. The existing module and the fictional one therefore cannot drift apart in timing or in body. An unauthenticated request also never spends GitHub API quota. `TestExistingAndMissingPrivateModulesAreIndistinguishable` holds the property.
 
