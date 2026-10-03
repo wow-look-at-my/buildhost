@@ -35,7 +35,7 @@ A conversion to TypeScript never took effect. It added a partial `src/app.ts` wh
 
 Properties keep it from recurring, and both are load-bearing:
 
-- **The output is generated, never committed.** There is no second copy to drift from. `internal/admin/static/*.js` is in `.gitignore`.
+- **The output is generated, not committed.** There is no second copy to drift from. `internal/admin/static/*.js` is in `.gitignore`.
 - **The tests read the generated bundle**, not the source (`internal/admin/static_test.go`). Chief among them is `TestAdminStaticInlineHandlersAreExported`. It reads every `onclick="App.x(...)"` reference in the rendered markup. It cross-checks each one against the bundle's export table. esbuild runs with `--global-name=App`, so `App.x` exists only for a name `app.ts` EXPORTS. A handler that is referenced but not exported is a silently dead button. There is no build error and nothing red, only a control that does nothing when clicked. This test also caught `dlMintLink`, which built its handler as a string literal during the conversion.
 
 `copy.ts` is bundled **without** `--global-name`. index.html loads `app.js` and then `copy.js`. A second global name overwrites `window.App` with the copy module's exports, which kills every button on the page.

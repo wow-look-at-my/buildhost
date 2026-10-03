@@ -23,7 +23,7 @@ So one packument request decompressed ~8 GB (zstd out of storage, then gzip), se
 Cache the extracted fields per artifact in `packaged_artifacts` under format `npm-manifest` (`internal/npm/manifest.go`). It is the same digest-cache pattern brew uses for a tar.gz sha256 and apt uses for a deb digest.
 
 - **No blob is stored.** `storage_key` and `size` mirror the SOURCE artifact exactly, so retention's freed-bytes UNION dedupes the row against the artifact's own. The answer itself lives in the row's `metadata` JSON. The row rides the existing per-release retention cascade. There is no migration and no schema change.
-- **Extraction is lazy and on demand.** It runs on the first packument that needs a given artifact, never at publish time, streaming straight from the blob store. No temp file is written anywhere.
+- **Extraction is lazy and on demand.** It runs on the first packument that needs a given artifact, not at publish time, streaming straight from the blob store. No temp file is written anywhere.
 - **`fields_version`** pins the extraction contract. Bump `npmManifestFieldsVersion` when `manifestPassthroughFields` changes. Every existing row then reads as a miss and refills in place. A packument can therefore never advertise a field set the server no longer produces.
 - **A verdict of "nothing to surface" is cached too.** A blob that is not a readable npm tarball caches an empty map. That covers a blob that is not gzip, one with no `package.json`, and one with bad JSON. The answer cannot change for a content-addressed blob. To re-derive it per request preserves the whole defect for exactly those packages. Only a failure to READ the blob is left uncached, such as a storage error or a cancelled context.
 
@@ -31,7 +31,7 @@ Cold requests are bounded ways:
 
 - **Blob grouping.** Storage is content-addressed. Releases that re-register unchanged bytes, through a hash-reference upload, therefore share a blob. It is decompressed once, and every sharing artifact gets its own cache row.
 - **Bounded concurrency** (`manifestFillConcurrency = 8`). Each fill streams one artifact through zstd+gzip, so memory stays bounded by the decoder windows. The work is CPU-bound: on a 4-core box multiple workers give ~3.2x. Raising the bound past the core count buys nothing but memory pressure.
-- **A hard budget** (`manifestFillBudget = 20s`). Overrunning it returns `503` + `Retry-After: 5`, never a `200` whose version entries quietly lost their dependency graph. Fills already committed survive, so each retry has less to do and a cold project converges instead of failing forever.
+- **A hard budget** (`manifestFillBudget = 20s`). Overrunning it returns `503` + `Retry-After: 5`, not a `200` whose version entries quietly lost their dependency graph. Fills already committed survive, so each retry has less to do and a cold project converges instead of failing forever.
 
 ## Measured
 
