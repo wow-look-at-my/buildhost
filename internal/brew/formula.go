@@ -232,8 +232,12 @@ func (h *Handler) fillDigests() {
 	}
 }
 
-// backfillVersionDigests queues every uncached tar.gz digest a versioned
-// formula needs, so the history is filled before taps ask for it.
+// BackfillVersionDigests queues every uncached tar.gz digest the served
+// handler's versioned formulas need.
+func BackfillVersionDigests(ctx context.Context) error {
+	return handler.backfillVersionDigests(ctx)
+}
+
 func (h *Handler) backfillVersionDigests(ctx context.Context) error {
 	projects, err := h.DB.ListProjects(ctx)
 	if err != nil {

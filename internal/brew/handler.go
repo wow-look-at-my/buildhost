@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -27,11 +26,6 @@ func init() {
 		handler.DataDir = auth.DataDir()
 		// Drop live lineage entries from a previous wiring and sweep crash
 		handler.resetTapCache()
-		go func() {
-			if err := handler.backfillVersionDigests(context.Background()); err != nil {
-				slog.Error("backfill versioned formula digests", "err", err)
-			}
-		}()
 	})
 	auth.ServiceHandle("brew", "GET /{project}", handler.parseRoute, handler.ServeFormula)
 	auth.ServiceHandle("brew", "GET /Formula/{project}.rb", handler.parseRoute, handler.ServeFormula)

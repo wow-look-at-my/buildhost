@@ -51,6 +51,20 @@ brew install pazer/build/myrepo-myapp
 
 `brew update` refreshes the tap with the credential stored in the tap's git remote. The `?token=` query parameter does not work with `brew tap`. git appends its own path segments after the query string, such as `/info/refs`. The URL then stops resolving as a git repository.
 
+### Specific versions
+
+The tap carries one versioned formula per published release on the project's default branch, named `<formula>@<version>`. The version is the release version without a leading `v`. Install one through the tap you already added:
+
+```bash
+brew install pazer/build/go-toolchain@1.0.0
+```
+
+A versioned formula is keg-only, `keg_only :versioned_formula` as homebrew-core declares it, so it installs beside the unversioned formula without a link conflict. Run it from `$(brew --prefix pazer/build/go-toolchain@1.0.0)/bin/go-toolchain`. To put it on PATH instead, run `brew unlink go-toolchain` when the unversioned formula is installed, then `brew link --force go-toolchain@1.0.0`.
+
+A private project's versions come through the authenticated tap, with `HOMEBREW_BUILDHOST_TOKEN` set as above. `myrepo/myapp` 0.9.0 installs as `brew install pazer/build/myrepo-myapp@0.9.0`.
+
+A version that does not start with a digit has no versioned formula. Homebrew turns `@<digit>` into `AT` in the Ruby class name, and any other `@` leaves the class name invalid.
+
 ### Background services (create_service)
 
 A project can declare that its binary runs as a background service. Declare it in the publishing repo's CI, with `create_service: 'true'` on the `buildhost-create-release` or `buildhost-publish` action. go-toolchain's composite spells that as `autorelease_args: create_service=true`. Every publish asserts the declared value. An absent input leaves the stored setting untouched. An operator can also flip it directly, with `PATCH /api/v1/projects/{project}` and a body of `{"create_service": true}`.
@@ -390,7 +404,7 @@ Semantics:
 
 - **Check the capability first.** Only send `upload_sha256` on an empty-body request when `GET /api/v1/server-info` advertises `"upload_by_sha256": true`. A server without the capability ignores the parameter and stores the empty body as the artifact.
 - The referenced blob must already belong to **this project** (uploaded for any of its releases, so re-releasing an unchanged binary is nearly free). An unknown hash, another project's blob, and a since-garbage-collected blob all return the same 404 -- fall back to a full upload.
-- The created rows are ordinary artifact rows, field-for-field identical to a full upload's, with the same 201 and 409 semantics. The reference composes with the `{os}` and `{arch}` fan-out grammar. Each hash-ref request carries its own optional `X-Artifact-Filename`.
+- The created rows are ordinary artifact rows, field-for-field identical to a full upload's, with the same 201 and semantics. The reference composes with the `{os}` and `{arch}` fan-out grammar. Each hash-ref request carries its own optional `X-Artifact-Filename`.
 - `upload_sha256` keeps its existing meaning elsewhere. A request **with** a body ignores it. Combined with `upload_session=` it remains the session-finalize integrity check.
 
 The in-repo publishers do this automatically when the server advertises the capability. The `buildhost-publish` GitHub action and `buildhost publish --manifest` both hash the files they are about to upload. They send each distinct file once. They register every byte-identical slot by reference. An identical APE slot copy in go-toolchain therefore transfers once, and not once per slot.
@@ -436,7 +450,7 @@ GET /dl/myapp/branch/main/linux/amd64
 
 `latest`, with no branch, resolves to the newest published release on the project's **default branch**. That branch is `master` by default. buildhost detects each repo's real default branch automatically. On a GitHub Actions OIDC publish it reads the `owner/repo` from the token, and asks GitHub for that repo's default branch. A repo that releases off another branch, such as `v1`, therefore gets a correct `latest` with nothing sent in the publish. A push to a feature branch never hijacks `latest`. When the default branch has no published release yet, `latest` is not available.
 
-buildhost authenticates these lookups as a **GitHub App**. Set `BUILDHOST_GITHUB_APP_ID` and `BUILDHOST_GITHUB_APP_PRIVATE_KEY`, and the key takes the PEM contents or a file path. That path is recommended, because it mints a short-lived installation token, needs `metadata: read` only, and carries a high rate limit. A static `BUILDHOST_GITHUB_TOKEN` PAT works as a fallback. Without either, a lookup is anonymous. GitHub throttles an anonymous lookup to 60 per hour per IP, and it cannot read a private repo.
+buildhost authenticates these lookups as a **GitHub App**. Set `BUILDHOST_GITHUB_APP_ID` and `BUILDHOST_GITHUB_APP_PRIVATE_KEY`, and the key takes the PEM contents or a file path. That path is recommended, because it mints a short-lived installation token, needs `metadata: read` only, and carries a high rate limit. A static `BUILDHOST_GITHUB_TOKEN` PAT works as a fallback. Without either, a lookup is anonymous. GitHub throttles an anonymous lookup to 60 per hour per IP. It cannot read a private repo.
 
 ## Static sites
 
@@ -476,14 +490,14 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 Set `BUILDHOST_SITE_DOMAIN` (e.g. `pazer.site`) to also serve each project's site at `https://<project>.<domain>/` -- the default branch on bare paths, any other branch (or commit) behind the `@` sigil: `https://myapp.pazer.site/@pr-7/`, `https://myapp.pazer.site/@0f1e2d3/`.
 
 - A slash-named branch, such as `claude/foo`, resolves by longest match. An `@<default-branch>` URL 302s to the canonical bare form. The `~` sigil this scheme launched with still works, and it 301s to the `@` form.
-- Only a project name that is a single DNS label serves here. That means `[a-z0-9-]`, at most 63 characters, with no leading or trailing `-`. Every other name stays on `sites.<apex>/...`.
+- Only a project name that is a single DNS label serves here. That means `[a-z0-9-]`, a bounded number of characters, with no leading or trailing `-`. Every other name stays on `sites.<apex>/...`.
 - Reserved on this scheme: a leading `~` path segment and the literal `/__sso`.
-- Private sites sign in via the primary apex: set `BUILDHOST_PRIMARY_DOMAIN` (e.g. `pazer.build`) and the browser authenticates there (same single GitHub OAuth app), then is handed back to the site domain -- no second OAuth app.
+- Private sites sign in via the primary apex: set `BUILDHOST_PRIMARY_DOMAIN` (e.g. `pazer.build`). The browser authenticates there (same single GitHub OAuth app), then is handed back to the site domain -- no second OAuth app.
 - Setting `BUILDHOST_PRIMARY_DOMAIN` also scopes the web UI and `/api/v1` to that apex: other hosts get a plain 404 (health, sign-in, `llms.txt` stay host-agnostic). Unset, everything stays host-agnostic as before.
 
 ## Large uploads
 
-buildhost accepts a single upload up to 2 GiB. A proxy in front of it may not. Cloudflare's edge rejects a request body over 100 MB, with a 413 that never reaches the origin. Several ways around that follow, and each one is reliable on the first try.
+buildhost accepts a single upload up to 2 GiB. A proxy in front of it may not. Cloudflare's edge rejects a request body over 100 MB, with a 413 that never reaches the origin. Several ways around that follow, and each is reliable on the first try.
 
 - **The direct upload endpoint is preferred when it is configured.** Your deployment can expose a hostname that reaches the origin without the proxied body cap. Point `--server`, or your upload URLs, at that hostname. A single-request upload of any size then works. Nothing else changes.
 - **A hash-reference upload sends identical bytes zero times.** A file byte-identical to one the project already uploaded need not be sent at all. Another platform slot of the same release is such a file, and so is an unchanged re-release. Register it with an empty-body PUT that names the blob's SHA-256. See [Registering more slots by hash](#registering-more-slots-by-hash-no-re-upload). The in-repo publish clients do this automatically when the server advertises `upload_by_sha256`.
@@ -545,7 +559,7 @@ curl -fsS -X PUT -H "Authorization: Bearer $TOKEN" \
 
 ## Tokens
 
-Tokens authenticate all API requests. There are two kinds:
+Tokens authenticate all API requests. There are kinds:
 
 - **A global token** omits `project_id`. It can access every project. It can also manage tokens.
 - **A project-scoped token** sets `project_id`. It is limited to one project. It cannot list or delete a token.
@@ -615,7 +629,7 @@ curl -X DELETE https://buildhost.example.com/api/v1/tokens/7 \
 
 ### Using a token
 
-All three forms are equivalent:
+All forms are equivalent:
 
 ```bash
 # Bearer token (preferred)
@@ -630,7 +644,7 @@ curl "https://buildhost.example.com/api/v1/projects?token=$TOKEN"
 
 ## Temporary download links
 
-To share a single artifact from a **private** project without handing out a token, mint a temporary, signed download link. The link works for exactly one artifact (`os`/`arch`/`fmt`/`version`) and expires (default 1 hour, max 24 hours).
+To share a single artifact from a **private** project without handing out a token, mint a temporary, signed download link. The link works for exactly one artifact (`os`/`arch`/`fmt`/`version`) and expires (default 1 hour, max many hours).
 
 ```bash
 curl -X POST https://buildhost.example.com/api/v1/projects/myapp/download-links \
@@ -647,9 +661,9 @@ curl -X POST https://buildhost.example.com/api/v1/projects/myapp/download-links 
 }
 ```
 
-Anyone with the `url` can download that one artifact until it expires — no account or token needed. Minting requires a token with the `share` scope, authorized for the project. The admin dashboard exposes the same thing as a **"temp link"** button on each release's artifact list.
+Anyone with the `url` can download that artifact until it expires — no account or token needed. Minting requires a token with the `share` scope, authorized for the project. The admin dashboard exposes the same thing as a **"temp link"** button on each release's artifact list.
 
-The link is a stateless HMAC signature. A server-side key, generated on the first start, keys it. The signature is bound to the exact artifact and expiry. A leaked link therefore reaches nothing else in the project, and it cannot outlive its expiry. A link is not individually revocable before its expiry. Rotate the signing key to invalidate every outstanding link.
+The link is a stateless HMAC signature. A server-side key, generated on the first start, keys it. The signature is bound to the exact artifact and expiry. A leaked link therefore reaches nothing else in the project. It cannot outlive its expiry. A link is not individually revocable before its expiry. Rotate the signing key to invalidate every outstanding link.
 
 ## API
 
