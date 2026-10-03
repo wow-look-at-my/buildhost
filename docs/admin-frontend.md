@@ -17,7 +17,7 @@ internal/admin/frontend/src/types.ts  # the admin API's response shapes
 ./scripts/build-admin-frontend.sh
 ```
 
-Or from the frontend directory, `npm run build` type-checks and bundles, and `npm run check` runs `tsc --noEmit` alone. `npm ci` is needed once only. The script runs it for you when `node_modules` is absent.
+`scripts/build-admin-frontend.sh` holds the commands: `tsc --noEmit`, then an `esbuild` bundle for each entry point. `npm ci` is needed once only. The script runs it for you when `node_modules` is absent.
 
 npm is therefore required to build buildhost from a clean tree. That is the deliberate trade: the alternative -- committing the output so a Node-less build works -- is exactly what produced the drift described below.
 
