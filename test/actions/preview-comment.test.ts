@@ -1,13 +1,9 @@
 // Behavior tests for .github/actions/lib/preview-comment.ts.
-//
-// Nothing else reaches this code: a publish e2e runs against a local server with
-// no pull request to comment on. A mistake here posts the wrong link, or none,
-// on every repo in the org at the same time.
+
 
 const assert = require('node:assert');
 const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/preview-comment`;
-// Untyped on purpose: the module's types are checked where it is CALLED, in the
-// composite; here the assertions are the contract.
+// Untyped on purpose: the module's types are checked where it is CALLED, in the composite.
 const { commentPreview, marker } = require(`${lib}.ts`);
 
 type Sent = Record<string, unknown>;
@@ -100,7 +96,7 @@ async function main(): Promise<void> {
 }
 
 // Node runs this file directly, so the rejection has to become an exit code
-// here: an unhandled a single prints a warning and still exits 0 on some versions.
+// here.
 main().catch((err: unknown) => {
 	console.error(err);
 	process.exit(1);

@@ -1,16 +1,5 @@
 // Delivering an artifact body from a composite action.
-//
-// So a body larger than the server's advertised `max_direct_upload_bytes` is
-// assembled through an upload session instead: POST /api/v1/uploads, PATCH
-// .../{id}?offset=N per chunk, then the ORIGINAL endpoint with an empty body
-// and ?upload_session=&upload_sha256=.
-//
-// The size decision is made BEFORE anything is sent, from server-info. This
-// mirrors internal/uploadclient, which is the CLI's engine for the same
-// protocol.
-//
-// Loaded by `require(".../upload.ts")` (node strips the types) typed as
-// `typeof import(".../upload")`. See docs/uploads.md.
+ origin/master
 
 /* */
 export const DefaultChunkSize = 64 << 20;
@@ -50,7 +39,7 @@ export interface PutFileOptions {
 	body: Body;
 	/** Extra request headers, e.g. `X-Artifact-Filename`. */
 	headers?: Record<string, string>;
-	/** Bytes per chunk. */
+	/** Bytes per chunk. Forces a direct upload however large the body is. */
 	chunkSize?: number;
 	/** Largest direct body. */
 	directLimit?: number;
@@ -172,6 +161,5 @@ async function abortSession(send: Send, id: string): Promise<void> {
 	try {
 		await send('DELETE', `/api/v1/uploads/${encodeURIComponent(id)}`);
 	} catch {
-		// nothing to do
 	}
 }

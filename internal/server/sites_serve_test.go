@@ -91,7 +91,7 @@ func TestSitesApexPath(t *testing.T) {
 	require.Equal(t, "/apexp/runner.html", resp.Header.Get("Location"))
 	require.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
 
-	// The legacy branch route is unshadowed.
+	// The branch route is unshadowed.
 	resp, _ = siteGet(t, env, "sites.test.local", "/apexp/branch/main/runner.html")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
 	require.Equal(t, "/apexp/runner.html", resp.Header.Get("Location"))

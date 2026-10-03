@@ -13,7 +13,7 @@ This directory ships an **opt-in** second ingress that bypasses the proxy for on
 
 ## What still goes through Cloudflare
 
-Everything else. Downloads, the web UI, apt/brew/npm/oci/dl/static/sites -- all keep using the proxied hostnames and stay cached and shielded by Cloudflare. This ingress exists for **uploads** (and any other large request bodies). Upload URLs are simply the same API paths on the direct hostname:
+Everything else. Downloads, the web UI, apt/brew/npm/oci/dl/static/sites -- all keep using the proxied hostnames and stay cached and shielded by Cloudflare. This ingress exists for **uploads** (and any other large request bodies). Upload URLs are the same API paths on the direct hostname:
 
 ```
 PUT https://api.pazer.build:8443/api/v1/projects/{project}/releases/latest/artifacts/{os}/{arch}

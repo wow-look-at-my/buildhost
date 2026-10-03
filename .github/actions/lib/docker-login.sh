@@ -23,8 +23,7 @@ server="${1:?usage: docker-login.sh <server-url>}"
 : "${ACTIONS_ID_TOKEN_REQUEST_URL:?OIDC unavailable. Add 'permissions: { id-token: write }' to this job.}"
 : "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:?OIDC unavailable. Add 'permissions: { id-token: write }' to this job.}"
 
-# The OCI registry lives on the oci.<domain> subdomain; the server URL itself is
-# the OIDC audience buildhost verifies the JWT against.
+# The OCI registry lives on the oci.<domain> subdomain.
 host="${server#*://}"; host="${host%%/*}"
 registry="oci.${host}"
 

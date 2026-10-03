@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/buildhost/internal/admin"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/brew"
 	"github.com/wow-look-at-my/buildhost/internal/buildinfo"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -116,6 +117,11 @@ var serveCmd = &cobra.Command{
 		}
 
 		srv := server.New(cfg, database, store)
+		go func() {
+			if err := brew.BackfillVersionDigests(ctx); err != nil {
+				slog.Error("brew: versioned formula digest backfill incomplete", "err", err)
+			}
+		}()
 		slog.Info("starting server", "addr", cfg.ListenAddr)
 
 		go func() {
@@ -224,7 +230,7 @@ func logRetentionReport(rep retention.Report) {
 		"records_marked_deleted", rep.RecordsMarkedDeleted, "records_unmarked", rep.RecordsUnmarked)
 
 	// Every unmarked record is the org's linked artifacts page claiming
-	// buildhost still holds something it just deleted. The sweeper cannot fail
+	// buildhost still holds something. The sweeper cannot fail
 	if rep.RecordsUnmarked > 0 {
 		slog.Warn("retention: evicted artifacts still recorded as stored",
 			"records", rep.RecordsUnmarked, "errors", strings.Join(rep.RecordErrors, "; "))

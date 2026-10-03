@@ -1,10 +1,5 @@
 // Behavior tests for .github/actions/lib/upload.ts.
-//
-// A mistake here fails publishing for every repo in the org that ships a
-// binary larger than the advertised direct limit.
-//
-// The server here speaks the real session protocol from docs/uploads.md, so the
-// assertions are about what buildhost actually receives.
+
 
 const assert = require('node:assert');
 const http = require('node:http') as typeof import('node:http');
@@ -14,8 +9,7 @@ const pathMod = require('node:path') as typeof import('node:path');
 const crypto = require('node:crypto') as typeof import('node:crypto');
 
 const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/upload`;
-// Untyped on purpose: the module's types are checked where it is CALLED, in the
-// publish composite; here the assertions are the contract.
+// Untyped on purpose: the module's types are checked where it is CALLED, in the publish composite.
 const { putFile, directLimit, DefaultDirectLimit } = require(`${lib}.ts`);
 
 type Req = { method: string; url: string; headers: Record<string, string>; body: Buffer };
@@ -132,7 +126,7 @@ function writeFixture(name: string, size: number) {
 }
 
 async function main(): Promise<void> {
-	// --- a file inside the advertised limit keeps the single direct PUT ------
+	// --- a file inside the advertised limit keeps the direct PUT ------
 
 	{
 		const h = await start({ maxDirect: 1 << 20 });
@@ -207,8 +201,7 @@ async function main(): Promise<void> {
 	{
 		const h = await start({ maxDirect: 1000 });
 		const f = writeFixture('short_linux_amd64', 5000);
-		// Drops the last byte of every chunk. Appending it would shift every
-		// later offset, so the spool would silently be the wrong bytes.
+		// Drops the last byte of every chunk.
 		const short = { ...f.body, read: (o: number, n: number) => f.body.read(o, n).subarray(0, n - 1) };
 		await assert.rejects(
 			putFile(h.send, core, { urlPath: '/api/v1/a', body: short, chunkSize: 1024 }),

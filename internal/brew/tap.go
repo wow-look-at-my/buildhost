@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/wow-look-at-my/go-containers/set"
 	mmap "github.com/wow-look-at-my/go-mmap"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -152,6 +153,7 @@ func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 	files := map[string][]byte{
 		repackage.BrewPrivateStrategyPath: []byte(repackage.BrewPrivateStrategy),
 	}
+	budget := tapInlineDigestBudget
 	for _, project := range visible {
 		release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
 		if err != nil {
@@ -164,7 +166,7 @@ func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		out, err := h.formulaForRelease(r.Context(), project, *release, artifacts, auth.RequestRootURL(r))
+		out, err := h.formulaForRelease(r.Context(), project, *release, artifacts, auth.RequestRootURL(r), formulaLatest, nil)
 		if err != nil {
 			if errors.Is(err, db.ErrNotFound) {
 				continue
@@ -175,39 +177,61 @@ func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		files["Formula/"+tapFormulaName(project.Name)+".rb"] = data
+		files[repackage.BrewFormulaPath(project.Name)] = data
+
+		if err := h.addVersionedFormulas(r, project, files, &budget); err != nil {
+			return nil, err
+		}
 	}
 
 	return files, nil
 }
 
+// addVersionedFormulas adds one name@version formula per published release on
+// the project's default branch. Uncached digests are computed while budget
+// lasts; a release still missing one after that is left out of this build
+// and its digests are filled in the background.
+func (h *Handler) addVersionedFormulas(r *http.Request, project db.Project, files map[string][]byte, budget *int) error {
+	releases, err := h.DB.ListPublishedReleasesOnDefaultBranch(r.Context(), project.ID)
+	if err != nil {
+		return err
+	}
+	// Newest first: on a case-insensitive filesystem (macOS) a couple of versions that differ only by case would collide in the clone.
+	seen := set.New[string]()
+	for _, release := range releases {
+		version := brewVersion(release)
+		path := repackage.BrewVersionedFormulaPath(project.Name, version)
+		if seen.Contains(strings.ToLower(path)) {
+			continue
+		}
+		artifacts, err := h.DB.ListArtifactsByPlatform(r.Context(), release.ID)
+		if err != nil {
+			return err
+		}
+		out, err := h.formulaForRelease(r.Context(), project, release, artifacts, auth.RequestRootURL(r), formulaVersionedBudgeted, budget)
+		if errors.Is(err, db.ErrNotFound) {
+			continue
+		}
+		// A pending newer release still claims its path.
+		seen.Add(strings.ToLower(path))
+		if errors.Is(err, errDigestPending) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		data, err := io.ReadAll(out.Reader)
+		if err != nil {
+			return err
+		}
+		files[path] = data
+	}
+	return nil
+}
+
 func buildGitObjects(files map[string][]byte, parent string) (objects map[string][]byte, commitSHA, rootTreeSHA string) {
 	objects = map[string][]byte{}
-	byDir := map[string][]gitTreeEntry{}
-	var rootFiles []gitTreeEntry
-
-	names := make([]string, 0, len(files))
-	for name := range files {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	for _, name := range names {
-		blobSHA := addGitObject(objects, "blob", files[name])
-		dir, base, nested := strings.Cut(name, "/")
-		if nested {
-			byDir[dir] = append(byDir[dir], gitTreeEntry{Mode: "100644", Name: base, SHA: blobSHA})
-		} else {
-			rootFiles = append(rootFiles, gitTreeEntry{Mode: "100644", Name: name, SHA: blobSHA})
-		}
-	}
-
-	rootEntries := rootFiles
-	for _, dir := range sortedKeys(byDir) {
-		treeSHA := addGitObject(objects, "tree", gitTree(byDir[dir]))
-		rootEntries = append(rootEntries, gitTreeEntry{Mode: "40000", Name: dir, SHA: treeSHA})
-	}
-	rootTreeSHA = addGitObject(objects, "tree", gitTree(rootEntries))
+	rootTreeSHA = writeGitTree(objects, files)
 
 	var commit bytes.Buffer
 	fmt.Fprintf(&commit, "tree %s\n", rootTreeSHA)
@@ -220,13 +244,26 @@ func buildGitObjects(files map[string][]byte, parent string) (objects map[string
 	return objects, commitSHA, rootTreeSHA
 }
 
-func sortedKeys(m map[string][]gitTreeEntry) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
+// writeGitTree adds the blobs and trees for files (slash-separated paths
+// relative to this tree) to objects, at any depth, and returns the tree's sha.
+func writeGitTree(objects map[string][]byte, files map[string][]byte) string {
+	var entries []gitTreeEntry
+	subdirs := map[string]map[string][]byte{}
+	for name, body := range files {
+		dir, rest, nested := strings.Cut(name, "/")
+		if !nested {
+			entries = append(entries, gitTreeEntry{Mode: "100644", Name: name, SHA: addGitObject(objects, "blob", body)})
+			continue
+		}
+		if subdirs[dir] == nil {
+			subdirs[dir] = map[string][]byte{}
+		}
+		subdirs[dir][rest] = body
 	}
-	sort.Strings(keys)
-	return keys
+	for dir, sub := range subdirs {
+		entries = append(entries, gitTreeEntry{Mode: "40000", Name: dir, SHA: writeGitTree(objects, sub)})
+	}
+	return addGitObject(objects, "tree", gitTree(entries))
 }
 
 type gitTreeEntry struct {

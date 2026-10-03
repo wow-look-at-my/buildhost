@@ -20,8 +20,6 @@ import (
 	"github.com/wow-look-at-my/go-containers/set"
 )
 
-// caCertsPEM is the public CA root bundle the curl project publishes.
-//
 //go:generate ../../scripts/fetch-cacerts.sh cacerts/ca-certificates.crt
 //go:embed cacerts/ca-certificates.crt
 var caCertsPEM []byte

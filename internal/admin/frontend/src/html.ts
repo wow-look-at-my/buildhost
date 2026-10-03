@@ -1,13 +1,4 @@
-// Tiny standalone HTML builder. No dependency on any global -- it just turns
-// nested calls into an escaped HTML string:
-//
-//   Html.div(Html.h2("Title", Html.span("note").cls("muted"))).cls("card")
-//
-// Text children are HTML-escaped by default (so a forgotten escape can't become
-// an injection); element children and Html.raw(...) render verbatim; arrays
-// flatten; null/undefined/false/true are skipped (so `cond && node` works).
-// Elements stringify via toString(), so `"" + Html.div(...)` works anywhere a
-// string is expected.
+// Tiny standalone HTML builder. No dependency on any global -- it turns nested calls into an escaped HTML string.
 
 export type Node = El | Raw | string | number | null | undefined | boolean | Node[];
 
@@ -105,8 +96,7 @@ export function render(node: Node): string {
     return escape(node);
 }
 
-// el(tag, ...children) builds an arbitrary/custom tag (e.g. "copy-btn"); the
-// common tags also get a shorthand Html.<tag>(...children).
+// el(tag, ...children) builds an arbitrary/custom tag (e.g. "copy-btn").
 export function el(tag: string, ...kids: Node[]): El {
     return new El(tag, kids);
 }

@@ -160,8 +160,8 @@ func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
 		}
 	}
 
-	// Only a run that actually deleted has anything to retract. A dry run
-	// reports the count it WOULD mark, so an operator sees the work before
+	// Only a run that deleted has anything to retract. A dry run reports the
+	// count it WOULD mark, so an operator sees the work before
 	if enforce {
 		r.markRecordsDeleted(ctx, &rep, doomed)
 	} else {
@@ -213,7 +213,7 @@ func (r *Retention) collectRecords(ctx context.Context, refs []ReleaseRef) []doo
 	return out
 }
 
-// markRecordsDeleted retracts the storage records of everything just evicted.
+// markRecordsDeleted retracts the storage records of everything evicted.
 //
 // A failure here never rolls back the eviction -- the bytes are already gone,
 // and refusing to GC because GitHub is unreachable would be worse. It is

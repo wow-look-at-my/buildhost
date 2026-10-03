@@ -38,7 +38,7 @@ func TestReconcileRepoNamespace_RenamesTheWholeFamily(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, child.ID, renamedChild.ID, "a child follows its root")
 
-	// Nothing published under the old names may break.
+	// Nothing published under the names may break.
 	old, aliased, err := d.ResolveProject(ctx, "slopfmt")
 	require.NoError(t, err)
 	assert.True(t, aliased)

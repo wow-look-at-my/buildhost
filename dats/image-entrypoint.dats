@@ -1,10 +1,10 @@
 # The image's ENTRYPOINT must never name the APE itself.
 #
-# This exists because the deployment sat for weeks on a version it could not
-# start, while CI stayed green. The image entered through ["/bin/sh", <APE>],
-# so it started only when something spelled the entrypoint that exact way. That
-# is a bare exec of an APE, which the kernel answers with ENOEXEC and docker
-# reports as exit 126, on a loop.
+# This exists because the deployment sat for weeks on a version it could not start, while CI stayed green. The
+# image entered through ["/bin/sh", <APE>], so it started only when something spelled the entrypoint that
+# exact way. A rolling updater creates the new container from the OLD container's config, which carries the
+# entrypoint resolved from the image that container was created from -- for one predating the APE,
+# ["buildhost"]. That is a bare exec of an APE, which the kernel answers with ENOEXEC.
 #
 # The fix is a shebang launcher on PATH, which the kernel CAN exec, in front of
 # the APE.

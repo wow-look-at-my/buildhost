@@ -48,7 +48,7 @@ func TestLegacySigil_ClassicSchemeTreatsTildeAsAnOrdinaryPathSegment(t *testing.
 
 // The other half of the asymmetry: on {project}.<site-domain>, "~" IS a sigil
 // and 301s to the "@" spelling, which is what "no published URL breaks" means
-// and where the legacy sigil actually earns its name.
+// and where the sigil earns its name.
 func TestLegacySigil_SubdomainSchemeRedirectsToAt(t *testing.T) {
 	t.Serial()
 	h, d, _ := setupTest(t)

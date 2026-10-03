@@ -232,9 +232,9 @@ func TestLimits(t *testing.T) {
 	assert.Contains(t, err.Error(), "exceeds 2 bytes")
 }
 
-// TestOpenRejectsNonArchive pins that a tar blob (what sites stored before this
-// format) is refused rather than misread -- which is what lets the caller fall
-// back to the old path instead of serving garbage.
+// TestOpenRejectsNonArchive pins that a tar blob (what sites stored before
+// this format) is refused rather than misread -- which is what lets the
+// caller fall back to the path instead of serving garbage.
 func TestOpenRejectsNonArchive(t *testing.T) {
 	t.Serial()
 	raw := makeTar(t, map[string]string{"a.txt": "hello"})
@@ -270,8 +270,8 @@ func TestDirectoriesAreNotEntries(t *testing.T) {
 	assert.Equal(t, "dir/f.txt", a.Entries()[0].Path)
 }
 
-// countingReaderAt records how many bytes a reader actually pulls, so a test
-// can assert that a read is a seek rather than a scan.
+// countingReaderAt records how many bytes a reader pulls, so a test can
+// assert that a read is a seek rather than a scan.
 type countingReaderAt struct {
 	ra io.ReaderAt
 	n  int64

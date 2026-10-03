@@ -33,8 +33,8 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 	}
 	shouldStrip := strippable && !debug
 
-	// The header answers "can I fetch symbols for THIS artifact?", which is
-	// only true when it is an ELF we can split.
+	// The header answers "can I fetch symbols for THIS artifact?", which is only
+	// true when it is an ELF we can split.
 	if strippable {
 		w.Header().Set("X-Debug-Symbols", "available")
 	} else {

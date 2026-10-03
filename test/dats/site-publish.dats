@@ -53,7 +53,7 @@ tests:
 	# Which canonical URL it names depends on which branch is the default, and
 	# this project has no site on main/master, so the fallback is whichever of
 	# both was deployed last. Assert the redirect, then follow the target the
-	# server actually named rather than hard-coding any of both forms.
+	# server actually named rather than hard-coding one of both forms.
 	- desc: the legacy branch URL redirects to the canonical one for the same file
 	  cmd: |
 		set -eu

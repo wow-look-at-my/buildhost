@@ -53,12 +53,12 @@ func TestStrip_NonexistentFile(t *testing.T) {
 func TestStrip_NonELFFile(t *testing.T) {
 	t.Serial()
 	cases := map[string][]byte{
-		// BFD rejects these outright; the old code relied on that happening.
+		// BFD rejects these outright; the code relied on that happening.
 		"plain text":         []byte("this is not an ELF binary"),
 		"Mach-O header":      {0xcf, 0xfa, 0xed, 0xfe, 0x0c, 0x00, 0x00, 0x01},
 		"shell script":       []byte("#!/bin/sh\necho hi\n"),
 		"shorter than magic": []byte("MZ"),
-		// The case that actually shipped broken: BFD ACCEPTS a PE32+.
+		// The case that shipped broken: BFD ACCEPTS a PE32+.
 		"PE32+ (what an APE looks like to BFD)": buildPEFixture(t),
 	}
 

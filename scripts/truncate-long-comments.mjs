@@ -1,17 +1,12 @@
 #!/usr/bin/env node
 // Truncates the Go doc comments go-toolchain's commentspan analyzer reports.
-//
-// It truncates; it never rewords.
-//
-// The argument is the file:line commentspan prints, which is where the comment
-// group starts.
+
 
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const CHAR_BUDGET = 120;
 
-// isDirective matches the comment forms the compiler and the tools read. They
-// carry no prose and are kept whole.
+// isDirective matches the comment forms the compiler and the tools read. They carry no prose and are kept whole.
 const isDirective = (text) => /^\/\/(go|line|nolint|export|sys|cgo|extern):/.test(text.trim());
 
 function truncate(body) {

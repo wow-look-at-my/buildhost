@@ -21,9 +21,8 @@ type RecordDeleter interface {
 	MarkDeleted(ctx context.Context, githubRepo, project, version, sha256Hex string) error
 }
 
-// GitHubRecordDeleter posts status: deleted to GitHub's artifact-metadata API,
-// authenticating as buildhost itself (GitHub App installation token, else the
-// static PAT) via the bearer function it is constructed with.
+// GitHubRecordDeleter posts status: deleted to GitHub's artifact-metadata
+// API.
 type GitHubRecordDeleter struct {
 	// RegistryURL is buildhost's own public base URL (e.g. https://pazer.build).
 	RegistryURL string

@@ -1,14 +1,5 @@
 // Every in-app link on the PREVIEW dashboard must reach a page that renders.
-//
-// The preview publishes the admin SPA with no backend, so every page draws from
-// the built-in demo dataset. That dataset linked to pages it had no data for:
-// clicking a release on the project page threw inside the renderer, left the
-// previous page on screen, and read as a link that does nothing.
-//
-// A unit test cannot see this.
-//
-// The preview also serves the app under a path prefix, which is what turns demo
-// mode on, so this serves it the same way.
+
 
 const ROOT = "internal/admin/static";
 const PREFIX = "/buildhost/@preview/";
@@ -20,8 +11,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright-core");
 
-// Progress lines, not assertions: what the crawl reached, in order, so a
-// failure reads against the pages that already rendered.
+// Progress lines, not assertions: what the crawl reached, in order.
 const core = { info: (m: string) => console.log(m) };
 
 const types: Record<string, string> = {
@@ -106,9 +96,7 @@ const main = async () => {
 		core.info(`${hash} -> ${heading}`);
 		visited++;
 
-		// A link whose href is a bare "#" carries no target: "copy link address"
-		// yields the dashboard's own URL, hover shows nothing, and opening it in a
-		// tab reloads the page. A click handler does not make up for any of that.
+		// A link whose href is a bare "#" carries no target.
 		const placeholders: string[] = await page.$$eval("#content a[href='#']",
 			(as: any[]) => as.map((a) => a.textContent.trim()));
 		if (placeholders.length > 0) {
@@ -116,16 +104,14 @@ const main = async () => {
 		}
 
 		const links: string[] = await page.$$eval("#content a[href^='#/'], .sidebar a[href^='#/']",
-			// This callback runs in the PAGE, where DOM types exist. This file
-			// is compiled without the DOM lib, so it cannot name them.
+			// This callback runs in the PAGE, where DOM types exist.
 			(as: any[]) => as.map((a) => a.getAttribute("href")));
 		for (const l of links) if (!seen.has(l)) queue.push(l);
 	}
 
 	await browser.close();
 	server.close();
-	// The browser's keep-alive sockets outlive close(); without this the
-	// process sits with a live event loop after the crawl is done.
+	// The browser's keep-alive sockets outlive close().
 	server.closeAllConnections();
 
 	if (errors.length > 0) {
@@ -134,8 +120,7 @@ const main = async () => {
 	core.info(`OK: ${visited} preview pages, every in-app link rendered`);
 };
 
-// A hang here is a job that runs until the workflow's own limit, with no
-// output to read. Fail it while the log still says what it was doing.
+// A hang here is a job that runs until the workflow's own limit, with no output to read.
 const DEADLINE_MS = 5 * 60 * 1000;
 let timer: any;
 const deadline = new Promise((_resolve, reject) => {

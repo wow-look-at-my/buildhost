@@ -207,7 +207,7 @@ func TestBranchSigil_UploadAndDelete(t *testing.T) {
 		assert.Equalf(t, want, rec.Body.String(), "GET %s", path)
 	}
 
-	// ...and the legacy URL for each 302s there, slash-named branch included.
+	// ...and the URL for each 302s there, slash-named branch included.
 	for path, want := range map[string]string{
 		"/p/branch/pr-3/":       "/p/@pr-3/",
 		"/p/branch/claude/foo/": "/p/@claude/foo/",

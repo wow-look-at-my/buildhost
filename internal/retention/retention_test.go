@@ -111,7 +111,7 @@ func TestPlan_ReportOnlyChangesNothing(t *testing.T) {
 	assert.Equal(t, 2, rep.BlobsDeleted)  // would free
 	assert.Greater(t, rep.ReclaimableBytes, int64(0))
 
-	// Nothing actually changed.
+	// Nothing changed.
 	for _, k := range keys {
 		ex, _ := store.Exists(ctx, k)
 		assert.True(t, ex)

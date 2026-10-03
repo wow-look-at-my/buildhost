@@ -1,9 +1,4 @@
 // The admin dashboard SPA.
-//
-// esbuild bundles this as an IIFE with --global-name=App, so every name EXPORTED
-// at the bottom lands on window.App -- which is what the inline
-// onclick="App.x(...)" handlers in the HTML generated here call. Adding an
-// inline handler for a function means exporting it too, or the button is dead.
 
 import { Html, type El } from "./html.ts";
 
@@ -42,15 +37,12 @@ const h = function (s: string | number | null | undefined): string {
 };
 
 // siteBranchURL links to a site's deployment. "@" is the read grammar; the
-// "/branch/" spelling only redirects here. The default branch's shorter bare
-// URL needs server state the admin API does not carry, and "@" reaches it in
-// a single hop, so this names the branch either way.
+// "/branch/" spelling only redirects here.
 const siteBranchURL = function (sitesBase: string, project: string, branch: string): string {
     return sitesBase + "/" + project + "/@" + branch + "/";
 };
 
 // siteFilesHash is the dashboard route of a single site branch's file list.
-// "/-/" ends the project name, because both the project and the branch can hold "/".
 const siteFilesHash = function (project: string, branch: string): string {
     return "#/sites/" + project + "/-/files/" + encodeURIComponent(branch);
 };
@@ -86,9 +78,7 @@ const formatTime = function (s: string | null | undefined): string {
         " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
 };
 
-// The demo dataset must answer every path the demo's own pages ask for. An
-// absent fixture used to resolve to {}, which threw deep inside a renderer and
-// left the previous page on screen -- a link that looked dead.
+// The demo dataset must answer every path the demo's own pages ask for.
 const demoFetch = function <T>(path: string): T {
     if (!Object.prototype.hasOwnProperty.call(demoData, path)) {
         throw new Error("no demo data for " + path);
@@ -175,8 +165,7 @@ const urlTpl = function (tpl: string, base: string, mid?: string, suffix?: strin
 };
 
 // A Homebrew formula name cannot contain '/', so a slash-namespaced project
-// folds its namespace to '-' in the tap (repackage.BrewFormulaName). That
-// folded name is both the tap filename and what the user types after the tap.
+// folds its namespace to '-' in the tap.
 const brewFormulaName = function (project: string): string {
     return project.replace(/\//g, "-");
 };
@@ -185,9 +174,8 @@ const brewInstall = function (brewBase: string, project: string): string {
     return "brew trust " + brewBase + "/tap.git\nbrew tap pazer/build " + brewBase + "/tap.git\nbrew install pazer/build/" + brewFormulaName(project);
 };
 
-// Each takes the services block and the project; `version` is "" for latest.
-// A private project needs its credential in the same block, because a copied
-// command that 401s teaches nothing about why.
+// Install commands, shared by the project page (latest) and the release page
+// (one version).
 
 // A Debian package name folds '/' and '_' to '-' (repackage.DebPackageName),
 // so apt and dpkg agree on a slash-namespaced project.
@@ -419,11 +407,7 @@ pages.project = function (name: string): void {
         html += '<tr><td class="info-label">Updated</td><td title="' + h(formatTime(p.updated_at)) + '">' + h(timeAgo(p.updated_at)) + "</td></tr>";
         html += "</table></div>";
 
-        // Download & Install (latest): non-versioned endpoints and commands so
-        // the newest build can be fetched without earliest opening a specific
-        // release. Mirrors the release page's endpoint card, version-free, plus
-        // the package-manager a single liners from the Registries page. Only
-        // shown a single time the project has a published release ("latest" 404s otherwise).
+        // Download & Install (latest): non-versioned endpoints and commands.
         var hasPublished = false;
         for (var ri = 0; ri < rels.length; ri++) { if (rels[ri].published) { hasPublished = true; break; } }
         if (hasPublished) {
@@ -542,8 +526,7 @@ pages.release = function (name: string, version: string): void {
                 var pkgs = a.packages || [];
                 var dlQ = "?v=" + r.version + "&os=" + a.os + "&arch=" + a.arch;
                 if (priv) {
-                    // Each link mints a signed, single-artifact link on click, then
-                    // downloads it.
+                    // Each link mints a signed, single-artifact link on click, then downloads it.
                     html += dlMintLink(dlBase + dlQ, p.name, r.version, a.os, a.arch, "raw", false, "raw", "Download (mints a temporary signed link)");
                     if (a.debug_storage_key) html += " " + dlMintLink(dlBase + dlQ + "&debug=1", p.name, r.version, a.os, a.arch, "raw", true, "debug", "Debug symbols");
                     for (var j = 0; j < pkgs.length; j++) {
@@ -564,11 +547,7 @@ pages.release = function (name: string, version: string): void {
 
         var aptU = (svc.apt || "") + "/" + p.name;
 
-        // A URL belongs here only where the URL IS the product: the direct
-        // download, and the APT repository line a reader pastes into a sources
-        // file. Everything else is a command. A registry address -- an npm
-        // packument, an OCI manifest -- is machine plumbing: pasting it into a
-        // browser answers with JSON, and it installs nothing.
+        // A URL belongs here only where the URL IS the product: the direct download.
         html += '<div class="card"><h2>Download Endpoints</h2><table class="info-table">';
         html += "<tr><td class='info-label'>Direct (latest)</td><td class='endpoint-cell'>" + urlTpl(dlBase + "?os={os}&arch={arch}", dlBase + "?os=", "&arch=") + "</td></tr>";
         html += "<tr><td class='info-label'>Direct (version)</td><td class='endpoint-cell'>" + urlTpl(dlBase + "?v=" + r.version + "&os={os}&arch={arch}", dlBase + "?v=" + r.version + "&os=", "&arch=") + "</td></tr>";
@@ -576,12 +555,7 @@ pages.release = function (name: string, version: string): void {
         html += "<tr><td class='info-label'>APT repository</td><td class='endpoint-cell'><a href='" + h(aptU + "/dists/stable/Release") + "' data-copy='" + h(aptU) + "'>" + h(aptU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
         html += "</table></div>";
 
-        // npm and the OCI tag list carry every published release, so both
-        // install THIS version. The APT index carries only the latest release
-        // (servePackages reads GetLatestRelease), so pinning this version there
-        // would hand out a command that fails on every older release; the apt
-        // block says plainly which version it installs. Homebrew's tap is
-        // latest-only for the same reason.
+        // npm and the OCI tag list carry every published release, so both install THIS version.
         var relPriv = !!p.is_private;
         html += '<div class="card"><h2>Install</h2>';
         html += codeBlock("Direct download (curl)", curlDownload(dlBase, r.version, relPriv));
@@ -828,16 +802,7 @@ const copyTempLink = function (btn: HTMLButtonElement, project: string, version:
 };
 
 // dlMintLink renders a download link for a private project's artifact.
-//
-// The href is still the artifact's REAL url, never "#": an anchor's href is what
-// the browser copies, shows on hover, and opens in a new tab, and a page-local
-// "#" makes each of them useless -- "copy link address" yielded the dashboard's
-// own URL. Following it directly asks for credentials, which is the honest
-// answer for a private artifact; the temp-link button next to it is the
-// shareable one.
-//
-// Values are safe charsets (project/version/os/arch/fmt), so they embed directly
-// in the inline handler.
+
 const dlMintLink = function (url: string, project: string, version: string, os: string, arch: string, fmt: string, debug: boolean, label: string, title: string): string {
     var call = "App.downloadArtifact(this,'" + project + "','" + version + "','" + os + "','" + arch + "','" + fmt + "'," + (debug ? "true" : "false") + ")";
     return '<a href="' + h(url) + '" class="dl-mint" onclick="return ' + h(call) + '" title="' + h(title) + '">' + h(label) + "</a>";
@@ -1010,8 +975,7 @@ pages.siteFiles = function (name: string, branch: string): void {
         if (files.length === 0) {
             html += '<tr><td colspan="2" class="empty">No files</td></tr>';
         }
-        // Files arrive sorted by path, so a directory row goes in each time the
-        // directory changes.
+        // Files arrive sorted by path, so a directory row goes in each time the directory changes.
         var prevDirs: string[] = [];
         for (var i = 0; i < files.length; i++) {
             var f = files[i]!;
@@ -1324,7 +1288,7 @@ pages.goproxy = function (): void {
         var hl = st.health;
         var html = '<h1>Go Proxy</h1>';
 
-        // Health and loud.
+        // Health first, and loud.
         var cls = hl.healthy ? (hl.reason ? "warn" : "ok") : "bad";
         var label = hl.healthy ? (hl.reason ? "Ready, but unproven" : "Ready") : "NOT serving private modules";
         html += '<div class="card goproxy-health goproxy-' + cls + '">';
@@ -1782,7 +1746,7 @@ window.addEventListener("hashchange", function () {
 });
 
 // A renderer runs inside .then(), so its failure surfaces here, not at the
-// router's try. Without this the old page stays up and the link reads as dead.
+// router's try.
 window.addEventListener("unhandledrejection", function (ev) {
     fail(ev.reason);
 });

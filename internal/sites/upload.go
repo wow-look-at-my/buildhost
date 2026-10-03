@@ -57,8 +57,8 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		attribute.String("sites.branch", rt.branch),
 	)
 
-	// The branch was previously stored verbatim (any bytes the router decoded).
-	// Enforce the same charset the rest of the system uses for git refs
+	// The branch was stored verbatim (any bytes the router decoded). Enforce the
+	// same charset the rest of the system uses for git refs
 	if !validSiteBranch(rt.branch) {
 		http.Error(w, `{"error":"invalid branch name: 1-256 characters of [a-zA-Z0-9._/-]"}`, http.StatusBadRequest)
 		return

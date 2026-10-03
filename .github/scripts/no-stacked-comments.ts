@@ -1,11 +1,4 @@
-// Most of these actions only execute on some triggers, so without this a
-// violation ships and surfaces as a broken publish in whichever consumer repo
-// runs it next.
-//
-// Scans the same thing the action does, and only that: a shell `run:` block and
-// a checked-in `file:` script are both exempt.
-//
-// Usage: node .github/scripts/no-stacked-comments.ts <yaml>...
+
 import * as fs from "node:fs";
 
 type Run = { file: string; start: number; end: number };

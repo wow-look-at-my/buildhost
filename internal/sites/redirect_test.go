@@ -96,7 +96,7 @@ func TestSigilDefaultBranchCollapsesToBareURL(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "preview", rec.Body.String())
 
-	// Neither does the legacy /branch/ spelling redirect.
+	// Neither does the /branch/ spelling redirect.
 	req = httptest.NewRequest("GET", "http://sites.example.com/ue553/branch/main/a/x.css", nil)
 	req = withRoute(req, proj, route{project: "ue553", branch: "main", path: "a/x.css"})
 	rec = httptest.NewRecorder()

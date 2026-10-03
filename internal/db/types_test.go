@@ -68,8 +68,8 @@ func TestNormalizeLegacyWasmPair(t *testing.T) {
 	assert.Equal(t, OSWasm, o)
 	assert.Equal(t, ArchWasip1, a)
 
-	// Anything else is not the legacy pair -- including the canonical form
-	// itself, a lone js/wasip1 os with a non-wasm arch, and linux/wasm.
+	// Anything else is not the pair -- including the canonical form itself, a
+	// lone js/wasip1 os with a non-wasm arch, and linux/wasm.
 	notLegacy := [][2]string{
 		{"wasm", "js"}, {"wasm", "wasip1"}, {"wasm", "wasm"},
 		{"js", "amd64"}, {"wasip1", "arm64"}, {"js", ""},

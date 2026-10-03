@@ -66,7 +66,7 @@ func TestTarXZRepackage(t *testing.T) {
 	data, err := io.ReadAll(output.Reader)
 	require.Nil(t, err)
 
-	// The xz package is used in production; here just verify non-empty output
+	// The xz package is used in production; here verify non-empty output
 	require.GreaterOrEqual(t, len(data), 6)
 
 	xzMagic := []byte{0xFD, '7', 'z', 'X', 'Z', 0x00}

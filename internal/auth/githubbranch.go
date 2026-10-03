@@ -174,6 +174,7 @@ func GitHubBranches(ctx context.Context, repoPath string) ([]string, error) {
 
 var githubBranchListClient = &http.Client{Timeout: 30 * time.Second}
 
+
 func validRepoPath(s string) bool {
 	owner, repo, ok := strings.Cut(s, "/")
 	if !ok || strings.Contains(repo, "/") {

@@ -109,7 +109,7 @@ func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "v1", updated.DefaultBranch, "publish must record the repo's default branch")
 
-	// "latest" now resolves to the v1 release; under the old hardcoded "master"
+	// "latest" now resolves to the v1 release; under the hardcoded "master"
 	latest, err := h.DB.GetLatestRelease(ctx, proj.ID)
 	require.NoError(t, err)
 	assert.Equal(t, rel.Version, latest.Version)

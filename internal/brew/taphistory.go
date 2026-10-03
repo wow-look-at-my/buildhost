@@ -23,7 +23,7 @@ const tapHistoryMaxLineages = 64
 
 // tapHistoryRoot returns the persistent lineage-store root. Production always
 // wires DataDir (OnReady); the fallbacks keep bare test constructions working
-// without ever colliding with the legacy tmp snapshot dir.
+// without ever colliding with the tmp snapshot dir.
 func (h *Handler) tapHistoryRoot() string {
 	if h.DataDir != "" {
 		return filepath.Join(h.DataDir, tapHistoryDirName)
