@@ -308,7 +308,7 @@ func TestRouter_StaticNPMWrapper(t *testing.T) {
 }
 
 // TestRouter_ScopeEncoding covers how npm addresses a scoped package: it
-// URL-encodes the scope slash, so the real-world request is
+// URL-encodes the scope slash.
 func TestRouter_ScopeEncoding(t *testing.T) {
 	t.Serial()
 	d, _ := routerEnv(t)
@@ -341,9 +341,7 @@ func TestRouter_ScopeEncoding(t *testing.T) {
 }
 
 // apexReq drives a request through the real dispatch on the apex (main) host,
-// where the `/npm/* -> npm.{domain}/*` redirect lives, rather than the npm
-// subdomain that npmGet targets. req.Host="localhost" so RequestScheme yields
-// http and the npm subdomain is "npm.localhost".
+// where the `/npm/* -> npm.{domain}/*` redirect lives.
 func apexReq(t *testing.T, method, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	routerEnv(t) // ensure routerHandler is wired

@@ -124,7 +124,6 @@ func fetchGitHubDefaultBranch(ctx context.Context, repoPath string) string {
 	return body.DefaultBranch
 }
 
-// validRepoPath reports whether s is a safe "owner/repo" to interpolate into a
 func validRepoPath(s string) bool {
 	owner, repo, ok := strings.Cut(s, "/")
 	if !ok || strings.Contains(repo, "/") {

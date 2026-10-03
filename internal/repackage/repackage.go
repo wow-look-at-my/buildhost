@@ -25,18 +25,16 @@ type Input struct {
 	Project  db.Project
 	Release  db.Release
 	Artifact db.Artifact
-	// Reader streams the artifact bytes (already stripped, when stripping ran). Size is
+	// Reader streams the artifact bytes (already stripped, when stripping ran).
 	Reader io.Reader
 	Size   int64
 	// TmpDir is scratch space for formats that must spool a member to learn its size
-	TmpDir  string
-	BaseURL string
-	// CacheSuffix distinguishes derived rows this repackage writes into
+	TmpDir      string
+	BaseURL     string
 	CacheSuffix string
 	DownloadURL func(name, version string, os db.OS, arch db.Arch, format string) string
 }
 
-// SizeUnknown marks an Output whose length is not known up front because the body is
 const SizeUnknown int64 = -1
 
 type Output struct {

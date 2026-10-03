@@ -30,7 +30,7 @@ func init() {
 		}
 	})
 
-	// Registration stays OUT of the OnReady callback: OnReady fires only from
+	// Registration stays OUT of the OnReady callback.
 	auth.HandleRawPrimary("POST /api/v1/uploads", handleCreate)
 	auth.HandleRawPrimary("GET /api/v1/uploads/{id}", handleStatus)
 	auth.HandleRawPrimary("PATCH /api/v1/uploads/{id}", handleAppend)

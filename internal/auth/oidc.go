@@ -223,7 +223,7 @@ func splitImmutableID(segment string) (name, id string) {
 	return segment[:at], segment[at+1:]
 }
 
-// trimImmutableID returns just the name half of splitImmutableID.
+// trimImmutableID returns the name half of splitImmutableID.
 func trimImmutableID(segment string) string {
 	name, _ := splitImmutableID(segment)
 	return name

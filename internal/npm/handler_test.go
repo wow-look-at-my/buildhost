@@ -133,5 +133,3 @@ func TestNormalizeVersion(t *testing.T) {
 	assert.Equal(t, "1.0.0", normalizeVersion("1"))
 	assert.Equal(t, "2.0.0", normalizeVersion("v2"))
 }
-
-// TestServeHTTP_RoutedRealNpmRequest drives requests through the real subdomain

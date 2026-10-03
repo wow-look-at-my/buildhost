@@ -80,7 +80,6 @@ func TestServeFormula_NoBrewPackage(t *testing.T) {
 	require.NoError(t, d.CreateRelease(ctx, rel))
 	require.NoError(t, d.PublishRelease(ctx, rel.ID))
 
-	// Create artifact -- on-demand generation means brew formula is
 	key, size, err := store.Put(ctx, strings.NewReader("binary"))
 	require.NoError(t, err)
 	require.NoError(t, d.CreateArtifact(ctx, &db.Artifact{
@@ -128,7 +127,7 @@ func TestServeFormula_Success(t *testing.T) {
 	assert.NotEmpty(t, rec.Body.Bytes())
 }
 
-// The operator-set projects.create_service flag round-trips DB -> formula: the
+// The operator-set projects.create_service flag round-trips DB -> formula.
 func TestServeFormula_CreateServiceFlag(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)
@@ -306,7 +305,7 @@ func TestParseRoute_FoldedTapNameResolvesToProject(t *testing.T) {
 	req.SetPathValue("project", "gcc-pgo")
 	assert.Equal(t, "gcc/pgo", h.parseRoute(req).ProjectName())
 
-	// No fold candidate: the literal name passes through untouched (404s in
+	// No fold candidate.
 	req = httptest.NewRequest("GET", "/Formula/no-such.rb", nil)
 	req.SetPathValue("project", "no-such")
 	assert.Equal(t, "no-such", h.parseRoute(req).ProjectName())

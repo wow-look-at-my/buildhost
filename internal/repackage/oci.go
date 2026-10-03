@@ -20,8 +20,6 @@ import (
 	"github.com/wow-look-at-my/go-containers/set"
 )
 
-// caCertsPEM is the public CA root bundle the curl project publishes.
-//
 //go:generate ../../scripts/fetch-cacerts.sh cacerts/ca-certificates.crt
 //go:embed cacerts/ca-certificates.crt
 var caCertsPEM []byte
@@ -282,7 +280,7 @@ type essentials struct {
 	diffID     string
 }
 
-// essentialsOnce memoizes the shared base layer: it is constant for the lifetime of the
+// essentialsOnce memoizes the shared base layer.
 var essentialsOnce = sync.OnceValues(buildEssentials)
 
 func essentialsLayer() ([]byte, string, error) {

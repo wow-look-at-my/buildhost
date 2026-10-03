@@ -1,6 +1,6 @@
 package api
 
-// Tests for single-artifact multi-platform ingest: PUT .../artifacts/ape with
+// Tests for single-artifact multi-platform ingest.
 
 import (
 	"context"
@@ -251,9 +251,7 @@ func TestUploadAPE_RejectsWindowsOnStubPE(t *testing.T) {
 	assert.Contains(t, msg, "windows/amd64", "the error must name the platform to drop")
 }
 
-// TestUploadAPE_RealPEHeaderPublishesWindows is the negative control: the same
-// upload with a real header is accepted, so the gate keys on the section count
-// rather than on the presence of windows in the set.
+// TestUploadAPE_RealPEHeaderPublishesWindows is the.
 func TestUploadAPE_RealPEHeaderPublishesWindows(t *testing.T) {
 	t.Serial()
 	h, proj, _ := setupUploadTest(t, "aperealpeproj")
