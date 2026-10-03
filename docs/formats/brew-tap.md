@@ -38,7 +38,11 @@ A history formula needs the tar.gz digest of every artifact of every release. A 
 
 `brew.{domain}/Formula/<formula>@<version>.rb` serves one release's formula directly. The version is `release.Version` without a leading `v`, or `version_num` when the version is empty. Its digests are computed on that request.
 
+<<<<<<< HEAD
 Every formula declares `keg_only` when its class name is not the base class name, which `Module#name` gives at load time. The tap's own formula keeps the base name, so it links. A formula `brew extract` renamed is keg-only, so it installs beside the latest one. This ships the same binary name, without a link conflict in either order. The reason is a string, not `keg_only :versioned_formula`.
+=======
+Every formula declares `keg_only` when its class name is not the base class name, which `Module#name` gives at load time. The tap's own formula keeps the base name, so it links. A formula `brew extract` renamed is keg-only, so it installs beside the latest one. This ships the same binary name, without a link conflict in either order. The reason is a string, never `keg_only :versioned_formula`.
+>>>>>>> origin/claude/vibrant-fermat-o25fc8
 
 Homebrew 7 auto-links a `:versioned_formula` keg when no sibling version is installed (`FormulaInstaller#auto_link_versioned_keg_only?`). It relies on finding the siblings to unlink them when another version links. In a third-party tap it never finds them: `Tap#prefix_to_versioned_formulae_names` is keyed by full `user/repo/name` names, and `Formula#versioned_formulae_names` looks up the short name. Installing a pin and then the unversioned formula therefore failed with "Can not symlink bin/<name>". A string reason is never auto-linked.
 
