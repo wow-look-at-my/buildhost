@@ -83,6 +83,33 @@ func TestTap_BuildDigestsLatestReleaseOnly(t *testing.T) {
 	}
 }
 
+// The history leaves out a past release whose digest is not cached, and the
+// background filler hashes it. The request itself never does.
+func TestTapHistory_PendingDigestFillsInBackground(t *testing.T) {
+	t.Serial()
+	h, d, store := setupTest(t)
+	proj, _, _ := seedBrewProject(t, d, store, "app", "v1-binary")
+	addRelease(t, d, store, proj, "1.1.0", 1001000, db.LatestBranch, "v11-binary")
+	_, err := h.buildTapFiles(tapRequest(false))
+	require.NoError(t, err)
+
+	versions := func() []string {
+		history, err := h.tapHistory(tapRequest(false))
+		require.NoError(t, err)
+		var out []string
+		for _, f := range history {
+			assert.Equal(t, "Formula/app.rb", f.path)
+			_, rest, _ := strings.Cut(string(f.data), `version "`)
+			v, _, _ := strings.Cut(rest, `"`)
+			out = append(out, v)
+		}
+		return out
+	}
+	assert.Equal(t, []string{"1.1.0"}, versions())
+	h.fillWG.Wait()
+	assert.Equal(t, []string{"1.0.0", "1.1.0"}, versions())
+}
+
 func TestServeFormula_Versioned(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)
@@ -111,12 +138,13 @@ func TestServeFormula_Versioned(t *testing.T) {
 	latest := serve("ns-app.rb")
 	require.Equal(t, http.StatusOK, latest.Code)
 	assert.Contains(t, latest.Body.String(), `version "1.1.0"`)
-	assert.NotContains(t, latest.Body.String(), "keg_only")
+	assert.Contains(t, latest.Body.String(), "class NsApp < Formula")
 }
 
-// A real git clone of a tap whose project has several releases holds only the
-// formula, and the history passes fsck.
-func TestSmartClone_NoVersionedFormulas(t *testing.T) {
+// A real git clone holds one formula per project at HEAD, and the history
+// holds a commit of that file at every release: brew extract, which brew
+// version-install runs, walks it back to the version asked for.
+func TestSmartClone_HistoryHoldsEveryVersion(t *testing.T) {
 	t.Serial()
 	requireGit(t)
 
@@ -127,12 +155,39 @@ func TestSmartClone_NoVersionedFormulas(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj, _, _ := seedBrewProject(t, d, store, "ns/app", "v1-binary")
 	addRelease(t, d, store, proj, "1.1.0", 1001000, db.LatestBranch, "v11-binary")
+	require.NoError(t, h.backfillHistoryDigests(context.Background()))
+	h.fillWG.Wait()
 	ts := smartTapServer(t, h)
 
 	dir := filepath.Join(t.TempDir(), "tap")
 	runGit(t, t.TempDir(), "clone", ts.URL+"/brew/tap.git", dir)
 	runGit(t, dir, "fsck", "--strict")
 
-	tree := runGit(t, dir, "ls-tree", "-r", "--name-only", "HEAD")
-	assert.Equal(t, "Formula/ns-app.rb\nlib/buildhost_private_download.rb\n", tree)
+	assert.Equal(t, "Formula/ns-app.rb\n", runGit(t, dir, "ls-tree", "-r", "--name-only", "HEAD"))
+	assert.Contains(t, runGit(t, dir, "show", "HEAD:Formula/ns-app.rb"), `version "1.1.0"`)
+
+	var versions []string
+	for _, rev := range strings.Fields(runGit(t, dir, "log", "--format=%H", "--", "Formula/ns-app.rb")) {
+		body := runGit(t, dir, "show", rev+":Formula/ns-app.rb")
+		_, rest, _ := strings.Cut(body, `version "`)
+		v, _, _ := strings.Cut(rest, `"`)
+		versions = append(versions, v)
+	}
+	assert.Equal(t, []string{"1.1.0", "1.0.0"}, versions)
+
+	// A refresh with nothing new appends nothing.
+	head := runGit(t, dir, "rev-parse", "HEAD")
+	runGit(t, dir, "pull", "--ff-only")
+	assert.Equal(t, head, runGit(t, dir, "rev-parse", "HEAD"))
+
+	// A new release appends; the versions are not replayed again.
+	addRelease(t, d, store, proj, "1.2.0", 1002000, db.LatestBranch, "v12-binary")
+	runGit(t, dir, "pull", "--ff-only")
+	versions = nil
+	for _, rev := range strings.Fields(runGit(t, dir, "log", "--format=%H", "--", "Formula/ns-app.rb")) {
+		_, rest, _ := strings.Cut(runGit(t, dir, "show", rev+":Formula/ns-app.rb"), `version "`)
+		v, _, _ := strings.Cut(rest, `"`)
+		versions = append(versions, v)
+	}
+	assert.Equal(t, []string{"1.2.0", "1.1.0", "1.0.0"}, versions)
 }

@@ -23,6 +23,8 @@ const (
 	formulaLatest formulaMode = iota
 	// formulaVersioned is a name@version formula; missing digests are computed.
 	formulaVersioned
+	// formulaHistory is a past release's unversioned formula for the tap history.
+	formulaHistory
 )
 
 var errDigestPending = errors.New("tar.gz digest not cached yet")
@@ -45,7 +47,7 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 	}
 	version := brewVersion(release)
 	className := repackage.BrewClassName(project.Name)
-	if mode != formulaLatest {
+	if mode == formulaVersioned {
 		name, ok := repackage.BrewVersionedClassName(project.Name, version)
 		if !ok {
 			return nil, db.ErrNotFound
@@ -55,6 +57,7 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 
 	resources := make([]repackage.BrewResource, 0, len(artifacts))
 	var kind string
+	pending := false
 
 	sort.SliceStable(artifacts, func(i, j int) bool {
 		if artifacts[i].OS != artifacts[j].OS {
@@ -72,7 +75,15 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 			kind = string(a.Kind)
 		}
 
-		sum, err := h.tarGZSHA256(ctx, project, release, a, baseURL)
+		sum, err := h.cachedTarGZSHA256(ctx, a)
+		if errors.Is(err, errDigestPending) {
+			if mode == formulaHistory {
+				h.queueDigestFill(project, release, a, baseURL)
+				pending = true
+				continue
+			}
+			sum, err = h.tarGZSHA256(ctx, project, release, a, baseURL)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -85,6 +96,9 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 		})
 	}
 
+	if pending {
+		return nil, errDigestPending
+	}
 	if len(resources) == 0 {
 		return nil, db.ErrNotFound
 	}
@@ -98,8 +112,7 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 		License:     firstNonEmpty(project.License, "MIT"),
 		Kind:        kind,
 		// A private project's formula downloads through the tap's token-aware
-		Private:   project.IsPrivate,
-		Versioned: mode != formulaLatest,
+		Private: project.IsPrivate,
 		// The project's packaging-agnostic create_service setting.
 		Service:   project.CreateService,
 		Resources: resources,
@@ -151,6 +164,109 @@ func (h *Handler) cachedTarGZSHA256(ctx context.Context, a db.PlatformArtifact) 
 		return "", errDigestPending
 	}
 	return cached, nil
+}
+
+type digestFill struct {
+	project  db.Project
+	release  db.Release
+	artifact db.PlatformArtifact
+	baseURL  string
+}
+
+// queueDigestFill schedules tarGZSHA256 for an artifact on the handler's one
+// background filler. An artifact already queued or in progress is skipped.
+func (h *Handler) queueDigestFill(project db.Project, release db.Release, a db.PlatformArtifact, baseURL string) {
+	h.fillMu.Lock()
+	defer h.fillMu.Unlock()
+	if h.filling[a.ID] {
+		return
+	}
+	if h.filling == nil {
+		h.filling = map[int64]bool{}
+	}
+	h.filling[a.ID] = true
+	h.fillWG.Add(1)
+	h.fillQueue = append(h.fillQueue, digestFill{project: project, release: release, artifact: a, baseURL: baseURL})
+	if !h.fillRunning {
+		h.fillRunning = true
+		go h.fillDigests()
+	}
+}
+
+func (h *Handler) fillDigests() {
+	for {
+		h.fillMu.Lock()
+		job := h.fillQueue[0]
+		h.fillQueue = h.fillQueue[1:]
+		h.fillMu.Unlock()
+
+		if _, err := h.tarGZSHA256(context.Background(), job.project, job.release, job.artifact, job.baseURL); err != nil {
+			slog.Warn("fill tar.gz digest for tap history", "project", job.project.Name, "version", job.release.Version, "artifact_id", job.artifact.ID, "err", err)
+		}
+
+		h.fillMu.Lock()
+		delete(h.filling, job.artifact.ID)
+		drained := len(h.fillQueue) == 0
+		if drained {
+			h.fillRunning = false
+		}
+		h.fillMu.Unlock()
+
+		if drained {
+			// The live lineages were built without these releases.
+			h.tapMu.Lock()
+			for key := range h.tapSnaps {
+				h.dropTapLineageLocked(key)
+			}
+			h.tapMu.Unlock()
+		}
+		h.fillWG.Done()
+		if drained {
+			return
+		}
+	}
+}
+
+// BackfillHistoryDigests queues every uncached tar.gz digest the tap history
+// needs on the served handler's background filler.
+func BackfillHistoryDigests(ctx context.Context) error {
+	return handler.backfillHistoryDigests(ctx)
+}
+
+func (h *Handler) backfillHistoryDigests(ctx context.Context) error {
+	projects, err := h.DB.ListProjects(ctx)
+	if err != nil {
+		return err
+	}
+	for _, project := range projects {
+		if !repackage.BrewEligibleProjectName(project.Name) {
+			continue
+		}
+		releases, err := h.DB.ListPublishedReleasesOnDefaultBranch(ctx, project.ID)
+		if err != nil {
+			return err
+		}
+		for _, release := range releases {
+			artifacts, err := h.DB.ListArtifactsByPlatform(ctx, release.ID)
+			if err != nil {
+				return err
+			}
+			for _, a := range artifacts {
+				if _, _, ok := brewPlatform(a.Artifact); !ok {
+					continue
+				}
+				_, err := h.cachedTarGZSHA256(ctx, a)
+				if errors.Is(err, errDigestPending) {
+					h.queueDigestFill(project, release, a, "")
+					continue
+				}
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func brewPlatform(a db.Artifact) (string, string, bool) {
