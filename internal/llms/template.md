@@ -74,7 +74,7 @@ The body is stored once. One ordinary artifact row is created per os/arch combin
 
 That per-combination fan-out applies to a file that is NOT an APE. There the combinations are separate builds that happen to share bytes.
 
-The uploaded body can instead carry APE magic while the segments expand to more than one combination. The upload then publishes ONE artifact that covers them all, exactly as the `/artifacts/ape` endpoint below does. It answers with that single artifact JSON object rather than an array. A file that runs on N platforms gets one download link, never N.
+The uploaded body can instead carry APE magic while the segments expand to more than one combination. The upload then publishes ONE artifact that covers them all, exactly as the `/artifacts/ape` endpoint below does. It answers with that single artifact JSON object rather than an array. A file that runs on N platforms gets one download link, not N.
 
 One binary can run on SEVERAL platforms. An Portable Executable is such a binary. It boots natively on Linux, macOS and Windows from one file. The registry publishes it as ONE artifact with ONE download link, and not as N rows.
 

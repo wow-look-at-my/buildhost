@@ -146,8 +146,8 @@ func (d *DB) NameAvailable(ctx context.Context, name string) (bool, error) {
 	return n == 0, nil
 }
 
-// NameAvailableTo is NameAvailable, except that an alias of project id counts
-// as free: a project can move back onto a name it held before.
+// NameAvailableTo reports whether project id may take a name: the name is free, or it is an alias id itself carries from an earlier rename. It is NameAvailable, except that an alias of project id counts as free: a
+// project can move back onto a name it held before.
 func (d *DB) NameAvailableTo(ctx context.Context, name string, id int64) (bool, error) {
 	p, aliased, err := d.ResolveProject(ctx, name)
 	if errors.Is(err, ErrNotFound) {
@@ -168,14 +168,15 @@ func (d *DB) RenameProject(ctx context.Context, id int64, oldName, newName strin
 	}
 	defer tx.Rollback()
 	q := d.q.WithTx(tx)
-	if err := q.RenameProject(ctx, RenameProjectParams{Name: newName, ID: id}); err != nil {
-		return fmt.Errorf("rename project to %q: %w", newName, err)
-	}
-	// Both names are free to this project, so any alias row for either is its
-	// own from an earlier rename.
+	// A rename back onto an earlier name takes that name out of the alias table.
 	if err := q.DeleteProjectAlias(ctx, newName); err != nil {
 		return fmt.Errorf("clear alias %q: %w", newName, err)
 	}
+	if err := q.RenameProject(ctx, RenameProjectParams{Name: newName, ID: id}); err != nil {
+		return fmt.Errorf("rename project to %q: %w", newName, err)
+	}
+	// The name is free, so any alias row for it is this project's own from an
+	// earlier rename. The delete makes the insert idempotent.
 	if err := q.DeleteProjectAlias(ctx, oldName); err != nil {
 		return fmt.Errorf("clear alias %q: %w", oldName, err)
 	}
