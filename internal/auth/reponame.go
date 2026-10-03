@@ -10,9 +10,7 @@ import (
 
 // Depth: docs/project-repo-identity.md.
 
-// repoNamespaceRoot is the root project a repo owns, the name OIDC provisions
-// and a token for the repo derives. It must equal RepoProjectName, or the
-// reconcile keeps a name the token cannot write.
+// repoNamespaceRoot is the root project a repo owns, the name OIDC provisions.
 func repoNamespaceRoot(repoPath string) string {
 	slash := strings.LastIndex(repoPath, "/")
 	if slash < 0 || slash == len(repoPath)-1 {
