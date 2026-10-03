@@ -31,10 +31,13 @@ shared:
 			TAP="$(brew --repository pazer/build)"
 			# Pull until the tap history holds that release.
 			for _ in $(seq 60); do
-				git -C "$TAP" pull -q --ff-only
-				[ "$(git -C "$TAP" log --format=%H -- Formula/versioned-fixture.rb | wc -l)" -ge 2 ] && break
+				git -C "$TAP" fetch -q origin
+				[ "$(git -C "$TAP" log --format=%H origin/main -- Formula/versioned-fixture.rb | wc -l)" -ge 2 ] && break
 				sleep 1
 			done
+			# brew update reports what the appended history changed. Its output is
+			# what a user sees, so the suite asserts on it below.
+			brew update 2>&1 | tee "$WORK/update.txt"
 			"$REPO/scripts/brew-doc-flows.sh" version "$BREW_HOST" > "$WORK/version.sh"
 			echo "--- documented version flow, executed verbatim ---"
 			cat "$WORK/version.sh"
@@ -140,6 +143,20 @@ tests:
 		stdout:
 			- "versioned-fixture-1.0.0"
 			- "versioned-fixture-2.0.0"
+
+	# That must not surface as a "New Formulae" entry per release.
+	- desc: brew update lists no versioned formula
+	  cmd: |
+		set -eu
+		update="$(dirname {shared.env})/update.txt"
+		cat "$update"
+		if grep -E '^pazer/build/[^ ]*@' "$update"; then
+			echo "brew update listed a versioned formula" >&2; exit 1
+		fi
+		echo "no-versions-listed"
+	  outputs:
+		stdout:
+			- "no-versions-listed"
 
 	# brew lists every formula file in a tap as a formula of its own, so a
 	# file per release floods `brew update` with "New Formulae".
