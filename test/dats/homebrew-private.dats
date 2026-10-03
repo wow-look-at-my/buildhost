@@ -27,7 +27,9 @@ shared:
 			HOMEBREW_NO_GITHUB_API=1 HOMEBREW_BUILDHOST_TOKEN="$BUILDHOST_TOKEN" brew version-install pazer/build/myrepo-myapp@0.9.0
 			echo "TAP='$TAP'" > "$ENV_FILE"
 
-setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
+setup:
+	- cmd: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
+	  timeout: 10m
 
 tests:
 	- desc: the privately installed binary executes

@@ -46,7 +46,9 @@ shared:
 			echo "REPO='$REPO'" > "$ENV_FILE"
 			echo "TAP='$TAP'" >> "$ENV_FILE"
 
-setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
+setup:
+	- cmd: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
+	  timeout: 10m
 
 tests:
 	# A single flow, documents, empty drift: the blocks the server serves
