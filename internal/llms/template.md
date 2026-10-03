@@ -167,11 +167,12 @@ brew tap pazer/build __BREW_URL__/tap.git
 brew install pazer/build/go-toolchain
 ```
 
-For a private project, tap the authenticated tap instead. It contains every public formula, plus the private projects the token can read. A git client transmits a credential only after a challenge. The credential therefore rides the tap URL as the HTTP Basic password. The authenticated tap replaces the public one, so run `brew untap --force pazer/build` first when the public tap is already added. Also export `HOMEBREW_BUILDHOST_TOKEN`, so the formula's download strategy can authenticate the artifact fetch. The `?token=` query parameter does not work with `brew tap`, because git appends its own path segments after the query string. Here is an example for a private project named `myrepo/myapp`:
+For a private project, tap the authenticated tap instead. It contains every public formula, plus the private projects the token can read. A git client transmits a credential only after a challenge. The credential therefore rides the tap URL as the HTTP Basic password. The authenticated tap replaces the public one under the same name. `brew tap --custom-remote` taps it fresh or repoints an existing public tap, and `brew update-reset` moves the checkout onto its unrelated history. Installed formulae stay installed. Never run `brew untap --force pazer/build`, which uninstalls every formula from the tap. Also export `HOMEBREW_BUILDHOST_TOKEN`, so the formula's download strategy can authenticate the artifact fetch. The `?token=` query parameter does not work with `brew tap`, because git appends its own path segments after the query string. Here is an example for a private project named `myrepo/myapp`:
 
 ```
 brew trust "__BREW_TOKEN_URL__/private/tap.git"
-brew tap pazer/build "__BREW_TOKEN_URL__/private/tap.git"
+brew tap --custom-remote pazer/build "__BREW_TOKEN_URL__/private/tap.git"
+brew update-reset "$(brew --repository pazer/build)"
 export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
 brew install pazer/build/myrepo-myapp
 ```
