@@ -1,7 +1,7 @@
 # The DOCUMENTED private Homebrew flow, executed verbatim, and what the
-# authenticated tap must then hold. Split from the public suite because the
-# docs say the authenticated tap REPLACES the public one, so the workflow
-# untaps between both.
+# authenticated tap must then hold. It runs after the public suite, on the
+# public tap that suite added and installed from: the documented flow repoints
+# that tap in place, and every formula installed through it must survive.
 #
 # The brew commands come from docs/homebrew.md through scripts/brew-doc-flows.sh; the
 # public suite is where the docs themselves are checked for agreement.
@@ -24,6 +24,18 @@ shared:
 setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
 
 tests:
+	- desc: formulae installed from the public tap stay installed across the switch
+	  cmd: |
+		set -eu
+		brew list --formula --full-name > installed.txt
+		for f in pazer/build/go-toolchain pazer/build/ape-fixture; do
+			grep -qx "$f" installed.txt || { echo "$f was uninstalled by the switch" >&2; cat installed.txt >&2; exit 1; }
+		done
+		echo "kept-installed"
+	  outputs:
+		stdout:
+			- "kept-installed"
+
 	- desc: the privately installed binary executes
 	  cmd: myapp
 	  outputs:
