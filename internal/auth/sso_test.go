@@ -217,7 +217,6 @@ func TestSigninStart_InstantHandoff_RoundTrip(t *testing.T) {
 	for _, c := range rec.Result().Cookies() {
 		assert.NotEqual(t, sessionCookieName, c.Name, "no session on a replayed code")
 	}
-	// The failure page offers a restart at the PRIMARY apex carrying the
 	assert.Contains(t, rec.Body.String(), "https://pazer.build"+signinStartPath)
 }
 
@@ -361,7 +360,7 @@ func TestSSORedeem_ExpiredCode(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Contains(t, rec.Body.String(), "expired")
-	// The next was MAC-verified, so the restart link may carry it -- at the
+	// The next was MAC-verified.
 	assert.Contains(t, rec.Body.String(), "https://pazer.build"+signinStartPath)
 	for _, c := range rec.Result().Cookies() {
 		assert.NotEqual(t, sessionCookieName, c.Name)
@@ -381,7 +380,7 @@ func TestSSORedeem_TamperRejected(t *testing.T) {
 	require.NoError(t, err)
 	code := u.Query().Get("code")
 
-	// Swapping the query next for another destination fails: the real next is
+	// Swapping the query next for another destination fails.
 	req := httptest.NewRequest("GET", ssoPath+"?code="+url.QueryEscape(code)+"&next="+url.QueryEscape("https://evil.pazer.site/steal"), nil)
 	req.Host = "myapp.pazer.site"
 	rec := httptest.NewRecorder()

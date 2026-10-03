@@ -5,7 +5,7 @@
 > tar.gz / tar.xz / tar.zst, zip, an APT (.deb) repository, a Homebrew
 > formula, an npm package, or an OCI/Docker image.
 
-buildhost stores a single original binary per project, version, OS, and architecture, and repackages it on demand at download time. Every format is generated from that one source artifact, so they always stay in sync. All downloads resolve to one content-addressed, CDN-cacheable endpoint with strong ETags and immutable caching.
+buildhost stores a single original binary per project, version, OS, and architecture, and repackages it on demand at download time. Every format is generated from that source artifact, so they always stay in sync. All downloads resolve to one content-addressed, CDN-cacheable endpoint with strong ETags and immutable caching.
 
 This document lives at `__BASE_URL__/llms.txt` and is written for LLMs and automated agents. Every example below uses this server's configured base URL, `__BASE_URL__`.
 
@@ -70,13 +70,13 @@ POST __BASE_URL__/api/v1/projects/{project}/releases/{version}/publish
 
 The upload's `{os}` segment accepts one OS, a comma-separated list such as `linux,darwin,windows`, or `cosmo` for linux, darwin and windows together. The aliases `any`, `all` and `universal` mean the same as `cosmo`. The `{arch}` segment accepts a list, or `any` or `all` for amd64 and arm64.
 
-The body is stored once. One ordinary artifact row is created per os/arch combination. The set is all-or-nothing, and a conflicting combination returns 409. Downloads are therefore unchanged. Always request a concrete os/arch. A single os/arch returns one artifact JSON object. A multi-platform upload returns a JSON array of them.
+The body is stored once. One ordinary artifact row is created per os/arch combination. The set is all-or-nothing. A conflicting combination returns 409. Downloads are therefore unchanged. Always request a concrete os/arch. A single os/arch returns one artifact JSON object. A multi-platform upload returns a JSON array of them.
 
-That per-combination fan-out applies to a file that is NOT an APE. There the combinations really are separate builds that happen to share bytes.
+That per-combination fan-out applies to a file that is NOT an APE. There the combinations are separate builds that happen to share bytes.
 
 The uploaded body can instead carry APE magic while the segments expand to more than one combination. The upload then publishes ONE artifact that covers them all, exactly as the `/artifacts/ape` endpoint below does. It answers with that single artifact JSON object rather than an array. A file that runs on N platforms gets one download link, never N.
 
-One binary can run on SEVERAL platforms. An Actually Portable Executable is such a binary. It boots natively on Linux, macOS and Windows from one file. The registry publishes it as ONE artifact with ONE download link, and not as N rows.
+One binary can run on SEVERAL platforms. An Portable Executable is such a binary. It boots natively on Linux, macOS and Windows from one file. The registry publishes it as ONE artifact with ONE download link, and not as N rows.
 
 ```
 PUT __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/ape?platforms=linux/amd64,darwin/arm64,windows/amd64
@@ -84,7 +84,7 @@ PUT __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/ape?plat
 
 `platforms` is a comma-separated `os/arch` list. Each side accepts the same alias spellings as everywhere else, so `macOS/aarch64` is `darwin/arm64`. The first entry is the artifact's canonical slot.
 
-Every listed platform then resolves to that one artifact. `/{project}?os=darwin&arch=arm64` and `/{project}?os=linux&arch=amd64` redirect to the SAME download URL, with the same digest and ETag. apt, brew, npm and oci still cover every listed platform.
+Every listed platform then resolves to that artifact. `/{project}?os=darwin&arch=arm64` and `/{project}?os=linux&arch=amd64` redirect to the SAME download URL, with the same digest and ETag. apt, brew, npm and oci still cover every listed platform.
 
 `?kind=`, `X-Artifact-Filename`, `upload_session=` and `upload_sha256=` work exactly as they do on the `{os}/{arch}` endpoint. `kind=docker` and `kind=npm-package` are rejected.
 
@@ -224,7 +224,7 @@ A failure of the PROXY's own credential is a 403, not a 404. It therefore does N
 
 `GOPRIVATE` keeps your org's module paths out of the public checksum database. It sets `GONOPROXY` and `GONOSUMDB` for you.
 
-Send a read-scoped token to fetch a module in one of this proxy's private namespaces. Without one, every such module is answered 404. That is the same answer a module that does not exist gets. The match is deliberate. A 401 or 403 confirms that the module exists, which is the fact a private module is keeping. A public module needs no credential.
+Send a read-scoped token to fetch a module in one of this proxy's private namespaces. Without one, every such module is answered 404. That is the same answer a module that does not exist gets. The match is deliberate. A 401 or confirms that the module exists, which is the fact a private module is keeping. A public module needs no credential.
 
 A fetch that fails is answered with a status that says WHY. A 403 means the proxy's own credential failed to read the module. A 502 means the upstream failed. A 404 means the module is not there, or is not visible to you. A 404 never means the proxy failed to read the module on your behalf. That case is the 403.
 
@@ -255,7 +255,7 @@ __SITES_URL__/myapp/@pr-7/x.css     -> x.css on that branch
 __SITES_URL__/myapp/@0f1e2d3/x.css  -> x.css from that exact commit
 ```
 
-A commit ref takes the full 40-hex sha, or any abbreviation of 7 characters or more. It resolves while that commit is still the live deployment of some branch. The URL therefore serves exactly that build, or it answers 404. It never quietly becomes a later build.
+A commit ref takes the full 40-hex sha, or any abbreviation of several characters or more. It resolves while that commit is still the live deployment of some branch. The URL therefore serves exactly that build, or it answers 404. It never quietly becomes a later build.
 
 A redirect only ever runs toward the shorter URL. `@<default branch>` 302s to the bare path above, and never the reverse. The original `/myapp/branch/main/x.css` spelling is not going away either. It 302s to whichever URL above names the same file. Every published link therefore keeps resolving.
 

@@ -1,7 +1,6 @@
 package dl
 
-// Version/branch resolution tests for the download redirect: latest and
-// per-branch resolution and cache-control semantics (the signed-token and
+// Version/branch resolution tests for the download redirect.
 
 import (
 	"net/http"

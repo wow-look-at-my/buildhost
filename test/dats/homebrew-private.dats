@@ -1,7 +1,7 @@
 # The DOCUMENTED private Homebrew flow, executed verbatim, and what the
 # authenticated tap must then hold. Split from the public suite because the
 # docs say the authenticated tap REPLACES the public one, so the workflow
-# untaps between the two.
+# untaps between both.
 #
 # The brew commands come from README.md through scripts/brew-doc-flows.sh; the
 # public suite is where the docs themselves are checked for agreement.

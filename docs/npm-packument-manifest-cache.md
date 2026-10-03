@@ -27,15 +27,15 @@ Cache the extracted fields per artifact in `packaged_artifacts` under format `np
 - **`fields_version`** pins the extraction contract. Bump `npmManifestFieldsVersion` when `manifestPassthroughFields` changes. Every existing row then reads as a miss and refills in place. A packument can therefore never advertise a field set the server no longer produces.
 - **A verdict of "nothing to surface" is cached too.** A blob that is not a readable npm tarball caches an empty map. That covers a blob that is not gzip, one with no `package.json`, and one with bad JSON. The answer cannot change for a content-addressed blob. To re-derive it per request preserves the whole defect for exactly those packages. Only a failure to READ the blob is left uncached, such as a storage error or a cancelled context.
 
-Cold requests are bounded three ways:
+Cold requests are bounded ways:
 
 - **Blob grouping.** Storage is content-addressed. Releases that re-register unchanged bytes, through a hash-reference upload, therefore share a blob. It is decompressed once, and every sharing artifact gets its own cache row.
-- **Bounded concurrency** (`manifestFillConcurrency = 8`). Each fill streams one artifact through zstd+gzip, so memory stays bounded by the decoder windows. The work is CPU-bound: on a 4-core box 8 workers give ~3.2x, and raising the bound past the core count buys nothing but memory pressure.
+- **Bounded concurrency** (`manifestFillConcurrency = 8`). Each fill streams one artifact through zstd+gzip, so memory stays bounded by the decoder windows. The work is CPU-bound: on a 4-core box multiple workers give ~3.2x, and raising the bound past the core count buys nothing but memory pressure.
 - **A hard budget** (`manifestFillBudget = 20s`). Overrunning it returns `503` + `Retry-After: 5`, never a `200` whose version entries quietly lost their dependency graph. Fills already committed survive, so each retry has less to do and a cold project converges instead of failing forever.
 
 ## Measured
 
-Against a real `buildhost serve` seeded with 238 published releases of the actual 17.6 MB `cc-marketplace__jq` tarball:
+Against a real `buildhost serve` seeded with multiple published releases of the actual 17.6 MB `cc-marketplace__jq` tarball:
 
 | | before | after |
 |---|---|---|
@@ -49,7 +49,7 @@ buildhost cannot seek inside a gzip member. A publisher can put `package/package
 
 ## Regression checks
 
-`internal/npm/packument_cache_test.go` asserts by COUNTING BLOB READS rather than by timing, so it fails deterministically if per-request work ever becomes proportional to the release count again:
+`internal/npm/packument_cache_test.go` asserts by COUNTING BLOB READS rather than by timing. As a result, it fails deterministically if per-request work ever becomes proportional to the release count again:
 
 - a warm packument reads **zero** blobs and serves byte-identical JSON to the cold one.
 - a cold packument reads each release's blob exactly once, and **once in total** when the releases share a blob.

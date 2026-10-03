@@ -66,7 +66,7 @@ func TestRenderBrewFormula_DualOS(t *testing.T) {
 	mac := BrewResource{OS: "macos", Arch: "arm", URL: "https://dl.example/darwin-arm64", SHA256: strings.Repeat("dd", 32)}
 	body := renderFormula(t, baseFormula(mac, linux))
 
-	// No platform gate, on_* blocks intact, and the top-level url is the
+	// No platform gate, on_* blocks intact.
 	assert.NotContains(t, body, "depends_on")
 	assert.Contains(t, body, "on_macos do")
 	assert.Contains(t, body, "on_linux do")
