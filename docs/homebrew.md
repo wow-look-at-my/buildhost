@@ -35,6 +35,20 @@ brew install pazer/build/myrepo-myapp
 
 `brew update` refreshes the tap with the credential stored in the tap's git remote. The `?token=` query parameter does not work with `brew tap`. git appends its own path segments after the query string, such as `/info/refs`. The URL then stops resolving as a git repository.
 
+## Specific versions
+
+The tap carries one versioned formula per published release on the project's default branch, named `<formula>@<version>`. The version is the release version without a leading `v`. Install one through the tap you already added:
+
+```bash
+brew install pazer/build/go-toolchain@1.0.0
+```
+
+A versioned formula is keg-only and never linked automatically, so it installs beside the unversioned formula without a link conflict, in either order. Run it from `$(brew --prefix pazer/build/go-toolchain@1.0.0)/bin/go-toolchain`. To put it on PATH instead, run `brew unlink go-toolchain` when the unversioned formula is installed, then `brew link --force go-toolchain@1.0.0`.
+
+A private project's versions come through the authenticated tap, with `HOMEBREW_BUILDHOST_TOKEN` set as above. `myrepo/myapp` 0.9.0 installs as `brew install pazer/build/myrepo-myapp@0.9.0`.
+
+A version that does not start with a digit has no versioned formula. Homebrew turns `@<digit>` into `AT` in the Ruby class name, and any other `@` leaves the class name invalid.
+
 ## Background services (create_service)
 
 A project can declare that its binary runs as a background service. Declare it in the publishing repo's CI, with `create_service: 'true'` on the `buildhost-create-release` or `buildhost-publish` action. go-toolchain's composite spells that as `autorelease_args: create_service=true`. Every publish asserts the declared value. An absent input leaves the stored setting untouched. An operator can also flip it directly, with `PATCH /api/v1/projects/{project}` and a body of `{"create_service": true}`.

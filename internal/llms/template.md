@@ -176,6 +176,15 @@ export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
 brew install pazer/build/myrepo-myapp
 ```
 
+To install one release, add `@<version>` to the formula name, without a leading `v`. The tap carries one versioned formula per published release on the default branch. A private project's versions come through the authenticated tap:
+
+```
+brew install pazer/build/go-toolchain@1.0.0
+brew install pazer/build/myrepo-myapp@0.9.0
+```
+
+A versioned formula is keg-only, so it installs beside the unversioned one. Run it from `$(brew --prefix pazer/build/go-toolchain@1.0.0)/bin/`, or `brew link --force` it after `brew unlink` of the unversioned formula.
+
 A slash-namespaced project folds `/` to `-` in its formula name. That is the same rule as the APT package name rule. The installed command keeps the binary's own name. `myrepo/myapp` therefore installs as `brew install pazer/build/myrepo-myapp` and puts `myapp` on PATH.
 
 A project can declare its `create_service` setting. Its CI sends that bool on release-create, or an operator sets it through the API. Such a project is a background service, materialized per format.

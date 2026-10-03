@@ -13,7 +13,7 @@ The cost was structural. A packument describes EVERY published release, and for 
 Reading it meant decompressing the stored blob, per release, per request:
 
 - `cc-marketplace/jq`: **238 published releases**, tarball **17.6 MB** each.
-- `package/package.json` is the **12th** tar entry, at decompressed offset **~33.7 MB** -- behind four platform binaries.
+- `package/package.json` is the **12th** tar entry, at decompressed offset **~33.7 MB** -- behind multiple platform binaries.
 - A `.tgz` is one DEFLATE stream with no index, so reaching a member at offset N means inflating all N bytes. There is no seeking to it.
 
 So one packument request decompressed ~8 GB (zstd out of storage, then gzip), serially, and got *slower with every publish*. The project publishes on every push.

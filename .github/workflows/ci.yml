@@ -450,28 +450,71 @@ jobs:
             arm64|aarch64) arch=arm64 ;;
             *) echo "unsupported arch"; exit 1 ;;
           esac
-          printf '%s\n' '#!/bin/sh' 'echo buildhost-homebrew-private-ok' > "${{ runner.temp }}/myapp"
-          chmod +x "${{ runner.temp }}/myapp"
           ./buildhost project create \
             --server "$BUILDHOST_BASE_URL" \
             --token "$BUILDHOST_TOKEN" \
             --name myrepo/myapp \
             --versioning semver \
             --private
-          printf '%s\n' \
-            "server = \"$BUILDHOST_BASE_URL\"" \
-            "token = \"$BUILDHOST_TOKEN\"" \
-            'project = "myrepo/myapp"' \
-            'version = "1.0.0"' \
-            'git_branch = "master"' \
-            "" \
-            "[[artifact]]" \
-            "path = \"${{ runner.temp }}/myapp\"" \
-            "os = \"$os\"" \
-            "arch = \"$arch\"" \
-            'kind = "binary"' \
-            > "${{ runner.temp }}/buildhost-release-private.toml"
-          ./buildhost publish --manifest "${{ runner.temp }}/buildhost-release-private.toml"
+          # 0.9.0 is the pinned private version homebrew-private.dats installs; 1.0.0 is the latest.
+          for spec in 0.9.0:buildhost-homebrew-private-0.9.0 1.0.0:buildhost-homebrew-private-ok; do
+            version="${spec%%:*}"
+            mkdir -p "${{ runner.temp }}/myapp-$version"
+            printf '%s\n' '#!/bin/sh' "echo ${spec#*:}" > "${{ runner.temp }}/myapp-$version/myapp"
+            chmod +x "${{ runner.temp }}/myapp-$version/myapp"
+            printf '%s\n' \
+              "server = \"$BUILDHOST_BASE_URL\"" \
+              "token = \"$BUILDHOST_TOKEN\"" \
+              'project = "myrepo/myapp"' \
+              "version = \"$version\"" \
+              'git_branch = "master"' \
+              "" \
+              "[[artifact]]" \
+              "path = \"${{ runner.temp }}/myapp-$version/myapp\"" \
+              "os = \"$os\"" \
+              "arch = \"$arch\"" \
+              'kind = "binary"' \
+              > "${{ runner.temp }}/buildhost-release-private.toml"
+            ./buildhost publish --manifest "${{ runner.temp }}/buildhost-release-private.toml"
+          done
+      - name: Publish versioned-fixture 1.0.0 and 2.0.0 (public)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)" in
+            Darwin) os=darwin ;;
+            Linux) os=linux ;;
+            *) echo "unsupported OS"; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64) arch=amd64 ;;
+            arm64|aarch64) arch=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          ./buildhost project create \
+            --server "$BUILDHOST_BASE_URL" \
+            --token "$BUILDHOST_TOKEN" \
+            --name versioned-fixture \
+            --versioning semver
+          for version in 1.0.0 2.0.0; do
+            mkdir -p "${{ runner.temp }}/versioned-fixture-$version"
+            printf '%s\n' '#!/bin/sh' "echo versioned-fixture-$version" > "${{ runner.temp }}/versioned-fixture-$version/versioned-fixture"
+            chmod +x "${{ runner.temp }}/versioned-fixture-$version/versioned-fixture"
+            printf '%s\n' \
+              "server = \"$BUILDHOST_BASE_URL\"" \
+              "token = \"$BUILDHOST_TOKEN\"" \
+              'project = "versioned-fixture"' \
+              "version = \"$version\"" \
+              'git_branch = "master"' \
+              "" \
+              "[[artifact]]" \
+              "path = \"${{ runner.temp }}/versioned-fixture-$version/versioned-fixture\"" \
+              "os = \"$os\"" \
+              "arch = \"$arch\"" \
+              'kind = "binary"' \
+              > "${{ runner.temp }}/buildhost-release-versioned.toml"
+            ./buildhost publish --manifest "${{ runner.temp }}/buildhost-release-versioned.toml"
+          done
       # Hostile-name fixtures for the formula-codegen guarantees the e2e
       - name: Publish hostile-name fixtures (public)
         shell: bash

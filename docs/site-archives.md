@@ -41,7 +41,7 @@ The 128 KiB is a pair of the reader's `64 KiB` buffer fills, plus the entry. One
 
 Compressing each file on its own is what makes one file readable without touching the others. It also gives up what a single gzip stream over the whole tar exploits: the redundancy *between* files.
 
-`TestArchiveSizeVsTarGz` measures the worst case on purpose -- 60 near-identical HTML pages, where nearly all the compressible information is cross-file:
+`TestArchiveSizeVsTarGz` measures the worst case on purpose -- near-identical HTML pages, where nearly all the compressible information is cross-file:
 
 ```
 tar 146,944 bytes,  tar.gz 2,016 bytes,  binpazer archive 12,008 bytes

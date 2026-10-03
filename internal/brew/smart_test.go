@@ -81,7 +81,7 @@ func TestServeTapInfoRefs_AdvertisementDerivesFromLineageTip(t *testing.T) {
 // A plain (non-shallow) smart clone -- what `brew tap` runs -- must transfer
 // the tap's FULL history: every commit reachable from the tip, so later dumb
 // or smart fetches fast-forward. The client echoing advertised capabilities
-// must not be mistaken for a shallow request (the old "expected ACK/NAK, got
+// must not be mistaken for a shallow request (the "expected ACK/NAK, got
 // 'shallow <sha>'" failure).
 func TestServeUploadPack_FullCloneTransfersWholeHistory(t *testing.T) {
 	t.Serial()
