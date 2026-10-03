@@ -8,7 +8,6 @@ const { recordReleaseArtifacts, recordSite, recordImage } = require(`${lib}.ts`)
 type Sent = Record<string, unknown>;
 const ctx = { repo: { owner: 'PazerOP', repo: 'UE553' } };
 const SERVER = 'https://pazer.build';
-const DL = 'https://dl.pazer.build';
 const SHA = 'a'.repeat(64);
 // The dl URL a record links: pinned to the exact version its digest covers.
 const dlURL = (project: string, version: string, arch: string) =>

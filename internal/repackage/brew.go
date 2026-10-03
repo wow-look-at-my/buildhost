@@ -196,9 +196,6 @@ type BrewFormula struct {
 	License     string
 	Kind        string
 	// Private marks a formula for a private project: it requires the tap's
-<<<<<<< HEAD
-	Private   bool
-=======
 	Private bool
 	// Versioned renders the keg-only formula at BrewVersionedFormulaPath.
 	Versioned bool
