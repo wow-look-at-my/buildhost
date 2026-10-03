@@ -41,6 +41,7 @@ func TestServe_RendersBaseURL(t *testing.T) {
 	// The authenticated-tap URL macro renders scheme + creds placeholder +
 	assert.Contains(t, body, `brew trust "https://x:$TOKEN@brew.pazer.build/private/tap.git"`+"\n"+`brew tap pazer/build "https://x:$TOKEN@brew.pazer.build/private/tap.git"`)
 	assert.Contains(t, body, "brew install pazer/build/myrepo-myapp")
+	assert.Contains(t, body, "brew install pazer/build/go-toolchain@1.0.0\n")
 	assert.NotContains(t, body, "__BREW_TOKEN_URL__")
 	assert.NotContains(t, body, "brew install https://brew.pazer.build/myapp")
 	assert.Contains(t, body, "docker pull oci.pazer.build/myapp:latest")
@@ -64,7 +65,7 @@ func TestServe_RendersRequestHost(t *testing.T) {
 
 func TestApexBaseURL_StripsServiceSubdomain(t *testing.T) {
 	t.Serial()
-	// /llms.txt is served on the apex and every service subdomain, but the
+	// /llms.txt is served on the apex and every service subdomain.
 	cases := []struct {
 		host string
 		want string

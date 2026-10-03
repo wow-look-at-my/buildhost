@@ -64,7 +64,6 @@ func runGit(t *testing.T, dir string, args ...string) string {
 	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@test", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@test",
 		"GIT_TERMINAL_PROMPT=0",
-		// Auto-gc repacks detached and can delete a pack while a later fsck is
 		"GIT_CONFIG_COUNT=2",
 		"GIT_CONFIG_KEY_0=gc.auto", "GIT_CONFIG_VALUE_0=0",
 		"GIT_CONFIG_KEY_1=maintenance.auto", "GIT_CONFIG_VALUE_1=false",
@@ -179,7 +178,6 @@ func TestTap_LineageCapEvictsLRU(t *testing.T) {
 	}
 	assert.LessOrEqual(t, dirs, tapHistoryMaxLineages)
 
-	// The most recently built lineage is present (evictions strike before the
 	lastKey := "https://" + strings.TrimPrefix(lastHost, "git.") + "\x00anon"
 	_, err = os.Stat(h.tapLineageDir(lastKey))
 	assert.NoError(t, err)

@@ -14,7 +14,7 @@ A backend self-registers its routes from init() on auth.Router(). Adding a backe
 
 ### Registration timing: init(), never OnReady
 
-`auth.OnReady` runs from `auth.Init`, i.e. only in a booted server. A route registered there is absent from `buildhost routes`. The PR route-diff job therefore never shows it, and it can change with nobody seeing the change. Register routes in `init()`. Use OnReady only to wire handler dependencies: the DB, the store and the data dir. Method values on the package-level `handler` var bind a pointer, so a route registered in `init()` still sees fields OnReady assigns later.
+`auth.OnReady` runs from `auth.Init`, i.e. only in a booted server. A route registered there is absent from `buildhost routes`. The PR route-diff job therefore never shows it. It can change with nobody seeing the change. Register routes in `init()`. Use OnReady only to wire handler dependencies: the DB, the store and the data dir. Method values on the package-level `handler` var bind a pointer, so a route registered in `init()` still sees fields OnReady assigns later.
 
 A pattern that genuinely depends on configuration registers through `auth.OnSiteDomain` instead. `auth.Init` runs those with the configured site domain. `auth.ListRoutes`, which is what `buildhost routes` prints, runs them with `auth.SiteDomainPlaceholder`. The family therefore stays enumerable and diffable.
 
