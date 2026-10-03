@@ -96,8 +96,7 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 type updateProjectRequest struct {
 	CreateService *bool   `json:"create_service"`
 	AptDepends    *string `json:"apt_depends"`
-	// Versioning is decoded only to refuse it. A write token includes CI's OIDC
-	// token, so the admin dashboard is the single place that changes versioning.
+	// Versioning is decoded only to refuse it.
 	Versioning json.RawMessage `json:"versioning"`
 }
 

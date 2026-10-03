@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// Info holds the VCS stamps embedded at build time. Its fields are empty when
+// Info holds the VCS stamps embedded at build time.
 type Info struct {
 	Revision string // full git commit SHA
 	Time     string // commit time in RFC3339

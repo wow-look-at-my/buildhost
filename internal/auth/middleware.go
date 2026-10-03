@@ -209,10 +209,10 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			if errors.Is(err, db.ErrNotFound) {
 				t := TokenFrom(r.Context())
 				oidcProject := OIDCProjectFrom(r.Context())
-				// Auto-provisioning is a write-only action: only a write request
-				// (the publish POST/PUT flow, a docker push, a site deploy) may
-				// create a missing project. A read never provisions -- it just
-				// 404s -- so a GET can never materialize a project as a side
+				// Auto-provisioning is a write-only action: only a write request (the
+				// publish POST/PUT flow, a docker push, a site deploy) may create a
+				// missing project. A read never provisions -- it 404s -- so a GET can
+				// never materialize a project as a side
 				if ri.Access() != WriteAccess || t == nil || oidcProject == "" || !oidcAuthorizesProject(oidcProject, ri.ProjectName()) || !validNamespacedProjectName(ri.ProjectName()) {
 					if ri.Access() == WriteAccess && t == nil {
 						unauthorizedResponse(w, r)
@@ -274,18 +274,17 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				if repo := OIDCRepoFrom(r.Context()); repo.RepoPath != "" {
 					if repo.OwnerID != "" && repo.RepoID != "" {
 						if project.GithubOwnerID != "" || project.GithubRepoID != "" {
-							// Rename/resurrection guard: GitHub NAMES are reusable --
-							// delete (or rename) a repo and a stranger can re-register the
-							// name and mint valid OIDC tokens for the same "owner/repo" --
-							// but the numeric IDs are not. A token whose IDs disagree with
-							// the pin may not act on the project, read or write.
+							// Rename/resurrection guard: GitHub NAMES are reusable -- delete (or
+							// rename) a repo and a stranger can re-register the name and mint
+							// valid OIDC tokens for the same "owner/repo" -- but the numeric IDs
+							// are not. A token whose IDs disagree with the pin may not act on the
+							// project, read or write.
 							//
-							// The REPO id identifies the repository itself. It
-							// survives a rename and a transfer to another owner, and it
-							// changes only when somebody deletes the repository and makes
-							// it again. An owner id that moves under an unchanged repo id
-							// is therefore a transfer, not a takeover. The branch below
-							// re-pins it instead of a refusal.
+							// The REPO id identifies the repository itself. It survives a rename
+							// and a transfer to another owner, and it changes only when somebody
+							// deletes the repository and makes it again. An owner id that moves
+							// under an unchanged repo id is therefore a transfer, not a takeover.
+							// The branch below re-pins it instead of a refusal.
 							if project.GithubRepoID != repo.RepoID {
 								slog.WarnContext(r.Context(), "OIDC repo identity mismatch",
 									"project", project.Name,

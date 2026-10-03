@@ -19,7 +19,7 @@ import (
 const siteName = "buildhost"
 
 var templateFuncs = template.FuncMap{
-	// nonEmpty reports whether s is a non-blank string, for {{if}} guards on
+	// nonEmpty reports whether s is a non-blank string.
 	"nonEmpty": func(s string) bool { return strings.TrimSpace(s) != "" },
 }
 
@@ -203,9 +203,9 @@ func buildProjectView(r *http.Request, p *db.Project, rels []db.ReleaseSummary, 
 	return v
 }
 
-// buildInstallInfo assembles copy-paste fetch commands. `docker pull` is always
-// offered (buildhost synthesizes an image even from a bare binary); the
-// download/apt/brew/npm forms are offered only when the latest release actually
+// buildInstallInfo assembles copy-paste fetch commands. `docker pull` is
+// always offered (buildhost synthesizes an image even from a bare binary);
+// the download/apt/brew/npm forms are offered only when the latest release
 // has a non-docker artifact to repackage.
 func buildInstallInfo(r *http.Request, project, version string, hasBinary bool) *installInfo {
 	info := &installInfo{
@@ -214,7 +214,7 @@ func buildInstallInfo(r *http.Request, project, version string, hasBinary bool) 
 	}
 	if hasBinary {
 		info.Curl = fmt.Sprintf("curl -LO %q", dlURL(r, project, "", "linux", "amd64", "raw"))
-		// The cloneable tap URL is the /tap.git smart-HTTP endpoint, never the
+		// The cloneable tap URL is the /tap.git smart-HTTP endpoint.
 		info.Brew = "brew trust " + serviceBase(r, "brew") + "/tap.git" +
 			"\nbrew tap pazer/build " + serviceBase(r, "brew") + "/tap.git" +
 			// A formula name cannot contain '/', so a slash-namespaced project
@@ -256,7 +256,7 @@ type artifactRow struct {
 	Downloads  []downloadLink
 	Docker     bool
 	DockerPull string
-	// FormatBadge is the executable format detected at upload ("APE"), "" when
+	// FormatBadge is the executable format detected at upload ("APE").
 	FormatBadge string
 }
 
@@ -329,7 +329,7 @@ func serviceURL(r *http.Request, service, path string) string {
 }
 
 // dlURL builds a canonical download URL on the dl subdomain. An empty version
-// downloads the latest; an empty/"raw" format downloads the original binary.
+// downloads the latest; an empty/"raw" format downloads the binary.
 func dlURL(r *http.Request, project, version, os, arch, format string) string {
 	q := url.Values{}
 	q.Set("os", os)

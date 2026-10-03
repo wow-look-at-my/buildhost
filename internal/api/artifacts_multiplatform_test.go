@@ -232,7 +232,6 @@ func TestUploadArtifact_DuplicateListElement(t *testing.T) {
 	assert.Empty(t, rows)
 }
 
-// A fan-out that collides with an existing row on ANY combination mirrors the
 func TestUploadArtifact_MultiConflictAtomic(t *testing.T) {
 	t.Serial()
 	h, proj, rel := setupUploadTest(t, "conflictproj")
@@ -287,7 +286,7 @@ func TestUploadArtifact_HashRefRegistersExistingBlob(t *testing.T) {
 	assert.Equal(t, full.Size, ref.Size)
 	assert.NotZero(t, ref.ID)
 
-	// Each slot's request carries its own filename (unlike fan-out, which
+	// Each slot's request carries its own filename (unlike fan-out.
 	assert.Equal(t, "tool_linux_amd64", full.Filename)
 	assert.Equal(t, "tool_windows_amd64.exe", ref.Filename)
 
@@ -426,7 +425,7 @@ func TestUploadArtifact_HashRefConflictAtomic(t *testing.T) {
 // A request naming an upload session is a session finalize, never a hash-ref:
 // there upload_sha256 keeps its integrity-check meaning. (In production the
 // uploads middleware resolves the session before routing; at the handler
-// level the session parameter must simply not trigger the hash-ref branch.)
+// level the session parameter must not trigger the hash-ref branch.)
 func TestUploadArtifact_HashRefExcludedBySessionParam(t *testing.T) {
 	t.Serial()
 	h, proj, _ := setupUploadTest(t, "hashrefsession")
@@ -440,7 +439,6 @@ func TestUploadArtifact_HashRefExcludedBySessionParam(t *testing.T) {
 		"?upload_session=sess-1&upload_sha256="+full.SHA256, "")
 	require.Equal(t, http.StatusCreated, rec.Code)
 
-	// The handler stored the (empty) request body -- it did not resolve the
 	var got db.Artifact
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	emptySum := sha256.Sum256(nil)

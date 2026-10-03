@@ -43,7 +43,6 @@ func TestServe_SetsSiteSecurityHeaders(t *testing.T) {
 	req := httptest.NewRequest("GET", "/sites/mysite/branch/main/assets/app.mjs", nil)
 	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: "assets/app.mjs"})
 	rec := httptest.NewRecorder()
-	// The global security middleware sets these strict app headers before the
 	rec.Header().Set("Content-Security-Policy", "default-src 'none'")
 	rec.Header().Set("X-Frame-Options", "DENY")
 	h.Serve(rec, req)
