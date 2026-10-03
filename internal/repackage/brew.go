@@ -131,22 +131,22 @@ end
 `
 
 type brewData struct {
-	ClassName   string
-	Name        string
-	InstallName string
-	Description string
-	Homepage    string
-	Version     string
-	License     string
-	Kind        string
+	ClassName       string
+	Name            string
+	InstallName     string
+	Description     string
+	Homepage        string
+	Version         string
+	License         string
+	Kind            string
 	Private         bool
 	PrivateStrategy string
 	// BaseClassName is the unversioned class name, which the keg_only check compares against.
 	BaseClassName string
 	Service       bool
 	Canonical     BrewResource
-	DependsOnOS     string
-	Resources       []BrewResource
+	DependsOnOS   string
+	Resources     []BrewResource
 }
 
 // brewCanonicalResource picks the deterministic resource emitted as the
