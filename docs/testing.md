@@ -102,7 +102,7 @@ It drives that server with curl and jq. The runner has both. The docker image th
 
 ## Where a test lives
 
-An assertion goes in a dats suite, never in a workflow step. `test/dats/` is where those suites live. A workflow step invokes one by name with `--no-sandbox`. These suites need the host: brew and its prefix, curl and jq, and a service the workflow started first. The sandbox dats falls back to on a runner is a bare `debian:stable-slim` with none of that.
+An assertion goes in a dats suite, not in a workflow step. `test/dats/` is where those suites live. A workflow step invokes one by name with `--no-sandbox`. These suites need the host: brew and its prefix, curl and jq, and a service the workflow started first. The sandbox dats falls back to on a runner is a bare `debian:stable-slim` with none of that.
 
 `dats/` at the module root is the other option. It is currently empty. `go-toolchain` walks it on every build and runs it sandboxed. A suite there may therefore need only what that image has.
 

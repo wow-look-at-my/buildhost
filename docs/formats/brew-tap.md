@@ -32,7 +32,7 @@ The tap carries `Formula/<formula>/<formula>@<version>.rb` for every published r
 
 Each project's versions sit in their own directory. Homebrew finds a tap formula anywhere under `Formula/` by basename, because `Tap#formula_files` globs `Formula/**/*.rb`. A publish then rewrites only that project's tree object. One flat tree will hold every version of every project.
 
-A versioned formula is keg-only with a string reason, never `keg_only :versioned_formula`. It installs beside the unversioned formula, which ships the same binary name, without a link conflict in either order.
+A versioned formula is keg-only with a string reason, not `keg_only :versioned_formula`. It installs beside the unversioned formula, which ships the same binary name, without a link conflict in either order.
 
 Homebrew 7 auto-links a `:versioned_formula` keg when no sibling version is installed (`FormulaInstaller#auto_link_versioned_keg_only?`). It relies on finding the siblings to unlink them when another version links. In a third-party tap it never finds them: `Tap#prefix_to_versioned_formulae_names` is keyed by full `user/repo/name` names, and `Formula#versioned_formulae_names` looks up the short name. Installing a pin and then the unversioned formula therefore failed with "Can not symlink bin/<name>". A string reason is never auto-linked.
 
