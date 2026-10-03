@@ -39,9 +39,8 @@ func tapRequest(authed bool) *http.Request {
 	return req
 }
 
-// The first build after a publish leaves out versions whose digests are not
-// cached and fills them in the background; the next build carries one
-// keg-only name@version formula per published default-branch release.
+// One keg-only name@version formula per published default-branch release,
+// in the first build after the publish.
 func TestTap_VersionedFormulasPerDefaultBranchRelease(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)
@@ -52,12 +51,6 @@ func TestTap_VersionedFormulasPerDefaultBranchRelease(t *testing.T) {
 	files, err := h.buildTapFiles(tapRequest(false))
 	require.NoError(t, err)
 	assert.Contains(t, files, "Formula/ns-app.rb")
-	assert.Contains(t, files, "Formula/ns-app/ns-app@1.1.0.rb")
-	assert.NotContains(t, files, "Formula/ns-app/ns-app@1.0.0.rb")
-
-	h.fillWG.Wait()
-	files, err = h.buildTapFiles(tapRequest(false))
-	require.NoError(t, err)
 
 	old := string(files["Formula/ns-app/ns-app@1.0.0.rb"])
 	require.NotEmpty(t, old)
@@ -90,10 +83,6 @@ func TestTap_PrivateVersionedFormulas(t *testing.T) {
 	proj := seedPrivateBrewProject(t, d, store, "ns/secretapp", "priv-v1")
 	addRelease(t, d, store, proj, "1.1.0", 1001000, db.LatestBranch, "priv-v11")
 
-	_, err := h.buildTapFiles(tapRequest(true))
-	require.NoError(t, err)
-	h.fillWG.Wait()
-
 	files, err := h.buildTapFiles(tapRequest(true))
 	require.NoError(t, err)
 	body := string(files["Formula/ns-secretapp/ns-secretapp@1.0.0.rb"])
@@ -116,14 +105,62 @@ func TestTap_CaseCollidingVersionsKeepNewest(t *testing.T) {
 	addRelease(t, d, store, proj, "2.0.0-rc", 2000000, db.LatestBranch, "lower")
 	addRelease(t, d, store, proj, "2.0.0-RC", 2000001, db.LatestBranch, "upper")
 
-	_, err := h.buildTapFiles(tapRequest(false))
-	require.NoError(t, err)
-	h.fillWG.Wait()
 	files, err := h.buildTapFiles(tapRequest(false))
 	require.NoError(t, err)
 
 	assert.Contains(t, files, "Formula/app/app@2.0.0-RC.rb")
 	assert.NotContains(t, files, "Formula/app/app@2.0.0-rc.rb")
+}
+
+func withInlineDigestBudget(t *testing.T, n int) {
+	old := tapInlineDigestBudget
+	tapInlineDigestBudget = n
+	t.Cleanup(func() { tapInlineDigestBudget = old })
+}
+
+// Past the inline budget a version is left out and filled in the background.
+// When the filler drains it drops the live lineages, so the next fetch sees
+// the version without waiting out tapCacheTTL.
+func TestTap_VersionsPastBudgetFillInBackground(t *testing.T) {
+	t.Serial()
+	withInlineDigestBudget(t, 0)
+	h, d, store := setupTest(t)
+	proj, _, _ := seedBrewProject(t, d, store, "app", "v1-binary")
+	addRelease(t, d, store, proj, "1.1.0", 1001000, db.LatestBranch, "v11-binary")
+
+	files, err := h.buildTapFiles(tapRequest(false))
+	require.NoError(t, err)
+	assert.Contains(t, files, "Formula/app/app@1.1.0.rb")
+	assert.NotContains(t, files, "Formula/app/app@1.0.0.rb")
+
+	require.Equal(t, http.StatusOK, getTap(t, h, "git.example.com", "info/refs").Code)
+	h.fillWG.Wait()
+	h.tapMu.Lock()
+	live := len(h.tapSnaps)
+	h.tapMu.Unlock()
+	assert.Zero(t, live, "a drained filler must drop the live lineages")
+
+	files, err = h.buildTapFiles(tapRequest(false))
+	require.NoError(t, err)
+	assert.Contains(t, files, "Formula/app/app@1.0.0.rb")
+}
+
+func TestBackfillVersionDigests_FillsHistory(t *testing.T) {
+	t.Serial()
+	withInlineDigestBudget(t, 0)
+	h, d, store := setupTest(t)
+	proj, _, _ := seedBrewProject(t, d, store, "app", "v1-binary")
+	addRelease(t, d, store, proj, "1.1.0", 1001000, db.LatestBranch, "v11-binary")
+	addRelease(t, d, store, proj, "1.2.0", 1002000, db.LatestBranch, "v12-binary")
+
+	require.NoError(t, h.backfillVersionDigests(context.Background()))
+	h.fillWG.Wait()
+
+	files, err := h.buildTapFiles(tapRequest(false))
+	require.NoError(t, err)
+	for _, v := range []string{"1.0.0", "1.1.0", "1.2.0"} {
+		assert.Contains(t, files, "Formula/app/app@"+v+".rb")
+	}
 }
 
 func TestServeFormula_Versioned(t *testing.T) {
@@ -171,9 +208,6 @@ func TestSmartClone_VersionedFormulasAreNestedTrees(t *testing.T) {
 	proj, _, _ := seedBrewProject(t, d, store, "ns/app", "v1-binary")
 	addRelease(t, d, store, proj, "1.1.0", 1001000, db.LatestBranch, "v11-binary")
 	ts := smartTapServer(t, h)
-
-	require.Equal(t, http.StatusOK, mustGet(t, ts.URL+"/brew/tap.git/info/refs"))
-	h.fillWG.Wait()
 
 	dir := filepath.Join(t.TempDir(), "tap")
 	runGit(t, t.TempDir(), "clone", ts.URL+"/brew/tap.git", dir)

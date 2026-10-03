@@ -153,6 +153,7 @@ func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 	files := map[string][]byte{
 		repackage.BrewPrivateStrategyPath: []byte(repackage.BrewPrivateStrategy),
 	}
+	budget := tapInlineDigestBudget
 	for _, project := range visible {
 		release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
 		if err != nil {
@@ -165,7 +166,7 @@ func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		out, err := h.formulaForRelease(r.Context(), project, *release, artifacts, auth.RequestRootURL(r), formulaLatest)
+		out, err := h.formulaForRelease(r.Context(), project, *release, artifacts, auth.RequestRootURL(r), formulaLatest, nil)
 		if err != nil {
 			if errors.Is(err, db.ErrNotFound) {
 				continue
@@ -178,7 +179,7 @@ func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 		}
 		files[repackage.BrewFormulaPath(project.Name)] = data
 
-		if err := h.addVersionedFormulas(r, project, files); err != nil {
+		if err := h.addVersionedFormulas(r, project, files, &budget); err != nil {
 			return nil, err
 		}
 	}
@@ -187,10 +188,10 @@ func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 }
 
 // addVersionedFormulas adds one name@version formula per published release on
-// the project's default branch. A release whose tar.gz digests are not cached
-// yet is left out of this build and queued for the background digest filler,
-// so a tap request never hashes a project's whole history inline.
-func (h *Handler) addVersionedFormulas(r *http.Request, project db.Project, files map[string][]byte) error {
+// the project's default branch. Uncached digests are computed while budget
+// lasts; a release still missing one after that is left out of this build
+// and its digests are filled in the background.
+func (h *Handler) addVersionedFormulas(r *http.Request, project db.Project, files map[string][]byte, budget *int) error {
 	releases, err := h.DB.ListPublishedReleasesOnDefaultBranch(r.Context(), project.ID)
 	if err != nil {
 		return err
@@ -207,8 +208,13 @@ func (h *Handler) addVersionedFormulas(r *http.Request, project db.Project, file
 		if err != nil {
 			return err
 		}
-		out, err := h.formulaForRelease(r.Context(), project, release, artifacts, auth.RequestRootURL(r), formulaVersionedCached)
-		if errors.Is(err, db.ErrNotFound) || errors.Is(err, errDigestPending) {
+		out, err := h.formulaForRelease(r.Context(), project, release, artifacts, auth.RequestRootURL(r), formulaVersionedBudgeted, budget)
+		if errors.Is(err, db.ErrNotFound) {
+			continue
+		}
+		// A pending newer release still claims its path.
+		seen.Add(strings.ToLower(path))
+		if errors.Is(err, errDigestPending) {
 			continue
 		}
 		if err != nil {
@@ -218,7 +224,6 @@ func (h *Handler) addVersionedFormulas(r *http.Request, project db.Project, file
 		if err != nil {
 			return err
 		}
-		seen.Add(strings.ToLower(path))
 		files[path] = data
 	}
 	return nil

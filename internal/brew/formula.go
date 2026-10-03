@@ -23,9 +23,12 @@ const (
 	formulaLatest formulaMode = iota
 	// formulaVersioned is a name@version formula; missing digests are computed.
 	formulaVersioned
-	// formulaVersionedCached is a name@version formula built from cached returns errDigestPending.
-	formulaVersionedCached
+	// formulaVersionedBudgeted is a name@version formula for the tap.
+	formulaVersionedBudgeted
 )
+
+// tapInlineDigestBudget is how many missing version digests one tap build computes inline.
+var tapInlineDigestBudget = 16
 
 var errDigestPending = errors.New("tar.gz digest not cached yet")
 
@@ -39,7 +42,9 @@ func brewVersion(release db.Release) string {
 	return version
 }
 
-func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, release db.Release, artifacts []db.PlatformArtifact, baseURL string, mode formulaMode) (*repackage.Output, error) {
+// formulaForRelease renders one formula. budget is read only in
+// formulaVersionedBudgeted mode.
+func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, release db.Release, artifacts []db.PlatformArtifact, baseURL string, mode formulaMode, budget *int) (*repackage.Output, error) {
 	// A digit-leading project name can never be a loadable Homebrew formula
 	if !repackage.BrewEligibleProjectName(project.Name) {
 		return nil, db.ErrNotFound
@@ -56,6 +61,7 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 
 	resources := make([]repackage.BrewResource, 0, len(artifacts))
 	var kind string
+	pending := false
 
 	sort.SliceStable(artifacts, func(i, j int) bool {
 		if artifacts[i].OS != artifacts[j].OS {
@@ -73,15 +79,19 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 			kind = string(a.Kind)
 		}
 
-		var sum string
-		var err error
-		if mode == formulaVersionedCached {
-			sum, err = h.cachedTarGZSHA256(ctx, a)
-			if errors.Is(err, errDigestPending) {
+		sum, err := h.cachedTarGZSHA256(ctx, a)
+		if errors.Is(err, errDigestPending) {
+			switch {
+			case mode != formulaVersionedBudgeted:
+				sum, err = h.tarGZSHA256(ctx, project, release, a, baseURL)
+			case *budget > 0:
+				*budget--
+				sum, err = h.tarGZSHA256(ctx, project, release, a, baseURL)
+			default:
 				h.queueDigestFill(project, release, a, baseURL)
+				pending = true
+				continue
 			}
-		} else {
-			sum, err = h.tarGZSHA256(ctx, project, release, a, baseURL)
 		}
 		if err != nil {
 			return nil, err
@@ -95,6 +105,9 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 		})
 	}
 
+	if pending {
+		return nil, errDigestPending
+	}
 	if len(resources) == 0 {
 		return nil, db.ErrNotFound
 	}
@@ -196,6 +209,12 @@ func (h *Handler) fillDigests() {
 		if len(h.fillQueue) == 0 {
 			h.fillRunning = false
 			h.fillMu.Unlock()
+			// The live lineages were built without these versions; the next fetch rebuilds instead of waiting out tapCacheTTL.
+			h.tapMu.Lock()
+			for key := range h.tapSnaps {
+				h.dropTapLineageLocked(key)
+			}
+			h.tapMu.Unlock()
 			return
 		}
 		job := h.fillQueue[0]
@@ -211,6 +230,44 @@ func (h *Handler) fillDigests() {
 		h.fillMu.Unlock()
 		h.fillWG.Done()
 	}
+}
+
+// backfillVersionDigests queues every uncached tar.gz digest a versioned
+// formula needs, so the history is filled before taps ask for it.
+func (h *Handler) backfillVersionDigests(ctx context.Context) error {
+	projects, err := h.DB.ListProjects(ctx)
+	if err != nil {
+		return err
+	}
+	for _, project := range projects {
+		if !repackage.BrewEligibleProjectName(project.Name) {
+			continue
+		}
+		releases, err := h.DB.ListPublishedReleasesOnDefaultBranch(ctx, project.ID)
+		if err != nil {
+			return err
+		}
+		for _, release := range releases {
+			artifacts, err := h.DB.ListArtifactsByPlatform(ctx, release.ID)
+			if err != nil {
+				return err
+			}
+			for _, a := range artifacts {
+				if _, _, ok := brewPlatform(a.Artifact); !ok {
+					continue
+				}
+				_, err := h.cachedTarGZSHA256(ctx, a)
+				if errors.Is(err, errDigestPending) {
+					h.queueDigestFill(project, release, a, "")
+					continue
+				}
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func brewPlatform(a db.Artifact) (string, string, bool) {
