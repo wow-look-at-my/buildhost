@@ -20,7 +20,7 @@ Schemes address the same sites, and both resolve their branch through the same h
 
 ### Redirects only ever run toward the shorter URL
 
-The bare project path is canonical. Every other spelling that means the same file redirects INTO it, never the other way round:
+The bare project path is canonical. Every other spelling that means the same file redirects INTO it, not the other way round:
 
 | request | result |
 | --- | --- |
