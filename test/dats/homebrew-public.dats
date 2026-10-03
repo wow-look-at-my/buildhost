@@ -2,7 +2,7 @@
 # leave on disk.
 #
 # The brew commands are not written here: scripts/brew-doc-flows.sh extracts
-# them from README.md and substitutes only the host, and this suite asserts the
+# them from docs/homebrew.md and substitutes only the host, and this suite asserts the
 # served /llms.txt agrees with them.
 #
 # The workflow starts the server and publishes the artifacts; $BUILDHOST_TOKEN,
@@ -38,8 +38,8 @@ setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
 
 tests:
 	# A single flow, documents, empty drift: the blocks the server serves
-	# in /llms.txt must be the blocks README.md documents.
-	- desc: llms.txt documents the same brew flows as README.md
+	# in /llms.txt must be the blocks docs/homebrew.md documents.
+	- desc: llms.txt documents the same brew flows as docs/homebrew.md
 	  cmd: |
 		set -eu
 		. {shared.env}
@@ -51,7 +51,7 @@ tests:
 		test "$(grep -c '^brew trust ' llms-flows.txt)" = "2" || {
 			echo "llms.txt: want exactly 2 brew flow blocks (public, private)" >&2; exit 1; }
 		# llms.txt names the public host, so compare it after the same
-		# substitution the extractor applies to README.md.
+		# substitution the extractor applies to docs/homebrew.md.
 		sed -e 's|https://|http://|g' -e "s|brew\.pazer\.build|$BREW_HOST|g" llms-flows.txt > llms-local.txt
 		"$REPO/scripts/brew-doc-flows.sh" public "$BREW_HOST" > readme-flows.txt
 		"$REPO/scripts/brew-doc-flows.sh" private "$BREW_HOST" >> readme-flows.txt

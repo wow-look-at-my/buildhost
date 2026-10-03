@@ -3,7 +3,7 @@
 # docs say the authenticated tap REPLACES the public one, so the workflow
 # untaps between both.
 #
-# The brew commands come from README.md through scripts/brew-doc-flows.sh; the
+# The brew commands come from docs/homebrew.md through scripts/brew-doc-flows.sh; the
 # public suite is where the docs themselves are checked for agreement.
 #
 # see docs/formats/brew-tap.md

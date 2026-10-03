@@ -37,7 +37,7 @@ jobs:
         env:
           GOPROXY: direct
         with:
-          generate: 365c729892bd
+          generate: 3ed2a7fd952f
           timeout: '25'
       # The step above just ran every generate directive, which is what makes
       - uses: ./.github/actions/buildhost-download
@@ -73,7 +73,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      # PR routes: from the go-build hand-off the build job already produced for
+      # PR routes.
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
           name: go-build-build.broot
@@ -318,7 +318,6 @@ jobs:
           project: dats
       - if: runner.os == 'Linux'
         uses: Homebrew/actions/setup-homebrew@main
-      # Homebrew 6's Linux build sandbox (bubblewrap) needs unprivileged user
       - if: runner.os == 'Linux'
         name: Host prep for Homebrew's build sandbox (bubblewrap + user namespaces)
         run: |
