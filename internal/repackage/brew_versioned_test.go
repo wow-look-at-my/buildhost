@@ -56,8 +56,18 @@ func TestRenderBrewFormula_VersionedIsKegOnly(t *testing.T) {
 	body := renderFormula(t, f)
 
 	assert.Contains(t, body, "class MytoolAT100 < Formula\n")
-	assert.Contains(t, body, "  license \"MIT\"\n\n  keg_only :versioned_formula\n\n  url ")
+	assert.Contains(t, body, "  license \"MIT\"\n\n  keg_only \"it pins one release, and the unversioned formula links the same command\"\n\n  url ")
 	assert.NotContains(t, body, "require_relative")
+}
+
+// Homebrew auto-links a keg_only :versioned_formula keg when no sibling is
+// installed, and in a third-party tap it never finds the siblings to unlink
+// by short ones). The unversioned formula's link then conflicts. A string
+// reason is never auto-linked.
+func TestRenderBrewFormula_VersionedIsNeverAutoLinked(t *testing.T) {
+	f := baseFormula(BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example.com/mytool", SHA256: "abc"})
+	f.Versioned = true
+	assert.NotContains(t, renderFormula(t, f), ":versioned_formula")
 }
 
 func TestRenderBrewFormula_UnversionedIsNotKegOnly(t *testing.T) {

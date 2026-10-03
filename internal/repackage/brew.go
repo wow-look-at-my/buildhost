@@ -45,7 +45,7 @@ var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }
   license "{{ .License }}"
   {{- if .Versioned }}
 
-  keg_only :versioned_formula
+  keg_only "it pins one release, and the unversioned formula links the same command"
   {{- end }}
 
   url "{{ .Canonical.URL }}"{{ if .Private }}, using: BuildhostCurlDownloadStrategy{{ end }}
@@ -197,7 +197,7 @@ type BrewFormula struct {
 	Kind        string
 	// Private marks a formula for a private project: it requires the tap's
 	Private bool
-	// Homebrew requires of a name@version formula that shares its binary name with the unversioned one.
+	// Versioned renders the keg-only formula at BrewVersionedFormulaPath.
 	Versioned bool
 	Service   bool
 	Resources []BrewResource

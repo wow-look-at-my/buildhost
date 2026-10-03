@@ -59,7 +59,7 @@ The tap carries one versioned formula per published release on the project's def
 brew install pazer/build/go-toolchain@1.0.0
 ```
 
-A versioned formula is keg-only, `keg_only :versioned_formula` as homebrew-core declares it, so it installs beside the unversioned formula without a link conflict. Run it from `$(brew --prefix pazer/build/go-toolchain@1.0.0)/bin/go-toolchain`. To put it on PATH instead, run `brew unlink go-toolchain` when the unversioned formula is installed, then `brew link --force go-toolchain@1.0.0`.
+A versioned formula is keg-only and never linked automatically, so it installs beside the unversioned formula without a link conflict, in either order. Run it from `$(brew --prefix pazer/build/go-toolchain@1.0.0)/bin/go-toolchain`. To put it on PATH instead, run `brew unlink go-toolchain` when the unversioned formula is installed, then `brew link --force go-toolchain@1.0.0`.
 
 A private project's versions come through the authenticated tap, with `HOMEBREW_BUILDHOST_TOKEN` set as above. `myrepo/myapp` 0.9.0 installs as `brew install pazer/build/myrepo-myapp@0.9.0`.
 

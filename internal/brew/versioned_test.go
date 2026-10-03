@@ -56,7 +56,7 @@ func TestTap_VersionedFormulasPerDefaultBranchRelease(t *testing.T) {
 	require.NotEmpty(t, old)
 	assert.Contains(t, old, "class NsAppAT100 < Formula\n")
 	assert.Contains(t, old, `version "1.0.0"`)
-	assert.Contains(t, old, "keg_only :versioned_formula")
+	assert.Contains(t, old, `keg_only "it pins one release`)
 	assert.Contains(t, old, "v=1.0.0")
 	assert.Contains(t, old, `bin.install "app"`)
 
@@ -183,7 +183,7 @@ func TestServeFormula_Versioned(t *testing.T) {
 	rec := serve("ns-app@1.0.0.rb")
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), "class NsAppAT100 < Formula")
-	assert.Contains(t, rec.Body.String(), "keg_only :versioned_formula")
+	assert.Contains(t, rec.Body.String(), `keg_only "it pins one release`)
 	assert.Equal(t, `inline; filename="ns-app@1.0.0.rb"`, rec.Header().Get("Content-Disposition"))
 
 	assert.Equal(t, http.StatusNotFound, serve("ns-app@3.0.0.rb").Code)
