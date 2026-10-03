@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	registryURL = "https://mirror.gcr.io"
+	registryURL = "https://registry-1.docker.io"
 	tokenURL    = "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/busybox:pull"
 	imageRepo   = "library/busybox"
 	maxManifest = 1 << 20
