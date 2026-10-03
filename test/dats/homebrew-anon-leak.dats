@@ -42,6 +42,9 @@ tests:
 		if grep -rl --exclude-dir=.git 'myrepo' "$TAP"; then
 			echo "the anonymous tap leaks the private project name" >&2; exit 1
 		fi
+		if find "$TAP" -path "$TAP/.git" -prune -o -name '*myrepo*' -print | grep .; then
+			echo "the anonymous tap leaks the private project name in a path" >&2; exit 1
+		fi
 		echo "no-leak"
 	  outputs:
 		stdout:
@@ -69,6 +72,7 @@ tests:
 		check /myrepo/myapp 401
 		check /Formula/myrepo/myapp.rb 401
 		check /Formula/myrepo-myapp.rb 404
+		check /Formula/myrepo-myapp@0.9.0.rb 404
 		check /Formula/7zip.rb 404
 		echo "clean-errors"
 	  outputs:

@@ -26,6 +26,28 @@ A private formula calls `require_relative` on the tap's `lib/buildhost_private_d
 
 A credentialed tap or formula response carries `Cache-Control: private, no-store` and `Vary: Authorization`. The CDN can therefore never serve one scope's tap to another.
 
+## Versioned formulas
+
+The tap carries `Formula/<formula>/<formula>@<version>.rb` for every published release on the project's default branch, the same set apex `latest` picks from. `brew install pazer/build/<formula>@<version>` installs that release. `brew.{domain}/Formula/<formula>@<version>.rb` serves one directly. The version is `release.Version` without a leading `v`, or `version_num` when the version is empty.
+
+Each project's versions sit in their own directory. Homebrew finds a tap formula anywhere under `Formula/` by basename, because `Tap#formula_files` globs `Formula/**/*.rb`. A publish then rewrites only that project's tree object. One flat tree will hold every version of every project.
+
+A versioned formula is keg-only with a string reason, never `keg_only :versioned_formula`. It installs beside the unversioned formula, which ships the same binary name, without a link conflict in either order.
+
+Homebrew 7 auto-links a `:versioned_formula` keg when no sibling version is installed (`FormulaInstaller#auto_link_versioned_keg_only?`). It relies on finding the siblings to unlink them when another version links. In a third-party tap it never finds them: `Tap#prefix_to_versioned_formulae_names` is keyed by full `user/repo/name` names, and `Formula#versioned_formulae_names` looks up the short name. Installing a pin and then the unversioned formula therefore failed with "Can not symlink bin/<name>". A string reason is never auto-linked.
+
+The class name is `repackage.BrewVersionedClassName`, a port of Homebrew's `Formulary.class_s`. Homebrew turns `@<digit>` into `AT`, so `ns-app@1.2.3` is `NsAppAT123`. A version that does not start with a digit keeps its `@` and cannot be a Ruby constant. As a result, it gets no versioned formula. Neither does one whose class name comes out with any other non-constant character, such as `1.0.0--x`.
+
+A private versioned formula sits one level deeper than the unversioned one, so it requires `../../lib/buildhost_private_download`.
+
+A couple of versions that differ only by case will collide in a clone on a case-insensitive filesystem. The newest one keeps the path.
+
+### Digest cost
+
+A versioned formula needs the tar.gz digest of every artifact of every default-branch release, and the tap builds under `tapMu`. One build computes at most `tapInlineDigestBudget` missing digests inline. That covers a publish. As a result, a new release is in the next tap. A release still missing a digest after that is left out of the build and queued on the handler's one background filler (`queueDigestFill`). When the queue drains, the filler drops every live lineage, so the next fetch rebuilds rather than waiting out `tapCacheTTL`.
+
+`buildhost serve` queues every missing version digest at start (`brew.BackfillVersionDigests`). That covers the first deploy over an existing history and every `TransformVersion` bump, which invalidates all cached digests at once.
+
 ## Formula codegen must always emit valid, loadable Ruby
 
 The class name comes from `repackage.BrewClassName`. It mirrors Homebrew's own filename-to-class derivation in `Formulary.class_s`. There `-`, `_` and `.` separate, and buildhost's folded `/` separates too. The next character is upcased, so `go1.2.3` becomes `Go123`.

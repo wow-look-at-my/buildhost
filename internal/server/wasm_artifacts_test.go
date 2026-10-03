@@ -80,8 +80,8 @@ func TestWasmArtifact_UploadDownloadRoundTrip(t *testing.T) {
 	resp.Body.Close()
 }
 
-// Deprecated legacy shim: the currently-released go-toolchain autorelease
-// derives upload parameters from GOOS_GOARCH filenames (name_js_wasm /
+// Deprecated legacy shim: the-released go-toolchain autorelease derives
+// upload parameters from GOOS_GOARCH filenames (name_js_wasm /
 // name_wasip1_wasm), so it uploads with os=js/arch=wasm. That pair must fold
 // to the canonical os=wasm form at every ingestion point -- upload, dl, and
 // static canonicalization -- and "js" must never surface as an os in stored

@@ -1,4 +1,4 @@
-# The SHIPPED binary must render the route table docs/routes.txt records. The
+# The SHIPPED binary must render the route table docs/routes.golden records. The
 # unit test in internal/routescheck renders in process, which cannot see a
 # binary that fails to enumerate what it serves.
 #
@@ -21,14 +21,14 @@ tests:
 		stdout:
 			- "routes-rendered"
 
-	- desc: docs/routes.txt matches what the built binary renders
+	- desc: docs/routes.golden matches what the built binary renders
 	  cmd: |
 		set -eu
 		out="$(mktemp)"
 		"$BUILDHOST_BIN" routes > "$out"
-		if ! diff -u --label "docs/routes.txt (committed)" --label "buildhost routes (built binary)" docs/routes.txt "$out"; then
-			echo "docs/routes.txt is stale. Regenerate it and commit the result:" >&2
-			echo "    go-toolchain && ./build/buildhost routes > docs/routes.txt" >&2
+		if ! diff -u --label "docs/routes.golden (committed)" --label "buildhost routes (built binary)" docs/routes.golden "$out"; then
+			echo "docs/routes.golden is stale. Regenerate it and commit the result:" >&2
+			echo "    go-toolchain && ./build/buildhost routes > docs/routes.golden" >&2
 			echo "  (or, without a built binary:  UPDATE_ROUTES_GOLDEN=1 go-toolchain)" >&2
 			exit 1
 		fi

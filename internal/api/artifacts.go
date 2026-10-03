@@ -174,7 +174,7 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		}
 		oses, arches = []db.OS{db.OS(rt.os)}, []db.Arch{db.Arch(rt.arch)}
 	} else if o, a, ok := db.NormalizeLegacyWasmPair(rt.os, rt.arch); ok {
-		// Deprecated legacy shim: currently-released go-toolchain autoreleases
+		// Deprecated legacy shim:-released go-toolchain autoreleases
 		oses, arches = []db.OS{o}, []db.Arch{a}
 	} else {
 		var err error
@@ -336,10 +336,10 @@ func (c *headCapture) Write(p []byte) (int, error) {
 
 // resolveHashRef authorizes and resolves a hash-reference upload: the
 // referenced blob must already belong to this project (any release -- which
-// covers "the previous slot of this same release" as well as an unchanged
-// binary from an earlier release) and must still exist in storage. It returns
-// the storage key, the blob's decompressed size for the artifact row, and its
-// leading bytes for the executable-format check; on failure it writes the error
+// covers "the slot of this same release" as well as an unchanged binary from
+// an earlier release) and must still exist in storage. It returns the storage
+// key, the blob's decompressed size for the artifact row, and its leading
+// bytes for the executable-format check; on failure it writes the error
 // response and returns ok=false.
 func (h *Handler) resolveHashRef(ctx context.Context, w http.ResponseWriter, projectID int64, refHex string) (string, int64, []byte, bool) {
 	if !validSHA256Hex.MatchString(refHex) {
