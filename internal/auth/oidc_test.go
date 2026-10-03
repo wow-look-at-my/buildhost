@@ -210,7 +210,6 @@ func TestVerifyToken_RejectsUnsupportedAlgorithm(t *testing.T) {
 		SubjectPattern: "*",
 		Scopes:         "read,write",
 	}}
-	// HS256 doesn't produce valid JWTs that ParseUnverified can handle the
 	_, _, err := v.VerifyToken(context.Background(), token, policies)
 	require.Error(t, err)
 }
@@ -315,7 +314,8 @@ func TestRepoProjectName(t *testing.T) {
 
 func TestOIDCClaimsProjectName_DotRepository(t *testing.T) {
 	t.Serial()
-	claims := &oidcClaims{Repository: "myorg/.github", Subject: "repo:myorg/.github:ref:refs/heads/master"}
+	claims := &oidcClaims{Repository: "myorg/.github"}
+	claims.Subject = "repo:myorg/.github:ref:refs/heads/master"
 	assert.Equal(t, "github", claims.projectName())
 }
 
