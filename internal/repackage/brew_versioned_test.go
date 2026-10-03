@@ -43,8 +43,7 @@ func TestBrewVersionedClassName_RejectsUnloadable(t *testing.T) {
 	}
 }
 
-func TestBrewVersionedFormulaPath(t *testing.T) {
-	assert.Equal(t, "Formula/ns-app/ns-app@1.2.3.rb", BrewVersionedFormulaPath("ns/app", "1.2.3"))
+func TestBrewVersionedFormulaName(t *testing.T) {
 	assert.Equal(t, "ns-app@1.2.3", BrewVersionedFormulaName("ns/app", "1.2.3"))
 	assert.Equal(t, "Formula/ns-app.rb", BrewFormulaPath("ns/app"))
 }
@@ -76,13 +75,12 @@ func TestRenderBrewFormula_UnversionedIsNotKegOnly(t *testing.T) {
 	assert.Contains(t, body, "  license \"MIT\"\n\n  url ")
 }
 
-// A versioned formula sits one directory deeper (Formula/<name>/), so its
-// require_relative climbs a couple of levels to reach the tap's lib/.
-func TestRenderBrewFormula_PrivateRequirePathFollowsDepth(t *testing.T) {
+// Every formula sits directly under Formula/, so the require climbs one level.
+func TestRenderBrewFormula_PrivateRequirePath(t *testing.T) {
 	f := baseFormula(BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example.com/mytool", SHA256: "abc"})
 	f.Private = true
 	assert.True(t, strings.HasPrefix(renderFormula(t, f), `require_relative "../lib/buildhost_private_download"`+"\n"))
 
 	f.Versioned = true
-	assert.True(t, strings.HasPrefix(renderFormula(t, f), `require_relative "../../lib/buildhost_private_download"`+"\n"))
+	assert.True(t, strings.HasPrefix(renderFormula(t, f), `require_relative "../lib/buildhost_private_download"`+"\n"))
 }

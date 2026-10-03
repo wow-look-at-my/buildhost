@@ -111,11 +111,6 @@ var serveCmd = &cobra.Command{
 		}
 
 		srv := server.New(cfg, database, store)
-		go func() {
-			if err := brew.BackfillVersionDigests(ctx); err != nil {
-				slog.Error("brew: versioned formula digest backfill incomplete", "err", err)
-			}
-		}()
 		slog.Info("starting server", "addr", cfg.ListenAddr)
 
 		go func() {

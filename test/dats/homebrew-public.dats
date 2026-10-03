@@ -27,12 +27,9 @@ shared:
 			# runs tests concurrently, and brew installs at the same time
 			# contend for the same prefix.
 			brew install pazer/build/ape-fixture
-			"$REPO/scripts/brew-doc-flows.sh" version "$BREW_HOST" > "$WORK/version.sh"
-			echo "--- documented version flow, executed verbatim ---"
-			cat "$WORK/version.sh"
-			bash -euo pipefail "$WORK/version.sh"
-			brew install pazer/build/versioned-fixture@1.0.0 pazer/build/versioned-fixture
+			brew install pazer/build/versioned-fixture
 			echo "REPO='$REPO'" > "$ENV_FILE"
+			echo "TAP='$(brew --repository pazer/build)'" >> "$ENV_FILE"
 
 setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
 
@@ -111,29 +108,27 @@ tests:
 	# The same guarantees against the APE-SHAPED fixture, so the invariant
 	# holds on macOS too (where go-toolchain's own artifact is a Mach-O brew
 	# recognizes) and for anyone shipping a Cosmopolitan binary.
-	- desc: the documented versioned install is keg-only and runs
-	  cmd: |
-		set -euo pipefail
-		bin="$(brew --prefix pazer/build/go-toolchain@1.0.0)/bin/go-toolchain"
-		test -x "$bin" || { echo "go-toolchain@1.0.0 did not install $bin" >&2; exit 1; }
-		brew info --json=v2 pazer/build/go-toolchain@1.0.0 | grep -q '"keg_only": *true' \
-			|| { echo "go-toolchain@1.0.0 must be keg-only" >&2; exit 1; }
-		"$bin" version
-	  outputs:
-		stdout:
-			- "Version:"
-
-	- desc: a pinned version installs that release's binary
-	  cmd: '"$(brew --prefix pazer/build/versioned-fixture@1.0.0)/bin/versioned-fixture"'
-	  outputs:
-		stdout:
-			- "versioned-fixture-1.0.0"
-
-	- desc: the unversioned formula beside the pin is the latest release
+	- desc: a project with several releases installs its latest release
 	  cmd: versioned-fixture
 	  outputs:
 		stdout:
 			- "versioned-fixture-2.0.0"
+
+	# brew lists every formula file in a tap as a formula of its own, so a
+	# file per release floods `brew update` with "New Formulae".
+	- desc: the tap holds one formula per project and no versions
+	  cmd: |
+		set -eu
+		. {shared.env}
+		(cd "$TAP/Formula" && find . -name '*.rb' | sed 's|^\./||' | sort) > formulas.txt
+		grep -qx 'versioned-fixture.rb' formulas.txt
+		if grep -q '[@/]' formulas.txt; then
+			echo "versioned formulas in the tap:" >&2; cat formulas.txt >&2; exit 1
+		fi
+		echo "one-per-project"
+	  outputs:
+		stdout:
+			- "one-per-project"
 
 	- desc: an APE-shaped formula installs, keeps its mode, and runs
 	  cmd: |

@@ -37,17 +37,9 @@ brew install pazer/build/myrepo-myapp
 
 ## Specific versions
 
-The tap carries one versioned formula per published release on the project's default branch, named `<formula>@<version>`. The version is the release version without a leading `v`. Install one through the tap you already added:
+The tap carries one formula per project, at the latest release on the default branch. Homebrew lists every formula file in a tap as a formula of its own. As a result, the tap holds no file per release.
 
-```bash
-brew install pazer/build/go-toolchain@1.0.0
-```
-
-A versioned formula is keg-only and never linked automatically, so it installs beside the unversioned formula without a link conflict, in either order. Run it from `$(brew --prefix pazer/build/go-toolchain@1.0.0)/bin/go-toolchain`. To put it on PATH instead, run `brew unlink go-toolchain` when the unversioned formula is installed, then `brew link --force go-toolchain@1.0.0`.
-
-A private project's versions come through the authenticated tap, with `HOMEBREW_BUILDHOST_TOKEN` set as above. `myrepo/myapp` 0.9.0 installs as `brew install pazer/build/myrepo-myapp@0.9.0`.
-
-A version that does not start with a digit has no versioned formula. Homebrew turns `@<digit>` into `AT` in the Ruby class name, and any other `@` leaves the class name invalid.
+A keg-only formula for one release is served at `https://brew.pazer.build/Formula/<formula>@<version>.rb`, without a leading `v` on the version.
 
 ## Background services (create_service)
 

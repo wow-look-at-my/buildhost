@@ -197,7 +197,7 @@ type BrewFormula struct {
 	Kind        string
 	// Private marks a formula for a private project: it requires the tap's
 	Private bool
-	// Versioned renders the keg-only formula at BrewVersionedFormulaPath.
+	// Versioned renders the keg-only name@version formula.
 	Versioned bool
 	Service   bool
 	Resources []BrewResource
@@ -217,7 +217,7 @@ func RenderBrewFormula(f BrewFormula) (*Output, error) {
 		License:         sanitizeBrewString(f.License),
 		Kind:            f.Kind,
 		Private:         f.Private,
-		StrategyRequire: brewStrategyRequire(f.Versioned),
+		StrategyRequire: brewStrategyRequire(),
 		Versioned:       f.Versioned,
 		// The service block references opt_bin/<InstallName>, which exists
 		Service:     f.Service && f.Kind == "binary",
@@ -333,18 +333,8 @@ func BrewVersionedFormulaName(project, version string) string {
 	return BrewFormulaName(project) + "@" + version
 }
 
-// BrewVersionedFormulaPath shards a project's versioned formulas into their
-// own directory, so a publish rewrites only that project's tree object.
-func BrewVersionedFormulaPath(project, version string) string {
-	return "Formula/" + BrewFormulaName(project) + "/" + BrewVersionedFormulaName(project, version) + ".rb"
-}
-
-func brewStrategyRequire(versioned bool) string {
-	up := "../"
-	if versioned {
-		up = "../../"
-	}
-	return up + strings.TrimSuffix(BrewPrivateStrategyPath, ".rb")
+func brewStrategyRequire() string {
+	return "../" + strings.TrimSuffix(BrewPrivateStrategyPath, ".rb")
 }
 
 var brewVersionChars = regexp.MustCompile(`^[0-9][0-9A-Za-z.+_-]*$`)
