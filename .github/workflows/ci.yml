@@ -456,7 +456,7 @@ jobs:
             --name myrepo/myapp \
             --versioning semver \
             --private
-          # 0.9.0 is the pinned private version homebrew-private.dats installs; 1.0.0 is the latest.
+          # Two releases: the tap must serve only the latest, 1.0.0.
           for spec in 0.9.0:buildhost-homebrew-private-0.9.0 1.0.0:buildhost-homebrew-private-ok; do
             version="${spec%%:*}"
             mkdir -p "${{ runner.temp }}/myapp-$version"

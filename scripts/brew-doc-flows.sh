@@ -2,16 +2,15 @@
 # Print the documented Homebrew flow, localized for a test instance.
 set -euo pipefail
 
-leg="${1:?usage: brew-doc-flows.sh public|private|version <host:port>}"
-local_host="${2:?usage: brew-doc-flows.sh public|private|version <host:port>}"
+leg="${1:?usage: brew-doc-flows.sh public|private <host:port>}"
+local_host="${2:?usage: brew-doc-flows.sh public|private <host:port>}"
 doc_host="brew.pazer.build"
 doc="$(dirname "$0")/../docs/homebrew.md"
 
 case "$leg" in
 	public) section='^# Homebrew$'; stop='^#{1,3} ' ;;
 	private) section='^## Private projects$'; stop='^#{1,3} ' ;;
-	version) section='^## Specific versions$'; stop='^#{1,3} ' ;;
-	*) echo "unknown leg $leg: want public, private or version" >&2; exit 1 ;;
+	*) echo "unknown leg $leg: want public or private" >&2; exit 1 ;;
 esac
 
 block="$(awk -v section="$section" -v stop="$stop" '
