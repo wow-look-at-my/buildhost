@@ -172,7 +172,7 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A concrete artifact's bytes were just served -- record who fetched what.
+	// A concrete artifact's bytes were served -- record who fetched what.
 	if sctx.Artifact.ID != 0 {
 		h.recordDownload(r, sctx.Artifact.ID, fmtStr)
 	}

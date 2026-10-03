@@ -115,16 +115,13 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 // operatorView reports whether this caller may see the proxy's own
-// configuration -- the private prefixes, the credential state, the readiness
-// module. Each of those names private repositories, so it takes the same
+// configuration -- the private prefixes, the credential state.
 func (s *Service) operatorView(r *http.Request) bool {
 	return globalReader(r)
 }
 
 // globalReader reports whether the caller holds a read or write token that is
-// not scoped to a project. That includes an OIDC identity from any repository in
-// an allowed org, so every org workflow can fetch the org's private modules. A
-// signed-in GitHub user does not count: any GitHub account can sign in.
+// not scoped to a project.
 func globalReader(r *http.Request) bool {
 	t := auth.TokenFrom(r.Context())
 	if t == nil || t.ProjectID != nil {
@@ -133,9 +130,7 @@ func globalReader(r *http.Request) bool {
 	return t.HasScope("read") || t.HasScope("write")
 }
 
-// cacheControl is the Cache-Control for a successful immutable response. A
-// private module's content was served to an authenticated caller, so no shared
-// cache (the CDN in front of this host) may store it.
+// cacheControl is the Cache-Control for a successful immutable response.
 func (s *Service) cacheControl(modPath string) string {
 	if s.isPrivate(modPath) {
 		return "private, max-age=31536000, immutable"
@@ -289,7 +284,7 @@ func (s *Service) ok(w http.ResponseWriter, r *http.Request, req request, source
 	s.record(req, source, outcome, http.StatusOK, "", started)
 }
 
-// fail answers a failed fetch. This is the single exit for every error.
+// fail answers a failed fetch. This is the exit for every error.
 func (s *Service) fail(w http.ResponseWriter, r *http.Request, req request, err error, started time.Time) {
 	e := asError(req.Module, req.Version, err)
 	logFailure(e)

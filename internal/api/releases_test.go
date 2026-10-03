@@ -109,7 +109,7 @@ func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "v1", updated.DefaultBranch, "publish must record the repo's default branch")
 
-	// "latest" now resolves to the v1 release; under the old hardcoded "master"
+	// "latest" now resolves to the v1 release; under the hardcoded "master"
 	latest, err := h.DB.GetLatestRelease(ctx, proj.ID)
 	require.NoError(t, err)
 	assert.Equal(t, rel.Version, latest.Version)
@@ -531,7 +531,7 @@ func TestCreateRelease_Draft(t *testing.T) {
 
 	proj := &db.Project{Name: "draftproj", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	// The apex "latest" tracks the project's default branch; use it so the
+	// The apex "latest" tracks the project's default branch.
 	branch := db.LatestBranch
 
 	create := func(body string) db.Release {
@@ -555,7 +555,7 @@ func TestCreateRelease_Draft(t *testing.T) {
 	assert.True(t, draft.Draft)
 	assert.False(t, draft.Published)
 
-	// The apex "latest" still resolves to the published release, not the
+	// The apex "latest" still resolves to the published release.
 	latest, err := h.DB.GetLatestRelease(ctx, proj.ID)
 	require.NoError(t, err)
 	assert.Equal(t, published.Version, latest.Version, "a draft must never become latest")
