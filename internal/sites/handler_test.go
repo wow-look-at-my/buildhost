@@ -92,7 +92,7 @@ func TestUpload_PublicSiteFlag(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, site.IsPublic, "X-Public-Site: true should persist as public")
 
-	// The Serve route reports this branch as publicly readable; write and the
+	// The Serve route reports this branch as publicly readable.
 	assert.True(t, route{project: "priv", branch: "pr-1"}.AllowsPublicRead(context.Background(), d, proj))
 	assert.False(t, route{project: "priv", branch: "pr-1", write: true}.AllowsPublicRead(context.Background(), d, proj))
 	assert.False(t, route{project: "priv", branch: ""}.AllowsPublicRead(context.Background(), d, proj))
@@ -376,7 +376,7 @@ func TestUpload_ResponseCarriesCanonicalURL(t *testing.T) {
 			URL string `json:"url"`
 		}
 		require.NoError(t, json.NewDecoder(rec.Body).Decode(&got))
-		// The embedded row's fields stay top-level, so an older client that
+		// The embedded row's fields stay top-level.
 		assert.Equal(t, branch, got.Branch)
 		return got.URL
 	}

@@ -169,7 +169,6 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if project.IsPrivate {
-		// The caller authenticated to reach this handler (the route is
 		w.Header().Set("Cache-Control", "private, no-store")
 		signed, _ := static.SignedURL(auth.DeriveServiceURL(r, "static"), p, time.Now().Add(privateRedirectTTL))
 		http.Redirect(w, r, signed, http.StatusFound)

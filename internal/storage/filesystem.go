@@ -118,8 +118,7 @@ func (fs *Filesystem) Put(_ context.Context, r io.Reader) (string, int64, error)
 }
 
 // PutUncompressed stores a blob without the storage layer's zstd wrapper, so
-// it can be read at an offset later (see OpenReaderAt). The key is unchanged --
-// it is the sha256 of the same bytes -- so a blob already stored compressed
+// it can be read at an offset later (see OpenReaderAt).
 func (fs *Filesystem) PutUncompressed(ctx context.Context, r io.Reader) (string, int64, error) {
 	if !fs.compress {
 		return fs.Put(ctx, r) // already the uncompressed path
@@ -159,7 +158,7 @@ func (fs *Filesystem) OpenReaderAt(_ context.Context, key string) (ReaderAtClose
 	if err != nil {
 		return nil, 0, fmt.Errorf("mmap blob: %w", err)
 	}
-	// Random access, so the kernel must not drop pages behind a cursor that
+	// Random access.
 	_ = m.Advise(mmap.AdvRandom)
 
 	if len(m) >= 12 && bytes.Equal(m[:4], compressedMagic[:]) {
@@ -302,7 +301,6 @@ func (fs *Filesystem) GetCompressed(_ context.Context, key string) (*CompressedB
 	}, nil
 }
 
-// mmapByteReadCloser serves a byte slice that lives inside a memory mapping and
 type mmapByteReadCloser struct {
 	*bytes.Reader
 	m mmap.MMap

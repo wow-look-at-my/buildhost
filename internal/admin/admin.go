@@ -18,8 +18,6 @@ import (
 	"github.com/wow-look-at-my/router"
 )
 
-// The dashboard's JS is GENERATED from internal/admin/frontend/src.
-//
 //go:generate ../../scripts/build-admin-frontend.sh
 //go:embed static/index.html static/style.css static/app.js static/copy.js
 var content embed.FS

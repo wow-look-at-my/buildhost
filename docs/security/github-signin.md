@@ -1,6 +1,6 @@
 # Browser sign-in with GitHub (per-repo authorization)
 
-Extracted verbatim from CLAUDE.md. Paragraph breaks go at the existing topic boundaries. No wording changed. CLAUDE.md carried this bullet TWICE, in two versions that had drifted apart. The older copy predated the dead-token re-auth path. The newer, superset version is what follows. The stale copy is dropped.
+Extracted verbatim from CLAUDE.md. Paragraph breaks go at the existing topic boundaries. No wording changed. CLAUDE.md carried this bullet TWICE, in a couple of versions that had drifted apart. The older copy predated the dead-token re-auth path. The newer, superset version is what follows. The stale copy is dropped.
 
 ## The flow
 
@@ -20,9 +20,9 @@ It mints a buildhost-signed `bh_session` cookie that carries **login and the Git
 
 Each project records the GitHub `owner/repo` it was provisioned from. The field is `projects.github_repo`, set from the OIDC publish subject `repo:OWNER/NAME:...` through `WithOIDCRepo` on create. Each write re-syncs it. `Authenticate` verifies `bh_session` and puts `WithUser(login)` and `WithGitHubToken` on the request. `requireProject` then calls `userCanReadProject`. That grants read only when the signed-in user can reach the repo. The probe is `GET /repos/{owner}/{repo}` with the user's token, and access means a `200` (`canAccessRepo`, cached per login, repo and token-fingerprint for 5m).
 
-`checkRepoAccess` classifies the probe three ways. A `200` is access. A `404` is a definite no, because GitHub 404s a repo the token cannot see. A `401` means **the session's embedded token itself is dead**, revoked or expired mid-session. On this fixed-host authenticated GET, rate limiting answers 403 or 429 and never 401. A 401 is therefore unambiguous.
+`checkRepoAccess` classifies the probe multiple ways. A `200` is access. A `404` is a definite no, because GitHub 404s a repo the token cannot see. A `401` means **the session's embedded token itself is dead**, revoked or expired mid-session. On this fixed-host authenticated GET, rate limiting answers 403 or 429 and never 401. A 401 is therefore unambiguous.
 
-The cache stores **only authoritative answers**: 200, 404, and the token-dead 401. A dead token never comes back, and the fingerprint key re-checks a fresh sign-in. A *transient* failure therefore denies the one request and is not cached. A network error, a 5xx, a 429 and a rate-limit 403 are all transient. Caching one pins an authorized owner to "Access denied" for a whole TTL over a momentary GitHub hiccup. The token fingerprint in the key does the matching job for a re-login. A broader-scoped token is never shadowed by a negative answer cached against the previous token. Every probe outcome other than 200 and 404 logs at WARN with the repo and the status.
+The cache stores **only authoritative answers**: 200, 404, and the token-dead 401. A dead token never comes back, and the fingerprint key re-checks a fresh sign-in. A *transient* failure therefore denies the request and is not cached. A network error, a 5xx, a 429 and a rate-limit 403 are all transient. Caching one pins an authorized owner to "Access denied" for a whole TTL over a momentary GitHub hiccup. The token fingerprint in the key does the matching job for a re-login. A broader-scoped token is never shadowed by a negative answer cached against the token. Every probe outcome other than 200 and logs at WARN with the repo and the status.
 
 This applies to ReadAccess and HiddenReadAccess. It never grants write, which still needs a `write` token. A project with no recorded `github_repo` cannot be opened through GitHub login at all. A token is the only way in.
 
@@ -38,13 +38,13 @@ The access probe answers the token-dead `401`. The ReadAccess deny path then mar
 
 ## Setup
 
-Create a GitHub OAuth App with the callback `https://{apex}/__signin/callback`. Set `BUILDHOST_GITHUB_CLIENT_ID` and `BUILDHOST_GITHUB_CLIENT_SECRET`. There is a trade-off. The `repo` scope is broad, and the user's token lives in the signed session cookie. A GitHub App with a fine-grained read-only repo permission narrows that, and it is future work.
+Create a GitHub OAuth App with the callback `https://{apex}/__signin/callback`. Set `BUILDHOST_GITHUB_CLIENT_ID` and `BUILDHOST_GITHUB_CLIENT_SECRET`. There is a trade-off. The `repo` scope is broad, and the user's token lives in the signed session cookie. A GitHub App with a fine-grained read-only repo permission narrows that. It is future work.
 
 ## Cross-domain sign-in handoff (site domain)
 
 `myapp.<site-domain>` is a different REGISTRABLE domain from the primary apex. The `Domain=<apex>` `bh_session` cookie therefore cannot cross to it. The single OAuth App's callback also lives on the primary apex only. An unauthenticated site-domain browser gets a 303 to `https://<BUILDHOST_PRIMARY_DOMAIN>/__signin?next=<original URL>`. With no primary domain configured it gets the plain JSON 401 instead, never a redirect to an apex that cannot complete OAuth.
 
-Sign-in there is a full OAuth round trip. It completes at once when the request already carries a valid primary-apex session. The server then parks the minted session VALUE under a random one-time nonce (`ssoHandoffs`, in memory, TTL-swept). A restart voids the in-flight codes harmlessly. The browser gets a 303 to `https://<next-host>/__sso?code=<signed nonce+next>&next=<original>`. The code is HMAC-signed with the shared `download-signing.key`, purpose-separated. It expires in 60s or less. A redemption deletes it, so it is single-use. It also BINDS the destination, and a mismatched `next` query parameter is rejected. **The session token itself never appears in any URL.** The code is worthless without the server-side entry. Tests assert that: no token material reaches any Location header.
+Sign-in there is a full OAuth round trip. It completes at once when the request already carries a valid primary-apex session. The server then parks the minted session VALUE under a random one-time nonce (`ssoHandoffs`, in memory, TTL-swept). A restart voids the in-flight codes harmlessly. The browser gets a 303 to `https://<next-host>/__sso?code=<signed nonce+next>&next=<original>`. The code is HMAC-signed with the shared `download-signing.key`, purpose-separated. It expires in 60s or less. A redemption deletes it. As a result, it is single-use. It also BINDS the destination, and a mismatched `next` query parameter is rejected. **The session token itself never appears in any URL.** The code is worthless without the server-side entry. Tests assert that: no token material reaches any Location header.
 
 `/__sso` answers only on the site domain. Its own Host gate 404s elsewhere, and the host-agnostic registration exists only for the bare site apex fallthrough. It sets the parked session as a `Domain=<site-domain>` cookie through the same `setSessionCookie` (`apexHost` classifies a site host to the site apex). It then 303s to the destination. Every handoff response is `Cache-Control: no-store`. Every failure is a 4xx page with a restart link at the primary apex (`signinFailedPage`, shared with the callback), and never a 5xx.
 

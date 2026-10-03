@@ -189,7 +189,7 @@ func TestExistingAndMissingPrivateModulesAreIndistinguishable(t *testing.T) {
 
 	assert.Equal(t, real.Code, fictional.Code)
 	assert.Equal(t, real.Header().Get("Content-Type"), fictional.Header().Get("Content-Type"))
-	// Only the echoed module path may differ, so compare with it removed.
+	// Only the echoed module path may differ, so compare with.
 	assert.Equal(t,
 		strings.ReplaceAll(real.Body.String(), privateOrg+"/tml", "M"),
 		strings.ReplaceAll(fictional.Body.String(), privateOrg+"/no-such-repo-anywhere", "M"))

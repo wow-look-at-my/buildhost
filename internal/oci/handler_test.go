@@ -187,7 +187,7 @@ func TestParseRoute(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// parseOCIPath is the pure path parser; parseRoute just trims the
+			// parseOCIPath is the pure path parser.
 			got := parseOCIPath(strings.TrimPrefix(tt.path, "/v2/"))
 			assert.Equal(t, tt.want, got)
 		})

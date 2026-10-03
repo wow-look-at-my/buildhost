@@ -47,8 +47,6 @@ shared:
 setup: env ENV_FILE={shared.env} sh {shared.export.sh}
 
 tests:
-	# The #240 case: the live container predated the APE and recorded the bare
-	# name, so a bare exec of the APE is what the rolling update ran.
 	- desc: a container that recorded the bare name on PATH still starts the server
 	  cmd: |
 		set -eu

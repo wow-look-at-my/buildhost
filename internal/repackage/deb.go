@@ -333,8 +333,7 @@ func DebPackageName(project string) string {
 
 // DebDependsLine renders the project's apt_depends as a "Depends:" control
 // line with its newline, or "" when the project declares none. The deb and
-// the APT Packages entry both use it, so they always agree. A stored
-// value that fails validation is an error, never a dropped line.
+// the APT Packages entry both use it, so they always agree.
 func DebDependsLine(p db.Project) (string, error) {
 	if p.AptDepends == "" {
 		return "", nil

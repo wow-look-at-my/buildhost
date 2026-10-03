@@ -9,7 +9,7 @@ import (
 
 // apiGoproxy reports the Go module proxy's state.
 //
-// The dashboard exists because of how the previous proxy failed: with no
+// The dashboard exists because of how the proxy failed: with no
 func (s *Server) apiGoproxy(w http.ResponseWriter, r *http.Request) {
 	svc := goproxy.Current()
 	if svc == nil {
@@ -29,8 +29,8 @@ func (s *Server) apiGoproxy(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// apiGoproxyRecheck re-runs the readiness probe on demand. An operator who has
-// just fixed the credential should not have to wait out the poll interval to
+// apiGoproxyRecheck re-runs the readiness probe on demand. An operator who
+// has fixed the credential should not have to wait out the poll interval to
 // find out whether it worked.
 func (s *Server) apiGoproxyRecheck(w http.ResponseWriter, r *http.Request) {
 	svc := goproxy.Current()

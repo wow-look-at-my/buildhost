@@ -7,7 +7,7 @@ import (
 
 // State is everything the admin dashboard shows about the proxy. It is
 // assembled here rather than in internal/admin so the dashboard cannot drift
-// from what the proxy actually does.
+// from what the proxy does.
 type State struct {
 	Health  Health   `json:"health"`
 	Cache   Cache    `json:"cache"`

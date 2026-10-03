@@ -148,8 +148,8 @@ func TestServeRelease_HashesMatchServedPackages(t *testing.T) {
 // TestServePackages_RefillsOnCreateServiceFlip pins the staleness guard: the
 // deb bytes bake in mutable project state (here the create_service
 // materialization, flippable with no new release via the project PATCH), so a
-// cached digest computed under the old inputs must be recomputed -- otherwise
-// apt would verify downloads against a hash the pool no longer serves.
+// cached digest computed under the inputs must be recomputed -- otherwise apt
+// would verify downloads against a hash the pool no longer serves.
 func TestServePackages_RefillsOnCreateServiceFlip(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()
@@ -160,7 +160,6 @@ func TestServePackages_RefillsOnCreateServiceFlip(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, first, fmt.Sprintf("SHA256: %s\n", shaOff))
 
-	// Flip the packaging-agnostic service setting (in the DB and on the
 	require.NoError(t, d.SetProjectCreateService(ctx, proj.ID, true))
 	proj.CreateService = true
 

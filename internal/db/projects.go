@@ -146,8 +146,8 @@ func (d *DB) NameAvailable(ctx context.Context, name string) (bool, error) {
 	return n == 0, nil
 }
 
-// RenameProject moves a project to a new name, keeping the previous name as an
-// alias. Caller must have confirmed the new name is available.
+// RenameProject moves a project to a new name, keeping the name as an alias.
+// Caller must have confirmed the new name is available.
 func (d *DB) RenameProject(ctx context.Context, id int64, oldName, newName string) error {
 	tx, err := d.BeginTx(ctx, nil)
 	if err != nil {
@@ -158,8 +158,8 @@ func (d *DB) RenameProject(ctx context.Context, id int64, oldName, newName strin
 	if err := q.RenameProject(ctx, RenameProjectParams{Name: newName, ID: id}); err != nil {
 		return fmt.Errorf("rename project to %q: %w", newName, err)
 	}
-	// The old name is free, so any alias row for it is this project's own from
-	// an earlier rename. The delete makes the insert idempotent.
+	// The name is free, so any alias row for it is this project's own from an
+	// earlier rename. The delete makes the insert idempotent.
 	if err := q.DeleteProjectAlias(ctx, oldName); err != nil {
 		return fmt.Errorf("clear alias %q: %w", oldName, err)
 	}

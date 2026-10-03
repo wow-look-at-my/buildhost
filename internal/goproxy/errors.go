@@ -37,9 +37,8 @@ func (k Kind) String() string {
 	return "unknown"
 }
 
-// Error is a fetch failure carrying enough for a caller to act without reading
-// the server's logs: which module, what the upstream actually said, and whether
-// the proxy's own credential was the problem.
+// Error is a fetch failure carrying enough for a caller to act without
+// reading the server's logs: which module, what the upstream said.
 type Error struct {
 	Kind Kind
 	// Module and Version address what was being fetched ("" when not applicable).
@@ -146,9 +145,9 @@ func invalidErr(mod, ver, detail string) *Error {
 // inaccessibleErr answers a caller who may not see this module.
 //
 // The answer is identical whether the module exists or not: the check runs
-// before any upstream call, so there is nothing that could differ. That is what
-// keeps a prober from mapping the org's private repositories by diffing
-// responses. The note is on both answers too, so it tells a caller who simply
+// before any upstream call, so there is nothing that could differ. That is
+// what keeps a prober from mapping the org's private repositories by diffing
+// responses. The note is on both answers too.
 func inaccessibleErr(mod, ver string) *Error {
 	return &Error{
 		Kind:    KindInaccessible,

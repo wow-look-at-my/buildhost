@@ -77,11 +77,9 @@ runs:
       id: cli-source
       if: ${{ steps.cli.outputs.source_build == 'true' }}
       shell: bash
-      env:
-        ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
-        repo="$(cd "${ACTION_PATH}/../../.." && pwd)"
+        repo="$(cd "${{ github.action_path }}/../../.." && pwd)"
         cd "${repo}"
         ./scripts/fetch-cacerts.sh
         ./scripts/resolve-org-deps.sh

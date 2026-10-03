@@ -2,13 +2,13 @@
 
 Static site hosting: `internal/sites/`. Upload tar.gz (or zip) archives, serve files per branch. Self-registering via `init()`.
 
-Three files carry the URL grammar, in the order a request meets them. `resolve.go` turns a `<ref>[/<path>]` remainder into the branch that serves it. `canonical.go` decides which URL is THE URL, and how every other spelling redirects toward it. `serve.go` streams the bytes.
+Files carry the URL grammar, in the order a request meets them. `resolve.go` turns a `<ref>[/<path>]` remainder into the branch that serves it. `canonical.go` decides which URL is THE URL, and how every other spelling redirects toward it. `serve.go` streams the bytes.
 
 This was extracted verbatim from CLAUDE.md's `internal/sites/` entry, which had grown into a manual. The apex-path section below is the only new prose.
 
 ## Serving schemes
 
-Two schemes address the same sites, and both resolve their branch through the same helpers, so a URL means the same file either way.
+Schemes address the same sites, and both resolve their branch through the same helpers. As a result, a URL means the same file either way.
 
 ### Classic: `sites.{domain}/{project}/...`
 
@@ -54,13 +54,13 @@ The collapse is also skipped when the bare URL addresses a DIFFERENT project. `a
 
 Each older form keeps working **only on the scheme it came from**. That asymmetry is easy to misread. `/branch/{branch}/` is classic-scheme only, and 302s to the canonical URL. `~{branch}` is subdomain-scheme only, and 301s to `@`.
 
-`~` has never been a sigil on the classic scheme. `/{project}/~{branch}/<file>` is therefore an ordinary path, which names a literal file `~{branch}/<file>` under the default branch. It answers 404, or 401 on a private project whose root branch is not public. It never answers a redirect. `TestLegacySigil_*` in `internal/sites` pins that. The top-level CLAUDE.md once claimed `~` redirected on the classic scheme too, and sent a reader hunting a routing bug that does not exist.
+`~` has never been a sigil on the classic scheme. `/{project}/~{branch}/<file>` is therefore an ordinary path, which names a literal file `~{branch}/<file>` under the default branch. It answers 404, or 401 on a private project whose root branch is not public. It never answers a redirect. `TestLegacySigil_*` in `internal/sites` pins that. The top-level CLAUDE.md once claimed `~` redirected on the classic scheme too. The top-level CLAUDE.md sent a reader hunting a routing bug that does not exist.
 
 A sigil beats a path segment for one reason. `branch` is an ordinary segment. The old form therefore failed to address a site with a top-level `branch/` directory at all. Every URL in such a site also carried a segment that reads like part of the site.
 
-`@` is outside the branch charset (`validSiteBranch`) AND outside the project-name charset. It can therefore never be part of a name it separates. That makes the project and branch split exact, with no DB lookup, however deeply namespaced the project is. `splitBranchSigil` does it. `@` is also very rare in a real file name, which is what makes it safe to reserve at that one position.
+`@` is outside the branch charset (`validSiteBranch`) AND outside the project-name charset. It can therefore never be part of a name it separates. That makes the project and branch split exact, with no DB lookup, however deeply namespaced the project is. `splitBranchSigil` does it. `@` is also very rare in a real file name, which is what makes it safe to reserve at that position.
 
-What it does NOT delimit is where the branch ENDS. A branch name may contain `/`, as `claude/foo` does. `@claude/foo/c.html` is therefore still resolved by longest match against the project's site rows, in `splitSiteBranch`. The older spelling needs the same rule. Both spellings hand the same raw `<branch>[/<path>]` remainder to that one resolver, through `route.ref()`. They can therefore never disagree about which file a URL addresses.
+What it does NOT delimit is where the branch ENDS. A branch name may contain `/`, as `claude/foo` does. `@claude/foo/c.html` is therefore still resolved by longest match against the project's site rows, in `splitSiteBranch`. The older spelling needs the same rule. Both spellings hand the same raw `<branch>[/<path>]` remainder to that resolver, through `route.ref()`. They can therefore never disagree about which file a URL addresses.
 
 A read shares the apex route. A sigil is not a path segment, so no pattern can express it without an out-score of the literal-less `GET /{project}`. `parseRootRoute` splits at the sigil when there is one. That is the same place the `{project}.<site-domain>` scheme has always kept its sigil grammar.
 
@@ -72,11 +72,11 @@ Both publishers still EMIT that spelling for the upload endpoint itself, `PUT /{
 
 Inside buildhost, every site LINK is in the `@` form. That covers the web frontend's per-branch links and the admin dashboard's "Open" links alike, and the dashboard builds its links through `siteBranchURL`. Both ship in the same binary as the server, so neither can outrun it.
 
-The dashboard still shows `/branch/` in its endpoint table and its curl snippets, and it must. Those are the `PUT` and `DELETE` write routes. `TestAdminStaticSiteLinksUseRefSigil` tells the two apart. A link concatenates a runtime branch. An endpoint carries the literal `{branch}` placeholder.
+The dashboard still shows `/branch/` in its endpoint table and its curl snippets. It must. Those are the `PUT` and `DELETE` write routes. `TestAdminStaticSiteLinksUseRefSigil` tells the two apart. A link concatenates a runtime branch. An endpoint carries the literal `{branch}` placeholder.
 
 ### Commit refs (`@{commit}`)
 
-`@` also takes a git commit. That is the full 40-hex sha, or any abbreviation of at least 7 characters, matched case-insensitively, as git does. `looksLikeCommit` decides. A link can therefore pin the exact build it was tested against, instead of a track of wherever the branch moves next.
+`@` also takes a git commit. That is the full 40-hex sha, or any abbreviation of several characters, matched case-insensitively, as git does. `looksLikeCommit` decides. A link can therefore pin the exact build it was tested against, instead of a track of wherever the branch moves next.
 
     sites.{domain}/myapp/@0f1e2d3/runner.html
 
@@ -86,11 +86,11 @@ Resolution runs branches first, then commits, through `splitSiteBranch` and then
 
 Here is exactly what a commit URL guarantees. A site is keyed `(project, branch)`, and a re-deploy replaces it in place. A commit therefore resolves only while it is still some branch's LIVE deployment. Re-deploy the branch and the old sha answers `404`.
 
-That is the useful half of immutability. The URL serves that build or nothing, and it never quietly becomes a later one. It costs no retention of every historical deployment. When several branches sit on the same commit, the newest deployment wins, so the answer is deterministic. `SitesByCommitPrefix` orders by `updated_at DESC`.
+That is the useful half of immutability. The URL serves that build or nothing, and it never quietly becomes a later one. It costs no retention of every historical deployment. When several branches sit on the same commit, the newest deployment wins. As a result, the answer is deterministic. `SitesByCommitPrefix` orders by `updated_at DESC`.
 
 ### Apex path (`/{project}` and `/{project}/<file>`)
 
-The **bare project root**, `/{project}/`, serves `index.html` straight from the project's `default_branch`. buildhost learns that branch from GitHub on publish, and it is often `main`. The seed default is `master`, which is the same branch the apex download `latest` tracks. A project's root URL therefore resolves to its canonical site, without the caller's knowledge of which branch it lives on, and with no redirect hop.
+The **bare project root**, `/{project}/`, serves `index.html` straight from the project's `default_branch`. buildhost learns that branch from GitHub on publish. It is often `main`. The seed default is `master`, which is the same branch the apex download `latest` tracks. A project's root URL therefore resolves to its canonical site, without the caller's knowledge of which branch it lives on, and with no redirect hop.
 
 `/{project}` without the slash `301`s to `/{project}/`. A relative link in `index.html` then resolves under the project, rather than under the host root.
 
@@ -112,7 +112,7 @@ The route is a literal-less `GET /{project}`. It scores below the `branch` and `
 
 `subdomain.go` implements this. It activates when `BUILDHOST_SITE_DOMAIN` is configured, through config to `server.New` to `auth.Init`. An UNSET value registers ZERO new routes, which `TestSiteDomain_RouteTable` pins.
 
-Each project whose name is a valid single DNS label is ALSO served at `{project}.<site-domain>/{path...}`. `validSiteLabel` decides validity: `[a-z0-9-]`, 1 to 63 characters, with no leading or trailing hyphen. A host label is folded to lowercase, as DNS does.
+Each project whose name is a valid single DNS label is ALSO served at `{project}.<site-domain>/{path...}`. `validSiteLabel` decides validity: `[a-z0-9-]`, 1 to many characters, with no leading or trailing hyphen. A host label is folded to lowercase, as DNS does.
 
 The route is registered through `auth.SiteDomainHandle`, from an `auth.OnSiteDomain` hook, because the domain is unknown at `init()`. `buildhost routes` runs the same hook against `auth.SiteDomainPlaceholder`. The route is therefore still enumerable, and it still shows up in a PR's route diff.
 
@@ -130,11 +130,11 @@ Some things are reserved on the subdomain scheme only. They are the `@` and `~` 
 
 The BARE site apex carries no project label. It matches no host-bearing route, and falls through to the host-agnostic routes. `<site-domain>/healthz` and `/__sso` therefore answer there. The web and API surface answers there too, but ONLY while `BUILDHOST_PRIMARY_DOMAIN` is unset. With that value set, those routes are primary-scoped and answer 404 off-apex. See the unknown-domain security note.
 
-A name with `/`, `.` or `_`, or a name over 63 characters, answers 404 on this scheme. It stays reachable on `sites.{domain}/...`. There is no brew-style fold-back in v1.
+A name with `/`, `.` or `_`, or a name many characters, answers 404 on this scheme. It stays reachable on `sites.{domain}/...`. There is no brew-style fold-back in v1.
 
 ## CORS applies to REDIRECTS, not just to the bytes
 
-`setSiteSecurityHeaders`, in `internal/sites/serve.go`, drops the app's strict `Content-Security-Policy` and `X-Frame-Options`. It sets the hosted-site headers instead, and `Access-Control-Allow-Origin: *` is among them. **Every site response must go through it. That includes a redirect, and it must happen BEFORE the redirect is written.**
+`setSiteSecurityHeaders`, in `internal/sites/serve.go`, drops the app's strict `Content-Security-Policy` and `X-Frame-Options`. It sets the hosted-site headers instead, and `Access-Control-Allow-Origin: *` is among them. **Every site response must go through it. That includes a redirect. It must happen BEFORE the redirect is written.**
 
 A browser re-checks CORS on each hop of a cross-origin fetch. A redirect that omits the header therefore fails the whole load, even when its target carries it. The browser reports the failure against the ORIGINAL URL, so the 200 at the end of the chain looks innocent. `curl` enforces CORS at no hop. A redirect chain it follows happily can therefore be completely unusable from a page.
 
@@ -142,14 +142,14 @@ This is not hypothetical. The legacy `/{project}/branch/{branch}/` form became a
 
 The legacy form is what every deployed client, README and published preview link still says. Every cross-origin consumer of every hosted site therefore broke at once. An admin dashboard that imported an ES module from `sites.pazer.build` sat retrying `error loading dynamically imported module` on every page view, while the same URL returned 200 to curl.
 
-Two checks guard it. Both were verified to fail before the fix.
+Checks guard it. Both were verified to fail before the fix.
 
 - `internal/sites/cors_test.go` -- every redirect either scheme can emit must carry the header. Add a case here when you add a redirect.
 - CI job `sites-cors-e2e`, which runs `test/dats/sites-cors.dats`. It spawns a real server. It walks each redirect chain, and asserts the header on every hop. It then has a **real headless browser** import a module cross-origin, through the legacy redirect. The browser layer is the point. It also covers the MIME type and CSP, which a header assertion cannot see. It FAILS when no browser can be launched, rather than a skip, because a check that cannot go red is decoration.
 
 ## Public sites under private projects
 
-A site uploaded with the header `X-Public-Site: true` is stored with `is_public=1`. It is served **without a token, even under a private project**. The sites read route implements `auth.PublicReadAuthorizer`, so the centralized `requireProject` opens just that one branch. The project's releases and its other branches stay gated. This is used for a PR preview of a private repo. The `buildhost-publish-site` action sends the header when its `public` input is `true`.
+A site uploaded with the header `X-Public-Site: true` is stored with `is_public=1`. It is served **without a token, even under a private project**. The sites read route implements `auth.PublicReadAuthorizer`. As a result, the centralized `requireProject` opens just that branch. The project's releases and its other branches stay gated. This is used for a PR preview of a private repo. The `buildhost-publish-site` action sends the header when its `public` input is `true`.
 
 ## Storage and limits
 

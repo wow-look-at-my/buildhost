@@ -13,7 +13,6 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
-// TestRequireProject_WriteUnauthorized_ExplainsOIDCReason proves that when a
 func TestRequireProject_WriteUnauthorized_ExplainsOIDCReason(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)

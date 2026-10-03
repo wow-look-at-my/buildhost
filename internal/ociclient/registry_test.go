@@ -189,7 +189,7 @@ func (f *fakeRegistry) handler(project string) http.Handler {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			// The real server appends the PUT body before finalizing, which is
+			// The real server appends the PUT body before finalizing.
 			sess = append(sess, readAll(f.t, r)...)
 			digest := r.URL.Query().Get("digest")
 			if digestOf(sess) != digest {

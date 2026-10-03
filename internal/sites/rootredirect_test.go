@@ -25,9 +25,7 @@ func rootServed(t *testing.T, h *Handler, project *db.Project) string {
 }
 
 // A project whose default_branch points at a branch with no published site
-// (e.g. the seed "master" while sites were only ever deployed to "main",
-// because buildhost's GitHub default-branch lookup hasn't corrected the hint)
-// must still resolve its bare root to a real site instead of serving a
+// (e.g. the seed "master" while sites were only ever deployed to "main".
 func TestRootServe_FallsBackToExistingSite(t *testing.T) {
 	t.Serial()
 	h, d, _ := setupTest(t)

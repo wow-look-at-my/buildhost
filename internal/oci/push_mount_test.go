@@ -65,7 +65,7 @@ func TestMountBlob_LinksABlobAnotherReadableProjectAlreadyHas(t *testing.T) {
 	assert.Equal(t, int64(len("the shared base layer")), link.Size)
 }
 
-// The digest of a private image's layer is not a secret worth relying on, so
+// The digest of a private image's layer is not a secret worth relying on.
 func TestMountBlob_RefusesAPrivateOwnerTheCallerCannotRead(t *testing.T) {
 	t.Serial()
 	h, d, _ := setupTest(t)

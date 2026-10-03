@@ -1,5 +1,3 @@
-# The round-trip suite gets its own published port, so it never contends with
-# the container-healthcheck job's 8080 on a shared host.
 services:
   buildhost:
     environment:

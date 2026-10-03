@@ -63,7 +63,7 @@ Every rejection is a 4xx that names the offending token, and stores nothing:
 - an unknown os or arch, a pair without a `/`, an empty element, an empty set, or a duplicate after normalization (`darwin/arm64,macos/aarch64`)
 - an incoherent pair, such as `linux/wasip1`. An `os=wasm` value pairs only with `js` or `wasip1`.
 - a platform already taken in this release for this kind. The answer is a 409 that names the platform. The check runs from either direction, so a per-platform upload for a covered platform conflicts too.
-- **a multi-platform set whose file is not an Actually Portable Executable.**
+- **a multi-platform set whose file is not an Portable Executable.**
 
 That last one is the point of the badge. A claim that one file runs on several platforms is only true for a format that carries each of their code. `internal/exeformat` therefore reads the leading bytes. It requires the `MZqFpD` magic that Cosmopolitan's stub opens with. A single-platform `platforms=` value is not a portability claim, so any file may take this path.
 
@@ -91,9 +91,9 @@ The unique index enforces exactly what `artifacts.UNIQUE(release_id, os, arch, k
 
 ## Resolution
 
-`GetArtifactByReleaseOSArch` joins through `artifact_platforms`. Every download path therefore resolves a covered platform to the one artifact, with no per-caller change. Those paths are `/dl`, `/static`, apt, and a signed download link.
+`GetArtifactByReleaseOSArch` joins through `artifact_platforms`. Every download path therefore resolves a covered platform to the artifact, with no per-caller change. Those paths are `/dl`, `/static`, apt, and a signed download link.
 
-`/dl` additionally folds the requested pair to the artifact's canonical slot. It does that before it builds the `static.{domain}/file` URL. Without that fold, each covered platform of one file produces its own static URL. A CDN then caches a separate copy of one blob per platform. A UI that compares two platforms' links then shows two URLs for one binary. With the fold, `dl/{project}?os=darwin&arch=arm64` and `dl/{project}?os=linux&arch=amd64` return the same Location. That one object has one digest and one ETag. A pair the artifact does not cover is left untouched, and `static` answers the 404 as before.
+`/dl` additionally folds the requested pair to the artifact's canonical slot. It does that before it builds the `static.{domain}/file` URL. Without that fold, each covered platform of one file produces its own static URL. A CDN then caches a separate copy of one blob per platform. A UI that compares platforms' links then shows two URLs for one binary. With the fold, `dl/{project}?os=darwin&arch=arm64` and `dl/{project}?os=linux&arch=amd64` return the same Location. That object has one digest and one ETag. A pair the artifact does not cover is left untouched, and `static` answers the 404 as before.
 
 `latest` and branch resolution are unchanged. The fold happens after the release is resolved. The apex-`latest` default-branch rule (`docs/apex-latest.md`) therefore still decides which release is served.
 
@@ -101,7 +101,7 @@ The unique index enforces exactly what `artifacts.UNIQUE(release_id, os, arch, k
 
 **A multi-platform artifact reaches exactly the platforms that N separate rows reach.** Multi-platform ingest changes the row count and the number of download links. It changes nothing about coverage. A Homebrew formula still gets a `darwin/arm64` bottle. apt still gets a `linux/arm64` deb. The OCI index still lists every covered platform. All of them point at the same stored blob.
 
-`db.ListArtifactsByPlatform` is what those surfaces consume. It returns one entry per covered platform, with `os` and `arch` rewritten to that platform. Each entry carries a `CacheSuffix`, because `packaged_artifacts` is keyed on `(artifact_id, format)`. Without the suffix, two platforms of one file share one derived package. The result is a `linux/arm64` deb served as the `linux/amd64` deb, or one platform's OCI config unlinked when the next is generated. Every OCI key the synthesizer writes takes the suffix, the base layer and the binary layer included. An APE's staged ELF differs per architecture. An unsuffixed layer key therefore unlinks the blob the earlier platform's manifest names. That platform's pull then fails on a blob the registry says it does not have. The canonical slot's suffix is `""`, so every pre-existing cache row keeps its exact key. A non-canonical platform's suffix is `@os/arch`.
+`db.ListArtifactsByPlatform` is what those surfaces consume. It returns one entry per covered platform, with `os` and `arch` rewritten to that platform. Each entry carries a `CacheSuffix`, because `packaged_artifacts` is keyed on `(artifact_id, format)`. Without the suffix, platforms of one file share one derived package. The result is a `linux/arm64` deb served as the `linux/amd64` deb, or one platform's OCI config unlinked when the next is generated. Every OCI key the synthesizer writes takes the suffix, the base layer and the binary layer included. An APE's staged ELF differs per architecture. An unsuffixed layer key therefore unlinks the blob the earlier platform's manifest names. That platform's pull then fails on a blob the registry says it does not have. The canonical slot's suffix is `""`, so every pre-existing cache row keeps its exact key. A non-canonical platform's suffix is `@os/arch`.
 
 ## What a consumer sees
 

@@ -68,7 +68,7 @@ func (h *Handler) ServeSubdomain(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(ctx)
 	rt := routeFrom(ctx)
 
-	// The original "~" spelling names the same branch as "@", permanently, so
+	// The original "~" spelling names the same branch as "@", permanently.
 	if strings.HasPrefix(r.URL.Path, "/"+string(legacyBranchSigil)) {
 		target := "/" + string(branchSigil) + r.URL.Path[2:]
 		if q := r.URL.RawQuery; q != "" {
