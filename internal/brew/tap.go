@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/wow-look-at-my/go-containers/set"
 	mmap "github.com/wow-look-at-my/go-mmap"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -195,11 +196,11 @@ func (h *Handler) addVersionedFormulas(r *http.Request, project db.Project, file
 		return err
 	}
 	// Newest first: on a case-insensitive filesystem (macOS) a couple of versions that differ only by case would collide in the clone.
-	seen := map[string]bool{}
+	seen := set.New[string]()
 	for _, release := range releases {
 		version := brewVersion(release)
 		path := repackage.BrewVersionedFormulaPath(project.Name, version)
-		if seen[strings.ToLower(path)] {
+		if seen.Contains(strings.ToLower(path)) {
 			continue
 		}
 		artifacts, err := h.DB.ListArtifactsByPlatform(r.Context(), release.ID)
@@ -217,7 +218,7 @@ func (h *Handler) addVersionedFormulas(r *http.Request, project db.Project, file
 		if err != nil {
 			return err
 		}
-		seen[strings.ToLower(path)] = true
+		seen.Add(strings.ToLower(path))
 		files[path] = data
 	}
 	return nil
