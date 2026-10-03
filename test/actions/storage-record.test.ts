@@ -9,6 +9,9 @@ type Sent = Record<string, unknown>;
 const ctx = { repo: { owner: 'PazerOP', repo: 'UE553' } };
 const SERVER = 'https://pazer.build';
 const SHA = 'a'.repeat(64);
+// The dl URL a record links: pinned to the exact version its digest covers.
+const dlURL = (project: string, version: string, arch: string) =>
+	`https://dl.pazer.build/${project}?${new URLSearchParams([['v', version], ['os', 'linux'], ['arch', arch], ['debug', '1']])}`;
 
 let info: string[] = [], failed: string[] = [], sent: Sent[] = [];
 const core = { info: (m: string) => info.push(m), setFailed: (m: string) => failed.push(m) };
@@ -37,7 +40,7 @@ async function main(): Promise<void> {
 	assert.deepStrictEqual(sent[0], {
 		org: 'PazerOP', name: 'ue553', version: 'v7', digest: `sha256:${SHA}`,
 		registry_url: SERVER, repository: 'ue553', path: 'linux/amd64',
-		artifact_url: 'https://dl.pazer.build/ue553?arch=amd64&debug=1&os=linux',
+		artifact_url: dlURL('ue553', 'v7', 'amd64'),
 		github_repository: 'UE553', status: 'active', return_records: false,
 	});
 	assert.match(info[0], /^Recorded ue553 linux\/amd64 sha256:a{64} on PazerOP's linked artifacts page$/);
@@ -46,7 +49,7 @@ async function main(): Promise<void> {
 	reset();
 	await release(gh(), { artifacts: [slot({ project: 'repo/client', version: 'v1' }), slot({ project: 'repo/server', version: 'v2', arch: 'arm64' })] });
 	assert.deepStrictEqual(sent.map((r) => [r.name, r.version, r.path]), [['repo/client', 'v1', 'linux/amd64'], ['repo/server', 'v2', 'linux/arm64']]);
-	assert.strictEqual(sent[1].artifact_url, 'https://dl.pazer.build/repo/server?arch=arm64&debug=1&os=linux');
+	assert.strictEqual(sent[1].artifact_url, dlURL('repo/server', 'v2', 'arm64'));
 
 	// A published artifact with no sha256 is a failed publish, not a record.
 	reset();

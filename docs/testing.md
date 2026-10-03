@@ -110,14 +110,14 @@ A workflow step may still DO things: install brew, start a server, run a composi
 
 Some checks need a program rather than a shell: octokit fakes, a browser crawl, a manual walk of a redirect chain. Those live under `test/actions/` as node tests -- node runs TypeScript directly -- and a dats suite invokes each one and reads its output. `action-libs.dats` covers the storage-record module, `admin-demo-links.dats` the preview crawl, and `sites-cors.dats` the cross-origin import.
 
-## The route table golden (docs/routes.txt)
+## The route table golden (docs/routes.golden)
 
-`docs/routes.txt` is the committed route table, rendered by the program itself (`auth.AllRoutes()`, the same enumeration `buildhost routes` prints) and never parsed out of source. Gates keep it honest, both fail-on-drift:
+`docs/routes.golden` is the committed route table, rendered by the program itself (`auth.AllRoutes()`, the same enumeration `buildhost routes` prints) and never parsed out of source. Gates keep it honest, both fail-on-drift:
 
 - `internal/routescheck/golden_test.go` fails the ordinary build when the route set differs from the file, naming the regeneration command.
 - The `route-diff` CI job re-checks the file against the REAL BINARY's `routes` output. The golden can therefore never describe a route the shipped program does not serve.
 
-Regenerate with `go-toolchain && ./build/buildhost routes > docs/routes.txt`, or `UPDATE_ROUTES_GOLDEN=1 go-toolchain` when no binary is built yet.
+Regenerate with `go-toolchain && ./build/buildhost routes > docs/routes.golden`, or `UPDATE_ROUTES_GOLDEN=1 go-toolchain` when no binary is built yet.
 
 It exists because this repo has no central router file. Every backend self-registers from its own `init()`. Before the golden, an added endpoint therefore left nothing route-shaped in Files Changed for a reviewer to look at. The golden turns a new route into an ordinary one-line diff. It also makes a duplicated or unintended route impossible to land unnoticed.
 
