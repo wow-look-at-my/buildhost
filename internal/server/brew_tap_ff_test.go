@@ -46,7 +46,7 @@ func gitScratchDir(t *testing.T) string {
 // gitTestEnv is the environment every git invocation in these tests runs with.
 // The identity vars keep commits reproducible; the GIT_CONFIG_* pair turns OFF
 // automatic repacking, which fetch, rebase and clone all trigger. Auto-gc runs
-// detached, so it can repack and delete a pack while a later `git fsck` in the
+// detached.
 var gitTestEnv = []string{
 	"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@test", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@test",
 	"GIT_TERMINAL_PROMPT=0",
@@ -179,7 +179,7 @@ func TestBrewFormula_LiteralSlashNamespacedPathServesFormula(t *testing.T) {
 	resp.Body.Close()
 }
 
-// A private project's LITERAL formula path names the project exactly, so an
+// A private project's LITERAL formula path names the project exactly.
 func TestBrewFormula_PrivateSlashNamespacedPathMatchesLegacyPath(t *testing.T) {
 	t.Serial()
 	env := setup(t)

@@ -56,7 +56,7 @@ func TestSubjectParsers_ImmutableIDs(t *testing.T) {
 			repoPath: "MyOrg/MyRepo",
 		},
 		{
-			// A non-numeric @-suffix is NOT an immutable ID: nothing is
+			// A non-numeric @-suffix is NOT an immutable ID.
 			name:     "non-numeric suffix not stripped",
 			subject:  "repo:myorg/bad@name:ref:refs/heads/main",
 			org:      "myorg",
@@ -64,7 +64,7 @@ func TestSubjectParsers_ImmutableIDs(t *testing.T) {
 			repoPath: "myorg/bad@name",
 		},
 		{
-			// Only the LAST "@" is considered, so an ID after earlier junk is
+			// Only the LAST "@" is considered.
 			name:     "only last at-sign considered",
 			subject:  "repo:myorg/we@ird@123:ref:refs/heads/main",
 			org:      "myorg",

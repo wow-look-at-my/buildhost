@@ -16,7 +16,7 @@ The setting is packaging-format-AGNOSTIC. It says "this project runs as a backgr
 
 ## Publish responses carry their artifacts
 
-Both `PublishRelease` and `GetRelease` return `publishedRelease` (the `db.Release` embedded, so every pre-existing top-level field is unchanged for older clients, plus `artifacts`). Publish already loaded them for its no-artifacts check, so that costs nothing. Pinned by `TestPublishRelease_ReturnsPublishedArtifacts` and `TestGetRelease_ReturnsArtifacts`. The reason it exists is `docs/artifact-storage-records.md`: the low-level publish composite needs the artifact list to post storage records, and there is no artifacts-listing endpoint.
+Both `PublishRelease` and `GetRelease` return `publishedRelease` (the `db.Release` embedded, so every pre-existing top-level field is unchanged for older clients, plus `artifacts`). Publish already loaded them for its no-artifacts check. As a result, that costs nothing. Pinned by `TestPublishRelease_ReturnsPublishedArtifacts` and `TestGetRelease_ReturnsArtifacts`. The reason it exists is `docs/artifact-storage-records.md`. The low-level publish composite needs the artifact list to post storage records, and there is no artifacts-listing endpoint.
 
 ## Size caps
 

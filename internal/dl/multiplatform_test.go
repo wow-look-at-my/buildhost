@@ -27,7 +27,6 @@ func redirectFor(t *testing.T, h *Handler, proj *db.Project, params url.Values) 
 	return requireRedirect(t, rec)
 }
 
-// TestDownload_MultiPlatform_EveryPlatformGetsTheSameURL is the property the
 func TestDownload_MultiPlatform_EveryPlatformGetsTheSameURL(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)
@@ -83,7 +82,7 @@ func TestDownload_MultiPlatform_LatestAndBranchResolveToo(t *testing.T) {
 }
 
 // TestDownload_MultiPlatform_UncoveredPlatformIsUntouched proves the fold is
-// scoped to platforms the artifact actually covers: an uncovered pair keeps its
+// scoped to platforms the artifact covers: an uncovered pair keeps its
 func TestDownload_MultiPlatform_UncoveredPlatformIsUntouched(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)

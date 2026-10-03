@@ -115,7 +115,7 @@ func TestRandomAccessReadsOnlyItsEntry(t *testing.T) {
 	t.Serial()
 	files := map[string]string{"target.txt": "the payload"}
 	for i := 0; i < 50; i++ {
-		// Poorly-compressible filler, so the container is genuinely large and
+		// Poorly-compressible filler.
 		files[fmt.Sprintf("filler/%02d.txt", i)] = randomText(i, 20000)
 	}
 	data := archive(t, files)
@@ -144,7 +144,7 @@ func TestReadCostIsIndependentOfArchiveSize(t *testing.T) {
 	measure := func(n int) (read, container int64) {
 		files := map[string]string{"last.txt": "payload"}
 		for i := 0; i < n; i++ {
-			// Random bytes, so per-entry compression cannot collapse the
+			// Random bytes.
 			files[fmt.Sprintf("f%04d.txt", i)] = randomText(i, 20000)
 		}
 		data := archive(t, files)
@@ -232,9 +232,9 @@ func TestLimits(t *testing.T) {
 	assert.Contains(t, err.Error(), "exceeds 2 bytes")
 }
 
-// TestOpenRejectsNonArchive pins that a tar blob (what sites stored before this
-// format) is refused rather than misread -- which is what lets the caller fall
-// back to the old path instead of serving garbage.
+// TestOpenRejectsNonArchive pins that a tar blob (what sites stored before
+// this format) is refused rather than misread -- which is what lets the
+// caller fall back to the path instead of serving garbage.
 func TestOpenRejectsNonArchive(t *testing.T) {
 	t.Serial()
 	raw := makeTar(t, map[string]string{"a.txt": "hello"})
@@ -270,8 +270,8 @@ func TestDirectoriesAreNotEntries(t *testing.T) {
 	assert.Equal(t, "dir/f.txt", a.Entries()[0].Path)
 }
 
-// countingReaderAt records how many bytes a reader actually pulls, so a test
-// can assert that a read is a seek rather than a scan.
+// countingReaderAt records how many bytes a reader pulls, so a test can
+// assert that a read is a seek rather than a scan.
 type countingReaderAt struct {
 	ra io.ReaderAt
 	n  int64

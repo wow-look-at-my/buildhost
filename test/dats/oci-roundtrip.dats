@@ -7,7 +7,7 @@
 # is the only one where a real docker daemon talks to buildhost running as the
 # container it ships, over the wire, in both directions.
 #
-# The two directions are different code paths and both are covered here:
+# Both directions are different code paths and both are covered here:
 #
 #   push  -- docker uploads blobs and PUTs a manifest, and buildhost records a
 #            kind=docker release. Pulling that back proves the bytes round-trip.

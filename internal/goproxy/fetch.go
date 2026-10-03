@@ -50,8 +50,8 @@ func (s *Service) cachedOrFetch(ctx context.Context, modPath, version string, ne
 		hit bool
 	)
 	err := s.inflight.do(key, func() error {
-		// Re-check inside the flight: the request we waited behind may have just
-		// filled this in.
+		// Re-check inside the flight: the request we waited behind may have filled
+		// this in.
 		if c, err := s.db.GetGoproxyCached(ctx, modPath, version); err == nil {
 			if !needZip || c.ZipKey != "" {
 				out, hit = c, true

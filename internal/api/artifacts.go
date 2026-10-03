@@ -74,7 +74,7 @@ var (
 // expandOSSpec parses the {os} path segment of an artifact upload: a single
 // OS name (any spelling db.NormalizeOS accepts), a comma-separated list of
 // them, or an expand-everywhere alias (cosmo/any/all/universal). It rejects
-// unknown names, empty elements, and duplicates (after normalization, so
+// unknown names, empty elements, and duplicates (after normalization.
 func expandOSSpec(spec string) ([]db.OS, error) {
 	switch strings.ToLower(strings.TrimSpace(spec)) {
 	case "cosmo", "any", "all", "universal":
@@ -98,7 +98,7 @@ func expandOSSpec(spec string) ([]db.OS, error) {
 }
 
 // platformCombos is the cartesian product the {os}/{arch} segments expand to,
-// in the order the rows would have been created.
+// in the order the rows.
 func platformCombos(oses []db.OS, arches []db.Arch) []db.Platform {
 	out := make([]db.Platform, 0, len(oses)*len(arches))
 	for _, osName := range oses {
@@ -174,7 +174,7 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		}
 		oses, arches = []db.OS{db.OS(rt.os)}, []db.Arch{db.Arch(rt.arch)}
 	} else if o, a, ok := db.NormalizeLegacyWasmPair(rt.os, rt.arch); ok {
-		// Deprecated legacy shim: currently-released go-toolchain autoreleases
+		// Deprecated legacy shim:-released go-toolchain autoreleases
 		oses, arches = []db.OS{o}, []db.Arch{a}
 	} else {
 		var err error
@@ -186,11 +186,10 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		// Every combination the upload fans out to must be a coherent
-		// platform: os=wasm pairs only with the wasm flavor arches
-		// (js/wasip1) and vice versa -- a "linux/js" or "wasm/amd64" row
-		// could never be downloaded by anything real. Checked before the
-		// body is read so a bad spec stores nothing.
+		// Every combination the upload fans out to must be a coherent platform:
+		// os=wasm pairs only with the wasm flavor arches (js/wasip1) and vice versa
+		// -- a "linux/js" or "wasm/amd64" row could never be downloaded by anything
+		// real. Checked before the body is read so a bad spec stores nothing.
 		for _, osName := range oses {
 			for _, arch := range arches {
 				if !db.CompatiblePlatform(osName, arch) {
@@ -240,7 +239,7 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Single combination keeps the exact pre-fan-out code path and response; a
+	// Single combination keeps the exact pre-fan-out code path and response.
 	var err error
 	if len(artifacts) == 1 {
 		err = h.DB.CreateArtifact(ctx, artifacts[0])
@@ -277,16 +276,14 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusCreated, withPlatforms)
 }
 
-// storedUpload is the outcome of getting an upload's bytes into storage,
-// whichever way they arrived (streamed body, chunked session, or a hash
-// reference to a blob the project already has).
+// storedUpload is the outcome of getting an upload's bytes into storage.
 type storedUpload struct {
 	storageKey string
 	sha256hex  string
 	size       int64
 	// format is what the leading bytes say the file is. "" means unrecognized,
 	format exeformat.Format
-	// ntBoot says whether an APE's PE header can boot it on Windows, so a
+	// ntBoot says whether an APE's PE header can boot it on Windows.
 	ntBoot exeformat.NTBoot
 }
 
@@ -339,10 +336,10 @@ func (c *headCapture) Write(p []byte) (int, error) {
 
 // resolveHashRef authorizes and resolves a hash-reference upload: the
 // referenced blob must already belong to this project (any release -- which
-// covers "the previous slot of this same release" as well as an unchanged
-// binary from an earlier release) and must still exist in storage. It returns
-// the storage key, the blob's decompressed size for the artifact row, and its
-// leading bytes for the executable-format check; on failure it writes the error
+// covers "the slot of this same release" as well as an unchanged binary from
+// an earlier release) and must still exist in storage. It returns the storage
+// key, the blob's decompressed size for the artifact row, and its leading
+// bytes for the executable-format check; on failure it writes the error
 // response and returns ok=false.
 func (h *Handler) resolveHashRef(ctx context.Context, w http.ResponseWriter, projectID int64, refHex string) (string, int64, []byte, bool) {
 	if !validSHA256Hex.MatchString(refHex) {

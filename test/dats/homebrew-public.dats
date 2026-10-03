@@ -2,7 +2,7 @@
 # leave on disk.
 #
 # The brew commands are not written here: scripts/brew-doc-flows.sh extracts
-# them from README.md and substitutes only the host, and this suite asserts the
+# them from docs/homebrew.md and substitutes only the host, and this suite asserts the
 # served /llms.txt agrees with them.
 #
 # The workflow starts the server and publishes the artifacts; $BUILDHOST_TOKEN,
@@ -27,14 +27,19 @@ shared:
 			# runs tests concurrently, and brew installs at the same time
 			# contend for the same prefix.
 			brew install pazer/build/ape-fixture
+			"$REPO/scripts/brew-doc-flows.sh" version "$BREW_HOST" > "$WORK/version.sh"
+			echo "--- documented version flow, executed verbatim ---"
+			cat "$WORK/version.sh"
+			bash -euo pipefail "$WORK/version.sh"
+			brew install pazer/build/versioned-fixture@1.0.0 pazer/build/versioned-fixture
 			echo "REPO='$REPO'" > "$ENV_FILE"
 
 setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
 
 tests:
 	# A single flow, documents, empty drift: the blocks the server serves
-	# in /llms.txt must be the blocks README.md documents.
-	- desc: llms.txt documents the same brew flows as README.md
+	# in /llms.txt must be the blocks docs/homebrew.md documents.
+	- desc: llms.txt documents the same brew flows as docs/homebrew.md
 	  cmd: |
 		set -eu
 		. {shared.env}
@@ -46,7 +51,7 @@ tests:
 		test "$(grep -c '^brew trust ' llms-flows.txt)" = "2" || {
 			echo "llms.txt: want exactly 2 brew flow blocks (public, private)" >&2; exit 1; }
 		# llms.txt names the public host, so compare it after the same
-		# substitution the extractor applies to README.md.
+		# substitution the extractor applies to docs/homebrew.md.
 		sed -e 's|https://|http://|g' -e "s|brew\.pazer\.build|$BREW_HOST|g" llms-flows.txt > llms-local.txt
 		"$REPO/scripts/brew-doc-flows.sh" public "$BREW_HOST" > readme-flows.txt
 		"$REPO/scripts/brew-doc-flows.sh" private "$BREW_HOST" >> readme-flows.txt
@@ -106,6 +111,30 @@ tests:
 	# The same guarantees against the APE-SHAPED fixture, so the invariant
 	# holds on macOS too (where go-toolchain's own artifact is a Mach-O brew
 	# recognizes) and for anyone shipping a Cosmopolitan binary.
+	- desc: the documented versioned install is keg-only and runs
+	  cmd: |
+		set -euo pipefail
+		bin="$(brew --prefix pazer/build/go-toolchain@1.0.0)/bin/go-toolchain"
+		test -x "$bin" || { echo "go-toolchain@1.0.0 did not install $bin" >&2; exit 1; }
+		brew info --json=v2 pazer/build/go-toolchain@1.0.0 | grep -q '"keg_only": *true' \
+			|| { echo "go-toolchain@1.0.0 must be keg-only" >&2; exit 1; }
+		"$bin" version
+	  outputs:
+		stdout:
+			- "Version:"
+
+	- desc: a pinned version installs that release's binary
+	  cmd: '"$(brew --prefix pazer/build/versioned-fixture@1.0.0)/bin/versioned-fixture"'
+	  outputs:
+		stdout:
+			- "versioned-fixture-1.0.0"
+
+	- desc: the unversioned formula beside the pin is the latest release
+	  cmd: versioned-fixture
+	  outputs:
+		stdout:
+			- "versioned-fixture-2.0.0"
+
 	- desc: an APE-shaped formula installs, keeps its mode, and runs
 	  cmd: |
 		set -euo pipefail

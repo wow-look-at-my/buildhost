@@ -75,7 +75,7 @@ func OnSiteDomain(fn func(domain string)) {
 // SiteDomainPlaceholder stands in for the configured site domain when routes
 const SiteDomainPlaceholder = "{site-domain}"
 
-// ListRoutes returns the complete route table for enumeration, including the
+// ListRoutes returns the complete route table for enumeration.
 func ListRoutes() []router.Route {
 	for _, fn := range siteDomainFuncs {
 		fn(SiteDomainPlaceholder)
@@ -128,7 +128,7 @@ func HandleHandler(pattern string, parse ParseFunc, handler http.Handler) {
 }
 
 // HandlePrimary and HandleRawPrimary register main-domain routes that belong to
-// the registry's own UI/API surface (the web frontend and /api/v1). When
+// the registry's own UI/API surface (the web frontend and /api/v1).
 func HandlePrimary(pattern string, parse ParseFunc, handler http.HandlerFunc) {
 	mux.HandleFunc(pattern, router.Allow, primaryOnly(requireProjectFunc(parse, handler)))
 }
@@ -176,9 +176,8 @@ func servicePattern(subdomain, pattern string) string {
 	return method + subdomain + ".{domain}" + rest
 }
 
-// siteDomainPattern turns a path-only pattern into a host+path pattern anchored
-// to a project label under a configured site domain, e.g. ("pazer.site",
-// "GET /{path...}") becomes "GET {project}.pazer.site/{path...}". A non-final
+// siteDomainPattern turns a path-only pattern into a host+path pattern
+// anchored to a project label under a configured site domain.
 func siteDomainPattern(domain, pattern string) string {
 	method := ""
 	rest := pattern
@@ -195,8 +194,6 @@ func SiteDomainHandle(domain, pattern string, parse ParseFunc, handler http.Hand
 	mux.HandleFunc(siteDomainPattern(domain, pattern), router.Allow, requireProjectFunc(parse, handler))
 }
 
-// SiteDomainHandleRaw registers an unauthenticated route on the
-// {project}.<domain> scheme (the /__sso redemption endpoint -- its caller is by
 func SiteDomainHandleRaw(domain, pattern string, handler http.HandlerFunc) {
 	mux.HandleFunc(siteDomainPattern(domain, pattern), router.Allow, handler)
 }
@@ -229,7 +226,7 @@ func ServiceRedirect(from, to string, permanent bool) {
 	})
 }
 
-// ServeHTTP dispatches every request through the single router. Service
+// ServeHTTP dispatches every request through the router. Service
 func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mux.ServeHTTP(w, r)
 }
@@ -251,8 +248,7 @@ func DeriveServiceURL(r *http.Request, service string) *url.URL {
 	return &url.URL{Scheme: RequestScheme(r), Host: service + "." + domainFromRequest(r)}
 }
 
-// RequestScheme returns the scheme the client used to reach this server. We run
-// behind a TLS-terminating Cloudflare Tunnel (and an internal nginx sidecar that
+// RequestScheme returns the scheme the client used to reach this server.
 func RequestScheme(r *http.Request) string {
 	host := hostNoPort(r.Host)
 	if host == "localhost" || strings.HasSuffix(host, ".localhost") || host == "127.0.0.1" || host == "::1" {
