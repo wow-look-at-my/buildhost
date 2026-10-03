@@ -10,6 +10,8 @@ A repo's projects are its root project, named after the repo, plus every `<root>
 
 `auth.reconcileRepoNamespace` rewrites the root segment of every project that carries the repo id when GitHub reports a new repo name. The root `A` becomes `B`. The child `A/child` becomes `B/child`. This runs on WRITE requests only. A read never mutates project state.
 
+The new root is the name `auth.RepoProjectName` gives the repo, the same name OIDC provisions, so `.github` keeps `github`. A name that is an alias of the project itself counts as free. A project can therefore move back onto a name it held before.
+
 A child whose whole path repeats the root collapses onto the root. A repo named after its sole binary otherwise lands on `lpi/lpi`, which names the same thing at both levels.
 
 A target name that is already taken is NOT resolved automatically. That name is a duplicate left by a rename older than this reconcile. To fold release histories together has no safe default. The reconcile logs the duplicate and moves on. An operator resolves it from the admin dashboard.
