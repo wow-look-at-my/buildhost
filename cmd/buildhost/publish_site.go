@@ -50,7 +50,6 @@ func runPublishSite(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Archive to a temp file (not a streaming pipe) so the upload knows the
 	tmp, err := os.CreateTemp("", "buildhost-site-*.tar.gz")
 	if err != nil {
 		return fmt.Errorf("create archive temp file: %w", err)

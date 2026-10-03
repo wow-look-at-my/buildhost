@@ -1,6 +1,7 @@
 package brew
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -28,7 +29,7 @@ func init() {
 	})
 	auth.ServiceHandle("brew", "GET /{project}", handler.parseRoute, handler.ServeFormula)
 	auth.ServiceHandle("brew", "GET /Formula/{project}.rb", handler.parseRoute, handler.ServeFormula)
-	// A slash-namespaced name needs its own route: the {project}.rb pattern is
+	// A slash-namespaced name needs its own route.
 	auth.ServiceHandle("brew", "GET /Formula/{path...}", handler.parseRoute, handler.ServeFormula)
 	auth.ServiceHandleRaw("brew", "GET /tap.git", handler.RedirectTap)
 	auth.ServiceHandleRaw("brew", "GET /tap.git/{path...}", handler.RedirectTap)
@@ -36,7 +37,7 @@ func init() {
 	auth.ServiceHandleRaw("brew", "GET /private/tap.git/{path...}", handler.ServePrivateTap)
 	auth.ServiceHandleRaw("git", "GET /brew/tap.git", handler.ServeTap)
 	auth.ServiceHandleRaw("git", "GET /brew/tap.git/{path...}", handler.ServeTap)
-	// Smart-HTTP git endpoints (see smart.go), always the same pair UNDER a
+	// Smart-HTTP git endpoints (see smart.go).
 	auth.ServiceHandleRaw("brew", "GET /tap.git/info/refs", handler.ServeTapInfoRefs)
 	auth.ServiceHandleRaw("brew", "POST /tap.git/git-upload-pack", handler.ServeTapUploadPack)
 	auth.ServiceHandleRaw("brew", "GET /private/tap.git/info/refs", handler.ServePrivateTapInfoRefs)
@@ -57,11 +58,20 @@ func (h *Handler) parseRoute(r *http.Request) auth.RouteInfo {
 	return route{project: h.resolveFormulaProject(r)}
 }
 
-func (h *Handler) resolveFormulaProject(r *http.Request) string {
+// formulaRequestName returns the formula name the request asks for, split at
+// "@" into the name and the requested version ("" for the unversioned
+// formula). A project name never contains "@".
+func formulaRequestName(r *http.Request) (string, string) {
 	name := r.PathValue("project")
 	if name == "" {
 		name = strings.TrimSuffix(r.PathValue("path"), ".rb")
 	}
+	name, version, _ := strings.Cut(name, "@")
+	return name, version
+}
+
+func (h *Handler) resolveFormulaProject(r *http.Request) string {
+	name, _ := formulaRequestName(r)
 	if h.DB == nil || !strings.Contains(name, "-") {
 		return name
 	}
@@ -94,12 +104,28 @@ type Handler struct {
 	tapMu    sync.Mutex
 	tapSnaps map[string]*tapLineage
 	tapPins  map[string]int
+
+	// fillMu guards the background tar.gz digest filler (queueDigestFill).
+	fillMu      sync.Mutex
+	fillQueue   []digestFill
+	filling     map[int64]bool
+	fillRunning bool
+	fillWG      sync.WaitGroup
 }
 
 func (h *Handler) ServeFormula(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
 
-	release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
+	_, version := formulaRequestName(r)
+	mode := formulaLatest
+	var release *db.Release
+	var err error
+	if version == "" {
+		release, err = h.DB.GetLatestRelease(r.Context(), project.ID)
+	} else {
+		mode = formulaVersioned
+		release, err = h.versionedRelease(r.Context(), project.ID, version)
+	}
 	if errors.Is(err, db.ErrNotFound) {
 		http.NotFound(w, r)
 		return
@@ -115,7 +141,7 @@ func (h *Handler) ServeFormula(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, err := h.formulaForRelease(r.Context(), *project, *release, artifacts, auth.RequestRootURL(r))
+	out, err := h.formulaForRelease(r.Context(), *project, *release, artifacts, auth.RequestRootURL(r), mode, nil)
 	if errors.Is(err, db.ErrNotFound) {
 		http.NotFound(w, r)
 		return
@@ -132,6 +158,26 @@ func (h *Handler) ServeFormula(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("Cache-Control", "no-cache")
 	}
-	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", project.Name+".rb"))
+	filename := project.Name
+	if version != "" {
+		filename = repackage.BrewVersionedFormulaName(project.Name, version)
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", filename+".rb"))
 	io.Copy(w, out.Reader)
+}
+
+// versionedRelease finds the published default-branch release a name@version
+// formula names: the same set, and the same version spelling, the tap's
+// versioned formulas come from.
+func (h *Handler) versionedRelease(ctx context.Context, projectID int64, version string) (*db.Release, error) {
+	releases, err := h.DB.ListPublishedReleasesOnDefaultBranch(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	for _, release := range releases {
+		if brewVersion(release) == version {
+			return &release, nil
+		}
+	}
+	return nil, db.ErrNotFound
 }

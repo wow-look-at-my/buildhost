@@ -21,7 +21,7 @@ func TestParseModulePath(t *testing.T) {
 			want: []repoRef{{Owner: "wow-look-at-my", Repo: "tml"}},
 		},
 		{
-			// A real shape in this org: the module is the "go" directory of the
+			// A real shape in this org.
 			name: "nested module",
 			path: "github.com/wow-look-at-my/agentic-loop/go",
 			want: []repoRef{{Owner: "wow-look-at-my", Repo: "agentic-loop", Dir: "go"}},
@@ -98,7 +98,7 @@ func TestMatchesPrefix(t *testing.T) {
 	assert.True(t, matchesPrefix("github.com/wow-look-at-my/a/b/v2", prefixes))
 	assert.True(t, matchesPrefix("github.com/PazerOP/thing", prefixes))
 
-	// The boundary that matters: a prefix must not match a longer org name that
+	// The boundary that matters.
 	assert.False(t, matchesPrefix("github.com/wow-look-at-my-evil/x", prefixes))
 	assert.False(t, matchesPrefix("github.com/other/x", prefixes))
 	assert.False(t, matchesPrefix("golang.org/x/mod", prefixes))

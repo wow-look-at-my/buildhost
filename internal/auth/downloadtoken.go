@@ -19,7 +19,7 @@ import (
 	"github.com/wow-look-at-my/go-containers/set"
 )
 
-// downloadTokenPrefix tags a signed, artifact-bound temporary download token so
+// downloadTokenPrefix tags a signed.
 const downloadTokenPrefix = "bhdl_"
 
 var (

@@ -14,7 +14,7 @@ var templateMD string
 
 var handler Handler
 
-// The services that serve their own copy of the guide. Nothing here reads a
+// The services that serve their own copy of the guide.
 var serviceSubdomains = set.Of[string]("apt", "brew", "dl", "git", "goproxy", "npm", "oci", "sites", "static")
 
 func init() {
@@ -53,11 +53,11 @@ func render(baseURL string) []byte {
 	return []byte(out)
 }
 
-// siteSection documents the {project}.<site-domain> serving scheme when a site
-// domain is configured, and renders nothing otherwise -- the served guide only
-// describes endpoints this deployment actually has. The section's URLs live on
-// the dedicated site domain, never on a service subdomain of the apex, so the
-// per-subdomain rendering guards are unaffected.
+// siteSection documents the {project}.<site-domain> serving scheme when a
+// site domain is configured, and renders nothing otherwise -- the served
+// guide only describes endpoints this deployment has. The section's URLs live
+// on the dedicated site domain, never on a service subdomain of the apex, so
+// the per-subdomain rendering guards are unaffected.
 func siteSection(scheme string) string {
 	sd := auth.SiteDomain()
 	if sd == "" {
