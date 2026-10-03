@@ -1507,9 +1507,9 @@ const demoData: Record<string, unknown> = {
             ]
         }]
     },
-    // The demo deliberately shows an UNHEALTHY proxy: the failure mode this page
-    // exists for (a credential that cannot read private modules while public ones
-    // keep working) is the single worth showing off in a preview.
+    // The demo deliberately shows an UNHEALTHY proxy: the failure mode this
+    // page exists for (a credential that cannot read private modules while
+    // public ones keep working) is the case to show in a preview.
     "/goproxy": {
         enabled: true,
         state: {

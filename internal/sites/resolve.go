@@ -18,13 +18,7 @@ func defaultBranch(project *db.Project) string {
 	return db.LatestBranch
 }
 
-// resolveRootBranch returns the branch the bare site root should resolve to. It
-// prefers the project's default branch (defaultBranch), but only when a site has
-// actually been published there. projects.default_branch is a best-effort hint
-// learned from GitHub on publish; it can lag at the seed "master" -- e.g. until a
-// GitHub-OIDC publish corrects it, or when buildhost can't reach a private repo
-// to learn its real default -- in which case the sites may all live on a branch
-// (commonly "main") the hint doesn't name.
+// resolveRootBranch returns the branch the bare site root should resolve to.
 func resolveRootBranch(ctx context.Context, database *db.DB, project *db.Project) string {
 	preferred := defaultBranch(project)
 	if database == nil || siteExists(ctx, database, project.ID, preferred) {

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Print the documented Homebrew flow, localized for a test instance.
-#
 set -euo pipefail
 
 leg="${1:?usage: brew-doc-flows.sh public|private|version <host:port>}"
