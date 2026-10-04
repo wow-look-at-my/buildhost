@@ -40,17 +40,15 @@ brew install pazer/build/myrepo-myapp
 
 ## Specific versions
 
-The tap carries one versioned formula per published release on the project's default branch, named `<formula>@<version>`. The version is the release version without a leading `v`. Install one through the tap you already added:
+The tap carries one formula per project, at the latest release on the default branch, so `brew update` lists no versions. Its git history holds every published release. Install one with `brew version-install`, without a leading `v` on the version:
 
 ```bash
-brew install pazer/build/go-toolchain@1.0.0
+brew version-install pazer/build/go-toolchain@1.0.0
 ```
 
-A versioned formula is keg-only and never linked automatically, so it installs beside the unversioned formula without a link conflict, in either order. Run it from `$(brew --prefix pazer/build/go-toolchain@1.0.0)/bin/go-toolchain`. To put it on PATH instead, run `brew unlink go-toolchain` when the unversioned formula is installed, then `brew link --force go-toolchain@1.0.0`.
+Homebrew copies that release's formula out of the tap history into a personal `<user>/versions` tap, as `<formula>@<version>`, and installs it from there. A pinned version is keg-only, so it installs beside the latest one without a link conflict. Run it from `$(brew --prefix go-toolchain@1.0.0)/bin/go-toolchain`, or `brew link --force` it after `brew unlink go-toolchain`. When the version asked for is the latest one, `brew version-install` installs the ordinary formula instead.
 
-A private project's versions come through the authenticated tap, with `HOMEBREW_BUILDHOST_TOKEN` set as above. `myrepo/myapp` 0.9.0 installs as `brew install pazer/build/myrepo-myapp@0.9.0`.
-
-A version that does not start with a digit has no versioned formula. Homebrew turns `@<digit>` into `AT` in the Ruby class name, and any other `@` leaves the class name invalid.
+A private project works the same way through the authenticated tap, with `HOMEBREW_BUILDHOST_TOKEN` set as above. A release appears in the history once buildhost has hashed its download. A background worker does that at start and whenever a tap refresh finds a release it lacks.
 
 ## Background services (create_service)
 

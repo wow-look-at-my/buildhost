@@ -23,12 +23,9 @@ const (
 	formulaLatest formulaMode = iota
 	// formulaVersioned is a name@version formula; missing digests are computed.
 	formulaVersioned
-	// formulaVersionedBudgeted is a name@version formula for the tap.
-	formulaVersionedBudgeted
+	// formulaHistory is a past release's unversioned formula for the tap history.
+	formulaHistory
 )
-
-// tapInlineDigestBudget is how many missing version digests one tap build computes inline.
-var tapInlineDigestBudget = 16
 
 var errDigestPending = errors.New("tar.gz digest not cached yet")
 
@@ -42,16 +39,15 @@ func brewVersion(release db.Release) string {
 	return version
 }
 
-// formulaForRelease renders one formula. budget is read only in
-// formulaVersionedBudgeted mode.
-func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, release db.Release, artifacts []db.PlatformArtifact, baseURL string, mode formulaMode, budget *int) (*repackage.Output, error) {
+// formulaForRelease renders one formula.
+func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, release db.Release, artifacts []db.PlatformArtifact, baseURL string, mode formulaMode) (*repackage.Output, error) {
 	// A digit-leading project name can never be a loadable Homebrew formula
 	if !repackage.BrewEligibleProjectName(project.Name) {
 		return nil, db.ErrNotFound
 	}
 	version := brewVersion(release)
 	className := repackage.BrewClassName(project.Name)
-	if mode != formulaLatest {
+	if mode == formulaVersioned {
 		name, ok := repackage.BrewVersionedClassName(project.Name, version)
 		if !ok {
 			return nil, db.ErrNotFound
@@ -81,17 +77,12 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 
 		sum, err := h.cachedTarGZSHA256(ctx, a)
 		if errors.Is(err, errDigestPending) {
-			switch {
-			case mode != formulaVersionedBudgeted:
-				sum, err = h.tarGZSHA256(ctx, project, release, a, baseURL)
-			case *budget > 0:
-				*budget--
-				sum, err = h.tarGZSHA256(ctx, project, release, a, baseURL)
-			default:
+			if mode == formulaHistory {
 				h.queueDigestFill(project, release, a, baseURL)
 				pending = true
 				continue
 			}
+			sum, err = h.tarGZSHA256(ctx, project, release, a, baseURL)
 		}
 		if err != nil {
 			return nil, err
@@ -121,8 +112,7 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 		License:     firstNonEmpty(project.License, "MIT"),
 		Kind:        kind,
 		// A private project's formula downloads through the tap's token-aware
-		Private:   project.IsPrivate,
-		Versioned: mode != formulaLatest,
+		Private: project.IsPrivate,
 		// The project's packaging-agnostic create_service setting.
 		Service:   project.CreateService,
 		Resources: resources,
@@ -211,7 +201,7 @@ func (h *Handler) fillDigests() {
 		h.fillMu.Unlock()
 
 		if _, err := h.tarGZSHA256(context.Background(), job.project, job.release, job.artifact, job.baseURL); err != nil {
-			slog.Warn("fill tar.gz digest for versioned formula", "project", job.project.Name, "version", job.release.Version, "artifact_id", job.artifact.ID, "err", err)
+			slog.Warn("fill tar.gz digest for tap history", "project", job.project.Name, "version", job.release.Version, "artifact_id", job.artifact.ID, "err", err)
 		}
 
 		h.fillMu.Lock()
@@ -223,7 +213,7 @@ func (h *Handler) fillDigests() {
 		h.fillMu.Unlock()
 
 		if drained {
-			// The live lineages were built without these versions.
+			// The live lineages were built without these releases.
 			h.tapMu.Lock()
 			for key := range h.tapSnaps {
 				h.dropTapLineageLocked(key)
@@ -237,13 +227,13 @@ func (h *Handler) fillDigests() {
 	}
 }
 
-// BackfillVersionDigests queues every uncached tar.gz digest the served
-// handler's versioned formulas need.
-func BackfillVersionDigests(ctx context.Context) error {
-	return handler.backfillVersionDigests(ctx)
+// BackfillHistoryDigests queues every uncached tar.gz digest the tap history
+// needs on the served handler's background filler.
+func BackfillHistoryDigests(ctx context.Context) error {
+	return handler.backfillHistoryDigests(ctx)
 }
 
-func (h *Handler) backfillVersionDigests(ctx context.Context) error {
+func (h *Handler) backfillHistoryDigests(ctx context.Context) error {
 	projects, err := h.DB.ListProjects(ctx)
 	if err != nil {
 		return err

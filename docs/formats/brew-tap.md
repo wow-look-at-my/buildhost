@@ -26,31 +26,27 @@ The route then serves a tap scoped to the credential. That tap holds every publi
 
 A credentialed request to plain `/tap.git` is likewise served in place, rather than redirected. A redirect drops the credential mid-flight.
 
-A private formula calls `require_relative` on the tap's `lib/buildhost_private_download.rb` (`repackage.BrewPrivateStrategy`). It downloads `using: BuildhostCurlDownloadStrategy`. That strategy sends `Authorization: Bearer $HOMEBREW_BUILDHOST_TOKEN`. The `HOMEBREW_` prefix is mandatory, because Homebrew scrubs every other env var before formula code runs. The tap itself never embeds a token. The authenticated dl redirect completes the chain with its signed-token Location.
+A private formula carries `repackage.BrewPrivateStrategy` inline, guarded by `unless defined?`. `brew extract` copies a formula into a tap that has no `lib/`, so the formula cannot require a file from this tap. It downloads `using: BuildhostCurlDownloadStrategy`. That strategy sends `Authorization: Bearer $HOMEBREW_BUILDHOST_TOKEN`. The `HOMEBREW_` prefix is mandatory, because Homebrew scrubs every other env var before formula code runs. The tap itself never embeds a token. The authenticated dl redirect completes the chain with its signed-token Location.
 
 A credentialed tap or formula response carries `Cache-Control: private, no-store` and `Vary: Authorization`. The CDN can therefore never serve one scope's tap to another.
 
 ## Versioned formulas
 
-The tap carries `Formula/<formula>/<formula>@<version>.rb` for every published release on the project's default branch, the same set apex `latest` picks from. `brew install pazer/build/<formula>@<version>` installs that release. `brew.{domain}/Formula/<formula>@<version>.rb` serves one directly. The version is `release.Version` without a leading `v`, or `version_num` when the version is empty.
+The tap TREE holds ONE formula per project, the latest release. It never holds a `name@version` file. Homebrew lists every file under `Formula/` as a formula of its own (`Tap#formula_files` globs `Formula/**/*.rb`), so a file per release floods `brew update` with "New Formulae". `TestTap_OneFormulaPerProject` guards it.
 
-Each project's versions sit in their own directory. Homebrew finds a tap formula anywhere under `Formula/` by basename, because `Tap#formula_files` globs `Formula/**/*.rb`. A publish then rewrites only that project's tree object. One flat tree will hold every version of every project.
+The tap HISTORY holds every published default-branch release. `brew version-install <tap>/<formula>@<version>` finds no such formula. As a result, it runs `brew extract`, which walks the git log of `Formula/<formula>.rb` back from HEAD to the commit whose `version` matches. It writes that file into the user's `<user>/versions` tap with the class renamed to `<Formula>AT<version>`, then installs it. `brew extract` source: `Library/Homebrew/dev-cmd/extract.rb`.
 
-A versioned formula is keg-only with a string reason, not `keg_only :versioned_formula`. It installs beside the unversioned formula, which ships the same binary name, without a link conflict in either order.
+`refreshTapLineage` therefore appends, before the commit of the current tree, one commit per past release the lineage has not recorded. Each commit sets that project's formula to that release. `buildhost-history-keys` in the lineage directory records each formula state (path plus a sha256 of its bytes) the history already holds. A re-rendered release, from a new digest or a template change, is a new state and is appended again. As a result, `brew extract` finds the current bytes first. The commits only append, so a clone still fast-forwards. `TestSmartClone_HistoryHoldsEveryVersion` guards it.
+
+A history formula needs the tar.gz digest of every artifact of every release. A tap request never computes one for a past release: `formulaHistory` mode leaves a release with an uncached digest out and queues it. This is on the handler's one background filler (`queueDigestFill`). When the queue drains the filler drops every live lineage, so the next fetch appends the release. `buildhost serve` queues every missing digest at start (`brew.BackfillHistoryDigests`), which covers the first deploy and every `TransformVersion` bump. Hashing past releases on the request path pinned the CPU on a first clone. `TestTap_BuildDigestsLatestReleaseOnly` and `TestTapHistory_PendingDigestFillsInBackground` guard it.
+
+`brew.{domain}/Formula/<formula>@<version>.rb` serves one release's formula directly. The version is `release.Version` without a leading `v`, or `version_num` when the version is empty. Its digests are computed on that request.
+
+Every formula declares `keg_only` when its class name is not the base class name, which `Module#name` gives at load time. The tap's own formula keeps the base name, so it links. A formula `brew extract` renamed is keg-only, so it installs beside the latest one. This ships the same binary name, without a link conflict in either order. The reason is a string, not `keg_only :versioned_formula`.
 
 Homebrew 7 auto-links a `:versioned_formula` keg when no sibling version is installed (`FormulaInstaller#auto_link_versioned_keg_only?`). It relies on finding the siblings to unlink them when another version links. In a third-party tap it never finds them: `Tap#prefix_to_versioned_formulae_names` is keyed by full `user/repo/name` names, and `Formula#versioned_formulae_names` looks up the short name. Installing a pin and then the unversioned formula therefore failed with "Can not symlink bin/<name>". A string reason is never auto-linked.
 
 The class name is `repackage.BrewVersionedClassName`, a port of Homebrew's `Formulary.class_s`. Homebrew turns `@<digit>` into `AT`, so `ns-app@1.2.3` is `NsAppAT123`. A version that does not start with a digit keeps its `@` and cannot be a Ruby constant. As a result, it gets no versioned formula. Neither does one whose class name comes out with any other non-constant character, such as `1.0.0--x`.
-
-A private versioned formula sits one level deeper than the unversioned one, so it requires `../../lib/buildhost_private_download`.
-
-A couple of versions that differ only by case will collide in a clone on a case-insensitive filesystem. The newest one keeps the path.
-
-### Digest cost
-
-A versioned formula needs the tar.gz digest of every artifact of every default-branch release, and the tap builds under `tapMu`. One build computes at most `tapInlineDigestBudget` missing digests inline. That covers a publish. As a result, a new release is in the next tap. A release still missing a digest after that is left out of the build and queued on the handler's one background filler (`queueDigestFill`). When the queue drains, the filler drops every live lineage, so the next fetch rebuilds rather than waiting out `tapCacheTTL`.
-
-`buildhost serve` queues every missing version digest at start (`brew.BackfillVersionDigests`). That covers the first deploy over an existing history and every `TransformVersion` bump, which invalidates all cached digests at once.
 
 ## Formula codegen must always emit valid, loadable Ruby
 
