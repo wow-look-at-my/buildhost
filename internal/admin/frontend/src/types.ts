@@ -173,6 +173,18 @@ export interface SiteDetail {
     updated_at: string;
 }
 
+export interface SiteFile {
+    path: string;
+    size: number;
+}
+
+export interface SiteFilesData {
+    services: ServiceURLs;
+    project: Project;
+    site: SiteInfo;
+    files: SiteFile[];
+}
+
 export interface SitesData {
     services: ServiceURLs;
     sites: SiteDetail[];
@@ -266,6 +278,29 @@ export interface RetentionData {
     preview: RetentionPreview;
 }
 
+// The inventory (GET /api/retention/inventory) is a debug dump: every stored
+// file, and the reason retention keeps it. The page copies or downloads it
+// verbatim, so only the fields the buttons report are named here.
+export interface RetentionInventory {
+    generated_at: string;
+    totals: {
+        files: number;
+        bytes: number;
+        blobs: number;
+        blob_bytes: number;
+        reclaimable_blobs: number;
+        reclaimable_bytes: number;
+        held_blobs: number;
+        held_bytes: number;
+        releases: number;
+        evicted_releases: number;
+        hold_mismatches: number;
+    };
+    by_hold: { name: string; files: number; bytes: number; blobs: number; blob_bytes: number }[];
+    by_role: { name: string; files: number; bytes: number; blobs: number; blob_bytes: number }[];
+    files: Record<string, unknown>[];
+}
+
 // --- Project tree (the Projects page groups slash-namespaced names) ---
 
 export interface TreeRow {
@@ -286,10 +321,48 @@ export interface Pages {
     tokens(): void;
     sites(): void;
     site(name: string): void;
+    siteFiles(name: string, branch: string): void;
     oidc(): void;
     artifacts(): void;
     storage(): void;
     retention(): void;
+    goproxy(): void;
+    duplicates(): void;
+}
+
+// --- Projects split by a GitHub rename (admin GET /api/duplicates) ---
+
+export interface DuplicateEntry {
+    name: string;
+    root: string;
+    repo: string;
+    releases: number;
+}
+
+export interface DuplicateGroup {
+    repo_id: string;
+    repo: string;
+    projects: DuplicateEntry[];
+}
+
+export interface DuplicatesData {
+    groups: DuplicateGroup[];
+}
+
+export interface MergePlan {
+    from: string;
+    into: string;
+    releases: { id: number; old_version: string; new_version: string }[];
+    aliases: string[];
+    sites: number;
+    oci_tags: number;
+    oci_blobs: number;
+    tokens: number;
+    policies: number;
+    conflicts: string[];
+    applicable: boolean;
+    applied: boolean;
+    snapshot?: string;
 }
 
 // --- Signed temporary download link (admin POST .../download-links) ---
@@ -298,9 +371,8 @@ export interface DownloadLink {
     url: string;
 }
 
-// serviceURLs(r) in internal/admin/admin.go: one absolute base URL per service
-// subdomain, derived per request. Present on the dashboard, project, release
-// and registries payloads.
+// serviceURLs(r) in internal/admin/admin.go: one absolute base URL per
+// service subdomain, derived per request.
 export interface ServiceURLs {
     dl: string;
     apt: string;
@@ -309,4 +381,66 @@ export interface ServiceURLs {
     oci: string;
     sites: string;
     static: string;
+}
+
+// --- Go module proxy (GET /api/goproxy) ---
+
+export interface GoproxyHealth {
+    healthy: boolean;
+    reason?: string;
+    credential_configured: boolean;
+    credential_kind: string;
+    private_prefixes: string[] | null;
+    upstream: string;
+    readiness_module: string;
+    probed: boolean;
+    probe_version?: string;
+    probe_error?: string;
+    probe_error_kind?: string;
+    checked_at: string;
+}
+
+export interface GoproxyModule {
+    path: string;
+    source: string;
+    private: boolean;
+    versions: number;
+    bytes: number;
+    last_error_kind: string;
+    last_error: string;
+    last_error_at?: string;
+    last_success_at?: string;
+    last_fetched_at?: string;
+}
+
+export interface GoproxyEvent {
+    at: string;
+    module: string;
+    version: string;
+    endpoint: string;
+    source: string;
+    outcome: string;
+    status: number;
+    detail: string;
+    duration: string;
+}
+
+export interface GoproxyState {
+    health: GoproxyHealth;
+    cache: { modules: number; versions: number; zips: number; bytes: number; failing_modules: number };
+    traffic: {
+        since_start: boolean;
+        cache_hits: number;
+        cache_misses: number;
+        fetches: number;
+        bytes_sent: number;
+        errors: Record<string, number> | null;
+    };
+    modules: GoproxyModule[] | null;
+    recent: GoproxyEvent[] | null;
+}
+
+export interface GoproxyData {
+    enabled: boolean;
+    state?: GoproxyState;
 }

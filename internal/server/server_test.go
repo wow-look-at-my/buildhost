@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	_ "github.com/wow-look-at-my/buildhost/internal/api"
@@ -26,9 +27,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
-// testEnv bundles the objects needed by every integration test. cfg, store,
-// and handler are kept so a test can simulate a redeploy (server.New over the
-// same data dir) or serve the same router under a rewritten Host.
+// testEnv bundles the objects needed by every integration test. cfg, store.
 type testEnv struct {
 	ts       *httptest.Server
 	database *db.DB
@@ -105,10 +104,6 @@ func (e *testEnv) doRequest(t *testing.T, method, path, contentType string, body
 	req, err := http.NewRequest(method, e.ts.URL+path, body)
 	require.Nil(t, err)
 
-	// The web frontend and /api/v1 are scoped to the primary apex when one is
-	// configured, so main-domain requests must address it (clients of such a
-	// deployment reach the API via that hostname). With no primary domain
-	// (the default env) the httptest host is used as before.
 	if e.cfg.PrimaryDomain != "" {
 		req.Host = e.cfg.PrimaryDomain
 	}
@@ -185,6 +180,7 @@ func readBody(t *testing.T, resp *http.Response) []byte {
 // ---------------------------------------------------------------------------
 
 func TestFullLifecycle(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	binaryPayload := []byte("#!/bin/sh\necho hello world\n")
@@ -280,6 +276,7 @@ func TestFullLifecycle(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHealthz(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	resp := env.get(t, "/healthz")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -289,14 +286,26 @@ func TestHealthz(t *testing.T) {
 		Status  string `json:"status"`
 		Commit  string `json:"commit"`
 		Version string `json:"version"`
+		Started string `json:"started"`
 	}
 	require.NoError(t, json.Unmarshal(readBody(t, resp), &body))
 	require.Equal(t, "ok", body.Status)
 	require.NotEmpty(t, body.Commit)  // "unknown" in tests, but never empty
 	require.NotEmpty(t, body.Version) // "dev" in tests, but never empty
+	started, err := time.Parse(time.RFC3339, body.Started)
+	require.NoError(t, err, "started must be an RFC 3339 time")
+	require.False(t, started.After(time.Now()), "started lies in the future")
+
+	again := env.get(t, "/healthz")
+	var second struct {
+		Started string `json:"started"`
+	}
+	require.NoError(t, json.Unmarshal(readBody(t, again), &second))
+	require.Equal(t, body.Started, second.Started, "started names the process start, so it never moves while the process runs")
 }
 
 func TestHealthz_DBClosed(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	// Close the database to simulate an unreachable DB.

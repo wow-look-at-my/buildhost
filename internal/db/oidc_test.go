@@ -10,6 +10,7 @@ import (
 )
 
 func TestOIDCPolicy_CRUD(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -22,7 +23,6 @@ func TestOIDCPolicy_CRUD(t *testing.T) {
 	require.NoError(t, d.CreateOIDCPolicy(ctx, p))
 	assert.NotEqual(t, int64(0), p.ID)
 
-	// List policies should return the one we created.
 	policies, err := d.ListOIDCPolicies(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(policies))
@@ -42,6 +42,7 @@ func TestOIDCPolicy_CRUD(t *testing.T) {
 }
 
 func TestOIDCPolicy_CreateDuplicateReturnsErrConflict(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -63,6 +64,7 @@ func TestOIDCPolicy_CreateDuplicateReturnsErrConflict(t *testing.T) {
 }
 
 func TestOIDCPolicy_DeleteNotFoundReturnsErrNotFound(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -71,6 +73,7 @@ func TestOIDCPolicy_DeleteNotFoundReturnsErrNotFound(t *testing.T) {
 }
 
 func TestOIDCPolicy_WithProjectScope(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -96,6 +99,7 @@ func TestOIDCPolicy_WithProjectScope(t *testing.T) {
 }
 
 func TestOIDCPolicy_ListByIssuer(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -115,12 +119,10 @@ func TestOIDCPolicy_ListByIssuer(t *testing.T) {
 		require.NoError(t, d.CreateOIDCPolicy(ctx, p))
 	}
 
-	// List by issuer A should return 2.
 	policiesA, err := d.ListOIDCPoliciesByIssuer(ctx, "https://issuer-a.example.com")
 	require.NoError(t, err)
 	assert.Equal(t, 2, len(policiesA))
 
-	// List by issuer B should return 1.
 	policiesB, err := d.ListOIDCPoliciesByIssuer(ctx, "https://issuer-b.example.com")
 	require.NoError(t, err)
 	assert.Equal(t, 1, len(policiesB))
@@ -132,6 +134,7 @@ func TestOIDCPolicy_ListByIssuer(t *testing.T) {
 }
 
 func TestOIDCPolicy_GetByID_NotFound(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -140,6 +143,7 @@ func TestOIDCPolicy_GetByID_NotFound(t *testing.T) {
 }
 
 func TestOIDCPolicy_DifferentSubjectPatternAllowed(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 

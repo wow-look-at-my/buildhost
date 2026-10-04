@@ -11,6 +11,7 @@ CREATE TABLE projects (
     github_repo_id TEXT NOT NULL DEFAULT '',
     default_branch TEXT NOT NULL DEFAULT 'master',
     create_service INTEGER NOT NULL DEFAULT 0,
+    apt_depends TEXT NOT NULL DEFAULT '',
     created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );
@@ -151,6 +152,18 @@ CREATE TABLE oci_tags (
     UNIQUE(project_id, tag)
 );
 
+-- Every name a project answered to before a rename (mirrored from
+-- migrations/018_project_aliases.sql). A project name is a public contract, so
+-- an old dl/apt/brew/npm URL keeps resolving after the name follows its repo.
+CREATE TABLE project_aliases (
+    name       TEXT PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES projects(id),
+    created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_aliases_project ON project_aliases(project_id);
+CREATE INDEX IF NOT EXISTS idx_projects_github_repo_id ON projects(github_repo_id);
+
 CREATE TABLE retention_settings (
     id            INTEGER PRIMARY KEY CHECK (id = 1),
     keep_n        INTEGER NOT NULL DEFAULT 10,
@@ -165,3 +178,45 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_stripped_key ON artifacts(stripped_stor
 CREATE INDEX IF NOT EXISTS idx_artifacts_debug_key    ON artifacts(debug_storage_key);
 CREATE INDEX IF NOT EXISTS idx_packaged_storage_key   ON packaged_artifacts(storage_key);
 CREATE INDEX IF NOT EXISTS idx_oci_blob_links_skey    ON oci_blob_links(storage_key);
+
+-- Go module proxy cache (mirrored from migrations/017_goproxy.sql). Cached
+-- upstream modules are NOT projects/releases -- see that migration for why.
+CREATE TABLE goproxy_modules (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_path     TEXT NOT NULL UNIQUE,
+    source          TEXT NOT NULL DEFAULT 'github',
+    last_error_kind TEXT NOT NULL DEFAULT '',
+    last_error      TEXT NOT NULL DEFAULT '',
+    last_error_at   DATETIME,
+    last_success_at DATETIME,
+    created_at      DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE goproxy_versions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_id       INTEGER NOT NULL REFERENCES goproxy_modules(id) ON DELETE CASCADE,
+    version         TEXT NOT NULL,
+    commit_sha      TEXT NOT NULL DEFAULT '',
+    committed_at    DATETIME,
+    go_mod          TEXT NOT NULL DEFAULT '',
+    zip_storage_key TEXT NOT NULL DEFAULT '',
+    zip_size        INTEGER NOT NULL DEFAULT 0,
+    fetched_at      DATETIME NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(module_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_goproxy_versions_module ON goproxy_versions(module_id);
+CREATE INDEX IF NOT EXISTS idx_goproxy_versions_key    ON goproxy_versions(zip_storage_key);
+
+-- Run locks (mirrored from migrations/019_run_locks.sql).
+CREATE TABLE run_locks (
+    repo_id     TEXT NOT NULL,
+    run_id      TEXT NOT NULL,
+    run_attempt TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    value       TEXT NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (repo_id, run_id, run_attempt, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_run_locks_created ON run_locks(created_at);

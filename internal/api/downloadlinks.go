@@ -119,8 +119,6 @@ func (h *Handler) CreateDownloadLink(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// clampDownloadLinkTTL maps a requested TTL (seconds; 0 = use default) into the
-// allowed [min, max] window.
 func clampDownloadLinkTTL(seconds int64) time.Duration {
 	ttl := defaultDownloadLinkTTL
 	if seconds > 0 {
@@ -137,7 +135,6 @@ func clampDownloadLinkTTL(seconds int64) time.Duration {
 
 // resolvedDownloadVersion mirrors the dl handler: the static endpoint keys on a
 // bare numeric/semver string (no leading "v"), falling back to the auto-increment
-// number. Signing this exact string keeps the link's v= matching the signature.
 func resolvedDownloadVersion(rel *db.Release) string {
 	v := strings.TrimPrefix(rel.Version, "v")
 	if v == "" {

@@ -14,6 +14,7 @@ import (
 )
 
 func TestCreateRelease_Semver(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -36,6 +37,7 @@ func TestCreateRelease_Semver(t *testing.T) {
 }
 
 func TestCreateRelease_Auto(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -58,6 +60,7 @@ func TestCreateRelease_Auto(t *testing.T) {
 }
 
 func TestCreateRelease_AutoWithExplicitVersion(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -82,6 +85,7 @@ func TestCreateRelease_AutoWithExplicitVersion(t *testing.T) {
 // A publish that carries the repo's default branch records it on the project,
 // so the apex "latest" tracks that branch -- the go-toolchain ("v1") fix.
 func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -105,8 +109,7 @@ func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "v1", updated.DefaultBranch, "publish must record the repo's default branch")
 
-	// "latest" now resolves to the v1 release; under the old hardcoded "master"
-	// it would have been nothing.
+	// "latest" now resolves to the v1 release; under the hardcoded "master"
 	latest, err := h.DB.GetLatestRelease(ctx, proj.ID)
 	require.NoError(t, err)
 	assert.Equal(t, rel.Version, latest.Version)
@@ -119,6 +122,7 @@ func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
 // never clobber an operator-set value, and a declaring CI is the source of
 // truth.
 func TestCreateRelease_CreateServiceDeclaration(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -158,6 +162,7 @@ func TestCreateRelease_CreateServiceDeclaration(t *testing.T) {
 }
 
 func TestCreateRelease_InvalidDefaultBranch(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -179,6 +184,7 @@ func TestCreateRelease_InvalidDefaultBranch(t *testing.T) {
 // requireProject middleware (tested in the auth package).
 
 func TestCreateRelease_InvalidBody(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -195,26 +201,56 @@ func TestCreateRelease_InvalidBody(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
-func TestCreateRelease_SemverMissingVersion(t *testing.T) {
-	h := setupTestHandler(t)
-	ctx := context.Background()
-
-	proj := &db.Project{Name: "semproj2", Versioning: db.VersioningSemver}
-	require.NoError(t, h.DB.CreateProject(ctx, proj))
-
-	body := `{}`
-	req := httptest.NewRequest("POST", "/api/projects/semproj2/releases", strings.NewReader(body))
-	req.SetPathValue("project", "semproj2")
+// postSemverRelease creates a release on a semver project and returns the recorder.
+func postSemverRelease(t *testing.T, h *Handler, proj *db.Project, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest("POST", "/api/projects/"+proj.Name+"/releases", strings.NewReader(body))
+	req.SetPathValue("project", proj.Name)
 	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.CreateRelease(rec, req)
+	return rec
+}
 
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Contains(t, rec.Body.String(), "version is required")
+func TestCreateRelease_SemverMissingVersionStartsAtFirstPatch(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+	proj := &db.Project{Name: "semproj2", Versioning: db.VersioningSemver}
+	require.NoError(t, h.DB.CreateProject(context.Background(), proj))
+
+	rec := postSemverRelease(t, h, proj, `{}`)
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var rel db.Release
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
+	assert.Equal(t, "0.0.1", rel.Version)
+}
+
+func TestCreateRelease_SemverMissingVersionBumpsTheLatestPatch(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+	proj := &db.Project{Name: "semproj3", Versioning: db.VersioningSemver}
+	require.NoError(t, h.DB.CreateProject(context.Background(), proj))
+	require.Equal(t, http.StatusCreated, postSemverRelease(t, h, proj, `{"version":"v1.2.3"}`).Code)
+
+	rec := postSemverRelease(t, h, proj, `{"git_branch":"main"}`)
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var rel db.Release
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
+	assert.Equal(t, "1.2.4", rel.Version)
+	assert.Equal(t, semverToNum("1.2.4"), rel.VersionNum)
+}
+
+func TestNumToSemverInvertsSemverToNum(t *testing.T) {
+	for _, v := range []string{"0.0.1", "1.2.3", "10.0.999", "3.41.0"} {
+		assert.Equal(t, v, numToSemver(semverToNum(v)))
+	}
 }
 
 func TestCreateRelease_Duplicate(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -236,6 +272,7 @@ func TestCreateRelease_Duplicate(t *testing.T) {
 }
 
 func TestGetRelease_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -263,6 +300,7 @@ func TestGetRelease_Success(t *testing.T) {
 // container -- so without this the fallback has nothing to recover and a
 // publish fails for the duration of someone else's deploy.
 func TestGetRelease_ReturnsArtifacts(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -300,13 +338,12 @@ func TestGetRelease_ReturnsArtifacts(t *testing.T) {
 
 	require.Len(t, got.Artifacts, 2)
 	for _, a := range got.Artifacts {
-		// The digest is what a storage record is keyed by; an empty one would
-		// make the recovery path useless even when it fires.
 		assert.Equal(t, key, a.SHA256)
 	}
 }
 
 func TestGetRelease_ReleaseNotFound(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -324,13 +361,13 @@ func TestGetRelease_ReleaseNotFound(t *testing.T) {
 }
 
 func TestGetRelease_Latest(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
 	proj := &db.Project{Name: "latestproj", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
 
-	// Two published releases; "latest" must resolve to the highest version.
 	older := &db.Release{ProjectID: proj.ID, Version: "1", VersionNum: 1, GitBranch: "master", GitCommit: "aaa111"}
 	require.NoError(t, h.DB.CreateRelease(ctx, older))
 	require.NoError(t, h.DB.PublishRelease(ctx, older.ID))
@@ -354,6 +391,7 @@ func TestGetRelease_Latest(t *testing.T) {
 }
 
 func TestGetRelease_LatestNoPublishedReleases(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -378,6 +416,7 @@ func TestGetRelease_LatestNoPublishedReleases(t *testing.T) {
 // requireProject middleware in the auth package.
 
 func TestListReleases_Success(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -402,6 +441,7 @@ func TestListReleases_Success(t *testing.T) {
 // requireProject middleware in the auth package.
 
 func TestCreateRelease_OciUser(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -428,6 +468,7 @@ func TestCreateRelease_OciUser(t *testing.T) {
 }
 
 func TestCreateRelease_InvalidOciUser(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
@@ -447,6 +488,7 @@ func TestCreateRelease_InvalidOciUser(t *testing.T) {
 }
 
 func TestValidOCIUser(t *testing.T) {
+	t.Serial()
 	valid := []string{"root", "nonroot", "65532", "65532:65532", "nonroot:nonroot", "1000:1000", "app", "_svc", "a-b:c-d"}
 	for _, s := range valid {
 		assert.True(t, validOCIUser(s), "expected %q to be valid", s)
@@ -458,6 +500,7 @@ func TestValidOCIUser(t *testing.T) {
 }
 
 func TestSemverToNum(t *testing.T) {
+	t.Serial()
 	tests := []struct {
 		input    string
 		expected int64
@@ -482,13 +525,13 @@ func TestSemverToNum(t *testing.T) {
 // That is the whole point -- publishing a build for yourself without moving the
 // pointer everyone else follows.
 func TestCreateRelease_Draft(t *testing.T) {
+	t.Serial()
 	h := setupTestHandler(t)
 	ctx := context.Background()
 
 	proj := &db.Project{Name: "draftproj", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	// The apex "latest" tracks the project's default branch; use it so the
-	// assertions below exercise the real resolution path.
+	// The apex "latest" tracks the project's default branch.
 	branch := db.LatestBranch
 
 	create := func(body string) db.Release {
@@ -505,15 +548,14 @@ func TestCreateRelease_Draft(t *testing.T) {
 		return rel
 	}
 
-	published := create(`{"git_branch":"` + branch + `"}`)
+	published := create(jsonDoc(t, map[string]any{"git_branch": branch}))
 	require.NoError(t, h.DB.PublishRelease(ctx, published.ID))
 
-	draft := create(`{"git_branch":"` + branch + `","draft":true}`)
+	draft := create(jsonDoc(t, map[string]any{"git_branch": branch, "draft": true}))
 	assert.True(t, draft.Draft)
 	assert.False(t, draft.Published)
 
-	// The apex "latest" still resolves to the published release, not the
-	// newer draft.
+	// The apex "latest" still resolves to the published release.
 	latest, err := h.DB.GetLatestRelease(ctx, proj.ID)
 	require.NoError(t, err)
 	assert.Equal(t, published.Version, latest.Version, "a draft must never become latest")

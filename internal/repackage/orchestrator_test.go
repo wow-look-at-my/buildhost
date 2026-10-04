@@ -31,6 +31,7 @@ func openTestStore(t *testing.T) *storage.Filesystem {
 }
 
 func TestOrchestrator_PublishRelease_NoArtifacts(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	store := openTestStore(t)
 	ctx := context.Background()
@@ -53,6 +54,7 @@ func TestOrchestrator_PublishRelease_NoArtifacts(t *testing.T) {
 }
 
 func TestOrchestrator_PublishRelease_WithArtifact(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	store := openTestStore(t)
 	ctx := context.Background()
@@ -90,6 +92,7 @@ func TestOrchestrator_PublishRelease_WithArtifact(t *testing.T) {
 }
 
 func TestOrchestrator_PublishRelease_BinaryKind_AttemptsStrip(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	store := openTestStore(t)
 	ctx := context.Background()
@@ -129,6 +132,7 @@ func TestOrchestrator_PublishRelease_BinaryKind_AttemptsStrip(t *testing.T) {
 }
 
 func TestNewOrchestrator(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	store := openTestStore(t)
 
@@ -139,6 +143,7 @@ func TestNewOrchestrator(t *testing.T) {
 }
 
 func TestGenerator_Generate(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	store := openTestStore(t)
 	ctx := context.Background()
@@ -166,7 +171,6 @@ func TestGenerator_Generate(t *testing.T) {
 	require.NotNil(t, out)
 	assert.True(t, strings.HasSuffix(out.Filename, ".tar.gz"))
 	// tar.gz streams, so its length isn't known up front (SizeUnknown); verify it
-	// produced a non-empty archive by reading it.
 	assert.Equal(t, SizeUnknown, out.Size)
 	data, err := io.ReadAll(out.Reader)
 	out.Reader.Close()
@@ -175,6 +179,7 @@ func TestGenerator_Generate(t *testing.T) {
 }
 
 func TestGenerator_Generate_UnsupportedFormat(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	store := openTestStore(t)
 

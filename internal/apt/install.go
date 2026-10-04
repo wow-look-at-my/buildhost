@@ -9,12 +9,6 @@ import (
 )
 
 // installScriptTemplate is a POSIX sh installer that adds this project's signed
-// APT repository and refreshes the package index. It is rendered per request so
-// every URL is self-referential (derived from the Host the request came in on).
-//
-// APT reads an ASCII-armored key directly when it is referenced via signed-by,
-// so the script does not need gpg/dearmor on the client -- it just saves the
-// served key.asc as-is.
 const installScriptTemplate = `#!/bin/sh
 #
 # buildhost APT repository installer

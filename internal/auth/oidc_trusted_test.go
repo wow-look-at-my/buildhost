@@ -12,6 +12,7 @@ import (
 )
 
 func TestVerifyToken_TrustedIssuer_NoPolicies(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -38,6 +39,7 @@ func TestVerifyToken_TrustedIssuer_NoPolicies(t *testing.T) {
 }
 
 func TestVerifyToken_TrustedIssuer_AllowedEvent(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -65,6 +67,7 @@ func TestVerifyToken_TrustedIssuer_AllowedEvent(t *testing.T) {
 // This is the exact PazerOP/scratch PR-preview scenario -- a pure casing
 // mismatch must not silently block auto-provisioning.
 func TestVerifyToken_TrustedIssuer_OrgCaseInsensitive(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -86,6 +89,7 @@ func TestVerifyToken_TrustedIssuer_OrgCaseInsensitive(t *testing.T) {
 }
 
 func TestVerifyToken_TrustedIssuer_AutoProvision(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -107,6 +111,7 @@ func TestVerifyToken_TrustedIssuer_AutoProvision(t *testing.T) {
 }
 
 func TestVerifyToken_TrustedIssuer_AudienceIgnored(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -130,6 +135,7 @@ func TestVerifyToken_TrustedIssuer_AudienceIgnored(t *testing.T) {
 }
 
 func TestVerifyToken_TrustedIssuer_PrivateRepoVisibility(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -154,6 +160,7 @@ func TestVerifyToken_TrustedIssuer_PrivateRepoVisibility(t *testing.T) {
 }
 
 func TestVerifyToken_TrustedIssuer_PublicRepoVisibility(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -178,6 +185,7 @@ func TestVerifyToken_TrustedIssuer_PublicRepoVisibility(t *testing.T) {
 }
 
 func TestVerifyToken_UntrustedIssuer_NoPolicies(t *testing.T) {
+	t.Serial()
 	v := NewOIDCVerifier(OIDCConfig{TrustedIssuers: []string{"https://trusted.example.com"}})
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},

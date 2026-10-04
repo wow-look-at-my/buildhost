@@ -19,8 +19,6 @@ import (
 )
 
 // countingStore records sequential Get calls, which is how these tests tell
-// the indexed read path from the tar scan it replaced: serving from an archive
-// must never fall back to streaming the blob from the start.
 type countingStore struct {
 	storage.Storage
 	mu   sync.Mutex
@@ -56,8 +54,6 @@ func (c *countingStore) count() int {
 	return c.gets
 }
 
-// withCountingStore swaps the package handler's store for a counting one. The
-// sites tests do not run in parallel, so the swap is safe.
 func withCountingStore(t *testing.T, inner storage.Storage) *countingStore {
 	t.Helper()
 	c := &countingStore{Storage: inner}
@@ -71,6 +67,7 @@ func withCountingStore(t *testing.T, inner storage.Storage) *countingStore {
 // format change: an uploaded site is stored as a binpazer archive, and serving
 // a file out of it never streams the blob from the start.
 func TestUploadStoresArchiveAndServesByIndex(t *testing.T) {
+	t.Serial()
 	env := setupEnv(t)
 	proj := seedProject(t, env.db, "indexed")
 	counting := withCountingStore(t, env.store)
@@ -85,7 +82,7 @@ func TestUploadStoresArchiveAndServesByIndex(t *testing.T) {
 	}
 	env.uploadSite(t, "indexed", "main", files)
 
-	// What got stored is an archive, not the tar it used to be.
+	// What got stored is an archive, not the tar.
 	site, err := env.db.GetSite(context.Background(), proj.ID, "main")
 	require.NoError(t, err)
 	rc, _, err := env.store.Get(context.Background(), site.StorageKey)
@@ -106,8 +103,6 @@ func TestUploadStoresArchiveAndServesByIndex(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "<h1>home</h1>", rec.Body.String())
 
-	// A miss still finds the site's own 404 page -- which used to mean a SECOND
-	// full scan of the archive.
 	rec = env.do(t, "GET", "/indexed/nope.html", "", nil, false)
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	assert.Equal(t, "<h1>missing</h1>", rec.Body.String())
@@ -116,18 +111,13 @@ func TestUploadStoresArchiveAndServesByIndex(t *testing.T) {
 		"serving from an archive must not stream the blob: %d sequential Get calls", counting.count()-before)
 }
 
-// TestLegacyTarSiteStillServes pins the fallback: every site uploaded before
-// this format is a plain tar blob, and those must keep serving exactly as they
-// did -- through the scan, since there is no index to use.
-func TestLegacyTarSiteStillServes(t *testing.T) {
-	env := setupEnv(t)
-	proj := seedProject(t, env.db, "legacy")
-	counting := withCountingStore(t, env.store)
-
-	// Store a bare tar, the way uploads did before archives.
+// seedTarSite stores a site the way uploads did before archives: a plain tar,
+// zstd-compressed by the store.
+func seedTarSite(t *testing.T, env *testEnv, proj *db.Project, branch string, files map[string]string) string {
+	t.Helper()
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	for name, body := range map[string]string{"index.html": "<h1>old</h1>", "404.html": "<h1>old 404</h1>"} {
+	for name, body := range files {
 		require.NoError(t, tw.WriteHeader(&tar.Header{
 			Name: name, Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg,
 		}))
@@ -139,17 +129,74 @@ func TestLegacyTarSiteStillServes(t *testing.T) {
 	key, size, err := env.store.Put(context.Background(), bytes.NewReader(buf.Bytes()))
 	require.NoError(t, err)
 	_, err = env.db.UpsertSite(context.Background(), &db.Site{
-		ProjectID: proj.ID, Branch: "main", StorageKey: key, Size: size, FileCount: 2,
+		ProjectID: proj.ID, Branch: branch, StorageKey: key, Size: size, FileCount: int64(len(files)),
 	})
 	require.NoError(t, err)
+	return key
+}
 
-	rec := env.do(t, "GET", "/legacy/", "", nil, false)
+func TestTarSiteIsNotServed(t *testing.T) {
+	t.Serial()
+	env := setupEnv(t)
+	proj := seedProject(t, env.db, "tarsite")
+	seedTarSite(t, env, proj, "main", map[string]string{"index.html": "<h1>old</h1>"})
+
+	rec := env.do(t, "GET", "/tarsite/", "", nil, false)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code, "the serve path reads archives only")
+}
+
+func TestConvertTarSites(t *testing.T) {
+	t.Serial()
+	env := setupEnv(t)
+	ctx := context.Background()
+	proj := seedProject(t, env.db, "converted")
+	oldKey := seedTarSite(t, env, proj, "main", map[string]string{
+		"index.html": "<h1>old</h1>",
+		"404.html":   "<h1>old 404</h1>",
+		"a/b.css":    "body{}",
+	})
+	env.uploadSite(t, "converted", "fresh", map[string]string{"index.html": "new"})
+	fresh, err := env.db.GetSite(ctx, proj.ID, "fresh")
+	require.NoError(t, err)
+
+	require.NoError(t, ConvertTarSites(ctx, env.db, env.store, t.TempDir()))
+
+	site, err := env.db.GetSite(ctx, proj.ID, "main")
+	require.NoError(t, err)
+	require.NotEqual(t, oldKey, site.StorageKey, "the row must point at the new archive")
+	_, _, err = env.store.Get(ctx, oldKey)
+	assert.Error(t, err, "the tar blob must be deleted once nothing references it")
+
+	counting := withCountingStore(t, env.store)
+	rec := env.do(t, "GET", "/converted/a/b.css", "", nil, false)
 	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "<h1>old</h1>", rec.Body.String())
-
-	rec = env.do(t, "GET", "/legacy/gone.html", "", nil, false)
+	assert.Equal(t, "body{}", rec.Body.String())
+	rec = env.do(t, "GET", "/converted/gone.html", "", nil, false)
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	assert.Equal(t, "<h1>old 404</h1>", rec.Body.String())
+	assert.Zero(t, counting.count(), "a converted site must be served through its index")
 
-	assert.Positive(t, counting.count(), "a legacy tar site is served by the sequential scan")
+	again, err := env.db.GetSite(ctx, proj.ID, "fresh")
+	require.NoError(t, err)
+	assert.Equal(t, fresh.StorageKey, again.StorageKey, "an archive site must be left alone")
+
+	require.NoError(t, ConvertTarSites(ctx, env.db, env.store, t.TempDir()))
+	after, err := env.db.GetSite(ctx, proj.ID, "main")
+	require.NoError(t, err)
+	assert.Equal(t, site.StorageKey, after.StorageKey, "a second run must change nothing")
+}
+
+func TestConvertTarSitesReportsFailures(t *testing.T) {
+	t.Serial()
+	env := setupEnv(t)
+	ctx := context.Background()
+	proj := seedProject(t, env.db, "broken")
+	key, size, err := env.store.Put(ctx, bytes.NewReader([]byte("not a tar at all, and long enough to fail")))
+	require.NoError(t, err)
+	_, err = env.db.UpsertSite(ctx, &db.Site{ProjectID: proj.ID, Branch: "main", StorageKey: key, Size: size})
+	require.NoError(t, err)
+
+	err = ConvertTarSites(ctx, env.db, env.store, t.TempDir())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "main")
 }

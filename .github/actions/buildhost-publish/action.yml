@@ -37,6 +37,16 @@ inputs:
       for (the repo project and any <repo>/<binary> sub-projects).
     required: false
     default: ''
+  apt_depends:
+    description: >-
+      The runtime prerequisites of the published binary, in Debian
+      relationship syntax (e.g. 'bubblewrap | docker.io'). The generated deb
+      and the APT Packages entry carry it as a Depends field. The server
+      refuses an invalid value, and the publish fails. Empty (the default)
+      sends nothing and leaves the stored value untouched. Applies to every
+      project this publish creates a release for.
+    required: false
+    default: ''
   default_branch:
     description: >-
       The repo's default branch (e.g. 'main'). When set, the apex "latest"
@@ -74,11 +84,6 @@ runs:
       uses: wow-look-at-my/actions@no-all-builds-job#latest
 
     # Registering the publish as a GitHub Deployment is part of publishing, not
-    # an add-on: it has no opt-out input and a failure fails the step. Warning
-    # and continuing was an opt-out by neglect -- seven of the eight callers had
-    # been skipping deployments entirely, each one green, because nobody reads a
-    # warning in a passing run. The calling job needs `deployments: write`
-    # (ADDITIVE -- a job-level permissions block replaces the workflow-level one).
     - name: Create GitHub Deployment
       id: deployment
       uses: wow-look-at-my/actions@typescript#latest
@@ -147,13 +152,13 @@ runs:
       uses: wow-look-at-my/actions@typescript#latest
       env:
         # Only artifact mode (path unset) talks to the GitHub API from THIS
-        # step; path mode gets no token at all. (The optional deployment steps
-        # authenticate separately, via the typescript action's own
-        # github-token input default -- never via this env var.)
         GITHUB_TOKEN: ${{ inputs.path == '' && github.token || '' }}
+        # An env var carries the value, so no character in it can break the script.
+        BUILDHOST_APT_DEPENDS: ${{ inputs.apt_depends }}
       with:
         script: |
           const { recordReleaseArtifacts } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
+          const upload = require("${{ github.action_path }}/../lib/upload.ts") as typeof import("${{ github.action_path }}/../lib/upload");
           await (async () => {
             const inputProject: string = "${{ inputs.project }}";
             const inputVersion: string = "${{ inputs.version }}";
@@ -167,6 +172,7 @@ runs:
               return;
             }
             const inputDefaultBranch: string = "${{ inputs.default_branch }}";
+            const inputAptDepends: string = process.env.BUILDHOST_APT_DEPENDS ?? "";
 
             const server = "${{ inputs.server }}";
             const project = inputProject.length > 0 ? inputProject : github.repository.split("/").pop()!;
@@ -195,8 +201,10 @@ runs:
               // Download artifact via octokit
               const oct = octokit(process.env.GITHUB_TOKEN!);
               const [owner, repo] = github.repository.split("/");
+              // github.run_id reaches a script as the env var's string; octokit's run_id is a number.
               const { data: { artifacts } } = await oct.rest.actions.listWorkflowRunArtifacts({
-                owner, repo, run_id: github.run_id,
+                // the github context is rebuilt from environment variables, so run_id arrives as a string
+                owner, repo, run_id: Number(github.run_id),
               });
               const artifact = artifacts.find((a: any) => a.name === artifactName);
               if (!artifact) { core.setFailed(`Artifact '${artifactName}' not found in run`); return; }
@@ -343,8 +351,8 @@ runs:
               status >= 500 || (status === 404 && text.trim() === "");
 
             // retries a transient failure with backoff so a rolling buildhost deploy never hard-fails the publish
-            const api = async (method: string, urlPath: string, body?: string | Buffer) => {
-              const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+            const api = async (method: string, urlPath: string, body?: string | Buffer | null, extra?: Record<string, string>) => {
+              const headers: Record<string, string> = { Authorization: `Bearer ${token}`, ...(extra ?? {}) };
               if (typeof body === "string") headers["Content-Type"] = "application/json";
               else if (body) headers["Content-Type"] = "application/octet-stream";
               const maxAttempts = 5;
@@ -368,14 +376,29 @@ runs:
               return { status: 0, text: "unreachable" };
             };
 
-            // the ape endpoint names the served file in a header, so the download is not called <binary>_cosmo_fat
-            const apiWithFilename = async (method: string, urlPath: string, body: Buffer, filename: string) => {
-              const resp = await fetch(`${server}${urlPath}`, {
-                method,
-                headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/octet-stream", "X-Artifact-Filename": filename },
-                body,
-              });
-              return { status: resp.status, text: await resp.text() };
+            // Cloudflare answers 413 to a body over 100 MB, so anything past the server's advertised direct limit is assembled through an upload session instead.
+            let directLimit = -1;
+            const putFile = async (urlPath: string, filePath: string, sum: string, extra?: Record<string, string>) => {
+              if (directLimit < 0) directLimit = await upload.directLimit(api, core);
+              const body = {
+                size: fs.statSync(filePath).size,
+                sha256: sum,
+                // A short read leaves the tail of an allocUnsafe buffer holding whatever was in that memory, so keep reading until the chunk is whole.
+                read: (offset: number, length: number): Buffer => {
+                  const buf = Buffer.allocUnsafe(length);
+                  const fd = fs.openSync(filePath, "r");
+                  try {
+                    let got = 0;
+                    while (got < length) {
+                      const n = fs.readSync(fd, buf, got, length - got, offset + got);
+                      if (n <= 0) throw new Error(`${filePath}: wanted ${length} bytes at ${offset}, the file ended after ${got}`);
+                      got += n;
+                    }
+                  } finally { fs.closeSync(fd); }
+                  return buf;
+                },
+              };
+              return upload.putFile(api, core, { urlPath, body, headers: extra, directLimit });
             };
 
             const releaseBody = () => JSON.stringify({
@@ -385,6 +408,7 @@ runs:
               ...(inputBrewService.length > 0 ? { create_service: inputBrewService === 'true' } : {}),
               // an older server ignores this unknown field
               ...(inputDefaultBranch.length > 0 ? { default_branch: inputDefaultBranch } : {}),
+              ...(inputAptDepends.length > 0 ? { apt_depends: inputAptDepends } : {}),
             });
 
             // resolves a version from a create-release response (201 new, 409 existing); null and a failure on any other status
@@ -409,7 +433,7 @@ runs:
                 const full = path.join(sourceDir, entry.file);
                 const sum = await fileSHA256(full);
                 const url = `/api/v1/projects/${proj}/releases/${releaseVersion}/artifacts/ape?platforms=${entry.platforms.join(",")}&kind=${entry.kind}`;
-                const r = await apiWithFilename("PUT", url, fs.readFileSync(full), entry.filename);
+                const r = await putFile(url, full, sum, { "X-Artifact-Filename": entry.filename });
                 if (r.status !== 201) { core.setFailed(`Upload ${proj} ${entry.file} [${entry.platforms.join(", ")}] failed (${r.status}): ${r.text}`); return false; }
                 for (const platform of entry.platforms) {
                   const [platformOS, platformArch] = platform.split("/");
@@ -426,7 +450,7 @@ runs:
               }
 
               for (const [sum, group] of [...byContent.entries()]) {
-                const body = () => fs.readFileSync(path.join(sourceDir, group[0].file));
+                const bodyPath = path.join(sourceDir, group[0].file);
                 const record = () => {
                   for (const { os: fileOs, arch } of group) {
                     uploadedSlots.push({ project: proj, version: releaseVersion, os: fileOs, arch, sha256: sum });
@@ -437,7 +461,7 @@ runs:
 
                 // fan-out: when a group's slots are exactly the product of the platforms it covers -- what a cosmo build always produces -- buildhost makes every row from one streamed body, in one transaction
                 if (oses.length * arches.length === group.length) {
-                  const r = await api("PUT", slotURL(oses.join(","), arches.join(",")), body());
+                  const r = await putFile(slotURL(oses.join(","), arches.join(",")), bodyPath, sum);
                   if (r.status !== 201) { core.setFailed(`Upload ${proj} ${oses.join(",")}/${arches.join(",")} failed (${r.status}): ${r.text}`); return false; }
                   record();
                   core.info(`Uploaded ${proj} ${oses.join(",")}/${arches.join(",")} (${group.length} slot(s), one transfer)`);
@@ -446,7 +470,7 @@ runs:
 
                 // a ragged slot set the cartesian grammar cannot express (e.g. every platform but windows/arm64): send the bytes once, then register the rest against the stored blob by hash
                 const [first, ...rest] = group;
-                const r = await api("PUT", slotURL(first.os, first.arch), body());
+                const r = await putFile(slotURL(first.os, first.arch), bodyPath, sum);
                 if (r.status !== 201) { core.setFailed(`Upload ${proj} ${first.os}/${first.arch} failed (${r.status}): ${r.text}`); return false; }
                 core.info(`Uploaded ${proj} ${first.os}/${first.arch}`);
                 for (const { os: fileOs, arch } of rest) {
@@ -455,7 +479,7 @@ runs:
                   if (ref.status === 409) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${ref.status}): ${ref.text}`); return false; }
                   // the blob was evicted between the two requests -- the bytes are right here
                   core.warning(`Hash-reference upload ${proj} ${fileOs}/${arch} returned ${ref.status}; sending the bytes`);
-                  const full = await api("PUT", slotURL(fileOs, arch), body());
+                  const full = await putFile(slotURL(fileOs, arch), bodyPath, sum);
                   if (full.status !== 201) { core.setFailed(`Upload ${proj} ${fileOs}/${arch} failed (${full.status}): ${full.text}`); return false; }
                 }
                 record();
@@ -491,8 +515,6 @@ runs:
           })();
 
     # Terminal status for the GitHub Deployment created above; runs even when
-    # the publish failed so the deployment is marked failure instead of
-    # dangling in_progress. Never fails the action.
     - name: Finish GitHub Deployment
       id: deployment-status
       if: ${{ always() && steps.deployment.outputs.deployment_id != '' }}

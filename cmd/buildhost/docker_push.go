@@ -76,7 +76,7 @@ func runDockerPush(cmd *cobra.Command, refs []string) error {
 			return fmt.Errorf("invalid --chunk-size: %w", err)
 		}
 		if n == 0 {
-			n = -1 // 0 means "disable chunking" (always one request per blob)
+			n = -1
 		}
 		p.ChunkSize = n
 	}

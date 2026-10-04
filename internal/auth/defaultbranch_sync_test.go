@@ -17,6 +17,7 @@ import (
 // it on the project -- buildhost learns "v1" from the repo identity in the token,
 // with nothing sent in the request. This is the go-toolchain fix.
 func TestRequireProject_OIDCSyncsDefaultBranch(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	withStubGitHub(t, "", func(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +61,7 @@ func TestRequireProject_OIDCSyncsDefaultBranch(t *testing.T) {
 // A non-GitHub OIDC issuer must not trigger a github.com lookup -- the registry
 // stays provider-agnostic.
 func TestRequireProject_NonGitHubIssuer_NoDefaultBranchSync(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	initTestMiddleware(t, d)
 	var hits atomic.Int32

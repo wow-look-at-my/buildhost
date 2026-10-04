@@ -13,6 +13,7 @@ import (
 )
 
 func TestAPICreateToken(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodPost, "/api/tokens", bytes.NewBufferString(`{"name":"mytoken","scopes":"read,write"}`))
@@ -28,6 +29,7 @@ func TestAPICreateToken(t *testing.T) {
 }
 
 func TestAPICreateToken_ProjectScoped(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -35,7 +37,10 @@ func TestAPICreateToken_ProjectScoped(t *testing.T) {
 	p, err := database.GetProject(ctx, "testproject")
 	require.NoError(t, err)
 
-	body := bytes.NewBufferString(fmt.Sprintf(`{"name":"proj-token","scopes":"read","project_id":%d}`, p.ID))
+	// Marshalled, not formatted: a quote or a backslash in a value would break a formatted document.
+	spec, err := json.Marshal(map[string]any{"name": "proj-token", "scopes": "read", "project_id": p.ID})
+	require.NoError(t, err)
+	body := bytes.NewBuffer(spec)
 	w := serve(srv, http.MethodPost, "/api/tokens", body)
 	assert.Equal(t, http.StatusOK, w.Code)
 
@@ -47,6 +52,7 @@ func TestAPICreateToken_ProjectScoped(t *testing.T) {
 }
 
 func TestAPICreateToken_MissingName(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodPost, "/api/tokens", bytes.NewBufferString(`{"scopes":"read"}`))
@@ -54,6 +60,7 @@ func TestAPICreateToken_MissingName(t *testing.T) {
 }
 
 func TestAPIUpdateToken(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -67,6 +74,7 @@ func TestAPIUpdateToken(t *testing.T) {
 }
 
 func TestAPIUpdateToken_InvalidID(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodPatch, "/api/tokens/abc", bytes.NewBufferString(`{"name":"x","scopes":"read"}`))
@@ -74,6 +82,7 @@ func TestAPIUpdateToken_InvalidID(t *testing.T) {
 }
 
 func TestAPIDeleteToken(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -87,6 +96,7 @@ func TestAPIDeleteToken(t *testing.T) {
 }
 
 func TestAPIDeleteToken_NotFound(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodDelete, "/api/tokens/9999", nil)
@@ -94,6 +104,7 @@ func TestAPIDeleteToken_NotFound(t *testing.T) {
 }
 
 func TestAPIDeleteToken_InvalidID(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodDelete, "/api/tokens/abc", nil)
@@ -101,6 +112,7 @@ func TestAPIDeleteToken_InvalidID(t *testing.T) {
 }
 
 func TestAPITokens(t *testing.T) {
+	t.Serial()
 	srv, database := newTestServer(t)
 	seedData(t, database)
 
@@ -117,6 +129,7 @@ func TestAPITokens(t *testing.T) {
 }
 
 func TestAPITokens_Empty(t *testing.T) {
+	t.Serial()
 	srv, _ := newTestServer(t)
 
 	w := serve(srv, http.MethodGet, "/api/tokens", nil)

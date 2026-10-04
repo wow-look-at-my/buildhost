@@ -18,12 +18,6 @@ import (
 	"github.com/wow-look-at-my/router"
 )
 
-// The dashboard's JS is GENERATED from internal/admin/frontend/src (TypeScript);
-// the .js files are gitignored build artifacts, never committed. Each generated
-// file is embedded BY NAME on purpose: a wildcard still matches index.html and
-// style.css, so a build that skipped generate would compile clean and serve a
-// blank dashboard -- naming them makes that a compile error instead.
-//
 //go:generate ../../scripts/build-admin-frontend.sh
 //go:embed static/index.html static/style.css static/app.js static/copy.js
 var content embed.FS
@@ -82,10 +76,6 @@ func New(cfg config.Config, database *db.DB, store storage.Storage, build BuildI
 	return s
 }
 
-// startCPUTracker spawns the background sampling goroutine at most once per
-// Server: NewHTTPServer can be called repeatedly (every admin test request
-// does), and without this guard each call leaked another ticker goroutine
-// forever.
 func (s *Server) startCPUTracker() {
 	s.cpuTrackerOnce.Do(func() {
 		prev := getCPUTime()
@@ -119,7 +109,12 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/projects/{name}/releases/{version}", router.Allow, s.apiRelease)
 	mux.HandleFunc("GET /api/projects/{name}/downloads", router.Allow, s.apiProjectDownloads)
 	mux.HandleFunc("POST /api/projects/{name}/download-links", router.Allow, s.apiCreateDownloadLink)
+	mux.HandleFunc("GET /api/projects/{name}/merge-plan", router.Allow, s.apiMergePlan)
+	mux.HandleFunc("POST /api/projects/{name}/merge", router.Allow, s.apiMerge)
+	mux.HandleFunc("PUT /api/projects/{name}/versioning", router.Allow, s.apiSetVersioning)
+	mux.HandleFunc("GET /api/projects/{name}/site-files", router.Allow, s.apiSiteFiles)
 	mux.HandleFunc("GET /api/projects/{name}", router.Allow, s.apiProject)
+	mux.HandleFunc("GET /api/duplicates", router.Allow, s.apiDuplicates)
 	mux.HandleFunc("GET /api/projects", router.Allow, s.apiProjects)
 	mux.HandleFunc("GET /api/registries", router.Allow, s.apiRegistries)
 	mux.HandleFunc("GET /api/tokens", router.Allow, s.apiTokens)
@@ -130,8 +125,12 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/sites", router.Allow, s.apiSites)
 	mux.HandleFunc("GET /api/artifacts", router.Allow, s.apiArtifacts)
 	mux.HandleFunc("GET /api/storage", router.Allow, s.apiStorage)
+	mux.HandleFunc("GET /api/backup", router.Allow, s.apiBackup)
+	mux.HandleFunc("GET /api/goproxy", router.Allow, s.apiGoproxy)
+	mux.HandleFunc("POST /api/goproxy/recheck", router.Allow, s.apiGoproxyRecheck)
 	mux.HandleFunc("GET /api/retention", router.Allow, s.apiRetention)
 	mux.HandleFunc("PUT /api/retention", router.Allow, s.apiUpdateRetention)
+	mux.HandleFunc("GET /api/retention/inventory", router.Allow, s.apiRetentionInventory)
 	mux.HandleFunc("POST /api/retention/run", router.Allow, s.apiRunRetention)
 	mux.HandleFunc("GET /admin/inflight", router.Allow, InflightHandler)
 
@@ -160,13 +159,6 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
-		// The admin SPA is entirely first-party: it ships inline event handlers
-		// (onclick) and inline styles in the markup it builds. 'unsafe-inline'
-		// permits that own code to run -- without it the page's edit/delete
-		// buttons (script-src-attr) silently do nothing. It does NOT relax the
-		// origin allowlist: cross-origin scripts/styles/connections are still
-		// confined to 'self' and data:, so injected third-party scripts (e.g. a
-		// Cloudflare analytics beacon) remain blocked.
 		w.Header().Set("Content-Security-Policy", "default-src 'self' data: 'unsafe-inline'")
 		w.Header().Set("X-Permitted-Cross-Domain-Policies", "none")
 		w.Header().Set("Permissions-Policy", "interest-cohort=()")
@@ -200,11 +192,7 @@ func (s *Server) writeJSON(w http.ResponseWriter, v any) {
 //
 // The registry serves each format from a dedicated subdomain (dl., apt., brew.,
 // npm., oci., sites., static.) -- never from a path prefix on the main host.
-// The admin dashboard itself runs on a subdomain (e.g. admin.example.com), so
-// auth.DeriveServiceURL strips that first label and rebuilds the real service
-// host (dl.example.com, ...). These are exactly the hosts the router matches,
-// because they are produced by the same helpers the main server uses when it
-// emits cross-service links, so the dashboard can never drift from reality.
+// The admin dashboard itself runs on a subdomain (e.g. admin.example.com).
 func serviceURLs(r *http.Request) map[string]string {
 	return map[string]string{
 		"dl":     auth.DeriveServiceURL(r, "dl").String(),

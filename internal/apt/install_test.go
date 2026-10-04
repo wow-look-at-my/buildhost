@@ -70,7 +70,6 @@ func TestServeInstallScript(t *testing.T) {
 	assert.Contains(t, body, "/etc/apt/sources.list.d/buildhost-myapp.list")
 	assert.Contains(t, body, "sudo apt-get install $PKG")
 	// Private-repo token support is wired in, and the auth entry also covers
-	// the static host (the .deb pool download redirects there).
 	assert.Contains(t, body, "BUILDHOST_TOKEN")
 	assert.Contains(t, body, "STATIC_HOST='static.pazer.build'")
 	assert.Contains(t, body, "machine $STATIC_HOST")
@@ -97,6 +96,5 @@ func TestServeInstallScript_NamespacedSlug(t *testing.T) {
 	assert.Contains(t, body, "/etc/apt/sources.list.d/buildhost-team-tool.list")
 	assert.Contains(t, body, "/etc/apt/auth.conf.d/buildhost-team-tool.conf")
 	// The install hint uses the folded Debian package name
-	// (repackage.DebPackageName), never the raw slash-namespaced name.
 	assert.Contains(t, body, "PKG='team-tool'")
 }

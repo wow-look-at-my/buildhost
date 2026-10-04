@@ -1,14 +1,5 @@
 #!/usr/bin/env bash
 # Build the admin dashboard's TypeScript into the JS that internal/admin embeds.
-#
-# The outputs (internal/admin/static/*.js) are gitignored BUILD ARTIFACTS: the
-# TypeScript under internal/admin/frontend/src is the only source. This script is
-# the //go:generate directive beside that embed, so `go-toolchain --generate`
-# materializes them exactly like the CA bundle and the sqlc/regex code.
-#
-# It fails loudly rather than skipping: a dashboard that ships without its JS is
-# a blank page, and that is precisely the failure that went unnoticed when the
-# artifacts were committed instead of generated.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,8 +18,10 @@ if [ ! -d node_modules ]; then
     npm ci --silent
 fi
 
-# `npm run build` type-checks first (tsc --noEmit), then bundles with esbuild.
-npm run build --silent
+bin="$frontend/node_modules/.bin"
+"$bin/tsc" --noEmit
+"$bin/esbuild" src/app.ts --bundle --outfile=../static/app.js --format=iife --global-name=App --target=es2020
+"$bin/esbuild" src/copy.ts --bundle --outfile=../static/copy.js --format=iife --target=es2020
 
 for f in ../static/app.js ../static/copy.js; do
     [ -s "$f" ] || { echo "build-admin-frontend: $f was not produced" >&2; exit 1; }

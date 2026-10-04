@@ -69,15 +69,26 @@ func (d *DB) ListSites(ctx context.Context, projectID int64) ([]Site, error) {
 	return d.q.ListSitesByProject(ctx, projectID)
 }
 
+func (d *DB) ListAllSites(ctx context.Context) ([]Site, error) {
+	return d.q.ListAllSites(ctx)
+}
+
+// ReplaceSiteBlob points a site at a new blob. It reports false and changes
+// nothing when a publish already swapped out oldKey.
+func (d *DB) ReplaceSiteBlob(ctx context.Context, id int64, oldKey, newKey string, size int64) (bool, error) {
+	n, err := d.q.UpdateSiteBlob(ctx, UpdateSiteBlobParams{
+		StorageKey:   newKey,
+		Size:         size,
+		ID:           id,
+		StorageKey_2: oldKey,
+	})
+	if err != nil {
+		return false, fmt.Errorf("replace site blob: %w", err)
+	}
+	return n == 1, nil
+}
+
 // SitesByCommitPrefix returns the project's sites whose recorded git_commit
-// starts with prefix, newest deployment first. prefix must be hex (the caller
-// validates it), which is also what makes it safe to interpolate into LIKE:
-// neither "%" nor "_" can occur in it.
-//
-// Sites are keyed (project, branch) and replaced in place on re-deploy, so this
-// finds a commit only while it is some branch's CURRENT deployment. That is the
-// point: a commit URL either serves exactly that build or 404s -- it never
-// quietly starts serving a later one.
 func (d *DB) SitesByCommitPrefix(ctx context.Context, projectID int64, prefix string) ([]Site, error) {
 	return d.q.GetSiteByCommitPrefix(ctx, GetSiteByCommitPrefixParams{
 		ProjectID: projectID,

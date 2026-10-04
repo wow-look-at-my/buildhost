@@ -1,9 +1,5 @@
 package server_test
 
-// End-to-end proof of single-artifact multi-platform ingest: ONE uploaded APE
-// becomes ONE artifact, and every platform it covers downloads the identical
-// bytes from the identical URL.
-
 import (
 	"crypto/rand"
 	"crypto/sha256"
@@ -28,14 +24,11 @@ func apeBytes(t *testing.T) []byte {
 	return append([]byte("MZqFpD"), body...)
 }
 
-// seedAPERelease creates a project + release and PUTs one APE covering the
-// three platforms gosmopolitan's fat build targets. It returns the payload and
-// the artifact the server recorded.
 func seedAPERelease(t *testing.T, env *testEnv, project string) ([]byte, db.ArtifactWithPlatforms) {
 	t.Helper()
 	payload := apeBytes(t)
 
-	resp := env.postJSON(t, "/api/v1/projects", `{"name":"`+project+`","versioning":"auto"}`)
+	resp := env.postJSON(t, "/api/v1/projects", jsonDoc(t, map[string]any{"name": project, "versioning": "auto"}))
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
 	resp = env.postJSON(t, "/api/v1/projects/"+project+"/releases", `{"git_branch":"master"}`)
@@ -74,9 +67,8 @@ func mustDo(t *testing.T, req *http.Request) *http.Response {
 }
 
 // TestMultiPlatformAPE_OneUploadOneRowOneURL is the deliverable's end-to-end
-// contract: upload once, ask for three different platforms, get one artifact,
-// one static URL, one digest and one ETag every time.
 func TestMultiPlatformAPE_OneUploadOneRowOneURL(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	payload, artifact := seedAPERelease(t, env, "apehost")
 	wantSHA := sha256.Sum256(payload)
@@ -85,7 +77,6 @@ func TestMultiPlatformAPE_OneUploadOneRowOneURL(t *testing.T) {
 	assert.Equal(t, "ape", artifact.ExeFormat)
 	require.Len(t, artifact.Platforms, 3)
 
-	// One artifact row, not three.
 	resp := env.authGet(t, "/api/v1/projects/apehost/releases/1")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	var release struct {
@@ -135,9 +126,8 @@ func TestMultiPlatformAPE_OneUploadOneRowOneURL(t *testing.T) {
 }
 
 // TestMultiPlatformAPE_ReleasePageShowsOneLinkWithBadge proves the public,
-// no-JavaScript frontend renders the owner-visible outcome: one download link
-// row carrying an "APE: <platforms>" badge.
 func TestMultiPlatformAPE_ReleasePageShowsOneLinkWithBadge(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 	seedAPERelease(t, env, "apeweb")
 
@@ -155,13 +145,13 @@ func TestMultiPlatformAPE_ReleasePageShowsOneLinkWithBadge(t *testing.T) {
 	assert.Contains(t, page, `class="badge badge-format"`)
 	assert.Contains(t, page, "APE: ")
 	assert.Contains(t, page, "linux/amd64, darwin/arm64, windows/amd64")
-	// Exactly one raw download link: one file, one link.
 	assert.Equal(t, 1, strings.Count(page, `>raw</a>`))
 }
 
 // A non-APE upload cannot claim several platforms, and the rejection stores
 // nothing.
 func TestMultiPlatformAPE_NonAPERejectedEndToEnd(t *testing.T) {
+	t.Serial()
 	env := setup(t)
 
 	resp := env.postJSON(t, "/api/v1/projects", `{"name":"notape","versioning":"auto"}`)

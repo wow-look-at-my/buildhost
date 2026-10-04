@@ -11,6 +11,7 @@ import (
 // --- Download Events ---------------------------------------------------------
 
 func TestRecordAndListDownloadEvents(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p, r := createTestRelease(t, d)
@@ -34,7 +35,6 @@ func TestRecordAndListDownloadEvents(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, byProject, 2)
 
-	// Newest first (same-second timestamps tie-broken by id DESC).
 	first := byProject[0]
 	assert.Equal(t, "tar.gz", first.Fmt)
 	assert.Equal(t, "198.51.100.4", first.ClientIp)
@@ -60,6 +60,7 @@ func TestRecordAndListDownloadEvents(t *testing.T) {
 }
 
 func TestListDownloadEventsEmpty(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p, r := createTestRelease(t, d)

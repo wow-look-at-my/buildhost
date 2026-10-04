@@ -8,7 +8,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -36,22 +35,29 @@ func jwksServer(t *testing.T, pub *rsa.PublicKey, kid string) *httptest.Server {
 	t.Helper()
 	n := base64.RawURLEncoding.EncodeToString(pub.N.Bytes())
 	e := base64.RawURLEncoding.EncodeToString([]byte{1, 0, 1})
-	jwksBody := fmt.Sprintf(`{"keys":[{"kty":"RSA","kid":"%s","n":"%s","e":"%s"}]}`, kid, n, e)
+	// Marshalled, not formatted: a quote or a backslash in a value would break a formatted document.
+	jwksBody, err := json.Marshal(map[string]any{
+		"keys": []map[string]string{{"kty": "RSA", "kid": kid, "n": n, "e": e}},
+	})
+	require.NoError(t, err)
 
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/.well-known/openid-configuration" {
-			fmt.Fprintf(w, `{"jwks_uri":"%s/.well-known/jwks"}`, srv.URL)
+			discovery, err := json.Marshal(map[string]string{"jwks_uri": srv.URL + "/.well-known/jwks"})
+			require.NoError(t, err)
+			w.Write(discovery)
 			return
 		}
-		w.Write([]byte(jwksBody))
+		w.Write(jwksBody)
 	}))
 	t.Cleanup(srv.Close)
 	return srv
 }
 
 func TestVerifyToken_FullPipeline_ValidJWT(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -82,6 +88,7 @@ func TestVerifyToken_FullPipeline_ValidJWT(t *testing.T) {
 }
 
 func TestVerifyToken_FullPipeline_ExpiredJWT(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -107,6 +114,7 @@ func TestVerifyToken_FullPipeline_ExpiredJWT(t *testing.T) {
 }
 
 func TestVerifyToken_FullPipeline_WrongSignature(t *testing.T) {
+	t.Serial()
 	key1, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	key2, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -134,6 +142,7 @@ func TestVerifyToken_FullPipeline_WrongSignature(t *testing.T) {
 }
 
 func TestVerifyToken_FullPipeline_GlobalPolicy(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -160,6 +169,7 @@ func TestVerifyToken_FullPipeline_GlobalPolicy(t *testing.T) {
 }
 
 func TestParseRSAPublicKey(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -173,22 +183,22 @@ func TestParseRSAPublicKey(t *testing.T) {
 }
 
 func TestParseRSAPublicKey_InvalidExponent(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	n := base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes())
 
-	// Exponent of 1 is invalid (< 3).
 	e1 := base64.RawURLEncoding.EncodeToString([]byte{1})
 	_, err = parseRSAPublicKey(n, e1)
 	assert.Error(t, err)
 
-	// Exponent of 2 is invalid (even).
 	e2 := base64.RawURLEncoding.EncodeToString([]byte{2})
 	_, err = parseRSAPublicKey(n, e2)
 	assert.Error(t, err)
 }
 
 func TestVerifyToken_RejectsTokenWithNoExpiry(t *testing.T) {
+	t.Serial()
 	v := NewOIDCVerifier(OIDCConfig{})
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
@@ -208,6 +218,7 @@ func TestVerifyToken_RejectsTokenWithNoExpiry(t *testing.T) {
 }
 
 func TestVerifyToken_FullPipeline_AudienceMatch(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -235,6 +246,7 @@ func TestVerifyToken_FullPipeline_AudienceMatch(t *testing.T) {
 }
 
 func TestVerifyToken_FullPipeline_AudienceMismatch(t *testing.T) {
+	t.Serial()
 	v := NewOIDCVerifier(OIDCConfig{})
 	token := fakeJWT(
 		map[string]any{"alg": "RS256", "kid": "key1"},
@@ -257,6 +269,7 @@ func TestVerifyToken_FullPipeline_AudienceMismatch(t *testing.T) {
 }
 
 func TestVerifyToken_FullPipeline_NoAudienceInPolicy_AnyAudienceAccepted(t *testing.T) {
+	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 

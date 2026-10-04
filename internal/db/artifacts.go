@@ -5,22 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/wow-look-at-my/buildhost/internal/exeformat"
 )
 
-// CreateArtifact inserts one artifact occupying exactly the (os, arch) slot on
-// the row. Use CreateMultiPlatformArtifact for one file covering several.
 func (d *DB) CreateArtifact(ctx context.Context, a *Artifact) error {
 	return d.CreateArtifacts(ctx, []*Artifact{a})
 }
 
-// CreateMultiPlatformArtifact inserts ONE artifact row covering every platform
-// in the set: one blob, one row, one download link, N occupied slots. platforms
-// must be non-empty; platforms[0] becomes the row's canonical slot (its
-// os/arch), which is what every covered platform's download redirect folds to.
-//
-// Slot conflicts are reported as ErrConflict naming the platform, exactly like
-// a single-platform create, and nothing is written -- the whole set lands or
-// none of it does.
 func (d *DB) CreateMultiPlatformArtifact(ctx context.Context, a *Artifact, platforms []Platform) error {
 	if len(platforms) == 0 {
 		return errors.New("create multi-platform artifact: no platforms")
@@ -29,13 +21,6 @@ func (d *DB) CreateMultiPlatformArtifact(ctx context.Context, a *Artifact, platf
 	return d.createArtifacts(ctx, []*Artifact{a}, [][]Platform{platforms})
 }
 
-// CreateArtifacts inserts several artifact rows in one transaction: either
-// every row is created or none is. It backs the multi-platform upload fan-out
-// (one uploaded blob published for several os/arch combinations), where a
-// conflict on any single combination must leave the release unchanged so the
-// client can resolve it and retry the identical request. A unique violation is
-// reported as ErrConflict naming the conflicting combination. On success each
-// artifact's ID is filled in.
 func (d *DB) CreateArtifacts(ctx context.Context, artifacts []*Artifact) error {
 	sets := make([][]Platform, len(artifacts))
 	for i, a := range artifacts {
@@ -44,9 +29,6 @@ func (d *DB) CreateArtifacts(ctx context.Context, artifacts []*Artifact) error {
 	return d.createArtifacts(ctx, artifacts, sets)
 }
 
-// createArtifacts writes each artifact plus its platform set in one
-// transaction. artifact_platforms carries the slot-uniqueness index, so a
-// conflict surfaces from either insert; both are reported the same way.
 func (d *DB) createArtifacts(ctx context.Context, artifacts []*Artifact, sets [][]Platform) error {
 	tx, err := d.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -100,8 +82,7 @@ func (d *DB) createArtifacts(ctx context.Context, artifacts []*Artifact, sets []
 	return nil
 }
 
-// ArtifactPlatforms returns every (os, arch) slot an artifact occupies, in the
-// order it was published. The first entry is the canonical slot.
+// ArtifactPlatforms returns every (os, arch) slot an artifact occupies.
 func (d *DB) ArtifactPlatforms(ctx context.Context, artifactID int64) ([]Platform, error) {
 	rows, err := d.q.ListArtifactPlatformsByArtifact(ctx, artifactID)
 	if err != nil {
@@ -114,9 +95,6 @@ func (d *DB) ArtifactPlatforms(ctx context.Context, artifactID int64) ([]Platfor
 	return out, nil
 }
 
-// ListArtifactsWithPlatforms lists a release's artifacts with each one's
-// platform set attached, so a caller renders one entry per FILE rather than one
-// per platform.
 func (d *DB) ListArtifactsWithPlatforms(ctx context.Context, releaseID int64) ([]ArtifactWithPlatforms, error) {
 	arts, err := d.ListArtifacts(ctx, releaseID)
 	if err != nil {
@@ -177,13 +155,6 @@ func (d *DB) GetArtifact(ctx context.Context, releaseID int64, os, arch string) 
 	return &row, nil
 }
 
-// ListArtifactsByPlatform lists a release's artifacts ONE ENTRY PER COVERED
-// PLATFORM: an ordinary per-platform artifact yields itself, a file covering
-// several yields one entry per platform with OS/Arch rewritten to that
-// platform. Every surface that thinks in platforms -- apt, brew, npm, oci --
-// consumes this, so a multi-platform artifact reaches exactly the platforms it
-// would have reached as N separate rows. What changes is the row count and the
-// number of download links, not the coverage.
 func (d *DB) ListArtifactsByPlatform(ctx context.Context, releaseID int64) ([]PlatformArtifact, error) {
 	arts, err := d.ListArtifactsWithPlatforms(ctx, releaseID)
 	if err != nil {
@@ -198,10 +169,6 @@ func (d *DB) ListArtifactsByPlatform(ctx context.Context, releaseID int64) ([]Pl
 	return out, nil
 }
 
-// GetPlatformArtifact resolves one covered platform to the artifact serving it,
-// with OS/Arch rewritten to the requested platform. Callers that derive a
-// per-platform package (a deb's Architecture, an OCI config) need this rather
-// than GetArtifact, whose OS/Arch are the artifact's canonical slot.
 func (d *DB) GetPlatformArtifact(ctx context.Context, releaseID int64, os, arch string) (*PlatformArtifact, error) {
 	a, err := d.GetArtifact(ctx, releaseID, os, arch)
 	if err != nil {
@@ -211,10 +178,34 @@ func (d *DB) GetPlatformArtifact(ctx context.Context, releaseID int64, os, arch 
 	return &pa, nil
 }
 
+// PortableArtifact returns the release's artifact that runs anywhere, which is
+// what a caller naming no platform is asking for.
+//
+// ErrNotFound means the release has no such artifact, or carries several. The
+// caller must then say which platform it wants, because nothing here can.
+func (d *DB) PortableArtifact(ctx context.Context, releaseID int64) (*Artifact, error) {
+	arts, err := d.ListArtifacts(ctx, releaseID)
+	if err != nil {
+		return nil, err
+	}
+	var found *Artifact
+	for i, a := range arts {
+		if a.ExeFormat != string(exeformat.APE) {
+			continue
+		}
+		if found != nil {
+			return nil, ErrNotFound
+		}
+		found = &arts[i]
+	}
+	if found == nil {
+		return nil, ErrNotFound
+	}
+	return found, nil
+}
+
 // CanonicalPlatform maps a requested (os, arch) to the canonical slot of the
 // artifact covering it. For an ordinary per-platform artifact that is the same
-// pair; for one file covering several platforms every covered pair maps to the
-// one slot, so all of them share a single download URL, digest and ETag.
 func (d *DB) CanonicalPlatform(ctx context.Context, releaseID int64, os, arch string) (string, string, error) {
 	a, err := d.GetArtifact(ctx, releaseID, os, arch)
 	if err != nil {

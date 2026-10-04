@@ -20,15 +20,12 @@ import (
 var errBlobTooLarge = errors.New("blob exceeds maximum size")
 
 // errRangeMismatch is returned when a chunk's Content-Range start does not
-// equal the bytes committed so far (an out-of-order or duplicated chunk).
 var errRangeMismatch = errors.New("chunk offset does not match committed size")
 
-// uploadSession is an in-progress OCI blob upload. Bytes are streamed to a temp
-// file under the data dir (never /tmp) and hashed incrementally so the final
-// digest can be verified against the client-supplied digest.
+// uploadSession is an in-progress OCI blob upload.
 type uploadSession struct {
 	uuid       string
-	mu         sync.Mutex // serializes appendChunk/finalize for one session
+	mu         sync.Mutex
 	file       *os.File
 	hasher     hash.Hash
 	written    int64
@@ -36,10 +33,7 @@ type uploadSession struct {
 	lastActive time.Time // guarded by mu; sweep goes by activity, not creation
 }
 
-// uploadStore tracks in-progress blob uploads. Sessions live in memory plus a
-// temp file each; only finalized blobs reach content-addressed storage. This is
-// fine for the single-container deployment model; horizontal scaling would need
-// sticky routing or shared session state.
+// uploadStore tracks in-progress blob uploads.
 type uploadStore struct {
 	mu       sync.Mutex
 	dir      string
@@ -96,11 +90,6 @@ func (s *uploadStore) appendChunk(sess *uploadSession, r io.Reader) (int64, erro
 	return s.appendChunkAt(sess, r, -1)
 }
 
-// appendChunkAt appends r at the stated start offset (-1 skips the offset
-// check). A start that does not equal the committed size returns
-// errRangeMismatch with the committed size and consumes nothing, so a client
-// that retried an already-applied chunk can resume instead of corrupting the
-// blob. On success it returns the new committed size.
 func (s *uploadStore) appendChunkAt(sess *uploadSession, r io.Reader, start int64) (int64, error) {
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
@@ -162,7 +151,6 @@ func (s *uploadStore) sweep(maxAge time.Duration) {
 	s.mu.Unlock()
 	// Check idleness outside s.mu: finalize holds sess.mu while it calls
 	// remove (which takes s.mu), so taking sess.mu under s.mu would invert
-	// that order and risk a deadlock.
 	for _, sess := range all {
 		sess.mu.Lock()
 		idle := sess.lastActive.Before(cutoff)

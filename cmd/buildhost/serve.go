@@ -14,11 +14,13 @@ import (
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/buildhost/internal/admin"
+	"github.com/wow-look-at-my/buildhost/internal/brew"
 	"github.com/wow-look-at-my/buildhost/internal/buildinfo"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
 	"github.com/wow-look-at-my/buildhost/internal/server"
+	"github.com/wow-look-at-my/buildhost/internal/sites"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/buildhost/internal/telemetry"
 	"github.com/wow-look-at-my/buildhost/internal/uploads"
@@ -36,8 +38,6 @@ var serveCmd = &cobra.Command{
 
 		// Make the Go runtime aware of the container's memory cgroup so the GC
 		// runs harder as we approach the limit instead of letting the heap grow
-		// until the kernel OOM-kills us. No-ops if GOMEMLIMIT is already set or
-		// AUTOMEMLIMIT=off, so an operator can still override it.
 		if limit, err := memlimit.SetGoMemLimitWithOpts(
 			memlimit.WithRatio(0.9),
 			memlimit.WithProvider(memlimit.FromCgroup),
@@ -74,8 +74,6 @@ var serveCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		// Seed the UI-editable retention policy from env defaults on first start
-		// (INSERT OR IGNORE -- never clobbers later dashboard edits).
 		if err := database.SeedRetentionSettings(context.Background(), cfg.RetentionKeepN, int(cfg.RetentionRecencyGuard.Hours())); err != nil {
 			return fmt.Errorf("seed retention settings: %w", err)
 		}
@@ -85,6 +83,10 @@ var serveCmd = &cobra.Command{
 			return fmt.Errorf("init storage: %w", err)
 		}
 		store := storage.NewTraced(fsStore)
+
+		if err := sites.ConvertTarSites(context.Background(), database, store, cfg.DataDir+"/tmp"); err != nil {
+			slog.Error("sites: tar conversion incomplete", "err", err)
+		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer stop()
@@ -109,6 +111,12 @@ var serveCmd = &cobra.Command{
 		}
 
 		srv := server.New(cfg, database, store)
+		// One background worker hashes what the brew tap history still lacks, so no tap request has to.
+		go func() {
+			if err := brew.BackfillHistoryDigests(ctx); err != nil {
+				slog.Error("brew: tap history digest backfill incomplete", "err", err)
+			}
+		}()
 		slog.Info("starting server", "addr", cfg.ListenAddr)
 
 		go func() {
@@ -175,7 +183,6 @@ func startRetentionSweeper(ctx context.Context, cfg config.Config, database *db.
 					continue
 				}
 				// Read the live (dashboard-editable) policy each cycle so edits
-				// apply without a restart. enforce stays env-gated.
 				settings, err := database.GetRetentionSettings(ctx)
 				if err != nil {
 					slog.Error("retention sweep: load settings failed", "err", err)
@@ -214,8 +221,7 @@ func logRetentionReport(rep retention.Report) {
 		"records_marked_deleted", rep.RecordsMarkedDeleted, "records_unmarked", rep.RecordsUnmarked)
 
 	// Every unmarked record is the org's linked artifacts page claiming
-	// buildhost still holds something it just deleted. The sweeper cannot fail
-	// a build over it, so it says so at WARN with the reason attached.
+	// buildhost still holds something. The sweeper cannot fail
 	if rep.RecordsUnmarked > 0 {
 		slog.Warn("retention: evicted artifacts still recorded as stored",
 			"records", rep.RecordsUnmarked, "errors", strings.Join(rep.RecordErrors, "; "))
