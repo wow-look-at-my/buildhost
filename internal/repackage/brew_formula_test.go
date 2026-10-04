@@ -80,7 +80,9 @@ func TestRenderBrewFormula_PrivateTopLevelURLUsesStrategy(t *testing.T) {
 	body := renderFormula(t, f)
 
 	assert.Contains(t, body, "\n  url \"https://dl.example/x\", using: BuildhostCurlDownloadStrategy\n")
-	assert.Contains(t, body, `require_relative "../lib/buildhost_private_download"`)
+	// Inline, because brew extract copies the formula into a tap with no lib/.
+	assert.True(t, strings.HasPrefix(body, BrewPrivateStrategy+"\nclass "), body)
+	assert.NotContains(t, body, "require_relative")
 }
 
 func TestRenderBrewFormula_NoResourcesErrors(t *testing.T) {
@@ -104,6 +106,10 @@ func TestRenderBrewFormula_ServiceOffByteIdentical(t *testing.T) {
   homepage "https://example.com"
   version "1.0.0"
   license "MIT"
+
+  # brew extract and brew version-install rename the class to <name>AT<version>.
+  # A renamed class pins one release, so it must not link over the latest one.
+  keg_only "it pins one release, and the unversioned formula links the same command" if name.to_s.split("::").last != "Mytool"
 
   url "https://dl.example/linux-amd64"
   sha256 "` + strings.Repeat("aa", 32) + `"
