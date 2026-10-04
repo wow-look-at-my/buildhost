@@ -14,6 +14,12 @@ The `{project}.rb` pattern is ONE path segment. A slash-namespaced name therefor
 
 The name a user TYPES is the folded one, as in `brew install pazer/build/gcc-pgo`. A Homebrew formula name cannot contain `/`. `repackage.BrewFormulaName` is that fold. The admin dashboard, the web frontend, llms.txt and the README all install through it.
 
+## A sole nested formula takes its root's name
+
+A repo whose only binary has a different name publishes as `<repo>/<binary>`. `tapFormulaNames` gives that formula the folded name of the topmost root that has no formula of its own and holds no other formula. `simple-llm-harness/slh` is therefore `Formula/simple-llm-harness.rb`, class `SimpleLlmHarness`, and still installs `slh`. A root name that another formula already folds to stays with that formula. The tap history writes past releases at the same path, so `brew version-install` finds them under the new name.
+
+The tap writes `formula_renames.json` at its root, mapping each folded name to its new one. Brew reads it to resolve `brew install` of the old name, and `brew update` migrates an installed keg. The formula route `brew.{domain}/Formula/{name}.rb` still serves the folded name only.
+
 ## Authenticated tap
 
 `brew.{domain}/private/tap.git` challenges an anonymous request with a 401 and a Basic realm. git does NOT send a URL-embedded credential preemptively, and waits for a challenge. A 200 therefore makes a credentialed `brew tap x:TOKEN@...` silently ingest the public-only tap.
