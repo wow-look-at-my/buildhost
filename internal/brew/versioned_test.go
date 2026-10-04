@@ -94,7 +94,7 @@ func TestTapHistory_PendingDigestFillsInBackground(t *testing.T) {
 	require.NoError(t, err)
 
 	versions := func() []string {
-		history, err := h.tapHistory(tapRequest(false))
+		history, err := h.tapHistory(tapRequest(false), nil)
 		require.NoError(t, err)
 		var out []string
 		for _, f := range history {

@@ -12,7 +12,9 @@ Do not install a formula with a naked remote URL, such as `brew install https://
 
 On Linux these formulas have no bottle. `brew install` therefore runs Homebrew's build sandbox. That sandbox needs bubblewrap, from `apt install bubblewrap`, and Homebrew also instills its own. It needs an unprivileged user namespace too. A hardened host such as Ubuntu 24.04 may need `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. In a container or a CI runner with no user namespace, set `HOMEBREW_NO_SANDBOX_LINUX=1` instead. macOS needs neither.
 
-A slash-namespaced project folds `/` to `-` in its formula name. That is the same rule APT applies to a package name. Project `log-streamer/client` therefore installs as `brew install pazer/build/log-streamer-client`. When a root holds exactly one nested project and none of its own, the root name is an alias for it. `brew install pazer/build/log-streamer` works the same way.
+A slash-namespaced project folds `/` to `-` in its formula name. That is the same rule APT applies to a package name. Project `log-streamer/client` therefore installs as `brew install pazer/build/log-streamer-client`.
+
+A repo whose one binary has a different name publishes it as `<repo>/<binary>`. Such a formula takes the repo's name: `simple-llm-harness/slh` installs as `brew install pazer/build/simple-llm-harness`, and puts `slh` on PATH. The rule applies when the root has no formula of its own and holds no other formula. The old folded name still installs it, through the tap's `formula_renames.json`.
 
 A project whose name starts with a digit cannot be served as a formula at all. Homebrew derives the Ruby class from the formula name, and a Ruby class cannot start with a digit. Such a project is therefore omitted from the tap.
 
@@ -26,14 +28,14 @@ Git transmits a credential only after a 401 challenge. The token therefore goes 
 
 An artifact download authenticates separately, through `HOMEBREW_BUILDHOST_TOKEN`. A private formula reads that at install time. The token is never written into the tap.
 
-The example below uses a private project named `myrepo/myapp`. Under the folding rule above it installs as `myrepo-myapp`. The installed command keeps the binary's own name, `myapp`:
+The example below uses a private project named `myrepo/myapp`, the only project under `myrepo`. Under the rule above it installs as `myrepo`. The installed command keeps the binary's own name, `myapp`:
 
 ```bash
 brew trust "https://x:$TOKEN@brew.pazer.build/private/tap.git"
 brew tap --custom-remote pazer/build "https://x:$TOKEN@brew.pazer.build/private/tap.git"
 brew update-reset "$(brew --repository pazer/build)"
 export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
-brew install pazer/build/myrepo-myapp
+brew install pazer/build/myrepo
 ```
 
 `brew update` refreshes the tap with the credential stored in the tap's git remote. The `?token=` query parameter does not work with `brew tap`. git appends its own path segments after the query string, such as `/info/refs`. The URL then stops resolving as a git repository.

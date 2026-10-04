@@ -21,10 +21,10 @@ shared:
 			TAP="$(brew --repository pazer/build)"
 			for _ in $(seq 60); do
 				git -C "$TAP" pull -q --ff-only
-				[ "$(git -C "$TAP" log --format=%H -- Formula/myrepo-myapp.rb | wc -l)" -ge 2 ] && break
+				[ "$(git -C "$TAP" log --format=%H -- Formula/myrepo.rb | wc -l)" -ge 2 ] && break
 				sleep 1
 			done
-			HOMEBREW_NO_GITHUB_API=1 HOMEBREW_BUILDHOST_TOKEN="$BUILDHOST_TOKEN" brew version-install pazer/build/myrepo-myapp@0.9.0
+			HOMEBREW_NO_GITHUB_API=1 HOMEBREW_BUILDHOST_TOKEN="$BUILDHOST_TOKEN" brew version-install pazer/build/myrepo@0.9.0
 			echo "TAP='$TAP'" > "$ENV_FILE"
 
 setup:
@@ -53,17 +53,23 @@ tests:
 	# The extracted formula lands in the user's versions tap, which has no lib/,
 	# so its download strategy must ride inside the formula.
 	- desc: brew version-install installs an older private release through the token strategy
-	  cmd: '"$(brew --prefix myrepo-myapp@0.9.0)/bin/myapp"'
+	  cmd: '"$(brew --prefix myrepo@0.9.0)/bin/myapp"'
 	  outputs:
 		stdout:
 			- "buildhost-homebrew-private-0.9.0"
 
-	# myrepo publishes one binary not named after it, as myrepo/myapp. The tap alias lets the repo name alone resolve to that formula.
-	- desc: the repo name resolves to its sole nested formula
-	  cmd: brew info --json=v2 pazer/build/myrepo | jq -r '.formulae[0].full_name'
+	# myrepo/myapp is the only formula under myrepo, so the formula carries the repo's name.
+	- desc: the sole nested formula is installed under its repo's name
+	  cmd: brew list --formula --full-name | grep -x 'pazer/build/myrepo'
 	  outputs:
 		stdout:
-			- "pazer/build/myrepo-myapp"
+			- "pazer/build/myrepo"
+
+	- desc: the folded name resolves to the renamed formula
+	  cmd: brew info --json=v2 pazer/build/myrepo-myapp | jq -r '.formulae[0].full_name'
+	  outputs:
+		stdout:
+			- "pazer/build/myrepo"
 
 	# `brew update` refreshes a tap by fetching its git remote, and for the
 	# authenticated tap the credentials live in that stored URL. Proving the
@@ -97,7 +103,7 @@ tests:
 		fi
 		grep -qx 'dotted.app.rb' formulas.txt || {
 			echo "the dotted public project is missing from the tap" >&2; cat formulas.txt >&2; exit 1; }
-		grep -qx 'myrepo-myapp.rb' formulas.txt || {
+		grep -qx 'myrepo.rb' formulas.txt || {
 			echo "the private formula is missing from the tap" >&2; cat formulas.txt >&2; exit 1; }
 		if grep -q '[@/]' formulas.txt; then
 			echo "the tap must hold one formula per project, no versions" >&2; cat formulas.txt >&2; exit 1
