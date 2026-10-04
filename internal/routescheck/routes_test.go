@@ -1,63 +1,76 @@
 package routescheck
 
 import (
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/go-containers/set"
+	"github.com/wow-look-at-my/router"
 
 	// Import every backend so its init() registers routes. The guard below
-	// then sees the full route table. auth.Init is deliberately NOT called.
 	_ "github.com/wow-look-at-my/buildhost/internal/api"
 	_ "github.com/wow-look-at-my/buildhost/internal/apt"
 	_ "github.com/wow-look-at-my/buildhost/internal/brew"
 	_ "github.com/wow-look-at-my/buildhost/internal/dl"
+	_ "github.com/wow-look-at-my/buildhost/internal/goproxy"
 	_ "github.com/wow-look-at-my/buildhost/internal/llms"
 	_ "github.com/wow-look-at-my/buildhost/internal/npm"
 	_ "github.com/wow-look-at-my/buildhost/internal/oci"
 	_ "github.com/wow-look-at-my/buildhost/internal/sites"
 	_ "github.com/wow-look-at-my/buildhost/internal/static"
+	_ "github.com/wow-look-at-my/buildhost/internal/uploads"
 	_ "github.com/wow-look-at-my/buildhost/internal/web"
 )
 
-// TestAllRoutesRegisteredWithoutInit guards against a backend registering its
-// routes inside an auth.OnReady() callback instead of directly in init().
-// OnReady callbacks fire only from auth.Init() (server startup), so such routes
-// are invisible to `buildhost routes`, the route-diff CI check, and any tooling
-// that enumerates routes without booting a server. Every backend must call
-// auth.ServiceHandle/Handle in init() and use OnReady only to populate handler
-// dependencies (DB, Store, ...).
-//
-// This package imports every backend (their init() runs) but never calls
-// auth.Init(), so a route deferred to OnReady drops out of auth.AllRoutes()
-// and fails here.
-func TestAllRoutesRegisteredWithoutInit(t *testing.T) {
-	var patterns []string
-	for _, r := range auth.AllRoutes() {
-		patterns = append(patterns, r.Pattern)
-	}
+const testSiteDomain = "routecheck.example"
 
-	// One representative route per service-subdomain backend.
-	want := []string{
-		"npm.{domain}/{pkg}",
-		"npm.{domain}/@buildhost/{project}/-/{filename}",
-		"apt.{domain}/{path...}",
-		"brew.{domain}/{project}",
-		"brew.{domain}/tap.git/info/refs",
-		"brew.{domain}/tap.git/git-upload-pack",
-		"brew.{domain}/private/tap.git/git-upload-pack",
-		"git.{domain}/brew/tap.git/{path...}",
-		"git.{domain}/brew/tap.git/info/refs",
-		"git.{domain}/brew/tap.git/git-upload-pack",
-		"dl.{domain}/{project}",
-		"sites.{domain}/{project}/branch/{branch}",
-		"static.{domain}/file",
-		"oci.{domain}/v2/",
+func patterns(routes []router.Route) []string {
+	out := make([]string, 0, len(routes))
+	for _, r := range routes {
+		out = append(out, r.Pattern)
 	}
-	for _, w := range want {
-		assert.Contains(t, patterns, w,
-			"route %q missing from auth.AllRoutes(); is it registered inside auth.OnReady() instead of directly in init()? Found:\n%s",
-			w, strings.Join(patterns, "\n"))
+	sort.Strings(out)
+	return out
+}
+
+// TestInitRegistersOnlySiteDomainRoutes is the exhaustive form of the guard:
+func TestInitRegistersOnlySiteDomainRoutes(t *testing.T) {
+	t.Serial()
+	enumerable := patterns(auth.ListRoutes())
+	enumerableSet := set.Of(enumerable...)
+
+	auth.Init(nil, nil, t.TempDir(), nil, nil, nil, nil, "", "", "", testSiteDomain, "primary.example")
+
+	for _, p := range patterns(auth.AllRoutes()) {
+		// A configured site-domain route is the placeholder route with the real
+		// domain substituted back in.
+		if enumerableSet.Contains(strings.ReplaceAll(p, testSiteDomain, auth.SiteDomainPlaceholder)) {
+			continue
+		}
+		assert.Fail(t, "route is invisible to `buildhost routes`",
+			"route %q appeared only after auth.Init. Register it in init() instead of inside "+
+				"auth.OnReady (OnReady is for wiring handler dependencies), or -- if its pattern "+
+				"genuinely depends on configuration -- through auth.OnSiteDomain. Enumerable routes:\n%s",
+			p, strings.Join(enumerable, "\n"))
+
+	}
+}
+
+// TestListRoutesCoversConfigConditionalFamilies pins the other half: the
+// enumerable table must contain the config-conditional routes, so a future
+// refactor cannot quietly drop them out of `buildhost routes` and leave the
+// check above trivially satisfied.
+func TestListRoutesCoversConfigConditionalFamilies(t *testing.T) {
+	t.Serial()
+	got := patterns(auth.ListRoutes())
+	for _, want := range []string{
+		"/__sso",
+		"{project}." + auth.SiteDomainPlaceholder + "/__sso",
+		"{project}." + auth.SiteDomainPlaceholder + "/{path...}",
+	} {
+		assert.Contains(t, got, want)
 	}
 }

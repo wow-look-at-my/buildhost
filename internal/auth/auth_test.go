@@ -11,6 +11,7 @@ import (
 )
 
 func TestExtractToken_Bearer(t *testing.T) {
+	t.Serial()
 	r, _ := http.NewRequest("GET", "/", nil)
 	r.Header.Set("Authorization", "Bearer my-secret-token")
 
@@ -20,6 +21,7 @@ func TestExtractToken_Bearer(t *testing.T) {
 }
 
 func TestExtractToken_BasicAuth(t *testing.T) {
+	t.Serial()
 	r, _ := http.NewRequest("GET", "/", nil)
 	cred := base64.StdEncoding.EncodeToString([]byte("user:the-password-token"))
 	r.Header.Set("Authorization", "Basic "+cred)
@@ -30,6 +32,7 @@ func TestExtractToken_BasicAuth(t *testing.T) {
 }
 
 func TestExtractToken_QueryParam(t *testing.T) {
+	t.Serial()
 	r, _ := http.NewRequest("GET", "/?token=query-token-value", nil)
 
 	got := ExtractToken(r)
@@ -38,6 +41,7 @@ func TestExtractToken_QueryParam(t *testing.T) {
 }
 
 func TestExtractToken_NoAuth(t *testing.T) {
+	t.Serial()
 	r, _ := http.NewRequest("GET", "/", nil)
 
 	got := ExtractToken(r)
@@ -46,6 +50,7 @@ func TestExtractToken_NoAuth(t *testing.T) {
 }
 
 func TestExtractToken_BearerTakesPrecedenceOverBasic(t *testing.T) {
+	t.Serial()
 	r, _ := http.NewRequest("GET", "/?token=query", nil)
 	r.Header.Set("Authorization", "Bearer bearer-wins")
 
@@ -55,6 +60,7 @@ func TestExtractToken_BearerTakesPrecedenceOverBasic(t *testing.T) {
 }
 
 func TestExtractToken_BasicTakesPrecedenceOverQuery(t *testing.T) {
+	t.Serial()
 	r, _ := http.NewRequest("GET", "/?token=query", nil)
 	cred := base64.StdEncoding.EncodeToString([]byte("x:basic-wins"))
 	r.Header.Set("Authorization", "Basic "+cred)
@@ -65,6 +71,7 @@ func TestExtractToken_BasicTakesPrecedenceOverQuery(t *testing.T) {
 }
 
 func TestExtractToken_InvalidBasicEncoding(t *testing.T) {
+	t.Serial()
 	r, _ := http.NewRequest("GET", "/", nil)
 	r.Header.Set("Authorization", "Basic %%%not-base64%%%")
 
@@ -74,6 +81,7 @@ func TestExtractToken_InvalidBasicEncoding(t *testing.T) {
 }
 
 func TestWithToken_TokenFrom_RoundTrip(t *testing.T) {
+	t.Serial()
 	tok := &db.APIToken{
 		ID:     42,
 		Name:   "test-token",
@@ -98,6 +106,7 @@ func TestWithToken_TokenFrom_RoundTrip(t *testing.T) {
 }
 
 func TestWithProject_ProjectFrom_RoundTrip(t *testing.T) {
+	t.Serial()
 	ctx := context.Background()
 
 	// Before setting, ProjectFrom returns nil.
@@ -120,9 +129,9 @@ func (r testRoute) ProjectName() string { return r.project }
 func (r testRoute) Access() AccessLevel { return r.access }
 
 func TestWithRouteInfo_RouteInfoFrom_RoundTrip(t *testing.T) {
+	t.Serial()
 	ctx := context.Background()
 
-	// Before setting, RouteInfoFrom returns nil (zero value of interface).
 	ri := RouteInfoFrom(ctx)
 	require.Nil(t, ri)
 

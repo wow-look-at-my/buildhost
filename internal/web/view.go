@@ -11,6 +11,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/exeformat"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 )
 
@@ -18,8 +19,7 @@ import (
 const siteName = "buildhost"
 
 var templateFuncs = template.FuncMap{
-	// nonEmpty reports whether s is a non-blank string, for {{if}} guards on
-	// optional metadata fields.
+	// nonEmpty reports whether s is a non-blank string.
 	"nonEmpty": func(s string) bool { return strings.TrimSpace(s) != "" },
 }
 
@@ -145,9 +145,6 @@ type siteRow struct {
 }
 
 // installInfo holds copy-pasteable commands for fetching a project. Commands
-// are gated on what the latest published release actually contains: a
-// docker-only release exposes just `docker pull`, anything with a real binary
-// exposes the download/apt/brew/npm forms too.
 type installInfo struct {
 	HasBinary bool
 	Curl      string
@@ -194,7 +191,7 @@ func buildProjectView(r *http.Request, p *db.Project, rels []db.ReleaseSummary, 
 	for _, s := range sites {
 		v.Sites = append(v.Sites, siteRow{
 			Branch:  s.Branch,
-			URL:     serviceURL(r, "sites", p.Name+"/branch/"+s.Branch+"/"),
+			URL:     serviceURL(r, "sites", p.Name+"/@"+s.Branch+"/"),
 			Files:   s.FileCount,
 			Updated: timeAgo(s.UpdatedAt),
 		})
@@ -206,9 +203,9 @@ func buildProjectView(r *http.Request, p *db.Project, rels []db.ReleaseSummary, 
 	return v
 }
 
-// buildInstallInfo assembles copy-paste fetch commands. `docker pull` is always
-// offered (buildhost synthesizes an image even from a bare binary); the
-// download/apt/brew/npm forms are offered only when the latest release actually
+// buildInstallInfo assembles copy-paste fetch commands. `docker pull` is
+// always offered (buildhost synthesizes an image even from a bare binary);
+// the download/apt/brew/npm forms are offered only when the latest release
 // has a non-docker artifact to repackage.
 func buildInstallInfo(r *http.Request, project, version string, hasBinary bool) *installInfo {
 	info := &installInfo{
@@ -217,11 +214,14 @@ func buildInstallInfo(r *http.Request, project, version string, hasBinary bool) 
 	}
 	if hasBinary {
 		info.Curl = fmt.Sprintf("curl -LO %q", dlURL(r, project, "", "linux", "amd64", "raw"))
-		info.Brew = "brew tap pazer/build " + serviceBase(r, "brew") + "\nbrew install pazer/build/" + project
+		// The cloneable tap URL is the /tap.git smart-HTTP endpoint.
+		info.Brew = "brew trust " + serviceBase(r, "brew") + "/tap.git" +
+			"\nbrew tap pazer/build " + serviceBase(r, "brew") + "/tap.git" +
+			// A formula name cannot contain '/', so a slash-namespaced project
+			"\nbrew install pazer/build/" + repackage.BrewFormulaName(project)
 		info.Npm = "npm install @buildhost/" + project + " --registry " + serviceBase(r, "npm")
 		aptURL := serviceURL(r, "apt", project)
 		// A slash-namespaced project keeps its slash in the repo URL but installs
-		// under a folded Debian package name (see repackage.DebPackageName).
 		pkg := repackage.DebPackageName(project)
 		info.Apt = fmt.Sprintf(
 			"sudo install -d -m 0755 /etc/apt/keyrings\n"+
@@ -248,8 +248,7 @@ type releaseView struct {
 }
 
 type artifactRow struct {
-	OS         string
-	Arch       string
+	Platforms  string
 	Kind       string
 	Filename   string
 	Size       string
@@ -257,6 +256,8 @@ type artifactRow struct {
 	Downloads  []downloadLink
 	Docker     bool
 	DockerPull string
+	// FormatBadge is the executable format detected at upload ("APE").
+	FormatBadge string
 }
 
 type downloadLink struct {
@@ -265,10 +266,9 @@ type downloadLink struct {
 }
 
 // archiveFormats are the repackaged download formats offered for every
-// non-docker artifact, matching the fmt values the dl/static endpoints accept.
 var archiveFormats = []string{"tar.gz", "tar.xz", "tar.zst", "zip"}
 
-func buildReleaseView(r *http.Request, p *db.Project, rel *db.Release, arts []db.Artifact) releaseView {
+func buildReleaseView(r *http.Request, p *db.Project, rel *db.Release, arts []db.ArtifactWithPlatforms) releaseView {
 	v := releaseView{
 		SiteName:    siteName,
 		ProjectName: p.Name,
@@ -282,12 +282,12 @@ func buildReleaseView(r *http.Request, p *db.Project, rel *db.Release, arts []db
 
 	for _, a := range arts {
 		row := artifactRow{
-			OS:       string(a.OS),
-			Arch:     string(a.Arch),
-			Kind:     string(a.Kind),
-			Filename: a.Filename,
-			Size:     humanSize(a.Size),
-			SHA256:   a.SHA256,
+			Platforms:   db.FormatPlatforms(a.Platforms),
+			Kind:        string(a.Kind),
+			Filename:    a.Filename,
+			Size:        humanSize(a.Size),
+			SHA256:      a.SHA256,
+			FormatBadge: exeformat.Format(a.ExeFormat).Label(),
 		}
 		if a.Kind.ServedViaDockerOnly() {
 			row.Docker = true
@@ -313,9 +313,6 @@ func buildReleaseView(r *http.Request, p *db.Project, rel *db.Release, arts []db
 // ----- URL helpers ---------------------------------------------------------
 
 // serviceBase returns the scheme://host base for a service subdomain, derived
-// from the main-domain request (e.g. example.com -> https://dl.example.com).
-// It deliberately does not use auth.DeriveServiceURL, which is meant for
-// subdomain-origin requests and strips the first host label.
 func serviceBase(r *http.Request, service string) string {
 	return auth.RequestScheme(r) + "://" + service + "." + r.Host
 }
@@ -332,7 +329,7 @@ func serviceURL(r *http.Request, service, path string) string {
 }
 
 // dlURL builds a canonical download URL on the dl subdomain. An empty version
-// downloads the latest; an empty/"raw" format downloads the original binary.
+// downloads the latest; an empty/"raw" format downloads the binary.
 func dlURL(r *http.Request, project, version, os, arch, format string) string {
 	q := url.Values{}
 	q.Set("os", os)
@@ -365,7 +362,6 @@ func releasePath(project, version string) string {
 // ----- formatting helpers --------------------------------------------------
 
 // lastSegment returns the final /-separated segment of a slash-namespaced
-// project name -- the tree label shown next to the full name on the index.
 func lastSegment(name string) string {
 	if i := strings.LastIndexByte(name, '/'); i >= 0 {
 		return name[i+1:]

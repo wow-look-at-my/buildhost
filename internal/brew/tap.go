@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/wow-look-at-my/go-containers/set"
 	mmap "github.com/wow-look-at-my/go-mmap"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -26,8 +28,7 @@ import (
 // permanently redirected to the public tap on the git subdomain, exactly as
 // before. A request that carries a valid credential is served IN PLACE
 // instead: clients drop credentials when following a cross-host redirect (git
-// re-roots all subsequent requests on the redirect target), so redirecting an
-// authenticated tap request would silently downgrade it to the public tap.
+// re-roots all subsequent requests on the redirect target).
 func (h *Handler) RedirectTap(w http.ResponseWriter, r *http.Request) {
 	if auth.TokenFrom(r.Context()) != nil {
 		h.serveTapFile(w, r)
@@ -43,12 +44,6 @@ func (h *Handler) RedirectTap(w http.ResponseWriter, r *http.Request) {
 }
 
 // ServePrivateTap handles brew.{domain}/private/tap.git -- the authenticated
-// tap. An anonymous request gets a 401 Basic challenge rather than public
-// content: git does NOT send URL-embedded credentials preemptively (it waits
-// for a challenge), so answering 200 here would make a credentialed
-// `brew tap x:TOKEN@.../private/tap.git` silently ingest the public-only tap
-// and the user would never learn their token was dropped. The challenge is
-// what makes the standard creds-in-URL private-tap pattern work at all.
 func (h *Handler) ServePrivateTap(w http.ResponseWriter, r *http.Request) {
 	if auth.TokenFrom(r.Context()) == nil {
 		w.Header().Set("Www-Authenticate", `Basic realm="buildhost"`)
@@ -59,12 +54,6 @@ func (h *Handler) ServePrivateTap(w http.ResponseWriter, r *http.Request) {
 	h.serveTapFile(w, r)
 }
 
-// ServeTap serves one file of the dumb-HTTP git tap on the git subdomain from
-// the scope's persistent lineage store (refreshed at most once per tapCacheTTL,
-// see tapcache.go/taphistory.go) by memory-mapping it -- never buffering the
-// file on the heap and never rebuilding the whole tap per object request. The
-// store is append-only with fast-forward-only refs, so a publish landing
-// mid-`brew update` can never orphan the refs a client already fetched.
 func (h *Handler) ServeTap(w http.ResponseWriter, r *http.Request) {
 	h.serveTapFile(w, r)
 }
@@ -110,8 +99,6 @@ func (h *Handler) serveTapFile(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	}
 
-	// A zero-length file (objects/info/packs) has nothing to map -- mmap
-	// rejects an empty region, same as the storage layer's empty-blob case.
 	if info.Size() == 0 {
 		w.Header().Set("Content-Length", "0")
 		return
@@ -129,15 +116,6 @@ func (h *Handler) serveTapFile(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, rc)
 }
 
-// tapScopeKey returns the snapshot-cache key component identifying the
-// request's credential. Every anonymous request shares one scope; a DB token
-// keys by its unique ID; an OIDC synthetic token (always ID -1) keys by its
-// subject-derived name plus its policy project and namespace restriction, so
-// two distinct OIDC identities can never collide onto one cached tap. Keying
-// by credential -- not by the resulting project set -- means a cache hit costs
-// no DB work and each scope keeps the "one consistent snapshot per TTL"
-// property the cache exists for (a publish mid-`brew update` must not swap
-// refs/objects out from under the client).
 func tapScopeKey(ctx context.Context) string {
 	t := auth.TokenFrom(ctx)
 	if t == nil {
@@ -152,11 +130,7 @@ func tapScopeKey(ctx context.Context) string {
 
 // tapVisibleProjects computes the projects the request may see in a tap: every
 // public project, plus -- when the request carries a credential -- the private
-// projects that credential can read. The visibility rule is
-// auth.TokenCanReadProject, the same one requireProject applies to
-// single-project reads, so a private project name can never leak into a tap
-// its token could not read directly. Evaluated once per snapshot BUILD; cached
-// snapshots are keyed by credential (tapScopeKey), never shared across scopes.
+// projects that credential can read.
 func (h *Handler) tapVisibleProjects(r *http.Request) ([]db.Project, error) {
 	projects, err := h.DB.ListProjects(r.Context())
 	if err != nil {
@@ -172,103 +146,214 @@ func (h *Handler) tapVisibleProjects(r *http.Request) ([]db.Project, error) {
 }
 
 // buildTapFiles assembles the tap's working-tree contents for the request's
-// scope: one formula per visible project (folded filename) plus the private
-// download strategy library.
 func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
+	files, _, err := h.buildTap(r)
+	return files, err
+}
+
+// buildTap returns the tap's files and the formula name of each project in it.
+func (h *Handler) buildTap(r *http.Request) (map[string][]byte, map[string]string, error) {
 	visible, err := h.tapVisibleProjects(r)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	files := map[string][]byte{
-		// Always ship the private-download strategy so the tap layout is
-		// uniform across scopes; it contains no secrets and public-only taps
-		// simply never reference it.
-		repackage.BrewPrivateStrategyPath: []byte(repackage.BrewPrivateStrategy),
+	type latest struct {
+		project   db.Project
+		release   db.Release
+		artifacts []db.PlatformArtifact
 	}
+	var candidates []latest
+	rendered := map[string][]byte{}
 	for _, project := range visible {
 		release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
 		if err != nil {
 			if errors.Is(err, db.ErrNotFound) {
 				continue
 			}
-			return nil, err
+			return nil, nil, err
 		}
-		artifacts, err := h.DB.ListArtifacts(r.Context(), release.ID)
+		artifacts, err := h.DB.ListArtifactsByPlatform(r.Context(), release.ID)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		out, err := h.formulaForRelease(r.Context(), project, *release, artifacts, auth.RequestRootURL(r))
+		data, err := h.renderFormula(r, project, *release, artifacts, repackage.BrewFormulaName(project.Name), formulaLatest)
+		if errors.Is(err, db.ErrNotFound) {
+			continue
+		}
 		if err != nil {
-			if errors.Is(err, db.ErrNotFound) {
-				continue
-			}
-			return nil, err
+			return nil, nil, err
 		}
-		data, err := io.ReadAll(out.Reader)
-		if err != nil {
-			return nil, err
-		}
-		files["Formula/"+tapFormulaName(project.Name)+".rb"] = data
+		candidates = append(candidates, latest{project, *release, artifacts})
+		rendered[project.Name] = data
 	}
 
-	return files, nil
+	projects := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		projects = append(projects, c.project.Name)
+	}
+	names := tapFormulaNames(projects)
+
+	files := map[string][]byte{}
+	renames := map[string]string{}
+	for _, c := range candidates {
+		name := names[c.project.Name]
+		data := rendered[c.project.Name]
+		if folded := repackage.BrewFormulaName(c.project.Name); name != folded {
+			renames[folded] = name
+			if data, err = h.renderFormula(r, c.project, c.release, c.artifacts, name, formulaLatest); err != nil {
+				return nil, nil, err
+			}
+		}
+		files["Formula/"+name+".rb"] = data
+	}
+	if len(renames) > 0 {
+		body, err := json.MarshalIndent(renames, "", "  ")
+		if err != nil {
+			return nil, nil, err
+		}
+		files[tapRenamesFile] = append(body, '\n')
+	}
+	return files, names, nil
 }
 
-// buildGitObjects materializes files (keyed by repo-relative path, at most one
-// directory deep, e.g. "Formula/x.rb" or "lib/y.rb") as loose git objects:
-// blobs, trees, and one commit. When parent is non-empty it is recorded as the
-// commit's parent, so a lineage's history only ever grows forward -- the
-// fast-forward guarantee `brew update` depends on (its updater rebases the
-// client's clone onto origin/main; an unrelated new root commit wedges every
-// client in add/add conflicts). Object contents are deterministic (zero
-// timestamps, fixed identity), so identical (files, parent) inputs produce
-// identical SHAs across builds, restarts, and redeploys.
-func buildGitObjects(files map[string][]byte, parent string) (objects map[string][]byte, commitSHA, rootTreeSHA string) {
-	objects = map[string][]byte{}
-	byDir := map[string][]gitTreeEntry{}
-	var rootFiles []gitTreeEntry
+// tapRenamesFile maps an old formula name to its current one. brew install resolves an old name through it.
+const tapRenamesFile = "formula_renames.json"
 
-	names := make([]string, 0, len(files))
-	for name := range files {
-		names = append(names, name)
+// renderFormula renders one formula under the tap name formula.
+func (h *Handler) renderFormula(r *http.Request, project db.Project, release db.Release, artifacts []db.PlatformArtifact, formula string, mode formulaMode) ([]byte, error) {
+	out, err := h.formulaForRelease(r.Context(), project, release, artifacts, auth.RequestRootURL(r), formula, mode)
+	if err != nil {
+		return nil, err
 	}
-	sort.Strings(names)
+	return io.ReadAll(out.Reader)
+}
 
-	for _, name := range names {
-		blobSHA := addGitObject(objects, "blob", files[name])
-		dir, base, nested := strings.Cut(name, "/")
-		if nested {
-			byDir[dir] = append(byDir[dir], gitTreeEntry{Mode: "100644", Name: base, SHA: blobSHA})
-		} else {
-			rootFiles = append(rootFiles, gitTreeEntry{Mode: "100644", Name: name, SHA: blobSHA})
+// tapFormulaNames maps each project with a formula to its tap formula name.
+// The name is the project's folded name, except for the only formula under a root that has no formula of its own.
+// That formula takes the topmost such root's folded name: a repo whose one binary is not named after it publishes as "<repo>/<binary>", and installs as "<repo>".
+// A root name that another formula already folds to stays with that formula.
+func tapFormulaNames(projects []string) map[string]string {
+	own := set.New[string]()
+	folded := set.New[string]()
+	nested := map[string]int{}
+	for _, p := range projects {
+		own.Add(p)
+		folded.Add(repackage.BrewFormulaName(p))
+		for i := 1; i < len(p); i++ {
+			if p[i] == '/' {
+				nested[p[:i]]++
+			}
 		}
 	}
-
-	rootEntries := rootFiles
-	for _, dir := range sortedKeys(byDir) {
-		treeSHA := addGitObject(objects, "tree", gitTree(byDir[dir]))
-		rootEntries = append(rootEntries, gitTreeEntry{Mode: "40000", Name: dir, SHA: treeSHA})
+	names := make(map[string]string, len(projects))
+	for _, p := range projects {
+		names[p] = repackage.BrewFormulaName(p)
+		for i := 1; i < len(p); i++ {
+			if p[i] != '/' {
+				continue
+			}
+			root := p[:i]
+			if own.Contains(root) || nested[root] != 1 || folded.Contains(repackage.BrewFormulaName(root)) {
+				continue
+			}
+			names[p] = repackage.BrewFormulaName(root)
+			break
+		}
 	}
-	rootTreeSHA = addGitObject(objects, "tree", gitTree(rootEntries))
+	return names
+}
 
+// tapHistoryFormula is one past release's formula, at the path the tap's
+// latest formula for that project uses.
+type tapHistoryFormula struct {
+	path      string
+	data      []byte
+	releaseID int64
+}
+
+// tapHistory renders every published default-branch release of every visible
+// project, oldest first. A release whose digests are not cached yet is left
+// out and queued on the background filler: a tap request never hashes one.
+// names is the formula name of each project in the tap; any other project keeps its folded name.
+func (h *Handler) tapHistory(r *http.Request, names map[string]string) ([]tapHistoryFormula, error) {
+	visible, err := h.tapVisibleProjects(r)
+	if err != nil {
+		return nil, err
+	}
+	var history []tapHistoryFormula
+	for _, project := range visible {
+		name, ok := names[project.Name]
+		if !ok {
+			name = repackage.BrewFormulaName(project.Name)
+		}
+		releases, err := h.DB.ListPublishedReleasesOnDefaultBranch(r.Context(), project.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, release := range releases {
+			artifacts, err := h.DB.ListArtifactsByPlatform(r.Context(), release.ID)
+			if err != nil {
+				return nil, err
+			}
+			data, err := h.renderFormula(r, project, release, artifacts, name, formulaHistory)
+			if errors.Is(err, db.ErrNotFound) || errors.Is(err, errDigestPending) {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			history = append(history, tapHistoryFormula{path: "Formula/" + name + ".rb", data: data, releaseID: release.ID})
+		}
+	}
+	sort.Slice(history, func(i, j int) bool { return history[i].releaseID < history[j].releaseID })
+	return history, nil
+}
+
+// gitObjects collects the loose objects of the commits one refresh appends.
+type gitObjects map[string][]byte
+
+// blobs adds each file's blob and returns the path -> blob sha map.
+func (o gitObjects) blobs(files map[string][]byte) map[string]string {
+	shas := make(map[string]string, len(files))
+	for path, body := range files {
+		shas[path] = addGitObject(o, "blob", body)
+	}
+	return shas
+}
+
+// commit adds the tree for blobs and a commit of it with parent, and returns
+// the commit and tree shas.
+func (o gitObjects) commit(blobs map[string]string, parent string) (commitSHA, treeSHA string) {
+	treeSHA = o.tree(blobs)
 	var commit bytes.Buffer
-	fmt.Fprintf(&commit, "tree %s\n", rootTreeSHA)
+	fmt.Fprintf(&commit, "tree %s\n", treeSHA)
 	if parent != "" {
 		fmt.Fprintf(&commit, "parent %s\n", parent)
 	}
 	commit.WriteString("author buildhost <buildhost@localhost> 0 +0000\ncommitter buildhost <buildhost@localhost> 0 +0000\n\nUpdate Homebrew tap\n")
-	commitSHA = addGitObject(objects, "commit", commit.Bytes())
-
-	return objects, commitSHA, rootTreeSHA
+	return addGitObject(o, "commit", commit.Bytes()), treeSHA
 }
 
-func sortedKeys(m map[string][]gitTreeEntry) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
+// tree adds the trees for blobs (slash-separated paths relative to this tree
+// -> blob sha), at any depth, and returns the tree's sha.
+func (o gitObjects) tree(blobs map[string]string) string {
+	var entries []gitTreeEntry
+	subdirs := map[string]map[string]string{}
+	for name, sha := range blobs {
+		dir, rest, nested := strings.Cut(name, "/")
+		if !nested {
+			entries = append(entries, gitTreeEntry{Mode: "100644", Name: name, SHA: sha})
+			continue
+		}
+		if subdirs[dir] == nil {
+			subdirs[dir] = map[string]string{}
+		}
+		subdirs[dir][rest] = sha
 	}
-	sort.Strings(keys)
-	return keys
+	for dir, sub := range subdirs {
+		entries = append(entries, gitTreeEntry{Mode: "40000", Name: dir, SHA: o.tree(sub)})
+	}
+	return addGitObject(o, "tree", gitTree(entries))
 }
 
 type gitTreeEntry struct {
@@ -300,10 +385,13 @@ func gitTree(entries []gitTreeEntry) []byte {
 	return buf.Bytes()
 }
 
-func addGitObject(objects map[string][]byte, kind string, body []byte) string {
+func addGitObject(objects gitObjects, kind string, body []byte) string {
 	raw := append([]byte(fmt.Sprintf("%s %d\x00", kind, len(body))), body...)
 	sum := sha1.Sum(raw)
 	sha := hex.EncodeToString(sum[:])
+	if _, ok := objects[sha]; ok {
+		return sha
+	}
 
 	var compressed bytes.Buffer
 	zw := zlib.NewWriter(&compressed)
@@ -326,7 +414,7 @@ func tapSuffix(r *http.Request) string {
 }
 
 func tapFormulaName(project string) string {
-	return strings.ReplaceAll(project, "/", "-")
+	return repackage.BrewFormulaName(project)
 }
 
 func domainFromRequest(r *http.Request) string {

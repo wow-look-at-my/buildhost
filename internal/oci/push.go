@@ -8,22 +8,21 @@ import (
 	"strconv"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
 // contentRangePattern matches the OCI distribution chunk range form
-// "<start>-<end>" (inclusive byte offsets, no "bytes " prefix).
 var contentRangePattern = regexp.MustCompile(`^([0-9]+)-([0-9]+)$`)
 
 // StartBlobUpload handles POST /v2/{name}/blobs/uploads/.
-//
-// Two modes:
-//   - monolithic: ?digest=sha256:... with the blob as the body -> store now, 201.
-//   - session:    no digest -> open an upload session, 202 + Location for PATCH/PUT.
-//
-// A ?mount= request (cross-repo blob mount) is treated as a session start: we
-// don't implement mounting, and the client falls back to a normal upload.
 func (h *Handler) StartBlobUpload(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
+
+	if mount := r.URL.Query().Get("mount"); mount != "" {
+		if h.mountBlob(w, r, project, mount, r.URL.Query().Get("from")) {
+			return
+		}
+	}
 
 	digest := r.URL.Query().Get("digest")
 	if digest != "" {
@@ -67,14 +66,42 @@ func (h *Handler) StartBlobUpload(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// mountBlob answers a cross-repository blob mount, reporting whether it wrote a
+// response. Storage is content-addressed and global, so mounting is a link row:
+func (h *Handler) mountBlob(w http.ResponseWriter, r *http.Request, project *db.Project, digest, from string) bool {
+	if !validDigest.MatchString(digest) {
+		return false
+	}
+	key := digest[7:]
+	if ok, err := h.Store.Exists(r.Context(), key); err != nil || !ok {
+		return false
+	}
+	owners, err := h.DB.ListOCIBlobOwners(r.Context(), key)
+	if err != nil {
+		return false
+	}
+	for _, owner := range owners {
+		if from != "" && owner.Project.Name != from {
+			continue
+		}
+		if owner.Project.ID != project.ID && !auth.TokenCanReadProject(r.Context(), &owner.Project) {
+			continue
+		}
+		if err := h.DB.LinkOCIBlob(r.Context(), project.ID, key, owner.MediaType, owner.Size, owner.IsManifest); err != nil {
+			return false
+		}
+		w.Header().Set("Location", blobPath(project.Name, digest))
+		w.Header().Set("Docker-Content-Digest", digest)
+		w.WriteHeader(http.StatusCreated)
+		return true
+	}
+	return false
+}
+
 // PatchBlobUpload handles PATCH /v2/{name}/blobs/uploads/{uuid} (chunk append).
 //
 // A Content-Range header ("<start>-<end>", as the OCI distribution spec has
-// chunked clients send) is verified against the bytes committed so far: a
-// mismatched start returns 416 with the current Range and consumes nothing, so
-// a client that lost a response can query where the server actually is and
-// resume instead of corrupting the blob. Requests without the header keep the
-// old append-only behavior (docker's single in-session PATCH sends none).
+// chunked clients send) is verified against the bytes committed so far.
 func (h *Handler) PatchBlobUpload(w http.ResponseWriter, r *http.Request, uuid string) {
 	project := auth.ProjectFrom(r.Context())
 	sess := h.uploads.get(uuid)
@@ -123,9 +150,7 @@ func (h *Handler) GetBlobUploadStatus(w http.ResponseWriter, r *http.Request, uu
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// setUploadHeaders writes the shared upload-session response headers. Range is
-// the inclusive byte range received so far, with the end clamped to >= 0 so an
-// empty session reports "0-0" rather than an invalid "0--1".
+// setUploadHeaders writes the shared upload-session response headers.
 func setUploadHeaders(w http.ResponseWriter, projectName, uuid string, committed int64) {
 	end := committed - 1
 	if end < 0 {

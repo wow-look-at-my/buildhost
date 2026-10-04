@@ -2,40 +2,62 @@ name: CI
 
 on:
   push:
+    branches: ['**']
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: gha_${{ github.repository }}_${{ github.workflow }}_${{ github.ref != 'refs/heads/master' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
   packages: write
-  # Required by the publish-ghcr reusable workflow (it verifies actions:read to
-  # download build artifacts). A reusable workflow cannot be granted more than
-  # the caller declares, so omitting this makes the whole run a startup_failure.
   actions: read
+  deployments: write
+  artifact-metadata: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The CA bundle baked into the binary is fetched here, not committed (so the repo
-      # carries no unreviewable cert blob). Must run before go-toolchain builds/embeds.
-      - run: ./scripts/fetch-cacerts.sh
-      - uses: wow-look-at-my/go-toolchain@v1
+      # A generate directive spelling `go run` builds an APE the runner cannot exec. Ported from go-toolchain's action, which will carry it; this then no-ops.
+      - name: Register the APE binfmt handler
+        shell: bash
+        run: |
+          set -eu
+          dir=/proc/sys/fs/binfmt_misc
+          if [ -e "$dir/APE" ]; then exit 0; fi
+          if [ ! -w "$dir/register" ]; then sudo mount -t binfmt_misc none "$dir" || true; fi
+          if ! printf '%s\n' ':APE:M::\x4d\x5a\x71\x46\x70\x44\x3d\x27::/bin/sh:' | sudo tee "$dir/register" > /dev/null 2>&1; then
+            echo "::warning::APE binfmt handler not registered; a bare exec of an APE still fails here"
+          fi
+      # No fetch-cacerts step: the CA bundle is a generate directive The org module proxy is gone, so modules come direct with sumdb off.
+      - uses: wow-look-at-my/go-toolchain@master
+        env:
+          GOPROXY: direct
         with:
-          generate: acf27fe87179
-          autorelease: 'false'
+          generate: 3ed2a7fd952f
+          timeout: '25'
+      # The step above just ran every generate directive, which is what makes
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
+      - env:
+          BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/repo-hygiene.dats test/dats/compression-opts.dats test/dats/routes-golden.dats
       # On the default branch, cache this commit's route list keyed by its SHA.
-      # Caches created on the default branch are restorable from every branch,
-      # so feature-branch route-diff runs reuse this instead of rebuilding base.
-      # The path MUST match route-diff's restore path: actions/cache derives the
-      # cache version from the path, so a mismatched path is a guaranteed miss
-      # even for an identical key.
       - if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        run: chmod +x build/buildhost_linux_amd64 && ./build/buildhost_linux_amd64 routes > base-routes.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x build/buildhost
+          ./build/buildhost routes > base-routes.txt
+          # Never cache an empty list: every later PR would restore it and
+          if [ ! -s base-routes.txt ]; then
+            echo "::error::route render produced no output; refusing to cache an empty base list"
+            exit 1
+          fi
       - if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         uses: actions/cache/save@v4
         with:
@@ -45,28 +67,46 @@ jobs:
   route-diff:
     needs: build
     # Only meaningful on a branch that has an open PR to comment on. The default
-    # branch has no PR to diff against, and its own route list is already cached
-    # by the build job above -- running here would just rebuild the base from
-    # source and throw the result away. Skip it.
     if: github.ref != format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
     steps:
-      # PR routes: from the go-build hand-off the build job already produced for
-      # this ref. go-toolchain@v1 saves build/ via cache-upload (run-keyed cache
-      # entry) instead of a GHA artifact, so it must be restored with the
-      # matching cache-download action, not actions/download-artifact.
+      # PR routes.
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64 && echo "routes=$(./build/buildhost_linux_amd64 routes | base64 -w0)" >> "$GITHUB_OUTPUT"
-        id: routes
+      # render-routes: run the binary and REFUSE an empty or failed result.
+      - name: Define the route renderer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "${{ runner.temp }}/render-routes.sh" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          bin="$1"; out="$2"; label="$3"
+          if ! "$bin" routes > "$out"; then
+            echo "::error::$label route render FAILED: '$bin routes' exited non-zero"
+            exit 1
+          fi
+          if [ ! -s "$out" ]; then
+            echo "::error::$label route render produced NO OUTPUT. Refusing to diff:"
+            echo "::error::an empty $label makes every route look added or removed."
+            exit 1
+          fi
+          echo "$label routes: $(wc -l < "$out") total, $(grep -c '^/api/v1' "$out" || true) under /api/v1"
+          SH
+          chmod +x "${{ runner.temp }}/render-routes.sh"
+      - id: routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x build/buildhost
+          "${{ runner.temp }}/render-routes.sh" ./build/buildhost pr-routes.txt "PR"
+          echo "routes=$(base64 -w0 pr-routes.txt)" >> "$GITHUB_OUTPUT"
       # Base routes: prefer the route list the default-branch build cached
-      # (keyed by the base commit SHA). Build base from source only on a cold
-      # cache -- without a real baseline the diff reports every route as added.
       - id: base
         env:
           GH_TOKEN: ${{ github.token }}
@@ -82,34 +122,46 @@ jobs:
           ref: ${{ steps.base.outputs.sha }}
           path: base
       # Base may post-date the CA-bundle change and embed it; fetch before building it.
-      # Inlined (not the script) so it works even on base commits that predate the script.
       - if: steps.cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p base/internal/repackage/cacerts
           curl -fsSL --retry 3 --proto '=https' --tlsv1.2 -o base/internal/repackage/cacerts/ca-certificates.crt https://curl.se/ca/cacert.pem
       # Build base with plain Go, NOT the go-toolchain action: go-toolchain@v1
-      # unconditionally hands off build/ under the run-unique go-build cache key,
-      # and a second same-run invocation (the build job already ran one) collides
-      # on that key and fails. Mirrors homebrew-tap-e2e's setup-go + generate +
-      # build recipe -- route-diff only needs a runnable base binary.
       - if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/setup-go@v5
         with:
           go-version-file: base/go.mod
+      # The admin dashboard's JS is a generate directive too (internal/admin),
       - if: steps.cache.outputs.cache-hit != 'true'
         working-directory: base
         run: |
+          if [ -x scripts/resolve-org-deps.sh ]; then ./scripts/resolve-org-deps.sh; fi
           go generate ./internal/api
+          if [ -x scripts/build-admin-frontend.sh ]; then ./scripts/build-admin-frontend.sh; fi
+          if [ -d internal/repackage/shellgen ]; then go generate ./internal/repackage; fi
           go build -o build/buildhost_linux_amd64 ./cmd/buildhost
       - if: steps.cache.outputs.cache-hit != 'true'
-        run: chmod +x base/build/buildhost_linux_amd64 && ./base/build/buildhost_linux_amd64 routes > base-routes.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x base/build/buildhost_linux_amd64
+          "${{ runner.temp }}/render-routes.sh" ./base/build/buildhost_linux_amd64 base-routes.txt "base"
       - if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: base-routes.txt
           key: route-list-${{ steps.base.outputs.sha }}
       - id: baseroutes
-        run: echo "routes=$(base64 -w0 base-routes.txt)" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -s base-routes.txt ]; then
+            echo "::error::base route list is empty or missing (cache hit: ${{ steps.cache.outputs.cache-hit }})."
+            echo "::error::Refusing to diff -- an empty base reports every route as added."
+            exit 1
+          fi
+          echo "base routes: $(wc -l < base-routes.txt) total, $(grep -c '^/api/v1' base-routes.txt || true) under /api/v1"
+          echo "routes=$(base64 -w0 base-routes.txt)" >> "$GITHUB_OUTPUT"
       - uses: wow-look-at-my/actions@typescript#latest
         with:
           steps: ${{ toJSON(steps) }}
@@ -160,35 +212,93 @@ jobs:
                   await gh.rest.issues.createComment({ ...repo, issue_number: pr, body });
               }
 
+  # The publish composites all import .github/actions/lib/storage-record, and
+  storage-record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
+      - run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/action-libs.dats
+
   container-healthcheck:
     # Only meaningful if the build succeeded and saved the go-build hand-off. Without
-    # this, an always()-style condition makes it run on build failure and then fail on
-    # the missing hand-off (a misleading second red X for one real failure).
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost
       # Build the image (and pull its base layers) in a separate, untimed step
-      # so the --wait-timeout below budgets only container startup, not the
-      # image build/pull. up then reuses this image instead of rebuilding.
       - run: docker compose -f docker-compose.ci.yml build
+      # Compose starts the image with its own entrypoint; a rolling update starts it with whatever the old container recorded.
+      - run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/image-entrypoints.dats
       - run: docker compose -f docker-compose.ci.yml up -d --wait --wait-timeout 30
+      # Stripping is documented to happen at download time, and it silently did
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build the strip fixture
+        run: go build -o "${{ runner.temp }}/strip-fixture" ./test/e2e/testdata/netcheck
+      - env:
+          STRIP_FIXTURE: ${{ runner.temp }}/strip-fixture
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/image-strips.dats
       - run: docker compose -f docker-compose.ci.yml logs
         if: failure()
 
+  # The only job where a real docker daemon talks to the SHIPPED IMAGE as a registry, in both directions: push an image in, pull an image out, run it.
+  oci-roundtrip-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build-build.broot
+          path: build/
+      - run: chmod +x build/buildhost
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build the marker entrypoint (static linux/amd64)
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "${{ runner.temp }}/marker" ./test/e2e/testdata/marker
+      # The OCI endpoint is host-routed: the first Host label must be "oci".
+      - name: Map the OCI host to the local container
+        run: echo "127.0.0.1 oci.buildhost.test" | sudo tee -a /etc/hosts
+      # Synthesized layers are zstd, which Docker reads only through the containerd image store.
+      - name: Turn on the containerd image store
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /etc/docker
+          existing="$(sudo cat /etc/docker/daemon.json 2>/dev/null || echo '{}')"
+          printf '%s' "$existing" | jq \
+            --arg reg "oci.buildhost.test:47823" \
+            '.features."containerd-snapshotter" = true
+             | .["insecure-registries"] = ((.["insecure-registries"] // []) + [$reg] | unique)' \
+            | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+          for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
+      - run: docker compose -f docker-compose.ci.yml -f test/compose.oci-roundtrip.yml build
+      - run: docker compose -f docker-compose.ci.yml -f test/compose.oci-roundtrip.yml up -d --wait --wait-timeout 30
+      - env:
+          BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
+          MARKER_BIN: ${{ runner.temp }}/marker
+          REPO: ${{ github.workspace }}
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/oci-roundtrip.dats
+      - run: docker compose -f docker-compose.ci.yml -f test/compose.oci-roundtrip.yml logs
+        if: failure()
+
   # Proves the DOCUMENTED Homebrew flows -- public and private -- work against a
-  # real spawned buildhost with the real brew executable. The brew commands are
-  # not written here: .github/scripts/brew-tap-e2e.ts extracts them verbatim
-  # from README.md (and asserts the served llms.txt agrees), substituting only
-  # the server host. Changing what CI runs therefore REQUIRES changing the
-  # user-facing docs -- a "fix CI only" change goes red. (That drift already
-  # happened once: Homebrew 6.0 broke `brew install` and the fix landed in CI
-  # only, while README/llms.txt kept documenting a flow that failed for users.)
   homebrew-tap-e2e:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -199,20 +309,15 @@ jobs:
       BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
       BUILDHOST_BASE_URL: http://localhost:18080
       # CI-speed hygiene only -- these do not alter whether the documented flow
-      # works (they skip brew's self-update and post-install cleanup). Every
-      # flow-affecting knob (trust, the Linux sandbox) must come from the docs.
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
       - if: runner.os == 'Linux'
         uses: Homebrew/actions/setup-homebrew@main
-      # Homebrew 6's Linux build sandbox (bubblewrap) needs unprivileged user
-      # namespaces, which Ubuntu 24.04 runners restrict via AppArmor. Lift the
-      # restriction so CI runs the sandbox the way a real Linux user machine
-      # does -- the docs document this exact sysctl for hardened hosts. The
-      # HOMEBREW_NO_SANDBOX_LINUX opt-out the docs reserve for containers
-      # without user namespaces is deliberately NOT set here.
       - if: runner.os == 'Linux'
         name: Host prep for Homebrew's build sandbox (bubblewrap + user namespaces)
         run: |
@@ -221,8 +326,15 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: ./scripts/fetch-cacerts.sh
+      # Stock Go cannot resolve the org v0.0.0 placeholder. Some are private, so the checksum database skips them.
+      - env:
+          GONOSUMDB: github.com/wow-look-at-my
+        run: ./scripts/resolve-org-deps.sh
+      # Natively, never the shipped APE: SQLite's file locking fails under the APE's macOS syscall layer, and the server dies on SQLITE_IOERR_LOCK.
+      - run: go generate ./internal/repackage
       - run: go generate ./internal/api
+      # The dashboard JS is generated, not committed, and embedded by name.
+      - run: ./scripts/build-admin-frontend.sh
       - run: go build -o buildhost ./cmd/buildhost
       - name: Start local buildhost
         shell: bash
@@ -235,15 +347,15 @@ jobs:
           TOKEN="$(./buildhost bootstrap --name ci)"
           echo "::add-mask::$TOKEN"
           echo "BUILDHOST_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-          ./buildhost serve > "$RUNNER_TEMP/buildhost.log" 2>&1 &
-          echo "$!" > "$RUNNER_TEMP/buildhost.pid"
+          ./buildhost serve > "${{ runner.temp }}/buildhost.log" 2>&1 &
+          echo "$!" > "${{ runner.temp }}/buildhost.pid"
           for _ in {1..60}; do
             if curl -fsS "$BUILDHOST_BASE_URL/healthz" >/dev/null; then
               exit 0
             fi
             sleep 1
           done
-          cat "$RUNNER_TEMP/buildhost.log"
+          cat "${{ runner.temp }}/buildhost.log"
           exit 1
       - name: Publish go-toolchain artifact (public)
         shell: bash
@@ -259,8 +371,12 @@ jobs:
             arm64|aarch64) arch=arm64 ;;
             *) echo "unsupported arch"; exit 1 ;;
           esac
-          printf '%s\n' '#!/bin/sh' 'echo buildhost-homebrew-ok' > "$RUNNER_TEMP/go-toolchain"
-          chmod +x "$RUNNER_TEMP/go-toolchain"
+          # Publish the REAL go-toolchain binary from the live registry.
+          curl -fsSL --compressed \
+            "https://dl.pazer.build/go-toolchain?branch=v1&os=$os&arch=$arch" \
+            -o "${{ runner.temp }}/go-toolchain"
+          chmod +x "${{ runner.temp }}/go-toolchain"
+          file "${{ runner.temp }}/go-toolchain"
           ./buildhost project create \
             --server "$BUILDHOST_BASE_URL" \
             --token "$BUILDHOST_TOKEN" \
@@ -274,15 +390,52 @@ jobs:
             'git_branch = "master"' \
             "" \
             "[[artifact]]" \
-            "path = \"$RUNNER_TEMP/go-toolchain\"" \
+            "path = \"${{ runner.temp }}/go-toolchain\"" \
             "os = \"$os\"" \
             "arch = \"$arch\"" \
             'kind = "binary"' \
-            > "$RUNNER_TEMP/buildhost-release.toml"
-          ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release.toml"
+            > "${{ runner.temp }}/buildhost-release.toml"
+          ./buildhost publish --manifest "${{ runner.temp }}/buildhost-release.toml"
+      # go-toolchain ships an APE only on Linux; its darwin artifacts are plain
+      - name: Publish ape-fixture artifact (public, APE-shaped)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)" in
+            Darwin) os=darwin ;;
+            Linux) os=linux ;;
+            *) echo "unsupported OS"; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64) arch=amd64 ;;
+            arm64|aarch64) arch=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          printf '%s\n' \
+            "MZqFpD='APE-shaped fixture: not a shebang script, not an ELF or Mach-O'" \
+            ': >> "$0" || { echo "self-write failed: an APE binary rewrites itself on first run" >&2; exit 1; }' \
+            'echo buildhost-homebrew-ape-ok' > "${{ runner.temp }}/ape-fixture"
+          chmod +x "${{ runner.temp }}/ape-fixture"
+          ./buildhost project create \
+            --server "$BUILDHOST_BASE_URL" \
+            --token "$BUILDHOST_TOKEN" \
+            --name ape-fixture \
+            --versioning semver
+          printf '%s\n' \
+            "server = \"$BUILDHOST_BASE_URL\"" \
+            "token = \"$BUILDHOST_TOKEN\"" \
+            'project = "ape-fixture"' \
+            'version = "1.0.0"' \
+            'git_branch = "master"' \
+            "" \
+            "[[artifact]]" \
+            "path = \"${{ runner.temp }}/ape-fixture\"" \
+            "os = \"$os\"" \
+            "arch = \"$arch\"" \
+            'kind = "binary"' \
+            > "${{ runner.temp }}/buildhost-release-ape.toml"
+          ./buildhost publish --manifest "${{ runner.temp }}/buildhost-release-ape.toml"
       # Slash-namespaced AND private -- the exact shape of the live project this
-      # e2e exists for. The folded formula name (myrepo-myapp) and the
-      # basename-install rule are covered end to end.
       - name: Publish myrepo/myapp artifact (private, slash-namespaced)
         shell: bash
         run: |
@@ -297,32 +450,72 @@ jobs:
             arm64|aarch64) arch=arm64 ;;
             *) echo "unsupported arch"; exit 1 ;;
           esac
-          printf '%s\n' '#!/bin/sh' 'echo buildhost-homebrew-private-ok' > "$RUNNER_TEMP/myapp"
-          chmod +x "$RUNNER_TEMP/myapp"
           ./buildhost project create \
             --server "$BUILDHOST_BASE_URL" \
             --token "$BUILDHOST_TOKEN" \
             --name myrepo/myapp \
             --versioning semver \
             --private
-          printf '%s\n' \
-            "server = \"$BUILDHOST_BASE_URL\"" \
-            "token = \"$BUILDHOST_TOKEN\"" \
-            'project = "myrepo/myapp"' \
-            'version = "1.0.0"' \
-            'git_branch = "master"' \
-            "" \
-            "[[artifact]]" \
-            "path = \"$RUNNER_TEMP/myapp\"" \
-            "os = \"$os\"" \
-            "arch = \"$arch\"" \
-            'kind = "binary"' \
-            > "$RUNNER_TEMP/buildhost-release-private.toml"
-          ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-private.toml"
+          # 0.9.0 is the older release homebrew-private.dats installs with brew version-install; 1.0.0 is the latest.
+          for spec in 0.9.0:buildhost-homebrew-private-0.9.0 1.0.0:buildhost-homebrew-private-ok; do
+            version="${spec%%:*}"
+            mkdir -p "${{ runner.temp }}/myapp-$version"
+            printf '%s\n' '#!/bin/sh' "echo ${spec#*:}" > "${{ runner.temp }}/myapp-$version/myapp"
+            chmod +x "${{ runner.temp }}/myapp-$version/myapp"
+            printf '%s\n' \
+              "server = \"$BUILDHOST_BASE_URL\"" \
+              "token = \"$BUILDHOST_TOKEN\"" \
+              'project = "myrepo/myapp"' \
+              "version = \"$version\"" \
+              'git_branch = "master"' \
+              "" \
+              "[[artifact]]" \
+              "path = \"${{ runner.temp }}/myapp-$version/myapp\"" \
+              "os = \"$os\"" \
+              "arch = \"$arch\"" \
+              'kind = "binary"' \
+              > "${{ runner.temp }}/buildhost-release-private.toml"
+            ./buildhost publish --manifest "${{ runner.temp }}/buildhost-release-private.toml"
+          done
+      - name: Publish versioned-fixture 1.0.0 and 2.0.0 (public)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)" in
+            Darwin) os=darwin ;;
+            Linux) os=linux ;;
+            *) echo "unsupported OS"; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64) arch=amd64 ;;
+            arm64|aarch64) arch=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          ./buildhost project create \
+            --server "$BUILDHOST_BASE_URL" \
+            --token "$BUILDHOST_TOKEN" \
+            --name versioned-fixture \
+            --versioning semver
+          for version in 1.0.0 2.0.0; do
+            mkdir -p "${{ runner.temp }}/versioned-fixture-$version"
+            printf '%s\n' '#!/bin/sh' "echo versioned-fixture-$version" > "${{ runner.temp }}/versioned-fixture-$version/versioned-fixture"
+            chmod +x "${{ runner.temp }}/versioned-fixture-$version/versioned-fixture"
+            printf '%s\n' \
+              "server = \"$BUILDHOST_BASE_URL\"" \
+              "token = \"$BUILDHOST_TOKEN\"" \
+              'project = "versioned-fixture"' \
+              "version = \"$version\"" \
+              'git_branch = "master"' \
+              "" \
+              "[[artifact]]" \
+              "path = \"${{ runner.temp }}/versioned-fixture-$version/versioned-fixture\"" \
+              "os = \"$os\"" \
+              "arch = \"$arch\"" \
+              'kind = "binary"' \
+              > "${{ runner.temp }}/buildhost-release-versioned.toml"
+            ./buildhost publish --manifest "${{ runner.temp }}/buildhost-release-versioned.toml"
+          done
       # Hostile-name fixtures for the formula-codegen guarantees the e2e
-      # asserts: a digit-leading name must be EXCLUDED from brew entirely
-      # (`class 7zip < Formula` is invalid Ruby and unloadable by design), and
-      # a dotted name must fold into a valid, loadable class (DottedApp).
       - name: Publish hostile-name fixtures (public)
         shell: bash
         run: |
@@ -337,8 +530,8 @@ jobs:
             arm64|aarch64) arch=arm64 ;;
             *) echo "unsupported arch"; exit 1 ;;
           esac
-          printf '%s\n' '#!/bin/sh' 'echo hostile-name-fixture' > "$RUNNER_TEMP/hostile-bin"
-          chmod +x "$RUNNER_TEMP/hostile-bin"
+          printf '%s\n' '#!/bin/sh' 'echo hostile-name-fixture' > "${{ runner.temp }}/hostile-bin"
+          chmod +x "${{ runner.temp }}/hostile-bin"
           for name in 7zip dotted.app; do
             ./buildhost project create \
               --server "$BUILDHOST_BASE_URL" \
@@ -353,46 +546,30 @@ jobs:
               'git_branch = "master"' \
               "" \
               "[[artifact]]" \
-              "path = \"$RUNNER_TEMP/hostile-bin\"" \
+              "path = \"${{ runner.temp }}/hostile-bin\"" \
               "os = \"$os\"" \
               "arch = \"$arch\"" \
               'kind = "binary"' \
-              > "$RUNNER_TEMP/buildhost-release-hostile.toml"
-            ./buildhost publish --manifest "$RUNNER_TEMP/buildhost-release-hostile.toml"
+              > "${{ runner.temp }}/buildhost-release-hostile.toml"
+            ./buildhost publish --manifest "${{ runner.temp }}/buildhost-release-hostile.toml"
           done
-      - name: Public install flow (brew commands extracted from the docs)
-        uses: wow-look-at-my/actions@typescript#latest
-        env:
-          LEG: public
-        with:
-          file: .github/scripts/brew-tap-e2e.ts
-      - name: Execute the publicly installed binary
-        run: test "$(go-toolchain)" = "buildhost-homebrew-ok"
-      # Docs: the authenticated tap replaces the public tap under the same name
-      # ("remove it first with brew untap --force" -- plain untap refuses while
-      # formulae installed from the tap exist).
-      - name: Untap the public tap before the private flow (per docs)
-        run: brew untap --force pazer/build
-      - name: Private install flow (brew commands extracted from the docs)
-        uses: wow-look-at-my/actions@typescript#latest
-        env:
-          LEG: private
-        with:
-          file: .github/scripts/brew-tap-e2e.ts
-      - name: Execute the privately installed binary
-        run: test "$(myapp)" = "buildhost-homebrew-private-ok"
-      - name: Anonymous tap must not leak the private project
-        uses: wow-look-at-my/actions@typescript#latest
-        env:
-          LEG: anon-leak
-        with:
-          file: .github/scripts/brew-tap-e2e.ts
+      # Each suite runs the documented flow in its own setup and then asserts
+      - env:
+          BREW_HOST: brew.localhost:18080
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/homebrew-public.dats
+      # The private flow repoints the public tap the previous suite left installed
+      - env:
+          BREW_HOST: brew.localhost:18080
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/homebrew-private.dats
+      - env:
+          BREW_HOST: brew.localhost:18080
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/homebrew-anon-leak.dats
       - name: Dump buildhost log
         if: failure()
         shell: bash
         run: |
-          if [ -f "$RUNNER_TEMP/buildhost.log" ]; then
-            cat "$RUNNER_TEMP/buildhost.log"
+          if [ -f "${{ runner.temp }}/buildhost.log" ]; then
+            cat "${{ runner.temp }}/buildhost.log"
           else
             echo "buildhost log was not created"
           fi
@@ -400,51 +577,297 @@ jobs:
         if: always()
         shell: bash
         run: |
-          if [ -f "$RUNNER_TEMP/buildhost.pid" ]; then
-            kill "$(cat "$RUNNER_TEMP/buildhost.pid")" || true
+          if [ -f "${{ runner.temp }}/buildhost.pid" ]; then
+            kill "$(cat "${{ runner.temp }}/buildhost.pid")" || true
           fi
 
   # Prove an image buildhost SYNTHESIZES from a plain binary is a valid, loadable
-  # container image whose baked-in CA bundle works for real outbound HTTPS. Uses crane
-  # (go-containerregistry): it pulls/decompresses buildhost's zstd layers, which the
-  # default GitHub Docker (no containerd image store) may not.
   synthesized-image-e2e:
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - name: Install crane (zstd-capable OCI client)
-        run: go install github.com/google/go-containerregistry/cmd/crane@latest
+        run: |
+          go install github.com/google/go-containerregistry/cmd/crane@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Build netcheck entrypoint (static linux/amd64)
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/netcheck" ./test/e2e/testdata/netcheck
-      - name: Pull and run the synthesized OCI image
-        run: PATH="$(go env GOPATH)/bin:$PATH" bash test/e2e/run.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/netcheck"
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "${{ runner.temp }}/netcheck" ./test/e2e/testdata/netcheck
+      # The OCI endpoint is host-routed: the first Host label must be "oci".
+      - name: Map the OCI host to the local server
+        run: echo "127.0.0.1 oci.buildhost.test" | sudo tee -a /etc/hosts
+      # buildhost's layers are zstd.
+      - name: Turn on the containerd image store
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /etc/docker
+          existing="$(sudo cat /etc/docker/daemon.json 2>/dev/null || echo '{}')"
+          printf '%s' "$existing" | jq \
+            --arg reg "oci.buildhost.test:8088" \
+            '.features."containerd-snapshotter" = true
+             | .["insecure-registries"] = ((.["insecure-registries"] // []) + [$reg] | unique)' \
+            | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+          for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
+      - env:
+          BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
+          NETCHECK_BIN: ${{ runner.temp }}/netcheck
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/synthesized-image.dats
+      # The suite above synthesizes from a plain ELF, which exercises none of the shell layer an APE image needs.
+      - env:
+          BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/synthesized-ape-image.dats
+
+  # Proves a hosted site stays loadable CROSS-ORIGIN, through its redirects.
+  sites-cors-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build-build.broot
+          path: build/
+      - run: chmod +x build/buildhost
+      # playwright-core drives the runner's preinstalled Chrome.
+      - name: Install browser driver
+        run: npm install --no-save --no-audit --no-fund playwright-core@1.62.1
+      - name: A hosted site must load cross-origin in a real browser
+        env:
+          BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/sites-cors.dats
+      # The preview publishes this same static dir with no backend behind it.
+      - name: Build the admin frontend
+        run: ./scripts/build-admin-frontend.sh
+      - name: Every link on the preview dashboard must reach a page
+        timeout-minutes: 10
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/admin-demo-links.dats
 
   apt-install-e2e:
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-build.broot
           path: build/
-      - run: chmod +x build/buildhost_linux_amd64
+      - run: chmod +x build/buildhost
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - name: Build apt test package payload (static linux/amd64)
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/buildhost-apt-e2e" ./test/e2e/testdata/netcheck
-      - name: Install from the generated APT repository
-        run: bash test/e2e/apt-install.sh build/buildhost_linux_amd64 "$RUNNER_TEMP/buildhost-apt-e2e"
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "${{ runner.temp }}/buildhost-apt-e2e" ./test/e2e/testdata/netcheck
+      # Untimed, so the suite's 30s setup hook pays for neither.
+      - name: Build the apt client image
+        run: docker build -t buildhost-aptbox:ci -f test/dats/aptbox.Dockerfile .
+      # host-gateway reaches the server on the runner from the container's network.
+      - name: Start the apt client
+        run: |
+          docker run -d --name buildhost-aptbox \
+            --add-host apt.localhost:host-gateway \
+            --add-host static.localhost:host-gateway \
+            buildhost-aptbox:ci sleep infinity
+      - env:
+          BUILDHOST_BIN: ${{ github.workspace }}/build/buildhost
+          ARTIFACT_BIN: ${{ runner.temp }}/buildhost-apt-e2e
+          APTBOX: buildhost-aptbox
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/apt-install.dats
+
+  # Proves the buildhost-upload-artifact composite action's BOTH upload paths
+  multi-platform-ape-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build-build.broot
+          path: build/
+      - run: chmod +x build/buildhost
+      # --no-sandbox: the suite drives the server with curl and jq.
+      - run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/multi-platform-ape.dats
+
+  upload-artifact-action-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
+      BUILDHOST_BASE_URL: http://localhost:18080
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build-build.broot
+          path: build/
+      - run: chmod +x build/buildhost
+      - name: Start local buildhost (1 MiB direct-upload limit)
+        shell: bash
+        env:
+          BUILDHOST_DATA_DIR: ${{ runner.temp }}/buildhost-data
+          BUILDHOST_DB_PATH: ${{ runner.temp }}/buildhost-data/buildhost.db
+          BUILDHOST_ADMIN_LISTEN_ADDR: ""
+          BUILDHOST_MAX_DIRECT_UPLOAD_SIZE: "1048576"
+        run: |
+          set -euo pipefail
+          TOKEN="$(./build/buildhost bootstrap --name ci)"
+          echo "::add-mask::$TOKEN"
+          echo "BUILDHOST_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          ./build/buildhost serve > "${{ runner.temp }}/buildhost.log" 2>&1 &
+          echo "$!" > "${{ runner.temp }}/buildhost.pid"
+          for _ in {1..60}; do
+            if curl -fsS "$BUILDHOST_BASE_URL/healthz" >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "${{ runner.temp }}/buildhost.log"
+          exit 1
+      - name: Create project and test files
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./build/buildhost project create \
+            --server "$BUILDHOST_BASE_URL" \
+            --token "$BUILDHOST_TOKEN" \
+            --name upload-e2e
+          head -c 65536 /dev/urandom > "${{ runner.temp }}/small.bin"
+          head -c 3158217 /dev/urandom > "${{ runner.temp }}/big.bin"
+      - name: Create release
+        id: release
+        uses: ./.github/actions/buildhost-create-release
+        with:
+          server: http://localhost:18080
+          token: ${{ env.BUILDHOST_TOKEN }}
+          project: upload-e2e
+          git_branch: master
+      - name: Upload small file (direct PUT path)
+        id: small
+        uses: ./.github/actions/buildhost-upload-artifact
+        with:
+          server: http://localhost:18080
+          token: ${{ env.BUILDHOST_TOKEN }}
+          project: upload-e2e
+          version: ${{ steps.release.outputs.version }}
+          os: linux
+          arch: amd64
+          path: ${{ runner.temp }}/small.bin
+          filename: small.bin
+      - env:
+          LOG: ${{ runner.temp }}/buildhost.log
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/upload-direct.dats
+      - name: Upload big file (chunked session path, 1 MiB chunks)
+        id: big
+        uses: ./.github/actions/buildhost-upload-artifact
+        with:
+          server: http://localhost:18080
+          token: ${{ env.BUILDHOST_TOKEN }}
+          project: upload-e2e
+          version: ${{ steps.release.outputs.version }}
+          os: linux
+          arch: arm64
+          path: ${{ runner.temp }}/big.bin
+          filename: big.bin
+          chunk_size: "1048576"
+      - name: Publish release
+        uses: ./.github/actions/buildhost-publish-release
+        with:
+          server: http://localhost:18080
+          token: ${{ env.BUILDHOST_TOKEN }}
+          project: upload-e2e
+          version: ${{ steps.release.outputs.version }}
+      # What the two upload paths did to the server -- one session for the
+      - env:
+          LOG: ${{ runner.temp }}/buildhost.log
+          SMALL_FILE: ${{ runner.temp }}/small.bin
+          BIG_FILE: ${{ runner.temp }}/big.bin
+          SMALL_SHA: ${{ steps.small.outputs.sha256 }}
+          BIG_SHA: ${{ steps.big.outputs.sha256 }}
+          VERSION: ${{ steps.release.outputs.version }}
+          BASE: http://localhost:18080
+          STATIC: http://static.localhost:18080
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/upload-artifact.dats
+      - name: Create site fixtures (one tiny, one over the direct limit)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${{ runner.temp }}/small-site" "${{ runner.temp }}/big-site"
+          printf '<h1>direct site</h1>' > "${{ runner.temp }}/small-site/index.html"
+          printf '<h1>chunked site</h1>' > "${{ runner.temp }}/big-site/index.html"
+          head -c 3000000 /dev/urandom > "${{ runner.temp }}/big-site/blob.bin"
+      - name: Publish small site (direct PUT path)
+        uses: ./.github/actions/buildhost-publish-site
+        with:
+          server: http://localhost:18080
+          token: ${{ env.BUILDHOST_TOKEN }}
+          project: upload-e2e
+          branch: direct
+          source_dir: ${{ runner.temp }}/small-site
+          chunk_size: "1048576"
+          comment: false
+      - env:
+          LOG: ${{ runner.temp }}/buildhost.log
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/site-direct.dats
+      - name: Publish big site (chunked session path, 1 MiB chunks)
+        id: publish-big-site
+        uses: ./.github/actions/buildhost-publish-site
+        with:
+          server: http://localhost:18080
+          token: ${{ env.BUILDHOST_TOKEN }}
+          project: upload-e2e
+          branch: chunked
+          source_dir: ${{ runner.temp }}/big-site
+          chunk_size: "1048576"
+          comment: false
+      # What the site publishes and the CLI did to the same server.
+      - env:
+          LOG: ${{ runner.temp }}/buildhost.log
+          SITES: http://sites.localhost:18080
+          BASE: http://localhost:18080
+          TOKEN: ${{ env.BUILDHOST_TOKEN }}
+          BIN: ${{ github.workspace }}/build/buildhost
+          BIG_SITE_BLOB: ${{ runner.temp }}/big-site/blob.bin
+          SITE_URL: ${{ steps.publish-big-site.outputs.site_url }}
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/site-publish.dats
+      - name: Dump buildhost log
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f "${{ runner.temp }}/buildhost.log" ]; then
+            cat "${{ runner.temp }}/buildhost.log"
+          else
+            echo "buildhost log was not created"
+          fi
+      - name: Stop local buildhost
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "${{ runner.temp }}/buildhost.pid" ]; then
+            kill "$(cat "${{ runner.temp }}/buildhost.pid")" || true
+          fi
 
   publish-ghcr:
     needs: container-healthcheck

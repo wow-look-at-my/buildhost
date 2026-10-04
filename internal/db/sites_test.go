@@ -17,6 +17,7 @@ func createSiteTestProject(t *testing.T, d *DB) *Project {
 }
 
 func TestUpsertSite_CreateNew(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createSiteTestProject(t, d)
@@ -37,6 +38,7 @@ func TestUpsertSite_CreateNew(t *testing.T) {
 }
 
 func TestUpsertSite_ReplaceExisting(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createSiteTestProject(t, d)
@@ -72,12 +74,14 @@ func TestUpsertSite_ReplaceExisting(t *testing.T) {
 }
 
 func TestGetSite_NotFound(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	_, err := d.GetSite(context.Background(), 999, "nope")
 	assert.True(t, errors.Is(err, ErrNotFound))
 }
 
 func TestListSites_Empty(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createSiteTestProject(t, d)
@@ -88,6 +92,7 @@ func TestListSites_Empty(t *testing.T) {
 }
 
 func TestListSites_MultipleBranches(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createSiteTestProject(t, d)
@@ -111,6 +116,7 @@ func TestListSites_MultipleBranches(t *testing.T) {
 }
 
 func TestDeleteSite(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 	p := createSiteTestProject(t, d)
@@ -135,12 +141,14 @@ func TestDeleteSite(t *testing.T) {
 }
 
 func TestDeleteSite_NotFound(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	_, err := d.DeleteSite(context.Background(), 999, "nope")
 	assert.True(t, errors.Is(err, ErrNotFound))
 }
 
 func TestDeleteSitesByRepositoryBranch(t *testing.T) {
+	t.Serial()
 	d := openTestDB(t)
 	ctx := context.Background()
 

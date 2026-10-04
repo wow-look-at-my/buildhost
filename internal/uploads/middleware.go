@@ -10,12 +10,8 @@ import (
 
 const (
 	// SessionParam names a completed upload session on any upload endpoint:
-	// re-issue the original request with an empty body and
-	// ?upload_session=<id>, and the spooled bytes become the request body.
 	SessionParam = "upload_session"
-	// SHA256Param optionally carries the expected SHA-256 of the assembled
-	// upload (hex). Verified against the spool before the handler runs.
-	SHA256Param = "upload_sha256"
+	SHA256Param  = "upload_sha256"
 	// SHA256Header is the header equivalent of SHA256Param.
 	SHA256Header = "X-Upload-SHA256"
 )
@@ -24,17 +20,15 @@ const (
 // upload session in place of a request body. It runs between authentication
 // and routing: a mutating request carrying ?upload_session=<id> (and an empty
 // body) has its Body swapped for the session's spool file, so the endpoint's
-// own routing, project auth, size caps, and storage logic all run unchanged --
-// they just read the spool instead of the network. On a 2xx response the
-// session is consumed (spool deleted); on failure it is kept so the client can
-// retry the finalize, abort it, or let the TTL sweep collect it.
+// own routing, project auth, size caps, and storage logic all run unchanged
+// -- they read the spool instead of the network. On a 2xx response the
+// session is consumed (spool deleted); on failure it is kept so the client
+// can retry the finalize, abort it, or let the TTL sweep collect it.
 func ResolveSessionBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Query().Get(SessionParam)
 		if id == "" || !mutatingMethod(r.Method) || strings.HasPrefix(r.URL.Path, "/api/v1/uploads") {
 			// Not a finalize. The /api/v1/uploads exclusion keeps the session
-			// endpoints themselves out of finalize semantics (an append must
-			// never consume another session as its body).
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -73,8 +67,6 @@ func ResolveSessionBody(next http.Handler) http.Handler {
 			}
 			if !strings.EqualFold(want, got) {
 				// The spool does not contain what the client thinks it sent. Keep
-				// the session (the client may re-check and abort) but never hand
-				// corrupt bytes to the endpoint.
 				store.EndFinalize(sess)
 				jsonError(w, http.StatusBadRequest, "sha256 mismatch: upload is "+got)
 				return
@@ -88,7 +80,6 @@ func ResolveSessionBody(next http.Handler) http.Handler {
 		consumed := false
 		defer func() {
 			// Runs even if the handler panics (recovery middleware is outside
-			// this one): never leave a session locked busy forever.
 			if consumed {
 				store.Remove(sess)
 			} else {

@@ -69,6 +69,33 @@ func (d *DB) ListSites(ctx context.Context, projectID int64) ([]Site, error) {
 	return d.q.ListSitesByProject(ctx, projectID)
 }
 
+func (d *DB) ListAllSites(ctx context.Context) ([]Site, error) {
+	return d.q.ListAllSites(ctx)
+}
+
+// ReplaceSiteBlob points a site at a new blob. It reports false and changes
+// nothing when a publish already swapped out oldKey.
+func (d *DB) ReplaceSiteBlob(ctx context.Context, id int64, oldKey, newKey string, size int64) (bool, error) {
+	n, err := d.q.UpdateSiteBlob(ctx, UpdateSiteBlobParams{
+		StorageKey:   newKey,
+		Size:         size,
+		ID:           id,
+		StorageKey_2: oldKey,
+	})
+	if err != nil {
+		return false, fmt.Errorf("replace site blob: %w", err)
+	}
+	return n == 1, nil
+}
+
+// SitesByCommitPrefix returns the project's sites whose recorded git_commit
+func (d *DB) SitesByCommitPrefix(ctx context.Context, projectID int64, prefix string) ([]Site, error) {
+	return d.q.GetSiteByCommitPrefix(ctx, GetSiteByCommitPrefixParams{
+		ProjectID: projectID,
+		GitCommit: prefix + "%",
+	})
+}
+
 func (d *DB) DeleteSite(ctx context.Context, projectID int64, branch string) (storageKey string, err error) {
 	tx, err := d.DB.BeginTx(ctx, nil)
 	if err != nil {

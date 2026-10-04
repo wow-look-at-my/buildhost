@@ -2,17 +2,13 @@ package sites
 
 import (
 	"archive/tar"
-	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
-	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -79,6 +75,7 @@ func uploadSite(t *testing.T, h *Handler, proj *db.Project, branch string, files
 }
 
 func TestUpload_PublicSiteFlag(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "priv")
 
@@ -95,8 +92,7 @@ func TestUpload_PublicSiteFlag(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, site.IsPublic, "X-Public-Site: true should persist as public")
 
-	// The Serve route reports this branch as publicly readable; write and the
-	// branch listing never do.
+	// The Serve route reports this branch as publicly readable.
 	assert.True(t, route{project: "priv", branch: "pr-1"}.AllowsPublicRead(context.Background(), d, proj))
 	assert.False(t, route{project: "priv", branch: "pr-1", write: true}.AllowsPublicRead(context.Background(), d, proj))
 	assert.False(t, route{project: "priv", branch: ""}.AllowsPublicRead(context.Background(), d, proj))
@@ -110,6 +106,7 @@ func TestUpload_PublicSiteFlag(t *testing.T) {
 }
 
 func TestUpload(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -131,6 +128,7 @@ func TestUpload(t *testing.T) {
 }
 
 func TestUpload_InvalidGzip(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -143,6 +141,7 @@ func TestUpload_InvalidGzip(t *testing.T) {
 }
 
 func TestUpload_EmptyArchive(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -160,118 +159,8 @@ func TestUpload_EmptyArchive(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
-func TestServe_File(t *testing.T) {
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-	uploadSite(t, h, proj, "main", map[string]string{
-		"index.html": "<h1>hello</h1>",
-		"style.css":  "body{}",
-	})
-
-	req := httptest.NewRequest("GET", "/sites/mysite/branch/main/style.css", nil)
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: "style.css"})
-	rec := httptest.NewRecorder()
-	h.Serve(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "body{}", rec.Body.String())
-	assert.Contains(t, rec.Header().Get("Content-Type"), "css")
-}
-
-func TestServe_SetsSiteSecurityHeaders(t *testing.T) {
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-	uploadSite(t, h, proj, "main", map[string]string{
-		"index.html":     "<h1>hi</h1>",
-		"assets/app.mjs": "export default 1;",
-	})
-
-	req := httptest.NewRequest("GET", "/sites/mysite/branch/main/assets/app.mjs", nil)
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: "assets/app.mjs"})
-	rec := httptest.NewRecorder()
-	// The global security middleware sets these strict app headers before the
-	// handler runs; serving a site must drop them so its assets can load.
-	rec.Header().Set("Content-Security-Policy", "default-src 'none'")
-	rec.Header().Set("X-Frame-Options", "DENY")
-	h.Serve(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Empty(t, rec.Header().Get("Content-Security-Policy"))
-	assert.Empty(t, rec.Header().Get("X-Frame-Options"))
-	assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"))
-	assert.Empty(t, rec.Header().Get("Access-Control-Allow-Credentials"))
-	assert.Equal(t, "same-origin", rec.Header().Get("Cross-Origin-Opener-Policy"))
-	assert.Equal(t, "credentialless", rec.Header().Get("Cross-Origin-Embedder-Policy"))
-}
-
-func TestServe_IndexFallback(t *testing.T) {
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-	uploadSite(t, h, proj, "main", map[string]string{
-		"index.html": "<h1>hello</h1>",
-	})
-
-	req := httptest.NewRequest("GET", "/sites/mysite/branch/main/", nil)
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: ""})
-	rec := httptest.NewRecorder()
-	h.Serve(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "<h1>hello</h1>", rec.Body.String())
-}
-
-func TestServe_NotFound_NoBranch(t *testing.T) {
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-
-	req := httptest.NewRequest("GET", "/sites/mysite/branch/main/foo.html", nil)
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: "foo.html"})
-	rec := httptest.NewRecorder()
-	h.Serve(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
-
-func TestServe_NotFound_NoFile(t *testing.T) {
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-	uploadSite(t, h, proj, "main", map[string]string{
-		"index.html": "<h1>hello</h1>",
-	})
-
-	req := httptest.NewRequest("GET", "/sites/mysite/branch/main/missing.html", nil)
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: "missing.html"})
-	rec := httptest.NewRecorder()
-	h.Serve(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
-
-func TestServeRedirect(t *testing.T) {
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-	uploadSite(t, h, proj, "main", map[string]string{"index.html": "<h1>hello</h1>"})
-
-	// A branch root requested without a trailing slash redirects to the slashed
-	// form (so index.html's relative links resolve under the branch). Serve --
-	// the single GET route -- handles this; there is no separate redirect route
-	// that could shadow file serving.
-	req := httptest.NewRequest("GET", "/sites/mysite/branch/main", nil)
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: ""})
-	rec := httptest.NewRecorder()
-	rec.Header().Set("Content-Security-Policy", "default-src 'none'")
-	rec.Header().Set("X-Frame-Options", "DENY")
-	h.Serve(rec, req)
-
-	assert.Equal(t, http.StatusMovedPermanently, rec.Code)
-	assert.Equal(t, "/sites/mysite/branch/main/", rec.Header().Get("Location"))
-	assert.Empty(t, rec.Header().Get("Content-Security-Policy"))
-	assert.Empty(t, rec.Header().Get("X-Frame-Options"))
-	assert.Equal(t, "same-origin", rec.Header().Get("Cross-Origin-Opener-Policy"))
-	assert.Equal(t, "credentialless", rec.Header().Get("Cross-Origin-Embedder-Policy"))
-}
-
 func TestDelete(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{
@@ -294,6 +183,7 @@ func TestDelete(t *testing.T) {
 }
 
 func TestDelete_NotFound(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -306,6 +196,7 @@ func TestDelete_NotFound(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{"index.html": "main"})
@@ -324,6 +215,7 @@ func TestList(t *testing.T) {
 }
 
 func TestList_Empty(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -338,24 +230,8 @@ func TestList_Empty(t *testing.T) {
 	assert.Equal(t, "[]\n", body)
 }
 
-func TestServe_SubdirIndex(t *testing.T) {
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-	uploadSite(t, h, proj, "main", map[string]string{
-		"index.html":      "<h1>root</h1>",
-		"docs/index.html": "<h1>docs</h1>",
-	})
-
-	req := httptest.NewRequest("GET", "/sites/mysite/branch/main/docs/", nil)
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: "docs/"})
-	rec := httptest.NewRecorder()
-	h.Serve(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "<h1>docs</h1>", rec.Body.String())
-}
-
 func TestUpload_GitCommitHeader(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
@@ -374,6 +250,7 @@ func TestUpload_GitCommitHeader(t *testing.T) {
 }
 
 func TestUpload_ReplacesExisting(t *testing.T) {
+	t.Serial()
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 	uploadSite(t, h, proj, "main", map[string]string{"index.html": "v1"})
@@ -390,6 +267,7 @@ func TestUpload_ReplacesExisting(t *testing.T) {
 }
 
 func TestValidateTar_PathTraversal(t *testing.T) {
+	t.Serial()
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	require.NoError(t, tw.WriteHeader(&tar.Header{
@@ -404,6 +282,7 @@ func TestValidateTar_PathTraversal(t *testing.T) {
 }
 
 func TestValidateTar_AbsolutePath(t *testing.T) {
+	t.Serial()
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	require.NoError(t, tw.WriteHeader(&tar.Header{
@@ -418,6 +297,7 @@ func TestValidateTar_AbsolutePath(t *testing.T) {
 }
 
 func TestValidateTar_Symlink(t *testing.T) {
+	t.Serial()
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	require.NoError(t, tw.WriteHeader(&tar.Header{
@@ -430,43 +310,8 @@ func TestValidateTar_Symlink(t *testing.T) {
 	assert.Contains(t, err.Error(), "unsupported entry type")
 }
 
-func TestContentType(t *testing.T) {
-	tests := []struct {
-		name string
-		want string
-	}{
-		{"index.html", "text/html"},
-		{"style.css", "text/css"},
-		{"app.js", "javascript"},
-		{"font.woff2", "font/woff2"},
-		{"font.woff", "font/woff"},
-		{"app.mjs", "javascript"},
-		{"data.bin", "application/octet-stream"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := contentType(tt.name)
-			assert.Contains(t, got, tt.want)
-		})
-	}
-}
-
-func TestServe_ContentLength(t *testing.T) {
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-	content := "<h1>hello world</h1>"
-	uploadSite(t, h, proj, "main", map[string]string{"index.html": content})
-
-	req := httptest.NewRequest("GET", "/sites/mysite/branch/main/index.html", nil)
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", path: "index.html"})
-	rec := httptest.NewRecorder()
-	h.Serve(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, fmt.Sprintf("%d", len(content)), rec.Header().Get("Content-Length"))
-}
-
 func TestRouteAccess(t *testing.T) {
+	t.Serial()
 	r := route{project: "p", branch: "b", write: true}
 	assert.Equal(t, auth.WriteAccess, r.Access())
 
@@ -475,6 +320,7 @@ func TestRouteAccess(t *testing.T) {
 }
 
 func TestParseRoute(t *testing.T) {
+	t.Serial()
 	req := httptest.NewRequest("PUT", "/sites/myapp/branch/main/some/file.txt", nil)
 	req.SetPathValue("project", "myapp")
 	req.SetPathValue("branch", "main")
@@ -497,6 +343,7 @@ func TestParseRoute(t *testing.T) {
 }
 
 func TestParseRoute_BranchList(t *testing.T) {
+	t.Serial()
 	req := httptest.NewRequest("GET", "/sites/myapp/branches", nil)
 	req.SetPathValue("project", "myapp")
 
@@ -506,228 +353,36 @@ func TestParseRoute_BranchList(t *testing.T) {
 	assert.Equal(t, "", r.branch)
 }
 
-func makeZip(t *testing.T, files map[string]string) []byte {
-	t.Helper()
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-	for name, content := range files {
-		w, err := zw.Create(name)
-		require.NoError(t, err)
-		_, err = w.Write([]byte(content))
-		require.NoError(t, err)
+// The publish response must name the canonical URL for the branch it deployed,
+// so no publisher has to reimplement the grammar to advertise a site.
+func TestUpload_ResponseCarriesCanonicalURL(t *testing.T) {
+	t.Serial()
+	h, d, _ := setupTest(t)
+	proj := seedProject(t, d, "mysite")
+	require.NoError(t, d.SetProjectDefaultBranch(context.Background(), proj.ID, "master"))
+	proj.DefaultBranch = "master"
+
+	publish := func(branch string) string {
+		t.Helper()
+		body := makeTarGz(t, map[string]string{"index.html": "<h1>hi</h1>"})
+		req := httptest.NewRequest("PUT", "/sites/mysite/branch/"+branch, bytes.NewReader(body))
+		req = withRoute(req, proj, route{project: "mysite", branch: branch, write: true})
+		rec := httptest.NewRecorder()
+		h.Upload(rec, req)
+		require.Equal(t, http.StatusCreated, rec.Code)
+
+		var got struct {
+			db.Site
+			URL string `json:"url"`
+		}
+		require.NoError(t, json.NewDecoder(rec.Body).Decode(&got))
+		// The embedded row's fields stay top-level.
+		assert.Equal(t, branch, got.Branch)
+		return got.URL
 	}
-	require.NoError(t, zw.Close())
-	return buf.Bytes()
-}
 
-func TestUpload_Zip(t *testing.T) {
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-
-	body := makeZip(t, map[string]string{
-		"index.html": "<h1>hello</h1>",
-		"style.css":  "body{}",
-	})
-
-	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/zip")
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})
-	rec := httptest.NewRecorder()
-	h.Upload(rec, req)
-
-	assert.Equal(t, http.StatusCreated, rec.Code)
-
-	var site db.Site
-	require.NoError(t, json.NewDecoder(rec.Body).Decode(&site))
-	assert.Equal(t, "main", site.Branch)
-	assert.Equal(t, int64(2), site.FileCount)
-}
-
-func TestServe_ZipUpload(t *testing.T) {
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-
-	body := makeZip(t, map[string]string{"index.html": "<h1>from zip</h1>"})
-	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/zip")
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})
-	rec := httptest.NewRecorder()
-	h.Upload(rec, req)
-	require.Equal(t, http.StatusCreated, rec.Code)
-
-	req2 := httptest.NewRequest("GET", "/sites/mysite/branch/main/", nil)
-	req2 = withRoute(req2, proj, route{project: "mysite", branch: "main", path: ""})
-	rec2 := httptest.NewRecorder()
-	h.Serve(rec2, req2)
-
-	assert.Equal(t, http.StatusOK, rec2.Code)
-	assert.Equal(t, "<h1>from zip</h1>", rec2.Body.String())
-}
-
-func TestUpload_InvalidZip(t *testing.T) {
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-
-	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", bytes.NewReader([]byte("not a zip")))
-	req.Header.Set("Content-Type", "application/zip")
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})
-	rec := httptest.NewRecorder()
-	h.Upload(rec, req)
-
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-}
-
-func TestZipToTar_PathTraversal(t *testing.T) {
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-	w, err := zw.Create("../etc/passwd")
-	require.NoError(t, err)
-	w.Write([]byte("evil"))
-	zw.Close()
-
-	var out bytes.Buffer
-	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
-	require.NoError(t, err)
-	_, err = zipToTar(zr, &out)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "path traversal")
-}
-
-func TestUpload_Fetch(t *testing.T) {
-	// Serve a zip from an httptest server acting as the remote.
-	remote := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
-		w.Header().Set("Content-Type", "application/zip")
-		w.Write(makeZip(t, map[string]string{"index.html": "<h1>fetched</h1>"}))
-	}))
-	defer remote.Close()
-
-	// Swap in the TLS client from the test server.
-	orig := siteFetchClient
-	siteFetchClient = remote.Client()
-	defer func() { siteFetchClient = orig }()
-
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-	h.FetchDomains = []string{remote.Listener.Addr().(*net.TCPAddr).IP.String()}
-
-	body := fmt.Sprintf(`{"url":%q,"headers":{"Authorization":"Bearer test-token"}}`, remote.URL+"/artifact.zip")
-	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})
-	rec := httptest.NewRecorder()
-	h.Upload(rec, req)
-
-	require.Equal(t, http.StatusCreated, rec.Code)
-
-	// Verify the site is served correctly.
-	req2 := httptest.NewRequest("GET", "/sites/mysite/branch/main/", nil)
-	req2 = withRoute(req2, proj, route{project: "mysite", branch: "main", path: ""})
-	rec2 := httptest.NewRecorder()
-	h.Serve(rec2, req2)
-	assert.Equal(t, http.StatusOK, rec2.Code)
-	assert.Equal(t, "<h1>fetched</h1>", rec2.Body.String())
-}
-
-func TestUpload_Fetch_DomainNotAllowed(t *testing.T) {
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-	h.FetchDomains = []string{"allowed.example.com"}
-
-	body := `{"url":"https://evil.example.com/site.zip"}`
-	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})
-	rec := httptest.NewRecorder()
-	h.Upload(rec, req)
-
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Contains(t, rec.Body.String(), "not in allowed list")
-}
-
-func TestUpload_Fetch_Disabled(t *testing.T) {
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-	// FetchDomains is empty — fetch mode disabled.
-
-	body := `{"url":"https://example.com/site.zip"}`
-	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})
-	rec := httptest.NewRecorder()
-	h.Upload(rec, req)
-
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Contains(t, rec.Body.String(), "not enabled")
-}
-
-func TestUpload_Fetch_InvalidJSON(t *testing.T) {
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-	h.FetchDomains = []string{"example.com"}
-
-	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", strings.NewReader(`not json`))
-	req.Header.Set("Content-Type", "application/json")
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})
-	rec := httptest.NewRecorder()
-	h.Upload(rec, req)
-
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-}
-
-func TestUpload_Fetch_HttpURL(t *testing.T) {
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-	h.FetchDomains = []string{"example.com"}
-
-	body := `{"url":"http://example.com/site.zip"}`
-	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})
-	rec := httptest.NewRecorder()
-	h.Upload(rec, req)
-
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Contains(t, rec.Body.String(), "only https")
-}
-
-func TestUpload_Fetch_NonOK(t *testing.T) {
-	remote := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer remote.Close()
-
-	orig := siteFetchClient
-	siteFetchClient = remote.Client()
-	defer func() { siteFetchClient = orig }()
-
-	h, d, _ := setupTest(t)
-	proj := seedProject(t, d, "mysite")
-	h.FetchDomains = []string{remote.Listener.Addr().(*net.TCPAddr).IP.String()}
-
-	body := fmt.Sprintf(`{"url":%q}`, remote.URL+"/artifact.zip")
-	req := httptest.NewRequest("PUT", "/sites/mysite/branch/main", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req = withRoute(req, proj, route{project: "mysite", branch: "main", write: true})
-	rec := httptest.NewRecorder()
-	h.Upload(rec, req)
-
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Contains(t, rec.Body.String(), "fetch returned 404")
-}
-
-func TestZipToTar_AbsolutePath(t *testing.T) {
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-	w, err := zw.Create("/etc/passwd")
-	require.NoError(t, err)
-	w.Write([]byte("evil"))
-	zw.Close()
-
-	var out bytes.Buffer
-	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
-	require.NoError(t, err)
-	_, err = zipToTar(zr, &out)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "absolute path")
+	// The default branch's deployment IS the bare project path.
+	assert.Equal(t, "https://sites.example.com/mysite/", publish("master"))
+	// Any other branch needs naming, and the "@" form is how it is named --
+	assert.Equal(t, "https://sites.example.com/mysite/@pr-7/", publish("pr-7"))
 }

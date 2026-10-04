@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/spf13/cobra"
 
 	"github.com/wow-look-at-my/buildhost/internal/uploadclient"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 func init() {
@@ -37,20 +39,24 @@ func init() {
 	publishCmd.Flags().String("git-branch", "", "Git branch")
 	publishCmd.Flags().String("git-commit", "", "Git commit")
 	publishCmd.Flags().String("oci-user", "", "Run-as user for synthesized OCI images (uid[:gid] or name[:group]); default is root")
+	publishCmd.Flags().String("apt-depends", "", `Debian Depends for the project's deb, e.g. "bubblewrap | docker.io". An empty value clears it. An absent flag leaves it untouched`)
 	publishCmd.Flags().String("manifest", "", "Path to release manifest (TOML)")
+	publishCmd.Flags().Bool("draft", false, "Upload without publishing: the release stays out of latest/branch resolution and every package manager, downloadable only by its exact version")
 	addChunkSizeFlag(publishCmd)
 }
 
 type manifest struct {
-	Server    string             `toml:"server"`
-	Token     string             `toml:"token"`
-	Project   string             `toml:"project"`
-	Version   string             `toml:"version"`
-	GitBranch string             `toml:"git_branch"`
-	GitCommit string             `toml:"git_commit"`
-	Notes     string             `toml:"notes"`
-	OciUser   string             `toml:"oci_user"`
-	Artifacts []manifestArtifact `toml:"artifact"`
+	Server    string `toml:"server"`
+	Token     string `toml:"token"`
+	Project   string `toml:"project"`
+	Version   string `toml:"version"`
+	GitBranch string `toml:"git_branch"`
+	GitCommit string `toml:"git_commit"`
+	Notes     string `toml:"notes"`
+	OciUser   string `toml:"oci_user"`
+	// AptDepends is sent only when the manifest names it.
+	AptDepends *string            `toml:"apt_depends"`
+	Artifacts  []manifestArtifact `toml:"artifact"`
 }
 
 type manifestArtifact struct {
@@ -81,17 +87,23 @@ func publishSingle(cmd *cobra.Command) error {
 	gitBranch, _ := cmd.Flags().GetString("git-branch")
 	gitCommit, _ := cmd.Flags().GetString("git-commit")
 	ociUser, _ := cmd.Flags().GetString("oci-user")
+	draft, _ := cmd.Flags().GetBool("draft")
 
 	if serverURL == "" || token == "" || project == "" || artifactPath == "" || osStr == "" || archStr == "" {
 		return fmt.Errorf("--server, --token, --project, --artifact, --os, and --arch are required")
 	}
 
-	releaseBody, _ := json.Marshal(map[string]string{
+	release := map[string]any{
 		"version":    version,
 		"git_branch": gitBranch,
 		"git_commit": gitCommit,
 		"oci_user":   ociUser,
-	})
+		"draft":      draft,
+	}
+	if cmd.Flags().Changed("apt-depends") {
+		release["apt_depends"], _ = cmd.Flags().GetString("apt-depends")
+	}
+	releaseBody, _ := json.Marshal(release)
 	resp, err := doRequest("POST", serverURL+"/api/v1/projects/"+project+"/releases", token, bytes.NewReader(releaseBody))
 	if err != nil {
 		return fmt.Errorf("create release: %w", err)
@@ -124,6 +136,29 @@ func publishSingle(cmd *cobra.Command) error {
 	}
 
 	fmt.Printf("uploaded %s/%s %s/%s\n", project, rel.Version, osStr, archStr)
+
+	// A draft stops here by design: it stays unpublished, so latest/branch
+	// resolution and every package manager ignore it, and retention keeps it
+	// rather than sweeping it as an abandoned upload. Print the exact-version
+	// URL, which is the only way to reach it.
+	if draft {
+		fmt.Printf("draft %s/%s (not published)\n", project, rel.Version)
+		fmt.Printf("download: %s?project=%s&v=%s&os=%s&arch=%s\n",
+			strings.Replace(serverURL, "://", "://static.", 1)+"/file", project, rel.Version, osStr, archStr)
+		return nil
+	}
+
+	// Publish the release, exactly like manifest mode: an unpublished release
+	resp, err = doRequest("POST", fmt.Sprintf("%s/api/v1/projects/%s/releases/%s/publish", serverURL, project, rel.Version), token, nil)
+	if err != nil {
+		return fmt.Errorf("publish release: %w", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("publish failed: %s", resp.Status)
+	}
+
+	fmt.Printf("published %s/%s\n", project, rel.Version)
 	return nil
 }
 
@@ -138,13 +173,17 @@ func publishFromManifest(cmd *cobra.Command, path string) error {
 		return fmt.Errorf("parse manifest: %w", err)
 	}
 
-	releaseBody, _ := json.Marshal(map[string]string{
+	release := map[string]any{
 		"version":    m.Version,
 		"git_branch": m.GitBranch,
 		"git_commit": m.GitCommit,
 		"notes":      m.Notes,
 		"oci_user":   m.OciUser,
-	})
+	}
+	if m.AptDepends != nil {
+		release["apt_depends"] = *m.AptDepends
+	}
+	releaseBody, _ := json.Marshal(release)
 	resp, err := doRequest("POST", m.Server+"/api/v1/projects/"+m.Project+"/releases", m.Token, bytes.NewReader(releaseBody))
 	if err != nil {
 		return fmt.Errorf("create release: %w", err)
@@ -152,6 +191,9 @@ func publishFromManifest(cmd *cobra.Command, path string) error {
 	var rel struct{ Version string }
 	json.NewDecoder(resp.Body).Decode(&rel)
 	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		return fmt.Errorf("create release failed: %s", resp.Status)
+	}
 	if rel.Version == "" {
 		rel.Version = m.Version
 	}
@@ -162,14 +204,9 @@ func publishFromManifest(cmd *cobra.Command, path string) error {
 	}
 
 	// When the server supports hash-reference uploads, byte-identical manifest
-	// entries transfer once: the first entry of each (sha256, kind) group
-	// sends the bytes, the rest register the stored blob by reference -- each
-	// keeping its own per-entry filename header. Without the capability the
-	// loop is exactly the classic one-full-upload-per-entry (and never probes:
-	// an old server ignores upload_sha256 and would store the empty body).
 	canHashRef := up.SupportsUploadBySHA256()
 	type blobGroup struct{ sum, kind string }
-	uploaded := make(map[blobGroup]bool)
+	uploaded := set.New[blobGroup]()
 
 	baseDir := filepath.Dir(path)
 	for _, a := range m.Artifacts {
@@ -198,7 +235,7 @@ func publishFromManifest(cmd *cobra.Command, path string) error {
 				return fmt.Errorf("hash %s: %w", artifactPath, err)
 			}
 			group = blobGroup{sum, kind}
-			if uploaded[group] {
+			if uploaded.Contains(group) {
 				resp, err := up.UploadByHash("PUT", url, header, sum)
 				if err != nil {
 					return fmt.Errorf("upload %s/%s: %w", a.OS, a.Arch, err)
@@ -209,11 +246,8 @@ func publishFromManifest(cmd *cobra.Command, path string) error {
 					fmt.Printf("registered %s/%s %s/%s (existing blob, no bytes sent)\n", m.Project, rel.Version, a.OS, a.Arch)
 					continue
 				case http.StatusConflict:
-					// A real slot conflict -- the full upload would 409 too.
 					return fmt.Errorf("upload %s/%s failed: %s", a.OS, a.Arch, resp.Status)
 				default:
-					// E.g. 404: the blob vanished between uploads. The bytes
-					// are right here -- fall back to sending them.
 					fmt.Printf("hash-reference upload for %s/%s returned %s; sending full upload\n", a.OS, a.Arch, resp.Status)
 				}
 			}
@@ -228,7 +262,7 @@ func publishFromManifest(cmd *cobra.Command, path string) error {
 			return fmt.Errorf("upload %s/%s failed: %s", a.OS, a.Arch, resp.Status)
 		}
 		if canHashRef {
-			uploaded[group] = true
+			uploaded.Add(group)
 		}
 
 		fmt.Printf("uploaded %s/%s %s/%s\n", m.Project, rel.Version, a.OS, a.Arch)

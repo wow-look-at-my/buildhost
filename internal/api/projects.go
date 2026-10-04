@@ -1,8 +1,6 @@
 package api
 
 // Project names may contain multiple `/`-separated segments. Each segment matches
-// the same alphabet as a single-segment name and must start with [a-z0-9]. No
-// leading, trailing, or consecutive slashes. Total length capped in validProjectName.
 //go:generate go run github.com/wow-look-at-my/go-regex-compiler/cmd/go-regex-compiler@latest --regex "^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$" --func validProjectNameRegex --package api --output gen_project_name.go --match full
 //go:generate gofmt -w gen_project_name.go
 
@@ -16,11 +14,10 @@ import (
 )
 
 func init() {
-	auth.OnReady(func() {
-		auth.HandleRaw("POST /api/v1/projects", handler.CreateProject)
-		auth.HandleRaw("GET /api/v1/projects", handler.ListProjects)
-		auth.Handle("GET /api/v1/projects/{project}", parseRoute, handler.GetProject)
-	})
+	auth.HandleRawPrimary("POST /api/v1/projects", handler.CreateProject)
+	auth.HandleRawPrimary("GET /api/v1/projects", handler.ListProjects)
+	auth.HandlePrimary("GET /api/v1/projects/{project}", parseRoute, handler.GetProject)
+	auth.HandlePrimary("PATCH /api/v1/projects/{project}", parseRoute, handler.UpdateProjectSettings)
 }
 
 type createProjectRequest struct {
@@ -33,8 +30,6 @@ type createProjectRequest struct {
 }
 
 // validProjectName enforces the structural regex (validProjectNameRegex, generated)
-// plus a total-length cap. The regex itself does not bound length, so a separate
-// check keeps multi-segment names from growing without limit.
 const maxProjectNameLen = 255
 
 func validProjectName(s string) bool {
@@ -94,6 +89,58 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusOK, auth.ProjectFrom(r.Context()))
+}
+
+// updateProjectRequest carries operator-set project settings. Every field is a
+// pointer so an absent key leaves the setting unchanged (PATCH semantics).
+type updateProjectRequest struct {
+	CreateService *bool   `json:"create_service"`
+	AptDepends    *string `json:"apt_depends"`
+	// Versioning is decoded only to refuse it.
+	Versioning json.RawMessage `json:"versioning"`
+}
+
+// UpdateProjectSettings PATCHes operator-set project settings. Auth rides the
+// centralized requireProject middleware: PATCH is a write verb (parseRoute),
+// so only a write-scoped token authorized for the project reaches here.
+func (h *Handler) UpdateProjectSettings(w http.ResponseWriter, r *http.Request) {
+	project := auth.ProjectFrom(r.Context())
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
+	var req updateProjectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Versioning != nil {
+		jsonError(w, http.StatusForbidden, "versioning is changed from the admin dashboard only")
+		return
+	}
+	if req.AptDepends != nil {
+		if err := db.ValidateAptDepends(*req.AptDepends); err != nil {
+			jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	if req.AptDepends != nil && *req.AptDepends != project.AptDepends {
+		if err := h.DB.SetProjectAptDepends(r.Context(), project.ID, *req.AptDepends); err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to update project")
+			return
+		}
+		project.AptDepends = *req.AptDepends
+	}
+
+	if req.CreateService != nil && *req.CreateService != project.CreateService {
+		if err := h.DB.SetProjectCreateService(r.Context(), project.ID, *req.CreateService); err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to update project")
+			return
+		}
+		project.CreateService = *req.CreateService
+	}
+
+	jsonResponse(w, http.StatusOK, project)
 }
 
 func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {

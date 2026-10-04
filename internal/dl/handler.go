@@ -1,14 +1,18 @@
 package dl
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/wow-look-at-my/go-containers/set"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -16,9 +20,6 @@ import (
 )
 
 // privateRedirectTTL bounds the signed token embedded in a private project's
-// redirect Location. It only needs to outlive the client's redirect follow
-// (immediate in practice); verification happens when the static request
-// starts, so a long transfer is unaffected by expiry.
 const privateRedirectTTL = 15 * time.Minute
 
 var dlTracer = otel.Tracer("buildhost.dl")
@@ -59,22 +60,39 @@ func handleDBErr(w http.ResponseWriter, r *http.Request, err error) bool {
 	return false
 }
 
+// portableMissing explains a bare request the release cannot answer, naming
+// what it does carry so the caller is not left guessing a pair.
+func portableMissing(ctx context.Context, d *db.DB, releaseID int64) string {
+	const lead = "this release has no portable build, so name os and arch"
+	arts, err := d.ListArtifactsByPlatform(ctx, releaseID)
+	if err != nil || len(arts) == 0 {
+		return lead
+	}
+	seen := set.New[string]()
+	var pairs []string
+	for _, a := range arts {
+		pair := fmt.Sprintf("%s/%s", a.OS, a.Arch)
+		if seen.Add(pair) {
+			pairs = append(pairs, pair)
+		}
+	}
+	slices.Sort(pairs)
+	return lead + ". It carries " + strings.Join(pairs, ", ")
+}
+
 func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
 	q := r.URL.Query()
 
 	osStr := q.Get("os")
 	archStr := q.Get("arch")
-	if osStr == "" || archStr == "" {
-		http.Error(w, "os and arch are required", http.StatusBadRequest)
+	// Naming neither asks for the artifact that runs anywhere. Half a pair is a typo.
+	portable := osStr == "" && archStr == ""
+	if !portable && (osStr == "" || archStr == "") {
+		http.Error(w, "name both os and arch, or neither for the portable build", http.StatusBadRequest)
 		return
 	}
 	// Accept platform-name aliases natively (RUNNER_OS "Linux"/"macOS"/"Windows",
-	// RUNNER_ARCH "X64"/"ARM64", uname's "x86_64"/"aarch64", ...) so callers can
-	// pass them through verbatim; fold them to the canonical spelling the static
-	// endpoint and stored artifacts use. Unrecognized values pass through unchanged.
-	// The deprecated GOOS/GOARCH-ordered wasm pair (os=js|wasip1, arch=wasm) is
-	// likewise folded to the canonical os=wasm form for symmetry with upload.
 	if o, a, ok := db.NormalizeLegacyWasmPair(osStr, archStr); ok {
 		osStr, archStr = string(o), string(a)
 	}
@@ -123,20 +141,34 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		resolvedVersion = fmt.Sprintf("%d", release.VersionNum)
 	}
 
+	if portable {
+		a, err := h.DB.PortableArtifact(r.Context(), release.ID)
+		if errors.Is(err, db.ErrNotFound) {
+			http.Error(w, portableMissing(r.Context(), h.DB, release.ID), http.StatusBadRequest)
+			return
+		}
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		osStr, archStr = string(a.OS), string(a.Arch)
+	} else {
+		canonOS, canonArch, err := h.DB.CanonicalPlatform(r.Context(), release.ID, osStr, archStr)
+		switch {
+		case err == nil:
+			osStr, archStr = canonOS, canonArch
+		case !errors.Is(err, db.ErrNotFound):
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+	}
+
 	p := static.For(project.Name).WithVersion(resolvedVersion).WithOS(db.OS(osStr)).WithArch(db.Arch(archStr)).WithFmt(fmtStr)
 	if q.Get("debug") == "1" {
 		p = p.WithDebug(true)
 	}
 
 	if project.IsPrivate {
-		// The caller authenticated to reach this handler (the route is
-		// ReadAccess-gated), but clients drop the Authorization header when
-		// following a cross-host redirect -- curl does so by design, and
-		// Homebrew inherits curl semantics -- so a bare Location would 401 at
-		// the static host. Carry the authorization in the Location itself: a
-		// short-lived signed token bound to exactly this artifact tuple (the
-		// same mechanism as temporary download links). The response embeds a
-		// live credential, so it is never cacheable and never permanent.
 		w.Header().Set("Cache-Control", "private, no-store")
 		signed, _ := static.SignedURL(auth.DeriveServiceURL(r, "static"), p, time.Now().Add(privateRedirectTTL))
 		http.Redirect(w, r, signed, http.StatusFound)
@@ -146,13 +178,10 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	code := http.StatusFound
 	if immutable {
 		// An exact version is an immutable mapping -- safe to cache the redirect
-		// itself forever, just like the artifact it points at.
 		code = http.StatusMovedPermanently
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		// "latest" and branch tips are MUTABLE pointers: a new publish repoints
-		// them. Never let a CDN or browser cache this redirect, or clients would
-		// stay pinned to a stale release until the cached pointer expires.
 		w.Header().Set("Cache-Control", "no-store")
 	}
 	static.Redirect(w, r, auth.DeriveServiceURL(r, "static"), p, code)

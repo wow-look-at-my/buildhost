@@ -1,32 +1,6 @@
 package brew
 
 // Persistent tap history. Every tap build used to mint a single PARENTLESS
-// root commit into a throwaway snapshot under {DataDir}/tmp -- so each publish
-// rewrote the tap's entire git history, and Homebrew's updater (which fetches
-// with --force and rebases the client's clone onto origin/main) replayed the
-// client's old root onto an unrelated new root: add/add conflicts, every
-// client wedged mid-rebase after every publish.
-//
-// This file gives each tap LINEAGE -- one (apex base URL, credential scope)
-// pair, exactly what tapcache keys builds by -- a durable, append-only,
-// bare-layout git directory under {DataDir}/brew-tap/<sha256(key)>/ (NOT under
-// {DataDir}/tmp, which is scratch space; the same durable-state precedent as
-// apt-signing.key and download-signing.key):
-//
-//	objects/xx/yyyy...   loose objects, content-addressed, never rewritten
-//	refs/heads/main      the tip commit sha ("<sha>\n"), advanced temp+rename
-//	info/refs            "<sha>\trefs/heads/main\n" (dumb-HTTP ref listing)
-//	HEAD                 "ref: refs/heads/main\n"
-//	objects/info/packs   empty (no packs; loose objects only)
-//
-// The directory IS the served repo (mmap'd through an os.Root, the storage
-// pattern), and it is the durable truth: a rebuild reads the persisted tip,
-// reuses it when the new content's tree is unchanged, and otherwise mints a
-// commit WITH `parent <tip>` -- so per lineage, refs/heads/main only ever
-// moves to a DESCENDANT of its previous value, across restarts and redeploys.
-// Objects are only ever added (a publish adds ~2-4 small objects), so a client
-// mid-`brew update` can always fetch every object its refs snapshot names even
-// if the tip advances underneath it.
 
 import (
 	"bytes"
@@ -35,29 +9,25 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
+
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
-// tapHistoryDirName is the directory under the persistent data dir (NOT the
-// swept tmp scratch root) that holds one subdirectory per tap lineage.
 const tapHistoryDirName = "brew-tap"
 
 // tapHistoryMaxLineages caps how many lineage histories are kept on disk.
-// Legitimate deployments need a handful (one per apex host x credential scope
-// that actually taps); the cap keeps junk Host headers and deleted tokens from
-// growing the store without bound. Eviction is whole-lineage, LRU by directory
-// mtime (bumped on every build) -- an evicted lineage restarts from a fresh
-// root on its next request, which is acceptable exactly because eviction only
-// ever reaches lineages nothing has fetched for a long time.
 const tapHistoryMaxLineages = 64
 
 // tapHistoryRoot returns the persistent lineage-store root. Production always
 // wires DataDir (OnReady); the fallbacks keep bare test constructions working
-// without ever colliding with the legacy tmp snapshot dir.
+// without ever colliding with the tmp snapshot dir.
 func (h *Handler) tapHistoryRoot() string {
 	if h.DataDir != "" {
 		return filepath.Join(h.DataDir, tapHistoryDirName)
@@ -69,9 +39,7 @@ func (h *Handler) tapHistoryRoot() string {
 	return filepath.Join(base, "brew-tap-history")
 }
 
-// tapLineageDir maps a tapcache key to its on-disk lineage directory. Hashing
-// keeps hostile Host headers / token names from smuggling path syntax into the
-// directory name.
+// tapLineageDir maps a tapcache key to its on-disk lineage directory.
 func (h *Handler) tapLineageDir(key string) string {
 	sum := sha256.Sum256([]byte(key))
 	return filepath.Join(h.tapHistoryRoot(), hex.EncodeToString(sum[:]))
@@ -80,12 +48,22 @@ func (h *Handler) tapLineageDir(key string) string {
 // refreshTapLineage recomputes the tap contents for the request's scope and
 // advances the lineage store at dir. If the new content's tree equals the
 // persisted tip's tree the tip commit is REUSED (no growth from the periodic
-// TTL rebuilds); otherwise a child commit of the tip is minted, its objects
+// TTL rebuilds); otherwise child commits of the tip are minted, their objects
 // are written (content-addressed, idempotent, temp+rename), and only then is
 // the tip advanced -- so a reader can never observe a ref naming objects that
 // are not yet on disk, and a crash at any point leaves a consistent store.
+//
+// The tree holds only the latest formula of each project. brew extract, which
+// brew version-install runs, finds an older version in the history instead.
+// So every past release the lineage has not recorded yet gets one commit that
+// sets its project's formula to that release, before the commit of the
+// current tree. Those commits are appended, so a clone still fast-forwards.
 func (h *Handler) refreshTapLineage(r *http.Request, dir string) error {
-	files, err := h.buildTapFiles(r)
+	files, names, err := h.buildTap(r)
+	if err != nil {
+		return err
+	}
+	history, err := h.tapHistory(r, names)
 	if err != nil {
 		return err
 	}
@@ -94,17 +72,28 @@ func (h *Handler) refreshTapLineage(r *http.Request, dir string) error {
 	}
 
 	tip := readTapTip(dir)
-	objects, commitSHA, treeSHA := buildGitObjects(files, tip)
-	if tip != "" {
+	recorded := readTapHistoryKeys(dir)
+	objects := gitObjects{}
+	current := objects.blobs(files)
+	head := tip
+	var appended []string
+	for _, f := range history {
+		key := tapHistoryKey(f.path, f.data)
+		if recorded.Contains(key) || bytes.Equal(files[f.path], f.data) {
+			continue
+		}
+		blobs := maps.Clone(current)
+		blobs[f.path] = addGitObject(objects, "blob", f.data)
+		head, _ = objects.commit(blobs, head)
+		appended = append(appended, key)
+	}
+	commitSHA, treeSHA := objects.commit(current, head)
+	if len(appended) == 0 && tip != "" {
 		if tipTree, err := readCommitTree(dir, tip); err == nil && tipTree == treeSHA {
 			// Content unchanged: keep the tip commit -- the sha stays stable
-			// across rebuilds. Just record recency for the LRU cap.
 			touchTapLineage(dir)
 			return nil
 		}
-		// An unreadable tip OBJECT (external corruption) still keeps tip as
-		// the parent: clients that hold the old history keep fast-forwarding,
-		// which is the guarantee this store exists for.
 	}
 	if err := writeTapObjects(dir, objects); err != nil {
 		return err
@@ -112,12 +101,51 @@ func (h *Handler) refreshTapLineage(r *http.Request, dir string) error {
 	if err := advanceTapTip(dir, commitSHA); err != nil {
 		return err
 	}
+	for path, data := range files {
+		appended = append(appended, tapHistoryKey(path, data))
+	}
+	for _, key := range appended {
+		recorded.Add(key)
+	}
+	if err := writeTapHistoryKeys(dir, recorded); err != nil {
+		return err
+	}
 	touchTapLineage(dir)
 	return nil
 }
 
-// readTapTip returns the lineage's persisted tip commit sha, or "" when the
-// lineage has no history yet (first build seeds a parentless root).
+// tapHistoryKeysFile lists one key per formula state the lineage's history already holds.
+const tapHistoryKeysFile = "buildhost-history-keys"
+
+// tapHistoryKey names one formula state: the path and its exact bytes.
+func tapHistoryKey(path string, data []byte) string {
+	sum := sha256.Sum256(data)
+	return path + "\t" + hex.EncodeToString(sum[:])
+}
+
+func readTapHistoryKeys(dir string) set.Set[string] {
+	keys := set.New[string]()
+	b, err := os.ReadFile(filepath.Join(dir, tapHistoryKeysFile))
+	if err != nil {
+		return keys
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if line != "" {
+			keys.Add(line)
+		}
+	}
+	return keys
+}
+
+// writeTapHistoryKeys runs after the tip advances. A crash in between only
+// makes the next refresh append the same states again.
+func writeTapHistoryKeys(dir string, keys set.Set[string]) error {
+	lines := keys.Values()
+	slices.Sort(lines)
+	return writeTapFileAtomic(dir, tapHistoryKeysFile, []byte(strings.Join(lines, "\n")+"\n"))
+}
+
+// readTapTip returns the lineage's persisted tip commit sha.
 func readTapTip(dir string) string {
 	b, err := os.ReadFile(filepath.Join(dir, "refs", "heads", "main"))
 	if err != nil {
@@ -154,7 +182,7 @@ func readCommitTree(dir, commitSHA string) (string, error) {
 		return "", err
 	}
 	defer zr.Close()
-	raw, err := io.ReadAll(zr) // commits are ~200 bytes
+	raw, err := io.ReadAll(zr)
 	if err != nil {
 		return "", err
 	}
@@ -187,9 +215,6 @@ func writeTapObjects(dir string, objects map[string][]byte) error {
 }
 
 // advanceTapTip publishes commitSHA as the lineage's tip. Callers must have
-// persisted the commit's objects first. refs/heads/main is written last: it is
-// what the next build reads as the parent, so the commit point of a tip move
-// is a single atomic rename.
 func advanceTapTip(dir, commitSHA string) error {
 	if err := writeTapFileAtomic(dir, "HEAD", []byte("ref: refs/heads/main\n")); err != nil {
 		return err
@@ -236,8 +261,6 @@ func writeTapFileAtomic(dir, name string, data []byte) error {
 
 const tapTempPrefix = ".tmp-"
 
-// touchTapLineage stamps the lineage directory's mtime -- the LRU recency the
-// disk cap evicts by. Explicit because a tree-unchanged rebuild writes nothing.
 func touchTapLineage(dir string) {
 	now := time.Now()
 	_ = os.Chtimes(dir, now, now)

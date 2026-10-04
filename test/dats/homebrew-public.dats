@@ -1,0 +1,189 @@
+# The DOCUMENTED public Homebrew flow, executed verbatim, and what it must
+# leave on disk.
+#
+# The brew commands are not written here: scripts/brew-doc-flows.sh extracts
+# them from docs/homebrew.md and substitutes only the host, and this suite asserts the
+# served /llms.txt agrees with them.
+#
+# The workflow starts the server and publishes the artifacts; $BUILDHOST_TOKEN,
+# $BUILDHOST_BASE_URL and $BREW_HOST come from it.
+#
+# Runs on the host (--no-sandbox): brew's prefix is outside any sandbox this
+# would get, and the point is what brew did to a real file.
+#
+# see docs/formats/brew-tap.md
+
+shared:
+	files:
+		start.sh: |
+			# Run the documented public flow. Writes $ENV_FILE.
+			set -eu
+			WORK="$(dirname "$ENV_FILE")"
+			"$REPO/scripts/brew-doc-flows.sh" public "$BREW_HOST" > "$WORK/public.sh"
+			echo "--- documented public flow, executed verbatim ---"
+			cat "$WORK/public.sh"
+			TOKEN="$BUILDHOST_TOKEN" bash -euo pipefail "$WORK/public.sh"
+			# The APE-shaped fixture installs here rather than in a test: dats
+			# runs tests concurrently, and brew installs at the same time
+			# contend for the same prefix.
+			brew install pazer/build/ape-fixture
+			brew install pazer/build/versioned-fixture
+			TAP="$(brew --repository pazer/build)"
+			# Pull until the tap history holds that release.
+			for _ in $(seq 60); do
+				git -C "$TAP" fetch -q origin
+				[ "$(git -C "$TAP" log --format=%H origin/main -- Formula/versioned-fixture.rb | wc -l)" -ge 2 ] && break
+				sleep 1
+			done
+			# brew update reports what the appended history changed. Its output is
+			# what a user sees, so the suite asserts on it below.
+			brew update 2>&1 | tee "$WORK/update.txt"
+			"$REPO/scripts/brew-doc-flows.sh" version "$BREW_HOST" > "$WORK/version.sh"
+			echo "--- documented version flow, executed verbatim ---"
+			cat "$WORK/version.sh"
+			HOMEBREW_NO_GITHUB_API=1 bash -euo pipefail "$WORK/version.sh"
+			HOMEBREW_NO_GITHUB_API=1 brew version-install pazer/build/versioned-fixture@1.0.0
+			echo "REPO='$REPO'" > "$ENV_FILE"
+			echo "TAP='$TAP'" >> "$ENV_FILE"
+
+setup:
+	- cmd: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
+	  timeout: 10m
+
+tests:
+	# A single flow, documents, empty drift: the blocks the server serves
+	# in /llms.txt must be the blocks docs/homebrew.md documents.
+	- desc: llms.txt documents the same brew flows as docs/homebrew.md
+	  cmd: |
+		set -eu
+		. {shared.env}
+		curl -fsS "$BUILDHOST_BASE_URL/llms.txt" > llms.txt
+		# The served blocks are fenced with no language tag; the brew flows are
+		# the ones that open with `brew tap`.
+		awk '/^```/ { fence = !fence; if (fence) { buf = "" } else if (buf ~ /^brew trust /) { printf "%s", buf }; next }
+			fence { buf = buf $0 "\n" }' llms.txt > llms-flows.txt
+		test "$(grep -c '^brew trust ' llms-flows.txt)" = "2" || {
+			echo "llms.txt: want exactly 2 brew flow blocks (public, private)" >&2; exit 1; }
+		# llms.txt names the public host, so compare it after the same
+		# substitution the extractor applies to docs/homebrew.md.
+		sed -e 's|https://|http://|g' -e "s|brew\.pazer\.build|$BREW_HOST|g" llms-flows.txt > llms-local.txt
+		"$REPO/scripts/brew-doc-flows.sh" public "$BREW_HOST" > readme-flows.txt
+		"$REPO/scripts/brew-doc-flows.sh" private "$BREW_HOST" >> readme-flows.txt
+		diff -u readme-flows.txt llms-local.txt
+		echo "docs-agree"
+	  outputs:
+		stdout:
+			- "docs-agree"
+
+	# The tripwire against smuggling CI-only crutches into the executed
+	# commands: every line is a plain brew command or a token export, and the
+	# tap/trust/install skeleton is present.
+	- desc: the documented flows are brew commands only, with tap, trust and install
+	  cmd: |
+		set -eu
+		. {shared.env}
+		for leg in public private; do
+			"$REPO/scripts/brew-doc-flows.sh" "$leg" "$BREW_HOST" \
+				| grep -v '^[[:space:]]*$' | grep -v '^#' > flow.txt
+			if grep -qv '^\(brew\|export\) ' flow.txt; then
+				echo "$leg flow has a non-brew/export line:" >&2; cat flow.txt >&2; exit 1
+			fi
+			for want in 'brew tap ' 'brew trust ' 'brew install '; do
+				grep -q "^$want" flow.txt || { echo "$leg flow lost $want" >&2; exit 1; }
+			done
+		done
+		echo "flow-shape-ok"
+	  outputs:
+		stdout:
+			- "flow-shape-ok"
+
+	# The generated formula opts out with skip_clean "bin"; this is what turns
+	# a regression in that codegen red instead of shipping a binary users
+	# cannot run.
+	- desc: the installed binary keeps both the execute and the write bit
+	  cmd: |
+		set -euo pipefail
+		bin="$(brew --prefix pazer/build/go-toolchain)/bin/go-toolchain"
+		ls -l "$bin"
+		test -x "$bin" || { echo "not executable -- Homebrew's Cleaner chmods unrecognized files 0444"; exit 1; }
+		test -w "$bin" || { echo "not writable -- an APE rewrites itself on first run"; exit 1; }
+		echo "mode-ok"
+	  outputs:
+		stdout:
+			- "mode-ok"
+
+	# The user-facing claim is that the installed thing RUNS. On Linux this is
+	# also where an APE assimilates itself, which is what makes the write bit
+	# load-bearing. `version` exits 0 even when its update check cannot reach
+	# GitHub, so this is not a network-flaky assertion.
+	- desc: the publicly installed binary executes
+	  cmd: go-toolchain version
+	  outputs:
+		stdout:
+			- "Version:"
+
+	# The same guarantees against the APE-SHAPED fixture, so the invariant
+	# holds on macOS too (where go-toolchain's own artifact is a Mach-O brew
+	# recognizes) and for anyone shipping a Cosmopolitan binary.
+	- desc: a project with several releases installs its latest release
+	  cmd: versioned-fixture
+	  outputs:
+		stdout:
+			- "versioned-fixture-2.0.0"
+
+	# brew version-install extracts the release from the tap history into the
+	# user's versions tap. The pin is keg-only, so the latest one keeps PATH.
+	- desc: brew version-install installs an older release beside the latest
+	  cmd: |
+		set -euo pipefail
+		bin="$(brew --prefix versioned-fixture@1.0.0)/bin/versioned-fixture"
+		brew info --json=v2 versioned-fixture@1.0.0 | grep -q '"keg_only": *true' \
+			|| { echo "versioned-fixture@1.0.0 must be keg-only" >&2; exit 1; }
+		"$bin"
+		versioned-fixture
+	  outputs:
+		stdout:
+			- "versioned-fixture-1.0.0"
+			- "versioned-fixture-2.0.0"
+
+	# That must not surface as a "New Formulae" entry per release.
+	- desc: brew update lists no versioned formula
+	  cmd: |
+		set -eu
+		update="$(dirname {shared.env})/update.txt"
+		cat "$update"
+		if grep -E '^pazer/build/[^ ]*@' "$update"; then
+			echo "brew update listed a versioned formula" >&2; exit 1
+		fi
+		echo "no-versions-listed"
+	  outputs:
+		stdout:
+			- "no-versions-listed"
+
+	# brew lists every formula file in a tap as a formula of its own, so a
+	# file per release floods `brew update` with "New Formulae".
+	- desc: the tap holds one formula per project and no versions
+	  cmd: |
+		set -eu
+		. {shared.env}
+		(cd "$TAP/Formula" && find . -name '*.rb' | sed 's|^\./||' | sort) > formulas.txt
+		grep -qx 'versioned-fixture.rb' formulas.txt
+		if grep -q '[@/]' formulas.txt; then
+			echo "versioned formulas in the tap:" >&2; cat formulas.txt >&2; exit 1
+		fi
+		echo "one-per-project"
+	  outputs:
+		stdout:
+			- "one-per-project"
+
+	- desc: an APE-shaped formula installs, keeps its mode, and runs
+	  cmd: |
+		set -euo pipefail
+		bin="$(brew --prefix pazer/build/ape-fixture)/bin/ape-fixture"
+		ls -l "$bin"
+		test -x "$bin" || { echo "not executable (Cleaner chmods unrecognized files 0444)"; exit 1; }
+		test -w "$bin" || { echo "not writable (an APE rewrites itself on first run)"; exit 1; }
+		ape-fixture
+	  outputs:
+		stdout:
+			- "buildhost-homebrew-ape-ok"

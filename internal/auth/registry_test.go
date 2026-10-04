@@ -10,6 +10,7 @@ import (
 )
 
 func TestServiceRedirect(t *testing.T) {
+	t.Serial()
 	ServiceRedirect("docker", "oci", true)
 
 	ts := httptest.NewServer(http.HandlerFunc(ServeHTTP))
@@ -27,6 +28,7 @@ func TestServiceRedirect(t *testing.T) {
 }
 
 func TestServiceRedirect_Temporary(t *testing.T) {
+	t.Serial()
 	ServiceRedirect("old", "new", false)
 
 	ts := httptest.NewServer(http.HandlerFunc(ServeHTTP))
@@ -44,6 +46,7 @@ func TestServiceRedirect_Temporary(t *testing.T) {
 }
 
 func TestServeHTTP_SubdomainDispatch(t *testing.T) {
+	t.Serial()
 	ServiceHandleRaw("mytest", "GET /hello", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("from mytest service"))
@@ -63,6 +66,7 @@ func TestServeHTTP_SubdomainDispatch(t *testing.T) {
 }
 
 func TestServeHTTP_FallsThrough(t *testing.T) {
+	t.Serial()
 	HandleRaw("GET /api-test", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -81,6 +85,7 @@ func TestServeHTTP_FallsThrough(t *testing.T) {
 }
 
 func TestDeriveServiceURL(t *testing.T) {
+	t.Serial()
 	req := httptest.NewRequest("GET", "/test", nil)
 	req.Host = "dl.pazer.build"
 
@@ -90,6 +95,7 @@ func TestDeriveServiceURL(t *testing.T) {
 }
 
 func TestDeriveServiceURL_HTTP(t *testing.T) {
+	t.Serial()
 	req := httptest.NewRequest("GET", "/test", nil)
 	req.Host = "dl.localhost:8080"
 
@@ -99,6 +105,7 @@ func TestDeriveServiceURL_HTTP(t *testing.T) {
 }
 
 func TestRequestScheme(t *testing.T) {
+	t.Serial()
 	cases := []struct {
 		host string
 		want string
@@ -120,6 +127,7 @@ func TestRequestScheme(t *testing.T) {
 }
 
 func TestRequestBaseURL_PreservesHostAndPort(t *testing.T) {
+	t.Serial()
 	cases := []struct {
 		host string
 		want string
@@ -128,7 +136,6 @@ func TestRequestBaseURL_PreservesHostAndPort(t *testing.T) {
 		{"pazer.build", "https://pazer.build"},
 		{"dl.pazer.build", "https://dl.pazer.build"},
 		// Local/dev and direct access: the port is part of how the client
-		// reached us and must survive into self-referential links.
 		{"localhost:8080", "http://localhost:8080"},
 		{"127.0.0.1:54321", "http://127.0.0.1:54321"},
 	}

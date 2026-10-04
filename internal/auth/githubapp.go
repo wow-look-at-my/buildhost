@@ -14,17 +14,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// GitHub App authentication for buildhost's own REST lookups (resolving a repo's
-// default branch). Preferred over a static PAT: no token to rotate, least-
-// privilege (metadata:read), and installation tokens carry a far higher rate
-// limit. The flow is the standard one:
-//
-//	app JWT (RS256, signed with the app private key)
-//	  -> GET /repos/{owner}/{repo}/installation        (installation id)
-//	  -> POST /app/installations/{id}/access_tokens     (1h installation token)
-//	  -> GET /repos/{owner}/{repo}                       (default_branch)
-//
-// Installation ids and tokens are cached, so steady state is a single repos call.
+// GitHub App authentication for buildhost's own REST lookups (resolving a
+// repo's default branch).
 
 type githubApp struct {
 	appID      string
@@ -85,10 +76,14 @@ func currentGitHubApp() *githubApp {
 	return ghApp
 }
 
+// HasGitHubApp reports whether App auth is configured, so a caller can name
+func HasGitHubApp() bool { return currentGitHubApp() != nil }
+
 // bearerForRepo returns the bearer token to authenticate a github.com REST call
-// for owner/repo: a GitHub App installation token when an App is configured,
-// otherwise the static PAT, otherwise "" (anonymous). Best-effort -- a failure to
-// mint an App token falls through to the PAT/anonymous path.
+func BearerForRepo(ctx context.Context, owner, repo string) string {
+	return bearerForRepo(ctx, owner, repo)
+}
+
 func bearerForRepo(ctx context.Context, owner, repo string) string {
 	if app := currentGitHubApp(); app != nil {
 		if tok := app.installationToken(ctx, owner, repo); tok != "" {
@@ -133,7 +128,6 @@ func (a *githubApp) installationToken(ctx context.Context, owner, repo string) s
 const appInstallationIDTTL = 24 * time.Hour
 
 // installationID resolves (and caches by owner) the installation id covering
-// owner/repo. Returns 0 if the app is not installed there or on any error.
 func (a *githubApp) installationID(ctx context.Context, owner, repo string) int64 {
 	now := time.Now()
 	a.mu.Lock()
@@ -196,7 +190,6 @@ func (a *githubApp) createInstallationToken(ctx context.Context, jwtStr string, 
 }
 
 // appGet performs an app-JWT-authenticated GET and decodes JSON into out.
-// Returns false on any non-200 / transport / decode error.
 func (a *githubApp) appGet(ctx context.Context, jwtStr, path string, out any) bool {
 	ctx, cancel := context.WithTimeout(ctx, branchLookupBudget)
 	defer cancel()
@@ -221,7 +214,6 @@ func (a *githubApp) appGet(ctx context.Context, jwtStr, path string, out any) bo
 }
 
 // signedJWT returns a cached or freshly-signed app JWT (RS256). GitHub caps app
-// JWT lifetime at 10 minutes; we use 9 and backdate iat 30s for clock skew.
 func (a *githubApp) signedJWT() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()

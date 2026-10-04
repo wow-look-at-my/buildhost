@@ -16,8 +16,6 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
-// seedPrivateBrewProject creates a PRIVATE project with one published release
-// and one linux/amd64 binary artifact.
 func seedPrivateBrewProject(t *testing.T, d *db.DB, store *storage.Filesystem, name, body string) *db.Project {
 	t.Helper()
 	ctx := context.Background()
@@ -42,8 +40,6 @@ func withReadToken(req *http.Request, projectID *int64) *http.Request {
 	return req.WithContext(auth.WithToken(req.Context(), tok))
 }
 
-// tapFile fetches one path of the tap through the given entrypoint with an
-// optional token in context.
 func tapFile(t *testing.T, serve http.HandlerFunc, urlPath, pathValue string, tokenProject *int64, authed bool) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest("GET", urlPath, nil)
@@ -60,6 +56,7 @@ func tapFile(t *testing.T, serve http.HandlerFunc, urlPath, pathValue string, to
 }
 
 func TestServePrivateTap_AnonymousGetsBasicChallenge(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
 	seedPrivateBrewProject(t, d, store, "secretapp", "priv-binary")
@@ -73,8 +70,10 @@ func TestServePrivateTap_AnonymousGetsBasicChallenge(t *testing.T) {
 }
 
 func TestServePrivateTap_TokenScopedTapIncludesPrivateFormula(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
+	seedBrewProject(t, d, store, "ns/other", "other-binary")
 	seedPrivateBrewProject(t, d, store, "ns/secretapp", "priv-binary")
 
 	// A global read token sees public + private projects.
@@ -91,27 +90,23 @@ func TestServePrivateTap_TokenScopedTapIncludesPrivateFormula(t *testing.T) {
 	all := tapFilesText(files)
 	// Private formula present under its folded name, using the token strategy.
 	assert.Contains(t, all, "ns-secretapp.rb")
-	assert.Contains(t, all, `require_relative "../lib/buildhost_private_download"`)
 	assert.Contains(t, all, "using: BuildhostCurlDownloadStrategy")
 	assert.Contains(t, all, "class NsSecretapp < Formula")
 	// Slash-named projects install by BASENAME: the tar.gz's only top-level
-	// entry is the namespace directory, and brew strips a lone top-level dir
-	// when unpacking, so the staged file is just the basename. Installing the
-	// slashed path ENOENTs (reproduced against real brew 6.0.9).
 	assert.Contains(t, all, `bin.install "secretapp"`)
 	assert.NotContains(t, all, `bin.install "ns/secretapp"`)
-	// The strategy library rides along and never embeds a token.
-	assert.Contains(t, all, "buildhost_private_download.rb")
+	// The formula carries the strategy inline and never embeds a token.
+	assert.NotContains(t, all, "require_relative")
 	assert.Contains(t, all, `ENV["HOMEBREW_BUILDHOST_TOKEN"]`)
 	assert.Contains(t, all, "class BuildhostCurlDownloadStrategy < CurlDownloadStrategy")
 }
 
 func TestScopedTap_PublicFormulaStaysPlain(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
 
-	// Even through the authenticated tap, a PUBLIC project's formula keeps the
-	// plain anonymous-download shape (no strategy, no require).
+	// Even through the authenticated tap.
 	req := withReadToken(httptest.NewRequest("GET", "/private/tap.git", nil), nil)
 	req.Host = "brew.example.com"
 	files, err := h.buildTapFiles(req)
@@ -120,12 +115,11 @@ func TestScopedTap_PublicFormulaStaysPlain(t *testing.T) {
 	all := tapFilesText(files)
 	assert.Contains(t, all, "class Pubapp < Formula")
 	assert.NotContains(t, all, "using: BuildhostCurlDownloadStrategy\n      sha256")
-	// The only require_relative in the tap text is inside no formula -- the
-	// strategy file itself contains none.
 	assert.NotContains(t, all, "require_relative")
 }
 
 func TestScopedTap_ProjectScopedTokenCannotSeeOtherPrivateProjects(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
 	mine := seedPrivateBrewProject(t, d, store, "mine", "mine-binary")
@@ -143,6 +137,7 @@ func TestScopedTap_ProjectScopedTokenCannotSeeOtherPrivateProjects(t *testing.T)
 }
 
 func TestAnonymousTap_NeverContainsPrivateNames(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
 	seedPrivateBrewProject(t, d, store, "secretapp", "priv-binary")
@@ -155,12 +150,11 @@ func TestAnonymousTap_NeverContainsPrivateNames(t *testing.T) {
 	all := tapFilesText(files)
 	assert.Contains(t, all, "pubapp.rb")
 	assert.NotContains(t, all, "secretapp")
-	// The strategy library is part of the uniform tap layout even when nothing
-	// references it (it contains no secrets).
-	assert.Contains(t, all, "buildhost_private_download.rb")
+	assert.NotContains(t, all, "BuildhostCurlDownloadStrategy")
 }
 
 func TestRedirectTap_AnonymousRedirects_AuthenticatedServedInPlace(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
 	seedPrivateBrewProject(t, d, store, "secretapp", "priv-binary")
@@ -169,8 +163,7 @@ func TestRedirectTap_AnonymousRedirects_AuthenticatedServedInPlace(t *testing.T)
 	require.Equal(t, http.StatusMovedPermanently, anon.Code)
 	assert.Equal(t, "https://git.example.com/brew/tap.git/info/refs", anon.Header().Get("Location"))
 
-	// A credentialed request must NOT be redirected: the client would drop the
-	// credential on the cross-host follow and silently land on the public tap.
+	// A credentialed request must NOT be redirected.
 	authed := tapFile(t, h.RedirectTap, "/tap.git/info/refs", "info/refs", nil, true)
 	require.Equal(t, http.StatusOK, authed.Code)
 	assert.Equal(t, "private, no-store", authed.Header().Get("Cache-Control"))
@@ -179,6 +172,7 @@ func TestRedirectTap_AnonymousRedirects_AuthenticatedServedInPlace(t *testing.T)
 }
 
 func TestTapSnapshots_KeyedByScopeWithoutThrashing(t *testing.T) {
+	t.Serial()
 	oldTTL := tapCacheTTL
 	tapCacheTTL = time.Hour
 	t.Cleanup(func() { tapCacheTTL = oldTTL })
@@ -192,12 +186,9 @@ func TestTapSnapshots_KeyedByScopeWithoutThrashing(t *testing.T) {
 	authed1 := tapFile(t, h.ServeTap, "/brew/tap.git/info/refs", "info/refs", nil, true)
 	require.Equal(t, http.StatusOK, authed1.Code)
 
-	// Different scopes serve different tap builds (the scoped one carries the
-	// extra private formula, so the commits differ)...
 	assert.NotEqual(t, anon1.Body.String(), authed1.Body.String())
 
 	// ...and revisiting each scope hits its own live snapshot: same bytes, no
-	// rebuild thrash between interleaved anonymous and authenticated clients.
 	anon2 := tapFile(t, h.ServeTap, "/brew/tap.git/info/refs", "info/refs", nil, false)
 	authed2 := tapFile(t, h.ServeTap, "/brew/tap.git/info/refs", "info/refs", nil, true)
 	assert.Equal(t, anon1.Body.String(), anon2.Body.String())
@@ -208,6 +199,7 @@ func TestTapSnapshots_KeyedByScopeWithoutThrashing(t *testing.T) {
 }
 
 func TestServeFormula_PrivateProjectUsesTokenStrategyAndNoStore(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj := seedPrivateBrewProject(t, d, store, "secretapp", "priv-binary")
 
@@ -220,16 +212,14 @@ func TestServeFormula_PrivateProjectUsesTokenStrategyAndNoStore(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
 	body := rec.Body.String()
-	assert.Contains(t, body, `require_relative "../lib/buildhost_private_download"`)
+	assert.Contains(t, body, "class BuildhostCurlDownloadStrategy < CurlDownloadStrategy")
 	assert.Contains(t, body, "using: BuildhostCurlDownloadStrategy")
-	// The formula must never embed the caller's token; auth comes from
-	// HOMEBREW_BUILDHOST_TOKEN at install time.
+	// The formula must never embed the caller's token.
 	assert.NotContains(t, body, "token=")
 }
 
 // tapFilesText concatenates every tap file path and its content, so tests can
-// assert on tap contents (formula filenames live in the paths, formula text in
-// the values) in one string.
+// assert on tap contents (formula filenames live in the paths.
 func tapFilesText(files map[string][]byte) string {
 	var b strings.Builder
 	for path, data := range files {
@@ -245,17 +235,15 @@ func tapFilesText(files map[string][]byte) string {
 // (Homebrew scrubs everything else before formula code runs) and no token may
 // be baked in.
 func TestPrivateStrategySource(t *testing.T) {
+	t.Serial()
 	assert.Contains(t, repackage.BrewPrivateStrategy, `ENV["HOMEBREW_BUILDHOST_TOKEN"]`)
 	assert.Contains(t, repackage.BrewPrivateStrategy, "Authorization: Bearer ")
-	assert.Equal(t, "lib/buildhost_private_download.rb", repackage.BrewPrivateStrategyPath)
 }
 
 // A digit-leading project name is structurally unloadable by Homebrew, and
-// emitting `class 7zip < Formula` is a guaranteed ".rb: syntax error" that
-// breaks evaluation of the whole tap (reproduced against Homebrew 6.0.9). It
-// must 404 on the formula endpoint and never appear in the tap; names with
-// dots must fold into a valid class exactly like brew's own derivation.
+// emitting `class 7zip < Formula` is a guaranteed ".rb.
 func TestHostileProjectNames_NeverEmitInvalidRuby(t *testing.T) {
+	t.Serial()
 	h, d, store := setupTest(t)
 	proj, _, _ := seedBrewProject(t, d, store, "7zip", "digit-binary")
 	seedBrewProject(t, d, store, "dotted.app", "dotted-binary")

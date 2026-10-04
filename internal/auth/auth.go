@@ -18,18 +18,21 @@ const (
 	oidcRepoKey
 	userKey
 	githubTokenKey
+	sessionTokenDeadKey
+	runLockRepoKey
 )
 
-// oidcRepo carries the GitHub repo identity from a verified OIDC token, so the
-// project-auth middleware can resolve the repo's default branch from GitHub and
-// persist the repo on the project for GitHub-login authorization.
-type oidcRepo struct {
-	repoPath string // "owner/repo"
-	issuer   string
+// OIDCRepoIdentity carries the GitHub repo identity from a verified OIDC
+type OIDCRepoIdentity struct {
+	RepoPath string // "owner/repo" (plain names, IDs stripped)
+	Issuer   string
+	OwnerID  string
+	RepoID   string
+	// RunID / RunAttempt name the workflow run and attempt that minted the token.
+	RunID      string
+	RunAttempt string
 }
 
-// WithGitHubToken stashes the signed-in user's GitHub OAuth token (from the
-// session) so requireProject can check their access to a project's repo.
 func WithGitHubToken(ctx context.Context, token string) context.Context {
 	return context.WithValue(ctx, githubTokenKey, token)
 }
@@ -39,10 +42,19 @@ func GitHubTokenFrom(ctx context.Context) string {
 	return s
 }
 
+// WithSessionTokenDead marks the request's bh_session as carrying a dead GitHub
+func WithSessionTokenDead(ctx context.Context) context.Context {
+	return context.WithValue(ctx, sessionTokenDeadKey, true)
+}
+
+// SessionTokenDeadFrom reports whether the session's GitHub token was found
+// dead by the repo-access probe.
+func SessionTokenDeadFrom(ctx context.Context) bool {
+	v, _ := ctx.Value(sessionTokenDeadKey).(bool)
+	return v
+}
+
 // WithUser marks the request as a signed-in human (identity is their GitHub
-// login), set from a verified bh_session cookie after a Sign in with GitHub
-// flow. A request carrying it may read a private project when the user can
-// access that project's repo. It never grants write.
 func WithUser(ctx context.Context, login string) context.Context {
 	return context.WithValue(ctx, userKey, login)
 }
@@ -99,23 +111,37 @@ func OIDCPrivateFrom(ctx context.Context) (bool, bool) {
 	return v, ok
 }
 
-// WithOIDCRepo records the GitHub repo identity (owner/repo) and issuer from a
-// verified OIDC token, so the project-auth middleware can resolve the repo's
-// default branch from GitHub.
-func WithOIDCRepo(ctx context.Context, repoPath, issuer string) context.Context {
-	return context.WithValue(ctx, oidcRepoKey, oidcRepo{repoPath: repoPath, issuer: issuer})
+// WithOIDCRepo records the GitHub repo identity (owner/repo, issuer, numeric
+func WithOIDCRepo(ctx context.Context, identity OIDCRepoIdentity) context.Context {
+	return context.WithValue(ctx, oidcRepoKey, identity)
 }
 
-// OIDCRepoFrom returns the OIDC repo path ("owner/repo") and issuer, or empty
-// strings if none was recorded.
-func OIDCRepoFrom(ctx context.Context) (repoPath, issuer string) {
-	v, _ := ctx.Value(oidcRepoKey).(oidcRepo)
-	return v.repoPath, v.issuer
+func OIDCRepoFrom(ctx context.Context) OIDCRepoIdentity {
+	v, _ := ctx.Value(oidcRepoKey).(OIDCRepoIdentity)
+	return v
 }
 
-// WithOIDCError records why OIDC verification failed for a presented JWT, so an
-// eventual 401 can explain the reason instead of a bare "authentication
-// required". It is set only when a JWT was presented and rejected.
+// withRunLockOnlyRepo records the identity of a verified token that the event
+// allowlist refused. Only RunLockRepoFrom reads it.
+func withRunLockOnlyRepo(ctx context.Context, identity OIDCRepoIdentity) context.Context {
+	return context.WithValue(ctx, runLockRepoKey, identity)
+}
+
+// RunLockRepoFrom returns the run identity a run lock request may act for: the
+// identity of an accepted OIDC token, or of a verified token that only the
+// event allowlist refused. A run lock grants nothing but the run's own locks,
+// so a scheduled run can use them while the rest of the API refuses it.
+func RunLockRepoFrom(ctx context.Context) (OIDCRepoIdentity, bool) {
+	if t := TokenFrom(ctx); t != nil && t.HasScope("write") {
+		if repo := OIDCRepoFrom(ctx); repo.RepoID != "" {
+			return repo, true
+		}
+	}
+	repo, ok := ctx.Value(runLockRepoKey).(OIDCRepoIdentity)
+	return repo, ok && repo.RepoID != ""
+}
+
+// WithOIDCError records why OIDC verification failed for a presented JWT.
 func WithOIDCError(ctx context.Context, err error) context.Context {
 	return context.WithValue(ctx, oidcErrorKey, err)
 }
