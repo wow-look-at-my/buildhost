@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/wow-look-at-my/go-containers/set"
 	mmap "github.com/wow-look-at-my/go-mmap"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -150,11 +149,15 @@ func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+<<<<<<< HEAD
 	files := map[string][]byte{
 		repackage.BrewPrivateStrategyPath: []byte(repackage.BrewPrivateStrategy),
 	}
 	budget := tapInlineDigestBudget
 	var formulas []string
+=======
+	files := map[string][]byte{}
+>>>>>>> origin/master
 	for _, project := range visible {
 		release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
 		if err != nil {
@@ -167,7 +170,7 @@ func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		out, err := h.formulaForRelease(r.Context(), project, *release, artifacts, auth.RequestRootURL(r), formulaLatest, nil)
+		out, err := h.formulaForRelease(r.Context(), project, *release, artifacts, auth.RequestRootURL(r), formulaLatest)
 		if err != nil {
 			if errors.Is(err, db.ErrNotFound) {
 				continue
@@ -179,17 +182,21 @@ func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 			return nil, err
 		}
 		files[repackage.BrewFormulaPath(project.Name)] = data
+<<<<<<< HEAD
 		formulas = append(formulas, project.Name)
 
 		if err := h.addVersionedFormulas(r, project, files, &budget); err != nil {
 			return nil, err
 		}
+=======
+>>>>>>> origin/master
 	}
 	addRootAliases(files, formulas)
 
 	return files, nil
 }
 
+<<<<<<< HEAD
 // tapAliasDir holds Homebrew's tap aliases. Brew reads an alias only as a symlink to a formula file.
 const tapAliasDir = "Aliases"
 
@@ -263,18 +270,79 @@ func (h *Handler) addVersionedFormulas(r *http.Request, project db.Project, file
 func buildGitObjects(files map[string][]byte, parent string) (objects map[string][]byte, commitSHA, rootTreeSHA string) {
 	objects = map[string][]byte{}
 	rootTreeSHA = writeGitTree(objects, files, true, gitModeFile)
+=======
+// tapHistoryFormula is one past release's formula, at the path the tap's
+// latest formula for that project uses.
+type tapHistoryFormula struct {
+	path      string
+	data      []byte
+	releaseID int64
+}
 
+// tapHistory renders every published default-branch release of every visible
+// project, oldest first. A release whose digests are not cached yet is left
+// out and queued on the background filler: a tap request never hashes one.
+func (h *Handler) tapHistory(r *http.Request) ([]tapHistoryFormula, error) {
+	visible, err := h.tapVisibleProjects(r)
+	if err != nil {
+		return nil, err
+	}
+	var history []tapHistoryFormula
+	for _, project := range visible {
+		releases, err := h.DB.ListPublishedReleasesOnDefaultBranch(r.Context(), project.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, release := range releases {
+			artifacts, err := h.DB.ListArtifactsByPlatform(r.Context(), release.ID)
+			if err != nil {
+				return nil, err
+			}
+			out, err := h.formulaForRelease(r.Context(), project, release, artifacts, auth.RequestRootURL(r), formulaHistory)
+			if errors.Is(err, db.ErrNotFound) || errors.Is(err, errDigestPending) {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			data, err := io.ReadAll(out.Reader)
+			if err != nil {
+				return nil, err
+			}
+			history = append(history, tapHistoryFormula{path: repackage.BrewFormulaPath(project.Name), data: data, releaseID: release.ID})
+		}
+	}
+	sort.Slice(history, func(i, j int) bool { return history[i].releaseID < history[j].releaseID })
+	return history, nil
+}
+>>>>>>> origin/master
+
+// gitObjects collects the loose objects of the commits one refresh appends.
+type gitObjects map[string][]byte
+
+// blobs adds each file's blob and returns the path -> blob sha map.
+func (o gitObjects) blobs(files map[string][]byte) map[string]string {
+	shas := make(map[string]string, len(files))
+	for path, body := range files {
+		shas[path] = addGitObject(o, "blob", body)
+	}
+	return shas
+}
+
+// commit adds the tree for blobs and a commit of it with parent, and returns
+// the commit and tree shas.
+func (o gitObjects) commit(blobs map[string]string, parent string) (commitSHA, treeSHA string) {
+	treeSHA = o.tree(blobs)
 	var commit bytes.Buffer
-	fmt.Fprintf(&commit, "tree %s\n", rootTreeSHA)
+	fmt.Fprintf(&commit, "tree %s\n", treeSHA)
 	if parent != "" {
 		fmt.Fprintf(&commit, "parent %s\n", parent)
 	}
 	commit.WriteString("author buildhost <buildhost@localhost> 0 +0000\ncommitter buildhost <buildhost@localhost> 0 +0000\n\nUpdate Homebrew tap\n")
-	commitSHA = addGitObject(objects, "commit", commit.Bytes())
-
-	return objects, commitSHA, rootTreeSHA
+	return addGitObject(o, "commit", commit.Bytes()), treeSHA
 }
 
+<<<<<<< HEAD
 const (
 	gitModeFile    = "100644"
 	gitModeSymlink = "120000"
@@ -284,27 +352,40 @@ const (
 // relative to this tree) to objects, at any depth, and returns the tree's sha.
 // A file in the root's tapAliasDir is a symlink, and its body is the link target.
 func writeGitTree(objects map[string][]byte, files map[string][]byte, root bool, mode string) string {
+=======
+// tree adds the trees for blobs (slash-separated paths relative to this tree
+// -> blob sha), at any depth, and returns the tree's sha.
+func (o gitObjects) tree(blobs map[string]string) string {
+>>>>>>> origin/master
 	var entries []gitTreeEntry
-	subdirs := map[string]map[string][]byte{}
-	for name, body := range files {
+	subdirs := map[string]map[string]string{}
+	for name, sha := range blobs {
 		dir, rest, nested := strings.Cut(name, "/")
 		if !nested {
+<<<<<<< HEAD
 			entries = append(entries, gitTreeEntry{Mode: mode, Name: name, SHA: addGitObject(objects, "blob", body)})
+=======
+			entries = append(entries, gitTreeEntry{Mode: "100644", Name: name, SHA: sha})
+>>>>>>> origin/master
 			continue
 		}
 		if subdirs[dir] == nil {
-			subdirs[dir] = map[string][]byte{}
+			subdirs[dir] = map[string]string{}
 		}
-		subdirs[dir][rest] = body
+		subdirs[dir][rest] = sha
 	}
 	for dir, sub := range subdirs {
+<<<<<<< HEAD
 		subMode := mode
 		if root && dir == tapAliasDir {
 			subMode = gitModeSymlink
 		}
 		entries = append(entries, gitTreeEntry{Mode: "40000", Name: dir, SHA: writeGitTree(objects, sub, false, subMode)})
+=======
+		entries = append(entries, gitTreeEntry{Mode: "40000", Name: dir, SHA: o.tree(sub)})
+>>>>>>> origin/master
 	}
-	return addGitObject(objects, "tree", gitTree(entries))
+	return addGitObject(o, "tree", gitTree(entries))
 }
 
 type gitTreeEntry struct {
@@ -336,10 +417,13 @@ func gitTree(entries []gitTreeEntry) []byte {
 	return buf.Bytes()
 }
 
-func addGitObject(objects map[string][]byte, kind string, body []byte) string {
+func addGitObject(objects gitObjects, kind string, body []byte) string {
 	raw := append([]byte(fmt.Sprintf("%s %d\x00", kind, len(body))), body...)
 	sum := sha1.Sum(raw)
 	sha := hex.EncodeToString(sum[:])
+	if _, ok := objects[sha]; ok {
+		return sha
+	}
 
 	var compressed bytes.Buffer
 	zw := zlib.NewWriter(&compressed)
