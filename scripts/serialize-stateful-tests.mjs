@@ -16,8 +16,7 @@ if (dirs.length === 0) {
 	process.exit(2);
 }
 
-// Matches `func TestName(t *testing.T) {` on its own line. A subtest closure
-// takes its own *testing.T from t.Run, so it never matches.
+// Matches `func TestName(t *testing.T) {` on its own line.
 const testFunc = /^func (Test[A-Za-z0-9_]*)\(([a-zA-Z_][A-Za-z0-9_]*) \*testing\.T\) \{$/;
 
 let changed = 0;

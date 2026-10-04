@@ -43,8 +43,8 @@ func TestCanAccessRepo(t *testing.T) {
 	assert.False(t, canAccess(t, g, "alice", "", "PazerOP/allowed"))
 }
 
-// canAccess collapses canAccessRepo's (allowed, tokenDead) pair to just
-// allowed, for tests that only assert access.
+// canAccess collapses canAccessRepo's (allowed, tokenDead) pair to allowed,
+// for tests that only assert access.
 func canAccess(t *testing.T, g *GitHubAuth, login, token, repo string) bool {
 	t.Helper()
 	allowed, _ := g.canAccessRepo(context.Background(), login, token, repo)

@@ -9,11 +9,15 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
+
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 const tapHistoryDirName = "brew-tap"
@@ -23,7 +27,7 @@ const tapHistoryMaxLineages = 64
 
 // tapHistoryRoot returns the persistent lineage-store root. Production always
 // wires DataDir (OnReady); the fallbacks keep bare test constructions working
-// without ever colliding with the legacy tmp snapshot dir.
+// without ever colliding with the tmp snapshot dir.
 func (h *Handler) tapHistoryRoot() string {
 	if h.DataDir != "" {
 		return filepath.Join(h.DataDir, tapHistoryDirName)
@@ -44,12 +48,22 @@ func (h *Handler) tapLineageDir(key string) string {
 // refreshTapLineage recomputes the tap contents for the request's scope and
 // advances the lineage store at dir. If the new content's tree equals the
 // persisted tip's tree the tip commit is REUSED (no growth from the periodic
-// TTL rebuilds); otherwise a child commit of the tip is minted, its objects
+// TTL rebuilds); otherwise child commits of the tip are minted, their objects
 // are written (content-addressed, idempotent, temp+rename), and only then is
 // the tip advanced -- so a reader can never observe a ref naming objects that
 // are not yet on disk, and a crash at any point leaves a consistent store.
+//
+// The tree holds only the latest formula of each project. brew extract, which
+// brew version-install runs, finds an older version in the history instead.
+// So every past release the lineage has not recorded yet gets one commit that
+// sets its project's formula to that release, before the commit of the
+// current tree. Those commits are appended, so a clone still fast-forwards.
 func (h *Handler) refreshTapLineage(r *http.Request, dir string) error {
-	files, err := h.buildTapFiles(r)
+	files, names, err := h.buildTap(r)
+	if err != nil {
+		return err
+	}
+	history, err := h.tapHistory(r, names)
 	if err != nil {
 		return err
 	}
@@ -58,8 +72,23 @@ func (h *Handler) refreshTapLineage(r *http.Request, dir string) error {
 	}
 
 	tip := readTapTip(dir)
-	objects, commitSHA, treeSHA := buildGitObjects(files, tip)
-	if tip != "" {
+	recorded := readTapHistoryKeys(dir)
+	objects := gitObjects{}
+	current := objects.blobs(files)
+	head := tip
+	var appended []string
+	for _, f := range history {
+		key := tapHistoryKey(f.path, f.data)
+		if recorded.Contains(key) || bytes.Equal(files[f.path], f.data) {
+			continue
+		}
+		blobs := maps.Clone(current)
+		blobs[f.path] = addGitObject(objects, "blob", f.data)
+		head, _ = objects.commit(blobs, head)
+		appended = append(appended, key)
+	}
+	commitSHA, treeSHA := objects.commit(current, head)
+	if len(appended) == 0 && tip != "" {
 		if tipTree, err := readCommitTree(dir, tip); err == nil && tipTree == treeSHA {
 			// Content unchanged: keep the tip commit -- the sha stays stable
 			touchTapLineage(dir)
@@ -72,8 +101,48 @@ func (h *Handler) refreshTapLineage(r *http.Request, dir string) error {
 	if err := advanceTapTip(dir, commitSHA); err != nil {
 		return err
 	}
+	for path, data := range files {
+		appended = append(appended, tapHistoryKey(path, data))
+	}
+	for _, key := range appended {
+		recorded.Add(key)
+	}
+	if err := writeTapHistoryKeys(dir, recorded); err != nil {
+		return err
+	}
 	touchTapLineage(dir)
 	return nil
+}
+
+// tapHistoryKeysFile lists one key per formula state the lineage's history already holds.
+const tapHistoryKeysFile = "buildhost-history-keys"
+
+// tapHistoryKey names one formula state: the path and its exact bytes.
+func tapHistoryKey(path string, data []byte) string {
+	sum := sha256.Sum256(data)
+	return path + "\t" + hex.EncodeToString(sum[:])
+}
+
+func readTapHistoryKeys(dir string) set.Set[string] {
+	keys := set.New[string]()
+	b, err := os.ReadFile(filepath.Join(dir, tapHistoryKeysFile))
+	if err != nil {
+		return keys
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if line != "" {
+			keys.Add(line)
+		}
+	}
+	return keys
+}
+
+// writeTapHistoryKeys runs after the tip advances. A crash in between only
+// makes the next refresh append the same states again.
+func writeTapHistoryKeys(dir string, keys set.Set[string]) error {
+	lines := keys.Values()
+	slices.Sort(lines)
+	return writeTapFileAtomic(dir, tapHistoryKeysFile, []byte(strings.Join(lines, "\n")+"\n"))
 }
 
 // readTapTip returns the lineage's persisted tip commit sha.

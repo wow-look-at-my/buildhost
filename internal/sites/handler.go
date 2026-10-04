@@ -25,7 +25,7 @@ func init() {
 	})
 	// Config-conditional {project}.<site-domain> scheme (see subdomain.go).
 	auth.OnSiteDomain(registerSiteDomainRoutes)
-	// The original /branch/{branch}/ form. Kept working forever -- it is what
+	// The /branch/{branch}/ form. Kept working forever -- it is what
 	auth.ServiceHandle("sites", "PUT /{project}/branch/{branch}", parseRoute, handler.Upload)
 	auth.ServiceHandle("sites", "DELETE /{project}/branch/{branch}", parseRoute, handler.Delete)
 	auth.ServiceHandle("sites", "GET /{project}/branch/{branch}/{path...}", parseRoute, handler.RedirectLegacyBranch)

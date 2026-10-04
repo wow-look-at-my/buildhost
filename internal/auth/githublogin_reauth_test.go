@@ -82,10 +82,10 @@ func TestCanAccessRepo_TransientStatuses_NotTokenDead(t *testing.T) {
 
 // The regression this split exists for: a browser whose session cookie still
 // MAC-verifies but whose embedded GitHub token has died (revoked, or an
-// expiring token) used to be dead-ended on the misleading "your account doesn't
-// have access" page for the cookie's remaining lifetime. Now the dead session
-// is cleared and the browser is transparently sent back through sign-in,
-// returning to the original URL.
+// expiring token) used to be dead-ended on the misleading "your account
+// doesn't have access" page for the cookie's remaining lifetime. Now the dead
+// session is cleared and the browser is transparently sent back through
+// sign-in, returning to the URL.
 func TestRequireProject_Browser_SessionTokenDead_ClearsSessionAndReauths(t *testing.T) {
 	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

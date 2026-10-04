@@ -177,8 +177,8 @@ func (a *Archive) OpenFile(p string) (io.Reader, Entry, error) {
 }
 
 // WriteTar rebuilds a tar stream from the archive, so a caller that must hand
-// out the original packaging (an npm .tgz, a browser download) can regenerate
-// it from the indexed form.
+// out the packaging (an npm .tgz, a browser download) can regenerate it from
+// the indexed form.
 func (a *Archive) WriteTar(w io.Writer) error {
 	tw := tar.NewWriter(w)
 	for _, e := range a.entries {

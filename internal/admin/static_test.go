@@ -22,15 +22,16 @@ func readBundle(t *testing.T) string {
 	return string(data)
 }
 
-// The dashboard wires its buttons with inline onclick="App.x(...)" markup, and
-// the bundle only exposes App.x for names the TypeScript EXPORTS. A handler that
-// is referenced but not exported is a silently dead button -- no build error,
-// nothing red in CI, just a control that does nothing when clicked.
+// The dashboard wires its buttons with inline onclick="App.x(...)" markup,
+// and the bundle only exposes App.x for names the TypeScript EXPORTS. A
+// handler that is referenced but not exported is a silently dead button -- no
+// build error, nothing red in CI, a control that does nothing when clicked.
 //
 // This is also the check that would have caught the drift this file was
-// rewritten for: the committed bundle had diverged from its TypeScript source,
-// and the old assertions (on internal function names) passed against the stale
-// artifact while the real source could not have produced a working dashboard.
+// rewritten for: the committed bundle had diverged from its TypeScript
+// source, and the assertions (on internal function names) passed against the
+// stale artifact while the real source could not have produced a working
+// dashboard.
 func TestAdminStaticInlineHandlersAreExported(t *testing.T) {
 	t.Serial()
 	body := readBundle(t)
@@ -67,7 +68,9 @@ func TestAdminStaticHomebrewInstructionsUseTap(t *testing.T) {
 	// A formula name cannot contain '/', so the placeholder is the FOLDED
 	require.Contains(t, body, "brew install pazer/build/{formula}")
 	require.NotContains(t, body, "brew install pazer/build/{project}")
-	require.Contains(t, body, "/tap.git\\nbrew trust pazer/build\\nbrew install pazer/build/")
+	require.Contains(t, body, "brew trust ")
+	require.Contains(t, body, "/tap.git\\nbrew tap pazer/build ")
+	require.Contains(t, body, "/tap.git\\nbrew install pazer/build/")
 }
 
 // Slash-namespaced projects render as a tree on the Projects page. These are the
@@ -104,7 +107,7 @@ func TestAdminStaticPrivateDownloadsMintLinks(t *testing.T) {
 	require.Contains(t, body, "App.downloadArtifact")
 }
 
-// Every script the dashboard's HTML loads must be a file that actually gets
+// Every script the dashboard's HTML loads must be a file that gets
 func TestAdminStaticScriptTagsResolve(t *testing.T) {
 	t.Serial()
 	index, err := os.ReadFile("static/index.html")
@@ -126,7 +129,7 @@ func TestAdminStaticSiteLinksUseRefSigil(t *testing.T) {
 	require.NotContains(t, body, `/branch/" +`,
 		`a site link is built by concatenating a branch onto "/branch/"; use siteBranchURL (the "@" form) -- "/branch/" only redirects on reads`)
 	require.Contains(t, body, `"/@"`, "the canonical site-link helper is gone")
-	// The write endpoints keep the old spelling; if they ever disappear, this
+	// The write endpoints keep the spelling; if they ever disappear, this
 	require.Contains(t, body, "/branch/{branch}", "the site write endpoints should still be documented")
 }
 

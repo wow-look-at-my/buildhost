@@ -1,12 +1,4 @@
 // Handing the published site URL to the pull request it previews.
-//
-// A gallery nobody is handed is a gallery nobody opens. Publishing per branch
-// only pays off when a reviewer looks before merging, so the publish itself
-// posts the link rather than leaving each consumer to re-implement a sticky
-// comment.
-//
-// Loaded by `require(".../preview-comment.ts")` (node strips the types) typed as
-// `typeof import(".../preview-comment")`, the same as storage-record.ts.
 
 export interface Core { info(m: string): void; warning(m: string): void; setFailed(m: string): void }
 export interface Context { repo: { owner: string; repo: string } }

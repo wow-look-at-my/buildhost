@@ -6,15 +6,16 @@
 # The assertions about what it prints live in test/dats/homebrew-*.dats.
 set -euo pipefail
 
-leg="${1:?usage: brew-doc-flows.sh public|private <host:port>}"
-local_host="${2:?usage: brew-doc-flows.sh public|private <host:port>}"
+leg="${1:?usage: brew-doc-flows.sh public|private|version <host:port>}"
+local_host="${2:?usage: brew-doc-flows.sh public|private|version <host:port>}"
 doc_host="brew.pazer.build"
-readme="$(dirname "$0")/../README.md"
+doc="$(dirname "$0")/../docs/homebrew.md"
 
 case "$leg" in
-	public) section='^## Homebrew$'; stop='^#{1,3} ' ;;
-	private) section='^### Private projects$'; stop='^#{1,3} ' ;;
-	*) echo "unknown leg $leg: want public or private" >&2; exit 1 ;;
+	public) section='^# Homebrew$'; stop='^#{1,3} ' ;;
+	private) section='^## Private projects$'; stop='^#{1,3} ' ;;
+	version) section='^## Specific versions$'; stop='^#{1,3} ' ;;
+	*) echo "unknown leg $leg: want public, private or version" >&2; exit 1 ;;
 esac
 
 block="$(awk -v section="$section" -v stop="$stop" '
@@ -23,7 +24,7 @@ block="$(awk -v section="$section" -v stop="$stop" '
 	$0 == "```bash" { fence = 1; next }
 	fence && $0 == "```" { exit }
 	fence { print }
-' "$readme")"
+' "$doc")"
 
-test -n "$block" || { echo "README.md: no fenced bash block for the $leg flow" >&2; exit 1; }
+test -n "$block" || { echo "docs/homebrew.md: no fenced bash block for the $leg flow" >&2; exit 1; }
 printf '%s\n' "$block" | sed -e 's|https://|http://|g' -e "s|$doc_host|$local_host|g"

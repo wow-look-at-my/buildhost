@@ -156,7 +156,7 @@ func (h *Handler) dropTapLineageLocked(key string) {
 	delete(h.tapSnaps, key)
 }
 
-// tapRoot returns the LEGACY scratch directory old snapshots lived under, kept
+// tapRoot returns the scratch directory old snapshots lived under, kept
 func (h *Handler) tapRoot() string {
 	base := h.TmpDir
 	if base == "" {

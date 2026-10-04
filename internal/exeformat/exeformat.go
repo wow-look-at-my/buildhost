@@ -4,7 +4,7 @@ package exeformat
 // Format names a recognized executable container. Empty means unrecognized.
 type Format string
 
-// APE is an Actually Portable Executable: a polyglot shell script / PE / ELF /
+// APE is an Portable Executable: a polyglot shell script / PE / ELF /
 const APE Format = "ape"
 
 // Label is the badge text for a format, e.g. "APE".

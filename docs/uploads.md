@@ -22,7 +22,7 @@ A section count of one is Cosmopolitan's do-nothing stub header. It maps none of
 
 Another section count reads as a real boot header. An APE from another Cosmopolitan toolchain is therefore not rejected for a different section layout. A PE header past the sniff window (`exeformat.SniffLen`) reads as unknown, rather than as a rejection.
 
-Multi-platform publish fan-out happens at upload time, never at download time. One uploaded blob becomes N ordinary per-platform artifact rows. A comma list, or the `cosmo` or `any` alias, in the upload URL's `{os}` and `{arch}` segments asks for it, for a non-APE upload. An APE takes the one-row path above instead.
+Multi-platform publish fan-out happens at upload time, not at download time. One uploaded blob becomes N ordinary per-platform artifact rows. A comma list, or the `cosmo` or `any` alias, in the upload URL's `{os}` and `{arch}` segments asks for it, for a non-APE upload. An APE takes the one-row path above instead.
 
 There is deliberately no stored `os=any` value and no download-time fallback. Downloads, `latest` resolution, the format handlers, retention refcounting and CDN caching therefore all see plain per-platform artifacts. `IsBlobReferenced` counts the shared blob until the last row goes.
 
@@ -34,7 +34,7 @@ That is how one uploaded binary covers an exact slot set the cartesian grammar c
 
 `resolveHashRef` in `artifacts.go` runs the flow. A bad hex shape answers 400. The same-project gate is `db.BlobBelongsToProject`. Its failure is a 404 byte-identical to the answer for an unknown blob. A public sha256 can therefore never mint a row that serves another project's bytes. `Store.Exists` follows, and answers 404 when the blob was garbage-collected. A header-only `Store.Get` then reads the row size.
 
-The combination build, the row insert, the 409 conflict semantics and the 201 responses are shared with a full upload. Each hash-ref request carries its own `X-Artifact-Filename`, so filenames are per slot. Fan-out has one shared header instead.
+The combination build, the row insert, the 409 conflict semantics and the responses are shared with a full upload. Each hash-ref request carries its own `X-Artifact-Filename`, so filenames are per slot. Fan-out has one shared header instead.
 
 Server-info advertises `upload_by_sha256: true`. A body-carrying PUT ignores the parameter. A session finalize reads it as the spool integrity check. Both are byte-identical to before.
 
@@ -42,7 +42,7 @@ Server-info advertises `upload_by_sha256: true`. A body-carrying PUT ignores the
 
 The buildhost-publish action groups discovered artifacts by sha256. It sends that one request when a group's slots are exactly the product of the platforms it covers. Every cosmo build is such a group. That case is what motivated hash references at all.
 
-Only a ragged set falls through to an upload followed by a hash reference. `{linux/amd64, linux/arm64, windows/amd64}` with no `windows/arm64` is such a set. Any status other than 201 or 409 there triggers a full upload, in case the blob was evicted in between.
+Only a ragged set falls through to an upload followed by a hash reference. `{linux/amd64, linux/arm64, windows/amd64}` with no `windows/arm64` is such a set. Any status other than 201 or there triggers a full upload, in case the blob was evicted in between.
 
 `buildhost publish --manifest` still hash-refs per entry. A manifest names each slot's own `X-Artifact-Filename`, which fan-out's single shared header cannot carry.
 
@@ -68,7 +68,7 @@ These are generic chunked upload sessions. A client can deliver an arbitrarily l
 
 **Finalize by reference** is the key move. The `ResolveSessionBody` middleware is wired in `internal/server`, between `Authenticate` and routing. It intercepts any mutating request that carries `?upload_session=<id>` with an empty body. It verifies ownership, and answers 404 otherwise, so there is no existence leak. It verifies the optional `?upload_sha256=` or `X-Upload-SHA256` integrity hash. It then swaps the spool file in as `r.Body`. Every existing endpoint's routing, project auth, size caps and storage logic therefore runs unchanged.
 
-The session is consumed on a 2xx response. It is kept for a retry on any other status. A spool lives at `{DataDir}/tmp/uploads/<id>.spool`. It is capped at `BUILDHOST_MAX_UPLOAD_SIZE` **at append time**. It is swept after `BUILDHOST_UPLOAD_SESSION_TTL`, which defaults to 24h. Three things sweep: an opportunistic sweep on create, a 15-minute janitor that serve starts, and orphan cleanup at startup.
+The session is consumed on a 2xx response. It is kept for a retry on any other status. A spool lives at `{DataDir}/tmp/uploads/<id>.spool`. It is capped at `BUILDHOST_MAX_UPLOAD_SIZE` **at append time**. It is swept after `BUILDHOST_UPLOAD_SESSION_TTL`, which defaults to 24h. Things sweep: an opportunistic sweep on create, a 15-minute janitor that serve starts, and orphan cleanup at startup.
 
 A session is server memory plus a spool file, which is the same model as the OCI blob upload store. A container swap mid-session answers the next chunk with a clean 404, and the client restarts.
 
@@ -84,7 +84,7 @@ The CLI does this automatically. A client decides from the advertised limit BEFO
 
 A small file keeps the classic single request, byte for byte. A larger file creates a session. The engine appends sequential chunks, of 64 MiB by default. `--chunk-size` sets that, and `0` disables chunking. Each chunk has its own retry and backoff, which resumes from the server's committed size, read from a 409 or from the status endpoint. The engine finalizes with the file's sha256. On a hard failure it makes a best-effort DELETE of the session.
 
-A missing session endpoint is a hard error, not a mode. The one buildhost advertises `upload_sessions`. The old 404 and 405 fallback had one real effect. It sent a several-hundred-megabyte single request. The proxy rejected that with a 413 nobody was able to trace back to the client.
+A missing session endpoint is a hard error, not a mode. The buildhost advertises `upload_sessions`. The old 404 and 405 fallback had one real effect. It sent a several-hundred-megabyte single request. The proxy rejected that with a 413 nobody was able to trace back to the client.
 
 The engine lives in `internal/`, and not in `cmd/`. Its tests therefore do not drag the untested CLI package into coverage.
 
@@ -100,7 +100,7 @@ A blob the registry already has is skipped after a HEAD. A blob small enough for
 
 Every upload request sets `GetBody`. Without it net/http declines to retry a request once the body is written, and one mid-flight stream error fails the whole publish.
 
-The layout walk pushes depth-first. It pushes the blobs, then each child manifest by digest, and an attestation manifest is included. It pushes the root by each tag last. It requires exactly one top-level `index.json` entry, so a push carries one image.
+The layout walk pushes depth-first. It pushes the blobs, then each child manifest by digest, and an attestation manifest is included. It pushes the root by each tag last. It requires exactly one top-level `index.json` entry. As a result, a push carries one image.
 
 The `buildhost-publish-docker` action builds with buildx `--output type=oci,tar=false`. It pushes through this client, and builds the CLI from the action's own checkout. A tag that references a foreign registry still goes through buildx `push: true`.
 

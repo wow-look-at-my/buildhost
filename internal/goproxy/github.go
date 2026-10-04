@@ -60,7 +60,7 @@ type tagRef struct {
 }
 
 // do issues an authenticated GitHub API request and classifies the response.
-// Every non-2xx becomes a typed *Error here, which is the single place upstream
+// Every non-2xx becomes a typed *Error here, which is the place upstream
 func (g *githubSource) do(ctx context.Context, owner, repo, method, url, mod, ver, accept string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
@@ -351,7 +351,7 @@ func (g *githubSource) buildZip(ctx context.Context, ref repoRef, rev string, mv
 	if g.tarballLimit > 0 {
 		body = io.LimitReader(resp.Body, g.tarballLimit)
 	}
-	if err := extractModuleTree(body, ref.Dir, tree); err != nil {
+	if err := extractModuleTree(body, ref.Dir, tree, g.tarballLimit); err != nil {
 		return "", 0, upstreamErr(mv.Path, mv.Version, upstreamGitHub, 0, "extracting repository tarball", err)
 	}
 
@@ -374,18 +374,23 @@ func (g *githubSource) buildZip(ctx context.Context, ref repoRef, rev string, mv
 
 // extractModuleTree writes the module directory out of a GitHub repository
 // tarball into dest. GitHub wraps the repo in a single top-level directory whose
-func extractModuleTree(r io.Reader, subdir, dest string) error {
+func extractModuleTree(r io.Reader, subdir, dest string, limit int64) error {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
 		return fmt.Errorf("gzip: %w", err)
 	}
 	defer gz.Close()
 
+	var raw io.Reader = gz
+	if limit > 0 {
+		raw = &cappedReader{r: gz, limit: limit, left: limit}
+	}
+
 	want := ""
 	if subdir != "" {
 		want = strings.Trim(subdir, "/") + "/"
 	}
-	tr := tar.NewReader(gz)
+	tr := tar.NewReader(raw)
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -435,6 +440,26 @@ func safeJoin(root, rel string) (string, error) {
 		return "", fmt.Errorf("tar entry %q escapes the extraction root", rel)
 	}
 	return out, nil
+}
+
+// cappedReader fails once more than left bytes have been read, rather than
+// silently truncating the way io.LimitReader does.
+type cappedReader struct {
+	r     io.Reader
+	limit int64
+	left  int64
+}
+
+func (c *cappedReader) Read(p []byte) (int, error) {
+	if c.left <= 0 {
+		return 0, fmt.Errorf("repository tarball expands past the %d-byte limit", c.limit)
+	}
+	if int64(len(p)) > c.left {
+		p = p[:c.left]
+	}
+	n, err := c.r.Read(p)
+	c.left -= int64(n)
+	return n, err
 }
 
 func writeFile(path string, r io.Reader, size int64) error {

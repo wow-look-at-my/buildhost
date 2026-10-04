@@ -1,8 +1,7 @@
 package dl
 
-// Signed-token redirect and platform-alias tests. Split from
-// handler_test.go, which holds the core download/resolution tests and the
-// shared test helpers.
+// Signed-token redirect and platform-alias tests. Split from handler_test.go,
+// which holds the core download/resolution tests and the shared test helpers.
 
 import (
 	"net/http"

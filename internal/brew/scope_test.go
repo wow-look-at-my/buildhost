@@ -73,6 +73,7 @@ func TestServePrivateTap_TokenScopedTapIncludesPrivateFormula(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
+	seedBrewProject(t, d, store, "ns/other", "other-binary")
 	seedPrivateBrewProject(t, d, store, "ns/secretapp", "priv-binary")
 
 	// A global read token sees public + private projects.
@@ -89,14 +90,13 @@ func TestServePrivateTap_TokenScopedTapIncludesPrivateFormula(t *testing.T) {
 	all := tapFilesText(files)
 	// Private formula present under its folded name, using the token strategy.
 	assert.Contains(t, all, "ns-secretapp.rb")
-	assert.Contains(t, all, `require_relative "../lib/buildhost_private_download"`)
 	assert.Contains(t, all, "using: BuildhostCurlDownloadStrategy")
 	assert.Contains(t, all, "class NsSecretapp < Formula")
 	// Slash-named projects install by BASENAME: the tar.gz's only top-level
 	assert.Contains(t, all, `bin.install "secretapp"`)
 	assert.NotContains(t, all, `bin.install "ns/secretapp"`)
-	// The strategy library rides along and never embeds a token.
-	assert.Contains(t, all, "buildhost_private_download.rb")
+	// The formula carries the strategy inline and never embeds a token.
+	assert.NotContains(t, all, "require_relative")
 	assert.Contains(t, all, `ENV["HOMEBREW_BUILDHOST_TOKEN"]`)
 	assert.Contains(t, all, "class BuildhostCurlDownloadStrategy < CurlDownloadStrategy")
 }
@@ -150,8 +150,7 @@ func TestAnonymousTap_NeverContainsPrivateNames(t *testing.T) {
 	all := tapFilesText(files)
 	assert.Contains(t, all, "pubapp.rb")
 	assert.NotContains(t, all, "secretapp")
-	// The strategy library is part of the uniform tap layout even when nothing
-	assert.Contains(t, all, "buildhost_private_download.rb")
+	assert.NotContains(t, all, "BuildhostCurlDownloadStrategy")
 }
 
 func TestRedirectTap_AnonymousRedirects_AuthenticatedServedInPlace(t *testing.T) {
@@ -213,7 +212,7 @@ func TestServeFormula_PrivateProjectUsesTokenStrategyAndNoStore(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
 	body := rec.Body.String()
-	assert.Contains(t, body, `require_relative "../lib/buildhost_private_download"`)
+	assert.Contains(t, body, "class BuildhostCurlDownloadStrategy < CurlDownloadStrategy")
 	assert.Contains(t, body, "using: BuildhostCurlDownloadStrategy")
 	// The formula must never embed the caller's token.
 	assert.NotContains(t, body, "token=")
@@ -239,7 +238,6 @@ func TestPrivateStrategySource(t *testing.T) {
 	t.Serial()
 	assert.Contains(t, repackage.BrewPrivateStrategy, `ENV["HOMEBREW_BUILDHOST_TOKEN"]`)
 	assert.Contains(t, repackage.BrewPrivateStrategy, "Authorization: Bearer ")
-	assert.Equal(t, "lib/buildhost_private_download.rb", repackage.BrewPrivateStrategyPath)
 }
 
 // A digit-leading project name is structurally unloadable by Homebrew, and

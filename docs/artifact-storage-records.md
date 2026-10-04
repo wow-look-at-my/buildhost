@@ -6,11 +6,11 @@ Every publish composite records what buildhost stored on the org's linked artifa
 
 buildhost stores several kinds of thing. `.github/actions/lib/storage-record.ts` therefore exports a function for each one. `recordReleaseArtifacts` serves buildhost-publish and buildhost-publish-release. `recordSite` serves buildhost-publish-site. `recordImage` serves buildhost-publish-docker.
 
-Two composites record the same kind, for one reason. `buildhost-publish` is the whole pipeline in one step. `buildhost-publish-release` is the last step of the `create-release -> upload-artifact -> publish-release` chain that a publisher assembles itself.
+Composites record the same kind, for one reason. `buildhost-publish` is the whole pipeline in one step. `buildhost-publish-release` is the last step of the `create-release -> upload-artifact -> publish-release` chain that a publisher assembles itself.
 
 The pipeline cannot be built from those components. A composite action has no loop. It therefore cannot invoke `upload-artifact` once per file. It therefore reimplements the chain inline. That is why the record derivation was a second copy, with its own `dl.<host>` origin, `debug=1` URL and `sha256:` digest.
 
-**A caller passes what it published, never a record.** The module derives every field, URL, label and message. The whole per-composite footprint is therefore this:
+**A caller passes what it published, not a record.** The module derives every field, URL, label and message. The whole per-composite footprint is therefore this:
 
 ```ts
 const { recordSite } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
@@ -25,7 +25,7 @@ An earlier draft made this a reusable action invoked as its own step. That draft
 
 ## What suppresses a record
 
-Recording has no opt-out. A failure is RED. Two things skip it. Both are properties of the TARGET rather than a switch.
+Recording has no opt-out. A failure is RED. Things skip it. Both are properties of the TARGET rather than a switch.
 
 - **An unreachable registry** -- a loopback host, or a scheme other than `https://`. The row points at bytes nothing can fetch, and the API accepts only https. This keeps buildhost's own `upload-artifact-action-e2e` out of the org's inventory.
 - **A user-account owner** -- the endpoint is org-scoped. A personal account has no linked artifacts page. The POST therefore answers 404 whatever the token grants. The owner type is probed with `GET /users/{owner}`, and only after a 404. An organization therefore pays no extra call. The probe fails closed. An unreadable owner type leaves the failure standing, so a genuine permissions 404 on an org still fails.
@@ -38,11 +38,11 @@ A 403 therefore names the grant. A 404 reports what the probe observed. It says 
 
 ## Tests
 
-`test/actions/storage-record.test.ts` holds them. `test/dats/action-libs.dats` runs it, in the `storage-record` CI job. It needs its own job. The composites' own e2e publishes to a loopback server, where the skip returns before a record is posted. Every branch here therefore ships untested without that job, and a mistake fails publishing org-wide.
+`test/actions/storage-record.test.ts` holds them. `test/dats/action-libs.dats` runs it, in the `storage-record` CI job. It needs its own job. The composites' own e2e publishes to a loopback server, where the skip returns before a record is posted. Every branch here therefore ships untested without that job. A mistake fails publishing org-wide.
 
 ---
 
-The rest of this document was extracted verbatim from CLAUDE.md. Paragraph breaks follow the original bold-lead structure. No wording was changed.
+The rest of this document.md. Paragraph breaks follow the bold-lead structure. No wording was changed.
 
 ## No separate step, no separate action
 
@@ -56,7 +56,7 @@ An earlier draft factored this into a reusable `wow-look-at-my/actions@artifact-
 
 Without it, that whole path stored real, permanent, consumer-visible artifacts and recorded nothing. To treat those blocks as "components, not the pipeline" was wrong, because for those repos the chain IS the pipeline.
 
-It needs the artifact list to do this, and there is no artifacts-listing endpoint. **Both `PublishRelease` and `GetRelease` therefore return `publishedRelease`.** That type embeds the `db.Release`, so every pre-existing top-level field is unchanged for an older client, and it adds `artifacts`. Publish already loaded them for its no-artifacts check, so that costs nothing. `TestPublishRelease_ReturnsPublishedArtifacts` and `TestGetRelease_ReturnsArtifacts` pin it.
+It needs the artifact list to do this, and there is no artifacts-listing endpoint. **Both `PublishRelease` and `GetRelease` therefore return `publishedRelease`.** That type embeds the `db.Release`, so every pre-existing top-level field is unchanged for an older client. It adds `artifacts`. Publish already loaded them for its no-artifacts check. As a result, that costs nothing. `TestPublishRelease_ReturnsPublishedArtifacts` and `TestGetRelease_ReturnsArtifacts` pin it.
 
 A publish response that carries no `artifacts` FAILS outright. There is deliberately no retry. It once had one. A publish served mid-rollout by the previous container came back without the field, and failed an unrelated repo's CI. That was observed live: cc-marketplace published mid-rollout and failed, while two sibling repos published minutes later and succeeded.
 
@@ -76,13 +76,13 @@ A warn-and-continue path was rejected as an opt-out by neglect. The publish then
 
 This is a deliberate divergence from the deployment steps' graceful-skip contract. A deployment is a nicety. A record of what the registry now holds is part of the publish being complete. The LOW-LEVEL blocks post no record. create-release, upload-artifact and publish-release are among them. They are components, and the top-level composites are the pipeline.
 
-**The one thing that suppresses a record is a property of the target, not a switch.** A `registry_url` whose host is `localhost`, `127.0.0.1` or `::1` is skipped, with an info line. A loopback server is not a registry anything can fetch from. The row is permanently unreachable. That is what keeps buildhost's own `upload-artifact-action-e2e` from writing junk into the org's inventory, because that job publishes a site to `http://localhost:18080`. Every real publish records unconditionally.
+**The thing that suppresses a record is a property of the target, not a switch.** A `registry_url` whose host is `localhost`, `127.0.0.1` or `::1` is skipped, with an info line. A loopback server is not a registry anything can fetch from. The row is permanently unreachable. That is what keeps buildhost's own `upload-artifact-action-e2e` from writing junk into the org's inventory, because that job publishes a site to `http://localhost:18080`. Every real publish records unconditionally.
 
 ## API field constraints that are easy to get wrong
 
-These come from GitHub's OpenAPI description, and each one has bitten.
+These come from GitHub's OpenAPI description, and each has bitten.
 
-`github_repository` is the repo NAME only. Its pattern is `^[A-Za-z0-9.\-_]+$`. An `owner/repo` value is therefore rejected outright, and it fails every publish. The org is already the endpoint's path parameter.
+`github_repository` is the repo NAME only. Its pattern is `^[A-Za-z0-9.\-_]+$`. An `owner/repo` value is therefore rejected outright. It fails every publish. The org is already the endpoint's path parameter.
 
 `registry_url` and `artifact_url` must match `^https://`. That is a second reason the loopback skip exists. A plain-http server cannot be recorded at all.
 
@@ -94,7 +94,7 @@ These come from GitHub's OpenAPI description, and each one has bitten.
 
 This is the load-bearing subtlety. buildhost strips and repackages on demand. For an ELF the default `raw` download is therefore NOT byte-identical to the upload. A non-ELF artifact, such as an APE, a PE or a Mach-O, is served as-is, so it happens to match.
 
-`debug=1` is the one download that returns the uploaded bytes verbatim. `buildhost-publish` therefore points each record's `artifact_url` at `.../{project}?v=&os=&arch=&debug=1`. A storage record whose URL serves bytes that hash to something other than its digest is worse than no record. The uploaded digest is also the one a future `actions/attest` provenance subject covers.
+`debug=1` is the download that returns the uploaded bytes verbatim. `buildhost-publish` therefore points each record's `artifact_url` at `.../{project}?v=&os=&arch=&debug=1`. A storage record whose URL serves bytes that hash to something other than its digest is worse than no record. The uploaded digest is also the one a future `actions/attest` provenance subject covers.
 
 `buildhost-publish` therefore hashes every artifact unconditionally. It previously did that only when the server advertised `upload_by_sha256`. The cost is one extra streaming read of a file the upload loop reads anyway.
 
@@ -102,7 +102,7 @@ The per-composite shape follows.
 
 - **`buildhost-publish`**: one record per os/arch slot per project. `name` and `repository` are the buildhost project, and that includes a namespaced `<repo>/<binary>`. `version` is the release version. `path` is `<os>/<arch>`. `uploadAndPublish` accumulates the records, and a hash-reference registration is included, because those are real artifact rows. `postStorageRecords` drains them at both exits, which are the namespaced path and the legacy flat fallback.
 - **`buildhost-publish-docker`**: one record for the buildhost-bound image. The digest is read from the exported OCI layout's `index.json` root descriptor. buildx does not push on this path. It writes a layout for the chunk-aware CLI instead. That descriptor, and not a buildx output, is therefore the digest buildhost stores and serves. A layout with no root digest FAILS the push, and so does an unparseable reference. Neither skips the record. `artifact_url` is the real manifest URL, `https://oci.{domain}/v2/{project}/manifests/{digest}`. A tag that targets a foreign registry is deliberately not recorded, because another registry's inventory is its own to account for.
-- **`buildhost-publish-site`**: it records the uploaded tar.gz or zip archive's sha256. It carries **no** `artifact_url`. A site is served unpacked, so no URL returns those bytes, and a record must never point at bytes that hash to something else. This runs on every PR-preview push, so every job that publishes a site declares `artifact-metadata: write`.
+- **`buildhost-publish-site`**: it records the uploaded tar.gz or zip archive's sha256. It carries **no** `artifact_url`. A site is served unpacked, so no URL returns those bytes. A record must never point at bytes that hash to something else. This runs on every PR-preview push, so every job that publishes a site declares `artifact-metadata: write`.
 
 ## Retention retracts what it evicts
 
@@ -110,7 +110,7 @@ An evicted release's artifacts are no longer fetchable at the URL their storage 
 
 Several properties make this work where CI cannot. Eviction runs in the background sweeper or in the `gc` CLI, with no workflow in the picture. `collectRecords` captures the digests BEFORE the rows go, because after eviction nothing can reconstruct them. The deleter authenticates as buildhost itself, through `auth.BearerForRepo`, with the App installation token or else the static PAT. It addresses the org from the project's recorded `github_repo`.
 
-`registry_url` must equal what the publishing CI recorded, which is buildhost's own public base URL. The server is otherwise never told its own URL. This one path therefore reads `BUILDHOST_PRIMARY_DOMAIN`.
+`registry_url` must equal what the publishing CI recorded, which is buildhost's own public base URL. The server is otherwise never told its own URL. This path therefore reads `BUILDHOST_PRIMARY_DOMAIN`.
 
 A project with no `github_repo` is skipped, because nothing addressable was ever posted. A *failure* never aborts the eviction. The bytes are already gone, and a refusal to GC over a GitHub outage is worse. Such a failure is counted in `Report.RecordsMarkedDeleted`, `Report.RecordsUnmarked` and `Report.RecordErrors`. `gc` prints those counts, and it exits NON-ZERO on any unmarked record in enforce mode. The sweeper logs them at WARN.
 

@@ -162,7 +162,7 @@ func TestBrewTapDumb_StillServesLooseObjectsAndFastForwards(t *testing.T) {
 	dumb := []string{"GIT_SMART_HTTP=0"}
 	clone := filepath.Join(gitScratchDir(t), "tap")
 	gitRunEnv(t, gitScratchDir(t), dumb, "clone", "-c", "fetch.unpackLimit=1", gitTS.URL+"/brew/tap.git", clone)
-	// With unpackLimit pinned, a pack transfer would have been KEPT: no pack
+	// With unpackLimit pinned, a pack transfer
 	require.False(t, hasPackFiles(t, clone), "a dumb clone fetches loose objects, never a pack")
 	tip1 := strings.TrimSpace(gitRun(t, clone, "rev-parse", "origin/main"))
 

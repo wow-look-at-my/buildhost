@@ -143,6 +143,11 @@ func (s *Server) apiMerge(w http.ResponseWriter, r *http.Request) {
 }
 
 func mergePlanJSON(p *db.ProjectMergePlan) map[string]any {
+	// A list field is an array on the wire, never null.
+	conflicts := p.Conflicts
+	if conflicts == nil {
+		conflicts = []string{}
+	}
 	releases := []map[string]any{}
 	for _, r := range p.Releases {
 		releases = append(releases, map[string]any{
@@ -160,7 +165,7 @@ func mergePlanJSON(p *db.ProjectMergePlan) map[string]any {
 		"oci_blobs":  p.OCIBlobs,
 		"tokens":     p.Tokens,
 		"policies":   p.Policies,
-		"conflicts":  p.Conflicts,
+		"conflicts":  conflicts,
 		"applicable": p.Applicable(),
 		"applied":    false,
 	}

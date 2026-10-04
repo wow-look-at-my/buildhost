@@ -425,7 +425,7 @@ func TestUploadArtifact_HashRefConflictAtomic(t *testing.T) {
 // A request naming an upload session is a session finalize, never a hash-ref:
 // there upload_sha256 keeps its integrity-check meaning. (In production the
 // uploads middleware resolves the session before routing; at the handler
-// level the session parameter must simply not trigger the hash-ref branch.)
+// level the session parameter must not trigger the hash-ref branch.)
 func TestUploadArtifact_HashRefExcludedBySessionParam(t *testing.T) {
 	t.Serial()
 	h, proj, _ := setupUploadTest(t, "hashrefsession")

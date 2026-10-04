@@ -94,9 +94,7 @@ function tarGz(files: Record<string, string>): Buffer {
 // A manual, NON-following fetch so each hop can be inspected on its own. This is
 // the whole point: the bug was invisible to anything that auto-followed.
 async function hop(url: string): Promise<{ status: number; acao: string | null; location: string | null; type: string | null }> {
-	// sites.localhost resolves to loopback on the runner, so the service label
-	// the router dispatches on rides the URL -- no Host header override, which
-	// undici may refuse to set.
+	// sites.localhost resolves to loopback on the runner, so the service label the router dispatches on rides the URL -- no Host header override.
 	const res = await fetch(url, { redirect: "manual", headers: { Origin: CONSUMER_ORIGIN } });
 	// Drain so the connection can be reused.
 	await res.arrayBuffer().catch(() => undefined);
@@ -110,8 +108,8 @@ async function hop(url: string): Promise<{ status: number; acao: string | null; 
 
 const failures: string[] = [];
 
-// Walks a URL's whole redirect chain and requires the CORS header on EVERY hop,
-// redirects included -- the invariant a browser actually enforces.
+// Walks a URL's whole redirect chain and requires the CORS header on EVERY
+// hop, redirects included -- the invariant a browser enforces.
 async function assertChainCORS(label: string, startPath: string, wantRedirect: boolean) {
 	let url = SITES + startPath;
 	let hops = 0;
@@ -141,14 +139,12 @@ async function assertChainCORS(label: string, startPath: string, wantRedirect: b
 		break;
 	}
 	if (wantRedirect && !sawRedirect) {
-		// The shape being guarded no longer redirects, so this case silently
-		// stopped covering anything. That is a finding, not a pass.
+		// The shape being guarded no longer redirects, so this case silently stopped covering anything.
 		failures.push(`${label}: expected a redirect in the chain from ${startPath}, got none -- this case no longer guards what it claims`);
 	}
 	core.info(`  ok  ${label} (${hops} hop(s), CORS on each)`);
 }
 
-// ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
 const server = child_process.spawn(...runner(["serve"]), { env: serverEnv, stdio: ["ignore", "pipe", "pipe"] });
@@ -214,11 +210,7 @@ try {
 		if (up.status !== 201) throw new Error(`upload ${branch}: ${up.status} ${await up.text()}`);
 	}
 
-	// A private project whose `library` branch is published public -- the
-	// production shape. Its `master` branch is published WITHOUT the flag, and
-	// asserted below to be refused anonymously: without that, "the public-read
-	// bypass survives the redirect" would be an untested claim, since a project
-	// that was accidentally public serves every branch anyway.
+	// A private project whose `library` branch is published public -- the production shape.
 	await createProject(PRIVATE_PROJECT, true);
 	const upGated = await fetch(`${SITES}/${PRIVATE_PROJECT}/branch/master`, {
 		method: "PUT",
@@ -248,8 +240,7 @@ try {
 	if (upPriv.status !== 201) throw new Error(`upload private site: ${upPriv.status} ${await upPriv.text()}`);
 
 	core.info("CORS headers on every redirect hop:");
-	// The exact URL that broke production: legacy spelling of a NON-default
-	// branch, redirecting to the canonical @branch form.
+	// The exact URL that broke production: legacy spelling of a NON-default branch.
 	await assertChainCORS("legacy /branch/ (non-default branch)", `/${PROJECT}/branch/library/ui/mod.js`, true);
 	// Legacy spelling of the DEFAULT branch: collapses to the bare project path.
 	await assertChainCORS("legacy /branch/ (default branch)", `/${PROJECT}/branch/master/index.html`, true);

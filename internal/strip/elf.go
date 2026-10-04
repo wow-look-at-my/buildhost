@@ -179,10 +179,10 @@ func (s *section) strippable() bool {
 		strings.HasPrefix(s.name, ".stab")
 }
 
-// plan marks sections to keep and reports the offset up to which the original
-// file is copied verbatim. Everything allocated lives below that point -- so
-// program headers, which reference file offsets directly, stay valid without
-// being touched at all.
+// plan marks sections to keep and reports the offset up to which the file is
+// copied verbatim. Everything allocated lives below that point -- so program
+// headers, which reference file offsets directly, stay valid without being
+// touched at all.
 func (img *elfImage) plan() (prefixEnd uint64) {
 	bo := img.bo
 	prefixEnd = uint64(bo.Uint16(img.header[offEhsize:]))
@@ -212,9 +212,9 @@ func align(n, a uint64) uint64 {
 	return n
 }
 
-// writeStripped produces the stripped binary. Layout: the original bytes up to
-// the end of the last allocated section, then the kept non-allocated sections,
-// then the section header table.
+// writeStripped produces the stripped binary. Layout: the bytes up to the end
+// of the last allocated section, then the kept non-allocated sections, then
+// the section header table.
 func (img *elfImage) writeStripped(src *os.File, dst *os.File, prefixEnd uint64) error {
 	if _, err := src.Seek(0, io.SeekStart); err != nil {
 		return err

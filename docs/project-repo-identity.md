@@ -1,8 +1,8 @@
 # Projects follow their GitHub repo, by repo id
 
-A project's name comes from its GitHub repo name. That name is mutable. A rename or a transfer changes it. The numeric repo id does not change. It survives both. It changes only when somebody deletes the repository and creates it again. Migration 014 pins that id on the project (`projects.github_repo_id`). `docs/security/oidc.md` covers the trust model it enforces.
+A project's name comes from its GitHub repo name. That name is mutable. A rename or a transfer changes it. The numeric repo id does not change. It survives both. It changes only when somebody deletes the repository and creates it again. Migration multiple pins that id on the project (`projects.github_repo_id`). `docs/security/oidc.md` covers the trust model it enforces.
 
-The pin alone did not stop a rename from splitting a project in half. Resolution still went by NAME. The first publish after a rename found nothing under the new name. It then auto-provisioned a second project beside the first. The release history stayed under the old name. Every new release landed under the new one.
+The pin alone did not stop a rename from splitting a project in half. Resolution still went by NAME. The first publish after a rename found nothing under the new name. It then auto-provisioned a second project beside the first. The release history stayed under the name. Every new release landed under the new one.
 
 ## A repo owns a namespace
 
@@ -10,9 +10,11 @@ A repo's projects are its root project, named after the repo, plus every `<root>
 
 `auth.reconcileRepoNamespace` rewrites the root segment of every project that carries the repo id when GitHub reports a new repo name. The root `A` becomes `B`. The child `A/child` becomes `B/child`. This runs on WRITE requests only. A read never mutates project state.
 
+The new root is the name `auth.RepoProjectName` gives the repo, the same name OIDC provisions, so `.github` keeps `github`. A name that is an alias of the project itself counts as free. A project can therefore move back onto a name it held before.
+
 A child whose whole path repeats the root collapses onto the root. A repo named after its sole binary otherwise lands on `lpi/lpi`, which names the same thing at both levels.
 
-A target name that is already taken is NOT resolved automatically. That name is a duplicate left by a rename older than this reconcile. To fold two release histories together has no safe default. The reconcile logs the duplicate and moves on. An operator resolves it from the admin dashboard.
+A target name that is already taken is NOT resolved automatically. That name is a duplicate left by a rename older than this reconcile. To fold release histories together has no safe default. The reconcile logs the duplicate and moves on. An operator resolves it from the admin dashboard.
 
 ## Old names keep resolving
 
@@ -38,7 +40,7 @@ The merge does this:
 - It keeps the source's name, and the source's own aliases, as aliases of the target.
 - It deletes the emptied source project row.
 
-`download_counts` and `download_events` key off `artifact_id`. They follow their releases, and nothing here moves them.
+`download_counts` and `download_events` key off `artifact_id`. They follow their releases. Nothing here moves them.
 
 Every change runs in one transaction. A drain check fails that transaction if any table still references the merged-away project. That check stops a table added later from leaving orphans behind in silence.
 
@@ -46,7 +48,7 @@ Every change runs in one transaction. A drain check fails that transaction if an
 
 The merge stops rather than guess in these cases:
 
-- The two projects do not share a pinned repo id. Nothing proves they are the same repository.
+- The projects do not share a pinned repo id. Nothing proves they are the same repository.
 - Both deploy a site for the same branch, or publish the same OCI tag. To keep one silently drops the other.
 - A semver version exists on both sides.
 - The database changed between the plan and the apply.

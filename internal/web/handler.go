@@ -155,7 +155,7 @@ func (h *Handler) resolveRelease(ctx context.Context, project *db.Project, versi
 	return rel
 }
 
-// Stylesheet serves the single same-origin stylesheet for the frontend.
+// Stylesheet serves the same-origin stylesheet for the frontend.
 func (h *Handler) Stylesheet(w http.ResponseWriter, r *http.Request) {
 	if match := r.Header.Get("If-None-Match"); match == styleETag {
 		w.WriteHeader(http.StatusNotModified)

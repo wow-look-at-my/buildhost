@@ -217,7 +217,7 @@ func TestServeTap_LineageCachedAndAppendsOnChange(t *testing.T) {
 	assert.Equal(t, commitSHA, readCommitParent(t, linDir, newTip),
 		"the new tip must be a child of the previous tip")
 
-	// The previous tip's object is STILL served (append-only store): a client
+	// The tip's object is STILL served (append-only store): a client
 	recOld := getTap(t, h, "git.example.com", "objects/"+commitSHA[:2]+"/"+commitSHA[2:])
 	require.Equal(t, http.StatusOK, recOld.Code)
 

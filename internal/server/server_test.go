@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	_ "github.com/wow-look-at-my/buildhost/internal/api"
@@ -285,11 +286,22 @@ func TestHealthz(t *testing.T) {
 		Status  string `json:"status"`
 		Commit  string `json:"commit"`
 		Version string `json:"version"`
+		Started string `json:"started"`
 	}
 	require.NoError(t, json.Unmarshal(readBody(t, resp), &body))
 	require.Equal(t, "ok", body.Status)
 	require.NotEmpty(t, body.Commit)  // "unknown" in tests, but never empty
 	require.NotEmpty(t, body.Version) // "dev" in tests, but never empty
+	started, err := time.Parse(time.RFC3339, body.Started)
+	require.NoError(t, err, "started must be an RFC 3339 time")
+	require.False(t, started.After(time.Now()), "started lies in the future")
+
+	again := env.get(t, "/healthz")
+	var second struct {
+		Started string `json:"started"`
+	}
+	require.NoError(t, json.Unmarshal(readBody(t, again), &second))
+	require.Equal(t, body.Started, second.Started, "started names the process start, so it never moves while the process runs")
 }
 
 func TestHealthz_DBClosed(t *testing.T) {

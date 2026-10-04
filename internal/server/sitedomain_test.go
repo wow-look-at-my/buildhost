@@ -290,7 +290,7 @@ func TestSiteDomain_SlashBranchClassicScheme(t *testing.T) {
 	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
 	assert.Equal(t, "/p2/@claude/foo/", resp.Header.Get("Location"))
 
-	// The legacy spelling resolves the same slash-named branch and 302s to it,
+	// The spelling resolves the same slash-named branch and 302s to it,
 	resp, _ = siteGet(t, env, "sites.test.local", "/p2/branch/claude/foo/index.html")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
 	assert.Equal(t, "/p2/@claude/foo/index.html", resp.Header.Get("Location"))
@@ -311,7 +311,7 @@ func TestSiteDomain_SlashBranchClassicScheme(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "pub-cf", body)
 
-	// The gate opens the legacy URL for that same public branch too: it
+	// The gate opens the URL for that same public branch too: it
 	resp, _ = siteGet(t, env, "sites.test.local", "/p3/branch/claude/foo/index.html")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
 	assert.Equal(t, "/p3/index.html", resp.Header.Get("Location"))

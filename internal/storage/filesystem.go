@@ -118,8 +118,7 @@ func (fs *Filesystem) Put(_ context.Context, r io.Reader) (string, int64, error)
 }
 
 // PutUncompressed stores a blob without the storage layer's zstd wrapper, so
-// it can be read at an offset later (see OpenReaderAt). The key is unchanged --
-// it is the sha256 of the same bytes -- so a blob already stored compressed
+// it can be read at an offset later (see OpenReaderAt).
 func (fs *Filesystem) PutUncompressed(ctx context.Context, r io.Reader) (string, int64, error) {
 	if !fs.compress {
 		return fs.Put(ctx, r) // already the uncompressed path

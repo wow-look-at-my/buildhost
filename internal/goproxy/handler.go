@@ -116,15 +116,27 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 // operatorView reports whether this caller may see the proxy's own
-// configuration -- the private prefixes, the credential state, the readiness
-// module. Each of those names private repositories, so it takes the same
+// configuration -- the private prefixes, the credential state.
 func (s *Service) operatorView(r *http.Request) bool {
-	if t := auth.TokenFrom(r.Context()); t != nil && t.ProjectID == nil &&
-		(t.HasScope("read") || t.HasScope("write")) {
-		return true
+	return globalReader(r)
+}
+
+// globalReader reports whether the caller holds a read or write token that is
+// not scoped to a project.
+func globalReader(r *http.Request) bool {
+	t := auth.TokenFrom(r.Context())
+	if t == nil || t.ProjectID != nil {
+		return false
 	}
-	_, ok := auth.UserFrom(r.Context())
-	return ok
+	return t.HasScope("read") || t.HasScope("write")
+}
+
+// cacheControl is the Cache-Control for a successful immutable response.
+func (s *Service) cacheControl(modPath string) string {
+	if s.isPrivate(modPath) {
+		return "private, max-age=31536000, immutable"
+	}
+	return "public, max-age=31536000, immutable"
 }
 
 // accessible reports whether this caller may see this module.
@@ -134,8 +146,7 @@ func (s *Service) accessible(r *http.Request, modPath string) bool {
 	if !s.isPrivate(modPath) {
 		return true
 	}
-	if t := auth.TokenFrom(r.Context()); t != nil && t.ProjectID == nil &&
-		(t.HasScope("read") || t.HasScope("write")) {
+	if globalReader(r) {
 		return true
 	}
 	refs, err := parseModulePath(modPath)
@@ -245,8 +256,7 @@ func (s *Service) serveZip(w http.ResponseWriter, r *http.Request, req request, 
 
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Length", fmt.Sprint(size))
-	// A module version is immutable, so its zip may be cached forever.
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("Cache-Control", s.cacheControl(req.Module))
 	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodHead {
 		s.record(req, source, outcome, http.StatusOK, "", started)
@@ -260,8 +270,11 @@ func (s *Service) serveZip(w http.ResponseWriter, r *http.Request, req request, 
 func (s *Service) ok(w http.ResponseWriter, r *http.Request, req request, source, outcome string, started time.Time, contentType string, body []byte) {
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", fmt.Sprint(len(body)))
-	if req.Endpoint == "info" || req.Endpoint == "mod" {
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	switch {
+	case req.Endpoint == "info" || req.Endpoint == "mod":
+		w.Header().Set("Cache-Control", s.cacheControl(req.Module))
+	case s.isPrivate(req.Module):
+		w.Header().Set("Cache-Control", "private, no-store")
 	}
 	w.WriteHeader(http.StatusOK)
 	if r.Method != http.MethodHead {

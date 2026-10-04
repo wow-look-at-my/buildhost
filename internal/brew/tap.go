@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/wow-look-at-my/go-containers/set"
 	mmap "github.com/wow-look-at-my/go-mmap"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -145,88 +147,213 @@ func (h *Handler) tapVisibleProjects(r *http.Request) ([]db.Project, error) {
 
 // buildTapFiles assembles the tap's working-tree contents for the request's
 func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
+	files, _, err := h.buildTap(r)
+	return files, err
+}
+
+// buildTap returns the tap's files and the formula name of each project in it.
+func (h *Handler) buildTap(r *http.Request) (map[string][]byte, map[string]string, error) {
 	visible, err := h.tapVisibleProjects(r)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	files := map[string][]byte{
-		repackage.BrewPrivateStrategyPath: []byte(repackage.BrewPrivateStrategy),
+	type latest struct {
+		project   db.Project
+		release   db.Release
+		artifacts []db.PlatformArtifact
 	}
+	var candidates []latest
+	rendered := map[string][]byte{}
 	for _, project := range visible {
 		release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
 		if err != nil {
 			if errors.Is(err, db.ErrNotFound) {
 				continue
 			}
-			return nil, err
+			return nil, nil, err
 		}
 		artifacts, err := h.DB.ListArtifactsByPlatform(r.Context(), release.ID)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		out, err := h.formulaForRelease(r.Context(), project, *release, artifacts, auth.RequestRootURL(r))
+		data, err := h.renderFormula(r, project, *release, artifacts, repackage.BrewFormulaName(project.Name), formulaLatest)
+		if errors.Is(err, db.ErrNotFound) {
+			continue
+		}
 		if err != nil {
-			if errors.Is(err, db.ErrNotFound) {
-				continue
-			}
-			return nil, err
+			return nil, nil, err
 		}
-		data, err := io.ReadAll(out.Reader)
-		if err != nil {
-			return nil, err
-		}
-		files["Formula/"+tapFormulaName(project.Name)+".rb"] = data
+		candidates = append(candidates, latest{project, *release, artifacts})
+		rendered[project.Name] = data
 	}
 
-	return files, nil
+	projects := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		projects = append(projects, c.project.Name)
+	}
+	names := tapFormulaNames(projects)
+
+	files := map[string][]byte{}
+	renames := map[string]string{}
+	for _, c := range candidates {
+		name := names[c.project.Name]
+		data := rendered[c.project.Name]
+		if folded := repackage.BrewFormulaName(c.project.Name); name != folded {
+			renames[folded] = name
+			if data, err = h.renderFormula(r, c.project, c.release, c.artifacts, name, formulaLatest); err != nil {
+				return nil, nil, err
+			}
+		}
+		files["Formula/"+name+".rb"] = data
+	}
+	if len(renames) > 0 {
+		body, err := json.MarshalIndent(renames, "", "  ")
+		if err != nil {
+			return nil, nil, err
+		}
+		files[tapRenamesFile] = append(body, '\n')
+	}
+	return files, names, nil
 }
 
-func buildGitObjects(files map[string][]byte, parent string) (objects map[string][]byte, commitSHA, rootTreeSHA string) {
-	objects = map[string][]byte{}
-	byDir := map[string][]gitTreeEntry{}
-	var rootFiles []gitTreeEntry
+// tapRenamesFile maps an old formula name to its current one. brew install resolves an old name through it.
+const tapRenamesFile = "formula_renames.json"
 
-	names := make([]string, 0, len(files))
-	for name := range files {
-		names = append(names, name)
+// renderFormula renders one formula under the tap name formula.
+func (h *Handler) renderFormula(r *http.Request, project db.Project, release db.Release, artifacts []db.PlatformArtifact, formula string, mode formulaMode) ([]byte, error) {
+	out, err := h.formulaForRelease(r.Context(), project, release, artifacts, auth.RequestRootURL(r), formula, mode)
+	if err != nil {
+		return nil, err
 	}
-	sort.Strings(names)
+	return io.ReadAll(out.Reader)
+}
 
-	for _, name := range names {
-		blobSHA := addGitObject(objects, "blob", files[name])
-		dir, base, nested := strings.Cut(name, "/")
-		if nested {
-			byDir[dir] = append(byDir[dir], gitTreeEntry{Mode: "100644", Name: base, SHA: blobSHA})
-		} else {
-			rootFiles = append(rootFiles, gitTreeEntry{Mode: "100644", Name: name, SHA: blobSHA})
+// tapFormulaNames maps each project with a formula to its tap formula name.
+// The name is the project's folded name, except for the only formula under a root that has no formula of its own.
+// That formula takes the topmost such root's folded name: a repo whose one binary is not named after it publishes as "<repo>/<binary>", and installs as "<repo>".
+// A root name that another formula already folds to stays with that formula.
+func tapFormulaNames(projects []string) map[string]string {
+	own := set.New[string]()
+	folded := set.New[string]()
+	nested := map[string]int{}
+	for _, p := range projects {
+		own.Add(p)
+		folded.Add(repackage.BrewFormulaName(p))
+		for i := 1; i < len(p); i++ {
+			if p[i] == '/' {
+				nested[p[:i]]++
+			}
 		}
 	}
-
-	rootEntries := rootFiles
-	for _, dir := range sortedKeys(byDir) {
-		treeSHA := addGitObject(objects, "tree", gitTree(byDir[dir]))
-		rootEntries = append(rootEntries, gitTreeEntry{Mode: "40000", Name: dir, SHA: treeSHA})
+	names := make(map[string]string, len(projects))
+	for _, p := range projects {
+		names[p] = repackage.BrewFormulaName(p)
+		for i := 1; i < len(p); i++ {
+			if p[i] != '/' {
+				continue
+			}
+			root := p[:i]
+			if own.Contains(root) || nested[root] != 1 || folded.Contains(repackage.BrewFormulaName(root)) {
+				continue
+			}
+			names[p] = repackage.BrewFormulaName(root)
+			break
+		}
 	}
-	rootTreeSHA = addGitObject(objects, "tree", gitTree(rootEntries))
+	return names
+}
 
+// tapHistoryFormula is one past release's formula, at the path the tap's
+// latest formula for that project uses.
+type tapHistoryFormula struct {
+	path      string
+	data      []byte
+	releaseID int64
+}
+
+// tapHistory renders every published default-branch release of every visible
+// project, oldest first. A release whose digests are not cached yet is left
+// out and queued on the background filler: a tap request never hashes one.
+// names is the formula name of each project in the tap; any other project keeps its folded name.
+func (h *Handler) tapHistory(r *http.Request, names map[string]string) ([]tapHistoryFormula, error) {
+	visible, err := h.tapVisibleProjects(r)
+	if err != nil {
+		return nil, err
+	}
+	var history []tapHistoryFormula
+	for _, project := range visible {
+		name, ok := names[project.Name]
+		if !ok {
+			name = repackage.BrewFormulaName(project.Name)
+		}
+		releases, err := h.DB.ListPublishedReleasesOnDefaultBranch(r.Context(), project.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, release := range releases {
+			artifacts, err := h.DB.ListArtifactsByPlatform(r.Context(), release.ID)
+			if err != nil {
+				return nil, err
+			}
+			data, err := h.renderFormula(r, project, release, artifacts, name, formulaHistory)
+			if errors.Is(err, db.ErrNotFound) || errors.Is(err, errDigestPending) {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			history = append(history, tapHistoryFormula{path: "Formula/" + name + ".rb", data: data, releaseID: release.ID})
+		}
+	}
+	sort.Slice(history, func(i, j int) bool { return history[i].releaseID < history[j].releaseID })
+	return history, nil
+}
+
+// gitObjects collects the loose objects of the commits one refresh appends.
+type gitObjects map[string][]byte
+
+// blobs adds each file's blob and returns the path -> blob sha map.
+func (o gitObjects) blobs(files map[string][]byte) map[string]string {
+	shas := make(map[string]string, len(files))
+	for path, body := range files {
+		shas[path] = addGitObject(o, "blob", body)
+	}
+	return shas
+}
+
+// commit adds the tree for blobs and a commit of it with parent, and returns
+// the commit and tree shas.
+func (o gitObjects) commit(blobs map[string]string, parent string) (commitSHA, treeSHA string) {
+	treeSHA = o.tree(blobs)
 	var commit bytes.Buffer
-	fmt.Fprintf(&commit, "tree %s\n", rootTreeSHA)
+	fmt.Fprintf(&commit, "tree %s\n", treeSHA)
 	if parent != "" {
 		fmt.Fprintf(&commit, "parent %s\n", parent)
 	}
 	commit.WriteString("author buildhost <buildhost@localhost> 0 +0000\ncommitter buildhost <buildhost@localhost> 0 +0000\n\nUpdate Homebrew tap\n")
-	commitSHA = addGitObject(objects, "commit", commit.Bytes())
-
-	return objects, commitSHA, rootTreeSHA
+	return addGitObject(o, "commit", commit.Bytes()), treeSHA
 }
 
-func sortedKeys(m map[string][]gitTreeEntry) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
+// tree adds the trees for blobs (slash-separated paths relative to this tree
+// -> blob sha), at any depth, and returns the tree's sha.
+func (o gitObjects) tree(blobs map[string]string) string {
+	var entries []gitTreeEntry
+	subdirs := map[string]map[string]string{}
+	for name, sha := range blobs {
+		dir, rest, nested := strings.Cut(name, "/")
+		if !nested {
+			entries = append(entries, gitTreeEntry{Mode: "100644", Name: name, SHA: sha})
+			continue
+		}
+		if subdirs[dir] == nil {
+			subdirs[dir] = map[string]string{}
+		}
+		subdirs[dir][rest] = sha
 	}
-	sort.Strings(keys)
-	return keys
+	for dir, sub := range subdirs {
+		entries = append(entries, gitTreeEntry{Mode: "40000", Name: dir, SHA: o.tree(sub)})
+	}
+	return addGitObject(o, "tree", gitTree(entries))
 }
 
 type gitTreeEntry struct {
@@ -258,10 +385,13 @@ func gitTree(entries []gitTreeEntry) []byte {
 	return buf.Bytes()
 }
 
-func addGitObject(objects map[string][]byte, kind string, body []byte) string {
+func addGitObject(objects gitObjects, kind string, body []byte) string {
 	raw := append([]byte(fmt.Sprintf("%s %d\x00", kind, len(body))), body...)
 	sum := sha1.Sum(raw)
 	sha := hex.EncodeToString(sum[:])
+	if _, ok := objects[sha]; ok {
+		return sha
+	}
 
 	var compressed bytes.Buffer
 	zw := zlib.NewWriter(&compressed)

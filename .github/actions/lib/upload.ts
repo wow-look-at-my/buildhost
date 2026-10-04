@@ -50,7 +50,7 @@ export interface PutFileOptions {
 	body: Body;
 	/** Extra request headers, e.g. `X-Artifact-Filename`. */
 	headers?: Record<string, string>;
-	/** Bytes per chunk. */
+	/** Bytes per chunk. 0 forces a direct upload however large the body is. */
 	chunkSize?: number;
 	/** Largest direct body. */
 	directLimit?: number;
@@ -172,6 +172,5 @@ async function abortSession(send: Send, id: string): Promise<void> {
 	try {
 		await send('DELETE', `/api/v1/uploads/${encodeURIComponent(id)}`);
 	} catch {
-		// nothing to do
 	}
 }

@@ -140,9 +140,8 @@ func servicePattern(subdomain, pattern string) string {
 	return method + subdomain + ".{domain}" + rest
 }
 
-// siteDomainPattern turns a path-only pattern into a host+path pattern anchored
-// to a project label under a configured site domain, e.g. ("pazer.site",
-// "GET /{path...}") becomes "GET {project}.pazer.site/{path...}". A non-final
+// siteDomainPattern turns a path-only pattern into a host+path pattern
+// anchored to a project label under a configured site domain.
 func siteDomainPattern(domain, pattern string) string {
 	method := ""
 	rest := pattern
@@ -191,7 +190,7 @@ func ServiceRedirect(from, to string, permanent bool) {
 	})
 }
 
-// ServeHTTP dispatches every request through the single router. Service
+// ServeHTTP dispatches every request through the router. Service
 func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mux.ServeHTTP(w, r)
 }
