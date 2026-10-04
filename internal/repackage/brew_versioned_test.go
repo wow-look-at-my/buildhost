@@ -43,21 +43,21 @@ func TestBrewVersionedClassName_RejectsUnloadable(t *testing.T) {
 	}
 }
 
-func TestBrewVersionedFormulaPath(t *testing.T) {
-	assert.Equal(t, "Formula/ns-app/ns-app@1.2.3.rb", BrewVersionedFormulaPath("ns/app", "1.2.3"))
+func TestBrewVersionedFormulaName(t *testing.T) {
 	assert.Equal(t, "ns-app@1.2.3", BrewVersionedFormulaName("ns/app", "1.2.3"))
 	assert.Equal(t, "Formula/ns-app.rb", BrewFormulaPath("ns/app"))
 }
 
-func TestRenderBrewFormula_VersionedIsKegOnly(t *testing.T) {
+// brew extract renames the class to <name>AT<version>, so keg_only keys on
+// the class name at load time. The latest formula's class keeps the base name.
+func TestRenderBrewFormula_KegOnlyWhenClassIsRenamed(t *testing.T) {
 	f := baseFormula(BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example.com/mytool", SHA256: "abc"})
-	f.ClassName = "MytoolAT100"
-	f.Versioned = true
 	body := renderFormula(t, f)
+	assert.Contains(t, body, "class "+f.ClassName+" < Formula\n")
+	assert.Contains(t, body, `  keg_only "it pins one release, and the unversioned formula links the same command" if name.to_s.split("::").last != "`+BrewClassName(f.Name)+`"`+"\n")
 
-	assert.Contains(t, body, "class MytoolAT100 < Formula\n")
-	assert.Contains(t, body, "  license \"MIT\"\n\n  keg_only \"it pins one release, and the unversioned formula links the same command\"\n\n  url ")
-	assert.NotContains(t, body, "require_relative")
+	f.ClassName = "MytoolAT100"
+	assert.Contains(t, renderFormula(t, f), `!= "`+BrewClassName(f.Name)+`"`)
 }
 
 // Homebrew auto-links a keg_only :versioned_formula keg when no sibling is
@@ -66,23 +66,12 @@ func TestRenderBrewFormula_VersionedIsKegOnly(t *testing.T) {
 // reason is never auto-linked.
 func TestRenderBrewFormula_VersionedIsNeverAutoLinked(t *testing.T) {
 	f := baseFormula(BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example.com/mytool", SHA256: "abc"})
-	f.Versioned = true
 	assert.NotContains(t, renderFormula(t, f), ":versioned_formula")
 }
 
-func TestRenderBrewFormula_UnversionedIsNotKegOnly(t *testing.T) {
-	body := renderFormula(t, baseFormula(BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example.com/mytool", SHA256: "abc"}))
-	assert.NotContains(t, body, "keg_only")
-	assert.Contains(t, body, "  license \"MIT\"\n\n  url ")
-}
-
-// A versioned formula sits one directory deeper (Formula/<name>/), so its
-// require_relative climbs a couple of levels to reach the tap's lib/.
-func TestRenderBrewFormula_PrivateRequirePathFollowsDepth(t *testing.T) {
+func TestRenderBrewFormula_PrivateStrategyIsGuarded(t *testing.T) {
 	f := baseFormula(BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example.com/mytool", SHA256: "abc"})
 	f.Private = true
-	assert.True(t, strings.HasPrefix(renderFormula(t, f), `require_relative "../lib/buildhost_private_download"`+"\n"))
-
-	f.Versioned = true
-	assert.True(t, strings.HasPrefix(renderFormula(t, f), `require_relative "../../lib/buildhost_private_download"`+"\n"))
+	body := renderFormula(t, f)
+	assert.True(t, strings.Contains(body, "unless defined?(BuildhostCurlDownloadStrategy)\n  class BuildhostCurlDownloadStrategy < CurlDownloadStrategy\n"))
 }
