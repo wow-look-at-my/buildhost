@@ -18,7 +18,9 @@ A project whose name starts with a digit cannot be served as a formula at all. H
 
 ## Private projects
 
-A private project never appears in the public tap. Tap the **authenticated tap** instead. It serves every public formula, plus the private projects your token can read. It therefore replaces the public tap under the same name. Remove the public tap first, with `brew untap --force pazer/build`, when you already added it.
+A private project never appears in the public tap. Tap the **authenticated tap** instead. It serves every public formula, plus the private projects your token can read. It therefore replaces the public tap under the same name.
+
+`brew tap --custom-remote` taps it fresh, or repoints a public tap you already added. The authenticated tap's history shares no commits with the public tap's, so `brew update-reset` then moves the checkout onto it. Formulae you already installed stay installed. Do not run `brew untap --force pazer/build`: it uninstalls every formula installed from the tap.
 
 Git transmits a credential only after a 401 challenge. The token therefore goes in the tap URL, as the HTTP Basic password. The username is ignored, and `x` is the convention.
 
@@ -28,7 +30,8 @@ The example below uses a private project named `myrepo/myapp`. Under the folding
 
 ```bash
 brew trust "https://x:$TOKEN@brew.pazer.build/private/tap.git"
-brew tap pazer/build "https://x:$TOKEN@brew.pazer.build/private/tap.git"
+brew tap --custom-remote pazer/build "https://x:$TOKEN@brew.pazer.build/private/tap.git"
+brew update-reset "$(brew --repository pazer/build)"
 export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
 brew install pazer/build/myrepo-myapp
 ```
