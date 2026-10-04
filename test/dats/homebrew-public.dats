@@ -27,14 +27,28 @@ shared:
 			# runs tests concurrently, and brew installs at the same time
 			# contend for the same prefix.
 			brew install pazer/build/ape-fixture
+			brew install pazer/build/versioned-fixture
+			TAP="$(brew --repository pazer/build)"
+			# Pull until the tap history holds that release.
+			for _ in $(seq 60); do
+				git -C "$TAP" fetch -q origin
+				[ "$(git -C "$TAP" log --format=%H origin/main -- Formula/versioned-fixture.rb | wc -l)" -ge 2 ] && break
+				sleep 1
+			done
+			# brew update reports what the appended history changed. Its output is
+			# what a user sees, so the suite asserts on it below.
+			brew update 2>&1 | tee "$WORK/update.txt"
 			"$REPO/scripts/brew-doc-flows.sh" version "$BREW_HOST" > "$WORK/version.sh"
 			echo "--- documented version flow, executed verbatim ---"
 			cat "$WORK/version.sh"
-			bash -euo pipefail "$WORK/version.sh"
-			brew install pazer/build/versioned-fixture@1.0.0 pazer/build/versioned-fixture
+			HOMEBREW_NO_GITHUB_API=1 bash -euo pipefail "$WORK/version.sh"
+			HOMEBREW_NO_GITHUB_API=1 brew version-install pazer/build/versioned-fixture@1.0.0
 			echo "REPO='$REPO'" > "$ENV_FILE"
+			echo "TAP='$TAP'" >> "$ENV_FILE"
 
-setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
+setup:
+	- cmd: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
+	  timeout: 10m
 
 tests:
 	# A single flow, documents, empty drift: the blocks the server serves
@@ -111,29 +125,56 @@ tests:
 	# The same guarantees against the APE-SHAPED fixture, so the invariant
 	# holds on macOS too (where go-toolchain's own artifact is a Mach-O brew
 	# recognizes) and for anyone shipping a Cosmopolitan binary.
-	- desc: the documented versioned install is keg-only and runs
-	  cmd: |
-		set -euo pipefail
-		bin="$(brew --prefix pazer/build/go-toolchain@1.0.0)/bin/go-toolchain"
-		test -x "$bin" || { echo "go-toolchain@1.0.0 did not install $bin" >&2; exit 1; }
-		brew info --json=v2 pazer/build/go-toolchain@1.0.0 | grep -q '"keg_only": *true' \
-			|| { echo "go-toolchain@1.0.0 must be keg-only" >&2; exit 1; }
-		"$bin" version
-	  outputs:
-		stdout:
-			- "Version:"
-
-	- desc: a pinned version installs that release's binary
-	  cmd: '"$(brew --prefix pazer/build/versioned-fixture@1.0.0)/bin/versioned-fixture"'
-	  outputs:
-		stdout:
-			- "versioned-fixture-1.0.0"
-
-	- desc: the unversioned formula beside the pin is the latest release
+	- desc: a project with several releases installs its latest release
 	  cmd: versioned-fixture
 	  outputs:
 		stdout:
 			- "versioned-fixture-2.0.0"
+
+	# brew version-install extracts the release from the tap history into the
+	# user's versions tap. The pin is keg-only, so the latest one keeps PATH.
+	- desc: brew version-install installs an older release beside the latest
+	  cmd: |
+		set -euo pipefail
+		bin="$(brew --prefix versioned-fixture@1.0.0)/bin/versioned-fixture"
+		brew info --json=v2 versioned-fixture@1.0.0 | grep -q '"keg_only": *true' \
+			|| { echo "versioned-fixture@1.0.0 must be keg-only" >&2; exit 1; }
+		"$bin"
+		versioned-fixture
+	  outputs:
+		stdout:
+			- "versioned-fixture-1.0.0"
+			- "versioned-fixture-2.0.0"
+
+	# That must not surface as a "New Formulae" entry per release.
+	- desc: brew update lists no versioned formula
+	  cmd: |
+		set -eu
+		update="$(dirname {shared.env})/update.txt"
+		cat "$update"
+		if grep -E '^pazer/build/[^ ]*@' "$update"; then
+			echo "brew update listed a versioned formula" >&2; exit 1
+		fi
+		echo "no-versions-listed"
+	  outputs:
+		stdout:
+			- "no-versions-listed"
+
+	# brew lists every formula file in a tap as a formula of its own, so a
+	# file per release floods `brew update` with "New Formulae".
+	- desc: the tap holds one formula per project and no versions
+	  cmd: |
+		set -eu
+		. {shared.env}
+		(cd "$TAP/Formula" && find . -name '*.rb' | sed 's|^\./||' | sort) > formulas.txt
+		grep -qx 'versioned-fixture.rb' formulas.txt
+		if grep -q '[@/]' formulas.txt; then
+			echo "versioned formulas in the tap:" >&2; cat formulas.txt >&2; exit 1
+		fi
+		echo "one-per-project"
+	  outputs:
+		stdout:
+			- "one-per-project"
 
 	- desc: an APE-shaped formula installs, keeps its mode, and runs
 	  cmd: |
