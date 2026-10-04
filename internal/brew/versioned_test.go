@@ -47,6 +47,7 @@ func TestTap_OneFormulaPerProject(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj, _, _ := seedBrewProject(t, d, store, "ns/app", "v1-binary")
 	addRelease(t, d, store, proj, "1.1.0", 1001000, db.LatestBranch, "v11-binary")
+	seedBrewProject(t, d, store, "ns/other", "other-v1")
 	seedPrivateBrewProject(t, d, store, "ns/secretapp", "priv-v1")
 
 	for _, authed := range []bool{false, true} {
@@ -94,7 +95,7 @@ func TestTapHistory_PendingDigestFillsInBackground(t *testing.T) {
 	require.NoError(t, err)
 
 	versions := func() []string {
-		history, err := h.tapHistory(tapRequest(false))
+		history, err := h.tapHistory(tapRequest(false), nil)
 		require.NoError(t, err)
 		var out []string
 		for _, f := range history {
@@ -153,7 +154,7 @@ func TestSmartClone_HistoryHoldsEveryVersion(t *testing.T) {
 	t.Cleanup(func() { tapCacheTTL = oldTTL })
 
 	h, d, store := setupTest(t)
-	proj, _, _ := seedBrewProject(t, d, store, "ns/app", "v1-binary")
+	proj, _, _ := seedBrewProject(t, d, store, "ns-app", "v1-binary")
 	addRelease(t, d, store, proj, "1.1.0", 1001000, db.LatestBranch, "v11-binary")
 	require.NoError(t, h.backfillHistoryDigests(context.Background()))
 	h.fillWG.Wait()
