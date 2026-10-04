@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/wow-look-at-my/go-containers/set"
 	mmap "github.com/wow-look-at-my/go-mmap"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -145,38 +147,120 @@ func (h *Handler) tapVisibleProjects(r *http.Request) ([]db.Project, error) {
 
 // buildTapFiles assembles the tap's working-tree contents for the request's
 func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
+	files, _, err := h.buildTap(r)
+	return files, err
+}
+
+// buildTap returns the tap's files and the formula name of each project in it.
+func (h *Handler) buildTap(r *http.Request) (map[string][]byte, map[string]string, error) {
 	visible, err := h.tapVisibleProjects(r)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	files := map[string][]byte{}
+	type latest struct {
+		project   db.Project
+		release   db.Release
+		artifacts []db.PlatformArtifact
+	}
+	var candidates []latest
+	rendered := map[string][]byte{}
 	for _, project := range visible {
 		release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
 		if err != nil {
 			if errors.Is(err, db.ErrNotFound) {
 				continue
 			}
-			return nil, err
+			return nil, nil, err
 		}
 		artifacts, err := h.DB.ListArtifactsByPlatform(r.Context(), release.ID)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		out, err := h.formulaForRelease(r.Context(), project, *release, artifacts, auth.RequestRootURL(r), formulaLatest)
+		data, err := h.renderFormula(r, project, *release, artifacts, repackage.BrewFormulaName(project.Name), formulaLatest)
+		if errors.Is(err, db.ErrNotFound) {
+			continue
+		}
 		if err != nil {
-			if errors.Is(err, db.ErrNotFound) {
-				continue
-			}
-			return nil, err
+			return nil, nil, err
 		}
-		data, err := io.ReadAll(out.Reader)
-		if err != nil {
-			return nil, err
-		}
-		files[repackage.BrewFormulaPath(project.Name)] = data
+		candidates = append(candidates, latest{project, *release, artifacts})
+		rendered[project.Name] = data
 	}
 
-	return files, nil
+	projects := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		projects = append(projects, c.project.Name)
+	}
+	names := tapFormulaNames(projects)
+
+	files := map[string][]byte{}
+	renames := map[string]string{}
+	for _, c := range candidates {
+		name := names[c.project.Name]
+		data := rendered[c.project.Name]
+		if folded := repackage.BrewFormulaName(c.project.Name); name != folded {
+			renames[folded] = name
+			if data, err = h.renderFormula(r, c.project, c.release, c.artifacts, name, formulaLatest); err != nil {
+				return nil, nil, err
+			}
+		}
+		files["Formula/"+name+".rb"] = data
+	}
+	if len(renames) > 0 {
+		body, err := json.MarshalIndent(renames, "", "  ")
+		if err != nil {
+			return nil, nil, err
+		}
+		files[tapRenamesFile] = append(body, '\n')
+	}
+	return files, names, nil
+}
+
+// tapRenamesFile maps an old formula name to its current one. brew install resolves an old name through it.
+const tapRenamesFile = "formula_renames.json"
+
+// renderFormula renders one formula under the tap name formula.
+func (h *Handler) renderFormula(r *http.Request, project db.Project, release db.Release, artifacts []db.PlatformArtifact, formula string, mode formulaMode) ([]byte, error) {
+	out, err := h.formulaForRelease(r.Context(), project, release, artifacts, auth.RequestRootURL(r), formula, mode)
+	if err != nil {
+		return nil, err
+	}
+	return io.ReadAll(out.Reader)
+}
+
+// tapFormulaNames maps each project with a formula to its tap formula name.
+// The name is the project's folded name, except for the only formula under a root that has no formula of its own.
+// That formula takes the topmost such root's folded name: a repo whose one binary is not named after it publishes as "<repo>/<binary>", and installs as "<repo>".
+// A root name that another formula already folds to stays with that formula.
+func tapFormulaNames(projects []string) map[string]string {
+	own := set.New[string]()
+	folded := set.New[string]()
+	nested := map[string]int{}
+	for _, p := range projects {
+		own.Add(p)
+		folded.Add(repackage.BrewFormulaName(p))
+		for i := 1; i < len(p); i++ {
+			if p[i] == '/' {
+				nested[p[:i]]++
+			}
+		}
+	}
+	names := make(map[string]string, len(projects))
+	for _, p := range projects {
+		names[p] = repackage.BrewFormulaName(p)
+		for i := 1; i < len(p); i++ {
+			if p[i] != '/' {
+				continue
+			}
+			root := p[:i]
+			if own.Contains(root) || nested[root] != 1 || folded.Contains(repackage.BrewFormulaName(root)) {
+				continue
+			}
+			names[p] = repackage.BrewFormulaName(root)
+			break
+		}
+	}
+	return names
 }
 
 // tapHistoryFormula is one past release's formula, at the path the tap's
@@ -190,13 +274,18 @@ type tapHistoryFormula struct {
 // tapHistory renders every published default-branch release of every visible
 // project, oldest first. A release whose digests are not cached yet is left
 // out and queued on the background filler: a tap request never hashes one.
-func (h *Handler) tapHistory(r *http.Request) ([]tapHistoryFormula, error) {
+// names is the formula name of each project in the tap; any other project keeps its folded name.
+func (h *Handler) tapHistory(r *http.Request, names map[string]string) ([]tapHistoryFormula, error) {
 	visible, err := h.tapVisibleProjects(r)
 	if err != nil {
 		return nil, err
 	}
 	var history []tapHistoryFormula
 	for _, project := range visible {
+		name, ok := names[project.Name]
+		if !ok {
+			name = repackage.BrewFormulaName(project.Name)
+		}
 		releases, err := h.DB.ListPublishedReleasesOnDefaultBranch(r.Context(), project.ID)
 		if err != nil {
 			return nil, err
@@ -206,18 +295,14 @@ func (h *Handler) tapHistory(r *http.Request) ([]tapHistoryFormula, error) {
 			if err != nil {
 				return nil, err
 			}
-			out, err := h.formulaForRelease(r.Context(), project, release, artifacts, auth.RequestRootURL(r), formulaHistory)
+			data, err := h.renderFormula(r, project, release, artifacts, name, formulaHistory)
 			if errors.Is(err, db.ErrNotFound) || errors.Is(err, errDigestPending) {
 				continue
 			}
 			if err != nil {
 				return nil, err
 			}
-			data, err := io.ReadAll(out.Reader)
-			if err != nil {
-				return nil, err
-			}
-			history = append(history, tapHistoryFormula{path: repackage.BrewFormulaPath(project.Name), data: data, releaseID: release.ID})
+			history = append(history, tapHistoryFormula{path: "Formula/" + name + ".rb", data: data, releaseID: release.ID})
 		}
 	}
 	sort.Slice(history, func(i, j int) bool { return history[i].releaseID < history[j].releaseID })

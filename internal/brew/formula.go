@@ -39,14 +39,14 @@ func brewVersion(release db.Release) string {
 	return version
 }
 
-// formulaForRelease renders one formula.
-func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, release db.Release, artifacts []db.PlatformArtifact, baseURL string, mode formulaMode) (*repackage.Output, error) {
+// formulaForRelease renders one formula. formula is its tap name, which sets the class name.
+func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, release db.Release, artifacts []db.PlatformArtifact, baseURL, formula string, mode formulaMode) (*repackage.Output, error) {
 	// A digit-leading project name can never be a loadable Homebrew formula
 	if !repackage.BrewEligibleProjectName(project.Name) {
 		return nil, db.ErrNotFound
 	}
 	version := brewVersion(release)
-	className := repackage.BrewClassName(project.Name)
+	className := repackage.BrewClassName(formula)
 	if mode == formulaVersioned {
 		name, ok := repackage.BrewVersionedClassName(project.Name, version)
 		if !ok {
@@ -106,6 +106,7 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 	return repackage.RenderBrewFormula(repackage.BrewFormula{
 		ClassName:   className,
 		Name:        project.Name,
+		Formula:     formula,
 		Description: firstNonEmpty(project.Description, project.Name),
 		Homepage:    firstNonEmpty(project.Homepage, baseURL),
 		Version:     version,

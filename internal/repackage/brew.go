@@ -187,8 +187,10 @@ type BrewResource struct {
 }
 
 type BrewFormula struct {
-	ClassName   string
-	Name        string
+	ClassName string
+	Name      string
+	// Formula is the tap name, when it is not the folded Name.
+	Formula     string
 	Description string
 	Homepage    string
 	Version     string
@@ -204,6 +206,10 @@ func RenderBrewFormula(f BrewFormula) (*Output, error) {
 	if len(f.Resources) == 0 {
 		return nil, fmt.Errorf("formula %q has no resources", f.Name)
 	}
+	formula := f.Formula
+	if formula == "" {
+		formula = BrewFormulaName(f.Name)
+	}
 	d := brewData{
 		ClassName:       f.ClassName,
 		Name:            sanitizeBrewString(f.Name),
@@ -215,7 +221,7 @@ func RenderBrewFormula(f BrewFormula) (*Output, error) {
 		Kind:            f.Kind,
 		Private:         f.Private,
 		PrivateStrategy: BrewPrivateStrategy,
-		BaseClassName:   BrewClassName(f.Name),
+		BaseClassName:   BrewClassName(formula),
 		// The service block references opt_bin/<InstallName>, which exists
 		Service:     f.Service && f.Kind == "binary",
 		Canonical:   brewCanonicalResource(f.Resources),
