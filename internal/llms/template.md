@@ -174,7 +174,7 @@ brew trust "__BREW_TOKEN_URL__/private/tap.git"
 brew tap --custom-remote pazer/build "__BREW_TOKEN_URL__/private/tap.git"
 brew update-reset "$(brew --repository pazer/build)"
 export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
-brew install pazer/build/myrepo-myapp
+brew install pazer/build/myrepo
 ```
 
 The tap carries one formula per project, at the latest default-branch release. Its git history holds every published release. Install an older one with `brew version-install`, without a leading `v` on the version. Homebrew extracts it into a personal `<user>/versions` tap as a keg-only `<formula>@<version>`:
@@ -183,7 +183,7 @@ The tap carries one formula per project, at the latest default-branch release. I
 brew version-install pazer/build/go-toolchain@1.0.0
 ```
 
-A slash-namespaced project folds `/` to `-` in its formula name. That is the same rule as the APT package name rule. The installed command keeps the binary's own name. `myrepo/myapp` therefore installs as `brew install pazer/build/myrepo-myapp` and puts `myapp` on PATH.
+A slash-namespaced project folds `/` to `-` in its formula name. That is the same rule as the APT package name rule. The installed command keeps the binary's own name. A formula that is the only one under a root with no formula of its own takes the root's name. `myrepo/myapp` therefore installs as `brew install pazer/build/myrepo` and puts `myapp` on PATH. The folded name `myrepo-myapp` still installs it, through the tap's `formula_renames.json`.
 
 A project can declare its `create_service` setting. Its CI sends that bool on release-create, or an operator sets it through the API. Such a project is a background service, materialized per format.
 
