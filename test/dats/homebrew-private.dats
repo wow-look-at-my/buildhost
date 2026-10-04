@@ -18,10 +18,18 @@ shared:
 			echo "--- documented private flow, executed verbatim ---"
 			sed 's|x:[^@]*@|x:***@|' "$WORK/private.sh"
 			TOKEN="$BUILDHOST_TOKEN" bash -euo pipefail "$WORK/private.sh"
-			HOMEBREW_BUILDHOST_TOKEN="$BUILDHOST_TOKEN" brew install pazer/build/myrepo-myapp@0.9.0
-			echo "TAP='$(brew --repository pazer/build)'" > "$ENV_FILE"
+			TAP="$(brew --repository pazer/build)"
+			for _ in $(seq 60); do
+				git -C "$TAP" pull -q --ff-only
+				[ "$(git -C "$TAP" log --format=%H -- Formula/myrepo-myapp.rb | wc -l)" -ge 2 ] && break
+				sleep 1
+			done
+			HOMEBREW_NO_GITHUB_API=1 HOMEBREW_BUILDHOST_TOKEN="$BUILDHOST_TOKEN" brew version-install pazer/build/myrepo-myapp@0.9.0
+			echo "TAP='$TAP'" > "$ENV_FILE"
 
-setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
+setup:
+	- cmd: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
+	  timeout: 10m
 
 tests:
 	- desc: formulae installed from the public tap stay installed across the switch
@@ -42,8 +50,10 @@ tests:
 		stdout:
 			- "buildhost-homebrew-private-ok"
 
-	- desc: a pinned private version installs that release through the token strategy
-	  cmd: '"$(brew --prefix pazer/build/myrepo-myapp@0.9.0)/bin/myapp"'
+	# The extracted formula lands in the user's versions tap, which has no lib/,
+	# so its download strategy must ride inside the formula.
+	- desc: brew version-install installs an older private release through the token strategy
+	  cmd: '"$(brew --prefix myrepo-myapp@0.9.0)/bin/myapp"'
 	  outputs:
 		stdout:
 			- "buildhost-homebrew-private-0.9.0"
@@ -79,8 +89,11 @@ tests:
 		fi
 		grep -qx 'dotted.app.rb' formulas.txt || {
 			echo "the dotted public project is missing from the tap" >&2; cat formulas.txt >&2; exit 1; }
-		grep -qx 'myrepo-myapp/myrepo-myapp@0.9.0.rb' formulas.txt || {
-			echo "the private versioned formula is missing from the tap" >&2; cat formulas.txt >&2; exit 1; }
+		grep -qx 'myrepo-myapp.rb' formulas.txt || {
+			echo "the private formula is missing from the tap" >&2; cat formulas.txt >&2; exit 1; }
+		if grep -q '[@/]' formulas.txt; then
+			echo "the tap must hold one formula per project, no versions" >&2; cat formulas.txt >&2; exit 1
+		fi
 		while read -r f; do
 			brew ruby -- -c "$TAP/Formula/$f" | grep -q 'Syntax OK' \
 				|| { echo "formula $f is not valid Ruby" >&2; exit 1; }

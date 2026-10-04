@@ -117,9 +117,10 @@ var serveCmd = &cobra.Command{
 		}
 
 		srv := server.New(cfg, database, store)
+		// One background worker hashes what the brew tap history still lacks, so no tap request has to.
 		go func() {
-			if err := brew.BackfillVersionDigests(ctx); err != nil {
-				slog.Error("brew: versioned formula digest backfill incomplete", "err", err)
+			if err := brew.BackfillHistoryDigests(ctx); err != nil {
+				slog.Error("brew: tap history digest backfill incomplete", "err", err)
 			}
 		}()
 		slog.Info("starting server", "addr", cfg.ListenAddr)
