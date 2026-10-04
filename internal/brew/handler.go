@@ -141,7 +141,7 @@ func (h *Handler) ServeFormula(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, err := h.formulaForRelease(r.Context(), *project, *release, artifacts, auth.RequestRootURL(r), mode)
+	out, err := h.formulaForRelease(r.Context(), *project, *release, artifacts, auth.RequestRootURL(r), repackage.BrewFormulaName(project.Name), mode)
 	if errors.Is(err, db.ErrNotFound) {
 		http.NotFound(w, r)
 		return

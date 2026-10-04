@@ -59,11 +59,11 @@ func (h *Handler) tapLineageDir(key string) string {
 // sets its project's formula to that release, before the commit of the
 // current tree. Those commits are appended, so a clone still fast-forwards.
 func (h *Handler) refreshTapLineage(r *http.Request, dir string) error {
-	files, err := h.buildTapFiles(r)
+	files, names, err := h.buildTap(r)
 	if err != nil {
 		return err
 	}
-	history, err := h.tapHistory(r)
+	history, err := h.tapHistory(r, names)
 	if err != nil {
 		return err
 	}
