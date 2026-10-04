@@ -14,6 +14,10 @@ The `{project}.rb` pattern is ONE path segment. A slash-namespaced name therefor
 
 The name a user TYPES is the folded one, as in `brew install pazer/build/gcc-pgo`. A Homebrew formula name cannot contain `/`. `repackage.BrewFormulaName` is that fold. The admin dashboard, the web frontend, llms.txt and the README all install through it.
 
+## Root aliases
+
+A repo whose only binary has a different name publishes as `<repo>/<binary>`, so the repo name alone matches no formula. `addRootAliases` writes `Aliases/<root>` for each root that has no formula of its own and exactly one nested formula. Brew reads a tap alias only as a symlink to a formula file, so `writeGitTree` gives the entries of the root `Aliases/` tree mode `120000`. `brew install pazer/build/simple-llm-harness` then installs `simple-llm-harness-slh`. The command stays `slh`. A root with several nested formulas gets no alias, because the name does not pick one.
+
 ## Authenticated tap
 
 `brew.{domain}/private/tap.git` challenges an anonymous request with a 401 and a Basic realm. git does NOT send a URL-embedded credential preemptively, and waits for a challenge. A 200 therefore makes a credentialed `brew tap x:TOKEN@...` silently ingest the public-only tap.

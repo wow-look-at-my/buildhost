@@ -12,7 +12,7 @@ Do not install a formula with a naked remote URL, such as `brew install https://
 
 On Linux these formulas have no bottle. `brew install` therefore runs Homebrew's build sandbox. That sandbox needs bubblewrap, from `apt install bubblewrap`, and Homebrew also instills its own. It needs an unprivileged user namespace too. A hardened host such as Ubuntu 24.04 may need `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. In a container or a CI runner with no user namespace, set `HOMEBREW_NO_SANDBOX_LINUX=1` instead. macOS needs neither.
 
-A slash-namespaced project folds `/` to `-` in its formula name. That is the same rule APT applies to a package name. Project `log-streamer/client` therefore installs as `brew install pazer/build/log-streamer-client`.
+A slash-namespaced project folds `/` to `-` in its formula name. That is the same rule APT applies to a package name. Project `log-streamer/client` therefore installs as `brew install pazer/build/log-streamer-client`. When a root holds exactly one nested project and none of its own, the root name is an alias for it. `brew install pazer/build/log-streamer` works the same way.
 
 A project whose name starts with a digit cannot be served as a formula at all. Homebrew derives the Ruby class from the formula name, and a Ruby class cannot start with a digit. Such a project is therefore omitted from the tap.
 

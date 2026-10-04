@@ -48,6 +48,13 @@ tests:
 		stdout:
 			- "buildhost-homebrew-private-0.9.0"
 
+	# myrepo publishes one binary not named after it, as myrepo/myapp. The tap alias lets the repo name alone resolve to that formula.
+	- desc: the repo name resolves to its sole nested formula
+	  cmd: brew info --json=v2 pazer/build/myrepo | jq -r '.formulae[0].full_name'
+	  outputs:
+		stdout:
+			- "pazer/build/myrepo-myapp"
+
 	# `brew update` refreshes a tap by fetching its git remote, and for the
 	# authenticated tap the credentials live in that stored URL. Proving the
 	# refetch works is the cheap half of a full brew update.

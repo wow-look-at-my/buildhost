@@ -154,6 +154,7 @@ func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 		repackage.BrewPrivateStrategyPath: []byte(repackage.BrewPrivateStrategy),
 	}
 	budget := tapInlineDigestBudget
+	var formulas []string
 	for _, project := range visible {
 		release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
 		if err != nil {
@@ -178,13 +179,43 @@ func (h *Handler) buildTapFiles(r *http.Request) (map[string][]byte, error) {
 			return nil, err
 		}
 		files[repackage.BrewFormulaPath(project.Name)] = data
+		formulas = append(formulas, project.Name)
 
 		if err := h.addVersionedFormulas(r, project, files, &budget); err != nil {
 			return nil, err
 		}
 	}
+	addRootAliases(files, formulas)
 
 	return files, nil
+}
+
+// tapAliasDir holds Homebrew's tap aliases. Brew reads an alias only as a symlink to a formula file.
+const tapAliasDir = "Aliases"
+
+// addRootAliases makes `brew install <tap>/<root>` install the formula nested
+// under a root that has no formula of its own. A repo whose only binary is
+// not named after it publishes as "<repo>/<binary>", so the repo name alone
+// needs this alias. A root with several nested formulas is ambiguous and gets
+// no alias.
+func addRootAliases(files map[string][]byte, formulas []string) {
+	nested := map[string][]string{}
+	for _, name := range formulas {
+		for i := len(name) - 1; i > 0; i-- {
+			if name[i] == '/' {
+				nested[name[:i]] = append(nested[name[:i]], name)
+			}
+		}
+	}
+	for root, names := range nested {
+		if len(names) != 1 {
+			continue
+		}
+		if _, taken := files[repackage.BrewFormulaPath(root)]; taken {
+			continue
+		}
+		files[tapAliasDir+"/"+repackage.BrewFormulaName(root)] = []byte("../" + repackage.BrewFormulaPath(names[0]))
+	}
 }
 
 // addVersionedFormulas adds one name@version formula per published release on
@@ -231,7 +262,7 @@ func (h *Handler) addVersionedFormulas(r *http.Request, project db.Project, file
 
 func buildGitObjects(files map[string][]byte, parent string) (objects map[string][]byte, commitSHA, rootTreeSHA string) {
 	objects = map[string][]byte{}
-	rootTreeSHA = writeGitTree(objects, files)
+	rootTreeSHA = writeGitTree(objects, files, true, gitModeFile)
 
 	var commit bytes.Buffer
 	fmt.Fprintf(&commit, "tree %s\n", rootTreeSHA)
@@ -244,15 +275,21 @@ func buildGitObjects(files map[string][]byte, parent string) (objects map[string
 	return objects, commitSHA, rootTreeSHA
 }
 
+const (
+	gitModeFile    = "100644"
+	gitModeSymlink = "120000"
+)
+
 // writeGitTree adds the blobs and trees for files (slash-separated paths
 // relative to this tree) to objects, at any depth, and returns the tree's sha.
-func writeGitTree(objects map[string][]byte, files map[string][]byte) string {
+// A file in the root's tapAliasDir is a symlink, and its body is the link target.
+func writeGitTree(objects map[string][]byte, files map[string][]byte, root bool, mode string) string {
 	var entries []gitTreeEntry
 	subdirs := map[string]map[string][]byte{}
 	for name, body := range files {
 		dir, rest, nested := strings.Cut(name, "/")
 		if !nested {
-			entries = append(entries, gitTreeEntry{Mode: "100644", Name: name, SHA: addGitObject(objects, "blob", body)})
+			entries = append(entries, gitTreeEntry{Mode: mode, Name: name, SHA: addGitObject(objects, "blob", body)})
 			continue
 		}
 		if subdirs[dir] == nil {
@@ -261,7 +298,11 @@ func writeGitTree(objects map[string][]byte, files map[string][]byte) string {
 		subdirs[dir][rest] = body
 	}
 	for dir, sub := range subdirs {
-		entries = append(entries, gitTreeEntry{Mode: "40000", Name: dir, SHA: writeGitTree(objects, sub)})
+		subMode := mode
+		if root && dir == tapAliasDir {
+			subMode = gitModeSymlink
+		}
+		entries = append(entries, gitTreeEntry{Mode: "40000", Name: dir, SHA: writeGitTree(objects, sub, false, subMode)})
 	}
 	return addGitObject(objects, "tree", gitTree(entries))
 }
