@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -39,128 +40,74 @@ func tapRequest(authed bool) *http.Request {
 	return req
 }
 
-// One keg-only name@version formula per published default-branch release,
-// in the first build after the publish.
-func TestTap_VersionedFormulasPerDefaultBranchRelease(t *testing.T) {
+// The tap carries one formula per project, like any other tap. A pinned
+// release in the tap is listed by brew as a formula of its own.
+func TestTap_OneFormulaPerProject(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)
 	proj, _, _ := seedBrewProject(t, d, store, "ns/app", "v1-binary")
 	addRelease(t, d, store, proj, "1.1.0", 1001000, db.LatestBranch, "v11-binary")
-	addRelease(t, d, store, proj, "9.9.9", 9009009, "feature-x", "feature-binary")
+	seedPrivateBrewProject(t, d, store, "ns/secretapp", "priv-v1")
 
-	files, err := h.buildTapFiles(tapRequest(false))
-	require.NoError(t, err)
-	assert.Contains(t, files, "Formula/ns-app.rb")
-
-	old := string(files["Formula/ns-app/ns-app@1.0.0.rb"])
-	require.NotEmpty(t, old)
-	assert.Contains(t, old, "class NsAppAT100 < Formula\n")
-	assert.Contains(t, old, `version "1.0.0"`)
-	assert.Contains(t, old, `keg_only "it pins one release`)
-	assert.Contains(t, old, "v=1.0.0")
-	assert.Contains(t, old, `bin.install "app"`)
-
-	newer := string(files["Formula/ns-app/ns-app@1.1.0.rb"])
-	assert.Contains(t, newer, "class NsAppAT110 < Formula\n")
-	assert.Contains(t, newer, "v=1.1.0")
-
-	latest := string(files["Formula/ns-app.rb"])
-	assert.Contains(t, latest, `version "1.1.0"`)
-	assert.NotContains(t, latest, "keg_only")
-
-	// A feature-branch release is never the default branch's version.
-	for path := range files {
-		assert.NotContains(t, path, "9.9.9")
+	for _, authed := range []bool{false, true} {
+		files, err := h.buildTapFiles(tapRequest(authed))
+		require.NoError(t, err)
+		for path := range files {
+			assert.NotContains(t, path, "@", "the tap must hold no versioned formula")
+			if rest, ok := strings.CutPrefix(path, "Formula/"); ok {
+				assert.NotContains(t, rest, "/")
+			}
+		}
+		assert.Contains(t, string(files["Formula/ns-app.rb"]), `version "1.1.0"`)
 	}
 }
 
-// The versioned formulas of a private project ride the authenticated tap
-// only, download through the token strategy, and require it from a couple
-// of levels down.
-func TestTap_PrivateVersionedFormulas(t *testing.T) {
+// A tap build hashes only the latest release. Hashing every past release
+// repackaged the whole history and pinned the CPU on a first clone.
+func TestTap_BuildDigestsLatestReleaseOnly(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)
-	proj := seedPrivateBrewProject(t, d, store, "ns/secretapp", "priv-v1")
-	addRelease(t, d, store, proj, "1.1.0", 1001000, db.LatestBranch, "priv-v11")
-
-	files, err := h.buildTapFiles(tapRequest(true))
-	require.NoError(t, err)
-	body := string(files["Formula/ns-secretapp/ns-secretapp@1.0.0.rb"])
-	require.NotEmpty(t, body)
-	assert.True(t, strings.HasPrefix(body, `require_relative "../../lib/buildhost_private_download"`+"\n"))
-	assert.Contains(t, body, "using: BuildhostCurlDownloadStrategy")
-	assert.Contains(t, body, "class NsSecretappAT100 < Formula")
-
-	anon, err := h.buildTapFiles(tapRequest(false))
-	require.NoError(t, err)
-	assert.NotContains(t, tapFilesText(anon), "secretapp")
-}
-
-// Versions that differ only by case would collide in a clone on a
-// case-insensitive filesystem; the newest one keeps the path.
-func TestTap_CaseCollidingVersionsKeepNewest(t *testing.T) {
-	t.Serial()
-	h, d, store := setupTest(t)
-	proj, _, _ := seedBrewProject(t, d, store, "app", "base")
-	addRelease(t, d, store, proj, "2.0.0-rc", 2000000, db.LatestBranch, "lower")
-	addRelease(t, d, store, proj, "2.0.0-RC", 2000001, db.LatestBranch, "upper")
-
-	files, err := h.buildTapFiles(tapRequest(false))
-	require.NoError(t, err)
-
-	assert.Contains(t, files, "Formula/app/app@2.0.0-RC.rb")
-	assert.NotContains(t, files, "Formula/app/app@2.0.0-rc.rb")
-}
-
-func withInlineDigestBudget(t *testing.T, n int) {
-	old := tapInlineDigestBudget
-	tapInlineDigestBudget = n
-	t.Cleanup(func() { tapInlineDigestBudget = old })
-}
-
-// Past the inline budget a version is left out and filled in the background.
-// When the filler drains it drops the live lineages, so the next fetch sees
-// the version without waiting out tapCacheTTL.
-func TestTap_VersionsPastBudgetFillInBackground(t *testing.T) {
-	t.Serial()
-	withInlineDigestBudget(t, 0)
-	h, d, store := setupTest(t)
-	proj, _, _ := seedBrewProject(t, d, store, "app", "v1-binary")
+	proj, old, _ := seedBrewProject(t, d, store, "app", "v1-binary")
 	addRelease(t, d, store, proj, "1.1.0", 1001000, db.LatestBranch, "v11-binary")
 
-	files, err := h.buildTapFiles(tapRequest(false))
+	_, err := h.buildTapFiles(tapRequest(false))
 	require.NoError(t, err)
-	assert.Contains(t, files, "Formula/app/app@1.1.0.rb")
-	assert.NotContains(t, files, "Formula/app/app@1.0.0.rb")
 
-	require.Equal(t, http.StatusOK, getTap(t, h, "git.example.com", "info/refs").Code)
-	h.fillWG.Wait()
-	h.tapMu.Lock()
-	live := len(h.tapSnaps)
-	h.tapMu.Unlock()
-	assert.Zero(t, live, "a drained filler must drop the live lineages")
-
-	files, err = h.buildTapFiles(tapRequest(false))
+	ctx := context.Background()
+	artifacts, err := d.ListArtifactsByPlatform(ctx, old.ID)
 	require.NoError(t, err)
-	assert.Contains(t, files, "Formula/app/app@1.0.0.rb")
-}
-
-func TestBackfillVersionDigests_FillsHistory(t *testing.T) {
-	t.Serial()
-	withInlineDigestBudget(t, 0)
-	h, d, store := setupTest(t)
-	proj, _, _ := seedBrewProject(t, d, store, "app", "v1-binary")
-	addRelease(t, d, store, proj, "1.1.0", 1001000, db.LatestBranch, "v11-binary")
-	addRelease(t, d, store, proj, "1.2.0", 1002000, db.LatestBranch, "v12-binary")
-
-	require.NoError(t, h.backfillVersionDigests(context.Background()))
-	h.fillWG.Wait()
-
-	files, err := h.buildTapFiles(tapRequest(false))
-	require.NoError(t, err)
-	for _, v := range []string{"1.0.0", "1.1.0", "1.2.0"} {
-		assert.Contains(t, files, "Formula/app/app@"+v+".rb")
+	require.NotEmpty(t, artifacts)
+	for _, a := range artifacts {
+		_, _, _, _, _, err := d.GetPackagedArtifact(ctx, a.ID, a.CacheFormat(string(repackage.FormatTarGZ)))
+		assert.ErrorIs(t, err, db.ErrNotFound, "a past release must not be hashed by a tap build")
 	}
+}
+
+// The history leaves out a past release whose digest is not cached, and the
+// background filler hashes it. The request itself never does.
+func TestTapHistory_PendingDigestFillsInBackground(t *testing.T) {
+	t.Serial()
+	h, d, store := setupTest(t)
+	proj, _, _ := seedBrewProject(t, d, store, "app", "v1-binary")
+	addRelease(t, d, store, proj, "1.1.0", 1001000, db.LatestBranch, "v11-binary")
+	_, err := h.buildTapFiles(tapRequest(false))
+	require.NoError(t, err)
+
+	versions := func() []string {
+		history, err := h.tapHistory(tapRequest(false))
+		require.NoError(t, err)
+		var out []string
+		for _, f := range history {
+			assert.Equal(t, "Formula/app.rb", f.path)
+			_, rest, _ := strings.Cut(string(f.data), `version "`)
+			v, _, _ := strings.Cut(rest, `"`)
+			out = append(out, v)
+		}
+		return out
+	}
+	assert.Equal(t, []string{"1.1.0"}, versions())
+	h.fillWG.Wait()
+	assert.Equal(t, []string{"1.0.0", "1.1.0"}, versions())
 }
 
 func TestServeFormula_Versioned(t *testing.T) {
@@ -191,12 +138,13 @@ func TestServeFormula_Versioned(t *testing.T) {
 	latest := serve("ns-app.rb")
 	require.Equal(t, http.StatusOK, latest.Code)
 	assert.Contains(t, latest.Body.String(), `version "1.1.0"`)
-	assert.NotContains(t, latest.Body.String(), "keg_only")
+	assert.Contains(t, latest.Body.String(), "class NsApp < Formula")
 }
 
-// A real git clone of a tap carrying versioned formulas: Formula/<name>/ is a
-// nested tree, and the whole history passes fsck.
-func TestSmartClone_VersionedFormulasAreNestedTrees(t *testing.T) {
+// A real git clone holds one formula per project at HEAD, and the history
+// holds a commit of that file at every release: brew extract, which brew
+// version-install runs, walks it back to the version asked for.
+func TestSmartClone_HistoryHoldsEveryVersion(t *testing.T) {
 	t.Serial()
 	requireGit(t)
 
@@ -207,15 +155,39 @@ func TestSmartClone_VersionedFormulasAreNestedTrees(t *testing.T) {
 	h, d, store := setupTest(t)
 	proj, _, _ := seedBrewProject(t, d, store, "ns/app", "v1-binary")
 	addRelease(t, d, store, proj, "1.1.0", 1001000, db.LatestBranch, "v11-binary")
+	require.NoError(t, h.backfillHistoryDigests(context.Background()))
+	h.fillWG.Wait()
 	ts := smartTapServer(t, h)
 
 	dir := filepath.Join(t.TempDir(), "tap")
 	runGit(t, t.TempDir(), "clone", ts.URL+"/brew/tap.git", dir)
 	runGit(t, dir, "fsck", "--strict")
 
-	tree := runGit(t, dir, "ls-tree", "-r", "--name-only", "HEAD")
-	assert.Contains(t, tree, "Formula/ns-app.rb\n")
-	assert.Contains(t, tree, "Formula/ns-app/ns-app@1.0.0.rb\n")
-	assert.Contains(t, tree, "Formula/ns-app/ns-app@1.1.0.rb\n")
-	assert.Contains(t, tree, "lib/buildhost_private_download.rb\n")
+	assert.Equal(t, "Formula/ns-app.rb\n", runGit(t, dir, "ls-tree", "-r", "--name-only", "HEAD"))
+	assert.Contains(t, runGit(t, dir, "show", "HEAD:Formula/ns-app.rb"), `version "1.1.0"`)
+
+	var versions []string
+	for _, rev := range strings.Fields(runGit(t, dir, "log", "--format=%H", "--", "Formula/ns-app.rb")) {
+		body := runGit(t, dir, "show", rev+":Formula/ns-app.rb")
+		_, rest, _ := strings.Cut(body, `version "`)
+		v, _, _ := strings.Cut(rest, `"`)
+		versions = append(versions, v)
+	}
+	assert.Equal(t, []string{"1.1.0", "1.0.0"}, versions)
+
+	// A refresh with nothing new appends nothing.
+	head := runGit(t, dir, "rev-parse", "HEAD")
+	runGit(t, dir, "pull", "--ff-only")
+	assert.Equal(t, head, runGit(t, dir, "rev-parse", "HEAD"))
+
+	// A new release appends; the versions are not replayed again.
+	addRelease(t, d, store, proj, "1.2.0", 1002000, db.LatestBranch, "v12-binary")
+	runGit(t, dir, "pull", "--ff-only")
+	versions = nil
+	for _, rev := range strings.Fields(runGit(t, dir, "log", "--format=%H", "--", "Formula/ns-app.rb")) {
+		_, rest, _ := strings.Cut(runGit(t, dir, "show", rev+":Formula/ns-app.rb"), `version "`)
+		v, _, _ := strings.Cut(rest, `"`)
+		versions = append(versions, v)
+	}
+	assert.Equal(t, []string{"1.2.0", "1.1.0", "1.0.0"}, versions)
 }
