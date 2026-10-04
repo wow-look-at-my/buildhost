@@ -73,6 +73,7 @@ func TestServePrivateTap_TokenScopedTapIncludesPrivateFormula(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
+	seedBrewProject(t, d, store, "ns/other", "other-binary")
 	seedPrivateBrewProject(t, d, store, "ns/secretapp", "priv-binary")
 
 	// A global read token sees public + private projects.
