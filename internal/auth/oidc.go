@@ -55,6 +55,7 @@ type oidcClaims struct {
 	RepositoryOwnerID string `json:"repository_owner_id"` // numeric account ID
 	RunID             string `json:"run_id"`
 	RunAttempt        string `json:"run_attempt"`
+	Actor             string `json:"actor"`
 }
 
 const oidcLeeway = 60 * time.Second
@@ -91,8 +92,8 @@ type VerifyResult struct {
 	// RunID / RunAttempt name the workflow run and attempt that minted the token.
 	RunID      string
 	RunAttempt string
-	// OrgTrusted is true when the token's owner matched a named BUILDHOST_OIDC_ORGS entry.
-	OrgTrusted bool
+	// Actor is the GitHub login that triggered the workflow run.
+	Actor string
 }
 
 func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []db.OIDCPolicy) (*db.APIToken, string, error) {
@@ -204,7 +205,7 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 	}
 	if result != nil {
 		result.OIDCPrivate = verified.RepositoryVisibility != "public"
-		result.OrgTrusted = orgNamed(v.allowedOrgs, org, ownerID)
+		result.Actor = verified.Actor
 	}
 	return &db.APIToken{
 		ID:     -1,
@@ -350,18 +351,8 @@ func trimRepoPathIDs(path string) string {
 // orgAllowed reports whether the token's org may auto-provision. "*" allows
 // all.
 func orgAllowed(allowed []string, org, ownerID string) bool {
-	return slices.Contains(allowed, "*") || orgNamed(allowed, org, ownerID)
-}
-
-// TrustsOrg reports whether org is a named BUILDHOST_OIDC_ORGS entry.
-func (v *OIDCVerifier) TrustsOrg(org, ownerID string) bool {
-	return v != nil && orgNamed(v.allowedOrgs, org, ownerID)
-}
-
-// orgNamed matches org against the named allowlist entries only.
-func orgNamed(allowed []string, org, ownerID string) bool {
-	if org == "" {
-		return false
+	if slices.Contains(allowed, "*") {
+		return true
 	}
 	for _, entry := range allowed {
 		name, id := splitImmutableID(entry)

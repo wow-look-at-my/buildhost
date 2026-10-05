@@ -60,7 +60,6 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 					if oidcProject != "" {
 						rctx = WithOIDCProject(rctx, oidcProject)
 						rctx = WithOIDCPrivate(rctx, vr.OIDCPrivate)
-						rctx = WithOIDCOrgTrusted(rctx, vr.OrgTrusted)
 						rctx = WithOIDCRepo(rctx, OIDCRepoIdentity{
 							RepoPath:   vr.RepoPath,
 							Issuer:     vr.Issuer,
@@ -68,6 +67,7 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 							RepoID:     vr.RepoID,
 							RunID:      vr.RunID,
 							RunAttempt: vr.RunAttempt,
+							Actor:      vr.Actor,
 						})
 					}
 					r = r.WithContext(rctx)
@@ -154,8 +154,9 @@ func TokenCanReadProject(ctx context.Context, project *db.Project) bool {
 }
 
 // tokenReadsProject applies the project half of a read check to a token that
-// already holds the read scope. An OIDC identity reads its own namespace, and
-// from a named trusted org it also reads a project of another named trusted org.
+// already holds the read scope. An OIDC identity reads its own namespace. It
+// also reads another project when GitHub says the run's actor can read that
+// project's repo.
 func tokenReadsProject(ctx context.Context, t *db.APIToken, project *db.Project) bool {
 	if !t.AuthorizedForProject(project.ID) {
 		return false
@@ -164,18 +165,17 @@ func tokenReadsProject(ctx context.Context, t *db.APIToken, project *db.Project)
 	if oidcProject == "" {
 		return true
 	}
-	return oidcAuthorizesProject(oidcProject, project.Name) || oidcOrgReads(ctx, project)
+	return oidcAuthorizesProject(oidcProject, project.Name) || oidcActorReads(ctx, project)
 }
 
-// oidcOrgReads reports whether an OIDC identity from a named
-// BUILDHOST_OIDC_ORGS entry may read a project that a named entry also owns.
-// Read only: a write stays confined to the identity's own namespace.
-func oidcOrgReads(ctx context.Context, project *db.Project) bool {
-	if !OIDCOrgTrustedFrom(ctx) || mw == nil || mw.Verifier == nil {
+// oidcActorReads reports whether the GitHub user who triggered the run can
+// read the project's repo. Read only: a write stays in the identity's namespace.
+func oidcActorReads(ctx context.Context, project *db.Project) bool {
+	id := OIDCRepoFrom(ctx)
+	if id.Issuer != GitHubActionsIssuer {
 		return false
 	}
-	owner, _, ok := strings.Cut(project.GithubRepo, "/")
-	return ok && mw.Verifier.TrustsOrg(owner, project.GithubOwnerID)
+	return gitHubUserReadsRepo(ctx, id.Actor, project.GithubRepo)
 }
 
 // oidcAuthorizesProject reports whether an OIDC identity auto-provisioned for a
