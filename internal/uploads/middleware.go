@@ -19,7 +19,7 @@ const (
 // ResolveSessionBody makes every existing upload endpoint accept a chunked
 // upload session in place of a request body. It runs between authentication
 // and routing. A mutating request carrying ?upload_session=<id> (and an empty
-// body) has its Body swapped for the session's spool file, so the endpoint's
+// body) has its Body swapped for the session's spool file. So the endpoint's
 // own routing, project auth, size caps, and storage logic all run unchanged.
 // They read the spool instead of the network. On a 2xx response the session
 // is consumed (spool deleted). On failure it is kept so the client can retry

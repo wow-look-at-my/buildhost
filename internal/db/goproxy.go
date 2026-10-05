@@ -90,7 +90,7 @@ func (d *DB) SetGoproxyZip(ctx context.Context, moduleID int64, version, key str
 	return nil
 }
 
-// MarkGoproxySuccess and MarkGoproxyFailure keep the last outcome per module, so
+// MarkGoproxySuccess and MarkGoproxyFailure keep the last outcome per module. So
 // a module that is failing is visible on the dashboard rather than only in a log
 func (d *DB) MarkGoproxySuccess(ctx context.Context, moduleID int64) error {
 	if err := New(d.DB).MarkGoproxyModuleSuccess(ctx, moduleID); err != nil {

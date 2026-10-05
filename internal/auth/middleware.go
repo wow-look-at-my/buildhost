@@ -301,10 +301,10 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				if repo := OIDCRepoFrom(r.Context()); repo.RepoPath != "" {
 					if repo.OwnerID != "" && repo.RepoID != "" {
 						if project.GithubOwnerID != "" || project.GithubRepoID != "" {
-							// Rename/resurrection guard. GitHub NAMES are reusable -- delete (or
+							// Rename/resurrection guard. GitHub NAMES are reusable. Delete (or
 							// rename) a repo and a stranger can re-register the name and mint
-							// valid OIDC tokens for the same "owner/repo" -- but the numeric IDs
-							// are not. A token whose IDs disagree with the pin may not act on the
+							// valid OIDC tokens for the same "owner/repo". But the numeric IDs
+							// are not reusable. A token whose IDs disagree with the pin may not act on the
 							// project, read or write.
 							//
 							// The REPO id identifies the repository itself. It survives a rename

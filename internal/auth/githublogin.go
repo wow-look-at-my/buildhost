@@ -89,8 +89,8 @@ func githubAuth() *GitHubAuth {
 func githubAuthEnabled() bool { return githubAuth() != nil }
 
 // loginRedirectURL is the absolute URL a browser needing to authenticate is sent
-// to: the apex sign-in entrypoint, carrying a next= back to the full original
-// URL (which may be on a service subdomain). A request on the configured site
+// to. That is the apex sign-in entrypoint, carrying a next= back to the full
+// original URL (which may be on a service subdomain). A request on the configured site
 func loginRedirectURL(r *http.Request) string {
 	next := RequestBaseURL(r) + r.URL.RequestURI()
 	base := apexRootURL(r)
@@ -157,7 +157,7 @@ func handleSigninStart(w http.ResponseWriter, r *http.Request) {
 
 	nonce := randToken()
 	// Bind the destination into a signed state and tie the flow to this browser
-	// via a short-lived cookie (double-submit), so the callback can't be forged
+	// via a short-lived cookie (double-submit). So the callback can't be forged
 	// or pointed elsewhere.
 	http.SetCookie(w, &http.Cookie{
 		Name: stateCookieName, Value: nonce, Path: signinCallbackPath,
@@ -178,7 +178,7 @@ func handleSigninStart(w http.ResponseWriter, r *http.Request) {
 
 // handleSigninCallback completes the OAuth round-trip. No failure here may be
 // a dead end. The browser is sitting on the fixed callback URL. This happens
-// where a reload re-submits the consumed single-use code, so every exit
+// where a reload re-submits the consumed single-use code. So every exit
 // either restarts the flow or renders a page with a way to. And never with a
 // 5xx -- Cloudflare replaces origin 5xx bodies with its own bare error page,
 // which used to strand

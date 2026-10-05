@@ -295,9 +295,9 @@ func TestGetRelease_Success(t *testing.T) {
 
 // GetRelease must carry the release's artifacts. buildhost-publish-release
 // falls back to re-reading the release. This happens when the publish
-// response predates the artifacts field -- a rolling deploy can serve that
-// publish from an older container -- so without this the fallback has nothing
-// to recover and a publish fails for the duration of someone else's deploy.
+// response predates the artifacts field. A rolling deploy can serve that
+// publish from an older container. So without this the fallback has nothing
+// to recover, and a publish fails for the duration of someone else's deploy.
 func TestGetRelease_ReturnsArtifacts(t *testing.T) {
 	t.Serial()
 	h := setupTestHandler(t)

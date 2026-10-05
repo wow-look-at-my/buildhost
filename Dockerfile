@@ -12,7 +12,7 @@ RUN mkdir -p /tmpdir && chmod 1777 /tmpdir
 
 # The binary the final image runs is the ELF the APE's trampoline would have
 # staged for THIS target. The trampoline stages into a hardcoded
-# /tmp/.ape-run-1-$(id -u) that it picks itself and no variable moves, so a
+# /tmp/.ape-run-1-$(id -u) that it picks itself and no variable moves. So a
 # deployment's noexec /tmp killed every container at exit 126. Staging here
 # means nothing unpacks at run time and /tmp stops mattering.
 FROM busybox:musl AS staged

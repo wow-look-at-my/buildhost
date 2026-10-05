@@ -129,10 +129,10 @@ func withRunLockOnlyRepo(ctx context.Context, identity OIDCRepoIdentity) context
 	return context.WithValue(ctx, runLockRepoKey, identity)
 }
 
-// RunLockRepoFrom returns the run identity a run lock request may act for: the
-// identity of an accepted OIDC token, or of a verified token that only the
-// event allowlist refused. A run lock grants nothing but the run's own locks,
-// so a scheduled run can use them while the rest of the API refuses it.
+// RunLockRepoFrom returns the run identity a run lock request may act for.
+// That is an accepted OIDC token's identity, or a verified token's that only
+// the event allowlist refused. A run lock grants nothing but the run's own
+// locks, so a scheduled run can use them while the rest of the API refuses it.
 func RunLockRepoFrom(ctx context.Context) (OIDCRepoIdentity, bool) {
 	if t := TokenFrom(ctx); t != nil && t.HasScope("write") {
 		if repo := OIDCRepoFrom(ctx); repo.RepoID != "" {

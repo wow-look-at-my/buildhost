@@ -180,7 +180,7 @@ try {
 
 	await createProject(PROJECT, false);
 
-	// Branches so `library` is NOT the default -- the production shape,
+	// Branches so `library` is NOT the default. That is the production shape,
 	// where the URL redirects to the @branch form rather than collapsing
 	// straight to the bare project path.
 	for (const [branch, files] of [

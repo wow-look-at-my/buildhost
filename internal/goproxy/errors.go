@@ -87,7 +87,7 @@ func (e *Error) HTTPStatus() int {
 
 // Body is what the client sees. `go mod download` surfaces a proxy's response
 // body verbatim in its error. This text is the whole diagnosis for whoever
-// hits it. It names the module, the upstream and its status, and for an
+// hits it. It names the module, the upstream and its status. For an
 // authorization failure it says plainly that the proxy could not read the
 // module rather than that the module is absent.
 func (e *Error) Body() string {

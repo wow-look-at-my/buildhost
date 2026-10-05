@@ -128,9 +128,9 @@ func tapScopeKey(ctx context.Context) string {
 	return fmt.Sprintf("tok\x00%d\x00%s\x00%d\x00%s", t.ID, t.Name, pid, auth.OIDCProjectFrom(ctx))
 }
 
-// tapVisibleProjects computes the projects the request may see in a tap: every
-// public project, plus -- when the request carries a credential -- the private
-// projects that credential can read.
+// tapVisibleProjects computes the projects the request may see in a tap. Those
+// are every public project, plus -- when the request carries a credential --
+// the private projects that credential can read.
 func (h *Handler) tapVisibleProjects(r *http.Request) ([]db.Project, error) {
 	projects, err := h.DB.ListProjects(r.Context())
 	if err != nil {

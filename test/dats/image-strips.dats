@@ -61,8 +61,8 @@ tests:
 		stdout:
 			- "stripped"
 
-	# Checked against the SECTION TABLE, not by searching for the string: the
-	# section-name string table keeps every name it ever held, so ".debug_info"
+	# Checked against the SECTION TABLE, not by searching for the string. The
+	# section-name string table keeps every name it ever held. So ".debug_info"
 	# is still present as BYTES in a correctly stripped file.
 	- desc: the stripped download is a usable ELF with its debug sections gone
 	  cmd: |

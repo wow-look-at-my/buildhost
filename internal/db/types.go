@@ -212,9 +212,9 @@ func NormalizeArch(s string) (Arch, bool) {
 }
 
 // NormalizeLegacyWasmPair maps the deprecated GOOS/GOARCH-ordered WebAssembly
-// pair -- (os=js, arch=wasm) or (os=wasip1, arch=wasm), the
-// `name_GOOS_GOARCH` filename convention-released go-toolchain autoreleases
-// derive upload parameters from -- to the canonical
+// pair to the canonical. That pair is (os=js, arch=wasm) or (os=wasip1,
+// arch=wasm), the `name_GOOS_GOARCH` filename convention-released
+// go-toolchain autoreleases derive upload parameters from.
 func NormalizeLegacyWasmPair(osName, arch string) (OS, Arch, bool) {
 	if strings.ToLower(strings.TrimSpace(arch)) != "wasm" {
 		return "", "", false

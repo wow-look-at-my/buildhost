@@ -24,9 +24,9 @@ const (
 	machineARM64 = 0xb7
 )
 
-// fakeAPE builds a payload with the prologue an APE carries: the magic the
-// detector matches, and the printf call per architecture that the trampoline
-// uses to write a real ELF header over its own copy.
+// fakeAPE builds a payload with the prologue an APE carries. That is the magic
+// the detector matches, and the printf call per architecture. The trampoline
+// uses that call to write a real ELF header over its own copy.
 func fakeAPE() []byte {
 	var b strings.Builder
 	b.WriteString("MZqFpD='\n")
@@ -201,8 +201,8 @@ func TestAPEIndexFailsLoudlyWhenAChildCannotBeSynthesized(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "linux/386", "the error must name the platform that failed")
 }
 
-// TestAPEIndexFailsLoudlyWhenAChildIsNotLinked covers the other silent drop:
-// BlobBelongsToProject answering false left no log line at all, so a cache-key
+// TestAPEIndexFailsLoudlyWhenAChildIsNotLinked covers the other silent drop.
+// BlobBelongsToProject answering false left no log line at all. So a cache-key
 // collision across platforms was invisible from every surface.
 func TestAPEIndexFailsLoudlyWhenAChildIsNotLinked(t *testing.T) {
 	t.Serial()

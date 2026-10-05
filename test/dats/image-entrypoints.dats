@@ -57,7 +57,7 @@ tests:
 			- "buildhost"
 
 	# A deployment mounts a noexec tmpfs over /tmp. The APE trampoline stages its
-	# copy under a hardcoded /tmp path that reads no TMPDIR, so an image shipping
+	# copy under a hardcoded /tmp path that reads no TMPDIR. So an image shipping
 	# the APE itself died here at exit 126, against a path nobody chose. The
 	# launcher announced a directory it had picked and changed nothing.
 	- desc: the image starts with /tmp mounted noexec

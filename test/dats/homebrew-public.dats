@@ -1,8 +1,8 @@
 # The DOCUMENTED public Homebrew flow, executed verbatim, and what it must
 # leave on disk.
 #
-# The brew commands are not written here: scripts/brew-doc-flows.sh extracts
-# them from docs/homebrew.md and substitutes only the host, and this suite asserts the
+# The brew commands are not written here. scripts/brew-doc-flows.sh extracts
+# them from docs/homebrew.md and substitutes only the host. This suite asserts the
 # served /llms.txt agrees with them.
 #
 # The workflow starts the server and publishes the artifacts; $BUILDHOST_TOKEN,

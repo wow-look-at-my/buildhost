@@ -141,9 +141,9 @@ func TestRequireProject_SiteDomainBrowser_RedirectsToPrimary(t *testing.T) {
 	assert.Empty(t, rec.Header().Get("Location"))
 }
 
-// The instant path. A browser that already holds a valid primary-apex session
-// (with a LIVE GitHub token -- probed via GET /user) and asks to sign in to a
-// site-domain destination skips the OAuth consent round-trip -- the session is
+// The instant path. A browser already holds a valid primary-apex session
+// (with a LIVE GitHub token -- probed via GET /user). It asks to sign in to a
+// site-domain destination and skips the OAuth consent round-trip. The session is
 // parked. The browser is bounced straight to /__sso. The full redemption round
 // trip must set the SAME session value as a site-apex cookie, and the code
 // must be single-use.
@@ -255,8 +255,8 @@ func TestSigninStart_InstantHandoff_DeadTokenFallsThroughToOAuth(t *testing.T) {
 }
 
 // The OAuth-callback path. Completing GitHub sign-in with a site-domain next
-// sets the primary-apex session cookie as always AND bounces through /__sso
-// instead of redirecting to the destination directly.
+// sets the primary-apex session cookie as always. It ALSO bounces through
+// /__sso instead of redirecting to the destination directly.
 func TestSigninCallback_SiteNext_MintsHandoff(t *testing.T) {
 	t.Serial()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

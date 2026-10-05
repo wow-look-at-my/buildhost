@@ -91,8 +91,8 @@ func TestRenderBrewFormula_NoResourcesErrors(t *testing.T) {
 	require.Error(t, err)
 }
 
-// The flag-OFF rendering is pinned byte-for-byte: formula bytes feed the tap's
-// content-addressed git objects, so unintended drift mints a spurious tap
+// The flag-OFF rendering is pinned byte-for-byte. Formula bytes feed the tap's
+// content-addressed git objects. So unintended drift mints a spurious tap
 // commit for every project on deploy. Any deliberate change to the formula
 // (e.g. the skip_clean/chmod mode fix) belongs in this golden.
 func TestRenderBrewFormula_ServiceOffByteIdentical(t *testing.T) {
@@ -139,10 +139,10 @@ end
 }
 
 // The opt-in service block (projects.create_service): brew services manages the
-// installed binary as a login service. keep_alive uses the CRASH-ONLY form --
+// installed binary as a login service. keep_alive uses the CRASH-ONLY form.
 // `successful_exit: false` renders KeepAlive {SuccessfulExit: false} in the
-// launchd plist (Homebrew service.rb KEEP_ALIVE_KEYS) -- because plain
-// `keep_alive true` would respawn a deliberately-exiting app (a single-instance
+// launchd plist (Homebrew service.rb KEEP_ALIVE_KEYS). That form is used because
+// plain `keep_alive true` would respawn a deliberately-exiting app (a single-instance
 func TestRenderBrewFormula_ServiceBlock(t *testing.T) {
 	t.Serial()
 	f := baseFormula(BrewResource{OS: "macos", Arch: "arm", URL: "https://dl.example/darwin-arm64", SHA256: strings.Repeat("bb", 32)})

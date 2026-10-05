@@ -10,7 +10,7 @@ import (
 )
 
 // TestRootRedirectRouteShadowing proves the apex GET /{project} route catches
-// the project root and every file path under it, yet never shadows the more
+// the project root and every file path under it. Yet it never shadows the more
 // specific branch / branches routes. The router is best-match: more literal
 // segments win, so the literal-less apex route only catches paths that aren't
 func TestRootRedirectRouteShadowing(t *testing.T) {

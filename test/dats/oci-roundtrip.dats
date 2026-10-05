@@ -21,9 +21,9 @@
 # the assertion: an image nobody starts is what shipped the defect this suite
 # exists for.
 #
-# The workflow starts the image with compose, maps the OCI host in /etc/hosts,
-# marks it insecure, turns on the containerd image store (buildhost's layers are
-# zstd) and passes $BUILDHOST_BIN and $MARKER_BIN. Needs curl, jq and the docker
+# The workflow starts the image with compose, maps the OCI host in /etc/hosts
+# and marks it insecure. It turns on the containerd image store (buildhost's
+# layers are zstd) and passes $BUILDHOST_BIN and $MARKER_BIN. Needs curl, jq and the docker
 # CLI, so a workflow runs it --no-sandbox.
 #
 # see docs/formats/oci.md
@@ -118,7 +118,7 @@ tests:
 
 	# The bytes have to survive the round trip. Removing the local image first
 	# is what makes the run below read from buildhost instead of the daemon's
-	# own cache, which is how a broken pull passes unnoticed.
+	# own cache. Reading from that cache is how a broken pull passes unnoticed.
 	- desc: the pushed image pulls back out and runs
 	  cmd: |
 		set -eu
@@ -171,7 +171,7 @@ tests:
 			- "buildhost"
 
 	# A deployment gives a container a noexec /tmp. The APE trampoline stages
-	# its copy under a hardcoded /tmp path that no variable moves, so an image
+	# its copy under a hardcoded /tmp path that no variable moves. So an image
 	# shipping the APE itself dies here on exit 126 against a path nobody chose.
 	- desc: the synthesized image starts with /tmp mounted noexec
 	  cmd: |

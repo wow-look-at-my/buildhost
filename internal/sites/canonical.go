@@ -65,7 +65,7 @@ func (h *Handler) canonicalURLFor(ctx context.Context, project *db.Project, bran
 // project's file.
 //
 // The check is the whole point. Consider the apex path's project/file split.
-// That split is resolved by longest match against existing projects, so with
+// That split is resolved by longest match against existing projects. So with
 // projects "org" and "org/repo" the URL /org/repo/x.css belongs to org/repo,
 // NOT to the file
 func (h *Handler) apexURLFor(ctx context.Context, project *db.Project, filePath string, r *http.Request) (string, bool) {

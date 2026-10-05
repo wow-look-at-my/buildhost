@@ -12,9 +12,9 @@ import (
 
 // A site file must be reachable at the project's own root path
 // (sites.{domain}/{project}/{file}), not only under /branch/{branch}/. Anything
-// linking to a site -- an MCP App declaring a runner origin, a page's own
-// relative asset, a README -- otherwise has to name a branch it has no business
-// knowing. These go through the REAL router: the apex route is literal-less and
+// linking to a site otherwise has to name a branch it has no business knowing.
+// That is an MCP App declaring a runner origin, a page's own relative asset, or
+// a README. These go through the REAL router: the apex route is literal-less and
 // must lose to the branch routes while still catching everything else.
 func TestApexPath_ServesFilesFromDefaultBranch(t *testing.T) {
 	t.Serial()
@@ -58,9 +58,9 @@ func TestApexPath_ServesFilesFromDefaultBranch(t *testing.T) {
 
 // A slash-namespaced project's root must still be its root: /org/repo is
 // org/repo's bare root, never "the file repo under project org". Longest match
-// decides, so adding file serving to the apex path cannot repoint a URL that
-// already resolved -- even when the shorter project genuinely holds a file at
-// that path.
+// decides. So adding file serving to the apex path cannot repoint a URL that
+// already resolved. That holds even when the shorter project genuinely holds a
+// file at that path.
 func TestApexPath_NamespacedProjectRootUnchanged(t *testing.T) {
 	t.Serial()
 	env := setupEnv(t)

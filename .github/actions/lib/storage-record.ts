@@ -123,7 +123,7 @@ async function post(octokit: Octokit, core: Core, context: Context, records: Rec
 	const owner = context.repo.owner;
 	for (const rec of records) {
 		// A record without the link back to the bytes its digest covers is a
-		// silent downgrade, so an over-long URL fails rather than dropping it.
+		// silent downgrade. So an over-long URL fails rather than dropping it.
 		if (rec.artifact_url !== undefined && rec.artifact_url.length > MAX_ARTIFACT_URL) {
 			core.setFailed(`Cannot record ${label(rec)}: its artifact_url is ${rec.artifact_url.length} chars, over the API's ${MAX_ARTIFACT_URL}-char limit. Recording it without the URL would silently drop the only link back to the bytes the digest covers; shorten the project name or change the download URL scheme.`);
 			return false;

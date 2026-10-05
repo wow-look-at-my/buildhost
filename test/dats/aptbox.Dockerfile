@@ -2,7 +2,7 @@
 
 # The apt client for test/dats/apt-install.dats.
 #
-# The suite used to install onto the runner itself, which made it depend on
+# The suite used to install onto the runner itself. That made it depend on
 # whatever apt state that host carried and left cleanup to a teardown. A
 # container fixes both: exactly one extra source, an apt state baked at build
 # time, and nothing to undo afterwards.

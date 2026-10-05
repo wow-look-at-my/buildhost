@@ -360,9 +360,9 @@ func TestNestedModuleUsesTagPrefix(t *testing.T) {
 	assert.Equal(t, "v0.3.0\n", rec.Body.String())
 }
 
-// With no tags at all -- the normal state for this org's branch-pinned modules
-// -- @latest must resolve to a pseudo-version of the default branch head rather
-// than reporting that there is nothing there.
+// With no tags at all, @latest must resolve to a pseudo-version of the default
+// branch head rather than reporting that there is nothing there. No tags is
+// the normal state for this org's branch-pinned modules.
 func TestLatestFallsBackToPseudoVersion(t *testing.T) {
 	t.Serial()
 	fake := newFakeGitHub(t)

@@ -240,8 +240,8 @@ func TestOCIRepackageAPEImageLayout(t *testing.T) {
 	assert.NotContains(t, launcher, "TMPDIR", "nothing is staged at run time, so there is no TMPDIR to set")
 }
 
-// Every image gets the same layout, whatever kind of binary it was built from:
-// the binary out of the way under /usr/local/lib, and a launcher at each
+// Every image gets the same layout, whatever kind of binary it was built from.
+// The binary is out of the way under /usr/local/lib, and a launcher is at each
 // spelling. A layout that varies is a layout only some images are tested on.
 func TestOCIWriteLayerLayoutIsTheSameForEveryBinary(t *testing.T) {
 	t.Serial()

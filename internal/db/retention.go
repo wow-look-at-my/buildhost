@@ -145,8 +145,8 @@ func (d *DB) IsBlobReferenced(ctx context.Context, key string) (bool, error) {
 }
 
 // ListEvictableReleases returns published releases past keep-N on their
-// (project, branch) that are also older than recencyCutoff and not pinned by an
-// oci tag or a pushed-docker artifact.
+// (project, branch) that are also older than recencyCutoff. A release pinned by
+// an oci tag or a pushed-docker artifact is not returned.
 func (d *DB) ListEvictableReleases(ctx context.Context, keepN int64, recencyCutoff time.Time) ([]ListEvictableReleasesRow, error) {
 	return d.q.ListEvictableReleases(ctx, ListEvictableReleasesParams{
 		RecencyCutoff: sqliteDatetime(recencyCutoff),

@@ -75,7 +75,7 @@ func parseModulePath(path string) ([]repoRef, error) {
 }
 
 // matchesPrefix compares case-insensitively. This is because GitHub owner and
-// repository names are: github.com/ORG/x names the same repository as
+// repository names are. github.com/ORG/x names the same repository as
 // github.com/org/x, and must get the same private handling.
 func matchesPrefix(path string, prefixes []string) bool {
 	lower := strings.ToLower(path)

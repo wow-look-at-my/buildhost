@@ -154,7 +154,7 @@ func mustGet(t *testing.T, url string) int {
 
 // The consistency guarantee for a publish landing mid-clone. The pack is
 // built from the commit the client WANTED (the sha the advertisement handed
-// it), which the append-only lineage still holds even though the tip has
+// it). The append-only lineage still holds that commit even though the tip has
 // advanced past it.
 func TestServeUploadPack_ServesRequestedWantAfterTipAdvance(t *testing.T) {
 	t.Serial()
