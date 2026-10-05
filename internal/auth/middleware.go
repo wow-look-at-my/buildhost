@@ -139,10 +139,9 @@ func UserCanReadRepo(ctx context.Context, ownerRepo string) bool {
 	return allowed
 }
 
-// TokenCanReadProject reports whether the request context carries a credential
-// that authorizes READING the given project, applying exactly the token rules
-// requireProject's ReadAccess branch applies to a private project: a token with
-// the read scope, authorized for the project, and -- for OIDC identities -- inside
+// TokenCanReadProject reports whether the request context carries a
+// credential that authorizes READING the given project, applying exactly the
+// token rules requireProject's ReadAccess branch applies.
 func TokenCanReadProject(ctx context.Context, project *db.Project) bool {
 	if !project.IsPrivate {
 		return true
