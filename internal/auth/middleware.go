@@ -183,16 +183,6 @@ func oidcActorReads(ctx context.Context, project *db.Project) (bool, string) {
 	return gitHubUserReadsRepo(ctx, id.Actor, project.GithubRepo)
 }
 
-func forbiddenForProject(w http.ResponseWriter, reason string) {
-	body := map[string]string{"error": "token not authorized for this project"}
-	if reason != "" {
-		body["reason"] = reason
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusForbidden)
-	json.NewEncoder(w).Encode(body)
-}
-
 // oidcAuthorizesProject reports whether an OIDC identity auto-provisioned for a
 // repository may act on the given project. oidcProject is the repo's derived
 func oidcAuthorizesProject(oidcProject, requested string) bool {
@@ -431,7 +421,14 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						return
 					}
 					if ok, reason := tokenReadsProjectWhy(r.Context(), t, project); !ok {
-						forbiddenForProject(w, reason)
+						msg := "token not authorized for this project"
+						if reason != "" {
+							msg += ": " + reason
+						}
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusForbidden)
+						body, _ := json.Marshal(map[string]string{"error": msg})
+						w.Write(body)
 						return
 					}
 				}
