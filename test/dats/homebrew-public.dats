@@ -23,7 +23,7 @@ shared:
 			echo "--- documented public flow, executed verbatim ---"
 			cat "$WORK/public.sh"
 			TOKEN="$BUILDHOST_TOKEN" bash -euo pipefail "$WORK/public.sh"
-			# The APE-shaped fixture installs here rather than in a test: dats
+			# The APE-shaped fixture installs here rather than in a test. Dats
 			# runs tests concurrently, and brew installs at the same time
 			# contend for the same prefix.
 			brew install pazer/build/ape-fixture
@@ -76,7 +76,7 @@ tests:
 			- "docs-agree"
 
 	# The tripwire against smuggling CI-only crutches into the executed
-	# commands: every line is a plain brew command or a token export, and the
+	# commands: every line is a plain brew command or a token export. The
 	# tap/trust/install skeleton is present.
 	- desc: the documented flows are brew commands only, with tap, trust and install
 	  cmd: |
@@ -97,7 +97,7 @@ tests:
 		stdout:
 			- "flow-shape-ok"
 
-	# The generated formula opts out with skip_clean "bin"; this is what turns
+	# The generated formula opts out with skip_clean "bin". This is what turns
 	# a regression in that codegen red instead of shipping a binary users
 	# cannot run.
 	- desc: the installed binary keeps both the execute and the write bit

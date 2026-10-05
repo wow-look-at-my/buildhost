@@ -174,7 +174,7 @@ func TestDebPackageName(t *testing.T) {
 }
 
 // TestDebRepackage_NamespacedName proves a slash-namespaced project produces a
-// valid Debian package: the control Package field, the .deb filename, and the
+// valid Debian package. The control Package field, the .deb filename, and the
 // installed binary path all use the folded name (slash -> dash). dpkg rejects a
 // Package name containing '/', so this is what makes apt usable for namespaced
 // projects.

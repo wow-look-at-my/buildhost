@@ -105,8 +105,8 @@ func TestSigilDefaultBranchCollapsesToBareURL(t *testing.T) {
 	assert.Equal(t, "body{}", rec.Body.String())
 }
 
-// The collapse is skipped when the bare URL would address a DIFFERENT project:
-// the apex path splits project from file by longest match, so with projects
+// The collapse is skipped when the bare URL would address a DIFFERENT project.
+// The apex path splits project from file by longest match, so with projects
 // "org" and "org/repo", /org/repo/x.css is org/repo's file. Redirecting org's
 // own repo/x.css there would silently point at another project's site.
 func TestSigilDefaultBranchKeepsShadowedFileInPlace(t *testing.T) {

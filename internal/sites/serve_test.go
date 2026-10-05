@@ -78,10 +78,10 @@ func (e *testEnv) uploadSite(t *testing.T, project, branch string, files map[str
 
 // TestRouting pins the real routing the rest of the suite relies on. It is the
 // regression test for the redirect loop fixed by folding the branch-root
-// redirect into Serve: a single GET route means a file request reaches Serve
-// directly instead of being shadowed by a greedier redirect route.
-// This test MUST use setupEnv (real router) -- direct handler calls cannot
-// catch routing-level bugs.
+// redirect into Serve. A single GET route means a file request reaches Serve
+// directly instead of being shadowed by a greedier redirect route. This test
+// MUST use setupEnv (real router) -- direct handler calls cannot catch
+// routing-level bugs.
 func TestRouting(t *testing.T) {
 	t.Serial()
 	env := setupEnv(t)

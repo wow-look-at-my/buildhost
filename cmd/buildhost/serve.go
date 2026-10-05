@@ -36,8 +36,9 @@ var serveCmd = &cobra.Command{
 	RunE: func(_ *cobra.Command, _ []string) error {
 		cfg := config.Load()
 
-		// Make the Go runtime aware of the container's memory cgroup so the GC
-		// runs harder as we approach the limit instead of letting the heap grow
+		// Make the Go runtime aware of the container's memory cgroup. Do this
+		// so the GC runs harder as we approach the limit instead of letting the
+		// heap grow
 		if limit, err := memlimit.SetGoMemLimitWithOpts(
 			memlimit.WithRatio(0.9),
 			memlimit.WithProvider(memlimit.FromCgroup),
@@ -162,8 +163,8 @@ var serveCmd = &cobra.Command{
 
 // startRetentionSweeper launches the background GC sweeper when a positive
 // interval is configured. It is report-only unless BUILDHOST_RETENTION_ENFORCE is
-// set, defers a tick while writes are in flight (the same counter /ready-to-update
-// uses), and exits when ctx is cancelled at shutdown.
+// set, defers a tick. This holds while writes are in flight (the same counter
+// /ready-to-update uses), and exits when ctx is cancelled at shutdown.
 func startRetentionSweeper(ctx context.Context, cfg config.Config, database *db.DB, store storage.Storage) {
 	if cfg.RetentionInterval <= 0 {
 		return

@@ -1,10 +1,10 @@
-# What the upload composites and the CLI must have done to a real server: one
+# What the upload composites. The CLI must have done to a real server. One
 # session for the chunked path and none for the direct one, bytes that survive
 # the round trip, a release that ends up published, and an advertised site URL
 # that serves rather than redirects.
 #
 # The workflow runs the composites -- an action only runs inside a workflow --
-# and hands the results here: LOG is the server's log, BASE and SITES its
+# and hands the results here. LOG is the server's log, BASE and SITES its
 # hosts, and the SHA/VERSION/SITE_URL values are what the steps reported.
 #
 # This half runs after both site publishes, so the session count covers
@@ -54,8 +54,8 @@ tests:
 		stdout:
 			- "sites-match"
 
-	# Which canonical URL it names depends on which branch is the default, and
-	# this project has no site on main/master, so the fallback is whichever of
+	# Which canonical URL it names depends on which branch is the default.
+	# This project has no site on main/master. The fallback is whichever of
 	# both was deployed last. Assert the redirect, then follow the target the
 	# server actually named rather than hard-coding one of both forms.
 	- desc: the legacy branch URL redirects to the canonical one for the same file
@@ -78,10 +78,10 @@ tests:
 			- "redirects-canonical"
 
 	# Single-mode `buildhost publish` (no --manifest) must PUBLISH the release
-	# it creates. The CLI package deliberately has no unit tests, so this is
+	# it creates. The CLI package deliberately has no unit tests. This is
 	# where that promise is kept: an unpublished release is invisible to
-	# latest/branch/brew/apt/npm/web and eventually swept as an abandoned
-	# upload, with no CLI way to publish it later.
+	# latest/branch/brew/apt/npm/web. The unpublished release eventually swept
+	# as an abandoned upload, with no CLI way to publish it later.
 	- desc: a single-mode CLI publish leaves the release published
 	  cmd: |
 		set -eu

@@ -12,8 +12,8 @@ import (
 
 // readBundle returns the GENERATED dashboard bundle. It is produced from
 // internal/admin/frontend/src by the //go:generate directive in admin.go and is
-// gitignored, so a missing file here means the tree was not generated -- the
-// same condition that fails the //go:embed at compile time.
+// gitignored. A missing file here means the tree was not generated -- the same
+// condition that fails the //go:embed at compile time.
 func readBundle(t *testing.T) string {
 	t.Helper()
 	data, err := os.ReadFile("static/app.js")
@@ -28,10 +28,10 @@ func readBundle(t *testing.T) string {
 // build error, nothing red in CI, a control that does nothing when clicked.
 //
 // This is also the check that would have caught the drift this file was
-// rewritten for: the committed bundle had diverged from its TypeScript
+// rewritten for. The committed bundle had diverged from its TypeScript
 // source, and the assertions (on internal function names) passed against the
-// stale artifact while the real source could not have produced a working
-// dashboard.
+// stale artifact. This happens while the real source could not have produced
+// a working dashboard.
 func TestAdminStaticInlineHandlersAreExported(t *testing.T) {
 	t.Serial()
 	body := readBundle(t)
@@ -75,7 +75,7 @@ func TestAdminStaticHomebrewInstructionsUseTap(t *testing.T) {
 
 // Slash-namespaced projects render as a tree on the Projects page. These are the
 // class names the rendered markup and the stylesheet agree on, not internal
-// function names -- the rendering may be refactored, the markup contract may not.
+// function names. The rendering may be refactored, the markup contract may not.
 func TestAdminStaticProjectsRenderAsTree(t *testing.T) {
 	t.Serial()
 	body := readBundle(t)
@@ -145,8 +145,9 @@ func TestAdminStaticReleasePageShowsBrewInstallCommand(t *testing.T) {
 
 // A registry ADDRESS is not an install command. The release page used to print
 // the npm packument URL and the OCI manifest URL as the whole answer for "how
-// do I get this?" -- pasting either into a browser returns JSON and installs
-// nothing. Each ecosystem gets the command that installs THIS release.
+// do I get this?". Pasting either into a browser returns JSON. The browser
+// installs nothing. Each ecosystem gets the command that installs THIS
+// release.
 func TestAdminStaticReleasePageShowsInstallCommands(t *testing.T) {
 	t.Serial()
 	body := readBundle(t)

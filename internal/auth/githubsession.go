@@ -47,9 +47,9 @@ func signState(st signinState, exp time.Time) string {
 }
 
 // parseState authenticates an OAuth state parameter. ok reports a valid
-// signature; everything in st is then trustworthy even when expired is set
-// (the MAC covers the expiry too), so an expired flow can still be restarted
-// to its own next URL. ok=false means forged or corrupt: use nothing from it.
+// signature. Everything in st is then trustworthy even when expired is set
+// (the MAC covers the expiry too). An expired flow can still be restarted to
+// its own next URL. ok=false means forged or corrupt: use nothing from it.
 func parseState(value string) (st signinState, expired, ok bool) {
 	payload, expired, ok := parseSignedValue("state", value)
 	if !ok {

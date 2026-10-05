@@ -106,8 +106,8 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 
 	// Persist the manifest document itself (alongside its config + layers above)
 	// and link it to the project, so the pull path can serve it by its content
-	// digest. A multi-arch index lists each platform's image manifest by digest,
-	// and the client resolves it via GET /v2/{name}/manifests/<digest>, which is
+	// digest. A multi-arch index lists each platform's image manifest by digest.
+	// The client resolves it via GET /v2/{name}/manifests/<digest>, which is
 	// gated on BlobBelongsToProject and served straight from storage. Without
 	if input.Project.ID > 0 && o.DB != nil {
 		manifestKey, manifestSize, err := o.Store.Put(ctx, bytes.NewReader(manifestData))

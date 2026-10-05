@@ -353,7 +353,7 @@ func TestUploadArtifact_HashRefMalformedHash400(t *testing.T) {
 }
 
 // The same-project gate: sha256 values are public (release JSON, checksums
-// files), so knowing a hash must never let another project mint a row serving
+// files). Knowing a hash must never let another project mint a row serving
 // the blob -- and the refusal must be indistinguishable from an unknown blob.
 func TestUploadArtifact_HashRefCrossProject404(t *testing.T) {
 	t.Serial()

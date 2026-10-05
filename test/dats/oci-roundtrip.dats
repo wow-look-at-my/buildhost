@@ -4,8 +4,8 @@
 # Every other OCI check stops short of this. The unit tests drive handlers
 # through httptest and never start a container. synthesized-image.dats runs the
 # buildhost BINARY on the host and pulls a synthesized image from it. This suite
-# is the only one where a real docker daemon talks to buildhost running as the
-# container it ships, over the wire, in both directions.
+# is the only one. This holds where a real docker daemon talks to buildhost
+# running as the container it ships, over the wire, in both directions.
 #
 # Both directions are different code paths and both are covered here:
 #
@@ -16,10 +16,10 @@
 #            where a dropped platform, an unlinked layer blob or a binary the
 #            kernel cannot exec turns into a pull that fails at the client.
 #
-# The payload for the synthesized side is the repo's own APE, so the pulled
-# image exercises the staged-ELF path and the shell in the base layer. Running
-# it is the assertion: an image nobody starts is what shipped the defect this
-# suite exists for.
+# The payload for the synthesized side is the repo's own APE. The pulled image
+# exercises the staged-ELF path and the shell in the base layer. Running it is
+# the assertion: an image nobody starts is what shipped the defect this suite
+# exists for.
 #
 # The workflow starts the image with compose, maps the OCI host in /etc/hosts,
 # marks it insecure, turns on the containerd image store (buildhost's layers are
@@ -47,7 +47,7 @@ shared:
 				echo "BUILDHOST_BIN is not an APE, so the pull side would test the plain-ELF path" >&2; exit 1; }
 			# A registered APE binfmt handler makes the kernel run any APE
 			# through a shell, so an image whose binary was never staged would
-			# still start and this suite would stop being able to fail.
+			# still start. This suite would stop being able to fail.
 			for h in /proc/sys/fs/binfmt_misc/*; do
 				case "${h##*/}" in status|register|'*') continue ;; esac
 				if grep -qi '^magic 4d5a714670443d27$' "$h" 2>/dev/null &&
@@ -64,7 +64,7 @@ shared:
 
 			printf '%s' "$TOKEN" | docker login "$REGISTRY" -u buildhost --password-stdin
 
-			# PUSH SIDE. A scratch image around a static binary: the whole image
+			# PUSH SIDE. A scratch image around a static binary. The whole image
 			# is bytes this suite controls, so a mismatch on the way back out is
 			# buildhost's and not a base image's.
 			mkdir -p "$WORK/ctx"
@@ -101,7 +101,7 @@ setup: env ENV_FILE={shared.env} sh {shared.start.sh}
 
 tests:
 	# The push landed as a release the API reports, not just as blobs in a
-	# directory: a push the rest of buildhost cannot see is not stored.
+	# directory. A push the rest of buildhost cannot see is not stored.
 	- desc: the pushed image is a docker release the API reports
 	  cmd: |
 		set -eu
@@ -131,7 +131,7 @@ tests:
 			- "MARKER-OK"
 
 	# The defect this suite was written for: the index served for an APE
-	# omitted linux/amd64, the artifact's own canonical platform and the only
+	# omitted linux/amd64, the artifact's own canonical platform. The only
 	# one anything can run. docker reported "no matching manifest for
 	# linux/amd64 in the manifest list entries" and the cause reached nobody.
 	- desc: the index carries every linux platform the APE covers

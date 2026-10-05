@@ -112,7 +112,7 @@ func decodePackument(t *testing.T, rec *httptest.ResponseRecorder) map[string]an
 }
 
 // TestRouter_Packument_NPMPackageArtifact covers the fallback path: the stored
-// blob is not a readable npm tarball, so no manifest fields can be reflected and
+// blob is not a readable npm tarball. No manifest fields can be reflected and
 // the version entry is the minimal-but-valid {name, version, dist}.
 func TestRouter_Packument_NPMPackageArtifact(t *testing.T) {
 	t.Serial()
@@ -201,8 +201,9 @@ func TestRouter_Tarball_NotFound(t *testing.T) {
 
 // TestRouter_NamespacedProject proves a slash-namespaced buildhost project
 // round-trips as a single-slash (valid) npm package: project
-// "cc-marketplace/my-plugin" is served as "@buildhost/cc-marketplace__my-plugin"
-// and its tarball downloads through the encoded route.
+// "cc-marketplace/my-plugin" is served as
+// "@buildhost/cc-marketplace__my-plugin". Its tarball downloads through the
+// encoded route.
 func TestRouter_NamespacedProject(t *testing.T) {
 	t.Serial()
 	content := "namespaced tarball"
@@ -283,7 +284,7 @@ func TestRouter_UnpublishedSkipped(t *testing.T) {
 }
 
 // TestRouter_StaticNPMWrapper exercises the npm-wrapper Fmt (fmt_wrapper.go)
-// through the real static endpoint -- this is the launcher package the npm
+// through the real static endpoint. This is the launcher package the npm
 // packument points binary projects at (fmt=npm-wrapper, os=any/arch=any).
 func TestRouter_StaticNPMWrapper(t *testing.T) {
 	t.Serial()

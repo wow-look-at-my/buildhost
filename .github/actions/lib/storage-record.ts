@@ -52,8 +52,8 @@ export async function recordSite(octokit: Octokit, core: Core, context: Context,
 	server: string; project: string; branch: string; version: string; sha256: string;
 }): Promise<boolean> {
 	// No artifact_url: a site is served unpacked, so no URL returns the archive
-	// bytes this digest covers, and a record must never point at bytes that hash
-	// to something else.
+	// bytes this digest covers. A record must never point at bytes that hash to
+	// something else.
 	return post(octokit, core, context, [{
 		name: params.project, version: params.version, digest: `sha256:${params.sha256}`,
 		registry_url: params.server, repository: params.project, path: `branch/${params.branch}`,

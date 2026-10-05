@@ -107,8 +107,8 @@ func TestApexPath_UnknownProjectNotFound(t *testing.T) {
 }
 
 // The apex file path resolves its branch through resolveRootBranch, the same
-// chain the root redirect and the public-read gate use, so it lands on a
-// branch that has a site even when projects.default_branch lags behind.
+// chain the root redirect and the public-read gate use. It lands on a branch
+// that has a site even when projects.default_branch lags behind.
 func TestApexPath_UsesResolvedDefaultBranch(t *testing.T) {
 	t.Serial()
 	h, d, _ := setupTest(t)

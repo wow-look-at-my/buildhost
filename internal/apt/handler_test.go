@@ -201,7 +201,7 @@ func TestServePackages_Success(t *testing.T) {
 
 // TestServePackages_NamespacedName proves the Packages index for a
 // slash-namespaced project advertises a valid Debian package name (slash folded
-// to dash) in both the Package and Filename fields, so apt/dpkg accept it.
+// to dash) in both the Package. Filename fields, so apt/dpkg accept it.
 func TestServePackages_NamespacedName(t *testing.T) {
 	h, d, store := setupTest(t)
 	ctx := context.Background()

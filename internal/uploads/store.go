@@ -1,6 +1,7 @@
-// Package uploads implements generic chunked upload sessions, so a client can
-// deliver an arbitrarily large request body to ANY existing upload endpoint in
-// pieces small enough to survive a proxy's request-body cap (Cloudflare's edge
+// Package uploads implements generic chunked upload sessions. A client can
+// deliver an arbitrarily large request body to ANY. That ANY is existing
+// upload endpoint in pieces small enough to survive a proxy's request-body cap
+// (Cloudflare's edge
 package uploads
 
 import (
@@ -119,10 +120,10 @@ func (s *Store) Get(id, owner string) (*Session, error) {
 // Append streams r onto the end of the spool. offset must equal the session's
 // current committed size (ErrOffsetMismatch otherwise, with the actual size
 // returned so the client can resume). Partially transferred bytes are
-// committed -- a chunk interrupted mid-body advances the size by what landed,
-// and the client resumes from the size reported by a status read. An append
-// that would exceed the store's maximum size is rolled back entirely and
-// returns ErrTooLarge. The returned size is the committed size after the call.
+// committed -- a chunk interrupted mid-body advances the size by what landed.
+// The client resumes from the size reported by a status read. An append that
+// would exceed the store's maximum size is rolled back entirely and returns
+// ErrTooLarge. The returned size is the committed size after the call.
 func (s *Store) Append(sess *Session, offset int64, r io.Reader) (int64, error) {
 	sess.mu.Lock()
 	defer sess.mu.Unlock()

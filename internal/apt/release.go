@@ -117,7 +117,7 @@ type hashEntry struct {
 
 // computePackagesHashes renders each architecture's Packages index through
 // packagesEntry -- the same renderer servePackages serves -- and hashes the
-// rendered bytes, so the Release/InRelease SHA256 lines can never disagree
+// rendered bytes. The Release/InRelease SHA256 lines can never disagree
 func (h *Handler) computePackagesHashes(r *http.Request, project *db.Project, release *db.Release) ([]hashEntry, error) {
 	arches := []string{"amd64", "arm64", "i386", "armhf"}
 	baseURL := auth.RequestRootURL(r)

@@ -1,5 +1,5 @@
 // shellgen fetches the busybox every synthesized image's base layer carries and
-// writes it into the tree for go:embed, the way fetch-cacerts.sh does for the CA
+// writes it into the tree for go:embed. The way fetch-cacerts.sh does for the CA
 // bundle.
 //
 // It runs at BUILD time on purpose. A pull-time fetch made every image buildhost

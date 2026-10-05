@@ -120,7 +120,7 @@ func TestAdminMergePlan_PreviewChangesNothing(t *testing.T) {
 // marshalled as null, and the page crashed on exactly the plan worth merging:
 // "can't access property length, p.conflicts is null".
 //
-// The raw JSON is asserted, not the decoded value: null and [] both decode to
+// The raw JSON is asserted, not the decoded value. Null and [] both decode to
 // a nil `any`, so a decoded check passes while the browser still breaks.
 func TestAdminMergePlan_CleanPlanCarriesAnEmptyConflictArray(t *testing.T) {
 	t.Serial()

@@ -2,7 +2,7 @@
 # carry no file that needs an ELF interpreter.
 #
 # A rolling update creates the replacement container from the OLD container's
-# config, so the entrypoint it starts with is whatever the container it replaces
+# config. The entrypoint it starts with is whatever the container it replaces
 # recorded -- not the one this image declares. The shipped binary is an APE, and
 # the kernel cannot exec one: its header is a shell script. So the image puts a
 # shebang launcher on PATH and keeps the APE beside it, and every spelling has
@@ -23,7 +23,7 @@ shared:
 			IMAGE="${BUILDHOST_IMAGE:-buildhost:ci}"
 			docker image inspect "$IMAGE" >/dev/null
 			# A registered APE binfmt handler makes the kernel run any APE
-			# through a shell, so a bare exec of one succeeds and these tests
+			# through a shell. A bare exec of one succeeds and these tests
 			# stop being able to fail. The handler is host-wide and containers
 			# inherit it, so refuse to report a green nobody earned.
 			for h in /proc/sys/fs/binfmt_misc/*; do

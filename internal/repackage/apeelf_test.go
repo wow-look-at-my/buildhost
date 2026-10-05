@@ -42,7 +42,7 @@ func testPrintfOctal(b []byte) string {
 
 // testAPE builds a payload shaped like an APE: the prologue magic, a printf
 // call per architecture, and a body. The trampoline uses those calls to turn
-// its own copy into an ELF, and reading them back is how the image ships a
+// its own copy into an ELF. Reading them back is how the image ships a
 // binary the kernel can load.
 func testAPE(machines ...uint16) []byte {
 	var b strings.Builder
@@ -79,7 +79,7 @@ func TestAPEAsELFPicksTheHeaderForTheArch(t *testing.T) {
 }
 
 // The prologue is the only place the header can come from, so a payload that
-// carries none must fail rather than ship an image that cannot start.
+// carries none must fail rather than ship an image. That image cannot start.
 func TestAPEAsELFRefusesAPayloadWithNoHeader(t *testing.T) {
 	t.Serial()
 	_, err := apeAsELF(strings.NewReader("MZqFpD='\n"+strings.Repeat("nothing here\n", 16)), db.ArchAMD64)

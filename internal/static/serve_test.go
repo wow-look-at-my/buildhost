@@ -385,8 +385,8 @@ func TestServe_RepackageFormat(t *testing.T) {
 	assert.NotEmpty(t, rec.Body.Bytes())
 }
 
-// A binary artifact that is not an ELF must be served EXACTLY as uploaded, and
-// the same immutable URL must return the same bytes every time.
+// A binary artifact that is not an ELF must be served EXACTLY as uploaded. The
+// same immutable URL must return the same bytes every time.
 //
 // Regression: buildhost strips binaries at download time wherever strip and
 // objcopy exist (only the distroless production image lacks them). Those tools

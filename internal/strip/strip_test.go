@@ -232,7 +232,7 @@ func TestStrip_StrippedBinaryStillRuns(t *testing.T) {
 }
 
 // Downloads are cached by strong ETag and their sha256 is baked into Homebrew
-// formulas and APT indexes, so the same artifact must strip to the same bytes
+// formulas and APT indexes. The same artifact must strip to the same bytes
 // every time.
 func TestStrip_Deterministic(t *testing.T) {
 	t.Serial()

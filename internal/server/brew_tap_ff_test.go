@@ -142,7 +142,7 @@ func TestBrewTap_GitUpdateFastForwardsAcrossPublishAndRedeploy(t *testing.T) {
 }
 
 // A slash-namespaced project's formula lives in the tap under its FOLDED
-// filename (gcc/pgo -> gcc-pgo.rb); the per-formula URL users copy must
+// filename (gcc/pgo -> gcc-pgo.rb). The per-formula URL users copy must
 // resolve that folded name back to the project instead of 404ing.
 func TestBrewFormula_FoldedFilenameResolvesSlashNamespacedProject(t *testing.T) {
 	t.Serial()

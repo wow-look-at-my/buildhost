@@ -32,9 +32,9 @@ func baseFormula(resources ...BrewResource) BrewFormula {
 }
 
 // Homebrew can only import a formula whose STABLE spec has a URL on the
-// platform doing the import; a formula carrying only on_<os> stanzas for the
+// platform doing the import. A formula carrying only on_<os> stanzas for the
 // OTHER platform raises "formula requires at least a URL" and poisons the
-// whole tap. Every formula therefore emits a top-level url/sha256, and a
+// whole tap. Every formula therefore emits a top-level url/sha256. A
 // single-OS formula declares depends_on so a foreign-platform install fails
 // cleanly instead of fetching a binary that cannot run.
 func TestRenderBrewFormula_LinuxOnly(t *testing.T) {
@@ -219,7 +219,7 @@ func TestRenderBrewFormula_NonBinaryKindHasNoSkipClean(t *testing.T) {
 }
 
 // Slash-namespaced projects install the BASENAME (brew strips the lone
-// top-level directory when unpacking), so the chmod must name the same file
+// top-level directory when unpacking). The chmod must name the same file
 // bin.install staged -- chmod'ing the slashed path would ENOENT the install.
 func TestRenderBrewFormula_SlashNamespacedChmodsBasename(t *testing.T) {
 	t.Serial()

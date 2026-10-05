@@ -14,7 +14,7 @@ import (
 // TestSitesServedFileCSP proves, through the full server middleware chain, that
 // a hosted static site's assets are served without a blocking CSP. The global
 // securityHeaders middleware applies "default-src 'none'" to every API response
-// (correct for JSON/binary endpoints); the sites Serve handler removes it so
+// (correct for JSON/binary endpoints). The sites Serve handler removes it so
 // the browser can load the site's own scripts, styles, and images.
 func TestSitesServedFileCSP(t *testing.T) {
 	t.Serial()
@@ -48,7 +48,7 @@ func TestSitesServedFileCSP(t *testing.T) {
 // A site file must be reachable at the project's own root path, through the
 // whole stack: host dispatch -> requireProject -> sites handler. Before this,
 // only /{project}/branch/{branch}/{path} served a file and the bare root merely
-// redirected, so every link into a site had to name a branch -- and any link
+// redirected. Every link into a site had to name a branch -- and any link
 func TestSitesApexPath(t *testing.T) {
 	t.Serial()
 	env := setup(t)
@@ -102,7 +102,7 @@ func TestSitesApexPath(t *testing.T) {
 }
 
 // The apex file path is gated exactly like every other site read: the
-// public-read bypass opens only a public site's own default branch, and the
+// public-read bypass opens only a public site's own default branch. The
 // gate resolves that branch through the same helper the handler does.
 func TestSitesApexPathVisibility(t *testing.T) {
 	t.Serial()

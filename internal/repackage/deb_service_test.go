@@ -11,8 +11,8 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
-// The deb materialization of the packaging-agnostic create_service setting:
-// a flagged binary project's deb ships a systemd USER unit -- ordered
+// The deb materialization of the packaging-agnostic create_service setting.
+// A flagged binary project's deb ships a systemd USER unit -- ordered
 // after/bound to graphical-session.target (this is a per-user, often GUI,
 // app) with the crash-only Restart=on-failure (the brew KeepAlive
 // {SuccessfulExit:false} twin) -- at /usr/lib/systemd/user/<pkg>.service.

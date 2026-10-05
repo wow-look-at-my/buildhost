@@ -39,8 +39,8 @@ func (h *Handler) RedirectLegacyBranch(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusFound)
 }
 
-// canonicalURLFor returns the canonical URL for a file of a resolved branch:
-// the bare project path when that branch is the default and the bare URL
+// canonicalURLFor returns the canonical URL for a file of a resolved branch.
+// The bare project path when that branch is the default and the bare URL
 // addresses this project's file (see apexURLFor), else the "@" spelling.
 // mutable reports whether the target depends on which branch is default, so
 // the caller can mark that response uncacheable.
@@ -64,9 +64,10 @@ func (h *Handler) canonicalURLFor(ctx context.Context, project *db.Project, bran
 // "/{project}/<file>" -- and reports whether that URL addresses this
 // project's file.
 //
-// The check is the whole point. The apex path's project/file split is
-// resolved by longest match against existing projects, so with projects "org"
-// and "org/repo" the URL /org/repo/x.css belongs to org/repo, NOT to the file
+// The check is the whole point. Consider the apex path's project/file split.
+// That split is resolved by longest match against existing projects, so with
+// projects "org" and "org/repo" the URL /org/repo/x.css belongs to org/repo,
+// NOT to the file
 func (h *Handler) apexURLFor(ctx context.Context, project *db.Project, filePath string, r *http.Request) (string, bool) {
 	target := "/" + project.Name + "/"
 	if filePath != "" {

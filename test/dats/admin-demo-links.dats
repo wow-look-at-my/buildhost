@@ -2,7 +2,7 @@
 #
 # The preview publishes the admin SPA with no backend, so every page draws from
 # the built-in demo dataset. That dataset once linked to pages it had no data
-# for: clicking a release threw inside the renderer, left the previous page on
+# for. Clicking a release threw inside the renderer, left the previous page on
 # screen, and read as a link that does nothing. Only walking the links the app
 # itself renders finds that, so the crawl drives a real browser and lives in a
 # node test the suite invokes.

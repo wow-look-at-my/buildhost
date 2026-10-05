@@ -140,7 +140,7 @@ func TestGetProject_Success(t *testing.T) {
 
 // Note: GetProject auth (private project, not found) is tested via requireProject
 
-// PATCH must classify as a write verb: UpdateProjectSettings relies on the
+// PATCH must classify as a write verb. UpdateProjectSettings relies on the
 // centralized requireProject middleware demanding a write-scoped token
 // authorized for the project, which only happens for WriteAccess routes.
 func TestParseRoute_PATCHIsWrite(t *testing.T) {

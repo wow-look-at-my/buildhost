@@ -37,8 +37,8 @@ func lineageDirFor(t *testing.T, h *Handler) string {
 }
 
 // The smart advertisement must describe the SAME tip as the dumb path -- both
-// read the lineage's persisted refs/heads/main -- and the info/refs route
-// without a service parameter must keep serving the dumb file byte-for-byte.
+// read the lineage's persisted refs/heads/main. The info/refs route without a
+// service parameter must keep serving the dumb file byte-for-byte.
 func TestServeTapInfoRefs_AdvertisementDerivesFromLineageTip(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)
@@ -79,10 +79,10 @@ func TestServeTapInfoRefs_AdvertisementDerivesFromLineageTip(t *testing.T) {
 }
 
 // A plain (non-shallow) smart clone -- what `brew tap` runs -- must transfer
-// the tap's FULL history: every commit reachable from the tip, so later dumb
-// or smart fetches fast-forward. The client echoing advertised capabilities
-// must not be mistaken for a shallow request (the "expected ACK/NAK, got
-// 'shallow <sha>'" failure).
+// the tap's FULL history. This covers every commit reachable from the tip,
+// so later dumb or smart fetches fast-forward. The client echoing advertised
+// capabilities must not be mistaken for a shallow request (the "expected
+// ACK/NAK, got 'shallow <sha>'" failure).
 func TestServeUploadPack_FullCloneTransfersWholeHistory(t *testing.T) {
 	t.Serial()
 	requireGit(t)
@@ -152,7 +152,7 @@ func mustGet(t *testing.T, url string) int {
 	return resp.StatusCode
 }
 
-// The consistency guarantee for a publish landing mid-clone: the pack is
+// The consistency guarantee for a publish landing mid-clone. The pack is
 // built from the commit the client WANTED (the sha the advertisement handed
 // it), which the append-only lineage still holds even though the tip has
 // advanced past it.

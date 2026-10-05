@@ -7,7 +7,7 @@
 # container fixes both: exactly one extra source, an apt state baked at build
 # time, and nothing to undo afterwards.
 #
-# Building it is the workflow's job, in its own untimed step, so the suite's
+# Building it is the workflow's job, in its own untimed step. The suite's
 # setup hook never pays for a base-image pull or these installs.
 FROM ubuntu:24.04
 

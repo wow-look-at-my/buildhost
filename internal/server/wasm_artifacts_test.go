@@ -84,8 +84,8 @@ func TestWasmArtifact_UploadDownloadRoundTrip(t *testing.T) {
 // upload parameters from GOOS_GOARCH filenames (name_js_wasm /
 // name_wasip1_wasm), so it uploads with os=js/arch=wasm. That pair must fold
 // to the canonical os=wasm form at every ingestion point -- upload, dl, and
-// static canonicalization -- and "js" must never surface as an os in stored
-// rows or URLs.
+// static canonicalization. "js" must never surface as an os in stored rows
+// or URLs.
 func TestWasmArtifact_LegacyGoosGoarchPairEndToEnd(t *testing.T) {
 	t.Serial()
 	env := setup(t)

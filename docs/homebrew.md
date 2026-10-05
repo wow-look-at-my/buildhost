@@ -16,7 +16,7 @@ A slash-namespaced project folds `/` to `-` in its formula name. That is the sam
 
 A repo whose one binary has a different name publishes it as `<repo>/<binary>`. Such a formula takes the repo's name: `simple-llm-harness/slh` installs as `brew install pazer/build/simple-llm-harness`, and puts `slh` on PATH. The rule applies when the root has no formula of its own and holds no other formula. The old folded name still installs it, through the tap's `formula_renames.json`.
 
-A project whose name starts with a digit cannot be served as a formula at all. Homebrew derives the Ruby class from the formula name, and a Ruby class cannot start with a digit. Such a project is therefore omitted from the tap.
+A project whose name starts with a digit cannot be served as a formula at all. Homebrew derives the Ruby class from the formula name. A Ruby class cannot start with a digit. Such a project is therefore omitted from the tap.
 
 ## Private projects
 

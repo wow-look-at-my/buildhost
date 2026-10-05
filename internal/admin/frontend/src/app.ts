@@ -220,7 +220,7 @@ const dockerPull = function (svc: ServiceURLs, project: string, version: string,
 };
 
 // A private project's dl link redirects to the static host, and curl only
-// re-sends credentials across that hop with --location-trusted; the token is
+// re-sends credentials across that hop with --location-trusted. The token is
 // the HTTP Basic password.
 const curlDownload = function (dlBase: string, version: string, priv: boolean): string {
     var url = dlBase + (version ? "?v=" + version + "&" : "?") + "os=linux&arch=amd64";
@@ -1194,7 +1194,7 @@ const renderRetention = function (d: RetentionData): void {
 
 const INVENTORY_HINT = "Every stored file with its size, timestamp, project, version, sha256, reference count, and the reason retention keeps it — plus totals grouped by that reason.";
 
-// The inventory is a debug dump of the server's own state, so this never falls
+// The inventory is a debug dump of the server's own state. This never falls
 // back to the demo fixture on a failed request: a copied fixture would read as
 // what the server holds.
 const fetchInventory = function (): Promise<RetentionInventory> {

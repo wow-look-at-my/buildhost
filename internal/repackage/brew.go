@@ -298,10 +298,8 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 	})
 }
 
-// BrewClassName derives the formula's Ruby class name from the project name.
-// It MUST match what Homebrew derives from the formula FILENAME
-// (Formulary.class_s of the folded name), or the tap's formulas fail to load
-// with "expected to find class" -- and it must always be a valid Ruby
+// BrewClassName derives the formula's Ruby class name from the project name. It MUST match what Homebrew derives from the formula FILENAME (Formulary.class_s of the folded name). Otherwise, the tap's formulas fail to load with "expected to find
+// class" -- and it must always be a valid Ruby
 func BrewClassName(name string) string {
 	parts := strings.FieldsFunc(name, func(r rune) bool {
 		return r == '-' || r == '_' || r == '/' || r == '.'
@@ -353,9 +351,9 @@ func BrewVersionedClassName(project, version string) (string, bool) {
 }
 
 // brewClassS ports Homebrew's Formulary.class_s (Library/Homebrew/formulary.rb)
-// step for step: capitalize, upcase the alphanumeric after each separator and
-// drop the separator, turn "+" into "x", then turn the first "@" followed by a
-// digit into "AT".
+// step for step. Capitalize, upcase the alphanumeric after each separator. Drop
+// the separator, turn "+" into "x", then turn the first "@" followed by a digit
+// into "AT".
 func brewClassS(name string) string {
 	if name == "" {
 		return ""

@@ -59,10 +59,10 @@ func (h *Handler) ServeTap(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveTapFile is the shared tap file server. The tap contents are scoped to
-// the request's credential (public projects only when anonymous; plus the
+// the request's credential (public projects only when anonymous. Plus the
 // private projects the credential can read otherwise), and a credentialed
-// response is marked uncacheable for shared caches -- its body depends on the
-// Authorization header, and the live deployment sits behind a CDN.
+// response is marked uncacheable for shared caches. Its body depends on the
+// Authorization header. The live deployment sits behind a CDN.
 func (h *Handler) serveTapFile(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(tapSuffix(r), "/")
 	if path == "" {
@@ -228,10 +228,9 @@ func (h *Handler) renderFormula(r *http.Request, project db.Project, release db.
 	return io.ReadAll(out.Reader)
 }
 
-// tapFormulaNames maps each project with a formula to its tap formula name.
-// The name is the project's folded name, except for the only formula under a root that has no formula of its own.
-// That formula takes the topmost such root's folded name: a repo whose one binary is not named after it publishes as "<repo>/<binary>", and installs as "<repo>".
-// A root name that another formula already folds to stays with that formula.
+// tapFormulaNames maps each project with a formula to its tap formula name. The name is the project's folded name, except for the only formula under a root that
+// has no formula of its own. That formula takes the topmost such root's folded name. A repo whose one binary is not named after it publishes as
+// "<repo>/<binary>", and installs as "<repo>". A root name that another formula already folds to stays with that formula.
 func tapFormulaNames(projects []string) map[string]string {
 	own := set.New[string]()
 	folded := set.New[string]()

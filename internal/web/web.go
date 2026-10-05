@@ -1,5 +1,5 @@
 // Package web serves buildhost's public, read-only browse frontend on the main
-// domain. It is intentionally NOT a single-page app: every page is rendered
+// domain. It is intentionally NOT a single-page app. Every page is rendered
 // server-side as plain semantic HTML so the registry is consumable and
 // indexable without executing any JavaScript. There is no JS at all -- styling
 // lives in a single same-origin stylesheet.
@@ -7,7 +7,7 @@
 // The frontend exposes only what the public REST API already exposes: public
 // projects, their published releases, and the artifacts within them. Private
 // projects are gated by the same auth.requireProject middleware used by every
-// other read endpoint, so an anonymous visitor can never see a private project.
+// other read endpoint. An anonymous visitor can never see a private project.
 package web
 
 import (
