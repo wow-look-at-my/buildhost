@@ -169,4 +169,14 @@ func TestRequireProjectOIDCActorReadIsReadOnly(t *testing.T) {
 	assert.Equal(t, http.StatusOK, run(ReadAccess))
 	assert.Equal(t, http.StatusOK, run(HiddenReadAccess))
 	assert.Equal(t, http.StatusForbidden, run(WriteAccess))
+
+	handler := requireProjectFunc(func(*http.Request) RouteInfo {
+		return testRouteInfo{project: "bashfs", access: ReadAccess}
+	}, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	req := httptest.NewRequest("GET", "/", nil).WithContext(actorCtx("claude-code-web-config", "stranger"))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Contains(t, rec.Body.String(), "GitHub answered 404 for the permission of stranger", "a refusal must say why")
+	assert.NotContains(t, rec.Body.String(), "wow-look-at-my/bashfs", "a refusal must not name the private repo")
 }

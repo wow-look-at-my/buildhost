@@ -156,19 +156,18 @@ func TokenCanReadProject(ctx context.Context, project *db.Project) bool {
 // tokenReadsProject applies the project half of a read check to a token that
 // already holds the read scope. An OIDC identity reads its own namespace.
 func tokenReadsProject(ctx context.Context, t *db.APIToken, project *db.Project) bool {
-	ok, _ := tokenReadDecision(ctx, t, project)
+	ok, _ := tokenReadsProjectWhy(ctx, t, project)
 	return ok
 }
 
-func tokenReadDecision(ctx context.Context, t *db.APIToken, project *db.Project) (bool, string) {
+// tokenReadsProjectWhy is tokenReadsProject plus the reason for a refusal of
+// an OIDC read outside the identity's namespace.
+func tokenReadsProjectWhy(ctx context.Context, t *db.APIToken, project *db.Project) (bool, string) {
 	if !t.AuthorizedForProject(project.ID) {
 		return false, ""
 	}
 	oidcProject := OIDCProjectFrom(ctx)
-	if oidcProject == "" {
-		return true, ""
-	}
-	if oidcAuthorizesProject(oidcProject, project.Name) {
+	if oidcProject == "" || oidcAuthorizesProject(oidcProject, project.Name) {
 		return true, ""
 	}
 	return oidcActorReads(ctx, project)
@@ -179,10 +178,7 @@ func tokenReadDecision(ctx context.Context, t *db.APIToken, project *db.Project)
 func oidcActorReads(ctx context.Context, project *db.Project) (bool, string) {
 	id := OIDCRepoFrom(ctx)
 	if id.Issuer != GitHubActionsIssuer {
-		return false, "the token is not from GitHub Actions"
-	}
-	if project.GithubRepo == "" {
-		return false, "the project records no GitHub repo"
+		return false, "only a GitHub Actions token reads outside its own repo"
 	}
 	return gitHubUserReadsRepo(ctx, id.Actor, project.GithubRepo)
 }
@@ -434,7 +430,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						unauthorizedResponse(w, r)
 						return
 					}
-					if ok, reason := tokenReadDecision(r.Context(), t, project); !ok {
+					if ok, reason := tokenReadsProjectWhy(r.Context(), t, project); !ok {
 						forbiddenForProject(w, reason)
 						return
 					}
