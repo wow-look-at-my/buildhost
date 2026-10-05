@@ -31,6 +31,8 @@ type OIDCRepoIdentity struct {
 	// RunID / RunAttempt name the workflow run and attempt that minted the token.
 	RunID      string
 	RunAttempt string
+	// Actor is the GitHub login that triggered the run.
+	Actor string
 }
 
 func WithGitHubToken(ctx context.Context, token string) context.Context {
