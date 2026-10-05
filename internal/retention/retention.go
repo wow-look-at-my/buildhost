@@ -156,9 +156,9 @@ type doomedRecord struct {
 }
 
 // collectRecords resolves the artifacts of the releases about to be evicted.
-// Releases whose project records no github_repo are skipped: the record was
+// Releases whose project records no github_repo are skipped. The record was
 // posted under some org's linked artifacts page and without the repo there is
-// no way to know which, so there is nothing addressable to retract.
+// no way to know which. There is nothing addressable to retract.
 func (r *Retention) collectRecords(ctx context.Context, refs []ReleaseRef) []doomedRecord {
 	var out []doomedRecord
 	repos := make(map[int64]string, len(refs))

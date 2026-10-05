@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A browser re-checks CORS on EVERY hop of a cross-origin fetch, so a redirect
+// A browser re-checks CORS on EVERY hop of a cross-origin fetch. So a redirect
 // that omits the site headers fails the whole load even though its target
 func TestSiteRedirectsCarryCORSHeaders(t *testing.T) {
 	t.Serial()

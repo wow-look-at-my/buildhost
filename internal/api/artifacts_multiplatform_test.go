@@ -255,8 +255,8 @@ func TestUploadArtifact_MultiConflictAtomic(t *testing.T) {
 
 // --- hash-reference uploads ------------------------------------------------
 // An empty-body PUT with ?upload_sha256=<hex> (and no upload_session)
-// registers artifact row(s) for a blob the project already uploaded, without
-// re-sending the bytes.
+// registers artifact row(s) for a blob the project already uploaded. It does
+// not re-send the bytes.
 
 func TestUploadArtifact_HashRefRegistersExistingBlob(t *testing.T) {
 	t.Serial()
@@ -353,7 +353,7 @@ func TestUploadArtifact_HashRefMalformedHash400(t *testing.T) {
 }
 
 // The same-project gate: sha256 values are public (release JSON, checksums
-// files), so knowing a hash must never let another project mint a row serving
+// files). Knowing a hash must never let another project mint a row serving
 // the blob -- and the refusal must be indistinguishable from an unknown blob.
 func TestUploadArtifact_HashRefCrossProject404(t *testing.T) {
 	t.Serial()

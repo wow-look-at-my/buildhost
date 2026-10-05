@@ -1,6 +1,6 @@
-// Chunked OCI upload sessions: blobs larger than the server's advertised
+// Chunked OCI upload sessions. Blobs larger than the server's advertised
 // direct-upload limit go through POST session + sequential PATCH appends +
-// digest-checked PUT, resuming from the server's committed size. Split from
+// digest-checked PUT. They resume from the server's committed size. Split from
 // upload.go, which holds the existence skip, the mount, and the single-request
 // finalize.
 package ociclient
@@ -24,7 +24,7 @@ var rangePattern = regexp.MustCompile(`^([0-9]+)-([0-9]+)$`)
 var errSessionGone = errors.New("upload session no longer exists")
 
 // pushBlobChunked uploads a blob through the given OCI upload session, opening
-// a replacement and starting the blob over if the registry forgets it -- a
+// a replacement and starting the blob over if the registry forgets it. A
 // publish minutes deep must not die because the far end restarted.
 func (p *Pusher) pushBlobChunked(loc, digest string, f *os.File, size int64) error {
 	for attempt := range retryAttempts {

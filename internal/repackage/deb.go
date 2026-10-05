@@ -285,7 +285,7 @@ func writeArMember(w io.Writer, name string, body io.Reader, size int64) error {
 
 // debPostinst is the maintainer script that sets the create_service unit up
 // automatically at install. `systemctl --global enable` is pure symlink
-// manipulation under /etc/systemd/user (no running manager needed; works in
+// manipulation under /etc/systemd/user (no running manager needed. Works in
 // chroots/containers), attaching the unit to every user's
 // graphical-session.target -- so the service starts at each user's NEXT
 func debPostinst(pkgName string) string {

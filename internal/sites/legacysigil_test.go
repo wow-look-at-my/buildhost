@@ -12,7 +12,8 @@ import (
 // "~" is the SUBDOMAIN scheme's original branch sigil, and only that scheme's.
 // On the classic sites.{domain}/{project}/... scheme it has never been a sigil:
 // it is an ordinary path character, so /{project}/~{branch}/{file} addresses a
-// file literally named "~{branch}/{file}" under the project's default branch.
+// file literally named "~{branch}/{file}". That ~{bra is under the project's
+// default branch.
 //
 // This is pinned because the top-level CLAUDE.md claimed the opposite -- that
 // "the older /branch/{branch}/ and ~ spellings still serve the same files, as
@@ -46,7 +47,7 @@ func TestLegacySigil_ClassicSchemeTreatsTildeAsAnOrdinaryPathSegment(t *testing.
 	assert.Equal(t, "// LIBRARY BRANCH module", rec.Body.String())
 }
 
-// The other half of the asymmetry: on {project}.<site-domain>, "~" IS a sigil
+// The other half of the asymmetry: on {project}.<site-domain>. "~" IS a sigil
 // and 301s to the "@" spelling, which is what "no published URL breaks" means
 // and where the sigil earns its name.
 func TestLegacySigil_SubdomainSchemeRedirectsToAt(t *testing.T) {

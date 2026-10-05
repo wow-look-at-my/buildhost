@@ -31,10 +31,10 @@ var majorSuffixRE = regexp.MustCompile(`^v([2-9]|[1-9][0-9]+)$`)
 // parseModulePath maps a module path onto the GitHub repo that serves it.
 //
 // Only github.com paths are handled: this proxy's private-module source is the
-// GitHub API, and a path it cannot map is reported as such rather than being
+// GitHub API. A path it cannot map is reported as such rather than being
 // guessed at. Everything else reaches the upstream public proxy instead.
 //
-// A "/vN" major-version suffix does not by itself say where the code lives: it
+// A "/vN" major-version suffix does not by itself say where the code lives. It
 // may sit at the module root (go.mod declares the /vN path) or in a "vN"
 func parseModulePath(path string) ([]repoRef, error) {
 	if err := module.CheckPath(path); err != nil {
@@ -74,9 +74,9 @@ func parseModulePath(path string) ([]repoRef, error) {
 	}, nil
 }
 
-// matchesPrefix compares case-insensitively because GitHub owner and repository
-// names are: github.com/ORG/x names the same repository as github.com/org/x, and
-// must get the same private handling.
+// matchesPrefix compares case-insensitively. This is because GitHub owner and
+// repository names are. github.com/ORG/x names the same repository as
+// github.com/org/x, and must get the same private handling.
 func matchesPrefix(path string, prefixes []string) bool {
 	lower := strings.ToLower(path)
 	for _, p := range prefixes {

@@ -117,10 +117,9 @@ func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
 }
 
 // The publish path is the declarative surface for create_service: a present
-// field is asserted on EVERY publish (idempotently), an absent field leaves
+// field is asserted on EVERY publish (idempotently). An absent field leaves
 // the stored setting untouched -- so an older CI that never sends it can
-// never clobber an operator-set value, and a declaring CI is the source of
-// truth.
+// never clobber an operator-set value. A declaring CI is the source of truth.
 func TestCreateRelease_CreateServiceDeclaration(t *testing.T) {
 	t.Serial()
 	h := setupTestHandler(t)
@@ -295,10 +294,10 @@ func TestGetRelease_Success(t *testing.T) {
 }
 
 // GetRelease must carry the release's artifacts. buildhost-publish-release
-// falls back to re-reading the release when the publish response predates the
-// artifacts field -- a rolling deploy can serve that publish from an older
-// container -- so without this the fallback has nothing to recover and a
-// publish fails for the duration of someone else's deploy.
+// falls back to re-reading the release. This happens when the publish
+// response predates the artifacts field. A rolling deploy can serve that
+// publish from an older container. So without this the fallback has nothing
+// to recover, and a publish fails for the duration of someone else's deploy.
 func TestGetRelease_ReturnsArtifacts(t *testing.T) {
 	t.Serial()
 	h := setupTestHandler(t)
@@ -519,11 +518,11 @@ func TestSemverToNum(t *testing.T) {
 	}
 }
 
-// A draft release is uploaded deliberately but kept out of the project's
-// release stream: `latest` (and per-branch resolution, and every package
-// manager built on it) must not see it, while an exact-version lookup must.
-// That is the whole point -- publishing a build for yourself without moving the
-// pointer everyone else follows.
+// A draft release is uploaded deliberately. However, the draft release kept out
+// of the project's release stream: `latest` (and per-branch resolution, and
+// every package manager built on it) must not see it, while an exact-version
+// lookup must. That is the whole point -- publishing a build for yourself
+// without moving the pointer everyone else follows.
 func TestCreateRelease_Draft(t *testing.T) {
 	t.Serial()
 	h := setupTestHandler(t)

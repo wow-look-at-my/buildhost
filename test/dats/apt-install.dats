@@ -1,9 +1,10 @@
-# What `apt-get install` gets from a generated APT repository: a plain project,
-# a slash-namespaced one whose Debian package name folds '/' to '-', and an APE
-# whose package must ship a launcher instead of a bare root-owned binary.
+# What `apt-get install` gets from a generated APT repository. The cases are a
+# plain project, a slash-namespaced one whose Debian package name folds '/' to
+# '-', and an APE. The APE's package must ship a launcher instead of a bare
+# root-owned binary.
 #
 # Setup publishes and installs; the tests only ask questions about what landed.
-# The apt client is a container the workflow builds and starts (APTBOX), so the
+# The apt client is a container the workflow builds and starts (APTBOX). The
 # runner's own apt state is never touched and there is nothing to undo. It runs
 # on the default bridge and reaches the server through host-gateway.
 #
@@ -144,8 +145,8 @@ tests:
 		stdout:
 			- "plain-installed"
 
-	# create_service was declared on release-create, so the deb must ship the
-	# systemd USER unit and postinst must have enabled it globally -- the
+	# create_service was declared on release-create. The deb must ship the
+	# systemd USER unit and postinst must have enabled it globally. The
 	# symlink is what makes it start at every user's next graphical login.
 	- desc: create_service ships a user unit and enables it globally
 	  cmd: |

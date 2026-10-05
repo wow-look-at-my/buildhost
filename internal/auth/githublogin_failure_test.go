@@ -11,8 +11,8 @@ import (
 )
 
 // A state that fails signature verification carries nothing trustworthy, so
-// there is no automatic redirect -- but the page still offers a fresh sign-in
-// (to the apex root), not a bare dead end.
+// there is no automatic redirect. However, the page still offers a fresh
+// sign-in (to the apex root), not a bare dead end.
 func TestSigninCallback_ForgedState_TerminalPage(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)
@@ -33,7 +33,7 @@ func TestSigninCallback_ForgedState_TerminalPage(t *testing.T) {
 }
 
 // GitHub reporting an exchange failure (wrong client secret, consumed or
-// expired code) must NOT surface as a 5xx: Cloudflare replaces origin 5xx
+// expired code) must NOT surface as a 5xx. Cloudflare replaces origin 5xx
 // bodies with its own bare error page, which used to strand the user at the
 // callback URL with no way forward. Instead: a 4xx page with a retry link.
 func TestSigninCallback_ExchangeFailure_RecoverablePage(t *testing.T) {

@@ -136,7 +136,7 @@ func (h *Handler) PatchBlobUpload(w http.ResponseWriter, r *http.Request, uuid s
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// GetBlobUploadStatus handles GET /v2/{name}/blobs/uploads/{uuid}: the upload
+// GetBlobUploadStatus handles GET /v2/{name}/blobs/uploads/{uuid}. The upload
 // status read a chunked client uses to learn the committed size and resume
 // after a lost response or connection.
 func (h *Handler) GetBlobUploadStatus(w http.ResponseWriter, r *http.Request, uuid string) {

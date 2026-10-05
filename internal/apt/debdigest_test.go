@@ -125,7 +125,7 @@ func TestServePackages_CachesDebDigest(t *testing.T) {
 }
 
 // TestServeRelease_HashesMatchServedPackages pins the single-renderer
-// invariant through the digest cache: the SHA256 lines in Release (and thus
+// invariant through the digest cache. The SHA256 lines in Release (and thus
 // the clearsigned InRelease) are computed over exactly the bytes the Packages
 // route serves.
 func TestServeRelease_HashesMatchServedPackages(t *testing.T) {
@@ -145,10 +145,10 @@ func TestServeRelease_HashesMatchServedPackages(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), wantLine)
 }
 
-// TestServePackages_RefillsOnCreateServiceFlip pins the staleness guard: the
+// TestServePackages_RefillsOnCreateServiceFlip pins the staleness guard. The
 // deb bytes bake in mutable project state (here the create_service
 // materialization, flippable with no new release via the project PATCH), so a
-// cached digest computed under the inputs must be recomputed -- otherwise apt
+// cached digest computed under the inputs must be recomputed. Otherwise apt
 // would verify downloads against a hash the pool no longer serves.
 func TestServePackages_RefillsOnCreateServiceFlip(t *testing.T) {
 	h, d, store := setupTest(t)
@@ -174,7 +174,7 @@ func TestServePackages_RefillsOnCreateServiceFlip(t *testing.T) {
 }
 
 // A digest that cannot be computed (here: the stored blob is gone) must
-// surface as an error on BOTH the Packages index and the Release hashes --
+// surface as an error on BOTH the Packages index. The Release hashes --
 // never a silently wrong Size/SHA256 that apt would reject on download.
 func TestServePackages_DigestErrorSurfaces(t *testing.T) {
 	h, d, _ := setupTest(t)

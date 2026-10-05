@@ -110,9 +110,10 @@ func platformCombos(oses []db.OS, arches []db.Arch) []db.Platform {
 }
 
 // expandArchSpec parses the {arch} path segment of an artifact upload: a
-// single architecture name (any spelling db.NormalizeArch accepts), a
-// comma-separated list, or "any"/"all" for the amd64+arm64 pair. Unknown
-// names, empty elements, and duplicates are rejected like expandOSSpec.
+// single architecture name (any spelling db.NormalizeArch accepts). This
+// also covers a comma-separated list, or "any"/"all" for the amd64+arm64
+// pair. Unknown names, empty elements, and duplicates are rejected like
+// expandOSSpec.
 func expandArchSpec(spec string) ([]db.Arch, error) {
 	switch strings.ToLower(strings.TrimSpace(spec)) {
 	case "any", "all":
@@ -187,9 +188,10 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Every combination the upload fans out to must be a coherent platform:
-		// os=wasm pairs only with the wasm flavor arches (js/wasip1) and vice versa
-		// -- a "linux/js" or "wasm/amd64" row could never be downloaded by anything
-		// real. Checked before the body is read so a bad spec stores nothing.
+		// os=wasm pairs only with the wasm flavor arches (js/wasip1) and vice
+		// versa. A "linux/js" or "wasm/amd64" row could never be downloaded by
+		// anything real. Checked before the body is read so a bad spec stores
+		// nothing.
 		for _, osName := range oses {
 			for _, arch := range arches {
 				if !db.CompatiblePlatform(osName, arch) {
@@ -339,7 +341,7 @@ func (c *headCapture) Write(p []byte) (int, error) {
 // covers "the slot of this same release" as well as an unchanged binary from
 // an earlier release) and must still exist in storage. It returns the storage
 // key, the blob's decompressed size for the artifact row, and its leading
-// bytes for the executable-format check; on failure it writes the error
+// bytes for the executable-format check. On failure it writes the error
 // response and returns ok=false.
 func (h *Handler) resolveHashRef(ctx context.Context, w http.ResponseWriter, projectID int64, refHex string) (string, int64, []byte, bool) {
 	if !validSHA256Hex.MatchString(refHex) {

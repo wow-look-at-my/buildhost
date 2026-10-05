@@ -1,6 +1,7 @@
 // Package uploadclient uploads a file to any buildhost upload endpoint,
-// transparently switching to a chunked upload session when the file is too
-// large for a single request to pass the proxy in front of the server
+// transparently switching to a chunked upload session. This happens when
+// the file is too large for a single request to pass the proxy in front of
+// the server
 package uploadclient
 
 import (

@@ -85,7 +85,7 @@ CREATE UNIQUE INDEX idx_artifact_platforms_slot
     ON artifact_platforms(release_id, kind, os, arch);
 ```
 
-The unique index enforces exactly what `artifacts.UNIQUE(release_id, os, arch, kind)` enforces for a canonical slot. That is why a conflict is detected in both directions. `ordinal` is the publisher's declared order. Ordinal 0 is the **canonical slot**. It is mirrored into `artifacts.os` and `artifacts.arch`.
+The unique index enforces exactly what `artifacts.UNIQUE(release_id, os, arch, kind)` enforces for a canonical slot. That is why a conflict is detected in both directions. `ordinal` is the publisher's declared order. One ordinal is the **canonical slot**. It is mirrored into `artifacts.os` and `artifacts.arch`.
 
 `artifacts.exe_format` records what the leading bytes said the file is. The value is `ape`, or `''` when nothing was recognized. The badge reads that field rather than an assumption. To add another portable format later therefore needs a detector plus a label, and no schema change.
 

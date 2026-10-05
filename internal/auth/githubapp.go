@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"sync"
@@ -78,6 +79,18 @@ func currentGitHubApp() *githubApp {
 
 // HasGitHubApp reports whether App auth is configured, so a caller can name
 func HasGitHubApp() bool { return currentGitHubApp() != nil }
+
+// GitHubCredentialSource names what authenticates buildhost's own GitHub REST
+// calls: "app", "token" or "none".
+func GitHubCredentialSource() string {
+	if HasGitHubApp() {
+		return "app"
+	}
+	if currentGitHubToken() != "" {
+		return "token"
+	}
+	return "none"
+}
 
 // bearerForRepo returns the bearer token to authenticate a github.com REST call
 func BearerForRepo(ctx context.Context, owner, repo string) string {
@@ -170,10 +183,12 @@ func (a *githubApp) createInstallationToken(ctx context.Context, jwtStr string, 
 
 	resp, err := githubBranchHTTPClient.Do(req)
 	if err != nil {
+		slog.WarnContext(ctx, "github app: installation token request failed", "installation", instID, "err", err)
 		return "", time.Time{}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
+		slog.WarnContext(ctx, "github app: installation token refused", "installation", instID, "status", resp.StatusCode)
 		return "", time.Time{}
 	}
 	var body struct {
@@ -204,10 +219,12 @@ func (a *githubApp) appGet(ctx context.Context, jwtStr, path string, out any) bo
 
 	resp, err := githubBranchHTTPClient.Do(req)
 	if err != nil {
+		slog.WarnContext(ctx, "github app: request failed", "path", path, "err", err)
 		return false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		slog.WarnContext(ctx, "github app: request refused", "path", path, "status", resp.StatusCode)
 		return false
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out) == nil

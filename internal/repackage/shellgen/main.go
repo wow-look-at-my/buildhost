@@ -1,5 +1,5 @@
 // shellgen fetches the busybox every synthesized image's base layer carries and
-// writes it into the tree for go:embed, the way fetch-cacerts.sh does for the CA
+// writes it into the tree for go:embed. The way fetch-cacerts.sh does for the CA
 // bundle.
 //
 // It runs at BUILD time on purpose. A pull-time fetch made every image buildhost
@@ -247,7 +247,7 @@ func readBusyboxLayer(r io.Reader) ([]byte, []string, error) {
 		}
 	}
 	sort.Strings(applets)
-	// An APE trampoline is a shell script, so a layer with no sh applet ships an
+	// An APE trampoline is a shell script. So a layer with no sh applet ships an
 	// image whose every container dies at exec with the file present.
 	if !slices.Contains(applets, "sh") {
 		return nil, nil, errors.New("shell image has no bin/sh applet")

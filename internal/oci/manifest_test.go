@@ -94,10 +94,11 @@ func TestServeHTTP_MultiArchIndex_ChildrenResolveByDigest(t *testing.T) {
 
 // TestServeHTTP_MultiArchIndex_IndexResolvesByDigest is the regression test for
 // the by-digest *index* bug: a synthesized multi-arch image serves its image
-// index by tag and advertises the index's own content digest in Docker-Content-
-// Digest, and that digest MUST itself be retrievable. The Docker daemon's classic
-// (overlay2 / non-containerd) image store pulls a tag by reading the manifest,
-// then re-requests the *same* manifest by the advertised digest to store it
+// index by tag. The synthesized multi-arch image advertises the index's own
+// content digest in Docker-Content- Digest, and that digest MUST itself be
+// retrievable. The Docker daemon's classic (overlay2 / non-containerd) image
+// store pulls a tag by reading the manifest. It then re-requests the *same*
+// manifest by the advertised digest to store it
 func TestServeHTTP_MultiArchIndex_IndexResolvesByDigest(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)

@@ -177,7 +177,7 @@ type publicHealth struct {
 	Detail    string    `json:"detail"`
 }
 
-// serveHealth exposes readiness on the proxy's own subdomain, so an external
+// serveHealth exposes readiness on the proxy's own subdomain. An external
 // check can ask this proxy whether it can serve private modules rather than
 // only whether it is listening.
 //

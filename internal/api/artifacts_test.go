@@ -255,9 +255,10 @@ func TestPublishRelease_Success(t *testing.T) {
 }
 
 // The publish response must carry the artifacts it made public. There is no
-// artifacts listing endpoint, so a publisher assembling its own
-// create/upload/publish chain (buildhost-publish-release) has no other way to
-// learn the digests it must record on the org's linked artifacts page. Drop
+// artifacts listing endpoint. A publisher assembling its own
+// create/upload/publish chain (buildhost-publish-release) must record the
+// digests on the org's linked artifacts page. So it has no other way to
+// learn them. Drop
 // the field and that whole path silently stores artifacts and records nothing.
 func TestPublishRelease_ReturnsPublishedArtifacts(t *testing.T) {
 	t.Serial()

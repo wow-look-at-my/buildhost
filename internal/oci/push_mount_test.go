@@ -1,7 +1,7 @@
 package oci
 
 // Cross-repository blob mount (POST /v2/{name}/blobs/uploads/?mount=): storage
-// is content-addressed and global, so a blob another project already links is a
+// is content-addressed and global. A blob another project already links is a
 // row away, not an upload away. What these pin is the authorization: the mount
 
 import (
@@ -120,8 +120,8 @@ func TestMountBlob_HonoursFromAsARestriction(t *testing.T) {
 	require.Equal(t, http.StatusCreated, rec.Code, "the named project does have it")
 }
 
-// A link row whose bytes retention has since collected must not be mountable:
-// the mount would produce a project pointing at a blob no pull can serve.
+// A link row whose bytes retention has since collected must not be mountable.
+// The mount would produce a project pointing at a blob no pull can serve.
 func TestMountBlob_RefusesWhenStorageNoLongerHasTheBytes(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)

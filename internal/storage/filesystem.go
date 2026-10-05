@@ -127,8 +127,8 @@ func (fs *Filesystem) PutUncompressed(ctx context.Context, r io.Reader) (string,
 	return raw.Put(ctx, r)
 }
 
-// OpenReaderAt returns a random-access view of a blob, mapped rather than read,
-// so a container's index can be followed with seeks instead of a scan. A blob
+// OpenReaderAt returns a random-access view of a blob, mapped rather than read.
+// A container's index can be followed with seeks instead of a scan. A blob
 // stored zstd-compressed has no offsets to seek to and yields
 // ErrRandomUnsupported.
 func (fs *Filesystem) OpenReaderAt(_ context.Context, key string) (ReaderAtCloser, int64, error) {
@@ -248,9 +248,10 @@ func (z *mmapZstdReadCloser) Close() error {
 }
 
 // GetCompressed returns a blob's stored bytes WITHOUT decompressing them, so a
-// caller can pass a zstd-compressed blob straight through to a client that
-// accepts zstd (Content-Encoding: zstd) instead of decompressing it server-side.
-// A blob stored compressed yields the raw zstd stream (Encoding "zstd", Size =
+// caller can pass a zstd-compressed blob straight through to a client. That
+// client accepts zstd (Content-Encoding: zstd) instead of decompressing it
+// server-side. A blob stored compressed yields the raw zstd stream (Encoding
+// "zstd", Size =
 func (fs *Filesystem) GetCompressed(_ context.Context, key string) (*CompressedBlob, error) {
 	if !validStorageKey.MatchString(key) {
 		return nil, os.ErrNotExist

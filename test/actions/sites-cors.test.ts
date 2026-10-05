@@ -159,8 +159,8 @@ try {
 	const auth = { Authorization: `Bearer ${token}` };
 
 	// The create-project field is `is_private` (bool). An unknown field is
-	// IGNORED, so a wrong name silently yields a PUBLIC project -- which is how
-	// the private-project case below spent its first life asserting nothing. Every
+	// IGNORED. A wrong name silently yields a PUBLIC project -- which is how the
+	// private-project case below spent its first life asserting nothing. Every
 	// creation here therefore reads the visibility back and fails on a mismatch.
 	async function createProject(name: string, isPrivate: boolean) {
 		const res = await fetch(`http://localhost:${PORT}/api/v1/projects`, {
@@ -180,7 +180,7 @@ try {
 
 	await createProject(PROJECT, false);
 
-	// Branches so `library` is NOT the default -- the production shape,
+	// Branches so `library` is NOT the default. That is the production shape,
 	// where the URL redirects to the @branch form rather than collapsing
 	// straight to the bare project path.
 	for (const [branch, files] of [

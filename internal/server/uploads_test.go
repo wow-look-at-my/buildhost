@@ -62,10 +62,10 @@ func (e *testEnv) appendChunk(t *testing.T, id string, offset int, chunk []byte)
 		"application/octet-stream", bytes.NewReader(chunk), true)
 }
 
-// TestChunkedUploadMatchesDirectUpload proves the headline behavior: a
-// multi-chunk upload finalized against the REAL artifact endpoint produces an
-// artifact byte-identical to a direct PUT of the same payload, and the bytes
-// round-trip through the download path.
+// TestChunkedUploadMatchesDirectUpload proves the headline behavior. Consider
+// a multi-chunk upload finalized against the REAL artifact endpoint. That
+// upload produces an artifact byte-identical to a direct PUT of the same
+// payload, and the bytes round-trip through the download path.
 func TestChunkedUploadMatchesDirectUpload(t *testing.T) {
 	t.Serial()
 	env := setup(t)
