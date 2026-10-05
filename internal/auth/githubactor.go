@@ -51,6 +51,8 @@ func gitHubUserReadsRepo(ctx context.Context, login, ownerRepo string) (allowed 
 		actorReadMu.Lock()
 		actorReadCache[key] = actorReadEntry{allowed: allowed, reason: reason, exp: now.Add(repoAccessTTL)}
 		actorReadMu.Unlock()
+	} else {
+		slog.ErrorContext(ctx, "github permission check could not answer, denying", "repo", ownerRepo, "user", login, "reason", reason)
 	}
 	return allowed, reason
 }
@@ -81,7 +83,7 @@ func fetchUserRepoPermission(ctx context.Context, login, ownerRepo string) (allo
 	case http.StatusOK:
 	case http.StatusNotFound:
 		slog.WarnContext(ctx, "github permission check: 404", "repo", ownerRepo, "user", login)
-		return false, true, fmt.Sprintf("GitHub answered 404 for the permission of %s on the project's repo", login)
+		return false, false, fmt.Sprintf("GitHub answered 404 for the permission of %s on the project's repo", login)
 	default:
 		slog.WarnContext(ctx, "github permission check: transient failure, denying without caching", "repo", ownerRepo, "user", login, "status", resp.StatusCode)
 		return false, false, fmt.Sprintf("GitHub answered HTTP %d for the permission of %s on the project's repo", resp.StatusCode, login)
