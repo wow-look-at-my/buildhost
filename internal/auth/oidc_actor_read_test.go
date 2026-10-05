@@ -2,7 +2,7 @@ package auth
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -43,7 +43,7 @@ func withStubPermissions(t *testing.T, perms map[string]string) *atomic.Int32 {
 			http.NotFound(w, r)
 			return
 		}
-		fmt.Fprintf(w, `{"permission":%q}`, perm)
+		assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{"permission": perm}))
 	})
 	t.Cleanup(func() {
 		actorReadMu.Lock()
