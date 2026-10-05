@@ -138,7 +138,7 @@ func TestOIDCActorReadRefusalNamesTheReason(t *testing.T) {
 	var body map[string]string
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	assert.Equal(t, "token not authorized for this project", body["error"])
-	assert.Equal(t, "buildhost's GitHub credential cannot see wow-look-at-my/bashfs (HTTP 404)", body["reason"])
+	assert.Equal(t, "GitHub answered 404 for the permission of PazerOP on the project's repo", body["reason"])
 
 	actorReadMu.Lock()
 	_, cached := actorReadCache["pazerop\x00wow-look-at-my/bashfs"]
