@@ -67,6 +67,7 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 							RepoID:     vr.RepoID,
 							RunID:      vr.RunID,
 							RunAttempt: vr.RunAttempt,
+							Actor:      vr.Actor,
 						})
 					}
 					r = r.WithContext(rctx)
@@ -138,22 +139,43 @@ func UserCanReadRepo(ctx context.Context, ownerRepo string) bool {
 	return allowed
 }
 
-// TokenCanReadProject reports whether the request context carries a credential
-// that authorizes READING the given project, applying exactly the token rules
-// requireProject's ReadAccess branch applies to a private project: a token with
-// the read scope, authorized for the project, and -- for OIDC identities -- inside
+// TokenCanReadProject reports whether the request context carries a
+// credential that authorizes READING the given project, applying exactly the
+// token rules requireProject's ReadAccess branch applies.
 func TokenCanReadProject(ctx context.Context, project *db.Project) bool {
 	if !project.IsPrivate {
 		return true
 	}
 	t := TokenFrom(ctx)
-	if t == nil || !t.HasScope("read") || !t.AuthorizedForProject(project.ID) {
+	if t == nil || !t.HasScope("read") {
 		return false
 	}
-	if oidcProject := OIDCProjectFrom(ctx); oidcProject != "" && !oidcAuthorizesProject(oidcProject, project.Name) {
+	return tokenReadsProject(ctx, t, project)
+}
+
+// tokenReadsProject applies the project half of a read check to a token that
+// already holds the read scope. An OIDC identity reads its own namespace. It
+// also reads another project when GitHub says the run's actor can read that
+// project's repo.
+func tokenReadsProject(ctx context.Context, t *db.APIToken, project *db.Project) bool {
+	if !t.AuthorizedForProject(project.ID) {
 		return false
 	}
-	return true
+	oidcProject := OIDCProjectFrom(ctx)
+	if oidcProject == "" {
+		return true
+	}
+	return oidcAuthorizesProject(oidcProject, project.Name) || oidcActorReads(ctx, project)
+}
+
+// oidcActorReads reports whether the GitHub user who triggered the run can
+// read the project's repo. Read only: a write stays in the identity's namespace.
+func oidcActorReads(ctx context.Context, project *db.Project) bool {
+	id := OIDCRepoFrom(ctx)
+	if id.Issuer != GitHubActionsIssuer {
+		return false
+	}
+	return gitHubUserReadsRepo(ctx, id.Actor, project.GithubRepo)
 }
 
 // oidcAuthorizesProject reports whether an OIDC identity auto-provisioned for a
@@ -393,7 +415,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						unauthorizedResponse(w, r)
 						return
 					}
-					if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && !oidcAuthorizesProject(oidcProject, project.Name)) {
+					if !tokenReadsProject(r.Context(), t, project) {
 						http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
 						return
 					}
@@ -403,9 +425,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				// Same authorization as ReadAccess, but an unauthorized caller
 				if project.IsPrivate {
 					userOK, _ := userCanReadProject(r.Context(), project)
-					authorized := userOK || (t != nil && t.HasScope("read") &&
-						t.AuthorizedForProject(project.ID) &&
-						(oidcProject == "" || oidcAuthorizesProject(oidcProject, project.Name)))
+					authorized := userOK || (t != nil && t.HasScope("read") && tokenReadsProject(r.Context(), t, project))
 					if !authorized {
 						projectNotFound(w)
 						return
