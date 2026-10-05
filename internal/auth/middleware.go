@@ -154,28 +154,47 @@ func TokenCanReadProject(ctx context.Context, project *db.Project) bool {
 }
 
 // tokenReadsProject applies the project half of a read check to a token that
-// already holds the read scope. An OIDC identity reads its own namespace. It
-// also reads another project when GitHub says the run's actor can read that
-// project's repo.
+// already holds the read scope. An OIDC identity reads its own namespace.
 func tokenReadsProject(ctx context.Context, t *db.APIToken, project *db.Project) bool {
+	ok, _ := tokenReadDecision(ctx, t, project)
+	return ok
+}
+
+func tokenReadDecision(ctx context.Context, t *db.APIToken, project *db.Project) (bool, string) {
 	if !t.AuthorizedForProject(project.ID) {
-		return false
+		return false, ""
 	}
 	oidcProject := OIDCProjectFrom(ctx)
 	if oidcProject == "" {
-		return true
+		return true, ""
 	}
-	return oidcAuthorizesProject(oidcProject, project.Name) || oidcActorReads(ctx, project)
+	if oidcAuthorizesProject(oidcProject, project.Name) {
+		return true, ""
+	}
+	return oidcActorReads(ctx, project)
 }
 
 // oidcActorReads reports whether the GitHub user who triggered the run can
 // read the project's repo. Read only: a write stays in the identity's namespace.
-func oidcActorReads(ctx context.Context, project *db.Project) bool {
+func oidcActorReads(ctx context.Context, project *db.Project) (bool, string) {
 	id := OIDCRepoFrom(ctx)
 	if id.Issuer != GitHubActionsIssuer {
-		return false
+		return false, "the token is not from GitHub Actions"
+	}
+	if project.GithubRepo == "" {
+		return false, "the project records no GitHub repo"
 	}
 	return gitHubUserReadsRepo(ctx, id.Actor, project.GithubRepo)
+}
+
+func forbiddenForProject(w http.ResponseWriter, reason string) {
+	body := map[string]string{"error": "token not authorized for this project"}
+	if reason != "" {
+		body["reason"] = reason
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	json.NewEncoder(w).Encode(body)
 }
 
 // oidcAuthorizesProject reports whether an OIDC identity auto-provisioned for a
@@ -415,8 +434,8 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						unauthorizedResponse(w, r)
 						return
 					}
-					if !tokenReadsProject(r.Context(), t, project) {
-						http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
+					if ok, reason := tokenReadDecision(r.Context(), t, project); !ok {
+						forbiddenForProject(w, reason)
 						return
 					}
 				}
