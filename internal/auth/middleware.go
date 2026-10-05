@@ -154,9 +154,7 @@ func TokenCanReadProject(ctx context.Context, project *db.Project) bool {
 }
 
 // tokenReadsProject applies the project half of a read check to a token that
-// already holds the read scope. An OIDC identity reads its own namespace. It
-// also reads another project when GitHub says the run's actor can read that
-// project's repo.
+// already holds the read scope. An OIDC identity reads its own namespace.
 func tokenReadsProject(ctx context.Context, t *db.APIToken, project *db.Project) bool {
 	ok, _ := tokenReadsProjectWhy(ctx, t, project)
 	return ok
