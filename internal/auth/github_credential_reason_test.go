@@ -10,7 +10,7 @@ import (
 
 // A refused cross-repo read says which credential source buildhost lacks. The
 // bare "no credential" text reads the same for an unconfigured deployment and
-// for a mint GitHub refused, and only one of those is fixed by configuration.
+// for a mint GitHub refused. Only the first is fixed by configuration.
 func TestNoRepoCredentialReasonNamesTheMissingSource(t *testing.T) {
 	t.Serial()
 	require.NoError(t, SetGitHubApp("", ""))
