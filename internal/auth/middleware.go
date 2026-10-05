@@ -60,6 +60,7 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 					if oidcProject != "" {
 						rctx = WithOIDCProject(rctx, oidcProject)
 						rctx = WithOIDCPrivate(rctx, vr.OIDCPrivate)
+						rctx = WithOIDCOrgTrusted(rctx, vr.OrgTrusted)
 						rctx = WithOIDCRepo(rctx, OIDCRepoIdentity{
 							RepoPath:   vr.RepoPath,
 							Issuer:     vr.Issuer,
@@ -147,13 +148,35 @@ func TokenCanReadProject(ctx context.Context, project *db.Project) bool {
 		return true
 	}
 	t := TokenFrom(ctx)
-	if t == nil || !t.HasScope("read") || !t.AuthorizedForProject(project.ID) {
+	if t == nil || !t.HasScope("read") {
 		return false
 	}
-	if oidcProject := OIDCProjectFrom(ctx); oidcProject != "" && !oidcAuthorizesProject(oidcProject, project.Name) {
+	return tokenReadsProject(ctx, t, project)
+}
+
+// tokenReadsProject applies the project half of a read check to a token that
+// already holds the read scope. An OIDC identity reads its own namespace, and
+// from a named trusted org it also reads a project of another named trusted org.
+func tokenReadsProject(ctx context.Context, t *db.APIToken, project *db.Project) bool {
+	if !t.AuthorizedForProject(project.ID) {
 		return false
 	}
-	return true
+	oidcProject := OIDCProjectFrom(ctx)
+	if oidcProject == "" {
+		return true
+	}
+	return oidcAuthorizesProject(oidcProject, project.Name) || oidcOrgReads(ctx, project)
+}
+
+// oidcOrgReads reports whether an OIDC identity from a named
+// BUILDHOST_OIDC_ORGS entry may read a project that a named entry also owns.
+// Read only: a write stays confined to the identity's own namespace.
+func oidcOrgReads(ctx context.Context, project *db.Project) bool {
+	if !OIDCOrgTrustedFrom(ctx) || mw == nil || mw.Verifier == nil {
+		return false
+	}
+	owner, _, ok := strings.Cut(project.GithubRepo, "/")
+	return ok && mw.Verifier.TrustsOrg(owner, project.GithubOwnerID)
 }
 
 // oidcAuthorizesProject reports whether an OIDC identity auto-provisioned for a
@@ -393,7 +416,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						unauthorizedResponse(w, r)
 						return
 					}
-					if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && !oidcAuthorizesProject(oidcProject, project.Name)) {
+					if !tokenReadsProject(r.Context(), t, project) {
 						http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
 						return
 					}
@@ -403,9 +426,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				// Same authorization as ReadAccess, but an unauthorized caller
 				if project.IsPrivate {
 					userOK, _ := userCanReadProject(r.Context(), project)
-					authorized := userOK || (t != nil && t.HasScope("read") &&
-						t.AuthorizedForProject(project.ID) &&
-						(oidcProject == "" || oidcAuthorizesProject(oidcProject, project.Name)))
+					authorized := userOK || (t != nil && t.HasScope("read") && tokenReadsProject(r.Context(), t, project))
 					if !authorized {
 						projectNotFound(w)
 						return

@@ -14,6 +14,7 @@ const (
 	routeKey
 	oidcProjectKey
 	oidcPrivateKey
+	oidcOrgTrustedKey
 	oidcErrorKey
 	oidcRepoKey
 	userKey
@@ -109,6 +110,17 @@ func WithOIDCPrivate(ctx context.Context, private bool) context.Context {
 func OIDCPrivateFrom(ctx context.Context) (bool, bool) {
 	v, ok := ctx.Value(oidcPrivateKey).(bool)
 	return v, ok
+}
+
+// WithOIDCOrgTrusted records that the OIDC identity's owner is a named
+// BUILDHOST_OIDC_ORGS entry.
+func WithOIDCOrgTrusted(ctx context.Context, trusted bool) context.Context {
+	return context.WithValue(ctx, oidcOrgTrustedKey, trusted)
+}
+
+func OIDCOrgTrustedFrom(ctx context.Context) bool {
+	v, _ := ctx.Value(oidcOrgTrustedKey).(bool)
+	return v
 }
 
 // WithOIDCRepo records the GitHub repo identity (owner/repo, issuer, numeric
