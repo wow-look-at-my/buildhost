@@ -55,6 +55,7 @@ type oidcClaims struct {
 	RepositoryOwnerID string `json:"repository_owner_id"` // numeric account ID
 	RunID             string `json:"run_id"`
 	RunAttempt        string `json:"run_attempt"`
+	Actor             string `json:"actor"`
 }
 
 const oidcLeeway = 60 * time.Second
@@ -91,6 +92,8 @@ type VerifyResult struct {
 	// RunID / RunAttempt name the workflow run and attempt that minted the token.
 	RunID      string
 	RunAttempt string
+	// Actor is the GitHub login that triggered the workflow run.
+	Actor string
 }
 
 func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []db.OIDCPolicy) (*db.APIToken, string, error) {
@@ -202,6 +205,7 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 	}
 	if result != nil {
 		result.OIDCPrivate = verified.RepositoryVisibility != "public"
+		result.Actor = verified.Actor
 	}
 	return &db.APIToken{
 		ID:     -1,
