@@ -170,10 +170,12 @@ func (a *githubApp) createInstallationToken(ctx context.Context, jwtStr string, 
 
 	resp, err := githubBranchHTTPClient.Do(req)
 	if err != nil {
+		slog.WarnContext(ctx, "github app: installation token request failed", "installation", instID, "err", err)
 		return "", time.Time{}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
+		slog.WarnContext(ctx, "github app: installation token refused", "installation", instID, "status", resp.StatusCode)
 		return "", time.Time{}
 	}
 	var body struct {
@@ -204,10 +206,12 @@ func (a *githubApp) appGet(ctx context.Context, jwtStr, path string, out any) bo
 
 	resp, err := githubBranchHTTPClient.Do(req)
 	if err != nil {
+		slog.WarnContext(ctx, "github app: request failed", "path", path, "err", err)
 		return false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		slog.WarnContext(ctx, "github app: request refused", "path", path, "status", resp.StatusCode)
 		return false
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out) == nil
