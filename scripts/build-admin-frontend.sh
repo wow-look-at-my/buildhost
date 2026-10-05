@@ -18,10 +18,10 @@ if [ ! -d node_modules ]; then
     npm ci --silent
 fi
 
-bin="$frontend/node_modules/.bin"
-"$bin/tsc" --noEmit
-"$bin/esbuild" src/app.ts --bundle --outfile=../static/app.js --format=iife --global-name=App --target=es2020
-"$bin/esbuild" src/copy.ts --bundle --outfile=../static/copy.js --format=iife --target=es2020
+# `npm run build` type-checks first (tsc --noEmit), then bundles with esbuild.
+"$frontend/node_modules/.bin/tsc" --noEmit
+"$frontend/node_modules/.bin/esbuild" src/app.ts --bundle --outfile=../static/app.js --format=iife --global-name=App --target=es2020
+"$frontend/node_modules/.bin/esbuild" src/copy.ts --bundle --outfile=../static/copy.js --format=iife --target=es2020
 
 for f in ../static/app.js ../static/copy.js; do
     [ -s "$f" ] || { echo "build-admin-frontend: $f was not produced" >&2; exit 1; }

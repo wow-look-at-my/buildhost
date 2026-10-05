@@ -1,9 +1,7 @@
 #
-# This exists because stripping stopped happening and nobody noticed for weeks:
-# it shelled out to strip(1)/objcopy(1), which the distroless image does not
-# ship. Every download went out unstripped and fmt=symbols could not work. The
-# unit tests all passed, because the runner has binutils and the container does
-# not. Only a check against the real image sees this.
+# Every download went out unstripped and fmt=symbols could not work. The unit
+# tests all passed, because the runner has binutils and the container does not.
+# Only a check against the real image sees this.
 #
 # Needs curl, jq, readelf and the docker CLI, so a workflow runs it
 # --no-sandbox.

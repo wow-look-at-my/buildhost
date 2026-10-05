@@ -1,7 +1,3 @@
-# What the upload composites and the CLI must have done to a real server: one
-# session for the chunked path and none for the direct one, bytes that survive
-# the round trip, a release that ends up published, and an advertised site URL
-# that serves rather than redirects.
 #
 # The workflow runs the composites -- an action only runs inside a workflow --
 # and hands the results here: LOG is the server's log, BASE and SITES its
@@ -57,7 +53,7 @@ tests:
 	# Which canonical URL it names depends on which branch is the default, and
 	# this project has no site on main/master, so the fallback is whichever of
 	# both was deployed last. Assert the redirect, then follow the target the
-	# server actually named rather than hard-coding one of both forms.
+	# server actually named rather than hard-coding any of both forms.
 	- desc: the legacy branch URL redirects to the canonical one for the same file
 	  cmd: |
 		set -eu

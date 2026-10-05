@@ -1,11 +1,10 @@
 # The launcher must exec the binary, and nothing else.
 #
-# The kernel loads a file whose first bytes are ELF. An APE's are not, so its
-# own header carries a trampoline that copies the ELF payload out and execs the
-# copy. That copy needs a directory that is writable AND not noexec.
+# The kernel loads a file whose earliest bytes are ELF. An APE's are not, so
+# its own header carries a trampoline that copies the ELF payload out and execs
+# the copy. That copy needs a directory that is writable AND not noexec.
 #
-# The launcher used to hunt for one and export TMPDIR. That could never work:
-# the trampoline hardcodes
+# That could never work: the trampoline hardcodes
 #
 #   c="/tmp/.ape-run-1-$(id -u 2>/dev/null || echo shared)/$k"
 #
@@ -16,8 +15,8 @@
 # of the APE, and a shell script honours TMPDIR where the trampoline does not.
 #
 # The image now stages the ELF at build time, so nothing unpacks at run time and
-# the launcher is one exec. These run against the real script with a stub in
-# place of the binary, sandboxed by go-toolchain on every build.
+# the launcher is a single exec. These run against the real script with a stub
+# in place of the binary, sandboxed by go-toolchain on every build.
 
 shared:
 	files:

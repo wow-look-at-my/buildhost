@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Print the documented Homebrew flow, localized for a test instance.
+#
+# Usage: brew-doc-flows.sh public|private <host:port>
+#
+# The assertions about what it prints live in test/dats/homebrew-*.dats.
 set -euo pipefail
 
 leg="${1:?usage: brew-doc-flows.sh public|private|version <host:port>}"

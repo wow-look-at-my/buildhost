@@ -1,4 +1,16 @@
 // Delivering an artifact body from a composite action.
+//
+// So a body larger than the server's advertised `max_direct_upload_bytes` is
+// assembled through an upload session instead: POST /api/v1/uploads, PATCH
+// .../{id}?offset=N per chunk, then the ORIGINAL endpoint with an empty body
+// and ?upload_session=&upload_sha256=.
+//
+// The size decision is made BEFORE anything is sent, from server-info. This
+// mirrors internal/uploadclient, which is the CLI's engine for the same
+// protocol.
+//
+// Loaded by `require(".../upload.ts")` (node strips the types) typed as
+// `typeof import(".../upload")`. See docs/uploads.md.
 
 /* */
 export const DefaultChunkSize = 64 << 20;
@@ -13,10 +25,8 @@ export interface Core { info(m: string): void; warning(m: string): void }
 
 export interface Response { status: number; text: string }
 
-/**
- * Send one request. The caller owns authentication, retries and base URL, so
- * this module carries only the session protocol.
- */
+/** Send a single request. The caller owns authentication, retries and base
+ * URL, so this module carries only the session protocol. */
 export type Send = (
 	method: string,
 	urlPath: string,
@@ -24,10 +34,8 @@ export type Send = (
 	headers?: Record<string, string>,
 ) => Promise<Response>;
 
-/**
- * The bytes to send. The caller owns the filesystem, so this module needs no
- * node builtins of its own and stays one file of protocol.
- */
+/** The bytes to send. The caller owns the filesystem, so this module needs
+ * no node builtins of its own and stays a single file of protocol. */
 export interface Body {
 	size: number;
 	/** Bare hex sha256 of the whole body, used as the finalize integrity check. */
@@ -42,7 +50,7 @@ export interface PutFileOptions {
 	body: Body;
 	/** Extra request headers, e.g. `X-Artifact-Filename`. */
 	headers?: Record<string, string>;
-	/** Bytes per chunk. Forces a direct upload however large the body is. */
+	/** Bytes per chunk. 0 forces a direct upload however large the body is. */
 	chunkSize?: number;
 	/** Largest direct body. */
 	directLimit?: number;
@@ -160,8 +168,6 @@ async function sessionSize(send: Send, id: string): Promise<number> {
 	return size;
 }
 
-// Best-effort: a session left behind is swept after BUILDHOST_UPLOAD_SESSION_TTL
-// anyway, so a failure here must not mask the real one.
 async function abortSession(send: Send, id: string): Promise<void> {
 	try {
 		await send('DELETE', `/api/v1/uploads/${encodeURIComponent(id)}`);

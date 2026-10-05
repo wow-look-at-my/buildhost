@@ -1,4 +1,11 @@
-// Asserts that a hosted site stays loadable CROSS-ORIGIN -- through its redirects, in a real browser.
+// Asserts that a hosted site stays loadable CROSS-ORIGIN -- through its
+// redirects, in a real browser.
+//
+// This check exists because that stopped being true and every cross-origin
+// consumer broke at the same time.
+//
+// Nothing caught it. Only a real browser doing a real cross-origin import can
+// see this class of defect, which is exactly what runs below.
 
 const fs = require("node:fs");
 const os = require("node:os");
@@ -6,7 +13,7 @@ const path = require("node:path");
 const child_process = require("node:child_process");
 
 // Progress lines and the failure report. The suite reads stdout, so a failure
-// has to arrive as a non-zero exit, not as a label on a green run.
+// has to arrive as a non-exit, not as a label on a green run.
 const core = {
 	info: (m: string) => console.log(m),
 	error: (m: string) => console.error(m),
@@ -21,12 +28,16 @@ const HOST = `sites.localhost:${PORT}`;
 const SITES = `http://${HOST}`;
 const CONSUMER_ORIGIN = `http://localhost:${CONSUMER_PORT}`;
 const PROJECT = "cors-e2e";
-// The shape that broke: a PRIVATE project serving one public site branch (X-Public-Site).
+// The shape that actually broke: a PRIVATE project serving a single public
+// site branch (X-Public-Site), which is how every PR preview and published
+// library site under a private repo is served. A public project would not
+// exercise the public-read bypass at all, so a redirect that lost either the
+// CORS header or the anonymous bypass would go unnoticed.
 const PRIVATE_PROJECT = "cors-e2e-private";
 const MARKER = "site-module-loaded";
 
-// The router dispatches on the Host's first label, so the sites service has to
-// be addressed by name. GitHub runners resolve *.localhost to loopback (the
+// The router dispatches on the Host's earliest label, so the sites service has
+// to be addressed by name. GitHub runners resolve *.localhost to loopback (the
 // same assumption image-strips-e2e.ts makes for static.localhost); say so
 // outright rather than letting an unrelated-looking connection error surface.
 {
@@ -41,7 +52,10 @@ const MARKER = "site-module-loaded";
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "buildhost-cors-e2e-"));
 const binAbs = path.resolve(BIN);
-// An APE starts through its own shell trampoline: a direct execve of it fails ENOEXEC.
+// An APE starts through its own shell trampoline: a direct execve of it fails
+// ENOEXEC, because nothing here registers an APE binfmt handler. A shell reads
+// the header and does the rest, which is what a bash "run:" step does
+// implicitly and node's spawn does not.
 const isAPE = fs.readFileSync(binAbs).subarray(0, 2).toString() === "MZ";
 const runner = (args: string[]): [string, string[]] =>
 	isAPE ? ["sh", [binAbs, ...args]] : [binAbs, args];
@@ -149,6 +163,7 @@ try {
 			const r = await fetch(`http://127.0.0.1:${PORT}/healthz`);
 			if (r.ok) break;
 		} catch {
+			/* */
 		}
 		if (i > 100) throw new Error(`buildhost never became healthy:\n${serverLog}`);
 		await new Promise((r) => setTimeout(r, 100));
@@ -160,8 +175,8 @@ try {
 
 	// The create-project field is `is_private` (bool). An unknown field is
 	// IGNORED, so a wrong name silently yields a PUBLIC project -- which is how
-	// the private-project case below spent its first life asserting nothing. Every
-	// creation here therefore reads the visibility back and fails on a mismatch.
+	// the private-project case below spent its earliest life asserting nothing.
+	// Every creation here therefore reads the visibility back and fails on a mismatch.
 	async function createProject(name: string, isPrivate: boolean) {
 		const res = await fetch(`http://localhost:${PORT}/api/v1/projects`, {
 			method: "POST",
@@ -180,8 +195,8 @@ try {
 
 	await createProject(PROJECT, false);
 
-	// Branches so `library` is NOT the default -- the production shape,
-	// where the URL redirects to the @branch form rather than collapsing
+	// Branches so `library` is NOT the default -- the production shape, where
+	// the legacy URL redirects to the @branch form rather than collapsing
 	// straight to the bare project path.
 	for (const [branch, files] of [
 		["master", { "index.html": "<h1>default</h1>" }],
@@ -238,9 +253,16 @@ try {
 	// Plain serves, which were never broken -- so a regression here is caught too.
 	await assertChainCORS("canonical @branch file", `/${PROJECT}/@library/ui/mod.js`, false);
 	await assertChainCORS("bare apex file", `/${PROJECT}/index.html`, false);
-	// The production shape: private project, public site branch, ANONYMOUS.
+	// The production shape: private project, public site branch, ANONYMOUS (no
+	// token is ever sent above -- assertChainCORS sends only an Origin).
 	await assertChainCORS("private project, public branch (legacy /branch/)", `/${PRIVATE_PROJECT}/branch/library/ui/mod.js`, true);
 
+	// This is the actual user-visible claim, and it covers what header
+	// assertions cannot: MIME type, CSP, and module specifier resolution
+	// against the post-redirect URL. The private-project/public-branch URL,
+	// because that is the production shape -- and the browser sends no
+	// credentials, so it also proves the anonymous public-read bypass holds
+	// across the redirect.
 	const MODULE_URL = `${SITES}/${PRIVATE_PROJECT}/branch/library/ui/mod.js`;
 	const page_html = `<!doctype html><meta charset=utf-8><title>consumer</title><script type="module">
   const done = (t) => { window.__result = t; };
