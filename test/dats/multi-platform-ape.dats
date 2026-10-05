@@ -1,6 +1,6 @@
-# One APE is ONE artifact row that every covered platform folds onto, and a
-# multi-platform claim without APE magic is refused. One server serves the
-# whole file: setup publishes the APE, the tests only ask questions about it.
+# A single APE is A single artifact row that every covered platform folds
+# onto, and a multi-platform claim without APE magic is refused. A single
+# server serves the whole file: setup publishes the APE, the tests only ask questions about it.
 #
 # Needs curl and jq, which is why a workflow runs this --no-sandbox rather than
 # letting the dats phase sandbox it into an image that has neither.
@@ -10,7 +10,7 @@
 shared:
 	files:
 		start.sh: |
-			# Publish one APE and leave the server running. Writes $ENV_FILE.
+			# Publish a single APE and leave the server running. Writes $ENV_FILE.
 			set -eu
 			WORK="$(dirname "$ENV_FILE")"
 			BIN="${BUILDHOST_BIN:-}"
@@ -37,8 +37,6 @@ shared:
 				# killing that shell alone orphans the server on its port.
 				setsid $RUN serve > "$WORK/server.log" 2>&1 &
 				echo "$!" > "$WORK/server.pid"
-				# A hook gets 30s in total, and this loop is per attempt, so a
-				# one-second poll spends the whole budget on the first one.
 				for _ in $(seq 50); do
 					if curl -fsS "$BASE/healthz" >/dev/null 2>&1; then started=yes; break; fi
 					sleep 0.2

@@ -64,8 +64,8 @@ tests:
 		stdout:
 			- "#!/bin/sh"
 
-	# Both halves are read out and compared, rather than one literal line pinned
-	# here. The property that matters is that both agree.
+	# Both halves are read out and compared, rather than a single literal line
+	# pinned here. The property that matters is that both agree.
 	- desc: the launcher starts the binary at the path the Dockerfile puts it
 	  cmd: |
 		set -eu

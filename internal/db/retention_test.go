@@ -14,7 +14,24 @@ func retProject(t *testing.T, d *DB, name string) *Project {
 	t.Helper()
 	p := &Project{Name: name, Versioning: VersioningAuto}
 	require.NoError(t, d.CreateProject(context.Background(), p))
+	require.NoError(t, d.SetProjectDefaultBranch(context.Background(), p.ID, "main"))
+	p.DefaultBranch = "main"
 	return p
+}
+
+// evictPolicy is a policy whose cutoffs admit every release created before the
+// test ran, so only the keep windows and the pins decide.
+func evictPolicy(keepN, branchKeepN int64) EvictionPolicy {
+	future := time.Now().Add(48 * time.Hour)
+	return EvictionPolicy{KeepN: keepN, BranchKeepN: branchKeepN, RecencyCutoff: future, BranchTTLCutoff: future}
+}
+
+func versionsOf(rows []ListEvictableReleasesRow) []string {
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.Version)
+	}
+	return out
 }
 
 func retRelease(t *testing.T, d *DB, projectID int64, version string, num int64, branch string) *Release {
@@ -50,19 +67,108 @@ func TestListEvictableReleases_KeepNPerBranch(t *testing.T) {
 	}
 	retRelease(t, d, p.ID, "dev-1", 6, "dev")
 	retRelease(t, d, p.ID, "dev-2", 7, "dev")
+	retRelease(t, d, p.ID, "dev-3", 8, "dev")
 
-	future := time.Now().Add(48 * time.Hour)
-	got, err := d.ListEvictableReleases(ctx, 2, future)
+	got, err := d.ListEvictableReleases(ctx, evictPolicy(2, 2))
 	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"v1", "v2", "v3", "dev-1"}, versionsOf(got))
 
-	var versions []string
-	for _, r := range got {
-		versions = append(versions, r.Version)
-	}
-	assert.ElementsMatch(t, []string{"v1", "v2", "v3"}, versions)
+	// The default branch and the other branches have separate windows.
+	got, err = d.ListEvictableReleases(ctx, evictPolicy(2, 1))
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"v1", "v2", "v3", "dev-1", "dev-2"}, versionsOf(got))
 
 	// A cutoff in the past excludes everything (recency guard): all rows are fresh.
-	got, err = d.ListEvictableReleases(ctx, 2, time.Now().Add(-time.Hour))
+	p2 := evictPolicy(2, 1)
+	p2.RecencyCutoff = time.Now().Add(-time.Hour)
+	got, err = d.ListEvictableReleases(ctx, p2)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
+func TestListEvictableReleases_DeletedBranchTTL(t *testing.T) {
+	t.Serial()
+	d := openTestDB(t)
+	ctx := context.Background()
+	p := retProject(t, d, "proj")
+	retRelease(t, d, p.ID, "v1", 1, "main")
+	retRelease(t, d, p.ID, "gone-1", 2, "gone")
+	retRelease(t, d, p.ID, "gone-2", 3, "gone")
+	retRelease(t, d, p.ID, "live-1", 4, "live")
+	retRelease(t, d, p.ID, "v2", 5, "main")
+
+	// Not deleted: the tip of each branch stays.
+	pol := evictPolicy(10, 1)
+	got, err := d.ListEvictableReleases(ctx, pol)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"gone-1"}, versionsOf(got))
+
+	deletedAt := time.Now().Add(-72 * time.Hour)
+	require.NoError(t, d.RecordBranchDeleted(ctx, p.ID, "gone", deletedAt))
+	pol.BranchTTLCutoff = time.Now().Add(-7 * 24 * time.Hour)
+	got, err = d.ListEvictableReleases(ctx, pol)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"gone-1"}, versionsOf(got))
+
+	// Past the TTL: the whole branch goes, tip included. Other branches stay.
+	pol.BranchTTLCutoff = time.Now().Add(-24 * time.Hour)
+	got, err = d.ListEvictableReleases(ctx, pol)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"gone-1", "gone-2"}, versionsOf(got))
+
+	sum, err := d.SumReclaimableBytes(ctx, pol)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), sum) // no artifacts in this test
+
+	// A repeated record keeps the earliest deletion time.
+	require.NoError(t, d.RecordBranchDeleted(ctx, p.ID, "gone", time.Now()))
+	got, err = d.ListEvictableReleases(ctx, pol)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"gone-1", "gone-2"}, versionsOf(got))
+
+	// The branch comes back: its tip is pinned again.
+	require.NoError(t, d.ClearBranchDeleted(ctx, p.ID, "gone"))
+	got, err = d.ListEvictableReleases(ctx, pol)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"gone-1"}, versionsOf(got))
+}
+
+func TestListEvictableReleases_ProjectNewestSurvivesDeletion(t *testing.T) {
+	t.Serial()
+	d := openTestDB(t)
+	ctx := context.Background()
+	p := retProject(t, d, "proj")
+	retRelease(t, d, p.ID, "f1", 1, "feature")
+	retRelease(t, d, p.ID, "f2", 2, "feature")
+	require.NoError(t, d.RecordBranchDeleted(ctx, p.ID, "feature", time.Now().Add(-30*24*time.Hour)))
+
+	pol := evictPolicy(10, 1)
+	pol.BranchTTLCutoff = time.Now()
+	got, err := d.ListEvictableReleases(ctx, pol)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"f1"}, versionsOf(got))
+}
+
+func TestRecordBranchDeletedForRepo(t *testing.T) {
+	t.Serial()
+	d := openTestDB(t)
+	ctx := context.Background()
+	p := retProject(t, d, "proj")
+	other := retProject(t, d, "other")
+	require.NoError(t, d.SetProjectGitHubRepo(ctx, p.ID, "Org/Proj"))
+	require.NoError(t, d.SetProjectGitHubRepo(ctx, other.ID, "org/other"))
+
+	require.NoError(t, d.RecordBranchDeletedForRepo(ctx, "org/proj", "feat", time.Now()))
+	got, err := d.ListDeletedBranches(ctx, p.ID)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "feat", got[0].Branch)
+	got, err = d.ListDeletedBranches(ctx, other.ID)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+
+	require.NoError(t, d.ClearBranchDeletedForRepo(ctx, "org/proj", "feat"))
+	got, err = d.ListDeletedBranches(ctx, p.ID)
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }
@@ -75,16 +181,15 @@ func TestListEvictableReleases_KeepZeroStillKeepsTip(t *testing.T) {
 	retRelease(t, d, p.ID, "v1", 1, "main")
 	retRelease(t, d, p.ID, "v2", 2, "main")
 	retRelease(t, d, p.ID, "v3", 3, "main")
-	future := time.Now().Add(48 * time.Hour)
+	retRelease(t, d, p.ID, "f1", 4, "feature")
+	retRelease(t, d, p.ID, "v4", 5, "main")
 
-	got, err := d.ListEvictableReleases(ctx, 0, future)
+	got, err := d.ListEvictableReleases(ctx, evictPolicy(0, 0))
 	require.NoError(t, err)
-	var versions []string
-	for _, r := range got {
-		versions = append(versions, r.Version)
-	}
-	assert.ElementsMatch(t, []string{"v1", "v2"}, versions)
-	assert.NotContains(t, versions, "v3")
+	versions := versionsOf(got)
+	assert.ElementsMatch(t, []string{"v1", "v2", "v3"}, versions)
+	assert.NotContains(t, versions, "v4")
+	assert.NotContains(t, versions, "f1")
 }
 
 func TestListEvictableReleases_Pins(t *testing.T) {
@@ -96,9 +201,8 @@ func TestListEvictableReleases_Pins(t *testing.T) {
 	r2 := retRelease(t, d, p.ID, "v2", 2, "main")
 	retRelease(t, d, p.ID, "v3", 3, "main")
 	retRelease(t, d, p.ID, "v4", 4, "main")
-	future := time.Now().Add(48 * time.Hour)
 
-	got, err := d.ListEvictableReleases(ctx, 2, future)
+	got, err := d.ListEvictableReleases(ctx, evictPolicy(2, 2))
 	require.NoError(t, err)
 	assert.Len(t, got, 2)
 
@@ -107,7 +211,7 @@ func TestListEvictableReleases_Pins(t *testing.T) {
 	require.NoError(t, d.CreateArtifact(ctx, &Artifact{
 		ReleaseID: r2.ID, OS: OSLinux, Arch: ArchAMD64, Kind: KindDocker, StorageKey: "dockerkey", Size: 1, SHA256: "x",
 	}))
-	got, err = d.ListEvictableReleases(ctx, 2, future)
+	got, err = d.ListEvictableReleases(ctx, evictPolicy(2, 2))
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }
@@ -220,8 +324,7 @@ func TestSumReclaimableBytes(t *testing.T) {
 		require.NoError(t, d.UpdateArtifactStripped(ctx, a.ID, fmt.Sprintf("s%d", i), 10, "x", fmt.Sprintf("d%d", i), 5))
 		require.NoError(t, d.CreatePackagedArtifact(ctx, a.ID, "deb", fmt.Sprintf("p%d", i), 20, "x", "f", "{}"))
 	}
-	future := time.Now().Add(48 * time.Hour)
-	sum, err := d.SumReclaimableBytes(ctx, 2, future)
+	sum, err := d.SumReclaimableBytes(ctx, evictPolicy(2, 2))
 	require.NoError(t, err)
 	assert.Equal(t, int64(405), sum)
 }
@@ -234,22 +337,21 @@ func TestRetentionSettings(t *testing.T) {
 	// Defaults when unseeded.
 	s, err := d.GetRetentionSettings(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, 10, s.KeepN)
-	assert.Equal(t, 24, s.RecencyHours)
+	assert.Equal(t, DefaultRetentionSettings, s)
 
-	require.NoError(t, d.SeedRetentionSettings(ctx, 5, 12))
-	require.NoError(t, d.SeedRetentionSettings(ctx, 99, 99))
+	first := RetentionSettings{KeepN: 5, RecencyHours: 12, BranchKeepN: 2, BranchTTLDays: 3}
+	require.NoError(t, d.SeedRetentionSettings(ctx, first))
+	require.NoError(t, d.SeedRetentionSettings(ctx, RetentionSettings{KeepN: 99, RecencyHours: 99, BranchKeepN: 99, BranchTTLDays: 99}))
 	s, err = d.GetRetentionSettings(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, 5, s.KeepN)
-	assert.Equal(t, 12, s.RecencyHours)
+	assert.Equal(t, first, s)
 
 	// Update overwrites.
-	require.NoError(t, d.UpdateRetentionSettings(ctx, 20, 48))
+	next := RetentionSettings{KeepN: 20, RecencyHours: 48, BranchKeepN: 0, BranchTTLDays: 14}
+	require.NoError(t, d.UpdateRetentionSettings(ctx, next))
 	s, err = d.GetRetentionSettings(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, 20, s.KeepN)
-	assert.Equal(t, 48, s.RecencyHours)
+	assert.Equal(t, next, s)
 }
 
 func TestUpdateRetentionSettings_UpsertsWhenUnseeded(t *testing.T) {
@@ -257,11 +359,11 @@ func TestUpdateRetentionSettings_UpsertsWhenUnseeded(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 	// No prior seed: the update must insert the row (upsert), not no-op.
-	require.NoError(t, d.UpdateRetentionSettings(ctx, 3, 6))
+	want := RetentionSettings{KeepN: 3, RecencyHours: 6, BranchKeepN: 1, BranchTTLDays: 7}
+	require.NoError(t, d.UpdateRetentionSettings(ctx, want))
 	s, err := d.GetRetentionSettings(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, 3, s.KeepN)
-	assert.Equal(t, 6, s.RecencyHours)
+	assert.Equal(t, want, s)
 }
 
 func TestListAbandonedReleases(t *testing.T) {

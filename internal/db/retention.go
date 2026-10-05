@@ -9,11 +9,16 @@ import (
 	"time"
 )
 
-// RetentionSettings is the UI-editable retention policy (stored as a single row).
+// RetentionSettings is the stored retention policy. docs/retention.md describes each field.
 type RetentionSettings struct {
-	KeepN        int
-	RecencyHours int
+	KeepN         int
+	RecencyHours  int
+	BranchKeepN   int
+	BranchTTLDays int
 }
+
+// DefaultRetentionSettings is the policy before the row is seeded.
+var DefaultRetentionSettings = RetentionSettings{KeepN: 10, RecencyHours: 24, BranchKeepN: 1, BranchTTLDays: 7}
 
 // GetRetentionSettings returns the current policy, falling back to built-in
 // defaults if the row has not been seeded yet (e.g. the CLI running before any
@@ -21,27 +26,45 @@ type RetentionSettings struct {
 func (d *DB) GetRetentionSettings(ctx context.Context) (RetentionSettings, error) {
 	row, err := d.q.GetRetentionSettings(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
-		return RetentionSettings{KeepN: 10, RecencyHours: 24}, nil
+		return DefaultRetentionSettings, nil
 	}
 	if err != nil {
 		return RetentionSettings{}, fmt.Errorf("get retention settings: %w", err)
 	}
-	return RetentionSettings{KeepN: int(row.KeepN), RecencyHours: int(row.RecencyHours)}, nil
+	return RetentionSettings{
+		KeepN:         int(row.KeepN),
+		RecencyHours:  int(row.RecencyHours),
+		BranchKeepN:   int(row.BranchKeepN),
+		BranchTTLDays: int(row.BranchTtlDays),
+	}, nil
 }
 
-func (d *DB) SeedRetentionSettings(ctx context.Context, keepN, recencyHours int) error {
+// SeedRetentionSettings inserts the initial policy row if absent (INSERT OR
+// IGNORE), so a policy edited in the dashboard survives a restart.
+func (d *DB) SeedRetentionSettings(ctx context.Context, s RetentionSettings) error {
 	return d.q.SeedRetentionSettings(ctx, SeedRetentionSettingsParams{
-		KeepN:        int64(keepN),
-		RecencyHours: int64(recencyHours),
+		KeepN:         int64(s.KeepN),
+		RecencyHours:  int64(s.RecencyHours),
+		BranchKeepN:   int64(s.BranchKeepN),
+		BranchTtlDays: int64(s.BranchTTLDays),
 	})
 }
 
 // UpdateRetentionSettings persists a new policy (from the admin dashboard).
-func (d *DB) UpdateRetentionSettings(ctx context.Context, keepN, recencyHours int) error {
+func (d *DB) UpdateRetentionSettings(ctx context.Context, s RetentionSettings) error {
 	return d.q.UpdateRetentionSettings(ctx, UpdateRetentionSettingsParams{
-		KeepN:        int64(keepN),
-		RecencyHours: int64(recencyHours),
+		KeepN:         int64(s.KeepN),
+		RecencyHours:  int64(s.RecencyHours),
+		BranchKeepN:   int64(s.BranchKeepN),
+		BranchTtlDays: int64(s.BranchTTLDays),
 	})
+}
+
+type EvictionPolicy struct {
+	KeepN           int64
+	BranchKeepN     int64
+	RecencyCutoff   time.Time
+	BranchTTLCutoff time.Time
 }
 
 // sqliteDatetime formats t to match SQLite's datetime('now') text format
@@ -144,13 +167,13 @@ func (d *DB) IsBlobReferenced(ctx context.Context, key string) (bool, error) {
 	return n != 0, err
 }
 
-// ListEvictableReleases returns published releases past keep-N on their
-// (project, branch) that are also older than recencyCutoff and not pinned by an
-// oci tag or a pushed-docker artifact.
-func (d *DB) ListEvictableReleases(ctx context.Context, keepN int64, recencyCutoff time.Time) ([]ListEvictableReleasesRow, error) {
+// ListEvictableReleases returns the published releases the policy evicts.
+func (d *DB) ListEvictableReleases(ctx context.Context, p EvictionPolicy) ([]ListEvictableReleasesRow, error) {
 	return d.q.ListEvictableReleases(ctx, ListEvictableReleasesParams{
-		RecencyCutoff: sqliteDatetime(recencyCutoff),
-		KeepN:         keepN,
+		RecencyCutoff:   sqliteDatetime(p.RecencyCutoff),
+		KeepN:           p.KeepN,
+		BranchKeepN:     p.BranchKeepN,
+		BranchTtlCutoff: sqliteDatetime(p.BranchTTLCutoff),
 	})
 }
 
@@ -163,10 +186,12 @@ func (d *DB) ListAbandonedReleases(ctx context.Context, cutoff time.Time) ([]Lis
 // SumReclaimableBytes returns an upper bound on the logical bytes keep-N eviction
 // would free (it does not subtract blobs shared with surviving releases). For the
 // admin dashboard estimate; the gc CLI and sweeper report the exact figure.
-func (d *DB) SumReclaimableBytes(ctx context.Context, keepN int64, recencyCutoff time.Time) (int64, error) {
+func (d *DB) SumReclaimableBytes(ctx context.Context, p EvictionPolicy) (int64, error) {
 	return d.q.SumReclaimableBytes(ctx, SumReclaimableBytesParams{
-		RecencyCutoff: sqliteDatetime(recencyCutoff),
-		KeepN:         keepN,
+		RecencyCutoff:   sqliteDatetime(p.RecencyCutoff),
+		KeepN:           p.KeepN,
+		BranchKeepN:     p.BranchKeepN,
+		BranchTtlCutoff: sqliteDatetime(p.BranchTTLCutoff),
 	})
 }
 
@@ -190,6 +215,6 @@ func (d *DB) ListGoproxyBlobFiles(ctx context.Context) ([]ListGoproxyBlobFilesRo
 }
 
 // ListReleaseRetentionFacts returns, for every release, the facts the eviction
-func (d *DB) ListReleaseRetentionFacts(ctx context.Context) ([]ListReleaseRetentionFactsRow, error) {
-	return d.q.ListReleaseRetentionFacts(ctx)
+func (d *DB) ListReleaseRetentionFacts(ctx context.Context, branchTTLCutoff time.Time) ([]ListReleaseRetentionFactsRow, error) {
+	return d.q.ListReleaseRetentionFacts(ctx, sqliteDatetime(branchTTLCutoff))
 }
