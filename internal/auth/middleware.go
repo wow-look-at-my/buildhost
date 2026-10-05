@@ -158,22 +158,29 @@ func TokenCanReadProject(ctx context.Context, project *db.Project) bool {
 // also reads another project when GitHub says the run's actor can read that
 // project's repo.
 func tokenReadsProject(ctx context.Context, t *db.APIToken, project *db.Project) bool {
+	ok, _ := tokenReadsProjectWhy(ctx, t, project)
+	return ok
+}
+
+// tokenReadsProjectWhy is tokenReadsProject plus the reason for a refusal of
+// an OIDC read outside the identity's namespace.
+func tokenReadsProjectWhy(ctx context.Context, t *db.APIToken, project *db.Project) (bool, string) {
 	if !t.AuthorizedForProject(project.ID) {
-		return false
+		return false, ""
 	}
 	oidcProject := OIDCProjectFrom(ctx)
-	if oidcProject == "" {
-		return true
+	if oidcProject == "" || oidcAuthorizesProject(oidcProject, project.Name) {
+		return true, ""
 	}
-	return oidcAuthorizesProject(oidcProject, project.Name) || oidcActorReads(ctx, project)
+	return oidcActorReads(ctx, project)
 }
 
 // oidcActorReads reports whether the GitHub user who triggered the run can
 // read the project's repo. Read only: a write stays in the identity's namespace.
-func oidcActorReads(ctx context.Context, project *db.Project) bool {
+func oidcActorReads(ctx context.Context, project *db.Project) (bool, string) {
 	id := OIDCRepoFrom(ctx)
 	if id.Issuer != GitHubActionsIssuer {
-		return false
+		return false, "only a GitHub Actions token reads outside its own repo"
 	}
 	return gitHubUserReadsRepo(ctx, id.Actor, project.GithubRepo)
 }
@@ -415,8 +422,15 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						unauthorizedResponse(w, r)
 						return
 					}
-					if !tokenReadsProject(r.Context(), t, project) {
-						http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
+					if ok, reason := tokenReadsProjectWhy(r.Context(), t, project); !ok {
+						msg := "token not authorized for this project"
+						if reason != "" {
+							msg += ": " + reason
+						}
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusForbidden)
+						body, _ := json.Marshal(map[string]string{"error": msg})
+						w.Write(body)
 						return
 					}
 				}
