@@ -283,13 +283,15 @@ func TestHealthz(t *testing.T) {
 	require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
 
 	var body struct {
-		Status  string `json:"status"`
-		Commit  string `json:"commit"`
-		Version string `json:"version"`
-		Started string `json:"started"`
+		Status           string `json:"status"`
+		Commit           string `json:"commit"`
+		Version          string `json:"version"`
+		Started          string `json:"started"`
+		GitHubCredential string `json:"github_credential"`
 	}
 	require.NoError(t, json.Unmarshal(readBody(t, resp), &body))
 	require.Equal(t, "ok", body.Status)
+	require.Contains(t, []string{"app", "token", "none"}, body.GitHubCredential, "healthz names the GitHub credential source")
 	require.NotEmpty(t, body.Commit)  // "unknown" in tests, but never empty
 	require.NotEmpty(t, body.Version) // "dev" in tests, but never empty
 	started, err := time.Parse(time.RFC3339, body.Started)

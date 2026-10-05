@@ -17,8 +17,10 @@ func TestNoRepoCredentialReasonNamesTheMissingSource(t *testing.T) {
 	SetGitHubToken("")
 	t.Cleanup(func() { SetGitHubToken("") })
 	assert.Equal(t, "no GitHub App and no BUILDHOST_GITHUB_TOKEN are configured", noRepoCredentialReason())
+	assert.Equal(t, "none", GitHubCredentialSource())
 
 	SetGitHubToken("ghp_x")
+	assert.Equal(t, "token", GitHubCredentialSource())
 	assert.Contains(t, noRepoCredentialReason(), "BUILDHOST_GITHUB_TOKEN is set")
 
 	withStubGitHubApp(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -26,6 +28,7 @@ func TestNoRepoCredentialReasonNamesTheMissingSource(t *testing.T) {
 	}))
 	// No static token to fall through to: the App is the only source, and it fails.
 	SetGitHubToken("")
+	assert.Equal(t, "app", GitHubCredentialSource())
 	assert.Contains(t, noRepoCredentialReason(), "could not mint an installation token")
 
 	_, _, reason := fetchUserRepoPermission(t.Context(), "PazerOP", "wow-look-at-my/gh-wait-ci")

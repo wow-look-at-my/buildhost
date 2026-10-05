@@ -80,6 +80,18 @@ func currentGitHubApp() *githubApp {
 // HasGitHubApp reports whether App auth is configured, so a caller can name
 func HasGitHubApp() bool { return currentGitHubApp() != nil }
 
+// GitHubCredentialSource names what authenticates buildhost's own GitHub REST
+// calls: "app", "token" or "none".
+func GitHubCredentialSource() string {
+	if HasGitHubApp() {
+		return "app"
+	}
+	if currentGitHubToken() != "" {
+		return "token"
+	}
+	return "none"
+}
+
 // bearerForRepo returns the bearer token to authenticate a github.com REST call
 func BearerForRepo(ctx context.Context, owner, repo string) string {
 	return bearerForRepo(ctx, owner, repo)
