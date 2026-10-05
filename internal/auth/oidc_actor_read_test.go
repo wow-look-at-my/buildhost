@@ -116,6 +116,35 @@ func TestOIDCActorReadCachesAndDeniesOnFailure(t *testing.T) {
 	assert.False(t, cached, "a failed lookup is not cached")
 }
 
+// It says nothing about the actor, so it is not cached, and the refusal names
+// it.
+func TestOIDCActorReadRefusalNamesTheReason(t *testing.T) {
+	t.Serial()
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+	withStubPermissions(t, map[string]string{})
+
+	proj := &db.Project{Name: "bashfs", Versioning: "auto", IsPrivate: true, GithubRepo: "wow-look-at-my/bashfs"}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	handler := requireProjectFunc(func(*http.Request) RouteInfo {
+		return testRouteInfo{project: "bashfs", access: ReadAccess}
+	}, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	req := httptest.NewRequest("GET", "/", nil).WithContext(actorCtx("claude-code-web-config", "PazerOP"))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "token not authorized for this project: GitHub answered 404 for the permission of PazerOP on the project's repo", body["error"])
+
+	actorReadMu.Lock()
+	_, cached := actorReadCache["pazerop\x00wow-look-at-my/bashfs"]
+	actorReadMu.Unlock()
+	assert.False(t, cached, "a 404 is not an answer about the actor, so it is not cached")
+}
+
 // The read grant must not leak into a write: a publish stays confined to the
 // identity's own namespace.
 func TestRequireProjectOIDCActorReadIsReadOnly(t *testing.T) {
