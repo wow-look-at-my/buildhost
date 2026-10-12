@@ -15,7 +15,7 @@ This document lives at `__BASE_URL__/llms.txt` and is written for LLMs and autom
 - **Release**: one version of a project. Versions auto-increment by default (`1`, `2`, `3`, ...) or use semver if the project opts in.
 - **Artifact**: an uploaded binary for a specific OS and architecture, such as `linux/amd64`. A release can hold many artifacts.
 - **Branch**: the git branch is a first-class field on every release. You can therefore always fetch the latest build of a branch.
-- **Visibility**: projects are public or private. Private projects require an auth token on every endpoint, including the package-manager formats.
+- **Visibility**: projects are public or private. Private projects require an auth token on every endpoint, including the package-manager formats. A project follows the GitHub repo that publishes it, unless an operator forces a folder, the project or one build public or private. A build forced private needs a token to download even when its project is public.
 
 ## Authentication
 
