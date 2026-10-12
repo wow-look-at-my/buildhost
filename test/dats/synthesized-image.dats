@@ -3,13 +3,14 @@
 #
 # Clients, on purpose. crane (go-containerregistry) is daemon-free, so this
 # runs the same way locally and on a runner. Docker is exercised as well,
-# because "pullable" is a claim about the client people actually use, and
-# buildhost's layers are zstd -- which Docker reads only through the containerd
+# because "pullable" is a claim about the client people actually use.
+# Buildhost's layers are zstd -- which Docker reads only through the containerd
 # image store. crane alone proved the half that was never in doubt.
 #
-# The workflow builds the netcheck entrypoint, installs crane, maps the OCI
-# host in /etc/hosts and turns on the containerd image store; $NETCHECK_BIN and
-# $BUILDHOST_BIN come from it. Needs curl, crane and docker, so --no-sandbox.
+# The workflow builds the netcheck entrypoint and installs crane. The workflow
+# also maps the OCI host in /etc/hosts and turns on the containerd image store.
+# $NETCHECK_BIN and $BUILDHOST_BIN come from it. Needs curl, crane and docker,
+# so --no-sandbox.
 #
 # see docs/formats/oci.md
 

@@ -51,7 +51,7 @@ buildhost try-update                    # queries localhost:8080/ready-to-update
 buildhost try-update --addr :9090       # custom listen address
 ```
 
-Exit 0 means idle. An update is then safe. A non-zero exit means busy or unreachable. The caller must then skip this poll cycle.
+One exit means idle. An update is then safe. A non-zero exit means busy or unreachable. The caller must then skip this poll cycle.
 
 The admin endpoint `GET /admin/inflight` on `:9090` still returns `{"inflight": N}` with the raw count for dashboards.
 

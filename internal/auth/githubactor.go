@@ -57,12 +57,25 @@ func gitHubUserReadsRepo(ctx context.Context, login, ownerRepo string) (allowed 
 	return allowed, reason
 }
 
+// noRepoCredentialReason names which credential source is missing. A deployment
+// with no App and no token reads the same as a mint that failed unless it says.
+func noRepoCredentialReason() string {
+	if currentGitHubApp() != nil {
+		return "the GitHub App is configured but could not mint an installation token for the repo"
+	}
+	if currentGitHubToken() != "" {
+		return "BUILDHOST_GITHUB_TOKEN is set but empty for this repo"
+	}
+	return "no GitHub App and no BUILDHOST_GITHUB_TOKEN are configured"
+}
+
 func fetchUserRepoPermission(ctx context.Context, login, ownerRepo string) (allowed, definite bool, reason string) {
 	owner, repo, _ := strings.Cut(ownerRepo, "/")
 	bearer := bearerForRepo(ctx, owner, repo)
 	if bearer == "" {
-		slog.WarnContext(ctx, "github permission check: no credential for repo", "repo", ownerRepo)
-		return false, false, "buildhost holds no GitHub credential for the project's repo"
+		why := noRepoCredentialReason()
+		slog.WarnContext(ctx, "github permission check: no credential for repo", "repo", ownerRepo, "why", why)
+		return false, false, "buildhost holds no GitHub credential for the project's repo: " + why
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, branchLookupBudget)

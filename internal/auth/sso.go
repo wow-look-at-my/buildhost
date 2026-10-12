@@ -110,7 +110,7 @@ func siteHandoffDest(next string) *url.URL {
 }
 
 // mintSiteHandoff mints a single-use handoff code for a sign-in whose
-// destination is on the configured site domain and returns the absolute
+// destination is on the configured site domain. It returns the absolute
 // /__sso redemption URL to redirect the browser to. It returns "" when the
 // destination is not a site-domain URL (the caller then redirects to next
 // directly, the ordinary same-domain flow). sessionValue is the signed
