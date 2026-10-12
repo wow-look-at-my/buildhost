@@ -55,6 +55,23 @@ func (r route) AllowsPublicRead(_ context.Context, _ *db.DB, project *db.Project
 	return auth.VerifyDownloadToken(r.token, project.Name, r.version, r.os, r.arch, r.fmtStr, r.debug)
 }
 
+// BuildVisibility applies the override of the release named by v.
+func (r route) BuildVisibility(ctx context.Context, d *db.DB, project *db.Project) db.Visibility {
+	if r.version == "" || r.version == "latest" {
+		return db.VisibilityAuto
+	}
+	release, err := resolveVersion(ctx, d, project.ID, r.version)
+	if err != nil {
+		return db.VisibilityAuto
+	}
+	mode, err := d.ReleaseVisibility(ctx, release.ID)
+	if err != nil {
+		// Fail closed: an unknown override must not open a private build.
+		return db.VisibilityPrivate
+	}
+	return mode
+}
+
 func parseRoute(r *http.Request) auth.RouteInfo {
 	q := r.URL.Query()
 	fmtStr := q.Get("fmt")
@@ -158,7 +175,7 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("ETag", etag)
-	if r.URL.Query().Get("token") != "" {
+	if r.URL.Query().Get("token") != "" || auth.ReadIsPrivate(r.Context()) {
 		// A token-gated (signed-link) fetch is private content: never let a shared
 		w.Header().Set("Cache-Control", "private, no-store")
 	} else {
