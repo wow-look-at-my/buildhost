@@ -15,11 +15,11 @@ This document lives at `__BASE_URL__/llms.txt` and is written for LLMs and autom
 - **Release**: one version of a project. Versions auto-increment by default (`1`, `2`, `3`, ...) or use semver if the project opts in.
 - **Artifact**: an uploaded binary for a specific OS and architecture, such as `linux/amd64`. A release can hold many artifacts.
 - **Branch**: the git branch is a first-class field on every release. You can therefore always fetch the latest build of a branch.
-- **Visibility**: projects are public or private. Private projects require an auth token on every endpoint, including the package-manager formats.
+- **Visibility**: projects are public or private. Private projects require an auth token on every endpoint, including the package-manager formats. A project follows the GitHub repo that publishes it, unless an operator forces a folder, the project or one build public or private. A build forced private needs a token to download even when its project is public.
 
 ## Authentication
 
-buildhost uses bearer tokens. Provide one in whichever way your client allows:
+buildhost uses bearer tokens. Give one in whichever way your client allows:
 
 - HTTP header: `Authorization: Bearer <token>`
 - HTTP Basic auth: send the token as the password (the username is ignored)
@@ -70,7 +70,9 @@ POST __BASE_URL__/api/v1/projects/{project}/releases/{version}/publish
 
 The upload's `{os}` segment accepts one OS, a comma-separated list such as `linux,darwin,windows`, or `cosmo` for linux, darwin and windows together. The aliases `any`, `all` and `universal` mean the same as `cosmo`. The `{arch}` segment accepts a list, or `any` or `all` for amd64 and arm64.
 
-The body is stored once. One ordinary artifact row is created per os/arch combination. The set is all-or-nothing. A conflicting combination returns 409. Downloads are therefore unchanged. Always request a concrete os/arch. A single os/arch returns one artifact JSON object. A multi-platform upload returns a JSON array of them.
+The body is stored once. One ordinary artifact row is created per os/arch combination. The set is all-or-nothing. A conflicting combination returns 409. Downloads are therefore unchanged. Always request a concrete os/arch.
+
+A single os/arch returns one artifact JSON object. A multi-platform upload returns a JSON array of them.
 
 That per-combination fan-out applies to a file that is NOT an APE. There the combinations are separate builds that happen to share bytes.
 
@@ -94,9 +96,9 @@ A declared `windows/*` platform is checked against the bytes too. An APE whose P
 
 Every artifact in a release's JSON carries a `platforms` array. An ordinary per-platform artifact has one entry there. Read that array rather than `os` and `arch` alone.
 
-Hash-reference uploads work when `GET __BASE_URL__/api/v1/server-info` advertises `"upload_by_sha256": true`. A file byte-identical to one this project already uploaded, in any release, can be registered for more os/arch slots without a re-send. PUT the artifact URL with an EMPTY body and `?upload_sha256=<hex sha256 of the file>`.
+Hash-reference uploads work when `GET __BASE_URL__/api/v1/server-info` advertises `"upload_by_sha256": true`. A file byte-same to one this project already uploaded, in any release, can be registered for more os/arch slots without a re-send. PUT the artifact URL with an EMPTY body and `?upload_sha256=<hex sha256 of the file>`.
 
-The created rows and responses are identical to a full upload's. The reference composes with the os/arch list grammar above. A 404 means the blob is not available to this project, because it is unknown, another project's, or garbage-collected. Fall back to a full upload then.
+The created rows and responses are same to a full upload's. The reference composes with the os/arch list grammar above. A 404 means the blob is not available to this project, because it is unknown, another project's, or garbage-collected. Fall back to a full upload then.
 
 NEVER send an empty-body `upload_sha256` request to a server that does not advertise the capability. Such a server stores the empty body as the artifact. Together with `upload_session=` the parameter keeps its session-integrity meaning, described below.
 
@@ -112,7 +114,7 @@ The finalize step is the ORIGINAL upload endpoint with an empty body. The assemb
 
 ## Downloading
 
-Each service has its own subdomain. The download service resolves versions and redirects to the static endpoint:
+Each service has its own subdomain. The versions of the download service resolves and redirects to the static endpoint:
 
 ```
 # The latest version (version defaults to latest when omitted)
@@ -155,9 +157,13 @@ To set it up by hand instead, see the README. APT reads the armored key at __APT
 
 For a slash-namespaced project the repository URL keeps the slash, but the Debian package name folds `/` and `_` to `-` (for example, `myrepo/server` is served at `__APT_URL__/myrepo/server` and installs as `myrepo-server`).
 
-A `create_service` project's generated deb also ships a systemd user unit at `/usr/lib/systemd/user/<pkg>.service`. That unit is crash-only restart. It is bound to the graphical session. The package auto-enables it at install. It starts at each user's next graphical login. A removal disables it again. A pre-built `.deb` artifact uploaded as `kind=archive` is served byte-identical. Nothing is ever injected into it.
+A `create_service` project's generated deb also ships a systemd user unit at `/usr/lib/systemd/user/<pkg>.service`. That unit is crash-only start. It is bound to the graphical session. The package auto-enables it at install. It starts at each user's next graphical login. A removal disables it again.
 
-A project can declare its runtime prerequisites as `apt_depends`, in Debian relationship syntax, for example `"bubblewrap | docker.io"`. The generated deb and the Packages entry then carry a `Depends:` line, so `apt-get install` pulls them in. Send the string on release-create (`"apt_depends": "..."`), or on `PATCH __BASE_URL__/api/v1/projects/{project}`. An absent field leaves the stored value untouched. An empty string clears it. A value that is not Debian relationship syntax returns 400 and changes nothing. The CLI takes `--apt-depends`, and the `buildhost-publish` and `buildhost-create-release` actions take an `apt_depends` input.
+A pre-built `.deb` artifact uploaded as `kind=archive` is served byte-same. Nothing is ever injected into it.
+
+A project can declare its runtime prerequisites as `apt_depends`, in Debian relationship syntax, for example `"bubblewrap | docker.io"`. The generated deb and the Packages entry then carry a `Depends:` line, so `apt-get install` pulls them in. Send the string on release-create (`"apt_depends": "..."`), or on `PATCH __BASE_URL__/api/v1/projects/{project}`. An absent field leaves the stored value untouched. An empty string clears it. A value that is not Debian relationship syntax returns 400 and changes nothing.
+
+The CLI takes `--apt-depends`, and the `buildhost-publish` and `buildhost-create-release` actions take an `apt_depends` input.
 
 Homebrew: tap the generated Git repository, trust it, then install. The trust step is required from Homebrew 6.0. On Linux the bottle-less install runs Homebrew's build sandbox. That sandbox needs bubblewrap and an unprivileged user namespace. A container or a CI runner without them needs `HOMEBREW_NO_SANDBOX_LINUX=1` instead.
 
@@ -167,7 +173,9 @@ brew tap pazer/build __BREW_URL__/tap.git
 brew install pazer/build/go-toolchain
 ```
 
-For a private project, tap the authenticated tap instead. It contains every public formula, plus the private projects the token can read. A git client transmits a credential only after a challenge. The credential therefore rides the tap URL as the HTTP Basic password. The authenticated tap replaces the public one under the same name. `brew tap --custom-remote` taps it fresh or repoints an existing public tap, and `brew update-reset` moves the checkout onto its unrelated history. Installed formulae stay installed. Never run `brew untap --force pazer/build`, which uninstalls every formula from the tap. Also export `HOMEBREW_BUILDHOST_TOKEN`, so the formula's download strategy can authenticate the artifact fetch. The `?token=` query parameter does not work with `brew tap`, because git appends its own path segments after the query string. Here is an example for a private project named `myrepo/myapp`:
+For a private project, tap the authenticated tap instead. It contains every public formula, plus the private projects the token can read. A git client transmits a credential only after a challenge. The credential therefore rides the tap URL as the HTTP Basic password. The authenticated tap replaces the public one under the same name. `brew tap --custom-remote` taps it fresh or repoints an existing public tap, and `brew update-reset` moves the checkout onto its unrelated history.
+
+Installed formulae stay installed. Never run `brew untap --force pazer/build`, which uninstalls every formula from the tap. Also export `HOMEBREW_BUILDHOST_TOKEN`, so the formula's download strategy can authenticate the artifact fetch. The `?token=` query parameter does not work with `brew tap`, because git appends its own path segments after the query string. Here is an example for a private project named `myrepo/myapp`:
 
 ```
 brew trust "__BREW_TOKEN_URL__/private/tap.git"
@@ -183,11 +191,13 @@ The tap carries one formula per project, at the latest default-branch release. I
 brew version-install pazer/build/go-toolchain@1.0.0
 ```
 
-A slash-namespaced project folds `/` to `-` in its formula name. That is the same rule as the APT package name rule. The installed command keeps the binary's own name. A formula that is the only one under a root with no formula of its own takes the root's name. `myrepo/myapp` therefore installs as `brew install pazer/build/myrepo` and puts `myapp` on PATH. The folded name `myrepo-myapp` still installs it, through the tap's `formula_renames.json`.
+A slash-namespaced project folds `/` to `-` in its formula name. That is the same rule as the rule of the APT package name. The installed command keeps the binary's own name. A formula that is the only one under a root with no formula of its own takes the root's name. `myrepo/myapp` therefore installs as `brew install pazer/build/myrepo` and puts `myapp` on PATH. The folded name `myrepo-myapp` still installs it, through the tap's `formula_renames.json`.
 
 A project can declare its `create_service` setting. Its CI sends that bool on release-create, or an operator sets it through the API. Such a project is a background service, materialized per format.
 
-Its formula carries a `service do` block. Activate the service once with `brew services start pazer/build/<project>`. It becomes a user LaunchAgent at login, with crash-only restart and logs under `$(brew --prefix)/var/log/`. Homebrew's sandbox makes an install-time auto-start impossible for any formula. `brew uninstall` does not stop a service, so run `brew services stop` first. The project's generated deb ships an auto-enabled systemd user unit. See the APT section for that.
+Its formula carries a `service do` block. Activate the service once with `brew services start pazer/build/<project>`. It becomes a user LaunchAgent at login, with crash-only start and logs under `$(brew --prefix)/var/log/`. Homebrew's sandbox makes an install-time auto-start impossible for any formula. `brew uninstall` does not stop a service, so run `brew services stop` first. The project's generated deb ships an auto-enabled systemd user unit.
+
+See the APT section for that.
 
 npm (packages are published under the `@buildhost` scope):
 
@@ -203,7 +213,7 @@ docker pull __OCI_HOST__/myapp:latest
 
 ## Go module proxy
 
-buildhost serves the Go module download protocol, so `go` can fetch this org's private first-party modules alongside everything on the public mirror. Point the toolchain at it with a read-scoped token in `~/.netrc`:
+buildhost serves the protocol of the Go module download, so `go` can fetch this org's private first-party modules alongside everything on the public mirror. Point the toolchain at it with a read-scoped token in `~/.netrc`:
 
 ```
 # ~/.netrc
@@ -216,7 +226,7 @@ export GOPRIVATE='github.com/<your-org>/*'
 go mod download
 ```
 
-The trailing `,direct` is load-bearing. This proxy serves its own org's modules. It answers 404 for anything else, which is the module protocol's "try the next entry". Everything else is therefore fetched straight from its origin. No third-party mirror is involved unless the operator configures one, and none is configured by default. A mirror sees the module path of every dependency routed through it.
+The trailing `,direct` is load-bearing. This proxy serves its own org's modules. It answers 404 for anything else, which is the module protocol's "try the next entry". Everything else is therefore fetched straight from its origin. Default involvs no third-party mirror. A mirror sees the module path of every dependency routed through it.
 
 A failure of the PROXY's own credential is a 403, not a 404. It therefore does NOT fall through to `direct`. An operator's credential problem halts the fetch and is reported, rather than silently papered over.
 

@@ -6,13 +6,19 @@ REST API handlers (projects, releases, artifacts, publish, tokens). Each handler
 
 ## Project settings
 
-`PATCH /api/v1/projects/{project}` (`UpdateProjectSettings`) updates the operator-set project settings. It takes `create_service` and `apt_depends`. A body that names `versioning` gets a 403 and changes nothing. A write token includes a CI job's OIDC token, so versioning changes only from the admin dashboard's project page. A switch to `auto` there keeps the existing releases, and the next number follows the highest one. Request fields are pointer-typed. An absent one is unchanged. `parseRoute` counts PATCH as a write verb. The centralized requireProject therefore demands a write-scoped token authorized for the project. The release-create body accepts the same optional `create_service` bool, asserted on every publish, and an absent one is untouched. The publishing repo's CI is therefore the declarative surface. No documented flow has a manual API step. The release-create body takes an optional `apt_depends` string the same way. An empty string clears it. An invalid one is a 400 on either route, before anything is written, and the release-create makes no release.
+`PATCH /api/v1/projects/{project}` (`UpdateProjectSettings`) updates the operator-set project settings. It takes `create_service` and `apt_depends`. A body that names `versioning` gets a 403 and changes nothing. A write token includes a CI job's OIDC token, so versioning changes only from the admin dashboard's project page. A switch to `auto` there keeps the existing releases, and the next number follows the highest one. Request fields are pointer-typed.
+
+An absent one is unchanged. `parseRoute` counts PATCH as a write verb. The centralized requireProject therefore demands a write-scoped token authorized for the project. The release-create body accepts the same optional `create_service` bool, asserted on every publish, and an absent one is untouched. The publishing repo's CI is therefore the declarative surface. No documented flow has a manual API step.
+
+The release-create body takes an optional `apt_depends` string the same way. An empty string clears it. An invalid one is a 400 on either route, before anything is written, and the release-create makes no release.
 
 The setting is packaging-format-AGNOSTIC. It says "this project runs as a background service". Each format materializes it in its own way. brew emits a `service do` block. `fmt=deb` emits an auto-enabled systemd user unit. raw, zip, npm and OCI only store it.
 
 ## Release lookup
 
-`GET /api/v1/projects/{project}/releases/{version}` resolves `latest`, and the empty spec, to the apex latest published release through `db.GetLatestRelease`. That is the newest published release on the project's default branch. The branch is `projects.default_branch`, which defaults to `master`. buildhost resolves it per project from GitHub with the OIDC token's repo identity. See `docs/apex-latest.md`. No release on that branch means no apex latest. There is deliberately no fallback to newest-overall, which lets a feature branch hijack `latest`. This mirrors how dl, static and the web frontend already treat `latest`. A client such as go-toolchain's background update check gets the newest release's `version`, `git_commit` and `published_at` in one bounded request. It does not list every release. Any other `{version}` is still an exact match.
+`GET /api/v1/projects/{project}/releases/{version}` resolves `latest`, and the empty spec, to the apex latest published release through `db.GetLatestRelease`. That is the newest published release on the project's default branch. The branch is `projects.default_branch`, which defaults to `master`. buildhost resolves it per project from GitHub with the OIDC token's repo identity. See `docs/apex-latest.md`. No release on that branch means no apex latest. There is deliberately no fallback to newest-overall, which lets a feature branch hijack `latest`.
+
+This mirrors how dl, static and the web frontend already treat `latest`. A client such as go-toolchain's background update check gets the newest release's `version`, `git_commit` and `published_at` in one bounded request. It does not list every release. Any other `{version}` is still an exact match.
 
 ## Publish responses carry their artifacts
 

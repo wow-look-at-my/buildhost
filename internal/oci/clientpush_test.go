@@ -26,7 +26,6 @@ func newLiveRegistry(h *Handler, proj *db.Project) *httptest.Server {
 	}))
 }
 
-// writeLayoutBlob writes content into layoutDir's blob store, returning digest.
 func writeLayoutBlob(t *testing.T, dir string, content []byte) string {
 	t.Helper()
 	d := digestOf(content)
