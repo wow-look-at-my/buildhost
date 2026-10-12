@@ -35,7 +35,6 @@ function walk(root, relative, found) {
 	return found;
 }
 
-// The blocks running past the limit, as [startIndex, endIndex] pairs.
 function overLongBlocks(lines) {
 	const blocks = [];
 	let start = -1;

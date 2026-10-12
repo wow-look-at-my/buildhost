@@ -8,7 +8,7 @@ This directory ships an **opt-in** second ingress that bypasses the proxy for on
 
 - **An upload of any size, in one plain HTTP request.** Caddy has no request-body limit and never buffers a request body. The only remaining cap is the app's own `BUILDHOST_MAX_UPLOAD_SIZE`, which defaults to 2 GiB. Raise it in the `buildhost` service environment, for example `BUILDHOST_MAX_UPLOAD_SIZE=20G`. No read or write timeout is configured, so a multi-hour upload survives.
 - **TLS terminates in the sidecar**, because buildhost itself has no cert or ACME support. It is a plain `ListenAndServe` behind a reverse proxy, by design.
-- **Certificates come from ACME DNS-01** through the Cloudflare DNS API. The CA is `Let's Encrypt`. Use DNS-01 when this stack cannot have port 80 or 443 for an ACME challenge, because HTTP-01 and TLS-ALPN-01 each need one of them. DNS-01 needs no inbound connectivity at all to issue. An issued cert and the ACME account persist in the `ingress-data` volume, so a restart never re-issues. Caddy renews automatically in the background.
+- **Certificates come from ACME DNS-01** through the Cloudflare DNS API. The CA is `Let's Encrypt`. Use DNS-01 when this stack cannot port 80 or 443 for an ACME challenge, because HTTP-01 and TLS-ALPN-01 each need one of them. DNS-01 needs no inbound connectivity at all to issue. An issued cert and the ACME account persist in the `ingress-data` volume, so a start never re-issues. Caddy renews automatically in the background.
 - **No app changes needed.** buildhost is host-agnostic. It answers on any `Host` header and derives a generated URL from the request Host. A dedicated upload hostname such as `api.pazer.build:8443` therefore works with no code change and no config change.
 
 ## What still goes through Cloudflare
@@ -31,7 +31,7 @@ One-time steps, in order. Examples below use `api.pazer.build` as the ingress ho
 
 2. **Port-forward** -- forward an external TCP port (default **8443**) to port **8443** on the host running this compose stack.
 
-3. **Cloudflare API token** -- create a token scoped to exactly **Zone / DNS / Edit** for your zone (My Profile -> API Tokens -> Create Token -> "Edit zone DNS" template). Put it in the deploy `.env` next to `docker-compose.yml`:
+3. **Cloudflare API token** -- create a token scoped to exactly **Edit of the / of the Zone / DNS** for your zone (My Profile -> API Tokens -> Create Token -> "Edit zone DNS" template). Put it in the deploy `.env` next to `docker-compose.yml`:
 
    ```
    CLOUDFLARE_DNS_API_TOKEN=<the token>

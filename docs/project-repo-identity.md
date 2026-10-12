@@ -1,6 +1,8 @@
 # Projects follow their GitHub repo, by repo id
 
-A project's name comes from its GitHub repo name. That name is mutable. A rename or a transfer changes it. The numeric repo id does not change. It survives both. It changes only when somebody deletes the repository and creates it again. Migration multiple pins that id on the project (`projects.github_repo_id`). `docs/security/oidc.md` covers the trust model it enforces.
+A project's name comes from its GitHub repo name. That name is mutable. A rename or a transfer changes it. The numeric repo id does not change. It survives both. It changes only when somebody deletes the repository and creates it again.
+
+Migration multiple pins that id on the project (`projects.github_repo_id`). `docs/security/oidc.md` covers the trust model it enforces.
 
 The pin alone did not stop a rename from splitting a project in half. Resolution still went by NAME. The first publish after a rename found nothing under the new name. It then auto-provisioned a second project beside the first. The release history stayed under the name. Every new release landed under the new one.
 
@@ -55,4 +57,6 @@ The merge stops rather than guess in these cases:
 
 ### The snapshot
 
-An apply writes a full `VACUUM INTO` snapshot beside the database first. It refuses to proceed when that snapshot fails. `VACUUM INTO` takes its own read transaction. The copy is therefore consistent. The server keeps running throughout. A merge rewrites history in place instead of appending to it. The snapshot is not optional.
+An apply writes a full `VACUUM INTO` snapshot beside the database first. It refuses to proceed when that snapshot fails. `VACUUM INTO` takes its own read transaction. The copy is therefore consistent. The server keeps running throughout. A merge rewrites history in place instead of appending to it.
+
+The snapshot is not optional.

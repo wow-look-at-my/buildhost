@@ -2,7 +2,7 @@
 
 Extracted verbatim from CLAUDE.md, no wording changed. The larger items moved to their own docs: `docs/security/github-signin.md` (browser sign-in, cross-domain handoff, primary-domain scoping), `docs/security/oidc.md` (the whole OIDC trust model), `docs/security/tokens-and-links.md` (scopes and temporary download links), `docs/apex-latest.md` (the default-branch GitHub lookup).
 
-The following items have been reviewed and addressed or are intentional design choices:
+The following items was reviewed and addressed or are intentional design choices:
 
 - **Rate limiting**: Handled at the reverse proxy layer, not in the application
 - **No TLS termination**: Intentional -- runs behind a reverse proxy in Docker
@@ -26,4 +26,6 @@ Served site files drop the app's strict `Content-Security-Policy: default-src 'n
 
 ## Public sites under private projects
 
-A site uploaded with `X-Public-Site: true` is served anonymously even when its project is private. It is **opt-in per upload**, because the publisher's own OIDC or token write sets it explicitly. It is **scoped to that site branch**. It does not change the project's visibility. Release artifacts, other branches and the `/branches` listing all stay gated. `requireProject` enforces the bypass centrally, because the sites read route implements `PublicReadAuthorizer`. The sites handler does not enforce it. The "auth enforced once" invariant therefore holds. The `buildhost-publish-site` action defaults `public` to `false`. The PR-preview reusable workflow opts in with `public: true`, because a preview URL is meant to be shareable. A private repo can already serve a public GitHub Pages site the same way.
+A site uploaded with `X-Public-Site: true` is served anonymously even when its project is private. It is **opt-in per upload**, because the publisher's own OIDC or token write sets it explicitly. It is **scoped to that site branch**. It does not change the project's visibility. Release artifacts, other branches and the `/branches` listing all stay gated. `requireProject` enforces the bypass centrally, because the sites read route implements `PublicReadAuthorizer`.
+
+The sites handler does not enforce it. The "auth enforced once" invariant therefore holds. The `buildhost-publish-site` action defaults `public` to `false`. The PR-preview reusable workflow opts in with `public: true`, because a preview URL is meant to be shareable. A private repo can already serve a public GitHub Pages site the same way.

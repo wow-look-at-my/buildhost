@@ -35,13 +35,45 @@ func init() {
 
 type route struct {
 	project string
+	version string
+	branch  string
 }
 
 func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
+// BuildVisibility applies the override of the release this request resolves to.
+func (r route) BuildVisibility(ctx context.Context, d *db.DB, project *db.Project) db.Visibility {
+	release, _, err := resolveRelease(ctx, d, project.ID, r.version, r.branch)
+	if err != nil {
+		return db.VisibilityAuto
+	}
+	mode, err := d.ReleaseVisibility(ctx, release.ID)
+	if err != nil {
+		// Fail closed: an unknown override must not open a private build.
+		return db.VisibilityPrivate
+	}
+	return mode
+}
+
 func parseRoute(r *http.Request) auth.RouteInfo {
-	return route{project: r.PathValue("project")}
+	q := r.URL.Query()
+	return route{project: r.PathValue("project"), version: q.Get("v"), branch: q.Get("branch")}
+}
+
+// resolveRelease picks the release a dl request names: an exact version, the
+// newest build of a branch, or the apex latest.
+func resolveRelease(ctx context.Context, d *db.DB, projectID int64, version, branch string) (*db.Release, string, error) {
+	switch {
+	case version != "":
+		rel, err := d.GetRelease(ctx, projectID, version)
+		return rel, "exact", err
+	case branch != "":
+		rel, err := d.GetLatestReleaseByBranch(ctx, projectID, branch)
+		return rel, "branch", err
+	}
+	rel, err := d.GetLatestRelease(ctx, projectID)
+	return rel, "latest", err
 }
 
 type Handler struct {
@@ -104,28 +136,10 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, span := dlTracer.Start(r.Context(), "dl.resolve_version")
-	var (
-		release   *db.Release
-		err       error
-		immutable bool
-	)
-
-	version := q.Get("v")
-	branch := q.Get("branch")
-
-	switch {
-	case version != "":
-		release, err = h.DB.GetRelease(r.Context(), project.ID, version)
-		span.SetAttributes(attribute.String("dl.resolution", "exact"))
-		immutable = true
-	case branch != "":
-		release, err = h.DB.GetLatestReleaseByBranch(r.Context(), project.ID, branch)
-		span.SetAttributes(attribute.String("dl.resolution", "branch"))
-	default:
-		release, err = h.DB.GetLatestRelease(r.Context(), project.ID)
-		span.SetAttributes(attribute.String("dl.resolution", "latest"))
-	}
+	release, resolution, err := resolveRelease(r.Context(), h.DB, project.ID, q.Get("v"), q.Get("branch"))
+	span.SetAttributes(attribute.String("dl.resolution", resolution))
 	span.End()
+	immutable := resolution == "exact"
 
 	if handleDBErr(w, r, err) {
 		return
@@ -168,7 +182,7 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		p = p.WithDebug(true)
 	}
 
-	if project.IsPrivate {
+	if auth.ReadIsPrivate(r.Context()) {
 		w.Header().Set("Cache-Control", "private, no-store")
 		signed, _ := static.SignedURL(auth.DeriveServiceURL(r, "static"), p, time.Now().Add(privateRedirectTTL))
 		http.Redirect(w, r, signed, http.StatusFound)
