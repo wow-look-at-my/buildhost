@@ -123,7 +123,6 @@ func TestCreateRelease_RepoNumberIsNewInEveryChild(t *testing.T) {
 	assert.Equal(t, int64(8), published.VersionNum)
 }
 
-// A number the server picked that a row already holds is taken again, higher, instead of a 409.
 func TestCreateRelease_AutoPicksPastATakenNumber(t *testing.T) {
 	t.Serial()
 	h := setupTestHandler(t)

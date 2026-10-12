@@ -26,7 +26,7 @@ const slotName = (s: { os: string; arch: string; kind: string }) => `${s.os}/${s
 
 /**
  * Decides the fate of an existing release. An unpublished one takes the upload.
- * A published one takes nothing: the publish is a no-op when every slot already
+ * A published one takes nothing. The publish is a no-op when every slot already
  * holds the same bytes, and a failure that names each slot otherwise.
  */
 export async function existingRelease(send: Send, core: Core, proj: string, version: string, slots: Slot[]): Promise<Verdict> {
