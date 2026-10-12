@@ -3,7 +3,7 @@
 buildhost accepts a single upload up to 2 GiB. A proxy in front of it may not. Cloudflare's edge rejects a request body over 100 MB, with a 413 that never reaches the origin. Several ways around that follow, and each is reliable on the first try.
 
 - **The direct upload endpoint is preferred when it is configured.** Your deployment can expose a hostname that reaches the origin without the proxied body cap. Point `--server`, or your upload URLs, at that hostname. A single-request upload of any size then works. Nothing else changes.
-- **A hash-reference upload sends identical bytes zero times.** A file byte-identical to one the project already uploaded need not be sent at all. Another platform slot of the same release is such a file, and so is an unchanged re-release. Register it with an empty-body PUT that names the blob's SHA-256. See [Registering more slots by hash](#registering-more-slots-by-hash-no-re-upload). The in-repo publish clients do this automatically when the server advertises `upload_by_sha256`.
+- **A hash-reference upload sends same bytes zero times.** A file byte-same to one the project already uploaded need not be sent at all. Another platform slot of the same release is such a file, and so is an unchanged re-release. Register it with an empty-body PUT that names the blob's SHA-256. See [Registering more slots by hash](#registering-more-slots-by-hash-no-re-upload). The in-repo publish clients do this automatically when the server advertises `upload_by_sha256`.
 - **A chunked upload session is the automatic fallback.** Through the proxied hostname, the in-repo publish clients transparently split a large file into chunks that fit under the cap. You need no knowledge that this exists. `buildhost publish`, `buildhost publish-site` and the `buildhost-upload-artifact` GitHub action all check the file size against the server's advertised limit before they send anything. That limit is `max_direct_upload_bytes` from `GET /api/v1/server-info`, and it defaults to 95 MiB. They switch to a session only when they need one. A small file keeps the classic single request.
 
 ```bash
@@ -34,7 +34,9 @@ A session works with **every** upload endpoint. An artifact PUT and a site deplo
 
 A session expires after 24h, per `BUILDHOST_UPLOAD_SESSION_TTL`. It counts against the normal 2 GiB upload cap, at append time. Only the identity that created a session can touch it. A successful finalize consumes the session.
 
-From GitHub Actions, the `wow-look-at-my/buildhost/.github/actions/buildhost-upload-artifact@master` composite does all of this automatically. It checks the advertised limit. It sends a small file as the classic direct PUT, streamed from disk. It assembles a larger file through a session, in chunks by default, which its optional `chunk_size` input tunes. It resumes from the server's committed size on a hiccup. It finalizes with the file's SHA-256. It retries a transient server or network error, with backoff.
+From GitHub Actions, the `wow-look-at-my/buildhost/.github/actions/buildhost-upload-artifact@master` composite does all of this automatically. It checks the advertised limit. It sends a small file as the classic direct PUT, streamed from disk. It assembles a larger file through a session, in chunks by default, which its optional `chunk_size` input tunes. It resumes from the server's committed size on a hiccup. It finalizes with the file's SHA-256.
+
+It retries a transient server or network error, with backoff.
 
 From other CI without the CLI (uploading a >100 MB artifact through the proxied hostname), the same protocol is a short curl loop:
 
