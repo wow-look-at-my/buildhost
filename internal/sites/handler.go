@@ -71,9 +71,46 @@ func (r route) Access() auth.AccessLevel {
 	return auth.ReadAccess
 }
 
+// AllowsPublicRead lets requireProject serve a public site branch without a
+// token. A write never qualifies, and neither does a read that names no branch.
 func (r route) AllowsPublicRead(ctx context.Context, database *db.DB, project *db.Project) bool {
-	if r.write {
+	branch := r.readBranch(ctx, database, project)
+	if branch == "" {
 		return false
+	}
+	site, err := database.GetSite(ctx, project.ID, branch)
+	if err != nil {
+		return false
+	}
+	return site.IsPublic
+}
+
+// BuildVisibility gives a site branch its operator override. With no override,
+// a site published with X-Public-Site reads as public, and any other site
+// follows its project.
+func (r route) BuildVisibility(ctx context.Context, database *db.DB, project *db.Project) db.Visibility {
+	branch := r.readBranch(ctx, database, project)
+	if branch == "" {
+		return db.VisibilityAuto
+	}
+	mode, err := database.SiteVisibility(ctx, project.ID, branch)
+	if err != nil {
+		return db.VisibilityPrivate
+	}
+	if mode != db.VisibilityAuto {
+		return mode
+	}
+	site, err := database.GetSite(ctx, project.ID, branch)
+	if err == nil && site.IsPublic {
+		return db.VisibilityPublic
+	}
+	return db.VisibilityAuto
+}
+
+// readBranch resolves the site branch a read names, or "" for none.
+func (r route) readBranch(ctx context.Context, database *db.DB, project *db.Project) string {
+	if r.write {
+		return ""
 	}
 	branch := r.branch
 	switch {
@@ -84,14 +121,7 @@ func (r route) AllowsPublicRead(ctx context.Context, database *db.DB, project *d
 		// A named branch, in either spelling: the same longest-match
 		branch, _, _ = splitSiteBranch(ctx, database, project.ID, r.ref())
 	}
-	if branch == "" {
-		return false
-	}
-	site, err := database.GetSite(ctx, project.ID, branch)
-	if err != nil {
-		return false
-	}
-	return site.IsPublic
+	return branch
 }
 
 func parseRoute(r *http.Request) auth.RouteInfo {

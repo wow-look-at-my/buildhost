@@ -3,7 +3,7 @@
 # whole file: setup publishes the APE, the tests only ask questions about it.
 #
 # Needs curl and jq, which is why a workflow runs this --no-sandbox rather than
-# letting the dats phase sandbox it into an image that has neither.
+# letting the dats phase sandbox it into an image. That image has neither.
 #
 # see docs/multi-platform-artifacts.md
 

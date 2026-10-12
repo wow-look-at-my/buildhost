@@ -63,7 +63,7 @@ Every rejection is a 4xx that names the offending token, and stores nothing:
 - an unknown os or arch, a pair without a `/`, an empty element, an empty set, or a duplicate after normalization (`darwin/arm64,macos/aarch64`)
 - an incoherent pair, such as `linux/wasip1`. An `os=wasm` value pairs only with `js` or `wasip1`.
 - a platform already taken in this release for this kind. The answer is a 409 that names the platform. The check runs from either direction, so a per-platform upload for a covered platform conflicts too.
-- **a multi-platform set whose file is not an Actually Portable Executable.**
+- **a multi-platform set whose file is not an Portable Executable.**
 
 That last one is the point of the badge. A claim that one file runs on several platforms is only true for a format that carries each of their code. `internal/exeformat` therefore reads the leading bytes. It requires the `MZqFpD` magic that Cosmopolitan's stub opens with. A single-platform `platforms=` value is not a portability claim, so any file may take this path.
 
@@ -85,7 +85,7 @@ CREATE UNIQUE INDEX idx_artifact_platforms_slot
     ON artifact_platforms(release_id, kind, os, arch);
 ```
 
-The unique index enforces exactly what `artifacts.UNIQUE(release_id, os, arch, kind)` enforces for a canonical slot. That is why a conflict is detected in both directions. `ordinal` is the publisher's declared order. Ordinal 0 is the **canonical slot**. It is mirrored into `artifacts.os` and `artifacts.arch`.
+The unique index enforces exactly what `artifacts.UNIQUE(release_id, os, arch, kind)` enforces for a canonical slot. That is why a conflict is detected in both directions. `ordinal` is the publisher's declared order. One ordinal is the **canonical slot**. It is mirrored into `artifacts.os` and `artifacts.arch`.
 
 `artifacts.exe_format` records what the leading bytes said the file is. The value is `ape`, or `''` when nothing was recognized. The badge reads that field rather than an assumption. To add another portable format later therefore needs a detector plus a label, and no schema change.
 

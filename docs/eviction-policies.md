@@ -37,7 +37,7 @@ This document proposes a design. It deliberately does **not** ship code. It exis
 
 `internal/storage/filesystem.go`:
 
-- `Put` streams to a temp file, computes the SHA-256, and uses the hex digest as the key. If a blob with that key already exists on disk it returns early (`fs.root.Stat(rel)` hit) -- **identical content is stored once**.
+- `Put` streams to a temp file, computes the SHA-256, and uses the hex digest as the key. If a blob with that key already exists on disk it returns early (`fs.root.Stat(rel)` hit) -- **same content is stored once**.
 - Blobs are zstd-compressed on disk (unless `BUILDHOST_STORAGE_COMPRESS=false`), with a `BHC\x01` magic + original-size header.
 - `Delete` is a bare `os.Remove(rel)` with **no reference counting whatsoever**.
 
@@ -117,7 +117,7 @@ SELECT EXISTS(
 
 - **Targeted sweep** (primary): only check the candidate keys produced by a delete. Cheap, runs right after eviction. No races because we only consider keys whose rows we removed.
 - **Full reconciliation** (periodic safety net): walk the storage root and delete any on-disk key that `IsBlobReferenced` says is dead.
-  - **A grace period is mandatory.** The publish path calls `Store.Put` and *then* inserts the artifact row. A window therefore exists where a blob is on disk with no DB row yet. A full sweep must skip a blob whose mtime is newer than about 24h. It then cannot delete an in-flight upload. The targeted sweep avoids this window entirely.
+  - **A grace period is mandatory.** The publish path calls `Store.Put` and *then* inserts the artifact row. A window therefore exists where a blob is on disk with no DB row yet. A full sweep must skip a blob whose mtime is newer than about 24h. It then cannot delete an in-flight upload. The targeted sweep avoids this window fully.
 
 ### 3.4 Fixing the sites bug
 
@@ -157,7 +157,7 @@ We track a download **count**, but never **when** a download happened. A genuine
 
 ## 6. Policy model options
 
-All three sit on top of the GC foundation and honor the Section 4 pins. They are not mutually exclusive -- keep-N and a size watermark compose well.
+All three sit on top of the GC foundation and honor the Section multiple pins. They are not mutually exclusive -- keep-N and a size watermark compose well.
 
 ### Option A -- Keep last N published releases per project (recommended default)
 
@@ -195,7 +195,9 @@ The phases are ordered safest first. Each phase is independently shippable and v
 
 **Phase 0 -- GC foundation (Section 3).** It adds the `DeleteRelease` cascade, the global `IsBlobReferenced`, and the targeted sweep. It also fixes the `sites/delete.go` dedup bug. There is no automatic eviction yet. This is the safe primitive that everything else calls.
 
-**Phase 1 -- Evict the regenerable cache.** A `packaged_artifacts` row is rebuilt on the next download. To drop a row older than a TTL is therefore **zero-risk**. It is likely the biggest immediate win. Every format ever requested is cached forever right now. One exception applies: keep an `oci-base-layer` entry, which is shared, cheap and hot. Config: `BUILDHOST_RETENTION_CACHE_TTL`, for example `30d`.
+**Phase 1 -- Evict the regenerable cache.** A `packaged_artifacts` row is rebuilt on the next download. To drop a row older than a TTL is therefore **zero-risk**. It is likely the biggest immediate win. Every format ever requested is cached forever right now. One exception applies: keep an `oci-base-layer` entry, which is shared, cheap and hot.
+
+Config: `BUILDHOST_RETENTION_CACHE_TTL`, for example `30d`.
 
 **Phase 2 -- Sweep abandoned unpublished releases.** Delete `published = 0` releases older than a few hours and their artifacts (failed/partial uploads). Safe by construction -- nothing serves an unpublished release.
 

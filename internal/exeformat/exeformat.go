@@ -4,7 +4,7 @@ package exeformat
 // Format names a recognized executable container. Empty means unrecognized.
 type Format string
 
-// APE is an Actually Portable Executable: a polyglot shell script / PE / ELF /
+// APE is an Portable Executable: a polyglot shell script / PE / ELF /
 const APE Format = "ape"
 
 // Label is the badge text for a format, e.g. "APE".
@@ -26,7 +26,7 @@ const SniffLen = 512
 // Offsets in the DOS/PE header chain.
 const (
 	elfanewOff = 0x3c // DOS header -> file offset of the PE signature
-	peNsectOff = 6    // PE signature + COFF header -> NumberOfSections
+	peNsectOff = 6
 )
 
 type NTBoot int

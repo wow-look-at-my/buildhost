@@ -67,6 +67,7 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 							RepoID:     vr.RepoID,
 							RunID:      vr.RunID,
 							RunAttempt: vr.RunAttempt,
+							Actor:      vr.Actor,
 						})
 					}
 					r = r.WithContext(rctx)
@@ -138,22 +139,48 @@ func UserCanReadRepo(ctx context.Context, ownerRepo string) bool {
 	return allowed
 }
 
-// TokenCanReadProject reports whether the request context carries a credential
-// that authorizes READING the given project, applying exactly the token rules
-// requireProject's ReadAccess branch applies to a private project: a token with
-// the read scope, authorized for the project, and -- for OIDC identities -- inside
+// TokenCanReadProject reports whether the request context carries a
+// credential that authorizes READING the given project, applying exactly the
+// token rules requireProject's ReadAccess branch applies.
 func TokenCanReadProject(ctx context.Context, project *db.Project) bool {
 	if !project.IsPrivate {
 		return true
 	}
 	t := TokenFrom(ctx)
-	if t == nil || !t.HasScope("read") || !t.AuthorizedForProject(project.ID) {
+	if t == nil || !t.HasScope("read") {
 		return false
 	}
-	if oidcProject := OIDCProjectFrom(ctx); oidcProject != "" && !oidcAuthorizesProject(oidcProject, project.Name) {
-		return false
+	return tokenReadsProject(ctx, t, project)
+}
+
+// tokenReadsProject applies the project half of a read check to a token that
+// already holds the read scope. An OIDC identity reads its own namespace.
+func tokenReadsProject(ctx context.Context, t *db.APIToken, project *db.Project) bool {
+	ok, _ := tokenReadsProjectWhy(ctx, t, project)
+	return ok
+}
+
+// tokenReadsProjectWhy is tokenReadsProject plus the reason for a refusal of
+// an OIDC read outside the identity's namespace.
+func tokenReadsProjectWhy(ctx context.Context, t *db.APIToken, project *db.Project) (bool, string) {
+	if !t.AuthorizedForProject(project.ID) {
+		return false, ""
 	}
-	return true
+	oidcProject := OIDCProjectFrom(ctx)
+	if oidcProject == "" || oidcAuthorizesProject(oidcProject, project.Name) {
+		return true, ""
+	}
+	return oidcActorReads(ctx, project)
+}
+
+// oidcActorReads reports whether the GitHub user who triggered the run can
+// read the project's repo. Read only: a write stays in the identity's namespace.
+func oidcActorReads(ctx context.Context, project *db.Project) (bool, string) {
+	id := OIDCRepoFrom(ctx)
+	if id.Issuer != GitHubActionsIssuer {
+		return false, "only a GitHub Actions token reads outside its own repo"
+	}
+	return gitHubUserReadsRepo(ctx, id.Actor, project.GithubRepo)
 }
 
 // oidcAuthorizesProject reports whether an OIDC identity auto-provisioned for a
@@ -259,15 +286,20 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			oidcProject := OIDCProjectFrom(r.Context())
 			if t != nil && oidcProject != "" && oidcAuthorizesProject(oidcProject, project.Name) {
 				oidcPrivate, hasPrivate := OIDCPrivateFrom(r.Context())
-				if hasPrivate && project.IsPrivate != oidcPrivate {
-					if updateErr := mw.DB.SetProjectVisibility(r.Context(), project.ID, oidcPrivate); updateErr == nil {
+				if hasPrivate {
+					// The repo visibility is the AUTO value. An operator override in the admin dashboard keeps winning over it.
+					wasPrivate := project.IsPrivate
+					if syncErr := mw.DB.SyncAutoPrivate(r.Context(), project, oidcPrivate); syncErr != nil {
+						slog.ErrorContext(r.Context(), "OIDC visibility sync failed",
+							"project", project.Name, "err", syncErr)
+					} else if wasPrivate != project.IsPrivate {
 						slog.WarnContext(r.Context(), "OIDC visibility sync",
 							"project", project.Name,
-							"was_private", project.IsPrivate,
-							"now_private", oidcPrivate,
+							"was_private", wasPrivate,
+							"now_private", project.IsPrivate,
+							"repo_private", oidcPrivate,
 							"oidc_subject", t.Name,
 						)
-						project.IsPrivate = oidcPrivate
 						parentSpan.SetAttributes(attribute.Bool("project.visibility_synced", true))
 					}
 				}
@@ -359,6 +391,18 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			// Make the resolved project available to unauthorizedResponse.
 			r = r.WithContext(WithProject(r.Context(), project))
 
+			readPrivate := project.IsPrivate
+			if ri.Access() != WriteAccess {
+				if bv, ok := ri.(BuildVisibilityRoute); ok {
+					mode := bv.BuildVisibility(r.Context(), mw.DB, project)
+					readPrivate = mode.Apply(project.IsPrivate)
+					if mode != db.VisibilityAuto {
+						parentSpan.SetAttributes(attribute.String("project.build_visibility", string(mode)))
+					}
+				}
+				r = r.WithContext(context.WithValue(r.Context(), readPrivateKey{}, readPrivate))
+			}
+
 			switch ri.Access() {
 			case WriteAccess:
 				parentSpan.SetAttributes(attribute.String("project.access", "write"))
@@ -372,7 +416,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				}
 			case ReadAccess:
 				parentSpan.SetAttributes(attribute.String("project.access", "read"))
-				if project.IsPrivate {
+				if readPrivate {
 					// A specific resource the route declares public (e.g. a
 					// static site published with X-Public-Site.
 					if pra, ok := ri.(PublicReadAuthorizer); ok && pra.AllowsPublicRead(r.Context(), mw.DB, project) {
@@ -393,19 +437,24 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 						unauthorizedResponse(w, r)
 						return
 					}
-					if !t.AuthorizedForProject(project.ID) || (oidcProject != "" && !oidcAuthorizesProject(oidcProject, project.Name)) {
-						http.Error(w, `{"error":"token not authorized for this project"}`, http.StatusForbidden)
+					if ok, reason := tokenReadsProjectWhy(r.Context(), t, project); !ok {
+						msg := "token not authorized for this project"
+						if reason != "" {
+							msg += ": " + reason
+						}
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusForbidden)
+						body, _ := json.Marshal(map[string]string{"error": msg})
+						w.Write(body)
 						return
 					}
 				}
 			case HiddenReadAccess:
 				parentSpan.SetAttributes(attribute.String("project.access", "read"))
 				// Same authorization as ReadAccess, but an unauthorized caller
-				if project.IsPrivate {
+				if readPrivate {
 					userOK, _ := userCanReadProject(r.Context(), project)
-					authorized := userOK || (t != nil && t.HasScope("read") &&
-						t.AuthorizedForProject(project.ID) &&
-						(oidcProject == "" || oidcAuthorizesProject(oidcProject, project.Name)))
+					authorized := userOK || (t != nil && t.HasScope("read") && tokenReadsProject(r.Context(), t, project))
 					if !authorized {
 						projectNotFound(w)
 						return

@@ -14,11 +14,11 @@
 # so the message names a file that is present. A sibling repo shipped exactly
 # that by taking its busybox from an alpine-based stage.
 #
-# These assertions read the Dockerfile, which is where both defects are
-# spelled, and go-toolchain runs them sandboxed on every build with no host and
-# no docker. test/dats/image-entrypoints.dats asks the same questions of a
-# running container and catches what a spelling cannot: whether the paths
-# resolve and whether the binary starts.
+# These assertions read the Dockerfile. This is where both defects are spelled,
+# and go-toolchain runs them sandboxed on every build with no host and no
+# docker. test/dats/image-entrypoints.dats asks the same questions of a running
+# container. Test/dats/image-entrypoints.dats catches what a spelling cannot:
+# whether the paths resolve and whether the binary starts.
 
 tests:
 	- desc: the entrypoint and the healthcheck both name the launcher on PATH
@@ -42,7 +42,7 @@ tests:
 			- "no-shell-prefix"
 
 	# The binary lands from the staging stage, never from build/ directly. A
-	# COPY of the APE itself puts the trampoline back in the container, and the
+	# COPY of the APE itself puts the trampoline back in the container. The
 	# trampoline unpacks under a hardcoded /tmp that a deployment mounts noexec.
 	- desc: what lands on PATH is the launcher script, and the staged ELF lands elsewhere
 	  cmd: |

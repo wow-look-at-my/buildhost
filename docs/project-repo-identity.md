@@ -1,6 +1,8 @@
 # Projects follow their GitHub repo, by repo id
 
-A project's name comes from its GitHub repo name. That name is mutable. A rename or a transfer changes it. The numeric repo id does not change. It survives both. It changes only when somebody deletes the repository and creates it again. Migration 014 pins that id on the project (`projects.github_repo_id`). `docs/security/oidc.md` covers the trust model it enforces.
+A project's name comes from its GitHub repo name. That name is mutable. A rename or a transfer changes it. The numeric repo id does not change. It survives both. It changes only when somebody deletes the repository and creates it again.
+
+Migration multiple pins that id on the project (`projects.github_repo_id`). `docs/security/oidc.md` covers the trust model it enforces.
 
 The pin alone did not stop a rename from splitting a project in half. Resolution still went by NAME. The first publish after a rename found nothing under the new name. It then auto-provisioned a second project beside the first. The release history stayed under the name. Every new release landed under the new one.
 
@@ -9,6 +11,8 @@ The pin alone did not stop a rename from splitting a project in half. Resolution
 A repo's projects are its root project, named after the repo, plus every `<root>/<child>` beneath it. A repo therefore has exactly one top-level project and any number of children.
 
 `auth.reconcileRepoNamespace` rewrites the root segment of every project that carries the repo id when GitHub reports a new repo name. The root `A` becomes `B`. The child `A/child` becomes `B/child`. This runs on WRITE requests only. A read never mutates project state.
+
+The new root is the name `auth.RepoProjectName` gives the repo, the same name OIDC provisions, so `.github` keeps `github`. A name that is an alias of the project itself counts as free. A project can therefore move back onto a name it held before.
 
 A child whose whole path repeats the root collapses onto the root. A repo named after its sole binary otherwise lands on `lpi/lpi`, which names the same thing at both levels.
 
@@ -53,4 +57,6 @@ The merge stops rather than guess in these cases:
 
 ### The snapshot
 
-An apply writes a full `VACUUM INTO` snapshot beside the database first. It refuses to proceed when that snapshot fails. `VACUUM INTO` takes its own read transaction. The copy is therefore consistent. The server keeps running throughout. A merge rewrites history in place instead of appending to it. The snapshot is not optional.
+An apply writes a full `VACUUM INTO` snapshot beside the database first. It refuses to proceed when that snapshot fails. `VACUUM INTO` takes its own read transaction. The copy is therefore consistent. The server keeps running throughout. A merge rewrites history in place instead of appending to it.
+
+The snapshot is not optional.

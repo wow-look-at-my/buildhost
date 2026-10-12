@@ -25,6 +25,8 @@ import type {
     StorageData,
     TokenInfo,
     TreeRow,
+    VisibilityFolder,
+    VisibilityMode,
 } from "./types.ts";
 
 
@@ -220,7 +222,7 @@ const dockerPull = function (svc: ServiceURLs, project: string, version: string,
 };
 
 // A private project's dl link redirects to the static host, and curl only
-// re-sends credentials across that hop with --location-trusted; the token is
+// re-sends credentials across that hop with --location-trusted. The token is
 // the HTTP Basic password.
 const curlDownload = function (dlBase: string, version: string, priv: boolean): string {
     var url = dlBase + (version ? "?v=" + version + "&" : "?") + "os=linux&arch=amd64";
@@ -256,20 +258,21 @@ const projectTreeRows = function (projects: ProjectSummary[]): TreeRow[] {
     }
 
     var out: TreeRow[] = [];
-    var walk = function (node: TreeNode, depth: number): void {
+    var walk = function (node: TreeNode, depth: number, prefix: string): void {
         var names = Object.keys(node.children).sort();
         for (var i = 0; i < names.length; i++) {
             var child = node.children[names[i]!]!;
+            var path = prefix ? prefix + "/" + child.name : String(child.name);
             if (Object.keys(child.children).length > 0) {
-                out.push({ kind: "folder", depth: depth, name: child.name });
+                out.push({ kind: "folder", depth: depth, name: child.name, path: path });
             }
             if (child.project) {
                 out.push({ kind: "project", depth: depth, project: child.project });
             }
-            walk(child, depth + 1);
+            walk(child, depth + 1, path);
         }
     };
-    walk(root, 0);
+    walk(root, 0, "");
     return out;
 };
 
@@ -277,6 +280,62 @@ const projectLabel = function (name: string): string {
     var s = String(name || "");
     var i = s.lastIndexOf("/");
     return i >= 0 ? s.substring(i + 1) : s;
+};
+
+const visibilityBadge = function (priv: boolean): string {
+    return priv ? badge("warning", "Private") : badge("success", "Public");
+};
+
+// visibilitySelect renders the three-way override control. inherited is what
+// "auto" resolves to here; attrs are data-* attributes that tell setVisibility
+// which level to change.
+const visibilitySelect = function (mode: VisibilityMode, inherited: string, attrs: Record<string, string>): string {
+    var opts: [VisibilityMode, string][] = [
+        ["auto", "Auto (" + inherited + ")"],
+        ["public", "Force public"],
+        ["private", "Force private"],
+    ];
+    var html = '<select class="visibility-select" onchange="App.setVisibility(this)"';
+    for (var k in attrs) html += " data-" + k + '="' + h(attrs[k]!) + '"';
+    html += ">";
+    for (var i = 0; i < opts.length; i++) {
+        html += '<option value="' + opts[i]![0] + '"' + (opts[i]![0] === mode ? " selected" : "") + ">" + h(opts[i]![1]) + "</option>";
+    }
+    return html + "</select>";
+};
+
+const setVisibility = function (sel: HTMLSelectElement): void {
+    var d = sel.dataset;
+    var mode = sel.value;
+    var url: string, body: Record<string, string> = { mode: mode }, what: string;
+    var reload = function (): void { route(); };
+    if (d.level === "folder") {
+        url = "/api/visibility-folders";
+        body.prefix = d.prefix || "";
+        what = "folder " + d.prefix + "/";
+    } else if (d.level === "project") {
+        url = "/api/projects/" + encodeURIComponent(d.project || "") + "/visibility";
+        what = "project " + d.project;
+    } else if (d.level === "release") {
+        url = "/api/projects/" + encodeURIComponent(d.project || "") + "/releases/" + encodeURIComponent(d.version || "") + "/visibility";
+        what = d.project + " " + d.version;
+    } else if (d.level === "site") {
+        url = "/api/projects/" + encodeURIComponent(d.project || "") + "/site-visibility";
+        body.branch = d.branch || "";
+        what = d.project + " site @" + d.branch;
+    } else {
+        return;
+    }
+    var label = mode === "auto" ? "auto (follow the level above)" : "forced " + mode;
+    if (!confirm("Set " + what + " to " + label + "?")) { reload(); return; }
+    fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+    }).then(function (res) {
+        if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); reload(); });
+        reload();
+    }).catch(function () { alert("Could not change visibility (preview/demo mode has no backend)."); reload(); });
 };
 
 const projectNameCell = function (project: ProjectSummary, depth: number): string {
@@ -355,8 +414,24 @@ pages.dashboard = function (): void {
 pages.projects = function (): void {
     setTitle("Projects");
     renderSidebar("projects");
-    apiFetch<ProjectSummary[]>("/projects").then(function (projects) {
-        var html = '<h1>Projects</h1><div class="card"><table class="data-table"><thead><tr><th>Name</th><th>Description</th><th>Versioning</th><th>Visibility</th><th>Releases</th><th>Artifacts</th><th>Created</th></tr></thead><tbody>';
+    Promise.all([
+        apiFetch<ProjectSummary[]>("/projects"),
+        apiFetch<VisibilityFolder[]>("/visibility-folders"),
+    ]).then(function (res) {
+        var projects = res[0];
+        var folderModes: Record<string, VisibilityMode> = {};
+        for (var fi = 0; fi < (res[1] || []).length; fi++) folderModes[res[1][fi]!.prefix] = res[1][fi]!.mode;
+        // inheritedFolder names the nearest rule ABOVE path, which is what "auto" means for it.
+        var inheritedFolder = function (path: string): string {
+            for (var i = path.lastIndexOf("/"); i > 0; i = path.lastIndexOf("/", i - 1)) {
+                var m = folderModes[path.substring(0, i)];
+                if (m) return m + " from " + path.substring(0, i) + "/";
+            }
+            return "each project's repo";
+        };
+        var html = '<h1>Projects</h1>';
+        html += '<p class="section-desc">Visibility: a build override beats its project, a project override beats its folder, and a folder rule beats the GitHub repo that published the project. <b>Auto</b> follows the level above.</p>';
+        html += '<div class="card"><table class="data-table"><thead><tr><th>Name</th><th>Description</th><th>Versioning</th><th>Visibility</th><th>Releases</th><th>Artifacts</th><th>Created</th></tr></thead><tbody>';
         if (projects.length === 0) {
             html += '<tr><td colspan="7" class="empty">No projects yet</td></tr>';
         } else {
@@ -364,15 +439,21 @@ pages.projects = function (): void {
             for (var i = 0; i < rows.length; i++) {
                 var row = rows[i];
                 if (row.kind === "folder") {
-                    html += '<tr class="project-folder-row"><td colspan="7" class="project-folder-cell project-depth-' + row.depth + '"><span class="project-folder-icon"></span>' + h(row.name) + "</td></tr>";
+                    var path = row.path || String(row.name);
+                    html += '<tr class="project-folder-row"><td colspan="3" class="project-folder-cell project-depth-' + row.depth + '"><span class="project-folder-icon"></span>' + h(row.name) + "</td>";
+                    html += '<td colspan="4">' + visibilitySelect(folderModes[path] || "auto", inheritedFolder(path), { level: "folder", prefix: path }) + "</td></tr>";
                     continue;
                 }
                 var p = row.project!;
+                var v = p.visibility;
                 html += "<tr class='project-tree-row'>";
                 html += projectNameCell(p, row.depth);
                 html += '<td class="truncate">' + h(p.description) + "</td>";
                 html += "<td>" + badge("neutral", p.versioning) + "</td>";
-                html += "<td>" + (p.is_private ? badge("warning", "Private") : badge("success", "Public")) + "</td>";
+                html += "<td>" + visibilityBadge(p.is_private);
+                if (v && v.mode !== "auto") html += " " + badge("neutral", "forced");
+                else if (v && v.folder_mode !== "auto") html += " " + badge("neutral", "folder " + v.folder_prefix + "/");
+                html += "</td>";
                 html += "<td>" + p.release_count + "</td><td>" + p.artifact_count + "</td>";
                 html += '<td title="' + h(formatTime(p.created_at)) + '">' + h(timeAgo(p.created_at)) + "</td></tr>";
             }
@@ -402,7 +483,12 @@ pages.project = function (name: string): void {
         html += "<tr><td class='info-label'>Versioning</td><td>" +
             '<select id="versioning-select" onchange="App.setVersioning(\'' + h(p.name) + '\', this.value)">' + versioningOpts + "</select>" +
             "</td></tr>";
-        html += "<tr><td class='info-label'>Visibility</td><td>" + (p.is_private ? badge("warning", "Private") : badge("success", "Public")) + "</td></tr>";
+        var pv = d.visibility;
+        var autoSource = pv && pv.folder_mode !== "auto"
+            ? pv.folder_mode + " from folder " + pv.folder_prefix + "/"
+            : (pv && pv.auto_private ? "private" : "public") + (p.github_repo ? " from " + p.github_repo : " as created");
+        html += "<tr><td class='info-label'>Visibility</td><td>" + visibilityBadge(p.is_private) + " " +
+            visibilitySelect(pv ? pv.mode : "auto", autoSource, { level: "project", project: p.name }) + "</td></tr>";
         html += '<tr><td class="info-label">Created</td><td title="' + h(formatTime(p.created_at)) + '">' + h(timeAgo(p.created_at)) + "</td></tr>";
         html += '<tr><td class="info-label">Updated</td><td title="' + h(formatTime(p.updated_at)) + '">' + h(timeAgo(p.updated_at)) + "</td></tr>";
         html += "</table></div>";
@@ -448,9 +534,11 @@ pages.project = function (name: string): void {
             ).cls("card");
         }
 
-        html += '<div class="card"><h2>Releases</h2><table class="data-table"><thead><tr><th>Version</th><th>Branch</th><th>Commit</th><th>Status</th><th>Artifacts</th><th>Published</th><th>Created</th></tr></thead><tbody>';
+        var projectVis = p.is_private ? "private" : "public";
+        var releaseModes = d.release_modes || {};
+        html += '<div class="card"><h2>Releases</h2><table class="data-table"><thead><tr><th>Version</th><th>Branch</th><th>Commit</th><th>Status</th><th>Visibility</th><th>Artifacts</th><th>Published</th><th>Created</th></tr></thead><tbody>';
         if (rels.length === 0) {
-            html += '<tr><td colspan="7" class="empty">No releases yet</td></tr>';
+            html += '<tr><td colspan="8" class="empty">No releases yet</td></tr>';
         } else {
             for (var i = 0; i < rels.length; i++) {
                 var r = rels[i];
@@ -458,6 +546,7 @@ pages.project = function (name: string): void {
                 html += "<td>" + (r.git_branch ? "<code>" + h(r.git_branch) + "</code>" : "-") + "</td>";
                 html += "<td>" + (r.git_commit ? '<code class="commit">' + h(r.git_commit) + "</code>" : "-") + "</td>";
                 html += "<td>" + (r.published ? badge("success", "Published") : badge("warning", "Draft")) + "</td>";
+                html += "<td>" + visibilitySelect(releaseModes[r.version] || "auto", projectVis, { level: "release", project: p.name, version: r.version }) + "</td>";
                 html += "<td>" + r.artifact_count + "</td>";
                 html += "<td>" + h(formatTime(r.published_at)) + "</td>";
                 html += '<td title="' + h(formatTime(r.created_at)) + '">' + h(timeAgo(r.created_at)) + "</td></tr>";
@@ -468,10 +557,12 @@ pages.project = function (name: string): void {
         var sites = d.sites || [];
         if (sites.length > 0) {
             var sitesBase = svc.sites || "";
-            html += '<div class="card"><h2>Sites</h2><table class="data-table"><thead><tr><th>Branch</th><th>Files</th><th>Size</th><th>Commit</th><th>Updated</th><th>Link</th></tr></thead><tbody>';
+            var siteModes = d.site_modes || {};
+            html += '<div class="card"><h2>Sites</h2><table class="data-table"><thead><tr><th>Branch</th><th>Visibility</th><th>Files</th><th>Size</th><th>Commit</th><th>Updated</th><th>Link</th></tr></thead><tbody>';
             for (var k = 0; k < sites.length; k++) {
                 var si = sites[k];
                 html += "<tr><td><code>" + h(si.branch) + "</code></td>";
+                html += "<td>" + visibilitySelect(siteModes[si.branch] || "auto", si.is_public ? "public, published public" : projectVis, { level: "site", project: p.name, branch: si.branch }) + "</td>";
                 html += "<td>" + si.file_count + "</td>";
                 html += "<td>" + h(humanSize(si.size)) + "</td>";
                 html += "<td>" + (si.git_commit ? '<code class="commit">' + h(si.git_commit.substring(0, 12)) + "</code>" : "-") + "</td>";
@@ -491,7 +582,8 @@ pages.release = function (name: string, version: string): void {
     apiFetch<ReleaseData>("/projects/" + name + "/releases/" + version).then(function (d) {
         var p = d.project, r = d.release, bu = d.base_url, svc = d.services || {};
         var dlBase = (svc.dl || "") + "/" + p.name;
-        var priv = !!p.is_private;
+        var relMode: VisibilityMode = d.release_mode || "auto";
+        var priv = relMode === "auto" ? !!p.is_private : relMode === "private";
         var html = "<h1><a href='#/projects/" + h(p.name) + "'>" + h(p.name) + "</a> / " + h(r.version) + "</h1>";
 
         html += '<div class="stat-grid">';
@@ -503,6 +595,9 @@ pages.release = function (name: string, version: string): void {
         html += '<div class="card"><h2>Release Info</h2><table class="info-table">';
         html += "<tr><td class='info-label'>Version</td><td><code>" + h(r.version) + "</code></td></tr>";
         html += "<tr><td class='info-label'>Status</td><td>" + (r.published ? badge("success", "Published") : badge("warning", "Draft")) + "</td></tr>";
+        html += "<tr><td class='info-label'>Visibility</td><td>" + visibilityBadge(priv) + " " +
+            visibilitySelect(relMode, p.is_private ? "private" : "public", { level: "release", project: p.name, version: r.version }) +
+            '<div class="muted">Covers direct downloads (dl, static), npm tarballs and a docker pull by tag. Package indexes (APT, Homebrew, npm metadata) follow the project. A forced-public build of a private project stays private to docker, because image layers are fetched by digest.</div></td></tr>';
         if (r.git_branch) html += "<tr><td class='info-label'>Branch</td><td><code>" + h(r.git_branch) + "</code></td></tr>";
         if (r.git_commit) html += "<tr><td class='info-label'>Commit</td><td><code>" + h(r.git_commit) + "</code></td></tr>";
         if (r.notes) html += "<tr><td class='info-label'>Notes</td><td>" + h(r.notes) + "</td></tr>";
@@ -556,12 +651,12 @@ pages.release = function (name: string, version: string): void {
         html += "</table></div>";
 
         // npm and the OCI tag list carry every published release, so both install THIS version.
-        var relPriv = !!p.is_private;
+        var relPriv = !!p.is_private || relMode === "private";
         html += '<div class="card"><h2>Install</h2>';
-        html += codeBlock("Direct download (curl)", curlDownload(dlBase, r.version, relPriv));
+        html += codeBlock("Direct download (curl)", curlDownload(dlBase, r.version, priv));
         html += codeBlock("npm", npmInstall(svc, p.name, r.version, relPriv));
         html += codeBlock("Docker", dockerPull(svc, p.name, r.version, relPriv));
-        html += codeBlock("APT (one-line install, always the latest release)", aptOneLiner(aptU, relPriv));
+        html += codeBlock("APT (one-line install, always the latest release)", aptOneLiner(aptU, !!p.is_private));
         html += codeBlock("Homebrew (always the latest release)", brewInstall(svc.brew || "", p.name));
         html += "</div>";
 
@@ -1194,7 +1289,7 @@ const renderRetention = function (d: RetentionData): void {
 
 const INVENTORY_HINT = "Every stored file with its size, timestamp, project, version, sha256, reference count, and the reason retention keeps it — plus totals grouped by that reason.";
 
-// The inventory is a debug dump of the server's own state, so this never falls
+// The inventory is a debug dump of the server's own state. This never falls
 // back to the demo fixture on a failed request: a copied fixture would read as
 // what the server holds.
 const fetchInventory = function (): Promise<RetentionInventory> {
@@ -1489,6 +1584,7 @@ const demoData: Record<string, unknown> = {
         base_url: "https://builds.example.com",
         services: demoServices
     },
+    "/visibility-folders": [],
     "/registries": { base_url: "https://builds.example.com", services: demoServices, projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
     "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com", services: demoServices },
     // The demo shows a repo mid-rename, which is the state this page exists for.
@@ -1747,4 +1843,4 @@ window.addEventListener("unhandledrejection", function (ev) {
 });
 
 // Exported == reachable as App.x from the inline onclick handlers above.
-export { applyMerge, copyInventory, copyTempLink, copyText, deleteToken, downloadArtifact, downloadBackup, downloadInventory, editToken, pages, previewMerge, recheckGoproxy, reloadTokens, runRetention, saveToken, setVersioning };
+export { applyMerge, copyInventory, copyTempLink, copyText, deleteToken, downloadArtifact, downloadBackup, downloadInventory, editToken, pages, previewMerge, recheckGoproxy, reloadTokens, runRetention, saveToken, setVersioning, setVisibility };

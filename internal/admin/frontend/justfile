@@ -1,10 +1,12 @@
+[private]
+help:
+	@just --list
+
 # The package's own binaries come first on PATH, as npm run puts them.
 export PATH := justfile_directory() + "/node_modules/.bin:" + env_var("PATH")
 
-# The npm script build.
 build:
-	just check && esbuild src/app.ts --bundle --outfile=../static/app.js --format=iife --global-name=App --target=es2020 && esbuild src/copy.ts --bundle --outfile=../static/copy.js --format=iife --target=es2020
+	../../../scripts/build-admin-frontend.sh
 
-# The npm script check.
-check:
-	tsc --noEmit
+test:
+	node_modules/.bin/tsc --noEmit

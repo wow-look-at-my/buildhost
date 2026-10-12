@@ -295,6 +295,30 @@ func TestProjectFromSubject_UppercaseNormalized(t *testing.T) {
 	assert.Equal(t, "myrepo", projectFromSubject("repo:MyOrg/MyRepo:ref:refs/heads/main"))
 }
 
+func TestProjectFromSubject_LeadingPunctuationDropped(t *testing.T) {
+	t.Serial()
+	assert.Equal(t, "github", projectFromSubject("repo:myorg/.github:ref:refs/heads/master"))
+	assert.Equal(t, "github", projectFromSubject("repo:myorg@1/.github@2:ref:refs/heads/master"))
+	assert.Equal(t, "private", projectFromSubject("repo:myorg/_-private:pull_request"))
+	assert.Equal(t, "", projectFromSubject("repo:myorg/...:ref:refs/heads/master"))
+}
+
+func TestRepoProjectName(t *testing.T) {
+	t.Serial()
+	assert.Equal(t, "github", RepoProjectName(".github"))
+	assert.Equal(t, "github-private", RepoProjectName(".GitHub-Private"))
+	assert.Equal(t, "my.repo", RepoProjectName("my.repo"))
+	assert.Equal(t, "", RepoProjectName(".-_"))
+	assert.Equal(t, "", RepoProjectName(""))
+}
+
+func TestOIDCClaimsProjectName_DotRepository(t *testing.T) {
+	t.Serial()
+	claims := &oidcClaims{Repository: "myorg/.github"}
+	claims.Subject = "repo:myorg/.github:ref:refs/heads/master"
+	assert.Equal(t, "github", claims.projectName())
+}
+
 func TestProjectFromSubject_InvalidCharsRejected(t *testing.T) {
 	t.Serial()
 	assert.Equal(t, "", projectFromSubject("repo:org/my repo:ref:refs/heads/main"))

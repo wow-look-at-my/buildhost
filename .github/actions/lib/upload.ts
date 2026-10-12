@@ -113,7 +113,7 @@ async function sendChunks(send: Send, core: Core, id: string, body: Body, size: 
 		const want = Math.min(chunkSize, size - offset);
 		const chunk = body.read(offset, want);
 		// A Body that returns less than it was asked for would append a short
-		// chunk, and the offsets after it would all name the wrong bytes.
+		// chunk. The offsets after it would all name the wrong bytes.
 		if (chunk.length !== want) {
 			throw new Error(`upload session ${id}: read ${chunk.length} bytes at offset ${offset}, wanted ${want}`);
 		}

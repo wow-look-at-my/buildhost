@@ -46,7 +46,7 @@ func TestRootServe_FallsBackToExistingSite(t *testing.T) {
 }
 
 // The fallback prefers the conventional "main"/"master" over a more recently
-// updated ephemeral PR-preview branch, so the canonical root never lands on a
+// updated ephemeral PR-preview branch. The canonical root never lands on a
 // transient preview even when the preview was deployed last.
 func TestRootServe_PrefersMainOverRecentPreview(t *testing.T) {
 	t.Serial()
@@ -75,7 +75,7 @@ func TestRootServe_NoSitesNotFound(t *testing.T) {
 }
 
 // The project root without its trailing slash canonicalizes to the slashed
-// form, so relative links in index.html resolve under the project rather than
+// form. Relative links in index.html resolve under the project rather than
 // the host root. It must NOT redirect to a branch URL: that is the longer,
 // more fragile spelling, and pointing the short URL at it is backwards.
 func TestRootServe_TrailingSlashCanonicalization(t *testing.T) {

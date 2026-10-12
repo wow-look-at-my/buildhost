@@ -12,14 +12,20 @@ A push to a feature branch never hijacks `latest`. When the default branch has n
 
 ## Security notes on the lookup
 
-On a GitHub-OIDC write, buildhost resolves the repo's default branch through `GET api.github.com/repos/{owner}/{repo}` (`auth.GitHubDefaultBranch`). The `owner/repo` comes only from the **verified** OIDC subject. `validRepoPath` validates it before it goes into the fixed-host URL. There is therefore no SSRF surface and no injection surface. `validRefName` re-validates the returned branch before it is stored. The lookup is gated on the GitHub Actions issuer, so another OIDC provider triggers no call. It is best-effort: a failure leaves the existing default branch. It never fails a publish. It is cached for 1h on a positive answer and 5m on a negative one. It therefore cannot hammer GitHub.
+On a GitHub-OIDC write, buildhost resolves the repo's default branch through `GET api.github.com/repos/{owner}/{repo}` (`auth.GitHubDefaultBranch`). The `owner/repo` comes only from the **verified** OIDC subject. `validRepoPath` validates it before it goes into the fixed-host URL. There is therefore no SSRF surface and no injection surface. `validRefName` re-validates the returned branch before it is stored. The lookup is gated on the GitHub Actions issuer, so another OIDC provider triggers no call.
 
-It authenticates as a **GitHub App** when `BUILDHOST_GITHUB_APP_ID` and `BUILDHOST_GITHUB_APP_PRIVATE_KEY` are set. `auth.SetGitHubApp` signs an app JWT with the configured private key and exchanges it for a short-lived per-installation token. Both are cached. Otherwise it uses a static `BUILDHOST_GITHUB_TOKEN` PAT, and otherwise anonymous. The App private key and the PAT only widen rate limits and reach a private repo. Neither is ever logged or echoed. A malformed key disables App auth and logs that, instead of a crash at startup.
+It is best-effort: a failure leaves the existing default branch. It never fails a publish. It is cached for 1h on a positive answer and 5m on a negative one. It therefore cannot hammer GitHub.
+
+It authenticates as a **GitHub App** when `BUILDHOST_GITHUB_APP_ID` and `BUILDHOST_GITHUB_APP_PRIVATE_KEY` are set. `auth.SetGitHubApp` signs an app JWT with the configured private key and exchanges it for a short-lived per-installation token. Both are cached. Otherwise it uses a static `BUILDHOST_GITHUB_TOKEN` PAT, and otherwise anonymous. The App private key and the PAT only widen rate limits and reach a private repo. Neither is ever logged or echoed.
+
+A malformed key disables App auth and logs that, instead of a crash at startup.
 
 An environment variable can escape an inline PEM's newlines to the literal `\n` sequence in transit. That is the common Docker and compose footgun. `config.resolvePEM` un-escapes it before the parse. Without that the key fails to parse, App auth is silently disabled, and a default-branch lookup degrades to anonymous. Anonymous 404s on a private repo, and `projects.default_branch` stays stuck at the `master` seed.
 
 ## Draft releases
 
-`releases.draft` comes from `migrations/016_release_draft.sql`. A release created with `"draft":true` over REST, or with `buildhost publish --draft`, stays unpublished. It is therefore invisible to `latest`, to per-branch resolution, to brew, apt, npm and OCI, and to the web frontend. Every one of those filters on `published = 1`. `resolveVersion` still serves it by EXACT version. That combination already existed. The column exists to record INTENT.
+`releases.draft` comes from `migrations/016_release_draft.sql`. A release created with `"draft":true` over REST, or with `buildhost publish --draft`, stays unpublished. It is therefore invisible to `latest`, to per-branch resolution, to brew, apt, npm and OCI, and to the web frontend. Every one of those filters on `published = 1`. `resolveVersion` still serves it by EXACT version. That combination already existed.
+
+The column exists to record INTENT.
 
 Retention's `ListAbandonedReleases` sweeps an unpublished release past the cutoff as a partial or failed upload. Without the flag a deliberate draft is indistinguishable from one, and the sweep deletes it out from under its owner. The query now excludes `draft = 1`. `PublishRelease` clears the flag, because a release cannot be both a private build and part of the stream. The default is 0, so every existing release is untouched.

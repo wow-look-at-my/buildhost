@@ -1,7 +1,7 @@
 # The ANONYMOUS tap must not know a private project exists, and an
 # unauthorized formula request must be a clean HTTP error.
 #
-# The private project here is myrepo/myapp, which folds to myrepo-myapp.
+# The private project here is myrepo/myapp. Its tap formula is myrepo, and its folded name is myrepo-myapp.
 #
 # $BREW_HOST comes from the workflow, which starts the server and publishes.
 #
@@ -25,7 +25,7 @@ tests:
 		ls "$TAP/Formula" > formulas.txt
 		grep -qx 'go-toolchain.rb' formulas.txt || {
 			echo "the public formula is missing" >&2; cat formulas.txt >&2; exit 1; }
-		if grep -qx 'myrepo-myapp.rb' formulas.txt; then
+		if grep -qx 'myrepo.rb\|myrepo-myapp.rb' formulas.txt; then
 			echo "the anonymous tap LEAKS the private formula file" >&2; exit 1
 		fi
 		echo "public-only"
@@ -41,6 +41,9 @@ tests:
 		. {shared.env}
 		if grep -rl --exclude-dir=.git 'myrepo' "$TAP"; then
 			echo "the anonymous tap leaks the private project name" >&2; exit 1
+		fi
+		if find "$TAP" -path "$TAP/.git" -prune -o -name '*myrepo*' -print | grep .; then
+			echo "the anonymous tap leaks the private project name in a path" >&2; exit 1
 		fi
 		echo "no-leak"
 	  outputs:
@@ -69,6 +72,7 @@ tests:
 		check /myrepo/myapp 401
 		check /Formula/myrepo/myapp.rb 401
 		check /Formula/myrepo-myapp.rb 404
+		check /Formula/myrepo-myapp@0.9.0.rb 404
 		check /Formula/7zip.rb 404
 		echo "clean-errors"
 	  outputs:

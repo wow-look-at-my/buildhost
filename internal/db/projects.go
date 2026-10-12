@@ -30,7 +30,13 @@ func (d *DB) CreateProject(ctx context.Context, p *Project) error {
 	}
 	id, _ := res.LastInsertId()
 	p.ID = id
-	return nil
+	// The requested state is the auto value. A folder rule can still override it.
+	if err := d.q.UpsertProjectVisibilityRow(ctx, UpsertProjectVisibilityRowParams{
+		ProjectID: p.ID, Mode: VisibilityAuto, AutoPrivate: p.IsPrivate,
+	}); err != nil {
+		return fmt.Errorf("insert project visibility: %w", err)
+	}
+	return d.applyProjectVisibility(ctx, p)
 }
 
 func (d *DB) GetProject(ctx context.Context, name string) (*Project, error) {
@@ -146,8 +152,21 @@ func (d *DB) NameAvailable(ctx context.Context, name string) (bool, error) {
 	return n == 0, nil
 }
 
+// NameAvailableTo reports whether project id may take a name: the name is free, or it is an alias id itself carries from an earlier rename. It is NameAvailable, except that an alias of project id counts as free: a
+// project can move back onto a name it held before.
+func (d *DB) NameAvailableTo(ctx context.Context, name string, id int64) (bool, error) {
+	p, aliased, err := d.ResolveProject(ctx, name)
+	if errors.Is(err, ErrNotFound) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return aliased && p.ID == id, nil
+}
+
 // RenameProject moves a project to a new name, keeping the name as an alias.
-// Caller must have confirmed the new name is available.
+// Caller must have confirmed the new name is available to this project.
 func (d *DB) RenameProject(ctx context.Context, id int64, oldName, newName string) error {
 	tx, err := d.BeginTx(ctx, nil)
 	if err != nil {
@@ -155,6 +174,10 @@ func (d *DB) RenameProject(ctx context.Context, id int64, oldName, newName strin
 	}
 	defer tx.Rollback()
 	q := d.q.WithTx(tx)
+	// A rename back onto an earlier name takes that name out of the alias table.
+	if err := q.DeleteProjectAlias(ctx, newName); err != nil {
+		return fmt.Errorf("clear alias %q: %w", newName, err)
+	}
 	if err := q.RenameProject(ctx, RenameProjectParams{Name: newName, ID: id}); err != nil {
 		return fmt.Errorf("rename project to %q: %w", newName, err)
 	}

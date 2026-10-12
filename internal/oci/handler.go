@@ -51,6 +51,32 @@ func (r route) Access() auth.AccessLevel {
 	return auth.ReadAccess
 }
 
+// BuildVisibility applies a PRIVATE override of the release a manifest tag
+// names. A public override does not open a pull from a private project: blobs
+// are fetched by digest. This names no release, so they stay behind the
+// project's own visibility.
+func (r route) BuildVisibility(ctx context.Context, d *db.DB, project *db.Project) db.Visibility {
+	if r.action != "manifests" || r.reference == "" || strings.HasPrefix(r.reference, "sha256:") {
+		return db.VisibilityAuto
+	}
+	var releaseID int64
+	if tag, err := d.GetOCITag(ctx, project.ID, r.reference); err == nil {
+		releaseID = tag.ReleaseID
+	} else if rel, err := (&Handler{DB: d}).resolveTag(ctx, project, r.reference); err == nil {
+		releaseID = rel.ID
+	} else {
+		return db.VisibilityAuto
+	}
+	mode, err := d.ReleaseVisibility(ctx, releaseID)
+	if err != nil {
+		return db.VisibilityPrivate
+	}
+	if mode == db.VisibilityPrivate {
+		return mode
+	}
+	return db.VisibilityAuto
+}
+
 var ociActions = []string{"manifests", "blobs", "tags"}
 
 func parseRoute(r *http.Request) auth.RouteInfo {

@@ -36,17 +36,17 @@ func (b *Brew) Applicable(a db.Artifact) bool {
 
 // brewTemplate always emits a TOP-LEVEL url/sha256 (the canonical resource,
 
-var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }}require_relative "{{ .StrategyRequire }}"
+var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }}{{ .PrivateStrategy }}
 
 {{ end }}class {{ .ClassName }} < Formula
   desc "{{ .Description }}"
   homepage "{{ .Homepage }}"
   version "{{ .Version }}"
   license "{{ .License }}"
-  {{- if .Versioned }}
 
-  keg_only :versioned_formula
-  {{- end }}
+  # brew extract and brew version-install rename the class to <name>AT<version>.
+  # A renamed class pins one release, so it must not link over the latest one.
+  keg_only "it pins one release, and the unversioned formula links the same command" if name.to_s.split("::").last != "{{ .BaseClassName }}"
 
   url "{{ .Canonical.URL }}"{{ if .Private }}, using: BuildhostCurlDownloadStrategy{{ end }}
   sha256 "{{ .Canonical.SHA256 }}"
@@ -103,51 +103,51 @@ func brewInstallName(project string) string {
 	return project
 }
 
-const BrewPrivateStrategyPath = "lib/buildhost_private_download.rb"
-
-// BrewPrivateStrategy is the Ruby download strategy shipped in the generated
-const BrewPrivateStrategy = `# frozen_string_literal: true
-
-# Download strategy for private buildhost projects: sends the token from
+// BrewPrivateStrategy is the Ruby download strategy every private formula
+// carries inline. An extracted formula lands in another tap, so it cannot
+// require a file from this.
+const BrewPrivateStrategy = `# Download strategy for private buildhost projects: sends the token from
 # HOMEBREW_BUILDHOST_TOKEN as a Bearer Authorization header on the download
 # request. buildhost redirects private downloads with a short-lived signed
 # token in the Location, so the followed redirect needs no header.
-class BuildhostCurlDownloadStrategy < CurlDownloadStrategy
-  def initialize(url, name, version, **meta)
-    token = ENV["HOMEBREW_BUILDHOST_TOKEN"].to_s
-    unless token.empty?
-      meta = meta.merge(headers: Array(meta[:headers]) + ["Authorization: Bearer #{token}"])
+unless defined?(BuildhostCurlDownloadStrategy)
+  class BuildhostCurlDownloadStrategy < CurlDownloadStrategy
+    def initialize(url, name, version, **meta)
+      token = ENV["HOMEBREW_BUILDHOST_TOKEN"].to_s
+      unless token.empty?
+        meta = meta.merge(headers: Array(meta[:headers]) + ["Authorization: Bearer #{token}"])
+      end
+      super(url, name, version, **meta)
     end
-    super(url, name, version, **meta)
-  end
 
-  def fetch(timeout: nil)
-    if ENV["HOMEBREW_BUILDHOST_TOKEN"].to_s.empty?
-      raise "HOMEBREW_BUILDHOST_TOKEN is not set; export a buildhost token " \
-            "with read access to this project, then retry."
+    def fetch(timeout: nil)
+      if ENV["HOMEBREW_BUILDHOST_TOKEN"].to_s.empty?
+        raise "HOMEBREW_BUILDHOST_TOKEN is not set; export a buildhost token " \
+              "with read access to this project, then retry."
+      end
+      super
     end
-    super
   end
 end
 `
 
 type brewData struct {
-	ClassName   string
-	Name        string
-	InstallName string
-	Description string
-	Homepage    string
-	Version     string
-	License     string
-	Kind        string
-	Private     bool
-	// StrategyRequire is the require_relative path from the formula file to BrewPrivateStrategyPath.
-	StrategyRequire string
-	Versioned       bool
-	Service         bool
-	Canonical       BrewResource
-	DependsOnOS     string
-	Resources       []BrewResource
+	ClassName       string
+	Name            string
+	InstallName     string
+	Description     string
+	Homepage        string
+	Version         string
+	License         string
+	Kind            string
+	Private         bool
+	PrivateStrategy string
+	// BaseClassName is the unversioned class name, which the keg_only check compares against.
+	BaseClassName string
+	Service       bool
+	Canonical     BrewResource
+	DependsOnOS   string
+	Resources     []BrewResource
 }
 
 // brewCanonicalResource picks the deterministic resource emitted as the
@@ -188,17 +188,20 @@ type BrewResource struct {
 }
 
 type BrewFormula struct {
-	ClassName   string
-	Name        string
+	ClassName string
+	Name      string
+	// Formula is the tap name, when it is not the folded Name.
+	Formula     string
 	Description string
 	Homepage    string
 	Version     string
 	License     string
 	Kind        string
-	// Private marks a formula for a private project: it requires the tap's
+	// Private marks a formula for a private project: it carries BrewPrivateStrategy.
 	Private bool
-	// Homebrew requires of a name@version formula that shares its binary name with the unversioned one.
+	// Versioned marks a name@version formula, whose class Homebrew renames to <name>AT<version>.
 	Versioned bool
+	// Service adds a `service do` block so `brew services start` manages the
 	Service   bool
 	Resources []BrewResource
 }
@@ -206,6 +209,10 @@ type BrewFormula struct {
 func RenderBrewFormula(f BrewFormula) (*Output, error) {
 	if len(f.Resources) == 0 {
 		return nil, fmt.Errorf("formula %q has no resources", f.Name)
+	}
+	formula := f.Formula
+	if formula == "" {
+		formula = BrewFormulaName(f.Name)
 	}
 	d := brewData{
 		ClassName:       f.ClassName,
@@ -217,8 +224,8 @@ func RenderBrewFormula(f BrewFormula) (*Output, error) {
 		License:         sanitizeBrewString(f.License),
 		Kind:            f.Kind,
 		Private:         f.Private,
-		StrategyRequire: brewStrategyRequire(f.Versioned),
-		Versioned:       f.Versioned,
+		PrivateStrategy: BrewPrivateStrategy,
+		BaseClassName:   BrewClassName(formula),
 		// The service block references opt_bin/<InstallName>, which exists
 		Service:     f.Service && f.Kind == "binary",
 		Canonical:   brewCanonicalResource(f.Resources),
@@ -295,10 +302,8 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 	})
 }
 
-// BrewClassName derives the formula's Ruby class name from the project name.
-// It MUST match what Homebrew derives from the formula FILENAME
-// (Formulary.class_s of the folded name), or the tap's formulas fail to load
-// with "expected to find class" -- and it must always be a valid Ruby
+// BrewClassName derives the formula's Ruby class name from the project name. It MUST match what Homebrew derives from the formula FILENAME (Formulary.class_s of the folded name). Otherwise, the tap's formulas fail to load with "expected to find
+// class" -- and it must always be a valid Ruby
 func BrewClassName(name string) string {
 	parts := strings.FieldsFunc(name, func(r rune) bool {
 		return r == '-' || r == '_' || r == '/' || r == '.'
@@ -333,20 +338,6 @@ func BrewVersionedFormulaName(project, version string) string {
 	return BrewFormulaName(project) + "@" + version
 }
 
-// BrewVersionedFormulaPath shards a project's versioned formulas into their
-// own directory, so a publish rewrites only that project's tree object.
-func BrewVersionedFormulaPath(project, version string) string {
-	return "Formula/" + BrewFormulaName(project) + "/" + BrewVersionedFormulaName(project, version) + ".rb"
-}
-
-func brewStrategyRequire(versioned bool) string {
-	up := "../"
-	if versioned {
-		up = "../../"
-	}
-	return up + strings.TrimSuffix(BrewPrivateStrategyPath, ".rb")
-}
-
 var brewVersionChars = regexp.MustCompile(`^[0-9][0-9A-Za-z.+_-]*$`)
 
 var brewClassConstant = regexp.MustCompile(`^[A-Z][A-Za-z0-9_]*$`)
@@ -364,9 +355,9 @@ func BrewVersionedClassName(project, version string) (string, bool) {
 }
 
 // brewClassS ports Homebrew's Formulary.class_s (Library/Homebrew/formulary.rb)
-// step for step: capitalize, upcase the alphanumeric after each separator and
-// drop the separator, turn "+" into "x", then turn the first "@" followed by a
-// digit into "AT".
+// step for step. Capitalize, upcase the alphanumeric after each separator. Drop
+// the separator, turn "+" into "x", then turn the first "@" followed by a digit
+// into "AT".
 func brewClassS(name string) string {
 	if name == "" {
 		return ""

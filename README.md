@@ -16,11 +16,11 @@ From a single uploaded binary, buildhost serves:
 
 ## Homebrew
 
-[docs/homebrew-2.md](docs/homebrew-2.md) holds this section.
+[docs/homebrew.md](docs/homebrew.md) holds this section.
 
 ## APT (Debian / Ubuntu)
 
-[docs/apt-debian-ubuntu-2.md](docs/apt-debian-ubuntu-2.md) holds this section.
+[docs/apt-debian-ubuntu.md](docs/apt-debian-ubuntu.md) holds this section.
 
 ## Web frontend
 
@@ -53,7 +53,7 @@ The synthesized image is regenerated on demand, and nothing stores it. Its diges
 
 ## Publishing real Docker images
 
-[docs/publishing-real-docker-images-2.md](docs/publishing-real-docker-images-2.md) holds this section.
+[docs/publishing-real-docker-images.md](docs/publishing-real-docker-images.md) holds this section.
 
 ## GitHub Deployments
 
@@ -114,7 +114,9 @@ volumes:
 
 **Note:** the server reads the container's memory cgroup at startup. It sets `GOMEMLIMIT` to about 90% of that, through [automemlimit](https://github.com/KimMachineGun/automemlimit). Every download and repackage path streams. A blob read is mmap-backed, and nothing buffers a whole artifact. buildhost therefore serves an artifact far larger than `mem_limit` without an OOM. Set `GOMEMLIMIT` yourself, or `AUTOMEMLIMIT=off`, to override that.
 
-**Note:** an ELF binary is stripped on download. Its symbols are served separately, at `?fmt=symbols`. `?debug=1` returns the artifact exactly as uploaded. Stripping runs in-process. It therefore needs no `strip` and no `objcopy` in the image. Anything that is not an ELF is always served byte-for-byte as uploaded. A Cosmopolitan APE, a Mach-O and a script are all in that group.
+**Note:** an ELF binary is stripped on download. Its symbols are served separately, at `?fmt=symbols`. `?debug=1` returns the artifact exactly as uploaded. Stripping runs in-process. It therefore needs no `strip` and no `objcopy` in the image. Anything that is not an ELF is always served byte-for-byte as uploaded.
+
+A Cosmopolitan APE, a Mach-O and a script are all in that group.
 
 **Note:** service through Cloudflare's proxy caps a request body at the edge, at 100 MB on the Free plan. [`deploy/DIRECT-INGRESS.md`](deploy/DIRECT-INGRESS.md) adds an opt-in direct TLS ingress. An upload of any size then works in a single request.
 
@@ -157,7 +159,7 @@ curl -O http://localhost:8080/dl/myapp/latest/linux/amd64
 
 ## Multi-platform binaries (Cosmopolitan / APE)
 
-[docs/multi-platform-binaries-cosmopolitan-ape-2.md](docs/multi-platform-binaries-cosmopolitan-ape-2.md) holds this section.
+[docs/multi-platform-binaries-cosmopolitan-ape.md](docs/multi-platform-binaries-cosmopolitan-ape.md) holds this section.
 
 ## WebAssembly artifacts
 
@@ -237,7 +239,7 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 
 ### Project site subdomains (optional)
 
-Set `BUILDHOST_SITE_DOMAIN` (e.g. `pazer.site`) to also serve each project's site at `https://<project>.<domain>/` -- the default branch on bare paths. This is any other branch (or commit) behind the `@` sigil: `https://myapp.pazer.site/@pr-7/`, `https://myapp.pazer.site/@0f1e2d3/`.
+Set `BUILDHOST_SITE_DOMAIN` (e.g. `pazer.site`) to also serve each project's site at `https://<project>.<domain>/`. Bare paths serve the default branch. Any other branch or commit sits behind the `@` sigil: `https://myapp.pazer.site/@pr-7/`, `https://myapp.pazer.site/@0f1e2d3/`.
 
 - A slash-named branch, such as `claude/foo`, resolves by longest match. An `@<default-branch>` URL 302s to the canonical bare form. The `~` sigil this scheme launched with still works, and it 301s to the `@` form.
 - Only a project name that is a single DNS label serves here. That means `[a-z0-9-]`, a bounded number of characters, with no leading or trailing `-`. Every other name stays on `sites.<apex>/...`.
@@ -247,7 +249,7 @@ Set `BUILDHOST_SITE_DOMAIN` (e.g. `pazer.site`) to also serve each project's sit
 
 ## Large uploads
 
-[docs/large-uploads-2.md](docs/large-uploads-2.md) holds this section.
+[docs/large-uploads.md](docs/large-uploads.md) holds this section.
 
 ## Tokens
 
@@ -440,9 +442,11 @@ When GitHub sends a branch deletion (`delete` event with `ref_type: "branch"`), 
 
 ## Retention / garbage collection
 
-buildhost can reclaim storage by evicting old releases. Eviction keeps the latest `BUILDHOST_RETENTION_KEEP_N` published releases on each `(project, git branch)` and sweeps abandoned (never-published) uploads. This is then deletes any content-addressed blob no longer referenced by anything. **Pins that are never evicted:** each branch's latest published release, any release a `docker`/OCI tag points at, pushed-docker builds. This is anything newer than `BUILDHOST_RETENTION_RECENCY_GUARD`.
+buildhost can reclaim storage by evicting old releases. Eviction keeps the latest `BUILDHOST_RETENTION_KEEP_N` published releases on each `(project, git branch)`. It sweeps abandoned (never-published) uploads, then deletes any content-addressed blob that nothing references. **Pins that are never evicted:** each branch's latest published release, any release a `docker`/OCI tag points at, and pushed-docker builds. Anything newer than `BUILDHOST_RETENTION_RECENCY_GUARD` is pinned too.
 
-It is **report-only by default**. Nothing is deleted automatically. Manage it from the **admin dashboard's Retention page**. There you edit the policy, which is the keep-N value and the recency guard. You also see a live preview of exactly which releases an eviction removes, and how much storage that frees. You can also click to run garbage collection on demand, behind a confirmation. The policy is stored in the database. The `BUILDHOST_RETENTION_KEEP_N` and `_RECENCY_GUARD` env vars only seed its initial values.
+It is **report-only by default**. Nothing is deleted automatically. Manage it from the **admin dashboard's Retention page**. There you edit the policy, which is the keep-N value and the recency guard. You also see a live preview of exactly which releases an eviction removes, and how much storage that frees. You can also click to run garbage collection on demand, behind a confirmation.
+
+The policy is stored in the database. The `BUILDHOST_RETENTION_KEEP_N` and `_RECENCY_GUARD` env vars only seed its initial values.
 
 For headless/automated use there is also a CLI and an opt-in background sweeper:
 
@@ -461,7 +465,7 @@ Set `BUILDHOST_OIDC_ISSUERS` to a comma-separated list of trusted OIDC issuers (
 
 1. Fetches the issuer's JWKS keys (via OIDC discovery) and verifies the JWT signature
 2. Checks the org (from subject) and event type (from `event_name` claim) against the allowlists
-3. Derives the repo's project name from the subject claim (`repo:org/name:*` -> `name`)
+3. Derives the repo's project name from the subject claim (`repo:org/name:*` -> `name`). A leading `.`, `_` or `-` is dropped, so `.github` -> `github`.
 4. Auto-creates the project, or any project slash-namespaced beneath it, when that project does not exist. Such a project gets auto-versioning.
 5. Grants `read,write` scoped to that repo's namespace: project `name` and any `name/<...>` beneath it, but nothing else
 

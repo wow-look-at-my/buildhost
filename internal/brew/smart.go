@@ -44,8 +44,8 @@ func (h *Handler) ServePrivateTapUploadPack(w http.ResponseWriter, r *http.Reque
 	h.serveTapUploadPack(w, r)
 }
 
-// serveTapInfoRefs dispatches an info/refs request by its service parameter:
-// none means the dumb protocol (served exactly like every other tap file),
+// serveTapInfoRefs dispatches an info/refs request by its service parameter.
+// None means the dumb protocol (served exactly like every other tap file),
 // git-upload-pack means the smart advertisement, anything else is refused
 func (h *Handler) serveTapInfoRefs(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Query().Get("service") {

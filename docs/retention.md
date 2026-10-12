@@ -4,7 +4,7 @@
 
 Eviction policy + reference-counted garbage collection. Keeps the latest `BUILDHOST_RETENTION_KEEP_N` published releases per `(project, git_branch)` and sweeps abandoned (unpublished) uploads, then deletes content-addressed blobs no longer referenced by anything (the global `db.IsBlobReferenced`, generalizing `BlobBelongsToProject`).
 
-The whole eviction runs in one `db.EvictReleases` transaction. It is **rolled back for a dry-run and committed for an enforce**. Report-only and enforce therefore produce identical exact results. A blob shared by several evicted releases is freed once. This is the single source of truth for the background sweeper (`cmd/buildhost/serve.go`), the `buildhost gc` CLI, and the **admin dashboard Retention page**.
+The whole eviction runs in one `db.EvictReleases` transaction. It is **rolled back for a dry-run and committed for an enforce**. Report-only and enforce therefore produce same exact results. A blob shared by several evicted releases is freed once. This is the single source of truth for the background sweeper (`cmd/buildhost/serve.go`), the `buildhost gc` CLI, and the **admin dashboard Retention page**.
 
 The policy, keep-N and the recency guard, is **DB-backed and UI-editable**. It is stored in the single-row `retention_settings` table. `SeedRetentionSettings` seeds it from the `BUILDHOST_RETENTION_*` env defaults on first start, with an INSERT OR IGNORE. The dashboard manages it after that. The sweeper and the CLI read it live on each run through `db.GetRetentionSettings` and `retention.ConfigFromSettings`.
 

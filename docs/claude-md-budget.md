@@ -6,7 +6,9 @@ This document is the account of why. The interesting part is not the file size. 
 
 ## What the budget is
 
-Claude Code loads every CLAUDE.md verbatim into the prompt. There is no truncation worth the name. The only hard cap skips a file over 4 MiB entirely. The "limit" the CLI talks about is a warning threshold, and it changes nothing about what gets sent. An oversized instruction file is therefore not cut off. It is billed, in full, forever. It crowds out the context the actual task needs, and its rules compete with each other for attention.
+Claude Code loads every CLAUDE.md verbatim into the prompt. There is no truncation worth the name. The only hard cap skips a file over 4 MiB fully. The "limit" the CLI talks about is a warning threshold, and it changes nothing about what gets sent. An oversized instruction file is therefore not cut off. It is billed, in full, forever.
+
+It crowds out the context the actual task needs, and its rules compete with each other for attention.
 
 The 40,000 figure is the CLI's own floor for the same measurement. Characters, not bytes.
 
@@ -33,7 +35,7 @@ A third check, **unwrapped**, covers any line many columns that has room to wrap
 
 ## How the file was brought back
 
-By extraction, never summarization. The prose moved into `docs/` VERBATIM. CLAUDE.md kept a one-line pointer to each file. Paragraph breaks go at the existing topic boundaries. No wording changed. 120,754 characters became 9,299, which is 23% of budget. Every backticked identifier in the old file was checked, and each one still exists somewhere in the tree.
+By extraction, not summarization. The prose moved into `docs/` VERBATIM. CLAUDE.md kept a one-line pointer to each file. Paragraph breaks go at the existing topic boundaries. No wording changed. 120,754 characters became 9,299, which is 23% of budget.
 
 Things surfaced during the extraction that are worth recording, because both are symptoms of the same disease:
 

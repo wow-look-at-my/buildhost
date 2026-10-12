@@ -14,6 +14,7 @@ import (
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/buildhost/internal/admin"
+	"github.com/wow-look-at-my/buildhost/internal/brew"
 	"github.com/wow-look-at-my/buildhost/internal/buildinfo"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -35,8 +36,9 @@ var serveCmd = &cobra.Command{
 	RunE: func(_ *cobra.Command, _ []string) error {
 		cfg := config.Load()
 
-		// Make the Go runtime aware of the container's memory cgroup so the GC
-		// runs harder as we approach the limit instead of letting the heap grow
+		// Make the Go runtime aware of the container's memory cgroup. Do this
+		// so the GC runs harder as we approach the limit instead of letting the
+		// heap grow
 		if limit, err := memlimit.SetGoMemLimitWithOpts(
 			memlimit.WithRatio(0.9),
 			memlimit.WithProvider(memlimit.FromCgroup),
@@ -110,6 +112,12 @@ var serveCmd = &cobra.Command{
 		}
 
 		srv := server.New(cfg, database, store)
+		// One background worker hashes what the brew tap history still lacks, so no tap request has to.
+		go func() {
+			if err := brew.BackfillHistoryDigests(ctx); err != nil {
+				slog.Error("brew: tap history digest backfill incomplete", "err", err)
+			}
+		}()
 		slog.Info("starting server", "addr", cfg.ListenAddr)
 
 		go func() {
@@ -155,8 +163,8 @@ var serveCmd = &cobra.Command{
 
 // startRetentionSweeper launches the background GC sweeper when a positive
 // interval is configured. It is report-only unless BUILDHOST_RETENTION_ENFORCE is
-// set, defers a tick while writes are in flight (the same counter /ready-to-update
-// uses), and exits when ctx is cancelled at shutdown.
+// set, defers a tick. This holds while writes are in flight (the same counter
+// /ready-to-update uses), and exits when ctx is cancelled at shutdown.
 func startRetentionSweeper(ctx context.Context, cfg config.Config, database *db.DB, store storage.Storage) {
 	if cfg.RetentionInterval <= 0 {
 		return

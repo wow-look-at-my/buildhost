@@ -12,7 +12,7 @@ API parameters are load-bearing on every create. `required_contexts: []` is one.
 
 ## The deployment's `ref` decides whether anyone can find it
 
-GitHub stores a deployment's `ref` verbatim. A deployment created against a bare commit SHA therefore belongs to no branch. Every branch-scoped view, the branch panel and the PR deployment panel, then reports "This branch has not been deployed" or "No deployments", however healthy the deployment is. A create against a BRANCH NAME populates both fields. GitHub resolves the branch and fills `sha` itself, so the commit-level association is kept too. A branch name is strictly more discoverable than a SHA, never less.
+GitHub stores a deployment's `ref` verbatim. A deployment created against a bare commit SHA therefore belongs to no branch. Every branch-scoped view, the branch panel and the PR deployment panel, then reports "This branch has not been deployed" or "No deployments", however healthy the deployment is. A create against a BRANCH NAME populates both fields. GitHub resolves the branch and fills `sha` itself, so the commit-level association is kept too. A branch name is strictly more discoverable than a SHA, not less.
 
 All top-level composites take an optional `deployment_ref`. Each defaults to what it used before that input existed, so nothing changes until a caller opts in. `buildhost-publish` and `buildhost-publish-site` use `deployment_ref || git_commit || github.sha`. `buildhost-publish-docker` uses `deployment_ref || github.sha`, because it has no commit input. It is a separate input, because `git_commit` cannot serve double duty. That one is the recorded commit of the release or the site. The site sends it as `X-Git-Commit` and stores it as the record's version. It has to stay a real SHA. A caller that wants the publish to surface on the branch passes a branch name:
 
@@ -20,7 +20,9 @@ All top-level composites take an optional `deployment_ref`. Each defaults to wha
     deployment_ref: ${{ github.head_ref || github.ref_name }}
 ```
 
-`github.head_ref` is the PR's source branch. It is empty off `pull_request`. That expression is therefore the branch in both cases. Do NOT use `github.ref_name` alone on a `pull_request` event. There it is the synthetic merge ref (`23/merge`). `github.sha` carries the matching trap. It is the merge COMMIT. That commit is in no branch. It stops existing when the PR closes.
+`github.head_ref` is the PR's source branch. It is empty off `pull_request`. That expression is therefore the branch in both cases. Do NOT use `github.ref_name` alone on a `pull_request` event. There it is the synthetic merge ref (`23/merge`). `github.sha` carries the matching trap.
+
+It is the merge COMMIT. That commit is in no branch. It stops existing when the PR closes.
 
 ## Registering the deployment is part of publishing, and failure is RED
 

@@ -15,7 +15,7 @@ The divergence existed from the moment of the conversion. It surfaced only when 
 ## Why nothing caught it
 
 - **`go:embed` cannot tell source from artifact.** It embedded whatever was on disk. On a fresh clone that was the committed bundle. The build was therefore green.
-- **The tests read the artifact, not the source.** `static_test.go` asserted against `static/app.js`. It was therefore testing the very file that had stopped being generated. A test that reads a committed build output can only ever confirm the output. It never confirms that the source still produces it.
+- **The tests read the artifact, not the source.** `static_test.go` asserted against `static/app.js`. It was therefore testing the very file that stopped being generated. A test that reads a committed build output can only ever confirm the output. It never confirms that the source still produces it.
 - **Nothing ever rebuilt in CI.** The build ran `go-toolchain`. The frontend build was a manual step in CLAUDE.md: "rebuild before running go-toolchain". A step that only a human remembers is a step that does not run.
 - **The justification was self-sealing.** "Checked in so the build works without Node" is true. It is also exactly what removes the pressure that catches the drift. The cost is invisible until the day the artifact is deleted.
 

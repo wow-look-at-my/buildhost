@@ -2,7 +2,7 @@
 
 Extracted verbatim from CLAUDE.md, no wording changed. The larger items moved to their own docs: `docs/security/github-signin.md` (browser sign-in, cross-domain handoff, primary-domain scoping), `docs/security/oidc.md` (the whole OIDC trust model), `docs/security/tokens-and-links.md` (scopes and temporary download links), `docs/apex-latest.md` (the default-branch GitHub lookup).
 
-The following items have been reviewed and addressed or are intentional design choices:
+The following items was reviewed and addressed or are intentional design choices:
 
 - **Rate limiting**: Handled at the reverse proxy layer, not in the application
 - **No TLS termination**: Intentional -- runs behind a reverse proxy in Docker

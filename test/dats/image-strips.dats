@@ -1,6 +1,6 @@
 #
-# This exists because stripping stopped happening and nobody noticed for weeks:
-# it shelled out to strip(1)/objcopy(1), which the distroless image does not
+# This exists because stripping stopped happening and nobody noticed for weeks.
+# It shelled out to strip(1)/objcopy(1), which the distroless image does not
 # ship. Every download went out unstripped and fmt=symbols could not work. The
 # unit tests all passed, because the runner has binutils and the container does
 # not. Only a check against the real image sees this.
@@ -46,11 +46,14 @@ shared:
 
 setup: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
 
+# The tests run at the same time. Each one writes its files in its own
+# directory, or one test reads a file that another test still writes.
 tests:
 	- desc: the download comes back smaller than the upload
 	  cmd: |
 		set -eu
 		. {shared.env}
+		cd "$(mktemp -d)"
 		curl -fsSL -o out.bin "$STATIC/file?$QUERY&fmt=raw"
 		up="$(wc -c < "$FIXTURE")"
 		down="$(wc -c < out.bin)"
@@ -61,13 +64,14 @@ tests:
 		stdout:
 			- "stripped"
 
-	# Checked against the SECTION TABLE, not by searching for the string: the
-	# section-name string table keeps every name it ever held, so ".debug_info"
+	# Checked against the SECTION TABLE, not by searching for the string. The
+	# section-name string table keeps every name it ever held. So ".debug_info"
 	# is still present as BYTES in a correctly stripped file.
 	- desc: the stripped download is a usable ELF with its debug sections gone
 	  cmd: |
 		set -eu
 		. {shared.env}
+		cd "$(mktemp -d)"
 		curl -fsSL -o out.bin "$STATIC/file?$QUERY&fmt=raw"
 		test "$(head -c 4 out.bin | od -An -tx1 | tr -d ' \n')" = "7f454c46"
 		sh {shared.sections.sh} out.bin > sections.txt
@@ -97,6 +101,7 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
+		cd "$(mktemp -d)"
 		curl -fsSL -o symbols.bin "$STATIC/file?$QUERY&fmt=symbols"
 		sh {shared.sections.sh} symbols.bin | grep -qx -- '.debug_info'
 		echo "symbols-served"
@@ -108,6 +113,7 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
+		cd "$(mktemp -d)"
 		curl -fsSL -o full.bin "$STATIC/file?$QUERY&fmt=raw&debug=1"
 		cmp "$FIXTURE" full.bin
 		echo "bytes-identical"

@@ -1,6 +1,6 @@
 # Embedded CA certificate bundle
 
-`internal/repackage/oci.go` embeds `cacerts/ca-certificates.crt` with `//go:embed`. It writes the bundle into the shared "essentials" layer of every OCI image buildhost synthesizes from a raw binary. The path is `/etc/ssl/certs/ca-certificates.crt`, Go's default Linux x509 path. A networked binary can then make outbound HTTPS calls.
+`internal/repackage/oci.go` embeds `cacerts/ca-certificates.crt` with `//go:embed`. It writes the bundle into the shared "essentials" layer of every OCI image buildhost synthesizes from a raw binary. The path is `/etc/ssl/certs/ca-certificates.crt`, Go's path of the default Linux x509. A networked binary can then make outbound HTTPS calls.
 
 ## The bundle is fetched at build time, not committed
 
@@ -11,7 +11,7 @@
 A fetched bundle is a generated build input, exactly like `internal/api`'s `gen_*.go`. It is produced the same way. A `//go:generate` directive next to the `//go:embed` in `oci.go` runs `scripts/fetch-cacerts.sh`. Nobody has to remember a separate step:
 
 ```sh
-go-toolchain --generate 365c729892bd   # runs every directive, this one included
+go-toolchain --generate 3ed2a7fd952f   # runs every directive, this one included
 ./scripts/fetch-cacerts.sh             # or fetch it alone
 ```
 

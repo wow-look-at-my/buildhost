@@ -12,7 +12,7 @@ The base endpoint `GET/HEAD /v2/` performs OCI auth discovery. It answers `401` 
 
 The pull side synthesizes a minimal image from a binary artifact, in `internal/repackage/oci.go`. It serves a real pushed image instead when one exists.
 
-The synthesized image has **two layers**, and three for an APE. The first is a shared, deterministic, memoized "essentials" base layer. It carries an embedded public CA bundle at `/etc/ssl/certs/ca-certificates.crt`, so outbound TLS works. It also carries `/etc/passwd` and `/etc/group` with root, nobody and nonroot, plus `/etc/nsswitch.conf` and a sticky `/tmp`. The per-binary layer follows it. The base layer is content-addressed, so it dedupes to one blob server-wide. It is registered per pull as an `oci-base-layer` packaged artifact, so the `BlobBelongsToProject` gate serves it.
+The synthesized image has **two layers**, and three for an APE. The first is a shared, deterministic, memoized "essentials" base layer. It carries an embedded public CA bundle at `/etc/ssl/certs/ca-certificates.crt`, so outbound TLS works. It also carries `/etc/passwd` and `/etc/group` with root, nobody and nonroot, plus `/etc/nsswitch.conf` and a sticky `/tmp`. The per-binary layer follows it. The base layer is content-addressed, so it dedupes to one blob server-wide.
 
 Each per-platform **image manifest is likewise persisted and linked per pull**. `repackage.OCI.Repackage` stores it and calls `LinkOCIBlob` to record it in `oci_blob_links`. A multi-arch image index lists each platform's manifest by digest. Every child is therefore retrievable by `GET /v2/{project}/manifests/<digest>` and by `/blobs/<digest>`. `serveIndex` advertises only a child that resolves. As a result, it never emits a dangling index.
 
@@ -26,7 +26,7 @@ The config sets `Env`, which includes `SSL_CERT_FILE`. It also sets `WorkingDir`
 
 Every synthesized image has the same layers and the same paths. The kind of binary it was built from does not change them. A layout that varies by artifact is a layout only some images are ever tested on.
 
-The **base layer** is the minimal rootfs, the CA bundle and the shell, joined by `imageBase`. It varies only by architecture. It is byte-identical across projects, so storage deduplicates it to a single blob per arch. It is registered per pull as an `oci-base-layer` packaged artifact.
+The **base layer** is the minimal rootfs, the CA bundle and the shell, joined by `imageBase`. It varies only by architecture. It is byte-same across projects, so storage deduplicates it to a single blob per arch. It is registered per pull as an `oci-base-layer` packaged artifact.
 
 The shell is one static busybox at `/bin/busybox`, plus a symlink per applet. `shellgen` fetches it from a pinned `busybox:musl` image and checks the digest against that pin. Then `//go:embed` bakes it into the binary. That happens at BUILD time, exactly as `fetch-cacerts.sh` bakes in the CA bundle.
 
@@ -56,7 +56,9 @@ The APE's own trampoline handles this at run time. It copies itself somewhere wr
 
 The push side is `push.go`, `upload.go` and `putmanifest.go`. It accepts a monolithic or chunked blob upload, streamed to `DataDir/tmp/oci-uploads`. It accepts a manifest PUT and an index PUT. It records a `kind=docker` artifact.
 
-The chunked upload session is **resumable**. PATCH verifies an optional `Content-Range` start against the committed size. A mismatch answers 416 with the current `Range`, and consumes nothing. A client that lost a response therefore cannot corrupt the blob by a re-send. `GET /v2/{name}/blobs/uploads/{uuid}` reports the committed `Range` in a 204, for the resume. Session sweeping goes by **last activity**, at 2h idle, and not by creation time. A long chunked upload therefore never dies mid-flight.
+The chunked upload session is **resumable**. PATCH verifies an optional `Content-Range` start against the committed size. A mismatch answers 416 with the current `Range`, and consumes nothing. A client that lost a response therefore cannot corrupt the blob by a re-send. `GET /v2/{name}/blobs/uploads/{uuid}` reports the committed `Range` in a 204, for the resume. Session sweeping goes by **last activity**, at 2h idle, and not by creation time.
+
+A long chunked upload therefore never dies mid-flight.
 
 The route's `Access()` is method-aware. A push verb needs write. Every `uploads`-action route requires write whatever the method, because the GET status read is push-flow state. The package self-registers through init().
 
@@ -72,21 +74,23 @@ Without this, every image built `FROM` a published base re-uploads that base int
 
 ### When the registry forgets a session
 
-A session lives in server memory (`uploadStore`). A restart therefore takes every one of them. A later request then answers `BLOB_UPLOAD_UNKNOWN`. There is nothing to resume from. `ociclient` opens a fresh session and re-sends the blob from zero, rather than fail a publish that is minutes deep. For the same reason it retries the opening of a session on a 5xx.
+A session lives in server memory (`uploadStore`). A start therefore takes every one of them. A later request then answers `BLOB_UPLOAD_UNKNOWN`. There is nothing to resume from. `ociclient` opens a fresh session and re-sends the blob from zero, rather than fail a publish that is minutes deep. For the same reason it retries the opening of a session on a 5xx.
 
 ## Published layers are zstd, with no opt-out
 
-`buildhost-publish-docker` exports `compression=zstd,force-compression=true`. There is no input that selects an algorithm. The synthesized images have always been zstd. The gzip default in buildx was the only reason a published image differed from a synthesized one. `force-compression` is what reaches a layer that arrives already compressed, from a cache hit or a `FROM` base. An image therefore cannot ship half gzip. Only `compression-level`, zstd 0 to 22, stays adjustable.
+`buildhost-publish-docker` exports `compression=zstd,force-compression=true`. There is no input that selects an algorithm. The synthesized images have always been zstd. The gzip default in buildx was the only reason a published image differed from a synthesized one. `force-compression` is what reaches a layer that arrives already compressed, from a cache hit or a `FROM` base. An image therefore cannot ship half gzip.
+
+Only `compression-level`, zstd 0 to 22, stays adjustable.
 
 A consumer therefore needs an OCI-aware puller. Docker's containerd image store qualifies. It is the default on a fresh Engine 29.0 or later install, and `features.containerd-snapshotter` selects it before that. containerd, podman and go-containerregistry qualify too. Docker's classic image store cannot read a zstd layer at all. The failure is a hard "media type application/vnd.oci.image.layer.v1.tar+zstd not supported" on pull.
 
-Every push is then pulled back. Its recorded `org.opencontainers.image.revision` is checked against the building commit. That check runs in the action rather than in a caller's workflow. The action knows the refs it pushed. A registry that stored the wrong bytes looks identical from the build host.
+Every push is then pulled back. Its recorded `org.opencontainers.image.revision` is checked against the building commit. That check runs in the action rather than in a caller's workflow. The action knows the refs it pushed. A registry that stored the incorrect bytes looks same from the build host.
 
 ## Docker push as a release kind
 
 A release that contains a pushed `kind=docker` artifact is a "docker build". The OCI endpoint is the only place it is served. `kind=docker` is gated out of apt, brew, npm, and the raw `/static` and `/dl` paths.
 
-A pushed blob or manifest is linked to the project in `oci_blob_links`, so the existing `BlobBelongsToProject` pull gate serves it. A pushed tag lives in `oci_tags` as a mutable pointer. `latest` is an alias. A digest is immutable. An identical re-push is a no-op. A changed image creates a new auto-versioned release and repoints the tag.
+A pushed blob or manifest is linked to the project in `oci_blob_links`, so the existing `BlobBelongsToProject` pull gate serves it. A pushed tag lives in `oci_tags` as a mutable pointer. `latest` is an alias. A digest is immutable. An same re-push is a no-op. A changed image creates a new auto-versioned release and repoints the tag.
 
 `docker login` uses Basic auth against the token system. A GHA OIDC JWT works as the password, and it auto-provisions the project.
 

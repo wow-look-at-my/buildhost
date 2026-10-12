@@ -144,7 +144,7 @@ func (h *Handler) resolveNPMManifestFields(ctx context.Context, artifacts []db.A
 
 // cachedNPMManifestFields reports the artifact's cached fields. ok=false means
 // the cache holds no usable answer (never filled, filled under an older
-// extraction contract, or corrupt) -- distinct from a cached empty map, which
+// extraction contract, or corrupt) -- distinct from a cached empty map. This
 // is the final answer for a blob that is not a readable npm tarball.
 func (h *Handler) cachedNPMManifestFields(ctx context.Context, artifactID int64) (map[string]any, bool) {
 	_, _, _, _, metadata, err := h.DB.GetPackagedArtifact(ctx, artifactID, npmManifestCacheFormat)
@@ -162,7 +162,7 @@ func (h *Handler) cachedNPMManifestFields(ctx context.Context, artifactID int64)
 }
 
 // cacheNPMManifestFields fills the cache. Best-effort: the fields are already
-// correct for this response, and the extraction is a pure function of a
+// correct for this response. The extraction is a pure function of a
 // content-addressed blob, so a concurrent double-fill stores the same value.
 func (h *Handler) cacheNPMManifestFields(ctx context.Context, a db.Artifact, fields map[string]any) {
 	meta, err := json.Marshal(npmManifestMetadata{FieldsVersion: npmManifestFieldsVersion, Fields: fields})
@@ -182,7 +182,7 @@ func (h *Handler) cacheNPMManifestFields(ctx context.Context, a db.Artifact, fie
 //
 // cacheable distinguishes a final answer from a transient failure. A blob that
 // is readable but is not a usable npm tarball (not gzip, no package.json, bad
-// JSON) yields an empty map with cacheable=true: that verdict can never change
+// JSON) yields an empty map with cacheable=true. That verdict can never change
 // for a content-addressed blob, so caching it keeps the packument off the blob
 func (h *Handler) extractNPMManifestFields(ctx context.Context, storageKey string) (fields map[string]any, cacheable bool, err error) {
 	rc, _, err := h.Store.Get(ctx, storageKey)
@@ -248,13 +248,8 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request) {
 	filename := ri.filename
 
 	// The tarball filename embeds the npm-encoded project name (see
-	prefix := projectToNPMName(project.Name) + "-"
-	if !strings.HasPrefix(filename, prefix) {
-		http.NotFound(w, r)
-		return
-	}
-	version := strings.TrimSuffix(filename[len(prefix):], ".tgz")
-	if version == "" || version == filename[len(prefix):] {
+	version, ok := tarballVersion(project.Name, filename)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
@@ -283,6 +278,10 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request) {
 	if size > 0 {
 		w.Header().Set("Content-Length", fmt.Sprint(size))
 	}
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	if auth.ReadIsPrivate(r.Context()) {
+		w.Header().Set("Cache-Control", "private, no-store")
+	} else {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
 	io.Copy(w, rc)
 }

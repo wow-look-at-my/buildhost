@@ -55,6 +55,7 @@ type oidcClaims struct {
 	RepositoryOwnerID string `json:"repository_owner_id"` // numeric account ID
 	RunID             string `json:"run_id"`
 	RunAttempt        string `json:"run_attempt"`
+	Actor             string `json:"actor"`
 }
 
 const oidcLeeway = 60 * time.Second
@@ -91,6 +92,8 @@ type VerifyResult struct {
 	// RunID / RunAttempt name the workflow run and attempt that minted the token.
 	RunID      string
 	RunAttempt string
+	// Actor is the GitHub login that triggered the workflow run.
+	Actor string
 }
 
 func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []db.OIDCPolicy) (*db.APIToken, string, error) {
@@ -202,6 +205,7 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 	}
 	if result != nil {
 		result.OIDCPrivate = verified.RepositoryVisibility != "public"
+		result.Actor = verified.Actor
 	}
 	return &db.APIToken{
 		ID:     -1,
@@ -257,13 +261,23 @@ func (c *oidcClaims) ownerName() string {
 func (c *oidcClaims) projectName() string {
 	if c.Repository != "" {
 		if _, repo, ok := strings.Cut(c.Repository, "/"); ok {
-			name := strings.ToLower(trimImmutableID(repo))
-			if validOIDCProjectName(name) {
+			if name := RepoProjectName(trimImmutableID(repo)); name != "" {
 				return name
 			}
 		}
 	}
 	return projectFromSubject(c.Subject)
+}
+
+// RepoProjectName maps a GitHub repository name to the root project it owns,
+// or "" when none can be named.
+func RepoProjectName(repo string) string {
+	// A project name opens with a letter or digit, so `.github` owns `github`.
+	name := strings.TrimLeft(strings.ToLower(repo), "._-")
+	if !validOIDCProjectName(name) {
+		return ""
+	}
+	return name
 }
 
 // repoPath returns the token's "owner/repo" (plain names, original casing --
@@ -366,11 +380,7 @@ func projectFromSubject(subject string) string {
 	if slash < 0 {
 		return ""
 	}
-	name := strings.ToLower(trimImmutableID(repoPath[slash+1:]))
-	if !validOIDCProjectName(name) {
-		return ""
-	}
-	return name
+	return RepoProjectName(trimImmutableID(repoPath[slash+1:]))
 }
 
 func validOIDCProjectName(name string) bool {

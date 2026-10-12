@@ -11,14 +11,16 @@ The same defect in a different place is what made the npm registry look hung. A 
 A [binpazer](https://github.com/wow-look-at-my/bin-file-fmt) container (`internal/binarchive`):
 
 - one **zstd-compressed block per file** (block type `File`, GUID `62756...0001`),
-- a **directory block** (`Directory`, `...0002`) mapping path -> block offset, size and mode, written last because it needs the offsets,
-- binpazer's **Block Index + footer**, which is how a reader finds the directory without walking.
+- a **directory block** (`Directory`, `...0002`) mapping offset of the path -> block, size and mode, written last because it needs the offsets,
+- binpazer's **footer of the Block Index +**, which is how a reader finds the directory without walking.
 
-Serving a file is: footer -> index -> directory -> seek -> decode one block.
+Serving a file is: decode of the -> of the seek of the -> of the directory of the -> of the footer -> index one block.
 
 **The upload contract did not change.** A publisher still sends `tar.gz` or `zip`. The same validation and the same caps run. `sites.sha256` still describes the canonical tar the uploader sent. To fix a format's shortcomings is buildhost's job, not the publisher's. Nothing about the client changed.
 
-**Every read goes through the index.** There is no tar scan. A blob that is not an uncompressed archive answers 500. And the error names the blob. `ConvertTarSites` runs once at server start, before traffic. It rewrites each site that is still a plain tar blob into an archive, points the row at it, and deletes the tar. A site it cannot convert is logged at error level and named in the startup log.
+**Every read goes through the index.** There is no tar scan. A blob that is not an uncompressed archive answers 500. And the error names the blob. `ConvertTarSites` runs once at server start, before traffic. It rewrites each site that is still a plain tar blob into an archive, points the row at it, and deletes the tar.
+
+A site it cannot convert is logged at error level and named in the startup log.
 
 ## Supporting storage capabilities
 
@@ -41,7 +43,7 @@ The 128 KiB is a pair of the reader's `64 KiB` buffer fills, plus the entry. One
 
 Compressing each file on its own is what makes one file readable without touching the others. It also gives up what a single gzip stream over the whole tar exploits: the redundancy *between* files.
 
-`TestArchiveSizeVsTarGz` measures the worst case on purpose -- 60 near-identical HTML pages, where nearly all the compressible information is cross-file:
+`TestArchiveSizeVsTarGz` measures the worst case on purpose -- near-same HTML pages, where almost all the compressible information is cross-file:
 
 ```
 tar 146,944 bytes,  tar.gz 2,016 bytes,  binpazer archive 12,008 bytes

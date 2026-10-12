@@ -23,8 +23,10 @@ const (
 	formulaLatest formulaMode = iota
 	// formulaVersioned is a name@version formula; missing digests are computed.
 	formulaVersioned
-	// formulaVersionedCached is a name@version formula built from cached returns errDigestPending.
+	// formulaVersionedCached is a name@version formula built from cached digests; a missing one returns errDigestPending.
 	formulaVersionedCached
+	// formulaHistory is a past release's unversioned formula for the tap history.
+	formulaHistory
 )
 
 var errDigestPending = errors.New("tar.gz digest not cached yet")
@@ -39,14 +41,15 @@ func brewVersion(release db.Release) string {
 	return version
 }
 
-func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, release db.Release, artifacts []db.PlatformArtifact, baseURL string, mode formulaMode) (*repackage.Output, error) {
+// formulaForRelease renders one formula. formula is its tap name, which sets the class name.
+func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, release db.Release, artifacts []db.PlatformArtifact, baseURL, formula string, mode formulaMode) (*repackage.Output, error) {
 	// A digit-leading project name can never be a loadable Homebrew formula
 	if !repackage.BrewEligibleProjectName(project.Name) {
 		return nil, db.ErrNotFound
 	}
 	version := brewVersion(release)
-	className := repackage.BrewClassName(project.Name)
-	if mode != formulaLatest {
+	className := repackage.BrewClassName(formula)
+	if mode == formulaVersioned || mode == formulaVersionedCached {
 		name, ok := repackage.BrewVersionedClassName(project.Name, version)
 		if !ok {
 			return nil, db.ErrNotFound
@@ -56,6 +59,7 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 
 	resources := make([]repackage.BrewResource, 0, len(artifacts))
 	var kind string
+	pending := false
 
 	sort.SliceStable(artifacts, func(i, j int) bool {
 		if artifacts[i].OS != artifacts[j].OS {
@@ -75,12 +79,20 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 
 		var sum string
 		var err error
-		if mode == formulaVersionedCached {
+		switch mode {
+		case formulaVersionedCached:
 			sum, err = h.cachedTarGZSHA256(ctx, a)
 			if errors.Is(err, errDigestPending) {
 				h.queueDigestFill(project, release, a, baseURL)
 			}
-		} else {
+		case formulaHistory:
+			sum, err = h.cachedTarGZSHA256(ctx, a)
+			if errors.Is(err, errDigestPending) {
+				h.queueDigestFill(project, release, a, baseURL)
+				pending = true
+				continue
+			}
+		default:
 			sum, err = h.tarGZSHA256(ctx, project, release, a, baseURL)
 		}
 		if err != nil {
@@ -95,6 +107,9 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 		})
 	}
 
+	if pending {
+		return nil, errDigestPending
+	}
 	if len(resources) == 0 {
 		return nil, db.ErrNotFound
 	}
@@ -102,6 +117,7 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 	return repackage.RenderBrewFormula(repackage.BrewFormula{
 		ClassName:   className,
 		Name:        project.Name,
+		Formula:     formula,
 		Description: firstNonEmpty(project.Description, project.Name),
 		Homepage:    firstNonEmpty(project.Homepage, baseURL),
 		Version:     version,
@@ -109,7 +125,7 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 		Kind:        kind,
 		// A private project's formula downloads through the tap's token-aware
 		Private:   project.IsPrivate,
-		Versioned: mode != formulaLatest,
+		Versioned: mode == formulaVersioned || mode == formulaVersionedCached,
 		// The project's packaging-agnostic create_service setting.
 		Service:   project.CreateService,
 		Resources: resources,
@@ -203,14 +219,72 @@ func (h *Handler) fillDigests() {
 		h.fillMu.Unlock()
 
 		if _, err := h.tarGZSHA256(context.Background(), job.project, job.release, job.artifact, job.baseURL); err != nil {
-			slog.Warn("fill tar.gz digest for versioned formula", "project", job.project.Name, "version", job.release.Version, "artifact_id", job.artifact.ID, "err", err)
+			slog.Warn("fill tar.gz digest", "project", job.project.Name, "version", job.release.Version, "artifact_id", job.artifact.ID, "err", err)
 		}
 
 		h.fillMu.Lock()
 		delete(h.filling, job.artifact.ID)
+		drained := len(h.fillQueue) == 0
+		if drained {
+			h.fillRunning = false
+		}
 		h.fillMu.Unlock()
+
+		if drained {
+			// The live lineages were built without these releases.
+			h.tapMu.Lock()
+			for key := range h.tapSnaps {
+				h.dropTapLineageLocked(key)
+			}
+			h.tapMu.Unlock()
+		}
 		h.fillWG.Done()
+		if drained {
+			return
+		}
 	}
+}
+
+// BackfillHistoryDigests queues every uncached tar.gz digest the tap history
+// needs on the served handler's background filler.
+func BackfillHistoryDigests(ctx context.Context) error {
+	return handler.backfillHistoryDigests(ctx)
+}
+
+func (h *Handler) backfillHistoryDigests(ctx context.Context) error {
+	projects, err := h.DB.ListProjects(ctx)
+	if err != nil {
+		return err
+	}
+	for _, project := range projects {
+		if !repackage.BrewEligibleProjectName(project.Name) {
+			continue
+		}
+		releases, err := h.DB.ListPublishedReleasesOnDefaultBranch(ctx, project.ID)
+		if err != nil {
+			return err
+		}
+		for _, release := range releases {
+			artifacts, err := h.DB.ListArtifactsByPlatform(ctx, release.ID)
+			if err != nil {
+				return err
+			}
+			for _, a := range artifacts {
+				if _, _, ok := brewPlatform(a.Artifact); !ok {
+					continue
+				}
+				_, err := h.cachedTarGZSHA256(ctx, a)
+				if errors.Is(err, errDigestPending) {
+					h.queueDigestFill(project, release, a, "")
+					continue
+				}
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func brewPlatform(a db.Artifact) (string, string, bool) {
