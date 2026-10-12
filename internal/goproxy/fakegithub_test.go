@@ -155,7 +155,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // newTestService wires a Service against the fake upstream. token is what the
 // credential resolver hands back -- "" models a proxy with no GitHub credential
-// at all, which is the deployed failure this package was written for.
+// at all. This is the deployed failure this package was written for.
 func newTestService(t *testing.T, fake *fakeGitHub, token string, privatePrefixes []string) *Service {
 	t.Helper()
 

@@ -137,7 +137,7 @@ func publishSingle(cmd *cobra.Command) error {
 
 	fmt.Printf("uploaded %s/%s %s/%s\n", project, rel.Version, osStr, archStr)
 
-	// A draft stops here by design: it stays unpublished, so latest/branch
+	// A draft stops here by design. It stays unpublished, so latest/branch
 	// resolution and every package manager ignore it, and retention keeps it
 	// rather than sweeping it as an abandoned upload. Print the exact-version
 	// URL, which is the only way to reach it.

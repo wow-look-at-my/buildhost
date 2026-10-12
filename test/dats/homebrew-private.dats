@@ -1,9 +1,9 @@
 # The DOCUMENTED private Homebrew flow, executed verbatim, and what the
 # authenticated tap must then hold. It runs after the public suite, on the
-# public tap that suite added and installed from: the documented flow repoints
+# public tap that suite added and installed from. The documented flow repoints
 # that tap in place, and every formula installed through it must survive.
 #
-# The brew commands come from docs/homebrew.md through scripts/brew-doc-flows.sh; the
+# The brew commands come from docs/homebrew.md through scripts/brew-doc-flows.sh. The
 # public suite is where the docs themselves are checked for agreement.
 #
 # see docs/formats/brew-tap.md

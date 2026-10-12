@@ -32,9 +32,9 @@ func baseFormula(resources ...BrewResource) BrewFormula {
 }
 
 // Homebrew can only import a formula whose STABLE spec has a URL on the
-// platform doing the import; a formula carrying only on_<os> stanzas for the
+// platform doing the import. A formula carrying only on_<os> stanzas for the
 // OTHER platform raises "formula requires at least a URL" and poisons the
-// whole tap. Every formula therefore emits a top-level url/sha256, and a
+// whole tap. Every formula therefore emits a top-level url/sha256. A
 // single-OS formula declares depends_on so a foreign-platform install fails
 // cleanly instead of fetching a binary that cannot run.
 func TestRenderBrewFormula_LinuxOnly(t *testing.T) {
@@ -91,8 +91,8 @@ func TestRenderBrewFormula_NoResourcesErrors(t *testing.T) {
 	require.Error(t, err)
 }
 
-// The flag-OFF rendering is pinned byte-for-byte: formula bytes feed the tap's
-// content-addressed git objects, so unintended drift mints a spurious tap
+// The flag-OFF rendering is pinned byte-for-byte. Formula bytes feed the tap's
+// content-addressed git objects. So unintended drift mints a spurious tap
 // commit for every project on deploy. Any deliberate change to the formula
 // (e.g. the skip_clean/chmod mode fix) belongs in this golden.
 func TestRenderBrewFormula_ServiceOffByteIdentical(t *testing.T) {
@@ -139,10 +139,10 @@ end
 }
 
 // The opt-in service block (projects.create_service): brew services manages the
-// installed binary as a login service. keep_alive uses the CRASH-ONLY form --
+// installed binary as a login service. keep_alive uses the CRASH-ONLY form.
 // `successful_exit: false` renders KeepAlive {SuccessfulExit: false} in the
-// launchd plist (Homebrew service.rb KEEP_ALIVE_KEYS) -- because plain
-// `keep_alive true` would respawn a deliberately-exiting app (a single-instance
+// launchd plist (Homebrew service.rb KEEP_ALIVE_KEYS). That form is used because
+// plain `keep_alive true` would respawn a deliberately-exiting app (a single-instance
 func TestRenderBrewFormula_ServiceBlock(t *testing.T) {
 	t.Serial()
 	f := baseFormula(BrewResource{OS: "macos", Arch: "arm", URL: "https://dl.example/darwin-arm64", SHA256: strings.Repeat("bb", 32)})
@@ -219,7 +219,7 @@ func TestRenderBrewFormula_NonBinaryKindHasNoSkipClean(t *testing.T) {
 }
 
 // Slash-namespaced projects install the BASENAME (brew strips the lone
-// top-level directory when unpacking), so the chmod must name the same file
+// top-level directory when unpacking). The chmod must name the same file
 // bin.install staged -- chmod'ing the slashed path would ENOENT the install.
 func TestRenderBrewFormula_SlashNamespacedChmodsBasename(t *testing.T) {
 	t.Serial()

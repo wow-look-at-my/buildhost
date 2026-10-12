@@ -10,8 +10,8 @@ import (
 
 // HTTP-level behaviour (packuments, tarball downloads, platform packages,
 // private-project auth) is tested through the real router in router_test.go.
-// Handlers are never invoked directly with a hand-built request context, so
-// route registration, path parsing and the auth middleware are all exercised
+// Handlers are never invoked directly with a hand-built request context.
+// Route registration, path parsing and the auth middleware are all exercised
 // end to end. The tests here cover the pure parsing/helper functions.
 
 func TestParseRoute(t *testing.T) {

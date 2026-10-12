@@ -142,8 +142,8 @@ func TestServeFormula_Versioned(t *testing.T) {
 	assert.Contains(t, latest.Body.String(), "class NsApp < Formula")
 }
 
-// A real git clone holds one formula per project at HEAD, and the history
-// holds a commit of that file at every release: brew extract, which brew
+// A real git clone holds one formula per project at HEAD. The history
+// holds a commit of that file at every release. Brew extract, which brew
 // version-install runs, walks it back to the version asked for.
 func TestSmartClone_HistoryHoldsEveryVersion(t *testing.T) {
 	t.Serial()

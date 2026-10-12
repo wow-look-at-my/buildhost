@@ -54,8 +54,8 @@ func (d *DB) GetGoproxyCached(ctx context.Context, modulePath, version string) (
 }
 
 // PutGoproxyCached records a resolved version. The zip key may be empty: an
-// .info or .mod request resolves a version without ever building the zip, and
-// the later .zip request fills it in via SetGoproxyZip.
+// .info or .mod request resolves a version without ever building the zip. The
+// later .zip request fills it in via SetGoproxyZip.
 func (d *DB) PutGoproxyCached(ctx context.Context, moduleID int64, c *GoproxyCached) error {
 	var committed *time.Time
 	if !c.CommittedAt.IsZero() {
@@ -90,7 +90,7 @@ func (d *DB) SetGoproxyZip(ctx context.Context, moduleID int64, version, key str
 	return nil
 }
 
-// MarkGoproxySuccess and MarkGoproxyFailure keep the last outcome per module, so
+// MarkGoproxySuccess and MarkGoproxyFailure keep the last outcome per module. So
 // a module that is failing is visible on the dashboard rather than only in a log
 func (d *DB) MarkGoproxySuccess(ctx context.Context, moduleID int64) error {
 	if err := New(d.DB).MarkGoproxyModuleSuccess(ctx, moduleID); err != nil {

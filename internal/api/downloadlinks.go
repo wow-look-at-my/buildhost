@@ -33,10 +33,10 @@ type createDownloadLinkRequest struct {
 }
 
 // CreateDownloadLink mints a temporary, artifact-bound, signed download URL. The
-// returned link carries a &token= that authorizes exactly the requested
-// (os, arch, fmt, version) -- nothing else in the project -- until it expires
-// (default 1h, max 24h), so a private artifact can be shared without handing out
-// a project token. Requires a token holding the "share" scope and authorized for
+// returned link carries a &token= that authorizes exactly the requested (os,
+// arch, fmt, version) -- nothing else in the project -- until it expires
+// (default 1h, max 24h). A private artifact can be shared without handing out a
+// project token. Requires a token holding the "share" scope and authorized for
 // the project. This route does its own auth (HandleRaw) because the gate is the
 // share scope, not the read/write scopes requireProject knows about.
 func (h *Handler) CreateDownloadLink(w http.ResponseWriter, r *http.Request) {

@@ -14,7 +14,7 @@ import (
 )
 
 // A GitHub OIDC write resolves the repo's default branch from GitHub and records
-// it on the project -- buildhost learns "v1" from the repo identity in the token,
+// it on the project. Buildhost learns "v1" from the repo identity in the token,
 // with nothing sent in the request. This is the go-toolchain fix.
 func TestRequireProject_OIDCSyncsDefaultBranch(t *testing.T) {
 	t.Serial()

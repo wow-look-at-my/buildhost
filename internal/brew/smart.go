@@ -44,8 +44,8 @@ func (h *Handler) ServePrivateTapUploadPack(w http.ResponseWriter, r *http.Reque
 	h.serveTapUploadPack(w, r)
 }
 
-// serveTapInfoRefs dispatches an info/refs request by its service parameter:
-// none means the dumb protocol (served exactly like every other tap file),
+// serveTapInfoRefs dispatches an info/refs request by its service parameter.
+// None means the dumb protocol (served exactly like every other tap file),
 // git-upload-pack means the smart advertisement, anything else is refused
 func (h *Handler) serveTapInfoRefs(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Query().Get("service") {
@@ -81,8 +81,8 @@ func (h *Handler) serveUploadPackAdvertisement(w http.ResponseWriter, r *http.Re
 
 // serveTapUploadPack answers a smart fetch. The pack is built from the commit
 // the CLIENT asked for (its "want" -- the sha the advertisement handed it), so
-// a publish that advances the tip between the advertisement and this POST can
-// never produce a ref/pack mismatch: the append-only store still holds the
+// a publish that advances the tip between the advertisement. This POST can
+// never produce a ref/pack mismatch. The append-only store still holds the
 // wanted commit's entire closure.
 func (h *Handler) serveTapUploadPack(w http.ResponseWriter, r *http.Request) {
 	body, err := readUploadPackRequest(r)
