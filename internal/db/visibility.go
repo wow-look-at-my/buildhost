@@ -129,16 +129,16 @@ func (d *DB) ListProjectVisibility(ctx context.Context) (map[int64]ProjectVisibi
 }
 
 // applyProjectVisibility writes the resolved state to projects.is_private,
-// which is the value every read path checks, and updates p to match.
+// which is the value every read path checks, and updates p to match. The
+// UPDATE compares against the stored row, because p can be stale.
 func (d *DB) applyProjectVisibility(ctx context.Context, p *Project) error {
 	info, err := d.ProjectVisibility(ctx, p)
 	if err != nil {
 		return err
 	}
-	if info.Private == p.IsPrivate {
-		return nil
-	}
-	if err := d.SetProjectVisibility(ctx, p.ID, info.Private); err != nil {
+	if _, err := d.q.ApplyProjectPrivate(ctx, ApplyProjectPrivateParams{
+		IsPrivate: info.Private, ID: p.ID, IsPrivate_2: info.Private,
+	}); err != nil {
 		return fmt.Errorf("set project visibility: %w", err)
 	}
 	p.IsPrivate = info.Private

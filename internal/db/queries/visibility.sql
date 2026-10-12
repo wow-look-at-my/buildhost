@@ -1,3 +1,6 @@
+-- name: ApplyProjectPrivate :execrows
+UPDATE projects SET is_private = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND is_private != ?;
+
 -- name: ListVisibilityFolders :many
 SELECT prefix, mode, updated_at FROM visibility_folders ORDER BY prefix;
 

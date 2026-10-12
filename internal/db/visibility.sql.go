@@ -9,6 +9,24 @@ import (
 	"context"
 )
 
+const applyProjectPrivate = `-- name: ApplyProjectPrivate :execrows
+UPDATE projects SET is_private = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND is_private != ?
+`
+
+type ApplyProjectPrivateParams struct {
+	IsPrivate   bool  `json:"is_private"`
+	ID          int64 `json:"id"`
+	IsPrivate_2 bool  `json:"is_private_2"`
+}
+
+func (q *Queries) ApplyProjectPrivate(ctx context.Context, arg ApplyProjectPrivateParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, applyProjectPrivate, arg.IsPrivate, arg.ID, arg.IsPrivate_2)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteReleaseVisibility = `-- name: DeleteReleaseVisibility :exec
 DELETE FROM release_visibility WHERE release_id = ?
 `
