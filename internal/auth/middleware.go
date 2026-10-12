@@ -286,15 +286,20 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			oidcProject := OIDCProjectFrom(r.Context())
 			if t != nil && oidcProject != "" && oidcAuthorizesProject(oidcProject, project.Name) {
 				oidcPrivate, hasPrivate := OIDCPrivateFrom(r.Context())
-				if hasPrivate && project.IsPrivate != oidcPrivate {
-					if updateErr := mw.DB.SetProjectVisibility(r.Context(), project.ID, oidcPrivate); updateErr == nil {
+				if hasPrivate {
+					// The repo visibility is the AUTO value. An operator override in the admin dashboard keeps winning over it.
+					wasPrivate := project.IsPrivate
+					if syncErr := mw.DB.SyncAutoPrivate(r.Context(), project, oidcPrivate); syncErr != nil {
+						slog.ErrorContext(r.Context(), "OIDC visibility sync failed",
+							"project", project.Name, "err", syncErr)
+					} else if wasPrivate != project.IsPrivate {
 						slog.WarnContext(r.Context(), "OIDC visibility sync",
 							"project", project.Name,
-							"was_private", project.IsPrivate,
-							"now_private", oidcPrivate,
+							"was_private", wasPrivate,
+							"now_private", project.IsPrivate,
+							"repo_private", oidcPrivate,
 							"oidc_subject", t.Name,
 						)
-						project.IsPrivate = oidcPrivate
 						parentSpan.SetAttributes(attribute.Bool("project.visibility_synced", true))
 					}
 				}
@@ -386,6 +391,18 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			// Make the resolved project available to unauthorizedResponse.
 			r = r.WithContext(WithProject(r.Context(), project))
 
+			readPrivate := project.IsPrivate
+			if ri.Access() != WriteAccess {
+				if bv, ok := ri.(BuildVisibilityRoute); ok {
+					mode := bv.BuildVisibility(r.Context(), mw.DB, project)
+					readPrivate = mode.Apply(project.IsPrivate)
+					if mode != db.VisibilityAuto {
+						parentSpan.SetAttributes(attribute.String("project.build_visibility", string(mode)))
+					}
+				}
+				r = r.WithContext(context.WithValue(r.Context(), readPrivateKey{}, readPrivate))
+			}
+
 			switch ri.Access() {
 			case WriteAccess:
 				parentSpan.SetAttributes(attribute.String("project.access", "write"))
@@ -399,7 +416,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				}
 			case ReadAccess:
 				parentSpan.SetAttributes(attribute.String("project.access", "read"))
-				if project.IsPrivate {
+				if readPrivate {
 					// A specific resource the route declares public (e.g. a
 					// static site published with X-Public-Site.
 					if pra, ok := ri.(PublicReadAuthorizer); ok && pra.AllowsPublicRead(r.Context(), mw.DB, project) {
@@ -435,7 +452,7 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 			case HiddenReadAccess:
 				parentSpan.SetAttributes(attribute.String("project.access", "read"))
 				// Same authorization as ReadAccess, but an unauthorized caller
-				if project.IsPrivate {
+				if readPrivate {
 					userOK, _ := userCanReadProject(r.Context(), project)
 					authorized := userOK || (t != nil && t.HasScope("read") && tokenReadsProject(r.Context(), t, project))
 					if !authorized {

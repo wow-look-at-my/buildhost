@@ -248,13 +248,8 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request) {
 	filename := ri.filename
 
 	// The tarball filename embeds the npm-encoded project name (see
-	prefix := projectToNPMName(project.Name) + "-"
-	if !strings.HasPrefix(filename, prefix) {
-		http.NotFound(w, r)
-		return
-	}
-	version := strings.TrimSuffix(filename[len(prefix):], ".tgz")
-	if version == "" || version == filename[len(prefix):] {
+	version, ok := tarballVersion(project.Name, filename)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
@@ -283,6 +278,10 @@ func (h *Handler) serveTarball(w http.ResponseWriter, r *http.Request) {
 	if size > 0 {
 		w.Header().Set("Content-Length", fmt.Sprint(size))
 	}
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	if auth.ReadIsPrivate(r.Context()) {
+		w.Header().Set("Cache-Control", "private, no-store")
+	} else {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
 	io.Copy(w, rc)
 }
