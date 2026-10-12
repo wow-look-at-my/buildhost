@@ -26,7 +26,7 @@ const SniffLen = 512
 // Offsets in the DOS/PE header chain.
 const (
 	elfanewOff = 0x3c // DOS header -> file offset of the PE signature
-	peNsectOff = 6    // PE signature + COFF header -> NumberOfSections
+	peNsectOff = 6
 )
 
 type NTBoot int
