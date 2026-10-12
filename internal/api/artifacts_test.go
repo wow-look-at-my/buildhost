@@ -42,7 +42,6 @@ func TestUploadArtifact_Success(t *testing.T) {
 	assert.Greater(t, a.Size, int64(0))
 }
 
-// Note: TestUploadArtifact_NoAuth removed -- auth is now enforced by the
 // requireProject middleware (tested in the auth package).
 
 func TestUploadArtifact_ReleaseNotFound(t *testing.T) {
@@ -310,7 +309,6 @@ func TestPublishRelease_ReturnsPublishedArtifacts(t *testing.T) {
 	assert.True(t, arches[db.ArchAMD64] && arches[db.ArchARM64], "both uploaded slots must be reported, got %v", arches)
 }
 
-// Note: TestPublishRelease_NoAuth removed -- auth is now enforced by the
 // requireProject middleware (tested in the auth package).
 
 func TestPublishRelease_ReleaseNotFound(t *testing.T) {

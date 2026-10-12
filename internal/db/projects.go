@@ -30,7 +30,13 @@ func (d *DB) CreateProject(ctx context.Context, p *Project) error {
 	}
 	id, _ := res.LastInsertId()
 	p.ID = id
-	return nil
+	// The requested state is the auto value. A folder rule can still override it.
+	if err := d.q.UpsertProjectVisibilityRow(ctx, UpsertProjectVisibilityRowParams{
+		ProjectID: p.ID, Mode: VisibilityAuto, AutoPrivate: p.IsPrivate,
+	}); err != nil {
+		return fmt.Errorf("insert project visibility: %w", err)
+	}
+	return d.applyProjectVisibility(ctx, p)
 }
 
 func (d *DB) GetProject(ctx context.Context, name string) (*Project, error) {
