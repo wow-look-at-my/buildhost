@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -15,11 +16,9 @@ import (
 // returns the project.
 func publishRelease(t *testing.T, env *testEnv, name string, private bool, payloads ...string) *db.Project {
 	t.Helper()
-	body := `{"name":"` + name + `","versioning":"auto","is_private":false}`
-	if private {
-		body = `{"name":"` + name + `","versioning":"auto","is_private":true}`
-	}
-	require.Equal(t, http.StatusCreated, env.postJSON(t, "/api/v1/projects", body).StatusCode)
+	body, err := json.Marshal(map[string]any{"name": name, "versioning": "auto", "is_private": private})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusCreated, env.postJSON(t, "/api/v1/projects", string(body)).StatusCode)
 	for i, payload := range payloads {
 		version := string(rune('1' + i))
 		require.Equal(t, http.StatusCreated, env.postJSON(t, "/api/v1/projects/"+name+"/releases", `{"git_branch":"main"}`).StatusCode)
