@@ -23,9 +23,9 @@ func requireGit(t *testing.T) {
 	}
 }
 
-// tapGitServer serves the handler's tap over real HTTP with a FIXED host, so a
+// tapGitServer serves the handler's tap over real HTTP with a FIXED host. A
 // real git client can clone it and the lineage key stays stable across handler
-// instances (httptest picks a fresh port per instance; the Host header is what
+// instances (httptest picks a fresh port per instance. The Host header is what
 func tapGitServer(t *testing.T, h *Handler) *httptest.Server {
 	t.Helper()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -37,9 +37,10 @@ func tapGitServer(t *testing.T, h *Handler) *httptest.Server {
 }
 
 // gitScratchDir is t.TempDir() for a git working tree, with a removal that
-// tolerates a transient concurrent creator: an entry appearing inside .git
+// tolerates a transient concurrent creator. An entry appearing inside .git
 // between RemoveAll's last readdir and its rmdir fails t.TempDir() cleanup
-// ("directory not empty") and reds a test whose assertions all passed. Nothing
+// ("directory not empty"). Its rmdir reds a test whose assertions all passed.
+// Nothing
 func gitScratchDir(t *testing.T) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "buildhost-git")

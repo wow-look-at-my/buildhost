@@ -15,7 +15,7 @@ import (
 
 // TestRequireProject_ReadAccess_NeverAutoProvisions proves a read request does
 // not create a missing project even when an OIDC token would authorize a write
-// provision: auto-provisioning is a write-only action, so a GET can never
+// provision. Auto-provisioning is a write-only action. A GET can never
 // materialize a project as a side effect.
 func TestRequireProject_ReadAccess_NeverAutoProvisions(t *testing.T) {
 	t.Serial()
@@ -85,8 +85,8 @@ func (r publicReadRouteInfo) AllowsPublicRead(context.Context, *db.DB, *db.Proje
 
 // TestRequireProject_PublicRead_ServesPrivateProjectWithoutToken proves a route
 // that implements PublicReadAuthorizer (e.g. a static site published public) is
-// served without a token even under a private project, while a non-public read
-// of the same project still requires auth.
+// served without a token even under a private project. This happens while a
+// non-public read of the same project still requires auth.
 func TestRequireProject_PublicRead_ServesPrivateProjectWithoutToken(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)

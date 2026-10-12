@@ -30,7 +30,7 @@ export function commentBody(project: string, branch: string, siteURL: string): s
 
 /**
  * Resolve the pull request this publish previews. `prNumber` is the event's own
- * number where the event has one. Otherwise the branch names it: a push event
+ * number where the event has one. Otherwise the branch names it. A push event
  * carries no pull request, and the open pull request whose head is this branch
  * is the one a reviewer is reading.
  */
@@ -46,7 +46,7 @@ async function resolvePR(octokit: Octokit, context: Context, params: {
 
 /**
  * Post or update the sticky comment. Returns false only after calling setFailed.
- * A branch with no open pull request is a no-op, not a failure: a push to the
+ * A branch with no open pull request is a no-op, not a failure. A push to the
  * default branch previews nothing a reviewer is waiting on.
  */
 export async function commentPreview(client: unknown, core: Core, context: Context, params: {

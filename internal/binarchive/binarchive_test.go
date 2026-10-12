@@ -233,7 +233,7 @@ func TestLimits(t *testing.T) {
 }
 
 // TestOpenRejectsNonArchive pins that a tar blob (what sites stored before
-// this format) is refused rather than misread -- which is what lets the
+// this format) is refused rather than misread. That refusal is what lets the
 // caller fall back to the path instead of serving garbage.
 func TestOpenRejectsNonArchive(t *testing.T) {
 	t.Serial()

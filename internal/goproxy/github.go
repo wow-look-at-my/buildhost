@@ -225,7 +225,7 @@ func (g *githubSource) commitSHA(ctx context.Context, ref repoRef, t tagRef, mod
 
 // defaultBranch reports the repo's default branch. Unlike
 // auth.GitHubDefaultBranch (best-effort, "" on every failure) this surfaces the
-// classified error: resolving @latest for a tagless module depends on it, and
+// classified error. Resolving @latest for a tagless module depends on it, and
 // silently treating "I could not read the repo" as "no default branch" is how a
 // credential failure disappears.
 func (g *githubSource) defaultBranch(ctx context.Context, ref repoRef, mod string) (string, error) {
@@ -325,7 +325,7 @@ func (g *githubSource) goModAt(ctx context.Context, ref repoRef, rev, modPath, v
 // buildZip materializes the canonical module zip for modPath@version at rev.
 //
 // The zip is assembled by golang.org/x/mod/zip from an extracted tree rather
-// than hand-rolled: it is the same code the go command validates against, so it
+// than hand-rolled. It is the same code the go command validates against, so it
 // enforces the canonical layout (the module@version/ prefix, excluded nested
 // modules and vendor directories, the size limits). A hand-built zip that is
 // merely close produces a checksum mismatch at every consumer.

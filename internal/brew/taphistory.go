@@ -48,16 +48,17 @@ func (h *Handler) tapLineageDir(key string) string {
 // refreshTapLineage recomputes the tap contents for the request's scope and
 // advances the lineage store at dir. If the new content's tree equals the
 // persisted tip's tree the tip commit is REUSED (no growth from the periodic
-// TTL rebuilds); otherwise child commits of the tip are minted, their objects
+// TTL rebuilds). Otherwise child commits of the tip are minted. Their objects
 // are written (content-addressed, idempotent, temp+rename), and only then is
-// the tip advanced -- so a reader can never observe a ref naming objects that
-// are not yet on disk, and a crash at any point leaves a consistent store.
+// the tip advanced -- so a reader can never observe a ref naming objects.
+// Those objects are not yet on disk. A crash at any point leaves a consistent
+// store.
 //
 // The tree holds only the latest formula of each project. brew extract, which
 // brew version-install runs, finds an older version in the history instead.
 // So every past release the lineage has not recorded yet gets one commit that
-// sets its project's formula to that release, before the commit of the
-// current tree. Those commits are appended, so a clone still fast-forwards.
+// sets its project's formula to that release. That commit comes before the
+// commit of the current tree. Those commits are appended, so a clone still fast-forwards.
 func (h *Handler) refreshTapLineage(r *http.Request, dir string) error {
 	files, names, err := h.buildTap(r)
 	if err != nil {
@@ -198,8 +199,8 @@ func readCommitTree(dir, commitSHA string) (string, error) {
 }
 
 // writeTapObjects persists loose objects into the lineage's object store.
-// Content-addressed and append-only: an object that already exists is skipped,
-// new ones land via temp+rename so a crash never leaves a partial object under
+// Content-addressed and append-only: an object that already exists is skipped.
+// New ones land via temp+rename, so a crash never leaves a partial object under
 // its final name.
 func writeTapObjects(dir string, objects map[string][]byte) error {
 	for sha, data := range objects {
@@ -267,12 +268,12 @@ func touchTapLineage(dir string) {
 }
 
 // evictTapLineagesLocked enforces tapHistoryMaxLineages before a NEW lineage
-// directory is created: while at or over the cap, the least-recently-built
-// lineage (dir mtime) is dropped whole -- from the in-memory cache too, so its
-// os.Root closes -- and its history restarts from a fresh root if it is ever
-// requested again. A lineage pinned by an in-flight smart request
-// (acquireTapLineage) is never a victim -- a streaming pack walk must not have
-// its objects deleted underneath it -- so the cap can be transiently exceeded
+// directory is created. The least-recently-built lineage (dir mtime) is
+// dropped whole -- from the in-memory cache too, so its os.Root closes. This
+// holds while at or over the cap. Its history restarts from a fresh root if it
+// is ever requested again. A lineage pinned by an in-flight smart request
+// (acquireTapLineage) is never a victim. A streaming pack walk must not have
+// its objects deleted underneath it. So the cap can be transiently exceeded
 // by exactly the number of active requests. Must be called with tapMu held.
 func (h *Handler) evictTapLineagesLocked() {
 	root := h.tapHistoryRoot()

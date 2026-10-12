@@ -129,7 +129,7 @@ func (g *Generator) generate(ctx context.Context, format Format, project db.Proj
 
 // OpenArtifactStream opens an artifact's bytes as a stream for repackaging. When
 // stripping is available and the artifact is a binary/library it returns the stripped
-// stream and the stripped size; otherwise the raw stored stream and its size. Reader and
+// stream and the stripped size. Otherwise the raw stored stream and its size. Reader and
 // size always agree, so a tar/ar/npm header written from the size matches the body. The
 // caller MUST Close the returned reader.
 func OpenArtifactStream(ctx context.Context, store storage.Storage, artifact db.Artifact, tmpDir string) (io.ReadCloser, int64, error) {
