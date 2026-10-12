@@ -60,7 +60,7 @@ func TestInitRegistersOnlySiteDomainRoutes(t *testing.T) {
 }
 
 // TestListRoutesCoversConfigConditionalFamilies pins the other half: the
-// enumerable table must contain the config-conditional routes, so a future
+// enumerable table must contain the config-conditional routes. A future
 // refactor cannot quietly drop them out of `buildhost routes` and leave the
 // check above trivially satisfied.
 func TestListRoutesCoversConfigConditionalFamilies(t *testing.T) {

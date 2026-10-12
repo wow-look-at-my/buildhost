@@ -16,7 +16,7 @@ import (
 )
 
 // newLiveRegistry serves the real OCI handler over HTTP, simulating the auth
-// middleware's context injection -- so the CLI push client is exercised against
+// middleware's context injection. So the CLI push client is exercised against
 // the actual server implementation, chunk protocol and all.
 func newLiveRegistry(h *Handler, proj *db.Project) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -38,7 +38,7 @@ func writeLayoutBlob(t *testing.T, dir string, content []byte) string {
 
 // TestClientPush_EndToEnd pushes a synthetic image through the real handler
 // with a tiny chunk size, then pulls everything back through the real serve
-// paths -- the full client/server chunk protocol round trip.
+// paths. That is the full client/server chunk protocol round trip.
 func TestClientPush_EndToEnd(t *testing.T) {
 	t.Serial()
 	h, d, _ := setupTest(t)

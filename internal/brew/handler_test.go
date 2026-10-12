@@ -329,7 +329,7 @@ func TestParseRoute_FoldedTapNameResolvesToProject(t *testing.T) {
 
 // BUG guard: a single-OS project's formula must carry a TOP-LEVEL url/sha256
 // and a depends_on gate. With only on_<os> stanzas, Homebrew on the OTHER
-// platform found no stable URL ("formula requires at least a URL") and the
+// platform found no stable URL ("formula requires at least a URL"). The
 // failed import poisoned the whole tap for that platform.
 func TestServeFormula_LinuxOnlyCarriesTopLevelURLAndDependsOnLinux(t *testing.T) {
 	t.Serial()

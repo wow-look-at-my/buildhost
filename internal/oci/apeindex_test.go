@@ -24,9 +24,9 @@ const (
 	machineARM64 = 0xb7
 )
 
-// fakeAPE builds a payload with the prologue an APE carries: the magic the
-// detector matches, and the printf call per architecture that the trampoline
-// uses to write a real ELF header over its own copy.
+// fakeAPE builds a payload with the prologue an APE carries. That is the magic
+// the detector matches, and the printf call per architecture. The trampoline
+// uses that call to write a real ELF header over its own copy.
 func fakeAPE() []byte {
 	var b strings.Builder
 	b.WriteString("MZqFpD='\n")
@@ -100,13 +100,13 @@ func indexPlatforms(t *testing.T, body []byte) []string {
 }
 
 // TestAPEIndexCoversEveryPlatform is the regression test for the missing
-// canonical slot. An APE covers several platforms from a single upload, and the
+// canonical slot. An APE covers several platforms from a single upload. The
 // index dropped linux/amd64 -- the artifact's own canonical platform, the only
 // uploaded platform, and what every consumer on the deployment needs. `docker
 // pull` answered "no matching manifest for linux/amd64 in the manifest list
 // entries" while the release JSON listed it.
 //
-// A non-linux slot is absent from the index: the image is a linux rootfs with a
+// A non-linux slot is absent from the index. The image is a linux rootfs with a
 // linux shell, and stamping it darwin advertises what nothing can run.
 func TestAPEIndexCoversEveryPlatform(t *testing.T) {
 	t.Serial()
@@ -131,7 +131,7 @@ func TestAPEIndexCoversEveryPlatform(t *testing.T) {
 
 // TestAPEIndexNarrowerPlatformSets runs the same assertion for a narrower APE,
 // so a fix that appends the canonical entry unconditionally cannot pass by
-// luck: here it would list linux/amd64 again.
+// luck. Here it would list linux/amd64 again.
 func TestAPEIndexNarrowerPlatformSets(t *testing.T) {
 	t.Serial()
 	for _, tc := range []struct {
@@ -201,8 +201,8 @@ func TestAPEIndexFailsLoudlyWhenAChildCannotBeSynthesized(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "linux/386", "the error must name the platform that failed")
 }
 
-// TestAPEIndexFailsLoudlyWhenAChildIsNotLinked covers the other silent drop:
-// BlobBelongsToProject answering false left no log line at all, so a cache-key
+// TestAPEIndexFailsLoudlyWhenAChildIsNotLinked covers the other silent drop.
+// BlobBelongsToProject answering false left no log line at all. So a cache-key
 // collision across platforms was invisible from every surface.
 func TestAPEIndexFailsLoudlyWhenAChildIsNotLinked(t *testing.T) {
 	t.Serial()
@@ -226,7 +226,7 @@ func TestAPEIndexFailsLoudlyWhenAChildIsNotLinked(t *testing.T) {
 }
 
 // TestAPEPullPathResolvesLinuxAMD64 walks what `docker pull` does on a
-// linux/amd64 host: match a child by platform, fetch that manifest, fetch its
+// linux/amd64 host. Match a child by platform, fetch that manifest, fetch its
 // config blob, and read the platform back off the config. That is the
 // assertion that would have caught the missing canonical slot.
 func TestAPEPullPathResolvesLinuxAMD64(t *testing.T) {
@@ -294,8 +294,8 @@ func getBlobbish(t *testing.T, h *Handler, proj *db.Project, action, digest stri
 
 // TestNonAPEIndexIsNotDoubleListed guards the ordinary per-platform case. A
 // project that uploads a real build per platform gets an index entry per
-// artifact, and the fix for the APE case must not add another for the row's
-// own (os, arch).
+// artifact. The fix for the APE case must not add another for the row's own
+// (os, arch).
 func TestNonAPEIndexIsNotDoubleListed(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)

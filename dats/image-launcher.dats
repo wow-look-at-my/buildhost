@@ -10,10 +10,11 @@
 #   c="/tmp/.ape-run-1-$(id -u 2>/dev/null || echo shared)/$k"
 #
 # and reads no TMPDIR. A deployment's noexec /tmp therefore killed every
-# container at exit 126, against a path nobody chose, while the launcher
-# announced a directory it had picked and changed nothing. The suite that
-# covered the probe could not see this, because it put a shell script in place
-# of the APE, and a shell script honours TMPDIR where the trampoline does not.
+# container at exit 126, against a path nobody chose. This happens while the
+# launcher announced a directory it had picked and changed nothing. The suite
+# that covered the probe could not see this. This is because it put a shell
+# script in place of the APE, and a shell script honours TMPDIR where the
+# trampoline does not.
 #
 # The image now stages the ELF at build time, so nothing unpacks at run time and
 # the launcher is one exec. These run against the real script with a stub in

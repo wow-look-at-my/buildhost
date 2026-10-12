@@ -1,7 +1,7 @@
-# What the upload composites must have done to a real server: one session for
+# What the upload composites must have done to a real server. One session for
 # the chunked path, bytes that survive the round trip, and a release that ends
 # up published. The workflow runs the composites -- an action only runs inside
-# a workflow -- and hands the results here: LOG is the server's log, BASE and
+# a workflow -- and hands the results here. LOG is the server's log, BASE and
 # STATIC its hosts, and the SHA and VERSION values are what the steps
 # reported.
 #
