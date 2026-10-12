@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -32,7 +33,7 @@ func publishRelease(t *testing.T, env *testEnv, name string, private bool, paylo
 
 // staticPath is the canonical static URL of a release's linux/amd64 raw file.
 func staticPath(project, version string) string {
-	return "/file?arch=amd64&fmt=raw&os=linux&project=" + project + "&v=" + version
+	return "/file?arch=amd64&fmt=raw&os=linux&project=" + url.QueryEscape(project) + "&v=" + version
 }
 
 // anonStatus fetches a URL with no credential and answers the status.
