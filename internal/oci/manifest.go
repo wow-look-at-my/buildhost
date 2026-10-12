@@ -148,9 +148,9 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 }
 
 // platformEntry synthesizes a platform's image manifest and returns the index
-// descriptor for it. Every way this can go wrong is an error the caller reports:
-// a platform the release covers and the registry cannot serve must fail the
-// request, because the alternative is an index the puller cannot match.
+// descriptor for it. Every way this can go wrong is an error the caller reports.
+// A platform the release covers and the registry cannot serve must fail the
+// request. This is because the alternative is an index the puller cannot match.
 func (h *Handler) platformEntry(r *http.Request, project *db.Project, release *db.Release, a db.PlatformArtifact) (indexEntry, error) {
 	out, err := h.Gen.GenerateForPlatform(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestRootURL(r))
 	if err != nil {
@@ -184,7 +184,7 @@ func (h *Handler) platformEntry(r *http.Request, project *db.Project, release *d
 }
 
 // serveSingleManifest serves the release's image manifest directly, rather than
-// an index wrapping it, so a puller with no index support still resolves a
+// an index wrapping it. A puller with no index support still resolves a
 // single-platform project.
 func (h *Handler) serveSingleManifest(w http.ResponseWriter, r *http.Request, project *db.Project, entry indexEntry) {
 	rc, size, err := h.Store.Get(r.Context(), entry.Digest[7:])

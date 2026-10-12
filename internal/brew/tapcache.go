@@ -28,7 +28,7 @@ type tapLineage struct {
 
 // openTapFile resolves the lineage for the request's (base URL, credential
 // scope) cache key -- refreshing it under the mutex when there is no live
-// entry -- and opens the requested file inside it.
+// entry. Opens the requested file inside it.
 func (h *Handler) openTapFile(r *http.Request, path string) (*os.File, error) {
 	h.tapMu.Lock()
 	defer h.tapMu.Unlock()
@@ -42,8 +42,8 @@ func (h *Handler) openTapFile(r *http.Request, path string) (*os.File, error) {
 
 // resolveTapLineageLocked is the shared lineage resolution: sweep expired
 // entries, then return the live entry for the request's (base URL, credential
-// scope) key, refreshing/building it when there is none. Must be called with
-// tapMu held. Build failures are wrapped in errTapBuild.
+// scope) key, refreshing/building it. This holds when there is none. Must be
+// called with tapMu held. Build failures are wrapped in errTapBuild.
 func (h *Handler) resolveTapLineageLocked(r *http.Request) (*tapLineage, error) {
 	key := auth.RequestRootURL(r) + "\x00" + tapScopeKey(r.Context())
 

@@ -167,7 +167,7 @@ func (h *Handler) ServeFormula(w http.ResponseWriter, r *http.Request) {
 }
 
 // versionedRelease finds the published default-branch release a name@version
-// formula names: the same set, and the same version spelling, the tap's
+// formula names. The same set, and the same version spelling, the tap's
 // versioned formulas come from.
 func (h *Handler) versionedRelease(ctx context.Context, projectID int64, version string) (*db.Release, error) {
 	releases, err := h.DB.ListPublishedReleasesOnDefaultBranch(ctx, projectID)
