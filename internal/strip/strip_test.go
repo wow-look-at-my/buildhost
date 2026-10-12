@@ -47,7 +47,7 @@ func TestStrip_NonexistentFile(t *testing.T) {
 	assert.Contains(t, err.Error(), "read input")
 }
 
-// Non-ELF inputs are refused by the magic check, before strip/objcopy run at
+// Non-ELF inputs are refused by the magic check, before strip/objcopy run. At
 // all -- so the behavior no longer depends on whether BFD happens to reject the
 // format. The cases below are exactly the ones that mattered in production.
 func TestStrip_NonELFFile(t *testing.T) {
@@ -232,7 +232,7 @@ func TestStrip_StrippedBinaryStillRuns(t *testing.T) {
 }
 
 // Downloads are cached by strong ETag and their sha256 is baked into Homebrew
-// formulas and APT indexes, so the same artifact must strip to the same bytes
+// formulas and APT indexes. The same artifact must strip to the same bytes
 // every time.
 func TestStrip_Deterministic(t *testing.T) {
 	t.Serial()

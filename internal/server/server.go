@@ -26,7 +26,7 @@ const (
 
 // healthResponse is the JSON body of GET /healthz. It always reports the build
 // the server is running (commit and version) so a deploy can be verified
-// without a dedicated version endpoint; status is "ok" only when the database
+// without a dedicated version endpoint. Status is "ok" only when the database
 // is reachable.
 type healthResponse struct {
 	Status   string `json:"status"` // "ok" when healthy, "unhealthy" otherwise

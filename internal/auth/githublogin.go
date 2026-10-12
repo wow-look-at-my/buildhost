@@ -89,7 +89,8 @@ func githubAuth() *GitHubAuth {
 func githubAuthEnabled() bool { return githubAuth() != nil }
 
 // loginRedirectURL is the absolute URL a browser needing to authenticate is sent
-// to: the apex sign-in entrypoint, carrying a next= back to the full original
+// to: the apex sign-in entrypoint. That loginRedirectURL is carrying a next=
+// back to the full original
 // URL (which may be on a service subdomain). A request on the configured site
 func loginRedirectURL(r *http.Request) string {
 	next := RequestBaseURL(r) + r.URL.RequestURI()
@@ -139,9 +140,10 @@ func handleSigninStart(w http.ResponseWriter, r *http.Request) {
 	}
 	next := safeNextURL(r, r.URL.Query().Get("next"))
 	// Instant cross-domain handoff: the browser already holds a valid session on
-	// this apex and is heading to a site-domain destination -- skip the OAuth
-	// consent round-trip and hand the existing session across via /__sso. The
-	// session MAC alone is not enough to hand over: its embedded GitHub token
+	// this apex. The browser is heading to a site-domain destination -- skip the
+	// OAuth consent round-trip and hand the existing session across via /__sso.
+	// The session MAC alone is not enough to hand over: its embedded GitHub
+	// token
 	if c, err := r.Cookie(sessionCookieName); err == nil {
 		if _, ghToken, ok := verifySession(c.Value); ok && siteHandoffDest(next) != nil {
 			if _, lerr := g.fetchLogin(r.Context(), ghToken); lerr == nil {
@@ -155,7 +157,7 @@ func handleSigninStart(w http.ResponseWriter, r *http.Request) {
 	retried := r.URL.Query().Get("retry") == "1"
 
 	nonce := randToken()
-	// Bind the destination into a signed state and tie the flow to this browser
+	// Bind the destination into a signed state. It tie the flow to this browser
 	// via a short-lived cookie (double-submit), so the callback can't be forged
 	// or pointed elsewhere.
 	http.SetCookie(w, &http.Cookie{
@@ -176,8 +178,8 @@ func handleSigninStart(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSigninCallback completes the OAuth round-trip. No failure here may be
-// a dead end: the browser is sitting on the fixed callback URL, where a
-// reload re-submits the consumed single-use code, so every exit either
+// a dead end. The browser is sitting on the fixed callback URL. This happens
+// where a reload re-submits the consumed single-use code. Every exit either
 // restarts the flow or renders a page with a way to. And never with a 5xx --
 // Cloudflare replaces origin 5xx bodies with its own bare error page, which
 // used to strand

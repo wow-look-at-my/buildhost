@@ -66,7 +66,7 @@ func ParsePlatform(s string) (Platform, error) {
 
 // ParsePlatformList reads a comma-separated "os/arch,os/arch" set. An empty
 // list and a duplicate after normalization ("macos/arm64,darwin/arm64") are
-// both errors: a set that silently loses an entry would publish a binary as
+// both errors. A set that silently loses an entry would publish a binary as
 // covering less than the publisher declared.
 func ParsePlatformList(spec string) ([]Platform, error) {
 	elems := strings.Split(spec, ",")
@@ -170,7 +170,7 @@ func CompatiblePlatform(os OS, arch Arch) bool {
 	return true
 }
 
-// NormalizeOS maps an operating-system name to its canonical db.OS, accepting the
+// NormalizeOS maps an operating-system name to its canonical db.OS. Accepting the
 // spellings GitHub Actions' RUNNER_OS uses ("Linux", "macOS", "Windows") and
 // other common aliases so clients can pass platform names through verbatim. It
 // returns ("", false) for an unrecognized name; callers should leave such a value
@@ -211,8 +211,8 @@ func NormalizeArch(s string) (Arch, bool) {
 	return "", false
 }
 
-// NormalizeLegacyWasmPair maps the deprecated GOOS/GOARCH-ordered WebAssembly
-// pair -- (os=js, arch=wasm) or (os=wasip1, arch=wasm), the
+// NormalizeLegacyWasmPair maps the deprecated GOOS/GOARCH-ordered
+// WebAssembly. Pair -- (os=js, arch=wasm) or (os=wasip1, arch=wasm), the
 // `name_GOOS_GOARCH` filename convention-released go-toolchain autoreleases
 // derive upload parameters from -- to the canonical
 func NormalizeLegacyWasmPair(osName, arch string) (OS, Arch, bool) {

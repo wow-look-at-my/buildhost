@@ -385,14 +385,15 @@ func TestServe_RepackageFormat(t *testing.T) {
 	assert.NotEmpty(t, rec.Body.Bytes())
 }
 
-// A binary artifact that is not an ELF must be served EXACTLY as uploaded, and
-// the same immutable URL must return the same bytes every time.
+// A binary artifact that is not an ELF must be served EXACTLY as uploaded. The
+// same immutable URL must return the same bytes every time.
 //
 // Regression: buildhost strips binaries at download time wherever strip and
 // objcopy exist (only the distroless production image lacks them). Those tools
 // go through BFD, which accepts PE/COFF, so a Cosmopolitan APE binary -- what
-// go-toolchain ships on Linux -- was not rejected but rewritten: roughly half
-// the bytes, corrupt, and different on every request. That broke `brew install`
+// go-toolchain ships on Linux. Those tools was not rejected but rewritten:
+// roughly half the bytes, corrupt, and different on every request. That broke
+// `brew install`
 func TestServe_NonELFBinary_ServedVerbatimAndStable(t *testing.T) {
 	t.Serial()
 	h, d, store := setupIntegration(t)

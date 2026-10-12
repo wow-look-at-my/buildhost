@@ -106,8 +106,8 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 
 	// Persist the manifest document itself (alongside its config + layers above)
 	// and link it to the project, so the pull path can serve it by its content
-	// digest. A multi-arch index lists each platform's image manifest by digest,
-	// and the client resolves it via GET /v2/{name}/manifests/<digest>, which is
+	// digest. A multi-arch index lists each platform's image manifest by digest.
+	// The client resolves it via GET /v2/{name}/manifests/<digest>, which is
 	// gated on BlobBelongsToProject and served straight from storage. Without
 	if input.Project.ID > 0 && o.DB != nil {
 		manifestKey, manifestSize, err := o.Store.Put(ctx, bytes.NewReader(manifestData))
@@ -215,7 +215,7 @@ func joinLayers(layers ...[]byte) ([]byte, string, error) {
 
 // ociWriteLayer streams r -> tar -> zstd straight into store.Put while teeing
 // the uncompressed bytes through a hasher for the config's diff_id. The binary
-// lands under /usr/local/lib, with a launcher at /<name> and at
+// lands under /usr/local/lib. Those lands are with a launcher at /<name> and at
 // /usr/local/bin/<name> so a bare name on PATH also starts it. Every image gets
 // that layout, whatever kind of binary it was built from.
 func ociWriteLayer(ctx context.Context, store storage.Storage, r io.Reader, size int64, name string) (key string, compressedSize int64, diffID string, err error) {
@@ -288,12 +288,12 @@ func essentialsLayer() ([]byte, string, error) {
 	return e.compressed, e.diffID, err
 }
 
-// buildEssentials builds the deterministic, zstd-compressed "essentials" tar layer:
-// CA certificates plus a minimal rootfs (/etc/passwd, /etc/group, /etc/nsswitch.conf and
-// a sticky /tmp). It is pure -- it reads only the embedded bundle and fixed literals,
-// emits entries in a fixed order with pinned headers -- so the output is byte-identical
-// on every call (required: the pull path regenerates and re-hashes it per request).
-// The shell is appended to it per architecture; see OCI.base.
+// buildEssentials builds the deterministic, zstd-compressed "essentials" tar layer: CA
+// certificates plus a minimal rootfs (/etc/passwd, /etc/group, /etc/nsswitch.conf and a
+// sticky /tmp). It is pure -- it reads only the embedded bundle and fixed literals,
+// emits entries in a fixed order with pinned headers. So the output is byte-identical on
+// every call (required: the pull path regenerates and re-hashes it per request). The
+// shell is appended to it per architecture; see OCI.base.
 func buildEssentials() (essentials, error) {
 	var buf bytes.Buffer
 	zw, err := zstd.NewWriter(&buf, zstd.WithEncoderLevel(zstd.SpeedDefault))

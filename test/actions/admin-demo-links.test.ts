@@ -33,10 +33,10 @@ const server = http.createServer((req: any, res: any) => {
 	res.end(fs.readFileSync(file));
 });
 
-// The same sequence sites-cors.test.ts uses, in the same order: an explicit
-// binary outside a runner, then the runner's own Chrome, then a staged
-// download. A browser is REQUIRED -- no browser fails this check rather than
-// reducing it to something that cannot go red.
+// The same sequence sites-cors.test.ts uses. That sequence is in the same
+// order: an explicit binary outside a runner, then the runner's own Chrome,
+// then a staged download. A browser is REQUIRED -- no browser fails this
+// check rather than reducing it to something that cannot go red.
 const launch = async () => {
 	const attempts: Array<[string, Record<string, unknown>]> = [
 		...(process.env.PLAYWRIGHT_CHROME_PATH

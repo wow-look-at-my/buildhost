@@ -42,7 +42,6 @@ func TestUploadArtifact_Success(t *testing.T) {
 	assert.Greater(t, a.Size, int64(0))
 }
 
-// Note: TestUploadArtifact_NoAuth removed -- auth is now enforced by the
 // requireProject middleware (tested in the auth package).
 
 func TestUploadArtifact_ReleaseNotFound(t *testing.T) {
@@ -255,9 +254,9 @@ func TestPublishRelease_Success(t *testing.T) {
 }
 
 // The publish response must carry the artifacts it made public. There is no
-// artifacts listing endpoint, so a publisher assembling its own
+// artifacts listing endpoint. A publisher assembling its own
 // create/upload/publish chain (buildhost-publish-release) has no other way to
-// learn the digests it must record on the org's linked artifacts page. Drop
+// learn the digests. It must record on the org's linked artifacts page. Drop
 // the field and that whole path silently stores artifacts and records nothing.
 func TestPublishRelease_ReturnsPublishedArtifacts(t *testing.T) {
 	t.Serial()
@@ -309,7 +308,6 @@ func TestPublishRelease_ReturnsPublishedArtifacts(t *testing.T) {
 	assert.True(t, arches[db.ArchAMD64] && arches[db.ArchARM64], "both uploaded slots must be reported, got %v", arches)
 }
 
-// Note: TestPublishRelease_NoAuth removed -- auth is now enforced by the
 // requireProject middleware (tested in the auth package).
 
 func TestPublishRelease_ReleaseNotFound(t *testing.T) {

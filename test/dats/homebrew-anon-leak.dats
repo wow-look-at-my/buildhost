@@ -50,10 +50,9 @@ tests:
 		stdout:
 			- "no-leak"
 
-	# The FOLDED name is different: it resolves back to its project only for
-	# a request that may read it, so an anonymous probe stays
-	# indistinguishable from nonexistent rather than confirming a private
-	# project exists.
+	# The FOLDED name is different. It resolves back to its project only for
+	# a request that may read it. An anonymous probe stays indistinguishable
+	# from nonexistent rather than confirming a private project exists.
 	- desc: unauthorized formula paths return clean errors, never a fake formula body
 	  cmd: |
 		set -eu

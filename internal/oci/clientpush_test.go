@@ -15,9 +15,10 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/ociclient"
 )
 
-// newLiveRegistry serves the real OCI handler over HTTP, simulating the auth
-// middleware's context injection -- so the CLI push client is exercised against
-// the actual server implementation, chunk protocol and all.
+// newLiveRegistry serves the real OCI handler over HTTP. That newLiveRegistry
+// is simulating the auth middleware's context injection -- so the CLI push
+// client is exercised against the actual server implementation, chunk protocol
+// and all.
 func newLiveRegistry(h *Handler, proj *db.Project) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rt := parseOCIPath(strings.TrimPrefix(r.URL.Path, "/v2/"))
@@ -26,7 +27,6 @@ func newLiveRegistry(h *Handler, proj *db.Project) *httptest.Server {
 	}))
 }
 
-// writeLayoutBlob writes content into layoutDir's blob store, returning digest.
 func writeLayoutBlob(t *testing.T, dir string, content []byte) string {
 	t.Helper()
 	d := digestOf(content)
@@ -38,7 +38,7 @@ func writeLayoutBlob(t *testing.T, dir string, content []byte) string {
 
 // TestClientPush_EndToEnd pushes a synthetic image through the real handler
 // with a tiny chunk size, then pulls everything back through the real serve
-// paths -- the full client/server chunk protocol round trip.
+// paths. The full client/server chunk protocol round trip.
 func TestClientPush_EndToEnd(t *testing.T) {
 	t.Serial()
 	h, d, _ := setupTest(t)

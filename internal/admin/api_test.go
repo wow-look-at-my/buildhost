@@ -166,7 +166,7 @@ func TestAPIRelease(t *testing.T) {
 
 // assertServiceURLs checks the "services" map carries the real per-service
 // subdomain hosts the router serves, derived from the request Host
-// (buildhost.example.com -> example.com) with the admin label stripped.
+// (buildhost.example.com -> example.com). With the admin label stripped.
 func assertServiceURLs(t *testing.T, resp map[string]any) {
 	t.Helper()
 	services, ok := resp["services"].(map[string]any)

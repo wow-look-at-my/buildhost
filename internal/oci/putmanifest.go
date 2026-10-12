@@ -46,7 +46,7 @@ func isIndexMediaType(mt string) bool {
 
 // PutManifest handles PUT /v2/{name}/manifests/{reference}. It stores the
 // manifest (or image index), associates every referenced blob with the project
-// so the pull path will serve them, and -- when pushed by tag -- records a
+// so the pull path will serve them, and -- when pushed by tag. Records a
 // release of kind=docker artifacts and points the tag at it.
 func (h *Handler) PutManifest(w http.ResponseWriter, r *http.Request, reference string) {
 	if reference == "" {

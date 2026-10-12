@@ -84,7 +84,7 @@ func seedNPMPackage(t *testing.T, project, version, content string) {
 }
 
 // seedNPMPackageTarball creates a published release whose npm-package artifact is
-// a real gzipped tar containing package/package.json with the given fields -- so
+// a real gzipped tar containing package/package.json with the given fields. So
 // the packument's manifest-reflection path has a real manifest to read.
 func seedNPMPackageTarball(t *testing.T, project, version string, pkgJSON map[string]any) {
 	t.Helper()
@@ -112,7 +112,7 @@ func decodePackument(t *testing.T, rec *httptest.ResponseRecorder) map[string]an
 }
 
 // TestRouter_Packument_NPMPackageArtifact covers the fallback path: the stored
-// blob is not a readable npm tarball, so no manifest fields can be reflected and
+// blob is not a readable npm tarball. No manifest fields can be reflected and
 // the version entry is the minimal-but-valid {name, version, dist}.
 func TestRouter_Packument_NPMPackageArtifact(t *testing.T) {
 	t.Serial()
@@ -134,7 +134,7 @@ func TestRouter_Packument_NPMPackageArtifact(t *testing.T) {
 
 // TestRouter_Packument_NPMPackageReflectsManifest proves the registry surfaces a
 // pre-built package's own dependency graph and platform/engine gating from the
-// uploaded tarball's package.json -- the fix for "zombie" packages whose
+// uploaded tarball's package.json. This is the fix for "zombie" packages whose
 // optionalDependencies were silently dropped -- while keeping name/version/dist
 // authoritative and never echoing lifecycle scripts.
 func TestRouter_Packument_NPMPackageReflectsManifest(t *testing.T) {
@@ -201,8 +201,9 @@ func TestRouter_Tarball_NotFound(t *testing.T) {
 
 // TestRouter_NamespacedProject proves a slash-namespaced buildhost project
 // round-trips as a single-slash (valid) npm package: project
-// "cc-marketplace/my-plugin" is served as "@buildhost/cc-marketplace__my-plugin"
-// and its tarball downloads through the encoded route.
+// "cc-marketplace/my-plugin" is served as
+// "@buildhost/cc-marketplace__my-plugin". Its tarball downloads through the
+// encoded route.
 func TestRouter_NamespacedProject(t *testing.T) {
 	t.Serial()
 	content := "namespaced tarball"
@@ -283,7 +284,7 @@ func TestRouter_UnpublishedSkipped(t *testing.T) {
 }
 
 // TestRouter_StaticNPMWrapper exercises the npm-wrapper Fmt (fmt_wrapper.go)
-// through the real static endpoint -- this is the launcher package the npm
+// through the real static endpoint. This is the launcher package the npm
 // packument points binary projects at (fmt=npm-wrapper, os=any/arch=any).
 func TestRouter_StaticNPMWrapper(t *testing.T) {
 	t.Serial()

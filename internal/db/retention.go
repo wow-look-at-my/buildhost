@@ -55,10 +55,11 @@ type BlobRef struct {
 	Size int64
 }
 
-// EvictReleases deletes the given releases and all of their child rows -- each
+// EvictReleases deletes the given releases and all of their child rows. Each
 // release's artifacts, their packaged artifacts and download counts, and any oci
-// tags pointing at them -- in a single transaction, then determines which of
-// their content-addressed blobs are no longer referenced by any surviving row.
+// tags pointing at them. Any oci in a single transaction, then determines which
+// of their content-addressed blobs are no longer referenced by any surviving
+// row.
 //
 // When commit is true the deletions are committed and the returned blobs are safe
 // for the caller to delete from storage. When commit is false the transaction is

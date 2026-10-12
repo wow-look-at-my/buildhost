@@ -361,8 +361,8 @@ func TestNestedModuleUsesTagPrefix(t *testing.T) {
 }
 
 // With no tags at all -- the normal state for this org's branch-pinned modules
-// -- @latest must resolve to a pseudo-version of the default branch head rather
-// than reporting that there is nothing there.
+// -- @latest must resolve to a pseudo-version of the default. Branch head
+// rather than reporting that there is nothing there.
 func TestLatestFallsBackToPseudoVersion(t *testing.T) {
 	t.Serial()
 	fake := newFakeGitHub(t)
@@ -418,7 +418,7 @@ func TestPseudoVersionResolvesByEmbeddedRevision(t *testing.T) {
 }
 
 // A version string that is not semver at all is a malformed request, not a
-// missing module -- the caller has to fix their request, not go looking for a
+// missing module. The caller has to fix their request, not go looking for a
 // version that was never there.
 func TestNonSemverVersionIsABadRequest(t *testing.T) {
 	t.Serial()
@@ -430,8 +430,8 @@ func TestNonSemverVersionIsABadRequest(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "not a valid semantic version")
 }
 
-// A timestamp-only prerelease is NOT a pseudo-version: it carries no revision,
-// so it addresses no commit and is resolved as an ordinary tag -- which is
+// A timestamp-only prerelease is NOT a pseudo-version: it carries no revision.
+// It addresses no commit and is resolved as an ordinary tag -- which is
 // absent, and correctly reported as such.
 func TestTimestampPrereleaseIsResolvedAsATag(t *testing.T) {
 	t.Serial()

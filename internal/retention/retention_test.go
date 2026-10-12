@@ -250,10 +250,10 @@ func TestDeleteBlobIfUnreferenced(t *testing.T) {
 }
 
 // A draft is an unpublished release its owner MEANT to keep: uploaded to be
-// downloaded by exact version, deliberately outside latest/branch resolution
-// and every package manager. The abandoned sweep exists for partial uploads
-// that never finished, and cannot be allowed to delete drafts -- doing so would
-// quietly delete the feature.
+// downloaded by exact version. This also covers deliberately outside
+// latest/branch resolution and every package manager. The abandoned sweep
+// exists for partial uploads that never finished, and cannot be allowed to
+// delete drafts -- doing so would quietly delete the feature.
 func TestRun_DraftsSurviveAbandonedSweep(t *testing.T) {
 	t.Serial()
 	d, store, p := setup(t)

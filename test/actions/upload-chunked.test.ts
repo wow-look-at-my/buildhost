@@ -105,8 +105,9 @@ async function start(opts: ServerOptions): Promise<Harness> {
 const warnings: string[] = [];
 const core = { info: () => {}, warning: (m: string) => warnings.push(m) };
 
-// A fixture on disk, read back through the same fd-per-chunk Body the publish
-// composite builds, so the test exercises that shape rather than a fake one.
+// This is a fixture on disk. The fixture is read back through the same
+// fd-per-chunk Body the publish composite builds. The test exercises that
+// shape rather than a fake one.
 function writeFixture(name: string, size: number) {
 	const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'upload-test-'));
 	const bytes = crypto.randomBytes(size);

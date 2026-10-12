@@ -13,7 +13,7 @@ import (
 )
 
 // apeWithPESections builds a minimal APE body whose PE header declares nsect
-// sections, so a test can choose between the real header and the do-nothing
+// sections. A test can choose between the real header and the do-nothing
 // stub. 0x80 is where a gosmopolitan APE puts its PE header.
 func apeWithPESections(t *testing.T, nsect uint16) string {
 	t.Helper()
