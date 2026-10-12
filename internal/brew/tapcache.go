@@ -32,6 +32,8 @@ type tapLineage struct {
 	root    *os.Root
 	key     string // (base URL.
 	builtAt time.Time
+	// err is the last refresh's failure. Every request answers it until the next refresh, one tapCacheTTL later, succeeds.
+	err error
 }
 
 // tapRefresh is one in-flight refresh of a lineage directory. err is set
@@ -67,7 +69,9 @@ func tapLineageKey(r *http.Request) string {
 // A lineage whose last refresh is older than tapCacheTTL gets one started,
 // unless one is already running. A lineage with no tip yet waits for that
 // refresh to finish. A lineage with a tip waits at most tapRefreshWait, then
-// serves the tip it has. The refresh runs detached from the request, so a
+// serves the tip it has. A refresh that fails is an error for every request
+// that waits on it. Every later request gets that error too, until the next
+// refresh, one tapCacheTTL later, succeeds. The refresh runs detached from the request, so a
 // client that hangs up never throws its work away. It never holds tapMu, so
 // a refresh of one lineage never stalls a request for another. Build
 // failures are wrapped in errTapBuild.
@@ -84,25 +88,31 @@ func (h *Handler) awaitTapLineage(r *http.Request) (string, error) {
 	if ref == nil && time.Since(lin.builtAt) >= tapCacheTTL {
 		ref = h.startTapRefreshLocked(r, lin)
 	}
+	failed := lin.err
 	dir := lin.dir
 	h.tapMu.Unlock()
 
 	if ref == nil {
+		if failed != nil {
+			return "", fmt.Errorf("%w: %w", errTapBuild, failed)
+		}
 		return key, nil
 	}
-	hasTip := readTapTip(dir) != ""
 	var timeout <-chan time.Time
-	if hasTip {
+	if readTapTip(dir) != "" {
 		timer := time.NewTimer(tapRefreshWait)
 		defer timer.Stop()
 		timeout = timer.C
 	}
 	select {
 	case <-ref.done:
-		if ref.err != nil && readTapTip(dir) == "" {
+		if ref.err != nil {
 			return "", fmt.Errorf("%w: %w", errTapBuild, ref.err)
 		}
 	case <-timeout:
+		if failed != nil {
+			return "", fmt.Errorf("%w: %w", errTapBuild, failed)
+		}
 	case <-r.Context().Done():
 		return "", r.Context().Err()
 	}
@@ -137,9 +147,10 @@ func (h *Handler) liveTapLineageLocked(key string) (*tapLineage, error) {
 }
 
 // startTapRefreshLocked starts refreshing lin's directory in the background.
-// The directory stays pinned against eviction until the refresh ends. On
-// success the entry's builtAt moves to the end of the refresh, unless the
-// entry was dropped meanwhile: a dropped entry's replacement refreshes again.
+// The directory stays pinned against eviction until the refresh ends. The
+// entry's builtAt then moves to the end of the refresh. Its err records the
+// the outcome. An entry dropped meanwhile keeps neither: its replacement
+// refreshes again.
 // Must be called with tapMu held.
 func (h *Handler) startTapRefreshLocked(r *http.Request, lin *tapLineage) *tapRefresh {
 	ref := &tapRefresh{done: make(chan struct{})}
@@ -164,8 +175,9 @@ func (h *Handler) startTapRefreshLocked(r *http.Request, lin *tapLineage) *tapRe
 		ref.err = err
 		delete(h.tapRefreshes, dir)
 		h.unpinTapDirLocked(dir)
-		if err == nil && h.tapSnaps[lin.key] == lin {
+		if h.tapSnaps[lin.key] == lin {
 			lin.builtAt = time.Now()
+			lin.err = err
 		}
 		h.tapMu.Unlock()
 		close(ref.done)

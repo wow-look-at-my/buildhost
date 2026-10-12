@@ -170,7 +170,7 @@ func (h *Handler) serveTapUploadPack(w http.ResponseWriter, r *http.Request) {
 		f.Flush()
 	}
 
-	entries, err := collectPackEntries(root, commits, boundary)
+	entries, err := tapPackEntries(root, commits, boundary)
 	if err != nil {
 		// Headers are sent; abandoning the body fails the client's pack
 		return
@@ -258,6 +258,9 @@ func readUploadPackRequest(r *http.Request) ([]byte, error) {
 
 // maxUploadPackRefs caps how many want/shallow lines are honored per request.
 const maxUploadPackRefs = 32
+
+// tapPackEntries assembles a fetch's object list.
+var tapPackEntries = collectPackEntries
 
 // maxUploadPackHaves caps how many have lines are honored per request.
 const maxUploadPackHaves = 1024

@@ -124,7 +124,9 @@ A publish mid-`brew update` can no longer orphan a ref a client already fetched.
 
 The in-memory layer, in `tapcache.go`, is now a rebuild-rate gate plus an open `os.Root` cache. It allows at most one content re-check per `tapCacheTTL`, many seconds, per lineage. TapC caps the mapacheMaxEntries`, and eviction closes file descriptors only. As a result, the history stays.
 
-A re-check renders every visible project's formula and every past release's history formula, so it costs seconds on a busy registry. It runs off the request path. `awaitTapLineage` starts at most one refresh per lineage directory (`Handler.tapRefreshes`), detached from the request's cancellation and outside `tapMu`. A lineage with no tip yet waits for that refresh. A lineage with a tip waits at most `tapRefreshWait`, then serves the tip it already has, and the next request gets the new one. A refresh that once ran inside the request, under the global mutex, took longer than the CDN's origin timeout, and `brew update` failed with a 524.
+A re-check renders every visible project's formula and every past release's history formula, so it costs seconds on a busy registry. It runs off the request path. `awaitTapLineage` starts at most one refresh per lineage directory (`Handler.tapRefreshes`), detached from the request's cancellation and outside `tapMu`. A lineage with no tip yet waits for that refresh. A lineage with a tip waits at most `tapRefreshWait`, then serves the tip it already has, and the next request gets the new one. Only a slow refresh serves the old tip.
+
+A failed refresh is an `errTapBuild` 500 for every request that waits on it. Every later request gets the same 500 until the next refresh succeeds, one `tapCacheTTL` later. `TestTapRefresh_FailureWithTipIsAnError` and `TestTapRefresh_FailureWithoutTipIsAnError` guard it. `TestServeUploadPack_FlushesBeforePackAssembly` guards the early flush. A refresh that once ran inside the request, under the global mutex, took longer than the CDN's origin timeout, and `brew update` failed with a 524.
 
 `TestTapRefresh_SlowRefreshServesPersistedTip` guards it.
 
