@@ -55,10 +55,10 @@ type BlobRef struct {
 	Size int64
 }
 
-// EvictReleases deletes the given releases and all of their child rows -- each
+// EvictReleases deletes the given releases. All of their child rows -- each
 // release's artifacts, their packaged artifacts and download counts, and any oci
-// tags pointing at them -- in a single transaction, then determines which of
-// their content-addressed blobs are no longer referenced by any surviving row.
+// tags pointing at them. In a single transaction, then determines which of their
+// content-addressed blobs are no longer referenced by any surviving row.
 //
 // When commit is true the deletions are committed and the returned blobs are safe
 // for the caller to delete from storage. When commit is false the transaction is
@@ -145,8 +145,8 @@ func (d *DB) IsBlobReferenced(ctx context.Context, key string) (bool, error) {
 }
 
 // ListEvictableReleases returns published releases past keep-N on their
-// (project, branch) that are also older than recencyCutoff and not pinned by an
-// oci tag or a pushed-docker artifact.
+// (project, branch) that are also older than recencyCutoff. A release pinned by
+// an oci tag or a pushed-docker artifact is not returned.
 func (d *DB) ListEvictableReleases(ctx context.Context, keepN int64, recencyCutoff time.Time) ([]ListEvictableReleasesRow, error) {
 	return d.q.ListEvictableReleases(ctx, ListEvictableReleasesParams{
 		RecencyCutoff: sqliteDatetime(recencyCutoff),

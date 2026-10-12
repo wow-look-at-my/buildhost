@@ -12,7 +12,7 @@ RUN mkdir -p /tmpdir && chmod 1777 /tmpdir
 
 # The binary the final image runs is the ELF the APE's trampoline would have
 # staged for THIS target. The trampoline stages into a hardcoded
-# /tmp/.ape-run-1-$(id -u) that it picks itself and no variable moves, so a
+# /tmp/.ape-run-1-$(id -u) that it picks itself and no variable moves. So a
 # deployment's noexec /tmp killed every container at exit 126. Staging here
 # means nothing unpacks at run time and /tmp stops mattering.
 FROM busybox:musl AS staged
@@ -32,9 +32,9 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.description="Universal package registry server"
 
 # An APE starts through its own shell trampoline: the file is a polyglot whose
-# header is a shell script, and the kernel cannot exec it without either a
-# binfmt handler or a shell to interpret that header. distroless ships neither,
-# so the image carries the busybox the /data stage already pulls.
+# header is a shell script. The kernel cannot exec it without either a binfmt
+# handler or a shell to interpret that header. distroless ships neither, so the
+# image carries the busybox the /data stage already pulls.
 COPY --from=dirs /shell /bin
 COPY --from=dirs /tmpdir /tmp
 # The APE sits under /usr/local/lib and a shebang launcher takes its place on

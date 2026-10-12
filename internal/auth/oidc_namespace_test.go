@@ -12,7 +12,7 @@ import (
 	"github.com/wow-look-at-my/router"
 )
 
-// These tests cover slash-namespaced ("<repo>/<binary>") projects: the OIDC
+// These tests cover slash-namespaced ("<repo>/<binary>") projects. The OIDC
 // namespace authorization added to requireProject, plus an end-to-end proof
 // that the router resolves a multi-segment {project} path value.
 
@@ -145,7 +145,7 @@ func TestRequireProject_OIDCNamespace_WritesExistingSubProject(t *testing.T) {
 }
 
 // TestRequireProject_MultiSegmentRouting_EndToEnd drives the real router the
-// registry uses, proving a slash-namespaced project survives path matching:
+// registry uses. Proving a slash-namespaced project survives path matching:
 // {project} greedily captures "log-streamer/client" while the trailing literal
 // "releases"/"artifacts" anchors let {version}/{os}/{arch} bind correctly. The
 // OIDC token for repo "log-streamer" then auto-provisions it.

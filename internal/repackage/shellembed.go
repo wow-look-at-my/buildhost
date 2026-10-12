@@ -55,8 +55,8 @@ func ShellLayer(arch db.Arch) ([]byte, string, error) {
 }
 
 // buildShellLayer writes the deterministic shell layer: /bin/busybox and a
-// relative symlink per applet, with the same pinned headers the essentials layer
-// uses, so the diffID is the same on every server.
+// relative symlink per applet. It uses the same pinned headers the essentials
+// layer uses, so the diffID is the same on every server.
 func buildShellLayer(busybox []byte, applets []string) (*shellLayer, error) {
 	var buf bytes.Buffer
 	zw, err := zstd.NewWriter(&buf, zstd.WithEncoderLevel(zstd.SpeedDefault))

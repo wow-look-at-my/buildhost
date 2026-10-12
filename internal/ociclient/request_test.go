@@ -1,5 +1,6 @@
 // Tests for newRequest (upload.go): every upload body the pusher sends must
-// carry a GetBody, or net/http declines to retry it after a mid-flight stream
+// carry a GetBody, or net/http declines to retry it. This happens after a
+// mid-flight stream
 package ociclient
 
 import (

@@ -2,13 +2,13 @@
 #
 # The kernel cannot exec an APE: the file's header is a shell script, and no
 # binfmt handler is registered. So the synthesizer writes the ELF the APE's own
-# trampoline would have staged, keeps it under /usr/local/lib, and puts a
+# trampoline would have staged and keeps it under /usr/local/lib. It puts a
 # shebang launcher at the entrypoint path. The base layer carries the shell that
 # launcher needs. Get any part of that wrong and every container from the image
 # dies at exec, reporting "no such file or directory" against an entrypoint that
 # is present.
 #
-# The trampoline stages into a hardcoded /tmp that TMPDIR does not move, so an
+# The trampoline stages into a hardcoded /tmp that TMPDIR does not move. So an
 # image that shipped the APE itself dies on a noexec /tmp instead.
 #
 # The sibling suite synthesizes from a plain ELF, which exercises none of this.
@@ -34,7 +34,7 @@ shared:
 			head -c 8 "$BUILDHOST_BIN" | grep -q "MZqFpD='" || {
 				echo "BUILDHOST_BIN is not an APE, so this suite would test the ELF path" >&2; exit 1; }
 			# A registered APE binfmt handler makes the kernel run any APE
-			# through a shell, so an image with no shell layer would still
+			# through a shell. An image with no shell layer would still
 			# start and this suite would stop being able to fail.
 			for h in /proc/sys/fs/binfmt_misc/*; do
 				case "${h##*/}" in status|register|'*') continue ;; esac
@@ -83,7 +83,7 @@ setup: env ENV_FILE={shared.env} sh {shared.start.sh}
 teardown: sh -c '. {shared.env}; kill -- "-$(cat "$WORK/server.pid")" 2>/dev/null; true'
 
 tests:
-	# A bare APE path as the entrypoint is the defect: it is what a synthesis
+	# A bare APE path as the entrypoint is the defect. It is what a synthesis
 	# without the shell layer produces, and no container from such an image
 	# ever starts.
 	- desc: the entrypoint names a launcher, not the binary, over the two layers
@@ -160,8 +160,10 @@ tests:
 			- "linux/amd64"
 			- "buildhost"
 
-	# Every spelling a synthesized image ever gave must therefore still start,
-	# or the deployment is wedged on the version it already runs.
+	# A rolling updater creates the replacement from the config of the container
+	# it replaces. The entrypoint that reaches this image is whatever the OLD
+	# one recorded. Every spelling a synthesized image ever gave must therefore
+	# still start, or the deployment is wedged on the version it already runs.
 	- desc: an entrypoint an older container recorded still starts the server
 	  cmd: |
 		set -eu

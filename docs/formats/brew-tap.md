@@ -28,7 +28,7 @@ The route then serves a tap scoped to the credential. That tap holds every publi
 
 A credentialed request to plain `/tap.git` is likewise served in place, rather than redirected. A redirect drops the credential mid-flight.
 
-A private formula carries `repackage.BrewPrivateStrategy` inline, guarded by `unless defined?`. `brew extract` copies a formula into a tap that has no `lib/`, so the formula cannot require a file from this tap. It downloads `using: BuildhostCurlDownloadStrategy`. That strategy sends `Authorization: Bearer $HOMEBREW_BUILDHOST_TOKEN`. The `HOMEBREW_` prefix is mandatory, because Homebrew scrubs every other env var before formula code runs. The tap itself never embeds a token. The authenticated dl redirect completes the chain with its signed-token Location.
+A private formula carries `repackage.BrewPrivateStrategy` inline, guarded by `unless defined?`. `brew extract` copies a formula into a tap that has no `lib/`. The formula cannot require a file from this tap. It downloads `using: BuildhostCurlDownloadStrategy`. That strategy sends `Authorization: Bearer $HOMEBREW_BUILDHOST_TOKEN`. The `HOMEBREW_` prefix is mandatory, because Homebrew scrubs every other env var before formula code runs. The tap itself never embeds a token. The authenticated dl redirect completes the chain with its signed-token Location.
 
 A credentialed tap or formula response carries `Cache-Control: private, no-store` and `Vary: Authorization`. The CDN can therefore never serve one scope's tap to another.
 

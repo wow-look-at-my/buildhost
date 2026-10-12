@@ -1,7 +1,9 @@
 #
-# Every download went out unstripped and fmt=symbols could not work. The unit
-# tests all passed, because the runner has binutils and the container does not.
-# Only a check against the real image sees this.
+# This exists because stripping stopped happening and nobody noticed for weeks.
+# It shelled out to strip(1)/objcopy(1), which the distroless image does not
+# ship. Every download went out unstripped and fmt=symbols could not work. The
+# unit tests all passed, because the runner has binutils and the container does
+# not. Only a check against the real image sees this.
 #
 # Needs curl, jq, readelf and the docker CLI, so a workflow runs it
 # --no-sandbox.
@@ -59,8 +61,8 @@ tests:
 		stdout:
 			- "stripped"
 
-	# Checked against the SECTION TABLE, not by searching for the string: the
-	# section-name string table keeps every name it ever held, so ".debug_info"
+	# Checked against the SECTION TABLE, not by searching for the string. The
+	# section-name string table keeps every name it ever held. So ".debug_info"
 	# is still present as BYTES in a correctly stripped file.
 	- desc: the stripped download is a usable ELF with its debug sections gone
 	  cmd: |

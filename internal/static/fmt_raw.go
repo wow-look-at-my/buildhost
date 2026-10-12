@@ -44,7 +44,7 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 	// The raw artifact can be served either decompressed (identity) or.
 	w.Header().Set("Vary", "Accept-Encoding")
 
-	// zstd passthrough: when we are not stripping (stripping needs the real ELF
+	// zstd passthrough. When we are not stripping (stripping needs the real ELF
 	// bytes) and the client accepts zstd, stream the stored zstd blob straight to
 	// the client with Content-Encoding: zstd. buildhost never decompresses it --
 	// the client bears that cost. Falls through to the normal decompressing path

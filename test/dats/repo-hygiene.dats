@@ -1,5 +1,5 @@
 # A tracked build artifact drifts from the source it claims to come from,
-# silently, for as long as nobody rebuilds -- which is how the admin dashboard
+# silently, for as long as nobody rebuilds. That drift is how the admin dashboard
 # shipped a bundle nothing in frontend/src produced. These run after generate,
 # so a tracked generated file shows up as a dirty tree.
 #
