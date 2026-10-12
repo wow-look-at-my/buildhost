@@ -26,7 +26,7 @@ The payload is one JSON object, every field a non-empty string:
 
 ## Reading it
 
-Read the last several bytes. If the last 16 are not the magic, the file has no stamp. Otherwise the bytes before the magic are the payload length, and the payload sits before them.
+Read the length field and the magic from the end of the file, as the reader below does. A file whose last bytes are not the magic has no stamp. Otherwise the length field before the magic gives the payload size, and the payload sits before the length field.
 
 ```go
 func readStamp(f *os.File) (map[string]string, error) {
