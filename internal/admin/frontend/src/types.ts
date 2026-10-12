@@ -52,6 +52,23 @@ export interface DashboardData {
     cpu_total: string;
 }
 
+// "auto" defers to the next level up: build -> project -> folder -> GitHub repo.
+export type VisibilityMode = "auto" | "public" | "private";
+
+export interface ProjectVisibility {
+    mode: VisibilityMode;
+    auto_private: boolean;
+    folder_prefix: string;
+    folder_mode: VisibilityMode;
+    private: boolean;
+}
+
+export interface VisibilityFolder {
+    prefix: string;
+    mode: VisibilityMode;
+    updated_at: string;
+}
+
 export interface ProjectSummary {
     id: number;
     name: string;
@@ -61,6 +78,7 @@ export interface ProjectSummary {
     release_count: number;
     artifact_count: number;
     created_at: string;
+    visibility?: ProjectVisibility;
 }
 
 export interface Project {
@@ -71,6 +89,7 @@ export interface Project {
     license: string;
     versioning: string;
     is_private: boolean;
+    github_repo?: string;
     created_at: string;
     updated_at: string;
 }
@@ -90,6 +109,7 @@ export interface SiteInfo {
     file_count: number;
     size: number;
     git_commit: string;
+    is_public?: boolean;
     updated_at: string;
 }
 
@@ -99,6 +119,9 @@ export interface ProjectData {
     releases: ReleaseSummary[];
     sites: SiteInfo[];
     base_url: string;
+    visibility?: ProjectVisibility;
+    release_modes?: Record<string, VisibilityMode>;
+    site_modes?: Record<string, VisibilityMode>;
 }
 
 export interface Release {
@@ -139,6 +162,7 @@ export interface ReleaseData {
     services: ServiceURLs;
     project: Project;
     release: Release;
+    release_mode?: VisibilityMode;
     artifacts: ArtifactDetail[];
     total_downloads: number;
     total_size: number;
@@ -307,6 +331,8 @@ export interface TreeRow {
     kind: "folder" | "project";
     depth: number;
     name?: string;
+    // path is a folder's full prefix, e.g. "owner/repo".
+    path?: string;
     project?: ProjectSummary;
 }
 
