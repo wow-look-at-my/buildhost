@@ -159,7 +159,6 @@ runs:
         script: |
           const { recordReleaseArtifacts } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
           const upload = require("${{ github.action_path }}/../lib/upload.ts") as typeof import("${{ github.action_path }}/../lib/upload");
-          const stamp = require("${{ github.action_path }}/../lib/stamp.ts") as typeof import("${{ github.action_path }}/../lib/stamp");
           await (async () => {
             const inputProject: string = "${{ inputs.project }}";
             const inputVersion: string = "${{ inputs.version }}";
@@ -428,14 +427,10 @@ runs:
               const items = group.slots;
               const slotURL = (os: string, arch: string) =>
                 `/api/v1/projects/${proj}/releases/${releaseVersion}/artifacts/${os}/${arch}?kind=binary`;
-              // every binary uploads as a stamped copy that names this project's release; see docs/release-stamp.md
-              const stampDir = path.join(process.env.RUNNER_TEMP || os.tmpdir(), "buildhost-stamp", proj, releaseVersion);
-              const stamped = (file: string): string =>
-                stamp.stampCopy(path.join(sourceDir, file), path.join(stampDir, file), { project: proj, release: releaseVersion, revision: gitCommit });
 
               // one file that runs on several platforms: ONE artifact carrying the whole set, so consumers see one download link instead of one per platform
               for (const entry of group.portable) {
-                const full = entry.kind === "binary" ? stamped(entry.file) : path.join(sourceDir, entry.file);
+                const full = path.join(sourceDir, entry.file);
                 const sum = await fileSHA256(full);
                 const url = `/api/v1/projects/${proj}/releases/${releaseVersion}/artifacts/ape?platforms=${entry.platforms.join(",")}&kind=${entry.kind}`;
                 const r = await putFile(url, full, sum, { "X-Artifact-Filename": entry.filename });
@@ -448,15 +443,14 @@ runs:
               }
 
               // hashed unconditionally: the storage record needs it for every slot, and it's one streaming read of a file this loop is about to read anyway
-              const byContent = new Map<string, { file: string; os: string; arch: string; body: string }[]>();
+              const byContent = new Map<string, { file: string; os: string; arch: string }[]>();
               for (const item of items) {
-                const body = stamped(item.file);
-                const sum = await fileSHA256(body);
-                byContent.set(sum, [...(byContent.get(sum) ?? []), { ...item, body }]);
+                const sum = await fileSHA256(path.join(sourceDir, item.file));
+                byContent.set(sum, [...(byContent.get(sum) ?? []), item]);
               }
 
               for (const [sum, group] of [...byContent.entries()]) {
-                const bodyPath = group[0].body;
+                const bodyPath = path.join(sourceDir, group[0].file);
                 const record = () => {
                   for (const { os: fileOs, arch } of group) {
                     uploadedSlots.push({ project: proj, version: releaseVersion, os: fileOs, arch, sha256: sum });
