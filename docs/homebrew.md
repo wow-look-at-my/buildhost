@@ -50,11 +50,11 @@ brew version-install pazer/build/go-toolchain@1.0.0
 
 Homebrew copies that release's formula out of the tap history into a personal `<user>/versions` tap, as `<formula>@<version>`, and installs it from there. A pinned version is keg-only, so it installs beside the latest one without a link conflict. Run it from `$(brew --prefix go-toolchain@1.0.0)/bin/go-toolchain`, or `brew link --force` it after `brew unlink go-toolchain`. When the version asked for is the latest one, `brew version-install` installs the ordinary formula instead.
 
-A private project works the same way through the authenticated tap, with `HOMEBREW_BUILDHOST_TOKEN` set as above. A release appears in the history once buildhost has hashed its download. A background worker does that at start and whenever a tap refresh finds a release it lacks.
+A private project works the same way through the authenticated tap, with `HOMEBREW_BUILDHOST_TOKEN` set as above. A release appears in the history once buildhost hashed its download. A background worker does that at start and when a tap refresh finds a release it lacks.
 
 ## Background services (create_service)
 
-A project can declare that its binary runs as a background service. Declare it in the publishing repo's CI, with `create_service: 'true'` on the `buildhost-create-release` or `buildhost-publish` action. go-toolchain's composite spells that as `autorelease_args: create_service=true`. Every publish asserts the declared value. An absent input leaves the stored setting untouched. An operator can also flip it directly, with `PATCH /api/v1/projects/{project}` and a body of `{"create_service": true}`.
+A project can declare that its binary runs as a background service. Declare it in the publishing repo's CI. That CI is with `create_service: 'true'` on the `buildhost-create-release` or `buildhost-publish` action. go-toolchain's composite spells that as `autorelease_args: create_service=true`. Every publish asserts the declared value. An absent input leaves the stored setting untouched. An operator can also flip it directly, with `PATCH /api/v1/projects/{project}` and a body of `{"create_service": true}`.
 
 Each install format materializes the setting its own way. A Homebrew formula gains a `service do` block. One command activates it, once. It then starts at login, and it survives an upgrade, because the block runs the `opt` path.
 
@@ -62,6 +62,8 @@ Each install format materializes the setting its own way. A Homebrew formula gai
 brew services start pazer/build/competent-search-thing
 ```
 
-Homebrew cannot run that for you at install. A formula's only install-time hook is `post_install`. That hook runs inside brew's sandbox. That profile denies every file write outside a build path, and `~/Library/LaunchAgents` is one of them. No formula can therefore register a LaunchAgent. `brew uninstall` does not stop a service either. Run `brew services stop <tap>/<project>` before you remove it.
+Homebrew cannot run that for you at install. A formula's only install-time hook is `post_install`. That hook runs inside brew's sandbox. That profile denies every file write outside a build path, and `~/Library/LaunchAgents` is one of them. No formula can therefore register a LaunchAgent. `brew uninstall` does not stop a service either.
+
+Run `brew services stop <tap>/<project>` before you remove it.
 
 The service restarts only after a crash, through `keep_alive successful_exit: false`. A clean exit stays exited. It logs to `$(brew --prefix)/var/log/<name>.log`. On Linux prefer the APT install below, because brew's Linux units carry no graphical-session ordering. The APT section describes the deb materialization, which does auto-enable. Every other format, meaning raw, zip, npm and OCI, stores the flag and materializes nothing.
