@@ -27,6 +27,12 @@ tests:
 		stdout:
 			- "upload: all checks passed"
 
+	- desc: stamp appends one release stamp a reader finds from the end, and the binary still runs
+	  cmd: node test/actions/stamp.test.ts
+	  outputs:
+		stdout:
+			- "stamp: all checks passed"
+
 	- desc: download aborts a transfer that goes silent, and finishes a slow one that keeps sending
 	  cmd: node test/actions/download-stall.test.ts
 	  outputs:
