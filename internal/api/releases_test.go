@@ -118,7 +118,9 @@ func TestCreateRelease_RepoNumberIsNewInEveryChild(t *testing.T) {
 	require.Equal(t, http.StatusCreated, code)
 	assert.Equal(t, "8", built.Version)
 
-	code, published := postRelease(t, h, child, fmt.Sprintf(`{"version":%q}`, built.Version))
+	body, err := json.Marshal(map[string]string{"version": built.Version})
+	require.NoError(t, err)
+	code, published := postRelease(t, h, child, string(body))
 	require.Equal(t, http.StatusCreated, code)
 	assert.Equal(t, int64(8), published.VersionNum)
 }
