@@ -65,7 +65,7 @@ func TestDetectNTBoot(t *testing.T) {
 		"bare pe":  {[]byte("MZ\x90\x00\x03\x00"), NTUnknown},
 		"empty":    {nil, NTUnknown},
 		"ape only": {[]byte("MZqFpD"), NTUnknown},
-		// A PE header past the sniff window is unknown, never a rejection: the
+		// A PE header past the sniff window is unknown, never a rejection.
 		"pe header past sniff window": {apeWithPESections(t, SniffLen*4, 1)[:SniffLen], NTUnknown},
 		// A truncated DOS header cannot even be followed.
 		"truncated before e_lfanew": {apeWithPESections(t, 0x80, 1)[:elfanewOff+2], NTUnknown},

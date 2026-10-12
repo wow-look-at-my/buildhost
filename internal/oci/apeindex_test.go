@@ -26,8 +26,7 @@ const (
 
 // fakeAPE builds a payload with the prologue an APE carries: the magic the
 // detector matches, and the printf call per architecture that the trampoline
-// uses to write a real ELF header over its own copy. Reading a header out of
-// that prologue is how the image ships an ELF, so the fixture must carry them.
+// uses to write a real ELF header over its own copy.
 func fakeAPE() []byte {
 	var b strings.Builder
 	b.WriteString("MZqFpD='\n")
@@ -178,12 +177,12 @@ func TestAPEIndexNarrowerPlatformSets(t *testing.T) {
 	}
 }
 
-// TestAPEIndexFailsLoudlyWhenAChildCannotBeSynthesized covers the drop that
-// used to be silent. A platform the release covers and the registry cannot
-// serve must fail the request. A short index served as success moves the
-// failure to the client's platform matcher, which reports a platform it could
-// not match and no cause. The base layer carries a shell baked in per
-// architecture, so a covered platform with none is a child nothing can build.
+// TestAPEIndexFailsLoudlyWhenAChildCannotBeSynthesized covers the drop. A
+// platform the release covers and the registry cannot serve must fail the
+// request. A short index served as success moves the failure to the client's
+// platform matcher, which reports a platform it could not match and no cause.
+// The base layer carries a shell baked in per architecture, so a covered
+// platform with none is a child nothing can build.
 func TestAPEIndexFailsLoudlyWhenAChildCannotBeSynthesized(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)
@@ -226,10 +225,10 @@ func TestAPEIndexFailsLoudlyWhenAChildIsNotLinked(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "not linked to this project")
 }
 
-// TestAPEPullPathResolvesLinuxAMD64 walks what `docker pull` actually does on a
+// TestAPEPullPathResolvesLinuxAMD64 walks what `docker pull` does on a
 // linux/amd64 host: match a child by platform, fetch that manifest, fetch its
-// config blob, and read the platform back off the config. That is the assertion
-// that would have caught the missing canonical slot.
+// config blob, and read the platform back off the config. That is the
+// assertion that would have caught the missing canonical slot.
 func TestAPEPullPathResolvesLinuxAMD64(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)

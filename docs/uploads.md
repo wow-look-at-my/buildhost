@@ -68,7 +68,7 @@ These are generic chunked upload sessions. A client can deliver an arbitrarily l
 
 **Finalize by reference** is the key move. The `ResolveSessionBody` middleware is wired in `internal/server`, between `Authenticate` and routing. It intercepts any mutating request that carries `?upload_session=<id>` with an empty body. It verifies ownership, and answers 404 otherwise, so there is no existence leak. It verifies the optional `?upload_sha256=` or `X-Upload-SHA256` integrity hash. It then swaps the spool file in as `r.Body`. Every existing endpoint's routing, project auth, size caps and storage logic therefore runs unchanged.
 
-The session is consumed on a 2xx response. It is kept for a retry on any other status. A spool lives at `{DataDir}/tmp/uploads/<id>.spool`. It is capped at `BUILDHOST_MAX_UPLOAD_SIZE` **at append time**. It is swept after `BUILDHOST_UPLOAD_SESSION_TTL`, which defaults to 24h. Three things sweep: an opportunistic sweep on create, a 15-minute janitor that serve starts, and orphan cleanup at startup.
+The session is consumed on a 2xx response. It is kept for a retry on any other status. A spool lives at `{DataDir}/tmp/uploads/<id>.spool`. It is capped at `BUILDHOST_MAX_UPLOAD_SIZE` **at append time**. It is swept after `BUILDHOST_UPLOAD_SESSION_TTL`, which defaults to 24h. Things sweep: an opportunistic sweep on create, a 15-minute janitor that serve starts, and orphan cleanup at startup.
 
 A session is server memory plus a spool file, which is the same model as the OCI blob upload store. A container swap mid-session answers the next chunk with a clean 404, and the client restarts.
 
@@ -84,7 +84,7 @@ The CLI does this automatically. A client decides from the advertised limit BEFO
 
 A small file keeps the classic single request, byte for byte. A larger file creates a session. The engine appends sequential chunks, of 64 MiB by default. `--chunk-size` sets that, and `0` disables chunking. Each chunk has its own retry and backoff, which resumes from the server's committed size, read from a 409 or from the status endpoint. The engine finalizes with the file's sha256. On a hard failure it makes a best-effort DELETE of the session.
 
-A missing session endpoint is a hard error, not a mode. The one buildhost advertises `upload_sessions`. The old 404 and 405 fallback had one real effect. It sent a several-hundred-megabyte single request. The proxy rejected that with a 413 nobody was able to trace back to the client.
+A missing session endpoint is a hard error, not a mode. The buildhost advertises `upload_sessions`. The old 404 and 405 fallback had one real effect. It sent a several-hundred-megabyte single request. The proxy rejected that with a 413 nobody was able to trace back to the client.
 
 The engine lives in `internal/`, and not in `cmd/`. Its tests therefore do not drag the untested CLI package into coverage.
 
@@ -100,7 +100,7 @@ A blob the registry already has is skipped after a HEAD. A blob small enough for
 
 Every upload request sets `GetBody`. Without it net/http declines to retry a request once the body is written, and one mid-flight stream error fails the whole publish.
 
-The layout walk pushes depth-first. It pushes the blobs, then each child manifest by digest, and an attestation manifest is included. It pushes the root by each tag last. It requires exactly one top-level `index.json` entry, so a push carries one image.
+The layout walk pushes depth-first. It pushes the blobs, then each child manifest by digest, and an attestation manifest is included. It pushes the root by each tag last. It requires exactly one top-level `index.json` entry. As a result, a push carries one image.
 
 The `buildhost-publish-docker` action builds with buildx `--output type=oci,tar=false`. It pushes through this client, and builds the CLI from the action's own checkout. A tag that references a foreign registry still goes through buildx `push: true`.
 

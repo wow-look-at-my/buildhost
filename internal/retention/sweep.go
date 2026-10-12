@@ -1,8 +1,9 @@
-// Package retention implements buildhost's eviction policy and reference-counted
-// garbage collection. Policy (keep-N per branch, abandoned-upload sweep) decides
-// which releases to forget; the GC sweep decides when a content-addressed blob is
-// safe to delete. It is the single source of truth shared by the background
-// sweeper, the `buildhost gc` CLI, and the admin reclaimable-bytes estimate.
+// Package retention implements buildhost's eviction policy and
+// reference-counted garbage collection. Policy (keep-N per branch,
+// abandoned-upload sweep) decides which releases to forget; the GC sweep
+// decides when a content-addressed blob is safe to delete. It is the source
+// of truth shared by the background sweeper, the `buildhost gc` CLI, and the
+// admin reclaimable-bytes estimate.
 package retention
 
 import (

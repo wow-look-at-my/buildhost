@@ -23,19 +23,18 @@ var apeMagic = []byte("MZqFpD")
 // SniffLen is how many leading bytes the checks here need. The format check
 const SniffLen = 512
 
-// Offsets in the DOS/PE header chain, all fixed by the PE format itself rather
+// Offsets in the DOS/PE header chain.
 const (
 	elfanewOff = 0x3c // DOS header -> file offset of the PE signature
 	peNsectOff = 6    // PE signature + COFF header -> NumberOfSections
 )
 
-// NTBoot describes whether an APE's PE header can actually boot the binary on
 type NTBoot int
 
 const (
 	// NTUnknown means the sniffed prefix does not settle the question.
 	NTUnknown NTBoot = iota
-	// NTStub is the do-nothing stub header: it keeps the file parseable as a
+	// NTStub is the do-nothing stub header.
 	NTStub
 	// NTReal is a header that maps the payload and enters the runtime.
 	NTReal

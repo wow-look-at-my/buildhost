@@ -27,9 +27,7 @@ const defaultGitHubAPI = "https://api.github.com"
 // upstreamGitHub is the Upstream name reported on an *Error from this source.
 const upstreamGitHub = "github"
 
-// githubSource fetches module content straight from the GitHub REST API. There
-// is deliberately no `go` binary and no `git` subprocess behind this: every
-// failure is an HTTP status we can classify honestly (see errors.go).
+// githubSource fetches module content straight from the GitHub REST API.
 type githubSource struct {
 	client *http.Client
 	// api is the GitHub API root.
@@ -60,7 +58,7 @@ type tagRef struct {
 }
 
 // do issues an authenticated GitHub API request and classifies the response.
-// Every non-2xx becomes a typed *Error here, which is the single place upstream
+// Every non-2xx becomes a typed *Error here, which is the place upstream
 func (g *githubSource) do(ctx context.Context, owner, repo, method, url, mod, ver, accept string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {

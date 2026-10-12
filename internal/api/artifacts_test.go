@@ -375,7 +375,7 @@ func TestPublishRelease_AlreadyPublished(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, rec.Code)
 }
 
-// Note: Project-scoped token isolation tests have been removed. Token scope
+// Note: Project-scoped token isolation tests. Token scope
 
 // --- Security tests: filename sanitization ---
 

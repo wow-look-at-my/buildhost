@@ -10,8 +10,6 @@ import (
 )
 
 // addChunkSizeFlag registers --chunk-size on an upload-capable command.
-// Files larger than the server's direct-upload limit (from
-// GET /api/v1/server-info) are uploaded through a chunked upload session in
 func addChunkSizeFlag(cmd *cobra.Command) {
 	cmd.Flags().String("chunk-size", "",
 		fmt.Sprintf("Chunk size for large uploads (e.g. 64M); 0 disables chunking (default %dM)",

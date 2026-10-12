@@ -8,9 +8,9 @@ For a zero-downtime update, use docker-updater's rolling update mode with an ngi
 
 **Two versions must never share the service alias.** `deploy/nginx.conf` resolves the `buildhost-backend` alias per request. Docker's embedded DNS returns every address an alias resolves to, and it rotates them. Any container that holds that alias is therefore taking live traffic.
 
-docker-updater used to copy the alias onto the replacement at CREATE time. That load-balanced clients across the old and the new IMAGE for the whole health wait. This image sets `HEALTHCHECK --interval=30s --start-period=5s`, so the window ran from 5 to 35 seconds. About half of all requests in it were answered by the build under replacement. That is what made a publish come back missing the `artifacts` field its own release had just added.
+docker-updater used to copy the alias onto the replacement at CREATE time. That load-balanced clients across the old and the new IMAGE for the whole health wait. This image sets `HEALTHCHECK --interval=30s --start-period=5s`, so the window ran from 5 to many seconds. About half of all requests in it were answered by the build under replacement. That is what made a publish come back missing the `artifacts` field its own release had just added.
 
-docker-updater now withholds the aliases until the replacement is healthy. It then moves them and stops the old container. Exactly one version therefore serves a request. Nothing in this repo compensates for version skew any more. The publish action fails on a missing field rather than a retry.
+docker-updater now withholds the aliases until the replacement is healthy. It then moves them and stops the container. Exactly one version therefore serves a request. Nothing in this repo compensates for version skew any more. The publish action fails on a missing field rather than a retry.
 
 ## Ready-to-update endpoint
 
@@ -18,7 +18,7 @@ docker-updater now withholds the aliases until the replacement is healthy. It th
 
 ### The standard `/.well-known/docker-updater/` spellings
 
-The same two handlers also answer at the paths docker-updater discovers by itself, with no label at all:
+The same handlers also answer at the paths docker-updater discovers by itself, with no label at all:
 
 | Path | Same as | Answers |
 |---|---|---|
@@ -75,13 +75,13 @@ The shipped binary is an Actually Portable Executable. The image therefore also 
 
 This is not cosmetic. A rolling updater creates the new container from the *old* container's config. That config carries the entrypoint resolved from the image the old container came from. A container that predates the APE carries `["buildhost"]`. A bare exec of an APE is ENOEXEC, which means exit 126, on a loop. The old container is never replaced, and its stale config is cloned onto every later image. Docker reports the failure against the entrypoint path. The message therefore names a file that is present.
 
-`dats/image-entrypoint.dats` guards the spelling. `go-toolchain` runs it sandboxed on every build. It reads the Dockerfile rather than starting a container, because a bare exec cannot be reproduced from a shell at all. When `execve` answers ENOEXEC the shell runs the file as a script instead, so the broken form looks fine. It covers both spellings: the entrypoint must name the launcher, and the shell must come from an image that ships a static busybox.
+`dats/image-entrypoint.dats` guards the spelling. `go-toolchain` runs it sandboxed on every build. It reads the Dockerfile rather than starting a container, because a bare exec cannot be reproduced from a shell at all. When `execve` answers ENOEXEC the shell runs the file as a script instead. As a result, the broken form looks fine. It covers both spellings: the entrypoint must name the launcher. The shell must come from an image that ships a static busybox.
 
-`test/dats/image-entrypoints.dats` is the runtime half, and `container-healthcheck` runs it. It starts the built image once per spelling an old container can carry: the bare name on PATH, the absolute launcher path, and a shell in front of the path. It also asserts that nothing the image ships names an ELF interpreter, because the base image has no `/lib` to load one from.
+`test/dats/image-entrypoints.dats` is the runtime half, and `container-healthcheck` runs it. It starts the built image once per spelling an old container can carry: the bare name on PATH, the absolute launcher path. This is a shell in front of the path. It also asserts that nothing the image ships names an ELF interpreter, because the base image has no `/lib` to load one from.
 
 A bare exec IS reproducible. `docker run --entrypoint buildhost` on an image whose entrypoint path is the APE fails, and docker reports it against that path. It reproduces only where no APE binfmt handler is registered. The handler is host-wide, and containers inherit it. go-toolchain registers one on the runners it uses. With one registered, the kernel runs any APE through a shell. These assertions then cannot fail. The suite refuses to run when it finds one.
 
-`dats/image-entrypoint.dats` guards the spelling. `go-toolchain` runs it sandboxed on every build. It reads the Dockerfile rather than starting a container, because a bare exec cannot be reproduced from a shell at all. When `execve` answers ENOEXEC the shell runs the file as a script instead, so the broken form looks fine.
+`dats/image-entrypoint.dats` guards the spelling. `go-toolchain` runs it sandboxed on every build. It reads the Dockerfile rather than starting a container, because a bare exec cannot be reproduced from a shell at all. When `execve` answers ENOEXEC the shell runs the file as a script instead. As a result, the broken form looks fine.
 
 The runtime question is whether the launcher's target path is right. `container-healthcheck` answers it with `compose up --wait`. The launcher is the entrypoint, so a wrong path there is a container that never starts.
 

@@ -17,8 +17,6 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
-// shellFS carries the busybox every base layer ships. A pull-time fetch made every image need Docker Hub.
-//
 //go:generate go run ./shellgen shell
 //go:embed shell
 var shellFS embed.FS

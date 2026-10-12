@@ -8,19 +8,19 @@ JWT-based auth for GitHub Actions, and for any OIDC provider. The keys come from
 
 A trusted issuer (`BUILDHOST_OIDC_ISSUERS`) can create a project on the first publish. The project name comes from the JWT subject claim. A repo's token is authorized for its own project and for any `<repo>/<...>` sub-namespace. A multi-binary repo therefore publishes each binary to `<repo>/<binary>`, such as `log-streamer/client`.
 
-Two allowlists gate this path. `BUILDHOST_OIDC_ORGS` is the org allowlist. It matches case-insensitively, and `*` allows every org. `BUILDHOST_OIDC_EVENTS` is the event allowlist. It defaults to `push,pull_request,workflow_dispatch`.
+Allowlists gate this path. `BUILDHOST_OIDC_ORGS` is the org allowlist. It matches case-insensitively, and `*` allows every org. `BUILDHOST_OIDC_EVENTS` is the event allowlist. It defaults to `push,pull_request,workflow_dispatch`.
 
-All three default events imply write access to the repo. A push comes from a member. A fork PR gets no OIDC token, so `pull_request` means a same-repo PR. Only a user with repo write access can trigger a manual `workflow_dispatch` run.
+All default events imply write access to the repo. A push comes from a member. A fork PR gets no OIDC token, so `pull_request` means a same-repo PR. Only a user with repo write access can trigger a manual `workflow_dispatch` run.
 
 The project name comes from the subject claim (`repo:org/name:*` gives `name`). It is lowercased and validated against `[a-z0-9][a-z0-9._-]{0,127}`. The token is authorized to read and write that repo's whole namespace. That namespace is project `R` plus any slash-namespaced `R/<...>` beneath it. A trailing-slash boundary gates the match, so a sibling prefix such as `R-evil` is refused. An unrelated project is refused too. `requireProject` validates an auto-created namespaced name per segment before it creates the project.
 
-**Provisioning is write-only.** `requireProject` creates a missing project only for a `WriteAccess` route. Those routes are the publish POST and PUT flow, the docker push, and the site deploy. A read never provisions. `ReadAccess` and `HiddenReadAccess` cover `dl`, `static`, `apt`, `brew`, `npm` and the web frontend. A GET returns 404 instead, so a read can never materialize a project as a side effect.
+**Provisioning is write-only.** `requireProject` creates a missing project only for a `WriteAccess` route. Those routes are the publish POST and PUT flow, the docker push, and the site deploy. A read never provisions. `ReadAccess` and `HiddenReadAccess` cover `dl`, `static`, `apt`, `brew`, `npm` and the web frontend. A GET returns 404 instead. As a result, a read can never materialize a project as a side effect.
 
 **The `BUILDHOST_OIDC_ORGS` wildcard carries a risk.** A value of `*` lets any GitHub org auto-provision a project. Project names come from repo names. A repo in any org therefore derives the same project name as an existing project of the same name. The first push creates the project. `AuthorizedForProjectName` blocks every later push from another org. Avoid `*` in production. Scope the allowlist to trusted orgs only.
 
 ## Audience check
 
-The auto-provisioning path does NOT gate on the token's `aud` claim. Trust for a trusted-issuer token comes from the JWKS signature, the org allowlist (`BUILDHOST_OIDC_ORGS`), the event allowlist (`BUILDHOST_OIDC_EVENTS`), and the subject claim. To tell the server its own URL was never a meaningful trust boundary. A stale or missing value also caused a production 401 outage, so the gate was removed. A per-policy `audience` field on an `OIDCPolicy` is still honored. It is an optional, opt-in restriction for an explicitly configured policy. The server is never told its own URL. Every generated link comes from the request `Host` header (`auth.RequestBaseURL`).
+The auto-provisioning path does NOT gate on the token's `aud` claim. Trust for a trusted-issuer token comes from the JWKS signature, the org allowlist (`BUILDHOST_OIDC_ORGS`), the event allowlist (`BUILDHOST_OIDC_EVENTS`), and the subject claim. To tell the server its own URL was never a meaningful trust boundary. A stale or missing value also caused a production 401 outage. As a result, the gate was removed. A per-policy `audience` field on an `OIDCPolicy` is still honored. It is an optional, opt-in restriction for an explicitly configured policy. The server is never told its own URL. Every generated link comes from the request `Host` header (`auth.RequestBaseURL`).
 
 ## Event check
 
@@ -50,5 +50,5 @@ An operator who repoints a project at a legitimately RE-CREATED repo must clear 
 
 - **OIDC SSRF**: `jwks_uri` must match the issuer's host and must use HTTPS. Loopback is exempt, for tests.
 - **OIDC issuer scheme**: `fetchJWKS` requires HTTPS for a non-loopback issuer.
-- **OIDC RSA key size**: a JWKS key below 2048 bits is rejected.
+- **OIDC RSA key size**: a JWKS key a bounded number of bits is rejected.
 - **OIDC visibility sync**: a change of project visibility from a token's `repository_visibility` claim is logged at WARN level. The log line carries the project name, the old and new visibility, and the OIDC subject.

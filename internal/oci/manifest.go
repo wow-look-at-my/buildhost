@@ -132,8 +132,7 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 	digest := sha256.Sum256(indexData)
 
 	// Persist the index document under its own content digest and link it to the
-	// project, exactly as Generate persisted each child manifest above. The Docker
-	// daemon's classic (non-containerd) image store pulls a tag by reading the
+	// project, exactly as Generate persisted each child manifest above.
 	if err := h.persistManifestBlob(r.Context(), project.ID, indexData, "application/vnd.oci.image.index.v1+json"); err != nil {
 		ociError(w, http.StatusInternalServerError, "UNKNOWN", "failed to persist index")
 		return
@@ -307,7 +306,7 @@ func (h *Handler) serveTags(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Binary projects: each published release with a binary artifact is a
+	// Binary projects.
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)
 	if err != nil {
 		ociError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")

@@ -1,14 +1,8 @@
 // Behavior tests for .github/actions/lib/storage-record.ts.
-//
-// Its own job because nothing else reaches the code: upload-artifact-action-e2e
-// publishes to http://localhost:18080, where the unreachable-registry skip
-// returns before a record is posted. A mistake here fails publishing for every
-// repo in the org at once.
 
 const assert = require('node:assert');
 const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/storage-record`;
-// Untyped on purpose: the module's types are checked where it is CALLED, in
-// the four composites; here the assertions are the contract.
+// Untyped on purpose: the module's types are checked where it is CALLED, in the composites.
 const { recordReleaseArtifacts, recordSite, recordImage } = require(`${lib}.ts`);
 
 type Sent = Record<string, unknown>;
@@ -60,8 +54,7 @@ async function main(): Promise<void> {
 	assert.match(failed[0], /carried no sha256/);
 	assert.deepStrictEqual(sent, []);
 
-	// A site carries NO artifact_url: served unpacked, so no URL returns the
-	// archive bytes its digest covers.
+	// A site carries NO artifact_url: served unpacked, so no URL returns the archive bytes its digest covers.
 	reset();
 	assert.strictEqual(await recordSite(gh(), core, ctx, { server: SERVER, project: 'ue553', branch: 'pr-326', version: 'deadbeef', sha256: SHA }), true);
 	assert.strictEqual(sent[0].artifact_url, undefined);
@@ -99,7 +92,6 @@ async function main(): Promise<void> {
 	assert.strictEqual(info[0], 'Skipping 2 storage records: PazerOP is a user account, which has no linked artifacts page');
 	assert.deepStrictEqual(failed, []);
 
-	// An organization's 404 still fails, and says what it observed.
 	reset();
 	assert.strictEqual(await release(gh(fails(404), 'Organization')), false);
 	assert.match(failed[0], /HTTP 404.*GET \/users\/PazerOP reported 'Organization'.*missing 'artifact-metadata: write'/s);
@@ -109,7 +101,6 @@ async function main(): Promise<void> {
 	assert.strictEqual(await release(gh(fails(404), new Error('network'))), false);
 	assert.match(failed[0], /GET \/users\/PazerOP failed, so the owner type is unknown/);
 
-	// A 403 is a plain refusal, and neither it nor a success costs a lookup.
 	for (const [post, refused] of [[fails(403), true], [async () => ({}), false]] as const) {
 		reset();
 		let probed = false;
@@ -120,8 +111,7 @@ async function main(): Promise<void> {
 		else assert.deepStrictEqual(failed, []);
 	}
 
-	// An over-long artifact_url fails rather than dropping the only link back
-	// to the bytes the digest covers.
+	// An over-long artifact_url fails rather than dropping the only link back to the bytes the digest covers.
 	reset();
 	assert.strictEqual(await release(gh(), { project: `deep/${'n'.repeat(140)}` }), false);
 	assert.match(failed[0], /over the API's 152-char limit/);
@@ -135,7 +125,7 @@ async function main(): Promise<void> {
 }
 
 // Node runs this file directly, so the rejection has to become an exit code
-// here: an unhandled one prints a warning and still exits 0 on some versions.
+// here.
 main().catch((err: unknown) => {
 	console.error(err);
 	process.exit(1);

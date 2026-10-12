@@ -47,8 +47,8 @@ func TestUploadArtifact_CosmoAliasAPEIsOneRow(t *testing.T) {
 }
 
 // TestUploadArtifact_NonAPEAliasStillFansOut pins the other half: when the
-// combinations really are separate builds that happen to share bytes, a row
-// each is still the right answer.
+// combinations are separate builds that happen to share bytes, a row each is
+// still the right answer.
 func TestUploadArtifact_NonAPEAliasStillFansOut(t *testing.T) {
 	t.Serial()
 	h, proj, rel := setupUploadTest(t, "nonapealiasproj")
@@ -61,7 +61,6 @@ func TestUploadArtifact_NonAPEAliasStillFansOut(t *testing.T) {
 	assert.Len(t, rows, 3)
 }
 
-// TestUploadArtifact_AliasRejectsWindowsOnStubPE covers the failure that is
 func TestUploadArtifact_AliasRejectsWindowsOnStubPE(t *testing.T) {
 	t.Serial()
 	h, proj, rel := setupUploadTest(t, "stubpealiasproj")

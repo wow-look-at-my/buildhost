@@ -70,8 +70,7 @@ func debMetadataFingerprint(metadata string) string {
 func debDigestFingerprint(project *db.Project, a *db.Artifact) string {
 	withService := project.CreateService && a.Kind == db.KindBinary
 	hsh := sha256.New()
-	// repackage.TransformVersion is part of the fingerprint because the deb's
-	// payload is the artifact AFTER download-time transformation: if stripping
+	// repackage.TransformVersion is part of the fingerprint because the deb's payload is the artifact AFTER download-time transformation.
 	inputs := []string{project.Name, project.Description, project.Homepage, fmt.Sprintf("service=%t", withService), repackage.TransformVersion}
 	// Only a set value joins the inputs, so a project with no Depends keeps its cached digest.
 	if project.AptDepends != "" {

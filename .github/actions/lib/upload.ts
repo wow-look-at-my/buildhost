@@ -1,22 +1,9 @@
 // Delivering an artifact body from a composite action.
-//
-// Cloudflare's edge answers 413 to a request body over 100 MB, and that 413
-// never reaches the origin. So a body larger than the server's advertised
-// `max_direct_upload_bytes` is assembled through an upload session instead:
-// POST /api/v1/uploads, PATCH .../{id}?offset=N per chunk, then the ORIGINAL
-// endpoint with an empty body and ?upload_session=&upload_sha256=.
-//
-// The size decision is made BEFORE anything is sent, from server-info. There is
-// deliberately no path that sends a big PUT and reacts to a 413. This mirrors
-// internal/uploadclient, which is the CLI's engine for the same protocol.
-//
-// Loaded by `require(".../upload.ts")` (node strips the types) typed as
-// `typeof import(".../upload")`. See docs/uploads.md.
 
-/** 64 MiB, matching internal/uploadclient.DefaultChunkSize. */
+/* */
 export const DefaultChunkSize = 64 << 20;
 
-/** What the server advertises by default (95 MiB), when server-info is unreadable. */
+/* */
 export const DefaultDirectLimit = 95 << 20;
 
 /** How many times a chunk that commits no bytes is retried before giving up. */
@@ -55,13 +42,13 @@ export interface PutFileOptions {
 	body: Body;
 	/** Extra request headers, e.g. `X-Artifact-Filename`. */
 	headers?: Record<string, string>;
-	/** Bytes per chunk. 0 forces a direct upload however large the body is. */
+	/** Bytes per chunk. Forces a direct upload however large the body is. */
 	chunkSize?: number;
-	/** Largest direct body. Omitted asks the server, then falls back to 95 MiB. */
+	/** Largest direct body. */
 	directLimit?: number;
 }
 
-/** Reads the server's advertised direct-body limit, falling back to 95 MiB. */
+/* */
 export async function directLimit(send: Send, core: Core): Promise<number> {
 	const resp = await send('GET', '/api/v1/server-info');
 	if (resp.status !== 200) {
@@ -74,17 +61,13 @@ export async function directLimit(send: Send, core: Core): Promise<number> {
 			return info.max_direct_upload_bytes;
 		}
 	} catch {
-		// An unparseable body is the same as an unreachable one.
 	}
 	core.warning(`server-info carried no max_direct_upload_bytes; assuming ${DefaultDirectLimit >> 20} MiB`);
 	return DefaultDirectLimit;
 }
 
-/**
- * Sends the body to `urlPath`, directly when it fits and through an upload
- * session when it does not. The returned response is the artifact endpoint's
- * own, so callers keep checking for 201 exactly as before.
- */
+/** Sends the body to `urlPath`, directly when it fits and through an upload
+ * session when it does not. */
 export async function putFile(send: Send, core: Core, opts: PutFileOptions): Promise<Response> {
 	const size = opts.body.size;
 	const chunkSize = opts.chunkSize ?? DefaultChunkSize;
@@ -150,9 +133,8 @@ async function sendChunks(send: Send, core: Core, id: string, body: Body, size: 
 	}
 }
 
-// 200 and 409 both carry the committed size: 409 is the server rejecting the
-// offset and telling us the real one. Anything else asks the status endpoint,
-// because the bytes may have landed before the answer went missing.
+// Anything else asks the status endpoint, because the bytes may have landed
+// before the answer went missing.
 async function appendChunk(send: Send, id: string, offset: number, chunk: Buffer): Promise<number> {
 	const resp = await send('PATCH', `/api/v1/uploads/${encodeURIComponent(id)}?offset=${offset}`, chunk);
 	if (resp.status === 200 || resp.status === 409) {
@@ -184,6 +166,5 @@ async function abortSession(send: Send, id: string): Promise<void> {
 	try {
 		await send('DELETE', `/api/v1/uploads/${encodeURIComponent(id)}`);
 	} catch {
-		// nothing to do
 	}
 }

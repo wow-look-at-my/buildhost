@@ -36,7 +36,7 @@ What the job INSTALLS is the real thing. The public `go-toolchain` project is se
 
 The fixture's FILE TYPE is the whole point. Homebrew's Cleaner decides an installed file's mode from it. The previous `#!/bin/sh` stand-in was classified executable whatever happened. No formula regression was therefore able to turn the job red. That is how a `0444`, unrunnable `brew install go-toolchain` shipped while CI stayed green.
 
-A second project, `ape-fixture`, is a synthetic APE SHAPE. It carries no `#!`. It is neither an ELF nor a Mach-O. It appends to `$0` before it prints its marker, which stands in for self-assimilation, so a `0555` install fails too.
+A second project, `ape-fixture`, is a synthetic APE SHAPE. It carries no `#!`. It is neither an ELF nor a Mach-O. It appends to `$0` before it prints its marker, which stands in for self-assimilation. As a result, a `0555` install fails too.
 
 go-toolchain ships an APE only on Linux. Its darwin artifacts are plain Mach-O, which brew recognizes. The fixture therefore keeps the mode invariant covered on the macOS runner, and for any publisher that ships a Cosmopolitan binary. Both installs assert `-x` AND `-w` on the installed file before they execute it.
 
@@ -112,7 +112,7 @@ Some checks need a program rather than a shell: octokit fakes, a browser crawl, 
 
 ## The route table golden (docs/routes.txt)
 
-`docs/routes.txt` is the committed route table, rendered by the program itself (`auth.AllRoutes()`, the same enumeration `buildhost routes` prints) and never parsed out of source. Two gates keep it honest, both fail-on-drift:
+`docs/routes.txt` is the committed route table, rendered by the program itself (`auth.AllRoutes()`, the same enumeration `buildhost routes` prints) and never parsed out of source. Gates keep it honest, both fail-on-drift:
 
 - `internal/routescheck/golden_test.go` fails the ordinary build when the route set differs from the file, naming the regeneration command.
 - The `route-diff` CI job re-checks the file against the REAL BINARY's `routes` output. The golden can therefore never describe a route the shipped program does not serve.
@@ -121,4 +121,4 @@ Regenerate with `go-toolchain && ./build/buildhost routes > docs/routes.txt`, or
 
 It exists because this repo has no central router file. Every backend self-registers from its own `init()`. Before the golden, an added endpoint therefore left nothing route-shaped in Files Changed for a reviewer to look at. The golden turns a new route into an ordinary one-line diff. It also makes a duplicated or unintended route impossible to land unnoticed.
 
-`internal/routescheck/routes_test.go` guards the mechanism the golden depends on: routes must register in `init()`, not inside an `auth.OnReady()` callback. OnReady fires only from `auth.Init()` at server boot, so a route registered there is invisible to `buildhost routes`, to the golden, and to the route-diff check. Its `want` list covers every backend including `/api/v1`.
+`internal/routescheck/routes_test.go` guards the mechanism the golden depends on: routes must register in `init()`, not inside an `auth.OnReady()` callback. OnReady fires only from `auth.Init()` at server boot, so a route registered there is invisible to `buildhost routes`, to the golden. This is to the route-diff check. Its `want` list covers every backend including `/api/v1`.

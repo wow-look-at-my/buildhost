@@ -94,7 +94,6 @@ func (h *Handler) PutManifest(w http.ResponseWriter, r *http.Request, reference 
 		return
 	}
 
-	// Verify every referenced blob/manifest was already pushed and link it to the
 	var refs []descriptor
 	if index {
 		refs = m.Manifests
@@ -133,7 +132,7 @@ func (h *Handler) PutManifest(w http.ResponseWriter, r *http.Request, reference 
 	}
 
 	// If this exact image (same manifest digest) is already tagged, point the
-	// new tag at the existing release rather than creating a duplicate. This is
+	// new tag at the existing release rather than creating a duplicate.
 	if relID := h.releaseForDigest(ctx, project.ID, digest); relID != 0 {
 		if err := h.DB.SetOCITag(ctx, project.ID, reference, digest, relID); err != nil {
 			ociError(w, http.StatusInternalServerError, "UNKNOWN", "failed to set tag")

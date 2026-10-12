@@ -68,8 +68,8 @@ func TestAdminRetention_UpdateValidation(t *testing.T) {
 
 // An enforcing on-demand run defers while writes are in flight (like the
 // background sweeper): it could otherwise free a blob a mid-flight write --
-// e.g. a hash-reference upload that just passed its existence check -- is
-// about to reference. Report-only runs mutate nothing and stay allowed.
+// e.g. a hash-reference upload that passed its existence check -- is about to
+// reference. Report-only runs mutate nothing and stay allowed.
 func TestAdminRetention_RunEnforceDefersOnInflightWrites(t *testing.T) {
 	t.Serial()
 	srv, _ := newTestServer(t)
