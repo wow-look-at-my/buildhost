@@ -2,7 +2,9 @@
 
 ## What the packument reflects (extracted verbatim from CLAUDE.md)
 
-A pre-built `kind=npm-package` artifact's packument **reflects the uploaded tarball's own `package.json` manifest**. It does not emit a bare `{name,version,dist}` stub. `npmManifestFields` reads `package/package.json` from the stored tarball. It surfaces `dependencies`, `optionalDependencies`, `peerDependencies`, `peerDependenciesMeta`, `bundle(d)Dependencies`, `bin`, `os`, `cpu` and `engines`. Without that, a package whose runtime depends on those fields publishes with an empty dependency graph and installs as an inert no-op. A launcher whose `optionalDependencies` are its per-platform binary packages is one such package. npm resolves against the packument, not the tarball. `name`, `version` and `dist` stay buildhost-authoritative. A lifecycle `scripts` block is deliberately never surfaced, because serving a packument must not imply that install hooks run. An unreadable blob falls back to the minimal entry.
+A pre-built `kind=npm-package` artifact's packument **reflects the uploaded tarball's own `package.json` manifest**. It does not emit a bare `{name,version,dist}` stub. `npmManifestFields` reads `package/package.json` from the stored tarball. It surfaces `dependencies`, `optionalDependencies`, `peerDependencies`, `peerDependenciesMeta`, `bundle(d)Dependencies`, `bin`, `os`, `cpu` and `engines`. Without that, a package whose runtime depends on those fields publishes with an empty dependency graph and installs as an inert no-op. A launcher whose `optionalDependencies` are its per-platform binary packages is one such package. npm resolves against the packument, not the tarball.
+
+`name`, `version` and `dist` stay buildhost-authoritative. A lifecycle `scripts` block is deliberately never surfaced, because serving a packument must not imply that install hooks run. An unreadable blob falls back to the minimal entry.
 
 ## The defect
 
@@ -45,13 +47,15 @@ Against a real `buildhost serve` seeded with multiple published releases of the 
 
 ## Producer-side follow-up
 
-buildhost cannot seek inside a gzip member. A publisher can put `package/package.json` FIRST in the tarball, which is what `npm pack` itself does. A cold extraction then reads about 1 KB instead of 33 MB. `cc-marketplace`'s `marketplace-build package-plugin` builds its tarball with `tar -cf - -C dir .`, which is readdir order. That is how `package.json` ended up behind the platform binaries. A fix there makes a cold packument nearly free. The cache is what keeps buildhost correct for every other publisher.
+buildhost cannot seek inside a gzip member. A publisher can put `package/package.json` FIRST in the tarball, which is what `npm pack` itself does. A cold extraction then reads about 1 KB instead of 33 MB. `cc-marketplace`'s `marketplace-build package-plugin` builds its tarball with `tar -cf - -C dir .`, which is readdir order. That is how `package.json` ended up behind the platform binaries. A fix there makes a cold packument almost free.
+
+The cache is what keeps buildhost correct for every other publisher.
 
 ## Regression checks
 
 `internal/npm/packument_cache_test.go` asserts by COUNTING BLOB READS rather than by timing. As a result, it fails deterministically if per-request work ever becomes proportional to the release count again:
 
-- a warm packument reads **zero** blobs and serves byte-identical JSON to the cold one.
+- a warm packument reads **zero** blobs and serves byte-same JSON to the cold one.
 - a cold packument reads each release's blob exactly once, and **once in total** when the releases share a blob.
 - an unreadable blob is read once, then never again.
 - an exhausted budget returns `503` with `Retry-After`, not a stripped `200`. The next request converges to a full packument.
