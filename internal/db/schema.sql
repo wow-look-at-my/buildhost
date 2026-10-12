@@ -221,3 +221,31 @@ CREATE TABLE run_locks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_run_locks_created ON run_locks(created_at);
+
+-- Visibility overrides (mirrored from migrations/020_visibility_overrides.sql).
+CREATE TABLE visibility_folders (
+    prefix     TEXT PRIMARY KEY,
+    mode       TEXT NOT NULL CHECK (mode IN ('public', 'private')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE project_visibility (
+    project_id   INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    mode         TEXT NOT NULL DEFAULT 'auto' CHECK (mode IN ('auto', 'public', 'private')),
+    auto_private INTEGER NOT NULL,
+    updated_at   DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE release_visibility (
+    release_id INTEGER PRIMARY KEY REFERENCES releases(id) ON DELETE CASCADE,
+    mode       TEXT NOT NULL CHECK (mode IN ('public', 'private')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE site_visibility (
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    branch     TEXT NOT NULL,
+    mode       TEXT NOT NULL CHECK (mode IN ('public', 'private')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (project_id, branch)
+);

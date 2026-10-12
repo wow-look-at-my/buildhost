@@ -4,7 +4,7 @@ Static site hosting: `internal/sites/`. Upload tar.gz (or zip) archives, serve f
 
 Files carry the URL grammar, in the order a request meets them. `resolve.go` turns a `<ref>[/<path>]` remainder into the branch that serves it. `canonical.go` decides which URL is THE URL, and how every other spelling redirects toward it. `serve.go` streams the bytes.
 
-This was extracted verbatim from CLAUDE.md's `internal/sites/` entry, which had grown into a manual. The apex-path section below is the only new prose.
+This was extracted verbatim from CLAUDE.md's `internal/sites/` entry, which grew into a manual. The apex-path section below is the only new prose.
 
 ## Serving schemes
 
@@ -54,7 +54,9 @@ The collapse is also skipped when the bare URL addresses a DIFFERENT project. `a
 
 Each older form keeps working **only on the scheme it came from**. That asymmetry is easy to misread. `/branch/{branch}/` is classic-scheme only, and 302s to the canonical URL. `~{branch}` is subdomain-scheme only, and 301s to `@`.
 
-`~` has never been a sigil on the classic scheme. `/{project}/~{branch}/<file>` is therefore an ordinary path, which names a literal file `~{branch}/<file>` under the default branch. It answers 404, or 401 on a private project whose root branch is not public. It never answers a redirect. `TestLegacySigil_*` in `internal/sites` pins that. The top-level CLAUDE.md once claimed `~` redirected on the classic scheme too. The top-level CLAUDE.md sent a reader hunting a routing bug that does not exist.
+`~` has never been a sigil on the classic scheme. `/{project}/~{branch}/<file>` is therefore an ordinary path, which names a literal file `~{branch}/<file>` under the default branch. It answers 404, or 401 on a private project whose root branch is not public. It never answers a redirect. `TestLegacySigil_*` in `internal/sites` pins that. The top-level CLAUDE.md once claimed `~` redirected on the classic scheme too.
+
+The top-level CLAUDE.md sent a reader hunting a routing bug that does not exist.
 
 A sigil beats a path segment for one reason. `branch` is an ordinary segment. The old form therefore failed to address a site with a top-level `branch/` directory at all. Every URL in such a site also carried a segment that reads like part of the site.
 
@@ -82,7 +84,7 @@ The dashboard still shows `/branch/` in its endpoint table and its curl snippets
 
 This needs nothing new from a publisher. Every deploy already records its commit, in `sites.git_commit`. That value comes from the `X-Git-Commit` header the CLI and the `buildhost-publish-site` action send, and it defaults to `github.sha`.
 
-Resolution runs branches first, then commits, through `splitSiteBranch` and then `resolveCommitRef`. A branch whose name happens to be hex therefore always wins. No URL that resolved before can be repointed by a commit.
+Resolution runs branches first, then commits, through `splitSiteBranch` and then `resolveCommitRef`. A branch whose name happens to be hex therefore always wins. A commit repointed no URL that resolved before can.
 
 Here is exactly what a commit URL guarantees. A site is keyed `(project, branch)`, and a re-deploy replaces it in place. A commit therefore resolves only while it is still some branch's LIVE deployment. Re-deploy the branch and the old sha answers `404`.
 
@@ -90,11 +92,13 @@ That is the useful half of immutability. The URL serves that build or nothing, a
 
 ### Apex path (`/{project}` and `/{project}/<file>`)
 
-The **bare project root**, `/{project}/`, serves `index.html` straight from the project's `default_branch`. buildhost learns that branch from GitHub on publish. It is often `main`. The seed default is `master`, which is the same branch the apex download `latest` tracks. A project's root URL therefore resolves to its canonical site, without the caller's knowledge of which branch it lives on, and with no redirect hop.
+The **bare project root**, `/{project}/`, serves `index.html` straight from the project's `default_branch`. buildhost learns that branch from GitHub on publish. It is frequently `main`. The seed default is `master`, which is the same branch the apex download `latest` tracks. A project's root URL therefore resolves to its canonical site, without the caller's knowledge of which branch it lives on, and with no redirect hop.
 
 `/{project}` without the slash `301`s to `/{project}/`. A relative link in `index.html` then resolves under the project, rather than under the host root.
 
-The resolved `default_branch` can have **no published site**. That happens when the GitHub-learned default lags at the seed `master`, while every site was deployed to `main`. The lag comes from a private repo buildhost failed to reach, which left its real default unknown. The root then falls back to a branch that *does* have a site. It prefers the conventional `main` and `master` names over a more-recently-updated ephemeral PR-preview branch. It takes the newest site as a last resort. The root therefore never serves a guaranteed 404. `resolveRootBranch` in `serve.go` does this. The serve, the `@{default}` collapse and the public-read gate all use it, so they stay consistent. With no sites at all it keeps the default branch unchanged.
+The resolved `default_branch` can have **no published site**. That happens when the GitHub-learned default lags at the seed `master`, while every site was deployed to `main`. The lag comes from a private repo buildhost failed to reach, which left its real default unknown. The root then falls back to a branch that *does* have a site. It prefers the conventional `main` and `master` names over a more-recently-updated ephemeral PR-preview branch. It takes the newest site as a last resort.
+
+The root therefore never serves a guaranteed 404. `resolveRootBranch` in `serve.go` does this. The serve, the `@{default}` collapse and the public-read gate all use it, so they stay consistent. With no sites at all it keeps the default branch unchanged.
 
 A **file path under the project root**, `/{project}/<file>`, serves that file from the same resolved default branch. `ServeDefaultBranch` calls `serveSiteFile` for it, which is the same archive lookup, `index.html` and `404.html` handling every other site read uses.
 
@@ -102,7 +106,9 @@ Without that route, only an explicit branch URL served a file, and the bare root
 
 The project and path split is ambiguous by construction, because a project name is slash-namespaced and a file path has slashes too. The router cannot make that split. `{project}` has no wildcard after it, so it binds the WHOLE remainder greedily.
 
-`parseRootRoute` splits it by **longest match against existing projects**. `splitProjectPath` tries segment prefixes from longest to shortest, through `GetProject`. That is the same git-refs-style shadowing rule `splitSiteBranch` applies to a slash-named branch. With projects `org` and `org/repo`, `/org/repo` therefore stays org/repo's root, even when `org`'s site holds a file named `repo`. No URL that resolved before this route served files can be repointed by it. When no prefix names a project, the whole remainder stays the project name. `requireProject` then answers exactly the 404 the bare-root route always did.
+`parseRootRoute` splits it by **longest match against existing projects**. `splitProjectPath` tries segment prefixes from longest to shortest, through `GetProject`. That is the same git-refs-style shadowing rule `splitSiteBranch` applies to a slash-named branch. With projects `org` and `org/repo`, `/org/repo` therefore stays org/repo's root, even when `org`'s site holds a file named `repo`. It repointed no URL that resolved before this route served files can. When no prefix names a project, the whole remainder stays the project name.
+
+`requireProject` then answers exactly the 404 the bare-root route always did.
 
 That resolution only ROUTES. It never grants. `requireProject` applies its normal auth to whatever it resolves. Every candidate is a prefix of the requested path, on a route that already answers 401 for a private project. No name therefore becomes discoverable that was not discoverable already.
 
@@ -116,7 +122,7 @@ Each project whose name is a valid single DNS label is ALSO served at `{project}
 
 The route is registered through `auth.SiteDomainHandle`, from an `auth.OnSiteDomain` hook, because the domain is unknown at `init()`. `buildhost routes` runs the same hook against `auth.SiteDomainPlaceholder`. The route is therefore still enumerable, and it still shows up in a PR's route diff.
 
-The route is GET-only ReadAccess, and it never provisions. `parseSubdomainRoute` builds the SAME `route` struct as the classic scheme. The project is the host label the router's non-final `{project}` host parameter binds. `AllowsPublicRead` and the centralized `requireProject` flow therefore apply verbatim.
+The route is GET-only ReadAccess, and it never provisions. `parseSubdomainRoute` builds the SAME `route` struct as the classic scheme. The project is the host label the router's non-last `{project}` host parameter binds. `AllowsPublicRead` and the centralized `requireProject` flow therefore apply verbatim.
 
 The grammar follows. A bare path serves the **default branch**, through `resolveRootBranch` with `root=true`. That is the exact chain the classic apex path and its gate share. `@<branch>/<path>` serves any other branch behind the `@` sigil, which sits outside the branch charset, so there is no collision.
 
@@ -126,7 +132,9 @@ A slash-named branch resolves by **longest match** against the existing site row
 
 Some things are reserved on the subdomain scheme only. They are the `@` and `~` sigils at the path root, and the literal `/__sso`.
 
-`/__sso` is the cross-domain sign-in redemption endpoint. `internal/auth` registers it inside the same host family. The literal host labels in the `{project}.<site-domain>` pattern outrank every path term. That pattern therefore claims ALL of `*.<site-domain>` one label deep. That claim covers a service label such as `dl` too. A host-agnostic route never serves on a claimed host. Within the family, the literal `/__sso` outranks `{path...}`.
+`/__sso` is the cross-domain sign-in redemption endpoint. `internal/auth` registers it inside the same host family. The literal host labels in the `{project}.<site-domain>` pattern outrank every path term. That pattern therefore claims ALL of `*.<site-domain>` one label deep. That claim covers a service label such as `dl` too. A host-agnostic route never serves on a claimed host.
+
+Within the family, the literal `/__sso` outranks `{path...}`.
 
 The BARE site apex carries no project label. It matches no host-bearing route, and falls through to the host-agnostic routes. `<site-domain>/healthz` and `/__sso` therefore answer there. The web and API surface answers there too, but ONLY while `BUILDHOST_PRIMARY_DOMAIN` is unset. With that value set, those routes are primary-scoped and answer 404 off-apex. See the unknown-domain security note.
 
@@ -136,7 +144,7 @@ A name with `/`, `.` or `_`, or a name many characters, answers 404 on this sche
 
 `setSiteSecurityHeaders`, in `internal/sites/serve.go`, drops the app's strict `Content-Security-Policy` and `X-Frame-Options`. It sets the hosted-site headers instead, and `Access-Control-Allow-Origin: *` is among them. **Every site response must go through it. That includes a redirect. It must happen BEFORE the redirect is written.**
 
-A browser re-checks CORS on each hop of a cross-origin fetch. A redirect that omits the header therefore fails the whole load, even when its target carries it. The browser reports the failure against the ORIGINAL URL, so the 200 at the end of the chain looks innocent. `curl` enforces CORS at no hop. A redirect chain it follows happily can therefore be completely unusable from a page.
+A browser re-checks CORS on each hop of a cross-origin fetch. A redirect that omits the header therefore fails the whole load, even when its target carries it. The browser reports the failure against the ORIGINAL URL, so the 200 at the end of the chain looks innocent. `curl` enforces CORS at no hop. A redirect chain it follows happily can therefore be fully unusable from a page.
 
 This is not hypothetical. The legacy `/{project}/branch/{branch}/` form became a redirect to the canonical spelling. `RedirectLegacyBranch` did not call the helper at all. `ServeDefaultBranch` called it *after* it wrote its root-trailing-slash redirect.
 
@@ -149,13 +157,17 @@ Checks guard it. Both were verified to fail before the fix.
 
 ## Public sites under private projects
 
-A site uploaded with the header `X-Public-Site: true` is stored with `is_public=1`. It is served **without a token, even under a private project**. The sites read route implements `auth.PublicReadAuthorizer`. As a result, the centralized `requireProject` opens just that branch. The project's releases and its other branches stay gated. This is used for a PR preview of a private repo. The `buildhost-publish-site` action sends the header when its `public` input is `true`.
+A site uploaded with the header `X-Public-Site: true` is stored with `is_public=1`. It is served **without a token, even under a private project**. The sites read route implements `auth.PublicReadAuthorizer`. As a result, the centralized `requireProject` opens just that branch. The project's releases and its other branches stay gated. This is used for a PR preview of a private repo.
+
+The `buildhost-publish-site` action sends the header when its `public` input is `true`.
 
 ## Storage and limits
 
 A site is uploaded as tar.gz, with `Content-Type: application/gzip`, or as zip, with `Content-Type: application/zip`. It is stored as an indexed binpazer archive, in `internal/binarchive`. To serve one file is therefore a directory lookup plus a block decode, and not a scan of the whole tar. Server start converts any pre-archive tar blob once. See `docs/site-archives.md`.
 
-The branch routes and the apex path both go through `serveSiteFile`, so both get the indexed read. Each branch is an independent deployment. It holds one row in the `sites` table. A re-deploy of a branch replaces the previous site atomically. The upload size is capped at 256 MiB. A site holds at most 10,000 files. A public site does not change the project's own visibility. That visibility still comes from the OIDC `repository_visibility` claim. It is re-synced on every write.
+The branch routes and the apex path both go through `serveSiteFile`, so both get the indexed read. Each branch is an independent deployment. It holds one row in the `sites` table. A re-deploy of a branch replaces the previous site atomically. The upload size is capped at 256 MiB. A site holds at most 10,000 files.
+
+A public site does not change the project's own visibility. That visibility still comes from the OIDC `repository_visibility` claim. It is re-synced on every write.
 
 ## Fix-forwards shipped with the subdomain scheme
 

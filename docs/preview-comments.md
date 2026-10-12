@@ -4,7 +4,9 @@
 
 ## Why the publish owns it
 
-Publishing per branch pays off when a reviewer opens the preview before merging. A URL that reaches nobody buys nothing. Every consumer that wanted one used to write its own comment step. A reusable workflow in `wow-look-at-my/actions` carried a second implementation of the same comment. It can deploy only a sparse checkout or a run artifact. The org publishes without GitHub Actions artifacts. A consumer that builds its own output therefore had no route through it and wrote a third. That workflow is deleted. Its callers publish through this action directly.
+Publishing per branch pays off when a reviewer opens the preview before merging. A URL that reaches nobody buys nothing. Every consumer that wanted one used to write its own comment step. A reusable workflow in `wow-look-at-my/actions` carried a second implementation of the same comment. It can deploy only a sparse checkout or a run artifact. The org publishes without GitHub Actions artifacts.
+
+A consumer that builds its own output therefore had no route through it and wrote a third. That workflow is deleted. Its callers publish through this action directly.
 
 One publish, one comment.
 
