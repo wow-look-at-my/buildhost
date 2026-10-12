@@ -64,7 +64,7 @@ func TestServe_RendersRequestHost(t *testing.T) {
 
 func TestApexBaseURL_StripsServiceSubdomain(t *testing.T) {
 	t.Serial()
-	// /llms.txt is served on the apex and every service subdomain.
+	// /llms.txt is served on the apex and every service subdomain, but the
 	cases := []struct {
 		host string
 		want string

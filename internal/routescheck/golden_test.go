@@ -27,7 +27,8 @@ func renderRoutes() string {
 	return b.String()
 }
 
-// routesAtStartup is the table before any test runs.
+// routesAtStartup is the table before any test runs. A test here calls
+// auth.Init, which changes what ListRoutes renders.
 var routesAtStartup string
 
 func TestMain(m *testing.M) {
@@ -55,7 +56,7 @@ func TestRouteTableMatchesGolden(t *testing.T) {
 		"the route table changed but %s was not updated.\n%s", goldenPath, regenHint)
 }
 
-// TestGoldenRouteTableIsSorted pins the ordering the golden file relies on.
+// TestGoldenRouteTableIsSorted pins the ordering the golden file relies on: a
 func TestGoldenRouteTableIsSorted(t *testing.T) {
 	t.Serial()
 	lines := strings.Split(strings.TrimSuffix(routesAtStartup, "\n"), "\n")

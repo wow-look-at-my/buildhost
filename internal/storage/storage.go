@@ -13,6 +13,7 @@ type Storage interface {
 	Exists(ctx context.Context, key string) (bool, error)
 }
 
+// ErrCompressedUnsupported is returned by a CompressedGetter wrapper when the
 var ErrCompressedUnsupported = errors.New("storage: compressed passthrough not supported by backend")
 
 // CompressedBlob is a blob's stored bytes returned WITHOUT server-side
@@ -22,12 +23,13 @@ type CompressedBlob struct {
 	io.ReadCloser
 	// Encoding is the HTTP Content-Encoding the bytes carry: "zstd" when the blob
 	Encoding string
-	Size     int64
+	// Size is the number of bytes ReadCloser yields (compressed length when
+	Size int64
 	// OrigSize is the decompressed length of the artifact.
 	OrigSize int64
 }
 
-// CompressedGetter is an optional Storage capability.
+// CompressedGetter is an optional Storage capability. GetCompressed returns a
 type CompressedGetter interface {
 	GetCompressed(ctx context.Context, key string) (*CompressedBlob, error)
 }
@@ -35,7 +37,7 @@ type CompressedGetter interface {
 // ErrRandomUnsupported is returned by a RandomGetter when a blob cannot be read
 var ErrRandomUnsupported = errors.New("storage: random access not supported for this blob")
 
-// ReaderAtCloser is a random-access view of a blob's bytes.
+// ReaderAtCloser is a random-access view of a blob's bytes. It is safe for
 type ReaderAtCloser interface {
 	io.ReaderAt
 	io.Closer

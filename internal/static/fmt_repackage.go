@@ -51,7 +51,7 @@ func (f *repackageFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeCo
 		reader.Close()
 		return err
 	}
-	// The repackager reads the input lazily.
+	// The repackager reads the input lazily, so the input must stay open until the
 	out.Reader = repackage.ChainClose(out.Reader, reader)
 	defer out.Reader.Close()
 

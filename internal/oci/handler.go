@@ -39,7 +39,8 @@ type route struct {
 func (r route) ProjectName() string { return r.project }
 
 // Access is write for push verbs (so requireProject enforces a write-scoped
-// token authorized for the project) and read for pulls.
+// token authorized for the project) and read for pulls. Upload sessions are
+// push-flow state in every method -- the GET status read exists to resume an
 func (r route) Access() auth.AccessLevel {
 	if r.action == "uploads" {
 		return auth.WriteAccess

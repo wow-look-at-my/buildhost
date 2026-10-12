@@ -7,8 +7,9 @@ import (
 	"golang.org/x/mod/module"
 )
 
-// repoRef is a module path resolved onto a GitHub repository: which repo
-// holds it, which directory inside that repo is the module root.
+// repoRef is a module path resolved onto a GitHub repository: which repo holds
+// it, which directory inside that repo is the module root, and therefore which
+// tag prefix its versions carry.
 type repoRef struct {
 	Owner string
 	Repo  string

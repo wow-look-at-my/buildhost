@@ -16,8 +16,10 @@ services:
       - internal
     restart: unless-stopped
 
-  # Opt-in via the "direct-ingress" profile -- the default stack is
-  # unchanged without it:
+  # Direct TLS ingress (no Cloudflare) so artifact uploads of any size work:
+  # the Cloudflare proxy caps request bodies at 100 MB on the Free plan, so
+  # large uploads must skip the tunnel entirely. Opt-in via the
+  # "direct-ingress" profile -- the default stack is unchanged without it:
   #
   #   docker compose --profile direct-ingress up -d
   #

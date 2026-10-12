@@ -26,6 +26,7 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if strings.HasPrefix(r.URL.Path, "/v2/") {
+		// OCI clients (docker pull/push) require the registry error envelope and
 		w.Header().Set("Www-Authenticate", `Basic realm="buildhost"`)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -43,20 +44,20 @@ func unauthorizedResponse(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case !signedIn && TokenFrom(r.Context()) == nil:
 			// Anonymous browser: send them to GitHub to sign in, returning to the
-			// resource afterward.
+			// resource afterward. On a site-domain host the sign-in entrypoint is
 			if target := loginRedirectURL(r); target != "" {
 				http.Redirect(w, r, target, http.StatusSeeOther)
 				return
 			}
 		case signedIn:
 			if SessionTokenDeadFrom(r.Context()) {
-				// Signed in.
+				// Signed in, but the GitHub token embedded in the session cookie is
 				clearCookie(w, r, sessionCookieName, "/")
 				if target := loginRedirectURL(r); target != "" {
 					http.Redirect(w, r, target, http.StatusSeeOther)
 					return
 				}
-				// Site-domain host with no primary domain configured.
+				// Site-domain host with no primary domain configured: the
 				break
 			}
 			// Signed in with a live token, but not authorized for this resource

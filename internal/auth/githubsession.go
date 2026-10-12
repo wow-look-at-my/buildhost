@@ -14,7 +14,7 @@ import (
 
 // --- signed session + state (HMAC over the shared signing key) ---
 
-// mintSession signs the user's login + GitHub token into the session value.
+// mintSession signs the user's login + GitHub token into the session value. The
 func mintSession(login, token string, exp time.Time) string {
 	return signValue("session", login+"\x00"+token, exp)
 }
@@ -31,7 +31,7 @@ func verifySession(value string) (login, token string, ok bool) {
 	return l, t, true
 }
 
-// signinState is the payload bound into the signed OAuth state parameter.
+// signinState is the payload bound into the signed OAuth state parameter: the
 type signinState struct {
 	nonce   string
 	next    string
@@ -163,7 +163,7 @@ func clearCookie(w http.ResponseWriter, r *http.Request, name, path string) {
 
 // apexHost is the registrable host the session cookie is scoped to: the request
 // Host minus port, with a known leading service label (sites/dl/...) stripped --
-// the same apex derivation as apexRootURL. On the apex.
+// the same apex derivation as apexRootURL. On the apex, where /__signin and the
 func apexHost(r *http.Request) string {
 	host := hostNoPort(r.Host)
 	if sd := siteApexOf(host); sd != "" {
@@ -175,7 +175,7 @@ func apexHost(r *http.Request) string {
 	return host
 }
 
-// safeNextURL keeps post-login redirects inside this deployment.
+// safeNextURL keeps post-login redirects inside this deployment: it accepts an
 func safeNextURL(r *http.Request, next string) string {
 	// Sign-in runs on the apex, so the request Host is the apex root.
 	root := RequestBaseURL(r)

@@ -61,7 +61,7 @@ var gcCmd = &cobra.Command{
 // recordDeleterFor builds the sink that retracts an evicted release's
 // artifact-metadata storage records, authenticating as buildhost itself.
 //
-// RegistryURL must match the registry_url the publishing CI recorded.
+// RegistryURL must match the registry_url the publishing CI recorded, which is
 func recordDeleterFor(cfg config.Config) retention.RecordDeleter {
 	registry := ""
 	if cfg.PrimaryDomain != "" {

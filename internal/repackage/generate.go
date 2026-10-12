@@ -154,7 +154,7 @@ func OpenArtifactStream(ctx context.Context, store storage.Storage, artifact db.
 		if serr == nil {
 			return sr, ssize, nil
 		}
-		// Stripping failed on something that looked like an ELF.
+		// Stripping failed on something that looked like an ELF: serve the
 		strip.LogSkipped(ctx, artifact.StorageKey, serr)
 		rc, size, err = store.Get(ctx, artifact.StorageKey)
 		if err != nil {

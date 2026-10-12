@@ -42,6 +42,7 @@ func TestSitesServedFileCSP(t *testing.T) {
 	resp = env.doSubdomainRequest(t, "GET", "sites", "/mysite/app.js", "", nil, false)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+	// The global "default-src 'none'" CSP must be absent on site responses so
 	require.Empty(t, resp.Header.Get("Content-Security-Policy"))
 }
 
@@ -91,7 +92,7 @@ func TestSitesApexPath(t *testing.T) {
 	require.Equal(t, "/apexp/runner.html", resp.Header.Get("Location"))
 	require.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
 
-	// The branch route is unshadowed.
+	// The legacy branch route is unshadowed, and 302s to the canonical URL for
 	resp, _ = siteGet(t, env, "sites.test.local", "/apexp/branch/main/runner.html")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
 	require.Equal(t, "/apexp/runner.html", resp.Header.Get("Location"))
@@ -121,6 +122,7 @@ func TestSitesApexPathVisibility(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, "top-secret", string(body))
 
+	// A public site under a private project serves its files anonymously at the
 	env.createProject(t, "apexpub", true)
 	env.uploadBranchSite(t, "apexpub", "main", true, map[string]string{"preview.html": "public-preview"})
 	resp, text := siteGet(t, env, "sites.test.local", "/apexpub/preview.html")

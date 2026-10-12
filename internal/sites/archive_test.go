@@ -82,7 +82,7 @@ func TestUploadStoresArchiveAndServesByIndex(t *testing.T) {
 	}
 	env.uploadSite(t, "indexed", "main", files)
 
-	// What got stored is an archive, not the tar.
+	// What got stored is an archive, not the tar it used to be.
 	site, err := env.db.GetSite(context.Background(), proj.ID, "main")
 	require.NoError(t, err)
 	rc, _, err := env.store.Get(context.Background(), site.StorageKey)

@@ -1,7 +1,8 @@
 package dl
 
-// Signed-token redirect and platform-alias tests. Split from handler_test.go,
-// which holds the core download/resolution tests and the shared test helpers.
+// Signed-token redirect and platform-alias tests. Split from
+// handler_test.go, which holds the core download/resolution tests and the
+// shared test helpers.
 
 import (
 	"net/http"
@@ -31,7 +32,7 @@ func TestDownload_PrivateProjectRedirectCarriesSignedToken(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
-	// Never a permanent, never a cacheable redirect.
+	// Never a permanent, never a cacheable redirect: the Location embeds a
 	assert.Equal(t, http.StatusFound, rec.Code)
 	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
 

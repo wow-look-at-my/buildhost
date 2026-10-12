@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The invariant this whole package turns on.
+// The invariant this whole package turns on: only a genuine "upstream is
 func TestOnlyNotFoundBecomes404(t *testing.T) {
 	t.Serial()
 	tests := []struct {

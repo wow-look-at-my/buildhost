@@ -260,7 +260,7 @@ type treeEntryRef struct {
 	isTree bool
 }
 
-// parseTreeEntries decodes a tree object body.
+// parseTreeEntries decodes a tree object body: "<mode> <name>\x00" followed by
 func parseTreeEntries(body []byte) ([]treeEntryRef, error) {
 	var out []treeEntryRef
 	rest := body

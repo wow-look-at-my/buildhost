@@ -51,6 +51,7 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, target, http.StatusFound)
 			return
 		}
+		// The bare URL would address a different project (a namespaced sibling
 	}
 
 	if filePath == "" && !strings.HasSuffix(r.URL.Path, "/") {

@@ -143,7 +143,9 @@ func (s *Server) apiMerge(w http.ResponseWriter, r *http.Request) {
 }
 
 func mergePlanJSON(p *db.ProjectMergePlan) map[string]any {
-	// A list field is an array on the wire, never null.
+	// A list field is an array on the wire, never null. Conflicts is only ever
+	// appended to, so a plan with none carries a nil slice, and the dashboard
+	// reads its length: a clean plan, the one worth merging, crashed the page.
 	conflicts := p.Conflicts
 	if conflicts == nil {
 		conflicts = []string{}

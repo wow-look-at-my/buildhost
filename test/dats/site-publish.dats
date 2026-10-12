@@ -4,7 +4,7 @@
 # that serves rather than redirects.
 #
 # The workflow runs the composites -- an action only runs inside a workflow --
-# and hands the results here: LOG is the server's log, BASE and SITES its
+# and hands the results here: LOG is the server's log, BASE and SITES its two
 # hosts, and the SHA/VERSION/SITE_URL values are what the steps reported.
 #
 # This half runs after both site publishes, so the session count covers
@@ -17,6 +17,7 @@ tests:
 	  cmd: |
 		set -eu
 		echo "creates=$(grep -c 'method=POST path=/api/v1/uploads ' "$LOG" || true)"
+		# 4 chunks from the artifact upload plus at least 3 for the ~3 MB site.
 		chunks="$(grep -c 'method=PATCH path=/api/v1/uploads/' "$LOG" || true)"
 		test "$chunks" -ge 7
 		echo "chunks-at-least-7"
@@ -35,6 +36,7 @@ tests:
 		case "$SITE_URL" in
 			*"/branch/"*) echo "advertised the legacy /branch/ spelling" >&2; exit 1 ;;
 		esac
+		# No -L: the advertised URL must answer 200 itself.
 		curl -fsS "${SITE_URL}index.html"
 	  outputs:
 		stdout:
@@ -54,10 +56,11 @@ tests:
 		stdout:
 			- "sites-match"
 
+	# The legacy /branch/ URL is a 302 to the canonical URL for the same file.
 	# Which canonical URL it names depends on which branch is the default, and
 	# this project has no site on main/master, so the fallback is whichever of
-	# both was deployed last. Assert the redirect, then follow the target the
-	# server actually named rather than hard-coding one of both forms.
+	# the two was deployed last. Assert the redirect, then follow the target
+	# the server actually named rather than hard-coding one of the two forms.
 	- desc: the legacy branch URL redirects to the canonical one for the same file
 	  cmd: |
 		set -eu

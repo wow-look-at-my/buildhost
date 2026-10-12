@@ -57,8 +57,8 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		attribute.String("sites.branch", rt.branch),
 	)
 
-	// The branch was stored verbatim (any bytes the router decoded). Enforce the
-	// same charset the rest of the system uses for git refs
+	// The branch was previously stored verbatim (any bytes the router decoded).
+	// Enforce the same charset the rest of the system uses for git refs
 	if !validSiteBranch(rt.branch) {
 		http.Error(w, `{"error":"invalid branch name: 1-256 characters of [a-zA-Z0-9._/-]"}`, http.StatusBadRequest)
 		return
@@ -146,7 +146,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	if storeErr != nil {
 		span.RecordError(storeErr)
 		span.SetStatus(codes.Error, "store failed")
-		// Logged as well as traced: the client gets a generic message.
+		// Logged as well as traced: the client gets a generic message, so
 		slog.Error("sites: store site", "project", project.Name, "branch", rt.branch, "err", storeErr)
 		http.Error(w, `{"error":"failed to store site"}`, http.StatusInternalServerError)
 		return
@@ -158,7 +158,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	)
 
 	gitCommit := r.Header.Get("X-Git-Commit")
-	// Opt-in: a site published with X-Public-Site.
+	// Opt-in: a site published with X-Public-Site: true is served without a
 	isPublic := r.Header.Get("X-Public-Site") == "true"
 
 	site := &db.Site{
@@ -182,7 +182,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete the replaced site's blob only if no other row (another branch.
+	// Delete the replaced site's blob only if no other row (another branch, an
 	if oldKey != "" && oldKey != storageKey {
 		_, _ = retention.DeleteBlobIfUnreferenced(ctx, h.DB, h.Store, oldKey, true)
 	}
@@ -244,7 +244,7 @@ func (h *Handler) storeTar(ctx context.Context, writeTar func(io.Writer) (int, e
 		MaxEntries:   maxFileCount,
 		MaxTotalSize: maxSiteDecompressedSize,
 	})
-	// Unblocks the producer if the archive writer stopped early.
+	// Unblocks the producer if the archive writer stopped early, so the
 	pr.CloseWithError(aerr)
 	res := <-rc
 	if res.err != nil {
@@ -265,7 +265,7 @@ func (h *Handler) storeTar(ctx context.Context, writeTar func(io.Writer) (int, e
 }
 
 // putUncompressed stores a blob without the storage layer's whole-blob zstd
-// wrapper, so its index can be followed with seeks.
+// wrapper, so its index can be followed with seeks. A backend without the
 func putUncompressed(ctx context.Context, s storage.Storage, r io.Reader) (string, int64, error) {
 	if up, ok := s.(storage.UncompressedPutter); ok {
 		return up.PutUncompressed(ctx, r)
@@ -273,7 +273,7 @@ func putUncompressed(ctx context.Context, s storage.Storage, r io.Reader) (strin
 	return s.Put(ctx, r)
 }
 
-// cappedWriter forwards writes to w until more than max bytes have been written.
+// cappedWriter forwards writes to w until more than max bytes have been written, then
 type cappedWriter struct {
 	w   io.Writer
 	n   int64

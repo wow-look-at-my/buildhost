@@ -14,8 +14,9 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// GitHub App authentication for buildhost's own REST lookups (resolving a
-// repo's default branch).
+// GitHub App authentication for buildhost's own REST lookups (resolving a repo's
+// default branch). Preferred over a static PAT: no token to rotate, least-
+// privilege (metadata:read), and installation tokens carry a far higher rate
 
 type githubApp struct {
 	appID      string

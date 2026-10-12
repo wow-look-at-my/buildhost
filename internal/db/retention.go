@@ -29,6 +29,7 @@ func (d *DB) GetRetentionSettings(ctx context.Context) (RetentionSettings, error
 	return RetentionSettings{KeepN: int(row.KeepN), RecencyHours: int(row.RecencyHours)}, nil
 }
 
+// SeedRetentionSettings inserts the initial policy row if absent (INSERT OR
 func (d *DB) SeedRetentionSettings(ctx context.Context, keepN, recencyHours int) error {
 	return d.q.SeedRetentionSettings(ctx, SeedRetentionSettingsParams{
 		KeepN:        int64(keepN),
@@ -63,7 +64,7 @@ type BlobRef struct {
 // When commit is true the deletions are committed and the returned blobs are safe
 // for the caller to delete from storage. When commit is false the transaction is
 // rolled back -- a dry run that changes nothing -- and the returned blobs are
-// exactly what eviction WOULD free.
+// exactly what eviction WOULD free. Because all releases are deleted within the
 func (d *DB) EvictReleases(ctx context.Context, releaseIDs []int64, commit bool) (freed []BlobRef, candidateCount int, err error) {
 	if len(releaseIDs) == 0 {
 		return nil, 0, nil
@@ -139,6 +140,7 @@ func deleteReleaseRows(ctx context.Context, q *Queries, releaseID int64) error {
 	return nil
 }
 
+// IsBlobReferenced reports whether any row in any project still references the
 func (d *DB) IsBlobReferenced(ctx context.Context, key string) (bool, error) {
 	n, err := d.q.IsBlobReferenced(ctx, key)
 	return n != 0, err
@@ -170,6 +172,7 @@ func (d *DB) SumReclaimableBytes(ctx context.Context, keepN int64, recencyCutoff
 	})
 }
 
+// ListArtifactFiles returns every artifact row with the blobs it references and
 func (d *DB) ListArtifactFiles(ctx context.Context) ([]ListArtifactFilesRow, error) {
 	return d.q.ListArtifactFiles(ctx)
 }

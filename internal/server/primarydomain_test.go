@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 
-	// The web frontend registers its routes (GET /, /projects/*.
+	// The web frontend registers its routes (GET /, /projects/*, /_ui/...) in
 	_ "github.com/wow-look-at-my/buildhost/internal/web"
 )
 
@@ -21,6 +21,7 @@ func TestPrimaryDomain_ScopesWebAndAPIToApex(t *testing.T) {
 	t.Serial()
 	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, true)
 
+	// API writes address the primary apex (doRequest sets the Host) -- this is
 	env.createProject(t, "scoped-app", false)
 
 	// Web + API are served on the primary apex.
@@ -67,7 +68,7 @@ func TestPrimaryDomain_ScopesWebAndAPIToApex(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	resp, _ = siteGet(t, env, "evil.example", "/ready-to-update")
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	// docker-updater probes the container by IP, i.e. on an unclaimed host.
+	// docker-updater probes the container by IP, i.e. on an unclaimed host, and
 	resp, _ = siteGet(t, env, "evil.example", "/.well-known/docker-updater/health")
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	resp, _ = siteGet(t, env, "evil.example", "/.well-known/docker-updater/pre-update")
@@ -79,6 +80,7 @@ func TestPrimaryDomain_ScopesWebAndAPIToApex(t *testing.T) {
 	require.Equal(t, http.StatusSeeOther, resp.StatusCode)
 	assert.Contains(t, resp.Header.Get("Location"), "github.com/login/oauth/authorize")
 
+	// The bare site apex loses web/API (asserted above) but keeps the
 	resp, _ = siteGet(t, env, siteTestDomain, "/healthz")
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	resp, body = siteGet(t, env, siteTestDomain, "/__sso?code=garbage")

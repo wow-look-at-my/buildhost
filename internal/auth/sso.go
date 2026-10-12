@@ -55,6 +55,7 @@ func takeSSOHandoff(nonce string) (string, bool) {
 	return h.session, true
 }
 
+// siteApexOf returns the configured site domain when host (no port) is the
 func siteApexOf(host string) string {
 	sd := SiteDomain()
 	if sd == "" {
@@ -84,6 +85,8 @@ func init() {
 	OnSiteDomain(registerSSOHandoffRoutes)
 }
 
+// registerSSOHandoffRoutes registers the /__sso redemption endpoint iff a site
+// domain is configured -- with BUILDHOST_SITE_DOMAIN unset the route table is
 func registerSSOHandoffRoutes(sd string) {
 	if sd == "" || !ssoRegisteredDomains.Add(sd) {
 		return
@@ -131,7 +134,7 @@ func mintSiteHandoff(sessionValue, next string) string {
 func handleSSORedeem(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if requestSiteApex(r) == "" {
-		// The host-agnostic registration answers on every unclaimed host.
+		// The host-agnostic registration answers on every unclaimed host; the
 		http.NotFound(w, r)
 		return
 	}
@@ -168,7 +171,7 @@ func handleSSORedeem(w http.ResponseWriter, r *http.Request) {
 		ssoFailedHTML(w, r, http.StatusBadRequest, "This sign-in link was already used or has expired.", next)
 		return
 	}
-	// apexHost resolves a site-domain request to the site apex.
+	// apexHost resolves a site-domain request to the site apex, so the cookie is
 	setSessionCookie(w, r, session)
 	http.Redirect(w, r, next, http.StatusSeeOther)
 }

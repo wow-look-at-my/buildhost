@@ -18,9 +18,10 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
+// sitesHost is the Host header used by integration tests that go through the
 const sitesHost = "sites.test.local"
 
-// testEnv wires the real auth stack.
+// testEnv wires the real auth stack: requests are dispatched through the
 type testEnv struct {
 	handler http.Handler
 	db      *db.DB
@@ -91,6 +92,7 @@ func TestRouting(t *testing.T) {
 		"style.css":  "body{}",
 	})
 
+	// A file reaches the serving handler and is served -- not redirected into a
 	rec := env.do(t, "GET", "/mysite/style.css", "", nil, false)
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "body{}", rec.Body.String())
@@ -99,7 +101,7 @@ func TestRouting(t *testing.T) {
 	require.Equal(t, http.StatusFound, rec.Code)
 	assert.Equal(t, "/mysite/style.css", rec.Header().Get("Location"))
 
-	// The service answers on the sites subdomain.
+	// The service answers on the sites subdomain, not on the apex with a
 	apex := env.doHost(t, "test.local", "GET", "/sites/mysite/style.css", "", nil, false)
 	assert.Equal(t, http.StatusNotFound, apex.Code, "apex /sites path must not reach the sites handler")
 }
@@ -110,7 +112,7 @@ func TestServe_NestedDirServesIndexNotDirEntry(t *testing.T) {
 	h, d, _ := setupTest(t)
 	proj := seedProject(t, d, "mysite")
 
-	// A tar that, like GNU tar.
+	// A tar that, like GNU tar, carries an explicit directory entry before the
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
@@ -128,7 +130,7 @@ func TestServe_NestedDirServesIndexNotDirEntry(t *testing.T) {
 	h.Upload(prec, put)
 	require.Equal(t, http.StatusCreated, prec.Code)
 
-	// Request the directory.
+	// Request the directory: the URL ends with "/" but the router strips it from
 	get := httptest.NewRequest("GET", "/sites/mysite/branch/main/sub/", nil)
 	get = withRoute(get, proj, route{project: "mysite", branch: "main", path: "sub"})
 	grec := httptest.NewRecorder()

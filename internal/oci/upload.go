@@ -22,7 +22,8 @@ var errBlobTooLarge = errors.New("blob exceeds maximum size")
 // errRangeMismatch is returned when a chunk's Content-Range start does not
 var errRangeMismatch = errors.New("chunk offset does not match committed size")
 
-// uploadSession is an in-progress OCI blob upload.
+// uploadSession is an in-progress OCI blob upload. Bytes are streamed to a temp
+// file under the data dir (never /tmp) and hashed incrementally so the final
 type uploadSession struct {
 	uuid       string
 	mu         sync.Mutex
@@ -33,7 +34,7 @@ type uploadSession struct {
 	lastActive time.Time // guarded by mu; sweep goes by activity, not creation
 }
 
-// uploadStore tracks in-progress blob uploads.
+// uploadStore tracks in-progress blob uploads. Sessions live in memory plus a
 type uploadStore struct {
 	mu       sync.Mutex
 	dir      string

@@ -24,7 +24,7 @@ import (
 )
 
 // manifestPassthroughFields are the package.json fields buildhost surfaces from
-// a pre-built npm-package tarball into its packument version entry.
+// a pre-built npm-package tarball into its packument version entry. They are the
 var manifestPassthroughFields = []string{
 	"dependencies",
 	"optionalDependencies",
@@ -39,8 +39,10 @@ var manifestPassthroughFields = []string{
 }
 
 const (
+	// npmManifestCacheFormat is the packaged_artifacts format under which an
 	npmManifestCacheFormat = "npm-manifest"
 
+	// npmManifestFieldsVersion identifies the extraction contract -- which
 	npmManifestFieldsVersion = 1
 )
 

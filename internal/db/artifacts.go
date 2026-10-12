@@ -82,7 +82,7 @@ func (d *DB) createArtifacts(ctx context.Context, artifacts []*Artifact, sets []
 	return nil
 }
 
-// ArtifactPlatforms returns every (os, arch) slot an artifact occupies.
+// ArtifactPlatforms returns every (os, arch) slot an artifact occupies, in the
 func (d *DB) ArtifactPlatforms(ctx context.Context, artifactID int64) ([]Platform, error) {
 	rows, err := d.q.ListArtifactPlatformsByArtifact(ctx, artifactID)
 	if err != nil {
