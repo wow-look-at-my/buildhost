@@ -40,12 +40,12 @@ func TestVerifyToken_TrustedIssuer_RejectedEvent(t *testing.T) {
 	assert.Contains(t, err.Error(), "event")
 }
 
-// A workflow_dispatch-triggered run (a manual dispatch) carries
-// event_name == "workflow_dispatch". It is in the default allowed-events set
-// (push, pull_request, workflow_dispatch -- see config.Load) because GitHub only
-// lets users with write access to a repo trigger a manual run, and fork actors
-// never receive an OIDC token, so it carries the same write-access guarantee as
-// push. Auto-provisioning must accept it out of the box, otherwise a manual
+// A workflow_dispatch-triggered run (a manual dispatch) carries event_name ==
+// "workflow_dispatch". It is in the default allowed-events set (push,
+// pull_request, workflow_dispatch -- see config.Load). This is because GitHub
+// only lets users with write access to a repo trigger a manual run, and fork
+// actors never receive an OIDC token. It carries the same write-access guarantee
+// as push. Auto-provisioning must accept it out of the box, otherwise a manual
 // release/publish dispatch 401s at docker login.
 func TestVerifyToken_TrustedIssuer_WorkflowDispatchAccepted(t *testing.T) {
 	t.Serial()

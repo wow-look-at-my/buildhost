@@ -15,7 +15,7 @@ import (
 )
 
 // resolvePEM must hand SetGitHubApp a parseable key no matter how the GitHub App
-// private key was supplied: inline PEM with real newlines, inline PEM with the
+// private key was supplied. Inline PEM with real newlines, inline PEM with the
 // newlines escaped to the literal sequence "\n" (the usual shape after a
 // multi-line secret is squeezed through an environment variable), or a file
 func TestResolvePEM(t *testing.T) {

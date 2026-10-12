@@ -78,7 +78,7 @@ func TestCanAccessRepo_TransientFailureNotCached(t *testing.T) {
 }
 
 // A user who re-signs-in with a fresh, broader-scoped token is not shadowed by a
-// negative result cached against their previous token: the cache key includes a
+// negative result cached against their previous token. The cache key includes a
 // token fingerprint.
 func TestCanAccessRepo_NewTokenNotShadowedByStaleNegative(t *testing.T) {
 	t.Serial()
