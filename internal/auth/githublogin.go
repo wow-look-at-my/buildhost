@@ -157,7 +157,7 @@ func handleSigninStart(w http.ResponseWriter, r *http.Request) {
 	retried := r.URL.Query().Get("retry") == "1"
 
 	nonce := randToken()
-	// Bind the destination into a signed state. It tie the flow to this browser
+	// Bind the destination into a signed state. Tie the flow to this browser
 	// via a short-lived cookie (double-submit), so the callback can't be forged
 	// or pointed elsewhere.
 	http.SetCookie(w, &http.Cookie{
