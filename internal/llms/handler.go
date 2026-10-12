@@ -54,10 +54,10 @@ func render(baseURL string) []byte {
 }
 
 // siteSection documents the {project}.<site-domain> serving scheme when a
-// site domain is configured, and renders nothing otherwise -- the served
-// guide only describes endpoints this deployment has. The section's URLs live
-// on the dedicated site domain, never on a service subdomain of the apex, so
-// the per-subdomain rendering guards are unaffected.
+// site domain is configured, and renders nothing otherwise. The served guide
+// only describes endpoints this deployment has. The section's URLs live on
+// the dedicated site domain, never on a service subdomain of the apex, so the
+// per-subdomain rendering guards are unaffected.
 func siteSection(scheme string) string {
 	sd := auth.SiteDomain()
 	if sd == "" {
@@ -85,8 +85,9 @@ was this scheme's original branch sigil and 301s to the "@" spelling.
 }
 
 // apexBaseURL returns the request's scheme + apex host. /llms.txt is served on
-// the apex and on every service subdomain, but the guide's service URLs must
-// always anchor to the apex (dl.<apex>, oci.<apex>, ...) -- so when the request
+// the apex and on every service subdomain. However, the guide's service URLs
+// must always anchor to the apex (dl.<apex>, oci.<apex>, ...) -- so when the
+// request
 func apexBaseURL(r *http.Request) string {
 	host, port := r.Host, ""
 	if i := strings.LastIndex(host, ":"); i >= 0 {
