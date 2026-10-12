@@ -122,7 +122,11 @@ This is what keeps Homebrew's updater working. `brew update` runs `git fetch --f
 
 A publish mid-`brew update` can no longer orphan a ref a client already fetched.
 
-The in-memory layer, in `tapcache.go`, is now a rebuild-rate gate plus an open `os.Root` cache. It allows at most one content re-check per `tapCacheTTL`, many seconds, per lineage. It sweeps an expired entry on access. TapC caps the mapacheMaxEntries`, and eviction closes file descriptors only. As a result, the history stays.
+The in-memory layer, in `tapcache.go`, is now a rebuild-rate gate plus an open `os.Root` cache. It allows at most one content re-check per `tapCacheTTL`, many seconds, per lineage. TapC caps the mapacheMaxEntries`, and eviction closes file descriptors only. As a result, the history stays.
+
+A re-check renders every visible project's formula and every past release's history formula, so it costs seconds on a busy registry. It runs off the request path. `awaitTapLineage` starts at most one refresh per lineage directory (`Handler.tapRefreshes`), detached from the request's cancellation and outside `tapMu`. A lineage with no tip yet waits for that refresh. A lineage with a tip waits at most `tapRefreshWait`, then serves the tip it already has, and the next request gets the new one. A refresh that once ran inside the request, under the global mutex, took longer than the CDN's origin timeout, and `brew update` failed with a 524.
+
+`TestTapRefresh_SlowRefreshServesPersistedTip` guards it.
 
 TapH caps the DISK storeistoryMaxLineages`. It evicts a whole lineage, LRU by directory mtime. A junk Host header or a deleted token is therefore unable to grow it without bound. `resetTapCache`, which runs from OnReady, deliberately does NOT remove the history root. It sweeps only a crash orphan, meaning a temp file, and the legacy `{TmpDir}/brew-tap` snapshot root. The cost is a handful of new small objects per content-changing publish per lineage.
 
@@ -136,9 +140,11 @@ Each root keeps its credential semantics. The smart pair is served DIRECTLY on `
 
 `POST .../git-upload-pack` is the fetch. It assembles a version-2 packfile on the fly, by a walk of the parent and tree links through the lineage's loose objects. A plain clone gets FULL history, so a later dumb or smart fetch fast-forwards. The pack is depth-bounded, with shallow and unshallow lines, only when the client sent `deepen`. A plain clone's capability echo was once mistaken for a depth request, which killed git with "expected ACK/NAK, got 'shallow'".
 
-Negotiation is stateless-minimal. A have is never ACKed. Each flush-terminated batch gets NAK until the client sends done. It never gets NAK plus a pack, which corrupts the next round once history makes git batch its haves.
+Negotiation is stateless `multi_ack_detailed`, as git's upload-pack answers it. Each flush-terminated batch gets `ACK <sha> common` for every have the lineage holds as a commit. Then `ACK <sha> ready` once one of them is an ancestor of the want, then NAK. It never gets a pack, which corrupts the next round once history makes git batch its haves. A have that is never ACKed makes git walk its whole local history in rounds and then fetch the whole tap again. Each `brew update` grew with the history until the CDN timed it out.
 
-The last pack is self-contained from the client's WANT, which is the sha the advertisement handed it. A publish that lands mid-clone can therefore never produce a ref and pack mismatch. The append-only store and the want together pin the tip. While a smart request streams, its lineage directory is pinned against the disk-cap eviction. `acquireTapLineage` does that, and `Handler.tapPins` holds the refcounts.
+The last request's pack stops at every common have and leaves out its tree closure, so a `brew update` receives only what the new commits add. Its response opens with `ACK <last common>`, or NAK when there is none, and is flushed before the pack is assembled. A deepen request keeps the full walk: a client-shallow have needs the parents a stop will cut off. `TestServeUploadPack_FetchSendsOnlyMissingObjects` and `TestSmartFetch_IncrementalPackFastForwards` guard it.
+
+The last pack is self-contained from the client's WANT, which is the sha the advertisement handed it, down to the haves the client holds. A publish that lands mid-clone can therefore never produce a ref and pack mismatch. The append-only store and the want together pin the tip. While a smart request streams, its lineage directory is pinned against the disk-cap eviction. `acquireTapLineage` does that, and `Handler.tapPins` holds the refcounts.
 
 Real git prefers smart automatically. `brew tap` and `brew update` now transfer one pack, instead of several loose GETs per past publish. A dumb client, which sends no service parameter, is byte-for-byte unchanged.
 
