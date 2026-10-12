@@ -151,6 +151,13 @@ type ProjectAlias struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type ProjectVisibility struct {
+	ProjectID   int64      `json:"project_id"`
+	Mode        Visibility `json:"mode"`
+	AutoPrivate bool       `json:"auto_private"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
 type Release struct {
 	ID          int64      `json:"id"`
 	ProjectID   int64      `json:"project_id"`
@@ -164,6 +171,12 @@ type Release struct {
 	Draft       bool       `json:"draft"`
 	CreatedAt   time.Time  `json:"created_at"`
 	PublishedAt *time.Time `json:"published_at"`
+}
+
+type ReleaseVisibility struct {
+	ReleaseID int64      `json:"release_id"`
+	Mode      Visibility `json:"mode"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }
 
 type RetentionSetting struct {
@@ -194,4 +207,17 @@ type Site struct {
 	IsPublic   bool      `json:"is_public"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+type SiteVisibility struct {
+	ProjectID int64      `json:"project_id"`
+	Branch    string     `json:"branch"`
+	Mode      Visibility `json:"mode"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+type VisibilityFolder struct {
+	Prefix    string     `json:"prefix"`
+	Mode      Visibility `json:"mode"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }

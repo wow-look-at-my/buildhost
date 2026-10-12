@@ -8,7 +8,7 @@ For a zero-downtime update, use docker-updater's rolling update mode with an ngi
 
 **Two versions must never share the service alias.** `deploy/nginx.conf` resolves the `buildhost-backend` alias per request. Docker's embedded DNS returns every address an alias resolves to, and it rotates them. Any container that holds that alias is therefore taking live traffic.
 
-docker-updater used to copy the alias onto the replacement at CREATE time. That load-balanced clients across the old and the new IMAGE for the whole health wait. This image sets `HEALTHCHECK --interval=30s --start-period=5s`, so the window ran from 5 to many seconds. About half of all requests in it were answered by the build under replacement. That is what made a publish come back missing the `artifacts` field its own release had just added.
+docker-updater used to copy the alias onto the replacement at CREATE time. That load-balanced clients across the old and the new IMAGE for the whole health wait. This image sets `HEALTHCHECK --interval=30s --start-period=5s`, so the window ran from 5 to many seconds. The build under replacement answered about half of all requests in it. That is what made a publish come back missing the `artifacts` field its own release had just added.
 
 docker-updater now withholds the aliases until the replacement is healthy. It then moves them and stops the container. Exactly one version therefore serves a request. Nothing in this repo compensates for version skew any more. The publish action fails on a missing field rather than a retry.
 
@@ -25,9 +25,13 @@ The same handlers also answer at the paths docker-updater discovers by itself, w
 | `/.well-known/docker-updater/health` | `/healthz` | 200 while the database pings, 503 otherwise. The body carries `started`, the process start time, so a client can tell a restart from a network fault. |
 | `/.well-known/docker-updater/pre-update` | `/ready-to-update` | 200 when idle, 503 with writes in flight |
 
-They are aliases on purpose. A second implementation of "is it healthy" is a second answer that can disagree with the first. Both are registered with `HandleRaw`, so they carry no project auth. The prober carries no credential. A 401 reads as "serving but permanently unhealthy". Both are apex-only, because the prober addresses the container by IP. The router treats such a host as unclaimed.
+They are aliases on purpose. A second implementation of "is it healthy" is a second answer that can disagree with the first. Both are registered with `HandleRaw`, so they carry no project auth. The prober carries no credential. A 401 reads as "serving but permanently unhealthy". Both are apex-only, because the prober addresses the container by IP.
 
-Discovery builds that URL from the container's **first network IP and its single exposed TCP port**. The Dockerfile's `EXPOSE 8080` supplies that port. It is image metadata and it publishes nothing on the host. It therefore costs a deployment nothing. It needs no per-deployment label. Only one port may be declared, or discovery cannot choose. The admin port is therefore left undeclared. A deployment that needs a different port sets `docker-updater.well-known.port`.
+The router treats such a host as unclaimed.
+
+Discovery builds that URL from the container's **first network IP and its single exposed TCP port**. The Dockerfile's `EXPOSE 8080` supplies that port. It is image metadata and it publishes nothing on the host. It therefore costs a deployment nothing. It needs no per-deployment label. Only one port may be declared, or discovery cannot choose.
+
+The admin port is therefore left undeclared. A deployment that needs a different port sets `docker-updater.well-known.port`.
 
 No labels are needed at all. The caveat is the same as the one on the port-only pre-check form below. The address is a bridge IP, so docker-updater must sit on a network that reaches it. It shares `internal` in `deploy/docker-compose.yml`, which is enough.
 
@@ -42,7 +46,7 @@ labels:
 
 Do **not** use docker-updater's `:8080/...` port-only pre-check form. That form resolves the container's bridge IP. It therefore needs docker-updater to run with `--network host`. The full-URL form needs only a shared network with buildhost, which it joins as `internal` in `deploy/docker-compose.yml`. That keeps the updater off host networking.
 
-A rolling update, described below, **skips** a pre-check entirely. The old container drains through graceful shutdown instead. The pre-check endpoint therefore matters only for a non-rolling setup and for the `try-update` CLI.
+A rolling update, described below, **skips** a pre-check fully. The old container drains through graceful shutdown instead. The pre-check endpoint therefore matters only for a non-rolling setup and for the `try-update` CLI.
 
 The `try-update` CLI subcommand wraps this endpoint for manual use or other pre-update hooks:
 
@@ -55,7 +59,7 @@ One exit means idle. An update is then safe. A non-zero exit means busy or unrea
 
 The admin endpoint `GET /admin/inflight` on `:9090` still returns `{"inflight": N}` with the raw count for dashboards.
 
-Docker Compose label configuration for docker-updater with rolling updates:
+configuration of the Docker Compose label for docker-updater with rolling updates:
 
 ```yaml
 labels:
@@ -73,17 +77,23 @@ The shipped binary is an Actually Portable Executable. The image therefore also 
 
 **The entrypoint must never name the APE directly.** `/usr/local/lib/buildhost/buildhost` is the APE. `/usr/local/bin/buildhost` is a `#!/bin/sh` launcher that starts it. That is the same shape the deb repackager gives an APE. A shebang script is execable, so any spelling of the entrypoint works.
 
-This is not cosmetic. A rolling updater creates the new container from the *old* container's config. That config carries the entrypoint resolved from the image the old container came from. A container that predates the APE carries `["buildhost"]`. A bare exec of an APE is ENOEXEC, which means exit 126, on a loop. The old container is never replaced, and its stale config is cloned onto every later image. Docker reports the failure against the entrypoint path. The message therefore names a file that is present.
+This is not cosmetic. A rolling updater creates the new container from the *old* container's config. That config carries the entrypoint resolved from the image the old container came from. A container that predates the APE carries `["buildhost"]`. A bare exec of an APE is ENOEXEC, which means exit 126, on a loop. The old container is never replaced, and its stale config is cloned onto every later image.
 
-`dats/image-entrypoint.dats` guards the spelling. `go-toolchain` runs it sandboxed on every build. It reads the Dockerfile rather than starting a container, because a bare exec cannot be reproduced from a shell at all. When `execve` answers ENOEXEC the shell runs the file as a script instead. As a result, the broken form looks fine. It covers both spellings: the entrypoint must name the launcher. The shell must come from an image that ships a static busybox.
+Docker reports the failure against the entrypoint path. The message therefore names a file that is present.
+
+`dats/image-entrypoint.dats` guards the spelling. `go-toolchain` runs it sandboxed on every build. It reads the Dockerfile rather than starting a container, because a bare exec cannot be reproduced from a shell at all. When `execve` answers ENOEXEC the shell runs the file as a script instead. As a result, the broken form looks fine. It covers both spellings: the entrypoint must name the launcher.
+
+The shell must come from an image that ships a static busybox.
 
 `test/dats/image-entrypoints.dats` is the runtime half, and `container-healthcheck` runs it. It starts the built image once per entrypoint spelling an old container can carry. Those are the bare name on PATH, the absolute launcher path, and a shell in front of the path. It also asserts that nothing the image ships names an ELF interpreter, because the base image has no `/lib` to load one from.
 
-A bare exec IS reproducible. `docker run --entrypoint buildhost` on an image whose entrypoint path is the APE fails, and docker reports it against that path. It reproduces only where no APE binfmt handler is registered. The handler is host-wide, and containers inherit it. go-toolchain registers one on the runners it uses. With one registered, the kernel runs any APE through a shell. These assertions then cannot fail. The suite refuses to run when it finds one.
+A bare exec IS reproducible. `docker run --entrypoint buildhost` on an image whose entrypoint path is the APE fails, and docker reports it against that path. It reproduces only where no APE binfmt handler is registered. The handler is host-wide, and containers inherit it. go-toolchain registers one on the runners it uses. With one registered, the kernel runs any APE through a shell. These assertions then cannot fail.
+
+The suite refuses to run when it finds one.
 
 `dats/image-entrypoint.dats` guards the spelling. `go-toolchain` runs it sandboxed on every build. It reads the Dockerfile rather than starting a container, because a bare exec cannot be reproduced from a shell at all. When `execve` answers ENOEXEC the shell runs the file as a script instead. As a result, the broken form looks fine.
 
-The runtime question is whether the launcher's target path is right. `container-healthcheck` answers it with `compose up --wait`. The launcher is the entrypoint, so a wrong path there is a container that never starts.
+The runtime question is whether the launcher's target path is right. `container-healthcheck` answers it with `compose up --wait`. The launcher is the entrypoint, so a incorrect path there is a container that never starts.
 
 The admin dashboard on `:9090` has **no built-in authentication**. It must be placed behind a reverse proxy with access control (e.g., Cloudflare Access on a separate hostname). Never expose port 9090 to untrusted networks.
 

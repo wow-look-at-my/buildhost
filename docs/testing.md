@@ -48,7 +48,7 @@ CI job `container-healthcheck` (`ci.yml`) additionally runs `test/dats/image-str
 
 It then asserts that the download comes back smaller than the upload. The download must carry no `.symtab` section and no `.debug_*` section. It must keep `.text` and `.rodata` intact. It asserts that `fmt=symbols` returns a file with a real `.debug_info` section. It asserts that `?debug=1` returns exactly the uploaded bytes.
 
-A unit test can never catch the defect this guards. The runner has binutils and the container does not. That is precisely why stripping was broken in production while CI stayed green.
+A unit test can never catch the defect this guards. The runner binutils and the container does not. That is accurately why stripping was broken in production while CI stayed green.
 
 ## oci-roundtrip-e2e
 
@@ -66,7 +66,9 @@ The suite refuses to run when an APE binfmt handler is registered. The kernel th
 
 `test/dats/admin-demo-links.dats` is a step in `sites-cors-e2e`. It serves the built `internal/admin/static` under a path prefix, which is what puts the SPA in demo mode. It then walks every `#/` link the SPA renders, breadth-first, from the dashboard outward. A page must draw a heading that is not the error page.
 
-It exists because the demo dataset linked to a page it had no fixture for. The missing fixture resolved to `{}`. The renderer threw on that value, and the previous page stayed on screen. The link therefore did nothing. `apiFetch` now throws on an unknown demo path, and the router paints the failure. The same defect is therefore loud instead of invisible. The crawl fails on it either way.
+It exists because the demo dataset linked to a page it had no fixture for. The missing fixture resolved to `{}`. The renderer threw on that value, and the previous page stayed on screen. The link therefore did nothing. `apiFetch` now throws on an unknown demo path, and the router paints the failure. The same defect is therefore loud instead of invisible.
+
+The crawl fails on it either way.
 
 ## apt-install-e2e
 
@@ -74,7 +76,9 @@ It exists because the demo dataset linked to a page it had no fixture for. The m
 
 The apt client is a container, built from `test/dats/aptbox.Dockerfile` and started by the workflow in their own untimed steps. The suite installed onto the runner before this. It therefore inherited that host's apt state, and its setup hook paid for the base packages. The image bakes curl, gnupg, systemd and the non-root `aptuser`.
 
-The container runs on the default bridge. `host-gateway` points the `apt.localhost` and `static.localhost` entries in its hosts file at the runner. Apt reads that file and needs nothing else. Curl does not read it. Curl pins a `*.localhost` name to loopback, because that name is reserved for it. The key fetch therefore passes `--resolve`, the documented override. The suite reads the address out of the container rather than assuming one.
+The container runs on the default bridge. `host-gateway` points the `apt.localhost` and `static.localhost` entries in its hosts file at the runner. Apt reads that file and needs nothing else. Curl does not read it. Curl pins a `*.localhost` name to loopback, because that name is reserved for it. The key fetch therefore passes `--resolve`, the documented override.
+
+The suite reads the address out of the container rather than assuming one.
 
 The scheme is why these names stay under `.localhost`. `auth.RequestScheme` answers http for a loopback name. It answers https for every other name. Any other domain therefore makes the generated package URL https, and apt then fails to connect.
 
@@ -82,11 +86,13 @@ The scheme is why these names stay under `.localhost`. `auth.RequestScheme` answ
 
 CI job `upload-artifact-action-e2e` (`ci.yml`) exercises the `.github/actions/buildhost-upload-artifact` composite. It runs against a real spawned buildhost whose advertised `max_direct_upload_bytes` is shrunk to 1 MiB.
 
-A small file must upload as one classic direct PUT. The server log must show no session-endpoint traffic. A file of about 3 MiB must assemble through a chunked upload session, with one create and four MiB `?offset=` PATCH requests. Each server-computed sha256 must equal the local file's own. The chunk-assembled artifact must download back byte-identical. The create-release and publish-release composites run as part of the flow.
+A small file must upload as one classic direct PUT. The server log must show no session-endpoint traffic. A file of about 3 MiB must assemble through a chunked upload session, with one create and four MiB `?offset=` PATCH requests. Each server-computed sha256 must equal the local file's own. The chunk-assembled artifact must download back byte-same. The create-release and publish-release composites run as part of the flow.
 
 The same job runs single-mode `buildhost publish`, with no `--manifest`, against the real binary. It then asserts that the project's apex `latest` resolves published. The CLI package deliberately has no unit test. Any such test pulls the whole untested `cmd/buildhost` into the coverage denominator. See `internal/uploadclient`'s doc comment. CLI behavior is therefore guarded here, as `--manifest` mode is guarded in `homebrew-tap-e2e`.
 
-The job runs the composites, because an action runs only inside a workflow. Every assertion above lives in a suite the job invokes with the results. `test/dats/upload-direct.dats` asserts that the small upload opened no session. `test/dats/upload-artifact.dats` asserts the chunked session, the hashes, the byte-identical download, and the published release. `test/dats/site-direct.dats` asserts that the small site opened no session either. `test/dats/site-publish.dats` asserts the big site's own session. It also asserts the advertised URL that serves with no `/branch/` in it, the served bytes, the legacy redirect, and the single-mode CLI publish.
+The job runs the composites, because an action runs only inside a workflow. Every assertion above lives in a suite the job invokes with the results. `test/dats/upload-direct.dats` asserts that the small upload opened no session. `test/dats/upload-artifact.dats` asserts the chunked session, the hashes, the byte-same download, and the published release. `test/dats/site-direct.dats` asserts that the small site opened no session either. `test/dats/site-publish.dats` asserts the big site's own session.
+
+It also asserts the advertised URL that serves with no `/branch/` in it, the served bytes, the legacy redirect, and the single-mode CLI publish.
 
 ## test/dats/multi-platform-ape.dats
 
@@ -98,7 +104,9 @@ The Go tests cover the same properties in process. This suite exists because a r
 
 Each test starts its own server. It takes the binary from `BUILDHOST_BIN`, or else from `build/buildhost`, because a cosmo build writes the APE under that plain name. It starts an APE through a shell, because the kernel cannot exec one.
 
-It drives that server with curl and jq. The runner has both. The docker image that dats sandboxes into does not. That is why the suite runs `--no-sandbox`, and why it lives in `test/dats/` rather than `dats/`. Everything under `dats/` runs sandboxed on every build. Locally, `dats test/dats/multi-platform-ape.dats` sandboxes fine under bwrap, which binds the host's own tools. Depth: `docs/multi-platform-artifacts.md`.
+It drives that server with curl and jq. The runner has both. The docker image that dats sandboxes into does not. That is why the suite runs `--no-sandbox`, and why it lives in `test/dats/` rather than `dats/`. Everything under `dats/` runs sandboxed on every build. Locally, `dats test/dats/multi-platform-ape.dats` sandboxes fine under bwrap, which binds the host's own tools.
+
+Depth: `docs/multi-platform-artifacts.md`.
 
 ## Where a test lives
 
