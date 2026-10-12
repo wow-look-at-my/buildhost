@@ -2,8 +2,8 @@
 #
 # This exists because the deployment sat for weeks on a version it could not start, while CI stayed green. The
 # image entered through ["/bin/sh", <APE>], so it started only when something spelled the entrypoint that
-# exact way. A rolling updater creates the new container from the OLD container's config, which carries the
-# entrypoint resolved from the image that container was created from -- for one predating the APE,
+# exact way. A rolling updater creates the new container from the OLD container's config. That config carries
+# the entrypoint resolved from the image that container was created from -- for one predating the APE,
 # ["buildhost"]. That is a bare exec of an APE, which the kernel answers with ENOEXEC.
 #
 # The fix is a shebang launcher on PATH, which the kernel CAN exec, in front of
@@ -14,11 +14,11 @@
 # so the message names a file that is present. A sibling repo shipped exactly
 # that by taking its busybox from an alpine-based stage.
 #
-# These assertions read the Dockerfile, which is where both defects are
-# spelled, and go-toolchain runs them sandboxed on every build with no host and
-# no docker. test/dats/image-entrypoints.dats asks the same questions of a
-# running container and catches what a spelling cannot: whether the paths
-# resolve and whether the binary starts.
+# These assertions read the Dockerfile. This is where both defects are spelled,
+# and go-toolchain runs them sandboxed on every build with no host and no
+# docker. test/dats/image-entrypoints.dats asks the same questions of a running
+# container. Test/dats/image-entrypoints.dats catches what a spelling cannot:
+# whether the paths resolve and whether the binary starts.
 
 tests:
 	- desc: the entrypoint and the healthcheck both name the launcher on PATH
@@ -42,7 +42,7 @@ tests:
 			- "no-shell-prefix"
 
 	# The binary lands from the staging stage, never from build/ directly. A
-	# COPY of the APE itself puts the trampoline back in the container, and the
+	# COPY of the APE itself puts the trampoline back in the container. The
 	# trampoline unpacks under a hardcoded /tmp that a deployment mounts noexec.
 	- desc: what lands on PATH is the launcher script, and the staged ELF lands elsewhere
 	  cmd: |

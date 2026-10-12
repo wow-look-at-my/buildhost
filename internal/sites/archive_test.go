@@ -64,7 +64,7 @@ func withCountingStore(t *testing.T, inner storage.Storage) *countingStore {
 }
 
 // TestUploadStoresArchiveAndServesByIndex is the end-to-end proof of the
-// format change: an uploaded site is stored as a binpazer archive, and serving
+// format change. An uploaded site is stored as a binpazer archive, and serving
 // a file out of it never streams the blob from the start.
 func TestUploadStoresArchiveAndServesByIndex(t *testing.T) {
 	t.Serial()

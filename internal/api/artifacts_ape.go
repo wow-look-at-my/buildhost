@@ -51,8 +51,8 @@ func (h *Handler) UploadMultiPlatformArtifact(w http.ResponseWriter, r *http.Req
 		jsonError(w, http.StatusBadRequest, "invalid kind")
 		return
 	}
-	// A docker image is an OCI manifest with its own per-platform indexing, and
-	// an npm package is a tarball pinned to the os=any/arch=any sentinel. Neither
+	// A docker image is an OCI manifest with its own per-platform indexing. An
+	// npm package is a tarball pinned to the os=any/arch=any sentinel. Neither
 	if kind == string(db.KindDocker) || kind == string(db.KindNPMPackage) {
 		jsonError(w, http.StatusBadRequest, "kind "+kind+" cannot be published as a multi-platform artifact")
 		return

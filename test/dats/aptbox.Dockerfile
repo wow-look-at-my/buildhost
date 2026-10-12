@@ -2,12 +2,12 @@
 
 # The apt client for test/dats/apt-install.dats.
 #
-# The suite used to install onto the runner itself, which made it depend on
+# The suite used to install onto the runner itself. That made it depend on
 # whatever apt state that host carried and left cleanup to a teardown. A
 # container fixes both: exactly one extra source, an apt state baked at build
 # time, and nothing to undo afterwards.
 #
-# Building it is the workflow's job, in its own untimed step, so the suite's
+# Building it is the workflow's job, in its own untimed step. The suite's
 # setup hook never pays for a base-image pull or these installs.
 FROM ubuntu:24.04
 
