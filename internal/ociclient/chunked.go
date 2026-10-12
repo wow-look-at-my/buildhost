@@ -1,6 +1,6 @@
-// Chunked OCI upload sessions. A blob over the server's advertised direct-upload
-// limit goes through a POST session, sequential PATCH appends and a
-// digest-checked PUT. A retry resumes from the server's committed size. Split from
+// Chunked OCI upload sessions. Blobs larger than the server's advertised
+// direct-upload limit go through POST session + sequential PATCH appends +
+// digest-checked PUT. They resume from the server's committed size. Split from
 // upload.go, which holds the existence skip, the mount, and the single-request
 // finalize.
 package ociclient

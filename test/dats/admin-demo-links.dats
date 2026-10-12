@@ -4,8 +4,8 @@
 # the built-in demo dataset. That dataset once linked to pages it had no data
 # for. Clicking a release threw inside the renderer, left the previous page on
 # screen, and read as a link that does nothing. Only walking the links the app
-# itself renders finds that, so the crawl drives a real browser. The crawl
-# lives in a node test the suite invokes.
+# itself renders finds that. So the crawl drives a real browser and lives in a
+# node test the suite invokes.
 #
 # The workflow builds internal/admin/static and installs playwright-core;
 # $PLAYWRIGHT_CHROME_PATH names a browser when there is one outside a runner.

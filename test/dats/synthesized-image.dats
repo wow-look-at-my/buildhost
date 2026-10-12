@@ -7,9 +7,10 @@
 # Buildhost's layers are zstd -- which Docker reads only through the containerd
 # image store. crane alone proved the half that was never in doubt.
 #
-# The workflow builds the netcheck entrypoint, installs crane, maps the OCI
-# host in /etc/hosts. It turns on the containerd image store. $NETCHECK_BIN and
-# $BUILDHOST_BIN come from it. Needs curl, crane and docker, so --no-sandbox.
+# The workflow builds the netcheck entrypoint and installs crane. The workflow
+# also maps the OCI host in /etc/hosts and turns on the containerd image store.
+# $NETCHECK_BIN and $BUILDHOST_BIN come from it. Needs curl, crane and docker,
+# so --no-sandbox.
 #
 # see docs/formats/oci.md
 

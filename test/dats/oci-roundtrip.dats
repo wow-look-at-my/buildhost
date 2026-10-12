@@ -4,8 +4,8 @@
 # Every other OCI check stops short of this. The unit tests drive handlers
 # through httptest and never start a container. synthesized-image.dats runs the
 # buildhost BINARY on the host and pulls a synthesized image from it. This suite
-# is the only one where a real docker daemon talks to buildhost running as the
-# container it ships, over the wire. That suite is in both directions.
+# is the only one. This holds where a real docker daemon talks to buildhost
+# running as the container it ships, over the wire, in both directions.
 #
 # Both directions are different code paths and both are covered here:
 #
@@ -21,10 +21,9 @@
 # the assertion: an image nobody starts is what shipped the defect this suite
 # exists for.
 #
-# The workflow starts the image with compose, maps the OCI host in /etc/hosts,
-# marks it insecure, turns on the containerd image store (buildhost's layers are
-# zstd). And passes $BUILDHOST_BIN and $MARKER_BIN. Needs curl, jq and the
-# docker
+# The workflow starts the image with compose, maps the OCI host in /etc/hosts
+# and marks it insecure. It turns on the containerd image store (buildhost's
+# layers are zstd) and passes $BUILDHOST_BIN and $MARKER_BIN. Needs curl, jq and the docker
 # CLI, so a workflow runs it --no-sandbox.
 #
 # see docs/formats/oci.md
@@ -65,8 +64,8 @@ shared:
 
 			printf '%s' "$TOKEN" | docker login "$REGISTRY" -u buildhost --password-stdin
 
-			# PUSH SIDE. A scratch image around a static binary: the whole image
-			# is bytes this suite controls. A mismatch on the way back out is
+			# PUSH SIDE. A scratch image around a static binary. The whole image
+			# is bytes this suite controls, so a mismatch on the way back out is
 			# buildhost's and not a base image's.
 			mkdir -p "$WORK/ctx"
 			cp "$MARKER_BIN" "$WORK/ctx/marker"
@@ -119,7 +118,7 @@ tests:
 
 	# The bytes have to survive the round trip. Removing the local image first
 	# is what makes the run below read from buildhost instead of the daemon's
-	# own cache. This is how a broken pull passes unnoticed.
+	# own cache. Reading from that cache is how a broken pull passes unnoticed.
 	- desc: the pushed image pulls back out and runs
 	  cmd: |
 		set -eu
@@ -172,9 +171,8 @@ tests:
 			- "buildhost"
 
 	# A deployment gives a container a noexec /tmp. The APE trampoline stages
-	# its copy under a hardcoded /tmp path that no variable moves, so an image
-	# shipping the APE itself dies here. On exit 126 against a path nobody
-	# chose.
+	# its copy under a hardcoded /tmp path that no variable moves. So an image
+	# shipping the APE itself dies here on exit 126 against a path nobody chose.
 	- desc: the synthesized image starts with /tmp mounted noexec
 	  cmd: |
 		set -eu

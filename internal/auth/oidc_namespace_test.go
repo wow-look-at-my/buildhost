@@ -145,11 +145,10 @@ func TestRequireProject_OIDCNamespace_WritesExistingSubProject(t *testing.T) {
 }
 
 // TestRequireProject_MultiSegmentRouting_EndToEnd drives the real router the
-// registry uses, proving a slash-namespaced project survives path matching.
-// TestRequireProject_MultiSegmentRouting_EndToEnd {project} greedily captures
-// "log-streamer/client" while the trailing literal "releases"/"artifacts"
-// anchors let {version}/{os}/{arch} bind correctly. The OIDC token for repo
-// "log-streamer" then auto-provisions it.
+// registry uses. Proving a slash-namespaced project survives path matching:
+// {project} greedily captures "log-streamer/client" while the trailing literal
+// "releases"/"artifacts" anchors let {version}/{os}/{arch} bind correctly. The
+// OIDC token for repo "log-streamer" then auto-provisions it.
 func TestRequireProject_MultiSegmentRouting_EndToEnd(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)

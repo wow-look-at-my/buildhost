@@ -1,7 +1,7 @@
-# What `apt-get install` gets from a generated APT repository. This is a plain
-# project. A slash-namespaced one has a Debian package name that folds '/' to
-# '-'. An APE has a package that must ship a launcher, not a bare root-owned
-# binary.
+# What `apt-get install` gets from a generated APT repository. The cases are a
+# plain project, a slash-namespaced one whose Debian package name folds '/' to
+# '-', and an APE. The APE's package must ship a launcher instead of a bare
+# root-owned binary.
 #
 # Setup publishes and installs; the tests only ask questions about what landed.
 # The apt client is a container the workflow builds and starts (APTBOX). The

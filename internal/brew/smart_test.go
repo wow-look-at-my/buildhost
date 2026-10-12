@@ -78,9 +78,9 @@ func TestServeTapInfoRefs_AdvertisementDerivesFromLineageTip(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, rec.Code)
 }
 
-// A plain (non-shallow) smart clone -- what `brew tap` runs. It must
-// transfer the tap's FULL history: every commit reachable from the tip, so
-// later dumb or smart fetches fast-forward. The client echoing advertised
+// A plain (non-shallow) smart clone -- what `brew tap` runs -- must transfer
+// the tap's FULL history. This covers every commit reachable from the tip,
+// so later dumb or smart fetches fast-forward. The client echoing advertised
 // capabilities must not be mistaken for a shallow request (the "expected
 // ACK/NAK, got 'shallow <sha>'" failure).
 func TestServeUploadPack_FullCloneTransfersWholeHistory(t *testing.T) {
@@ -153,9 +153,9 @@ func mustGet(t *testing.T, url string) int {
 }
 
 // The consistency guarantee for a publish landing mid-clone. The pack is
-// built from the commit. The client WANTED (the sha the advertisement
-// handed it), which the append-only lineage still holds even though the tip
-// has advanced past it.
+// built from the commit the client WANTED (the sha the advertisement handed
+// it). The append-only lineage still holds that commit even though the tip has
+// advanced past it.
 func TestServeUploadPack_ServesRequestedWantAfterTipAdvance(t *testing.T) {
 	t.Serial()
 	requireGit(t)

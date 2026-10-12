@@ -47,8 +47,8 @@ func TestStrip_NonexistentFile(t *testing.T) {
 	assert.Contains(t, err.Error(), "read input")
 }
 
-// Non-ELF inputs are refused by the magic check, before strip/objcopy run. At
-// all -- so the behavior no longer depends on whether BFD happens to reject the
+// Non-ELF inputs are refused by the magic check, before strip/objcopy run at
+// all. So the behavior no longer depends on whether BFD happens to reject the
 // format. The cases below are exactly the ones that mattered in production.
 func TestStrip_NonELFFile(t *testing.T) {
 	t.Serial()

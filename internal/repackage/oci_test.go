@@ -241,9 +241,8 @@ func TestOCIRepackageAPEImageLayout(t *testing.T) {
 }
 
 // Every image gets the same layout, whatever kind of binary it was built from.
-// This also covers the binary out of the way under /usr/local/lib, and a
-// launcher at each spelling. A layout that varies is a layout only some images
-// are tested on.
+// The binary is out of the way under /usr/local/lib, and a launcher is at each
+// spelling. A layout that varies is a layout only some images are tested on.
 func TestOCIWriteLayerLayoutIsTheSameForEveryBinary(t *testing.T) {
 	t.Serial()
 	for name, body := range map[string][]byte{

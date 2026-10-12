@@ -2,14 +2,14 @@
 #
 # The kernel cannot exec an APE: the file's header is a shell script, and no
 # binfmt handler is registered. So the synthesizer writes the ELF the APE's own
-# trampoline would have staged, keeps it under /usr/local/lib. It puts a shebang
-# launcher at the entrypoint path. The base layer carries the shell that
+# trampoline would have staged and keeps it under /usr/local/lib. It puts a
+# shebang launcher at the entrypoint path. The base layer carries the shell that
 # launcher needs. Get any part of that wrong and every container from the image
 # dies at exec, reporting "no such file or directory" against an entrypoint that
 # is present.
 #
-# The trampoline stages into a hardcoded /tmp that TMPDIR does not move, so an
-# image. That shipped the APE itself dies on a noexec /tmp instead.
+# The trampoline stages into a hardcoded /tmp that TMPDIR does not move. So an
+# image that shipped the APE itself dies on a noexec /tmp instead.
 #
 # The sibling suite synthesizes from a plain ELF, which exercises none of this.
 # The payload here is the repo's own fat APE, so the test runs a real one.

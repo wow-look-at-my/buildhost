@@ -134,9 +134,9 @@ func TestRouter_Packument_NPMPackageArtifact(t *testing.T) {
 
 // TestRouter_Packument_NPMPackageReflectsManifest proves the registry surfaces a
 // pre-built package's own dependency graph and platform/engine gating from the
-// uploaded tarball's package.json. This is the fix for "zombie" packages whose
-// optionalDependencies were silently dropped -- while keeping name/version/dist
-// authoritative and never echoing lifecycle scripts.
+// uploaded tarball's package.json. That is the fix for "zombie" packages whose
+// optionalDependencies were silently dropped. It keeps name/version/dist
+// authoritative and never echoes lifecycle scripts.
 func TestRouter_Packument_NPMPackageReflectsManifest(t *testing.T) {
 	t.Serial()
 	seedNPMPackageTarball(t, "router-manifest", "7.0.0", map[string]any{

@@ -180,9 +180,9 @@ try {
 
 	await createProject(PROJECT, false);
 
-	// Branches so `library` is NOT the default -- the production shape.
-	// This applies where the URL redirects to the @branch form rather
-	// than collapsing straight to the bare project path.
+	// Branches so `library` is NOT the default. That is the production shape,
+	// where the URL redirects to the @branch form rather than collapsing
+	// straight to the bare project path.
 	for (const [branch, files] of [
 		["master", { "index.html": "<h1>default</h1>" }],
 		["library", { "index.html": "<h1>library</h1>", "ui/mod.js": `export const MARKER = ${JSON.stringify(MARKER)};\n` }],

@@ -360,9 +360,9 @@ func TestNestedModuleUsesTagPrefix(t *testing.T) {
 	assert.Equal(t, "v0.3.0\n", rec.Body.String())
 }
 
-// With no tags at all -- the normal state for this org's branch-pinned modules
-// -- @latest must resolve to a pseudo-version of the default. Branch head
-// rather than reporting that there is nothing there.
+// With no tags at all, @latest must resolve to a pseudo-version of the default
+// branch head rather than reporting that there is nothing there. No tags is
+// the normal state for this org's branch-pinned modules.
 func TestLatestFallsBackToPseudoVersion(t *testing.T) {
 	t.Serial()
 	fake := newFakeGitHub(t)
@@ -430,8 +430,8 @@ func TestNonSemverVersionIsABadRequest(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "not a valid semantic version")
 }
 
-// A timestamp-only prerelease is NOT a pseudo-version: it carries no revision.
-// It addresses no commit and is resolved as an ordinary tag -- which is
+// A timestamp-only prerelease is NOT a pseudo-version: it carries no revision,
+// so it addresses no commit. It is resolved as an ordinary tag -- which is
 // absent, and correctly reported as such.
 func TestTimestampPrereleaseIsResolvedAsATag(t *testing.T) {
 	t.Serial()

@@ -351,9 +351,9 @@ func BrewVersionedClassName(project, version string) (string, bool) {
 }
 
 // brewClassS ports Homebrew's Formulary.class_s (Library/Homebrew/formulary.rb)
-// step for step. They capitalize, upcase the alphanumeric after each separator
-// and drop the separator, turn "+" into "x", then turn the first "@". That @ is
-// followed by a digit into "AT".
+// step for step. Capitalize, upcase the alphanumeric after each separator. Drop
+// the separator, turn "+" into "x", then turn the first "@" followed by a digit
+// into "AT".
 func brewClassS(name string) string {
 	if name == "" {
 		return ""

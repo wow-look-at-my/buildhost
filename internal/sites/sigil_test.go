@@ -56,9 +56,8 @@ func TestBranchSigil_Serves(t *testing.T) {
 }
 
 // The bare project path is the canonical site URL. Naming the default branch
-// says nothing extra, so "@<default>" collapses INTO the bare URL.
-// "@<default>" redirects only ever run toward the shorter spelling, never away
-// from it.
+// says nothing extra. "@<default>" collapses INTO the bare URL -- redirects
+// only ever run toward the shorter spelling, never away from it.
 func TestBranchSigil_DefaultBranchCollapsesToBareURL(t *testing.T) {
 	t.Serial()
 	env := setupEnv(t)
