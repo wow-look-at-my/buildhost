@@ -48,17 +48,17 @@ func TestStrip_NonexistentFile(t *testing.T) {
 }
 
 // Non-ELF inputs are refused by the magic check, before strip/objcopy run at
-// all -- so the behavior no longer depends on whether BFD happens to reject the
+// all. So the behavior no longer depends on whether BFD happens to reject the
 // format. The cases below are exactly the ones that mattered in production.
 func TestStrip_NonELFFile(t *testing.T) {
 	t.Serial()
 	cases := map[string][]byte{
-		// BFD rejects these outright; the old code relied on that happening.
+		// BFD rejects these outright; the code relied on that happening.
 		"plain text":         []byte("this is not an ELF binary"),
 		"Mach-O header":      {0xcf, 0xfa, 0xed, 0xfe, 0x0c, 0x00, 0x00, 0x01},
 		"shell script":       []byte("#!/bin/sh\necho hi\n"),
 		"shorter than magic": []byte("MZ"),
-		// The case that actually shipped broken: BFD ACCEPTS a PE32+, so
+		// The case that shipped broken: BFD ACCEPTS a PE32+.
 		"PE32+ (what an APE looks like to BFD)": buildPEFixture(t),
 	}
 
@@ -232,7 +232,7 @@ func TestStrip_StrippedBinaryStillRuns(t *testing.T) {
 }
 
 // Downloads are cached by strong ETag and their sha256 is baked into Homebrew
-// formulas and APT indexes, so the same artifact must strip to the same bytes
+// formulas and APT indexes. The same artifact must strip to the same bytes
 // every time.
 func TestStrip_Deterministic(t *testing.T) {
 	t.Serial()

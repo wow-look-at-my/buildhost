@@ -1,9 +1,7 @@
 # The ANONYMOUS tap must not know a private project exists, and an
 # unauthorized formula request must be a clean HTTP error.
 #
-# A 200 with a JSON body saved as formula.rb is exactly the ".rb: syntax error"
-# class of failure users hit, so the content type matters as much as the code.
-# The private project here is myrepo/myapp, which folds to myrepo-myapp.
+# The private project here is myrepo/myapp. Its tap formula is myrepo, and its folded name is myrepo-myapp.
 #
 # $BREW_HOST comes from the workflow, which starts the server and publishes.
 # The clone lands in this file's temp directory, so nothing here needs brew or
@@ -29,7 +27,7 @@ tests:
 		ls "$TAP/Formula" > {outputs.formulas.txt}
 		grep -qx 'go-toolchain.rb' {outputs.formulas.txt} || {
 			echo "the public formula is missing" >&2; cat {outputs.formulas.txt} >&2; exit 1; }
-		if grep -qx 'myrepo-myapp.rb' {outputs.formulas.txt}; then
+		if grep -qx 'myrepo.rb\|myrepo-myapp.rb' {outputs.formulas.txt}; then
 			echo "the anonymous tap LEAKS the private formula file" >&2; exit 1
 		fi
 		echo "public-only"
@@ -46,16 +44,18 @@ tests:
 		if grep -rl --exclude-dir=.git 'myrepo' "$TAP"; then
 			echo "the anonymous tap leaks the private project name" >&2; exit 1
 		fi
+		if find "$TAP" -path "$TAP/.git" -prune -o -name '*myrepo*' -print | grep .; then
+			echo "the anonymous tap leaks the private project name in a path" >&2; exit 1
+		fi
 		echo "no-leak"
 	  outputs:
 		stdout:
 			- "no-leak"
 
-	# The literal slash-namespaced path names the project exactly, so it
-	# answers 401 like the legacy path. The FOLDED name is different: it
-	# resolves back to its project only for a request that may read it, so an
-	# anonymous probe stays indistinguishable from nonexistent rather than
-	# confirming a private project exists.
+	# The FOLDED name is different. It resolves back to its project only for
+	# a request that may read it. So an anonymous probe stays
+	# indistinguishable from nonexistent rather than confirming a private
+	# project exists.
 	- desc: unauthorized formula paths return clean errors, never a fake formula body
 	  cmd: |
 		set -eu
@@ -74,6 +74,7 @@ tests:
 		check /myrepo/myapp 401
 		check /Formula/myrepo/myapp.rb 401
 		check /Formula/myrepo-myapp.rb 404
+		check /Formula/myrepo-myapp@0.9.0.rb 404
 		check /Formula/7zip.rb 404
 		echo "clean-errors"
 	  outputs:

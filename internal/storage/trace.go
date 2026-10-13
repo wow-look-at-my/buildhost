@@ -54,7 +54,7 @@ func (t *TracedStorage) Get(ctx context.Context, key string) (io.ReadCloser, int
 
 // PutUncompressed forwards to the inner backend's UncompressedPutter
 // capability, falling back to the ordinary Put when it has none (the blob is
-// then stored compressed and simply is not randomly accessible).
+// then stored compressed and is not randomly accessible).
 func (t *TracedStorage) PutUncompressed(ctx context.Context, r io.Reader) (string, int64, error) {
 	up, ok := t.inner.(UncompressedPutter)
 	if !ok {

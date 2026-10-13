@@ -1,0 +1,6 @@
+services:
+  buildhost:
+    environment:
+      - BUILDHOST_BASE_URL=http://localhost:47823
+    ports: !override
+      - "47823:8080"

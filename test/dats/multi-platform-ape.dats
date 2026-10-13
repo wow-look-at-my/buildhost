@@ -2,9 +2,8 @@
 # multi-platform claim without APE magic is refused. One server serves the
 # whole file: setup publishes the APE, the tests only ask questions about it.
 #
-# Needs curl and jq, which is why a workflow runs it rather than the `dats/`
-# phase: the sandbox binds the host's own tool trees, and go-toolchain's
-# fallback image has neither.
+# Needs curl and jq, which is why a workflow runs this --no-sandbox rather than
+# letting the dats phase sandbox it into an image. That image has neither.
 #
 # see docs/multi-platform-artifacts.md
 
@@ -29,8 +28,6 @@ shared:
 			for off in 0 1 2 3 4 5 6 7 8 9; do
 				PORT=$(( 18100 + 2 * off ))
 				BUILDHOST_LISTEN_ADDR="127.0.0.1:$PORT"; export BUILDHOST_LISTEN_ADDR
-				# An empty value means the default :9090, shared with whatever
-				# else is on this host.
 				BUILDHOST_ADMIN_LISTEN_ADDR="127.0.0.1:$(( PORT + 1 ))"; export BUILDHOST_ADMIN_LISTEN_ADDR
 				BASE="http://localhost:$PORT"
 				rm -rf "$BUILDHOST_DATA_DIR"
@@ -40,9 +37,11 @@ shared:
 				# killing that shell alone orphans the server on its port.
 				setsid $RUN serve > "$WORK/server.log" 2>&1 &
 				echo "$!" > "$WORK/server.pid"
-				for _ in $(seq 30); do
+				# A hook gets 30s in total, and this loop is per attempt, so a
+				# one-second poll spends the whole budget on the first one.
+				for _ in $(seq 50); do
 					if curl -fsS "$BASE/healthz" >/dev/null 2>&1; then started=yes; break; fi
-					sleep 1
+					sleep 0.2
 				done
 				if [ -n "$started" ]; then break; fi
 				kill -- "-$(cat "$WORK/server.pid")" 2>/dev/null || true

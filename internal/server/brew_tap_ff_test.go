@@ -46,7 +46,7 @@ func gitScratchDir(t *testing.T) string {
 // gitTestEnv is the environment every git invocation in these tests runs with.
 // The identity vars keep commits reproducible; the GIT_CONFIG_* pair turns OFF
 // automatic repacking, which fetch, rebase and clone all trigger. Auto-gc runs
-// detached, so it can repack and delete a pack while a later `git fsck` in the
+// detached.
 var gitTestEnv = []string{
 	"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@test", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@test",
 	"GIT_TERMINAL_PROMPT=0",
@@ -102,10 +102,10 @@ func publishPrivateBrewProject(t *testing.T, env *testEnv, name, body string) {
 	resp.Body.Close()
 }
 
-// The tap history regression test through the REAL router: a real `git clone`
-// of the generated tap, a publish, a redeploy (fresh server.New over the same
-// data dir -- which re-runs every OnReady wiring, including the tap cache
-// reset), and then exactly Homebrew's update sequence (`git fetch --force` +
+// The tap history regression test through the REAL router. It runs a real
+// `git clone` of the generated tap, a publish, and a redeploy (fresh server.New
+// over the same data dir). The redeploy re-runs every OnReady wiring, including
+// the tap cache reset. Then it runs exactly Homebrew's update sequence (`git fetch --force` +
 func TestBrewTap_GitUpdateFastForwardsAcrossPublishAndRedeploy(t *testing.T) {
 	t.Serial()
 	gitOrSkip(t)
@@ -142,7 +142,7 @@ func TestBrewTap_GitUpdateFastForwardsAcrossPublishAndRedeploy(t *testing.T) {
 }
 
 // A slash-namespaced project's formula lives in the tap under its FOLDED
-// filename (gcc/pgo -> gcc-pgo.rb); the per-formula URL users copy must
+// filename (gcc/pgo -> gcc-pgo.rb). The per-formula URL users copy must
 // resolve that folded name back to the project instead of 404ing.
 func TestBrewFormula_FoldedFilenameResolvesSlashNamespacedProject(t *testing.T) {
 	t.Serial()
@@ -161,8 +161,8 @@ func TestBrewFormula_FoldedFilenameResolvesSlashNamespacedProject(t *testing.T) 
 	resp.Body.Close()
 }
 
-// The LITERAL slash-namespaced URL -- the form the admin dashboard linked and
-// the form a reader types from the project name -- must serve the same formula.
+// The LITERAL slash-namespaced URL must serve the same formula. That is the
+// form the admin dashboard linked and the form a reader types from the project name.
 func TestBrewFormula_LiteralSlashNamespacedPathServesFormula(t *testing.T) {
 	t.Serial()
 	env := setup(t)
@@ -179,7 +179,7 @@ func TestBrewFormula_LiteralSlashNamespacedPathServesFormula(t *testing.T) {
 	resp.Body.Close()
 }
 
-// A private project's LITERAL formula path names the project exactly, so an
+// A private project's LITERAL formula path names the project exactly.
 func TestBrewFormula_PrivateSlashNamespacedPathMatchesLegacyPath(t *testing.T) {
 	t.Serial()
 	env := setup(t)

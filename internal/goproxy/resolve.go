@@ -20,10 +20,10 @@ type resolved struct {
 	GoMod []byte
 }
 
-// resolveRef picks which repo directory actually holds modPath.
+// resolveRef picks which repo directory holds modPath.
 //
 // A "/vN" module may live at the repo root (its go.mod declares the /vN path)
-// or in a "vN" subdirectory, and only the go.mod settles it -- so each candidate
+// or in a "vN" subdirectory. Only the go.mod settles it -- so each candidate
 // is checked against the path it declares. A module with no go.mod at all is
 // accepted as-is: that is legal for pre-modules code, and there is nothing to
 // contradict.

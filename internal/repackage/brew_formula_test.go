@@ -32,9 +32,9 @@ func baseFormula(resources ...BrewResource) BrewFormula {
 }
 
 // Homebrew can only import a formula whose STABLE spec has a URL on the
-// platform doing the import; a formula carrying only on_<os> stanzas for the
+// platform doing the import. A formula carrying only on_<os> stanzas for the
 // OTHER platform raises "formula requires at least a URL" and poisons the
-// whole tap. Every formula therefore emits a top-level url/sha256, and a
+// whole tap. Every formula therefore emits a top-level url/sha256. A
 // single-OS formula declares depends_on so a foreign-platform install fails
 // cleanly instead of fetching a binary that cannot run.
 func TestRenderBrewFormula_LinuxOnly(t *testing.T) {
@@ -66,7 +66,7 @@ func TestRenderBrewFormula_DualOS(t *testing.T) {
 	mac := BrewResource{OS: "macos", Arch: "arm", URL: "https://dl.example/darwin-arm64", SHA256: strings.Repeat("dd", 32)}
 	body := renderFormula(t, baseFormula(mac, linux))
 
-	// No platform gate, on_* blocks intact, and the top-level url is the
+	// No platform gate, on_* blocks intact.
 	assert.NotContains(t, body, "depends_on")
 	assert.Contains(t, body, "on_macos do")
 	assert.Contains(t, body, "on_linux do")
@@ -80,7 +80,9 @@ func TestRenderBrewFormula_PrivateTopLevelURLUsesStrategy(t *testing.T) {
 	body := renderFormula(t, f)
 
 	assert.Contains(t, body, "\n  url \"https://dl.example/x\", using: BuildhostCurlDownloadStrategy\n")
-	assert.Contains(t, body, `require_relative "../lib/buildhost_private_download"`)
+	// Inline, because brew extract copies the formula into a tap with no lib/.
+	assert.True(t, strings.HasPrefix(body, BrewPrivateStrategy+"\nclass "), body)
+	assert.NotContains(t, body, "require_relative")
 }
 
 func TestRenderBrewFormula_NoResourcesErrors(t *testing.T) {
@@ -89,8 +91,8 @@ func TestRenderBrewFormula_NoResourcesErrors(t *testing.T) {
 	require.Error(t, err)
 }
 
-// The flag-OFF rendering is pinned byte-for-byte: formula bytes feed the tap's
-// content-addressed git objects, so unintended drift mints a spurious tap
+// The flag-OFF rendering is pinned byte-for-byte. Formula bytes feed the tap's
+// content-addressed git objects. So unintended drift mints a spurious tap
 // commit for every project on deploy. Any deliberate change to the formula
 // (e.g. the skip_clean/chmod mode fix) belongs in this golden.
 func TestRenderBrewFormula_ServiceOffByteIdentical(t *testing.T) {
@@ -104,6 +106,10 @@ func TestRenderBrewFormula_ServiceOffByteIdentical(t *testing.T) {
   homepage "https://example.com"
   version "1.0.0"
   license "MIT"
+
+  # brew extract and brew version-install rename the class to <name>AT<version>.
+  # A renamed class pins one release, so it must not link over the latest one.
+  keg_only "it pins one release, and the unversioned formula links the same command" if name.to_s.split("::").last != "Mytool"
 
   url "https://dl.example/linux-amd64"
   sha256 "` + strings.Repeat("aa", 32) + `"
@@ -133,10 +139,10 @@ end
 }
 
 // The opt-in service block (projects.create_service): brew services manages the
-// installed binary as a login service. keep_alive uses the CRASH-ONLY form --
+// installed binary as a login service. keep_alive uses the CRASH-ONLY form.
 // `successful_exit: false` renders KeepAlive {SuccessfulExit: false} in the
-// launchd plist (Homebrew service.rb KEEP_ALIVE_KEYS) -- because plain
-// `keep_alive true` would respawn a deliberately-exiting app (a single-instance
+// launchd plist (Homebrew service.rb KEEP_ALIVE_KEYS). That form is used because
+// plain `keep_alive true` would respawn a deliberately-exiting app (a single-instance
 func TestRenderBrewFormula_ServiceBlock(t *testing.T) {
 	t.Serial()
 	f := baseFormula(BrewResource{OS: "macos", Arch: "arm", URL: "https://dl.example/darwin-arm64", SHA256: strings.Repeat("bb", 32)})
@@ -213,7 +219,7 @@ func TestRenderBrewFormula_NonBinaryKindHasNoSkipClean(t *testing.T) {
 }
 
 // Slash-namespaced projects install the BASENAME (brew strips the lone
-// top-level directory when unpacking), so the chmod must name the same file
+// top-level directory when unpacking). The chmod must name the same file
 // bin.install staged -- chmod'ing the slashed path would ENOENT the install.
 func TestRenderBrewFormula_SlashNamespacedChmodsBasename(t *testing.T) {
 	t.Serial()

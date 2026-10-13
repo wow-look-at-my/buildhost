@@ -10,7 +10,7 @@ import (
 )
 
 // TestRootRedirectRouteShadowing proves the apex GET /{project} route catches
-// the project root and every file path under it, yet never shadows the more
+// the project root and every file path under it. Yet it never shadows the more
 // specific branch / branches routes. The router is best-match: more literal
 // segments win, so the literal-less apex route only catches paths that aren't
 func TestRootRedirectRouteShadowing(t *testing.T) {
@@ -37,7 +37,7 @@ func TestRootRedirectRouteShadowing(t *testing.T) {
 		{"/ue553", "root", "ue553"},
 		{"/ue553/", "root", "ue553"},
 		{"/org/repo", "root", "org/repo"}, // namespaced project root
-		// A file under the project root: the whole remainder arrives as
+		// A file under the project root.
 		{"/ue553/runner.html", "root", "ue553/runner.html"},
 		{"/ue553/assets/app.js", "root", "ue553/assets/app.js"},
 		{"/ue553/branches", "list", "ue553"},
@@ -96,7 +96,7 @@ func TestSigilDefaultBranchCollapsesToBareURL(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "preview", rec.Body.String())
 
-	// Neither does the legacy /branch/ spelling redirect: it is the
+	// Neither does the /branch/ spelling redirect.
 	req = httptest.NewRequest("GET", "http://sites.example.com/ue553/branch/main/a/x.css", nil)
 	req = withRoute(req, proj, route{project: "ue553", branch: "main", path: "a/x.css"})
 	rec = httptest.NewRecorder()
@@ -105,8 +105,8 @@ func TestSigilDefaultBranchCollapsesToBareURL(t *testing.T) {
 	assert.Equal(t, "body{}", rec.Body.String())
 }
 
-// The collapse is skipped when the bare URL would address a DIFFERENT project:
-// the apex path splits project from file by longest match, so with projects
+// The collapse is skipped when the bare URL would address a DIFFERENT project.
+// The apex path splits project from file by longest match, so with projects
 // "org" and "org/repo", /org/repo/x.css is org/repo's file. Redirecting org's
 // own repo/x.css there would silently point at another project's site.
 func TestSigilDefaultBranchKeepsShadowedFileInPlace(t *testing.T) {

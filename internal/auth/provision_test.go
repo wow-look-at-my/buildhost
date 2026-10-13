@@ -15,7 +15,7 @@ import (
 
 // TestRequireProject_ReadAccess_NeverAutoProvisions proves a read request does
 // not create a missing project even when an OIDC token would authorize a write
-// provision: auto-provisioning is a write-only action, so a GET can never
+// provision. Auto-provisioning is a write-only action. A GET can never
 // materialize a project as a side effect.
 func TestRequireProject_ReadAccess_NeverAutoProvisions(t *testing.T) {
 	t.Serial()
@@ -41,8 +41,6 @@ func TestRequireProject_ReadAccess_NeverAutoProvisions(t *testing.T) {
 	assert.ErrorIs(t, err, db.ErrNotFound, "read must not have created the project")
 }
 
-// TestRequireProject_WriteMissingProject_RejectedOIDC_ExplainsReason proves a
-// write to a not-yet-existing project whose JWT was rejected (e.g. org not in
 func TestRequireProject_WriteMissingProject_RejectedOIDC_ExplainsReason(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)
@@ -87,8 +85,8 @@ func (r publicReadRouteInfo) AllowsPublicRead(context.Context, *db.DB, *db.Proje
 
 // TestRequireProject_PublicRead_ServesPrivateProjectWithoutToken proves a route
 // that implements PublicReadAuthorizer (e.g. a static site published public) is
-// served without a token even under a private project, while a non-public read
-// of the same project still requires auth.
+// served without a token even under a private project. This happens while a
+// non-public read of the same project still requires auth.
 func TestRequireProject_PublicRead_ServesPrivateProjectWithoutToken(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)
@@ -112,8 +110,6 @@ func TestRequireProject_PublicRead_ServesPrivateProjectWithoutToken(t *testing.T
 	assert.Equal(t, http.StatusUnauthorized, serve(false), "a non-public read still requires auth")
 }
 
-// TestRequireProject_HiddenReadAccess_PrivateProject_Returns404 proves
-// HiddenReadAccess hides a private project from an unauthorized caller behind a
 func TestRequireProject_HiddenReadAccess_PrivateProject_Returns404(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)

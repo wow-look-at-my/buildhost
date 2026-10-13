@@ -30,7 +30,6 @@ type mockServer struct {
 
 	maxDirect int64
 
-	// uploadBySHA256 is advertised on server-info when set (a server with
 	uploadBySHA256 bool
 
 	sessions map[string][]byte // id -> spooled bytes
@@ -283,7 +282,7 @@ func TestFileSHA256(t *testing.T) {
 }
 
 // The hash-reference capability must ONLY come from an explicit server-info
-// advertisement: a server that predates the feature ignores upload_sha256 and
+// advertisement. A server that predates the feature ignores upload_sha256 and
 // would store the empty request body, so guessing is never safe.
 func TestSupportsUploadBySHA256(t *testing.T) {
 	t.Serial()

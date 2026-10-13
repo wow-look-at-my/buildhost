@@ -189,7 +189,7 @@ func TestExistingAndMissingPrivateModulesAreIndistinguishable(t *testing.T) {
 
 	assert.Equal(t, real.Code, fictional.Code)
 	assert.Equal(t, real.Header().Get("Content-Type"), fictional.Header().Get("Content-Type"))
-	// Only the echoed module path may differ, so compare with it removed.
+	// Only the echoed module path may differ, so compare with.
 	assert.Equal(t,
 		strings.ReplaceAll(real.Body.String(), privateOrg+"/tml", "M"),
 		strings.ReplaceAll(fictional.Body.String(), privateOrg+"/no-such-repo-anywhere", "M"))
@@ -214,6 +214,67 @@ func TestProjectScopedTokenCannotReadPrivateModules(t *testing.T) {
 	assert.Zero(t, fake.calls)
 }
 
+// CI in any org repository fetches the org's other private modules with the
+// workflow's own OIDC identity; no secret has to be provisioned.
+func TestOIDCIdentityReadsOtherOrgPrivateModules(t *testing.T) {
+	t.Serial()
+	fake := newFakeGitHub(t)
+	fake.Private = true
+	seedModule(fake, privateOrg+"/tml", "", "v1.2.0", "aaaa111122223333444455556666777788889999",
+		"module "+privateOrg+"/tml\n\ngo 1.25\n")
+	s := newTestService(t, fake, "tok", []string{privateOrg})
+
+	req := httptest.NewRequest(http.MethodGet, "/"+privateOrg+"/tml/@v/list", nil)
+	ctx := auth.WithToken(req.Context(), &db.ApiToken{Scopes: "read,write"})
+	ctx = auth.WithOIDCProject(ctx, "some-other-repo")
+	rec := httptest.NewRecorder()
+	s.serve(rec, req.WithContext(ctx))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, "v1.2.0\n", rec.Body.String())
+}
+
+// A private module's content was served to an authenticated caller. A shared
+// cache in front of this host must never store it for the next anonymous one.
+func TestPrivateModuleResponsesAreNotPubliclyCacheable(t *testing.T) {
+	t.Serial()
+	fake := newFakeGitHub(t)
+	fake.Private = true
+	seedModule(fake, privateOrg+"/tml", "", "v1.2.0", "aaaa111122223333444455556666777788889999",
+		"module "+privateOrg+"/tml\n\ngo 1.25\n")
+	s := newTestService(t, fake, "tok", []string{privateOrg})
+
+	for _, path := range []string{
+		"/" + privateOrg + "/tml/@v/list",
+		"/" + privateOrg + "/tml/@latest",
+		"/" + privateOrg + "/tml/@v/v1.2.0.info",
+		"/" + privateOrg + "/tml/@v/v1.2.0.mod",
+		"/" + privateOrg + "/tml/@v/v1.2.0.zip",
+	} {
+		t.Run(path, func(t *testing.T) {
+			rec := serveProxy(t, s, path)
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			cc := rec.Header().Get("Cache-Control")
+			assert.Contains(t, cc, "private")
+			assert.NotContains(t, cc, "public")
+		})
+	}
+}
+
+// GitHub names are case-insensitive, so a differently-cased path to a private
+// repository is still private and still gated.
+func TestPrivatePrefixMatchIgnoresCase(t *testing.T) {
+	t.Serial()
+	fake := newFakeGitHub(t)
+	fake.Private = true
+	s := newTestService(t, fake, "tok", []string{privateOrg})
+
+	assert.True(t, s.isPrivate("github.com/WOW-Look-At-My/tml"))
+	rec := serveAnon(t, s, "/github.com/!w!o!w-!look-!at-!my/tml/@v/list")
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Contains(t, rec.Body.String(), "no such module is visible to this caller")
+}
+
 // The counterpart: gating PUBLIC modules would only stop GOPROXY=<proxy>,direct
 // working for anyone without a buildhost token, and there is nothing to hide.
 func TestPublicModuleNeedsNoCredential(t *testing.T) {
@@ -221,7 +282,7 @@ func TestPublicModuleNeedsNoCredential(t *testing.T) {
 	mirror := fakeMirror(t, map[string]string{"golang.org/x/mod/@v/list": "v0.40.0\n"})
 	fake := newFakeGitHub(t)
 	s := newTestService(t, fake, "tok", []string{privateOrg})
-	s.upstream = newUpstreamSource(s.github.client, mirror.URL, []string{privateOrg})
+	s.upstream = newUpstreamSource(s.github.client, mirror.URL)
 
 	rec := serveAnon(t, s, "/golang.org/x/mod/@v/list")
 
@@ -299,9 +360,9 @@ func TestNestedModuleUsesTagPrefix(t *testing.T) {
 	assert.Equal(t, "v0.3.0\n", rec.Body.String())
 }
 
-// With no tags at all -- the normal state for this org's branch-pinned modules
-// -- @latest must resolve to a pseudo-version of the default branch head rather
-// than reporting that there is nothing there.
+// With no tags at all, @latest must resolve to a pseudo-version of the default
+// branch head rather than reporting that there is nothing there. No tags is
+// the normal state for this org's branch-pinned modules.
 func TestLatestFallsBackToPseudoVersion(t *testing.T) {
 	t.Serial()
 	fake := newFakeGitHub(t)
@@ -357,7 +418,7 @@ func TestPseudoVersionResolvesByEmbeddedRevision(t *testing.T) {
 }
 
 // A version string that is not semver at all is a malformed request, not a
-// missing module -- the caller has to fix their request, not go looking for a
+// missing module. The caller has to fix their request, not go looking for a
 // version that was never there.
 func TestNonSemverVersionIsABadRequest(t *testing.T) {
 	t.Serial()
@@ -370,7 +431,7 @@ func TestNonSemverVersionIsABadRequest(t *testing.T) {
 }
 
 // A timestamp-only prerelease is NOT a pseudo-version: it carries no revision,
-// so it addresses no commit and is resolved as an ordinary tag -- which is
+// so it addresses no commit. It is resolved as an ordinary tag -- which is
 // absent, and correctly reported as such.
 func TestTimestampPrereleaseIsResolvedAsATag(t *testing.T) {
 	t.Serial()

@@ -12,7 +12,7 @@ type Kind int
 const (
 	// KindNotFound: upstream is readable and the module genuinely is not there.
 	KindNotFound Kind = iota
-	// KindUnauthorized: upstream rejected our credential, or we have none. The
+	// KindUnauthorized: upstream rejected our credential, or we have none.
 	KindUnauthorized
 	// KindUpstream: upstream was reachable but failed (5xx, rate limit, malformed
 	KindUpstream
@@ -37,9 +37,8 @@ func (k Kind) String() string {
 	return "unknown"
 }
 
-// Error is a fetch failure carrying enough for a caller to act without reading
-// the server's logs: which module, what the upstream actually said, and whether
-// the proxy's own credential was the problem.
+// Error is a fetch failure carrying enough for a caller to act without
+// reading the server's logs: which module, what the upstream said.
 type Error struct {
 	Kind Kind
 	// Module and Version address what was being fetched ("" when not applicable).
@@ -48,7 +47,7 @@ type Error struct {
 	// Upstream names the system that answered (e.g. "github", a mirror's URL)
 	Upstream       string
 	UpstreamStatus int
-	// Detail is the upstream's own message, already trimmed to something a
+	// Detail is the upstream's own message.
 	Detail string
 	Err    error
 }
@@ -87,8 +86,8 @@ func (e *Error) HTTPStatus() int {
 }
 
 // Body is what the client sees. `go mod download` surfaces a proxy's response
-// body verbatim in its error, so this text is the whole diagnosis for whoever
-// hits it -- it names the module, the upstream and its status, and for an
+// body verbatim in its error. This text is the whole diagnosis for whoever
+// hits it. It names the module, the upstream and its status. For an
 // authorization failure it says plainly that the proxy could not read the
 // module rather than that the module is absent.
 func (e *Error) Body() string {
@@ -146,9 +145,9 @@ func invalidErr(mod, ver, detail string) *Error {
 // inaccessibleErr answers a caller who may not see this module.
 //
 // The answer is identical whether the module exists or not: the check runs
-// before any upstream call, so there is nothing that could differ. That is what
-// keeps a prober from mapping the org's private repositories by diffing
-// responses. The note is on both answers too, so it tells a caller who simply
+// before any upstream call, so there is nothing that could differ. That is
+// what keeps a prober from mapping the org's private repositories by diffing
+// responses. The note is on both answers too.
 func inaccessibleErr(mod, ver string) *Error {
 	return &Error{
 		Kind:    KindInaccessible,
@@ -162,27 +161,16 @@ func inaccessibleErr(mod, ver string) *Error {
 }
 
 // notServedErr answers a module outside this proxy's namespace, with no mirror
-// configured to forward it to.
-func notServedErr(mod, ver string, servedPrefixes []string) *Error {
+// configured to forward it to. The body does not name the private prefixes: it
+// goes to anonymous callers, and a prefix may name a private repository.
+func notServedErr(mod, ver string) *Error {
 	return &Error{
 		Kind:    KindNotFound,
 		Module:  mod,
 		Version: ver,
-		Detail: "not served by this proxy (it serves " + joinOr(servedPrefixes, "no module prefixes") +
-			", and no upstream mirror is configured). Use GOPROXY=<this proxy>,direct so the go " +
-			"command fetches everything else straight from its origin.",
+		Detail: "not served by this proxy, and no upstream mirror is configured. Use " +
+			"GOPROXY=<this proxy>,direct so the go command fetches it straight from its origin.",
 	}
-}
-
-func joinOr(items []string, empty string) string {
-	if len(items) == 0 {
-		return empty
-	}
-	out := items[0]
-	for _, s := range items[1:] {
-		out += ", " + s
-	}
-	return out
 }
 
 // asError normalizes any error into an *Error so a handler never has to guess a

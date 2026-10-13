@@ -58,7 +58,7 @@ func (d *DB) GetRelease(ctx context.Context, projectID int64, version string) (*
 }
 
 // GetLatestRelease resolves the apex "latest" release (no version, no explicit
-// branch): the newest published release on the project's default branch
+// branch). The newest published release on the project's default branch
 // (projects.default_branch, default "master"), so a push to a feature branch
 // cannot hijack "latest". A project whose default branch has no published
 func (d *DB) GetLatestRelease(ctx context.Context, projectID int64) (*Release, error) {
@@ -84,6 +84,12 @@ func (d *DB) GetLatestReleaseByBranch(ctx context.Context, projectID int64, bran
 		return nil, fmt.Errorf("get latest release by branch: %w", err)
 	}
 	return &row, nil
+}
+
+// ListPublishedReleasesOnDefaultBranch returns every published release on the
+// project's default branch, newest first: the set GetLatestRelease picks from.
+func (d *DB) ListPublishedReleasesOnDefaultBranch(ctx context.Context, projectID int64) ([]Release, error) {
+	return d.q.ListPublishedReleasesOnDefaultBranch(ctx, projectID)
 }
 
 func (d *DB) ListReleases(ctx context.Context, projectID int64) ([]Release, error) {

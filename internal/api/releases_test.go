@@ -109,7 +109,7 @@ func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "v1", updated.DefaultBranch, "publish must record the repo's default branch")
 
-	// "latest" now resolves to the v1 release; under the old hardcoded "master"
+	// "latest" now resolves to the v1 release; under the hardcoded "master"
 	latest, err := h.DB.GetLatestRelease(ctx, proj.ID)
 	require.NoError(t, err)
 	assert.Equal(t, rel.Version, latest.Version)
@@ -117,10 +117,9 @@ func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
 }
 
 // The publish path is the declarative surface for create_service: a present
-// field is asserted on EVERY publish (idempotently), an absent field leaves
+// field is asserted on EVERY publish (idempotently). An absent field leaves
 // the stored setting untouched -- so an older CI that never sends it can
-// never clobber an operator-set value, and a declaring CI is the source of
-// truth.
+// never clobber an operator-set value. A declaring CI is the source of truth.
 func TestCreateRelease_CreateServiceDeclaration(t *testing.T) {
 	t.Serial()
 	h := setupTestHandler(t)
@@ -180,7 +179,6 @@ func TestCreateRelease_InvalidDefaultBranch(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
-// Note: TestCreateRelease_NoAuth removed -- auth is now enforced by the
 // requireProject middleware (tested in the auth package).
 
 func TestCreateRelease_InvalidBody(t *testing.T) {
@@ -201,24 +199,52 @@ func TestCreateRelease_InvalidBody(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
-func TestCreateRelease_SemverMissingVersion(t *testing.T) {
-	t.Serial()
-	h := setupTestHandler(t)
-	ctx := context.Background()
-
-	proj := &db.Project{Name: "semproj2", Versioning: db.VersioningSemver}
-	require.NoError(t, h.DB.CreateProject(ctx, proj))
-
-	body := `{}`
-	req := httptest.NewRequest("POST", "/api/projects/semproj2/releases", strings.NewReader(body))
-	req.SetPathValue("project", "semproj2")
+// postSemverRelease creates a release on a semver project and returns the recorder.
+func postSemverRelease(t *testing.T, h *Handler, proj *db.Project, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest("POST", "/api/projects/"+proj.Name+"/releases", strings.NewReader(body))
+	req.SetPathValue("project", proj.Name)
 	req = withProjectRoute(req, proj)
 	req = req.WithContext(writeToken(req.Context(), "read,write"))
 	rec := httptest.NewRecorder()
 	h.CreateRelease(rec, req)
+	return rec
+}
 
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Contains(t, rec.Body.String(), "version is required")
+func TestCreateRelease_SemverMissingVersionStartsAtFirstPatch(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+	proj := &db.Project{Name: "semproj2", Versioning: db.VersioningSemver}
+	require.NoError(t, h.DB.CreateProject(context.Background(), proj))
+
+	rec := postSemverRelease(t, h, proj, `{}`)
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var rel db.Release
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
+	assert.Equal(t, "0.0.1", rel.Version)
+}
+
+func TestCreateRelease_SemverMissingVersionBumpsTheLatestPatch(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+	proj := &db.Project{Name: "semproj3", Versioning: db.VersioningSemver}
+	require.NoError(t, h.DB.CreateProject(context.Background(), proj))
+	require.Equal(t, http.StatusCreated, postSemverRelease(t, h, proj, `{"version":"v1.2.3"}`).Code)
+
+	rec := postSemverRelease(t, h, proj, `{"git_branch":"main"}`)
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var rel db.Release
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
+	assert.Equal(t, "1.2.4", rel.Version)
+	assert.Equal(t, semverToNum("1.2.4"), rel.VersionNum)
+}
+
+func TestNumToSemverInvertsSemverToNum(t *testing.T) {
+	for _, v := range []string{"0.0.1", "1.2.3", "10.0.999", "3.41.0"} {
+		assert.Equal(t, v, numToSemver(semverToNum(v)))
+	}
 }
 
 func TestCreateRelease_Duplicate(t *testing.T) {
@@ -267,10 +293,10 @@ func TestGetRelease_Success(t *testing.T) {
 }
 
 // GetRelease must carry the release's artifacts. buildhost-publish-release
-// falls back to re-reading the release when the publish response predates the
-// artifacts field -- a rolling deploy can serve that publish from an older
-// container -- so without this the fallback has nothing to recover and a
-// publish fails for the duration of someone else's deploy.
+// falls back to re-reading the release. This happens when the publish
+// response predates the artifacts field. A rolling deploy can serve that
+// publish from an older container. So without this the fallback has nothing
+// to recover, and a publish fails for the duration of someone else's deploy.
 func TestGetRelease_ReturnsArtifacts(t *testing.T) {
 	t.Serial()
 	h := setupTestHandler(t)
@@ -491,11 +517,11 @@ func TestSemverToNum(t *testing.T) {
 	}
 }
 
-// A draft release is uploaded deliberately but kept out of the project's
-// release stream: `latest` (and per-branch resolution, and every package
-// manager built on it) must not see it, while an exact-version lookup must.
-// That is the whole point -- publishing a build for yourself without moving the
-// pointer everyone else follows.
+// A draft release is uploaded deliberately. However, the draft release kept out
+// of the project's release stream: `latest` (and per-branch resolution, and
+// every package manager built on it) must not see it, while an exact-version
+// lookup must. That is the whole point -- publishing a build for yourself
+// without moving the pointer everyone else follows.
 func TestCreateRelease_Draft(t *testing.T) {
 	t.Serial()
 	h := setupTestHandler(t)
@@ -503,7 +529,7 @@ func TestCreateRelease_Draft(t *testing.T) {
 
 	proj := &db.Project{Name: "draftproj", Versioning: db.VersioningAuto}
 	require.NoError(t, h.DB.CreateProject(ctx, proj))
-	// The apex "latest" tracks the project's default branch; use it so the
+	// The apex "latest" tracks the project's default branch.
 	branch := db.LatestBranch
 
 	create := func(body string) db.Release {
@@ -527,7 +553,7 @@ func TestCreateRelease_Draft(t *testing.T) {
 	assert.True(t, draft.Draft)
 	assert.False(t, draft.Published)
 
-	// The apex "latest" still resolves to the published release, not the
+	// The apex "latest" still resolves to the published release.
 	latest, err := h.DB.GetLatestRelease(ctx, proj.ID)
 	require.NoError(t, err)
 	assert.Equal(t, published.Version, latest.Version, "a draft must never become latest")

@@ -44,8 +44,8 @@ func (h *Handler) ServePrivateTapUploadPack(w http.ResponseWriter, r *http.Reque
 	h.serveTapUploadPack(w, r)
 }
 
-// serveTapInfoRefs dispatches an info/refs request by its service parameter:
-// none means the dumb protocol (served exactly like every other tap file),
+// serveTapInfoRefs dispatches an info/refs request by its service parameter.
+// None means the dumb protocol (served exactly like every other tap file),
 // git-upload-pack means the smart advertisement, anything else is refused
 func (h *Handler) serveTapInfoRefs(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Query().Get("service") {
@@ -59,7 +59,7 @@ func (h *Handler) serveTapInfoRefs(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveUploadPackAdvertisement answers the smart ref advertisement from the
-// lineage's persisted tip -- the SAME refs/heads/main the dumb path serves, so
+// lineage's persisted tip -- the SAME refs/heads/main the dumb path serves.
 func (h *Handler) serveUploadPackAdvertisement(w http.ResponseWriter, r *http.Request) {
 	root, release, err := h.acquireTapLineage(r)
 	if err != nil {
@@ -81,9 +81,9 @@ func (h *Handler) serveUploadPackAdvertisement(w http.ResponseWriter, r *http.Re
 
 // serveTapUploadPack answers a smart fetch. The pack is built from the commit
 // the CLIENT asked for (its "want" -- the sha the advertisement handed it), so
-// a publish that advances the tip between the advertisement and this POST can
-// never produce a ref/pack mismatch: the append-only store still holds the
-// wanted commit's entire closure. An unknown or non-commit want falls back to
+// a publish that advances the tip between the advertisement. This POST can
+// never produce a ref/pack mismatch. The append-only store still holds the
+// wanted commit's entire closure.
 func (h *Handler) serveTapUploadPack(w http.ResponseWriter, r *http.Request) {
 	body, err := readUploadPackRequest(r)
 	if err != nil {
@@ -125,7 +125,7 @@ func (h *Handler) serveTapUploadPack(w http.ResponseWriter, r *http.Request) {
 	setTapCacheControl(w, r)
 
 	// A response to a deepen request always carries the shallow section (the
-	// exchange is stateless, so it is repeated on the final round too); a
+	// exchange is stateless, so it is repeated on the final round too).
 	if req.hasDeepen {
 		writeShallowSection(w, shallow, unshallow)
 		if !req.done {
@@ -300,7 +300,7 @@ func pktLines(body []byte) [][]byte {
 
 // writeShallowSection emits the deepen response: the commits that became
 // shallow (their parents were cut by the requested depth), the client-shallow
-// commits this pack un-shallows (their parents ARE included now, e.g. a
+// commits this pack un-shallows (their parents ARE included now.
 func writeShallowSection(w io.Writer, shallow, unshallow []string) {
 	for _, sha := range shallow {
 		w.Write(pktLineString("shallow " + sha + "\n"))

@@ -9,7 +9,7 @@ FROM oci_blob_links WHERE project_id = ? AND storage_key = ?;
 -- name: ListOCIBlobLinkProjects :many
 SELECT p.id, p.name, p.description, p.homepage, p.license, p.is_private, p.versioning,
        p.github_repo, p.github_owner_id, p.github_repo_id, p.default_branch, p.create_service,
-       p.created_at, p.updated_at,
+       p.apt_depends, p.created_at, p.updated_at,
        l.media_type, l.size, l.is_manifest
 FROM oci_blob_links l JOIN projects p ON p.id = l.project_id
 WHERE l.storage_key = ?;

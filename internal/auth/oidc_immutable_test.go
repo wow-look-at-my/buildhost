@@ -56,7 +56,7 @@ func TestSubjectParsers_ImmutableIDs(t *testing.T) {
 			repoPath: "MyOrg/MyRepo",
 		},
 		{
-			// A non-numeric @-suffix is NOT an immutable ID: nothing is
+			// A non-numeric @-suffix is NOT an immutable ID.
 			name:     "non-numeric suffix not stripped",
 			subject:  "repo:myorg/bad@name:ref:refs/heads/main",
 			org:      "myorg",
@@ -64,7 +64,7 @@ func TestSubjectParsers_ImmutableIDs(t *testing.T) {
 			repoPath: "myorg/bad@name",
 		},
 		{
-			// Only the LAST "@" is considered, so an ID after earlier junk is
+			// Only the LAST "@" is considered.
 			name:     "only last at-sign considered",
 			subject:  "repo:myorg/we@ird@123:ref:refs/heads/main",
 			org:      "myorg",
@@ -150,7 +150,8 @@ func TestVerifyToken_TrustedIssuer_ImmutableSubject_OrgCaseInsensitive(t *testin
 
 // The dedicated repository / repository_owner / *_id claims are preferred over
 // subject parsing, and the numeric IDs are surfaced for pinning -- from the
-// claims when present, else from an immutable subject's @id suffixes.
+// claims. This happens when present, else from an immutable subject's @id
+// suffixes.
 func TestVerifyToken_TrustedIssuer_DedicatedClaimsPreferred(t *testing.T) {
 	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -240,7 +241,7 @@ func TestOrgAllowed(t *testing.T) {
 
 // An allowlist entry pinned to a different owner ID refuses the token even
 // though the org NAME matches -- the resurrection case for the allowlist
-// itself -- and the error names the offending ID.
+// itself. The error names the offending ID.
 func TestVerifyToken_TrustedIssuer_OrgIDPinned_Mismatch(t *testing.T) {
 	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)

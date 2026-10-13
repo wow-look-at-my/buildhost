@@ -73,7 +73,7 @@ func walkCommits(root *os.Root, tip string, depth int, clientShallow []string) (
 }
 
 // collectPackEntries expands the walked commits into the full object list for
-// the pack: every commit, then each commit's tree closure, deduplicated -- the
+// the pack. Every commit, then each commit's tree closure, deduplicated -- the
 // lineage reuses unchanged trees and blobs across commits, so shared objects
 func collectPackEntries(root *os.Root, commits []commitNode) ([]string, error) {
 	seen := set.New[string](len(commits) * 4)
@@ -260,7 +260,7 @@ type treeEntryRef struct {
 	isTree bool
 }
 
-// parseTreeEntries decodes a tree object body: "<mode> <name>\x00" followed by
+// parseTreeEntries decodes a tree object body.
 func parseTreeEntries(body []byte) ([]treeEntryRef, error) {
 	var out []treeEntryRef
 	rest := body

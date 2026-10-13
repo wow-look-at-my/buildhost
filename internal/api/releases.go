@@ -32,10 +32,11 @@ type createReleaseRequest struct {
 	GitCommit string `json:"git_commit"`
 	// DefaultBranch is the repo's default branch (e.g. GitHub's
 	DefaultBranch string `json:"default_branch"`
-	// CreateService declares that the project's installed binary runs as a
 	CreateService *bool  `json:"create_service"`
-	Notes         string `json:"notes"`
-	OciUser       string `json:"oci_user"`
+	// AptDepends declares the project's Debian Depends value. Absent leaves it untouched, and "" clears it.
+	AptDepends *string `json:"apt_depends"`
+	Notes      string  `json:"notes"`
+	OciUser    string  `json:"oci_user"`
 	// Draft keeps the release out of the project's public release stream: it
 	Draft bool `json:"draft"`
 }
@@ -68,11 +69,16 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 				version = req.Version
 			}
 		}
-	} else {
-		if req.Version == "" {
-			jsonError(w, http.StatusBadRequest, "version is required for semver projects")
+	} else if req.Version == "" {
+		// A publisher that names no version gets the patch after the latest release.
+		nextNum, err := h.DB.NextVersionNum(r.Context(), project.ID)
+		if err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to determine next version")
 			return
 		}
+		versionNum = nextNum
+		version = numToSemver(nextNum)
+	} else {
 		version = strings.TrimPrefix(req.Version, "v")
 		if !validVersion(version) {
 			jsonError(w, http.StatusBadRequest, "invalid version string")
@@ -100,6 +106,20 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 	if req.OciUser != "" && !validOCIUser(req.OciUser) {
 		jsonError(w, http.StatusBadRequest, "invalid oci_user")
 		return
+	}
+	if req.AptDepends != nil {
+		if err := db.ValidateAptDepends(*req.AptDepends); err != nil {
+			jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	// A failed write fails the publish, because a release without its declared Depends installs broken.
+	if req.AptDepends != nil && *req.AptDepends != project.AptDepends {
+		if err := h.DB.SetProjectAptDepends(r.Context(), project.ID, *req.AptDepends); err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to update project apt_depends")
+			return
+		}
 	}
 
 	// Assert the declared create_service setting on EVERY publish attempt --
@@ -159,7 +179,6 @@ func (h *Handler) GetRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Artifacts ride along so a release's contents are readable without a
 	artifacts, err := h.DB.ListArtifactsWithPlatforms(r.Context(), rel.ID)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed to list artifacts")
@@ -208,6 +227,11 @@ func semverToNum(v string) int64 {
 		}
 	}
 	return num
+}
+
+// numToSemver is the inverse of semverToNum for a version with no pre-release part.
+func numToSemver(num int64) string {
+	return fmt.Sprintf("%d.%d.%d", num/1_000_000, num/1_000%1_000, num%1_000)
 }
 
 // validOCIUser reports whether s is a valid run-as user for a synthesized OCI image:

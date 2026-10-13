@@ -160,6 +160,24 @@ func TestHealthEndpointRedactsPrivateNamesFromAnonymousCallers(t *testing.T) {
 	assert.Contains(t, authed, "credential_kind")
 }
 
+// Any GitHub account can sign in, so a session alone may not see the
+// configuration that names private repositories.
+func TestHealthEndpointRedactsForSignedInUsers(t *testing.T) {
+	t.Serial()
+	fake := newFakeGitHub(t)
+	s := newTestService(t, fake, "tok", []string{privateOrg})
+	s.cfg.ReadinessModule = privateOrg + "/tml"
+	s.checkHealth(context.Background())
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req = req.WithContext(auth.WithUser(req.Context(), "some-stranger"))
+	rec := httptest.NewRecorder()
+	s.serveHealth(rec, req)
+
+	assert.NotContains(t, rec.Body.String(), "tml")
+	assert.NotContains(t, rec.Body.String(), "credential_kind")
+}
+
 // The dashboard's snapshot has to survive an empty cache: a proxy that has
 // never served anything still needs its health shown.
 func TestSnapshotOnEmptyCache(t *testing.T) {

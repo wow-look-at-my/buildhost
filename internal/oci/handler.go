@@ -19,8 +19,7 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
-		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.DataDir()+"/tmp",
-			repackage.WithShellCacheDir(auth.DataDir()+"/shell"))
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.DataDir()+"/tmp")
 		handler.uploads = newUploadStore(auth.DataDir()+"/tmp/oci-uploads", config.MaxBlobSize())
 	})
 	auth.ServiceHandleRaw("oci", "GET /v2/{$}", handler.V2Root)
@@ -40,8 +39,7 @@ type route struct {
 func (r route) ProjectName() string { return r.project }
 
 // Access is write for push verbs (so requireProject enforces a write-scoped
-// token authorized for the project) and read for pulls. Upload sessions are
-// push-flow state in every method -- the GET status read exists to resume an
+// token authorized for the project) and read for pulls.
 func (r route) Access() auth.AccessLevel {
 	if r.action == "uploads" {
 		return auth.WriteAccess
@@ -51,6 +49,32 @@ func (r route) Access() auth.AccessLevel {
 		return auth.WriteAccess
 	}
 	return auth.ReadAccess
+}
+
+// BuildVisibility applies a PRIVATE override of the release a manifest tag
+// names. A public override does not open a pull from a private project: blobs
+// are fetched by digest. This names no release, so they stay behind the
+// project's own visibility.
+func (r route) BuildVisibility(ctx context.Context, d *db.DB, project *db.Project) db.Visibility {
+	if r.action != "manifests" || r.reference == "" || strings.HasPrefix(r.reference, "sha256:") {
+		return db.VisibilityAuto
+	}
+	var releaseID int64
+	if tag, err := d.GetOCITag(ctx, project.ID, r.reference); err == nil {
+		releaseID = tag.ReleaseID
+	} else if rel, err := (&Handler{DB: d}).resolveTag(ctx, project, r.reference); err == nil {
+		releaseID = rel.ID
+	} else {
+		return db.VisibilityAuto
+	}
+	mode, err := d.ReleaseVisibility(ctx, releaseID)
+	if err != nil {
+		return db.VisibilityPrivate
+	}
+	if mode == db.VisibilityPrivate {
+		return mode
+	}
+	return db.VisibilityAuto
 }
 
 var ociActions = []string{"manifests", "blobs", "tags"}

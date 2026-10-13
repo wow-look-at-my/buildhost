@@ -140,7 +140,7 @@ func TestGetProject_Success(t *testing.T) {
 
 // Note: GetProject auth (private project, not found) is tested via requireProject
 
-// PATCH must classify as a write verb: UpdateProjectSettings relies on the
+// PATCH must classify as a write verb. UpdateProjectSettings relies on the
 // centralized requireProject middleware demanding a write-scoped token
 // authorized for the project, which only happens for WriteAccess routes.
 func TestParseRoute_PATCHIsWrite(t *testing.T) {
@@ -190,6 +190,36 @@ func TestUpdateProjectSettings_CreateService(t *testing.T) {
 	got, err = h.DB.GetProject(ctx, "svcproj")
 	require.NoError(t, err)
 	assert.False(t, got.CreateService)
+}
+
+func TestUpdateProjectSettings_RefusesVersioning(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "verproj", Versioning: db.VersioningSemver}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+
+	patch := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("PATCH", "/api/v1/projects/verproj", strings.NewReader(body))
+		req.SetPathValue("project", "verproj")
+		req = withProjectRoute(req, proj)
+		rec := httptest.NewRecorder()
+		h.UpdateProjectSettings(rec, req)
+		return rec
+	}
+
+	for _, body := range []string{`{"versioning":"auto"}`, `{"versioning":null}`, `{"create_service":true,"versioning":"auto"}`} {
+		rec := patch(body)
+		assert.Equal(t, http.StatusForbidden, rec.Code, "a write token must not change versioning: %s", body)
+		got, err := h.DB.GetProject(ctx, "verproj")
+		require.NoError(t, err)
+		assert.Equal(t, db.VersioningSemver, got.Versioning, body)
+		assert.False(t, got.CreateService, "a refused request changes nothing: %s", body)
+	}
+
+	rec := patch(`{"create_service":true}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 }
 
 func TestUpdateProjectSettings_InvalidBody(t *testing.T) {

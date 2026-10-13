@@ -26,6 +26,13 @@ JOIN projects p ON p.id = r.project_id
 WHERE r.project_id = ? AND r.git_branch = p.default_branch AND r.published = 1
 ORDER BY r.version_num DESC LIMIT 1;
 
+-- name: ListPublishedReleasesOnDefaultBranch :many
+SELECT r.id, r.project_id, r.version, r.version_num, r.git_branch, r.git_commit, r.notes, r.oci_user, r.published, r.draft, r.created_at, r.published_at
+FROM releases r
+JOIN projects p ON p.id = r.project_id
+WHERE r.project_id = ? AND r.git_branch = p.default_branch AND r.published = 1
+ORDER BY r.version_num DESC;
+
 -- name: ListReleasesByProject :many
 SELECT id, project_id, version, version_num, git_branch, git_commit, notes, oci_user, published, draft, created_at, published_at
 FROM releases WHERE project_id = ? ORDER BY version_num DESC;

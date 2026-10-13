@@ -22,7 +22,6 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 	})
-	// npm requests a scoped package as `@buildhost/<name>` but URL-encodes the
 	auth.ServiceHandleHandler("npm", "GET /{pkg}", parseRoute, &handler)
 	// Tarball URLs are emitted by us in the packument with literal slashes (npm
 	auth.ServiceHandle("npm", "GET /@buildhost/{project}/-/{filename}", parseTarballRoute, handler.serveTarball)
@@ -43,6 +42,37 @@ type tarballRoute struct {
 
 func (r tarballRoute) ProjectName() string      { return r.project }
 func (r tarballRoute) Access() auth.AccessLevel { return auth.ReadAccess }
+
+// BuildVisibility applies the override of the release the tarball belongs to.
+func (r tarballRoute) BuildVisibility(ctx context.Context, d *db.DB, project *db.Project) db.Visibility {
+	version, ok := tarballVersion(project.Name, r.filename)
+	if !ok {
+		return db.VisibilityAuto
+	}
+	release, err := d.GetRelease(ctx, project.ID, version)
+	if err != nil {
+		return db.VisibilityAuto
+	}
+	mode, err := d.ReleaseVisibility(ctx, release.ID)
+	if err != nil {
+		// Fail closed: an unknown override must not open a private build.
+		return db.VisibilityPrivate
+	}
+	return mode
+}
+
+// tarballVersion reads the version out of "<npm-name>-<version>.tgz".
+func tarballVersion(projectName, filename string) (string, bool) {
+	rest, ok := strings.CutPrefix(filename, projectToNPMName(projectName)+"-")
+	if !ok {
+		return "", false
+	}
+	version, ok := strings.CutSuffix(rest, ".tgz")
+	if !ok || version == "" {
+		return "", false
+	}
+	return version, true
+}
 
 var knownPlatforms []string
 

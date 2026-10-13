@@ -11,6 +11,7 @@ CREATE TABLE projects (
     github_repo_id TEXT NOT NULL DEFAULT '',
     default_branch TEXT NOT NULL DEFAULT 'master',
     create_service INTEGER NOT NULL DEFAULT 0,
+    apt_depends TEXT NOT NULL DEFAULT '',
     created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );
@@ -151,6 +152,18 @@ CREATE TABLE oci_tags (
     UNIQUE(project_id, tag)
 );
 
+-- Every name a project answered to before a rename (mirrored from
+-- migrations/018_project_aliases.sql). A project name is a public contract, so
+-- an old dl/apt/brew/npm URL keeps resolving after the name follows its repo.
+CREATE TABLE project_aliases (
+    name       TEXT PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES projects(id),
+    created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_aliases_project ON project_aliases(project_id);
+CREATE INDEX IF NOT EXISTS idx_projects_github_repo_id ON projects(github_repo_id);
+
 CREATE TABLE retention_settings (
     id            INTEGER PRIMARY KEY CHECK (id = 1),
     keep_n        INTEGER NOT NULL DEFAULT 10,
@@ -194,3 +207,44 @@ CREATE TABLE goproxy_versions (
 
 CREATE INDEX IF NOT EXISTS idx_goproxy_versions_module ON goproxy_versions(module_id);
 CREATE INDEX IF NOT EXISTS idx_goproxy_versions_key    ON goproxy_versions(zip_storage_key);
+
+-- Run locks (mirrored from migrations/019_run_locks.sql).
+CREATE TABLE run_locks (
+    repo_id     TEXT NOT NULL,
+    run_id      TEXT NOT NULL,
+    run_attempt TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    value       TEXT NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (repo_id, run_id, run_attempt, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_run_locks_created ON run_locks(created_at);
+
+-- Visibility overrides (mirrored from migrations/020_visibility_overrides.sql).
+CREATE TABLE visibility_folders (
+    prefix     TEXT PRIMARY KEY,
+    mode       TEXT NOT NULL CHECK (mode IN ('public', 'private')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE project_visibility (
+    project_id   INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    mode         TEXT NOT NULL DEFAULT 'auto' CHECK (mode IN ('auto', 'public', 'private')),
+    auto_private INTEGER NOT NULL,
+    updated_at   DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE release_visibility (
+    release_id INTEGER PRIMARY KEY REFERENCES releases(id) ON DELETE CASCADE,
+    mode       TEXT NOT NULL CHECK (mode IN ('public', 'private')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE site_visibility (
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    branch     TEXT NOT NULL,
+    mode       TEXT NOT NULL CHECK (mode IN ('public', 'private')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (project_id, branch)
+);

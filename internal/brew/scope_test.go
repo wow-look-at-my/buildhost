@@ -73,6 +73,7 @@ func TestServePrivateTap_TokenScopedTapIncludesPrivateFormula(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
+	seedBrewProject(t, d, store, "ns/other", "other-binary")
 	seedPrivateBrewProject(t, d, store, "ns/secretapp", "priv-binary")
 
 	// A global read token sees public + private projects.
@@ -89,14 +90,13 @@ func TestServePrivateTap_TokenScopedTapIncludesPrivateFormula(t *testing.T) {
 	all := tapFilesText(files)
 	// Private formula present under its folded name, using the token strategy.
 	assert.Contains(t, all, "ns-secretapp.rb")
-	assert.Contains(t, all, `require_relative "../lib/buildhost_private_download"`)
 	assert.Contains(t, all, "using: BuildhostCurlDownloadStrategy")
 	assert.Contains(t, all, "class NsSecretapp < Formula")
 	// Slash-named projects install by BASENAME: the tar.gz's only top-level
 	assert.Contains(t, all, `bin.install "secretapp"`)
 	assert.NotContains(t, all, `bin.install "ns/secretapp"`)
-	// The strategy library rides along and never embeds a token.
-	assert.Contains(t, all, "buildhost_private_download.rb")
+	// The formula carries the strategy inline and never embeds a token.
+	assert.NotContains(t, all, "require_relative")
 	assert.Contains(t, all, `ENV["HOMEBREW_BUILDHOST_TOKEN"]`)
 	assert.Contains(t, all, "class BuildhostCurlDownloadStrategy < CurlDownloadStrategy")
 }
@@ -106,7 +106,7 @@ func TestScopedTap_PublicFormulaStaysPlain(t *testing.T) {
 	h, d, store := setupTest(t)
 	seedBrewProject(t, d, store, "pubapp", "pub-binary")
 
-	// Even through the authenticated tap, a PUBLIC project's formula keeps the
+	// Even through the authenticated tap.
 	req := withReadToken(httptest.NewRequest("GET", "/private/tap.git", nil), nil)
 	req.Host = "brew.example.com"
 	files, err := h.buildTapFiles(req)
@@ -115,7 +115,6 @@ func TestScopedTap_PublicFormulaStaysPlain(t *testing.T) {
 	all := tapFilesText(files)
 	assert.Contains(t, all, "class Pubapp < Formula")
 	assert.NotContains(t, all, "using: BuildhostCurlDownloadStrategy\n      sha256")
-	// The only require_relative in the tap text is inside no formula -- the
 	assert.NotContains(t, all, "require_relative")
 }
 
@@ -151,8 +150,7 @@ func TestAnonymousTap_NeverContainsPrivateNames(t *testing.T) {
 	all := tapFilesText(files)
 	assert.Contains(t, all, "pubapp.rb")
 	assert.NotContains(t, all, "secretapp")
-	// The strategy library is part of the uniform tap layout even when nothing
-	assert.Contains(t, all, "buildhost_private_download.rb")
+	assert.NotContains(t, all, "BuildhostCurlDownloadStrategy")
 }
 
 func TestRedirectTap_AnonymousRedirects_AuthenticatedServedInPlace(t *testing.T) {
@@ -165,7 +163,7 @@ func TestRedirectTap_AnonymousRedirects_AuthenticatedServedInPlace(t *testing.T)
 	require.Equal(t, http.StatusMovedPermanently, anon.Code)
 	assert.Equal(t, "https://git.example.com/brew/tap.git/info/refs", anon.Header().Get("Location"))
 
-	// A credentialed request must NOT be redirected: the client would drop the
+	// A credentialed request must NOT be redirected.
 	authed := tapFile(t, h.RedirectTap, "/tap.git/info/refs", "info/refs", nil, true)
 	require.Equal(t, http.StatusOK, authed.Code)
 	assert.Equal(t, "private, no-store", authed.Header().Get("Cache-Control"))
@@ -214,14 +212,14 @@ func TestServeFormula_PrivateProjectUsesTokenStrategyAndNoStore(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
 	body := rec.Body.String()
-	assert.Contains(t, body, `require_relative "../lib/buildhost_private_download"`)
+	assert.Contains(t, body, "class BuildhostCurlDownloadStrategy < CurlDownloadStrategy")
 	assert.Contains(t, body, "using: BuildhostCurlDownloadStrategy")
-	// The formula must never embed the caller's token; auth comes from
+	// The formula must never embed the caller's token.
 	assert.NotContains(t, body, "token=")
 }
 
 // tapFilesText concatenates every tap file path and its content, so tests can
-// assert on tap contents (formula filenames live in the paths, formula text in
+// assert on tap contents (formula filenames live in the paths.
 func tapFilesText(files map[string][]byte) string {
 	var b strings.Builder
 	for path, data := range files {
@@ -240,11 +238,10 @@ func TestPrivateStrategySource(t *testing.T) {
 	t.Serial()
 	assert.Contains(t, repackage.BrewPrivateStrategy, `ENV["HOMEBREW_BUILDHOST_TOKEN"]`)
 	assert.Contains(t, repackage.BrewPrivateStrategy, "Authorization: Bearer ")
-	assert.Equal(t, "lib/buildhost_private_download.rb", repackage.BrewPrivateStrategyPath)
 }
 
 // A digit-leading project name is structurally unloadable by Homebrew, and
-// emitting `class 7zip < Formula` is a guaranteed ".rb: syntax error" that
+// emitting `class 7zip < Formula` is a guaranteed ".rb.
 func TestHostileProjectNames_NeverEmitInvalidRuby(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)

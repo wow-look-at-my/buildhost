@@ -13,7 +13,7 @@ import (
 )
 
 // apeWithPESections builds a minimal APE body whose PE header declares nsect
-// sections, so a test can choose between the real header and the do-nothing
+// sections. A test can choose between the real header and the do-nothing
 // stub. 0x80 is where a gosmopolitan APE puts its PE header.
 func apeWithPESections(t *testing.T, nsect uint16) string {
 	t.Helper()
@@ -47,8 +47,8 @@ func TestUploadArtifact_CosmoAliasAPEIsOneRow(t *testing.T) {
 }
 
 // TestUploadArtifact_NonAPEAliasStillFansOut pins the other half: when the
-// combinations really are separate builds that happen to share bytes, a row
-// each is still the right answer.
+// combinations are separate builds that happen to share bytes, a row each is
+// still the right answer.
 func TestUploadArtifact_NonAPEAliasStillFansOut(t *testing.T) {
 	t.Serial()
 	h, proj, rel := setupUploadTest(t, "nonapealiasproj")
@@ -61,7 +61,6 @@ func TestUploadArtifact_NonAPEAliasStillFansOut(t *testing.T) {
 	assert.Len(t, rows, 3)
 }
 
-// TestUploadArtifact_AliasRejectsWindowsOnStubPE covers the failure that is
 func TestUploadArtifact_AliasRejectsWindowsOnStubPE(t *testing.T) {
 	t.Serial()
 	h, proj, rel := setupUploadTest(t, "stubpealiasproj")

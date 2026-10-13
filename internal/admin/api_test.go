@@ -1,15 +1,21 @@
 package admin
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/binarchive"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
 func TestAPIDashboard(t *testing.T) {
@@ -159,8 +165,8 @@ func TestAPIRelease(t *testing.T) {
 }
 
 // assertServiceURLs checks the "services" map carries the real per-service
-// subdomain hosts the router serves, derived from the request Host
-// (buildhost.example.com -> example.com) with the admin label stripped.
+// subdomain hosts the router serves. Those hosts are derived from the request
+// Host (buildhost.example.com -> example.com) with the admin label stripped.
 func assertServiceURLs(t *testing.T, resp map[string]any) {
 	t.Helper()
 	services, ok := resp["services"].(map[string]any)
@@ -278,6 +284,46 @@ func TestAPISites(t *testing.T) {
 	assert.Len(t, sites, 1)
 	assert.Equal(t, "testproject", sites[0].(map[string]any)["project_name"])
 	assert.Equal(t, "main", sites[0].(map[string]any)["branch"])
+}
+
+func TestAPISiteFiles(t *testing.T) {
+	t.Serial()
+	srv, database := newTestServer(t)
+	ctx := context.Background()
+	p := &db.Project{Name: "org/profile", Versioning: db.VersioningAuto}
+	require.NoError(t, database.CreateProject(ctx, p))
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "cpu/profile.json", Mode: 0o644, Size: 2, Typeflag: tar.TypeReg}))
+	_, err := tw.Write([]byte("{}"))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+	archive, err := os.CreateTemp(t.TempDir(), "site-*")
+	require.NoError(t, err)
+	defer archive.Close()
+	_, err = binarchive.WriteFromTar(archive, tar.NewReader(&buf), binarchive.Limits{})
+	require.NoError(t, err)
+	_, err = archive.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+	key, size, err := srv.store.(storage.UncompressedPutter).PutUncompressed(ctx, archive)
+	require.NoError(t, err)
+	_, err = database.UpsertSite(ctx, &db.Site{ProjectID: p.ID, Branch: "claude/x", StorageKey: key, Size: size, FileCount: 1})
+	require.NoError(t, err)
+
+	w := serve(srv, http.MethodGet, "/api/projects/org/profile/site-files?branch=claude%2Fx", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var resp struct {
+		Files []map[string]any `json:"files"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, []map[string]any{{"path": "cpu/profile.json", "size": float64(2)}}, resp.Files)
+
+	w = serve(srv, http.MethodGet, "/api/projects/org/profile/site-files?branch=nope", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code, "an unknown branch must be a 404")
+
+	w = serve(srv, http.MethodGet, "/api/projects/org/profile/site-files", nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code, "a missing branch must be a 400")
 }
 
 func TestAPISites_Empty(t *testing.T) {

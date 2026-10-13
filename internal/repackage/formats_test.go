@@ -66,7 +66,7 @@ func TestTarXZRepackage(t *testing.T) {
 	data, err := io.ReadAll(output.Reader)
 	require.Nil(t, err)
 
-	// The xz package is used in production; here just verify non-empty output
+	// The xz package is used in production; here verify non-empty output
 	require.GreaterOrEqual(t, len(data), 6)
 
 	xzMagic := []byte{0xFD, '7', 'z', 'X', 'Z', 0x00}
@@ -174,7 +174,7 @@ func TestDebPackageName(t *testing.T) {
 }
 
 // TestDebRepackage_NamespacedName proves a slash-namespaced project produces a
-// valid Debian package: the control Package field, the .deb filename, and the
+// valid Debian package. The control Package field, the .deb filename, and the
 // installed binary path all use the folded name (slash -> dash). dpkg rejects a
 // Package name containing '/', so this is what makes apt usable for namespaced
 // projects.
@@ -207,7 +207,6 @@ func TestDebRepackage_NamespacedName(t *testing.T) {
 	assert.True(t, ok, "expected binary at ./usr/bin/pr-reviewer-agent-server, got entries: %v", dataEntries)
 }
 
-// readArMembers parses a Unix `ar` archive (the .deb container) into a map of
 func readArMembers(t *testing.T, data []byte) map[string][]byte {
 	t.Helper()
 	const magic = "!<arch>\n"

@@ -26,6 +26,20 @@ sql:
             go_type: "bool"
           - column: "sites.is_public"
             go_type: "bool"
+          - column: "project_visibility.auto_private"
+            go_type: "bool"
+          - column: "project_visibility.mode"
+            go_type:
+              type: "Visibility"
+          - column: "visibility_folders.mode"
+            go_type:
+              type: "Visibility"
+          - column: "release_visibility.mode"
+            go_type:
+              type: "Visibility"
+          - column: "site_visibility.mode"
+            go_type:
+              type: "Visibility"
           - column: "projects.versioning"
             go_type:
               type: "Versioning"

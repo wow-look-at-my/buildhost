@@ -12,8 +12,7 @@ import (
 const (
 	// defaultMaxUploadSize caps a single REST artifact upload (PUT .../artifacts).
 	defaultMaxUploadSize int64 = 2 << 30
-	// defaultMaxBlobSize caps a single OCI blob (image layer) pushed via the
-	defaultMaxBlobSize int64 = 10 << 30
+	defaultMaxBlobSize   int64 = 10 << 30
 	// defaultMaxDirectUploadSize is the size the server ADVERTISES (via
 	defaultMaxDirectUploadSize int64 = 95 << 20
 	// defaultUploadSessionTTL is how long an in-progress chunked upload session
@@ -51,7 +50,7 @@ func envDuration(name string, def time.Duration) time.Duration {
 }
 
 // envBytes parses a byte size from an env var, accepting a plain integer or an
-// integer with a single-letter binary suffix (K, M, G, T). Invalid or
+// integer with a single-letter binary suffix (K, M, G, T).
 func envBytes(name string, def int64) int64 {
 	v := strings.TrimSpace(os.Getenv(name))
 	if v == "" {
@@ -109,12 +108,11 @@ type Config struct {
 	// GitHub App credentials for buildhost's own REST lookups (resolving a repo's
 	GitHubAppID         string
 	GitHubAppPrivateKey string
-	// GitHubToken is a static-PAT fallback for the same lookups when no App is
-	GitHubToken      string
-	OTELEndpoint     string
-	SiteFetchDomains []string
+	GitHubToken         string
+	OTELEndpoint        string
+	SiteFetchDomains    []string
 
-	// SiteDomain is an optional dedicated domain for project static sites: when
+	// SiteDomain is an optional dedicated domain for project static sites.
 	SiteDomain string
 	// PrimaryDomain is the apex the GitHub OAuth callback is registered on (e.g.
 	PrimaryDomain string
@@ -183,7 +181,8 @@ func Load() Config {
 	if v := os.Getenv("BUILDHOST_DB_PATH"); v != "" {
 		c.DBPath = v
 	}
-	if v := os.Getenv("BUILDHOST_ADMIN_LISTEN_ADDR"); v != "" {
+	// Empty is a decision, not an absence: serve reads it as "no admin server".
+	if v, ok := os.LookupEnv("BUILDHOST_ADMIN_LISTEN_ADDR"); ok {
 		c.AdminListenAddr = v
 	}
 	if v := os.Getenv("BUILDHOST_STORAGE_COMPRESS"); v == "false" || v == "0" {

@@ -109,7 +109,7 @@ func TestPlan_ReportOnlyChangesNothing(t *testing.T) {
 	assert.Equal(t, 2, rep.BlobsDeleted)  // would free
 	assert.Greater(t, rep.ReclaimableBytes, int64(0))
 
-	// Nothing actually changed.
+	// Nothing changed.
 	for _, k := range keys {
 		ex, _ := store.Exists(ctx, k)
 		assert.True(t, ex)
@@ -249,7 +249,7 @@ func TestDeleteBlobIfUnreferenced(t *testing.T) {
 	assert.False(t, deleted)
 }
 
-// A draft is an unpublished release its owner MEANT to keep: uploaded to be
+// A draft is an unpublished release its owner MEANT to keep. Uploaded to be
 // downloaded by exact version, deliberately outside latest/branch resolution
 // and every package manager. The abandoned sweep exists for partial uploads
 // that never finished, and cannot be allowed to delete drafts -- doing so would

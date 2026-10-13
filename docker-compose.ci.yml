@@ -1,6 +1,8 @@
 services:
   buildhost:
     build: .
+    # Tagged so a test can address the image compose just built.
+    image: buildhost:ci
     environment:
       - BUILDHOST_BASE_URL=http://localhost:8080
     ports:

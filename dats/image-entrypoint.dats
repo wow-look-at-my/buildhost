@@ -1,22 +1,24 @@
 # The image's ENTRYPOINT must never name the APE itself.
 #
-# This exists because the deployment sat for weeks on a version it could not
-# start, while CI stayed green. The image entered through ["/bin/sh", <APE>],
-# so it started only when something spelled the entrypoint that exact way. A
-# rolling updater creates the new container from the OLD container's config,
-# which carries the entrypoint resolved from the image that container was
-# created from -- for one predating the APE, ["buildhost"]. That is a bare exec
-# of an APE, which the kernel answers with ENOEXEC and docker reports as exit
-# 126, on a loop.
+# This exists because the deployment sat for weeks on a version it could not start, while CI stayed green. The
+# image entered through ["/bin/sh", <APE>], so it started only when something spelled the entrypoint that
+# exact way. A rolling updater creates the new container from the OLD container's config. That config carries
+# the entrypoint resolved from the image that container was created from -- for one predating the APE,
+# ["buildhost"]. That is a bare exec of an APE, which the kernel answers with ENOEXEC.
 #
 # The fix is a shebang launcher on PATH, which the kernel CAN exec, in front of
-# the APE. These assertions are about the Dockerfile, not a running container,
-# for two reasons. The defect is a spelling in the Dockerfile. And a bare exec
-# cannot be reproduced from a shell at all: when execve answers ENOEXEC, the
-# shell runs the file as a script instead, so the broken form looks fine.
-# Whether the launcher's target path is right is a runtime question, and
-# container-healthcheck's `compose up --wait` answers it -- the launcher is the
-# entrypoint, so a wrong path there is a container that does not start.
+# the APE.
+#
+# The base image ships no libc, so a busybox that names an ELF interpreter
+# cannot start either. Docker reports that ENOENT against the ENTRYPOINT path,
+# so the message names a file that is present. A sibling repo shipped exactly
+# that by taking its busybox from an alpine-based stage.
+#
+# These assertions read the Dockerfile. This is where both defects are spelled,
+# and go-toolchain runs them sandboxed on every build with no host and no
+# docker. test/dats/image-entrypoints.dats asks the same questions of a running
+# container. Test/dats/image-entrypoints.dats catches what a spelling cannot:
+# whether the paths resolve and whether the binary starts.
 
 tests:
 	- desc: the entrypoint and the healthcheck both name the launcher on PATH
@@ -26,7 +28,7 @@ tests:
 			- 'ENTRYPOINT ["/usr/local/bin/buildhost"]'
 			- 'CMD ["/usr/local/bin/buildhost", "healthcheck"]'
 
-	# The failing shape, in the two places it can come back.
+	# The failing shape, in both places it can come back.
 	- desc: neither one puts a shell in front of a path
 	  cmd: |
 		set -eu
@@ -39,11 +41,21 @@ tests:
 		stdout:
 			- "no-shell-prefix"
 
-	- desc: what lands on PATH is the launcher script, and the APE lands elsewhere
-	  cmd: grep -E '^COPY --chmod=755 (build/buildhost|scripts/image-launcher.sh) ' Dockerfile
+	# The binary lands from the staging stage, never from build/ directly. A
+	# COPY of the APE itself puts the trampoline back in the container. The
+	# trampoline unpacks under a hardcoded /tmp that a deployment mounts noexec.
+	- desc: what lands on PATH is the launcher script, and the staged ELF lands elsewhere
+	  cmd: |
+		set -eu
+		grep -E '^COPY --from=staged --chmod=755 /buildhost /usr/local/lib/buildhost/buildhost$' Dockerfile
+		grep -E '^COPY --chmod=755 scripts/image-launcher.sh /usr/local/bin/buildhost$' Dockerfile
+		if grep -qE '^COPY .*build/buildhost /usr/local/lib' Dockerfile; then
+			echo 'the image copies the APE straight in, so the trampoline runs and needs /tmp' >&2
+			exit 1
+		fi
 	  outputs:
 		stdout:
-			- "COPY --chmod=755 build/buildhost /usr/local/lib/buildhost/buildhost"
+			- "COPY --from=staged --chmod=755 /buildhost /usr/local/lib/buildhost/buildhost"
 			- "COPY --chmod=755 scripts/image-launcher.sh /usr/local/bin/buildhost"
 
 	- desc: the launcher is a shebang script, which is what the kernel can exec
@@ -52,8 +64,49 @@ tests:
 		stdout:
 			- "#!/bin/sh"
 
-	- desc: the launcher starts the APE at the path the Dockerfile puts it
-	  cmd: grep -E '^exec ' scripts/image-launcher.sh
+	# Both halves are read out and compared, rather than one literal line pinned
+	# here. The property that matters is that both agree.
+	- desc: the launcher starts the binary at the path the Dockerfile puts it
+	  cmd: |
+		set -eu
+		copied="$(grep -oE '/usr/local/lib/[a-z-]+/[a-z-]+' Dockerfile | head -n1)"
+		launched="$(grep -oE '^real=\S+' scripts/image-launcher.sh | cut -d= -f2)"
+		test -n "$copied" || { echo 'the Dockerfile copies the APE nowhere under /usr/local/lib' >&2; exit 1; }
+		test -n "$launched" || { echo 'the launcher names no APE to start' >&2; exit 1; }
+		if [ "$copied" != "$launched" ]; then
+			echo "the Dockerfile puts the APE at $copied and the launcher starts $launched" >&2
+			exit 1
+		fi
+		grep -qE '^\s*exec "\$real" "\$@"$' scripts/image-launcher.sh || {
+			echo 'the launcher must exec the staged ELF, not hand it to a shell' >&2; exit 1; }
+		echo "agree: $copied"
 	  outputs:
 		stdout:
-			- 'exec /bin/sh /usr/local/lib/buildhost/buildhost "$@"'
+			- "agree: /usr/local/lib/buildhost/buildhost"
+
+	# Staging at build time is what takes /tmp out of the picture. A Dockerfile
+	# that copies the APE straight in puts the trampoline back, and the
+	# trampoline unpacks under a hardcoded /tmp that a deployment mounts noexec.
+	- desc: the image stages the binary rather than shipping the APE
+	  cmd: |
+		set -eu
+		grep -qE '^RUN APE_LOADERDIR=/tmp sh /in/apestage /in/buildhost /buildhost "\$TARGETARCH"$' Dockerfile || {
+			echo 'the image never stages the APE, so the trampoline runs in the container' >&2; exit 1; }
+		if grep -qE '^COPY .*build/buildhost /usr/local/lib' Dockerfile; then
+			echo 'the image copies the APE straight in, so it needs an exec-able /tmp' >&2; exit 1
+		fi
+		echo stages-the-binary
+	  outputs:
+		stdout:
+			- "stages-the-binary"
+
+	# The shell must come from an image that ships a STATIC busybox.
+	- desc: the shell stage is the busybox image, and that is where /bin comes from
+	  cmd: |
+		set -eu
+		grep -E '^FROM busybox:[a-z-]+ AS ' Dockerfile
+		grep -E '^COPY --from=[a-z]+ /shell /bin$' Dockerfile
+	  outputs:
+		stdout:
+			- "FROM busybox:"
+			- "/shell /bin"

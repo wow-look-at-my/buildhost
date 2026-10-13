@@ -37,6 +37,17 @@ func ociLinuxArtifacts(arts []db.PlatformArtifact) []db.PlatformArtifact {
 	return out
 }
 
+// indexEntry is a platform's descriptor in an image index.
+type indexEntry struct {
+	MediaType string `json:"mediaType"`
+	Digest    string `json:"digest"`
+	Size      int64  `json:"size"`
+	Platform  struct {
+		Architecture string `json:"architecture"`
+		OS           string `json:"os"`
+	} `json:"platform"`
+}
+
 func (h *Handler) serveManifest(w http.ResponseWriter, r *http.Request, reference string) {
 	project := auth.ProjectFrom(r.Context())
 
@@ -100,46 +111,21 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 	// covers no linux platform then correctly serves no OCI image.
 	artifacts = ociLinuxArtifacts(artifacts)
 
-	type indexEntry struct {
-		MediaType string `json:"mediaType"`
-		Digest    string `json:"digest"`
-		Size      int64  `json:"size"`
-		Platform  struct {
-			Architecture string `json:"architecture"`
-			OS           string `json:"os"`
-		} `json:"platform"`
-	}
-
 	var manifests []indexEntry
 	for _, a := range artifacts {
-		out, err := h.Gen.GenerateForPlatform(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestRootURL(r))
+		if !h.Gen.Applicable(repackage.FormatOCI, a.Artifact) {
+			continue
+		}
+		entry, err := h.platformEntry(r, project, release, a)
 		if err != nil {
-			// The platform drops out of the index; say so, or the pull fails with "manifest unknown" and no cause anywhere.
+			// A short index is worse than no index: the puller then reports a
+			// platform it could not match, and the cause reaches nobody.
 			slog.ErrorContext(r.Context(), "oci: cannot synthesize image for platform",
 				"project", project.Name, "version", release.Version, "os", a.OS, "arch", a.Arch, "err", err)
-			continue
+			ociError(w, http.StatusInternalServerError, "UNKNOWN",
+				fmt.Sprintf("cannot synthesize the %s/%s image for %s %s: %v", a.OS, a.Arch, project.Name, release.Version, err))
+			return
 		}
-		manifestData, err := io.ReadAll(out.Reader)
-		out.Reader.Close()
-		if err != nil {
-			continue
-		}
-		sum := sha256.Sum256(manifestData)
-		digest := "sha256:" + hex.EncodeToString(sum[:])
-
-		// Integrity check: only advertise a child the pull path can actually
-		belongs, err := h.DB.BlobBelongsToProject(r.Context(), project.ID, digest[7:])
-		if err != nil || !belongs {
-			continue
-		}
-
-		entry := indexEntry{
-			MediaType: "application/vnd.oci.image.manifest.v1+json",
-			Digest:    digest,
-			Size:      int64(len(manifestData)),
-		}
-		entry.Platform.Architecture = string(a.Arch)
-		entry.Platform.OS = string(a.OS)
 		manifests = append(manifests, entry)
 	}
 
@@ -149,7 +135,7 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 	}
 
 	if len(manifests) == 1 {
-		h.serveSingleManifest(w, r, project, release, manifests[0])
+		h.serveSingleManifest(w, r, project, manifests[0])
 		return
 	}
 
@@ -167,8 +153,7 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 	digest := sha256.Sum256(indexData)
 
 	// Persist the index document under its own content digest and link it to the
-	// project, exactly as Generate persisted each child manifest above. The Docker
-	// daemon's classic (non-containerd) image store pulls a tag by reading the
+	// project, exactly as Generate persisted each child manifest above.
 	if err := h.persistManifestBlob(r.Context(), project.ID, indexData, "application/vnd.oci.image.index.v1+json"); err != nil {
 		ociError(w, http.StatusInternalServerError, "UNKNOWN", "failed to persist index")
 		return
@@ -183,50 +168,60 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 	}
 }
 
-func (h *Handler) serveSingleManifest(w http.ResponseWriter, r *http.Request, project *db.Project, release *db.Release, entry struct {
-	MediaType string `json:"mediaType"`
-	Digest    string `json:"digest"`
-	Size      int64  `json:"size"`
-	Platform  struct {
-		Architecture string `json:"architecture"`
-		OS           string `json:"os"`
-	} `json:"platform"`
-}) {
-	artifacts, err := h.DB.ListArtifactsByPlatform(r.Context(), release.ID)
+// platformEntry synthesizes a platform's image manifest and returns the index
+// descriptor for it. Every way this can go wrong is an error the caller reports.
+// A platform the release covers and the registry cannot serve must fail the
+// request. This is because the alternative is an index the puller cannot match.
+func (h *Handler) platformEntry(r *http.Request, project *db.Project, release *db.Release, a db.PlatformArtifact) (indexEntry, error) {
+	out, err := h.Gen.GenerateForPlatform(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestRootURL(r))
+	if err != nil {
+		return indexEntry{}, err
+	}
+	manifestData, err := io.ReadAll(out.Reader)
+	out.Reader.Close()
+	if err != nil {
+		return indexEntry{}, fmt.Errorf("read the synthesized manifest: %w", err)
+	}
+	sum := sha256.Sum256(manifestData)
+	digest := "sha256:" + hex.EncodeToString(sum[:])
+
+	// Only advertise a child the pull path can serve; a collision lands here.
+	belongs, err := h.DB.BlobBelongsToProject(r.Context(), project.ID, digest[7:])
+	if err != nil {
+		return indexEntry{}, fmt.Errorf("look up the manifest blob %s: %w", digest, err)
+	}
+	if !belongs {
+		return indexEntry{}, fmt.Errorf("the synthesized manifest %s is not linked to this project", digest)
+	}
+
+	entry := indexEntry{
+		MediaType: "application/vnd.oci.image.manifest.v1+json",
+		Digest:    digest,
+		Size:      int64(len(manifestData)),
+	}
+	entry.Platform.Architecture = string(a.Arch)
+	entry.Platform.OS = string(a.OS)
+	return entry, nil
+}
+
+// serveSingleManifest serves the release's image manifest directly, rather than
+// an index wrapping it. A puller with no index support still resolves a
+// single-platform project.
+func (h *Handler) serveSingleManifest(w http.ResponseWriter, r *http.Request, project *db.Project, entry indexEntry) {
+	rc, size, err := h.Store.Get(r.Context(), entry.Digest[7:])
 	if err != nil {
 		ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest unknown")
 		return
 	}
-	// Same linux-only filter as serveIndex: serveIndex forwards to this when one
-	// child remains, so without the filter here it could pick a darwin/windows
-	// artifact that serveIndex already dropped.
-	artifacts = ociLinuxArtifacts(artifacts)
+	defer rc.Close()
 
-	for _, a := range artifacts {
-		out, err := h.Gen.GenerateForPlatform(r.Context(), repackage.FormatOCI, *project, *release, a, auth.RequestRootURL(r))
-		if err != nil {
-			slog.ErrorContext(r.Context(), "oci: cannot synthesize image for platform",
-				"project", project.Name, "version", release.Version, "os", a.OS, "arch", a.Arch, "err", err)
-			continue
-		}
-		manifestData, err := io.ReadAll(out.Reader)
-		out.Reader.Close()
-		if err != nil {
-			continue
-		}
-		digest := sha256.Sum256(manifestData)
+	w.Header().Set("Content-Type", entry.MediaType)
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
+	w.Header().Set("Docker-Content-Digest", entry.Digest)
 
-		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(manifestData)))
-		w.Header().Set("Docker-Content-Digest", "sha256:"+hex.EncodeToString(digest[:]))
-
-		if r.Method != http.MethodHead {
-			w.Write(manifestData)
-		}
-		return
+	if r.Method != http.MethodHead {
+		io.Copy(w, rc)
 	}
-
-	ociError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest unknown")
 }
 
 func (h *Handler) serveManifestByDigest(w http.ResponseWriter, r *http.Request, project *db.Project, digest string) {
@@ -332,7 +327,7 @@ func (h *Handler) serveTags(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Binary projects: each published release with a binary artifact is a
+	// Binary projects.
 	releases, err := h.DB.ListReleases(r.Context(), project.ID)
 	if err != nil {
 		ociError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")

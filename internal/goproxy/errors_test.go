@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The invariant this whole package turns on: only a genuine "upstream is
+// The invariant this whole package turns on.
 func TestOnlyNotFoundBecomes404(t *testing.T) {
 	t.Serial()
 	tests := []struct {
@@ -53,9 +53,8 @@ func TestAsErrorPreservesClassification(t *testing.T) {
 	assert.Equal(t, KindUnauthorized, asError("m", "v", wrapped).Kind)
 }
 
-// The body is the whole diagnosis: go prints a proxy's response body verbatim,
-// so an authorization failure has to say plainly that it is not a missing
-// module.
+// The body is the whole diagnosis: go prints a proxy's response body verbatim.
+// An authorization failure has to say plainly that it is not a missing module.
 func TestUnauthorizedBodySaysItIsNotMissing(t *testing.T) {
 	t.Serial()
 	body := unauthorizedErr("github.com/org/private", "v1.2.3", "github", 404,

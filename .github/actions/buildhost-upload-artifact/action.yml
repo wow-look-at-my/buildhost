@@ -65,15 +65,40 @@ runs:
         script: |
           await (async () => {
             const server: string = "${{ inputs.server }}";
-            let token: string = "${{ inputs.token }}";
-            if (!token) {
-              const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
-              const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
-              if (url && bearer) {
-                const r = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
-                token = ((await r.json()) as { value: string }).value ?? '';
-              }
-            }
+            const staticToken: string = "${{ inputs.token }}";
+            const idTokenURL = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+            const idTokenBearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+            const canMint = !staticToken && !!idTokenURL && !!idTokenBearer;
+
+            let token: string = staticToken;
+            // epoch seconds the current token dies at; 0 for a token with no expiry of its own
+            let tokenExpiresAt = 0;
+
+            const jwtExpiry = (jwt: string): number => {
+              const parts = jwt.split('.');
+              if (parts.length !== 3) return 0;
+              try {
+                const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString()) as { exp?: number };
+                return typeof claims.exp === 'number' ? claims.exp : 0;
+              } catch { return 0; }
+            };
+
+            const mintToken = async (): Promise<void> => {
+              const r = await fetch(`${idTokenURL}&audience=${server}`, { headers: { Authorization: `Bearer ${idTokenBearer}` } });
+              token = ((await r.json()) as { value: string }).value ?? '';
+              tokenExpiresAt = jwtExpiry(token);
+            };
+
+            // An OIDC token lives minutes and a large upload runs longer, so each request takes a bearer minted within 60s of its own exp, which is the leeway buildhost allows.
+            const bearer = async (): Promise<string> => {
+              if (!canMint) return token;
+              if (!token || tokenExpiresAt === 0 || Date.now() / 1000 > tokenExpiresAt - 60) await mintToken();
+              return token;
+            };
+
+            // A 401 says the presented token is dead, so drop it and the next bearer() mints a live one.
+            const expireToken = (): void => { if (canMint) tokenExpiresAt = 0; };
+
             const project: string = "${{ inputs.project }}";
             const version: string = "${{ inputs.version }}";
             const artifactOs: string = "${{ inputs.os }}";
@@ -87,7 +112,6 @@ runs:
             const target = `${server}/api/v1/projects/${project}/releases/${version}/artifacts/${artifactOs}/${arch}?kind=${kind}`;
 
             const uploadHeaders: Record<string, string> = {
-              'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/octet-stream',
             };
             if (filename) uploadHeaders['X-Artifact-Filename'] = filename;
@@ -127,12 +151,17 @@ runs:
 
             // retries a transient failure with backoff so a rolling buildhost deploy never hard-fails the upload
             const api = async (method: string, url: string, body?: Blob, headers?: Record<string, string>) => {
-              const h: Record<string, string> = headers ?? { Authorization: `Bearer ${token}` };
               const maxAttempts = 5;
               for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                const h: Record<string, string> = { ...(headers ?? {}), Authorization: `Bearer ${await bearer()}` };
                 try {
                   const resp = await fetch(url, { method, headers: h, body });
                   const text = await resp.text();
+                  if (resp.status === 401 && canMint && attempt < maxAttempts) {
+                    expireToken();
+                    core.warning(`${method} ${url} -> HTTP 401 (attempt ${attempt}/${maxAttempts}); minting a fresh OIDC token and retrying`);
+                    continue;
+                  }
                   if (attempt === maxAttempts || !isTransient(resp.status, text)) {
                     return { status: resp.status, text };
                   }
@@ -191,7 +220,7 @@ runs:
 
             const abortSession = async () => {
               try {
-                await fetch(sessionURL, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+                await fetch(sessionURL, { method: 'DELETE', headers: { Authorization: `Bearer ${await bearer()}` } });
               } catch { /* best effort */ }
             };
 
@@ -201,9 +230,10 @@ runs:
               for (let attempt = 0; attempt < 4; attempt++) {
                 if (attempt > 0) await sleep(1000 * 2 ** (attempt - 1));
                 try {
-                  const resp = await fetch(sessionURL, { headers: { Authorization: `Bearer ${token}` } });
+                  const resp = await fetch(sessionURL, { headers: { Authorization: `Bearer ${await bearer()}` } });
                   const body = (await resp.json()) as { size?: number };
                   if (resp.status === 200 && typeof body.size === 'number') return body.size;
+                  if (resp.status === 401) expireToken();
                   lastErr = `HTTP ${resp.status}`;
                 } catch (e) {
                   lastErr = e instanceof Error ? e.message : String(e);
@@ -219,7 +249,7 @@ runs:
               try {
                 const resp = await fetch(`${sessionURL}?offset=${offset}`, {
                   method: 'PATCH',
-                  headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/octet-stream' },
+                  headers: { 'Authorization': `Bearer ${await bearer()}`, 'Content-Type': 'application/octet-stream' },
                   body: chunk,
                 });
                 status = resp.status;
@@ -235,6 +265,8 @@ runs:
                 return body.size;
               }
               if (status >= 500) return sessionSize();
+              // A 401 here is a token that died mid-upload: mint a live one and resume from the committed size.
+              if (status === 401) { expireToken(); return sessionSize(); }
               throw new Error(`upload chunk at ${offset} failed: HTTP ${status}: ${text}`);
             };
 

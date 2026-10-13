@@ -12,8 +12,8 @@ import (
 
 // readBundle returns the GENERATED dashboard bundle. It is produced from
 // internal/admin/frontend/src by the //go:generate directive in admin.go and is
-// gitignored, so a missing file here means the tree was not generated -- the
-// same condition that fails the //go:embed at compile time.
+// gitignored. A missing file here means the tree was not generated -- the same
+// condition that fails the //go:embed at compile time.
 func readBundle(t *testing.T) string {
 	t.Helper()
 	data, err := os.ReadFile("static/app.js")
@@ -22,15 +22,16 @@ func readBundle(t *testing.T) string {
 	return string(data)
 }
 
-// The dashboard wires its buttons with inline onclick="App.x(...)" markup, and
-// the bundle only exposes App.x for names the TypeScript EXPORTS. A handler that
-// is referenced but not exported is a silently dead button -- no build error,
-// nothing red in CI, just a control that does nothing when clicked.
+// The dashboard wires its buttons with inline onclick="App.x(...)" markup,
+// and the bundle only exposes App.x for names the TypeScript EXPORTS. A
+// handler that is referenced but not exported is a silently dead button. There
+// is no build error and nothing red in CI. The control does nothing when clicked.
 //
 // This is also the check that would have caught the drift this file was
-// rewritten for: the committed bundle had diverged from its TypeScript source,
-// and the old assertions (on internal function names) passed against the stale
-// artifact while the real source could not have produced a working dashboard.
+// rewritten for. The committed bundle had diverged from its TypeScript
+// source, and the assertions (on internal function names) passed against the
+// stale artifact. This happens while the real source could not have produced
+// a working dashboard.
 func TestAdminStaticInlineHandlersAreExported(t *testing.T) {
 	t.Serial()
 	body := readBundle(t)
@@ -59,7 +60,6 @@ func TestAdminStaticInlineHandlersAreExported(t *testing.T) {
 	require.Emptyf(t, dead, `inline onclick="App.x(...)" handlers with no matching export (dead buttons): %v`, dead)
 }
 
-// The Homebrew snippet must clone the /tap.git endpoint (a bare host 404s) and
 func TestAdminStaticHomebrewInstructionsUseTap(t *testing.T) {
 	t.Serial()
 	body := readBundle(t)
@@ -68,12 +68,14 @@ func TestAdminStaticHomebrewInstructionsUseTap(t *testing.T) {
 	// A formula name cannot contain '/', so the placeholder is the FOLDED
 	require.Contains(t, body, "brew install pazer/build/{formula}")
 	require.NotContains(t, body, "brew install pazer/build/{project}")
-	require.Contains(t, body, "/tap.git\\nbrew trust pazer/build\\nbrew install pazer/build/")
+	require.Contains(t, body, "brew trust ")
+	require.Contains(t, body, "/tap.git\\nbrew tap pazer/build ")
+	require.Contains(t, body, "/tap.git\\nbrew install pazer/build/")
 }
 
 // Slash-namespaced projects render as a tree on the Projects page. These are the
 // class names the rendered markup and the stylesheet agree on, not internal
-// function names -- the rendering may be refactored, the markup contract may not.
+// function names. The rendering may be refactored, the markup contract may not.
 func TestAdminStaticProjectsRenderAsTree(t *testing.T) {
 	t.Serial()
 	body := readBundle(t)
@@ -105,7 +107,7 @@ func TestAdminStaticPrivateDownloadsMintLinks(t *testing.T) {
 	require.Contains(t, body, "App.downloadArtifact")
 }
 
-// Every script the dashboard's HTML loads must be a file that actually gets
+// Every script the dashboard's HTML loads must be a file that gets
 func TestAdminStaticScriptTagsResolve(t *testing.T) {
 	t.Serial()
 	index, err := os.ReadFile("static/index.html")
@@ -127,12 +129,12 @@ func TestAdminStaticSiteLinksUseRefSigil(t *testing.T) {
 	require.NotContains(t, body, `/branch/" +`,
 		`a site link is built by concatenating a branch onto "/branch/"; use siteBranchURL (the "@" form) -- "/branch/" only redirects on reads`)
 	require.Contains(t, body, `"/@"`, "the canonical site-link helper is gone")
-	// The write endpoints keep the old spelling; if they ever disappear, this
+	// The write endpoints keep the spelling; if they ever disappear, this
 	require.Contains(t, body, "/branch/{branch}", "the site write endpoints should still be documented")
 }
 
-// A project's release page must hand the reader a runnable install command.
-// It used to link the formula FILE at /Formula/{project}.rb, built from the
+// A project's release page must hand the reader a runnable install
+// command..rb.
 func TestAdminStaticReleasePageShowsBrewInstallCommand(t *testing.T) {
 	t.Serial()
 	body := readBundle(t)
@@ -143,8 +145,9 @@ func TestAdminStaticReleasePageShowsBrewInstallCommand(t *testing.T) {
 
 // A registry ADDRESS is not an install command. The release page used to print
 // the npm packument URL and the OCI manifest URL as the whole answer for "how
-// do I get this?" -- pasting either into a browser returns JSON and installs
-// nothing. Each ecosystem gets the command that installs THIS release.
+// do I get this?". Pasting either into a browser returns JSON. The browser
+// installs nothing. Each ecosystem gets the command that installs THIS
+// release.
 func TestAdminStaticReleasePageShowsInstallCommands(t *testing.T) {
 	t.Serial()
 	body := readBundle(t)
@@ -152,7 +155,7 @@ func TestAdminStaticReleasePageShowsInstallCommands(t *testing.T) {
 	require.Contains(t, body, "npm install ")
 	require.Contains(t, body, "docker pull ")
 	require.Contains(t, body, "/install.sh | sudo sh")
-	// The npm packument and the OCI manifest are machine plumbing. The
+	// The npm packument and the OCI manifest are machine plumbing.
 	require.NotContains(t, body, `"/@buildhost/" + `)
 	require.NotContains(t, body, `"/v2/" + `)
 }

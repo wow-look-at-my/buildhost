@@ -33,18 +33,18 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 	}
 	shouldStrip := strippable && !debug
 
-	// The header answers "can I fetch symbols for THIS artifact?", which is
-	// only true when it is an ELF we can split. It used to report whether the
+	// The header answers "can I fetch symbols for THIS artifact?", which is only
+	// true when it is an ELF we can split.
 	if strippable {
 		w.Header().Set("X-Debug-Symbols", "available")
 	} else {
 		w.Header().Set("X-Debug-Symbols", "unavailable")
 	}
 
-	// The raw artifact can be served either decompressed (identity) or, when the
+	// The raw artifact can be served either decompressed (identity) or.
 	w.Header().Set("Vary", "Accept-Encoding")
 
-	// zstd passthrough: when we are not stripping (stripping needs the real ELF
+	// zstd passthrough. When we are not stripping (stripping needs the real ELF
 	// bytes) and the client accepts zstd, stream the stored zstd blob straight to
 	// the client with Content-Encoding: zstd. buildhost never decompresses it --
 	// the client bears that cost. Falls through to the normal decompressing path
@@ -100,7 +100,6 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 	return nil
 }
 
-// acceptsZstd reports whether an Accept-Encoding header lists zstd with a
 func acceptsZstd(accept string) bool {
 	for _, part := range strings.Split(accept, ",") {
 		name, params, _ := strings.Cut(strings.TrimSpace(part), ";")

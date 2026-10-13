@@ -1,14 +1,18 @@
 package dl
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/wow-look-at-my/go-containers/set"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -31,13 +35,45 @@ func init() {
 
 type route struct {
 	project string
+	version string
+	branch  string
 }
 
 func (r route) ProjectName() string      { return r.project }
 func (r route) Access() auth.AccessLevel { return auth.ReadAccess }
 
+// BuildVisibility applies the override of the release this request resolves to.
+func (r route) BuildVisibility(ctx context.Context, d *db.DB, project *db.Project) db.Visibility {
+	release, _, err := resolveRelease(ctx, d, project.ID, r.version, r.branch)
+	if err != nil {
+		return db.VisibilityAuto
+	}
+	mode, err := d.ReleaseVisibility(ctx, release.ID)
+	if err != nil {
+		// Fail closed: an unknown override must not open a private build.
+		return db.VisibilityPrivate
+	}
+	return mode
+}
+
 func parseRoute(r *http.Request) auth.RouteInfo {
-	return route{project: r.PathValue("project")}
+	q := r.URL.Query()
+	return route{project: r.PathValue("project"), version: q.Get("v"), branch: q.Get("branch")}
+}
+
+// resolveRelease picks the release a dl request names: an exact version, the
+// newest build of a branch, or the apex latest.
+func resolveRelease(ctx context.Context, d *db.DB, projectID int64, version, branch string) (*db.Release, string, error) {
+	switch {
+	case version != "":
+		rel, err := d.GetRelease(ctx, projectID, version)
+		return rel, "exact", err
+	case branch != "":
+		rel, err := d.GetLatestReleaseByBranch(ctx, projectID, branch)
+		return rel, "branch", err
+	}
+	rel, err := d.GetLatestRelease(ctx, projectID)
+	return rel, "latest", err
 }
 
 type Handler struct {
@@ -56,14 +92,36 @@ func handleDBErr(w http.ResponseWriter, r *http.Request, err error) bool {
 	return false
 }
 
+// portableMissing explains a bare request the release cannot answer, naming
+// what it does carry so the caller is not left guessing a pair.
+func portableMissing(ctx context.Context, d *db.DB, releaseID int64) string {
+	const lead = "this release has no portable build, so name os and arch"
+	arts, err := d.ListArtifactsByPlatform(ctx, releaseID)
+	if err != nil || len(arts) == 0 {
+		return lead
+	}
+	seen := set.New[string]()
+	var pairs []string
+	for _, a := range arts {
+		pair := fmt.Sprintf("%s/%s", a.OS, a.Arch)
+		if seen.Add(pair) {
+			pairs = append(pairs, pair)
+		}
+	}
+	slices.Sort(pairs)
+	return lead + ". It carries " + strings.Join(pairs, ", ")
+}
+
 func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	project := auth.ProjectFrom(r.Context())
 	q := r.URL.Query()
 
 	osStr := q.Get("os")
 	archStr := q.Get("arch")
-	if osStr == "" || archStr == "" {
-		http.Error(w, "os and arch are required", http.StatusBadRequest)
+	// Naming neither asks for the artifact that runs anywhere. Half a pair is a typo.
+	portable := osStr == "" && archStr == ""
+	if !portable && (osStr == "" || archStr == "") {
+		http.Error(w, "name both os and arch, or neither for the portable build", http.StatusBadRequest)
 		return
 	}
 	// Accept platform-name aliases natively (RUNNER_OS "Linux"/"macOS"/"Windows",
@@ -78,28 +136,10 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, span := dlTracer.Start(r.Context(), "dl.resolve_version")
-	var (
-		release   *db.Release
-		err       error
-		immutable bool
-	)
-
-	version := q.Get("v")
-	branch := q.Get("branch")
-
-	switch {
-	case version != "":
-		release, err = h.DB.GetRelease(r.Context(), project.ID, version)
-		span.SetAttributes(attribute.String("dl.resolution", "exact"))
-		immutable = true
-	case branch != "":
-		release, err = h.DB.GetLatestReleaseByBranch(r.Context(), project.ID, branch)
-		span.SetAttributes(attribute.String("dl.resolution", "branch"))
-	default:
-		release, err = h.DB.GetLatestRelease(r.Context(), project.ID)
-		span.SetAttributes(attribute.String("dl.resolution", "latest"))
-	}
+	release, resolution, err := resolveRelease(r.Context(), h.DB, project.ID, q.Get("v"), q.Get("branch"))
+	span.SetAttributes(attribute.String("dl.resolution", resolution))
 	span.End()
+	immutable := resolution == "exact"
 
 	if handleDBErr(w, r, err) {
 		return
@@ -115,13 +155,26 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		resolvedVersion = fmt.Sprintf("%d", release.VersionNum)
 	}
 
-	canonOS, canonArch, err := h.DB.CanonicalPlatform(r.Context(), release.ID, osStr, archStr)
-	switch {
-	case err == nil:
-		osStr, archStr = canonOS, canonArch
-	case !errors.Is(err, db.ErrNotFound):
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+	if portable {
+		a, err := h.DB.PortableArtifact(r.Context(), release.ID)
+		if errors.Is(err, db.ErrNotFound) {
+			http.Error(w, portableMissing(r.Context(), h.DB, release.ID), http.StatusBadRequest)
+			return
+		}
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		osStr, archStr = string(a.OS), string(a.Arch)
+	} else {
+		canonOS, canonArch, err := h.DB.CanonicalPlatform(r.Context(), release.ID, osStr, archStr)
+		switch {
+		case err == nil:
+			osStr, archStr = canonOS, canonArch
+		case !errors.Is(err, db.ErrNotFound):
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	p := static.For(project.Name).WithVersion(resolvedVersion).WithOS(db.OS(osStr)).WithArch(db.Arch(archStr)).WithFmt(fmtStr)
@@ -129,8 +182,7 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		p = p.WithDebug(true)
 	}
 
-	if project.IsPrivate {
-		// The caller authenticated to reach this handler (the route is
+	if auth.ReadIsPrivate(r.Context()) {
 		w.Header().Set("Cache-Control", "private, no-store")
 		signed, _ := static.SignedURL(auth.DeriveServiceURL(r, "static"), p, time.Now().Add(privateRedirectTTL))
 		http.Redirect(w, r, signed, http.StatusFound)

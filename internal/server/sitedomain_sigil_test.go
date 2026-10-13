@@ -93,7 +93,7 @@ func TestSiteDomain_CommitRef(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "body{}", body)
 
-	// The abbreviated form, and no collapse even though this commit's site IS
+	// The abbreviated form, and no collapse even though
 	resp, body = siteGet(t, env, host, "/@"+sha[:7]+"/")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "pinned", body)
@@ -107,7 +107,7 @@ func TestSiteDomain_CommitRef(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
-// The "~" sigil this scheme launched with still resolves: it 301s to the "@"
+// The "~" sigil this scheme launched with still resolves. It 301s to the "@"
 // spelling of the same URL, so every published ~ link keeps working while there
 
 func TestSiteDomain_LegacySigilRedirects(t *testing.T) {

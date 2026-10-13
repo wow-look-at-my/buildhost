@@ -10,8 +10,8 @@ import (
 
 // HTTP-level behaviour (packuments, tarball downloads, platform packages,
 // private-project auth) is tested through the real router in router_test.go.
-// Handlers are never invoked directly with a hand-built request context, so
-// route registration, path parsing and the auth middleware are all exercised
+// Handlers are never invoked directly with a hand-built request context.
+// Route registration, path parsing and the auth middleware are all exercised
 // end to end. The tests here cover the pure parsing/helper functions.
 
 func TestParseRoute(t *testing.T) {
@@ -133,5 +133,3 @@ func TestNormalizeVersion(t *testing.T) {
 	assert.Equal(t, "1.0.0", normalizeVersion("1"))
 	assert.Equal(t, "2.0.0", normalizeVersion("v2"))
 }
-
-// TestServeHTTP_RoutedRealNpmRequest drives requests through the real subdomain

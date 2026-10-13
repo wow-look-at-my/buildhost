@@ -2,14 +2,25 @@ FROM busybox:musl AS dirs
 RUN mkdir -p /data && chown 65532:65532 /data
 # The APE trampoline is a shell script, and it shells out -- cksum, tr, mkdir,
 # cp so far. Installing every applet name against the one static busybox costs
-# a directory of symlinks and stops the next command it needs from being
-# another failed container start.
-# The links are relative, because this directory lands somewhere else in the
-# final image and an absolute link would point at a path that is not there.
+# a directory of symlinks. It stops the next command it needs from being
+# another failed container start. The links are relative. This is because this
+# directory lands somewhere else in the final image and an absolute link would
+# point at a path that is not there.
 RUN mkdir -p /shell && cp /bin/busybox /shell/busybox \
     && for a in $(/shell/busybox --list); do ln -sf busybox "/shell/$a"; done
-# The trampoline unpacks itself under TMPDIR, so the image needs a writable one.
 RUN mkdir -p /tmpdir && chmod 1777 /tmpdir
+
+# The binary the final image runs is the ELF the APE's trampoline would have
+# staged for THIS target. The trampoline stages into a hardcoded
+# /tmp/.ape-run-1-$(id -u) that it picks itself and no variable moves. So a
+# deployment's noexec /tmp killed every container at exit 126. Staging here
+# means nothing unpacks at run time and /tmp stops mattering.
+FROM busybox:musl AS staged
+ARG TARGETARCH
+COPY build/buildhost build/apestage /in/
+# A build container mounts /dev/shm noexec, and busybox as root reads it as
+# executable. The APE's own directory list starts there, so name /tmp instead.
+RUN APE_LOADERDIR=/tmp sh /in/apestage /in/buildhost /buildhost "$TARGETARCH"
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
@@ -21,17 +32,14 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.description="Universal package registry server"
 
 # An APE starts through its own shell trampoline: the file is a polyglot whose
-# header is a shell script, and the kernel cannot exec it without either a
-# binfmt handler or a shell to interpret that header. distroless ships neither,
-# so the image carries the busybox the /data stage already pulls.
+# header is a shell script. The kernel cannot exec it without either a binfmt
+# handler or a shell to interpret that header. distroless ships neither, so the
+# image carries the busybox the /data stage already pulls.
 COPY --from=dirs /shell /bin
 COPY --from=dirs /tmpdir /tmp
 # The APE sits under /usr/local/lib and a shebang launcher takes its place on
-# PATH, the same shape the deb repackager gives an APE. A launcher the kernel
-# can exec keeps the shell an implementation detail of this image: an
-# entrypoint that names the binary any other way still starts the server,
-# instead of exiting 126 on a bare exec.
-COPY --chmod=755 build/buildhost /usr/local/lib/buildhost/buildhost
+# PATH, the same shape the deb repackager gives an APE.
+COPY --from=staged --chmod=755 /buildhost /usr/local/lib/buildhost/buildhost
 COPY --chmod=755 scripts/image-launcher.sh /usr/local/bin/buildhost
 COPY --from=dirs --chown=65532:65532 /data /var/lib/buildhost
 

@@ -1,0 +1,9 @@
+[private]
+help:
+	@just --list
+
+build:
+	../../../scripts/build-admin-frontend.sh
+
+test:
+	node_modules/.bin/tsc --noEmit

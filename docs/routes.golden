@@ -14,6 +14,7 @@
 /api/v1/projects/{project}/releases/{version}/artifacts/ape {PUT}
 /api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch} {PUT}
 /api/v1/projects/{project}/releases/{version}/publish {POST}
+/api/v1/run-locks {GET,POST}
 /api/v1/server-info {GET}
 /api/v1/tokens {GET,POST}
 /api/v1/tokens/{id} {DELETE}

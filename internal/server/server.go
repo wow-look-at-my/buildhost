@@ -25,16 +25,22 @@ const (
 )
 
 // healthResponse is the JSON body of GET /healthz. It always reports the build
-// the server is running (commit and version) so a deploy can be verified
-// without a dedicated version endpoint; status is "ok" only when the database
+// the server is running, as commit and version. A deploy is then verified
+// without a dedicated version endpoint. Status is "ok" only when the database
 // is reachable.
 type healthResponse struct {
 	Status   string `json:"status"` // "ok" when healthy, "unhealthy" otherwise
 	Commit   string `json:"commit"` // git SHA the binary was built from, or "unknown"
 	Version  string `json:"version"`
 	Modified bool   `json:"modified,omitempty"` // built from a dirty working tree
-	Error    string `json:"error,omitempty"`    // failure detail when unhealthy
+	Started  string `json:"started"`
+	// GitHubCredential is "app", "token" or "none": what buildhost authenticates its own GitHub calls with.
+	GitHubCredential string `json:"github_credential"`
+	Error            string `json:"error,omitempty"` // failure detail when unhealthy
 }
+
+// startedAt lets a client that saw a dropped connection tell a restart from a network fault.
+var startedAt = time.Now().UTC()
 
 type Server struct {
 	cfg config.Config
@@ -52,10 +58,12 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 
 	health := func(w http.ResponseWriter, r *http.Request) {
 		resp := healthResponse{
-			Status:   "ok",
-			Commit:   buildinfo.Commit(),
-			Version:  buildinfo.Version(),
-			Modified: buildinfo.Get().Modified,
+			Status:           "ok",
+			Commit:           buildinfo.Commit(),
+			Version:          buildinfo.Version(),
+			Modified:         buildinfo.Get().Modified,
+			Started:          startedAt.Format(time.RFC3339),
+			GitHubCredential: auth.GitHubCredentialSource(),
 		}
 		code := http.StatusOK
 		if err := healthDB.PingContext(r.Context()); err != nil {
@@ -104,7 +112,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) Handler() http.Handler {
 	var h http.Handler = http.HandlerFunc(auth.ServeHTTP)
-	// Between Authenticate (needs the token in context to bind sessions to
 	h = uploads.ResolveSessionBody(h)
 	h = auth.GetMiddleware().Authenticate(h)
 	h = admin.TrackInflight(h)

@@ -62,10 +62,10 @@ func (e *testEnv) appendChunk(t *testing.T, id string, offset int, chunk []byte)
 		"application/octet-stream", bytes.NewReader(chunk), true)
 }
 
-// TestChunkedUploadMatchesDirectUpload proves the headline behavior: a
-// multi-chunk upload finalized against the REAL artifact endpoint produces an
-// artifact byte-identical to a direct PUT of the same payload, and the bytes
-// round-trip through the download path.
+// TestChunkedUploadMatchesDirectUpload proves the headline behavior. Consider
+// a multi-chunk upload finalized against the REAL artifact endpoint. That
+// upload produces an artifact byte-identical to a direct PUT of the same
+// payload, and the bytes round-trip through the download path.
 func TestChunkedUploadMatchesDirectUpload(t *testing.T) {
 	t.Serial()
 	env := setup(t)
@@ -120,7 +120,7 @@ func TestChunkedUploadMatchesDirectUpload(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 	resp.Body.Close()
 
-	// And the artifact actually serves: publish, then download the bytes.
+	// And the artifact serves: publish, then download the bytes.
 	resp = env.postJSON(t, "/api/v1/projects/chunky/releases/1/publish", `{}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
@@ -342,7 +342,7 @@ func TestUploadSessionAbortAndAuth(t *testing.T) {
 }
 
 // TestUploadSessionTooLarge proves the total-size cap applies at append time,
-// not just at finalize.
+// not at finalize.
 func TestUploadSessionTooLarge(t *testing.T) {
 	t.Serial()
 	t.Setenv("BUILDHOST_MAX_UPLOAD_SIZE", "16")
@@ -401,7 +401,7 @@ func TestChunkedSiteDeploy(t *testing.T) {
 		resp.Body.Close()
 	}
 
-	// Finalize on the sites subdomain endpoint; Content-Type still selects the
+	// Finalize on the sites subdomain endpoint.
 	resp = env.doSubdomainRequest(t, "PUT", "sites", "/sitey/branch/main?upload_session="+sess.ID,
 		"application/gzip", nil, true)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)

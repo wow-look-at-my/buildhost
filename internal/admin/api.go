@@ -9,6 +9,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/sites"
 )
 
 func (s *Server) apiSidebar(w http.ResponseWriter, r *http.Request) {
@@ -95,10 +96,21 @@ func (s *Server) apiProjects(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if projects == nil {
-		projects = []db.ProjectSummary{}
+	vis, err := s.db.ListProjectVisibility(r.Context())
+	if err != nil {
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
 	}
-	s.writeJSON(w, projects)
+	type projectRow struct {
+		db.ProjectSummary
+		Visibility db.ProjectVisibilityInfo `json:"visibility"`
+	}
+	out := make([]projectRow, len(projects))
+	for i, p := range projects {
+		out[i] = projectRow{ProjectSummary: p, Visibility: vis[p.ID]}
+	}
+	s.writeJSON(w, out)
 }
 
 func (s *Server) apiProject(w http.ResponseWriter, r *http.Request) {
@@ -133,12 +145,40 @@ func (s *Server) apiProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vis, err := s.db.ProjectVisibility(ctx, project)
+	if err != nil {
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	releaseVis, err := s.db.ReleaseVisibilities(ctx, project.ID)
+	if err != nil {
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	siteVis, err := s.db.SiteVisibilities(ctx, project.ID)
+	if err != nil {
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	releaseModes := make(map[string]db.Visibility, len(releaseVis))
+	for _, rel := range releases {
+		if mode, ok := releaseVis[rel.ID]; ok {
+			releaseModes[rel.Version] = mode
+		}
+	}
+
 	s.writeJSON(w, map[string]any{
-		"project":  project,
-		"releases": releases,
-		"sites":    sites,
-		"base_url": auth.RequestRootURL(r),
-		"services": serviceURLs(r),
+		"project":       project,
+		"releases":      releases,
+		"sites":         sites,
+		"visibility":    vis,
+		"release_modes": releaseModes,
+		"site_modes":    siteVis,
+		"base_url":      auth.RequestRootURL(r),
+		"services":      serviceURLs(r),
 	})
 }
 
@@ -201,9 +241,17 @@ func (s *Server) apiRelease(w http.ResponseWriter, r *http.Request) {
 		totalSize += a.Size
 	}
 
+	releaseMode, err := s.db.ReleaseVisibility(ctx, release.ID)
+	if err != nil {
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
 	s.writeJSON(w, map[string]any{
 		"project":         project,
 		"release":         release,
+		"release_mode":    releaseMode,
 		"artifacts":       artifacts,
 		"total_downloads": totalDownloads,
 		"total_size":      totalSize,
@@ -243,6 +291,53 @@ func (s *Server) apiSites(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, map[string]any{
 		"sites":    sites,
 		"base_url": auth.RequestRootURL(r),
+		"services": serviceURLs(r),
+	})
+}
+
+// apiSiteFiles lists the files of a single site branch. The branch is a
+// query parameter because a branch name can hold a slash.
+func (s *Server) apiSiteFiles(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	branch := r.URL.Query().Get("branch")
+	if branch == "" {
+		http.Error(w, "missing branch query parameter", http.StatusBadRequest)
+		return
+	}
+
+	project, err := s.db.GetProject(ctx, r.PathValue("name"))
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	site, err := s.db.GetSite(ctx, project.ID, branch)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	files, err := sites.ListFiles(ctx, s.store, site.StorageKey)
+	if err != nil {
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	s.writeJSON(w, map[string]any{
+		"project":  project,
+		"site":     site,
+		"files":    files,
 		"services": serviceURLs(r),
 	})
 }

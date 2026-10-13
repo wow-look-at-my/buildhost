@@ -1,6 +1,7 @@
 // Package uploadclient uploads a file to any buildhost upload endpoint,
-// transparently switching to a chunked upload session when the file is too
-// large for a single request to pass the proxy in front of the server
+// transparently switching to a chunked upload session. This happens when
+// the file is too large for a single request to pass the proxy in front of
+// the server
 package uploadclient
 
 import (
@@ -30,7 +31,7 @@ var RetryBaseDelay = time.Second
 
 // Uploader uploads files to a buildhost server's upload endpoints.
 type Uploader struct {
-	// Server is the apex server URL, hosting /api/v1/uploads and
+	// Server is the apex server URL.
 	Server string
 	// Token authenticates every request (Bearer).
 	Token string
@@ -177,8 +178,8 @@ func (u *Uploader) direct(method, target string, header map[string]string, body 
 }
 
 // chunked uploads via an upload session: create, append chunks (resuming from
-// the server's committed size on any hiccup), then finalize the original
-// request by reference with the file's sha256 for integrity.
+// the server's committed size on any hiccup), then finalize the request by
+// reference with the file's sha256 for integrity.
 func (u *Uploader) chunked(method, target string, header map[string]string, f *os.File, size int64) (*http.Response, error) {
 	sum, err := fileSHA256(f)
 	if err != nil {
@@ -306,8 +307,8 @@ func (u *Uploader) sessionSize(id string) (int64, error) {
 	return 0, fmt.Errorf("read upload session size: %w", lastErr)
 }
 
-// finalize re-issues the original upload request with an empty body,
-// referencing the session and its expected sha256.
+// finalize re-issues the upload request with an empty body, referencing the
+// session and its expected sha256.
 func (u *Uploader) finalize(method, target string, header map[string]string, id, sum string) (*http.Response, error) {
 	parsed, err := url.Parse(target)
 	if err != nil {

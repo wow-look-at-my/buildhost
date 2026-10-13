@@ -1,5 +1,5 @@
 // Package buildinfo exposes the version-control metadata that the Go toolchain
-// stamps into the binary at build time: the commit it was built from, the
+// stamps into the binary at build time. The commit it was built from, the
 // commit time, and whether the working tree was dirty. Both the `version`
 // command and the GET /healthz endpoint report it, so the running build can be
 // identified without a separate version endpoint (for example, to confirm that
@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// Info holds the VCS stamps embedded at build time. Its fields are empty when
+// Info holds the VCS stamps embedded at build time.
 type Info struct {
 	Revision string // full git commit SHA
 	Time     string // commit time in RFC3339

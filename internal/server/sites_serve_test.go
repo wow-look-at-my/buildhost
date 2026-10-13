@@ -14,7 +14,7 @@ import (
 // TestSitesServedFileCSP proves, through the full server middleware chain, that
 // a hosted static site's assets are served without a blocking CSP. The global
 // securityHeaders middleware applies "default-src 'none'" to every API response
-// (correct for JSON/binary endpoints); the sites Serve handler removes it so
+// (correct for JSON/binary endpoints). The sites Serve handler removes it so
 // the browser can load the site's own scripts, styles, and images.
 func TestSitesServedFileCSP(t *testing.T) {
 	t.Serial()
@@ -42,14 +42,13 @@ func TestSitesServedFileCSP(t *testing.T) {
 	resp = env.doSubdomainRequest(t, "GET", "sites", "/mysite/app.js", "", nil, false)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	// The global "default-src 'none'" CSP must be absent on site responses so
 	require.Empty(t, resp.Header.Get("Content-Security-Policy"))
 }
 
 // A site file must be reachable at the project's own root path, through the
 // whole stack: host dispatch -> requireProject -> sites handler. Before this,
 // only /{project}/branch/{branch}/{path} served a file and the bare root merely
-// redirected, so every link into a site had to name a branch -- and any link
+// redirected. Every link into a site had to name a branch -- and any link
 func TestSitesApexPath(t *testing.T) {
 	t.Serial()
 	env := setup(t)
@@ -92,7 +91,7 @@ func TestSitesApexPath(t *testing.T) {
 	require.Equal(t, "/apexp/runner.html", resp.Header.Get("Location"))
 	require.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
 
-	// The legacy branch route is unshadowed, and 302s to the canonical URL for
+	// The branch route is unshadowed.
 	resp, _ = siteGet(t, env, "sites.test.local", "/apexp/branch/main/runner.html")
 	require.Equal(t, http.StatusFound, resp.StatusCode)
 	require.Equal(t, "/apexp/runner.html", resp.Header.Get("Location"))
@@ -103,7 +102,7 @@ func TestSitesApexPath(t *testing.T) {
 }
 
 // The apex file path is gated exactly like every other site read: the
-// public-read bypass opens only a public site's own default branch, and the
+// public-read bypass opens only a public site's own default branch. The
 // gate resolves that branch through the same helper the handler does.
 func TestSitesApexPathVisibility(t *testing.T) {
 	t.Serial()
@@ -122,7 +121,6 @@ func TestSitesApexPathVisibility(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, "top-secret", string(body))
 
-	// A public site under a private project serves its files anonymously at the
 	env.createProject(t, "apexpub", true)
 	env.uploadBranchSite(t, "apexpub", "main", true, map[string]string{"preview.html": "public-preview"})
 	resp, text := siteGet(t, env, "sites.test.local", "/apexpub/preview.html")
