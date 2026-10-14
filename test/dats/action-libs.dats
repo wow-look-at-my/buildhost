@@ -33,6 +33,12 @@ tests:
 		stdout:
 			- "existing-release: all checks passed"
 
+	- desc: publish reads the portable manifest, hashes a file, and retries a transient API answer
+	  cmd: node test/actions/publish-libs.test.ts
+	  outputs:
+		stdout:
+			- "publish-libs: all checks passed"
+
 	- desc: every action value that holds an expression stays under GitHub's expression length limit
 	  cmd: node test/actions/expression-length.test.ts
 	  outputs:

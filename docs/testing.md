@@ -12,6 +12,10 @@ Extracted verbatim from CLAUDE.md, no wording changed.
 
 The remedy is the one the action names: say it in a single line, or move the prose to `docs/` and leave a pointer.
 
+## Inline values must stay within GitHub's expression length
+
+GitHub evaluates a `with:` value that holds `${{ }}` as one `format()` expression, and refuses the whole action at load when that expression passes 21000 characters. The error names the action file, and no step of it runs. `.github/scripts/script-length.ts` computes that length the way GitHub builds it, with each quote and brace doubled. It runs from `test/dats/repo-hygiene.dats`. When the publish script grows near the limit, move a self-contained piece into a module under `.github/actions/lib/` with a test in `test/actions/`.
+
 ## llms.txt drift guard
 
 `internal/server/llms_endpoints_test.go` guards the `/llms.txt` document against drift. It parses the *served* document. It asserts that every URL the document references resolves to a registered route. It then exercises the documented flows end to end against a seeded server. Those flows are the downloads, APT, Brew, npm, OCI, and the `/static` latest-rejection. An edit to `internal/llms/template.md` that references a nonexistent endpoint fails CI.
