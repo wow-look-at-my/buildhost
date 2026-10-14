@@ -33,12 +33,15 @@ jobs:
             echo "::warning::APE binfmt handler not registered; a bare exec of an APE still fails here"
           fi
       # No fetch-cacerts step: the CA bundle is a generate directive The org module proxy is gone, so modules come direct with sumdb off.
+      # go-toolchain's releases publish through this repo's own publish action. A release that
+      # action broke must not also block the pull request that repairs the action.
       - uses: wow-look-at-my/go-toolchain@master
         env:
           GOPROXY: direct
         with:
           generate: 3ed2a7fd952f
           timeout: '25'
+          allow-source-build: 'true'
       # The step above just ran every generate directive, which is what makes
       - uses: ./.github/actions/buildhost-download
         with:
