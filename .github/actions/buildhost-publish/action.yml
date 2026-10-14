@@ -161,6 +161,15 @@ runs:
           const upload = require("${{ github.action_path }}/../lib/upload.ts") as typeof import("${{ github.action_path }}/../lib/upload");
           const existing = require("${{ github.action_path }}/../lib/existing-release.ts") as typeof import("${{ github.action_path }}/../lib/existing-release");
           const artifactGroups = require("${{ github.action_path }}/../lib/artifact-groups.ts") as typeof import("${{ github.action_path }}/../lib/artifact-groups");
+          const buildhost = require("${{ github.action_path }}/../lib/client.ts") as typeof import("${{ github.action_path }}/../lib/client");
+          const publishGroup = require("${{ github.action_path }}/../lib/publish-group.ts") as typeof import("${{ github.action_path }}/../lib/publish-group");
+          const manifest = require("${{ github.action_path }}/../lib/portable-manifest.ts") as typeof import("${{ github.action_path }}/../lib/portable-manifest");
+          const client = require("${{ github.action_path }}/../lib/publish-client.ts") as typeof import("${{ github.action_path }}/../lib/publish-client");
+          const client = require("${{ github.action_path }}/../lib/api-client.ts") as typeof import("${{ github.action_path }}/../lib/api-client");
+          const names = require("${{ github.action_path }}/../lib/artifact-names.ts") as typeof import("${{ github.action_path }}/../lib/artifact-names");
+          const io = require("${{ github.action_path }}/../lib/file-io.ts") as typeof import("${{ github.action_path }}/../lib/file-io");
+          const { apiSender } = require("${{ github.action_path }}/../lib/api.ts") as typeof import("${{ github.action_path }}/../lib/api");
+          const { readPortableManifest, fileSHA256, manifestName } = require("${{ github.action_path }}/../lib/portable-manifest.ts") as typeof import("${{ github.action_path }}/../lib/portable-manifest");
           await (async () => {
             const inputProject: string = "${{ inputs.project }}";
             const inputVersion: string = "${{ inputs.version }}";
@@ -252,40 +261,87 @@ runs:
               core.setFailed(`No matrix artifacts matching '<binary>_{os}_{arch}' found, and no ${artifactGroups.manifestName}`);
               core.info(`Files: ${fs.readdirSync(sourceDir).join(", ")}`);
               return;
+            // require is the documented route to node modules -- the TS action injects no crypto global
+            const crypto = require("crypto");
+            const fileSHA256 = (p: string) => io.fileSHA256(fs, crypto, p);
+            const artifactRe = names.ArtifactRe;
+
+            const manifestPath = path.join(sourceDir, artifactGroups.ManifestName);
+            const found = artifactGroups.findArtifacts({
+              files: fs.readdirSync(sourceDir).filter((f) => {
+                const full = path.join(sourceDir, f);
+                return !fs.lstatSync(full).isSymbolicLink() && fs.statSync(full).isFile();
+              }),
+              manifest: fs.existsSync(manifestPath) ? fs.readFileSync(manifestPath, "utf-8") : null,
+              exists: (f) => fs.existsSync(path.join(sourceDir, f)),
+            }, project);
+            if (!found.ok) { core.setFailed(found.message); return; }
+            const { groups, files, portable } = found;
+            type Group = import("${{ github.action_path }}/../lib/artifact-groups").Group;
+            core.info(`Found ${files.length} per-platform artifact(s) and ${portable.length} portable artifact(s) across ${groups.size} project(s): ${[...groups.keys()].join(", ")}`);
+
+            const api = buildhost.client(server, token, core);
+            // A build that emits ONE file running on several platforms cannot say so in a filename, so it declares the set here and buildhost stores one artifact with one download link
+            type PortableEntry = import("${{ github.action_path }}/../lib/portable-manifest").PortableEntry;
+            const manifestName = manifest.ManifestName;
+            const manifestPath = path.join(sourceDir, manifestName);
+            const portable = fs.existsSync(manifestPath)
+              ? manifest.parsePortableManifest(fs.readFileSync(manifestPath, "utf-8"), (f) => fs.existsSync(path.join(sourceDir, f)), path)
+              : [];
+            if (typeof portable === "string") { core.setFailed(`${portable} (source directory ${sourceDir})`); return; }
+            // matches <binary>_<os>_<arch>[.exe]; binary is the cmd/ leaf name from go-toolchain and may contain hyphens (e.g. log-streamer-client)
+            const artifactRe = /^(.+)_([a-z]+)_([a-z0-9]+)$/;
+
+            // A build that emits ONE file running on several platforms declares the set in a manifest, and buildhost stores one artifact with one download link
+            type PortableEntry = import("${{ github.action_path }}/../lib/portable-manifest").PortableEntry;
+            const manifestName = manifest.manifestName;
+            const portable = manifest.readPortableManifest(sourceDir, core, fs, path);
+            // A build that emits ONE file running on several platforms declares the set in a manifest, and buildhost stores one artifact with one download link.
+            type PortableEntry = import("${{ github.action_path }}/../lib/portable-manifest").PortableEntry;
+            const portable = readPortableManifest(sourceDir, core);
+            if (portable === null) return;
+            const portableFiles = new Set(portable.map((p) => p.file));
+
+            const files = fs.readdirSync(sourceDir).filter((f) => {
+              const full = path.join(sourceDir, f);
+              if (fs.lstatSync(full).isSymbolicLink()) return false;
+              if (!fs.statSync(full).isFile()) return false;
+              if (f === "checksums.txt" || f === manifestName || f.endsWith(".zip")) return false;
+              if (portableFiles.has(f)) return false;
+              return artifactRe.test(f.replace(/\.exe$/, ""));
+            });
+
+            if (files.length === 0 && portable.length === 0) {
+              core.setFailed(`No matrix artifacts matching '<binary>_{os}_{arch}' found, and no ${manifestName}`);
+              core.info(`Files: ${fs.readdirSync(sourceDir).join(", ")}`);
+              return;
+            }
+
+            const projectForBinary = (binary: string) => names.projectForBinary(project, binary);
+
+            // Group artifacts by destination project.
+            type Item = { file: string; os: string; arch: string };
+            type Group = { slots: Item[]; portable: PortableEntry[] };
+            const groups = new Map<string, Group>();
+            const groupFor = (proj: string): Group => {
+              const g = groups.get(proj) ?? { slots: [], portable: [] };
+              groups.set(proj, g);
+              return g;
+            };
+            for (const file of files) {
+              const m = file.replace(/\.exe$/, "").match(artifactRe)!;
+              const [, binary, fileOs, arch] = m;
+              groupFor(projectForBinary(binary)).slots.push({ file, os: fileOs, arch });
+            }
+            for (const entry of portable) {
+              groupFor(projectForBinary(names.binaryForPortable(entry, path.basename))).portable.push(entry);
             }
             core.info(`Found ${found.files} per-platform artifact(s) and ${found.portable} portable artifact(s) across ${found.groups.size} project(s): ${[...found.groups.keys()].join(", ")}`);
 
-            const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-            // a transient 5xx or an empty-body proxy 404 (unlike the app's own 404, which carries JSON) gets retried; any 4xx with a body (including a genuine "project not found") returns immediately
-            const isTransient = (status: number, text: string): boolean =>
-              status >= 500 || (status === 404 && text.trim() === "");
-
-            // retries a transient failure with backoff so a rolling buildhost deploy never hard-fails the publish
-            const api = async (method: string, urlPath: string, body?: string | Buffer | null, extra?: Record<string, string>) => {
-              const headers: Record<string, string> = { Authorization: `Bearer ${token}`, ...(extra ?? {}) };
-              if (typeof body === "string") headers["Content-Type"] = "application/json";
-              else if (body) headers["Content-Type"] = "application/octet-stream";
-              const maxAttempts = 5;
-              for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-                try {
-                  const resp = await fetch(`${server}${urlPath}`, { method, headers, body });
-                  const text = await resp.text();
-                  if (attempt === maxAttempts || !isTransient(resp.status, text)) {
-                    return { status: resp.status, text };
-                  }
-                  core.warning(`${method} ${urlPath} -> HTTP ${resp.status} (transient; attempt ${attempt}/${maxAttempts}); retrying`);
-                } catch (e) {
-                  const msg = e instanceof Error ? e.message : String(e);
-                  if (attempt === maxAttempts) {
-                    return { status: 0, text: `request failed after ${maxAttempts} attempts: ${msg}` };
-                  }
-                  core.warning(`${method} ${urlPath} -> ${msg} (network error; attempt ${attempt}/${maxAttempts}); retrying`);
-                }
-                await sleep(1000 * 2 ** (attempt - 1));
-              }
-              return { status: 0, text: "unreachable" };
-            };
+            // The client retries a transient failure, and sends a body past the direct limit through an upload session.
+            const { api, putFile } = client.newClient({ server, token, core, upload, fs });
+            const api = client.makeApi(server, token, core);
+            const api = apiSender(server, token, core);
 
             // Cloudflare answers 413 to a body over 100 MB, so anything past the server's advertised direct limit is assembled through an upload session instead.
             let directLimit = -1;
@@ -294,20 +350,7 @@ runs:
               const body = {
                 size: fs.statSync(filePath).size,
                 sha256: sum,
-                // A short read leaves the tail of an allocUnsafe buffer holding whatever was in that memory, so keep reading until the chunk is whole.
-                read: (offset: number, length: number): Buffer => {
-                  const buf = Buffer.allocUnsafe(length);
-                  const fd = fs.openSync(filePath, "r");
-                  try {
-                    let got = 0;
-                    while (got < length) {
-                      const n = fs.readSync(fd, buf, got, length - got, offset + got);
-                      if (n <= 0) throw new Error(`${filePath}: wanted ${length} bytes at ${offset}, the file ended after ${got}`);
-                      got += n;
-                    }
-                  } finally { fs.closeSync(fd); }
-                  return buf;
-                },
+                read: (offset: number, length: number): Buffer => io.readChunk(fs, filePath, offset, length),
               };
               return upload.putFile(api, core, { urlPath, body, headers: extra, directLimit });
             };
@@ -399,6 +442,27 @@ runs:
               if (pub.status !== 200) { core.setFailed(`Publish ${proj} failed (${pub.status}): ${pub.text}`); return false; }
               core.info(`Published ${proj}/${releaseVersion} (${items.length + group.portable.length} artifacts) to ${server}`);
               return true;
+            // every slot the group would upload, with the sha256 of its bytes
+            const slotsOf = async (group: Group) => {
+              const slots: import("${{ github.action_path }}/../lib/existing-release").Slot[] = [];
+              for (const item of group.slots) {
+                slots.push({ os: item.os, arch: item.arch, kind: "binary", sha256: await fileSHA256(path.join(sourceDir, item.file)) });
+              }
+              for (const entry of group.portable) {
+                const sum = await fileSHA256(path.join(sourceDir, entry.file));
+                for (const platform of entry.platforms) {
+                  const [platformOS, platformArch] = platform.split("/");
+                  slots.push({ os: platformOS, arch: platformArch, kind: entry.kind, sha256: sum });
+                }
+              }
+              return slots;
+            };
+
+            const deps: import("${{ github.action_path }}/../lib/publish-group").Deps = {
+              send: api, core, server,
+              put: (url, f, sum, extra) => putFile(url, path.join(sourceDir, f), sum, extra),
+              sha256: (f) => fileSHA256(path.join(sourceDir, f)),
+              record: (slot) => { uploadedSlots.push(slot); },
             };
 
             const groupList = [...found.groups.entries()];
@@ -415,7 +479,7 @@ runs:
                 ? await existing.existingRelease(api, core, proj, rv, await artifactGroups.slotsOf(sourceDir, group))
                 : { action: "publish" };
               if (verdict.action === "fail") { core.setFailed(verdict.message); return; }
-              if (verdict.action === "publish" && !(await uploadAndPublish(proj, rv, group))) return;
+              if (verdict.action === "publish" && !(await publishGroup.publishGroup(deps, proj, rv, group))) return;
               published.push({ proj, rv });
             }
 
