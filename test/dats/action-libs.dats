@@ -44,3 +44,21 @@ tests:
 	  outputs:
 		stdout:
 			- "download-action-path: all checks passed"
+
+	- desc: the portable manifest reads every entry, and fails a manifest it cannot use
+	  cmd: node test/actions/portable-manifest.test.ts
+	  outputs:
+		stdout:
+			- "portable-manifest: all checks passed"
+
+	- desc: the publish client retries a transient failure with the bearer token
+	  cmd: node test/actions/publish-client.test.ts
+	  outputs:
+		stdout:
+			- "publish-client: all checks passed"
+
+	- desc: no script that holds an expression passes the length GitHub allows one expression
+	  cmd: node test/actions/expression-length.test.ts
+	  outputs:
+		stdout:
+			- "expression-length: all checks passed"
