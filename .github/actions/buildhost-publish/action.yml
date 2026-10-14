@@ -161,6 +161,7 @@ runs:
           const upload = require("${{ github.action_path }}/../lib/upload.ts") as typeof import("${{ github.action_path }}/../lib/upload");
           const existing = require("${{ github.action_path }}/../lib/existing-release.ts") as typeof import("${{ github.action_path }}/../lib/existing-release");
           const manifest = require("${{ github.action_path }}/../lib/portable-manifest.ts") as typeof import("${{ github.action_path }}/../lib/portable-manifest");
+          const client = require("${{ github.action_path }}/../lib/publish-client.ts") as typeof import("${{ github.action_path }}/../lib/publish-client");
           const client = require("${{ github.action_path }}/../lib/api-client.ts") as typeof import("${{ github.action_path }}/../lib/api-client");
           const names = require("${{ github.action_path }}/../lib/artifact-names.ts") as typeof import("${{ github.action_path }}/../lib/artifact-names");
           const io = require("${{ github.action_path }}/../lib/file-io.ts") as typeof import("${{ github.action_path }}/../lib/file-io");
@@ -260,6 +261,10 @@ runs:
             // matches <binary>_<os>_<arch>[.exe]; binary is the cmd/ leaf name from go-toolchain and may contain hyphens (e.g. log-streamer-client)
             const artifactRe = /^(.+)_([a-z]+)_([a-z0-9]+)$/;
 
+            // A build that emits ONE file running on several platforms declares the set in a manifest, and buildhost stores one artifact with one download link
+            type PortableEntry = import("${{ github.action_path }}/../lib/portable-manifest").PortableEntry;
+            const manifestName = manifest.manifestName;
+            const portable = manifest.readPortableManifest(sourceDir, core, fs, path);
             // A build that emits ONE file running on several platforms declares the set in a manifest, and buildhost stores one artifact with one download link.
             type PortableEntry = import("${{ github.action_path }}/../lib/portable-manifest").PortableEntry;
             const portable = readPortableManifest(sourceDir, core);
@@ -302,6 +307,8 @@ runs:
             }
             core.info(`Found ${files.length} per-platform artifact(s) and ${portable.length} portable artifact(s) across ${groups.size} project(s): ${[...groups.keys()].join(", ")}`);
 
+            // The client retries a transient failure, and sends a body past the direct limit through an upload session.
+            const { api, putFile } = client.newClient({ server, token, core, upload, fs });
             const api = client.makeApi(server, token, core);
             const api = apiSender(server, token, core);
 
