@@ -61,6 +61,7 @@ jobs:
           repository: wow-look-at-my/go-toolchain
           ref: claude/proof-324
           path: .proof-go-toolchain
+      - run: echo .proof-go-toolchain/ >> .git/info/exclude
       - uses: ./.proof-go-toolchain
         env:
           GOPROXY: direct
