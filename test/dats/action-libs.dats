@@ -39,6 +39,11 @@ tests:
 		stdout:
 			- "existing-release: all checks passed"
 
+	- desc: the publish helpers parse the manifest, map names, read files and retry the API
+	  cmd: node test/actions/publish-helpers.test.ts
+	  outputs:
+		stdout:
+			- "publish-helpers: all checks passed"
 	- desc: publish reads the portable manifest, hashes a file, and retries a transient API answer
 	  cmd: node test/actions/publish-libs.test.ts
 	  outputs:
@@ -56,3 +61,21 @@ tests:
 	  outputs:
 		stdout:
 			- "download-action-path: all checks passed"
+
+	- desc: the portable manifest reads every entry, and fails a manifest it cannot use
+	  cmd: node test/actions/portable-manifest.test.ts
+	  outputs:
+		stdout:
+			- "portable-manifest: all checks passed"
+
+	- desc: the publish client retries a transient failure with the bearer token
+	  cmd: node test/actions/publish-client.test.ts
+	  outputs:
+		stdout:
+			- "publish-client: all checks passed"
+
+	- desc: no script that holds an expression passes the length GitHub allows one expression
+	  cmd: node test/actions/expression-length.test.ts
+	  outputs:
+		stdout:
+			- "expression-length: all checks passed"
