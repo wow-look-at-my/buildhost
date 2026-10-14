@@ -33,10 +33,40 @@ jobs:
             echo "::warning::APE binfmt handler not registered; a bare exec of an APE still fails here"
           fi
       # No fetch-cacerts step: the CA bundle is a generate directive The org module proxy is gone, so modules come direct with sumdb off. go-toolchain publishes through this repo's publish action, so a release that action broke must not block its repair.
-      - uses: wow-look-at-my/go-toolchain@master
+      - name: Repair the published go-toolchain
+        id: gt
+        uses: wow-look-at-my/actions@typescript#latest
+        with:
+          script: |
+            const r = await fetch("https://dl.pazer.build/go-toolchain?os=linux&arch=amd64");
+            if (!r.ok) throw new Error(`download: HTTP ${r.status}`);
+            const buf = Buffer.from(await r.arrayBuffer());
+            const magic = Buffer.from("BUILDHOST-STAMP1", "ascii");
+            let out = buf;
+            if (buf.subarray(buf.length - 16).equals(magic)) {
+              const start = buf.length - 20 - buf.readUInt32BE(buf.length - 20);
+              const head = buf.subarray(0, start);
+              const rec = head.subarray(head.length - 64);
+              if (rec.subarray(0, 8).toString("ascii") === "GOSTDEMB") {
+                out = Buffer.concat([head.subarray(0, head.length - 64), buf.subarray(start), rec]);
+                core.info("moved the release stamp before the GOSTDEMB record");
+              }
+            }
+            const file = path.join(env.RUNNER_TEMP!, "gt", "go-toolchain");
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, out, { mode: 0o755 });
+            core.setOutput("path", file);
+      - uses: actions/checkout@v4
+        with:
+          repository: wow-look-at-my/go-toolchain
+          ref: claude/proof-324
+          path: .proof-go-toolchain
+      - run: echo .proof-go-toolchain/ >> .git/info/exclude
+      - uses: ./.proof-go-toolchain
         env:
           GOPROXY: direct
         with:
+          binary: ${{ steps.gt.outputs.path }}
           generate: 3ed2a7fd952f
           timeout: '25'
           allow-source-build: 'true'
