@@ -33,6 +33,18 @@ tests:
 		stdout:
 			- "existing-release: all checks passed"
 
+	- desc: artifact-groups finds what a publish uploads and the project each file goes to, and fails on a bad manifest
+	  cmd: node test/actions/artifact-groups.test.ts
+	  outputs:
+		stdout:
+			- "artifact-groups: all checks passed"
+
+	- desc: publish-group sends each body once, registers the rest by hash, and stops before the publish on a failure
+	  cmd: node test/actions/publish-group.test.ts
+	  outputs:
+		stdout:
+			- "publish-group: all checks passed"
+
 	- desc: download aborts a transfer that goes silent, and finishes a slow one that keeps sending
 	  cmd: node test/actions/download-stall.test.ts
 	  outputs:
