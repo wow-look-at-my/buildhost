@@ -160,6 +160,10 @@ runs:
           const { recordReleaseArtifacts } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
           const upload = require("${{ github.action_path }}/../lib/upload.ts") as typeof import("${{ github.action_path }}/../lib/upload");
           const existing = require("${{ github.action_path }}/../lib/existing-release.ts") as typeof import("${{ github.action_path }}/../lib/existing-release");
+          const manifest = require("${{ github.action_path }}/../lib/portable-manifest.ts") as typeof import("${{ github.action_path }}/../lib/portable-manifest");
+          const client = require("${{ github.action_path }}/../lib/api-client.ts") as typeof import("${{ github.action_path }}/../lib/api-client");
+          const names = require("${{ github.action_path }}/../lib/artifact-names.ts") as typeof import("${{ github.action_path }}/../lib/artifact-names");
+          const io = require("${{ github.action_path }}/../lib/file-io.ts") as typeof import("${{ github.action_path }}/../lib/file-io");
           const artifactGroups = require("${{ github.action_path }}/../lib/artifact-groups.ts") as typeof import("${{ github.action_path }}/../lib/artifact-groups");
           const buildhost = require("${{ github.action_path }}/../lib/client.ts") as typeof import("${{ github.action_path }}/../lib/client");
           const publishGroup = require("${{ github.action_path }}/../lib/publish-group.ts") as typeof import("${{ github.action_path }}/../lib/publish-group");
@@ -263,6 +267,8 @@ runs:
             const fileSHA256 = (p: string) => io.fileSHA256(fs, crypto, p);
             const artifactRe = names.ArtifactRe;
 
+            // A build that emits ONE file running on several platforms cannot say so in a filename, so it declares the set here and buildhost stores one artifact with one download link
+
             const manifestPath = path.join(sourceDir, artifactGroups.ManifestName);
             const found = artifactGroups.findArtifacts({
               files: fs.readdirSync(sourceDir).filter((f) => {
@@ -295,8 +301,12 @@ runs:
             const portable = manifest.readPortableManifest(sourceDir, core, fs, path);
             // A build that emits ONE file running on several platforms declares the set in a manifest, and buildhost stores one artifact with one download link.
             type PortableEntry = import("${{ github.action_path }}/../lib/portable-manifest").PortableEntry;
-            const portable = readPortableManifest(sourceDir, core);
-            if (portable === null) return;
+            const manifestName = manifest.ManifestName;
+            const manifestPath = path.join(sourceDir, manifestName);
+            const portable = fs.existsSync(manifestPath)
+              ? manifest.parsePortableManifest(fs.readFileSync(manifestPath, "utf-8"), (f) => fs.existsSync(path.join(sourceDir, f)), path)
+              : [];
+            if (typeof portable === "string") { core.setFailed(`${portable} (source directory ${sourceDir})`); return; }
             const portableFiles = new Set(portable.map((p) => p.file));
 
             const files = fs.readdirSync(sourceDir).filter((f) => {
@@ -335,6 +345,7 @@ runs:
             }
             core.info(`Found ${found.files} per-platform artifact(s) and ${found.portable} portable artifact(s) across ${found.groups.size} project(s): ${[...found.groups.keys()].join(", ")}`);
 
+            const api = client.makeApi(server, token, core);
             // The client retries a transient failure, and sends a body past the direct limit through an upload session.
             const { api, putFile } = client.newClient({ server, token, core, upload, fs });
             const api = client.makeApi(server, token, core);
