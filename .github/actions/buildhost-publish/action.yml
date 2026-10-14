@@ -160,6 +160,11 @@ runs:
           const { recordReleaseArtifacts } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
           const upload = require("${{ github.action_path }}/../lib/upload.ts") as typeof import("${{ github.action_path }}/../lib/upload");
           const existing = require("${{ github.action_path }}/../lib/existing-release.ts") as typeof import("${{ github.action_path }}/../lib/existing-release");
+          const manifest = require("${{ github.action_path }}/../lib/portable-manifest.ts") as typeof import("${{ github.action_path }}/../lib/portable-manifest");
+          const client = require("${{ github.action_path }}/../lib/publish-client.ts") as typeof import("${{ github.action_path }}/../lib/publish-client");
+          const client = require("${{ github.action_path }}/../lib/api-client.ts") as typeof import("${{ github.action_path }}/../lib/api-client");
+          const names = require("${{ github.action_path }}/../lib/artifact-names.ts") as typeof import("${{ github.action_path }}/../lib/artifact-names");
+          const io = require("${{ github.action_path }}/../lib/file-io.ts") as typeof import("${{ github.action_path }}/../lib/file-io");
           const { apiSender } = require("${{ github.action_path }}/../lib/api.ts") as typeof import("${{ github.action_path }}/../lib/api");
           const { readPortableManifest, fileSHA256, manifestName } = require("${{ github.action_path }}/../lib/portable-manifest.ts") as typeof import("${{ github.action_path }}/../lib/portable-manifest");
           await (async () => {
@@ -240,9 +245,26 @@ runs:
               // recordReleaseArtifacts(octokit, core, context, { server, artifacts: uploadedSlots });
               true;
 
+            // require is the documented route to node modules -- the TS action injects no crypto global
+            const crypto = require("crypto");
+            const fileSHA256 = (p: string) => io.fileSHA256(fs, crypto, p);
+            const artifactRe = names.ArtifactRe;
+
+            // A build that emits ONE file running on several platforms cannot say so in a filename, so it declares the set here and buildhost stores one artifact with one download link
+            type PortableEntry = import("${{ github.action_path }}/../lib/portable-manifest").PortableEntry;
+            const manifestName = manifest.ManifestName;
+            const manifestPath = path.join(sourceDir, manifestName);
+            const portable = fs.existsSync(manifestPath)
+              ? manifest.parsePortableManifest(fs.readFileSync(manifestPath, "utf-8"), (f) => fs.existsSync(path.join(sourceDir, f)), path)
+              : [];
+            if (typeof portable === "string") { core.setFailed(`${portable} (source directory ${sourceDir})`); return; }
             // matches <binary>_<os>_<arch>[.exe]; binary is the cmd/ leaf name from go-toolchain and may contain hyphens (e.g. log-streamer-client)
             const artifactRe = /^(.+)_([a-z]+)_([a-z0-9]+)$/;
 
+            // A build that emits ONE file running on several platforms declares the set in a manifest, and buildhost stores one artifact with one download link
+            type PortableEntry = import("${{ github.action_path }}/../lib/portable-manifest").PortableEntry;
+            const manifestName = manifest.manifestName;
+            const portable = manifest.readPortableManifest(sourceDir, core, fs, path);
             // A build that emits ONE file running on several platforms declares the set in a manifest, and buildhost stores one artifact with one download link.
             type PortableEntry = import("${{ github.action_path }}/../lib/portable-manifest").PortableEntry;
             const portable = readPortableManifest(sourceDir, core);
@@ -264,12 +286,7 @@ runs:
               return;
             }
 
-            // a binary named exactly after the repo publishes flat as "<repo>"; every other binary nests under "<repo>/<binary>", stripping a redundant leading "<repo>-"
-            const projectForBinary = (binary: string): string => {
-              if (binary === project) return project;
-              if (binary.startsWith(`${project}-`)) return `${project}/${binary.slice(project.length + 1)}`;
-              return `${project}/${binary}`;
-            };
+            const projectForBinary = (binary: string) => names.projectForBinary(project, binary);
 
             // Group artifacts by destination project.
             type Item = { file: string; os: string; arch: string };
@@ -285,18 +302,14 @@ runs:
               const [, binary, fileOs, arch] = m;
               groupFor(projectForBinary(binary)).slots.push({ file, os: fileOs, arch });
             }
-            // the binary name is the served filename when the manifest gave one, else the file's own name with a trailing _<os>_<arch> stripped
-            const binaryForPortable = (entry: PortableEntry): string => {
-              const base = path.basename(entry.file).replace(/\.exe$/, "");
-              if (entry.filename !== path.basename(entry.file)) return entry.filename;
-              const m = base.match(artifactRe);
-              return m ? m[1] : base;
-            };
             for (const entry of portable) {
-              groupFor(projectForBinary(binaryForPortable(entry))).portable.push(entry);
+              groupFor(projectForBinary(names.binaryForPortable(entry, path.basename))).portable.push(entry);
             }
             core.info(`Found ${files.length} per-platform artifact(s) and ${portable.length} portable artifact(s) across ${groups.size} project(s): ${[...groups.keys()].join(", ")}`);
 
+            // The client retries a transient failure, and sends a body past the direct limit through an upload session.
+            const { api, putFile } = client.newClient({ server, token, core, upload, fs });
+            const api = client.makeApi(server, token, core);
             const api = apiSender(server, token, core);
 
             // Cloudflare answers 413 to a body over 100 MB, so anything past the server's advertised direct limit is assembled through an upload session instead.
@@ -306,20 +319,7 @@ runs:
               const body = {
                 size: fs.statSync(filePath).size,
                 sha256: sum,
-                // A short read leaves the tail of an allocUnsafe buffer holding whatever was in that memory, so keep reading until the chunk is whole.
-                read: (offset: number, length: number): Buffer => {
-                  const buf = Buffer.allocUnsafe(length);
-                  const fd = fs.openSync(filePath, "r");
-                  try {
-                    let got = 0;
-                    while (got < length) {
-                      const n = fs.readSync(fd, buf, got, length - got, offset + got);
-                      if (n <= 0) throw new Error(`${filePath}: wanted ${length} bytes at ${offset}, the file ended after ${got}`);
-                      got += n;
-                    }
-                  } finally { fs.closeSync(fd); }
-                  return buf;
-                },
+                read: (offset: number, length: number): Buffer => io.readChunk(fs, filePath, offset, length),
               };
               return upload.putFile(api, core, { urlPath, body, headers: extra, directLimit });
             };
