@@ -164,6 +164,8 @@ runs:
           const client = require("${{ github.action_path }}/../lib/api-client.ts") as typeof import("${{ github.action_path }}/../lib/api-client");
           const names = require("${{ github.action_path }}/../lib/artifact-names.ts") as typeof import("${{ github.action_path }}/../lib/artifact-names");
           const io = require("${{ github.action_path }}/../lib/file-io.ts") as typeof import("${{ github.action_path }}/../lib/file-io");
+          const { apiSender } = require("${{ github.action_path }}/../lib/api.ts") as typeof import("${{ github.action_path }}/../lib/api");
+          const { readPortableManifest, fileSHA256, manifestName } = require("${{ github.action_path }}/../lib/portable-manifest.ts") as typeof import("${{ github.action_path }}/../lib/portable-manifest");
           await (async () => {
             const inputProject: string = "${{ inputs.project }}";
             const inputVersion: string = "${{ inputs.version }}";
@@ -255,6 +257,13 @@ runs:
               ? manifest.parsePortableManifest(fs.readFileSync(manifestPath, "utf-8"), (f) => fs.existsSync(path.join(sourceDir, f)), path)
               : [];
             if (typeof portable === "string") { core.setFailed(`${portable} (source directory ${sourceDir})`); return; }
+            // matches <binary>_<os>_<arch>[.exe]; binary is the cmd/ leaf name from go-toolchain and may contain hyphens (e.g. log-streamer-client)
+            const artifactRe = /^(.+)_([a-z]+)_([a-z0-9]+)$/;
+
+            // A build that emits ONE file running on several platforms declares the set in a manifest, and buildhost stores one artifact with one download link.
+            type PortableEntry = import("${{ github.action_path }}/../lib/portable-manifest").PortableEntry;
+            const portable = readPortableManifest(sourceDir, core);
+            if (portable === null) return;
             const portableFiles = new Set(portable.map((p) => p.file));
 
             const files = fs.readdirSync(sourceDir).filter((f) => {
@@ -294,6 +303,7 @@ runs:
             core.info(`Found ${files.length} per-platform artifact(s) and ${portable.length} portable artifact(s) across ${groups.size} project(s): ${[...groups.keys()].join(", ")}`);
 
             const api = client.makeApi(server, token, core);
+            const api = apiSender(server, token, core);
 
             // Cloudflare answers 413 to a body over 100 MB, so anything past the server's advertised direct limit is assembled through an upload session instead.
             let directLimit = -1;
