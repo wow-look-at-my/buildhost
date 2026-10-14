@@ -32,6 +32,15 @@ jobs:
           if ! printf '%s\n' ':APE:M::\x4d\x5a\x71\x46\x70\x44\x3d\x27::/bin/sh:' | sudo tee "$dir/register" > /dev/null 2>&1; then
             echo "::warning::APE binfmt handler not registered; a bare exec of an APE still fails here"
           fi
+      # The published go-toolchain fails as go with "cannot find GOROOT directory". A GOROOT from the gosmopolitan release lets it run. Ported from go-toolchain#623.
+      - name: Give go-toolchain a GOROOT
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${{ runner.temp }}/gosmopolitan"
+          mkdir -p "$root"
+          curl -fsSL --compressed "https://dl.pazer.build/gosmopolitan?branch=master&os=linux&arch=amd64" | tar -xz -C "$root"
+          echo "GOROOT=$root/go" >> "$GITHUB_ENV"
       # No fetch-cacerts step: the CA bundle is a generate directive The org module proxy is gone, so modules come direct with sumdb off. go-toolchain publishes through this repo's publish action, so a release that action broke must not block its repair.
       - uses: wow-look-at-my/go-toolchain@master
         env:
