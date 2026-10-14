@@ -4,10 +4,8 @@ export interface Core { info(m: string): void; warning(m: string): void }
 
 export interface Response { status: number; text: string }
 
-/**
- * A transient 5xx, or a proxy 404 with an empty body, is retried. The app's
- * own 404 carries JSON, and any 4xx with a body returns at once.
- */
+/** The app's a later own carries JSON, and any 4xx with a body returns at
+ * once. */
 export const isTransient = (status: number, text: string): boolean =>
 	status >= 500 || (status === 404 && text.trim() === '');
 
@@ -54,7 +52,6 @@ export function newClient(opts: ClientOptions): Client {
 		return { status: 0, text: 'unreachable' };
 	};
 
-	// Cloudflare answers 413 to a body over 100 MB, so a body past the advertised direct limit goes through an upload session.
 	let directLimit = -1;
 	const putFile = async (urlPath: string, filePath: string, sum: string, extra?: Record<string, string>): Promise<Response> => {
 		if (directLimit < 0) directLimit = await upload.directLimit(api, core);

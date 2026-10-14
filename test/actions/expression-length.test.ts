@@ -1,6 +1,5 @@
-// GitHub refuses a step whose expression passes 21000 characters, and only when
-// the step runs. A script block that holds `${{` is one expression, so each one
-// is measured here.
+// GitHub refuses a step whose expression passes many characters, and only when the step runs. A script block that holds `${{` is one
+// expression, so each is measured here.
 
 const assert = require('node:assert');
 const fs = require('node:fs') as typeof import('node:fs');
