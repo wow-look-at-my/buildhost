@@ -8,8 +8,8 @@ const crypto = require('node:crypto');
 const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib`;
 // Untyped on purpose: the module's types are checked where it is CALLED, in the publish composite.
 const manifest = require(`${lib}/portable-manifest.ts`);
-const client = require(`${lib}/api-client.ts`);
-const names = require(`${lib}/artifact-names.ts`);
+const client = require(`${lib}/client.ts`);
+const names = require(`${lib}/artifact-groups.ts`);
 const io = require(`${lib}/file-io.ts`);
 
 function testManifest() {
@@ -39,10 +39,10 @@ function testNames() {
 	assert.strictEqual(names.projectForBinary('app', 'app'), 'app');
 	assert.strictEqual(names.projectForBinary('app', 'app-cli'), 'app/cli');
 	assert.strictEqual(names.projectForBinary('app', 'helper'), 'app/helper');
-	assert.deepStrictEqual('log-streamer-client_linux_amd64'.match(names.ArtifactRe)?.slice(1), ['log-streamer-client', 'linux', 'amd64']);
-	assert.strictEqual(names.binaryForPortable({ file: 'dir/tool_cosmo_any.exe', filename: 'tool_cosmo_any.exe' }, path.basename), 'tool');
-	assert.strictEqual(names.binaryForPortable({ file: 'dir/tool.com', filename: 'served' }, path.basename), 'served');
-	assert.strictEqual(names.binaryForPortable({ file: 'plain', filename: 'plain' }, path.basename), 'plain');
+	assert.deepStrictEqual('log-streamer-client_linux_amd64'.match(names.artifactRe)?.slice(1), ['log-streamer-client', 'linux', 'amd64']);
+	assert.strictEqual(names.binaryForPortable({ file: 'dir/tool_cosmo_any.exe', filename: 'tool_cosmo_any.exe' }), 'tool');
+	assert.strictEqual(names.binaryForPortable({ file: 'dir/tool.com', filename: 'served' }), 'served');
+	assert.strictEqual(names.binaryForPortable({ file: 'plain', filename: 'plain' }), 'plain');
 }
 
 async function testFileIo() {
@@ -72,7 +72,7 @@ async function testApi() {
 			const a = answers.shift()!;
 			return { status: a.status, text: async () => a.text };
 		}) as any;
-		const api = client.makeApi('https://bh.example', 'tok', core, noSleep);
+		const api = client.client('https://bh.example', 'tok', core, noSleep);
 		assert.deepStrictEqual(await api('POST', '/api/v1/x', '{}'), { status: 201, text: '{"ok":true}' });
 		assert.strictEqual(seen.length, 3, 'a 5xx and an empty 404 are retried');
 		assert.strictEqual(seen[0].url, 'https://bh.example/api/v1/x');
@@ -89,7 +89,7 @@ async function testApi() {
 			throw new Error('ECONNRESET');
 		}) as any;
 		const failed = await api('PUT', '/b', Buffer.from('x'));
-		assert.strictEqual(calls, client.MaxAttempts);
+		assert.strictEqual(calls, client.maxAttempts);
 		assert.strictEqual(failed.status, 0);
 		assert.ok(failed.text.includes('ECONNRESET'), failed.text);
 	} finally {
