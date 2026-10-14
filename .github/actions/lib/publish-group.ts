@@ -43,7 +43,7 @@ export async function publishGroup(d: Deps, proj: string, releaseVersion: string
 		core.info(`Uploaded ${proj} ${entry.file} as one artifact covering ${entry.platforms.join(', ')}`);
 	}
 
-	// The storage record needs the hash of every slot, so each file is hashed whether or not it shares its bytes.
+	// The storage record needs the hash of every slot, so each file is hashed whether it shares its bytes.
 	const byContent = new Map<string, Item[]>();
 	for (const item of group.slots) {
 		const sum = await d.sha256(item.file);
@@ -75,7 +75,7 @@ export async function publishGroup(d: Deps, proj: string, releaseVersion: string
 			const ref = await d.send('PUT', `${slotURL(os, arch)}&upload_sha256=${sum}`);
 			if (ref.status === 201) { core.info(`Registered ${proj} ${os}/${arch} by hash`); continue; }
 			if (ref.status === 409) { core.setFailed(`Upload ${proj} ${os}/${arch} failed (${ref.status}): ${ref.text}`); return false; }
-			// The server evicted the blob between the two requests, and the bytes are still here.
+			// The server evicted the blob between both requests, and the bytes are still here.
 			core.warning(`Hash-reference upload ${proj} ${os}/${arch} returned ${ref.status}; sending the bytes`);
 			const full = await d.put(slotURL(os, arch), first.file, sum);
 			if (full.status !== 201) { core.setFailed(`Upload ${proj} ${os}/${arch} failed (${full.status}): ${full.text}`); return false; }

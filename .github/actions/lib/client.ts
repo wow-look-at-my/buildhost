@@ -11,28 +11,31 @@ export type Send = (
 	headers?: Record<string, string>,
 ) => Promise<Response>;
 
-const maxAttempts = 5;
+/** How many times one request is sent before its last answer is returned. */
+export const MaxAttempts = 5;
 
-/** A 5xx, or a proxy 404 with an empty body, is transient. The app's own 404 carries JSON, so a 404 with a body returns at once. */
 export const isTransient = (status: number, text: string): boolean =>
 	status >= 500 || (status === 404 && text.trim() === '');
 
-/** A sender that retries a transient failure with backoff, so a rolling buildhost deploy never fails the publish. */
+/**
+ * A sender that retries a transient failure with backoff, so a rolling buildhost deploy never fails the publish.
+ * A network error on the last attempt returns status 0.
+ */
 export function client(server: string, token: string, core: Core, delay = (ms: number) => new Promise((r) => setTimeout(r, ms))): Send {
 	return async (method, urlPath, body, extra) => {
 		const headers: Record<string, string> = { Authorization: `Bearer ${token}`, ...(extra ?? {}) };
 		if (typeof body === 'string') headers['Content-Type'] = 'application/json';
 		else if (body) headers['Content-Type'] = 'application/octet-stream';
-		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		for (let attempt = 1; attempt <= MaxAttempts; attempt++) {
 			try {
 				const resp = await fetch(`${server}${urlPath}`, { method, headers, body });
 				const text = await resp.text();
-				if (attempt === maxAttempts || !isTransient(resp.status, text)) return { status: resp.status, text };
-				core.warning(`${method} ${urlPath} -> HTTP ${resp.status} (transient; attempt ${attempt}/${maxAttempts}); retrying`);
+				if (attempt === MaxAttempts || !isTransient(resp.status, text)) return { status: resp.status, text };
+				core.warning(`${method} ${urlPath} -> HTTP ${resp.status} (transient; attempt ${attempt}/${MaxAttempts}); retrying`);
 			} catch (e) {
 				const msg = e instanceof Error ? e.message : String(e);
-				if (attempt === maxAttempts) return { status: 0, text: `request failed after ${maxAttempts} attempts: ${msg}` };
-				core.warning(`${method} ${urlPath} -> ${msg} (network error; attempt ${attempt}/${maxAttempts}); retrying`);
+				if (attempt === MaxAttempts) return { status: 0, text: `request failed after ${MaxAttempts} attempts: ${msg}` };
+				core.warning(`${method} ${urlPath} -> ${msg} (network error; attempt ${attempt}/${MaxAttempts}); retrying`);
 			}
 			await delay(1000 * 2 ** (attempt - 1));
 		}
