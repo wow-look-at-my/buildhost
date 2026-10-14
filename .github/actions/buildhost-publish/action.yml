@@ -159,6 +159,7 @@ runs:
         script: |
           const { recordReleaseArtifacts } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
           const upload = require("${{ github.action_path }}/../lib/upload.ts") as typeof import("${{ github.action_path }}/../lib/upload");
+          const existing = require("${{ github.action_path }}/../lib/existing-release.ts") as typeof import("${{ github.action_path }}/../lib/existing-release");
           await (async () => {
             const inputProject: string = "${{ inputs.project }}";
             const inputVersion: string = "${{ inputs.version }}";
@@ -411,14 +412,30 @@ runs:
             });
 
             // resolves a version from a create-release response (201 new, 409 existing); null and a failure on any other status
-            const releaseVersionFrom = (proj: string, resp: { status: number; text: string }): string | null => {
-              if (resp.status === 201) return JSON.parse(resp.text).version;
+            const releaseVersionFrom = (proj: string, resp: { status: number; text: string }): { rv: string; existed: boolean } | null => {
+              if (resp.status === 201) return { rv: JSON.parse(resp.text).version, existed: false };
               if (resp.status === 409) {
                 if (version.length === 0) { core.setFailed(`Release exists for ${proj}, no explicit version`); return null; }
-                return version;
+                return { rv: version, existed: true };
               }
               core.setFailed(`Create release for ${proj} failed (${resp.status}): ${resp.text}`);
               return null;
+            };
+
+            // every slot the group would upload, with the sha256 of its bytes
+            const slotsOf = async (group: Group) => {
+              const slots: import("${{ github.action_path }}/../lib/existing-release").Slot[] = [];
+              for (const item of group.slots) {
+                slots.push({ os: item.os, arch: item.arch, kind: "binary", sha256: await fileSHA256(path.join(sourceDir, item.file)) });
+              }
+              for (const entry of group.portable) {
+                const sum = await fileSHA256(path.join(sourceDir, entry.file));
+                for (const platform of entry.platforms) {
+                  const [platformOS, platformArch] = platform.split("/");
+                  slots.push({ os: platformOS, arch: platformArch, kind: entry.kind, sha256: sum });
+                }
+              }
+              return slots;
             };
 
             // identical bytes under several slot names is the NORMAL case -- a cosmo build emits one APE named for every platform -- so slots group by content and each group transfers once
@@ -494,10 +511,16 @@ runs:
             // publish each <repo>/<binary> project independently
             const published: { proj: string; rv: string }[] = [];
             for (const [proj, group] of groupList) {
-              const rv = releaseVersionFrom(proj, await api("POST", `/api/v1/projects/${proj}/releases`, releaseBody()));
-              if (rv === null) return;
+              const created = releaseVersionFrom(proj, await api("POST", `/api/v1/projects/${proj}/releases`, releaseBody()));
+              if (created === null) return;
+              const rv = created.rv;
               core.info(`Release: ${proj}/${rv}`);
-              if (!(await uploadAndPublish(proj, rv, group))) return;
+              // a published release never changes, so the same bytes are a no-op and other bytes fail naming each slot
+              const verdict: import("${{ github.action_path }}/../lib/existing-release").Verdict = created.existed
+                ? await existing.existingRelease(api, core, proj, rv, await slotsOf(group))
+                : { action: "publish" };
+              if (verdict.action === "fail") { core.setFailed(verdict.message); return; }
+              if (verdict.action === "publish" && !(await uploadAndPublish(proj, rv, group))) return;
               published.push({ proj, rv });
             }
 
