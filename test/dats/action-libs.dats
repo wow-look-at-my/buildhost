@@ -33,6 +33,12 @@ tests:
 		stdout:
 			- "existing-release: all checks passed"
 
+	- desc: publish reads the portable manifest, hashes a file, and retries a transient API answer
+	  cmd: node test/actions/publish-libs.test.ts
+	  outputs:
+		stdout:
+			- "publish-libs: all checks passed"
+
 	- desc: download aborts a transfer that goes silent, and finishes a slow one that keeps sending
 	  cmd: node test/actions/download-stall.test.ts
 	  outputs:
