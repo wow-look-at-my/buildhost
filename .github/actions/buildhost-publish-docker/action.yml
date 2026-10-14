@@ -285,7 +285,7 @@ runs:
     - name: Push to buildhost (chunked)
       id: push-buildhost
       if: ${{ inputs.push == 'true' && steps.refs.outputs.buildhost_refs != '' }}
-      uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-push@master
+      uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-push@lkgb
       with:
         server: ${{ inputs.server }}
         image: ${{ steps.refs.outputs.layout }}

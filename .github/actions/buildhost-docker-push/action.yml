@@ -44,7 +44,7 @@ runs:
     # Pinned at @lkgb rather than a relative path: a composite step's
     - name: Download the buildhost CLI
       id: download-cli
-      uses: wow-look-at-my/buildhost/.github/actions/buildhost-download@master
+      uses: wow-look-at-my/buildhost/.github/actions/buildhost-download@lkgb
       with:
         server: ${{ inputs.server }}
         project: buildhost
