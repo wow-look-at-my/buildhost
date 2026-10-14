@@ -33,6 +33,8 @@ tests:
 		stdout:
 			- "existing-release: all checks passed"
 
+	- desc: the publish helpers parse the manifest, map names, read files and retry the API
+	  cmd: node test/actions/publish-helpers.test.ts
 	- desc: every action value that holds an expression stays under GitHub's expression length limit
 	  cmd: node test/actions/expression-length.test.ts
 	  outputs:
@@ -58,7 +60,7 @@ tests:
 	  cmd: node test/actions/publish-libs.test.ts
 	  outputs:
 		stdout:
-			- "publish-libs: all checks passed"
+			- "publish-helpers: all checks passed"
 
 	- desc: download aborts a transfer that goes silent, and finishes a slow one that keeps sending
 	  cmd: node test/actions/download-stall.test.ts
