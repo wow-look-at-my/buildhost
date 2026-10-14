@@ -12,6 +12,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/exeformat"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 func init() {
@@ -146,18 +147,18 @@ func (h *Handler) sameMultiPlatformArtifact(ctx context.Context, want *db.Artifa
 	if err != nil {
 		return nil
 	}
-	wanted := map[db.Platform]bool{}
+	wanted := set.New[db.Platform]()
 	for _, p := range platforms {
-		wanted[p] = true
+		wanted.Add(p)
 	}
 	for idx := range rows {
 		row := &rows[idx]
-		if row.SHA256 != want.SHA256 || row.Kind != want.Kind || len(row.Platforms) != len(wanted) {
+		if row.SHA256 != want.SHA256 || row.Kind != want.Kind || len(row.Platforms) != wanted.Len() {
 			continue
 		}
 		match := true
 		for _, p := range row.Platforms {
-			if !wanted[p] {
+			if !wanted.Contains(p) {
 				match = false
 				break
 			}
