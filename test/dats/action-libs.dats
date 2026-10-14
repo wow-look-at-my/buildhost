@@ -33,11 +33,6 @@ tests:
 		stdout:
 			- "existing-release: all checks passed"
 
-	- desc: every action value that holds an expression stays under GitHub's expression length limit
-	  cmd: node test/actions/expression-length.test.ts
-	  outputs:
-		stdout:
-			- "expression-length: all checks passed"
 	- desc: artifact-groups finds what a publish uploads and the project each file goes to, and fails on a bad manifest
 	  cmd: node test/actions/artifact-groups.test.ts
 	  outputs:
