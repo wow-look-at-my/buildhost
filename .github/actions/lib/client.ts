@@ -13,7 +13,6 @@ export type Send = (
 
 export const maxAttempts = 5;
 
-/** A 5xx, or a proxy 404 with an empty body, is transient. The app's own 404 carries JSON, so a 404 with a body returns at once. */
 export const isTransient = (status: number, text: string): boolean =>
 	status >= 500 || (status === 404 && text.trim() === '');
 
