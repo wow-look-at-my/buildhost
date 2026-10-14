@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 
 // GitHub refuses a `with:` value whose expression text is longer than this, and fails the step before it runs.
 const maxExpression = 21000;
-// An installed action path is about 100 characters. This bound covers a long owner and ref.
+// An installed action path is many characters. This bound covers a long owner and ref.
 const actionPathAllowance = 200;
 
 type Block = { file: string; line: number; length: number };

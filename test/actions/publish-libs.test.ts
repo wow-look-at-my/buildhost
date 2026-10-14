@@ -41,7 +41,6 @@ async function main() {
 
 	assert.strictEqual(await fileSHA256(path.join(dir, 'app.com')), require('node:crypto').createHash('sha256').update('ape').digest('hex'));
 
-	// The sender retries a 503 and stops at the first final answer.
 	let calls = 0;
 	const server = http.createServer((req: any, res: any) => {
 		calls++;

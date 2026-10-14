@@ -6,7 +6,7 @@ export interface Response { status: number; text: string }
 
 export type Api = (method: string, urlPath: string, body?: string | Buffer | null, extra?: Record<string, string>) => Promise<Response>;
 
-/** A transient 5xx, or an empty-body proxy 404. The app's own 404 carries JSON and is final. */
+/** A server error, or a proxy's not-found with an empty body. The app's own not-found carries JSON and is final. */
 export function isTransient(status: number, text: string): boolean {
 	return status >= 500 || (status === 404 && text.trim() === '');
 }
