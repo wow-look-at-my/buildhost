@@ -1,4 +1,4 @@
-// Behavior tests for .github/actions/lib/portable-manifest.ts and .github/actions/lib/api.ts.
+// Behavior tests for .github/actions/lib/portable-manifest.ts and .github/actions/lib/client.ts.
 
 const assert = require('node:assert');
 const fs = require('node:fs');
@@ -8,7 +8,7 @@ const http = require('node:http');
 const libs = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib`;
 // Untyped on purpose: the modules' types are checked where they are CALLED, in the publish composite.
 const { readPortableManifest, fileSHA256, manifestName } = require(`${libs}/portable-manifest.ts`);
-const { apiSender } = require(`${libs}/api.ts`);
+const { client } = require(`${libs}/client.ts`);
 
 function recorder() {
 	const failed: string[] = [];
@@ -56,7 +56,7 @@ async function main() {
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 	const base = `http://127.0.0.1:${server.address().port}`;
 	const rec = recorder();
-	const reply = await apiSender(base, 'tok', rec.core, 1)('GET', '/api/v1/x');
+	const reply = await client(base, 'tok', rec.core, async () => {})('GET', '/api/v1/x');
 	server.close();
 	assert.deepStrictEqual(reply, { status: 200, text: '{"ok":true}' });
 	assert.strictEqual(calls, 2);
