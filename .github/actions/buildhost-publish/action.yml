@@ -155,27 +155,44 @@ runs:
         GITHUB_TOKEN: ${{ inputs.path == '' && github.token || '' }}
         # An env var carries the value, so no character in it can break the script.
         BUILDHOST_APT_DEPENDS: ${{ inputs.apt_depends }}
+        # The script below reads every input from here. A script with an expression in it is one expression, and GitHub caps that at 21000 characters.
+        BUILDHOST_ACTION_LIB: ${{ github.action_path }}/../lib
+        BUILDHOST_PROJECT: ${{ inputs.project }}
+        BUILDHOST_VERSION: ${{ inputs.version }}
+        BUILDHOST_GIT_BRANCH: ${{ inputs.git_branch }}
+        BUILDHOST_GIT_COMMIT: ${{ inputs.git_commit }}
+        BUILDHOST_ARTIFACT_NAME: ${{ inputs.artifact_name }}
+        BUILDHOST_PATH: ${{ inputs.path }}
+        BUILDHOST_CREATE_SERVICE: ${{ inputs.create_service }}
+        BUILDHOST_DEFAULT_BRANCH: ${{ inputs.default_branch }}
+        BUILDHOST_SERVER: ${{ inputs.server }}
       with:
         script: |
-          const { recordReleaseArtifacts } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
-          const upload = require("${{ github.action_path }}/../lib/upload.ts") as typeof import("${{ github.action_path }}/../lib/upload");
-          const existing = require("${{ github.action_path }}/../lib/existing-release.ts") as typeof import("${{ github.action_path }}/../lib/existing-release");
+          type PublishedArtifact = { os?: string; arch?: string; sha256?: string; project?: string; version?: string };
+          type Slot = { os: string; arch: string; kind: string; sha256: string };
+          type Verdict = { action: 'publish' } | { action: 'noop' } | { action: 'fail'; message: string };
+          type Resp = { status: number; text: string };
+          // A typeof import() needs a literal path, and a literal path here would be an expression. These shapes mirror ../lib.
+          const lib = process.env.BUILDHOST_ACTION_LIB ?? "";
+          const { recordReleaseArtifacts } = require(`${lib}/storage-record.ts`) as { recordReleaseArtifacts(octokit: unknown, core: unknown, context: unknown, params: { server: string; project?: string; version?: string; artifacts: readonly PublishedArtifact[] }): Promise<boolean> };
+          const upload = require(`${lib}/upload.ts`) as { directLimit(send: unknown, core: unknown): Promise<number>; putFile(send: unknown, core: unknown, opts: unknown): Promise<Resp> };
+          const existing = require(`${lib}/existing-release.ts`) as { existingRelease(send: unknown, core: unknown, proj: string, version: string, slots: Slot[]): Promise<Verdict> };
           await (async () => {
-            const inputProject: string = "${{ inputs.project }}";
-            const inputVersion: string = "${{ inputs.version }}";
-            const inputBranch: string = "${{ inputs.git_branch }}";
-            const inputCommit: string = "${{ inputs.git_commit }}";
-            const artifactName: string = "${{ inputs.artifact_name }}";
-            const inputPath: string = "${{ inputs.path }}";
-            const inputBrewService: string = "${{ inputs.create_service }}";
+            const inputProject: string = (process.env.BUILDHOST_PROJECT ?? "");
+            const inputVersion: string = (process.env.BUILDHOST_VERSION ?? "");
+            const inputBranch: string = (process.env.BUILDHOST_GIT_BRANCH ?? "");
+            const inputCommit: string = (process.env.BUILDHOST_GIT_COMMIT ?? "");
+            const artifactName: string = (process.env.BUILDHOST_ARTIFACT_NAME ?? "");
+            const inputPath: string = (process.env.BUILDHOST_PATH ?? "");
+            const inputBrewService: string = (process.env.BUILDHOST_CREATE_SERVICE ?? "");
             if (inputBrewService !== '' && inputBrewService !== 'true' && inputBrewService !== 'false') {
               core.setFailed(`create_service must be 'true', 'false', or empty; got '${inputBrewService}'`);
               return;
             }
-            const inputDefaultBranch: string = "${{ inputs.default_branch }}";
+            const inputDefaultBranch: string = (process.env.BUILDHOST_DEFAULT_BRANCH ?? "");
             const inputAptDepends: string = process.env.BUILDHOST_APT_DEPENDS ?? "";
 
-            const server = "${{ inputs.server }}";
+            const server = (process.env.BUILDHOST_SERVER ?? "");
             const project = inputProject.length > 0 ? inputProject : github.repository.split("/").pop()!;
             const version = inputVersion;
             const gitBranch = inputBranch.length > 0 ? inputBranch : github.ref_name;
@@ -232,7 +249,7 @@ runs:
             if (!token) { core.setFailed("Failed to obtain OIDC token"); return; }
 
             // artifacts accumulate here as they're accepted, posted below before this step returns
-            const uploadedSlots: import("${{ github.action_path }}/../lib/storage-record").PublishedArtifact[] = [];
+            const uploadedSlots: PublishedArtifact[] = [];
             // recording happens inline, with no opt-out; skipping it silently would leave the artifacts page stale while the publish stayed green
             const drainStorageRecords = async (): Promise<boolean> =>
               // recordReleaseArtifacts(octokit, core, context, { server, artifacts: uploadedSlots });
@@ -425,7 +442,7 @@ runs:
 
             // every slot the group would upload, with the sha256 of its bytes
             const slotsOf = async (group: Group) => {
-              const slots: import("${{ github.action_path }}/../lib/existing-release").Slot[] = [];
+              const slots: Slot[] = [];
               for (const item of group.slots) {
                 slots.push({ os: item.os, arch: item.arch, kind: "binary", sha256: await fileSHA256(path.join(sourceDir, item.file)) });
               }
@@ -517,7 +534,7 @@ runs:
               const rv = created.rv;
               core.info(`Release: ${proj}/${rv}`);
               // a published release never changes, so the same bytes are a no-op and other bytes fail naming each slot
-              const verdict: import("${{ github.action_path }}/../lib/existing-release").Verdict = created.existed
+              const verdict: Verdict = created.existed
                 ? await existing.existingRelease(api, core, proj, rv, await slotsOf(group))
                 : { action: "publish" };
               if (verdict.action === "fail") { core.setFailed(verdict.message); return; }
