@@ -252,9 +252,11 @@ runs:
             }
             if (found.files === 0 && found.portable === 0) {
               core.setFailed(`No matrix artifacts matching '<binary>_{os}_{arch}' found, and no ${artifactGroups.manifestName}`);
+
               core.info(`Files: ${fs.readdirSync(sourceDir).join(", ")}`);
               return;
             }
+
             core.info(`Found ${found.files} per-platform artifact(s) and ${found.portable} portable artifact(s) across ${found.groups.size} project(s): ${[...found.groups.keys()].join(", ")}`);
 
             // The client retries a transient failure, and sends a body past the direct limit through an upload session.
