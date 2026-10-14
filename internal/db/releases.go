@@ -32,6 +32,8 @@ func (d *DB) CreateRelease(ctx context.Context, r *Release) error {
 	return nil
 }
 
+// NextVersionNum answers the number after the highest one in the project's number line.
+// For an auto project that line spans its family, the repo project and each "<repo>/<child>" auto project.
 func (d *DB) NextVersionNum(ctx context.Context, projectID int64) (int64, error) {
 	maxNum, err := d.q.GetMaxVersionNum(ctx, projectID)
 	if err != nil {
