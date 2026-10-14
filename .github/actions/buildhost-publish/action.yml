@@ -161,6 +161,8 @@ runs:
           const upload = require("${{ github.action_path }}/../lib/upload.ts") as typeof import("${{ github.action_path }}/../lib/upload");
           const existing = require("${{ github.action_path }}/../lib/existing-release.ts") as typeof import("${{ github.action_path }}/../lib/existing-release");
           const artifactGroups = require("${{ github.action_path }}/../lib/artifact-groups.ts") as typeof import("${{ github.action_path }}/../lib/artifact-groups");
+          const { apiSender } = require("${{ github.action_path }}/../lib/api.ts") as typeof import("${{ github.action_path }}/../lib/api");
+          const io = require("${{ github.action_path }}/../lib/file-io.ts") as typeof import("${{ github.action_path }}/../lib/file-io");
           await (async () => {
             const inputProject: string = "${{ inputs.project }}";
             const inputVersion: string = "${{ inputs.version }}";
@@ -255,37 +257,8 @@ runs:
             }
             core.info(`Found ${found.files} per-platform artifact(s) and ${found.portable} portable artifact(s) across ${found.groups.size} project(s): ${[...found.groups.keys()].join(", ")}`);
 
-            const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-            // a transient 5xx or an empty-body proxy 404 (unlike the app's own 404, which carries JSON) gets retried; any 4xx with a body (including a genuine "project not found") returns immediately
-            const isTransient = (status: number, text: string): boolean =>
-              status >= 500 || (status === 404 && text.trim() === "");
-
-            // retries a transient failure with backoff so a rolling buildhost deploy never hard-fails the publish
-            const api = async (method: string, urlPath: string, body?: string | Buffer | null, extra?: Record<string, string>) => {
-              const headers: Record<string, string> = { Authorization: `Bearer ${token}`, ...(extra ?? {}) };
-              if (typeof body === "string") headers["Content-Type"] = "application/json";
-              else if (body) headers["Content-Type"] = "application/octet-stream";
-              const maxAttempts = 5;
-              for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-                try {
-                  const resp = await fetch(`${server}${urlPath}`, { method, headers, body });
-                  const text = await resp.text();
-                  if (attempt === maxAttempts || !isTransient(resp.status, text)) {
-                    return { status: resp.status, text };
-                  }
-                  core.warning(`${method} ${urlPath} -> HTTP ${resp.status} (transient; attempt ${attempt}/${maxAttempts}); retrying`);
-                } catch (e) {
-                  const msg = e instanceof Error ? e.message : String(e);
-                  if (attempt === maxAttempts) {
-                    return { status: 0, text: `request failed after ${maxAttempts} attempts: ${msg}` };
-                  }
-                  core.warning(`${method} ${urlPath} -> ${msg} (network error; attempt ${attempt}/${maxAttempts}); retrying`);
-                }
-                await sleep(1000 * 2 ** (attempt - 1));
-              }
-              return { status: 0, text: "unreachable" };
-            };
+            // The client retries a transient failure, and sends a body past the direct limit through an upload session.
+            const api = apiSender(server, token, core);
 
             // Cloudflare answers 413 to a body over 100 MB, so anything past the server's advertised direct limit is assembled through an upload session instead.
             let directLimit = -1;
@@ -294,20 +267,7 @@ runs:
               const body = {
                 size: fs.statSync(filePath).size,
                 sha256: sum,
-                // A short read leaves the tail of an allocUnsafe buffer holding whatever was in that memory, so keep reading until the chunk is whole.
-                read: (offset: number, length: number): Buffer => {
-                  const buf = Buffer.allocUnsafe(length);
-                  const fd = fs.openSync(filePath, "r");
-                  try {
-                    let got = 0;
-                    while (got < length) {
-                      const n = fs.readSync(fd, buf, got, length - got, offset + got);
-                      if (n <= 0) throw new Error(`${filePath}: wanted ${length} bytes at ${offset}, the file ended after ${got}`);
-                      got += n;
-                    }
-                  } finally { fs.closeSync(fd); }
-                  return buf;
-                },
+                read: (offset: number, length: number): Buffer => io.readChunk(fs, filePath, offset, length),
               };
               return upload.putFile(api, core, { urlPath, body, headers: extra, directLimit });
             };
