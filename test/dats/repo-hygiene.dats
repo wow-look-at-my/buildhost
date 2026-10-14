@@ -43,6 +43,11 @@ tests:
 		stdout:
 			- "no stacked inline-script comments"
 
+	- desc: no action or workflow string that holds an expression is over GitHub's length limit
+	  cmd: node .github/scripts/expression-length.ts .github/actions/*/action.yml .github/workflows/*.yml
+	  outputs:
+		stdout:
+			- "every expression string is at most 21000 characters"
 	- desc: an inline value holding an expression stays within the length GitHub loads
 	  cmd: node .github/scripts/expression-length.ts .github/actions/*/action.yml .github/workflows/*.yml
 	  outputs:

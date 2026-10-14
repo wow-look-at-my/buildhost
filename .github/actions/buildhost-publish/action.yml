@@ -160,6 +160,9 @@ runs:
           const { recordReleaseArtifacts } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
           const upload = require("${{ github.action_path }}/../lib/upload.ts") as typeof import("${{ github.action_path }}/../lib/upload");
           const existing = require("${{ github.action_path }}/../lib/existing-release.ts") as typeof import("${{ github.action_path }}/../lib/existing-release");
+          const artifactGroups = require("${{ github.action_path }}/../lib/artifact-groups.ts") as typeof import("${{ github.action_path }}/../lib/artifact-groups");
+          const buildhost = require("${{ github.action_path }}/../lib/client.ts") as typeof import("${{ github.action_path }}/../lib/client");
+          const publishGroup = require("${{ github.action_path }}/../lib/publish-group.ts") as typeof import("${{ github.action_path }}/../lib/publish-group");
           const manifest = require("${{ github.action_path }}/../lib/portable-manifest.ts") as typeof import("${{ github.action_path }}/../lib/portable-manifest");
           const client = require("${{ github.action_path }}/../lib/publish-client.ts") as typeof import("${{ github.action_path }}/../lib/publish-client");
           const client = require("${{ github.action_path }}/../lib/api-client.ts") as typeof import("${{ github.action_path }}/../lib/api-client");
@@ -245,11 +248,39 @@ runs:
               // recordReleaseArtifacts(octokit, core, context, { server, artifacts: uploadedSlots });
               true;
 
+            const fileSHA256 = artifactGroups.fileSHA256;
+            type Group = import("${{ github.action_path }}/../lib/artifact-groups").Group;
+            let found: ReturnType<typeof artifactGroups.groupArtifacts>;
+            try {
+              found = artifactGroups.groupArtifacts(sourceDir, project);
+            } catch (e) {
+              core.setFailed(e instanceof Error ? e.message : String(e));
+              return;
+            }
+            if (found.files === 0 && found.portable === 0) {
+              core.setFailed(`No matrix artifacts matching '<binary>_{os}_{arch}' found, and no ${artifactGroups.manifestName}`);
+              core.info(`Files: ${fs.readdirSync(sourceDir).join(", ")}`);
+              return;
             // require is the documented route to node modules -- the TS action injects no crypto global
             const crypto = require("crypto");
             const fileSHA256 = (p: string) => io.fileSHA256(fs, crypto, p);
             const artifactRe = names.ArtifactRe;
 
+            const manifestPath = path.join(sourceDir, artifactGroups.ManifestName);
+            const found = artifactGroups.findArtifacts({
+              files: fs.readdirSync(sourceDir).filter((f) => {
+                const full = path.join(sourceDir, f);
+                return !fs.lstatSync(full).isSymbolicLink() && fs.statSync(full).isFile();
+              }),
+              manifest: fs.existsSync(manifestPath) ? fs.readFileSync(manifestPath, "utf-8") : null,
+              exists: (f) => fs.existsSync(path.join(sourceDir, f)),
+            }, project);
+            if (!found.ok) { core.setFailed(found.message); return; }
+            const { groups, files, portable } = found;
+            type Group = import("${{ github.action_path }}/../lib/artifact-groups").Group;
+            core.info(`Found ${files.length} per-platform artifact(s) and ${portable.length} portable artifact(s) across ${groups.size} project(s): ${[...groups.keys()].join(", ")}`);
+
+            const api = buildhost.client(server, token, core);
             // A build that emits ONE file running on several platforms cannot say so in a filename, so it declares the set here and buildhost stores one artifact with one download link
             type PortableEntry = import("${{ github.action_path }}/../lib/portable-manifest").PortableEntry;
             const manifestName = manifest.ManifestName;
@@ -305,7 +336,7 @@ runs:
             for (const entry of portable) {
               groupFor(projectForBinary(names.binaryForPortable(entry, path.basename))).portable.push(entry);
             }
-            core.info(`Found ${files.length} per-platform artifact(s) and ${portable.length} portable artifact(s) across ${groups.size} project(s): ${[...groups.keys()].join(", ")}`);
+            core.info(`Found ${found.files} per-platform artifact(s) and ${found.portable} portable artifact(s) across ${found.groups.size} project(s): ${[...found.groups.keys()].join(", ")}`);
 
             // The client retries a transient failure, and sends a body past the direct limit through an upload session.
             const { api, putFile } = client.newClient({ server, token, core, upload, fs });
@@ -343,22 +374,6 @@ runs:
               }
               core.setFailed(`Create release for ${proj} failed (${resp.status}): ${resp.text}`);
               return null;
-            };
-
-            // every slot the group would upload, with the sha256 of its bytes
-            const slotsOf = async (group: Group) => {
-              const slots: import("${{ github.action_path }}/../lib/existing-release").Slot[] = [];
-              for (const item of group.slots) {
-                slots.push({ os: item.os, arch: item.arch, kind: "binary", sha256: await fileSHA256(path.join(sourceDir, item.file)) });
-              }
-              for (const entry of group.portable) {
-                const sum = await fileSHA256(path.join(sourceDir, entry.file));
-                for (const platform of entry.platforms) {
-                  const [platformOS, platformArch] = platform.split("/");
-                  slots.push({ os: platformOS, arch: platformArch, kind: entry.kind, sha256: sum });
-                }
-              }
-              return slots;
             };
 
             // identical bytes under several slot names is the NORMAL case -- a cosmo build emits one APE named for every platform -- so slots group by content and each group transfers once
@@ -427,9 +442,30 @@ runs:
               if (pub.status !== 200) { core.setFailed(`Publish ${proj} failed (${pub.status}): ${pub.text}`); return false; }
               core.info(`Published ${proj}/${releaseVersion} (${items.length + group.portable.length} artifacts) to ${server}`);
               return true;
+            // every slot the group would upload, with the sha256 of its bytes
+            const slotsOf = async (group: Group) => {
+              const slots: import("${{ github.action_path }}/../lib/existing-release").Slot[] = [];
+              for (const item of group.slots) {
+                slots.push({ os: item.os, arch: item.arch, kind: "binary", sha256: await fileSHA256(path.join(sourceDir, item.file)) });
+              }
+              for (const entry of group.portable) {
+                const sum = await fileSHA256(path.join(sourceDir, entry.file));
+                for (const platform of entry.platforms) {
+                  const [platformOS, platformArch] = platform.split("/");
+                  slots.push({ os: platformOS, arch: platformArch, kind: entry.kind, sha256: sum });
+                }
+              }
+              return slots;
             };
 
-            const groupList = [...groups.entries()];
+            const deps: import("${{ github.action_path }}/../lib/publish-group").Deps = {
+              send: api, core, server,
+              put: (url, f, sum, extra) => putFile(url, path.join(sourceDir, f), sum, extra),
+              sha256: (f) => fileSHA256(path.join(sourceDir, f)),
+              record: (slot) => { uploadedSlots.push(slot); },
+            };
+
+            const groupList = [...found.groups.entries()];
 
             // publish each <repo>/<binary> project independently
             const published: { proj: string; rv: string }[] = [];
@@ -440,10 +476,10 @@ runs:
               core.info(`Release: ${proj}/${rv}`);
               // a published release never changes, so the same bytes are a no-op and other bytes fail naming each slot
               const verdict: import("${{ github.action_path }}/../lib/existing-release").Verdict = created.existed
-                ? await existing.existingRelease(api, core, proj, rv, await slotsOf(group))
+                ? await existing.existingRelease(api, core, proj, rv, await artifactGroups.slotsOf(sourceDir, group))
                 : { action: "publish" };
               if (verdict.action === "fail") { core.setFailed(verdict.message); return; }
-              if (verdict.action === "publish" && !(await uploadAndPublish(proj, rv, group))) return;
+              if (verdict.action === "publish" && !(await publishGroup.publishGroup(deps, proj, rv, group))) return;
               published.push({ proj, rv });
             }
 
