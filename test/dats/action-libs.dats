@@ -33,6 +33,11 @@ tests:
 		stdout:
 			- "existing-release: all checks passed"
 
+	- desc: the publish helpers parse the manifest, map names, read files and retry the API
+	  cmd: node test/actions/publish-helpers.test.ts
+	  outputs:
+		stdout:
+			- "publish-helpers: all checks passed"
 	- desc: publish reads the portable manifest, hashes a file, and retries a transient API answer
 	  cmd: node test/actions/publish-libs.test.ts
 	  outputs:
