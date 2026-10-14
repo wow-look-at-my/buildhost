@@ -30,7 +30,7 @@ permissions:
   deployments: write   # optional, additive: register the publish as a GitHub Deployment
 steps:
   - uses: actions/checkout@v4
-  - uses: wow-look-at-my/buildhost/.github/actions/buildhost-publish-docker@master
+  - uses: wow-look-at-my/buildhost/.github/actions/buildhost-publish-docker@lkgb
     with:
       server: https://builds.example.com   # optional, defaults to https://pazer.build
       context: .                            # optional
@@ -43,7 +43,7 @@ Pass `tags`, newline-separated, to override that. A bare tag expands to `<regist
 To fetch an artifact back in a workflow, use `buildhost-download`. It resolves the same way the URL does, and it defaults to the runner's own platform.
 
 ```yaml
-- uses: wow-look-at-my/buildhost/.github/actions/buildhost-download@master
+- uses: wow-look-at-my/buildhost/.github/actions/buildhost-download@lkgb
   id: cli
   with:
     project: buildhost      # optional: version, branch, os, arch, format, token
@@ -55,7 +55,7 @@ For a build you drive yourself, use `buildhost-docker-push`. It takes an OCI lay
 
 ```yaml
 - run: docker buildx build --output type=oci,tar=false,dest=layout .
-- uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-push@master
+- uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-push@lkgb
   with:
     image: layout
     refs: oci.pazer.build/myproject:v1.2.3
@@ -64,7 +64,7 @@ For a build you drive yourself, use `buildhost-docker-push`. It takes an OCI lay
 A publish logs docker in for you, and so does a pull. To fetch a published image, into a nested daemon or onto the runner itself, use `buildhost-docker-pull`. It authenticates itself, so no workflow handles a registry credential.
 
 ```yaml
-- uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-pull@master
+- uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-pull@lkgb
   with:
     images: oci.pazer.build/myproject:v1.2.3
 ```
