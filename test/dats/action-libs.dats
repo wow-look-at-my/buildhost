@@ -33,6 +33,12 @@ tests:
 		stdout:
 			- "existing-release: all checks passed"
 
+	- desc: the publish helpers parse the manifest, map names, read files and retry the API
+	  cmd: node test/actions/publish-helpers.test.ts
+	  outputs:
+		stdout:
+			- "publish-helpers: all checks passed"
+
 	- desc: download aborts a transfer that goes silent, and finishes a slow one that keeps sending
 	  cmd: node test/actions/download-stall.test.ts
 	  outputs:

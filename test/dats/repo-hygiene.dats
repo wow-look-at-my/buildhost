@@ -42,3 +42,9 @@ tests:
 	  outputs:
 		stdout:
 			- "no stacked inline-script comments"
+
+	- desc: an inline value holding an expression stays within the length GitHub loads
+	  cmd: node .github/scripts/expression-length.ts .github/actions/*/action.yml .github/workflows/*.yml
+	  outputs:
+		stdout:
+			- "every expression is within"

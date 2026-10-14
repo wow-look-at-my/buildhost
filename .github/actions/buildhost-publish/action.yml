@@ -160,6 +160,10 @@ runs:
           const { recordReleaseArtifacts } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
           const upload = require("${{ github.action_path }}/../lib/upload.ts") as typeof import("${{ github.action_path }}/../lib/upload");
           const existing = require("${{ github.action_path }}/../lib/existing-release.ts") as typeof import("${{ github.action_path }}/../lib/existing-release");
+          const manifest = require("${{ github.action_path }}/../lib/portable-manifest.ts") as typeof import("${{ github.action_path }}/../lib/portable-manifest");
+          const client = require("${{ github.action_path }}/../lib/api-client.ts") as typeof import("${{ github.action_path }}/../lib/api-client");
+          const names = require("${{ github.action_path }}/../lib/artifact-names.ts") as typeof import("${{ github.action_path }}/../lib/artifact-names");
+          const io = require("${{ github.action_path }}/../lib/file-io.ts") as typeof import("${{ github.action_path }}/../lib/file-io");
           await (async () => {
             const inputProject: string = "${{ inputs.project }}";
             const inputVersion: string = "${{ inputs.version }}";
@@ -240,61 +244,17 @@ runs:
 
             // require is the documented route to node modules -- the TS action injects no crypto global
             const crypto = require("crypto");
-            const fileSHA256 = (p: string): Promise<string> => new Promise((resolve, reject) => {
-              const hash = crypto.createHash("sha256");
-              fs.createReadStream(p)
-                .on("error", reject)
-                .on("data", (chunk: Buffer) => hash.update(chunk))
-                .on("end", () => resolve(hash.digest("hex")));
-            });
-
-            // matches <binary>_<os>_<arch>[.exe]; binary is the cmd/ leaf name from go-toolchain and may contain hyphens (e.g. log-streamer-client)
-            const artifactRe = /^(.+)_([a-z]+)_([a-z0-9]+)$/;
+            const fileSHA256 = (p: string) => io.fileSHA256(fs, crypto, p);
+            const artifactRe = names.ArtifactRe;
 
             // A build that emits ONE file running on several platforms cannot say so in a filename, so it declares the set here and buildhost stores one artifact with one download link
-            type PortableEntry = { file: string; filename: string; kind: string; platforms: string[] };
-            const manifestName = "buildhost-artifacts.json";
-            const readPortableManifest = (): PortableEntry[] | null => {
-              const manifestPath = path.join(sourceDir, manifestName);
-              if (!fs.existsSync(manifestPath)) return [];
-              let doc: any;
-              try {
-                doc = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
-              } catch (e) {
-                core.setFailed(`${manifestName}: not valid JSON: ${e instanceof Error ? e.message : String(e)}`);
-                return null;
-              }
-              if (doc?.schema !== 1) {
-                core.setFailed(`${manifestName}: unsupported schema ${JSON.stringify(doc?.schema)}, want 1`);
-                return null;
-              }
-              if (!Array.isArray(doc.artifacts)) {
-                core.setFailed(`${manifestName}: "artifacts" must be an array`);
-                return null;
-              }
-              const out: PortableEntry[] = [];
-              for (const raw of doc.artifacts) {
-                const file = String(raw?.file ?? "");
-                if (!file || file.includes("..") || path.isAbsolute(file)) {
-                  core.setFailed(`${manifestName}: bad "file" ${JSON.stringify(raw?.file)}`);
-                  return null;
-                }
-                if (!fs.existsSync(path.join(sourceDir, file))) {
-                  core.setFailed(`${manifestName}: "${file}" does not exist in ${sourceDir}`);
-                  return null;
-                }
-                const platforms = raw?.platforms;
-                if (!Array.isArray(platforms) || platforms.length === 0 || platforms.some((p: any) => typeof p !== "string" || !p.includes("/"))) {
-                  core.setFailed(`${manifestName}: "${file}" needs a non-empty "platforms" array of "os/arch" strings`);
-                  return null;
-                }
-                out.push({ file, filename: String(raw?.filename ?? path.basename(file)), kind: String(raw?.kind ?? "binary"), platforms });
-              }
-              return out;
-            };
-
-            const portable = readPortableManifest();
-            if (portable === null) return;
+            type PortableEntry = import("${{ github.action_path }}/../lib/portable-manifest").PortableEntry;
+            const manifestName = manifest.ManifestName;
+            const manifestPath = path.join(sourceDir, manifestName);
+            const portable = fs.existsSync(manifestPath)
+              ? manifest.parsePortableManifest(fs.readFileSync(manifestPath, "utf-8"), (f) => fs.existsSync(path.join(sourceDir, f)), path)
+              : [];
+            if (typeof portable === "string") { core.setFailed(`${portable} (source directory ${sourceDir})`); return; }
             const portableFiles = new Set(portable.map((p) => p.file));
 
             const files = fs.readdirSync(sourceDir).filter((f) => {
@@ -312,12 +272,7 @@ runs:
               return;
             }
 
-            // a binary named exactly after the repo publishes flat as "<repo>"; every other binary nests under "<repo>/<binary>", stripping a redundant leading "<repo>-"
-            const projectForBinary = (binary: string): string => {
-              if (binary === project) return project;
-              if (binary.startsWith(`${project}-`)) return `${project}/${binary.slice(project.length + 1)}`;
-              return `${project}/${binary}`;
-            };
+            const projectForBinary = (binary: string) => names.projectForBinary(project, binary);
 
             // Group artifacts by destination project.
             type Item = { file: string; os: string; arch: string };
@@ -333,49 +288,12 @@ runs:
               const [, binary, fileOs, arch] = m;
               groupFor(projectForBinary(binary)).slots.push({ file, os: fileOs, arch });
             }
-            // the binary name is the served filename when the manifest gave one, else the file's own name with a trailing _<os>_<arch> stripped
-            const binaryForPortable = (entry: PortableEntry): string => {
-              const base = path.basename(entry.file).replace(/\.exe$/, "");
-              if (entry.filename !== path.basename(entry.file)) return entry.filename;
-              const m = base.match(artifactRe);
-              return m ? m[1] : base;
-            };
             for (const entry of portable) {
-              groupFor(projectForBinary(binaryForPortable(entry))).portable.push(entry);
+              groupFor(projectForBinary(names.binaryForPortable(entry, path.basename))).portable.push(entry);
             }
             core.info(`Found ${files.length} per-platform artifact(s) and ${portable.length} portable artifact(s) across ${groups.size} project(s): ${[...groups.keys()].join(", ")}`);
 
-            const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-            // a transient 5xx or an empty-body proxy 404 (unlike the app's own 404, which carries JSON) gets retried; any 4xx with a body (including a genuine "project not found") returns immediately
-            const isTransient = (status: number, text: string): boolean =>
-              status >= 500 || (status === 404 && text.trim() === "");
-
-            // retries a transient failure with backoff so a rolling buildhost deploy never hard-fails the publish
-            const api = async (method: string, urlPath: string, body?: string | Buffer | null, extra?: Record<string, string>) => {
-              const headers: Record<string, string> = { Authorization: `Bearer ${token}`, ...(extra ?? {}) };
-              if (typeof body === "string") headers["Content-Type"] = "application/json";
-              else if (body) headers["Content-Type"] = "application/octet-stream";
-              const maxAttempts = 5;
-              for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-                try {
-                  const resp = await fetch(`${server}${urlPath}`, { method, headers, body });
-                  const text = await resp.text();
-                  if (attempt === maxAttempts || !isTransient(resp.status, text)) {
-                    return { status: resp.status, text };
-                  }
-                  core.warning(`${method} ${urlPath} -> HTTP ${resp.status} (transient; attempt ${attempt}/${maxAttempts}); retrying`);
-                } catch (e) {
-                  const msg = e instanceof Error ? e.message : String(e);
-                  if (attempt === maxAttempts) {
-                    return { status: 0, text: `request failed after ${maxAttempts} attempts: ${msg}` };
-                  }
-                  core.warning(`${method} ${urlPath} -> ${msg} (network error; attempt ${attempt}/${maxAttempts}); retrying`);
-                }
-                await sleep(1000 * 2 ** (attempt - 1));
-              }
-              return { status: 0, text: "unreachable" };
-            };
+            const api = client.makeApi(server, token, core);
 
             // Cloudflare answers 413 to a body over 100 MB, so anything past the server's advertised direct limit is assembled through an upload session instead.
             let directLimit = -1;
@@ -384,20 +302,7 @@ runs:
               const body = {
                 size: fs.statSync(filePath).size,
                 sha256: sum,
-                // A short read leaves the tail of an allocUnsafe buffer holding whatever was in that memory, so keep reading until the chunk is whole.
-                read: (offset: number, length: number): Buffer => {
-                  const buf = Buffer.allocUnsafe(length);
-                  const fd = fs.openSync(filePath, "r");
-                  try {
-                    let got = 0;
-                    while (got < length) {
-                      const n = fs.readSync(fd, buf, got, length - got, offset + got);
-                      if (n <= 0) throw new Error(`${filePath}: wanted ${length} bytes at ${offset}, the file ended after ${got}`);
-                      got += n;
-                    }
-                  } finally { fs.closeSync(fd); }
-                  return buf;
-                },
+                read: (offset: number, length: number): Buffer => io.readChunk(fs, filePath, offset, length),
               };
               return upload.putFile(api, core, { urlPath, body, headers: extra, directLimit });
             };
