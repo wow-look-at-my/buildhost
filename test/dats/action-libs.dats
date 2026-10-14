@@ -27,6 +27,12 @@ tests:
 		stdout:
 			- "upload: all checks passed"
 
+	- desc: an already published release is a no-op for the same bytes, and a failure naming each slot for other bytes
+	  cmd: node test/actions/existing-release.test.ts
+	  outputs:
+		stdout:
+			- "existing-release: all checks passed"
+
 	- desc: download aborts a transfer that goes silent, and finishes a slow one that keeps sending
 	  cmd: node test/actions/download-stall.test.ts
 	  outputs:
