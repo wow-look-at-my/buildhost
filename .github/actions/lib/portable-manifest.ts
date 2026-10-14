@@ -1,3 +1,8 @@
+// The manifest a build writes when one file runs on several platforms.
+
+export interface Core { setFailed(m: string): void }
+
+/** A filename cannot say that one file runs on several platforms, so the build declares the set here. */
 // The manifest a build writes to declare ONE file that runs on several platforms.
 
 export const ManifestName = 'buildhost-artifacts.json';
@@ -41,6 +46,16 @@ export type PortableEntry = { file: string; filename: string; kind: string; plat
 
 export const manifestName = 'buildhost-artifacts.json';
 
+/**
+ * Reads the manifest in sourceDir. No manifest is an empty list. A manifest it
+ * cannot use fails the step and answers null.
+ */
+export function readPortableManifest(
+	sourceDir: string,
+	core: Core,
+	fs: typeof import('node:fs'),
+	path: typeof import('node:path'),
+): PortableEntry[] | null {
 /** Reads the manifest in sourceDir. No manifest is an empty list. A bad one fails the step and returns null. */
 export function readPortableManifest(sourceDir: string, core: Core): PortableEntry[] | null {
 	const manifestPath = path.join(sourceDir, manifestName);
