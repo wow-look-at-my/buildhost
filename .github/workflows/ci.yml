@@ -39,7 +39,6 @@ jobs:
         with:
           generate: 3ed2a7fd952f
           timeout: '25'
-          allow-source-build: 'true'
       # The step above just ran every generate directive, which is what makes
       - uses: ./.github/actions/buildhost-download
         with:
