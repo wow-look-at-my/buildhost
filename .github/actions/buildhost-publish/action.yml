@@ -434,7 +434,8 @@ runs:
                 const sum = await fileSHA256(full);
                 const url = `/api/v1/projects/${proj}/releases/${releaseVersion}/artifacts/ape?platforms=${entry.platforms.join(",")}&kind=${entry.kind}`;
                 const r = await putFile(url, full, sum, { "X-Artifact-Filename": entry.filename });
-                if (r.status !== 201) { core.setFailed(`Upload ${proj} ${entry.file} [${entry.platforms.join(", ")}] failed (${r.status}): ${r.text}`); return false; }
+                // 200: another leg of this build stored the same bytes for the same platforms
+                if (r.status !== 201 && r.status !== 200) { core.setFailed(`Upload ${proj} ${entry.file} [${entry.platforms.join(", ")}] failed (${r.status}): ${r.text}`); return false; }
                 for (const platform of entry.platforms) {
                   const [platformOS, platformArch] = platform.split("/");
                   uploadedSlots.push({ project: proj, version: releaseVersion, os: platformOS, arch: platformArch, sha256: sum });
