@@ -53,6 +53,8 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 
 	var version string
 	var versionNum int64
+	// picked is true when the server chose the number, which a concurrent create can take first.
+	picked := false
 
 	if project.Versioning == db.VersioningAuto {
 		nextNum, err := h.DB.NextVersionNum(r.Context(), project.ID)
@@ -62,11 +64,13 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 		}
 		versionNum = nextNum
 		version = fmt.Sprintf("%d", nextNum)
+		picked = true
 		if req.Version != "" {
 			num, err := strconv.ParseInt(req.Version, 10, 64)
 			if err == nil {
 				versionNum = num
 				version = req.Version
+				picked = false
 			}
 		}
 	} else if req.Version == "" {
@@ -141,7 +145,20 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 		Draft:      req.Draft,
 	}
 
-	if err := h.DB.CreateRelease(r.Context(), rel); err != nil {
+	err := h.DB.CreateRelease(r.Context(), rel)
+	// A number the server picked can go to a concurrent create in the same family. That is a race, not a conflict, so pick again.
+	for picked && errors.Is(err, db.ErrConflict) && r.Context().Err() == nil {
+		nextNum, nerr := h.DB.NextVersionNum(r.Context(), project.ID)
+		if nerr != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to determine next version")
+			return
+		}
+		// Each try takes a higher number, so a version string held under a lower version_num cannot loop the request.
+		rel.VersionNum = max(nextNum, rel.VersionNum+1)
+		rel.Version = fmt.Sprintf("%d", rel.VersionNum)
+		err = h.DB.CreateRelease(r.Context(), rel)
+	}
+	if err != nil {
 		if errors.Is(err, db.ErrConflict) {
 			jsonError(w, http.StatusConflict, "release already exists")
 			return
