@@ -33,6 +33,12 @@ tests:
 		stdout:
 			- "existing-release: all checks passed"
 
+	- desc: every action value that holds an expression stays under GitHub's expression length limit
+	  cmd: node test/actions/expression-length.test.ts
+	  outputs:
+		stdout:
+			- "expression-length: all checks passed"
+
 	- desc: download aborts a transfer that goes silent, and finishes a slow one that keeps sending
 	  cmd: node test/actions/download-stall.test.ts
 	  outputs:
