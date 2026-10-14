@@ -33,7 +33,6 @@ jobs:
             echo "::warning::APE binfmt handler not registered; a bare exec of an APE still fails here"
           fi
       # No fetch-cacerts step: the CA bundle is a generate directive The org module proxy is gone, so modules come direct with sumdb off. go-toolchain publishes through this repo's publish action, so a release that action broke must not block its repair.
-      # Proof run only: release 1176 carries its stamp after the GOSTDEMB record, so this moves the stamp before it.
       - name: Repair the published go-toolchain
         id: gt
         uses: wow-look-at-my/actions@typescript#latest
@@ -57,7 +56,12 @@ jobs:
             fs.mkdirSync(path.dirname(file), { recursive: true });
             fs.writeFileSync(file, out, { mode: 0o755 });
             core.setOutput("path", file);
-      - uses: wow-look-at-my/go-toolchain@claude/proof-324
+      - uses: actions/checkout@v4
+        with:
+          repository: wow-look-at-my/go-toolchain
+          ref: claude/proof-324
+          path: .proof-go-toolchain
+      - uses: ./.proof-go-toolchain
         env:
           GOPROXY: direct
         with:
