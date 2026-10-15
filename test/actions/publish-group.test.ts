@@ -1,10 +1,8 @@
 // Behavior tests for .github/actions/lib/publish-group.ts and .github/actions/lib/client.ts.
 
-const assert = require('node:assert');
-const root = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib`;
-// Untyped on purpose: the modules' types are checked where they are CALLED, in the publish composite.
-const { publishGroup } = require(`${root}/publish-group.ts`);
-const { client } = require(`${root}/client.ts`);
+import assert from 'node:assert';
+import { publishGroup } from '../../.github/actions/lib/publish-group.ts';
+import { client } from '../../.github/actions/lib/client.ts';
 
 const A = 'a'.repeat(64);
 const B = 'b'.repeat(64);

@@ -1,9 +1,7 @@
 // Behavior tests for .github/actions/lib/preview-comment.ts.
 
-const assert = require('node:assert');
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/preview-comment`;
-// Untyped on purpose: the module's types are checked where it is CALLED, in the composite.
-const { commentPreview, marker } = require(`${lib}.ts`);
+import assert from 'node:assert';
+import { commentPreview, marker } from '../../.github/actions/lib/preview-comment.ts';
 
 type Sent = Record<string, unknown>;
 const ctx = { repo: { owner: 'wow-look-at-my', repo: 'js-snippets' } };
