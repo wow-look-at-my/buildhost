@@ -188,10 +188,6 @@ runs:
           const { fileSHA256 } = require(`${lib}/portable-manifest.ts`) as { fileSHA256(file: string): Promise<string> };
           const io = require(`${lib}/file-io.ts`) as { readChunk(fs: unknown, filePath: string, offset: number, length: number): Buffer };
           await (async () => {
-            const inputProject: string = process.env.BUILDHOST_PROJECT ?? "";
-            const inputVersion: string = process.env.BUILDHOST_VERSION ?? "";
-            const inputBranch: string = process.env.BUILDHOST_GIT_BRANCH ?? "";
-            const inputCommit: string = process.env.BUILDHOST_GIT_COMMIT ?? "";
             const artifactName: string = process.env.BUILDHOST_ARTIFACT_NAME ?? "";
             const inputPath: string = process.env.BUILDHOST_PATH ?? "";
             const inputBrewService: string = process.env.BUILDHOST_CREATE_SERVICE ?? "";
@@ -203,10 +199,10 @@ runs:
             const inputAptDepends: string = process.env.BUILDHOST_APT_DEPENDS ?? "";
 
             const server: string = process.env.BUILDHOST_SERVER!;
-            const project = inputProject.length > 0 ? inputProject : github.repository.split("/").pop()!;
-            const version = inputVersion;
-            const gitBranch = inputBranch.length > 0 ? inputBranch : github.ref_name;
-            const gitCommit = inputCommit.length > 0 ? inputCommit : github.sha;
+            const project: string = process.env.BUILDHOST_PROJECT || github.repository.split("/").pop()!;
+            const version: string = process.env.BUILDHOST_VERSION ?? "";
+            const gitBranch: string = process.env.BUILDHOST_GIT_BRANCH || github.ref_name;
+            const gitCommit: string = process.env.BUILDHOST_GIT_COMMIT || github.sha;
 
             let sourceDir: string;
             if (inputPath.length > 0) {
