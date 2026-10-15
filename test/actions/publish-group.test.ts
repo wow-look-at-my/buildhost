@@ -62,6 +62,17 @@ const slot = (file: string, os: string, arch: string) => ({ file, os, arch });
 		assert.equal(h.recorded.length, 4);
 	}
 
+	// The server answers the same portable upload from another leg with the stored row, and the publish goes on.
+	{
+		const h = harness({ ape: A }, (_method, url) => (url.includes('/artifacts/ape?') ? 200 : 201));
+		const portable = [{ file: 'ape', filename: 'tool', kind: 'binary', platforms: ['linux/amd64', 'darwin/arm64'] }];
+		const ok = await publishGroup(h.deps, 'tool', '7', { slots: [], portable });
+		assert.equal(ok, true);
+		assert.deepEqual(h.failed, []);
+		assert.equal(h.recorded.length, 2);
+		assert.ok(h.asked.some((a) => a.startsWith('POST')));
+	}
+
 	// A failed upload stops before the publish and names the slot.
 	{
 		const h = harness({ l: A }, () => 500);
