@@ -1,10 +1,8 @@
 // Behavior tests for .github/actions/lib/publish-group.ts and .github/actions/lib/client.ts.
 
-const assert = require('node:assert');
-const root = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib`;
-// Untyped on purpose: the modules' types are checked where they are CALLED, in the publish composite.
-const { publishGroup } = require(`${root}/publish-group.ts`);
-const { client } = require(`${root}/client.ts`);
+import assert from 'node:assert';
+import { publishGroup } from '../../.github/actions/lib/publish-group.ts';
+import { client } from '../../.github/actions/lib/client.ts';
 
 const A = 'a'.repeat(64);
 const B = 'b'.repeat(64);
@@ -62,6 +60,17 @@ const slot = (file: string, os: string, arch: string) => ({ file, os, arch });
 		assert.equal(h.asked[0], 'PUT /api/v1/projects/tool/releases/7/artifacts/ape?platforms=linux/amd64,darwin/arm64&kind=binary <ape>');
 		assert.equal(h.asked.filter((a) => a.startsWith('PUT')).length, 3);
 		assert.equal(h.recorded.length, 4);
+	}
+
+	// The server answers the same portable upload from another leg with the stored row, and the publish goes on.
+	{
+		const h = harness({ ape: A }, (_method, url) => (url.includes('/artifacts/ape?') ? 200 : 201));
+		const portable = [{ file: 'ape', filename: 'tool', kind: 'binary', platforms: ['linux/amd64', 'darwin/arm64'] }];
+		const ok = await publishGroup(h.deps, 'tool', '7', { slots: [], portable });
+		assert.equal(ok, true);
+		assert.deepEqual(h.failed, []);
+		assert.equal(h.recorded.length, 2);
+		assert.ok(h.asked.some((a) => a.startsWith('POST')));
 	}
 
 	// A failed upload stops before the publish and names the slot.
