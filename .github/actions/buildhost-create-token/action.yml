@@ -39,37 +39,7 @@ runs:
     - id: create
       uses: wow-look-at-my/actions@typescript#latest
       with:
+        inputs: ${{ toJSON(inputs) }}
         script: |
-          await (async () => {
-            const server: string = "${{ inputs.server }}";
-            let token: string = "${{ inputs.token }}";
-            if (!token) {
-              const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
-              const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
-              if (url && bearer) {
-                const r = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
-                token = ((await r.json()) as { value: string }).value || '';
-              }
-            }
-            const projectId: string = "${{ inputs.project_id }}";
-
-            const body: Record<string, string | number> = {
-              name:   "${{ inputs.name }}",
-              scopes: "${{ inputs.scopes }}",
-            };
-            if (projectId) body['project_id'] = Number(projectId);
-
-            const resp = await fetch(`${server}/api/v1/tokens`, {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
-            });
-            const text = await resp.text();
-            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
-
-            const data = JSON.parse(text);
-            core.info(JSON.stringify(data, null, 2));
-            core.setOutput('response', text);
-            core.setOutput('token_value', data.token);
-            core.setOutput('token_id', String(data.details.id));
-          })();
+          const lib = require(${{ toJSON(format('{0}/../lib/resources.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/resources', github.action_path)) }});
+          await lib.createToken({ core, github, context, octokit, exec, inputs, steps });

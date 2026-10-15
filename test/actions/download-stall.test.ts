@@ -1,10 +1,8 @@
 // Behavior tests for .github/actions/lib/download.ts, against a real HTTP server.
 
-const assert = require('node:assert');
-const http = require('node:http') as typeof import('node:http');
-
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/download`;
-const { fetchBody } = require(`${lib}.ts`);
+import assert from 'node:assert';
+import * as http from 'node:http';
+import { fetchBody } from '../../.github/actions/lib/download.ts';
 
 type Handler = (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void;
 

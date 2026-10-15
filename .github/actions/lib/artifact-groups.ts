@@ -1,4 +1,6 @@
-// Which files a publish uploads, and the project each one goes to.
+// Which files a publish uploads, and the project each goes to.
+
+import type { Slot } from './existing-release';
 
 export const ManifestName = 'buildhost-artifacts.json';
 
@@ -98,4 +100,20 @@ export function findArtifacts(dir: Dir, project: string): Found {
 		groupFor(projectForBinary(project, binaryForPortable(entry))).portable.push(entry);
 	}
 	return { ok: true, groups, files, portable };
+}
+
+/** Every slot the group fills, with the sha256 of its bytes. sha256 hashes a file of the publish directory. */
+export async function slotsOf(group: Group, sha256: (file: string) => Promise<string>): Promise<Slot[]> {
+	const slots: Slot[] = [];
+	for (const item of group.slots) {
+		slots.push({ os: item.os, arch: item.arch, kind: 'binary', sha256: await sha256(item.file) });
+	}
+	for (const entry of group.portable) {
+		const sum = await sha256(entry.file);
+		for (const platform of entry.platforms) {
+			const [os, arch] = platform.split('/');
+			slots.push({ os, arch, kind: entry.kind, sha256: sum });
+		}
+	}
+	return slots;
 }
