@@ -19,9 +19,10 @@ export const isTransient = (status: number, text: string): boolean =>
 /** A sender that retries a transient failure with backoff, so a rolling buildhost deploy never fails the publish. */
 export function client(server: string, token: string, core: Core, delay = (ms: number) => new Promise((r) => setTimeout(r, ms))): Send {
 	return async (method, urlPath, body, extra) => {
-		const headers: Record<string, string> = { Authorization: `Bearer ${token}`, ...(extra ?? {}) };
+		const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
 		if (typeof body === 'string') headers['Content-Type'] = 'application/json';
 		else if (body) headers['Content-Type'] = 'application/octet-stream';
+		Object.assign(headers, extra ?? {});
 		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 			try {
 				const resp = await fetch(`${server}${urlPath}`, { method, headers, body });

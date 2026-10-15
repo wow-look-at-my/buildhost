@@ -20,6 +20,7 @@ const publishGroup = load('./publish-group.ts') as typeof import('./publish-grou
 const { fileSHA256 } = load('./portable-manifest.ts') as typeof import('./portable-manifest');
 const io = load('./file-io.ts') as typeof import('./file-io');
 const { mintOidcToken } = load('./oidc.ts') as typeof import('./oidc');
+const { downloadRunArtifact } = load('./run-artifact.ts') as typeof import('./run-artifact');
 
 /** The create_service, default_branch and apt_depends fields go only when set, so an empty input leaves the stored setting untouched. */
 export function releaseBody(f: { gitBranch: string; gitCommit: string; version: string; createService: string; defaultBranch: string; aptDepends: string }): string {
@@ -53,7 +54,7 @@ export function deploymentURL(server: string, project: string, published: { proj
 
 /** Runs the publish: the source directory, an OIDC token, then a release per project. A failure is reported through core.setFailed. */
 export async function publish(g: ActionGlobals): Promise<void> {
-	const { core, github, octokit, exec, inputs } = g;
+	const { core, github, exec, inputs } = g;
 	const artifactName: string = String(inputs.artifact_name);
 	const inputPath: string = String(inputs.path);
 	const inputBrewService: string = String(inputs.create_service);
@@ -82,15 +83,8 @@ export async function publish(g: ActionGlobals): Promise<void> {
 		// the default: downloads the run's artifact_name artifact and unzips it
 		sourceDir = path.join(os.tmpdir(), "buildhost-publish");
 		fs.mkdirSync(sourceDir, { recursive: true });
-		const oct = octokit(process.env.GITHUB_TOKEN!);
-		const [owner, repo] = github.repository.split("/");
-		// the github context is rebuilt from environment variables, so run_id arrives as a string
-		const { data: { artifacts } } = await oct.rest.actions.listWorkflowRunArtifacts({ owner, repo, run_id: Number(github.run_id) });
-		const artifact = artifacts.find((a) => a.name === artifactName);
-		if (!artifact) { core.setFailed(`Artifact '${artifactName}' not found in run`); return; }
-		const { data: zip } = await oct.rest.actions.downloadArtifact({ owner, repo, artifact_id: artifact.id, archive_format: "zip" });
 		const zipPath = path.join(sourceDir, "artifact.zip");
-		fs.writeFileSync(zipPath, Buffer.from(zip as ArrayBuffer));
+		if (!await downloadRunArtifact(g, artifactName, zipPath)) return;
 		await exec.exec("unzip", ["-o", zipPath, "-d", sourceDir]);
 	}
 

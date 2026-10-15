@@ -73,6 +73,12 @@ tests:
 		stdout:
 			- "docker: all checks passed"
 
+	- desc: a site publish uploads to its one-segment branch, directly or in chunks, then records the site and comments its URL
+	  cmd: node test/actions/site.test.ts
+	  outputs:
+		stdout:
+			- "site: all checks passed"
+
 	- desc: the GitHub Deployment registers for a real server only, and its terminal status follows the publish
 	  cmd: node test/actions/deployment.test.ts
 	  outputs:
