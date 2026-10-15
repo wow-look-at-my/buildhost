@@ -2,20 +2,10 @@ import * as fs from "node:fs";
 
 // GitHub refuses a `with:` value whose expression text is longer than this, and fails the step before it runs.
 const maxExpression = 21000;
-type Block = { file: string; line: number; length: number };
+// An installed action path is many characters. This bound covers a long owner and ref.
+const actionPathAllowance = 200;
 
-// GitHub makes one format() call of the value. Each expression becomes {N} and an argument. Every other brace and single quote is doubled.
-function formatLength(value: string): number {
-	const args: string[] = [];
-	const literal = value.split(/(\$\{\{[\s\S]*?\}\})/).map((part, i) => {
-		if (i % 2 === 1) {
-			args.push(part.slice(3, -2).trim());
-			return `{${args.length - 1}}`;
-		}
-		return part.replace(/[{}']/g, (c) => c + c);
-	}).join("");
-	return `format('${literal}'${args.map((a) => `, ${a}`).join("")})`.length;
-}
+type Block = { file: string; line: number; length: number };
 
 function scriptBlocks(file: string): Block[] {
 	const lines = fs.readFileSync(file, "utf8").split("\n");
@@ -28,8 +18,8 @@ function scriptBlocks(file: string): Block[] {
 		if (indent < 0) return;
 		const bodyIndent = Math.min(...body.filter((line) => line.trim() !== "").map((line) => line.search(/\S/)));
 		const text = body.map((line) => line.slice(bodyIndent)).join("\n");
-		// A script with no expression is a plain string, and no limit applies.
-		if (text.includes("${{")) blocks.push({ file, line: start, length: formatLength(text) });
+		const paths = text.split("${{ github.action_path }}").length - 1;
+		blocks.push({ file, line: start, length: text.length + paths * actionPathAllowance });
 		indent = -1;
 		body = [];
 	};

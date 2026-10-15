@@ -14,7 +14,7 @@ The remedy is the one the action names: say it in a single line, or move the pro
 
 ## Inline values must stay within GitHub's expression length
 
-GitHub evaluates a `with:` value that holds `${{ }}` as one `format()` expression, and refuses the whole action at load when that expression passes 21000 characters. The error names the action file, and no step of it runs. `.github/scripts/script-length.ts` computes that length the way GitHub builds it, with each quote and brace doubled. It runs from `test/dats/repo-hygiene.dats`. When the publish script grows near the limit, move a self-contained piece into a module under `.github/actions/lib/` with a test in `test/actions/`.
+GitHub evaluates a `with:` value that holds `${{ }}` as one `format()` expression, and refuses the whole action at load when that expression passes 21000 characters. The error names the action file, and no step of it runs. `.github/scripts/expression-length.ts` computes that length the way GitHub builds it, with each quote and brace doubled. It runs from `test/dats/repo-hygiene.dats`. When the publish script grows near the limit, move a self-contained piece into a module under `.github/actions/lib/` with a test in `test/actions/`.
 
 ## llms.txt drift guard
 
