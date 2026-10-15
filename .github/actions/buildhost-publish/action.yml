@@ -153,19 +153,6 @@ runs:
       env:
         # Only artifact mode (path unset) talks to the GitHub API from THIS
         GITHUB_TOKEN: ${{ inputs.path == '' && github.token || '' }}
-        # An env var carries the value, so no character in it can break the script.
-        BUILDHOST_APT_DEPENDS: ${{ inputs.apt_depends }}
-        # The script reads every input from here, so it holds no expression and GitHub's expression length limit does not apply to it.
-        BUILDHOST_ACTION_LIB: ${{ github.action_path }}/../lib
-        BUILDHOST_PROJECT: ${{ inputs.project }}
-        BUILDHOST_VERSION: ${{ inputs.version }}
-        BUILDHOST_GIT_BRANCH: ${{ inputs.git_branch }}
-        BUILDHOST_GIT_COMMIT: ${{ inputs.git_commit }}
-        BUILDHOST_ARTIFACT_NAME: ${{ inputs.artifact_name }}
-        BUILDHOST_PATH: ${{ inputs.path }}
-        BUILDHOST_CREATE_SERVICE: ${{ inputs.create_service }}
-        BUILDHOST_DEFAULT_BRANCH: ${{ inputs.default_branch }}
-        BUILDHOST_SERVER: ${{ inputs.server }}
       with:
         script: |
           type Resp = { status: number; text: string };
@@ -177,8 +164,11 @@ runs:
           type Verdict = { action: "publish" } | { action: "noop" } | { action: "fail"; message: string };
           type Found = { ok: true; groups: Map<string, Group>; files: string[]; portable: PortableEntry[] } | { ok: false; message: string };
           type Deps = { send: Send; core: typeof core; server: string; sha256(file: string): Promise<string>; put(urlPath: string, file: string, sha256: string, headers?: Record<string, string>): Promise<Resp>; record(slot: PublishedArtifact): void };
-          // A typeof import() needs a literal path, and a literal path here is an expression. These shapes mirror the modules under ../lib.
-          const lib = process.env.BUILDHOST_ACTION_LIB!;
+          // The lib path is known only at run time, so these shapes mirror the modules under ../lib.
+          const hostActionPath: string = ${{ toJSON(github.action_path) }};
+          // A container job gets the HOST path here. The work root two levels above GITHUB_WORKSPACE holds _actions in a container and on the host.
+          const underActions = hostActionPath.match(/[\\/]_actions[\\/].*$/);
+          const lib = path.join(underActions ? path.join(path.dirname(path.dirname(process.env.GITHUB_WORKSPACE!)), underActions[0]) : hostActionPath, "..", "lib");
           const { recordReleaseArtifacts } = require(`${lib}/storage-record.ts`) as { recordReleaseArtifacts(octokit: unknown, core: unknown, context: unknown, params: { server: string; artifacts: readonly PublishedArtifact[] }): Promise<boolean> };
           const upload = require(`${lib}/upload.ts`) as { directLimit(send: Send, core: unknown): Promise<number>; putFile(send: Send, core: unknown, opts: { urlPath: string; body: { size: number; sha256: string; read(offset: number, length: number): Buffer }; headers?: Record<string, string>; directLimit: number }): Promise<Resp> };
           const existing = require(`${lib}/existing-release.ts`) as { existingRelease(send: Send, core: unknown, proj: string, version: string, slots: Slot[]): Promise<Verdict> };
@@ -188,21 +178,22 @@ runs:
           const { fileSHA256 } = require(`${lib}/portable-manifest.ts`) as { fileSHA256(file: string): Promise<string> };
           const io = require(`${lib}/file-io.ts`) as { readChunk(fs: unknown, filePath: string, offset: number, length: number): Buffer };
           await (async () => {
-            const artifactName: string = process.env.BUILDHOST_ARTIFACT_NAME ?? "";
-            const inputPath: string = process.env.BUILDHOST_PATH ?? "";
-            const inputBrewService: string = process.env.BUILDHOST_CREATE_SERVICE ?? "";
+            // toJSON makes any input text a valid string literal, Windows backslashes included; the :string types stop tsc from narrowing each literal
+            const artifactName: string = ${{ toJSON(inputs.artifact_name) }};
+            const inputPath: string = ${{ toJSON(inputs.path) }};
+            const inputBrewService: string = ${{ toJSON(inputs.create_service) }};
             if (inputBrewService !== '' && inputBrewService !== 'true' && inputBrewService !== 'false') {
               core.setFailed(`create_service must be 'true', 'false', or empty; got '${inputBrewService}'`);
               return;
             }
-            const inputDefaultBranch: string = process.env.BUILDHOST_DEFAULT_BRANCH ?? "";
-            const inputAptDepends: string = process.env.BUILDHOST_APT_DEPENDS ?? "";
+            const inputDefaultBranch: string = ${{ toJSON(inputs.default_branch) }};
+            const inputAptDepends: string = ${{ toJSON(inputs.apt_depends) }};
 
-            const server: string = process.env.BUILDHOST_SERVER!;
-            const project: string = process.env.BUILDHOST_PROJECT || github.repository.split("/").pop()!;
-            const version: string = process.env.BUILDHOST_VERSION ?? "";
-            const gitBranch: string = process.env.BUILDHOST_GIT_BRANCH || github.ref_name;
-            const gitCommit: string = process.env.BUILDHOST_GIT_COMMIT || github.sha;
+            const server: string = ${{ toJSON(inputs.server) }};
+            const project: string = ${{ toJSON(inputs.project) }} || github.repository.split("/").pop()!;
+            const version: string = ${{ toJSON(inputs.version) }};
+            const gitBranch: string = ${{ toJSON(inputs.git_branch) }} || github.ref_name;
+            const gitCommit: string = ${{ toJSON(inputs.git_commit) }} || github.sha;
 
             let sourceDir: string;
             if (inputPath.length > 0) {
