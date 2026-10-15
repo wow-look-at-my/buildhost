@@ -155,36 +155,54 @@ runs:
         GITHUB_TOKEN: ${{ inputs.path == '' && github.token || '' }}
         # An env var carries the value, so no character in it can break the script.
         BUILDHOST_APT_DEPENDS: ${{ inputs.apt_depends }}
+        # The script reads every input from here, so it holds no expression and GitHub's expression length limit does not apply to it.
+        BUILDHOST_ACTION_LIB: ${{ github.action_path }}/../lib
+        BUILDHOST_PROJECT: ${{ inputs.project }}
+        BUILDHOST_VERSION: ${{ inputs.version }}
+        BUILDHOST_GIT_BRANCH: ${{ inputs.git_branch }}
+        BUILDHOST_GIT_COMMIT: ${{ inputs.git_commit }}
+        BUILDHOST_ARTIFACT_NAME: ${{ inputs.artifact_name }}
+        BUILDHOST_PATH: ${{ inputs.path }}
+        BUILDHOST_CREATE_SERVICE: ${{ inputs.create_service }}
+        BUILDHOST_DEFAULT_BRANCH: ${{ inputs.default_branch }}
+        BUILDHOST_SERVER: ${{ inputs.server }}
       with:
         script: |
-          const { recordReleaseArtifacts } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
-          const upload = require("${{ github.action_path }}/../lib/upload.ts") as typeof import("${{ github.action_path }}/../lib/upload");
-          const existing = require("${{ github.action_path }}/../lib/existing-release.ts") as typeof import("${{ github.action_path }}/../lib/existing-release");
-          const manifest = require("${{ github.action_path }}/../lib/portable-manifest.ts") as typeof import("${{ github.action_path }}/../lib/portable-manifest");
-          const client = require("${{ github.action_path }}/../lib/api-client.ts") as typeof import("${{ github.action_path }}/../lib/api-client");
-          const names = require("${{ github.action_path }}/../lib/artifact-names.ts") as typeof import("${{ github.action_path }}/../lib/artifact-names");
-          const io = require("${{ github.action_path }}/../lib/file-io.ts") as typeof import("${{ github.action_path }}/../lib/file-io");
-          const artifactGroups = require("${{ github.action_path }}/../lib/artifact-groups.ts") as typeof import("${{ github.action_path }}/../lib/artifact-groups");
-          const buildhost = require("${{ github.action_path }}/../lib/client.ts") as typeof import("${{ github.action_path }}/../lib/client");
-          const publishGroup = require("${{ github.action_path }}/../lib/publish-group.ts") as typeof import("${{ github.action_path }}/../lib/publish-group");
-          const { fileSHA256 } = require("${{ github.action_path }}/../lib/portable-manifest.ts") as typeof import("${{ github.action_path }}/../lib/portable-manifest");
-          const io = require("${{ github.action_path }}/../lib/file-io.ts") as typeof import("${{ github.action_path }}/../lib/file-io");
+          type Resp = { status: number; text: string };
+          type Send = (method: string, urlPath: string, body?: string | Buffer | null, headers?: Record<string, string>) => Promise<Resp>;
+          type PortableEntry = { file: string; filename: string; kind: string; platforms: string[] };
+          type Group = { slots: { file: string; os: string; arch: string }[]; portable: PortableEntry[] };
+          type Slot = { os: string; arch: string; kind: string; sha256: string };
+          type PublishedArtifact = { project: string; version: string; os: string; arch: string; sha256: string };
+          type Verdict = { action: "publish" } | { action: "noop" } | { action: "fail"; message: string };
+          type Found = { ok: true; groups: Map<string, Group>; files: string[]; portable: PortableEntry[] } | { ok: false; message: string };
+          type Deps = { send: Send; core: typeof core; server: string; sha256(file: string): Promise<string>; put(urlPath: string, file: string, sha256: string, headers?: Record<string, string>): Promise<Resp>; record(slot: PublishedArtifact): void };
+          // A typeof import() needs a literal path, and a literal path here is an expression. These shapes mirror the modules under ../lib.
+          const lib = process.env.BUILDHOST_ACTION_LIB!;
+          const { recordReleaseArtifacts } = require(`${lib}/storage-record.ts`) as { recordReleaseArtifacts(octokit: unknown, core: unknown, context: unknown, params: { server: string; artifacts: readonly PublishedArtifact[] }): Promise<boolean> };
+          const upload = require(`${lib}/upload.ts`) as { directLimit(send: Send, core: unknown): Promise<number>; putFile(send: Send, core: unknown, opts: { urlPath: string; body: { size: number; sha256: string; read(offset: number, length: number): Buffer }; headers?: Record<string, string>; directLimit: number }): Promise<Resp> };
+          const existing = require(`${lib}/existing-release.ts`) as { existingRelease(send: Send, core: unknown, proj: string, version: string, slots: Slot[]): Promise<Verdict> };
+          const artifactGroups = require(`${lib}/artifact-groups.ts`) as { ManifestName: string; findArtifacts(dir: { files: string[]; manifest: string | null; exists(file: string): boolean }, project: string): Found; slotsOf(group: Group, sha256: (file: string) => Promise<string>): Promise<Slot[]> };
+          const buildhost = require(`${lib}/client.ts`) as { client(server: string, token: string, core: unknown): Send };
+          const publishGroup = require(`${lib}/publish-group.ts`) as { publishGroup(d: Deps, proj: string, releaseVersion: string, group: Group): Promise<boolean> };
+          const { fileSHA256 } = require(`${lib}/portable-manifest.ts`) as { fileSHA256(file: string): Promise<string> };
+          const io = require(`${lib}/file-io.ts`) as { readChunk(fs: unknown, filePath: string, offset: number, length: number): Buffer };
           await (async () => {
-            const inputProject: string = "${{ inputs.project }}";
-            const inputVersion: string = "${{ inputs.version }}";
-            const inputBranch: string = "${{ inputs.git_branch }}";
-            const inputCommit: string = "${{ inputs.git_commit }}";
-            const artifactName: string = "${{ inputs.artifact_name }}";
-            const inputPath: string = "${{ inputs.path }}";
-            const inputBrewService: string = "${{ inputs.create_service }}";
+            const inputProject: string = process.env.BUILDHOST_PROJECT ?? "";
+            const inputVersion: string = process.env.BUILDHOST_VERSION ?? "";
+            const inputBranch: string = process.env.BUILDHOST_GIT_BRANCH ?? "";
+            const inputCommit: string = process.env.BUILDHOST_GIT_COMMIT ?? "";
+            const artifactName: string = process.env.BUILDHOST_ARTIFACT_NAME ?? "";
+            const inputPath: string = process.env.BUILDHOST_PATH ?? "";
+            const inputBrewService: string = process.env.BUILDHOST_CREATE_SERVICE ?? "";
             if (inputBrewService !== '' && inputBrewService !== 'true' && inputBrewService !== 'false') {
               core.setFailed(`create_service must be 'true', 'false', or empty; got '${inputBrewService}'`);
               return;
             }
-            const inputDefaultBranch: string = "${{ inputs.default_branch }}";
+            const inputDefaultBranch: string = process.env.BUILDHOST_DEFAULT_BRANCH ?? "";
             const inputAptDepends: string = process.env.BUILDHOST_APT_DEPENDS ?? "";
 
-            const server = "${{ inputs.server }}";
+            const server: string = process.env.BUILDHOST_SERVER!;
             const project = inputProject.length > 0 ? inputProject : github.repository.split("/").pop()!;
             const version = inputVersion;
             const gitBranch = inputBranch.length > 0 ? inputBranch : github.ref_name;
@@ -241,7 +259,7 @@ runs:
             if (!token) { core.setFailed("Failed to obtain OIDC token"); return; }
 
             // artifacts accumulate here as they're accepted, posted below before this step returns
-            const uploadedSlots: import("${{ github.action_path }}/../lib/storage-record").PublishedArtifact[] = [];
+            const uploadedSlots: PublishedArtifact[] = [];
             // recording happens inline, with no opt-out; skipping it silently would leave the artifacts page stale while the publish stayed green
             const drainStorageRecords = async (): Promise<boolean> =>
               // recordReleaseArtifacts(octokit, core, context, { server, artifacts: uploadedSlots });
@@ -297,7 +315,7 @@ runs:
             };
 
             const sha256 = (f: string) => fileSHA256(path.join(sourceDir, f));
-            const deps: import("${{ github.action_path }}/../lib/publish-group").Deps = {
+            const deps: Deps = {
               send: api, core, server, sha256,
               put: (url, f, sum, extra) => putFile(url, path.join(sourceDir, f), sum, extra),
               record: (slot) => { uploadedSlots.push(slot); },
@@ -311,7 +329,7 @@ runs:
               const rv = created.rv;
               core.info(`Release: ${proj}/${rv}`);
               // a published release never changes, so the same bytes are a no-op and other bytes fail naming each slot
-              const verdict: import("${{ github.action_path }}/../lib/existing-release").Verdict = created.existed
+              const verdict: Verdict = created.existed
                 ? await existing.existingRelease(api, core, proj, rv, await artifactGroups.slotsOf(group, sha256))
                 : { action: "publish" };
               if (verdict.action === "fail") { core.setFailed(verdict.message); return; }
