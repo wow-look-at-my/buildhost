@@ -1,8 +1,8 @@
 // Behavior tests for .github/actions/lib/resources.ts, each action against a fake fetch that records what it was sent.
 
-const assert = require('node:assert');
-const mod = require(`${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/resources.ts`);
-const { stepCore, oidcIssuer } = require('./fakes.ts') as typeof import('./fakes');
+import assert from 'node:assert';
+import * as mod from '../../.github/actions/lib/resources.ts';
+import { stepCore, oidcIssuer, globalsOf } from './fakes.ts';
 
 type Sent = { url: string; method: string; headers: Record<string, string>; body: unknown };
 
@@ -20,7 +20,7 @@ function serve(answer: (s: Sent) => { status: number; body: string }): Sent[] {
 function run(inputs: Record<string, string>) {
 	const { core, out } = stepCore();
 	const github = { ref_name: 'main', sha: 'c0ffee' };
-	return { g: { core, github, context: {}, octokit: {}, exec: {}, steps: {}, inputs: { server: 'https://bh.example', token: 'tok', ...inputs } }, out };
+	return { g: globalsOf({ core, github, context: {}, octokit: {}, exec: {}, steps: {}, inputs: { server: 'https://bh.example', token: 'tok', ...inputs } }), out };
 }
 
 (async () => {
@@ -79,7 +79,7 @@ function run(inputs: Record<string, string>) {
 	assert.strictEqual(mod.resourceURL('https://s', 'project', 'p', ''), 'https://s/api/v1/projects/p');
 	assert.strictEqual(mod.resourceURL('https://s', 'release', 'p', '2'), 'https://s/api/v1/projects/p/releases/2');
 	assert.deepStrictEqual(mod.resourceURL('https://s', 'release', 'p', ''), { error: 'version is required for resource=release' });
-	assert.match(mod.resourceURL('https://s', 'tag', 'p', '').error, /Unknown resource 'tag'/);
+	assert.match((mod.resourceURL('https://s', 'tag', 'p', '') as { error: string }).error, /Unknown resource 'tag'/);
 
 	sent = serve(() => ({ status: 200, body: '{"id":5}' }));
 	r = run({ resource: 'release', project: 'p', version: '2' });

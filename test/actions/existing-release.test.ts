@@ -1,9 +1,7 @@
 // Behavior tests for .github/actions/lib/existing-release.ts.
 
-const assert = require('node:assert');
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/existing-release`;
-// Untyped on purpose: the module's types are checked where it is CALLED, in the publish composite.
-const { existingRelease } = require(`${lib}.ts`);
+import assert from 'node:assert';
+import { existingRelease } from '../../.github/actions/lib/existing-release.ts';
 
 const A = 'a'.repeat(64);
 const B = 'b'.repeat(64);

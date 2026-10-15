@@ -1,8 +1,8 @@
 // Behavior tests for .github/actions/lib/deployment.ts. A rejected check is an unhandled rejection, which exits non-zero.
 
-const assert = require('node:assert');
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/deployment`;
-const { createPublishDeployment: createDeployment, finishPublishDeployment: finishDeployment, createDockerDeployment, finishDockerDeployment, dockerPublishOk } = require(`${lib}.ts`);
+import assert from 'node:assert';
+import { createPublishDeployment as createDeployment, finishPublishDeployment as finishDeployment, createDockerDeployment, finishDockerDeployment, dockerPublishOk } from '../../.github/actions/lib/deployment.ts';
+import { globalsOf } from './fakes.ts';
 
 function fakeGlobals(over: { inputs?: Record<string, string>; steps?: unknown; createDeployment?: (a: any) => any }) {
 	const calls: { name: string; args: any }[] = [];
@@ -28,7 +28,7 @@ function fakeGlobals(over: { inputs?: Record<string, string>; steps?: unknown; c
 	};
 	const github = { repository: 'o/r', ref_name: 'main' };
 	const inputs = { server: 'https://pazer.build', project: '', deployment_environment: '', deployment_ref: '', git_commit: '', git_branch: '', ...(over.inputs ?? {}) };
-	return { g: { core, github, context, octokit, exec: {}, inputs, steps: over.steps ?? {} }, calls, failed, outputs };
+	return { g: globalsOf({ core, github, context, octokit, exec: {}, inputs, steps: over.steps ?? {} }), calls, failed, outputs };
 }
 
 const steps = (outcome: string) => ({ publish: { outcome, outputs: { deployment_url: 'https://pazer.build/projects/r' } }, deployment: { outputs: { deployment_id: '7' } } });
@@ -84,10 +84,11 @@ const steps = (outcome: string) => ({ publish: { outcome, outputs: { deployment_
 	assert.match(docker.calls[0].args.description, /^buildhost docker publish of r/);
 	assert.strictEqual(docker.calls[1].args.description, 'Publishing Docker image to buildhost');
 
-	const built = { refs: { outcome: 'success' }, build: { outcome: 'success' }, 'push-buildhost': { outcome: 'skipped' }, 'push-foreign': { outcome: 'skipped' } };
+	const ran = (outcome: string) => ({ outcome, conclusion: outcome, outputs: {} });
+	const built = { refs: ran('success'), build: ran('success'), 'push-buildhost': ran('skipped'), 'push-foreign': ran('skipped') };
 	assert.strictEqual(dockerPublishOk(built), true, 'a skipped push is fine');
-	assert.strictEqual(dockerPublishOk({ ...built, build: { outcome: 'skipped' } }), false, 'a build that never ran is not a success');
-	assert.strictEqual(dockerPublishOk({ ...built, 'push-foreign': { outcome: 'failure' } }), false);
+	assert.strictEqual(dockerPublishOk({ ...built, build: ran('skipped') }), false, 'a build that never ran is not a success');
+	assert.strictEqual(dockerPublishOk({ ...built, 'push-foreign': ran('failure') }), false);
 
 	const dockerDone = fakeGlobals({ steps: { ...built, deployment: { outputs: { deployment_id: '9' } } } });
 	await finishDockerDeployment(dockerDone.g);

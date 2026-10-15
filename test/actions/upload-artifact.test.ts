@@ -1,10 +1,9 @@
 // Behavior tests for buildhost-upload-artifact (.github/actions/lib/upload-artifact.ts) and the OIDC token source it authenticates with.
 
-const check = require('node:assert');
-const where = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib`;
-const { uploadArtifact, uploadedSha256 } = require(`${where}/upload-artifact.ts`);
-const { jwtExpiry, tokenSource } = require(`${where}/oidc.ts`);
-const { tempDir, stepCore, oidcIssuer } = require('./fakes.ts') as typeof import('./fakes');
+import check from 'node:assert';
+import { uploadArtifact, uploadedSha256 } from '../../.github/actions/lib/upload-artifact.ts';
+import { jwtExpiry, tokenSource } from '../../.github/actions/lib/oidc.ts';
+import { tempDir, stepCore, oidcIssuer, globalsOf } from './fakes.ts';
 
 const jwt = (exp: number) => `h.${Buffer.from(JSON.stringify({ exp })).toString('base64url')}.s`;
 
@@ -25,7 +24,7 @@ function registry(handler: (method: string, path: string) => { status: number; b
 function upload(inputs: Record<string, string>) {
 	const { core, out } = stepCore();
 	const file = `${tempDir('artifact-', { tool: 'abcdefghij' })}/tool`;
-	return { out, g: { core, github: {}, context: {}, octokit: {}, exec: {}, steps: {}, inputs: { server: 'https://bh.example', token: 'tok', project: 'p', version: '3', os: 'linux', arch: 'amd64', path: file, kind: 'binary', filename: '', chunk_size: '', ...inputs } } };
+	return { out, g: globalsOf({ core, github: {}, context: {}, octokit: {}, exec: {}, steps: {}, inputs: { server: 'https://bh.example', token: 'tok', project: 'p', version: '3', os: 'linux', arch: 'amd64', path: file, kind: 'binary', filename: '', chunk_size: '', ...inputs } }) };
 }
 
 (async () => {

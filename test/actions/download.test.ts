@@ -1,11 +1,12 @@
 // Behavior tests for the buildhost-download entry in .github/actions/lib/download.ts. This covers the URL it asks dl for, the file it writes,
 // and a miss.
 
-const assert = require('node:assert');
-const { readFileSync, statSync, mkdtempSync } = require('node:fs') as typeof import('node:fs');
-const { tmpdir } = require('node:os') as typeof import('node:os');
-const { join } = require('node:path') as typeof import('node:path');
-const { download, downloadURL } = require(`${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/download.ts`);
+import assert from 'node:assert';
+import { readFileSync, statSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { download, downloadURL } from '../../.github/actions/lib/download.ts';
+import { globalsOf } from './fakes.ts';
 
 const none = { version: '', branch: '', os: '', arch: '', format: '' };
 
@@ -22,7 +23,7 @@ function step(inputs: Record<string, string>) {
 	const out = { failed: [] as string[], warned: [] as string[], outputs: {} as Record<string, string> };
 	const core = { info: () => {}, warning: (m: string) => out.warned.push(m), setFailed: (m: string) => out.failed.push(m), setOutput: (k: string, v: string) => { out.outputs[k] = v; } };
 	const all = { server: 'https://pazer.build', token: '', project: 'org/tool', ...none, path: '', executable: 'true', required: 'true', ...inputs };
-	return { g: { core, github: {}, context: {}, octokit: {}, exec: {}, steps: {}, inputs: all }, out };
+	return { g: globalsOf({ core, github: {}, context: {}, octokit: {}, exec: {}, steps: {}, inputs: all }), out };
 }
 
 (async () => {
