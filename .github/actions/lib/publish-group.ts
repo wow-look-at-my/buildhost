@@ -35,7 +35,7 @@ export async function publishGroup(d: Deps, proj: string, releaseVersion: string
 		const sum = await d.sha256(entry.file);
 		const url = `/api/v1/projects/${proj}/releases/${releaseVersion}/artifacts/ape?platforms=${entry.platforms.join(',')}&kind=${entry.kind}`;
 		const r = await d.put(url, entry.file, sum, { 'X-Artifact-Filename': entry.filename });
-		if (r.status !== 201) { core.setFailed(`Upload ${proj} ${entry.file} [${entry.platforms.join(', ')}] failed (${r.status}): ${r.text}`); return false; }
+		if (r.status !== 201 && r.status !== 200) { core.setFailed(`Upload ${proj} ${entry.file} [${entry.platforms.join(', ')}] failed (${r.status}): ${r.text}`); return false; }
 		for (const platform of entry.platforms) {
 			const [platformOS, platformArch] = platform.split('/');
 			d.record({ project: proj, version: releaseVersion, os: platformOS, arch: platformArch, sha256: sum });
