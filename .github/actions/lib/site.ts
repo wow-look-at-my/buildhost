@@ -8,11 +8,11 @@ import type { ActionGlobals } from './action-globals';
 import type { Response } from './client';
 
 const need = createRequire(import.meta.url);
-const { resolveToken } = need('./resources.ts') as typeof import('./resources');
+const { tokenSource } = need('./oidc.ts') as typeof import('./oidc');
 const { siteBranch, projectOf } = need('./deployment.ts') as typeof import('./deployment');
 const { client } = need('./client.ts') as typeof import('./client');
-const { putFile } = need('./upload.ts') as typeof import('./upload');
-const { readChunk } = need('./file-io.ts') as typeof import('./file-io');
+const { putFile, chunkSizeFrom } = need('./upload.ts') as typeof import('./upload');
+const { fileBody } = need('./file-io.ts') as typeof import('./file-io');
 const { fileSHA256 } = need('./portable-manifest.ts') as typeof import('./portable-manifest');
 const { recordSite } = need('./storage-record.ts') as typeof import('./storage-record');
 const { commentPreview } = need('./preview-comment.ts') as typeof import('./preview-comment');
@@ -22,14 +22,6 @@ const { downloadRunArtifact } = need('./run-artifact.ts') as typeof import('./ru
 export function sitesBase(apex: string): string {
 	const su = new URL(apex);
 	return `${su.protocol}//sites.${su.host}`;
-}
-
-/** The chunk size from the chunk_size input: empty is the default, no disables chunking, and anything else must be a non-negative integer. */
-export function chunkSizeFrom(input: string): number | string {
-	if (!input) return 64 * 1024 * 1024;
-	const n = Number(input);
-	if (!Number.isInteger(n) || n < 0) return `invalid chunk_size '${input}': expected a non-negative integer (bytes)`;
-	return n === 0 ? -1 : n;
 }
 
 /** The URL the server reports for the site, else the canonical one for a server predating that field. The server owns the URL grammar. */
@@ -81,7 +73,6 @@ export async function publishSite(g: ActionGlobals): Promise<void> {
 	const project = projectOf(g);
 	const branch = siteBranch(String(g.inputs.branch));
 	const gitCommit = String(g.inputs.git_commit || g.github.sha);
-	const bearer = await resolveToken(apex, String(g.inputs.token));
 
 	// built to disk, from source_dir or from the run's artifact
 	const archivePath = join(tmpdir(), artifactName ? 'site.zip' : 'site.tar.gz');
@@ -96,14 +87,14 @@ export async function publishSite(g: ActionGlobals): Promise<void> {
 	const sha256 = await fileSHA256(archivePath);
 
 	// session requests go to the server, and the upload itself to the sites endpoint
-	const api = client('', bearer, g.core);
+	const api = client('', tokenSource(apex, String(g.inputs.token)), g.core);
 	const send = (method: string, url: string, body?: string | Buffer | null, headers?: Record<string, string>) =>
 		api(method, url.startsWith('/') ? `${apex}${url}` : url, body, headers);
 	let resp: Response;
 	try {
 		resp = await putFile(send, g.core, {
 			urlPath: `${sitesBase(apex)}/${project}/branch/${branch}`,
-			body: { size, sha256, read: (offset, length) => readChunk(nodeFs, archivePath, offset, length) },
+			body: await fileBody(nodeFs, archivePath, sha256),
 			headers: {
 				'Content-Type': artifactName ? 'application/zip' : 'application/gzip',
 				'X-Git-Commit': gitCommit,

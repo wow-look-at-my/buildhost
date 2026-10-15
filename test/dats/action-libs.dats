@@ -79,6 +79,12 @@ tests:
 		stdout:
 			- "site: all checks passed"
 
+	- desc: an artifact upload goes direct or in chunks, re-mints an OIDC token the server refuses mid-upload, and outputs the stored sha256
+	  cmd: node test/actions/upload-artifact.test.ts
+	  outputs:
+		stdout:
+			- "upload-artifact: all checks passed"
+
 	- desc: the GitHub Deployment registers for a real server only, and its terminal status follows the publish
 	  cmd: node test/actions/deployment.test.ts
 	  outputs:

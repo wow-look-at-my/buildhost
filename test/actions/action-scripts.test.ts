@@ -132,7 +132,7 @@ function render(text: string): string {
 	});
 }
 
-const typeChecked = ['buildhost-publish', 'buildhost-create-oidc-policy', 'buildhost-create-project', 'buildhost-create-release', 'buildhost-create-token', 'buildhost-get', 'buildhost-publish-release', 'buildhost-download', 'buildhost-docker-push', 'buildhost-publish-docker', 'buildhost-publish-site'];
+const typeChecked = ['buildhost-publish', 'buildhost-create-oidc-policy', 'buildhost-create-project', 'buildhost-create-release', 'buildhost-create-token', 'buildhost-get', 'buildhost-publish-release', 'buildhost-download', 'buildhost-docker-push', 'buildhost-publish-docker', 'buildhost-publish-site', 'buildhost-upload-artifact'];
 const scripts = typeChecked.flatMap((action) => {
 	const actionDir = path.join(root, '.github/actions', action);
 	return blocks(fs.readFileSync(path.join(actionDir, 'action.yml'), 'utf8')).filter((b) => b.key === 'script').map((b) => ({ ...b, action, actionDir }));

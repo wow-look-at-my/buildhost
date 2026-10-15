@@ -2,7 +2,7 @@
 
 const assert = require('node:assert');
 const docker = require(`${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/docker.ts`);
-const { tempDir } = require('./temp-dir.ts') as typeof import('./temp-dir');
+const { tempDir, oidcIssuer } = require('./fakes.ts') as typeof import('./fakes');
 
 (async () => {
 	assert.deepStrictEqual(docker.defaultTagList('main', 'refs/heads/main', 'c0ffee', 'main'), ['c0ffee', 'main', 'latest'], 'the default branch also tags latest');
@@ -28,7 +28,7 @@ const { tempDir } = require('./temp-dir.ts') as typeof import('./temp-dir');
 	assert.deepStrictEqual(out.secrets, ['tok'], 'the token is masked');
 	assert.strictEqual(out.outputs.digest, 'sha256:abc');
 
-	delete process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+	oidcIssuer();
 	await docker.dockerPush({ ...g, inputs: { ...g.inputs, token: '' } });
 	assert.match(out.failed[0], /OIDC is unavailable/, 'no token and no OIDC fails');
 

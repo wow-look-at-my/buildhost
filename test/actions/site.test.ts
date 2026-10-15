@@ -3,7 +3,8 @@
 const assert = require('node:assert');
 const nodeFs = require('node:fs') as typeof import('node:fs');
 const site = require(`${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/site.ts`);
-const { tempDir } = require('./temp-dir.ts') as typeof import('./temp-dir');
+const upload = require(`${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/upload.ts`);
+const { tempDir } = require('./fakes.ts') as typeof import('./fakes');
 
 type Call = { method: string; url: string; headers: Record<string, string> };
 
@@ -17,7 +18,7 @@ function stub(directLimit: number) {
 		const json = (status: number, v: unknown) => new Response(JSON.stringify(v), { status });
 		if (u.pathname === '/api/v1/server-info') return json(200, { max_direct_upload_bytes: directLimit });
 		if (method === 'POST' && u.pathname === '/api/v1/uploads') return json(201, { id: 's1' });
-		if (method === 'PATCH') { committed += (init.body as Buffer).length; return json(200, { size: committed }); }
+		if (method === 'PATCH') { committed += init.body instanceof Blob ? init.body.size : init.body.length; return json(200, { size: committed }); }
 		if (method === 'PUT' && u.host === 'sites.bh.example') return json(201, { url: 'https://sites.bh.example/r/@main/' });
 		return json(404, { error: 'unexpected' });
 	}) as any;
@@ -43,9 +44,9 @@ function globals(inputs: Record<string, string>, pr?: number) {
 
 (async () => {
 	assert.strictEqual(site.sitesBase('https://pazer.build'), 'https://sites.pazer.build');
-	assert.strictEqual(site.chunkSizeFrom(''), 64 * 1024 * 1024);
-	assert.strictEqual(site.chunkSizeFrom('0'), -1, 'chunk_size 0 is always direct');
-	assert.match(site.chunkSizeFrom('-3'), /invalid chunk_size/);
+	assert.strictEqual(upload.chunkSizeFrom(''), 64 * 1024 * 1024);
+	assert.strictEqual(upload.chunkSizeFrom('0'), -1, 'chunk_size 0 is always direct');
+	assert.match(upload.chunkSizeFrom('-3'), /invalid chunk_size/);
 	assert.strictEqual(site.siteURLFrom({}, 'https://sites.s', 'p', 'b'), 'https://sites.s/p/@b/', 'an older server gets the canonical URL');
 
 	let calls = stub(1 << 20);

@@ -5,7 +5,7 @@ const fs = require('node:fs') as typeof import('node:fs');
 const path = require('node:path') as typeof import('node:path');
 const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/portable-manifest`;
 const { readPortableManifest, manifestName } = require(`${lib}.ts`);
-const { tempDir } = require('./temp-dir.ts') as typeof import('./temp-dir');
+const { tempDir } = require('./fakes.ts') as typeof import('./fakes');
 
 const dir = (files: Record<string, string>): string => tempDir('portable-', files);
 

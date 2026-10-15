@@ -2,6 +2,7 @@
 
 const assert = require('node:assert');
 const mod = require(`${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/resources.ts`);
+const { stepCore, oidcIssuer } = require('./fakes.ts') as typeof import('./fakes');
 
 type Sent = { url: string; method: string; headers: Record<string, string>; body: unknown };
 
@@ -17,18 +18,16 @@ function serve(answer: (s: Sent) => { status: number; body: string }): Sent[] {
 }
 
 function run(inputs: Record<string, string>) {
-	const out = { failed: [] as string[], warned: [] as string[], outputs: {} as Record<string, string> };
-	const core = { info: () => {}, warning: (m: string) => out.warned.push(m), setFailed: (m: string) => out.failed.push(m), setOutput: (k: string, v: string) => { out.outputs[k] = v; } };
+	const { core, out } = stepCore();
 	const github = { ref_name: 'main', sha: 'c0ffee' };
 	return { g: { core, github, context: {}, octokit: {}, exec: {}, steps: {}, inputs: { server: 'https://bh.example', token: 'tok', ...inputs } }, out };
 }
 
 (async () => {
-	delete process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+	oidcIssuer();
 	assert.strictEqual(await mod.resolveToken('https://bh.example', 'given'), 'given', 'the token input wins');
 	assert.strictEqual(await mod.resolveToken('https://bh.example', ''), '', 'no token and no OIDC is empty');
-	process.env.ACTIONS_ID_TOKEN_REQUEST_URL = 'https://oidc.example/t?a=1';
-	process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = 'bearer';
+	oidcIssuer('https://oidc.example/t?a=1');
 	const minted = serve(() => ({ status: 500, body: '' }));
 	assert.strictEqual(await mod.resolveToken('https://bh.example', ''), 'minted');
 	assert.strictEqual(minted[0].url, 'https://oidc.example/t?a=1&audience=https://bh.example', 'the OIDC token is minted for the server');

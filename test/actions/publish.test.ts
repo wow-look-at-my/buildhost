@@ -3,17 +3,15 @@
 const assert = require('node:assert');
 const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/publish`;
 const { publish, releaseBody, releaseVersionFrom, deploymentURL } = require(`${lib}.ts`);
-const { tempDir } = require('./temp-dir.ts') as typeof import('./temp-dir');
+const { tempDir, stepCore, oidcIssuer } = require('./fakes.ts') as typeof import('./fakes');
 
 type Answer = { status: number; body: string };
 
 function globals(inputs: Record<string, string>) {
-	const failed: string[] = [];
-	const outputs: Record<string, string> = {};
-	const core = { info: () => {}, warning: () => {}, setFailed: (m: string) => failed.push(m), setOutput: (k: string, v: string) => { outputs[k] = v; } };
+	const { core, out } = stepCore();
 	const github = { repository: 'o/tool', ref_name: 'main', sha: 'c0ffee', run_id: '1' };
 	const all = { server: 'https://bh.example', project: '', artifact_name: 'go-build', path: '', version: '', git_branch: '', git_commit: '', create_service: '', default_branch: '', apt_depends: '', ...inputs };
-	return { g: { core, github, context: {}, octokit: {}, exec: {}, inputs: all, steps: {} }, failed, outputs };
+	return { g: { core, github, context: {}, octokit: {}, exec: {}, inputs: all, steps: {} }, failed: out.failed, outputs: out.outputs };
 }
 
 // Answers each request by its method and path, and records it.
@@ -50,13 +48,12 @@ function fakeFetch(route: (method: string, urlPath: string) => Answer) {
 	assert.match(empty.failed[0], /is empty/);
 
 	const files = { tool_linux_amd64: 'elf', tool_darwin_arm64: 'macho' };
-	delete process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+	oidcIssuer();
 	const noOidc = globals({ path: tempDir('publish-', files) });
 	await publish(noOidc.g);
 	assert.match(noOidc.failed[0], /OIDC not available/);
 
-	process.env.ACTIONS_ID_TOKEN_REQUEST_URL = 'https://oidc.example/token?x=1';
-	process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = 'bearer';
+	oidcIssuer('https://oidc.example/token?x=1');
 
 	const seen = fakeFetch((method, urlPath) => {
 		if (urlPath === '/api/v1/server-info') return { status: 200, body: '{"max_direct_upload_bytes":1048576}' };

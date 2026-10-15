@@ -117,12 +117,7 @@ export async function publish(g: ActionGlobals): Promise<void> {
 	let directLimit = -1;
 	const putFile = async (urlPath: string, filePath: string, sum: string, extra?: Record<string, string>) => {
 		if (directLimit < 0) directLimit = await upload.directLimit(api, core);
-		const body = {
-			size: fs.statSync(filePath).size,
-			sha256: sum,
-			read: (offset: number, length: number): Buffer => io.readChunk(fs, filePath, offset, length),
-		};
-		return upload.putFile(api, core, { urlPath, body, headers: extra, directLimit });
+		return upload.putFile(api, core, { urlPath, body: await io.fileBody(fs, filePath, sum), headers: extra, directLimit });
 	};
 
 	const body = releaseBody({
