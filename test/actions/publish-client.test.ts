@@ -1,8 +1,7 @@
 // Behavior tests for .github/actions/lib/client.ts.
 
-const assert = require('node:assert');
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/client`;
-const { client, isTransient } = require(`${lib}.ts`);
+import assert from 'node:assert';
+import { client, isTransient } from '../../.github/actions/lib/client.ts';
 
 assert.strictEqual(isTransient(503, '{}'), true, 'a 5xx is transient');
 assert.strictEqual(isTransient(404, ''), true, 'a proxy 404 with no body is transient');

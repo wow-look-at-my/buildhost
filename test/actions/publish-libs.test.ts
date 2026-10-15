@@ -1,14 +1,13 @@
 // Behavior tests for .github/actions/lib/portable-manifest.ts and .github/actions/lib/client.ts.
 
-const assert = require('node:assert');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const http = require('node:http');
-const libs = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib`;
-// Untyped on purpose: the modules' types are checked where they are CALLED, in the publish composite.
-const { readPortableManifest, fileSHA256, manifestName } = require(`${libs}/portable-manifest.ts`);
-const { client } = require(`${libs}/client.ts`);
+import assert from 'node:assert';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import * as http from 'node:http';
+import * as crypto from 'node:crypto';
+import { readPortableManifest, fileSHA256, manifestName } from '../../.github/actions/lib/portable-manifest.ts';
+import { client } from '../../.github/actions/lib/client.ts';
 
 function recorder() {
 	const failed: string[] = [];
@@ -39,7 +38,7 @@ async function main() {
 		assert.match(rec.failed[0], /bad "file"/);
 	}
 
-	assert.strictEqual(await fileSHA256(path.join(dir, 'app.com')), require('node:crypto').createHash('sha256').update('ape').digest('hex'));
+	assert.strictEqual(await fileSHA256(path.join(dir, 'app.com')), crypto.createHash('sha256').update('ape').digest('hex'));
 
 	let calls = 0;
 	const server = http.createServer((req: any, res: any) => {
@@ -54,7 +53,7 @@ async function main() {
 		res.end('{"ok":true}');
 	});
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-	const base = `http://127.0.0.1:${server.address().port}`;
+	const base = `http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}`;
 	const rec = recorder();
 	const reply = await client(base, 'tok', rec.core, async () => {})('GET', '/api/v1/x');
 	server.close();

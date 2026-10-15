@@ -111,62 +111,10 @@ runs:
       if: ${{ inputs.push == 'true' }}
       uses: wow-look-at-my/actions@typescript#latest
       with:
+        inputs: ${{ toJSON(inputs) }}
         script: |
-          await (async () => {
-            core.setOutput('deployment_id', '');
-            const deployServer: string = "${{ inputs.server }}";
-            const deployHost: string = new URL(deployServer).hostname;
-            // this check finds a target nothing outside the runner can reach
-            if (deployHost === "localhost" || deployHost === "127.0.0.1" || deployHost === "::1" || !deployServer.startsWith("https://")) {
-              // a loopback or plain-http target has nothing true to register as live
-              core.info(`Skipping the GitHub Deployment: ${deployServer} is not a reachable https server, so its deployment URL would point nowhere`);
-              return;
-            }
-            try {
-              const projectInput: string = "${{ inputs.project }}";
-              const project: string = projectInput || github.repository.split('/').pop()!;
-              const envInput: string = "${{ inputs.deployment_environment }}";
-              const environment: string = envInput || `buildhost/${project}`;
-              const defaultBranch: string = context.payload.repository?.default_branch ?? '';
-              const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-              const deploymentRefInput: string = "${{ inputs.deployment_ref }}";
-              // a bare SHA belongs to no branch, so GitHub's branch/PR deployment views show it as never deployed -- pass a branch name here to fix that
-              const ref: string = deploymentRefInput || context.sha;
-              // every publish to a real server registers -- there's no opt-out
-              const dep = await octokit.rest.repos.createDeployment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref,
-                environment,
-                // the API default would try to merge the default branch into ref
-                auto_merge: false,
-                // the API default is "every commit status", and the org's all-builds status is still pending on this sha mid-run -> 409 Conflict
-                required_contexts: [],
-                transient_environment: false,
-                production_environment: defaultBranch !== '' && context.ref === `refs/heads/${defaultBranch}`,
-                description: `buildhost docker publish of ${project}`.slice(0, 140),
-              });
-              const id = (dep.data as any)?.id;
-              // a 2xx response without an id (e.g. the 202 auto-merge shape) counts as no deployment
-              if (typeof id !== 'number') {
-                core.setFailed(`GitHub Deployment not created (HTTP ${dep.status}): the API returned no deployment id`);
-                return;
-              }
-              core.setOutput('deployment_id', String(id));
-              await octokit.rest.repos.createDeploymentStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                deployment_id: id,
-                state: 'in_progress',
-                log_url: runUrl,
-                description: 'Publishing Docker image to buildhost',
-              });
-              core.info(`Created GitHub Deployment ${id} in environment '${environment}'`);
-            } catch (e) {
-              const msg = e instanceof Error ? e.message : String(e);
-              core.setFailed(`Could not create the GitHub Deployment (${msg}). Add 'deployments: write' to this job's permissions block -- job-level permissions REPLACE workflow-level ones, so add it alongside the ones the job already declares. Registering the publish is part of publishing and cannot be turned off.`);
-            }
-          })();
+          const lib = require(${{ toJSON(format('{0}/../lib/deployment.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/deployment', github.action_path)) }});
+          await lib.createDockerDeployment({ core, github, context, octokit, exec, inputs, steps });
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -182,16 +130,10 @@ runs:
       if: ${{ inputs.tags == '' }}
       uses: wow-look-at-my/actions@typescript#latest
       with:
+        inputs: ${{ toJSON(inputs) }}
         script: |
-          // mirrors GITHUB_REF_NAME: the branch for refs/heads/*, the git tag for refs/tags/*, "<pr>/merge" for pulls
-          const refName: string = env.GITHUB_REF_NAME ?? context.ref.replace(/^refs\/[^/]+\//, "");
-          const defaultBranch: string = context.payload.repository?.default_branch ?? "master";
-          // docker-sanitized so the result is always a bare buildhost-bound tag, e.g. "claude/foo" -> "claude-foo", never a foreign reference
-          const refTag = refName.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[.-]+/, "");
-          const tags = [context.sha, refTag].filter(Boolean);
-          if (context.ref === `refs/heads/${defaultBranch}`) tags.push("latest");
-          core.setOutput("tags", tags.join("\n"));
-          core.info(`tags input omitted; defaulting to: ${tags.join(", ")}`);
+          const lib = require(${{ toJSON(format('{0}/../lib/docker.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/docker', github.action_path)) }});
+          await lib.defaultTags({ core, github, context, octokit, exec, inputs, steps });
 
     - name: Resolve image references
       id: refs
@@ -337,35 +279,8 @@ runs:
       if: ${{ always() && steps.deployment.outputs.deployment_id != '' }}
       uses: wow-look-at-my/actions@typescript#latest
       with:
+        inputs: ${{ toJSON(inputs) }}
+        steps: ${{ toJSON(steps) }}
         script: |
-          await (async () => {
-            try {
-              const server: string = "${{ inputs.server }}";
-              const projectInput: string = "${{ inputs.project }}";
-              const project: string = projectInput || github.repository.split('/').pop()!;
-              // a failure before the build (refs, or buildx setup) leaves this 'skipped', which must not count as success below
-              const buildOutcome: string = "${{ steps.build.outcome }}";
-              const outcomes: string[] = [
-                "${{ steps.refs.outcome }}",
-                buildOutcome,
-                "${{ steps.push-buildhost.outcome }}",
-                "${{ steps.push-foreign.outcome }}",
-              ];
-              // 'skipped' push steps are fine -- which ones ran depends on which registries the tags target
-              const ok = buildOutcome === 'success' && outcomes.every((o) => o !== 'failure' && o !== 'cancelled');
-              const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-              await octokit.rest.repos.createDeploymentStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                deployment_id: Number("${{ steps.deployment.outputs.deployment_id }}"),
-                state: ok ? 'success' : 'failure',
-                log_url: runUrl,
-                ...(ok ? { environment_url: `${server}/projects/${project}` } : {}),
-                description: ok ? 'Docker image published to buildhost' : 'buildhost docker publish failed',
-              });
-              core.info(`GitHub Deployment marked ${ok ? 'success' : 'failure'}`);
-            } catch (e) {
-              const msg = e instanceof Error ? e.message : String(e);
-              core.setFailed(`Could not post the terminal GitHub Deployment status (${msg}); the deployment would be left stuck in_progress`);
-            }
-          })();
+          const lib = require(${{ toJSON(format('{0}/../lib/deployment.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/deployment', github.action_path)) }});
+          await lib.finishDockerDeployment({ core, github, context, octokit, exec, inputs, steps });

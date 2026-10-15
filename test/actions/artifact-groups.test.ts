@@ -1,9 +1,7 @@
 // Behavior tests for .github/actions/lib/artifact-groups.ts.
 
-const assert = require('node:assert');
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/artifact-groups`;
-// Untyped on purpose: the module's types are checked where it is CALLED, in the publish composite.
-const { findArtifacts, projectForBinary } = require(`${lib}.ts`);
+import assert from 'node:assert';
+import { findArtifacts, projectForBinary } from '../../.github/actions/lib/artifact-groups.ts';
 
 const dir = (files: string[], manifest: unknown = null, present: string[] = files) => ({
 	files,
@@ -21,7 +19,7 @@ assert.equal(projectForBinary('tool', 'other'), 'tool/other');
 	const found = findArtifacts(dir(['tool_linux_amd64', 'tool_windows_amd64.exe', 'tool-client_darwin_arm64', 'checksums.txt', 'x.zip', 'README']), 'tool');
 	assert.ok(found.ok);
 	assert.deepEqual([...found.groups.keys()].sort(), ['tool', 'tool/client']);
-	assert.deepEqual(found.groups.get('tool').slots, [
+	assert.deepEqual(found.groups.get('tool')!.slots, [
 		{ file: 'tool_linux_amd64', os: 'linux', arch: 'amd64' },
 		{ file: 'tool_windows_amd64.exe', os: 'windows', arch: 'amd64' },
 	]);
@@ -33,7 +31,7 @@ assert.equal(projectForBinary('tool', 'other'), 'tool/other');
 	const found = findArtifacts(dir(['tool_cosmo_any', 'buildhost-artifacts.json'], manifest), 'tool');
 	assert.ok(found.ok);
 	assert.equal(found.files.length, 0);
-	assert.deepEqual(found.groups.get('tool').portable, [{ file: 'tool_cosmo_any', filename: 'tool_cosmo_any', kind: 'binary', platforms: ['linux/amd64', 'darwin/arm64'] }]);
+	assert.deepEqual(found.groups.get('tool')!.portable, [{ file: 'tool_cosmo_any', filename: 'tool_cosmo_any', kind: 'binary', platforms: ['linux/amd64', 'darwin/arm64'] }]);
 }
 
 // A served filename names the project.
@@ -56,14 +54,14 @@ const bad: [unknown, RegExp][] = [
 ];
 for (const [manifest, want] of bad) {
 	const found = findArtifacts(dir(['tool_cosmo_any'], manifest), 'tool');
-	assert.equal(found.ok, false);
+	assert.ok(!found.ok);
 	assert.match(found.message, want);
 }
 
 // A directory with nothing to publish fails and lists what it holds.
 {
 	const found = findArtifacts(dir(['README', 'checksums.txt']), 'tool');
-	assert.equal(found.ok, false);
+	assert.ok(!found.ok);
 	assert.match(found.message, /No matrix artifacts.*Files: README, checksums.txt/);
 }
 
