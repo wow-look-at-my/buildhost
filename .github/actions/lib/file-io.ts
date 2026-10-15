@@ -39,3 +39,20 @@ export function readChunk(fs: Fs, filePath: string, offset: number, length: numb
 	}
 	return buf;
 }
+
+/** The parts of node's fs a fileBody reads through, beside the ones readChunk takes. */
+export interface BodyFs extends Fs {
+	statSync(p: string): { size: number };
+	openAsBlob(p: string): Promise<Blob>;
+}
+
+/** An upload Body for a file: its size and sha256, with chunks read from disk and streamed as Blob slices. */
+export async function fileBody(fs: BodyFs, filePath: string, sha256: string): Promise<import('./upload').Body> {
+	const whole = await fs.openAsBlob(filePath);
+	return {
+		size: fs.statSync(filePath).size,
+		sha256,
+		read: (offset, length) => readChunk(fs, filePath, offset, length),
+		blob: (offset, length) => whole.slice(offset, offset + length),
+	};
+}
