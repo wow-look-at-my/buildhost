@@ -91,7 +91,7 @@ runs:
         inputs: ${{ toJSON(inputs) }}
         script: |
           const lib = require(${{ toJSON(format('{0}/../lib/deployment.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/deployment', github.action_path)) }});
-          await lib.createDeployment({ core, github, context, octokit, exec, inputs, steps });
+          await lib.createPublishDeployment({ core, github, context, octokit, exec, inputs, steps });
 
     - id: publish
       uses: wow-look-at-my/actions@typescript#latest
@@ -113,4 +113,4 @@ runs:
         steps: ${{ toJSON(steps) }}
         script: |
           const lib = require(${{ toJSON(format('{0}/../lib/deployment.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/deployment', github.action_path)) }});
-          await lib.finishDeployment({ core, github, context, octokit, exec, inputs, steps });
+          await lib.finishPublishDeployment({ core, github, context, octokit, exec, inputs, steps });

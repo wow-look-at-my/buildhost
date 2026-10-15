@@ -1,40 +1,50 @@
-// The GitHub Deployment a buildhost publish registers in the calling repo.
+// The GitHub Deployment a buildhost publish registers in the calling repo, for buildhost-publish and buildhost-publish-docker.
 
 import type { ActionGlobals } from './action-globals';
 
-/** Registers the publish as an in-progress GitHub Deployment, and sets the deployment_id output. A loopback or plain-http server registers nothing. */
-export async function createDeployment(g: ActionGlobals): Promise<void> {
-	const { core, github, context, octokit, inputs } = g;
+/** What one publish registers: the ref and whether it is the production environment, and how its statuses read. */
+export interface DeploymentSpec {
+	ref: string;
+	production: boolean;
+	/** The start of the deployment description, such as "buildhost publish". */
+	kind: string;
+	/** The description of the in-progress status. */
+	inProgress: string;
+}
+
+/** The project a deployment is for: the project input, else the repository name. */
+function projectOf(g: ActionGlobals): string {
+	return String(g.inputs.project || g.github.repository.split('/').pop()!);
+}
+
+/** Registers an in-progress GitHub Deployment, and sets the deployment_id output. A loopback or plain-http server registers nothing. */
+export async function createDeployment(g: ActionGlobals, spec: DeploymentSpec): Promise<void> {
+	const { core, context, octokit, inputs } = g;
 	core.setOutput('deployment_id', '');
 	const deployServer: string = String(inputs.server);
 	const deployHost: string = new URL(deployServer).hostname;
 	// this check finds a target nothing outside the runner can reach
 	if (deployHost === "localhost" || deployHost === "127.0.0.1" || deployHost === "::1" || !deployServer.startsWith("https://")) {
-		// a loopback or plain-http target has nothing true to register as live
 		core.info(`Skipping the GitHub Deployment: ${deployServer} is not a reachable https server, so its deployment URL would point nowhere`);
 		return;
 	}
 	try {
-		const project: string = String(inputs.project || github.repository.split('/').pop()!);
+		const project = projectOf(g);
 		const environment: string = String(inputs.deployment_environment || `buildhost/${project}`);
-		// a bare SHA belongs to no branch.
-		const ref: string = String(inputs.deployment_ref || inputs.git_commit || context.sha);
-		const branch: string = String(inputs.git_branch || github.ref_name || '');
-		const defaultBranch: string = context.payload.repository?.default_branch ?? '';
 		const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
 		// every publish to a real server registers -- there's no opt-out
 		const dep = await octokit.rest.repos.createDeployment({
 			owner: context.repo.owner,
 			repo: context.repo.repo,
-			ref,
+			ref: spec.ref,
 			environment,
 			// the API default would try to merge the default branch into ref
 			auto_merge: false,
 			// the API default is "every commit status", and the org's all-builds status is still pending on this sha mid-run -> 409 Conflict
 			required_contexts: [],
 			transient_environment: false,
-			production_environment: defaultBranch !== '' && branch === defaultBranch,
-			description: `buildhost publish of ${project}`.slice(0, 140),
+			production_environment: spec.production,
+			description: `${spec.kind} of ${project}`.slice(0, 140),
 		});
 		const id = (dep.data as any)?.id;
 		if (typeof id !== 'number') {
@@ -48,7 +58,7 @@ export async function createDeployment(g: ActionGlobals): Promise<void> {
 			deployment_id: id,
 			state: 'in_progress',
 			log_url: runUrl,
-			description: 'Publishing to buildhost',
+			description: spec.inProgress,
 		});
 		core.info(`Created GitHub Deployment ${id} in environment '${environment}'`);
 	} catch (e) {
@@ -57,12 +67,10 @@ export async function createDeployment(g: ActionGlobals): Promise<void> {
 	}
 }
 
-/** Posts the terminal status of the deployment createDeployment registered, from the outcome of the publish step. */
-export async function finishDeployment(g: ActionGlobals): Promise<void> {
+/** Posts the terminal status of a deployment createDeployment registered. */
+export async function finishDeployment(g: ActionGlobals, ok: boolean, environmentUrl: string, descriptions: { success: string; failure: string }): Promise<void> {
 	const { core, context, octokit, steps } = g;
 	try {
-		const ok = steps.publish.outcome === 'success';
-		const environmentUrl: string = steps.publish.outputs.deployment_url ?? '';
 		const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
 		await octokit.rest.repos.createDeploymentStatus({
 			owner: context.repo.owner,
@@ -71,11 +79,55 @@ export async function finishDeployment(g: ActionGlobals): Promise<void> {
 			state: ok ? 'success' : 'failure',
 			log_url: runUrl,
 			...(ok && environmentUrl !== '' ? { environment_url: environmentUrl } : {}),
-			description: ok ? 'Published to buildhost' : 'buildhost publish failed',
+			description: ok ? descriptions.success : descriptions.failure,
 		});
 		core.info(`GitHub Deployment marked ${ok ? 'success' : 'failure'}`);
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		core.setFailed(`Could not post the terminal GitHub Deployment status (${msg}); the deployment would be left stuck in_progress`);
 	}
+}
+
+/** buildhost-publish's deployment. Its ref is deployment_ref, else git_commit, else the run sha, because a bare SHA belongs to no branch. */
+export async function createPublishDeployment(g: ActionGlobals): Promise<void> {
+	const { github, context, inputs } = g;
+	const branch = String(inputs.git_branch || github.ref_name || '');
+	const defaultBranch: string = context.payload.repository?.default_branch ?? '';
+	await createDeployment(g, {
+		ref: String(inputs.deployment_ref || inputs.git_commit || context.sha),
+		production: defaultBranch !== '' && branch === defaultBranch,
+		kind: 'buildhost publish',
+		inProgress: 'Publishing to buildhost',
+	});
+}
+
+/** buildhost-publish's terminal status, from the outcome of its publish step and the deployment_url it set. */
+export async function finishPublishDeployment(g: ActionGlobals): Promise<void> {
+	const publish = g.steps.publish;
+	await finishDeployment(g, publish.outcome === 'success', publish.outputs.deployment_url ?? '', { success: 'Published to buildhost', failure: 'buildhost publish failed' });
+}
+
+/** buildhost-publish-docker's deployment. Its ref is deployment_ref, else the run sha, and only a push to the default branch is production. */
+export async function createDockerDeployment(g: ActionGlobals): Promise<void> {
+	const { context, inputs } = g;
+	const defaultBranch: string = context.payload.repository?.default_branch ?? '';
+	await createDeployment(g, {
+		ref: String(inputs.deployment_ref || context.sha),
+		production: defaultBranch !== '' && context.ref === `refs/heads/${defaultBranch}`,
+		kind: 'buildhost docker publish',
+		inProgress: 'Publishing Docker image to buildhost',
+	});
+}
+
+/** Whether a docker publish succeeded: the build succeeded, and no step around it failed or was cancelled. A skipped push is fine. */
+export function dockerPublishOk(steps: ActionGlobals['steps']): boolean {
+	const build = steps.build?.outcome ?? 'skipped';
+	const outcomes = [steps.refs?.outcome, build, steps['push-buildhost']?.outcome, steps['push-foreign']?.outcome];
+	return build === 'success' && outcomes.every((o) => o !== 'failure' && o !== 'cancelled');
+}
+
+/** buildhost-publish-docker's terminal status. A success names the project page as the live URL. */
+export async function finishDockerDeployment(g: ActionGlobals): Promise<void> {
+	const ok = dockerPublishOk(g.steps);
+	await finishDeployment(g, ok, ok ? `${String(g.inputs.server)}/projects/${projectOf(g)}` : '', { success: 'Docker image published to buildhost', failure: 'buildhost docker publish failed' });
 }

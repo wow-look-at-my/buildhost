@@ -67,6 +67,12 @@ tests:
 		stdout:
 			- "resources: all checks passed"
 
+	- desc: a docker publish defaults its tags from the ref, and the push sends every ref with the token and outputs the layout's digest
+	  cmd: node test/actions/docker.test.ts
+	  outputs:
+		stdout:
+			- "docker: all checks passed"
+
 	- desc: the GitHub Deployment registers for a real server only, and its terminal status follows the publish
 	  cmd: node test/actions/deployment.test.ts
 	  outputs:

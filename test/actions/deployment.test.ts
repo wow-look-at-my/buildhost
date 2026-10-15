@@ -2,7 +2,7 @@
 
 const assert = require('node:assert');
 const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/deployment`;
-const { createDeployment, finishDeployment } = require(`${lib}.ts`);
+const { createPublishDeployment: createDeployment, finishPublishDeployment: finishDeployment, createDockerDeployment, finishDockerDeployment, dockerPublishOk } = require(`${lib}.ts`);
 
 function fakeGlobals(over: { inputs?: Record<string, string>; steps?: unknown; createDeployment?: (a: any) => any }) {
 	const calls: { name: string; args: any }[] = [];
@@ -75,6 +75,25 @@ const steps = (outcome: string) => ({ publish: { outcome, outputs: { deployment_
 	await finishDeployment(failed.g);
 	assert.strictEqual(failed.calls[0].args.state, 'failure');
 	assert.strictEqual(failed.calls[0].args.environment_url, undefined, 'a failed publish names no live URL');
+
+	const docker = fakeGlobals({ inputs: { deployment_ref: '' } });
+	(docker.g.context as any).ref = 'refs/heads/main';
+	await createDockerDeployment(docker.g);
+	assert.strictEqual(docker.calls[0].args.ref, 'c0ffee', 'a docker publish ignores git_commit');
+	assert.strictEqual(docker.calls[0].args.production_environment, true, 'a push to the default branch is production');
+	assert.match(docker.calls[0].args.description, /^buildhost docker publish of r/);
+	assert.strictEqual(docker.calls[1].args.description, 'Publishing Docker image to buildhost');
+
+	const built = { refs: { outcome: 'success' }, build: { outcome: 'success' }, 'push-buildhost': { outcome: 'skipped' }, 'push-foreign': { outcome: 'skipped' } };
+	assert.strictEqual(dockerPublishOk(built), true, 'a skipped push is fine');
+	assert.strictEqual(dockerPublishOk({ ...built, build: { outcome: 'skipped' } }), false, 'a build that never ran is not a success');
+	assert.strictEqual(dockerPublishOk({ ...built, 'push-foreign': { outcome: 'failure' } }), false);
+
+	const dockerDone = fakeGlobals({ steps: { ...built, deployment: { outputs: { deployment_id: '9' } } } });
+	await finishDockerDeployment(dockerDone.g);
+	assert.strictEqual(dockerDone.calls[0].args.state, 'success');
+	assert.strictEqual(dockerDone.calls[0].args.environment_url, 'https://pazer.build/projects/r');
+	assert.strictEqual(dockerDone.calls[0].args.description, 'Docker image published to buildhost');
 
 	console.log('deployment: all checks passed');
 })();

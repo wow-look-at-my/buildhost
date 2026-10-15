@@ -19,6 +19,7 @@ const buildhost = load('./client.ts') as typeof import('./client');
 const publishGroup = load('./publish-group.ts') as typeof import('./publish-group');
 const { fileSHA256 } = load('./portable-manifest.ts') as typeof import('./portable-manifest');
 const io = load('./file-io.ts') as typeof import('./file-io');
+const { mintOidcToken } = load('./oidc.ts') as typeof import('./oidc');
 
 /** The create_service, default_branch and apt_depends fields go only when set, so an empty input leaves the stored setting untouched. */
 export function releaseBody(f: { gitBranch: string; gitCommit: string; version: string; createService: string; defaultBranch: string; aptDepends: string }): string {
@@ -93,14 +94,11 @@ export async function publish(g: ActionGlobals): Promise<void> {
 		await exec.exec("unzip", ["-o", zipPath, "-d", sourceDir]);
 	}
 
-	const idTokenUrl = process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
-	const idTokenBearer = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
-	if (!idTokenUrl || !idTokenBearer) {
+	const token = await mintOidcToken(server);
+	if (token === null) {
 		core.setFailed("OIDC not available. Add 'permissions: { id-token: write }'.");
 		return;
 	}
-	const idResp = await fetch(`${idTokenUrl}&audience=${server}`, { headers: { Authorization: `Bearer ${idTokenBearer}` } });
-	const token: string = ((await idResp.json()) as { value: string }).value;
 	if (!token) { core.setFailed("Failed to obtain OIDC token"); return; }
 
 	// artifacts accumulate here as they're accepted, for the storage record
