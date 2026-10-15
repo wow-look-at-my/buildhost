@@ -79,11 +79,11 @@ tests:
 		stdout:
 			- "download: all checks passed"
 
-	- desc: download finds its lib from a container job, where the action path names the host
-	  cmd: node test/actions/download-action-path.test.ts
+	- desc: download asks dl for the runner's platform, writes the file, and reports a miss as an output when it is not required
+	  cmd: node test/actions/download.test.ts
 	  outputs:
 		stdout:
-			- "download-action-path: all checks passed"
+			- "download-action: all checks passed"
 
 	- desc: the portable manifest reads every entry, and fails a manifest it cannot use
 	  cmd: node test/actions/portable-manifest.test.ts
