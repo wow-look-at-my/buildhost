@@ -103,15 +103,24 @@ const sampleInputs: Record<string, string> = {
 	deployment_environment: '',
 	deployment_ref: '',
 };
-const sampleContext: Record<string, string> = {
+const sampleSteps = {
+	publish: { outcome: 'failure', conclusion: 'failure', outputs: { deployment_url: '' } },
+	deployment: { outcome: 'success', conclusion: 'success', outputs: { deployment_id: '1' } },
+};
+const sampleContext: Record<string, unknown> = {
 	'github.action_path': actionDir,
-	'steps.publish.outcome': 'failure',
-	'steps.publish.outputs.deployment_url': '',
-	'steps.deployment.outputs.deployment_id': '1',
+	inputs: sampleInputs,
+	steps: sampleSteps,
 };
 
-function sample(expr: string): string {
+// The value of one expression the scripts use: a context path, or format() over them.
+function sample(expr: string): unknown {
 	const name = expr.trim();
+	const fmt = /^format\('([^']*)',\s*(.*)\)$/.exec(name);
+	if (fmt !== null) {
+		const args = fmt[2].split(',').map((a) => String(sample(a)));
+		return fmt[1].replace(/\{(\d+)\}/g, (_m, n: string) => args[Number(n)]);
+	}
 	const v = name.startsWith('inputs.') ? sampleInputs[name.slice('inputs.'.length)] : sampleContext[name];
 	assert.ok(v !== undefined, `no sample value for ${name}`);
 	return v;
@@ -121,7 +130,7 @@ function sample(expr: string): string {
 function render(text: string): string {
 	return text.replace(/\$\{\{([\s\S]*?)\}\}/g, (_m, expr: string) => {
 		const json = /^\s*toJSON\((.*)\)\s*$/.exec(expr);
-		return json === null ? sample(expr) : JSON.stringify(sample(json[1]));
+		return json === null ? String(sample(expr)) : JSON.stringify(sample(json[1]));
 	});
 }
 
@@ -134,8 +143,11 @@ for (const script of scripts) {
 		GITHUB_REPOSITORY: 'o/r',
 		GITHUB_REF_NAME: 'main',
 		GITHUB_SHA: '0'.repeat(40),
+		// The script runs after the type-check, so the GitHub API points at a port nothing listens on.
+		GITHUB_API_URL: 'http://127.0.0.1:1',
 		INPUT_SCRIPT: render(script.body),
 		INPUT_INPUTS: JSON.stringify(sampleInputs),
+		INPUT_STEPS: JSON.stringify(sampleSteps),
 		'INPUT_GITHUB-TOKEN': 'token',
 	};
 	const run = spawnSync(process.execPath, [typescriptAction], { env, encoding: 'utf8' });

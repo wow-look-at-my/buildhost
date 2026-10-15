@@ -55,6 +55,18 @@ tests:
 		stdout:
 			- "publish-libs: all checks passed"
 
+	- desc: the publish step creates a release per project, uploads each platform and publishes, and fails on a bad input or a refused release
+	  cmd: node test/actions/publish.test.ts
+	  outputs:
+		stdout:
+			- "publish: all checks passed"
+
+	- desc: the GitHub Deployment registers for a real server only, and its terminal status follows the publish
+	  cmd: node test/actions/deployment.test.ts
+	  outputs:
+		stdout:
+			- "deployment: all checks passed"
+
 	- desc: download aborts a transfer that goes silent, and finishes a slow one that keeps sending
 	  cmd: node test/actions/download-stall.test.ts
 	  outputs:
