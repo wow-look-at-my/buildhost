@@ -112,9 +112,7 @@ runs:
       uses: wow-look-at-my/actions@typescript#latest
       with:
         inputs: ${{ toJSON(inputs) }}
-        script: |
-          const lib = require(${{ toJSON(format('{0}/../lib/deployment.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/deployment', github.action_path)) }});
-          await lib.createDockerDeployment({ core, github, context, octokit, exec, inputs, steps });
+        file: ${{ github.action_path }}/../lib/steps/publish-docker-deployment.ts
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -131,9 +129,7 @@ runs:
       uses: wow-look-at-my/actions@typescript#latest
       with:
         inputs: ${{ toJSON(inputs) }}
-        script: |
-          const lib = require(${{ toJSON(format('{0}/../lib/docker.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/docker', github.action_path)) }});
-          await lib.defaultTags({ core, github, context, octokit, exec, inputs, steps });
+        file: ${{ github.action_path }}/../lib/steps/publish-docker-default-tags.ts
 
     - name: Resolve image references
       id: refs
@@ -281,6 +277,4 @@ runs:
       with:
         inputs: ${{ toJSON(inputs) }}
         steps: ${{ toJSON(steps) }}
-        script: |
-          const lib = require(${{ toJSON(format('{0}/../lib/deployment.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/deployment', github.action_path)) }});
-          await lib.finishDockerDeployment({ core, github, context, octokit, exec, inputs, steps });
+        file: ${{ github.action_path }}/../lib/steps/publish-docker-deployment-status.ts

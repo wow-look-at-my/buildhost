@@ -67,6 +67,4 @@ runs:
       uses: wow-look-at-my/actions@typescript#latest
       with:
         inputs: ${{ toJSON(inputs) }}
-        script: |
-          const lib = require(${{ toJSON(format('{0}/../lib/download.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/download', github.action_path)) }});
-          await lib.download({ core, github, context, octokit, exec, inputs, steps });
+        file: ${{ github.action_path }}/../lib/steps/download-download.ts

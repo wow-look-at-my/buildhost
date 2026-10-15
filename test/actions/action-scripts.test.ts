@@ -5,6 +5,7 @@ const fs = require('node:fs') as typeof import('node:fs');
 const os = require('node:os') as typeof import('node:os');
 const path = require('node:path') as typeof import('node:path');
 const { spawnSync } = require('node:child_process') as typeof import('node:child_process');
+const { stripTypeScriptTypes } = require('node:module');
 
 const maxExpression = 21000;
 const root = process.env.GITHUB_WORKSPACE ?? process.cwd();
@@ -132,13 +133,34 @@ function render(text: string): string {
 	});
 }
 
-const typeChecked = ['buildhost-publish', 'buildhost-create-oidc-policy', 'buildhost-create-project', 'buildhost-create-release', 'buildhost-create-token', 'buildhost-get', 'buildhost-publish-release', 'buildhost-download', 'buildhost-docker-push', 'buildhost-publish-docker', 'buildhost-publish-site', 'buildhost-upload-artifact'];
-const scripts = typeChecked.flatMap((action) => {
+// Each typescript step of every action: an inline script, or a file under the action's own path.
+type TsStep = { action: string; actionDir: string; line: number; input: 'INPUT_SCRIPT' | 'INPUT_FILE'; value: string };
+const tsSteps: TsStep[] = [];
+for (const action of fs.readdirSync(path.join(root, '.github/actions'))) {
 	const actionDir = path.join(root, '.github/actions', action);
-	return blocks(fs.readFileSync(path.join(actionDir, 'action.yml'), 'utf8')).filter((b) => b.key === 'script').map((b) => ({ ...b, action, actionDir }));
-});
-for (const script of scripts) {
-	sampleContext['github.action_path'] = script.actionDir;
+	const file = path.join(actionDir, 'action.yml');
+	if (!fs.existsSync(file)) continue;
+	const text = fs.readFileSync(file, 'utf8');
+	for (const b of blocks(text)) if (b.key === 'script') tsSteps.push({ action, actionDir, line: b.line, input: 'INPUT_SCRIPT', value: b.body });
+	text.split('\n').forEach((l, i) => {
+		const m = /^\s+file: (\$\{\{ github\.action_path \}\}\/\S+\.ts)\s*$/.exec(l);
+		if (m) tsSteps.push({ action, actionDir, line: i + 1, input: 'INPUT_FILE', value: m[1] });
+	});
+}
+assert.ok(tsSteps.length > 0, 'no action has a typescript step');
+
+// A type belongs in a lib module, typed there, so a script that declares one fails. Type stripping erases a declaration and a type literal's braces.
+for (const step of tsSteps.filter((s) => s.input === 'INPUT_SCRIPT')) {
+	sampleContext['github.action_path'] = step.actionDir;
+	const src = `async function step() {\n${render(step.value)}\n}`;
+	const stripped: string = stripTypeScriptTypes(src);
+	let erased = '';
+	for (let k = 0; k < src.length; k++) if (stripped[k] !== src[k]) erased += src[k];
+	assert.ok(!/[{]|\btype\b|\binterface\b/.test(erased), `${step.action}/action.yml:${step.line}: the script declares a type (${erased.replace(/\s+/g, ' ').trim()}). Types and common code go in .github/actions/lib.`);
+}
+
+for (const step of tsSteps) {
+	sampleContext['github.action_path'] = step.actionDir;
 	const env: Record<string, string | undefined> = {
 		...process.env,
 		GITHUB_WORKSPACE: root,
@@ -147,14 +169,14 @@ for (const script of scripts) {
 		GITHUB_SHA: '0'.repeat(40),
 		// The script runs after the type-check, so the GitHub API points at a port nothing listens on.
 		GITHUB_API_URL: 'http://127.0.0.1:1',
-		INPUT_SCRIPT: render(script.body),
+		[step.input]: render(step.value),
 		INPUT_INPUTS: JSON.stringify(sampleInputs),
 		INPUT_STEPS: JSON.stringify(sampleSteps),
 		'INPUT_GITHUB-TOKEN': 'token',
 	};
 	const run = spawnSync(process.execPath, [typescriptAction], { env, encoding: 'utf8' });
 	const out = `${run.stdout}${run.stderr}`;
-	assert.ok(out.includes('Type-check passed.'), `${script.action}/action.yml:${script.line}: the script fails the typescript action's type-check:\n${out}`);
+	assert.ok(out.includes('Type-check passed.'), `${step.action}/action.yml:${step.line}: the step fails the typescript action's type-check:\n${out}`);
 }
 fs.rmSync(emptyDir, { recursive: true });
 console.log('action-scripts: all checks passed');
