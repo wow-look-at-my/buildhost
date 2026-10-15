@@ -46,7 +46,7 @@ func ResolveSessionBody(next http.Handler) http.Handler {
 			jsonError(w, http.StatusNotFound, ErrNotFound.Error())
 			return
 		}
-		if r.ContentLength != 0 {
+		if !bodyEmpty(r) {
 			jsonError(w, http.StatusBadRequest, "request body must be empty when finalizing an upload session")
 			return
 		}
@@ -95,6 +95,20 @@ func ResolveSessionBody(next http.Handler) http.Handler {
 
 func mutatingMethod(m string) bool {
 	return m == http.MethodPost || m == http.MethodPut || m == http.MethodPatch
+}
+
+// bodyEmpty reports whether r carries no body. So an unknown length is
+// decided by a read of one byte, not refused.
+func bodyEmpty(r *http.Request) bool {
+	if r.ContentLength == 0 || r.Body == nil || r.Body == http.NoBody {
+		return true
+	}
+	if r.ContentLength > 0 {
+		return false
+	}
+	var probe [1]byte
+	read, _ := io.ReadFull(r.Body, probe[:])
+	return read == 0
 }
 
 // expectedSHA256 returns the client-declared digest (query param or header),
