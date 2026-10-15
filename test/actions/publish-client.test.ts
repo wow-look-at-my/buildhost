@@ -1,9 +1,7 @@
-// Behavior tests for .github/actions/lib/publish-client.ts.
+// Behavior tests for .github/actions/lib/client.ts.
 
-const assert = require('node:assert');
-const fs = require('node:fs') as typeof import('node:fs');
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/publish-client`;
-const { newClient, isTransient } = require(`${lib}.ts`);
+import assert from 'node:assert';
+import { client, isTransient } from '../../.github/actions/lib/client.ts';
 
 assert.strictEqual(isTransient(503, '{}'), true, 'a 5xx is transient');
 assert.strictEqual(isTransient(404, ''), true, 'a proxy 404 with no body is transient');
@@ -19,8 +17,8 @@ assert.strictEqual(isTransient(400, 'bad'), false);
 		return { status: a.status, text: async () => a.body };
 	};
 	const warnings: string[] = [];
-	const core = { info: () => {}, warning: (m: string) => warnings.push(m) };
-	const { api } = newClient({ server: 'https://bh.example', token: 'tok', core, upload: {}, fs });
+	const core = { warning: (m: string) => warnings.push(m) };
+	const api = client('https://bh.example', 'tok', core, async () => {});
 	const r = await api('POST', '/api/v1/projects/p/releases', '{}');
 	assert.deepStrictEqual(r, { status: 201, text: '{"ok":true}' }, 'a transient failure is retried');
 	assert.strictEqual(asked.length, 2);

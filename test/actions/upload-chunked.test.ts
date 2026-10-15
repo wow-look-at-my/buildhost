@@ -1,15 +1,12 @@
 // Behavior tests for .github/actions/lib/upload.ts.
 
-const assert = require('node:assert');
-const http = require('node:http') as typeof import('node:http');
-const fs = require('node:fs') as typeof import('node:fs');
-const os = require('node:os') as typeof import('node:os');
-const pathMod = require('node:path') as typeof import('node:path');
-const crypto = require('node:crypto') as typeof import('node:crypto');
-
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/upload`;
-// Untyped on purpose: the module's types are checked where it is CALLED, in the publish composite.
-const { putFile, directLimit, DefaultDirectLimit } = require(`${lib}.ts`);
+import assert from 'node:assert';
+import * as http from 'node:http';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as pathMod from 'node:path';
+import * as crypto from 'node:crypto';
+import { putFile, directLimit, DefaultDirectLimit } from '../../.github/actions/lib/upload.ts';
 
 type Req = { method: string; url: string; headers: Record<string, string>; body: Buffer };
 
@@ -23,7 +20,7 @@ interface ServerOptions {
 }
 
 interface Harness {
-	send: (method: string, urlPath: string, body?: Buffer | null, headers?: Record<string, string>) => Promise<{ status: number; text: string }>;
+	send: (method: string, urlPath: string, body?: Buffer | Blob | null, headers?: Record<string, string>) => Promise<{ status: number; text: string }>;
 	requests: Req[];
 	spools: Map<string, Buffer>;
 	finalized: Req | null;
@@ -88,7 +85,7 @@ async function start(opts: ServerOptions): Promise<Harness> {
 	const port = (server.address() as { port: number }).port;
 	const base = `http://127.0.0.1:${port}`;
 
-	const send = async (method: string, urlPath: string, body?: Buffer | null, headers?: Record<string, string>) => {
+	const send = async (method: string, urlPath: string, body?: Buffer | Blob | null, headers?: Record<string, string>) => {
 		const h: Record<string, string> = { Authorization: 'Bearer t', ...(headers ?? {}) };
 		if (body) h['Content-Type'] = 'application/octet-stream';
 		const resp = await fetch(`${base}${urlPath}`, { method, headers: h, body: body ?? undefined });
