@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import type { ActionGlobals } from './action-globals';
-import type { Response } from './client';
+import type { Response, Send } from './client';
 
 const need = createRequire(import.meta.url);
 const { tokenSource } = need('./oidc.ts') as typeof import('./oidc');
@@ -88,8 +88,7 @@ export async function publishSite(g: ActionGlobals): Promise<void> {
 
 	// session requests go to the server, and the upload itself to the sites endpoint
 	const api = client('', tokenSource(apex, String(g.inputs.token)), g.core);
-	const send = (method: string, url: string, body?: string | Buffer | null, headers?: Record<string, string>) =>
-		api(method, url.startsWith('/') ? `${apex}${url}` : url, body, headers);
+	const send: Send = (method, url, body, headers) => api(method, url.startsWith('/') ? `${apex}${url}` : url, body, headers);
 	let resp: Response;
 	try {
 		resp = await putFile(send, g.core, {

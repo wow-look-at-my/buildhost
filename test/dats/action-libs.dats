@@ -115,7 +115,7 @@ tests:
 		stdout:
 			- "publish-client: all checks passed"
 
-	- desc: no script that holds an expression passes the length GitHub allows one expression, and each buildhost-publish script passes the typescript action's type-check
+	- desc: no script that holds an expression passes the length GitHub allows one expression, each typescript step passes the typescript action's type-check, and every action lib and its tests pass a strict tsc
 	  cmd: node test/actions/action-scripts.test.ts
 	  outputs:
 		stdout:
