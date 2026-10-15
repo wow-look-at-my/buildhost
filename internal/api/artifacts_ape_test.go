@@ -183,6 +183,33 @@ func TestUploadAPE_SlotConflictsBothWays(t *testing.T) {
 	assert.Len(t, rows, 1)
 }
 
+// Each leg of a build matrix uploads the same APE to the same release.
+func TestUploadAPE_SameBytesAgainIsTheStoredRow(t *testing.T) {
+	t.Serial()
+	h, proj, rel := setupUploadTest(t, "sameapeproj")
+
+	first := doAPEUpload(t, h, proj, "?platforms="+apePlatformSpec, apeBody, nil)
+	require.Equal(t, http.StatusCreated, first.Code)
+	again := doAPEUpload(t, h, proj, "?platforms="+apePlatformSpec, apeBody, nil)
+	require.Equal(t, http.StatusOK, again.Code, again.Body.String())
+	assert.Equal(t, decodeArtifact(t, first).ID, decodeArtifact(t, again).ID)
+
+	rows, err := h.DB.ListArtifacts(context.Background(), rel.ID)
+	require.NoError(t, err)
+	assert.Len(t, rows, 1)
+}
+
+// Other bytes for the same platforms still conflict.
+func TestUploadAPE_OtherBytesAgainConflict(t *testing.T) {
+	t.Serial()
+	h, proj, _ := setupUploadTest(t, "otherapeproj")
+
+	require.Equal(t, http.StatusCreated,
+		doAPEUpload(t, h, proj, "?platforms="+apePlatformSpec, apeBody, nil).Code)
+	rec := doAPEUpload(t, h, proj, "?platforms="+apePlatformSpec, apeBody+"-changed", nil)
+	assert.Equal(t, http.StatusConflict, rec.Code)
+}
+
 func TestUploadAPE_ConflictsWithExistingPerPlatformRow(t *testing.T) {
 	t.Serial()
 	h, proj, rel := setupUploadTest(t, "reverseconflictproj")
