@@ -193,7 +193,7 @@ fs.writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({
 		esModuleInterop: true, skipLibCheck: true, allowImportingTsExtensions: true, lib: ['ES2022'], types: ['node'],
 		typeRoots: [path.join(tsDist, 'types/node_modules/@types')], baseUrl: path.join(tsDist, 'types/node_modules'),
 	},
-	files: [path.join(tsDist, 'globals.d.ts'), ...tsFiles(libDir), ...tsFiles(testDir)],
+	files: [path.join(tsDist, 'globals.d.ts'), ...tsFiles(libDir), ...tsFiles(path.join(libDir, 'steps')), ...tsFiles(testDir)],
 }));
 const tsc = spawnSync('npx', ['--yes', '--package', 'typescript@5.9.3', 'tsc', '--project', path.join(project, 'tsconfig.json')], { encoding: 'utf8' });
 fs.rmSync(project, { recursive: true });
