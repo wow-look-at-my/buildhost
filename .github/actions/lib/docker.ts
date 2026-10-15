@@ -2,10 +2,8 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createRequire } from 'node:module';
-import type { ActionGlobals } from './action-globals';
-
-const { mintOidcToken } = createRequire(import.meta.url)('./oidc.ts') as typeof import('./oidc');
+import type { ActionGlobals } from './action-globals.ts';
+import { mintOidcToken } from './oidc.ts';
 
 /**
  * The tags a docker publish pushes when its tags input is empty: the commit, the ref name and, on the default branch, latest.

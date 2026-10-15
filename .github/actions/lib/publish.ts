@@ -3,24 +3,20 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { createRequire } from 'node:module';
-import type { ActionGlobals } from './action-globals';
-import type { PublishedArtifact } from './storage-record';
-import type { Verdict } from './existing-release';
-import type { Deps } from './publish-group';
-import type { Response } from './client';
-
-// A relative import that names its .ts file is a tsc error, and one that does not fails in node. The sibling modules load through require.
-const load = createRequire(import.meta.url);
-const upload = load('./upload.ts') as typeof import('./upload');
-const existing = load('./existing-release.ts') as typeof import('./existing-release');
-const artifactGroups = load('./artifact-groups.ts') as typeof import('./artifact-groups');
-const buildhost = load('./client.ts') as typeof import('./client');
-const publishGroup = load('./publish-group.ts') as typeof import('./publish-group');
-const { fileSHA256 } = load('./portable-manifest.ts') as typeof import('./portable-manifest');
-const io = load('./file-io.ts') as typeof import('./file-io');
-const { mintOidcToken } = load('./oidc.ts') as typeof import('./oidc');
-const { downloadRunArtifact } = load('./run-artifact.ts') as typeof import('./run-artifact');
+import type { ActionGlobals } from './action-globals.ts';
+import type { PublishedArtifact } from './storage-record.ts';
+import type { Verdict } from './existing-release.ts';
+import type { Deps } from './publish-group.ts';
+import type { Response } from './client.ts';
+import * as upload from './upload.ts';
+import * as existing from './existing-release.ts';
+import * as artifactGroups from './artifact-groups.ts';
+import * as buildhost from './client.ts';
+import * as publishGroup from './publish-group.ts';
+import { fileSHA256 } from './portable-manifest.ts';
+import * as io from './file-io.ts';
+import { mintOidcToken } from './oidc.ts';
+import { downloadRunArtifact } from './run-artifact.ts';
 
 /** The create_service, default_branch and apt_depends fields go only when set, so an empty input leaves the stored setting untouched. */
 export function releaseBody(f: { gitBranch: string; gitCommit: string; version: string; createService: string; defaultBranch: string; aptDepends: string }): string {

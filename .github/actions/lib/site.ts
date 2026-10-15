@@ -3,20 +3,16 @@
 import * as nodeFs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createRequire } from 'node:module';
-import type { ActionGlobals } from './action-globals';
-import type { Response, Send } from './client';
-
-const need = createRequire(import.meta.url);
-const { tokenSource } = need('./oidc.ts') as typeof import('./oidc');
-const { siteBranch, projectOf } = need('./deployment.ts') as typeof import('./deployment');
-const { client } = need('./client.ts') as typeof import('./client');
-const { putFile, chunkSizeFrom } = need('./upload.ts') as typeof import('./upload');
-const { fileBody } = need('./file-io.ts') as typeof import('./file-io');
-const { fileSHA256 } = need('./portable-manifest.ts') as typeof import('./portable-manifest');
-const { recordSite } = need('./storage-record.ts') as typeof import('./storage-record');
-const { commentPreview } = need('./preview-comment.ts') as typeof import('./preview-comment');
-const { downloadRunArtifact } = need('./run-artifact.ts') as typeof import('./run-artifact');
+import type { ActionGlobals } from './action-globals.ts';
+import { client, type Response, type Send } from './client.ts';
+import { tokenSource } from './oidc.ts';
+import { siteBranch, projectOf } from './deployment.ts';
+import { putFile, chunkSizeFrom } from './upload.ts';
+import { fileBody } from './file-io.ts';
+import { fileSHA256 } from './portable-manifest.ts';
+import { recordSite } from './storage-record.ts';
+import { commentPreview } from './preview-comment.ts';
+import { downloadRunArtifact } from './run-artifact.ts';
 
 /** The sites endpoint: buildhost dispatches each service by the first Host label, so it is sites.<domain>. */
 export function sitesBase(apex: string): string {

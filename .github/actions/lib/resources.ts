@@ -1,9 +1,7 @@
 // The single-request buildhost actions: create an OIDC policy, a token, a project or a release, read one resource, and publish a release.
 
-import { createRequire } from 'node:module';
-import type { ActionGlobals } from './action-globals';
-
-const { mintOidcToken } = createRequire(import.meta.url)('./oidc.ts') as typeof import('./oidc');
+import type { ActionGlobals } from './action-globals.ts';
+import { mintOidcToken } from './oidc.ts';
 
 /** The token a request sends: the token input, else an OIDC token minted for the server when the job may mint one, else empty. */
 export async function resolveToken(server: string, token: string): Promise<string> {

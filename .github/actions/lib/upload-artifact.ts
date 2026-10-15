@@ -1,15 +1,12 @@
 // buildhost-upload-artifact: uploads one file to a release slot, directly or through an upload session, and outputs its sha256.
 
 import * as fsMod from 'node:fs';
-import { createRequire } from 'node:module';
-import type { ActionGlobals } from './action-globals';
-
-const want = createRequire(import.meta.url);
-const { client } = want('./client.ts') as typeof import('./client');
-const { putFile, chunkSizeFrom } = want('./upload.ts') as typeof import('./upload');
-const { fileBody } = want('./file-io.ts') as typeof import('./file-io');
-const { fileSHA256 } = want('./portable-manifest.ts') as typeof import('./portable-manifest');
-const { tokenSource } = want('./oidc.ts') as typeof import('./oidc');
+import type { ActionGlobals } from './action-globals.ts';
+import { client } from './client.ts';
+import { putFile, chunkSizeFrom } from './upload.ts';
+import { fileBody } from './file-io.ts';
+import { fileSHA256 } from './portable-manifest.ts';
+import { tokenSource } from './oidc.ts';
 
 /**
  * The sha256 of an upload answer. A non-APE fan-out answers a row per platform, all sharing one blob, so any row carries it.
