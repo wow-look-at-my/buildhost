@@ -4,10 +4,8 @@
 // no pull request to comment on. A mistake here posts the wrong link, or none,
 // on every repo in the org at the same time.
 
-const assert = require('node:assert');
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/preview-comment`;
-// Untyped on purpose: the module's types are checked where it is CALLED, in the composite.
-const { commentPreview, marker } = require(`${lib}.ts`);
+import assert from 'node:assert';
+import { commentPreview, marker } from '../../.github/actions/lib/preview-comment.ts';
 
 type Sent = Record<string, unknown>;
 const ctx = { repo: { owner: 'wow-look-at-my', repo: 'js-snippets' } };

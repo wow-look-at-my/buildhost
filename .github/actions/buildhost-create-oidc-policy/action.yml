@@ -44,38 +44,7 @@ runs:
     - id: create
       uses: wow-look-at-my/actions@typescript#latest
       with:
+        inputs: ${{ toJSON(inputs) }}
         script: |
-          await (async () => {
-            const server: string = "${{ inputs.server }}";
-            let token: string = "${{ inputs.token }}";
-            if (!token) {
-              const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
-              const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
-              if (url && bearer) {
-                const { mintOidcToken } = require("${{ github.action_path }}/../lib/oidc.ts") as typeof import("${{ github.action_path }}/../lib/oidc");
-                token = await mintOidcToken({ url, bearer, audience: server, warning: core.warning });
-              }
-            }
-            const projectId: string = "${{ inputs.project_id }}";
-
-            const body: Record<string, string | number> = {
-              issuer:          "${{ inputs.issuer }}",
-              subject_pattern: "${{ inputs.subject_pattern }}",
-              scopes:          "${{ inputs.scopes }}",
-              audience:        "${{ inputs.audience }}",
-            };
-            if (projectId) body['project_id'] = Number(projectId);
-
-            const resp = await fetch(`${server}/api/v1/oidc/policies`, {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
-            });
-            const text = await resp.text();
-            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
-
-            const data = JSON.parse(text);
-            core.info(JSON.stringify(data, null, 2));
-            core.setOutput('response', text);
-            core.setOutput('policy_id', String(data.id));
-          })();
+          const lib = require(${{ toJSON(format('{0}/../lib/resources.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/resources', github.action_path)) }});
+          await lib.createOidcPolicy({ core, github, context, octokit, exec, inputs, steps });

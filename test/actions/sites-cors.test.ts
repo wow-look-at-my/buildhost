@@ -149,9 +149,9 @@ async function assertChainCORS(label: string, startPath: string, wantRedirect: b
 async function main(): Promise<void> {
 const server = child_process.spawn(...runner(["serve"]), { env: serverEnv, stdio: ["ignore", "pipe", "pipe"] });
 let serverLog = "";
-server.stdout.on("data", (d) => (serverLog += d));
-server.stderr.on("data", (d) => (serverLog += d));
-server.on("exit", (code) => {
+server.stdout.on("data", (d: Buffer) => (serverLog += d));
+server.stderr.on("data", (d: Buffer) => (serverLog += d));
+server.on("exit", (code: number | null) => {
 	if (code !== 0 && code !== null) core.error(`buildhost serve exited ${code}:\n${serverLog}`);
 });
 

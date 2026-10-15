@@ -31,45 +31,7 @@ runs:
     - id: publish
       uses: wow-look-at-my/actions@typescript#latest
       with:
+        inputs: ${{ toJSON(inputs) }}
         script: |
-          const { recordReleaseArtifacts } = require("${{ github.action_path }}/../lib/storage-record.ts") as typeof import("${{ github.action_path }}/../lib/storage-record");
-          await (async () => {
-            const server: string = "${{ inputs.server }}";
-            let token: string = "${{ inputs.token }}";
-            if (!token) {
-              const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
-              const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
-              if (url && bearer) {
-                const { mintOidcToken } = require("${{ github.action_path }}/../lib/oidc.ts") as typeof import("${{ github.action_path }}/../lib/oidc");
-                token = await mintOidcToken({ url, bearer, audience: server, warning: core.warning });
-              }
-            }
-            const project: string = "${{ inputs.project }}";
-            const version: string = "${{ inputs.version }}";
-
-            const resp = await fetch(`${server}/api/v1/projects/${project}/releases/${version}/publish`, {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${token}` },
-            });
-            const text = await resp.text();
-            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
-
-            core.info(JSON.stringify(JSON.parse(text), null, 2));
-            core.setOutput('response', text);
-
-            // recording happens here because this composite is the last step of the create/upload/publish chain for publishers that assemble it themselves
-            type ReleaseBody = {
-              version?: string;
-              artifacts?: { os?: string; arch?: string; sha256?: string }[];
-            };
-            const published = JSON.parse(text) as ReleaseBody;
-            // the publish response carries the artifacts it just made public; each becomes one storage record
-            const artifacts = published.artifacts ?? [];
-
-            if (artifacts.length === 0) {
-              core.setFailed(`Publishing ${project}/${version} returned no artifacts, so nothing can be recorded on the org's linked artifacts page. The publish endpoint returns them as of the buildhost release that added artifact-metadata recording -- this server is older than that, which is a version to upgrade rather than a condition to wait out. A publish that records nothing must not report success.`);
-              return;
-            }
-
-            // await recordReleaseArtifacts(octokit, core, context, { server, project, version: published.version ?? version, artifacts });
-          })();
+          const lib = require(${{ toJSON(format('{0}/../lib/resources.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/resources', github.action_path)) }});
+          await lib.publishRelease({ core, github, context, octokit, exec, inputs, steps });

@@ -39,13 +39,6 @@ tests:
 		stdout:
 			- "existing-release: all checks passed"
 
-	- desc: the publish helpers parse the manifest, map names, read files and retry the API
-	  cmd: node test/actions/publish-helpers.test.ts
-	- desc: every action value that holds an expression stays under GitHub's expression length limit
-	  cmd: node test/actions/expression-length.test.ts
-	  outputs:
-		stdout:
-			- "expression-length: all checks passed"
 	- desc: artifact-groups finds what a publish uploads and the project each file goes to, and fails on a bad manifest
 	  cmd: node test/actions/artifact-groups.test.ts
 	  outputs:
@@ -66,7 +59,43 @@ tests:
 	  cmd: node test/actions/publish-libs.test.ts
 	  outputs:
 		stdout:
-			- "publish-helpers: all checks passed"
+			- "publish-libs: all checks passed"
+
+	- desc: the publish step creates a release per project, uploads each platform and publishes, and fails on a bad input or a refused release
+	  cmd: node test/actions/publish.test.ts
+	  outputs:
+		stdout:
+			- "publish: all checks passed"
+
+	- desc: the single-request actions send the right request with an OIDC or given token, and report what the server answers
+	  cmd: node test/actions/resources.test.ts
+	  outputs:
+		stdout:
+			- "resources: all checks passed"
+
+	- desc: a docker publish defaults its tags from the ref, and the push sends every ref with the token and outputs the layout's digest
+	  cmd: node test/actions/docker.test.ts
+	  outputs:
+		stdout:
+			- "docker: all checks passed"
+
+	- desc: a site publish uploads to its one-segment branch, directly or in chunks, then records the site and comments its URL
+	  cmd: node test/actions/site.test.ts
+	  outputs:
+		stdout:
+			- "site: all checks passed"
+
+	- desc: an artifact upload goes direct or in chunks, re-mints an OIDC token the server refuses mid-upload, and outputs the stored sha256
+	  cmd: node test/actions/upload-artifact.test.ts
+	  outputs:
+		stdout:
+			- "upload-artifact: all checks passed"
+
+	- desc: the GitHub Deployment registers for a real server only, and its terminal status follows the publish
+	  cmd: node test/actions/deployment.test.ts
+	  outputs:
+		stdout:
+			- "deployment: all checks passed"
 
 	- desc: download aborts a transfer that goes silent, and finishes a slow one that keeps sending
 	  cmd: node test/actions/download-stall.test.ts
@@ -74,11 +103,11 @@ tests:
 		stdout:
 			- "download: all checks passed"
 
-	- desc: download finds its lib from a container job, where the action path names the host
-	  cmd: node test/actions/download-action-path.test.ts
+	- desc: download asks dl for the runner's platform, writes the file, and reports a miss as an output when it is not required
+	  cmd: node test/actions/download.test.ts
 	  outputs:
 		stdout:
-			- "download-action-path: all checks passed"
+			- "download-action: all checks passed"
 
 	- desc: the portable manifest reads every entry, and fails a manifest it cannot use
 	  cmd: node test/actions/portable-manifest.test.ts
@@ -92,8 +121,8 @@ tests:
 		stdout:
 			- "publish-client: all checks passed"
 
-	- desc: no script that holds an expression passes the length GitHub allows one expression
-	  cmd: node test/actions/expression-length.test.ts
+	- desc: no script that holds an expression passes the length GitHub allows one expression, each typescript step passes the typescript action's type-check, and every action lib and its tests pass a strict tsc
+	  cmd: node test/actions/action-scripts.test.ts
 	  outputs:
 		stdout:
-			- "expression-length: all checks passed"
+			- "action-scripts: all checks passed"
