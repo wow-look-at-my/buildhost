@@ -83,7 +83,6 @@ for (const file of yamlFiles()) {
 }
 assert.ok(measured > 0, 'the scan found no block that holds an expression');
 
-const actionDir = path.join(root, '.github/actions/buildhost-publish');
 // The runner keeps each action a job used under _actions, a couple of levels above the workspace. buildhost-download runs typescript#latest earlier in this job.
 const typescriptAction = path.join(path.dirname(path.dirname(root)), '_actions/wow-look-at-my/actions/typescript#latest/dist/index.js');
 assert.ok(fs.existsSync(typescriptAction), `the typescript action is not at ${typescriptAction}; a step of this job must use wow-look-at-my/actions@typescript#latest first`);
@@ -108,7 +107,6 @@ const sampleSteps = {
 	deployment: { outcome: 'success', conclusion: 'success', outputs: { deployment_id: '1' } },
 };
 const sampleContext: Record<string, unknown> = {
-	'github.action_path': actionDir,
 	inputs: sampleInputs,
 	steps: sampleSteps,
 };
@@ -134,9 +132,13 @@ function render(text: string): string {
 	});
 }
 
-const scripts = blocks(fs.readFileSync(path.join(actionDir, 'action.yml'), 'utf8')).filter((b) => b.key === 'script');
-assert.ok(scripts.length > 0, 'buildhost-publish has no script block');
+const typeChecked = ['buildhost-publish', 'buildhost-create-oidc-policy', 'buildhost-create-project', 'buildhost-create-release', 'buildhost-create-token', 'buildhost-get', 'buildhost-publish-release'];
+const scripts = typeChecked.flatMap((action) => {
+	const actionDir = path.join(root, '.github/actions', action);
+	return blocks(fs.readFileSync(path.join(actionDir, 'action.yml'), 'utf8')).filter((b) => b.key === 'script').map((b) => ({ ...b, action, actionDir }));
+});
 for (const script of scripts) {
+	sampleContext['github.action_path'] = script.actionDir;
 	const env: Record<string, string | undefined> = {
 		...process.env,
 		GITHUB_WORKSPACE: root,
@@ -152,7 +154,7 @@ for (const script of scripts) {
 	};
 	const run = spawnSync(process.execPath, [typescriptAction], { env, encoding: 'utf8' });
 	const out = `${run.stdout}${run.stderr}`;
-	assert.ok(out.includes('Type-check passed.'), `buildhost-publish/action.yml:${script.line}: the script fails the typescript action's type-check:\n${out}`);
+	assert.ok(out.includes('Type-check passed.'), `${script.action}/action.yml:${script.line}: the script fails the typescript action's type-check:\n${out}`);
 }
 fs.rmSync(emptyDir, { recursive: true });
 console.log('action-scripts: all checks passed');

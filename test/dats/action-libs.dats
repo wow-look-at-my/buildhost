@@ -61,6 +61,12 @@ tests:
 		stdout:
 			- "publish: all checks passed"
 
+	- desc: the single-request actions send the right request with an OIDC or given token, and report what the server answers
+	  cmd: node test/actions/resources.test.ts
+	  outputs:
+		stdout:
+			- "resources: all checks passed"
+
 	- desc: the GitHub Deployment registers for a real server only, and its terminal status follows the publish
 	  cmd: node test/actions/deployment.test.ts
 	  outputs:
