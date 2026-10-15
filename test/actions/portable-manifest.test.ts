@@ -1,17 +1,12 @@
 // Behavior tests for .github/actions/lib/portable-manifest.ts.
 
-const assert = require('node:assert');
-const fs = require('node:fs') as typeof import('node:fs');
-const os = require('node:os') as typeof import('node:os');
-const path = require('node:path') as typeof import('node:path');
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/portable-manifest`;
-const { readPortableManifest, manifestName } = require(`${lib}.ts`);
+import assert from 'node:assert';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { readPortableManifest, manifestName } from '../../.github/actions/lib/portable-manifest.ts';
+import { tempDir } from './fakes.ts';
 
-function dir(files: Record<string, string>): string {
-	const d = fs.mkdtempSync(path.join(os.tmpdir(), 'portable-'));
-	for (const [name, body] of Object.entries(files)) fs.writeFileSync(path.join(d, name), body);
-	return d;
-}
+const dir = (files: Record<string, string>): string => tempDir('portable-', files);
 
 function read(d: string): { out: unknown; failed: string[] } {
 	const failed: string[] = [];
