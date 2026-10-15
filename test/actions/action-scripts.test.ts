@@ -157,4 +157,23 @@ for (const script of scripts) {
 	assert.ok(out.includes('Type-check passed.'), `${script.action}/action.yml:${script.line}: the script fails the typescript action's type-check:\n${out}`);
 }
 fs.rmSync(emptyDir, { recursive: true });
+
+// A step's type-check stops at its own text, so every lib module and every test of them is checked here, strictly. Those stops
+// are against the action's own declarations: its globals.d.ts and the @types and @actions packages it ships.
+const tsDist = path.dirname(typescriptAction);
+const libDir = path.join(root, '.github/actions/lib');
+const testDir = path.join(root, 'test/actions');
+const tsFiles = (dir: string) => fs.readdirSync(dir).filter((f) => f.endsWith('.ts')).map((f) => path.join(dir, f));
+const project = fs.mkdtempSync(path.join(os.tmpdir(), 'lib-tsc-'));
+fs.writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({
+	compilerOptions: {
+		strict: true, noEmit: true, target: 'ES2022', module: 'ES2022', moduleResolution: 'node10', moduleDetection: 'force',
+		esModuleInterop: true, skipLibCheck: true, lib: ['ES2022'], types: ['node'],
+		typeRoots: [path.join(tsDist, 'types/node_modules/@types')], baseUrl: path.join(tsDist, 'types/node_modules'),
+	},
+	files: [path.join(tsDist, 'globals.d.ts'), ...tsFiles(libDir), ...tsFiles(testDir)],
+}));
+const tsc = spawnSync('npx', ['--yes', '--package', 'typescript@5.9.3', 'tsc', '--project', path.join(project, 'tsconfig.json')], { encoding: 'utf8' });
+fs.rmSync(project, { recursive: true });
+assert.strictEqual(tsc.status, 0, `tsc --noEmit over .github/actions/lib and test/actions failed:\n${tsc.stdout}${tsc.stderr}`);
 console.log('action-scripts: all checks passed');
