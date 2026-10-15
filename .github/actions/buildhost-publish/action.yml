@@ -92,7 +92,7 @@ runs:
         script: |
           await (async () => {
             core.setOutput('deployment_id', '');
-            const deployServer: string = inputs.server;
+            const deployServer: string = String(inputs.server);
             const deployHost: string = new URL(deployServer).hostname;
             // this check finds a target nothing outside the runner can reach
             if (deployHost === "localhost" || deployHost === "127.0.0.1" || deployHost === "::1" || !deployServer.startsWith("https://")) {
@@ -101,11 +101,11 @@ runs:
               return;
             }
             try {
-              const project: string = inputs.project || github.repository.split('/').pop()!;
-              const environment: string = inputs.deployment_environment || `buildhost/${project}`;
+              const project: string = String(inputs.project || github.repository.split('/').pop()!);
+              const environment: string = String(inputs.deployment_environment || `buildhost/${project}`);
               // a bare SHA belongs to no branch, so GitHub's branch/PR deployment views show it as never deployed -- pass a branch name here to fix that
-              const ref: string = inputs.deployment_ref || inputs.git_commit || context.sha;
-              const branch: string = inputs.git_branch || github.ref_name || '';
+              const ref: string = String(inputs.deployment_ref || inputs.git_commit || context.sha);
+              const branch: string = String(inputs.git_branch || github.ref_name || '');
               const defaultBranch: string = context.payload.repository?.default_branch ?? '';
               const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
               // every publish to a real server registers -- there's no opt-out
@@ -175,21 +175,21 @@ runs:
           const { fileSHA256 } = require(`${lib}/portable-manifest.ts`) as { fileSHA256(file: string): Promise<string> };
           const io = require(`${lib}/file-io.ts`) as { readChunk(fs: unknown, filePath: string, offset: number, length: number): Buffer };
           await (async () => {
-            const artifactName: string = inputs.artifact_name;
-            const inputPath: string = inputs.path;
-            const inputBrewService: string = inputs.create_service;
+            const artifactName: string = String(inputs.artifact_name);
+            const inputPath: string = String(inputs.path);
+            const inputBrewService: string = String(inputs.create_service);
             if (inputBrewService !== '' && inputBrewService !== 'true' && inputBrewService !== 'false') {
               core.setFailed(`create_service must be 'true', 'false', or empty; got '${inputBrewService}'`);
               return;
             }
-            const inputDefaultBranch: string = inputs.default_branch;
-            const inputAptDepends: string = inputs.apt_depends;
+            const inputDefaultBranch: string = String(inputs.default_branch);
+            const inputAptDepends: string = String(inputs.apt_depends);
 
-            const server: string = inputs.server;
-            const project: string = inputs.project || github.repository.split("/").pop()!;
-            const version: string = inputs.version;
-            const gitBranch: string = inputs.git_branch || github.ref_name;
-            const gitCommit: string = inputs.git_commit || github.sha;
+            const server: string = String(inputs.server);
+            const project: string = String(inputs.project || github.repository.split("/").pop()!);
+            const version: string = String(inputs.version);
+            const gitBranch: string = String(inputs.git_branch || github.ref_name);
+            const gitCommit: string = String(inputs.git_commit || github.sha);
 
             let sourceDir: string;
             if (inputPath.length > 0) {
