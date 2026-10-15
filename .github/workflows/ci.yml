@@ -32,30 +32,51 @@ jobs:
           if ! printf '%s\n' ':APE:M::\x4d\x5a\x71\x46\x70\x44\x3d\x27::/bin/sh:' | sudo tee "$dir/register" > /dev/null 2>&1; then
             echo "::warning::APE binfmt handler not registered; a bare exec of an APE still fails here"
           fi
-      # The published go-toolchain carries its release stamp after the GOSTDEMB record. That record must be the last bytes of the file, so the binary fails as go with "cannot find GOROOT directory". This step drops such a stamp. A release without one passes through unchanged.
-      - name: Fetch go-toolchain
+      # The published go-toolchain carries buildhost's release stamp after its embedded standard library's trailer. The go command reads that library from the end of the file, so the pipeline cannot run as the go command. Until a release carries the stamp ahead of the trailer, take the stamp out of the last bytes here.
+      - name: Take a go-toolchain the generators can run
         id: gotoolchain
         uses: wow-look-at-my/actions@typescript#latest
         with:
           script: |
-            const out = path.join(runner.temp, "go-toolchain");
-            await $`curl -fsSL --compressed -o ${out} https://dl.pazer.build/go-toolchain?os=linux&arch=amd64`;
-            const buf = fs.readFileSync(out);
-            const end = buf.length;
-            if (end >= 84 && buf.subarray(end - 16).toString() === "BUILDHOST-STAMP1") {
-              const start = end - 20 - buf.readUInt32BE(end - 20);
-              if (start >= 64 && buf.subarray(start - 64, start - 56).toString() === "GOSTDEMB") {
-                fs.writeFileSync(out, buf.subarray(0, start));
-                core.warning(`go-toolchain: dropped the ${end - start}-byte release stamp that followed its GOSTDEMB record`);
+            const resp = await fetch("https://dl.pazer.build/go-toolchain?os=linux&arch=amd64");
+            if (!resp.ok) throw new Error(`downloading go-toolchain: HTTP ${resp.status}`);
+            let buf = Buffer.from(await resp.arrayBuffer());
+            const magic = Buffer.from("BUILDHOST-STAMP1", "ascii");
+            if (buf.length >= 84 && buf.subarray(buf.length - 16).equals(magic)) {
+              const stamp = buf.length - 20 - buf.readUInt32BE(buf.length - 20);
+              const record = buf.subarray(stamp - 64, stamp);
+              if (record.subarray(0, 8).toString("ascii") === "GOSTDEMB") {
+                buf = Buffer.concat([buf.subarray(0, stamp - 64), buf.subarray(stamp), record]);
+                core.info("moved the release stamp ahead of the embedded standard library's trailer");
               }
             }
-            core.setOutput("path", out);
+            const file = path.join(env.RUNNER_TEMP!, "go-toolchain-repaired", "go-toolchain");
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, buf, { mode: 0o755 });
+            core.setOutput("binary", file);
+      # The pipeline's publish step names buildhost's publish action at @master. GitHub refuses that action at master as an expression over its 21000-character limit, so the step fails to load for every repo. This branch's tree holds the repair, and a path ref resolves against this workspace, so the pipeline publishes through the action this branch carries.
+      - name: Check out the pipeline
+        uses: actions/checkout@v4
+        with:
+          repository: wow-look-at-my/go-toolchain
+          ref: master
+          path: .go-toolchain
+      - name: Point the pipeline's publish at this tree's action
+        uses: wow-look-at-my/actions@typescript#latest
+        with:
+          script: |
+            const file = path.join(env.GITHUB_WORKSPACE!, ".go-toolchain", "action.yml");
+            const before = fs.readFileSync(file, "utf8");
+            const after = before.replaceAll("wow-look-at-my/buildhost/.github/actions/buildhost-publish@master", "./.github/actions/buildhost-publish");
+            if (after === before) throw new Error(`${file} names no remote buildhost-publish ref, so this step no longer retargets the publish`);
+            fs.writeFileSync(file, after);
+            fs.appendFileSync(path.join(env.GITHUB_WORKSPACE!, ".git", "info", "exclude"), ".go-toolchain/\n");
       # No fetch-cacerts step: the CA bundle is a generate directive The org module proxy is gone, so modules come direct with sumdb off. go-toolchain publishes through this repo's publish action, so a release that action broke must not block its repair.
-      - uses: wow-look-at-my/go-toolchain@master
+      - uses: ./.go-toolchain
         env:
           GOPROXY: direct
         with:
-          binary: ${{ steps.gotoolchain.outputs.path }}
+          binary: ${{ steps.gotoolchain.outputs.binary }}
           generate: 3ed2a7fd952f
           timeout: '25'
           allow-source-build: 'true'

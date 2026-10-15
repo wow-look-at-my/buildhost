@@ -12,6 +12,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/exeformat"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 func init() {
@@ -123,6 +124,12 @@ func (h *Handler) publishMultiPlatform(ctx context.Context, w http.ResponseWrite
 	if err := h.DB.CreateMultiPlatformArtifact(ctx, artifact, spec.platforms); err != nil {
 		spec.span.RecordError(err)
 		if errors.Is(err, db.ErrConflict) {
+			// Every leg of a build matrix uploads the same APE. The same bytes
+			// for the same platforms are the stored row, not a conflict.
+			if same := h.sameMultiPlatformArtifact(ctx, artifact, spec.platforms); same != nil {
+				jsonResponse(w, http.StatusOK, *same)
+				return
+			}
 			jsonError(w, http.StatusConflict, err.Error())
 			return
 		}
@@ -131,6 +138,36 @@ func (h *Handler) publishMultiPlatform(ctx context.Context, w http.ResponseWrite
 	}
 
 	jsonResponse(w, http.StatusCreated, db.ArtifactWithPlatforms{Artifact: *artifact, Platforms: spec.platforms})
+}
+
+// sameMultiPlatformArtifact answers the stored artifact of the release that
+// has the bytes, the kind and exactly the platforms of want, or nil.
+func (h *Handler) sameMultiPlatformArtifact(ctx context.Context, want *db.Artifact, platforms []db.Platform) *db.ArtifactWithPlatforms {
+	rows, err := h.DB.ListArtifactsWithPlatforms(ctx, want.ReleaseID)
+	if err != nil {
+		return nil
+	}
+	wanted := set.New[db.Platform]()
+	for _, p := range platforms {
+		wanted.Add(p)
+	}
+	for idx := range rows {
+		row := &rows[idx]
+		if row.SHA256 != want.SHA256 || row.Kind != want.Kind || len(row.Platforms) != wanted.Len() {
+			continue
+		}
+		match := true
+		for _, p := range row.Platforms {
+			if !wanted.Contains(p) {
+				match = false
+				break
+			}
+		}
+		if match {
+			return row
+		}
+	}
+	return nil
 }
 
 func firstWindows(platforms []db.Platform) (db.Platform, bool) {
