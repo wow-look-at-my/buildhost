@@ -74,4 +74,6 @@ runs:
       uses: wow-look-at-my/actions@typescript#latest
       with:
         inputs: ${{ toJSON(inputs) }}
-        file: ${{ github.action_path }}/../lib/steps/create-release-create.ts
+        script: |
+          const lib = require(${{ toJSON(format('{0}/../lib/resources.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/resources', github.action_path)) }});
+          await lib.createRelease({ core, github, context, octokit, exec, inputs, steps });

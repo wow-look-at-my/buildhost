@@ -92,4 +92,6 @@ runs:
       uses: wow-look-at-my/actions@typescript#latest
       with:
         inputs: ${{ toJSON(inputs) }}
-        file: ${{ github.action_path }}/../lib/steps/docker-push-push.ts
+        script: |
+          const lib = require(${{ toJSON(format('{0}/../lib/docker.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/docker', github.action_path)) }});
+          await lib.dockerPush({ core, github, context, octokit, exec, inputs, steps });
