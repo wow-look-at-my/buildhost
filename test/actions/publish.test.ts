@@ -1,9 +1,8 @@
 // Behavior tests for .github/actions/lib/publish.ts, against a fake fetch that answers the OIDC endpoint and the buildhost API.
 
-const assert = require('node:assert');
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/publish`;
-const { publish, releaseBody, releaseVersionFrom, deploymentURL } = require(`${lib}.ts`);
-const { tempDir, stepCore, oidcIssuer } = require('./fakes.ts') as typeof import('./fakes');
+import assert from 'node:assert';
+import { publish, releaseBody, releaseVersionFrom, deploymentURL } from '../../.github/actions/lib/publish.ts';
+import { tempDir, stepCore, oidcIssuer, globalsOf } from './fakes.ts';
 
 type Answer = { status: number; body: string };
 
@@ -11,7 +10,7 @@ function globals(inputs: Record<string, string>) {
 	const { core, out } = stepCore();
 	const github = { repository: 'o/tool', ref_name: 'main', sha: 'c0ffee', run_id: '1' };
 	const all = { server: 'https://bh.example', project: '', artifact_name: 'go-build', path: '', version: '', git_branch: '', git_commit: '', create_service: '', default_branch: '', apt_depends: '', ...inputs };
-	return { g: { core, github, context: {}, octokit: {}, exec: {}, inputs: all, steps: {} }, failed: out.failed, outputs: out.outputs };
+	return { g: globalsOf({ core, github, context: {}, octokit: {}, exec: {}, inputs: all, steps: {} }), failed: out.failed, outputs: out.outputs };
 }
 
 // Answers each request by its method and path, and records it.
@@ -33,8 +32,8 @@ function fakeFetch(route: (method: string, urlPath: string) => Answer) {
 		{ git_branch: 'b', git_commit: 'c', version: '1.2.3', create_service: false, default_branch: 'main', apt_depends: 'bubblewrap' });
 	assert.deepStrictEqual(releaseVersionFrom('p', '', { status: 201, text: '{"version":"4"}' }), { rv: '4', existed: false });
 	assert.deepStrictEqual(releaseVersionFrom('p', '1.0.0', { status: 409, text: '' }), { rv: '1.0.0', existed: true });
-	assert.match(releaseVersionFrom('p', '', { status: 409, text: '' }), /no explicit version/);
-	assert.match(releaseVersionFrom('p', '', { status: 500, text: 'boom' }), /failed \(500\): boom/);
+	assert.match(releaseVersionFrom('p', '', { status: 409, text: '' }) as string, /no explicit version/);
+	assert.match(releaseVersionFrom('p', '', { status: 500, text: 'boom' }) as string, /failed \(500\): boom/);
 	assert.strictEqual(deploymentURL('https://s', 'p', []), null);
 	assert.strictEqual(deploymentURL('https://s', 'p', [{ proj: 'p/cli', rv: '3' }]), 'https://s/projects/p/cli/releases/3');
 	assert.strictEqual(deploymentURL('https://s', 'p', [{ proj: 'p/cli', rv: '3' }, { proj: 'p', rv: '3' }]), 'https://s/projects/p', 'several projects name the repo-level one');

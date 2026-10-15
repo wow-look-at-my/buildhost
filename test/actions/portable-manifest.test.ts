@@ -1,11 +1,10 @@
 // Behavior tests for .github/actions/lib/portable-manifest.ts.
 
-const assert = require('node:assert');
-const fs = require('node:fs') as typeof import('node:fs');
-const path = require('node:path') as typeof import('node:path');
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/portable-manifest`;
-const { readPortableManifest, manifestName } = require(`${lib}.ts`);
-const { tempDir } = require('./fakes.ts') as typeof import('./fakes');
+import assert from 'node:assert';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { readPortableManifest, manifestName } from '../../.github/actions/lib/portable-manifest.ts';
+import { tempDir } from './fakes.ts';
 
 const dir = (files: Record<string, string>): string => tempDir('portable-', files);
 

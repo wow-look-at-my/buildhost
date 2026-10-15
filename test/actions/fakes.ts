@@ -3,6 +3,12 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import type { ActionGlobals } from '../../.github/actions/lib/action-globals.ts';
+
+/** A fake carries only the globals the code under test reads, so it stands in for the whole set the typescript action injects. */
+export function globalsOf(fake: object): ActionGlobals {
+	return fake as ActionGlobals;
+}
 
 /** A temporary directory holding the given files. */
 export function tempDir(prefix: string, files: Record<string, string>): string {

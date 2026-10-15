@@ -1,10 +1,10 @@
 // Behavior tests for .github/actions/lib/site.ts: the publish of a source_dir, directly and through an upload session, its record and its comment.
 
-const assert = require('node:assert');
-const nodeFs = require('node:fs') as typeof import('node:fs');
-const site = require(`${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/site.ts`);
-const upload = require(`${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/upload.ts`);
-const { tempDir } = require('./fakes.ts') as typeof import('./fakes');
+import assert from 'node:assert';
+import * as nodeFs from 'node:fs';
+import * as site from '../../.github/actions/lib/site.ts';
+import * as upload from '../../.github/actions/lib/upload.ts';
+import { tempDir, globalsOf } from './fakes.ts';
 
 type Call = { method: string; url: string; headers: Record<string, string> };
 
@@ -39,14 +39,14 @@ function globals(inputs: Record<string, string>, pr?: number) {
 		steps: {},
 		inputs: { server: 'https://bh.example', token: 'tok', project: '', branch: 'feature/x', source_dir: tempDir('site-', { 'index.html': 'hi' }), artifact_name: '', git_commit: '', public: 'false', chunk_size: '', comment: 'true', ...inputs },
 	};
-	return { g, out };
+	return { g: globalsOf(g), out };
 }
 
 (async () => {
 	assert.strictEqual(site.sitesBase('https://pazer.build'), 'https://sites.pazer.build');
 	assert.strictEqual(upload.chunkSizeFrom(''), 64 * 1024 * 1024);
 	assert.strictEqual(upload.chunkSizeFrom('0'), -1, 'chunk_size 0 is always direct');
-	assert.match(upload.chunkSizeFrom('-3'), /invalid chunk_size/);
+	assert.match(upload.chunkSizeFrom('-3') as string, /invalid chunk_size/);
 	assert.strictEqual(site.siteURLFrom({}, 'https://sites.s', 'p', 'b'), 'https://sites.s/p/@b/', 'an older server gets the canonical URL');
 
 	let calls = stub(1 << 20);

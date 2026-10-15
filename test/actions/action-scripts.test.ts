@@ -1,10 +1,10 @@
 // Checks each action and workflow block as GitHub hands it to a step: its expression length, and for buildhost-publish the typescript action's type-check.
 
-const assert = require('node:assert');
-const fs = require('node:fs') as typeof import('node:fs');
-const os = require('node:os') as typeof import('node:os');
-const path = require('node:path') as typeof import('node:path');
-const { spawnSync } = require('node:child_process') as typeof import('node:child_process');
+import assert from 'node:assert';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 const maxExpression = 21000;
 const root = process.env.GITHUB_WORKSPACE ?? process.cwd();
@@ -168,7 +168,7 @@ const project = fs.mkdtempSync(path.join(os.tmpdir(), 'lib-tsc-'));
 fs.writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({
 	compilerOptions: {
 		strict: true, noEmit: true, target: 'ES2022', module: 'ES2022', moduleResolution: 'node10', moduleDetection: 'force',
-		esModuleInterop: true, skipLibCheck: true, lib: ['ES2022'], types: ['node'],
+		esModuleInterop: true, skipLibCheck: true, allowImportingTsExtensions: true, lib: ['ES2022'], types: ['node'],
 		typeRoots: [path.join(tsDist, 'types/node_modules/@types')], baseUrl: path.join(tsDist, 'types/node_modules'),
 	},
 	files: [path.join(tsDist, 'globals.d.ts'), ...tsFiles(libDir), ...tsFiles(testDir)],

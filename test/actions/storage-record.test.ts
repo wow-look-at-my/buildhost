@@ -1,9 +1,7 @@
 // Behavior tests for .github/actions/lib/storage-record.ts.
 
-const assert = require('node:assert');
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/storage-record`;
-// Untyped on purpose: the module's types are checked where it is CALLED, in the composites.
-const { recordReleaseArtifacts, recordSite, recordImage } = require(`${lib}.ts`);
+import assert from 'node:assert';
+import { recordReleaseArtifacts, recordSite, recordImage, type Octokit } from '../../.github/actions/lib/storage-record.ts';
 
 type Sent = Record<string, unknown>;
 const ctx = { repo: { owner: 'PazerOP', repo: 'UE553' } };
@@ -28,7 +26,7 @@ const gh = (post: () => Promise<unknown> = async () => ({}), ownerType?: string 
 });
 const fails = (status: number) => async () => { throw Object.assign(new Error('Not Found'), { status }); };
 const slot = (over: Sent = {}) => ({ os: 'linux', arch: 'amd64', sha256: SHA, ...over });
-const release = (octokit: unknown, over: Sent = {}) => recordReleaseArtifacts(octokit, core, ctx, {
+const release = (octokit: Octokit, over: Sent = {}) => recordReleaseArtifacts(octokit, core, ctx, {
 	server: SERVER, project: 'ue553', version: 'v7', artifacts: [slot()], ...over,
 });
 
@@ -55,7 +53,7 @@ async function main(): Promise<void> {
 	reset();
 	assert.strictEqual(await release(gh(), { artifacts: [slot({ sha256: undefined })] }), false);
 	assert.match(failed[0], /carried no sha256/);
-	assert.deepStrictEqual(sent, []);
+	assert.strictEqual(sent.length, 0, 'nothing is posted');
 
 	// A site carries NO artifact_url: served unpacked, so no URL returns the archive bytes its digest covers.
 	reset();
@@ -79,7 +77,7 @@ async function main(): Promise<void> {
 	// Nothing to record is not a failure.
 	reset();
 	assert.strictEqual(await release(gh(), { artifacts: [] }), true);
-	assert.deepStrictEqual(sent, []);
+	assert.strictEqual(sent.length, 0, 'nothing is posted');
 
 	// A registry nothing can fetch from is skipped -- a property of the target.
 	for (const server of ['http://localhost:18080', 'https://127.0.0.1', 'http://pazer.build']) {
