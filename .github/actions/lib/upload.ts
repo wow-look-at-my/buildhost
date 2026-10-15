@@ -6,6 +6,14 @@ export const DefaultChunkSize = 64 << 20;
 /* */
 export const DefaultDirectLimit = 95 << 20;
 
+/** The chunk size from a chunk_size input: empty is DefaultChunkSize, no disables chunking, and anything else must be a non-negative integer. */
+export function chunkSizeFrom(input: string): number | string {
+	if (!input) return DefaultChunkSize;
+	const n = Number(input);
+	if (!Number.isInteger(n) || n < 0) return `invalid chunk_size '${input}': expected a non-negative integer (bytes)`;
+	return n === 0 ? -1 : n;
+}
+
 /** How many times a chunk that commits no bytes is retried before giving up. */
 const retryAttempts = 5;
 
@@ -20,7 +28,7 @@ export interface Response { status: number; text: string }
 export type Send = (
 	method: string,
 	urlPath: string,
-	body?: Buffer | null,
+	body?: Buffer | Blob | null,
 	headers?: Record<string, string>,
 ) => Promise<Response>;
 
@@ -34,6 +42,13 @@ export interface Body {
 	sha256: string;
 	/** Returns exactly `length` bytes starting at `offset`. */
 	read(offset: number, length: number): Buffer;
+	/** The same bytes as a Blob, which fetch streams from disk instead of holding in memory. */
+	blob?(offset: number, length: number): Blob;
+}
+
+/** The bytes to send, streamed when the Body can stream them. */
+function part(body: Body, offset: number, length: number): Buffer | Blob {
+	return body.blob ? body.blob(offset, length) : body.read(offset, length);
 }
 
 export interface PutFileOptions {
@@ -73,7 +88,7 @@ export async function putFile(send: Send, core: Core, opts: PutFileOptions): Pro
 	const chunkSize = opts.chunkSize ?? DefaultChunkSize;
 	const limit = opts.directLimit ?? await directLimit(send, core);
 	if (chunkSize <= 0 || size <= limit) {
-		return send('PUT', opts.urlPath, opts.body.read(0, size), opts.headers);
+		return send('PUT', opts.urlPath, part(opts.body, 0, size), opts.headers);
 	}
 
 	const id = await createSession(send);
@@ -111,11 +126,11 @@ async function sendChunks(send: Send, core: Core, id: string, body: Body, size: 
 	let stalls = 0;
 	while (offset < size) {
 		const want = Math.min(chunkSize, size - offset);
-		const chunk = body.read(offset, want);
-		// A Body that returns less than it was asked for would append a short
-		// chunk. The offsets after it would all name the wrong bytes.
-		if (chunk.length !== want) {
-			throw new Error(`upload session ${id}: read ${chunk.length} bytes at offset ${offset}, wanted ${want}`);
+		const chunk = part(body, offset, want);
+		// A Body that returns less than it was asked for would append a short chunk.
+		const got = chunk instanceof Blob ? chunk.size : chunk.length;
+		if (got !== want) {
+			throw new Error(`upload session ${id}: read ${got} bytes at offset ${offset}, wanted ${want}`);
 		}
 		const next = await appendChunk(send, id, offset, chunk);
 		if (next <= offset) {
@@ -135,7 +150,7 @@ async function sendChunks(send: Send, core: Core, id: string, body: Body, size: 
 
 // Anything else asks the status endpoint, because the bytes may have landed
 // before the answer went missing.
-async function appendChunk(send: Send, id: string, offset: number, chunk: Buffer): Promise<number> {
+async function appendChunk(send: Send, id: string, offset: number, chunk: Buffer | Blob): Promise<number> {
 	const resp = await send('PATCH', `/api/v1/uploads/${encodeURIComponent(id)}?offset=${offset}`, chunk);
 	if (resp.status === 200 || resp.status === 409) {
 		const size = (JSON.parse(resp.text) as { size?: number }).size;
