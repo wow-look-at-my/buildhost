@@ -41,7 +41,7 @@ outputs:
 runs:
   using: composite
   steps:
-    # Pinned at @master rather than a relative path: a composite step's
+    # A path ref cannot cross into another action's tree, so this one names the tag the org pins.
     - name: Download the buildhost CLI
       id: download-cli
       uses: wow-look-at-my/buildhost/.github/actions/buildhost-download@master
