@@ -13,7 +13,7 @@ inputs:
     required: false
     default: 'https://pazer.build'
   token:
-    description: 'API token with read scope; omit for a public project'
+    description: 'API token with read scope; omit to use the BUILDHOST_READ_TOKEN secret-server vends the calling repository, which a public project does not need'
     required: false
     default: ''
   project:
@@ -63,6 +63,8 @@ outputs:
 runs:
   using: composite
   steps:
+    # A repository's OIDC token reads only its own projects, so another repository's private project opens with the read token secret-server vends. The step exports every secret the caller is entitled to, and an unentitled caller gets none.
+    - uses: wow-look-at-my/actions@secret-server#latest
     - id: download
       uses: wow-look-at-my/actions@typescript#latest
       with:
