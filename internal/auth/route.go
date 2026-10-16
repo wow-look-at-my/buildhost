@@ -27,8 +27,7 @@ type PublicReadAuthorizer interface {
 }
 
 // BuildVisibilityRoute is a read route that names one build: a release or a
-// site branch. requireProject applies the build's override over the project's
-// visibility.
+// site branch.
 type BuildVisibilityRoute interface {
 	BuildVisibility(ctx context.Context, database *db.DB, project *db.Project) db.Visibility
 }
