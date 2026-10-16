@@ -19,7 +19,6 @@ export interface TokenSource {
 	expire(): boolean;
 }
 
-
 export const maxAttempts = 5;
 
 export const isTransient = (status: number, text: string): boolean =>
