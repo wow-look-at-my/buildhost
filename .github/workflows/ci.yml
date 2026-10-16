@@ -54,7 +54,7 @@ jobs:
             fs.mkdirSync(path.dirname(file), { recursive: true });
             fs.writeFileSync(file, buf, { mode: 0o755 });
             core.setOutput("binary", file);
-      # The pipeline's publish step names buildhost's publish action at @master. GitHub refuses that action at master as an expression over its 21000-character limit, so the step fails to load for every repo. This branch's tree holds the repair, and a path ref resolves against this workspace, so the pipeline publishes through the action this branch carries.
+      # The pipeline's publish step names buildhost's publish action at a remote ref. GitHub refuses that action at master as an expression over its 21000-character limit, so the step fails to load for every repo. This branch's tree holds the repair, and a path ref resolves against this workspace, so the pipeline publishes through the action this branch carries.
       - name: Check out the pipeline
         uses: actions/checkout@v4
         with:
@@ -67,7 +67,7 @@ jobs:
           script: |
             const file = path.join(env.GITHUB_WORKSPACE!, ".go-toolchain", "action.yml");
             const before = fs.readFileSync(file, "utf8");
-            const after = before.replaceAll("wow-look-at-my/buildhost/.github/actions/buildhost-publish@master", "./.github/actions/buildhost-publish");
+            const after = before.replace(/wow-look-at-my\/buildhost\/\.github\/actions\/buildhost-publish@[\w.\/-]+/g, "./.github/actions/buildhost-publish");
             if (after === before) throw new Error(`${file} names no remote buildhost-publish ref, so this step no longer retargets the publish`);
             fs.writeFileSync(file, after);
             fs.appendFileSync(path.join(env.GITHUB_WORKSPACE!, ".git", "info", "exclude"), ".go-toolchain/\n");
