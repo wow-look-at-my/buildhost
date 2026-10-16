@@ -79,7 +79,7 @@ jobs:
           script: |
             const file = path.join(env.GITHUB_WORKSPACE!, ".go-toolchain", "action.yml");
             const before = fs.readFileSync(file, "utf8");
-            const after = before.replaceAll("wow-look-at-my/buildhost/.github/actions/buildhost-publish@master", "./.github/actions/buildhost-publish");
+            const after = before.replaceAll(/wow-look-at-my\/buildhost\/\.github\/actions\/buildhost-publish@(master|lkgb)/g, "./.github/actions/buildhost-publish");
             if (after === before) throw new Error(`${file} names no remote buildhost-publish ref, so this step no longer retargets the publish`);
             fs.writeFileSync(file, after);
             fs.appendFileSync(path.join(env.GITHUB_WORKSPACE!, ".git", "info", "exclude"), ".go-toolchain/\n");
@@ -952,4 +952,4 @@ jobs:
 
   publish-ghcr:
     needs: container-healthcheck
-    uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@master
+    uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@lkgb
