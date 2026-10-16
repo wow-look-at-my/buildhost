@@ -53,5 +53,22 @@ function step(inputs: Record<string, string>) {
 	await download(required.g, async () => {});
 	assert.match(required.out.failed[0], /Could not download https:\/\/dl\.pazer\.build\/org\/tool/);
 
+	// With no token input, a job that may mint one sends its OIDC token, which is what reads a private project.
+	process.env.ACTIONS_ID_TOKEN_REQUEST_URL = 'https://issuer.example/token?api-version=2.0';
+	process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = 'runner';
+	const minted: { url: string; auth: string | undefined }[] = [];
+	globalThis.fetch = (async (url: string, init: { headers: Record<string, string> }) => {
+		minted.push({ url, auth: init.headers.Authorization });
+		if (url.startsWith('https://issuer.example/')) return new Response(JSON.stringify({ value: 'oidc-jwt' }), { status: 200 });
+		return new Response('binary', { status: 200 });
+	}) as any;
+	const viaOidc = step({ path: join(dir, 'private') });
+	await download(viaOidc.g, async () => {});
+	delete process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+	delete process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+	assert.strictEqual(minted[0].url, 'https://issuer.example/token?api-version=2.0&audience=https://pazer.build');
+	assert.strictEqual(minted[1].auth, 'Bearer oidc-jwt', 'the download carries the minted token');
+	assert.deepStrictEqual(viaOidc.out.failed, []);
+
 	console.log('download-action: all checks passed');
 })();
