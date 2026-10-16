@@ -41,10 +41,10 @@ outputs:
 runs:
   using: composite
   steps:
-    # A path ref cannot cross into another action's tree, so this one names the tag the org pins.
+    # Pinned at @lkgb rather than a relative path: a composite step's path ref cannot cross into another action's tree. This one names the tag the org pins.
     - name: Download the buildhost CLI
       id: download-cli
-      uses: wow-look-at-my/buildhost/.github/actions/buildhost-download@master
+      uses: wow-look-at-my/buildhost/.github/actions/buildhost-download@lkgb
       with:
         server: ${{ inputs.server }}
         project: buildhost
