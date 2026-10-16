@@ -6,7 +6,10 @@ import { readFileSync, statSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { download, downloadURL } from '../../.github/actions/lib/download.ts';
-import { globalsOf } from './fakes.ts';
+import { globalsOf, oidcIssuer } from './fakes.ts';
+
+// A runner can mint OIDC tokens. These checks start from a job that cannot.
+oidcIssuer();
 
 const none = { version: '', branch: '', os: '', arch: '', format: '' };
 
@@ -54,8 +57,7 @@ function step(inputs: Record<string, string>) {
 	assert.match(required.out.failed[0], /Could not download https:\/\/dl\.pazer\.build\/org\/tool/);
 
 	// With no token input, a job that may mint one sends its OIDC token, which is what reads a private project.
-	process.env.ACTIONS_ID_TOKEN_REQUEST_URL = 'https://issuer.example/token?api-version=2.0';
-	process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = 'runner';
+	oidcIssuer('https://issuer.example/token?api-version=2.0');
 	const minted: { url: string; auth: string | undefined }[] = [];
 	globalThis.fetch = (async (url: string, init: { headers: Record<string, string> }) => {
 		minted.push({ url, auth: init.headers.Authorization });
@@ -64,8 +66,7 @@ function step(inputs: Record<string, string>) {
 	}) as any;
 	const viaOidc = step({ path: join(dir, 'private') });
 	await download(viaOidc.g, async () => {});
-	delete process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
-	delete process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+	oidcIssuer();
 	assert.strictEqual(minted[0].url, 'https://issuer.example/token?api-version=2.0&audience=https://pazer.build');
 	assert.strictEqual(minted[1].auth, 'Bearer oidc-jwt', 'the download carries the minted token');
 	assert.deepStrictEqual(viaOidc.out.failed, []);
