@@ -40,6 +40,15 @@ function step(inputs: Record<string, string>) {
 	assert.strictEqual(statSync(join(dir, 'sub', 'tool')).mode & 0o111, 0o111, 'executable is the default');
 	assert.deepStrictEqual(ok.out.outputs, { path: join(dir, 'sub', 'tool'), downloaded: 'true' });
 
+	const vended = answer(200, 'binary');
+	process.env.BUILDHOST_READ_TOKEN = 'vended';
+	await download(step({ path: join(dir, 'vended'), os: 'linux', arch: 'amd64' }).g, async () => {});
+	assert.strictEqual(vended[0].auth, 'Bearer vended', 'no token input reads with the token secret-server vended');
+	const given = answer(200, 'binary');
+	await download(step({ token: 'given', path: join(dir, 'given'), os: 'linux', arch: 'amd64' }).g, async () => {});
+	assert.strictEqual(given[0].auth, 'Bearer given', 'a token input wins over the vended one');
+	delete process.env.BUILDHOST_READ_TOKEN;
+
 	const tries = answer(404, '');
 	const missing = step({ path: join(dir, 'gone'), required: 'false' });
 	await download(missing.g, async () => {});
