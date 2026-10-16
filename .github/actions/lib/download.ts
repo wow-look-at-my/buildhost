@@ -55,7 +55,8 @@ export function downloadURL(f: { server: string; project: string; version: strin
 export async function download(g: ActionGlobals, wait = (ms: number) => new Promise((r) => setTimeout(r, ms))): Promise<void> {
 	const { core, inputs } = g;
 	const project = String(inputs.project);
-	const token = String(inputs.token);
+	// The composite's secret-server step exports the read token secret-server vends the calling repository, so a private project needs no token input.
+	const token = String(inputs.token) || process.env.BUILDHOST_READ_TOKEN || "";
 	const url = downloadURL({
 		server: String(inputs.server), project, version: String(inputs.version), branch: String(inputs.branch),
 		os: String(inputs.os), arch: String(inputs.arch), format: String(inputs.format),
