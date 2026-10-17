@@ -129,11 +129,12 @@ func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 		return inv, fmt.Errorf("plan eviction: %w", err)
 	}
 	evicted := set.New[int64](plan.Releases())
-	for _, ref := range plan.EvictedReleases {
+	for _, ref := range plan.AllEvicted() {
 		evicted.Add(ref.ID)
 	}
-	for _, ref := range plan.AbandonedReleases {
-		evicted.Add(ref.ID)
+	deletedBranch := set.New[int64](len(plan.DeletedBranchReleases))
+	for _, ref := range plan.DeletedBranchReleases {
+		deletedBranch.Add(ref.ID)
 	}
 	freed := set.New[string](len(plan.FreedBlobs))
 	for _, b := range plan.FreedBlobs {
@@ -147,6 +148,12 @@ func (r *Retention) Inventory(ctx context.Context) (Inventory, error) {
 	holds := make(map[int64][]string, len(facts))
 	for _, f := range facts {
 		h := releaseHolds(f, r.cfg.KeepN, cutoff)
+		// Branch existence is not in the facts table, so the deleted-branch
+		// result comes from the plan. It overrides every keep-N reason: a build
+		// whose branch is gone is reclaimed however far inside keep-N it sits.
+		if deletedBranch.Contains(f.ID) {
+			h = nil
+		}
 		// The plan is the truth. When the derived reasons disagree with it, say
 		// so rather than print a reason that is wrong.
 		if (len(h) == 0) != evicted.Contains(f.ID) {
