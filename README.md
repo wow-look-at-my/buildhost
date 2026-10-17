@@ -403,7 +403,9 @@ Rotate the signing key to invalidate every outstanding link.
 
 ## Health and version
 
-`GET /healthz` returns `200` when the server is up and its database is reachable, and `503` when the database is unreachable. The JSON body reports the exact build the server runs, either way. You can therefore check which image a deployment is on.
+`GET /healthz` returns `200` when the server is up and its database is reachable, and `503` when the database is unreachable. The JSON body reports the exact build the server runs, either way. You can therefore check which image a deployment is on. The response carries `Cache-Control: no-store`.
+
+Ask the apex, or the container by IP or localhost. The service subdomains (`static`, `dl`, `oci`, `docker`, `apt`, `npm`, `brew`, `git`, `goproxy`, `sites`) and the site-domain hosts answer `/healthz` with `404`, because the CDN caches those hosts.
 
 ```json
 {"status":"ok","commit":"<git-sha>","version":"v0.0.<unix>"}
