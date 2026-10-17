@@ -295,5 +295,5 @@ GET    /healthz                                                              hea
 - Resolve to a concrete version before you call the static endpoint. It rejects `v=latest` with HTTP 400.
 - An upload larger than server-info's `max_direct_upload_bytes` must use a chunked upload session. See "Publishing with the REST API". The proxy in front of the server rejects a single request that big before it reaches buildhost.
 - For a private project, send the auth token on every request. The APT, npm and OCI endpoints accept it directly. Homebrew needs the authenticated tap plus `HOMEBREW_BUILDHOST_TOKEN`. See "Package managers".
-- `GET __BASE_URL__/healthz` returns 200 when the server and its database are reachable.
+- `GET __BASE_URL__/healthz` returns 200 when the server and its database are reachable. Ask the apex: the service subdomains and the site-domain hosts answer it with 404.
 - The human-readable README is the authoritative reference for configuration, OIDC auto-provisioning, and deployment.
