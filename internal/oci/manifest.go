@@ -22,6 +22,21 @@ import (
 
 var validDigest = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 
+// ociLinuxArtifacts filters a release's platform-slot artifacts down to linux
+// targets -- the only ones Docker can run as a container image. For an APE this
+// is what keeps darwin/* and windows/* out of the synthesized index while still
+// emitting a linux/arm64 child when the APE declares it. It returns a filtered
+// slice sharing the input's backing array; callers must not append to the result.
+func ociLinuxArtifacts(arts []db.PlatformArtifact) []db.PlatformArtifact {
+	out := arts[:0]
+	for _, a := range arts {
+		if a.OS == db.OSLinux {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 // indexEntry is a platform's descriptor in an image index.
 type indexEntry struct {
 	MediaType string `json:"mediaType"`
@@ -89,6 +104,12 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 		ociError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 		return
 	}
+	// Docker can only run linux images, so advertise only the linux children an
+	// APE artifact covers -- a darwin or windows child is not a runnable
+	// container image, and advertising one is a broken promise to the client
+	// (docker selects it and the container cannot start). A release whose APE
+	// covers no linux platform then correctly serves no OCI image.
+	artifacts = ociLinuxArtifacts(artifacts)
 
 	var manifests []indexEntry
 	for _, a := range artifacts {

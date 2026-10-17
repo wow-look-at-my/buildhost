@@ -4,6 +4,8 @@
 # The private project here is myrepo/myapp. Its tap formula is myrepo, and its folded name is myrepo-myapp.
 #
 # $BREW_HOST comes from the workflow, which starts the server and publishes.
+# The clone lands in this file's temp directory, so nothing here needs brew or
+# a prefix: git and curl against the running server are the whole suite.
 #
 # see docs/formats/brew-tap.md, docs/security/tokens-and-links.md
 
@@ -22,10 +24,10 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		ls "$TAP/Formula" > formulas.txt
-		grep -qx 'go-toolchain.rb' formulas.txt || {
-			echo "the public formula is missing" >&2; cat formulas.txt >&2; exit 1; }
-		if grep -qx 'myrepo.rb\|myrepo-myapp.rb' formulas.txt; then
+		ls "$TAP/Formula" > {outputs.formulas.txt}
+		grep -qx 'go-toolchain.rb' {outputs.formulas.txt} || {
+			echo "the public formula is missing" >&2; cat {outputs.formulas.txt} >&2; exit 1; }
+		if grep -qx 'myrepo.rb\|myrepo-myapp.rb' {outputs.formulas.txt}; then
 			echo "the anonymous tap LEAKS the private formula file" >&2; exit 1
 		fi
 		echo "public-only"

@@ -32,7 +32,31 @@ Docker pulls and runs the same image too. "Pullable" is a claim about the client
 
 ## homebrew-tap-e2e
 
-CI job `homebrew-tap-e2e` (`ci.yml`) runs the README-documented brew flows against a real spawned buildhost. The commands come from `scripts/brew-doc-flows.sh`. That script extracts the fenced blocks from `README.md` and substitutes only the host.
+CI job `homebrew-tap-e2e` (`ci.yml`) runs the README-documented brew flows against
+a real spawned buildhost.
+
+Each suite runs them against a Homebrew prefix of its own, built inside its
+sandbox temp directory by `scripts/brew-sandbox-prefix.sh` from a copy of the
+runner's brew that the job stages into the workspace (the runner's own prefix
+is under `/home` on Linux, which the sandbox does not bind). So the tap, the
+Cellar and the installed files all land somewhere a sandboxed command may
+write, and the assertions are unchanged -- still about what brew did to a real
+file. It is also why the public and private legs need no `brew untap` between
+them: they never share a prefix.
+
+The commands come from `scripts/brew-doc-flows.sh`,
+which extracts the fenced blocks from `README.md` and substitutes only the host;
+`test/dats/homebrew-public.dats` executes the public flow and asserts the served
+`/llms.txt` documents the same two blocks, `homebrew-private.dats` executes the
+private flow and checks the authenticated tap, and `homebrew-anon-leak.dats`
+clones the anonymous tap and probes the unauthorized formula paths. What it
+INSTALLS is the real thing: the public
+`go-toolchain` project is seeded by downloading the live registry's own artifact
+(`dl.pazer.build/go-toolchain?branch=v1&os=&arch=`, public, no token -- the same
+registry the `build` job's go-toolchain action already depends on), so the job
+asserts the actual user-facing claim that `brew install pazer/build/go-toolchain`
+yields a runnable binary (`go-toolchain version`, which exits 0 even when its
+update check can't reach GitHub).
 
 `test/dats/homebrew-public.dats` executes the public flow. It asserts that the served `/llms.txt` documents the same blocks. `homebrew-private.dats` executes the private flow and checks the authenticated tap. `homebrew-anon-leak.dats` clones the anonymous tap and probes the unauthorized formula paths.
 

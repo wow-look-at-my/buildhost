@@ -90,7 +90,7 @@ func (o *OCI) Repackage(ctx context.Context, input Input) (*Output, error) {
 
 	configData := ociCreateConfig(
 		string(input.Artifact.OS), string(input.Artifact.Arch),
-		diffIDs, entrypoint, input.Release.OciUser,
+		diffIDs, input.Project.Name, input.Release.OciUser, entrypoint,
 	)
 
 	configKey, configSize, err := o.Store.Put(ctx, bytes.NewReader(configData))
@@ -360,7 +360,7 @@ func writeTarEntry(tw *tar.Writer, name string, mode int64, typeflag byte, data 
 	return nil
 }
 
-func ociCreateConfig(os, arch string, diffIDs []string, entrypoint []string, user string) []byte {
+func ociCreateConfig(os, arch string, diffIDs []string, name, user string, entrypoint []string) []byte {
 	prefixed := make([]string, len(diffIDs))
 	for i, d := range diffIDs {
 		prefixed[i] = "sha256:" + d
