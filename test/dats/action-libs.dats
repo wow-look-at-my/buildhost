@@ -103,6 +103,12 @@ tests:
 		stdout:
 			- "download-action: all checks passed"
 
+	- desc: download runs secret-server only in a job that can mint an OIDC token
+	  cmd: node test/actions/download-oidc-gate.test.ts
+	  outputs:
+		stdout:
+			- "download-oidc-gate: all checks passed"
+
 	- desc: the portable manifest reads every entry, and fails a manifest it cannot use
 	  cmd: node test/actions/portable-manifest.test.ts
 	  outputs:

@@ -63,8 +63,19 @@ outputs:
 runs:
   using: composite
   steps:
+    # secret-server needs an OIDC token, and a job without id-token: write cannot mint one. Such a job still reads a public project.
+    - id: oidc
+      shell: bash
+      run: |
+        if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] && [ -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+          echo "available=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "::notice::This job has no id-token: write, so it reads public projects only."
+          echo "available=false" >> "$GITHUB_OUTPUT"
+        fi
     # A repository's OIDC token reads only its own projects, so another repository's private project opens with the read token secret-server vends. The step exports every secret the caller is entitled to, and an unentitled caller gets none.
-    - uses: wow-look-at-my/actions@secret-server#latest
+    - if: steps.oidc.outputs.available == 'true' && inputs.token == ''
+      uses: wow-look-at-my/actions@secret-server#latest
     - id: download
       uses: wow-look-at-my/actions@typescript#latest
       with:
