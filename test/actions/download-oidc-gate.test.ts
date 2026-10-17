@@ -1,4 +1,4 @@
-// buildhost-download runs secret-server only in a job that can mint an OIDC token. A job without id-token: write still reads a public project.
+// buildhost-download runs secret-server only in a job that can mint an OIDC token, so a job without id-token: write still reads a public project.
 
 import assert from 'node:assert';
 import { mkdtempSync, readFileSync } from 'node:fs';
