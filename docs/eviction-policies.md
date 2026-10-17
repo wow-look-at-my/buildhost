@@ -25,7 +25,7 @@ Status: **Implemented** -- keep-N per `(project, git branch)` + abandoned-upload
 
 buildhost currently **never deletes a release or artifact**. The only `DELETE FROM` statements in the codebase target `sites`, `api_tokens`, and `oidc_policies` (`internal/db/queries/{sites,tokens,oidc}.sql`). There is no `DeleteRelease`, no `DeleteArtifact`, and no garbage collection. Every publish adds rows and blobs that live forever.
 
-At the time of writing the instance holds projects / releases / artifacts and the GiB of the dashboard reports ~77.7 "Storage Used". With CI pushing a new release per branch per commit, this grows without bound. We need a way to bound it.
+At the time of writing the instance holds projects / releases / artifacts and the dashboard reports ~77.7 GiB "Storage Used". With CI pushing a new release per branch per commit, this grows without bound. We need a way to bound it.
 
 This document proposes a design. It deliberately does **not** ship code. It exists to align on the model and the safety rules first.
 
@@ -73,7 +73,7 @@ if storageKey != "" {
 }
 ```
 
-Site deploys can produce byte-same tarballs, for example multiple branches at the same commit. They then share one blob. To delete one branch removes the shared blob and breaks the other. The probability is low today. It is still the exact class of bug the eviction design must not repeat. The reference-counted approach below fixes it for free.
+Site deploys can produce byte-identical tarballs, for example multiple branches at the same commit. They then share one blob. To delete one branch removes the shared blob and breaks the other. The probability is low today. It is still the exact class of bug the eviction design must not repeat. The reference-counted approach below fixes it for free.
 
 ### 2.5 Stats machinery already exists
 
@@ -164,7 +164,7 @@ All three sit on top of the GC foundation and honor the Section multiple pins. T
 Keep the N most-recent published releases per project. Evict the older ones. The pins still apply: latest per branch, tagged, and recent.
 
 - **Pros:** predictable, easy to explain, and registry-standard, as npm dist-tags and ghcr retention are. It uses only a signal we already have, `version_num`. It bounds per-project growth directly.
-- **Cons:** it does not target a disk budget directly, so a few large projects can still dominate. N is a blunt instrument across different projects.
+- **Cons:** it does not target a disk budget directly, so a few huge projects can still dominate. N is a blunt instrument across different projects.
 - **Config:** `BUILDHOST_RETENTION_KEEP_N` (global default), optional per-project override column.
 
 ### Option B -- Age-based TTL
@@ -241,9 +241,7 @@ Surfaces, matching existing patterns:
 
 `oci_blob_links` is **project-scoped, not release-scoped**. A pushed docker blob or manifest attaches to the project. It is shared across pushes and tags (`internal/oci/*.go`).
 
-To evict a `kind=docker` release is therefore not a simple row cascade. You must drop the tag and the manifest first. You must then GC each blob that no remaining tag or manifest in that project reaches. This deserves its own design pass. It is out of scope for the initial keep-N work. Until then a docker image is retained.
-
-A tagged release is pinned regardless.
+To evict a `kind=docker` release is therefore not a simple row cascade. You must drop the tag and the manifest first. You must then GC each blob that no remaining tag or manifest in that project reaches. This deserves its own design pass. It is out of scope for the initial keep-N work. Until then a docker image is retained. A tagged release is pinned regardless.
 
 ---
 

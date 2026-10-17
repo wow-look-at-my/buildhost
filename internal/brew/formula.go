@@ -23,6 +23,8 @@ const (
 	formulaLatest formulaMode = iota
 	// formulaVersioned is a name@version formula; missing digests are computed.
 	formulaVersioned
+	// formulaVersionedCached is a name@version formula built from cached digests; a missing one returns errDigestPending.
+	formulaVersionedCached
 	// formulaHistory is a past release's unversioned formula for the tap history.
 	formulaHistory
 )
@@ -47,7 +49,7 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 	}
 	version := brewVersion(release)
 	className := repackage.BrewClassName(formula)
-	if mode == formulaVersioned {
+	if mode == formulaVersioned || mode == formulaVersionedCached {
 		name, ok := repackage.BrewVersionedClassName(project.Name, version)
 		if !ok {
 			return nil, db.ErrNotFound
@@ -75,13 +77,22 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 			kind = string(a.Kind)
 		}
 
-		sum, err := h.cachedTarGZSHA256(ctx, a)
-		if errors.Is(err, errDigestPending) {
-			if mode == formulaHistory {
+		var sum string
+		var err error
+		switch mode {
+		case formulaVersionedCached:
+			sum, err = h.cachedTarGZSHA256(ctx, a)
+			if errors.Is(err, errDigestPending) {
+				h.queueDigestFill(project, release, a, baseURL)
+			}
+		case formulaHistory:
+			sum, err = h.cachedTarGZSHA256(ctx, a)
+			if errors.Is(err, errDigestPending) {
 				h.queueDigestFill(project, release, a, baseURL)
 				pending = true
 				continue
 			}
+		default:
 			sum, err = h.tarGZSHA256(ctx, project, release, a, baseURL)
 		}
 		if err != nil {
@@ -113,7 +124,8 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 		License:     firstNonEmpty(project.License, "MIT"),
 		Kind:        kind,
 		// A private project's formula downloads through the tap's token-aware
-		Private: project.IsPrivate,
+		Private:   project.IsPrivate,
+		Versioned: mode == formulaVersioned || mode == formulaVersionedCached,
 		// The project's packaging-agnostic create_service setting.
 		Service:   project.CreateService,
 		Resources: resources,
@@ -197,12 +209,17 @@ func (h *Handler) queueDigestFill(project db.Project, release db.Release, a db.P
 func (h *Handler) fillDigests() {
 	for {
 		h.fillMu.Lock()
+		if len(h.fillQueue) == 0 {
+			h.fillRunning = false
+			h.fillMu.Unlock()
+			return
+		}
 		job := h.fillQueue[0]
 		h.fillQueue = h.fillQueue[1:]
 		h.fillMu.Unlock()
 
 		if _, err := h.tarGZSHA256(context.Background(), job.project, job.release, job.artifact, job.baseURL); err != nil {
-			slog.Warn("fill tar.gz digest for tap history", "project", job.project.Name, "version", job.release.Version, "artifact_id", job.artifact.ID, "err", err)
+			slog.Warn("fill tar.gz digest", "project", job.project.Name, "version", job.release.Version, "artifact_id", job.artifact.ID, "err", err)
 		}
 
 		h.fillMu.Lock()

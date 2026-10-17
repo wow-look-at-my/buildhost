@@ -24,14 +24,14 @@ func readBundle(t *testing.T) string {
 
 // The dashboard wires its buttons with inline onclick="App.x(...)" markup,
 // and the bundle only exposes App.x for names the TypeScript EXPORTS. A
-// handler that is referenced but not exported is a silently dead button. There
-// is no build error and nothing red in CI. The control does nothing when clicked.
+// handler that is referenced but not exported is a silently dead button -- no
+// build error, nothing red in CI, a control that does nothing when clicked.
 //
 // This is also the check that would have caught the drift this file was
-// rewritten for. The committed bundle had diverged from its TypeScript
+// rewritten for: the committed bundle had diverged from its TypeScript
 // source, and the assertions (on internal function names) passed against the
-// stale artifact. This happens while the real source could not have produced
-// a working dashboard.
+// stale artifact while the real source could not have produced a working
+// dashboard.
 func TestAdminStaticInlineHandlersAreExported(t *testing.T) {
 	t.Serial()
 	body := readBundle(t)

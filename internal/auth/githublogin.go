@@ -177,11 +177,12 @@ func handleSigninStart(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSigninCallback completes the OAuth round-trip. No failure here may be
-// a dead end. The browser is sitting on the fixed callback URL. This happens
-// where a reload re-submits the consumed single-use code. So every exit
-// either restarts the flow or renders a page with a way to. And never with a
-// 5xx -- Cloudflare replaces origin 5xx bodies with its own bare error page,
-// which used to strand
+// handleSigninCallback completes the OAuth round-trip. No failure here may be
+// a dead end: the browser is sitting on the fixed callback URL, where a
+// reload re-submits the consumed single-use code, so every exit either
+// restarts the flow or renders a page with a way to. And never with a 5xx --
+// Cloudflare replaces origin 5xx bodies with its own bare error page, which
+// used to strand
 func handleSigninCallback(w http.ResponseWriter, r *http.Request) {
 	g := githubAuth()
 	if g == nil {

@@ -32,9 +32,7 @@ Avoid `*` in production. Scope the allowlist to trusted orgs only.
 
 ## Audience check
 
-The auto-provisioning path does NOT gate on the token's `aud` claim. Trust for a trusted-issuer token comes from the JWKS signature, the org allowlist (`BUILDHOST_OIDC_ORGS`), the event allowlist (`BUILDHOST_OIDC_EVENTS`), and the subject claim. To tell the server its own URL was never a meaningful trust boundary. A stale or missing value also caused a production 401 outage. As a result, the gate was removed. A per-policy `audience` field on an `OIDCPolicy` is still honored.
-
-It is an optional, opt-in restriction for an explicitly configured policy. The server is never told its own URL. Every generated link comes from the request `Host` header (`auth.RequestBaseURL`).
+The auto-provisioning path does NOT gate on the token's `aud` claim. Trust for a trusted-issuer token comes from the JWKS signature, the org allowlist (`BUILDHOST_OIDC_ORGS`), the event allowlist (`BUILDHOST_OIDC_EVENTS`), and the subject claim. To tell the server its own URL was never a meaningful trust boundary. A stale or missing value also caused a production 401 outage. As a result, the gate was removed. A per-policy `audience` field on an `OIDCPolicy` is still honored. It is an optional, opt-in restriction for an explicitly configured policy. The server is never told its own URL. Every generated link comes from the request `Host` header (`auth.RequestBaseURL`).
 
 ## Event check
 

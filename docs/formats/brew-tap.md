@@ -8,7 +8,7 @@
 
 A formula is also fetchable at `brew.{domain}/Formula/{project}.rb`, and at the legacy `brew.{domain}/{project}`. A tap formula FILENAME folds the slash namespace, so `tapFormulaName` turns `gcc/pgo` into `gcc-pgo.rb`. The formula routes therefore resolve a folded name back to its project when no project matches it literally. `Handler.parseRoute` does that.
 
-A literally named project always wins. Auth restricts a fold candidate.TokenCanReadProject`, which is the tap-membership rule. An anonymous probe of a private project's folded name therefore stays a 404, and never a 401 existence leak. `requireProject` still applies its normal auth to the resolved project.
+A literally named project always wins. A fold candidate is restricted to a project the request may read, by `auth.TokenCanReadProject`, which is the tap-membership rule. An anonymous probe of a private project's folded name therefore stays a 404, and never a 401 existence leak. `requireProject` still applies its normal auth to the resolved project.
 
 The `{project}.rb` pattern is ONE path segment. A slash-namespaced name therefore also gets `brew.{domain}/Formula/{path...}`. Without that route, `/Formula/gcc/pgo.rb` fell through to the legacy `/{project}` route. That route read the whole path as a project name, and answered "project not found".
 
@@ -60,7 +60,7 @@ The class name is `repackage.BrewVersionedClassName`, a port of Homebrew's `Form
 
 The class name comes from `repackage.BrewClassName`. It mirrors Homebrew's own filename-to-class derivation in `Formulary.class_s`. There `-`, `_` and `.` separate, and buildhost's folded `/` separates too. The next character is upcased, so `go1.2.3` becomes `Go123`.
 
-Repa excluds a digit-leading project nameckage.BrewEligibleProjectName`. A formula endpoint answers 404 for it, and the tap skips it. `class 7zip < Formula` is a Ruby syntax error. No substitute class satisfies brew's loader either, because `Formulary.class_s("7zip")` returns `"7zip"`, which is not a legal constant. Both facts were measured against Homebrew 6.0.9.
+A digit-leading project name is excluded from brew entirely, by `repackage.BrewEligibleProjectName`. A formula endpoint answers 404 for it, and the tap skips it. `class 7zip < Formula` is a Ruby syntax error. No substitute class satisfies brew's loader either, because `Formulary.class_s("7zip")` returns `"7zip"`, which is not a legal constant. Both facts were measured against Homebrew 6.0.9.
 
 **Every formula carries a TOP-LEVEL `url` and `sha256`.** That is the canonical resource, which is linux/intel when present, and otherwise the first in stable (OS, Arch) order. `repackage.brewCanonicalResource` picks it. The per-platform `on_<os>` and `on_<arch>` stanzas come in addition.
 
@@ -76,7 +76,7 @@ That follows the default_branch reassertion precedent. An operator can also flip
 
 Only a BOOL crosses the wire either way. No publisher-controlled Ruby can therefore enter the template.
 
-A flagged binary-kind project's formula gains a `service do` block. It carries `run [opt_bin/"<InstallName>"]`, and the opt path survives an upgrade. It carries `keep_alive successful_exit: false`, which is launchd's `KeepAlive {SuccessfulExit: false}`, and means CRASH-ONLY start. A plain `keep_alive true` respawns a deliberately-exiting app about every few seconds, such as a single-instance exit-0 handoff. It carries `log_path` and `error_log_path` under `var/"log/"`, and brew services mkpaths the log parents itself before load, through `Service#path_dirs`. It carries `process_type :interactive`.
+A flagged binary-kind project's formula gains a `service do` block. It carries `run [opt_bin/"<InstallName>"]`, and the opt path survives an upgrade. It carries `keep_alive successful_exit: false`, which is launchd's `KeepAlive {SuccessfulExit: false}`, and means CRASH-ONLY restart. A plain `keep_alive true` respawns a deliberately-exiting app about every few seconds, such as a single-instance exit-0 handoff. It carries `log_path` and `error_log_path` under `var/"log/"`, and brew services mkpaths the log parents itself before load, through `Service#path_dirs`. It carries `process_type :interactive`.
 
 ONE `brew services start <tap>/<project>` then manages the binary as a login service. On macOS that is a user LaunchAgent in the gui domain. An upgrade keeps it running, through opt_bin.
 
@@ -114,7 +114,7 @@ The tap itself is served from a **persistent, append-only, per-lineage git histo
 
 There is one lineage per **(request-derived base URL, credential scope)** key. The base URL is part of the key because a tap must never be served with another host's URLs baked in. The credential scope is part of it because tap contents depend on what the credential may read. `tapScopeKey` computes that scope, as anon, a DB-token ID, or an OIDC subject plus namespace. One scope's lineage can therefore never be handed to another.
 
-Each lineage is a bare dumb-HTTP layout, with loose `objects/`, `refs/heads/main`, `info/refs` and `HEAD`. Mmap through an `os.R servs itoot`. That is the storage-layer pattern, with no heap buffering and no path escape.
+Each lineage is a bare dumb-HTTP layout, with loose `objects/`, `refs/heads/main`, `info/refs` and `HEAD`. It is served by mmap through an `os.Root`. That is the storage-layer pattern, with no heap buffering and no path escape.
 
 **A ref only ever fast-forwards.** A rebuild reads the persisted tip. It REUSES that tip when the new content's tree is unchanged. As a result, a periodic rebuild adds no growth. The commit sha is deterministic, from zero timestamps, a fixed identity, and content. A rebuild otherwise appends a commit with `parent <tip>`.
 
@@ -122,11 +122,9 @@ Temp file and rename writes objects. A reader therefore never sees a ref that na
 
 This is what keeps Homebrew's updater working. `brew update` runs `git fetch --force` and `git rebase origin/main` per tap. The old throwaway-snapshot design minted an unrelated PARENTLESS root per build. That wedged every client mid-rebase, in add/add conflicts, after every publish. An already-wedged clone recovers once, with `brew update-reset`. Append-only objects also fix the dumb-HTTP consistency race.
 
-A publish mid-`brew update` can no longer orphan a ref a client already fetched.
+The in-memory layer, in `tapcache.go`, is now a rebuild-rate gate plus an open `os.Root` cache. It allows at most one content re-check per `tapCacheTTL`, many seconds, per lineage. It sweeps an expired entry on access. The map is capped by `tapCacheMaxEntries`, and eviction closes file descriptors only. As a result, the history stays.
 
-The in-memory layer, in `tapcache.go`, is now a rebuild-rate gate plus an open `os.Root` cache. It allows at most one content re-check per `tapCacheTTL`, many seconds, per lineage. It sweeps an expired entry on access. TapC caps the mapacheMaxEntries`, and eviction closes file descriptors only. As a result, the history stays.
-
-TapH caps the DISK storeistoryMaxLineages`. It evicts a whole lineage, LRU by directory mtime. A junk Host header or a deleted token is therefore unable to grow it without bound. `resetTapCache`, which runs from OnReady, deliberately does NOT remove the history root. It sweeps only a crash orphan, meaning a temp file, and the legacy `{TmpDir}/brew-tap` snapshot root. The cost is a handful of new small objects per content-changing publish per lineage.
+The DISK store is capped too, by `tapHistoryMaxLineages`. It evicts a whole lineage, LRU by directory mtime. A junk Host header or a deleted token is therefore unable to grow it without bound. `resetTapCache`, which runs from OnReady, deliberately does NOT remove the history root. It sweeps only a crash orphan, meaning a temp file, and the legacy `{TmpDir}/brew-tap` snapshot root. The cost is a handful of new small objects per content-changing publish per lineage.
 
 ## Smart-HTTP serving
 

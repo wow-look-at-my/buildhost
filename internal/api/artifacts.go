@@ -188,10 +188,9 @@ func (h *Handler) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Every combination the upload fans out to must be a coherent platform:
-		// os=wasm pairs only with the wasm flavor arches (js/wasip1) and vice
-		// versa. A "linux/js" or "wasm/amd64" row could never be downloaded by
-		// anything real. Checked before the body is read so a bad spec stores
-		// nothing.
+		// os=wasm pairs only with the wasm flavor arches (js/wasip1) and vice versa
+		// -- a "linux/js" or "wasm/amd64" row could never be downloaded by anything
+		// real. Checked before the body is read so a bad spec stores nothing.
 		for _, osName := range oses {
 			for _, arch := range arches {
 				if !db.CompatiblePlatform(osName, arch) {

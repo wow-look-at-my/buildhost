@@ -25,7 +25,7 @@ func (f *fakeDeleter) MarkDeleted(_ context.Context, githubRepo, project, versio
 	return f.err
 }
 
-// Evicting a release makes its artifacts unfetchable. Their storage
+// Evicting a release makes its artifacts unfetchable, so their storage
 // records must be retracted -- otherwise the org's linked artifacts page
 // keeps asserting buildhost holds bytes it deleted.
 func TestRun_EnforceMarksEvictedRecordsDeleted(t *testing.T) {

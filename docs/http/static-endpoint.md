@@ -12,9 +12,7 @@ A token-bearing response is served `Cache-Control: private, no-store`, so a shar
 
 ## Encoding passthrough and canonicalization
 
-The `raw` format serves the stored zstd blob **as it is**, with `Content-Encoding: zstd` and `Vary: Accept-Encoding`. Conditions gate that. The client's `Accept-Encoding` must list zstd. The artifact must not be under a strip (`storage.CompressedGetter`). The client then does the decompression. Otherwise the format serves the decompressed bytes as before.
-
-`canonicalQuery` also folds an `os` or `arch` platform-name alias to its canonical spelling. Every spelling therefore resolves to one cacheable URL through the canonicalization redirect.
+The `raw` format serves the stored zstd blob **as it is**, with `Content-Encoding: zstd` and `Vary: Accept-Encoding`. Conditions gate that. The client's `Accept-Encoding` must list zstd. The artifact must not be under a strip (`storage.CompressedGetter`). The client then does the decompression. Otherwise the format serves the decompressed bytes as before. `canonicalQuery` also folds an `os` or `arch` platform-name alias to its canonical spelling. Every spelling therefore resolves to one cacheable URL through the canonicalization redirect.
 
 ## Download attribution
 

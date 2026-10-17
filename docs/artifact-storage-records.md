@@ -60,9 +60,7 @@ The composites' step lists are therefore unchanged from before this feature.
 
 Without it, that whole path stored real, permanent, consumer-visible artifacts and recorded nothing. To treat those blocks as "components, not the pipeline" was incorrect, because for those repos the chain IS the pipeline.
 
-It needs the artifact list to do this, and there is no artifacts-listing endpoint. **Both `PublishRelease` and `GetRelease` therefore return `publishedRelease`.** That type embeds the `db.Release`, so every pre-existing top-level field is unchanged for an older client. It adds `artifacts`. Publish already loaded them for its no-artifacts check. As a result, that costs nothing.
-
-`TestPublishRelease_ReturnsPublishedArtifacts` and `TestGetRelease_ReturnsArtifacts` pin it.
+It needs the artifact list to do this, and there is no artifacts-listing endpoint. **Both `PublishRelease` and `GetRelease` therefore return `publishedRelease`.** That type embeds the `db.Release`, so every pre-existing top-level field is unchanged for an older client. It adds `artifacts`. Publish already loaded them for its no-artifacts check. As a result, that costs nothing. `TestPublishRelease_ReturnsPublishedArtifacts` and `TestGetRelease_ReturnsArtifacts` pin it.
 
 A publish response that carries no `artifacts` FAILS outright. There is deliberately no retry. It once had one. A publish served mid-rollout by the previous container came back without the field, and failed an unrelated repo's CI. That was observed live: cc-marketplace published mid-rollout and failed, while two sibling repos published minutes later and succeeded.
 
@@ -86,7 +84,7 @@ This is a deliberate divergence from the deployment steps' graceful-skip contrac
 
 ## API field constraints that are easy to get wrong
 
-These come from GitHub's OpenAPI description, and each bit.
+These come from GitHub's OpenAPI description, and each has bitten.
 
 `github_repository` is the repo NAME only. Its pattern is `^[A-Za-z0-9.\-_]+$`. An `owner/repo` value is therefore rejected outright. It fails every publish. The org is already the endpoint's path parameter.
 
