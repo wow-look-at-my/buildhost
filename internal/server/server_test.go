@@ -321,13 +321,18 @@ func TestHealthz_HostGate(t *testing.T) {
 		require.Equal(t, "no-store", resp.Header.Get("Cache-Control"), "host %s", host)
 	}
 
-	for _, label := range []string{"static", "dl", "oci", "docker", "apt", "npm", "brew", "git", "goproxy", "sites"} {
+	for _, label := range []string{"static", "dl", "oci", "apt", "npm", "brew", "git", "goproxy", "sites"} {
 		for _, host := range []string{label + "." + primaryTestDomain, label + ".pazer.build:443"} {
 			resp, body := siteGet(t, env, host, "/healthz")
 			require.Equal(t, http.StatusNotFound, resp.StatusCode, "host %s", host)
 			require.NotContains(t, body, `"status"`, "host %s", host)
 		}
 	}
+
+	// docker.{domain} redirects every path to oci.{domain}, which 404s above.
+	resp, _ := siteGet(t, env, "docker."+primaryTestDomain, "/healthz")
+	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
+	require.Contains(t, resp.Header.Get("Location"), "oci."+primaryTestDomain+"/healthz")
 
 	for _, host := range []string{siteTestDomain, "myapp." + siteTestDomain} {
 		resp, body := siteGet(t, env, host, "/healthz")
