@@ -19,7 +19,7 @@ function fakeFetch(route: (method: string, urlPath: string) => Answer) {
 	globalThis.fetch = (async (url: string, init?: { method?: string; body?: unknown }) => {
 		const method = init?.method ?? 'GET';
 		seen.push({ method, url, body: init?.body });
-		if (url.startsWith('https://oidc.example')) return { status: 200, json: async () => ({ value: 'tok' }), text: async () => '' };
+		if (url.startsWith('https://oidc.example')) return new Response(JSON.stringify({ value: 'tok' }));
 		const a = route(method, new URL(url).pathname);
 		return { status: a.status, text: async () => a.body, json: async () => JSON.parse(a.body) };
 	}) as any;
