@@ -23,6 +23,8 @@ interface ServerOptions {
 	truncateChunk?: { nth: number; keep: number };
 	/** Status the finalize request answers with. */
 	finalizeStatus?: number;
+	/** Finalizes that answer busy before another finalize consumes the session. */
+	busyFinalizes?: number;
 }
 
 interface Harness {
@@ -39,6 +41,7 @@ async function start(opts: ServerOptions): Promise<Harness> {
 	let finalized: Req | null = null;
 	let patches = 0;
 	let nextID = 0;
+	let busy = 0;
 
 	const server = http.createServer((req, res) => {
 		const chunks: Buffer[] = [];
@@ -81,6 +84,13 @@ async function start(opts: ServerOptions): Promise<Harness> {
 				return;
 			}
 			// Anything else is the artifact endpoint the publish would call.
+			const sid = new URL(url, 'http://x').searchParams.get('upload_session');
+			if (opts.busyFinalizes !== undefined && sid) {
+				if (busy < opts.busyFinalizes) { busy++; json(409, { error: 'upload session busy' }); return; }
+				spools.delete(sid);
+				json(404, { error: 'upload session not found' });
+				return;
+			}
 			finalized = entry;
 			res.writeHead(opts.finalizeStatus ?? 201, { 'Content-Type': 'application/json' });
 			res.end(JSON.stringify({ ok: true }));
@@ -198,6 +208,21 @@ async function main(): Promise<void> {
 		const r = await putFile(h.send, core, { urlPath: '/api/v1/a', body: f.body, chunkSize: 1024 });
 		assert.strictEqual(r.status, 409, 'the endpoint status is returned, not thrown');
 		assert.strictEqual(h.spools.size, 0, 'the spool is aborted rather than left to the sweeper');
+		await h.close();
+	}
+
+	// --- a finalize that finds another running waits for it ------------
+
+	{
+		const h = await start({ maxDirect: 1000, busyFinalizes: 1 });
+		const f = writeFixture('busy_linux_amd64', 3000);
+		const r = await putFile(h.send, core, { urlPath: '/api/v1/a?kind=binary', body: f.body, chunkSize: 1024 });
+		assert.strictEqual(r.status, 201, 'the busy finalize ends in the stored artifact');
+		const q = new URL(h.finalized!.url, 'http://x').searchParams;
+		assert.strictEqual(q.get('upload_session'), null, 'the last request is a hash reference');
+		assert.strictEqual(q.get('upload_sha256'), f.sum);
+		assert.strictEqual(q.get('kind'), 'binary', 'the original query survives');
+		assert.ok(warnings.some((w) => w.includes('busy with another finalize')), 'the wait is named');
 		await h.close();
 	}
 
