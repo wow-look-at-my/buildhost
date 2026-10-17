@@ -1,12 +1,28 @@
 // The GitHub Actions OIDC token every buildhost action authenticates with when it has no token input.
 
 /** Mints an OIDC token audience-scoped to the buildhost server. It answers null when the job may not mint one, and empty when the issuer sent none. */
-export async function mintOidcToken(server: string): Promise<string | null> {
+export async function mintOidcToken(server: string, wait = (ms: number) => new Promise((done) => setTimeout(done, ms))): Promise<string | null> {
 	const url = process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
 	const bearer = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
 	if (!url || !bearer) return null;
-	const resp = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
-	return ((await resp.json()) as { value?: string }).value || '';
+	// The issuer sometimes answers with a proxy's error page. That is not a refusal, so the request goes again until it gets a token.
+	for (;;) {
+		let status = 0;
+		let text = '';
+		try {
+			const resp = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
+			status = resp.status;
+			text = await resp.text();
+			if (resp.ok) return (JSON.parse(text) as { value?: string }).value || '';
+		} catch (err) {
+			text = String(err);
+		}
+		if (status >= 400 && status < 500 && status !== 408 && status !== 429) {
+			throw new Error(`the OIDC issuer refused the token request (${status}): ${text.slice(0, 500)}`);
+		}
+		console.warn(`the OIDC token request failed (${status || 'no answer'}): ${text.slice(0, 200)}; it goes again in 2s`);
+		await wait(2000);
+	}
 }
 
 export function jwtExpiry(jwt: string): number {
