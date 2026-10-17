@@ -306,6 +306,40 @@ func TestHealthz(t *testing.T) {
 	require.Equal(t, body.Started, second.Started, "started names the process start, so it never moves while the process runs")
 }
 
+func TestHealthz_HostGate(t *testing.T) {
+	t.Serial()
+	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, false)
+
+	for _, host := range []string{
+		primaryTestDomain, strings.ToUpper(primaryTestDomain) + ":443",
+		"127.0.0.1:8080", "localhost:8080", "[::1]:8080", "buildhost:8080",
+		"evil.example",
+	} {
+		resp, body := siteGet(t, env, host, "/healthz")
+		require.Equal(t, http.StatusOK, resp.StatusCode, "host %s", host)
+		require.Contains(t, body, `"status":"ok"`, "host %s", host)
+		require.Equal(t, "no-store", resp.Header.Get("Cache-Control"), "host %s", host)
+	}
+
+	// Some service hosts own every path, so their own handler answers instead
+	// of the gate. Each one must still return no health body.
+	for _, label := range []string{"static", "dl", "oci", "docker", "apt", "npm", "brew", "git", "goproxy", "sites"} {
+		for _, host := range []string{label + "." + primaryTestDomain, label + ".pazer.build:443"} {
+			resp, body := siteGet(t, env, host, "/healthz")
+			require.NotEqual(t, http.StatusOK, resp.StatusCode, "host %s", host)
+			require.NotContains(t, body, `"github_credential"`, "host %s", host)
+		}
+	}
+	resp, _ := siteGet(t, env, "static."+primaryTestDomain, "/healthz")
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+	for _, host := range []string{siteTestDomain, "myapp." + siteTestDomain} {
+		resp, body := siteGet(t, env, host, "/healthz")
+		require.Equal(t, http.StatusNotFound, resp.StatusCode, "host %s", host)
+		require.NotContains(t, body, `"github_credential"`, "host %s", host)
+	}
+}
+
 func TestHealthz_DBClosed(t *testing.T) {
 	t.Serial()
 	env := setup(t)
