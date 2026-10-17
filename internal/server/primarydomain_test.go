@@ -80,7 +80,7 @@ func TestPrimaryDomain_ScopesWebAndAPIToApex(t *testing.T) {
 	assert.Contains(t, resp.Header.Get("Location"), "github.com/login/oauth/authorize")
 
 	resp, _ = siteGet(t, env, siteTestDomain, "/healthz")
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	resp, body = siteGet(t, env, siteTestDomain, "/__sso?code=garbage")
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	assert.Contains(t, body, "Sign-in failed")

@@ -72,8 +72,18 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 			code = http.StatusServiceUnavailable
 		}
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(code)
 		_ = json.NewEncoder(w).Encode(resp)
+	}
+	// The container healthcheck calls localhost or an IP, so this gate denies
+	// the CDN-cached hosts and does not use primaryOnly.
+	healthz := func(w http.ResponseWriter, r *http.Request) {
+		if auth.IsCachedContentHost(r.Host) {
+			http.NotFound(w, r)
+			return
+		}
+		health(w, r)
 	}
 	readyToUpdate := func(w http.ResponseWriter, _ *http.Request) {
 		if admin.InflightWrites() > 0 {
@@ -83,7 +93,7 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 		w.WriteHeader(http.StatusOK)
 	}
 
-	auth.HandleRaw("GET /healthz", health)
+	auth.HandleRaw("GET /healthz", healthz)
 	auth.HandleRaw("GET /ready-to-update", readyToUpdate)
 
 	auth.HandleRaw("GET "+wellKnownHealth, health)
