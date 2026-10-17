@@ -96,7 +96,18 @@ export async function putFile(send: Send, core: Core, opts: PutFileOptions): Pro
 		await sendChunks(send, core, id, opts.body, size, chunkSize);
 		const sep = opts.urlPath.includes('?') ? '&' : '?';
 		const finalize = `${opts.urlPath}${sep}upload_session=${encodeURIComponent(id)}&upload_sha256=${opts.body.sha256}`;
-		const resp = await send('PUT', finalize, null, opts.headers);
+		let resp = await send('PUT', finalize, null, opts.headers);
+		// A proxy can send a finalize again while the first one still runs. The
+		// second one finds the session busy, and the first one decides the result.
+		while (resp.status === 409 && resp.text.includes('upload session busy')) {
+			core.warning(`upload session ${id} is busy with another finalize; asking again`);
+			await new Promise((r) => setTimeout(r, 2000));
+			resp = await send('PUT', finalize, null, opts.headers);
+		}
+		// A hash reference registers what that finalize registered.
+		if (resp.status === 404) {
+			resp = await send('PUT', `${opts.urlPath}${sep}upload_sha256=${opts.body.sha256}`, null, opts.headers);
+		}
 		if (resp.status < 200 || resp.status >= 300) {
 			await abortSession(send, id);
 		}
