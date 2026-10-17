@@ -133,8 +133,8 @@ func TestAdminStaticSiteLinksUseRefSigil(t *testing.T) {
 	require.Contains(t, body, "/branch/{branch}", "the site write endpoints should still be documented")
 }
 
-// A project's release page must hand the reader a runnable install
-// command..rb.
+// A project's release page must hand the reader a runnable install command.
+// It used to link the formula FILE at /Formula/{project}.rb.
 func TestAdminStaticReleasePageShowsBrewInstallCommand(t *testing.T) {
 	t.Serial()
 	body := readBundle(t)

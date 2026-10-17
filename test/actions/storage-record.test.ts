@@ -1,4 +1,9 @@
 // Behavior tests for .github/actions/lib/storage-record.ts.
+//
+// Its own job because nothing else reaches the code: upload-artifact-action-e2e
+// publishes to http://localhost:18080, where the unreachable-registry skip
+// returns before a record is posted. A mistake here fails publishing for every
+// repo in the org at the same time.
 
 import assert from 'node:assert';
 import { recordReleaseArtifacts, recordSite, recordImage, type Octokit } from '../../.github/actions/lib/storage-record.ts';
@@ -126,7 +131,7 @@ async function main(): Promise<void> {
 }
 
 // Node runs this file directly, so the rejection has to become an exit code
-// here.
+// here: an unhandled one prints a warning and still exits 0 on some versions.
 main().catch((err: unknown) => {
 	console.error(err);
 	process.exit(1);

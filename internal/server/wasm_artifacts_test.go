@@ -173,7 +173,7 @@ func TestWasmArtifact_LegacyGoosGoarchPairEndToEnd(t *testing.T) {
 		require.Equal(t, tc.payload, got)
 	}
 
-	// Static folds the pair via its canonicalization redirect.
+	// Static folds the legacy pair via its canonicalization redirect.
 	resp = env.getSubdomain(t, "static", "/file?arch=wasm&os=js&project=wasmlegacy&v=1")
 	require.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
 	loc = resp.Header.Get("Location")

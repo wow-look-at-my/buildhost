@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Fetch the public CA bundle that gets embedded into the buildhost binary.
+# Fetch the public CA bundle that gets embedded into the buildhost binary (and from
+# there into every OCI image buildhost synthesizes from a plain binary).
+#
+# Run this before `go-toolchain` / `go build` locally; CI runs it in the build job.
 set -euo pipefail
 
 DEST="${1:-internal/repackage/cacerts/ca-certificates.crt}"

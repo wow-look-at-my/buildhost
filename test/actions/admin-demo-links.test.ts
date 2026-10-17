@@ -1,4 +1,14 @@
 // Every in-app link on the PREVIEW dashboard must reach a page that renders.
+//
+// The preview publishes the admin SPA with no backend, so every page draws from
+// the built-in demo dataset. That dataset linked to pages it had no data for:
+// clicking a release on the project page threw inside the renderer, left the
+// previous page on screen, and read as a link that does nothing.
+//
+// A unit test cannot see this.
+//
+// The preview also serves the app under a path prefix, which is what turns demo
+// mode on, so this serves it the same way.
 
 const ROOT = "internal/admin/static";
 const PREFIX = "/buildhost/@preview/";

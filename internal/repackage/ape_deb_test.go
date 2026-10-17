@@ -119,7 +119,7 @@ func TestDeb_APELauncherRunsReadOnlyBinary(t *testing.T) {
 	assert.NotZero(t, fi.Mode()&0o200, "the copy must be writable: an APE rewrites itself")
 }
 
-// Everything that is not an APE keeps the layout exactly.
+// Everything that is not an APE keeps the previous layout exactly.
 func TestDeb_NonAPEBinaryLayoutUnchanged(t *testing.T) {
 	t.Serial()
 	entries := debEntries(t, buildDeb(t, []byte("\x7fELF plain binary"), db.KindBinary, "plain"))

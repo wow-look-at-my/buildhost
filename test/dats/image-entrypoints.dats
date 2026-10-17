@@ -16,8 +16,8 @@
 shared:
 	files:
 		export.sh: |
-			# Flatten the image once. dats runs tests concurrently, so a test
-			# that consumed another test's output would race it.
+			# Flatten the image a single time. dats runs tests concurrently,
+			# so a test that consumed another test's output would race it.
 			set -eu
 			WORK="$(dirname "$ENV_FILE")"
 			IMAGE="${BUILDHOST_IMAGE:-buildhost:ci}"

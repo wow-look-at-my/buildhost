@@ -64,7 +64,7 @@ func TestBrewTapSmart_GitUpdateFastForwardsAcrossPublishAndRedeploy(t *testing.T
 	publishBrewProject(t, env, "appone", "appone-binary")
 	gitTS := gitTapServer(t, env)
 
-	// The router negotiates smart.
+	// The router really negotiates smart.
 	resp, err := http.Get(gitTS.URL + "/brew/tap.git/info/refs?service=git-upload-pack")
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
