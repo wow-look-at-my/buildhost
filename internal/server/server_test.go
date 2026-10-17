@@ -306,8 +306,6 @@ func TestHealthz(t *testing.T) {
 	require.Equal(t, body.Started, second.Started, "started names the process start, so it never moves while the process runs")
 }
 
-// The CDN caches the service and site hosts, so /healthz there must 404. The
-// apex and the container healthcheck (a bare IP or localhost) must keep 200.
 func TestHealthz_HostGate(t *testing.T) {
 	t.Serial()
 	env := setupSiteDomain(t, siteTestDomain, primaryTestDomain, false)
