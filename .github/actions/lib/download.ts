@@ -3,6 +3,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ActionGlobals } from './action-globals';
+import { tokenSource } from './oidc.ts';
 
 /** How long a transfer may go without a byte, before the headers or during the body. */
 export const DefaultStallMs = 30_000;
@@ -60,13 +61,15 @@ export async function download(g: ActionGlobals, wait = (ms: number) => new Prom
 		server: String(inputs.server), project, version: String(inputs.version), branch: String(inputs.branch),
 		os: String(inputs.os), arch: String(inputs.arch), format: String(inputs.format),
 	});
-	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+	// A private project needs a credential. Without a token input, the job's OIDC token is it.
+	const bearer = tokenSource(String(inputs.server), token);
 	const destination: string = String(inputs.path) || path.join(process.env.RUNNER_TEMP!, project.split("/").pop()!);
 
 	let lastError = "";
 	for (let attempt = 1; attempt <= 3; attempt++) {
 		try {
-			const body = await fetchBody(url, headers);
+			const auth = await bearer.bearer();
+			const body = await fetchBody(url, auth ? { Authorization: `Bearer ${auth}` } : {});
 			fs.mkdirSync(path.dirname(destination), { recursive: true });
 			fs.writeFileSync(destination, body);
 			if (String(inputs.executable) === "true") fs.chmodSync(destination, 0o755);

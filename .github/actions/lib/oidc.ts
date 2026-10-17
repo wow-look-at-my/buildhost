@@ -14,6 +14,8 @@ export interface MintOptions {
 	fetchImpl?: typeof fetch;
 	/** The server-URL form: an issuer that answers no token is "none", not a transient failure to retry. */
 	emptyIsNone?: boolean;
+	/** The delay between attempts. The server-URL form takes one, so a caller can drive the retry without waiting. */
+	wait?(ms: number): Promise<unknown>;
 }
 
 export const RETRY_INTERVAL_MS = 2000;
@@ -22,20 +24,14 @@ export const RETRY_INTERVAL_MS = 2000;
 // "upstream connect error", in place of JSON. That is transient, so the mint
 // retries it on a fixed interval.
 export async function mintOidcToken(o: MintOptions): Promise<string>;
-/** Mints an OIDC token audience-scoped to the buildhost server. It answers null when the job may not mint one, and empty when the issuer sent none. */
-export async function mintOidcToken(server: string): Promise<string | null>;
-export async function mintOidcToken(arg: MintOptions | string): Promise<string | null> {
+/** Mints an OIDC token audience-scoped to the buildhost server. It answers null when the job may not mint one, and empty when the issuer sent none; a refusal throws OidcRefused. */
+export async function mintOidcToken(server: string, wait?: (ms: number) => Promise<unknown>): Promise<string | null>;
+export async function mintOidcToken(arg: MintOptions | string, wait?: (ms: number) => Promise<unknown>): Promise<string | null> {
 	if (typeof arg === 'string') {
 		const url = process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
 		const bearer = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
 		if (!url || !bearer) return null;
-		try {
-			return await mintOidcToken({ url, bearer, audience: arg, warning: () => {}, emptyIsNone: true });
-		} catch (e) {
-			// the issuer refused: the caller presents an empty token, as before
-			if (e instanceof OidcRefused) return '';
-			throw e;
-		}
+		return await mintOidcToken({ url, bearer, audience: arg, warning: () => {}, emptyIsNone: true, wait });
 	}
 	const o = arg;
 	const doFetch = o.fetchImpl ?? fetch;
@@ -45,14 +41,16 @@ export async function mintOidcToken(arg: MintOptions | string): Promise<string |
 		try {
 			const r = await doFetch(`${o.url}&audience=${o.audience}`, { headers: { Authorization: `Bearer ${o.bearer}` } });
 			const text = await r.text();
-			if (r.status >= 400 && r.status < 500 && r.status !== 429) {
-				throw new OidcRefused(`the OIDC token request was refused: HTTP ${r.status}: ${text.slice(0, 300)}`);
+			if (r.status >= 400 && r.status < 500 && r.status !== 408 && r.status !== 429) {
+				throw new OidcRefused(`the OIDC issuer refused the token request (${r.status}): HTTP ${r.status}: ${text.slice(0, 300)}`);
 			}
 			if (r.ok) {
-				let value: unknown;
-				try { value = (JSON.parse(text) as { value?: unknown }).value; } catch { value = undefined; }
+				let parsed: { value?: unknown } | undefined;
+				try { parsed = JSON.parse(text) as { value?: unknown }; } catch { parsed = undefined; }
+				const value = parsed?.value;
 				if (typeof value === 'string' && value !== '') return value;
-				if (o.emptyIsNone) return '';
+				// A JSON answer with no token is the issuer saying "none"; a body that is not JSON at all is a proxy's error page, which is transient.
+				if (o.emptyIsNone && parsed !== undefined) return '';
 			}
 			problem = `HTTP ${r.status}: ${text.slice(0, 300)}`;
 		} catch (e) {
@@ -60,7 +58,7 @@ export async function mintOidcToken(arg: MintOptions | string): Promise<string |
 			problem = e instanceof Error ? e.message : String(e);
 		}
 		o.warning(`OIDC token request failed (attempt ${attempt}), retrying in ${interval} ms: ${problem}`);
-		await new Promise((r) => setTimeout(r, interval));
+		await (o.wait ? o.wait(interval) : new Promise((r) => setTimeout(r, interval)));
 	}
 }
 

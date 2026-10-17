@@ -2,7 +2,7 @@
 
 import check from 'node:assert';
 import { uploadArtifact, uploadedSha256 } from '../../.github/actions/lib/upload-artifact.ts';
-import { jwtExpiry, tokenSource } from '../../.github/actions/lib/oidc.ts';
+import { jwtExpiry, mintOidcToken, tokenSource } from '../../.github/actions/lib/oidc.ts';
 import { tempDir, stepCore, oidcIssuer, globalsOf } from './fakes.ts';
 
 const jwt = (exp: number) => `h.${Buffer.from(JSON.stringify({ exp })).toString('base64url')}.s`;
@@ -33,6 +33,22 @@ function upload(inputs: Record<string, string>) {
 	check.strictEqual(uploadedSha256([{ sha256: 'aa' }, { sha256: 'aa' }]), 'aa', 'a fan-out answers a row per platform');
 	check.strictEqual(uploadedSha256({ sha256: 'bb' }), 'bb');
 	check.strictEqual(uploadedSha256({}), '');
+
+	// The issuer's proxy answers with a text error page, then the token: the mint asks again rather than parse the page.
+	{
+		oidcIssuer('https://oidc.example/t?a=1');
+		const answers = [new Response('upstream connect error', { status: 503 }), new Response('upstream connect error'), new Response(JSON.stringify({ value: 'minted' }))];
+		let asked = 0;
+		let waited = 0;
+		const realFetch = globalThis.fetch;
+		globalThis.fetch = (async () => answers[asked++]) as any;
+		check.strictEqual(await mintOidcToken('https://bh.example', async () => { waited++; }), 'minted');
+		check.strictEqual(asked, 3);
+		check.strictEqual(waited, 2);
+		globalThis.fetch = (async () => new Response('no', { status: 403 })) as any;
+		await check.rejects(mintOidcToken('https://bh.example', async () => {}), /refused the token request \(403\)/);
+		globalThis.fetch = realFetch;
+	}
 
 	oidcIssuer();
 	const fixed = tokenSource('https://bh.example', 'given');
