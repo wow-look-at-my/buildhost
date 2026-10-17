@@ -30,7 +30,7 @@ buildhost serves a public, read-only browse UI on the main domain, and it uses n
 - `GET /projects/{project}` -- a project's metadata, its published releases, its deployed static sites, and copy-paste install and download commands
 - `GET /projects/{project}/releases/{version}` -- a release's artifacts, with a download link per format. The formats are `raw`, `tar.gz`, `tar.xz`, `tar.zst` and `zip`. An image release gets a `docker pull` instead.
 
-A private project is hidden. An anonymous visitor never sees it in a listing. A direct visit to its page returns a `404`, same to the answer for a project that does not exist. The frontend therefore never reveals that a private project exists, the same way GitHub treats a private repository. A read-scoped token authorized for the project reveals it.
+A private project is hidden. An anonymous visitor never sees it in a listing. A direct visit to its page returns a `404`, identical to the answer for a project that does not exist. The frontend therefore never reveals that a private project exists, the same way GitHub treats a private repository. A read-scoped token authorized for the project reveals it.
 
 A download link points at the `dl` subdomain. The single stylesheet is served from `/_ui/style.css`. No other asset is loaded. The authenticated admin dashboard remains a separate app on its own port. See [Container image](#container-image).
 
@@ -202,9 +202,7 @@ GET /dl/myapp/branch/main/linux/amd64
 
 `latest`, with no branch, resolves to the newest published release on the project's **default branch**. That branch is `master` by default. buildhost detects each repo's real default branch automatically. On a GitHub Actions OIDC publish it reads the `owner/repo` from the token, and asks GitHub for that repo's default branch. A repo that releases off another branch, such as `v1`, therefore gets a correct `latest` with nothing sent in the publish. A push to a feature branch never hijacks `latest`. When the default branch has no published release yet, `latest` is not available.
 
-buildhost authenticates these lookups as a **GitHub App**. Set `BUILDHOST_GITHUB_APP_ID` and `BUILDHOST_GITHUB_APP_PRIVATE_KEY`, and the key takes the PEM contents or a file path. That path is recommended, because it mints a short-lived installation token, needs `metadata: read` only, and carries a high rate limit. A static `BUILDHOST_GITHUB_TOKEN` PAT works as a fallback. Without either, a lookup is anonymous. GitHub throttles an anonymous lookup to 60 per hour per IP.
-
-It cannot read a private repo.
+buildhost authenticates these lookups as a **GitHub App**. Set `BUILDHOST_GITHUB_APP_ID` and `BUILDHOST_GITHUB_APP_PRIVATE_KEY`, and the key takes the PEM contents or a file path. That path is recommended, because it mints a short-lived installation token, needs `metadata: read` only, and carries a high rate limit. A static `BUILDHOST_GITHUB_TOKEN` PAT works as a fallback. Without either, a lookup is anonymous. GitHub throttles an anonymous lookup to 60 per hour per IP. It cannot read a private repo.
 
 ## Static sites
 
@@ -359,9 +357,7 @@ curl -X POST https://buildhost.example.com/api/v1/projects/myapp/download-links 
 
 Anyone with the `url` can download that artifact until it expires — no account or token needed. Minting requires a token with the `share` scope, authorized for the project. The admin dashboard exposes the same thing as a **"temp link"** button on each release's artifact list.
 
-The link is a stateless HMAC signature. A server-side key, generated on the first start, keys it. The signature is bound to the exact artifact and expiry. A leaked link therefore reaches nothing else in the project. It cannot outlive its expiry. A link is not individually revocable before its expiry.
-
-Rotate the signing key to invalidate every outstanding link.
+The link is a stateless HMAC signature. A server-side key, generated on the first start, keys it. The signature is bound to the exact artifact and expiry. A leaked link therefore reaches nothing else in the project. It cannot outlive its expiry. A link is not individually revocable before its expiry. Rotate the signing key to invalidate every outstanding link.
 
 ## API
 
@@ -411,7 +407,7 @@ Ask the apex, or the container by IP or localhost. The service subdomains (`stat
 {"status":"ok","commit":"<git-sha>","version":"v0.0.<unix>"}
 ```
 
-Buil prints the same build infodhost version`.
+The same build info is printed by `buildhost version`.
 
 ## Configuration
 
@@ -481,7 +477,7 @@ No manual project creation or OIDC policy setup needed.
 
 A project name may contain `/`, and it nests to any depth, as `log-streamer/client` does. A repository's OIDC token owns its whole namespace. Repo `R` may create and publish `R`, and any `R/<...>` beneath it. It may never touch a sibling such as `R-evil`, and never an unrelated project.
 
-A repo that ships several binaries can therefore publish each to its own project. go-toolchain's autorelease maps every built binary to `<repo>/<binary>`. It strips a redundant leading `<repo>-`. A single binary named after the repo stays flat, as `<repo>`.
+That is what lets a repo that ships several binaries publish each one to its own project. Go-toolchain's autorelease maps every built binary to `<repo>/<binary>`. It strips a redundant leading `<repo>-`. A single binary named after the repo stays flat, as `<repo>`.
 
 | repo | binary | project |
 |------|--------|---------|
@@ -500,7 +496,7 @@ By default the `push`, `pull_request` and `workflow_dispatch` events are allowed
 
 A `push` comes from a member or a collaborator. A `pull_request` from a fork receives no OIDC token at all, so only a same-repo PR, from a member, can authenticate. Only a user with write access to the repo can trigger a `workflow_dispatch`, which is a manual run. It therefore carries the same write-access guarantee as a `push`.
 
-Default so a PR-preview deploy works. Out of the box includes pull_request`. `workflow_dispatch` is included so a manual release or publish dispatch works out of the box. Set `BUILDHOST_OIDC_EVENTS=*` to allow every event type.
+`pull_request` is included by default so a PR-preview deploy works out of the box. `workflow_dispatch` is included so a manual release or publish dispatch works out of the box. Set `BUILDHOST_OIDC_EVENTS=*` to allow every event type.
 
 If `BUILDHOST_OIDC_ORGS` is empty, no orgs are allowed. Use `*` to allow all orgs. Org names are matched case-insensitively (GitHub logins are), so `pazerop` and `PazerOP` are equivalent.
 

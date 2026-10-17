@@ -15,7 +15,7 @@ buildhost publish \
 buildhost publish ... --os linux,windows --arch any --artifact ./myapp
 ```
 
-The body is streamed to content-addressed storage once. Each os/arch combination becomes an ordinary per-platform artifact row that references the same blob. The database of the fan-out therefore costs rows, and not bytes. Downloads, `latest` resolution, the APT, Brew, npm and OCI format handlers, and retention are all untouched. There is no stored `os=any` value, and no download-time fallback. A client still downloads a concrete `os` and `arch`.
+The body is streamed to content-addressed storage once. Each os/arch combination becomes an ordinary per-platform artifact row that references the same blob. The fan-out therefore costs database rows, and not bytes. Downloads, `latest` resolution, the APT, Brew, npm and OCI format handlers, and retention are all untouched. There is no stored `os=any` value, and no download-time fallback. A client still downloads a concrete `os` and `arch`.
 
 Here are the details. Each list element is normalized like a download parameter, so `macOS` becomes `darwin` and `x86_64` becomes `amd64`. An invalid, empty or duplicate element is rejected with a 400.
 
@@ -25,7 +25,7 @@ A single-combination upload returns the artifact JSON object exactly as before. 
 
 ## Registering more slots by hash (no re-upload)
 
-An **exact** slot set that is not an os by arch product cannot be expressed with the fan-out grammar. `{linux/amd64, linux/arm64, windows/amd64}` is such a set, where `windows/arm64` must stay free for a different native binary. For that case, upload the file once and register the remaining slots by **hash reference**. That is an empty-body PUT that names the stored blob's SHA-256. It also skips the re-send of a byte-same binary fully.
+An **exact** slot set that is not an os by arch product cannot be expressed with the fan-out grammar. `{linux/amd64, linux/arm64, windows/amd64}` is such a set, where `windows/arm64` must stay free for a different native binary. For that case, upload the file once and register the remaining slots by **hash reference**. That is an empty-body PUT that names the stored blob's SHA-256. It also skips the re-send of a byte-identical binary entirely.
 
 ```bash
 SUM=$(sha256sum ./mytool | awk '{print $1}')
@@ -44,8 +44,8 @@ done
 Semantics:
 
 - **Check the capability first.** Only send `upload_sha256` on an empty-body request when `GET /api/v1/server-info` advertises `"upload_by_sha256": true`. A server without the capability ignores the parameter and stores the empty body as the artifact.
-- The referenced blob must already belong to **this project** (uploaded for any of its releases, so re-releasing an unchanged binary is almost free). An unknown hash, another project's blob, and a since-garbage-collected blob all return the same 404 -- fall back to a full upload.
-- The created rows are ordinary artifact rows, field-for-field same to a full upload's, with the same 201 and semantics. The reference composes with the `{os}` and `{arch}` fan-out grammar. Each hash-ref request carries its own optional `X-Artifact-Filename`.
+- The referenced blob must already belong to **this project** (uploaded for any of its releases, so re-releasing an unchanged binary is nearly free). An unknown hash, another project's blob, and a since-garbage-collected blob all return the same 404 -- fall back to a full upload.
+- The created rows are ordinary artifact rows, field-for-field identical to a full upload's, with the same 201 and semantics. The reference composes with the `{os}` and `{arch}` fan-out grammar. Each hash-ref request carries its own optional `X-Artifact-Filename`.
 - `upload_sha256` keeps its existing meaning elsewhere. A request **with** a body ignores it. Combined with `upload_session=` it remains the session-finalize integrity check.
 
-The in-repo publishers do this automatically when the server advertises the capability. The `buildhost-publish` GitHub action and `buildhost publish --manifest` both hash the files they are about to upload. They send each distinct file once. They register every byte-same slot by reference. An same APE slot copy in go-toolchain therefore transfers once, and not once per slot.
+The in-repo publishers do this automatically when the server advertises the capability. The `buildhost-publish` GitHub action and `buildhost publish --manifest` both hash the files they are about to upload. They send each distinct file once. They register every byte-identical slot by reference. An identical APE slot copy in go-toolchain therefore transfers once, and not once per slot.

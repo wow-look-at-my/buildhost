@@ -37,6 +37,7 @@ func (b *Brew) Applicable(a db.Artifact) bool {
 // brewTemplate always emits a TOP-LEVEL url/sha256 (the canonical resource,
 
 var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }}{{ .PrivateStrategy }}
+
 {{ end }}class {{ .ClassName }} < Formula
   desc "{{ .Description }}"
   homepage "{{ .Homepage }}"
@@ -197,7 +198,10 @@ type BrewFormula struct {
 	License     string
 	Kind        string
 	// Private marks a formula for a private project: it carries BrewPrivateStrategy.
-	Private   bool
+	Private bool
+	// Versioned marks a name@version formula, whose class Homebrew renames to <name>AT<version>.
+	Versioned bool
+	// Service adds a `service do` block so `brew services start` manages the
 	Service   bool
 	Resources []BrewResource
 }

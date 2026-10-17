@@ -71,7 +71,7 @@ jobs:
             if (after === before) throw new Error(`${file} names no remote buildhost-publish ref, so this step no longer retargets the publish`);
             fs.writeFileSync(file, after);
             fs.appendFileSync(path.join(env.GITHUB_WORKSPACE!, ".git", "info", "exclude"), ".go-toolchain/\n");
-      # No fetch-cacerts step: the CA bundle is a generate directive The org module proxy is gone, so modules come direct with sumdb off. go-toolchain publishes through this repo's publish action, so a release that action broke must not block its repair.
+      # No fetch-cacerts step: the CA bundle is a generate directive. The org module proxy is gone, so modules come direct with sumdb off. go-toolchain publishes through this repo's publish action, so a release that action broke must not block its repair.
       - uses: ./.go-toolchain
         env:
           GOPROXY: direct

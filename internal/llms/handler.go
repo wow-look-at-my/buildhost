@@ -54,10 +54,10 @@ func render(baseURL string) []byte {
 }
 
 // siteSection documents the {project}.<site-domain> serving scheme when a
-// site domain is configured, and renders nothing otherwise. The served guide
-// only describes endpoints this deployment has. The section's URLs live on
-// the dedicated site domain, never on a service subdomain of the apex, so the
-// per-subdomain rendering guards are unaffected.
+// site domain is configured, and renders nothing otherwise -- the served
+// guide only describes endpoints this deployment has. The section's URLs live
+// on the dedicated site domain, never on a service subdomain of the apex, so
+// the per-subdomain rendering guards are unaffected.
 func siteSection(scheme string) string {
 	sd := auth.SiteDomain()
 	if sd == "" {

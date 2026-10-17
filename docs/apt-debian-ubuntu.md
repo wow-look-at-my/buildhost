@@ -33,7 +33,7 @@ sudo apt update && sudo apt install myapp
 
 ## Private projects
 
-A private project requires a token on every APT request. Put it in an `apt.conf.d`-style auth file. `apt update` and the package download then both authenticate. The package download redirects to the `static` subdomain. buildhost reads the token from the field of the HTTP Basic **password. The username is ignored, so any value works, and `token` is the convention here.
+A private project requires a token on every APT request. Put it in an `apt.conf.d`-style auth file. `apt update` and the package download then both authenticate. The package download redirects to the `static` subdomain. buildhost reads the token from the HTTP Basic **password** field. The username is ignored, so any value works, and `token` is the convention here.
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
@@ -66,7 +66,7 @@ A `create_service` project's generated deb ships a systemd user unit at `/usr/li
 
 The package sets it up at install. Its postinst runs `systemctl --global enable`. The service therefore starts at every user's next graphical login. The postinst also makes a best-effort immediate start, for the installing sudo user's live session. A removal of the package disables it again.
 
-This applies to a buildhost-GENERATED deb only, which means `fmt=deb`, from this APT repository. A pre-built `.deb` uploaded as an artifact, with `kind=archive`, is served byte-same. buildhost never injects anything into an uploaded file.
+This applies to a buildhost-GENERATED deb only, which means `fmt=deb`, from this APT repository. A pre-built `.deb` uploaded as an artifact, with `kind=archive`, is served byte-identical. buildhost never injects anything into an uploaded file.
 
 ## Runtime dependencies (apt_depends)
 

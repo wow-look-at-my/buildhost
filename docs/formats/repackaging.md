@@ -6,9 +6,7 @@ On-demand repackaging and stripping (tar.gz, tar.xz, tar.zst, zip, deb, brew, np
 
 ## Everything streams
 
-`Input` carries an `io.Reader` and a `Size`, not a `[]byte`. Each format pipes the artifact through its compressor with `io.Pipe` instead of a buffer. Memory is therefore bounded by the compressor window, not by the artifact size. `Output.Reader` is an `io.ReadCloser`. A streamed format whose compressed length is not known up front returns `Size = SizeUnknown`. The handler then omits Content-Length.
-
-The body is chunk-encoded. `OpenArtifactStream` binds the reader, optionally stripped, to its exact size. A tar, ar or npm header can therefore never disagree with the body. `ChainClose` ties the input stream's lifetime to the output reader, so a lazily-read pipe keeps its source open until the consumer is done.
+`Input` carries an `io.Reader` and a `Size`, never a `[]byte`. Each format pipes the artifact through its compressor with `io.Pipe` instead of a buffer. Memory is therefore bounded by the compressor window, not by the artifact size. `Output.Reader` is an `io.ReadCloser`. A streamed format whose compressed length is not known up front returns `Size = SizeUnknown`. The handler then omits Content-Length. The body is chunk-encoded. `OpenArtifactStream` binds the reader, optionally stripped, to its exact size. A tar, ar or npm header can therefore never disagree with the body. `ChainClose` ties the input stream's lifetime to the output reader, so a lazily-read pipe keeps its source open until the consumer is done.
 
 deb spools only the *compressed* data.tar.gz member to a temp under `Input.TmpDir`, to learn its `ar` length. It also materializes `projects.create_service` for a binary-kind artifact. data.tar gains `/usr/lib/systemd/user/<pkg>.service`. That unit is crash-only, with `Restart=on-failure` and After, PartOf. WantedBy set to graphical-session.target, per systemd.special(7). control.tar gains postinst and prerm maintainer scripts.
 

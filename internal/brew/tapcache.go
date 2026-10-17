@@ -28,7 +28,7 @@ type tapLineage struct {
 
 // openTapFile resolves the lineage for the request's (base URL, credential
 // scope) cache key -- refreshing it under the mutex when there is no live
-// entry. Opens the requested file inside it.
+// entry -- and opens the requested file inside it.
 func (h *Handler) openTapFile(r *http.Request, path string) (*os.File, error) {
 	h.tapMu.Lock()
 	defer h.tapMu.Unlock()

@@ -71,6 +71,20 @@ func (r route) Access() auth.AccessLevel {
 	return auth.ReadAccess
 }
 
+// AllowsPublicRead lets requireProject serve a public site branch without a
+// token. A write never qualifies, and neither does a read that names no branch.
+func (r route) AllowsPublicRead(ctx context.Context, database *db.DB, project *db.Project) bool {
+	branch := r.readBranch(ctx, database, project)
+	if branch == "" {
+		return false
+	}
+	site, err := database.GetSite(ctx, project.ID, branch)
+	if err != nil {
+		return false
+	}
+	return site.IsPublic
+}
+
 // BuildVisibility gives a site branch its operator override. With no override,
 // a site published with X-Public-Site reads as public, and any other site
 // follows its project.

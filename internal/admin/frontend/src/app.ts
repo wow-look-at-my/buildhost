@@ -650,7 +650,7 @@ pages.release = function (name: string, version: string): void {
         html += "<tr><td class='info-label'>APT repository</td><td class='endpoint-cell'><a href='" + h(aptU + "/dists/stable/Release") + "' data-copy='" + h(aptU) + "'>" + h(aptU) + "</a><copy-btn data-src='a'></copy-btn></td></tr>";
         html += "</table></div>";
 
-        // npm metadata and image layers follow the project: a private project OR a private build needs a token.
+        // npm and the OCI tag list carry every published release, so both install THIS version.
         var relPriv = !!p.is_private || relMode === "private";
         html += '<div class="card"><h2>Install</h2>';
         html += codeBlock("Direct download (curl)", curlDownload(dlBase, r.version, priv));

@@ -24,9 +24,9 @@ const (
 	machineARM64 = 0xb7
 )
 
-// fakeAPE builds a payload with the prologue an APE carries. That is the magic
-// the detector matches, and the printf call per architecture. The trampoline
-// uses that call to write a real ELF header over its own copy.
+// fakeAPE builds a payload with the prologue an APE carries: the magic the
+// detector matches, and the printf call per architecture that the trampoline
+// uses to write a real ELF header over its own copy.
 func fakeAPE() []byte {
 	var b strings.Builder
 	b.WriteString("MZqFpD='\n")
@@ -226,7 +226,7 @@ func TestAPEIndexFailsLoudlyWhenAChildIsNotLinked(t *testing.T) {
 }
 
 // TestAPEPullPathResolvesLinuxAMD64 walks what `docker pull` does on a
-// linux/amd64 host. Match a child by platform, fetch that manifest, fetch its
+// linux/amd64 host: match a child by platform, fetch that manifest, fetch its
 // config blob, and read the platform back off the config. That is the
 // assertion that would have caught the missing canonical slot.
 func TestAPEPullPathResolvesLinuxAMD64(t *testing.T) {

@@ -54,7 +54,7 @@ A private project works the same way through the authenticated tap, with `HOMEBR
 
 ## Background services (create_service)
 
-A project can declare that its binary runs as a background service. Declare it in the publishing repo's CI. That CI is with `create_service: 'true'` on the `buildhost-create-release` or `buildhost-publish` action. go-toolchain's composite spells that as `autorelease_args: create_service=true`. Every publish asserts the declared value. An absent input leaves the stored setting untouched. An operator can also flip it directly, with `PATCH /api/v1/projects/{project}` and a body of `{"create_service": true}`.
+A project can declare that its binary runs as a background service. Declare it in the publishing repo's CI, with `create_service: 'true'` on the `buildhost-create-release` or `buildhost-publish` action. go-toolchain's composite spells that as `autorelease_args: create_service=true`. Every publish asserts the declared value. An absent input leaves the stored setting untouched. An operator can also flip it directly, with `PATCH /api/v1/projects/{project}` and a body of `{"create_service": true}`.
 
 Each install format materializes the setting its own way. A Homebrew formula gains a `service do` block. One command activates it, once. It then starts at login, and it survives an upgrade, because the block runs the `opt` path.
 

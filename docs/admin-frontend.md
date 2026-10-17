@@ -33,8 +33,6 @@ A `static/*` wildcard still matches `index.html` and `style.css`. A build that s
 
 A conversion to TypeScript never took effect. It added a partial `src/app.ts` while the hand-written `static/app.js` kept shipping. Both were committed. The two then diverged for months. The live bundle grew the Retention page, the project tree, token CRUD, temp download links and the `/tap.git` fix. The TypeScript source had none of them.
 
-The documented "edit the TS, rebuild, commit" workflow cannot reproduce the shipped artifact. A generate from that source silently regresses the dashboard.
-
 Properties keep it from recurring, and both are load-bearing:
 
 - **The output is generated, not committed.** There is no second copy to drift from. `internal/admin/static/*.js` is in `.gitignore`.

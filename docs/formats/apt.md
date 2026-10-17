@@ -10,9 +10,7 @@ The `Packages` index's per-artifact deb `Size` and `SHA256` are **cached in `pac
 
 The row is a digest cache only. `storage_key` records the SOURCE artifact blob. No deb is stored, and a pool download still repackages on demand. That is sound, because deb generation is deterministic per input set. The ar member headers are fixed with a zero timestamp, uid and gid. The tar mtimes are zero.
 
-The gzip header fields and the member order are fixed. The input is content-addressed. `TestDebGenerationDeterministic` pins all of it. The rows also ride the existing retention cascade (`deleteReleaseRows`).
-
-The deb bytes, unlike a tar.gz, also bake in MUTABLE project state. That is the control `Description`, `Homepage` and `Depends`, and the create_service postinst, prerm and unit members. Each row's `metadata` therefore records a fingerprint of exactly those inputs (`{"inputs_sha256": ...}`, `debDigestFingerprint`). A mismatch reads as a miss and refills the row in place. An operator who flips create_service through the project PATCH, with no new release, causes one. Without that, the row keeps a stale digest, and apt rejects every pool download against it.
+The deb bytes, unlike a tar.gz, also bake in MUTABLE project state: the control `Description`, `Homepage` and `Depends`, and the create_service postinst, prerm. Unit members. Each row's `metadata` therefore records a fingerprint of exactly those inputs (`{"inputs_sha256": ...}`, `debDigestFingerprint`). A mismatch reads as a miss and refills the row in place. An operator who flips create_service through the project PATCH, with no new release, causes one. Without that, the row keeps a stale digest, and apt rejects every pool download against it.
 
 ONE shared renderer produces `Packages` and the `Release` and `InRelease` SHA256 lines. It is `packagesEntry` in `packages.go`, consumed by `computePackagesHashes` in `release.go`. The signed hashes therefore always describe exactly the served index bytes. A digest failure surfaces as a 500 on both routes. Before the cache it fell back silently to the RAW upload's size and sha, which are values apt can never verify a download against. With the cache warm, a `Packages`, `Release` or `InRelease` request costs one DB read per architecture, and no repackaging.
 
@@ -24,13 +22,11 @@ The renderer checks it again, and a bad stored value is a 500, not a dropped lin
 
 ## Package naming
 
-The Debian package name is `repackage.DebPackageName(project.Name)`. It folds `/` and `_` to `-`, because neither is legal in a deb package name. The same value appears in multiple places. Three of them are the served `Packages` index (`packages.go`), the InRelease hash computation (`release.go`), and the deb control `Package` field. The other two are the pool filename and the installed `/usr/bin/<pkg>` binary. apt and dpkg therefore always agree. A slash stays in the repo *URL* (`apt.{domain}/<repo>/<binary>`).
-
-`servePool` still resolves the project from the request path. Only the package *name* folds, so `pr-reviewer-agent/server` installs as `pr-reviewer-agent-server`.
+The Debian package name is `repackage.DebPackageName(project.Name)`. It folds `/` and `_` to `-`, because neither is legal in a deb package name. The same value appears in multiple places. Three of them are the served `Packages` index (`packages.go`), the InRelease hash computation (`release.go`), and the deb control `Package` field. The other two are the pool filename and the installed `/usr/bin/<pkg>` binary. apt and dpkg therefore always agree. A slash stays in the repo *URL* (`apt.{domain}/<repo>/<binary>`). `servePool` still resolves the project from the request path. Only the package *name* folds, so `pr-reviewer-agent/server` installs as `pr-reviewer-agent-server`.
 
 ## Release signing
 
-The key is Ed25519, which is OpenPGP EdDSA over Curve25519, algorithm 22. It is auto-generated on first startup and stored in `BUILDHOST_DATA_DIR/apt-signing.key`. Generation is one scalar multiply, about a millisecond. `TestNewSigner_GenerationIsWithinBudget` holds it under 100ms. An RSA-4096 prime search took seconds and made every caller work around the cost. Do not move to the newer `PubKeyAlgoEd25519`, algorithm 27.
+The key is Ed25519, which is OpenPGP EdDSA over Curve25519, algorithm 22. It is auto-generated on first startup and stored in `BUILDHOST_DATA_DIR/apt-signing.key`. Generation is one scalar multiply, about a millisecond. `TestNewSigner_GenerationIsWithinBudget` holds it under 100ms. An RSA-4096 prime search took seconds and made every caller work around the cost. Do not move to the newer `PubKeyAlgoEd25519`, algorithm 27. GnuPG 2.4's `gpgv` rejects it with "Invalid public key algorithm". That is every client's `apt update`. An existing RSA key on disk is still loaded and used as it is. An upgrade therefore never rotates a deployment's key or invalidates a client's `signed-by`.
 
 GnuPG 2.4's `gpgv` rejects it with "Invalid public key algorithm". That is every client's `apt update`. An existing RSA key on disk is still loaded and used as it is. An upgrade therefore never rotates a deployment's key or invalidates a client's `signed-by`.
 
