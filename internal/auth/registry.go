@@ -7,6 +7,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/go-containers/set"
 	"github.com/wow-look-at-my/router"
 )
 
@@ -126,6 +127,27 @@ func primaryOnly(h http.HandlerFunc) http.HandlerFunc {
 		}
 		h(w, r)
 	}
+}
+
+// cachedServiceLabels are the service subdomains that a CDN caches.
+var cachedServiceLabels = set.Of(
+	"apt", "brew", "dl", "docker", "git",
+	"goproxy", "npm", "oci", "sites", "static",
+)
+
+// IsCachedContentHost reports whether host (port allowed) is a service
+// subdomain or a site-domain host. A host-agnostic probe must refuse these
+// hosts, because the CDN can serve a stale copy of its answer.
+func IsCachedContentHost(host string) bool {
+	host = strings.ToLower(hostNoPort(host))
+	if pd := PrimaryDomain(); pd != "" && host == pd {
+		return false
+	}
+	if siteApexOf(host) != "" {
+		return true
+	}
+	dot := strings.IndexByte(host, '.')
+	return dot > 0 && cachedServiceLabels.Contains(host[:dot])
 }
 
 // servicePattern turns a path-only service pattern into a host+path pattern
