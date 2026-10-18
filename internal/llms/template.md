@@ -165,6 +165,10 @@ A project can declare its runtime prerequisites as `apt_depends`, in Debian rela
 
 The CLI takes `--apt-depends`, and the `buildhost-publish` and `buildhost-create-release` actions take an `apt_depends` input.
 
+A project can also depend on other buildhost projects, as a `depends` list of project names, for example `["ascii-timeline"]`. The Depends line then names each one, the project's `install.sh` also adds each dependency's repository, and the brew formula declares `depends_on "pazer/build/<formula>"`. `apt-get install` and `brew install` therefore install the dependencies too. Send the list on release-create or on the project PATCH. An absent field leaves it untouched, and `[]` clears it. A name that does not resolve, or that the token cannot read, returns 400.
+
+The CLI takes `--depends`, and both actions take a `depends` input.
+
 Homebrew: tap the generated Git repository, trust it, then install. The trust step is required from Homebrew 6.0. On Linux the bottle-less install runs Homebrew's build sandbox. That sandbox needs bubblewrap and an unprivileged user namespace. A container or a CI runner without them needs `HOMEBREW_NO_SANDBOX_LINUX=1` instead.
 
 ```

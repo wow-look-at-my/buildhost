@@ -12,6 +12,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // installScriptTemplate is a POSIX sh installer that adds this project's signed
@@ -168,7 +169,7 @@ func installSlug(project string) string {
 // stored name that no longer resolves is an error: the install would fail on
 // it.
 func (h *Handler) dependsClosure(ctx context.Context, project *db.Project) ([]db.Project, error) {
-	seen := map[int64]bool{project.ID: true}
+	seen := set.Of[int64](project.ID)
 	var deps []db.Project
 	queue := project.DependsOn()
 	for len(queue) > 0 {
@@ -181,10 +182,10 @@ func (h *Handler) dependsClosure(ctx context.Context, project *db.Project) ([]db
 		if err != nil {
 			return nil, err
 		}
-		if seen[dep.ID] {
+		if seen.Contains(dep.ID) {
 			continue
 		}
-		seen[dep.ID] = true
+		seen.Add(dep.ID)
 		deps = append(deps, *dep)
 		queue = append(queue, dep.DependsOn()...)
 	}

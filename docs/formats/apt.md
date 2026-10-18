@@ -22,6 +22,10 @@ ONE shared renderer produces `Packages` and the `Release` and `InRelease` SHA256
 
 The renderer checks it again, and a bad stored value is a 500, not a dropped line. A set value joins the digest fingerprint. An unset one does not, so a project with no Depends keeps its cached digest.
 
+`projects.depends` holds the canonical names of the buildhost projects the project depends on, joined by commas (`db.Project.DependsOn`). `DebDependsLine` puts each one in the same line as its `DebPackageName`, ahead of `apt_depends`. The value joins the digest fingerprint the same way. The API resolves each declared name through `ResolveProject` and stores the current name. A name the caller cannot read is refused with the same message as a missing one (`internal/api/depends.go`). `RenameProject` and a project merge rewrite every list that names the old project, so a stored name never goes stale.
+
+`install.sh` adds the repository of every project in the dependency closure (`dependsClosure`, `install.go`), because apt resolves a Depends only from a configured source. Each one gets an `add_dep` line with its URL, its slug and whether it is private. A private dependency makes the script exit with an error when no token is set. A stored name that no longer resolves is a 500, not a script that installs a broken package.
+
 ## Package naming
 
 The Debian package name is `repackage.DebPackageName(project.Name)`. It folds `/` and `_` to `-`, because neither is legal in a deb package name. The same value appears in multiple places. Three of them are the served `Packages` index (`packages.go`), the InRelease hash computation (`release.go`), and the deb control `Package` field. The other two are the pool filename and the installed `/usr/bin/<pkg>` binary. apt and dpkg therefore always agree. A slash stays in the repo *URL* (`apt.{domain}/<repo>/<binary>`).

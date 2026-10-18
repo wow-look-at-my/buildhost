@@ -94,7 +94,7 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 // updateProjectRequest carries operator-set project settings. Every field is a
 // pointer so an absent key leaves the setting unchanged (PATCH semantics).
 type updateProjectRequest struct {
-	CreateService *bool   `json:"create_service"`
+	CreateService *bool     `json:"create_service"`
 	AptDepends    *string   `json:"apt_depends"`
 	Depends       *[]string `json:"depends"`
 	// Versioning is decoded only to refuse it.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 type dependsError struct{ msg string }
@@ -51,15 +52,15 @@ func (h *Handler) resolveDepends(ctx context.Context, project *db.Project, names
 // refuseDependsCycle fails when a dependency of project already depends on project, directly or through others.
 // Homebrew refuses to install a formula on a dependency cycle.
 func (h *Handler) refuseDependsCycle(ctx context.Context, project *db.Project, deps []string) error {
-	seen := map[string]bool{}
+	seen := set.New[string]()
 	queue := slices.Clone(deps)
 	for len(queue) > 0 {
 		name := queue[0]
 		queue = queue[1:]
-		if seen[name] {
+		if seen.Contains(name) {
 			continue
 		}
-		seen[name] = true
+		seen.Add(name)
 		p, _, err := h.DB.ResolveProject(ctx, name)
 		if errors.Is(err, db.ErrNotFound) {
 			continue

@@ -73,3 +73,18 @@ This applies to a buildhost-GENERATED deb only, which means `fmt=deb`, from this
 A project declares its runtime prerequisites in Debian relationship syntax, such as `bubblewrap | docker.io`. The generated deb and the Packages entry then carry a `Depends:` line. Set it with `apt_depends` on the `buildhost-publish` or `buildhost-create-release` action, or with `--apt-depends` on `buildhost publish`.
 
 An empty input leaves the stored value untouched. `PATCH /api/v1/projects/{project}` with `{"apt_depends": ""}` clears it. The server refuses a value that is not relationship syntax. That refusal fails the publish.
+
+## Dependencies on other buildhost projects (depends)
+
+A project can also name the buildhost projects it depends on, such as `ascii-timeline`. Set it with `depends` on the `buildhost-publish` or `buildhost-create-release` action, with `--depends` on `buildhost publish`, or with go-toolchain's `depends` input. The `Depends:` line then names each one by its deb package name, ahead of `apt_depends`.
+
+apt resolves a Depends only from a repository it configured, and each project is its own repository. The generated `install.sh` therefore also adds the repository of every dependency, and of their dependencies in turn. It writes a keyring, a source list and, with a token, an auth entry for each one. `apt-get install api-cli` then installs `ascii-timeline` too:
+
+```bash
+curl -fsSL https://apt.pazer.build/api-cli/install.sh | sudo sh
+sudo apt-get install api-cli
+```
+
+A private dependency needs a read token, even under a public project. The installer stops with an error that names the dependency when `BUILDHOST_TOKEN` is unset. The server refuses a name it cannot resolve, or one the publishing token cannot read, as an unknown project, and the publish fails. It also refuses a project that depends on itself, directly or through a cycle. An absent input leaves the stored list untouched. `PATCH /api/v1/projects/{project}` with `{"depends": []}` clears it.
+
+A rename of a dependency rewrites every list that names it.

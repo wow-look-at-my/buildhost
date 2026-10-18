@@ -38,7 +38,7 @@ type createReleaseRequest struct {
 	// Depends names the buildhost projects the project's packages depend on. Absent leaves it untouched, and [] clears it.
 	Depends *[]string `json:"depends"`
 	Notes   string    `json:"notes"`
-	OciUser    string  `json:"oci_user"`
+	OciUser string    `json:"oci_user"`
 	// Draft keeps the release out of the project's public release stream: it
 	Draft bool `json:"draft"`
 }
