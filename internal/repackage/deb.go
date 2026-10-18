@@ -331,17 +331,29 @@ func DebPackageName(project string) string {
 	return strings.NewReplacer("/", "-", "_", "-").Replace(project)
 }
 
-// DebDependsLine renders the project's apt_depends as a "Depends:" control
-// line with its newline, or "" when the project declares none. The deb and
-// the APT Packages entry both use it, so they always agree.
+// DebDependsLine renders the project's depends and apt_depends as a "Depends:"
+// control line with its newline, or "" when the project declares none. The deb
+// and the APT Packages entry both use it, so they always agree. Each buildhost
+// project in depends appears as its deb package name, ahead of apt_depends.
 func DebDependsLine(p db.Project) (string, error) {
-	if p.AptDepends == "" {
-		return "", nil
-	}
 	if err := db.ValidateAptDepends(p.AptDepends); err != nil {
 		return "", fmt.Errorf("project %s: %w", p.Name, err)
 	}
-	return "Depends: " + p.AptDepends + "\n", nil
+	var relations []string
+	for _, dep := range p.DependsOn() {
+		relations = append(relations, DebPackageName(dep))
+	}
+	if p.AptDepends != "" {
+		relations = append(relations, p.AptDepends)
+	}
+	if len(relations) == 0 {
+		return "", nil
+	}
+	line := strings.Join(relations, ", ")
+	if err := db.ValidateAptDepends(line); err != nil {
+		return "", fmt.Errorf("project %s: %w", p.Name, err)
+	}
+	return "Depends: " + line + "\n", nil
 }
 
 func sanitizeControlField(s string) string {

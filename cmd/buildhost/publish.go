@@ -40,6 +40,7 @@ func init() {
 	publishCmd.Flags().String("git-commit", "", "Git commit")
 	publishCmd.Flags().String("oci-user", "", "Run-as user for synthesized OCI images (uid[:gid] or name[:group]); default is root")
 	publishCmd.Flags().String("apt-depends", "", `Debian Depends for the project's deb, e.g. "bubblewrap | docker.io". An empty value clears it. An absent flag leaves it untouched`)
+	publishCmd.Flags().StringSlice("depends", nil, `Buildhost projects the project's packages depend on, comma-separated or repeated, e.g. "ascii-timeline". apt and brew install them too. An empty value clears it. An absent flag leaves it untouched`)
 	publishCmd.Flags().String("manifest", "", "Path to release manifest (TOML)")
 	publishCmd.Flags().Bool("draft", false, "Upload without publishing: the release stays out of latest/branch resolution and every package manager, downloadable only by its exact version")
 	addChunkSizeFlag(publishCmd)
@@ -55,8 +56,10 @@ type manifest struct {
 	Notes     string `toml:"notes"`
 	OciUser   string `toml:"oci_user"`
 	// AptDepends is sent only when the manifest names it.
-	AptDepends *string            `toml:"apt_depends"`
-	Artifacts  []manifestArtifact `toml:"artifact"`
+	AptDepends *string `toml:"apt_depends"`
+	// Depends is sent only when the manifest names it.
+	Depends   *[]string          `toml:"depends"`
+	Artifacts []manifestArtifact `toml:"artifact"`
 }
 
 type manifestArtifact struct {
@@ -103,17 +106,20 @@ func publishSingle(cmd *cobra.Command) error {
 	if cmd.Flags().Changed("apt-depends") {
 		release["apt_depends"], _ = cmd.Flags().GetString("apt-depends")
 	}
+	if cmd.Flags().Changed("depends") {
+		deps, _ := cmd.Flags().GetStringSlice("depends")
+		// An empty flag clears the list, so it must send [] rather than null.
+		release["depends"] = append([]string{}, deps...)
+	}
 	releaseBody, _ := json.Marshal(release)
 	resp, err := doRequest("POST", serverURL+"/api/v1/projects/"+project+"/releases", token, bytes.NewReader(releaseBody))
 	if err != nil {
 		return fmt.Errorf("create release: %w", err)
 	}
 
-	var rel struct{ Version string }
-	json.NewDecoder(resp.Body).Decode(&rel)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
-		return fmt.Errorf("create release failed: %s", resp.Status)
+	rel, err := createdRelease(resp)
+	if err != nil {
+		return err
 	}
 	if rel.Version == "" {
 		rel.Version = version
@@ -183,16 +189,17 @@ func publishFromManifest(cmd *cobra.Command, path string) error {
 	if m.AptDepends != nil {
 		release["apt_depends"] = *m.AptDepends
 	}
+	if m.Depends != nil {
+		release["depends"] = *m.Depends
+	}
 	releaseBody, _ := json.Marshal(release)
 	resp, err := doRequest("POST", m.Server+"/api/v1/projects/"+m.Project+"/releases", m.Token, bytes.NewReader(releaseBody))
 	if err != nil {
 		return fmt.Errorf("create release: %w", err)
 	}
-	var rel struct{ Version string }
-	json.NewDecoder(resp.Body).Decode(&rel)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
-		return fmt.Errorf("create release failed: %s", resp.Status)
+	rel, err := createdRelease(resp)
+	if err != nil {
+		return err
 	}
 	if rel.Version == "" {
 		rel.Version = m.Version
@@ -279,6 +286,23 @@ func publishFromManifest(cmd *cobra.Command, path string) error {
 
 	fmt.Printf("published %s/%s\n", m.Project, rel.Version)
 	return nil
+}
+
+type createdReleaseBody struct{ Version string }
+
+// createdRelease reads a release-create answer. A refusal carries the server's reason, such as an unknown dependency.
+func createdRelease(resp *http.Response) (createdReleaseBody, error) {
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return createdReleaseBody{}, fmt.Errorf("read release-create answer: %w", err)
+	}
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		return createdReleaseBody{}, fmt.Errorf("create release failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var rel createdReleaseBody
+	json.Unmarshal(body, &rel)
+	return rel, nil
 }
 
 func doRequest(method, url, token string, body io.Reader) (*http.Response, error) {

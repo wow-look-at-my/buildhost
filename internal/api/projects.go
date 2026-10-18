@@ -95,7 +95,8 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 // pointer so an absent key leaves the setting unchanged (PATCH semantics).
 type updateProjectRequest struct {
 	CreateService *bool   `json:"create_service"`
-	AptDepends    *string `json:"apt_depends"`
+	AptDepends    *string   `json:"apt_depends"`
+	Depends       *[]string `json:"depends"`
 	// Versioning is decoded only to refuse it.
 	Versioning json.RawMessage `json:"versioning"`
 }
@@ -124,6 +125,9 @@ func (h *Handler) UpdateProjectSettings(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	if !h.applyDepends(w, r, project, req.Depends) {
+		return
+	}
 	if req.AptDepends != nil && *req.AptDepends != project.AptDepends {
 		if err := h.DB.SetProjectAptDepends(r.Context(), project.ID, *req.AptDepends); err != nil {
 			jsonError(w, http.StatusInternalServerError, "failed to update project")
