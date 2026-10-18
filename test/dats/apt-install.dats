@@ -53,9 +53,7 @@ shared:
 				$RUN serve > "$WORK/server.log" 2>&1 &
 			echo "$!" > "$WORK/server.pid"
 			started=""
-			# A hook gets 30s in total. A one-second poll spends the whole
-			# budget waiting, so the suite reports a timeout instead of the
-			# server log that says why.
+			# A short poll reaches the server log that says why it did not start, well before the hook times out.
 			for _ in $(seq 50); do
 				if curl -fsS "$BASE/healthz" >/dev/null 2>&1; then started=yes; break; fi
 				sleep 0.2
@@ -114,6 +112,14 @@ shared:
 			install buildhost-apt-e2e/tool buildhost-apt-e2e-tool
 			V3="$(publish buildhost-apt-e2e-ape '' "$WORK/ape-fixture")"
 			install buildhost-apt-e2e-ape buildhost-apt-e2e-ape
+			# The app depends on another buildhost project. Its own install.sh must add the
+			# dependency's repository, so one apt-get install pulls both in. curl maps every
+			# *.localhost name to loopback, so a curlrc sends the script's fetches to the server.
+			publish buildhost-apt-e2e-dep '' "$ARTIFACT_BIN" >/dev/null
+			publish buildhost-apt-e2e-app '"depends":["buildhost-apt-e2e-dep"]' "$ARTIFACT_BIN" >/dev/null
+			box sh -c "echo 'resolve = apt.localhost:80:$GW' > /root/.curlrc \
+				&& curl -fsSL http://apt.localhost/buildhost-apt-e2e-app/install.sh | sh \
+				&& DEBIAN_FRONTEND=noninteractive apt-get install -y buildhost-apt-e2e-app"
 			{
 				echo "WORK='$WORK'"
 				echo "APTBOX='$APTBOX'"
@@ -130,7 +136,10 @@ shared:
 			# touched the runner, so there is no apt state to undo.
 			true
 
-setup: env ENV_FILE={shared.env} sh {shared.start.sh}
+# The dependency case runs the generated install.sh, whose apt-get update also reads the Ubuntu archive.
+setup:
+	- cmd: env ENV_FILE={shared.env} sh {shared.start.sh}
+	  timeout: 5m
 teardown: sh {shared.teardown.sh} {shared.env}
 
 tests:
@@ -148,6 +157,19 @@ tests:
 	# create_service was declared on release-create. The deb must ship the
 	# systemd USER unit and postinst must have enabled it globally. The
 	# symlink is what makes it start at every user's next graphical login.
+	- desc: apt-get install of a package installs the buildhost project it depends on
+	  cmd: |
+		set -eu
+		. {shared.env}
+		docker exec "$APTBOX" test -f /etc/apt/sources.list.d/buildhost-buildhost-apt-e2e-dep.list
+		docker exec "$APTBOX" sh -c "dpkg-query -W -f='\${Depends}\n' buildhost-apt-e2e-app | grep -qx buildhost-apt-e2e-dep"
+		docker exec "$APTBOX" sh -c "dpkg-query -W -f='\${Status}\n' buildhost-apt-e2e-dep | grep -q 'install ok installed'"
+		docker exec "$APTBOX" test -x /usr/bin/buildhost-apt-e2e-dep
+		echo "dependency-installed"
+	  outputs:
+		stdout:
+			- "dependency-installed"
+
 	- desc: create_service ships a user unit and enables it globally
 	  cmd: |
 		set -eu
