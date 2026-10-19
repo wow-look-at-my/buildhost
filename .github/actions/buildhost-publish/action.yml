@@ -47,6 +47,18 @@ inputs:
       project this publish creates a release for.
     required: false
     default: ''
+  depends:
+    description: >-
+      The buildhost projects the published binary depends on, separated by
+      commas or whitespace (e.g. 'ascii-timeline'). The deb Depends field
+      names each one, the APT install.sh adds its repository, and the brew
+      formula declares depends_on for it, so apt and brew install it too.
+      The server refuses a name it cannot resolve, and the publish fails.
+      Empty (the default) sends nothing and leaves the stored list
+      untouched. Applies to every project this publish creates a release
+      for.
+    required: false
+    default: ''
   default_branch:
     description: >-
       The repo's default branch (e.g. 'main'). When set, the apex "latest"
