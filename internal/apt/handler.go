@@ -66,20 +66,35 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	subpath := routeFrom(r.Context()).subPath
 
 	switch {
-	case subpath == "dists/stable/InRelease":
-		h.serveRelease(w, r, true)
-	case subpath == "dists/stable/Release":
-		h.serveRelease(w, r, false)
-	case subpath == "dists/stable/Release.gpg":
-		h.serveReleaseGPG(w, r)
 	case subpath == "key.asc":
-		h.serveKey(w, r)
+		h.serveKey(w, r, "public, max-age=86400")
 	case subpath == "install.sh":
 		h.serveInstallScript(w, r)
-	case strings.HasPrefix(subpath, "dists/stable/main/binary-"):
-		h.servePackages(w, r, subpath)
 	case strings.HasPrefix(subpath, "pool/"):
 		h.servePool(w, r, subpath)
+	case strings.HasPrefix(subpath, "dists/"):
+		idx, err := h.projectIndex(r)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		h.serveDists(w, r, idx, subpath)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+// serveDists serves the signed index of a repository: Release, InRelease, Release.gpg and each Packages.
+func (h *Handler) serveDists(w http.ResponseWriter, r *http.Request, idx aptIndex, subpath string) {
+	switch {
+	case subpath == "dists/stable/InRelease":
+		h.serveRelease(w, r, idx, true)
+	case subpath == "dists/stable/Release":
+		h.serveRelease(w, r, idx, false)
+	case subpath == "dists/stable/Release.gpg":
+		h.serveReleaseGPG(w, r, idx)
+	case strings.HasPrefix(subpath, "dists/stable/main/binary-"):
+		h.servePackages(w, r, idx, subpath)
 	default:
 		http.NotFound(w, r)
 	}

@@ -40,7 +40,7 @@ func brewVersion(release db.Release) string {
 }
 
 // formulaForRelease renders one formula. formula is its tap name, which sets the class name.
-func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, release db.Release, artifacts []db.PlatformArtifact, baseURL, formula string, mode formulaMode) (*repackage.Output, error) {
+func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, release db.Release, artifacts []db.PlatformArtifact, baseURL, formula string, names map[string]string, mode formulaMode) (*repackage.Output, error) {
 	// A digit-leading project name can never be a loadable Homebrew formula
 	if !repackage.BrewEligibleProjectName(project.Name) {
 		return nil, db.ErrNotFound
@@ -116,8 +116,33 @@ func (h *Handler) formulaForRelease(ctx context.Context, project db.Project, rel
 		Private: project.IsPrivate,
 		// The project's packaging-agnostic create_service setting.
 		Service:   project.CreateService,
+		Depends:   formulaDepends(project, names),
 		Resources: resources,
 	})
+}
+
+// formulaDepends names the tap formula of each project p depends on.
+// names holds the tap's formula names. A project outside it keeps its folded name.
+func formulaDepends(p db.Project, names map[string]string) []string {
+	var deps []string
+	for _, dep := range p.DependsOn() {
+		name, ok := names[dep]
+		if !ok {
+			name = repackage.BrewFormulaName(dep)
+		}
+		deps = append(deps, name)
+	}
+	return deps
+}
+
+// dependsRenamed reports whether a dependency of p has a tap name other than its folded name.
+func dependsRenamed(p db.Project, names map[string]string) bool {
+	for _, dep := range p.DependsOn() {
+		if name, ok := names[dep]; ok && name != repackage.BrewFormulaName(dep) {
+			return true
+		}
+	}
+	return false
 }
 
 // tarGZSHA256 returns the hex sha256 of the artifact's tar.gz repackage -- the

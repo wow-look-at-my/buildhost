@@ -9,7 +9,7 @@ type Answer = { status: number; body: string };
 function globals(inputs: Record<string, string>) {
 	const { core, out } = stepCore();
 	const github = { repository: 'o/tool', ref_name: 'main', sha: 'c0ffee', run_id: '1' };
-	const all = { server: 'https://bh.example', project: '', artifact_name: 'go-build', path: '', version: '', git_branch: '', git_commit: '', create_service: '', default_branch: '', apt_depends: '', ...inputs };
+	const all = { server: 'https://bh.example', project: '', artifact_name: 'go-build', path: '', version: '', git_branch: '', git_commit: '', create_service: '', default_branch: '', apt_depends: '', depends: '', ...inputs };
 	return { g: globalsOf({ core, github, context: {}, octokit: {}, exec: {}, inputs: all, steps: {} }), failed: out.failed, outputs: out.outputs };
 }
 
@@ -27,9 +27,9 @@ function fakeFetch(route: (method: string, urlPath: string) => Answer) {
 }
 
 (async () => {
-	assert.strictEqual(releaseBody({ gitBranch: 'b', gitCommit: 'c', version: '', createService: '', defaultBranch: '', aptDepends: '' }), '{"git_branch":"b","git_commit":"c"}', 'an empty input sends no field');
-	assert.deepStrictEqual(JSON.parse(releaseBody({ gitBranch: 'b', gitCommit: 'c', version: '1.2.3', createService: 'false', defaultBranch: 'main', aptDepends: 'bubblewrap' })),
-		{ git_branch: 'b', git_commit: 'c', version: '1.2.3', create_service: false, default_branch: 'main', apt_depends: 'bubblewrap' });
+	assert.strictEqual(releaseBody({ gitBranch: 'b', gitCommit: 'c', version: '', createService: '', defaultBranch: '', aptDepends: '', depends: ' ' }), '{"git_branch":"b","git_commit":"c"}', 'an empty input sends no field');
+	assert.deepStrictEqual(JSON.parse(releaseBody({ gitBranch: 'b', gitCommit: 'c', version: '1.2.3', createService: 'false', defaultBranch: 'main', aptDepends: 'bubblewrap', depends: 'ascii-timeline, team/lib' })),
+		{ git_branch: 'b', git_commit: 'c', version: '1.2.3', create_service: false, default_branch: 'main', apt_depends: 'bubblewrap', depends: ['ascii-timeline', 'team/lib'] });
 	assert.deepStrictEqual(releaseVersionFrom('p', '', { status: 201, text: '{"version":"4"}' }), { rv: '4', existed: false });
 	assert.deepStrictEqual(releaseVersionFrom('p', '1.0.0', { status: 409, text: '' }), { rv: '1.0.0', existed: true });
 	assert.match(releaseVersionFrom('p', '', { status: 409, text: '' }) as string, /no explicit version/);
