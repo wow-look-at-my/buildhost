@@ -99,6 +99,7 @@ const sampleInputs: Record<string, string> = {
 	git_commit: '',
 	create_service: '',
 	apt_depends: 'bubblewrap | docker.io',
+	depends: 'ascii-timeline',
 	default_branch: '',
 	deployment_environment: '',
 	deployment_ref: '',

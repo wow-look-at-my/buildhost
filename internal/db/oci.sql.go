@@ -86,7 +86,7 @@ func (q *Queries) InsertOCIBlobLink(ctx context.Context, arg InsertOCIBlobLinkPa
 const listOCIBlobLinkProjects = `-- name: ListOCIBlobLinkProjects :many
 SELECT p.id, p.name, p.description, p.homepage, p.license, p.is_private, p.versioning,
        p.github_repo, p.github_owner_id, p.github_repo_id, p.default_branch, p.create_service,
-       p.apt_depends, p.created_at, p.updated_at,
+       p.apt_depends, p.depends, p.created_at, p.updated_at,
        l.media_type, l.size, l.is_manifest
 FROM oci_blob_links l JOIN projects p ON p.id = l.project_id
 WHERE l.storage_key = ?
@@ -106,6 +106,7 @@ type ListOCIBlobLinkProjectsRow struct {
 	DefaultBranch string     `json:"default_branch"`
 	CreateService bool       `json:"create_service"`
 	AptDepends    string     `json:"apt_depends"`
+	Depends       string     `json:"depends"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	MediaType     string     `json:"media_type"`
@@ -136,6 +137,7 @@ func (q *Queries) ListOCIBlobLinkProjects(ctx context.Context, storageKey string
 			&i.DefaultBranch,
 			&i.CreateService,
 			&i.AptDepends,
+			&i.Depends,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.MediaType,
