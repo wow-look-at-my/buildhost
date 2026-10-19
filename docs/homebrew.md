@@ -52,6 +52,10 @@ Homebrew copies that release's formula out of the tap history into a personal `<
 
 A private project works the same way through the authenticated tap, with `HOMEBREW_BUILDHOST_TOKEN` set as above. A release appears in the history once buildhost hashed its download. A background worker does that at start and when a tap refresh finds a release it lacks.
 
+## Dependencies on other buildhost projects (depends)
+
+A project that declares `depends` (see the APT page) gets a `depends_on "pazer/build/<formula>"` line in its formula for each dependency. `brew install pazer/build/api-cli` then installs `pazer/build/ascii-timeline` first. The name carries the tap, because brew resolves a bare name against homebrew-core first. So the formulas assume the tap name `pazer/build` that every install command here uses. A private dependency needs the authenticated tap and `HOMEBREW_BUILDHOST_TOKEN`. The public tap does not list it, so brew stops with "No available formula".
+
 ## Background services (create_service)
 
 A project can declare that its binary runs as a background service. Declare it in the publishing repo's CI. That CI is with `create_service: 'true'` on the `buildhost-create-release` or `buildhost-publish` action. go-toolchain's composite spells that as `autorelease_args: create_service=true`. Every publish asserts the declared value. An absent input leaves the stored setting untouched. An operator can also flip it directly, with `PATCH /api/v1/projects/{project}` and a body of `{"create_service": true}`.

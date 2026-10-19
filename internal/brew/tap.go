@@ -176,7 +176,7 @@ func (h *Handler) buildTap(r *http.Request) (map[string][]byte, map[string]strin
 		if err != nil {
 			return nil, nil, err
 		}
-		data, err := h.renderFormula(r, project, *release, artifacts, repackage.BrewFormulaName(project.Name), formulaLatest)
+		data, err := h.renderFormula(r, project, *release, artifacts, repackage.BrewFormulaName(project.Name), nil, formulaLatest)
 		if errors.Is(err, db.ErrNotFound) {
 			continue
 		}
@@ -198,9 +198,12 @@ func (h *Handler) buildTap(r *http.Request) (map[string][]byte, map[string]strin
 	for _, c := range candidates {
 		name := names[c.project.Name]
 		data := rendered[c.project.Name]
-		if folded := repackage.BrewFormulaName(c.project.Name); name != folded {
+		folded := repackage.BrewFormulaName(c.project.Name)
+		if name != folded {
 			renames[folded] = name
-			if data, err = h.renderFormula(r, c.project, c.release, c.artifacts, name, formulaLatest); err != nil {
+		}
+		if name != folded || dependsRenamed(c.project, names) {
+			if data, err = h.renderFormula(r, c.project, c.release, c.artifacts, name, names, formulaLatest); err != nil {
 				return nil, nil, err
 			}
 		}
@@ -220,8 +223,8 @@ func (h *Handler) buildTap(r *http.Request) (map[string][]byte, map[string]strin
 const tapRenamesFile = "formula_renames.json"
 
 // renderFormula renders one formula under the tap name formula.
-func (h *Handler) renderFormula(r *http.Request, project db.Project, release db.Release, artifacts []db.PlatformArtifact, formula string, mode formulaMode) ([]byte, error) {
-	out, err := h.formulaForRelease(r.Context(), project, release, artifacts, auth.RequestRootURL(r), formula, mode)
+func (h *Handler) renderFormula(r *http.Request, project db.Project, release db.Release, artifacts []db.PlatformArtifact, formula string, names map[string]string, mode formulaMode) ([]byte, error) {
+	out, err := h.formulaForRelease(r.Context(), project, release, artifacts, auth.RequestRootURL(r), formula, names, mode)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +297,7 @@ func (h *Handler) tapHistory(r *http.Request, names map[string]string) ([]tapHis
 			if err != nil {
 				return nil, err
 			}
-			data, err := h.renderFormula(r, project, release, artifacts, name, formulaHistory)
+			data, err := h.renderFormula(r, project, release, artifacts, name, names, formulaHistory)
 			if errors.Is(err, db.ErrNotFound) || errors.Is(err, errDigestPending) {
 				continue
 			}
