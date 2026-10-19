@@ -76,6 +76,9 @@ func debDigestFingerprint(project *db.Project, a *db.Artifact) string {
 	if project.AptDepends != "" {
 		inputs = append(inputs, "depends="+project.AptDepends)
 	}
+	if project.Depends != "" {
+		inputs = append(inputs, "project-depends="+project.Depends)
+	}
 	for _, s := range inputs {
 		hsh.Write([]byte(s))
 		hsh.Write([]byte{0})

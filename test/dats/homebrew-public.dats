@@ -28,6 +28,8 @@ shared:
 			# contend for the same prefix.
 			brew install pazer/build/ape-fixture
 			brew install pazer/build/versioned-fixture
+			# dep-app declares depends_on dep-lib. Only dep-app is named here.
+			brew install pazer/build/dep-app
 			TAP="$(brew --repository pazer/build)"
 			# Pull until the tap history holds that release.
 			for _ in $(seq 60); do
@@ -175,6 +177,18 @@ tests:
 	  outputs:
 		stdout:
 			- "one-per-project"
+
+	- desc: brew install of a formula installs the buildhost project it depends on
+	  cmd: |
+		set -euo pipefail
+		grep -n 'depends_on "pazer/build/dep-lib"' "$(brew --repository pazer/build)/Formula/dep-app.rb"
+		brew list --formula pazer/build/dep-lib >/dev/null
+		dep-lib
+		dep-app
+	  outputs:
+		stdout:
+			- "buildhost-homebrew-dep-lib-ok"
+			- "buildhost-homebrew-dep-app-ok"
 
 	- desc: an APE-shaped formula installs, keeps its mode, and runs
 	  cmd: |

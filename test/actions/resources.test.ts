@@ -67,12 +67,12 @@ function run(inputs: Record<string, string>) {
 	assert.deepStrictEqual(r.out.failed, []);
 
 	sent = serve(() => ({ status: 201, body: '{"version":"7"}' }));
-	r = run({ project: 'p', version: '', git_branch: '', git_commit: '', notes: 'n', create_service: 'true', default_branch: '', apt_depends: 'bubblewrap | docker.io' });
+	r = run({ project: 'p', version: '', git_branch: '', git_commit: '', notes: 'n', create_service: 'true', default_branch: '', apt_depends: 'bubblewrap | docker.io', depends: 'ascii-timeline team/lib' });
 	await mod.createRelease(r.g);
-	assert.deepStrictEqual(sent[0].body, { git_branch: 'main', git_commit: 'c0ffee', notes: 'n', create_service: true, apt_depends: 'bubblewrap | docker.io' });
+	assert.deepStrictEqual(sent[0].body, { git_branch: 'main', git_commit: 'c0ffee', notes: 'n', create_service: true, apt_depends: 'bubblewrap | docker.io', depends: ['ascii-timeline', 'team/lib'] });
 	assert.strictEqual(r.out.outputs.version, '7');
 
-	r = run({ project: 'p', version: '', git_branch: '', git_commit: '', notes: '', create_service: 'maybe', default_branch: '', apt_depends: '' });
+	r = run({ project: 'p', version: '', git_branch: '', git_commit: '', notes: '', create_service: 'maybe', default_branch: '', apt_depends: '', depends: '' });
 	await mod.createRelease(r.g);
 	assert.match(r.out.failed[0], /create_service must be/);
 
