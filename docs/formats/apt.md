@@ -22,6 +22,10 @@ ONE shared renderer produces `Packages` and the `Release` and `InRelease` SHA256
 
 The renderer checks it again, and a bad stored value is a 500, not a dropped line. A set value joins the digest fingerprint. An unset one does not, so a project with no Depends keeps its cached digest.
 
+`projects.depends` holds the canonical names of the buildhost projects the project depends on, joined by commas (`db.Project.DependsOn`). `DebDependsLine` puts each one in the same line as its `DebPackageName`, ahead of `apt_depends`. The value joins the digest fingerprint the same way. The API resolves each declared name through `ResolveProject` and stores the current name. A name the caller cannot read is refused with the same message as a missing one (`internal/api/depends.go`). `RenameProject` and a project merge rewrite every list that names the old project, so a stored name never goes stale.
+
+Without a token, `install.sh` adds the repository of every project in the dependency closure (`dependsClosure`, `install.go`), because apt resolves a Depends only from a configured source. Each one gets an `add_dep` line with its URL, its slug and whether it is private. A private dependency makes the script exit with an error. With a token, the script adds the authenticated source below instead, which lists the whole closure. A stored name that no longer resolves is a 500, not a script that installs a broken package.
+
 ## Package naming
 
 The Debian package name is `repackage.DebPackageName(project.Name)`. It folds `/` and `_` to `-`, because neither is legal in a deb package name. The same value appears in multiple places. Three of them are the served `Packages` index (`packages.go`), the InRelease hash computation (`release.go`), and the deb control `Package` field. The other two are the pool filename and the installed `/usr/bin/<pkg>` binary. apt and dpkg therefore always agree. A slash stays in the repo *URL* (`apt.{domain}/<repo>/<binary>`).
@@ -36,4 +40,14 @@ GnuPG 2.4's `gpgv` rejects it with "Invalid public key algorithm". That is every
 
 The InRelease (clearsigned), Release.gpg (detached) and key.asc (public key) endpoints are all served. The easiest client setup is the generated per-project installer (`curl -fsSL apt.{domain}/{project}/install.sh | sudo sh`). It saves the armored `key.asc` to `/etc/apt/keyrings/buildhost-{project}.asc`. It writes a `[signed-by=...]` source. APT reads the armored key directly through `signed-by`, verified against apt 2.8. The client therefore needs no `gpg --dearmor` step and no `gpg` binary.
 
-A private project passes a read token through `BUILDHOST_TOKEN`. The installer also records that token in `/etc/apt/auth.conf.d/`, scoped to the project's repo host and path.
+A private project passes a read token through `BUILDHOST_TOKEN`. The installer then writes the authenticated source and one `/etc/apt/auth.conf.d/buildhost-private.conf` entry for it. The `machine` line keeps the URL's scheme, because apt applies a line with no scheme to https only. An http deployment otherwise never sends the token.
+
+## The authenticated source
+
+`apt.{domain}/private/` (`private.go`) is the apt counterpart of `brew.{domain}/private/tap.git`. It is ONE repository scoped to the credential: every public project, plus each private project `auth.TokenCanReadProject` lets the token read. That is the rule requireProject applies to one project. The scope never names a project the token cannot open directly. A request with no token. An unknown token or a token without the read scope gets a 401 with `Basic realm="buildhost"`. apt sends an `auth.conf` credential only after a challenge.
+
+`aptIndex` (`packages.go`) is a repository: its projects, each at its latest release, its Release label, and its cache policy. A project repository and the scope share `packagesEntry`, the Release hashing and the signer. The scope puts each project's debs under `pool/<project>/`, because projects can share a version. Every scoped answer carries `Cache-Control: private, no-store` and `Vary: Authorization`. A pool request for a private project redirects with a signed, short-lived download token (`static.SignedURL`). The credential for the apt host is therefore the only one a client needs.
+
+A public project's deb redirects unsigned.
+
+The route registers `/private/dists/`, `/private/pool/` and `/private/key.asc` on their own. These are more specific than `/{path...}`, so a project named exactly `private` has no per-project repository.

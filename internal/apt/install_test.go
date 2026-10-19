@@ -71,8 +71,28 @@ func TestServeInstallScript(t *testing.T) {
 	assert.Contains(t, body, "sudo apt-get install $PKG")
 	// Private-repo token support is wired in, and the auth entry also covers
 	assert.Contains(t, body, "BUILDHOST_TOKEN")
-	assert.Contains(t, body, "STATIC_HOST='static.pazer.build'")
-	assert.Contains(t, body, "machine $STATIC_HOST")
+	// A token selects the one authenticated source, with one auth entry that keeps its scheme.
+	assert.Contains(t, body, "PRIVATE_URL='https://apt.pazer.build/private'")
+	assert.Contains(t, body, "deb [signed-by=$PRIVATE_KEYRING] $PRIVATE_URL stable main")
+	assert.Contains(t, body, `echo "machine $PRIVATE_URL"`)
+	assert.Contains(t, body, `curl -fsSL -H "Authorization: Bearer $TOKEN" "$PRIVATE_URL/key.asc"`)
+}
+
+// An http deployment needs the scheme in auth.conf, or apt never sends the token.
+func TestServeInstallScript_AuthKeepsHTTPScheme(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningAuto}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	req := httptest.NewRequest("GET", "/myapp/install.sh", nil)
+	req.Host = "apt.localhost"
+	req = withRoute(req, proj, route{project: "myapp", subPath: "install.sh"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "APT_URL='http://apt.localhost/myapp'")
+	assert.Contains(t, rec.Body.String(), "PRIVATE_URL='http://apt.localhost/private'")
 }
 
 func TestServeInstallScript_NamespacedSlug(t *testing.T) {
@@ -94,7 +114,6 @@ func TestServeInstallScript_NamespacedSlug(t *testing.T) {
 	assert.Contains(t, body, "APT_URL='https://apt.pazer.build/team/tool'")
 	assert.Contains(t, body, "/etc/apt/keyrings/buildhost-team-tool.asc")
 	assert.Contains(t, body, "/etc/apt/sources.list.d/buildhost-team-tool.list")
-	assert.Contains(t, body, "/etc/apt/auth.conf.d/buildhost-team-tool.conf")
 	// The install hint uses the folded Debian package name
 	assert.Contains(t, body, "PKG='team-tool'")
 }

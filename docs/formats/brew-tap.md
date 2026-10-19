@@ -68,6 +68,10 @@ Homebrew must find a stable URL on EVERY platform to import a formula at all. It
 
 An `on_*` block still overrides `url` and `sha256` on a platform it matches. A formula whose resources span only ONE os additionally declares `depends_on :linux` or `depends_on :macos`. That is homebrew-core's single-platform pattern. A foreign-platform install therefore fails cleanly, instead of a fetch of a binary that cannot run.
 
+## Dependencies
+
+A project's `depends` list renders one `depends_on "<repackage.BrewTap>/<formula>"` line per dependency, after the platform `depends_on`. `repackage.BrewTap` is `pazer/build`, the tap name every install command uses. The tap names each dependency by its tap formula name from `tapFormulaNames` (`formulaDepends`). That name depends a dependency that takes its root's name. A formula with such a dependency renders a second time once the names are known (`dependsRenamed`). The single-formula route and `fmt=brew` know no tap, so they use the folded name, which `formula_renames.json` still maps.
+
 ## Opt-in `service do` block
 
 `projects.create_service` arrives in migration 013. It is the packaging-agnostic background-service setting. The publishing repo's CI DECLARES it, as an optional `create_service` bool on release-create. The `buildhost-create-release` and `buildhost-publish` actions carry that input. It is asserted idempotently on EVERY publish. An absent value leaves the stored setting untouched, so an old CI never clobbers it.

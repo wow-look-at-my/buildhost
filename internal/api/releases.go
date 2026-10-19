@@ -35,8 +35,10 @@ type createReleaseRequest struct {
 	CreateService *bool  `json:"create_service"`
 	// AptDepends declares the project's Debian Depends value. Absent leaves it untouched, and "" clears it.
 	AptDepends *string `json:"apt_depends"`
-	Notes      string  `json:"notes"`
-	OciUser    string  `json:"oci_user"`
+	// Depends names the buildhost projects the project's packages depend on. Absent leaves it untouched, and [] clears it.
+	Depends *[]string `json:"depends"`
+	Notes   string    `json:"notes"`
+	OciUser string    `json:"oci_user"`
 	// Draft keeps the release out of the project's public release stream: it
 	Draft bool `json:"draft"`
 }
@@ -119,6 +121,9 @@ func (h *Handler) CreateRelease(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// A failed write fails the publish, because a release without its declared Depends installs broken.
+	if !h.applyDepends(w, r, project, req.Depends) {
+		return
+	}
 	if req.AptDepends != nil && *req.AptDepends != project.AptDepends {
 		if err := h.DB.SetProjectAptDepends(r.Context(), project.ID, *req.AptDepends); err != nil {
 			jsonError(w, http.StatusInternalServerError, "failed to update project apt_depends")
