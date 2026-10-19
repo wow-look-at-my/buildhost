@@ -60,7 +60,9 @@ func TestServeInstallScript_AddsDependencyRepositories(t *testing.T) {
 		"a private dependency demands the token")
 	assert.Contains(t, body, "add_dep 'team/lib' 'https://apt.pazer.build/team/lib' 'buildhost-team-lib' 0\n",
 		"a dependency of a dependency also needs its repository")
-	assert.Contains(t, body, `echo "deb [signed-by=$dep_keyring] $dep_url stable main" > "/etc/apt/sources.list.d/$dep_slug.list"`)
+	assert.Contains(t, body, `echo "deb [signed-by=/etc/apt/keyrings/$dep_slug.asc] $dep_url stable main" > "/etc/apt/sources.list.d/$dep_slug.list"`)
+	assert.Less(t, strings.Index(body, `if [ -n "$TOKEN" ]; then`), strings.Index(body, "add_dep 'ascii-timeline'"),
+		"the per-project repositories are the tokenless path; a token takes the one authenticated source")
 	assert.Less(t, strings.Index(body, "add_dep 'team/lib'"), strings.Index(body, "\napt-get update\n"),
 		"every repository is in place before the index refresh")
 	assert.Contains(t, body, "sudo apt-get install $PKG")

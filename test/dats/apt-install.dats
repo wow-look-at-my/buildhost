@@ -139,8 +139,12 @@ shared:
 			}
 			attempt notoken ''
 			attempt badtoken 'bh_not_a_real_token'
-			box test ! -e /etc/apt/sources.list.d/buildhost-buildhost-apt-e2e-secret.list \
-				|| { echo "a failed install.sh still wrote the private dependency's source" >&2; exit 1; }
+			for f in buildhost-buildhost-apt-e2e-secret.list buildhost-private.list; do
+				box test ! -e "/etc/apt/sources.list.d/$f" \
+					|| { echo "a failed install.sh still wrote $f" >&2; exit 1; }
+			done
+			# The tokenless attempt added the app's own repository. Remove it, so both packages must come from the one authenticated source.
+			box rm -f /etc/apt/sources.list.d/buildhost-buildhost-apt-e2e-pubapp.list
 			attempt token "$READ_TOKEN"
 			box sh -c "DEBIAN_FRONTEND=noninteractive apt-get install -y buildhost-apt-e2e-pubapp" > "$WORK/private-install.out" 2>&1 \
 				|| { cat "$WORK/private-token.out" "$WORK/private-install.out" >&2; exit 1; }
@@ -222,7 +226,13 @@ tests:
 		set -eu
 		. {shared.env}
 		test "$(cat "$WORK/private-token.rc")" = 0
-		docker exec "$APTBOX" test -f /etc/apt/auth.conf.d/buildhost-buildhost-apt-e2e-secret.conf
+		docker exec "$APTBOX" grep -qx 'deb \[signed-by=/etc/apt/keyrings/buildhost-private.asc\] http://apt.localhost/private stable main' /etc/apt/sources.list.d/buildhost-private.list
+		docker exec "$APTBOX" grep -qx 'machine http://apt.localhost/private' /etc/apt/auth.conf.d/buildhost-private.conf
+		docker exec "$APTBOX" test ! -e /etc/apt/sources.list.d/buildhost-buildhost-apt-e2e-secret.list
+		for pkg in buildhost-apt-e2e-pubapp buildhost-apt-e2e-secret; do
+			docker exec "$APTBOX" apt-cache policy "$pkg" | grep -q 'http://apt.localhost/private stable/main' \
+				|| { echo "$pkg does not come from the authenticated source" >&2; docker exec "$APTBOX" apt-cache policy "$pkg" >&2; exit 1; }
+		done
 		docker exec "$APTBOX" sh -c "dpkg-query -W -f='\${Depends}\n' buildhost-apt-e2e-pubapp | grep -qx buildhost-apt-e2e-secret"
 		docker exec "$APTBOX" sh -c "dpkg-query -W -f='\${Status}\n' buildhost-apt-e2e-secret | grep -q 'install ok installed'"
 		docker exec "$APTBOX" buildhost-apt-e2e-secret

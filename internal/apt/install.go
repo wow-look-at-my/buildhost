@@ -22,13 +22,15 @@ const installScriptTemplate = `#!/bin/sh
 #
 # Project: __PROJECT__
 #
-# Adds the signed APT repository for this project and refreshes the package
-# index. Re-running is safe; it overwrites the existing entry.
+# Adds the signed APT repository for this project and its dependencies, and
+# refreshes the package index. With BUILDHOST_TOKEN it adds the one
+# authenticated source instead, which lists every project the token can read.
+# Re-running is safe; it overwrites the existing entries.
 #
 # Public project:
 #   curl -fsSL __APT_URL__/install.sh | sudo sh
 #
-# Private project (needs a read token):
+# Private project, or a private dependency (needs a read token):
 #   curl -fsSL -H "Authorization: Bearer $TOKEN" __APT_URL__/install.sh \
 #     | sudo BUILDHOST_TOKEN=$TOKEN sh
 #
@@ -37,10 +39,12 @@ set -eu
 PROJECT='__PROJECT__'
 PKG='__PKG__'
 APT_URL='__APT_URL__'
-STATIC_URL='__STATIC_URL__'
+PRIVATE_URL='__PRIVATE_URL__'
 KEYRING='/etc/apt/keyrings/__SLUG__.asc'
 LIST='/etc/apt/sources.list.d/__SLUG__.list'
-AUTH='/etc/apt/auth.conf.d/__SLUG__.conf'
+PRIVATE_KEYRING='/etc/apt/keyrings/buildhost-private.asc'
+PRIVATE_LIST='/etc/apt/sources.list.d/buildhost-private.list'
+PRIVATE_AUTH='/etc/apt/auth.conf.d/buildhost-private.conf'
 TOKEN="${BUILDHOST_TOKEN:-}"
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -55,66 +59,45 @@ fi
 
 mkdir -p /etc/apt/keyrings
 
-if [ -n "$TOKEN" ]; then
-    curl -fsSL -H "Authorization: Bearer $TOKEN" "$APT_URL/key.asc" -o "$KEYRING"
-else
-    curl -fsSL "$APT_URL/key.asc" -o "$KEYRING"
-fi
-chmod 0644 "$KEYRING"
-
-echo "deb [signed-by=$KEYRING] $APT_URL stable main" > "$LIST"
-
-# Private repositories: persist the token so apt-get can authenticate. The
-# first machine line is scoped to this project's path so the token is never
-# sent to other repositories on the same host; the second covers the static
-# host, because the .deb pool download redirects there. Each line keeps its
-# scheme: apt applies a machine line with no scheme to https only.
-if [ -n "$TOKEN" ]; then
-    mkdir -p /etc/apt/auth.conf.d
-    {
-        echo "machine $APT_URL"
-        echo "login token"
-        echo "password $TOKEN"
-        echo "machine $STATIC_URL"
-        echo "login token"
-        echo "password $TOKEN"
-    } > "$AUTH"
-    chmod 0600 "$AUTH"
-fi
-
 # Each buildhost project this package depends on is its own APT repository.
-# add_dep adds one the same way as above, so apt-get can resolve the Depends.
+# add_dep adds one the same way as this project's, so apt-get can resolve the Depends.
 add_dep() {
     dep_name="$1"
     dep_url="$2"
     dep_slug="$3"
     dep_private="$4"
-    if [ "$dep_private" = 1 ] && [ -z "$TOKEN" ]; then
+    if [ "$dep_private" = 1 ]; then
         echo "buildhost: dependency '$dep_name' is a private project; pass a read token in BUILDHOST_TOKEN." >&2
         exit 1
     fi
-    dep_keyring="/etc/apt/keyrings/$dep_slug.asc"
-    if [ -n "$TOKEN" ]; then
-        curl -fsSL -H "Authorization: Bearer $TOKEN" "$dep_url/key.asc" -o "$dep_keyring"
-    else
-        curl -fsSL "$dep_url/key.asc" -o "$dep_keyring"
-    fi
-    chmod 0644 "$dep_keyring"
-    echo "deb [signed-by=$dep_keyring] $dep_url stable main" > "/etc/apt/sources.list.d/$dep_slug.list"
-    if [ -n "$TOKEN" ]; then
-        mkdir -p /etc/apt/auth.conf.d
-        {
-            echo "machine $dep_url"
-            echo "login token"
-            echo "password $TOKEN"
-            echo "machine $STATIC_URL"
-            echo "login token"
-            echo "password $TOKEN"
-        } > "/etc/apt/auth.conf.d/$dep_slug.conf"
-        chmod 0600 "/etc/apt/auth.conf.d/$dep_slug.conf"
-    fi
+    curl -fsSL "$dep_url/key.asc" -o "/etc/apt/keyrings/$dep_slug.asc"
+    chmod 0644 "/etc/apt/keyrings/$dep_slug.asc"
+    echo "deb [signed-by=/etc/apt/keyrings/$dep_slug.asc] $dep_url stable main" > "/etc/apt/sources.list.d/$dep_slug.list"
 }
+
+if [ -n "$TOKEN" ]; then
+    # With a token, one authenticated source lists this project, its
+    # dependencies and every other project the token can read. Its one auth
+    # entry covers every download: a private deb redirects with a signed link.
+    # The machine line keeps its scheme, because apt applies a line with no
+    # scheme to https only.
+    curl -fsSL -H "Authorization: Bearer $TOKEN" "$PRIVATE_URL/key.asc" -o "$PRIVATE_KEYRING"
+    chmod 0644 "$PRIVATE_KEYRING"
+    echo "deb [signed-by=$PRIVATE_KEYRING] $PRIVATE_URL stable main" > "$PRIVATE_LIST"
+    mkdir -p /etc/apt/auth.conf.d
+    {
+        echo "machine $PRIVATE_URL"
+        echo "login token"
+        echo "password $TOKEN"
+    } > "$PRIVATE_AUTH"
+    chmod 0600 "$PRIVATE_AUTH"
+else
+    curl -fsSL "$APT_URL/key.asc" -o "$KEYRING"
+    chmod 0644 "$KEYRING"
+    echo "deb [signed-by=$KEYRING] $APT_URL stable main" > "$LIST"
 __DEPENDS__
+fi
+
 apt-get update
 
 echo ""
@@ -142,14 +125,14 @@ func (h *Handler) serveInstallScript(w http.ResponseWriter, r *http.Request) {
 		if dep.IsPrivate {
 			private = 1
 		}
-		fmt.Fprintf(&depLines, "add_dep '%s' '%s/%s' '%s' %d\n", dep.Name, base, dep.Name, installSlug(dep.Name), private)
+		fmt.Fprintf(&depLines, "    add_dep '%s' '%s/%s' '%s' %d\n", dep.Name, base, dep.Name, installSlug(dep.Name), private)
 	}
 
 	script := strings.NewReplacer(
 		"__PROJECT__", project.Name,
 		"__PKG__", repackage.DebPackageName(project.Name),
 		"__APT_URL__", base+"/"+project.Name,
-		"__STATIC_URL__", auth.DeriveServiceURL(r, "static").String(),
+		"__PRIVATE_URL__", base+"/private",
 		"__SLUG__", installSlug(project.Name),
 		"__DEPENDS__", depLines.String(),
 	).Replace(installScriptTemplate)
