@@ -71,8 +71,28 @@ func TestServeInstallScript(t *testing.T) {
 	assert.Contains(t, body, "sudo apt-get install $PKG")
 	// Private-repo token support is wired in, and the auth entry also covers
 	assert.Contains(t, body, "BUILDHOST_TOKEN")
-	assert.Contains(t, body, "STATIC_HOST='static.pazer.build'")
-	assert.Contains(t, body, "machine $STATIC_HOST")
+	assert.Contains(t, body, "STATIC_URL='https://static.pazer.build'")
+	assert.Contains(t, body, "machine $STATIC_URL")
+	// apt applies a machine line with no scheme to https only, so each line keeps its scheme.
+	assert.Contains(t, body, `echo "machine $APT_URL"`)
+	assert.NotContains(t, body, "${APT_URL#*://}")
+}
+
+// An http deployment needs the scheme in auth.conf, or apt never sends the token.
+func TestServeInstallScript_AuthKeepsHTTPScheme(t *testing.T) {
+	h, d, _ := setupTest(t)
+	proj := &db.Project{Name: "myapp", Versioning: db.VersioningAuto}
+	require.NoError(t, d.CreateProject(context.Background(), proj))
+
+	req := httptest.NewRequest("GET", "/myapp/install.sh", nil)
+	req.Host = "apt.localhost"
+	req = withRoute(req, proj, route{project: "myapp", subPath: "install.sh"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "APT_URL='http://apt.localhost/myapp'")
+	assert.Contains(t, rec.Body.String(), "STATIC_URL='http://static.localhost'")
 }
 
 func TestServeInstallScript_NamespacedSlug(t *testing.T) {

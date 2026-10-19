@@ -37,7 +37,7 @@ set -eu
 PROJECT='__PROJECT__'
 PKG='__PKG__'
 APT_URL='__APT_URL__'
-STATIC_HOST='__STATIC_HOST__'
+STATIC_URL='__STATIC_URL__'
 KEYRING='/etc/apt/keyrings/__SLUG__.asc'
 LIST='/etc/apt/sources.list.d/__SLUG__.list'
 AUTH='/etc/apt/auth.conf.d/__SLUG__.conf'
@@ -67,14 +67,15 @@ echo "deb [signed-by=$KEYRING] $APT_URL stable main" > "$LIST"
 # Private repositories: persist the token so apt-get can authenticate. The
 # first machine line is scoped to this project's path so the token is never
 # sent to other repositories on the same host; the second covers the static
-# host, because the .deb pool download redirects there.
+# host, because the .deb pool download redirects there. Each line keeps its
+# scheme: apt applies a machine line with no scheme to https only.
 if [ -n "$TOKEN" ]; then
     mkdir -p /etc/apt/auth.conf.d
     {
-        echo "machine ${APT_URL#*://}"
+        echo "machine $APT_URL"
         echo "login token"
         echo "password $TOKEN"
-        echo "machine $STATIC_HOST"
+        echo "machine $STATIC_URL"
         echo "login token"
         echo "password $TOKEN"
     } > "$AUTH"
@@ -103,10 +104,10 @@ add_dep() {
     if [ -n "$TOKEN" ]; then
         mkdir -p /etc/apt/auth.conf.d
         {
-            echo "machine ${dep_url#*://}"
+            echo "machine $dep_url"
             echo "login token"
             echo "password $TOKEN"
-            echo "machine $STATIC_HOST"
+            echo "machine $STATIC_URL"
             echo "login token"
             echo "password $TOKEN"
         } > "/etc/apt/auth.conf.d/$dep_slug.conf"
@@ -148,7 +149,7 @@ func (h *Handler) serveInstallScript(w http.ResponseWriter, r *http.Request) {
 		"__PROJECT__", project.Name,
 		"__PKG__", repackage.DebPackageName(project.Name),
 		"__APT_URL__", base+"/"+project.Name,
-		"__STATIC_HOST__", auth.DeriveServiceURL(r, "static").Host,
+		"__STATIC_URL__", auth.DeriveServiceURL(r, "static").String(),
 		"__SLUG__", installSlug(project.Name),
 		"__DEPENDS__", depLines.String(),
 	).Replace(installScriptTemplate)

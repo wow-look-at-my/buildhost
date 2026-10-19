@@ -40,4 +40,4 @@ GnuPG 2.4's `gpgv` rejects it with "Invalid public key algorithm". That is every
 
 The InRelease (clearsigned), Release.gpg (detached) and key.asc (public key) endpoints are all served. The easiest client setup is the generated per-project installer (`curl -fsSL apt.{domain}/{project}/install.sh | sudo sh`). It saves the armored `key.asc` to `/etc/apt/keyrings/buildhost-{project}.asc`. It writes a `[signed-by=...]` source. APT reads the armored key directly through `signed-by`, verified against apt 2.8. The client therefore needs no `gpg --dearmor` step and no `gpg` binary.
 
-A private project passes a read token through `BUILDHOST_TOKEN`. The installer also records that token in `/etc/apt/auth.conf.d/`, scoped to the project's repo host and path.
+A private project passes a read token through `BUILDHOST_TOKEN`. The installer also records that token in `/etc/apt/auth.conf.d/`, scoped to the project's repo host and path. Each `machine` line keeps the URL's scheme, because apt applies a line with no scheme to https only. An http deployment otherwise never sends the token.

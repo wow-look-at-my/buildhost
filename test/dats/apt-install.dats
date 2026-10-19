@@ -67,7 +67,7 @@ shared:
 			# declarative publish-path settings go. Prints the version.
 			publish() {
 				auth -X POST "$BASE/api/v1/projects" -H 'Content-Type: application/json' \
-					-d "{\"name\":\"$1\",\"versioning\":\"auto\",\"is_private\":false,\"description\":\"APT endpoint e2e package\"}" >&2
+					-d "{\"name\":\"$1\",\"versioning\":\"auto\",\"is_private\":${4:-false},\"description\":\"APT endpoint e2e package\"}" >&2
 				body='{"git_branch":"master"'
 				if [ -n "$2" ]; then body="$body,$2"; fi
 				body="$body}"
@@ -120,6 +120,30 @@ shared:
 			box sh -c "echo 'resolve = apt.localhost:80:$GW' > /root/.curlrc \
 				&& curl -fsSL http://apt.localhost/buildhost-apt-e2e-app/install.sh | sh \
 				&& DEBIAN_FRONTEND=noninteractive apt-get install -y buildhost-apt-e2e-app"
+
+			# A public app that depends on a PRIVATE project. Without a token, and with a bad
+			# one, its install.sh must fail. With a read token it must install both packages.
+			# The tests read each attempt's exit status and output from $WORK.
+			printf '%s\n' '#!/bin/sh' 'echo buildhost-apt-private-dep-ok' > "$WORK/private-dep"
+			printf '%s\n' '#!/bin/sh' 'echo buildhost-apt-private-app-ok' > "$WORK/private-app"
+			chmod +x "$WORK/private-dep" "$WORK/private-app"
+			publish buildhost-apt-e2e-secret '' "$WORK/private-dep" true >/dev/null
+			publish buildhost-apt-e2e-pubapp '"depends":["buildhost-apt-e2e-secret"]' "$WORK/private-app" >/dev/null
+			READ_TOKEN="$(auth -X POST "$BASE/api/v1/tokens" -H 'Content-Type: application/json' \
+				-d '{"name":"apt-e2e-reader","scopes":"read"}' | jq -r .token)"
+			test -n "$READ_TOKEN" || { echo "no read token" >&2; exit 1; }
+			# attempt <name> <token>: run the app's install.sh with that token and record the result.
+			attempt() {
+				if box sh -c "curl -fsSL http://apt.localhost/buildhost-apt-e2e-pubapp/install.sh | BUILDHOST_TOKEN='$2' sh" \
+					> "$WORK/private-$1.out" 2>&1; then echo 0 > "$WORK/private-$1.rc"; else echo $? > "$WORK/private-$1.rc"; fi
+			}
+			attempt notoken ''
+			attempt badtoken 'bh_not_a_real_token'
+			box test ! -e /etc/apt/sources.list.d/buildhost-buildhost-apt-e2e-secret.list \
+				|| { echo "a failed install.sh still wrote the private dependency's source" >&2; exit 1; }
+			attempt token "$READ_TOKEN"
+			box sh -c "DEBIAN_FRONTEND=noninteractive apt-get install -y buildhost-apt-e2e-pubapp" > "$WORK/private-install.out" 2>&1 \
+				|| { cat "$WORK/private-token.out" "$WORK/private-install.out" >&2; exit 1; }
 			{
 				echo "WORK='$WORK'"
 				echo "APTBOX='$APTBOX'"
@@ -169,6 +193,44 @@ tests:
 	  outputs:
 		stdout:
 			- "dependency-installed"
+
+	- desc: install.sh with no token stops at a private dependency and names it
+	  cmd: |
+		set -eu
+		. {shared.env}
+		cat "$WORK/private-notoken.out"
+		test "$(cat "$WORK/private-notoken.rc")" = 1
+		grep -q "dependency 'buildhost-apt-e2e-secret' is a private project" "$WORK/private-notoken.out"
+		echo "refused-without-token"
+	  outputs:
+		stdout:
+			- "refused-without-token"
+
+	- desc: install.sh with a wrong token fails
+	  cmd: |
+		set -eu
+		. {shared.env}
+		cat "$WORK/private-badtoken.out"
+		test "$(cat "$WORK/private-badtoken.rc")" != 0
+		echo "refused-with-bad-token"
+	  outputs:
+		stdout:
+			- "refused-with-bad-token"
+
+	- desc: with a read token, apt-get install of a public app installs its private dependency
+	  cmd: |
+		set -eu
+		. {shared.env}
+		test "$(cat "$WORK/private-token.rc")" = 0
+		docker exec "$APTBOX" test -f /etc/apt/auth.conf.d/buildhost-buildhost-apt-e2e-secret.conf
+		docker exec "$APTBOX" sh -c "dpkg-query -W -f='\${Depends}\n' buildhost-apt-e2e-pubapp | grep -qx buildhost-apt-e2e-secret"
+		docker exec "$APTBOX" sh -c "dpkg-query -W -f='\${Status}\n' buildhost-apt-e2e-secret | grep -q 'install ok installed'"
+		docker exec "$APTBOX" buildhost-apt-e2e-secret
+		docker exec "$APTBOX" buildhost-apt-e2e-pubapp
+	  outputs:
+		stdout:
+			- "buildhost-apt-private-dep-ok"
+			- "buildhost-apt-private-app-ok"
 
 	- desc: create_service ships a user unit and enables it globally
 	  cmd: |
