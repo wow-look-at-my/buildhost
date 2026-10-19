@@ -17,9 +17,11 @@ import { fileSHA256 } from './portable-manifest.ts';
 import * as io from './file-io.ts';
 import { mintOidcToken } from './oidc.ts';
 import { downloadRunArtifact } from './run-artifact.ts';
+import { dependsList } from './depends.ts';
 
-/** The create_service, default_branch and apt_depends fields go only when set, so an empty input leaves the stored setting untouched. */
-export function releaseBody(f: { gitBranch: string; gitCommit: string; version: string; createService: string; defaultBranch: string; aptDepends: string }): string {
+/** The create_service, default_branch, apt_depends and depends fields go only when set, so an empty input leaves the stored setting untouched. */
+export function releaseBody(f: { gitBranch: string; gitCommit: string; version: string; createService: string; defaultBranch: string; aptDepends: string; depends: string }): string {
+	const depends = dependsList(f.depends);
 	return JSON.stringify({
 		git_branch: f.gitBranch, git_commit: f.gitCommit,
 		...(f.version.length > 0 ? { version: f.version } : {}),
@@ -27,6 +29,7 @@ export function releaseBody(f: { gitBranch: string; gitCommit: string; version: 
 		// an older server ignores this unknown field
 		...(f.defaultBranch.length > 0 ? { default_branch: f.defaultBranch } : {}),
 		...(f.aptDepends.length > 0 ? { apt_depends: f.aptDepends } : {}),
+		...(depends !== null ? { depends } : {}),
 	});
 }
 
@@ -123,6 +126,7 @@ export async function publish(g: ActionGlobals): Promise<void> {
 		createService: inputBrewService,
 		defaultBranch: String(inputs.default_branch),
 		aptDepends: String(inputs.apt_depends),
+		depends: String(inputs.depends),
 	});
 	const sha256 = (f: string) => fileSHA256(path.join(sourceDir, f));
 	const deps: Deps = {
