@@ -153,6 +153,8 @@ curl -fsSL -H "Authorization: Bearer $TOKEN" __APT_URL__/myapp/install.sh \
   | sudo BUILDHOST_TOKEN=$TOKEN sh
 ```
 
+With a token, the installer adds the authenticated source `__APT_URL__/private` instead. That is ONE repository that lists every public project plus each private project the token can read. A package and its private dependencies resolve from one source line and one auth entry. It answers an anonymous request with a 401 and a Basic challenge. In `/etc/apt/auth.conf.d/`, write `machine __APT_URL__/private`, `login token` and `password $TOKEN`, and keep the scheme on the machine line.
+
 To set it up by hand instead, see the README. APT reads the armored key at __APT_URL__/myapp/key.asc directly via signed-by, so no gpg step is needed.
 
 For a slash-namespaced project the repository URL keeps the slash, but the Debian package name folds `/` and `_` to `-` (for example, `myrepo/server` is served at `__APT_URL__/myrepo/server` and installs as `myrepo-server`).
@@ -165,7 +167,7 @@ A project can declare its runtime prerequisites as `apt_depends`, in Debian rela
 
 The CLI takes `--apt-depends`, and the `buildhost-publish` and `buildhost-create-release` actions take an `apt_depends` input.
 
-A project can also depend on other buildhost projects, as a `depends` list of project names, for example `["ascii-timeline"]`. The Depends line then names each one, the project's `install.sh` also adds each dependency's repository, and the brew formula declares `depends_on "pazer/build/<formula>"`. `apt-get install` and `brew install` therefore install the dependencies too. Send the list on release-create or on the project PATCH. An absent field leaves it untouched, and `[]` clears it. A name that does not resolve, or that the token cannot read, returns 400.
+A project can also depend on other buildhost projects, as a `depends` list of project names, for example `["ascii-timeline"]`. The Depends line then names each one, the project's `install.sh` also adds each dependency's repository (or, with a token, the authenticated source that lists them all), and the brew formula declares `depends_on "pazer/build/<formula>"`. `apt-get install` and `brew install` therefore install the dependencies too. Send the list on release-create or on the project PATCH. An absent field leaves it untouched, and `[]` clears it. A name that does not resolve, or that the token cannot read, returns 400.
 
 The CLI takes `--depends`, and both actions take a `depends` input.
 
