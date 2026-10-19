@@ -25,6 +25,8 @@ shared:
 				sleep 1
 			done
 			HOMEBREW_NO_GITHUB_API=1 HOMEBREW_BUILDHOST_TOKEN="$BUILDHOST_TOKEN" brew version-install pazer/build/myrepo@0.9.0
+			# brew-pubapp is public and depends on the private brew-secret. Only the public one is named here.
+			HOMEBREW_BUILDHOST_TOKEN="$BUILDHOST_TOKEN" brew install pazer/build/brew-pubapp
 			echo "TAP='$TAP'" > "$ENV_FILE"
 
 setup:
@@ -43,6 +45,21 @@ tests:
 	  outputs:
 		stdout:
 			- "kept-installed"
+
+	- desc: brew install of a public formula installs its private dependency through the authenticated tap
+	  cmd: |
+		set -eu
+		. {shared.env}
+		grep -n 'depends_on "pazer/build/brew-secret"' "$TAP/Formula/brew-pubapp.rb"
+		grep -q 'BuildhostCurlDownloadStrategy' "$TAP/Formula/brew-secret.rb" \
+			|| { echo "the private dependency's formula downloads without the token strategy" >&2; exit 1; }
+		brew list --formula pazer/build/brew-secret >/dev/null
+		brew-secret
+		brew-pubapp
+	  outputs:
+		stdout:
+			- "buildhost-homebrew-brew-secret-ok"
+			- "buildhost-homebrew-brew-pubapp-ok"
 
 	- desc: the privately installed binary executes
 	  cmd: myapp

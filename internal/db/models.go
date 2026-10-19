@@ -141,6 +141,7 @@ type Project struct {
 	DefaultBranch string     `json:"default_branch"`
 	CreateService bool       `json:"create_service"`
 	AptDepends    string     `json:"apt_depends"`
+	Depends       string     `json:"depends"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 }

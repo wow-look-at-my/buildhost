@@ -153,6 +153,8 @@ curl -fsSL -H "Authorization: Bearer $TOKEN" __APT_URL__/myapp/install.sh \
   | sudo BUILDHOST_TOKEN=$TOKEN sh
 ```
 
+With a token, the installer adds the authenticated source `__APT_URL__/private` instead. That is ONE repository that lists every public project plus each private project the token can read. A package and its private dependencies resolve from one source line and one auth entry. It answers an anonymous request with a 401 and a Basic challenge. In `/etc/apt/auth.conf.d/`, write `machine __APT_URL__/private`, `login token` and `password $TOKEN`, and keep the scheme on the machine line.
+
 To set it up by hand instead, see the README. APT reads the armored key at __APT_URL__/myapp/key.asc directly via signed-by, so no gpg step is needed.
 
 For a slash-namespaced project the repository URL keeps the slash, but the Debian package name folds `/` and `_` to `-` (for example, `myrepo/server` is served at `__APT_URL__/myrepo/server` and installs as `myrepo-server`).
@@ -164,6 +166,10 @@ A pre-built `.deb` artifact uploaded as `kind=archive` is served byte-same. Noth
 A project can declare its runtime prerequisites as `apt_depends`, in Debian relationship syntax, for example `"bubblewrap | docker.io"`. The generated deb and the Packages entry then carry a `Depends:` line, so `apt-get install` pulls them in. Send the string on release-create (`"apt_depends": "..."`), or on `PATCH __BASE_URL__/api/v1/projects/{project}`. An absent field leaves the stored value untouched. An empty string clears it. A value that is not Debian relationship syntax returns 400 and changes nothing.
 
 The CLI takes `--apt-depends`, and the `buildhost-publish` and `buildhost-create-release` actions take an `apt_depends` input.
+
+A project can also depend on other buildhost projects, as a `depends` list of project names, for example `["ascii-timeline"]`. The Depends line then names each one, the project's `install.sh` also adds each dependency's repository (or, with a token, the authenticated source that lists them all), and the brew formula declares `depends_on "pazer/build/<formula>"`. `apt-get install` and `brew install` therefore install the dependencies too. Send the list on release-create or on the project PATCH. An absent field leaves it untouched, and `[]` clears it. A name that does not resolve, or that the token cannot read, returns 400.
+
+The CLI takes `--depends`, and both actions take a `depends` input.
 
 Homebrew: tap the generated Git repository, trust it, then install. The trust step is required from Homebrew 6.0. On Linux the bottle-less install runs Homebrew's build sandbox. That sandbox needs bubblewrap and an unprivileged user namespace. A container or a CI runner without them needs `HOMEBREW_NO_SANDBOX_LINUX=1` instead.
 
