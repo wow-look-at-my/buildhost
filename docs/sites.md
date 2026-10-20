@@ -136,7 +136,9 @@ Some things are reserved on the subdomain scheme only. They are the `@` and `~` 
 
 Within the family, the literal `/__sso` outranks `{path...}`.
 
-The BARE site apex carries no project label. It matches no host-bearing route, and falls through to the host-agnostic routes. `/__sso` therefore answers there. `/healthz` answers 404 on every site-domain host, because the CDN caches those hosts. The web and API surface answers there too, but ONLY while `BUILDHOST_PRIMARY_DOMAIN` is unset. With that value set, those routes are primary-scoped and answer 404 off-apex. See the unknown-domain security note.
+The BARE site apex carries no project label. It matches no host-bearing route, and falls through to the host-agnostic routes. `/__sso` therefore answers there. `/healthz` answers 404 on every site-domain host, because the CDN caches those hosts. The web and API surface answers there too, but ONLY while `BUILDHOST_PRIMARY_DOMAIN` is unset. With that value set, those routes are primary-scoped and answer 404 off-apex.
+
+See the unknown-domain security note.
 
 A name with `/`, `.` or `_`, or a name many characters, answers 404 on this scheme. It stays reachable on `sites.{domain}/...`. There is no brew-style fold-back in v1.
 
