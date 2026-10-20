@@ -65,6 +65,8 @@ const serverEnv = {
 	BUILDHOST_DB_PATH: path.join(dataDir, "buildhost.db"),
 	BUILDHOST_LISTEN_ADDR: `127.0.0.1:${PORT}`,
 	BUILDHOST_ADMIN_LISTEN_ADDR: `127.0.0.1:19090`,
+	// Required. This server is addressed by several Hosts, so none is canonical.
+	BUILDHOST_PRIMARY_DOMAIN: "*",
 };
 
 function bootstrapToken(): string {

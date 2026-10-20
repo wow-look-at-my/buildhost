@@ -49,6 +49,8 @@ shared:
 			BUILDHOST_DB_PATH="$WORK/data/buildhost.db"; export BUILDHOST_DB_PATH
 			BUILDHOST_LISTEN_ADDR=":$PORT"; export BUILDHOST_LISTEN_ADDR
 			BUILDHOST_ADMIN_LISTEN_ADDR=""; export BUILDHOST_ADMIN_LISTEN_ADDR
+			# Required. This suite addresses the server by several Hosts, so none is canonical: "*" is the explicit opt-in.
+			BUILDHOST_PRIMARY_DOMAIN="*"; export BUILDHOST_PRIMARY_DOMAIN
 			TOKEN="$($RUN bootstrap --name ape-e2e | tail -n1)"
 			test -n "$TOKEN" || { echo "no token from bootstrap" >&2; exit 1; }
 			setsid $RUN serve > "$WORK/server.log" 2>&1 &
