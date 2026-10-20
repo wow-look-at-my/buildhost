@@ -15,15 +15,10 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp/packet"
 )
 
-// productionRSABits is the RSA size buildhost shipped before generateAndSave
-// switched to EdDSA. BenchmarkKeygenBySize measures the per-size cost, and
-// TestSigningKeySizeIsLoweredForTestsOnly guards the shipped size; generateAndSave
-// no longer reads it.
+// productionRSABits is the RSA size buildhost shipped before generateAndSave switched to EdDSA.
 const productionRSABits = 4096
 
-// rsaBits is what TestSigningKeySizeIsLoweredForTestsOnly references; TestMain
-// lowers it. generateAndSave no longer reads it -- it generates an EdDSA key --
-// so this is test-only evidence, not a production knob.
+// rsaBits is what TestSigningKeySizeIsLoweredForTestsOnly references; TestMain lowers it.
 var rsaBits = productionRSABits
 
 type Signer struct {

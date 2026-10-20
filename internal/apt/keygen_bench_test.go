@@ -1,5 +1,5 @@
 // Evidence for the key size TestMain picks: what each RSA size costs to
-// generate, and what a test actually pays for a Signer.
+// generate, and what a test pays for a Signer.
 package apt
 
 import (
