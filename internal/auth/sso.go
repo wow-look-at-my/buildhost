@@ -179,12 +179,11 @@ func ssoFailedHTML(w http.ResponseWriter, r *http.Request, status int, reason, n
 	signinFailedPage(w, r, status, reason, primarySigninURL(r, next))
 }
 
-// primarySigninURL is the sign-in entrypoint on the primary domain, carrying an
-// optional next. Falls back to this request's own apex when no primary domain
-// is configured (then sign-in is a same-domain concern).
+// primarySigninURL is the sign-in entrypoint on the primary domain, carrying
+// an optional next.
 func primarySigninURL(r *http.Request, next string) string {
 	base := apexRootURL(r)
-	if pd := PrimaryDomain(); pd != "" {
+	if pd := PinnedPrimaryDomain(); pd != "" {
 		base = RequestScheme(r) + "://" + pd
 	}
 	u := base + signinStartPath
