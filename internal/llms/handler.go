@@ -63,15 +63,7 @@ func siteSection(scheme string) string {
 	if sd == "" {
 		return ""
 	}
-	return `
-## Project site subdomains
-
-This deployment also serves each project's static site on a dedicated domain,
-one subdomain per project (only for project names that are a valid single DNS
-label: [a-z0-9-], max 63 chars, no leading/trailing hyphen):
-
-` + "```" + `
-` + scheme + `myapp.` + sd + `/                # default branch (same branch "latest" tracks)
+	return siteSectionMd + scheme + `myapp.` + sd + `/                # default branch (same branch "latest" tracks)
 ` + scheme + `myapp.` + sd + `/@pr-7/          # any other branch, behind the @ sigil
 ` + scheme + `myapp.` + sd + `/@0f1e2d3/       # a specific commit (7+ hex, or the full sha)
 ` + scheme + `myapp.` + sd + `/@claude/foo/    # slash-named branches resolve by longest match
@@ -115,3 +107,6 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Write(render(apexBaseURL(r)))
 }
+
+//go:embed site-section.md
+var siteSectionMd string
