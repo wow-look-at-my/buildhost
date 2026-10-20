@@ -148,7 +148,7 @@ func TestRequestBaseURL_PreservesHostAndPort(t *testing.T) {
 
 // A registered service answers on its own subdomain. An apex path prefix is
 // not a service route, so the apex form 404s instead of bouncing across.
-// internal/npm/redirect.go is the one apex path redirect, and it is explicit.
+// internal/npm/redirect.go is the apex path redirect, and it is explicit.
 func TestServiceApexPathIsNotAServiceRoute(t *testing.T) {
 	t.Serial()
 	ServiceHandleRaw("widgets", "/{path...}", func(w http.ResponseWriter, r *http.Request) {

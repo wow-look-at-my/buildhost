@@ -150,8 +150,7 @@ func (h *Handler) liveTapLineageLocked(key string) (*tapLineage, error) {
 // The directory stays pinned against eviction until the refresh ends. The
 // entry's builtAt then moves to the end of the refresh. Its err records the
 // the outcome. An entry dropped meanwhile keeps neither: its replacement
-// refreshes again.
-// Must be called with tapMu held.
+// refreshes again. Must be called with tapMu held.
 func (h *Handler) startTapRefreshLocked(r *http.Request, lin *tapLineage) *tapRefresh {
 	ref := &tapRefresh{done: make(chan struct{})}
 	if h.tapRefreshes == nil {
