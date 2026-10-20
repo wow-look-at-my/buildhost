@@ -56,18 +56,19 @@ func (q *Queries) DeleteReleaseRow(ctx context.Context, id int64) error {
 }
 
 const getRetentionSettings = `-- name: GetRetentionSettings :one
-SELECT keep_n, recency_hours FROM retention_settings WHERE id = 1
+SELECT keep_n, recency_hours, deleted_branch_days FROM retention_settings WHERE id = 1
 `
 
 type GetRetentionSettingsRow struct {
-	KeepN        int64 `json:"keep_n"`
-	RecencyHours int64 `json:"recency_hours"`
+	KeepN             int64 `json:"keep_n"`
+	RecencyHours      int64 `json:"recency_hours"`
+	DeletedBranchDays int64 `json:"deleted_branch_days"`
 }
 
 func (q *Queries) GetRetentionSettings(ctx context.Context) (GetRetentionSettingsRow, error) {
 	row := q.db.QueryRowContext(ctx, getRetentionSettings)
 	var i GetRetentionSettingsRow
-	err := row.Scan(&i.KeepN, &i.RecencyHours)
+	err := row.Scan(&i.KeepN, &i.RecencyHours, &i.DeletedBranchDays)
 	return i, err
 }
 
@@ -220,6 +221,75 @@ func (q *Queries) ListArtifactFiles(ctx context.Context) ([]ListArtifactFilesRow
 			&i.Draft,
 			&i.ProjectID,
 			&i.ProjectName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDeletedBranchCandidates = `-- name: ListDeletedBranchCandidates :many
+SELECT r.id, r.project_id, p.name AS project_name, p.github_repo, p.default_branch,
+       r.git_branch, r.version, r.version_num, r.created_at
+FROM releases r
+JOIN projects p ON p.id = r.project_id
+WHERE r.published = 1
+  AND r.created_at < datetime(?1)
+  AND r.id NOT IN (SELECT release_id FROM oci_tags)
+  AND r.id NOT IN (SELECT release_id FROM artifacts WHERE kind = 'docker')
+ORDER BY p.name, r.git_branch, r.version_num DESC
+`
+
+type ListDeletedBranchCandidatesRow struct {
+	ID            int64     `json:"id"`
+	ProjectID     int64     `json:"project_id"`
+	ProjectName   string    `json:"project_name"`
+	GithubRepo    string    `json:"github_repo"`
+	DefaultBranch string    `json:"default_branch"`
+	GitBranch     string    `json:"git_branch"`
+	Version       string    `json:"version"`
+	VersionNum    int64     `json:"version_num"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+// Published releases old enough for the deleted-branch rule, carrying the repo
+// identity and default branch the caller needs to decide each one. This query
+// answers only the half SQLite can see; whether the branch still exists on the
+// origin repository is resolved from GitHub by the caller, which discards every
+// row whose branch is still there.
+//
+// There is no tip exemption here, deliberately. A branch that is gone from the
+// remote has no tip to keep, and the point of the rule is that a dead branch's
+// builds age out completely instead of leaving its newest one behind forever.
+// Tagged releases and pushed-docker releases ARE excluded, for the same reasons
+// keep-N excludes them: an OCI tag pins its release, and docker blobs live in
+// project-scoped oci_blob_links that a release cascade does not reach.
+func (q *Queries) ListDeletedBranchCandidates(ctx context.Context, ageCutoff interface{}) ([]ListDeletedBranchCandidatesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDeletedBranchCandidates, ageCutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDeletedBranchCandidatesRow{}
+	for rows.Next() {
+		var i ListDeletedBranchCandidatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.ProjectName,
+			&i.GithubRepo,
+			&i.DefaultBranch,
+			&i.GitBranch,
+			&i.Version,
+			&i.VersionNum,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -601,16 +671,17 @@ func (q *Queries) ListReleaseRetentionFacts(ctx context.Context) ([]ListReleaseR
 }
 
 const seedRetentionSettings = `-- name: SeedRetentionSettings :exec
-INSERT OR IGNORE INTO retention_settings (id, keep_n, recency_hours) VALUES (1, ?, ?)
+INSERT OR IGNORE INTO retention_settings (id, keep_n, recency_hours, deleted_branch_days) VALUES (1, ?, ?, ?)
 `
 
 type SeedRetentionSettingsParams struct {
-	KeepN        int64 `json:"keep_n"`
-	RecencyHours int64 `json:"recency_hours"`
+	KeepN             int64 `json:"keep_n"`
+	RecencyHours      int64 `json:"recency_hours"`
+	DeletedBranchDays int64 `json:"deleted_branch_days"`
 }
 
 func (q *Queries) SeedRetentionSettings(ctx context.Context, arg SeedRetentionSettingsParams) error {
-	_, err := q.db.ExecContext(ctx, seedRetentionSettings, arg.KeepN, arg.RecencyHours)
+	_, err := q.db.ExecContext(ctx, seedRetentionSettings, arg.KeepN, arg.RecencyHours, arg.DeletedBranchDays)
 	return err
 }
 
@@ -655,20 +726,22 @@ func (q *Queries) SumReclaimableBytes(ctx context.Context, arg SumReclaimableByt
 }
 
 const updateRetentionSettings = `-- name: UpdateRetentionSettings :exec
-INSERT INTO retention_settings (id, keep_n, recency_hours, updated_at)
-VALUES (1, ?, ?, datetime('now'))
+INSERT INTO retention_settings (id, keep_n, recency_hours, deleted_branch_days, updated_at)
+VALUES (1, ?, ?, ?, datetime('now'))
 ON CONFLICT(id) DO UPDATE SET
     keep_n = excluded.keep_n,
     recency_hours = excluded.recency_hours,
+    deleted_branch_days = excluded.deleted_branch_days,
     updated_at = datetime('now')
 `
 
 type UpdateRetentionSettingsParams struct {
-	KeepN        int64 `json:"keep_n"`
-	RecencyHours int64 `json:"recency_hours"`
+	KeepN             int64 `json:"keep_n"`
+	RecencyHours      int64 `json:"recency_hours"`
+	DeletedBranchDays int64 `json:"deleted_branch_days"`
 }
 
 func (q *Queries) UpdateRetentionSettings(ctx context.Context, arg UpdateRetentionSettingsParams) error {
-	_, err := q.db.ExecContext(ctx, updateRetentionSettings, arg.KeepN, arg.RecencyHours)
+	_, err := q.db.ExecContext(ctx, updateRetentionSettings, arg.KeepN, arg.RecencyHours, arg.DeletedBranchDays)
 	return err
 }

@@ -44,7 +44,8 @@ var gcCmd = &cobra.Command{
 			return fmt.Errorf("load retention settings: %w", err)
 		}
 		ret := retention.New(database, store, retention.ConfigFromSettings(settings, enforce || cfg.RetentionEnforce)).
-			WithRecordDeleter(recordDeleterFor(cfg))
+			WithRecordDeleter(recordDeleterFor(cfg)).
+			WithBranchLister(branchListerFor())
 
 		rep, err := ret.Run(cmd.Context())
 		if err != nil {
@@ -70,14 +71,23 @@ func recordDeleterFor(cfg config.Config) retention.RecordDeleter {
 	return &retention.GitHubRecordDeleter{RegistryURL: registry, Bearer: auth.BearerForRepo}
 }
 
+// branchListerFor builds the deleted-branch rule's source of truth: GitHub's
+// own branch list for each project's repository, through the same REST base,
+// client and bearer resolver the default-branch lookup uses.
+func branchListerFor() retention.BranchLister {
+	return auth.BranchLister{}
+}
+
 func printGCReport(rep retention.Report, settings db.RetentionSettings) {
 	if rep.Enforced {
 		fmt.Println("buildhost gc -- ENFORCING (deletions applied)")
 	} else {
 		fmt.Println("buildhost gc -- DRY RUN (nothing deleted; pass --enforce to apply)")
 	}
-	fmt.Printf("  keep-N per (project, branch): %d   recency guard: %dh\n", settings.KeepN, settings.RecencyHours)
-	fmt.Printf("  releases: %d (%d past keep-N, %d abandoned)\n", rep.Releases(), len(rep.EvictedReleases), len(rep.AbandonedReleases))
+	fmt.Printf("  keep-N per (project, branch): %d   recency guard: %dh   deleted-branch window: %dd\n",
+		settings.KeepN, settings.RecencyHours, settings.DeletedBranchDays)
+	fmt.Printf("  releases: %d (%d past keep-N, %d abandoned, %d on deleted branches)\n",
+		rep.Releases(), len(rep.EvictedReleases), len(rep.AbandonedReleases), len(rep.DeletedBranchReleases))
 
 	for _, r := range rep.EvictedReleases {
 		fmt.Printf("    keep-N   project=%d branch=%s %s (release %d)\n", r.ProjectID, branchLabel(r.Branch), r.Version, r.ID)
@@ -85,12 +95,32 @@ func printGCReport(rep retention.Report, settings db.RetentionSettings) {
 	for _, r := range rep.AbandonedReleases {
 		fmt.Printf("    abandon  project=%d branch=%s %s (release %d)\n", r.ProjectID, branchLabel(r.Branch), r.Version, r.ID)
 	}
+	for _, r := range rep.DeletedBranchReleases {
+		fmt.Printf("    branch   project=%d branch=%s %s (release %d)\n", r.ProjectID, branchLabel(r.Branch), r.Version, r.ID)
+	}
+
+	// Everything below was KEPT. It prints on every run because a silent
+	// "nothing eligible" and a lookup that failed for every project produce the
+	// same release count.
+	for _, r := range rep.UnknownBranchReleases {
+		fmt.Printf("    kept     project=%d %s (release %d): no branch recorded\n", r.ProjectID, r.Version, r.ID)
+	}
+	if rep.BranchLookupsFailed > 0 {
+		fmt.Printf("  kept, branch state undetermined: %d release(s)\n", rep.BranchLookupsFailed)
+	}
+	for _, e := range rep.BranchLookupErrors {
+		fmt.Printf("    branch lookup: %s\n", e)
+	}
 
 	verb := "would free"
 	if rep.Enforced {
 		verb = "freed"
 	}
 	fmt.Printf("  blobs %s: %d (%s); %d shared blobs kept\n", verb, rep.BlobsDeleted, humanBytes(rep.ReclaimableBytes), rep.BlobsRetained)
+	// The dead-branch reason's own totals, so a pass that freed bytes because a
+	// branch is gone says so instead of folding them into the lines above.
+	fmt.Printf("  deleted-branch builds: %d (%d blobs, %s)\n",
+		len(rep.DeletedBranchReleases), rep.DeadBranchBlobs, humanBytes(rep.DeadBranchBytes))
 
 	// An evicted artifact whose storage record still says "stored" is a lie on
 	// the org's linked artifacts page, so the numbers are always printed --

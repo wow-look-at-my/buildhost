@@ -181,10 +181,11 @@ type ReleaseVisibility struct {
 }
 
 type RetentionSetting struct {
-	ID           int64     `json:"id"`
-	KeepN        int64     `json:"keep_n"`
-	RecencyHours int64     `json:"recency_hours"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID                int64     `json:"id"`
+	KeepN             int64     `json:"keep_n"`
+	RecencyHours      int64     `json:"recency_hours"`
+	DeletedBranchDays int64     `json:"deleted_branch_days"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 type RunLock struct {
