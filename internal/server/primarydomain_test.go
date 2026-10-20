@@ -92,8 +92,8 @@ func TestPrimaryDomain_ScopesWebAndAPIToApex(t *testing.T) {
 
 // BUILDHOST_PRIMARY_DOMAIN="*" is the explicit opt-in to serving every Host:
 // the main-domain surface stays fully host-agnostic (the historical unset
-// behavior), and configuring a real apex changes serve-time behavior only,
-// never the route table.
+// behavior). Configuring a real apex changes serve-time behavior only, never
+// the route table.
 func TestPrimaryDomain_WildcardKeepsHostAgnostic(t *testing.T) {
 	t.Serial()
 	env := setupWith(t, func(cfg *config.Config) { cfg.PrimaryDomain = config.PrimaryDomainAny })

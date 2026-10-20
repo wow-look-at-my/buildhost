@@ -114,18 +114,7 @@ type Config struct {
 
 	// SiteDomain is an optional dedicated domain for project static sites.
 	SiteDomain string
-	// PrimaryDomain is the apex the GitHub OAuth callback is registered on (e.g.
-	// "pazer.build"). The server otherwise derives every URL from the request
-	// Host, but a browser on the site domain that needs to sign in must be sent
-	// to this apex -- it cannot be derived from a <project>.<SiteDomain> request.
-	// It also scopes the web UI and /api/v1 to that apex, so a stray domain
-	// pointed at this server gets a plain 404 instead of a served page.
-	//
-	// REQUIRED (BUILDHOST_PRIMARY_DOMAIN): to run fully host-agnostic -- answering
-	// on whatever Host arrives, the historical behavior -- set it explicitly to
-	// PrimaryDomainAny ("*"). Unset is a startup error, never a silent default:
-	// "serve every domain" is a deliberate choice an operator states, not
-	// something a forgotten variable turns on.
+	// PrimaryDomain is the apex the GitHub OAuth callback is registered on (e.g. "pazer.build").
 	PrimaryDomain string
 
 	// Sign in with GitHub (browser login for private resources). When the client
@@ -162,18 +151,11 @@ func unescapePEMNewlines(v string) string {
 	return v
 }
 
-// PrimaryDomainAny is the explicit opt-in value for BUILDHOST_PRIMARY_DOMAIN
-// that keeps the server fully host-agnostic: the web UI and /api/v1 answer on
-// whatever Host arrives, and no host is treated as canonical. It exists so that
-// "serve every domain" must be typed out rather than inherited from an unset
-// variable -- see Config.PrimaryDomain and Validate.
+// PrimaryDomainAny is the explicit opt-in value for BUILDHOST_PRIMARY_DOMAIN that keeps the server fully host-agnostic.
 const PrimaryDomainAny = "*"
 
-// normalizeDomain canonicalizes a configured domain name: trimmed, lowercased,
-// with a leading "*." or "." (people write the wildcard DNS record form) and any
-// trailing dot stripped -- so "*.Pazer.Site." configures the domain "pazer.site".
-// The bare PrimaryDomainAny sentinel ("*") passes through untouched: it has no
-// "*." prefix to strip and no dots to trim.
+// normalizeDomain canonicalizes a configured domain name: trimmed,
+// lowercased, with a leading "*." or "."
 func normalizeDomain(v string) string {
 	v = strings.ToLower(strings.TrimSpace(v))
 	if v == PrimaryDomainAny {

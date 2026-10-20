@@ -41,18 +41,11 @@ func GitHubWebhookSecret() string { return sharedGitHubWebhookSecret }
 // SiteDomain is the optional dedicated domain for project static sites
 func SiteDomain() string { return sharedSiteDomain }
 
-// PrimaryDomain is the apex carrying the GitHub OAuth callback
-// (BUILDHOST_PRIMARY_DOMAIN); "" when unset. Site-domain browser sign-ins
-// redirect to https://<PrimaryDomain>/__signin. It may also be
-// config.PrimaryDomainAny ("*"), the explicit opt-in to serving every Host --
-// callers that need a real hostname to build a URL must use PinnedPrimaryDomain.
+// PrimaryDomain is the apex carrying the GitHub OAuth callback (BUILDHOST_PRIMARY_DOMAIN); "" when unset.
 func PrimaryDomain() string { return sharedPrimaryDomain }
 
-// PinnedPrimaryDomain is PrimaryDomain reduced to an actually-addressable host,
-// or "" when no single host is canonical. It collapses the two "not pinned to
-// one apex" cases -- unset, and the config.PrimaryDomainAny ("*") wildcard --
-// so URL builders cannot emit a literal "https://*/...". Use this anywhere the
-// value becomes a hostname; use PrimaryDomain only to inspect the raw setting.
+// PinnedPrimaryDomain is PrimaryDomain reduced to an actually-addressable
+// host, or "" when no single host is canonical.
 func PinnedPrimaryDomain() string {
 	if sharedPrimaryDomain == config.PrimaryDomainAny {
 		return ""
@@ -60,11 +53,8 @@ func PinnedPrimaryDomain() string {
 	return sharedPrimaryDomain
 }
 
-// OnReady runs fn once auth.Init has wired the shared dependencies (DB, store,
-// data dir). Use it to populate handler fields and NOTHING else: a route
-// registered from here exists only in a booted server, so it is absent from
-// `buildhost routes` and from the PR route diff built on it.
-// TestInitRegistersOnlySiteDomainRoutes enforces that.
+// OnReady runs fn once auth.Init has wired the shared dependencies (DB,
+// store, data dir).
 func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
 }
@@ -138,21 +128,8 @@ func HandleRawPrimary(pattern string, handler http.HandlerFunc) {
 	mux.HandleFunc(pattern, router.Allow, primaryOnly(handler))
 }
 
-// primaryOnly gates a handler to the configured primary apex (exact host match,
-// port stripped, case-folded; PrimaryDomain() is stored lowercased). The gate
-// runs BEFORE requireProject on purpose: a request on a foreign host must
-// produce exactly the router's not-found response -- http.NotFound, the same
-// call the router makes for an unregistered path -- with no auth semantics
-// (401s, sign-in redirects, OIDC auto-provisioning) that would reveal the
-// route exists. It reads PrimaryDomain() per request, not at registration
-// time, because web routes register in init() before config is known.
-//
-// config.PrimaryDomainAny ("*") is the operator's explicit opt-in to serving
-// every Host, so it passes everything through -- byte-identical to the
-// historical unpinned behavior. An empty PrimaryDomain cannot reach here in a
-// real server (config.Validate rejects it at startup); it is still treated as
-// pass-through so that tests and library callers constructing an auth registry
-// directly keep the permissive default rather than silently 404ing everything.
+// primaryOnly gates a handler to the configured primary apex (exact host
+// match, port stripped, case-folded; PrimaryDomain() is stored lowercased).
 func primaryOnly(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		pd := PrimaryDomain()
