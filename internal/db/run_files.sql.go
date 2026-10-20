@@ -61,6 +61,53 @@ func (q *Queries) GetRunFile(ctx context.Context, arg GetRunFileParams) (GetRunF
 	return i, err
 }
 
+const listRunBlobFiles = `-- name: ListRunBlobFiles :many
+SELECT f.repo_id, f.run_id, r.repo_path, f.name, f.storage_key, f.size, f.created_at
+FROM run_files f
+JOIN run_storage_runs r ON r.repo_id = f.repo_id AND r.run_id = f.run_id
+`
+
+type ListRunBlobFilesRow struct {
+	RepoID     string    `json:"repo_id"`
+	RunID      string    `json:"run_id"`
+	RepoPath   string    `json:"repo_path"`
+	Name       string    `json:"name"`
+	StorageKey string    `json:"storage_key"`
+	Size       int64     `json:"size"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+func (q *Queries) ListRunBlobFiles(ctx context.Context) ([]ListRunBlobFilesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRunBlobFiles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRunBlobFilesRow{}
+	for rows.Next() {
+		var i ListRunBlobFilesRow
+		if err := rows.Scan(
+			&i.RepoID,
+			&i.RunID,
+			&i.RepoPath,
+			&i.Name,
+			&i.StorageKey,
+			&i.Size,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRunFiles = `-- name: ListRunFiles :many
 SELECT name, storage_key, size, created_at FROM run_files
 WHERE repo_id = ? AND run_id = ?

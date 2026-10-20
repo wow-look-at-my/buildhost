@@ -41,6 +41,11 @@ SELECT r.repo_id, r.run_id, r.repo_path, r.created_at, r.used_at, r.ended_at,
 FROM run_storage_runs r
 ORDER BY r.ended_at IS NULL, r.ended_at, r.created_at;
 
+-- name: ListRunBlobFiles :many
+SELECT f.repo_id, f.run_id, r.repo_path, f.name, f.storage_key, f.size, f.created_at
+FROM run_files f
+JOIN run_storage_runs r ON r.repo_id = f.repo_id AND r.run_id = f.run_id;
+
 -- name: DeleteRunFiles :exec
 DELETE FROM run_files WHERE repo_id = ? AND run_id = ?;
 

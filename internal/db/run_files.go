@@ -100,6 +100,12 @@ func (d *DB) RunStorageRuns(ctx context.Context) ([]ListRunStorageRunsRow, error
 	return rows, nil
 }
 
+// ListRunBlobFiles returns every run file with the run it belongs to, for the
+// retention inventory.
+func (d *DB) ListRunBlobFiles(ctx context.Context) ([]ListRunBlobFilesRow, error) {
+	return d.q.ListRunBlobFiles(ctx)
+}
+
 // DeleteRun forgets the run and its files. It returns the storage keys the
 // files held, which the caller deletes once nothing else references them.
 func (d *DB) DeleteRun(ctx context.Context, key RunKey) ([]string, error) {
