@@ -114,7 +114,7 @@ type Config struct {
 
 	// SiteDomain is an optional dedicated domain for project static sites.
 	SiteDomain string
-	// PrimaryDomain is the apex the GitHub OAuth callback is registered on (e.g.
+	// PrimaryDomain is the apex the GitHub OAuth callback is registered on (e.g. "pazer.build").
 	PrimaryDomain string
 
 	// Sign in with GitHub (browser login for private resources). When the client
@@ -156,11 +156,30 @@ func unescapePEMNewlines(v string) string {
 	return v
 }
 
-// normalizeDomain canonicalizes a configured domain name: trimmed, lowercased,
+// PrimaryDomainAny is the explicit opt-in value for BUILDHOST_PRIMARY_DOMAIN that keeps the server fully host-agnostic.
+const PrimaryDomainAny = "*"
+
+// normalizeDomain canonicalizes a configured domain name: trimmed,
+// lowercased, with a leading "*." or "."
 func normalizeDomain(v string) string {
 	v = strings.ToLower(strings.TrimSpace(v))
+	if v == PrimaryDomainAny {
+		return v
+	}
 	v = strings.TrimPrefix(v, "*.")
 	return strings.Trim(v, ".")
+}
+
+// Validate reports a configuration that cannot serve correctly, so the process
+// exits at startup instead of degrading silently at request time.
+func (c Config) Validate() error {
+	if c.PrimaryDomain == "" {
+		return fmt.Errorf("BUILDHOST_PRIMARY_DOMAIN is required: set it to the apex " +
+			"that owns the web UI, /api/v1 and the GitHub OAuth callback (e.g. " +
+			"\"example.com\"), or to \"" + PrimaryDomainAny + "\" to serve every " +
+			"Host (the historical host-agnostic behavior)")
+	}
+	return nil
 }
 
 func Load() Config {
