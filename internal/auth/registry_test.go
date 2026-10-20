@@ -146,29 +146,22 @@ func TestRequestBaseURL_PreservesHostAndPort(t *testing.T) {
 	}
 }
 
-// TestServicePathRedirect covers the automatic main-domain -> subdomain
-// bounce that every registered service gets, so the path-style URLs
-// documented in /llms.txt (npm registry, apt repo, dl/static, ...) resolve
-// without the caller addressing the subdomain.
-func TestServicePathRedirect(t *testing.T) {
-	ServiceHandleRaw("widgets", "/{path...}", func(http.ResponseWriter, *http.Request) {})
+// A registered service answers on its own subdomain. An apex path prefix is
+// not a service route, so the apex form 404s instead of bouncing across.
+// internal/npm/redirect.go is the one apex path redirect, and it is explicit.
+func TestServiceApexPathIsNotAServiceRoute(t *testing.T) {
+	t.Serial()
+	ServiceHandleRaw("widgets", "/{path...}", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
 
-	cases := []struct {
-		name, target, wantLoc string
-	}{
-		{"bare service", "https://pazer.build/widgets", "https://widgets.pazer.build"},
-		{"nested path", "https://pazer.build/widgets/a/b/c", "https://widgets.pazer.build/a/b/c"},
-		{"encoded slash preserved", "https://pazer.build/widgets/x%2fy", "https://widgets.pazer.build/x%2fy"},
-		{"query preserved", "https://pazer.build/widgets/q?a=1&b=2", "https://widgets.pazer.build/q?a=1&b=2"},
-		{"loopback http with port", "http://localhost:8080/widgets/z", "http://widgets.localhost:8080/z"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", tc.target, nil)
-			rec := httptest.NewRecorder()
-			ServeHTTP(rec, req)
-			require.Equal(t, http.StatusMovedPermanently, rec.Code, "body: %s", rec.Body.String())
-			assert.Equal(t, tc.wantLoc, rec.Header().Get("Location"))
-		})
-	}
+	req := httptest.NewRequest("GET", "https://pazer.build/widgets/x", nil)
+	rec := httptest.NewRecorder()
+	ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code, "an apex path prefix must not reach the service")
+
+	req = httptest.NewRequest("GET", "https://widgets.pazer.build/x", nil)
+	rec = httptest.NewRecorder()
+	ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code, "the service's own subdomain serves it")
 }
