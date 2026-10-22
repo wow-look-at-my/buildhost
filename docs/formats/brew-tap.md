@@ -22,7 +22,7 @@ The tap writes `formula_renames.json` at its root, mapping each folded name to i
 
 ## Authenticated tap
 
-`brew.{domain}/private/tap.git` challenges an anonymous request with a 401 and a Basic realm. git does NOT send a URL-embedded credential preemptively, and waits for a challenge. A 200 therefore makes a credentialed `brew tap x:TOKEN@...` silently ingest the public-only tap.
+`brew.{domain}/private/tap.git` challenges an anonymous request with a 401 and a Basic realm. git does NOT send a URL-embedded credential preemptively, and waits for a challenge. A 200 therefore makes a client with a URL credential silently ingest the public-only tap. The documented flow sends the token as an `http.<url>.extraHeader` instead. A URL credential makes git report a redirect on every fetch, and Homebrew rewrites the tap remote to the redirect target without the credential.
 
 The route then serves a tap scoped to the credential. That tap holds every public project, plus the private projects the token can read. `auth.TokenCanReadProject` decides that, which is the same rule requireProject applies to a single-project read. Tap membership can therefore never leak a name the token cannot read directly.
 

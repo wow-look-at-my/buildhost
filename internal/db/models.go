@@ -188,12 +188,14 @@ type RetentionSetting struct {
 }
 
 type RunFile struct {
-	RepoID     string    `json:"repo_id"`
-	RunID      string    `json:"run_id"`
-	Name       string    `json:"name"`
-	StorageKey string    `json:"storage_key"`
-	Size       int64     `json:"size"`
-	CreatedAt  time.Time `json:"created_at"`
+	RepoID     string     `json:"repo_id"`
+	RunID      string     `json:"run_id"`
+	Name       string     `json:"name"`
+	StorageKey string     `json:"storage_key"`
+	Size       int64      `json:"size"`
+	CreatedAt  time.Time  `json:"created_at"`
+	Reads      int64      `json:"reads"`
+	ReadAt     *time.Time `json:"read_at"`
 }
 
 type RunLock struct {

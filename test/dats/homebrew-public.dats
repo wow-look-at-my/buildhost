@@ -78,17 +78,23 @@ tests:
 			- "docs-agree"
 
 	# The tripwire against smuggling CI-only crutches into the executed
-	# commands: every line is a plain brew command or a token export. The
+	# commands: every line is a plain brew command or a token export. The one
+	# exception is the git config header that carries the private tap's token,
+	# because brew has no command that stores a git credential. The
 	# tap/trust/install skeleton is present.
-	- desc: the documented flows are brew commands only, with tap, trust and install
+	- desc: the documented flows are brew commands only, plus the private token header
 	  cmd: |
 		set -eu
 		. {shared.env}
+		header="^git config --global \"http\\.http://$BREW_HOST/private/\\.extraHeader\" \"Authorization: Basic "
 		for leg in public private; do
 			"$REPO/scripts/brew-doc-flows.sh" "$leg" "$BREW_HOST" \
 				| grep -v '^[[:space:]]*$' | grep -v '^#' > flow.txt
-			if grep -qv '^\(brew\|export\) ' flow.txt; then
-				echo "$leg flow has a non-brew/export line:" >&2; cat flow.txt >&2; exit 1
+			if grep -v '^\(brew\|export\) ' flow.txt | grep -qv "$header"; then
+				echo "$leg flow has a line that is not brew, export or the token header:" >&2; cat flow.txt >&2; exit 1
+			fi
+			if [ "$leg" = private ]; then
+				grep -q "$header" flow.txt || { echo "private flow lost the token header" >&2; exit 1; }
 			fi
 			for want in 'brew tap ' 'brew trust ' 'brew install '; do
 				grep -q "^$want" flow.txt || { echo "$leg flow lost $want" >&2; exit 1; }
