@@ -19,7 +19,9 @@ import type {
     ReleaseData,
     RetentionData,
     RetentionInventory,
+    RunFile,
     RunFilesData,
+    RunFilesRun,
     ServiceURLs,
     SidebarData,
     SitesData,
@@ -29,6 +31,9 @@ import type {
     VisibilityFolder,
     VisibilityMode,
 } from "./types.ts";
+import type { TimelineHit, TimelineInterval, TimelineLane, TimelineViewElement } from "https://sites.pazer.build/js-snippets/@library/ui/timeline-view.js";
+import type { DataTableElement } from "https://sites.pazer.build/js-snippets/@library/ui/data-table.js";
+import type { BarChartElement } from "https://sites.pazer.build/js-snippets/@library/ui/bar-chart.js";
 
 
 let demo = false;
@@ -1525,6 +1530,54 @@ const route = function (): void {
 
 // --- Demo data ---
 
+// Live runs, ended runs inside the keep window, and one past it. Every
+// treatment of the Run Files charts is on screen in a preview.
+const demoRunFiles = function (): RunFilesData {
+    const ago = function (hours: number): string { return new Date(Date.now() - hours * 3600000).toISOString(); };
+    const sha = function (seed: string): string {
+        let out = "";
+        for (let i = 0; out.length < 64; i++) out += ((seed.charCodeAt(i % seed.length) * 7919 + i * 104729) % 65536).toString(16).padStart(4, "0");
+        return out.slice(0, 64);
+    };
+    const run = function (repo: string, id: string, start: number, end: number | null, files: [string, number, number, number][]): RunFilesData["runs"][number] {
+        let bytes = 0;
+        let reads = 0;
+        const list = files.map(function (f) {
+            bytes += f[1];
+            reads += f[3];
+            return { name: f[0], size: f[1], sha256: sha(repo + id + f[0]), created_at: ago(f[2]), reads: f[3], read_at: f[3] ? ago(Math.max(0, f[2] - 0.3)) : null };
+        });
+        return {
+            repo: repo, run_id: id, created_at: ago(start), used_at: ago(end == null ? 0.05 : end + 0.1), checked_at: ago(0.06),
+            ended_at: end == null ? null : ago(end), expires_at: end == null ? null : ago(end - 24),
+            bytes: bytes, reads: reads, files: list
+        };
+    };
+    const runs = [
+        run("myorg/compiler", "18300112233", 0.6, null, [["toolchain-Linux", 1_200_000_000, 0.5, 6], ["toolchain-macOS", 1_150_000_000, 0.45, 3], ["ape-binary-Linux", 300_000_000, 0.2, 0]]),
+        run("myorg/registry", "9120044817", 0.3, null, [["frontend-dist", 48_000_000, 0.25, 2]]),
+        run("myorg/compiler", "18299001122", 9, 7.5, [["toolchain-Linux", 1_210_000_000, 8.8, 7], ["toolchain-Windows", 1_300_000_000, 8.6, 2], ["distpack-linux-amd64", 400_000_000, 7.7, 1]]),
+        run("myorg/registry", "9119983001", 15, 14.6, [["frontend-dist", 47_500_000, 14.9, 1]]),
+        run("myorg/webhook-runner", "4410982211", 21, 20.2, [["dashboard-assets", 12_000_000, 20.9, 1], ["image-layout", 640_000_000, 20.5, 1]])
+    ];
+    let total = 0;
+    for (let i = 0; i < runs.length; i++) total += runs[i].bytes;
+    return {
+        keep_seconds: 86400,
+        check_interval_seconds: 300,
+        min_free_percent: 10,
+        total_bytes: total,
+        disk_total: 500_000_000_000,
+        disk_used: 438_000_000_000,
+        disk_free: 62_000_000_000,
+        runs: runs,
+        janitor: {
+            at: ago(0.06), duration_ms: 412, deferred: false, checked: 2, check_failures: 0,
+            ended: 0, deleted: 1, pressure_deleted: 0, freed_bytes: 2_150_000_000
+        }
+    };
+};
+
 let demoServices = {
     dl: "https://dl.builds.example.com",
     apt: "https://apt.builds.example.com",
@@ -1590,36 +1643,8 @@ const demoData: Record<string, unknown> = {
     "/visibility-folders": [],
     "/registries": { base_url: "https://builds.example.com", services: demoServices, projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
     "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com", services: demoServices },
+    "/run-files": demoRunFiles(),
     // The demo shows a repo mid-rename, which is the state this page exists for.
-    "/run-files": {
-        keep_seconds: 86400,
-        min_free_percent: 10,
-        total_bytes: 1_900_000_000,
-        disk_free: 412_000_000_000,
-        disk_total: 1_000_000_000_000,
-        runs: [
-            {
-                repo: "myorg/compiler", run_id: "18300112233",
-                created_at: new Date(Date.now() - 1800000).toISOString(),
-                used_at: new Date(Date.now() - 120000).toISOString(),
-                ended_at: null, expires_at: null, bytes: 1_500_000_000,
-                files: [
-                    { name: "toolchain-Linux", size: 1_200_000_000, sha256: "3f9a0c1d2e4b5a6978c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2", created_at: new Date(Date.now() - 1500000).toISOString() },
-                    { name: "ape-binary-Linux", size: 300_000_000, sha256: "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90", created_at: new Date(Date.now() - 1400000).toISOString() }
-                ]
-            },
-            {
-                repo: "myorg/compiler", run_id: "18299001122",
-                created_at: new Date(Date.now() - 30 * 3600000).toISOString(),
-                used_at: new Date(Date.now() - 21 * 3600000).toISOString(),
-                ended_at: new Date(Date.now() - 20 * 3600000).toISOString(),
-                expires_at: new Date(Date.now() + 4 * 3600000).toISOString(), bytes: 400_000_000,
-                files: [
-                    { name: "distpack-linux-amd64", size: 400_000_000, sha256: "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0", created_at: new Date(Date.now() - 27 * 3600000).toISOString() }
-                ]
-            }
-        ]
-    },
     "/duplicates": {
         groups: [{
             repo_id: "1287579802",
@@ -1825,47 +1850,226 @@ const setVersioning = function (name: string, versioning: string): void {
 pages.runFiles = function (): void {
     setTitle("Run Files");
     renderSidebar("run-files");
-    apiFetch<RunFilesData>("/run-files").then(function (d) {
-        var live = 0;
-        var fileCount = 0;
-        for (var i = 0; i < d.runs.length; i++) {
-            if (!d.runs[i].ended_at) live++;
-            fileCount += d.runs[i].files.length;
-        }
-        var html = "<h1>Run Files</h1>";
-        html += "<p>Directories that one job of a CI run hands to later jobs of the same run, through <code>buildhost-handoff</code>. " +
-            "A run's files go " + h(Math.round(d.keep_seconds / 3600)) + " hours after GitHub reports the run complete. " +
-            "Ended runs go sooner, oldest first, while free disk is below " + h(d.min_free_percent) + "%. A live run's files never go early.</p>";
-        html += '<div class="stat-grid">';
-        html += statTile(d.runs.length, "Runs");
-        html += statTile(live, "Live runs");
-        html += statTile(fileCount, "Files");
-        html += statTile(humanSize(d.total_bytes), "Stored");
-        if (d.disk_total) html += statTile(humanSize(d.disk_free || 0), "Disk free of " + humanSize(d.disk_total));
-        html += "</div>";
-        if (!d.runs.length) {
-            html += '<div class="card"><p class="empty">No CI run holds run files.</p></div>';
-            document.getElementById("content")!.innerHTML = html;
-            return;
-        }
-        for (var r = 0; r < d.runs.length; r++) {
-            var run = d.runs[r];
-            var runURL = "https://github.com/" + run.repo + "/actions/runs/" + run.run_id;
-            var state = run.ended_at
-                ? 'ended <span title="' + h(formatTime(run.ended_at)) + '">' + h(timeAgo(run.ended_at)) + "</span>, deleted after " + h(formatTime(run.expires_at))
-                : "live, last used " + h(timeAgo(run.used_at));
-            html += '<div class="card"><h2><a href="' + h(runURL) + '" target="_blank" rel="noopener">' + h(run.repo) + " #" + h(run.run_id) + "</a></h2>";
-            html += "<p>" + state + " &middot; " + h(humanSize(run.bytes)) + "</p>";
-            html += '<table class="data-table"><thead><tr><th>Name</th><th>Size</th><th>Sent</th><th>sha256</th></tr></thead><tbody>';
-            for (var f = 0; f < run.files.length; f++) {
-                var file = run.files[f];
-                html += "<tr><td><code>" + h(file.name) + "</code></td><td>" + h(humanSize(file.size)) + "</td>" +
-                    '<td title="' + h(formatTime(file.created_at)) + '">' + h(timeAgo(file.created_at)) + "</td>" +
-                    '<td><code title="' + h(file.sha256) + '">' + h(file.sha256.slice(0, 12)) + "</code></td></tr>";
-            }
-            html += "</tbody></table></div>";
-        }
+    Promise.all([apiFetch<RunFilesData>("/run-files"), loadRunFilesCharts()]).then(function (res) {
+        renderRunFiles(res[0]);
+    });
+};
+
+// The charts are js-snippets components, loaded at run time from the library site.
+const loadRunFilesCharts = function (): Promise<unknown> {
+    return Promise.all([
+        import("https://sites.pazer.build/js-snippets/@library/ui/timeline-view.js"),
+        import("https://sites.pazer.build/js-snippets/@library/ui/data-table.js"),
+        import("https://sites.pazer.build/js-snippets/@library/ui/bar-chart.js")
+    ]);
+};
+
+const runURL = function (run: RunFilesRun): string {
+    return "https://github.com/" + run.repo + "/actions/runs/" + run.run_id;
+};
+
+const runLabel = function (run: RunFilesRun): string {
+    return run.repo + " #" + run.run_id;
+};
+
+const ms = function (s: string | null): number {
+    return s ? new Date(s).getTime() : 0;
+};
+
+const renderRunFiles = function (d: RunFilesData): void {
+    const now = Date.now();
+    let live = 0;
+    let files = 0;
+    let reads = 0;
+    for (const run of d.runs) {
+        if (!run.ended_at) live++;
+        files += run.files.length;
+        reads += run.reads;
+    }
+    const keepHours = Math.round(d.keep_seconds / 3600);
+    let html = "<h1>Run Files</h1>";
+    html += '<p class="rf-lede">Directories one job of a CI run hands to later jobs through <code>buildhost-handoff</code>. ' +
+        "They go " + h(keepHours) + "h after GitHub reports the run complete, sooner (oldest ended first) while free disk is under " +
+        h(d.min_free_percent) + "%. A live run's files never go early.</p>";
+    html += '<div class="rf-kpis">' +
+        kpi(d.runs.length, "runs") + kpi(live, "live") + kpi(files, "files") + kpi(humanSize(d.total_bytes), "stored") + kpi(reads, "reads") +
+        "</div>";
+    html += janitorLine(d);
+    html += '<section class="rf-panel"><h2>Disk</h2>' +
+        (d.disk_total ? '<bar-chart id="rf-disk"></bar-chart>' : '<p class="empty">The data directory reports no filesystem size.</p>') + "</section>";
+    if (!d.runs.length) {
+        html += '<section class="rf-panel"><p class="empty">No CI run holds run files.</p></section>';
         document.getElementById("content")!.innerHTML = html;
+        fillDiskChart(d);
+        return;
+    }
+    html += '<section class="rf-panel"><h2>Lifecycle <span class="rf-hint">solid: run live &middot; hatched: kept after the run ended &middot; pips: file sent</span></h2>' +
+        '<timeline-view id="rf-timeline" no-minimap></timeline-view></section>';
+    html += '<div class="rf-split">' +
+        '<section class="rf-panel"><h2>Runs</h2><data-table id="rf-runs"></data-table></section>' +
+        '<section class="rf-panel"><h2>Bytes per run</h2><bar-chart id="rf-bytes" show-values></bar-chart></section>' +
+        "</div>";
+    document.getElementById("content")!.innerHTML = html;
+    fillDiskChart(d);
+    fillTimeline(d, now);
+    fillRunsTable(d);
+    fillBytesChart(d);
+};
+
+const kpi = function (value: string | number, label: string): string {
+    return '<span class="rf-kpi"><b>' + h(value) + "</b> " + h(label) + "</span>";
+};
+
+const janitorLine = function (d: RunFilesData): string {
+    const j = d.janitor;
+    const every = "sweeps every " + Math.round(d.check_interval_seconds / 60) + "m";
+    if (!j) return '<p class="rf-janitor">Janitor: no sweep yet since this server started (' + every + ").</p>";
+    if (j.deferred) return '<p class="rf-janitor">Janitor: last sweep ' + h(timeAgo(j.at)) + " was deferred, writes in flight (" + every + ").</p>";
+    let s = "Janitor: last sweep " + h(timeAgo(j.at)) + " in " + h(j.duration_ms) + "ms, asked GitHub about " + h(j.checked) + " live run" + (j.checked === 1 ? "" : "s") +
+        " (" + h(j.ended) + " ended), deleted " + h(j.deleted) + (j.pressure_deleted ? " (" + h(j.pressure_deleted) + " for disk pressure)" : "") +
+        ", freed " + h(humanSize(j.freed_bytes)) + " &middot; " + every;
+    if (j.check_failures) s += ' &middot; <span class="rf-bad">' + h(j.check_failures) + " status check" + (j.check_failures === 1 ? "" : "s") + " failed: " + h(j.last_check_error) + "</span>";
+    if (j.error) s += ' &middot; <span class="rf-bad">sweep failed: ' + h(j.error) + "</span>";
+    return '<p class="rf-janitor">' + s + "</p>";
+};
+
+const fillDiskChart = function (d: RunFilesData): void {
+    const el = document.getElementById("rf-disk") as BarChartElement | null;
+    if (!el || !d.disk_total) return;
+    const used = d.disk_used ?? d.disk_total - (d.disk_free ?? 0);
+    el.format = humanSize;
+    el.max = d.disk_total;
+    el.series = [
+        { key: "run", label: "run files" },
+        { key: "other", label: "everything else" },
+        { key: "free", label: "free", muted: true }
+    ];
+    el.rows = [{ id: "disk", label: "data dir", values: { run: d.total_bytes, other: Math.max(0, used - d.total_bytes), free: d.disk_free ?? 0 } }];
+    el.markers = [{ value: d.disk_total * (1 - d.min_free_percent / 100), label: d.min_free_percent + "% free floor", kind: "warning" }];
+};
+
+const fillTimeline = function (d: RunFilesData, now: number): void {
+    const el = document.getElementById("rf-timeline") as TimelineViewElement | null;
+    if (!el) return;
+    const lanes: TimelineLane[] = [];
+    const intervals: TimelineInterval[] = [];
+    let first = now;
+    let last = now;
+    for (const run of d.runs) {
+        const lane = run.repo + "#" + run.run_id;
+        const start = ms(run.created_at);
+        const ended = run.ended_at ? ms(run.ended_at) : null;
+        const expires = run.expires_at ? ms(run.expires_at) : null;
+        first = Math.min(first, start);
+        if (expires) last = Math.max(last, expires);
+        lanes.push({ id: lane, label: runLabel(run), group: run.repo });
+        intervals.push({
+            id: lane, laneId: lane, start: start, end: expires, category: run.repo, label: humanSize(run.bytes),
+            segments: ended != null && expires != null ? [{ start: start, end: ended, kind: "" }, { start: ended, end: expires, kind: "hatch" }] : undefined,
+            data: run
+        });
+        for (const f of run.files) {
+            const t = ms(f.created_at);
+            intervals.push({ id: lane + "/" + f.name, laneId: lane, start: t, end: t, category: run.repo, label: f.name, data: f });
+        }
+    }
+    el.staleAfterMs = 0;
+    el.tooltipFor = function (hit: TimelineHit): string | null {
+        const data = hit.interval?.data as RunFilesRun | RunFile | undefined;
+        if (!data) return null;
+        if ("run_id" in data) {
+            return runLabel(data) + "\n" + humanSize(data.bytes) + " in " + data.files.length + " file" + (data.files.length === 1 ? "" : "s") +
+                "\nstarted " + formatTime(data.created_at) +
+                (data.ended_at ? "\nended " + formatTime(data.ended_at) + "\ndeleted after " + formatTime(data.expires_at) : "\nlive, last used " + timeAgo(data.used_at));
+        }
+        return data.name + "\n" + humanSize(data.size) + ", sent " + formatTime(data.created_at) +
+            "\nread " + data.reads + " time" + (data.reads === 1 ? "" : "s") + (data.read_at ? ", last " + timeAgo(data.read_at) : "");
+    };
+    el.setData({ lanes: lanes, intervals: intervals });
+    const pad = (last - first) * 0.03;
+    el.setViewport(first - pad, last + pad);
+    el.style.height = Math.min(520, 70 + lanes.length * 30) + "px";
+};
+
+interface RunTableRow {
+    key: string;
+    run: RunFilesRun;
+}
+
+const fillRunsTable = function (d: RunFilesData): void {
+    const el = document.getElementById("rf-runs") as DataTableElement<RunTableRow> | null;
+    if (!el) return;
+    const link = function (row: RunTableRow): Node {
+        const a = document.createElement("a");
+        a.href = runURL(row.run);
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = runLabel(row.run);
+        return a;
+    };
+    const when = function (iso: string | null, empty: string): (row: RunTableRow) => Node {
+        return function (): Node {
+            const span = document.createElement("span");
+            span.textContent = iso ? timeAgo(iso) : empty;
+            if (iso) span.title = formatTime(iso);
+            return span;
+        };
+    };
+    el.columns = [
+        { key: "run", label: "Run", value: (r) => runLabel(r.run), render: link },
+        { key: "state", label: "State", value: (r) => (r.run.ended_at ? "ended" : "live") },
+        { key: "created", label: "Started", value: (r) => ms(r.run.created_at), render: (r) => when(r.run.created_at, "")(r), text: (r) => r.run.created_at },
+        { key: "expires", label: "Deleted", value: (r) => ms(r.run.expires_at) || Infinity, render: (r) => untilNode(r.run.expires_at), text: (r) => r.run.expires_at ?? "" },
+        { key: "files", label: "Files", value: (r) => r.run.files.length, align: "end" },
+        { key: "bytes", label: "Size", value: (r) => r.run.bytes, render: (r) => humanSize(r.run.bytes), align: "end" },
+        { key: "reads", label: "Reads", value: (r) => r.run.reads, align: "end" }
+    ];
+    el.facets = [{ key: "state", label: "state", of: (r) => (r.run.ended_at ? "ended" : "live"), order: ["live", "ended"] }];
+    el.rowId = (r) => r.key;
+    el.sort = { key: "created", dir: "desc" };
+    el.detailFor = function (row: RunTableRow): Node {
+        const t = document.createElement("table");
+        t.className = "rf-files";
+        t.innerHTML = "<thead><tr><th>File</th><th>Size</th><th>Sent</th><th>Reads</th><th>Last read</th><th>sha256</th></tr></thead>";
+        const body = document.createElement("tbody");
+        for (const f of row.run.files) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = "<td><code>" + h(f.name) + "</code></td><td>" + h(humanSize(f.size)) + '</td><td title="' + h(formatTime(f.created_at)) + '">' +
+                h(timeAgo(f.created_at)) + "</td><td>" + h(f.reads) + '</td><td title="' + h(formatTime(f.read_at)) + '">' + h(f.read_at ? timeAgo(f.read_at) : "never") +
+                '</td><td><code title="' + h(f.sha256) + '">' + h(f.sha256.slice(0, 12)) + "</code></td>";
+            body.append(tr);
+        }
+        t.append(body);
+        return t;
+    };
+    el.rows = d.runs.map((run) => ({ key: run.repo + "#" + run.run_id, run: run }));
+};
+
+const untilNode = function (iso: string | null): Node {
+    const span = document.createElement("span");
+    if (!iso) {
+        span.textContent = "when it ends + keep";
+        span.className = "rf-dim";
+        return span;
+    }
+    const left = ms(iso) - Date.now();
+    span.title = formatTime(iso);
+    span.textContent = left <= 0 ? "next sweep" : "in " + (left >= 3600000 ? Math.round(left / 3600000) + "h" : Math.max(1, Math.round(left / 60000)) + "m");
+    return span;
+};
+
+const fillBytesChart = function (d: RunFilesData): void {
+    const el = document.getElementById("rf-bytes") as BarChartElement | null;
+    if (!el) return;
+    el.format = humanSize;
+    el.series = [
+        { key: "live", label: "live run" },
+        { key: "ended", label: "ended, kept" }
+    ];
+    el.rows = d.runs.slice().sort((a, b) => b.bytes - a.bytes).map(function (run) {
+        const values: Record<string, number> = {};
+        values[run.ended_at ? "ended" : "live"] = run.bytes;
+        return { id: run.repo + "#" + run.run_id, label: runLabel(run), values: values, href: runURL(run), detail: run.files.length + " files" };
     });
 };
 
