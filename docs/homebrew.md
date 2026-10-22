@@ -33,8 +33,8 @@ An artifact download authenticates separately, through `HOMEBREW_BUILDHOST_TOKEN
 The example below uses a private project named `myrepo/myapp`, the only project under `myrepo`. Under the rule above it installs as `myrepo`. The installed command keeps the binary's own name, `myapp`:
 
 ```bash
-git config --global "http.https://brew.pazer.build/private/.extraHeader" "Authorization: Basic $(printf 'x:%s' "$TOKEN" | base64 | tr -d '\n')"
 brew trust "https://brew.pazer.build/private/tap.git"
+git config --global "http.https://brew.pazer.build/private/.extraHeader" "Authorization: Basic $(printf 'x:%s' "$TOKEN" | base64 | tr -d '\n')"
 brew tap --custom-remote pazer/build "https://brew.pazer.build/private/tap.git"
 brew update-reset "$(brew --repository pazer/build)"
 export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
