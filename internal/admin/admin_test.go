@@ -111,7 +111,7 @@ func TestSecurityHeaders(t *testing.T) {
 	assert.Equal(t, "DENY", w.Header().Get("X-Frame-Options"))
 	assert.Equal(t, "no-referrer", w.Header().Get("Referrer-Policy"))
 	assert.Equal(t, "max-age=63072000; includeSubDomains", w.Header().Get("Strict-Transport-Security"))
-	assert.Equal(t, "default-src 'self' data: 'unsafe-inline'", w.Header().Get("Content-Security-Policy"))
+	assert.Equal(t, "default-src 'self' data: 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://sites.pazer.build", w.Header().Get("Content-Security-Policy"))
 	assert.Equal(t, "none", w.Header().Get("X-Permitted-Cross-Domain-Policies"))
 	assert.Equal(t, "interest-cohort=()", w.Header().Get("Permissions-Policy"))
 }

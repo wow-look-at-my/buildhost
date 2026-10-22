@@ -86,6 +86,10 @@ func TestSweep_DeletesKeepAfterTheRunEnds(t *testing.T) {
 
 	require.NoError(t, f.j.Sweep(t.Context(), now.Add(25*time.Hour)))
 	assert.False(t, f.holds(t, "1"), "an ended run loses its files after Keep")
+	rep := LastReport()
+	require.NotNil(t, rep)
+	assert.Equal(t, 1, rep.Deleted)
+	assert.Equal(t, int64(1), rep.FreedBytes)
 	exists, err := f.j.Store.Exists(t.Context(), key)
 	require.NoError(t, err)
 	assert.False(t, exists, "the blob goes with the run")
@@ -99,6 +103,10 @@ func TestSweep_UnknownStatusKeepsTheRun(t *testing.T) {
 	f.fail["1"] = true
 	require.NoError(t, f.j.Sweep(t.Context(), time.Now()))
 	assert.True(t, f.holds(t, "1"), "a status GitHub did not answer is not an end")
+	rep := LastReport()
+	require.NotNil(t, rep)
+	assert.Equal(t, 1, rep.CheckFailures)
+	assert.Contains(t, rep.LastCheckError, "502")
 }
 
 func TestSweep_PressureDeletesEndedRunsOldestFirst(t *testing.T) {
