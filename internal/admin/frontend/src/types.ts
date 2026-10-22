@@ -353,6 +353,7 @@ export interface Pages {
     storage(): void;
     retention(): void;
     goproxy(): void;
+    runFiles(): void;
     duplicates(): void;
 }
 
@@ -469,4 +470,33 @@ export interface GoproxyState {
 export interface GoproxyData {
     enabled: boolean;
     state?: GoproxyState;
+}
+
+// --- Run files (admin GET /api/run-files) ---
+
+export interface RunFile {
+    name: string;
+    size: number;
+    sha256: string;
+    created_at: string;
+}
+
+export interface RunFilesRun {
+    repo: string;
+    run_id: string;
+    created_at: string;
+    used_at: string;
+    ended_at: string | null;
+    expires_at: string | null;
+    bytes: number;
+    files: RunFile[];
+}
+
+export interface RunFilesData {
+    keep_seconds: number;
+    min_free_percent: number;
+    total_bytes: number;
+    disk_free?: number;
+    disk_total?: number;
+    runs: RunFilesRun[];
 }
