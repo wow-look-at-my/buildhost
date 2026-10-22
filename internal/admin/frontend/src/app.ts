@@ -1841,7 +1841,7 @@ pages.runFiles = function (): void {
         html += statTile(live, "Live runs");
         html += statTile(fileCount, "Files");
         html += statTile(humanSize(d.total_bytes), "Stored");
-        if (d.disk_total) html += statTile(humanSize(d.disk_free || 0) + " of " + humanSize(d.disk_total), "Disk free");
+        if (d.disk_total) html += statTile(humanSize(d.disk_free || 0), "Disk free of " + humanSize(d.disk_total));
         html += "</div>";
         if (!d.runs.length) {
             html += '<div class="card"><p class="empty">No CI run holds run files.</p></div>';
@@ -1856,7 +1856,7 @@ pages.runFiles = function (): void {
                 : "live, last used " + h(timeAgo(run.used_at));
             html += '<div class="card"><h2><a href="' + h(runURL) + '" target="_blank" rel="noopener">' + h(run.repo) + " #" + h(run.run_id) + "</a></h2>";
             html += "<p>" + state + " &middot; " + h(humanSize(run.bytes)) + "</p>";
-            html += '<table class="table"><thead><tr><th>Name</th><th>Size</th><th>Sent</th><th>sha256</th></tr></thead><tbody>';
+            html += '<table class="data-table"><thead><tr><th>Name</th><th>Size</th><th>Sent</th><th>sha256</th></tr></thead><tbody>';
             for (var f = 0; f < run.files.length; f++) {
                 var file = run.files[f];
                 html += "<tr><td><code>" + h(file.name) + "</code></td><td>" + h(humanSize(file.size)) + "</td>" +
