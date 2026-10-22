@@ -21,6 +21,7 @@ declare module "https://sites.pazer.build/js-snippets/@library/ui/timeline-view.
         setViewport(start: number, end: number): void;
         staleAfterMs: number;
         minTime: number | null;
+        maxTime: number | null;
         tooltipFor: ((hit: TimelineHit) => string | Node | null) | null;
     }
 }

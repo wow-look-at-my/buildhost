@@ -1876,6 +1876,16 @@ const ms = function (s: string | null): number {
     return s ? new Date(s).getTime() : 0;
 };
 
+const RF_RUN_COLOR = "#4a9eff";
+
+// A table cell has no room for timeAgo's "18 minutes ago".
+const shortAgo = function (iso: string): string {
+    const mins = Math.max(0, Math.round((Date.now() - ms(iso)) / 60000));
+    if (mins < 60) return mins + "m ago";
+    if (mins < 48 * 60) return Math.round(mins / 60) + "h ago";
+    return Math.round(mins / 1440) + "d ago";
+};
+
 const renderRunFiles = function (d: RunFilesData): void {
     const now = Date.now();
     let live = 0;
@@ -1940,8 +1950,8 @@ const fillDiskChart = function (d: RunFilesData): void {
     el.format = humanSize;
     el.max = d.disk_total;
     el.series = [
-        { key: "run", label: "run files" },
-        { key: "other", label: "everything else" },
+        { key: "run", label: "run files", color: RF_RUN_COLOR },
+        { key: "other", label: "everything else", color: "#6b7178" },
         { key: "free", label: "free", muted: true }
     ];
     el.rows = [{ id: "disk", label: "data dir", values: { run: d.total_bytes, other: Math.max(0, used - d.total_bytes), free: d.disk_free ?? 0 } }];
@@ -1963,8 +1973,9 @@ const fillTimeline = function (d: RunFilesData, now: number): void {
         first = Math.min(first, start);
         if (expires) last = Math.max(last, expires);
         lanes.push({ id: lane, label: runLabel(run), group: run.repo });
+        // The chart is static (maxTime is set), so a live run ends at now rather than running on to the right edge.
         intervals.push({
-            id: lane, laneId: lane, start: start, end: expires, category: run.repo, label: humanSize(run.bytes),
+            id: lane, laneId: lane, start: start, end: expires ?? now, category: run.repo, label: humanSize(run.bytes),
             segments: ended != null && expires != null ? [{ start: start, end: ended, kind: "" }, { start: ended, end: expires, kind: "hatch" }] : undefined,
             data: run
         });
@@ -1985,10 +1996,13 @@ const fillTimeline = function (d: RunFilesData, now: number): void {
         return data.name + "\n" + humanSize(data.size) + ", sent " + formatTime(data.created_at) +
             "\nread " + data.reads + " time" + (data.reads === 1 ? "" : "s") + (data.read_at ? ", last " + timeAgo(data.read_at) : "");
     };
-    el.setData({ lanes: lanes, intervals: intervals });
+    // A fixed window from the oldest run to the last deletion shows each keep window in full; a live chart stops at now.
     const pad = (last - first) * 0.03;
+    el.minTime = first - pad;
+    el.maxTime = last + pad;
+    el.setData({ lanes: lanes, intervals: intervals, markers: [{ time: now, label: "now" }] });
     el.setViewport(first - pad, last + pad);
-    el.style.height = Math.min(520, 70 + lanes.length * 30) + "px";
+    el.style.height = Math.min(560, 64 + lanes.length * 40) + "px";
 };
 
 interface RunTableRow {
@@ -2010,7 +2024,7 @@ const fillRunsTable = function (d: RunFilesData): void {
     const when = function (iso: string | null, empty: string): (row: RunTableRow) => Node {
         return function (): Node {
             const span = document.createElement("span");
-            span.textContent = iso ? timeAgo(iso) : empty;
+            span.textContent = iso ? shortAgo(iso) : empty;
             if (iso) span.title = formatTime(iso);
             return span;
         };
@@ -2048,7 +2062,7 @@ const fillRunsTable = function (d: RunFilesData): void {
 const untilNode = function (iso: string | null): Node {
     const span = document.createElement("span");
     if (!iso) {
-        span.textContent = "when it ends + keep";
+        span.textContent = "after end";
         span.className = "rf-dim";
         return span;
     }
@@ -2063,8 +2077,8 @@ const fillBytesChart = function (d: RunFilesData): void {
     if (!el) return;
     el.format = humanSize;
     el.series = [
-        { key: "live", label: "live run" },
-        { key: "ended", label: "ended, kept" }
+        { key: "live", label: "live run", color: RF_RUN_COLOR },
+        { key: "ended", label: "ended, kept", color: "#a78bfa" }
     ];
     el.rows = d.runs.slice().sort((a, b) => b.bytes - a.bytes).map(function (run) {
         const values: Record<string, number> = {};
