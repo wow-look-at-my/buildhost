@@ -9,6 +9,7 @@ import (
 	"context"
 	"log/slog"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -38,6 +39,26 @@ type Janitor struct {
 	Busy func() bool
 }
 
+// Report is what one pass of the janitor did.
+type Report struct {
+	At              time.Time `json:"at"`
+	DurationMS      int64     `json:"duration_ms"`
+	Deferred        bool      `json:"deferred"`
+	Checked         int       `json:"checked"`
+	CheckFailures   int       `json:"check_failures"`
+	LastCheckError  string    `json:"last_check_error,omitempty"`
+	Ended           int       `json:"ended"`
+	Deleted         int       `json:"deleted"`
+	PressureDeleted int       `json:"pressure_deleted"`
+	FreedBytes      int64     `json:"freed_bytes"`
+	Error           string    `json:"error,omitempty"`
+}
+
+var lastReport atomic.Pointer[Report]
+
+// LastReport returns the most recent pass, or nil before the first one.
+func LastReport() *Report { return lastReport.Load() }
+
 // Start runs Sweep every CheckInterval until ctx is done.
 func (j *Janitor) Start(ctx context.Context) {
 	slog.Info("run files janitor enabled", "keep", j.Keep, "min_free_percent", j.MinFreePercent)
@@ -51,6 +72,7 @@ func (j *Janitor) Start(ctx context.Context) {
 			case <-t.C:
 				if j.Busy != nil && j.Busy() {
 					slog.Info("run files: deferring sweep, writes in flight")
+					lastReport.Store(&Report{At: time.Now(), Deferred: true})
 					continue
 				}
 				if err := j.Sweep(ctx, time.Now()); err != nil {
@@ -62,8 +84,21 @@ func (j *Janitor) Start(ctx context.Context) {
 }
 
 // Sweep reads the status of the live runs, then deletes what no run needs.
+// It records what it did for LastReport.
 func (j *Janitor) Sweep(ctx context.Context, now time.Time) error {
-	if err := j.checkRuns(ctx, now); err != nil {
+	started := time.Now()
+	rep := &Report{At: now}
+	err := j.sweep(ctx, now, rep)
+	rep.DurationMS = time.Since(started).Milliseconds()
+	if err != nil {
+		rep.Error = err.Error()
+	}
+	lastReport.Store(rep)
+	return err
+}
+
+func (j *Janitor) sweep(ctx context.Context, now time.Time, rep *Report) error {
+	if err := j.checkRuns(ctx, now, rep); err != nil {
 		return err
 	}
 	runs, err := j.DB.RunStorageRuns(ctx)
@@ -74,31 +109,35 @@ func (j *Janitor) Sweep(ctx context.Context, now time.Time) error {
 	for _, run := range runs {
 		switch {
 		case run.EndedAt != nil && now.Sub(*run.EndedAt) >= j.Keep:
-			j.deleteRun(ctx, run, "ended "+now.Sub(*run.EndedAt).Round(time.Minute).String()+" ago")
+			j.deleteRun(ctx, run, "ended "+now.Sub(*run.EndedAt).Round(time.Minute).String()+" ago", rep)
 		case now.Sub(run.CreatedAt) >= MaxRunLifetime:
-			j.deleteRun(ctx, run, "older than the longest a run can last, and GitHub never reported its end")
+			j.deleteRun(ctx, run, "older than the longest a run can last, and GitHub never reported its end", rep)
 		case run.EndedAt != nil:
 			ended = append(ended, run)
 		}
 	}
-	return j.relievePressure(ctx, ended, runs)
+	return j.relievePressure(ctx, ended, runs, rep)
 }
 
-func (j *Janitor) checkRuns(ctx context.Context, now time.Time) error {
+func (j *Janitor) checkRuns(ctx context.Context, now time.Time, rep *Report) error {
 	runs, err := j.DB.RunsToCheck(ctx, now.Add(-CheckInterval))
 	if err != nil {
 		return err
 	}
 	for _, run := range runs {
 		key := db.RunKey{RepoID: run.RepoID, RunID: run.RunID}
+		rep.Checked++
 		endedAt, done, err := j.RunEnded(ctx, run.RepoPath, run.RunID)
 		if err != nil {
+			rep.CheckFailures++
+			rep.LastCheckError = err.Error()
 			slog.Warn("run files: cannot read the run's status from GitHub; its files stay until it can", "repo", run.RepoPath, "run_id", run.RunID, "err", err)
 			continue
 		}
 		var mark *time.Time
 		if done {
 			mark = &endedAt
+			rep.Ended++
 		}
 		if err := j.DB.MarkRunChecked(ctx, key, mark); err != nil {
 			return err
@@ -109,7 +148,7 @@ func (j *Janitor) checkRuns(ctx context.Context, now time.Time) error {
 
 // relievePressure deletes ended runs, oldest-ended first, until free disk is
 // back above MinFreePercent. ended is in that order already.
-func (j *Janitor) relievePressure(ctx context.Context, ended, all []db.ListRunStorageRunsRow) error {
+func (j *Janitor) relievePressure(ctx context.Context, ended, all []db.ListRunStorageRunsRow, rep *Report) error {
 	if j.MinFreePercent <= 0 {
 		return nil
 	}
@@ -128,7 +167,9 @@ func (j *Janitor) relievePressure(ctx context.Context, ended, all []db.ListRunSt
 		if err != nil || !isLow {
 			return err
 		}
-		j.deleteRun(ctx, run, "free disk is below "+formatPercent(j.MinFreePercent))
+		if j.deleteRun(ctx, run, "free disk is below "+formatPercent(j.MinFreePercent), rep) {
+			rep.PressureDeleted++
+		}
 	}
 	isLow, err := low()
 	if err != nil || !isLow {
@@ -144,18 +185,21 @@ func (j *Janitor) relievePressure(ctx context.Context, ended, all []db.ListRunSt
 	return nil
 }
 
-func (j *Janitor) deleteRun(ctx context.Context, run db.ListRunStorageRunsRow, reason string) {
+func (j *Janitor) deleteRun(ctx context.Context, run db.ListRunStorageRunsRow, reason string, rep *Report) bool {
 	keys, err := j.DB.DeleteRun(ctx, db.RunKey{RepoID: run.RepoID, RunID: run.RunID})
 	if err != nil {
 		slog.Error("run files: delete run failed", "repo", run.RepoPath, "run_id", run.RunID, "err", err)
-		return
+		return false
 	}
 	for _, key := range keys {
 		if _, err := retention.DeleteBlobIfUnreferenced(ctx, j.DB, j.Store, key, true); err != nil {
 			slog.Error("run files: delete blob failed", "key", key, "err", err)
 		}
 	}
+	rep.Deleted++
+	rep.FreedBytes += run.Bytes
 	slog.Info("run files deleted", "repo", run.RepoPath, "run_id", run.RunID, "bytes", run.Bytes, "reason", reason)
+	return true
 }
 
 func formatPercent(p float64) string {
