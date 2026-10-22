@@ -46,8 +46,6 @@ func render(baseURL string) []byte {
 	out = strings.ReplaceAll(out, "__OCI_HOST__", "oci."+host)
 	// The netrc machine line takes a bare host, not a URL.
 	out = strings.ReplaceAll(out, "__GOPROXY_HOST__", "goproxy."+host)
-	// The authenticated Homebrew tap URL carries the token as the HTTP Basic
-	out = strings.ReplaceAll(out, "__BREW_TOKEN_URL__", scheme+"x:$TOKEN@brew."+host)
 	out = strings.ReplaceAll(out, "__SITE_SECTION__", siteSection(scheme))
 
 	return []byte(out)
