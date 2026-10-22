@@ -966,6 +966,88 @@ jobs:
             kill "$(cat "${{ runner.temp }}/buildhost.pid")" || true
           fi
 
+  # The hand-off composite against this PR's own server, with the job's real OIDC token as the run's identity.
+  handoff-action-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
+      BUILDHOST_BASE_URL: http://localhost:18080
+      BUILDHOST_PRIMARY_DOMAIN: "*"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build-build.broot
+          path: build/
+      - run: chmod +x build/buildhost
+      - name: Start local buildhost (1 MiB direct-upload limit)
+        shell: bash
+        env:
+          BUILDHOST_DATA_DIR: ${{ runner.temp }}/buildhost-data
+          BUILDHOST_DB_PATH: ${{ runner.temp }}/buildhost-data/buildhost.db
+          BUILDHOST_ADMIN_LISTEN_ADDR: ""
+          BUILDHOST_MAX_DIRECT_UPLOAD_SIZE: "1048576"
+          BUILDHOST_OIDC_ORGS: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          ./build/buildhost serve > "${{ runner.temp }}/buildhost.log" 2>&1 &
+          echo "$!" > "${{ runner.temp }}/buildhost.pid"
+          for _ in {1..60}; do
+            if curl -fsS "$BUILDHOST_BASE_URL/healthz" >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "${{ runner.temp }}/buildhost.log"
+          exit 1
+      - name: Create the directory to hand off
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${{ runner.temp }}/sent/bin"
+          head -c 3158217 /dev/urandom > "${{ runner.temp }}/sent/bin/go"
+          chmod 0755 "${{ runner.temp }}/sent/bin/go"
+          ln -s ../bin/go "${{ runner.temp }}/sent/compile"
+          printf 'plain\n' > "${{ runner.temp }}/sent/notes.txt"
+      - name: Send
+        uses: ./.github/actions/buildhost-handoff
+        with:
+          mode: send
+          server: http://localhost:18080
+          name: toolchain-e2e
+          path: ${{ runner.temp }}/sent
+      - name: Receive
+        uses: ./.github/actions/buildhost-handoff
+        with:
+          mode: receive
+          server: http://localhost:18080
+          name: toolchain-e2e
+          path: ${{ runner.temp }}/received
+      - env:
+          LOG: ${{ runner.temp }}/buildhost.log
+          SENT: ${{ runner.temp }}/sent
+          RECEIVED: ${{ runner.temp }}/received
+          BASE: http://localhost:18080
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/handoff.dats
+      - name: Server log
+        if: always()
+        shell: bash
+        run: cat "${{ runner.temp }}/buildhost.log" || echo "buildhost log was not created"
+      - name: Stop local buildhost
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "${{ runner.temp }}/buildhost.pid" ]; then
+            kill "$(cat "${{ runner.temp }}/buildhost.pid")" || true
+          fi
+
   publish-ghcr:
     needs: container-healthcheck
     uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@lkgb

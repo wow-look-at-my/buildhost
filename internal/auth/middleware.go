@@ -41,7 +41,7 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 					rctx := WithOIDCError(r.Context(), err)
 					var eventErr *EventNotAllowedError
 					if errors.As(err, &eventErr) {
-						rctx = withRunLockOnlyRepo(rctx, OIDCRepoIdentity{
+						rctx = withRunOnlyRepo(rctx, OIDCRepoIdentity{
 							RepoPath:   vr.RepoPath,
 							Issuer:     vr.Issuer,
 							OwnerID:    vr.OwnerID,
