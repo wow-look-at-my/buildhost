@@ -126,6 +126,11 @@ type Config struct {
 	RetentionInterval     time.Duration
 	RetentionRecencyGuard time.Duration // never evict releases newer than this
 	RetentionEnforce      bool          // actually delete; false = report-only
+
+	// Run files: how long a run's files outlive the run, and the free disk share below which ended runs go sooner.
+	RunFilesKeep           time.Duration
+	RunFilesMinFreePercent float64
+	runFilesErr            error
 }
 
 // resolvePEM returns PEM contents from a config value that is either the PEM
@@ -174,7 +179,28 @@ func (c Config) Validate() error {
 			"\"example.com\"), or to \"" + PrimaryDomainAny + "\" to serve every " +
 			"Host (the historical host-agnostic behavior)")
 	}
-	return nil
+	return c.runFilesErr
+}
+
+// loadRunFiles reads the run file settings. A value that is set and does not
+// parse is an error for Validate, not a quiet return to the default.
+func (c *Config) loadRunFiles() {
+	if v := strings.TrimSpace(os.Getenv("BUILDHOST_RUN_FILES_KEEP")); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 0 {
+			c.runFilesErr = fmt.Errorf("BUILDHOST_RUN_FILES_KEEP=%q: want a non-negative Go duration, such as 24h", v)
+			return
+		}
+		c.RunFilesKeep = d
+	}
+	if v := strings.TrimSpace(os.Getenv("BUILDHOST_RUN_FILES_MIN_FREE_PERCENT")); v != "" {
+		p, err := strconv.ParseFloat(v, 64)
+		if err != nil || p < 0 || p >= 100 {
+			c.runFilesErr = fmt.Errorf("BUILDHOST_RUN_FILES_MIN_FREE_PERCENT=%q: want a number from 0 up to 100", v)
+			return
+		}
+		c.RunFilesMinFreePercent = p
+	}
 }
 
 func Load() Config {
@@ -190,7 +216,11 @@ func Load() Config {
 		RetentionInterval:     0,
 		RetentionRecencyGuard: 24 * time.Hour,
 		RetentionEnforce:      false,
+
+		RunFilesKeep:           24 * time.Hour,
+		RunFilesMinFreePercent: 10,
 	}
+	c.loadRunFiles()
 	if v := os.Getenv("BUILDHOST_LISTEN_ADDR"); v != "" {
 		c.ListenAddr = v
 	}
