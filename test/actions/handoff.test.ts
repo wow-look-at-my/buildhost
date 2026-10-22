@@ -1,9 +1,12 @@
 // Behavior tests for .github/actions/lib/handoff.ts: the archive round trip, and a download that breaks and resumes.
 
 import assert from 'node:assert';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import { createZstdCompress } from 'node:zlib';
 import { pack, unpack, fetchRunFile, runFilePath, tarCommand } from '../../.github/actions/lib/handoff.ts';
 import { HTTPError } from '../../.github/actions/lib/download.ts';
 import { serve, tempDir } from './fakes.ts';
@@ -24,6 +27,26 @@ async function roundTrip(tmp: string) {
 	assert.strictEqual(fs.readFileSync(path.join(dst, 'bin', 'go'), 'utf8'), 'binary', 'the contents survive');
 	assert.strictEqual(fs.statSync(path.join(dst, 'bin', 'go')).mode & 0o111, 0o111, 'the exec bit survives');
 	assert.strictEqual(fs.readlinkSync(path.join(dst, 'compile')), '../bin/go', 'a symlink stays a symlink');
+}
+
+async function bytesAfterTheEndMarker(tmp: string) {
+	const src = path.join(tmp, 'padded-src');
+	fs.mkdirSync(src, { recursive: true });
+	fs.writeFileSync(path.join(src, 'f'), 'payload');
+	const plain = path.join(tmp, 'padded.tar');
+	execFileSync(tarCommand(), ['-cf', plain, '-C', src, '.']);
+	fs.appendFileSync(plain, Buffer.alloc(4_000_000));
+	const archive = path.join(tmp, 'padded.tar.zst');
+	await pipeline(fs.createReadStream(plain), createZstdCompress(), fs.createWriteStream(archive));
+	const dst = path.join(tmp, 'padded-dst');
+	await unpack(archive, dst);
+	assert.strictEqual(fs.readFileSync(path.join(dst, 'f'), 'utf8'), 'payload', 'tar stops at its end marker, and the bytes after it are no failure');
+}
+
+async function corruptArchiveFails(tmp: string) {
+	const archive = path.join(tmp, 'garbage.tar.zst');
+	fs.writeFileSync(archive, 'not zstd');
+	await assert.rejects(unpack(archive, path.join(tmp, 'garbage-dst')));
 }
 
 async function resumes(tmp: string) {
@@ -65,6 +88,8 @@ async function corruptFails(tmp: string) {
 async function run() {
 	const tmp = tempDir('handoff-', {});
 	await roundTrip(tmp);
+	await bytesAfterTheEndMarker(tmp);
+	await corruptArchiveFails(tmp);
 	await resumes(tmp);
 	await missIsFinal(tmp);
 	await corruptFails(tmp);
