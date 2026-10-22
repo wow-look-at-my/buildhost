@@ -38,11 +38,11 @@ func TestServe_RendersBaseURL(t *testing.T) {
 	assert.Contains(t, body, "https://dl.pazer.build/myapp")
 	assert.Contains(t, body, "https://pazer.build/llms.txt")
 	assert.Contains(t, body, "brew trust https://brew.pazer.build/tap.git\nbrew tap pazer/build https://brew.pazer.build/tap.git\nbrew install pazer/build/go-toolchain")
-	// The authenticated-tap URL macro renders scheme + creds placeholder +
-	assert.Contains(t, body, `brew trust "https://x:$TOKEN@brew.pazer.build/private/tap.git"`+"\n"+`brew tap --custom-remote pazer/build "https://x:$TOKEN@brew.pazer.build/private/tap.git"`+"\n"+`brew update-reset "$(brew --repository pazer/build)"`)
+	// The token rides a git config header, never the tap URL.
+	assert.Contains(t, body, `brew trust "https://brew.pazer.build/private/tap.git"`+"\n"+`git config --global "http.https://brew.pazer.build/private/.extraHeader" "Authorization: Basic $(printf 'x:%s' "$TOKEN" | base64 | tr -d '\n')"`+"\n"+`brew tap --custom-remote pazer/build "https://brew.pazer.build/private/tap.git"`+"\n"+`brew update-reset "$(brew --repository pazer/build)"`)
+	assert.NotContains(t, body, "x:$TOKEN@")
 	assert.Contains(t, body, "brew install pazer/build/myrepo\n")
 	assert.Contains(t, body, "brew version-install pazer/build/go-toolchain@1.0.0\n")
-	assert.NotContains(t, body, "__BREW_TOKEN_URL__")
 	assert.NotContains(t, body, "brew install https://brew.pazer.build/myapp")
 	assert.Contains(t, body, "docker pull oci.pazer.build/myapp:latest")
 	assert.NotContains(t, body, "__BASE_URL__")

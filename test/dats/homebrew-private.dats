@@ -16,7 +16,7 @@ shared:
 			WORK="$(dirname "$ENV_FILE")"
 			"$REPO/scripts/brew-doc-flows.sh" private "$BREW_HOST" > "$WORK/private.sh"
 			echo "--- documented private flow, executed verbatim ---"
-			sed 's|x:[^@]*@|x:***@|' "$WORK/private.sh"
+			sed 's|Basic [^"]*|Basic ***|' "$WORK/private.sh"
 			TOKEN="$BUILDHOST_TOKEN" bash -euo pipefail "$WORK/private.sh"
 			TAP="$(brew --repository pazer/build)"
 			for _ in $(seq 60); do
@@ -88,19 +88,23 @@ tests:
 		stdout:
 			- "pazer/build/myrepo"
 
-	# `brew update` refreshes a tap by fetching its git remote, and for the
-	# authenticated tap the credentials live in that stored URL. Proving the
-	# refetch works is the cheap half of a full brew update.
-	- desc: the authenticated tap refetches with its stored credentials
+	# `brew update` refreshes a tap by fetching its git remote, with the token
+	# the git config header carries. A token in the remote URL makes git report
+	# a redirect, and Homebrew then rewrites the remote without the token.
+	- desc: the authenticated tap refetches through the header, with no redirect
 	  cmd: |
 		set -eu
 		. {shared.env}
 		remote="$(git -C "$TAP" remote get-url origin)"
 		case "$remote" in
+			*@*) echo "tap remote carries a credential: $remote" >&2; exit 1 ;;
 			*"/private/tap.git") ;;
 			*) echo "tap remote is not the private tap URL" >&2; exit 1 ;;
 		esac
-		git -C "$TAP" fetch origin
+		git -C "$TAP" fetch origin 2> fetch.err
+		if grep -q 'redirecting' fetch.err; then
+			echo "the fetch reported a redirect, which Homebrew acts on" >&2; cat fetch.err >&2; exit 1
+		fi
 		echo "refetch-ok"
 	  outputs:
 		stdout:
