@@ -58,6 +58,13 @@ func TestRunFile_RoundTrip(t *testing.T) {
 	assert.Equal(t, payload, rec.Body.Bytes())
 	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 	assert.Equal(t, put.SHA256, rec.Header().Get("X-Content-SHA256"))
+
+	require.Equal(t, http.StatusPartialContent, getRunFile(t, h, testRunRepo, "toolchain-Linux", http.Header{"Range": {"bytes=10-"}}).Code)
+	files, err := h.DB.ListRunFiles(t.Context(), db.RunKey{RepoID: testRunRepo.RepoID, RunID: testRunRepo.RunID})
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	assert.Equal(t, int64(1), files[0].Reads, "a download counts once; its resumed Range request does not")
+	assert.NotNil(t, files[0].ReadAt)
 }
 
 func TestRunFile_RangeResumes(t *testing.T) {

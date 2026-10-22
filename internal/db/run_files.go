@@ -59,6 +59,14 @@ func (d *DB) PutRunFile(ctx context.Context, key RunKey, name string, file RunBl
 	return old.StorageKey, nil
 }
 
+// MarkRunFileRead counts one download of the run's file under name.
+func (d *DB) MarkRunFileRead(ctx context.Context, key RunKey, name string) error {
+	if err := d.q.MarkRunFileRead(ctx, MarkRunFileReadParams{RepoID: key.RepoID, RunID: key.RunID, Name: name}); err != nil {
+		return fmt.Errorf("mark run file read: %w", err)
+	}
+	return nil
+}
+
 // ListRunFiles returns every file the run holds.
 func (d *DB) ListRunFiles(ctx context.Context, key RunKey) ([]ListRunFilesRow, error) {
 	rows, err := d.q.ListRunFiles(ctx, ListRunFilesParams{RepoID: key.RepoID, RunID: key.RunID})

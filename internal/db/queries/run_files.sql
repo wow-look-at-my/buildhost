@@ -22,9 +22,13 @@ ON CONFLICT (repo_id, run_id, name) DO UPDATE SET
     created_at  = datetime('now');
 
 -- name: ListRunFiles :many
-SELECT name, storage_key, size, created_at FROM run_files
+SELECT name, storage_key, size, created_at, reads, read_at FROM run_files
 WHERE repo_id = ? AND run_id = ?
 ORDER BY name;
+
+-- name: MarkRunFileRead :exec
+UPDATE run_files SET reads = reads + 1, read_at = datetime('now')
+WHERE repo_id = ? AND run_id = ? AND name = ?;
 
 -- name: ListRunsToCheck :many
 SELECT repo_id, run_id, repo_path FROM run_storage_runs
@@ -36,7 +40,7 @@ UPDATE run_storage_runs SET checked_at = datetime('now'), ended_at = sqlc.narg(e
 WHERE repo_id = sqlc.arg(repo_id) AND run_id = sqlc.arg(run_id);
 
 -- name: ListRunStorageRuns :many
-SELECT r.repo_id, r.run_id, r.repo_path, r.created_at, r.used_at, r.ended_at,
+SELECT r.repo_id, r.run_id, r.repo_path, r.created_at, r.used_at, r.ended_at, r.checked_at,
        CAST(COALESCE((SELECT SUM(f.size) FROM run_files f WHERE f.repo_id = r.repo_id AND f.run_id = r.run_id), 0) AS INTEGER) AS bytes
 FROM run_storage_runs r
 ORDER BY r.ended_at IS NULL, r.ended_at, r.created_at;

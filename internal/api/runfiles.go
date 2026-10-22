@@ -144,6 +144,13 @@ func (h *Handler) GetRunFile(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "failed to record run")
 		return
 	}
+	// A resumed download asks again with Range. Only the first request of a
+	// download counts as a read.
+	if r.Header.Get("Range") == "" {
+		if err := h.DB.MarkRunFileRead(ctx, key, name); err != nil {
+			slog.ErrorContext(ctx, "run file: count read", "err", err)
+		}
+	}
 
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/octet-stream")
