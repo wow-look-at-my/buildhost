@@ -1,5 +1,7 @@
 package web
 
+import _ "embed"
+
 import (
 	"fmt"
 	"html/template"
@@ -224,10 +226,7 @@ func buildInstallInfo(r *http.Request, project, version string, hasBinary bool) 
 		// A slash-namespaced project keeps its slash in the repo URL but installs
 		pkg := repackage.DebPackageName(project)
 		info.Apt = fmt.Sprintf(
-			"sudo install -d -m 0755 /etc/apt/keyrings\n"+
-				"curl -fsSL %s/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/buildhost.gpg\n"+
-				"echo \"deb [signed-by=/etc/apt/keyrings/buildhost.gpg] %s stable main\" | sudo tee /etc/apt/sources.list.d/%s.list\n"+
-				"sudo apt update && sudo apt install %s",
+			buildInstallInfoSh,
 			aptURL, aptURL, pkg, pkg)
 	}
 	return info
@@ -425,3 +424,6 @@ func plural(n int, unit string) string {
 	}
 	return fmt.Sprintf("%d %ss ago", n, unit)
 }
+
+//go:embed build-install-info.sh
+var buildInstallInfoSh string

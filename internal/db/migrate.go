@@ -1,5 +1,7 @@
 package db
 
+import _ "embed"
+
 import (
 	"fmt"
 	"sort"
@@ -8,10 +10,7 @@ import (
 )
 
 func (d *DB) migrate() error {
-	_, err := d.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
-		version TEXT PRIMARY KEY,
-		applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-	)`)
+	_, err := d.Exec(migrateSql)
 	if err != nil {
 		return fmt.Errorf("create migrations table: %w", err)
 	}
@@ -68,3 +67,6 @@ func (d *DB) applyMigration(name string) error {
 	}
 	return nil
 }
+
+//go:embed migrate.sql
+var migrateSql string

@@ -17,26 +17,31 @@ export function uploadedSha256(answer: unknown): string {
 	return row?.sha256 ?? '';
 }
 
+/** Sends the file at filePath to urlPath on server, directly or through an upload session, as the token or the job's OIDC token. */
+export async function uploadFile(
+	core: import('./upload').Core, server: string, token: string, urlPath: string, filePath: string,
+	headers: Record<string, string> = {}, chunkSize?: number,
+): Promise<import('./client').Response> {
+	const send = client(server, tokenSource(server, token), core);
+	const body = await fileBody(fsMod, filePath, await fileSHA256(filePath));
+	core.info(`Uploading ${body.size} bytes to ${urlPath}`);
+	return putFile(send, core, { urlPath, body, headers, chunkSize });
+}
+
 /** buildhost-upload-artifact: outputs response and sha256. A failure is reported through core.setFailed. */
 export async function uploadArtifact(g: ActionGlobals): Promise<void> {
 	const { core, inputs } = g;
 	const chunkSize = chunkSizeFrom(String(inputs.chunk_size));
 	if (typeof chunkSize === 'string') { core.setFailed(chunkSize); return; }
-	const filePath = String(inputs.path);
 	const platform = `${String(inputs.os)}/${String(inputs.arch)}`;
 	const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream' };
 	if (inputs.filename) headers['X-Artifact-Filename'] = String(inputs.filename);
 
-	const base = String(inputs.server);
-	const send = client(base, tokenSource(base, String(inputs.token)), core);
-	const body = await fileBody(fsMod, filePath, await fileSHA256(filePath));
-	core.info(`Uploading ${body.size} bytes (${platform})`);
 	let r: import('./client').Response;
 	try {
-		r = await putFile(send, core, {
-			urlPath: `/api/v1/projects/${String(inputs.project)}/releases/${String(inputs.version)}/artifacts/${platform}?kind=${String(inputs.kind)}`,
-			body, headers, chunkSize,
-		});
+		r = await uploadFile(core, String(inputs.server), String(inputs.token),
+			`/api/v1/projects/${String(inputs.project)}/releases/${String(inputs.version)}/artifacts/${platform}?kind=${String(inputs.kind)}`,
+			String(inputs.path), headers, chunkSize);
 	} catch (e) {
 		core.setFailed(e instanceof Error ? e.message : String(e));
 		return;

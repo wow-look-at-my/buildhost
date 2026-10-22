@@ -1,5 +1,7 @@
 package db
 
+import _ "embed"
+
 import (
 	"context"
 	"database/sql"
@@ -145,13 +147,7 @@ func (d *DB) DeleteSitesByRepositoryBranch(ctx context.Context, repositoryName, 
 	defer tx.Rollback()
 
 	prefixLike := escapeLike(repositoryName) + "/%"
-	rows, err := tx.QueryContext(ctx, `
-SELECT sites.project_id, projects.name, sites.branch, sites.storage_key
-FROM sites
-JOIN projects ON projects.id = sites.project_id
-WHERE sites.branch = ?
-  AND (projects.name = ? OR projects.name LIKE ? ESCAPE '\')
-ORDER BY projects.name`, branch, repositoryName, prefixLike)
+	rows, err := tx.QueryContext(ctx, deleteSitesByRepositoryBranchSql, branch, repositoryName, prefixLike)
 	if err != nil {
 		return nil, fmt.Errorf("list repository branch sites: %w", err)
 	}
@@ -178,13 +174,7 @@ ORDER BY projects.name`, branch, repositoryName, prefixLike)
 		return nil, nil
 	}
 
-	if _, err := tx.ExecContext(ctx, `
-DELETE FROM sites
-WHERE branch = ?
-  AND project_id IN (
-    SELECT id FROM projects
-    WHERE name = ? OR name LIKE ? ESCAPE '\'
-  )`, branch, repositoryName, prefixLike); err != nil {
+	if _, err := tx.ExecContext(ctx, deleteSitesByRepositoryBranchSql2, branch, repositoryName, prefixLike); err != nil {
 		return nil, fmt.Errorf("delete repository branch sites: %w", err)
 	}
 
@@ -200,3 +190,9 @@ func escapeLike(s string) string {
 	s = strings.ReplaceAll(s, `_`, `\_`)
 	return s
 }
+
+//go:embed delete-sites-by-repository-branch.sql
+var deleteSitesByRepositoryBranchSql string
+
+//go:embed delete-sites-by-repository-branch-2.sql
+var deleteSitesByRepositoryBranchSql2 string
