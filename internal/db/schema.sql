@@ -269,6 +269,8 @@ CREATE TABLE run_files (
     storage_key TEXT NOT NULL,
     size        INTEGER NOT NULL,
     created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    reads       INTEGER NOT NULL DEFAULT 0,
+    read_at     DATETIME,
     PRIMARY KEY (repo_id, run_id, name)
 );
 

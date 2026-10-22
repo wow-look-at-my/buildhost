@@ -19,6 +19,7 @@ import type {
     ReleaseData,
     RetentionData,
     RetentionInventory,
+    RunFilesData,
     ServiceURLs,
     SidebarData,
     SitesData,
@@ -112,6 +113,7 @@ var NAV_ITEMS = [
     { id: "tokens", href: "#/tokens", label: "Tokens", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/></svg>' },
     { id: "sites", href: "#/sites", label: "Sites", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4.083 9h1.946c.089-1.546.383-2.97.837-4.118A6.004 6.004 0 004.083 9zM10 2a8 8 0 100 16 8 8 0 000-16zm0 2c-.076 0-.232.032-.465.262-.238.234-.497.623-.737 1.182-.389.907-.673 2.142-.766 3.556h3.936c-.093-1.414-.377-2.649-.766-3.556-.24-.56-.5-.948-.737-1.182C10.232 4.032 10.076 4 10 4zm3.971 5c-.089-1.546-.383-2.97-.837-4.118A6.004 6.004 0 0115.917 9h-1.946zm-2.003 2H8.032c.093 1.414.377 2.649.766 3.556.24.56.5.948.737 1.182.233.23.389.262.465.262.076 0 .232-.032.465-.262.238-.234.497-.623.737-1.182.389-.907.673-2.142.766-3.556zm1.166 4.118c.454-1.147.748-2.572.837-4.118h1.946a6.004 6.004 0 01-2.783 4.118zm-6.268 0C6.412 13.97 6.118 12.546 6.029 11H4.083a6.004 6.004 0 002.783 4.118z" clip-rule="evenodd"/></svg>' },
     { id: "goproxy", href: "#/goproxy", label: "Go Proxy", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>' },
+    { id: "run-files", href: "#/run-files", label: "Run Files", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm1 5a1 1 0 100 2h7a1 1 0 100-2H4z"/></svg>' },
     { id: "oidc", href: "#/oidc", label: "OIDC Policies", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' },
     { id: "retention", href: "#/retention", label: "Retention", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>' },
     { id: "duplicates", href: "#/duplicates", label: "Duplicates", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M7 3a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V5a2 2 0 00-2-2H7z"/><path d="M3 7a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>' }
@@ -1534,6 +1536,7 @@ const route = function (): void {
     else if (first === "storage") { go(pages.storage); }
     else if (first === "retention") { go(pages.retention); }
     else if (first === "goproxy") { go(pages.goproxy); }
+    else if (first === "run-files") { go(pages.runFiles); }
     else if (first === "duplicates") { go(pages.duplicates); }
     else { go(pages.dashboard); }
 };
@@ -1606,6 +1609,35 @@ const demoData: Record<string, unknown> = {
     "/registries": { base_url: "https://builds.example.com", services: demoServices, projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
     "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com", services: demoServices },
     // The demo shows a repo mid-rename, which is the state this page exists for.
+    "/run-files": {
+        keep_seconds: 86400,
+        min_free_percent: 10,
+        total_bytes: 1_900_000_000,
+        disk_free: 412_000_000_000,
+        disk_total: 1_000_000_000_000,
+        runs: [
+            {
+                repo: "myorg/compiler", run_id: "18300112233",
+                created_at: new Date(Date.now() - 1800000).toISOString(),
+                used_at: new Date(Date.now() - 120000).toISOString(),
+                ended_at: null, expires_at: null, bytes: 1_500_000_000,
+                files: [
+                    { name: "toolchain-Linux", size: 1_200_000_000, sha256: "3f9a0c1d2e4b5a6978c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2", created_at: new Date(Date.now() - 1500000).toISOString() },
+                    { name: "ape-binary-Linux", size: 300_000_000, sha256: "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90", created_at: new Date(Date.now() - 1400000).toISOString() }
+                ]
+            },
+            {
+                repo: "myorg/compiler", run_id: "18299001122",
+                created_at: new Date(Date.now() - 30 * 3600000).toISOString(),
+                used_at: new Date(Date.now() - 21 * 3600000).toISOString(),
+                ended_at: new Date(Date.now() - 20 * 3600000).toISOString(),
+                expires_at: new Date(Date.now() + 4 * 3600000).toISOString(), bytes: 400_000_000,
+                files: [
+                    { name: "distpack-linux-amd64", size: 400_000_000, sha256: "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0", created_at: new Date(Date.now() - 27 * 3600000).toISOString() }
+                ]
+            }
+        ]
+    },
     "/duplicates": {
         groups: [{
             repo_id: "1287579802",
@@ -1806,6 +1838,53 @@ const setVersioning = function (name: string, versioning: string): void {
         if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); pages.project(name); });
         pages.project(name);
     }).catch(function () { alert("Could not change versioning (preview/demo mode has no backend)."); pages.project(name); });
+};
+
+pages.runFiles = function (): void {
+    setTitle("Run Files");
+    renderSidebar("run-files");
+    apiFetch<RunFilesData>("/run-files").then(function (d) {
+        var live = 0;
+        var fileCount = 0;
+        for (var i = 0; i < d.runs.length; i++) {
+            if (!d.runs[i].ended_at) live++;
+            fileCount += d.runs[i].files.length;
+        }
+        var html = "<h1>Run Files</h1>";
+        html += "<p>Directories that one job of a CI run hands to later jobs of the same run, through <code>buildhost-handoff</code>. " +
+            "A run's files go " + h(Math.round(d.keep_seconds / 3600)) + " hours after GitHub reports the run complete. " +
+            "Ended runs go sooner, oldest first, while free disk is below " + h(d.min_free_percent) + "%. A live run's files never go early.</p>";
+        html += '<div class="stat-grid">';
+        html += statTile(d.runs.length, "Runs");
+        html += statTile(live, "Live runs");
+        html += statTile(fileCount, "Files");
+        html += statTile(humanSize(d.total_bytes), "Stored");
+        if (d.disk_total) html += statTile(humanSize(d.disk_free || 0), "Disk free of " + humanSize(d.disk_total));
+        html += "</div>";
+        if (!d.runs.length) {
+            html += '<div class="card"><p class="empty">No CI run holds run files.</p></div>';
+            document.getElementById("content")!.innerHTML = html;
+            return;
+        }
+        for (var r = 0; r < d.runs.length; r++) {
+            var run = d.runs[r];
+            var runURL = "https://github.com/" + run.repo + "/actions/runs/" + run.run_id;
+            var state = run.ended_at
+                ? 'ended <span title="' + h(formatTime(run.ended_at)) + '">' + h(timeAgo(run.ended_at)) + "</span>, deleted after " + h(formatTime(run.expires_at))
+                : "live, last used " + h(timeAgo(run.used_at));
+            html += '<div class="card"><h2><a href="' + h(runURL) + '" target="_blank" rel="noopener">' + h(run.repo) + " #" + h(run.run_id) + "</a></h2>";
+            html += "<p>" + state + " &middot; " + h(humanSize(run.bytes)) + "</p>";
+            html += '<table class="data-table"><thead><tr><th>Name</th><th>Size</th><th>Sent</th><th>sha256</th></tr></thead><tbody>';
+            for (var f = 0; f < run.files.length; f++) {
+                var file = run.files[f];
+                html += "<tr><td><code>" + h(file.name) + "</code></td><td>" + h(humanSize(file.size)) + "</td>" +
+                    '<td title="' + h(formatTime(file.created_at)) + '">' + h(timeAgo(file.created_at)) + "</td>" +
+                    '<td><code title="' + h(file.sha256) + '">' + h(file.sha256.slice(0, 12)) + "</code></td></tr>";
+            }
+            html += "</tbody></table></div>";
+        }
+        document.getElementById("content")!.innerHTML = html;
+    });
 };
 
 pages.duplicates = function (): void {
