@@ -187,6 +187,15 @@ type RetentionSetting struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+type RunFile struct {
+	RepoID     string    `json:"repo_id"`
+	RunID      string    `json:"run_id"`
+	Name       string    `json:"name"`
+	StorageKey string    `json:"storage_key"`
+	Size       int64     `json:"size"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 type RunLock struct {
 	RepoID     string    `json:"repo_id"`
 	RunID      string    `json:"run_id"`
@@ -194,6 +203,16 @@ type RunLock struct {
 	Name       string    `json:"name"`
 	Value      string    `json:"value"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+type RunStorageRun struct {
+	RepoID    string     `json:"repo_id"`
+	RunID     string     `json:"run_id"`
+	RepoPath  string     `json:"repo_path"`
+	CreatedAt time.Time  `json:"created_at"`
+	UsedAt    time.Time  `json:"used_at"`
+	CheckedAt *time.Time `json:"checked_at"`
+	EndedAt   *time.Time `json:"ended_at"`
 }
 
 type Site struct {
