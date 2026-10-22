@@ -1,5 +1,7 @@
 package repackage
 
+import _ "embed"
+
 import (
 	"context"
 	"io"
@@ -34,17 +36,7 @@ func TestDebRepackage_ServiceUnit(t *testing.T) {
 	unit, ok := entries["./usr/lib/systemd/user/testapp.service"]
 	require.True(t, ok, "expected service unit, got entries: %v", keysOf(entries))
 
-	want := "[Unit]\n" +
-		"Description=A test application\n" +
-		"After=graphical-session.target\n" +
-		"PartOf=graphical-session.target\n" +
-		"\n" +
-		"[Service]\n" +
-		"ExecStart=/usr/bin/testapp\n" +
-		"Restart=on-failure\n" +
-		"\n" +
-		"[Install]\n" +
-		"WantedBy=graphical-session.target\n"
+	want := testDebRepackage_ServiceUnitToml
 	assert.Equal(t, want, unit)
 
 	_, ok = entries["./usr/bin/testapp"]
@@ -150,3 +142,6 @@ func keysOf(m map[string]string) []string {
 	}
 	return out
 }
+
+//go:embed testdata/test-deb-repackage-service-unit.toml
+var testDebRepackage_ServiceUnitToml string

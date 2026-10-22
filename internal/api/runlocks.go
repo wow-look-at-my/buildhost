@@ -39,7 +39,7 @@ const maxRunLockField = 1024
 // runLockKey returns the key for req, from the run the request's OIDC token
 // names. It writes the error and returns false when there is none.
 func runLockKey(w http.ResponseWriter, r *http.Request, req runLockRequest) (db.RunLockKey, bool) {
-	repo, ok := auth.RunLockRepoFrom(r.Context())
+	repo, ok := auth.RunRepoFrom(r.Context())
 	if !ok && auth.TokenFrom(r.Context()) == nil {
 		jsonError(w, http.StatusUnauthorized, "authentication required: present the job's GitHub Actions OIDC token")
 		return db.RunLockKey{}, false
