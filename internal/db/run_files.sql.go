@@ -109,7 +109,7 @@ func (q *Queries) ListRunBlobFiles(ctx context.Context) ([]ListRunBlobFilesRow, 
 }
 
 const listRunFiles = `-- name: ListRunFiles :many
-SELECT name, storage_key, size, created_at FROM run_files
+SELECT name, storage_key, size, created_at, reads, read_at FROM run_files
 WHERE repo_id = ? AND run_id = ?
 ORDER BY name
 `
@@ -120,10 +120,12 @@ type ListRunFilesParams struct {
 }
 
 type ListRunFilesRow struct {
-	Name       string    `json:"name"`
-	StorageKey string    `json:"storage_key"`
-	Size       int64     `json:"size"`
-	CreatedAt  time.Time `json:"created_at"`
+	Name       string     `json:"name"`
+	StorageKey string     `json:"storage_key"`
+	Size       int64      `json:"size"`
+	CreatedAt  time.Time  `json:"created_at"`
+	Reads      int64      `json:"reads"`
+	ReadAt     *time.Time `json:"read_at"`
 }
 
 func (q *Queries) ListRunFiles(ctx context.Context, arg ListRunFilesParams) ([]ListRunFilesRow, error) {
@@ -140,6 +142,8 @@ func (q *Queries) ListRunFiles(ctx context.Context, arg ListRunFilesParams) ([]L
 			&i.StorageKey,
 			&i.Size,
 			&i.CreatedAt,
+			&i.Reads,
+			&i.ReadAt,
 		); err != nil {
 			return nil, err
 		}
@@ -155,7 +159,7 @@ func (q *Queries) ListRunFiles(ctx context.Context, arg ListRunFilesParams) ([]L
 }
 
 const listRunStorageRuns = `-- name: ListRunStorageRuns :many
-SELECT r.repo_id, r.run_id, r.repo_path, r.created_at, r.used_at, r.ended_at,
+SELECT r.repo_id, r.run_id, r.repo_path, r.created_at, r.used_at, r.ended_at, r.checked_at,
        CAST(COALESCE((SELECT SUM(f.size) FROM run_files f WHERE f.repo_id = r.repo_id AND f.run_id = r.run_id), 0) AS INTEGER) AS bytes
 FROM run_storage_runs r
 ORDER BY r.ended_at IS NULL, r.ended_at, r.created_at
@@ -168,6 +172,7 @@ type ListRunStorageRunsRow struct {
 	CreatedAt time.Time  `json:"created_at"`
 	UsedAt    time.Time  `json:"used_at"`
 	EndedAt   *time.Time `json:"ended_at"`
+	CheckedAt *time.Time `json:"checked_at"`
 	Bytes     int64      `json:"bytes"`
 }
 
@@ -187,6 +192,7 @@ func (q *Queries) ListRunStorageRuns(ctx context.Context) ([]ListRunStorageRunsR
 			&i.CreatedAt,
 			&i.UsedAt,
 			&i.EndedAt,
+			&i.CheckedAt,
 			&i.Bytes,
 		); err != nil {
 			return nil, err
@@ -250,6 +256,22 @@ type MarkRunCheckedParams struct {
 
 func (q *Queries) MarkRunChecked(ctx context.Context, arg MarkRunCheckedParams) error {
 	_, err := q.db.ExecContext(ctx, markRunChecked, arg.EndedAt, arg.RepoID, arg.RunID)
+	return err
+}
+
+const markRunFileRead = `-- name: MarkRunFileRead :exec
+UPDATE run_files SET reads = reads + 1, read_at = datetime('now')
+WHERE repo_id = ? AND run_id = ? AND name = ?
+`
+
+type MarkRunFileReadParams struct {
+	RepoID string `json:"repo_id"`
+	RunID  string `json:"run_id"`
+	Name   string `json:"name"`
+}
+
+func (q *Queries) MarkRunFileRead(ctx context.Context, arg MarkRunFileReadParams) error {
+	_, err := q.db.ExecContext(ctx, markRunFileRead, arg.RepoID, arg.RunID, arg.Name)
 	return err
 }
 
