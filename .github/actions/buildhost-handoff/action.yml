@@ -1,0 +1,44 @@
+name: Buildhost - Hand-off
+description: >
+  Hands a directory from one job of a workflow run to later jobs of the same
+  run, through buildhost's run files. mode send packs path and stores it under
+  name. mode receive restores it into path. A run's files are kept until a day
+  after GitHub reports the run complete, and a re-run reads what an earlier
+  attempt sent. A receive whose name the run does not hold fails and names what
+  the run does hold. The job needs id-token write.
+
+inputs:
+  mode:
+    description: 'send or receive'
+    required: true
+  name:
+    description: 'Hand-off name, unique within the run: 1-128 of [A-Za-z0-9._-], starting with a letter or digit'
+    required: true
+  path:
+    description: 'send: the directory to hand off. receive: the directory to restore into. Defaults to the workspace'
+    required: false
+    default: ''
+  server:
+    description: 'Buildhost server URL'
+    required: false
+    default: 'https://pazer.build'
+  token:
+    description: "API token; omit to use the job's OIDC token, which is the run's identity"
+    required: false
+    default: ''
+
+outputs:
+  path:
+    description: 'receive: the directory the files were restored into'
+    value: ${{ steps.handoff.outputs.path }}
+
+runs:
+  using: composite
+  steps:
+    - id: handoff
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        inputs: ${{ toJSON(inputs) }}
+        script: |
+          const lib = require(${{ toJSON(format('{0}/../lib/handoff.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/handoff', github.action_path)) }});
+          await lib.handoff({ core, github, context, octokit, exec, inputs, steps });

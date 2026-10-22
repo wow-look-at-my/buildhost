@@ -8,31 +8,51 @@ import { tokenSource } from './oidc.ts';
 /** How long a transfer may go without a byte, before the headers or during the body. */
 export const DefaultStallMs = 30_000;
 
+/** A non-2xx answer. status says which, so a caller can tell a miss from a blip. */
+export class HTTPError extends Error {
+	readonly status: number;
+	constructor(status: number, body: string) {
+		super(`HTTP ${status}${body ? `: ${body.slice(0, 500)}` : ''}`);
+		this.status = status;
+	}
+}
+
 /**
- * Fetch url and return the whole body. It rejects on a non-2xx status, and
- * when no byte arrives for stallMs.
+ * Fetch url and hand each piece of the body to the writer that open returns for the response. It rejects with an HTTPError on a
+ * non-2xx status, and when no byte arrives for stallMs.
  */
-export async function fetchBody(url: string, headers: Record<string, string>, stallMs = DefaultStallMs): Promise<Buffer> {
+export async function fetchStream(
+	url: string, headers: Record<string, string>,
+	open: (response: Response) => (chunk: Uint8Array) => unknown,
+	stallMs = DefaultStallMs,
+): Promise<Response> {
 	const controller = new AbortController();
 	const stalled = () => controller.abort(new Error(`no bytes for ${stallMs / 1000}s`));
 	let timer = setTimeout(stalled, stallMs);
 	try {
 		const response = await fetch(url, { headers, redirect: 'follow', signal: controller.signal });
-		if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		if (!response.ok) throw new HTTPError(response.status, await response.text());
 		if (!response.body) throw new Error('response has no body');
-		const chunks: Buffer[] = [];
+		const write = open(response);
 		const reader = response.body.getReader();
 		for (;;) {
 			clearTimeout(timer);
 			timer = setTimeout(stalled, stallMs);
 			const { done, value } = await reader.read();
 			if (done) break;
-			chunks.push(Buffer.from(value));
+			await write(value);
 		}
-		return Buffer.concat(chunks);
+		return response;
 	} finally {
 		clearTimeout(timer);
 	}
+}
+
+/** Fetch url and return the whole body, on the terms of fetchStream. */
+export async function fetchBody(url: string, headers: Record<string, string>, stallMs = DefaultStallMs): Promise<Buffer> {
+	const chunks: Buffer[] = [];
+	await fetchStream(url, headers, () => (chunk) => chunks.push(Buffer.from(chunk)), stallMs);
+	return Buffer.concat(chunks);
 }
 
 const runnerArch: Record<string, string> = { X64: "amd64", ARM64: "arm64", X86: "386", ARM: "arm" };

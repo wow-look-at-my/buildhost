@@ -9,6 +9,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/diskusage"
 	"github.com/wow-look-at-my/buildhost/internal/sites"
 )
 
@@ -29,7 +30,7 @@ func (s *Server) apiSidebar(w http.ResponseWriter, r *http.Request) {
 		"cpu_percent": fmt.Sprintf("%.1f%%", cpuPct),
 	}
 
-	if du, err := getDiskUsage(s.cfg.DataDir); err == nil && du.Total > 0 {
+	if du, err := diskusage.Get(s.cfg.DataDir); err == nil && du.Total > 0 {
 		resp["disk_used"] = humanSize(int64(du.Used))
 		resp["disk_total"] = humanSize(int64(du.Total))
 	}
@@ -405,7 +406,7 @@ func (s *Server) apiStorage(w http.ResponseWriter, r *http.Request) {
 		slog.Error("admin api error", "err", err, "path", r.URL.Path)
 	}
 
-	if du, err := getDiskUsage(s.cfg.DataDir); err == nil && du.Total > 0 {
+	if du, err := diskusage.Get(s.cfg.DataDir); err == nil && du.Total > 0 {
 		resp["disk_used"] = du.Used
 		resp["disk_total"] = du.Total
 	}

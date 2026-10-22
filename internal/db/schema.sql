@@ -249,3 +249,27 @@ CREATE TABLE site_visibility (
     updated_at DATETIME NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (project_id, branch)
 );
+
+-- Run files (mirrored from migrations/022_run_files.sql).
+CREATE TABLE run_storage_runs (
+    repo_id    TEXT NOT NULL,
+    run_id     TEXT NOT NULL,
+    repo_path  TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    used_at    DATETIME NOT NULL DEFAULT (datetime('now')),
+    checked_at DATETIME,
+    ended_at   DATETIME,
+    PRIMARY KEY (repo_id, run_id)
+);
+
+CREATE TABLE run_files (
+    repo_id     TEXT NOT NULL,
+    run_id      TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    storage_key TEXT NOT NULL,
+    size        INTEGER NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (repo_id, run_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_run_files_storage_key ON run_files(storage_key);

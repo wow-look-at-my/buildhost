@@ -1,5 +1,7 @@
 package auth
 
+import _ "embed"
+
 // Responses for unauthenticated and unauthorized requests: the canonical
 
 import (
@@ -88,30 +90,13 @@ func signedInForbiddenHTML(w http.ResponseWriter, r *http.Request, login string,
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusForbidden)
-	fmt.Fprintf(w, `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Access denied</title>
-<style>
-  body { font-family: system-ui, -apple-system, sans-serif; max-width: 34rem; margin: 12vh auto; padding: 0 1.25rem; line-height: 1.55; }
-  h1 { font-size: 1.4rem; margin-bottom: .5rem; }
-  a.btn { display: inline-block; margin-top: 1rem; padding: .55rem .9rem; border: 1px solid; border-radius: .4rem; text-decoration: none; }
-  .hint { margin-top: 1.25rem; font-size: .85rem; opacity: .8; }
-</style>
-</head>
-<body>
-<h1>Access denied</h1>
-<p>%s</p>
-<div><a class="btn" href="%s">Sign out &amp; switch account</a></div>
-<p class="hint">To use a different account you may also need to <a href="https://github.com/logout">sign out of GitHub</a> first.</p>
-</body>
-</html>
-`, detail, esc(signoutURL(r)))
+	fmt.Fprintf(w, signedInForbiddenHTMLHtml, detail, esc(signoutURL(r)))
 }
 
 // prefersHTML reports whether the request came from a browser navigation (its
 func prefersHTML(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
+
+//go:embed signed-in-forbidden-html.html
+var signedInForbiddenHTMLHtml string
