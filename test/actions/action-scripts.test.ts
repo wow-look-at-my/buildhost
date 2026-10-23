@@ -172,6 +172,8 @@ for (const step of tsSteps) {
 	const env: Record<string, string | undefined> = {
 		...process.env,
 		GITHUB_WORKSPACE: root,
+		// The runner sets this for a step of a composite action: it is the action's own directory.
+		GITHUB_ACTION_PATH: step.actionDir,
 		GITHUB_REPOSITORY: 'o/r',
 		GITHUB_REF_NAME: 'main',
 		GITHUB_SHA: '0'.repeat(40),
