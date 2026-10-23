@@ -48,6 +48,18 @@ type ArtifactPlatform struct {
 	Ordinal    int64 `json:"ordinal"`
 }
 
+type CacheEntry struct {
+	RepoID     string    `json:"repo_id"`
+	Ref        string    `json:"ref"`
+	Key        string    `json:"key"`
+	RepoPath   string    `json:"repo_path"`
+	StorageKey string    `json:"storage_key"`
+	Size       int64     `json:"size"`
+	CreatedAt  time.Time `json:"created_at"`
+	UsedAt     time.Time `json:"used_at"`
+	Reads      int64     `json:"reads"`
+}
+
 type DownloadCount struct {
 	ArtifactID int64 `json:"artifact_id"`
 	Count      int64 `json:"count"`

@@ -130,7 +130,12 @@ type Config struct {
 	// Run files: how long a run's files outlive the run, and the free disk share below which ended runs go sooner.
 	RunFilesKeep           time.Duration
 	RunFilesMinFreePercent float64
-	runFilesErr            error
+
+	// Cache: how long an entry nothing restores is kept.
+	CacheKeep           time.Duration
+	CacheMinFreePercent float64
+
+	janitorErr error
 }
 
 // resolvePEM returns PEM contents from a config value that is either the PEM
@@ -179,28 +184,50 @@ func (c Config) Validate() error {
 			"\"example.com\"), or to \"" + PrimaryDomainAny + "\" to serve every " +
 			"Host (the historical host-agnostic behavior)")
 	}
-	return c.runFilesErr
+	return c.janitorErr
 }
 
-// loadRunFiles reads the run file settings. A value that is set and does not
-// parse is an error for Validate, not a quiet return to the default.
-func (c *Config) loadRunFiles() {
-	if v := strings.TrimSpace(os.Getenv("BUILDHOST_RUN_FILES_KEEP")); v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil || d < 0 {
-			c.runFilesErr = fmt.Errorf("BUILDHOST_RUN_FILES_KEEP=%q: want a non-negative Go duration, such as 24h", v)
-			return
+// loadJanitors reads the run file and cache settings. A value that is set and
+// does not parse is an error for Validate, not a quiet return to the default.
+func (c *Config) loadJanitors() {
+	for _, err := range []error{
+		strictDuration("BUILDHOST_RUN_FILES_KEEP", "24h", &c.RunFilesKeep),
+		strictPercent("BUILDHOST_RUN_FILES_MIN_FREE_PERCENT", &c.RunFilesMinFreePercent),
+		strictDuration("BUILDHOST_CACHE_KEEP", "168h", &c.CacheKeep),
+		strictPercent("BUILDHOST_CACHE_MIN_FREE_PERCENT", &c.CacheMinFreePercent),
+	} {
+		if err != nil && c.janitorErr == nil {
+			c.janitorErr = err
 		}
-		c.RunFilesKeep = d
 	}
-	if v := strings.TrimSpace(os.Getenv("BUILDHOST_RUN_FILES_MIN_FREE_PERCENT")); v != "" {
-		p, err := strconv.ParseFloat(v, 64)
-		if err != nil || p < 0 || p >= 100 {
-			c.runFilesErr = fmt.Errorf("BUILDHOST_RUN_FILES_MIN_FREE_PERCENT=%q: want a number from 0 up to 100", v)
-			return
-		}
-		c.RunFilesMinFreePercent = p
+}
+
+// strictDuration sets dst from the variable name when it is set.
+func strictDuration(name, example string, dst *time.Duration) error {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return nil
 	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return fmt.Errorf("%s=%q: want a non-negative Go duration, such as %s", name, v, example)
+	}
+	*dst = d
+	return nil
+}
+
+// strictPercent sets dst from the variable name when it is set.
+func strictPercent(name string, dst *float64) error {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return nil
+	}
+	p, err := strconv.ParseFloat(v, 64)
+	if err != nil || p < 0 || p >= 100 {
+		return fmt.Errorf("%s=%q: want a number from 0 up to 100", name, v)
+	}
+	*dst = p
+	return nil
 }
 
 func Load() Config {
@@ -219,8 +246,10 @@ func Load() Config {
 
 		RunFilesKeep:           24 * time.Hour,
 		RunFilesMinFreePercent: 10,
+		CacheKeep:              7 * 24 * time.Hour,
+		CacheMinFreePercent:    15,
 	}
-	c.loadRunFiles()
+	c.loadJanitors()
 	if v := os.Getenv("BUILDHOST_LISTEN_ADDR"); v != "" {
 		c.ListenAddr = v
 	}

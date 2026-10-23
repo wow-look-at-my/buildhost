@@ -354,6 +354,7 @@ export interface Pages {
     retention(): void;
     goproxy(): void;
     runFiles(): void;
+    cache(): void;
     duplicates(): void;
 }
 
@@ -521,4 +522,42 @@ export interface RunFilesData {
     disk_used?: number;
     runs: RunFilesRun[];
     janitor: RunFilesJanitor | null;
+}
+
+// --- CI cache (admin GET /api/cache) ---
+
+export interface CacheEntryRow {
+    repo: string;
+    ref: string;
+    key: string;
+    size: number;
+    sha256: string;
+    created_at: string;
+    used_at: string;
+    reads: number;
+    expires_at: string;
+}
+
+/** One pass of the cache janitor (cicache.Report). */
+export interface CacheJanitor {
+    at: string;
+    duration_ms: number;
+    deferred: boolean;
+    entries: number;
+    expired: number;
+    pressure_deleted: number;
+    freed_bytes: number;
+    error?: string;
+}
+
+export interface CacheData {
+    keep_seconds: number;
+    check_interval_seconds: number;
+    min_free_percent: number;
+    total_bytes: number;
+    disk_free?: number;
+    disk_total?: number;
+    disk_used?: number;
+    entries: CacheEntryRow[];
+    janitor: CacheJanitor | null;
 }

@@ -97,7 +97,7 @@ tests:
 		stdout:
 			- "download: all checks passed"
 
-	- desc: handoff packs a directory with its modes and symlinks, and resumes a broken receive
+	- desc: handoff packs a directory with its modes and symlinks, resumes a broken receive, and the cache restores the scope that matched
 	  cmd: node test/actions/handoff.test.ts
 	  outputs:
 		stdout:

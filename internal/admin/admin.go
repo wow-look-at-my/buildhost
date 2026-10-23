@@ -137,6 +137,7 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("PUT /api/retention", router.Allow, s.apiUpdateRetention)
 	mux.HandleFunc("GET /api/retention/inventory", router.Allow, s.apiRetentionInventory)
 	mux.HandleFunc("GET /api/run-files", router.Allow, s.apiRunFiles)
+	mux.HandleFunc("GET /api/cache", router.Allow, s.apiCache)
 	mux.HandleFunc("POST /api/retention/run", router.Allow, s.apiRunRetention)
 	mux.HandleFunc("GET /admin/inflight", router.Allow, InflightHandler)
 
