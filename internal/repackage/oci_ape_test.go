@@ -19,9 +19,9 @@ import (
 func apeELFHeaderFor(machine uint16) []byte {
 	header := make([]byte, apeELFHeaderSize)
 	copy(header, "\x7fELF")
-	header[4] = 2 // ELFCLASS64
-	header[5] = 1 // ELFDATA2LSB
-	header[6] = 1 // EV_CURRENT
+	header[4] = 2  // ELFCLASS64
+	header[5] = 1  // ELFDATA2LSB
+	header[6] = 1  // EV_CURRENT
 	header[16] = 2 // ET_EXEC
 	header[18] = byte(machine)
 	header[19] = byte(machine >> 8)
