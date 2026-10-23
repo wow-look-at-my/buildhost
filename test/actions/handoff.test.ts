@@ -178,9 +178,11 @@ async function cacheSaveOfAHeldKeySendsNothing(tmp: string) {
 }
 
 async function cacheInputsAreChecked(tmp: string) {
-	assert.deepStrictEqual(cacheTree('pkg/obj/go-build\n\nbin\nbin\n', '/home/u', '/w/repo'), { root: '/w/repo', members: ['bin', 'pkg/obj/go-build'] },
+	// The root is a host path: /w/repo resolves to D:\w\repo on Windows. The members are archive names, with / on every host.
+	const ws = path.resolve('/w/repo');
+	assert.deepStrictEqual(cacheTree('pkg/obj/go-build\n\nbin\nbin\n', '/home/u', '/w/repo'), { root: ws, members: ['bin', 'pkg/obj/go-build'] },
 		'paths inside the workspace are members of it, sorted once each, so another workspace directory restores them');
-	assert.deepStrictEqual(cacheTree('~/.cache/wasmtime\nout', '/home/u', '/w/repo'), { root: '/', members: ['home/u/.cache/wasmtime', 'w/repo/out'] },
+	assert.deepStrictEqual(cacheTree('~/.cache/wasmtime\nout', '/home/u', '/w/repo'), { root: path.parse(ws).root, members: ['home/u/.cache/wasmtime', 'w/repo/out'] },
 		'a path outside the workspace roots every path at the filesystem root');
 	assert.throws(() => cacheTree('src/**/*.o', '/home/u', '/w/repo'), /is a pattern/);
 	assert.throws(() => cacheTree('!skip', '/home/u', '/w/repo'), /is a pattern/);
