@@ -1,21 +1,5 @@
 #!/usr/bin/env bash
-# Log docker in to this buildhost's OCI registry with a freshly minted GitHub
-# Actions OIDC token.
-#
-# This is INTERNAL to the buildhost repo on purpose. Authenticating to buildhost
-# is an action's business, not its callers': a workflow that has to log in
-# before it can build or pull is an action that did not finish its job, and the
-# credential is short-lived, so "log in once at the top" is wrong anyway. Call
-# this immediately before the docker operation that needs it.
-#
-# It lives in lib/ because more than a single action does such an operation --
-# buildhost-publish-docker builds and pulls back, buildhost-docker-pull pulls.
-#
-# Bash rather than a buildhost CLI subcommand because this runs before the step
-# that fetches the CLI, and because there is no supported docker-login CLI path
-# for anything outside the official buildhost actions.
-#
-# Usage: docker-login.sh <server-url> (e.g. https://pazer.build)
+# Log docker in to this buildhost's OCI registry with a freshly minted GitHub Actions OIDC token.
 set -euo pipefail
 
 server="${1:?usage: docker-login.sh <server-url>}"

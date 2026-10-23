@@ -22,7 +22,6 @@ func (h *Handler) StartBlobUpload(w http.ResponseWriter, r *http.Request) {
 		if h.mountBlob(w, r, project, mount, r.URL.Query().Get("from")) {
 			return
 		}
-		// Not mountable. The spec's fallback is a normal upload session.
 	}
 
 	digest := r.URL.Query().Get("digest")

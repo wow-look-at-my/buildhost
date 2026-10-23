@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
 # Prints the buildx exporter's compression options for a single optional level.
-#
-# Published layers are always zstd (see docs/formats/oci.md); the level is the
-# only adjustable part. buildx reads an unparseable level as no level at all and
-# builds at the default, so a typo would publish at a compression nobody chose
-# and nothing would say so -- hence the explicit accept list and the hard exit.
 set -euo pipefail
 
 level="${1-}"

@@ -1,11 +1,5 @@
 // Asserts that a hosted site stays loadable CROSS-ORIGIN -- through its
 // redirects, in a real browser.
-//
-// This check exists because that stopped being true and every cross-origin
-// consumer broke at the same time.
-//
-// Nothing caught it. Only a real browser doing a real cross-origin import can
-// see this class of defect, which is exactly what runs below.
 
 const fs = require("node:fs");
 const os = require("node:os");
@@ -28,11 +22,8 @@ const HOST = `sites.localhost:${PORT}`;
 const SITES = `http://${HOST}`;
 const CONSUMER_ORIGIN = `http://localhost:${CONSUMER_PORT}`;
 const PROJECT = "cors-e2e";
-// The shape that actually broke: a PRIVATE project serving a single public
-// site branch (X-Public-Site), which is how every PR preview and published
-// library site under a private repo is served. A public project would not
-// exercise the public-read bypass at all, so a redirect that lost either the
-// CORS header or the anonymous bypass would go unnoticed.
+// The shape that broke: a PRIVATE project serving a single public site branch
+// (X-Public-Site), which is how every PR preview.
 const PRIVATE_PROJECT = "cors-e2e-private";
 const MARKER = "site-module-loaded";
 
@@ -165,7 +156,6 @@ try {
 			const r = await fetch(`http://127.0.0.1:${PORT}/healthz`);
 			if (r.ok) break;
 		} catch {
-			/* */
 		}
 		if (i > 100) throw new Error(`buildhost never became healthy:\n${serverLog}`);
 		await new Promise((r) => setTimeout(r, 100));
@@ -255,16 +245,10 @@ try {
 	// Plain serves, which were never broken -- so a regression here is caught too.
 	await assertChainCORS("canonical @branch file", `/${PROJECT}/@library/ui/mod.js`, false);
 	await assertChainCORS("bare apex file", `/${PROJECT}/index.html`, false);
-	// The production shape: private project, public site branch, ANONYMOUS (no
-	// token is ever sent above -- assertChainCORS sends only an Origin).
+	// The production shape.
 	await assertChainCORS("private project, public branch (legacy /branch/)", `/${PRIVATE_PROJECT}/branch/library/ui/mod.js`, true);
 
-	// This is the actual user-visible claim, and it covers what header
-	// assertions cannot: MIME type, CSP, and module specifier resolution
-	// against the post-redirect URL. The private-project/public-branch URL,
-	// because that is the production shape -- and the browser sends no
-	// credentials, so it also proves the anonymous public-read bypass holds
-	// across the redirect.
+	// This is the actual user-visible claim.
 	const MODULE_URL = `${SITES}/${PRIVATE_PROJECT}/branch/library/ui/mod.js`;
 	const page_html = `<!doctype html><meta charset=utf-8><title>consumer</title><script type="module">
   const done = (t) => { window.__result = t; };

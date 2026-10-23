@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # Stock Go cannot resolve the v0.0.0 placeholder that an org module keeps in go.mod.
-# This script pins each org module in the working tree to the branch head that go-toolchain resolves.
-# The script is for CI jobs that must build with stock Go. Never commit its go.mod or go.sum edits.
 set -euo pipefail
 
 branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:?GITHUB_REF_NAME is not set}}"

@@ -285,7 +285,7 @@ func (s *Service) ok(w http.ResponseWriter, r *http.Request, req request, source
 	s.record(req, source, outcome, http.StatusOK, "", started)
 }
 
-// fail answers a failed fetch. This is the single exit for every error.
+// fail answers a failed fetch. This is the exit for every error.
 func (s *Service) fail(w http.ResponseWriter, r *http.Request, req request, err error, started time.Time) {
 	e := asError(req.Module, req.Version, err)
 	logFailure(e)

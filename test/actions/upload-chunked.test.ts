@@ -1,10 +1,8 @@
 // Behavior tests for .github/actions/lib/upload.ts.
 //
-// A mistake here fails publishing for every repo in the org that ships a
-// binary larger than the advertised direct limit.
+// A mistake here fails publishing for every repo in the org that ships a binary larger than the advertised direct limit.
 //
-// The server here speaks the real session protocol from docs/uploads.md, so the
-// assertions are about what buildhost actually receives.
+// The server here speaks the real session protocol from docs/uploads.md, so the assertions are about what buildhost receives.
 
 import assert from 'node:assert';
 import * as http from 'node:http';

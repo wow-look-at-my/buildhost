@@ -1,10 +1,11 @@
 // buildhost-handoff: hands a directory from one job of a run to later jobs of the same run, through buildhost's run files.
 
-import { createReadStream, createWriteStream, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, type WriteStream } from 'node:fs';
-import { join, resolve, win32 } from 'node:path';
+import { createReadStream, createWriteStream, existsSync, mkdtempSync, rmSync, statSync, type WriteStream } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { createZstdCompress, createZstdDecompress } from 'node:zlib';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { tarOf, untar } from './tar.ts';
 import type { ActionGlobals } from './action-globals.ts';
 import { uploadFile } from './upload-artifact.ts';
 import { fileSHA256 } from './portable-manifest.ts';
@@ -21,46 +22,22 @@ export function runFilePath(name: string, env: NodeJS.ProcessEnv = process.env):
 	return `/api/v1/run-files/${encodeURIComponent(name)}?${new URLSearchParams({ repository, run_id: runID })}`;
 }
 
-/** The tar to run. Windows takes its own bsdtar, which reads drive-letter paths that Git's GNU tar mistakes for hosts. */
-export function tarCommand(platform = process.platform, env: NodeJS.ProcessEnv = process.env): string {
-	return platform === 'win32' ? win32.join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
+/** Writes members of dir, by default all of it, to archive as a zstd-compressed tar. Modes, symlinks and hardlinks survive. */
+export async function pack(dir: string, archive: string, members = ['.']): Promise<void> {
+	await pipeline(Readable.from(tarOf(dir, members)), createZstdCompress(), createWriteStream(archive));
 }
 
-function exited(child: ChildProcess, what: string): Promise<void> {
-	return new Promise((done, fail) => {
-		child.on('error', fail);
-		child.on('close', (code) => (code === 0 ? done() : fail(new Error(`${what} exited ${code}`))));
-	});
-}
-
-/** Writes dir's contents to archive as a zstd-compressed tar. Modes and symlinks survive. */
-export async function pack(dir: string, archive: string, tar = tarCommand()): Promise<void> {
-	const child = spawn(tar, ['-cf', '-', '-C', dir, '.'], { stdio: ['ignore', 'pipe', 'inherit'] });
-	await Promise.all([
-		exited(child, 'tar -c'),
-		pipeline(child.stdout!, createZstdCompress(), createWriteStream(archive)),
-	]);
-}
-
-/**
- * Extracts a pack archive into dir. GNU tar stops at the end-of-archive marker and exits 0 while bytes after the marker
- * are still unread. So a closed input after tar exits 0 is not a failure.
- */
-export async function unpack(archive: string, dir: string, tar = tarCommand()): Promise<void> {
-	mkdirSync(dir, { recursive: true });
-	const child = spawn(tar, ['-xf', '-', '-C', dir], { stdio: ['pipe', 'inherit', 'inherit'] });
-	const [extract, feed] = await Promise.allSettled([
-		exited(child, 'tar -x'),
-		pipeline(createReadStream(archive), createZstdDecompress(), child.stdin!),
-	]);
-	if (extract.status === 'rejected') throw extract.reason;
-	if (feed.status === 'rejected' && !closedByTar(feed.reason)) throw feed.reason;
-}
-
-/** Reports whether err is the write side seeing the reader close, rather than a read or decompression error. */
-function closedByTar(err: unknown): boolean {
-	const code = (err as NodeJS.ErrnoException | undefined)?.code;
-	return code === 'EPIPE' || code === 'ERR_STREAM_PREMATURE_CLOSE';
+/** Extracts a pack archive into dir. Extraction stops at the end-of-archive marker, so bytes after it are no failure. */
+export async function unpack(archive: string, dir: string): Promise<void> {
+	const file = createReadStream(archive);
+	const zstd = createZstdDecompress();
+	file.on('error', (e) => zstd.destroy(e));
+	try {
+		await untar(file.pipe(zstd), dir);
+	} finally {
+		file.destroy();
+		zstd.destroy();
+	}
 }
 
 /**
@@ -117,24 +94,46 @@ export async function handoff(g: ActionGlobals): Promise<void> {
 	if (!validName.test(name)) { g.core.setFailed(`invalid name '${name}': want 1-128 of [A-Za-z0-9._-], starting with a letter or digit`); return; }
 	if (mode !== 'send' && mode !== 'receive') { g.core.setFailed(`invalid mode '${mode}': want send or receive`); return; }
 	const urlPath = runFilePath(name);
-	const archive = join(process.env.RUNNER_TEMP || mkdtempSync('handoff-'), `handoff-${name}.tar.zst`);
 
-	try {
+	await withArchive(g, `${mode} ${name}`, async (archive) => {
 		if (mode === 'send') {
-			if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) { g.core.setFailed(`path ${dir} is not a directory`); return; }
-			await pack(dir, archive);
-			const resp = await uploadFile(g.core, server, token, urlPath, archive);
+			if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`path ${dir} is not a directory`);
+			const resp = await packAndUpload(g, server, token, dir, ['.'], archive, urlPath);
 			if (resp.status !== 201) { g.core.setFailed(`send ${name} failed (HTTP ${resp.status}): ${resp.text}`); return; }
 			g.core.info(`Sent ${dir} as run file ${name}: ${resp.text}`);
 			return;
 		}
-		await fetchRunFile(`${server}${urlPath}`, tokenSource(server, token).bearer, archive);
-		await unpack(archive, dir);
+		await downloadAndUnpack(`${server}${urlPath}`, tokenSource(server, token).bearer, archive, dir);
 		g.core.info(`Received run file ${name} into ${dir}`);
 		g.core.setOutput('path', dir);
+	});
+}
+
+/**
+ * Runs body with the path of a temporary archive, and deletes the archive afterwards. A throw fails the step, and the message
+ * starts with what.
+ */
+export async function withArchive(g: ActionGlobals, what: string, body: (archive: string) => Promise<void>): Promise<void> {
+	const archive = join(process.env.RUNNER_TEMP || mkdtempSync('buildhost-'), `buildhost-${process.pid}-${Date.now()}.tar.zst`);
+	try {
+		await body(archive);
 	} catch (e) {
-		g.core.setFailed(`${mode} ${name}: ${e instanceof Error ? e.message : String(e)}`);
+		g.core.setFailed(`${what}: ${e instanceof Error ? e.message : String(e)}`);
 	} finally {
 		rmSync(archive, { force: true });
 	}
+}
+
+/** Downloads the archive url serves, checked against its sha256, and extracts it into dir. */
+export async function downloadAndUnpack(url: string, bearer: () => Promise<string>, archive: string, dir: string): Promise<void> {
+	await fetchRunFile(url, bearer, archive);
+	await unpack(archive, dir);
+}
+
+/** Packs members of dir into archive and uploads it to urlPath. */
+export async function packAndUpload(
+	g: ActionGlobals, server: string, token: string, dir: string, members: string[], archive: string, urlPath: string,
+): Promise<import('./client').Response> {
+	await pack(dir, archive, members);
+	return uploadFile(g.core, server, token, urlPath, archive);
 }

@@ -2,8 +2,8 @@ FROM busybox:musl AS dirs
 RUN mkdir -p /data && chown 65532:65532 /data
 # The APE trampoline is a shell script, and it shells out -- cksum, tr, mkdir,
 # cp so far. Installing every applet name against the single static busybox
-# costs a directory of symlinks and stops the next command it needs from being
-# another failed container start. The links are relative, because this
+# costs a directory of symlinks. It stops the next command it needs from being
+# another failed container start. The links are relative. This is because this
 # directory lands somewhere else in the final image and an absolute link would
 # point at a path that is not there.
 RUN mkdir -p /shell && cp /bin/busybox /shell/busybox \

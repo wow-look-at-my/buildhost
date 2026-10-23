@@ -20,9 +20,7 @@ export interface MintOptions {
 
 export const RETRY_INTERVAL_MS = 2000;
 
-// GitHub's token endpoint sometimes answers with a proxy error page, such as
-// "upstream connect error", in place of JSON. That is transient, so the mint
-// retries it on a fixed interval.
+// GitHub's token endpoint sometimes answers with a proxy error page, such as "upstream connect error", in place of JSON. That is transient.
 export async function mintOidcToken(o: MintOptions): Promise<string>;
 /** Mints an OIDC token audience-scoped to the buildhost server. It answers null when the job may not mint one, and empty when the issuer sent none; a refusal throws OidcRefused. */
 export async function mintOidcToken(server: string, wait?: (ms: number) => Promise<unknown>): Promise<string | null>;
@@ -49,7 +47,7 @@ export async function mintOidcToken(arg: MintOptions | string, wait?: (ms: numbe
 				try { parsed = JSON.parse(text) as { value?: unknown }; } catch { parsed = undefined; }
 				const value = parsed?.value;
 				if (typeof value === 'string' && value !== '') return value;
-				// A JSON answer with no token is the issuer saying "none"; a body that is not JSON at all is a proxy's error page, which is transient.
+				// A JSON answer with no token is the issuer saying "none". A body that is not JSON at all is a proxy's error page, which is transient.
 				if (o.emptyIsNone && parsed !== undefined) return '';
 			}
 			problem = `HTTP ${r.status}: ${text.slice(0, 300)}`;

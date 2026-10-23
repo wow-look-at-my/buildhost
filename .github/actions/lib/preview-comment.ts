@@ -19,9 +19,7 @@ export interface Octokit {
 	};
 }
 
-/** A single sticky comment per published site. The marker carries the project
- * and the site branch, so a repo that publishes several sites off a single
- * commit keeps a single comment per site instead of overwriting itself. */
+/** A single sticky comment per published site. */
 export function marker(project: string, branch: string): string {
 	return `<!-- buildhost-preview:${project}/${branch} -->`;
 }

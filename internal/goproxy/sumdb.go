@@ -9,15 +9,13 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 )
 
-// sumdbName is the one checksum database this proxy mirrors. A GOSUMDB of
-// "<key> https://goproxy.{domain}/sumdb/sum.golang.org" reaches it.
+// sumdbName is the checksum database this proxy mirrors.
 const sumdbName = "sum.golang.org"
 
 // sumdbOrigin is where a mirrored request goes. A test replaces it.
 var sumdbOrigin = "https://" + sumdbName
 
-// The checksum database holds public modules only. The go command skips it for
-// every module in GONOSUMDB, so no private module path reaches this handler.
+// The checksum database holds public modules only.
 func registerSumDBRoutes() {
 	auth.ServiceHandleRaw(Subdomain, "GET /sumdb/{name}/{rest...}", serveSumDB)
 }

@@ -1,10 +1,5 @@
 #!/usr/bin/env node
 // Truncates the Go doc comments go-toolchain's commentspan analyzer reports.
-//
-// It truncates; it never rewords.
-//
-// The argument is the file:line commentspan prints, which is where the comment
-// group starts.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 

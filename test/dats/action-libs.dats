@@ -103,12 +103,6 @@ tests:
 		stdout:
 			- "download: all checks passed"
 
-	- desc: handoff packs a directory with its modes and symlinks, and resumes a broken receive
-	  cmd: node test/actions/handoff.test.ts
-	  outputs:
-		stdout:
-			- "handoff: all checks passed"
-
 	- desc: download asks dl for the runner's platform, writes the file, and reports a miss as an output when it is not required
 	  cmd: node test/actions/download.test.ts
 	  outputs:

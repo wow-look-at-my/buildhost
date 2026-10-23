@@ -1,8 +1,4 @@
 // Behavior tests for .github/actions/lib/preview-comment.ts.
-//
-// Nothing else reaches this code: a publish e2e runs against a local server with
-// no pull request to comment on. A mistake here posts the wrong link, or none,
-// on every repo in the org at the same time.
 
 import assert from 'node:assert';
 import { commentPreview, marker } from '../../.github/actions/lib/preview-comment.ts';
@@ -96,8 +92,7 @@ async function main(): Promise<void> {
 	console.log('preview-comment: all checks passed');
 }
 
-// Node runs this file directly, so the rejection has to become an exit code
-// here: an unhandled one prints a warning and still exits 0 on some versions.
+// Node runs this file directly.
 main().catch((err: unknown) => {
 	console.error(err);
 	process.exit(1);

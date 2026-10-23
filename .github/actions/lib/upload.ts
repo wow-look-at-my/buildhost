@@ -1,16 +1,4 @@
 // Delivering an artifact body from a composite action.
-//
-// So a body larger than the server's advertised `max_direct_upload_bytes` is
-// assembled through an upload session instead: POST /api/v1/uploads, PATCH
-// .../{id}?offset=N per chunk, then the ORIGINAL endpoint with an empty body
-// and ?upload_session=&upload_sha256=.
-//
-// The size decision is made BEFORE anything is sent, from server-info. This
-// mirrors internal/uploadclient, which is the CLI's engine for the same
-// protocol.
-//
-// Loaded by `require(".../upload.ts")` (node strips the types) typed as
-// `typeof import(".../upload")`. See docs/uploads.md.
 
 /* */
 export const DefaultChunkSize = 64 << 20;
@@ -65,7 +53,7 @@ export interface PutFileOptions {
 	body: Body;
 	/** Extra request headers, e.g. `X-Artifact-Filename`. */
 	headers?: Record<string, string>;
-	/** Bytes per chunk. 0 forces a direct upload however large the body is. */
+	/** Bytes per chunk. A value of zero forces a direct upload however large the body is. */
 	chunkSize?: number;
 	/** Largest direct body. */
 	directLimit?: number;
