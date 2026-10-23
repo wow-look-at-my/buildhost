@@ -108,8 +108,17 @@ func tarMode(mode fs.FileMode) int64 {
 	return bits
 }
 
+// hostPath spells an NT path with forward slashes.
+func hostPath(p string) string {
+	if hostOS() != "windows" {
+		return p
+	}
+	return strings.ReplaceAll(p, `\`, "/")
+}
+
 // Pack writes members of root, by default all of it, to w as a zstd-compressed pax tar.
 func Pack(w io.Writer, root string, members []string) error {
+	root = hostPath(root)
 	if len(members) == 0 {
 		members = []string{"."}
 	}
@@ -308,6 +317,7 @@ type delayed struct {
 // the end-of-archive marker. Hardlinks and symlinks are made after every file, so no entry writes through a link, and
 // directories get their modes and mtimes after their contents.
 func Unpack(r io.Reader, dir string) error {
+	dir = hostPath(dir)
 	zr, err := zstd.NewReader(r, zstd.WithDecoderConcurrency(runtime.GOMAXPROCS(0)))
 	if err != nil {
 		return err
