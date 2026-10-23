@@ -29,7 +29,9 @@ async function roundTrip(tmp: string) {
 	const dst = path.join(tmp, 'dst');
 	await unpack(archive, dst);
 	assert.strictEqual(fs.readFileSync(path.join(dst, 'bin', 'go'), 'utf8'), 'binary', 'the contents survive');
-	assert.strictEqual(fs.statSync(path.join(dst, 'bin', 'go')).mode & 0o111, 0o111, 'the exec bit survives');
+	// NTFS holds no exec bit, so node reports none on Windows.
+	const exec = process.platform === 'win32' ? 0 : 0o111;
+	assert.strictEqual(fs.statSync(path.join(dst, 'bin', 'go')).mode & 0o111, exec, 'the exec bit survives where the host holds one');
 	assert.strictEqual(fs.readlinkSync(path.join(dst, 'compile')).split(path.sep).join('/'), '../bin/go', 'a symlink stays a symlink');
 }
 
