@@ -36,13 +36,15 @@ export function cacheTree(text: string, home = homedir(), workspace = process.en
 	if (pattern) throw new Error(`path '${pattern}' is a pattern; the cache takes plain paths`);
 	const ws = resolve(workspace);
 	const abs = [...new Set(lines.map((p) => resolve(ws, p === '~' ? home : p.startsWith('~/') ? join(home, p.slice(2)) : p)))].sort();
+	// A member is an archive name, so it is spelled with / on every host.
+	const member = (from: string, p: string) => relative(from, p).split(sep).join('/') || '.';
 	if (abs.every((p) => p === ws || p.startsWith(ws + sep))) {
-		return { root: ws, members: abs.map((p) => relative(ws, p) || '.') };
+		return { root: ws, members: abs.map((p) => member(ws, p)) };
 	}
 	const root = parse(abs[0]).root;
 	const other = abs.find((p) => parse(p).root !== root);
 	if (other) throw new Error(`paths ${abs[0]} and ${other} are on different drives; an entry holds paths of one drive`);
-	return { root, members: abs.map((p) => relative(root, p) || '.') };
+	return { root, members: abs.map((p) => member(root, p)) };
 }
 
 /** The restore keys, one per line, in the order the restore tries them. */
