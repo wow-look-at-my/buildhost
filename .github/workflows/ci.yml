@@ -1006,6 +1006,29 @@ jobs:
             kill "$(cat "${{ runner.temp }}/buildhost.pid")" || true
           fi
 
+  # The archive runs on every host a consumer packs on. Windows' own tar crashed on trees that Linux packed fine.
+  handoff-archive:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - id: dats
+        uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
+      # NT finds an executable by its extension. A posix host does not care.
+      - shell: bash
+        run: |
+          cp "${{ steps.dats.outputs.path }}" "${{ runner.temp }}/dats.exe"
+          chmod +x "${{ runner.temp }}/dats.exe"
+          "${{ runner.temp }}/dats.exe" --no-sandbox -v test test/dats/handoff-archive.dats
+
   # The hand-off and cache composites against this PR's own server, with the job's real OIDC token as the run's identity.
   handoff-action-e2e:
     needs: build
