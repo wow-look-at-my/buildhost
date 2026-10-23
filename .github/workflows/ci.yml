@@ -102,12 +102,7 @@ jobs:
           generate: 3ed2a7fd952f
           timeout: '25'
           allow-source-build: 'true'
-      # The step above just ran every generate directive. If that changed a
-      # TRACKED file, this repo is carrying a build artifact in git -- and a
-      # tracked artifact is free to drift from the source it claims to be built
-      # from, silently, for as long as nobody rebuilds. That is exactly how the
-      # admin dashboard shipped a bundle nothing in frontend/src produced.
-      # See docs/no-committed-build-artifacts.md.
+      # The step above just ran every generate directive. If that changed a TRACKED file, this repo is carrying a build artifact in git. A tracked artifact is free to drift from the source it claims to be built from, silently, for as long as nobody rebuilds. That is exactly how the admin dashboard shipped a bundle nothing in frontend/src produced. See docs/no-committed-build-artifacts.md.
       - name: Inline action scripts must carry no stacked comments
         run: node .github/scripts/no-stacked-comments.ts .github/actions/*/action.yml .github/workflows/*.yml
 
@@ -135,14 +130,12 @@ jobs:
             echo "drifts from its source silently. See docs/no-committed-build-artifacts.md"
             exit 1
           fi
-      # Hand build/ to the downstream jobs via the run-scoped cache -- go-toolchain
-      # no longer uploads a go-build artifact.
+      # Hand build/ to the downstream jobs via the run-scoped cache -- go-toolchain no longer uploads a go-build artifact.
       - uses: wow-look-at-my/actions@cache-upload#latest
         with:
           name: go-build
           path: build/
-      # Zero the go-build handoff -- the gated Go DRY-suite checks below must run
-      # against the pristine repo tree, not the built binary in build/.
+      # Zero the go-build handoff -- the gated Go DRY-suite checks below must run against the pristine repo tree, not the built binary in build/.
       - uses: ./.github/actions/buildhost-download
         with:
           project: dats
@@ -1274,6 +1267,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       actions: write
       contents: read
     steps:
