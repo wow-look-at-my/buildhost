@@ -23,6 +23,8 @@ for mod in $mods; do
 		echo "$mod: default branch -> $version"
 	fi
 	go mod edit -require="$mod@$version"
+	# A v0.0.0-<stamp>-<hash> pseudo-version sorts below the v0.0.0 placeholder.
+	go mod edit -replace="$mod=$mod@$version"
 done
 rm -rf "$outside"
 
