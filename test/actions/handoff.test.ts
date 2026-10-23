@@ -6,11 +6,9 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createZstdCompress } from 'node:zlib';
 import { pack, unpack, fetchRunFile, runFilePath } from '../../.github/actions/lib/handoff.ts';
-import { tarOf, untar } from '../../.github/actions/lib/tar.ts';
 import { HTTPError } from '../../.github/actions/lib/download.ts';
 import { cacheTree, restoreKeyList, restoreCache, saveCache } from '../../.github/actions/lib/cache.ts';
 import { globalsOf, serve, stepCore, tempDir } from './fakes.ts';
@@ -83,18 +81,6 @@ async function restoreIntoTheFilesystemRoot(tmp: string) {
 	fs.rmSync(path.dirname(file), { recursive: true });
 	await unpack(archive, root);
 	assert.strictEqual(fs.readFileSync(file, 'utf8'), 'rooted', 'an entry rooted at the filesystem root restores');
-}
-
-async function escapingEntryIsRefused(tmp: string) {
-	const src = path.join(tmp, 'escape-src');
-	fs.mkdirSync(src);
-	fs.writeFileSync(path.join(src, 'xx_f'), 'x');
-	const chunks: Buffer[] = [];
-	for await (const c of tarOf(src)) chunks.push(c);
-	// "../f" is as long as "xx_f", so every length in the archive still holds.
-	const evil = Buffer.from(Buffer.concat(chunks).toString('latin1').split('xx_f').join('../f'), 'latin1');
-	await assert.rejects(untar(Readable.from([evil]), path.join(tmp, 'escape-dst')), /leaves the directory/);
-	assert.ok(!fs.existsSync(path.join(tmp, 'f')), 'nothing lands outside the directory');
 }
 
 // A cache entry an older action version saved was written by the host tar. It must still restore.
@@ -248,7 +234,6 @@ async function run() {
 	await roundTrip(tmp);
 	await metadataRoundTrip(tmp);
 	await restoreIntoTheFilesystemRoot(tmp);
-	await escapingEntryIsRefused(tmp);
 	await bytesAfterTheEndMarker(tmp);
 	await corruptArchiveFails(tmp);
 	await resumes(tmp);

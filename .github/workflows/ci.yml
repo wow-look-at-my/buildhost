@@ -1000,16 +1000,26 @@ jobs:
 
   # The archive runs on every host a consumer packs on. Windows' own tar crashed on trees that Linux packed fine.
   handoff-archive:
+    needs: build
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      # The archive is this PR's `buildhost archive`, not the published one.
+      BUILDHOST_CLI: ${{ github.workspace }}/build/buildhost
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build-build.broot
+          path: build/
+      - shell: bash
+        run: chmod +x build/buildhost
       - id: dats
         uses: ./.github/actions/buildhost-download
         with:
@@ -1032,6 +1042,7 @@ jobs:
       BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
       BUILDHOST_BASE_URL: http://localhost:18080
       BUILDHOST_PRIMARY_DOMAIN: "*"
+      BUILDHOST_CLI: ${{ github.workspace }}/build/buildhost
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/buildhost-download

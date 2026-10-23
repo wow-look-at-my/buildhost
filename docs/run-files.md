@@ -1,6 +1,6 @@
 # Run files
 
-A run file is a file one job of a GitHub Actions run hands to later jobs of the same run. The `buildhost-handoff` action is the client: `mode: send` packs a directory as a zstd-compressed tar and stores it under a name, and `mode: receive` restores it. It replaces a hand-off through the Actions cache. It also replaces which a busy repository evicts between the job that saves an entry and the job that reads it.
+A run file is a file one job of a GitHub Actions run hands to later jobs of the same run. The `buildhost-handoff` action is the client: `mode: send` packs a directory as a zstd-compressed tar and stores it under a name, and `mode: receive` restores it. `buildhost archive` (`internal/runarchive`) packs and extracts, so every host writes the same pax archive with nanosecond mtimes, symlinks and hardlinks. The action runs the CLI that `BUILDHOST_CLI` names, else the newest published one. It replaces a hand-off through the Actions cache. It also replaces which a busy repository evicts between the job that saves an entry and the job that reads it.
 
 A run file is not a release, a project or an artifact. Nothing outside its run reads it, `dl` and `static` never serve it, and the release retention never sees it.
 
