@@ -17,6 +17,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/brew"
 	"github.com/wow-look-at-my/buildhost/internal/buildinfo"
+	"github.com/wow-look-at-my/buildhost/internal/cicache"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/diskusage"
@@ -144,6 +145,15 @@ var serveCmd = &cobra.Command{
 			Keep:           cfg.RunFilesKeep,
 			MinFreePercent: cfg.RunFilesMinFreePercent,
 			RunEnded:       auth.GitHubRunEnded,
+			Disk:           diskusage.Get,
+			Busy:           func() bool { return admin.InflightWrites() > 0 },
+		}).Start(ctx)
+		(&cicache.Janitor{
+			DB:             database,
+			Store:          store,
+			DataDir:        cfg.DataDir,
+			Keep:           cfg.CacheKeep,
+			MinFreePercent: cfg.CacheMinFreePercent,
 			Disk:           diskusage.Get,
 			Busy:           func() bool { return admin.InflightWrites() > 0 },
 		}).Start(ctx)
