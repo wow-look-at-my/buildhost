@@ -1,13 +1,10 @@
 # The DOCUMENTED private Homebrew flow, executed verbatim, and what the
-# authenticated tap must then hold. Split from the public suite because the
-# docs say the authenticated tap REPLACES the public one under the same name.
-# Each suite's prefix holds one tap by that name.
+# authenticated tap must then hold. It runs after the public suite, on the
+# public tap that suite added and installed from. The documented flow repoints
+# that tap in place, and every formula installed through it must survive.
 #
 # The brew commands come from docs/homebrew.md through scripts/brew-doc-flows.sh. The
 # public suite is where the docs themselves are checked for agreement.
-#
-# The flow runs against this file's own private Homebrew prefix, built inside
-# its temp directory -- see homebrew-public.dats.
 #
 # see docs/formats/brew-tap.md
 
@@ -17,8 +14,6 @@ shared:
 			# Run the documented private flow. Writes $ENV_FILE.
 			set -eu
 			WORK="$(dirname "$ENV_FILE")"
-			"$REPO/scripts/brew-sandbox-prefix.sh" "$WORK" > "$ENV_FILE"
-			. "$ENV_FILE"
 			"$REPO/scripts/brew-doc-flows.sh" private "$BREW_HOST" > "$WORK/private.sh"
 			echo "--- documented private flow, executed verbatim ---"
 			sed 's|Basic [^"]*|Basic ***|' "$WORK/private.sh"
@@ -32,7 +27,7 @@ shared:
 			HOMEBREW_NO_GITHUB_API=1 HOMEBREW_BUILDHOST_TOKEN="$BUILDHOST_TOKEN" brew version-install pazer/build/myrepo@0.9.0
 			# brew-pubapp is public and depends on the private brew-secret. Only the public one is named here.
 			HOMEBREW_BUILDHOST_TOKEN="$BUILDHOST_TOKEN" brew install pazer/build/brew-pubapp
-			echo "TAP='$TAP'" >> "$ENV_FILE"
+			echo "TAP='$TAP'" > "$ENV_FILE"
 
 setup:
 	- cmd: env ENV_FILE={shared.env} REPO="$PWD" sh {shared.start.sh}
@@ -67,10 +62,7 @@ tests:
 			- "buildhost-homebrew-brew-pubapp-ok"
 
 	- desc: the privately installed binary executes
-	  cmd: |
-		set -eu
-		. {shared.env}
-		myapp
+	  cmd: myapp
 	  outputs:
 		stdout:
 			- "buildhost-homebrew-private-ok"
@@ -126,22 +118,22 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		(cd "$TAP/Formula" && find . -name '*.rb' | sed 's|^\./||' | sort) > {outputs.formulas.txt}
-		if grep -q '^7zip' {outputs.formulas.txt}; then
+		(cd "$TAP/Formula" && find . -name '*.rb' | sed 's|^\./||' | sort) > formulas.txt
+		if grep -q '^7zip' formulas.txt; then
 			echo "digit-leading project 7zip must be excluded: brew cannot load it" >&2; exit 1
 		fi
-		grep -qx 'dotted.app.rb' {outputs.formulas.txt} || {
-			echo "the dotted public project is missing from the tap" >&2; cat {outputs.formulas.txt} >&2; exit 1; }
-		grep -qx 'myrepo.rb' {outputs.formulas.txt} || {
-			echo "the private formula is missing from the tap" >&2; cat {outputs.formulas.txt} >&2; exit 1; }
-		if grep -q '[@/]' {outputs.formulas.txt}; then
-			echo "the tap must hold one formula per project, no versions" >&2; cat {outputs.formulas.txt} >&2; exit 1
+		grep -qx 'dotted.app.rb' formulas.txt || {
+			echo "the dotted public project is missing from the tap" >&2; cat formulas.txt >&2; exit 1; }
+		grep -qx 'myrepo.rb' formulas.txt || {
+			echo "the private formula is missing from the tap" >&2; cat formulas.txt >&2; exit 1; }
+		if grep -q '[@/]' formulas.txt; then
+			echo "the tap must hold one formula per project, no versions" >&2; cat formulas.txt >&2; exit 1
 		fi
 		while read -r f; do
 			brew ruby -- -c "$TAP/Formula/$f" | grep -q 'Syntax OK' \
 				|| { echo "formula $f is not valid Ruby" >&2; exit 1; }
-		done < {outputs.formulas.txt}
-		echo "formulas=$(wc -l < {outputs.formulas.txt} | tr -d ' ') all parse"
+		done < formulas.txt
+		echo "formulas=$(wc -l < formulas.txt | tr -d ' ') all parse"
 	  outputs:
 		stdout:
 			- "all parse"

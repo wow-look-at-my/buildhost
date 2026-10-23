@@ -34,9 +34,7 @@ Docker pulls and runs the same image too. "Pullable" is a claim about the client
 
 CI job `homebrew-tap-e2e` (`ci.yml`) runs the README-documented brew flows against a real spawned buildhost.
 
-Each suite runs them against a Homebrew prefix of its own. `scripts/brew-sandbox-prefix.sh` builds that prefix inside the suite's sandbox temp directory. It copies the runner's brew from the staging area the job puts in the workspace. The runner's own prefix sits under `/home` on Linux, which the sandbox does not bind. So the tap, the Cellar and the installed files all land where a sandboxed command may write. The assertions are unchanged: they are still about what brew did to a real file.
-
-This is also why the public and private legs need no `brew untap` between them. They never share a prefix.
+Each suite runs them on the runner's own Homebrew. The runner's brew prefix sits outside every sandbox the suites get, which is why they run with `--no-sandbox`. So the tap, the Cellar and the installed files are all real files on the runner. The assertions are about what brew did to those files. The private leg repoints in place the tap the public leg made, and every formula installed through it must survive the switch.
 
 The commands come from `scripts/brew-doc-flows.sh`. It extracts the fenced blocks from `README.md` and substitutes only the host. `test/dats/homebrew-public.dats` executes the public flow and asserts the served `/llms.txt` documents the same blocks. `homebrew-private.dats` executes the private flow and checks the authenticated tap. `homebrew-anon-leak.dats` clones the anonymous tap and probes the unauthorized formula paths.
 

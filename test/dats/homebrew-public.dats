@@ -6,12 +6,10 @@
 # served /llms.txt agrees with them.
 #
 # The workflow starts the server and publishes the artifacts; $BUILDHOST_TOKEN,
-# $BUILDHOST_BASE_URL, $BREW_HOST and $BREW_SOURCE come from it.
+# $BUILDHOST_BASE_URL and $BREW_HOST come from it.
 #
-# The flow runs against a private Homebrew prefix built inside this file's temp
-# directory by scripts/brew-sandbox-prefix.sh. So the tap, the Cellar and the
-# installed files are all somewhere a sandboxed command may write. The
-# assertions are unchanged: they are still about what brew did to a real file.
+# Runs on the host (--no-sandbox): brew's prefix is outside any sandbox this
+# would get, and the point is what brew did to a real file.
 #
 # see docs/formats/brew-tap.md
 
@@ -21,8 +19,6 @@ shared:
 			# Run the documented public flow. Writes $ENV_FILE.
 			set -eu
 			WORK="$(dirname "$ENV_FILE")"
-			"$REPO/scripts/brew-sandbox-prefix.sh" "$WORK" > "$ENV_FILE"
-			. "$ENV_FILE"
 			"$REPO/scripts/brew-doc-flows.sh" public "$BREW_HOST" > "$WORK/public.sh"
 			echo "--- documented public flow, executed verbatim ---"
 			cat "$WORK/public.sh"
@@ -49,7 +45,7 @@ shared:
 			cat "$WORK/version.sh"
 			HOMEBREW_NO_GITHUB_API=1 bash -euo pipefail "$WORK/version.sh"
 			HOMEBREW_NO_GITHUB_API=1 brew version-install pazer/build/versioned-fixture@1.0.0
-			echo "REPO='$REPO'" >> "$ENV_FILE"
+			echo "REPO='$REPO'" > "$ENV_FILE"
 			echo "TAP='$TAP'" >> "$ENV_FILE"
 
 setup:
@@ -63,19 +59,19 @@ tests:
 	  cmd: |
 		set -eu
 		. {shared.env}
-		curl -fsS "$BUILDHOST_BASE_URL/llms.txt" > {outputs.llms.txt}
+		curl -fsS "$BUILDHOST_BASE_URL/llms.txt" > llms.txt
 		# The served blocks are fenced with no language tag; the brew flows are
 		# the ones that open with `brew tap`.
 		awk '/^```/ { fence = !fence; if (fence) { buf = "" } else if (buf ~ /^brew trust /) { printf "%s", buf }; next }
-			fence { buf = buf $0 "\n" }' {outputs.llms.txt} > {outputs.llms-flows.txt}
-		test "$(grep -c '^brew trust ' {outputs.llms-flows.txt})" = "2" || {
+			fence { buf = buf $0 "\n" }' llms.txt > llms-flows.txt
+		test "$(grep -c '^brew trust ' llms-flows.txt)" = "2" || {
 			echo "llms.txt: want exactly 2 brew flow blocks (public, private)" >&2; exit 1; }
 		# llms.txt names the public host, so compare it after the same
 		# substitution the extractor applies to docs/homebrew.md.
-		sed -e 's|https://|http://|g' -e "s|brew\.pazer\.build|$BREW_HOST|g" {outputs.llms-flows.txt} > {outputs.llms-local.txt}
-		"$REPO/scripts/brew-doc-flows.sh" public "$BREW_HOST" > {outputs.readme-flows.txt}
-		"$REPO/scripts/brew-doc-flows.sh" private "$BREW_HOST" >> {outputs.readme-flows.txt}
-		diff -u {outputs.readme-flows.txt} {outputs.llms-local.txt}
+		sed -e 's|https://|http://|g' -e "s|brew\.pazer\.build|$BREW_HOST|g" llms-flows.txt > llms-local.txt
+		"$REPO/scripts/brew-doc-flows.sh" public "$BREW_HOST" > readme-flows.txt
+		"$REPO/scripts/brew-doc-flows.sh" private "$BREW_HOST" >> readme-flows.txt
+		diff -u readme-flows.txt llms-local.txt
 		echo "docs-agree"
 	  outputs:
 		stdout:
@@ -93,15 +89,15 @@ tests:
 		header="^git config --global \"http\\.http://$BREW_HOST/private/\\.extraHeader\" \"Authorization: Basic "
 		for leg in public private; do
 			"$REPO/scripts/brew-doc-flows.sh" "$leg" "$BREW_HOST" \
-				| grep -v '^[[:space:]]*$' | grep -v '^#' > {outputs.flow.txt}
-			if grep -v '^\(brew\|export\) ' {outputs.flow.txt} | grep -qv "$header"; then
-				echo "$leg flow has a line that is not brew, export or the token header:" >&2; cat {outputs.flow.txt} >&2; exit 1
+				| grep -v '^[[:space:]]*$' | grep -v '^#' > flow.txt
+			if grep -v '^\(brew\|export\) ' flow.txt | grep -qv "$header"; then
+				echo "$leg flow has a line that is not brew, export or the token header:" >&2; cat flow.txt >&2; exit 1
 			fi
 			if [ "$leg" = private ]; then
-				grep -q "$header" {outputs.flow.txt} || { echo "private flow lost the token header" >&2; exit 1; }
+				grep -q "$header" flow.txt || { echo "private flow lost the token header" >&2; exit 1; }
 			fi
 			for want in 'brew tap ' 'brew trust ' 'brew install '; do
-				grep -q "^$want" {outputs.flow.txt} || { echo "$leg flow lost $want" >&2; exit 1; }
+				grep -q "^$want" flow.txt || { echo "$leg flow lost $want" >&2; exit 1; }
 			done
 		done
 		echo "flow-shape-ok"
@@ -115,7 +111,6 @@ tests:
 	- desc: the installed binary keeps both the execute and the write bit
 	  cmd: |
 		set -euo pipefail
-		. {shared.env}
 		bin="$(brew --prefix pazer/build/go-toolchain)/bin/go-toolchain"
 		ls -l "$bin"
 		test -x "$bin" || { echo "not executable -- Homebrew's Cleaner chmods unrecognized files 0444"; exit 1; }
@@ -130,10 +125,7 @@ tests:
 	# load-bearing. `version` exits 0 even when its update check cannot reach
 	# GitHub, so this is not a network-flaky assertion.
 	- desc: the publicly installed binary executes
-	  cmd: |
-		set -eu
-		. {shared.env}
-		go-toolchain version
+	  cmd: go-toolchain version
 	  outputs:
 		stdout:
 			- "Version:"
@@ -207,7 +199,6 @@ tests:
 	- desc: an APE-shaped formula installs, keeps its mode, and runs
 	  cmd: |
 		set -euo pipefail
-		. {shared.env}
 		bin="$(brew --prefix pazer/build/ape-fixture)/bin/ape-fixture"
 		ls -l "$bin"
 		test -x "$bin" || { echo "not executable (Cleaner chmods unrecognized files 0444)"; exit 1; }
