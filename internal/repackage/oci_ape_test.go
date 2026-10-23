@@ -115,11 +115,11 @@ func TestOCIRepackage_APEImageIsRunnable(t *testing.T) {
 		} `json:"layers"`
 	}
 	require.NoError(t, json.Unmarshal(manifest, &man))
-	require.Len(t, man.Layers, 3, "an APE image carries base + busybox shell + binary layers")
+	require.Len(t, man.Layers, 2, "an APE image carries the base, shell included, and the binary")
 
-	// The middle layer is the busybox shell: /bin/busybox plus the applet symlinks the APE prologue needs.
-	shell := fetch(man.Layers[1].Digest)
-	zr, err := zstd.NewReader(bytes.NewReader(shell))
+	// The base layer carries the busybox shell: /bin/busybox plus the applet symlinks.
+	base := fetch(man.Layers[0].Digest)
+	zr, err := zstd.NewReader(bytes.NewReader(base))
 	require.NoError(t, err)
 	defer zr.Close()
 	tr := tar.NewReader(zr)
@@ -147,7 +147,7 @@ func TestOCIRepackage_APEImageIsRunnable(t *testing.T) {
 	}
 
 	binHdr, ok := entries["bin/busybox"]
-	require.True(t, ok, "the shell layer must contain /bin/busybox")
+	require.True(t, ok, "the base layer must contain /bin/busybox")
 	assert.Equal(t, byte(tar.TypeReg), binHdr.Typeflag)
 	assert.Equal(t, int64(0o755), binHdr.Mode)
 	assert.Greater(t, binSize, int64(100*1024), "the busybox binary is ~1MB, not a stub")
@@ -177,7 +177,7 @@ func TestOCIRepackage_APEImageIsRunnable(t *testing.T) {
 	require.NoError(t, json.Unmarshal(cfg, &config))
 	assert.Equal(t, []string{"/bin/sh", "/testapp"}, config.Config.Entrypoint,
 		"an APE must run through the shipped shell, not direct exec")
-	require.Len(t, config.Rootfs.DiffIDs, 3, "base + shell + binary")
+	require.Len(t, config.Rootfs.DiffIDs, 2, "base + binary")
 }
 
 // A non-APE binary is a native ELF and keeps today's lean image: direct exec,
