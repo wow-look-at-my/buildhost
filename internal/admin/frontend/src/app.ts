@@ -22,6 +22,8 @@ import type {
     RunFile,
     RunFilesData,
     RunFilesRun,
+    CacheData,
+    CacheEntryRow,
     ServiceURLs,
     SidebarData,
     SitesData,
@@ -117,6 +119,7 @@ var NAV_ITEMS = [
     { id: "sites", href: "#/sites", label: "Sites", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4.083 9h1.946c.089-1.546.383-2.97.837-4.118A6.004 6.004 0 004.083 9zM10 2a8 8 0 100 16 8 8 0 000-16zm0 2c-.076 0-.232.032-.465.262-.238.234-.497.623-.737 1.182-.389.907-.673 2.142-.766 3.556h3.936c-.093-1.414-.377-2.649-.766-3.556-.24-.56-.5-.948-.737-1.182C10.232 4.032 10.076 4 10 4zm3.971 5c-.089-1.546-.383-2.97-.837-4.118A6.004 6.004 0 0115.917 9h-1.946zm-2.003 2H8.032c.093 1.414.377 2.649.766 3.556.24.56.5.948.737 1.182.233.23.389.262.465.262.076 0 .232-.032.465-.262.238-.234.497-.623.737-1.182.389-.907.673-2.142.766-3.556zm1.166 4.118c.454-1.147.748-2.572.837-4.118h1.946a6.004 6.004 0 01-2.783 4.118zm-6.268 0C6.412 13.97 6.118 12.546 6.029 11H4.083a6.004 6.004 0 002.783 4.118z" clip-rule="evenodd"/></svg>' },
     { id: "goproxy", href: "#/goproxy", label: "Go Proxy", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>' },
     { id: "run-files", href: "#/run-files", label: "Run Files", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm1 5a1 1 0 100 2h7a1 1 0 100-2H4z"/></svg>' },
+    { id: "cache", href: "#/cache", label: "CI Cache", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 5c0-1.1 3.1-2 7-2s7 .9 7 2v10c0 1.1-3.1 2-7 2s-7-.9-7-2V5zm7 2c3.9 0 7-.9 7-2s-3.1-2-7-2-7 .9-7 2 3.1 2 7 2z"/></svg>' },
     { id: "oidc", href: "#/oidc", label: "OIDC Policies", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' },
     { id: "retention", href: "#/retention", label: "Retention", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>' },
     { id: "duplicates", href: "#/duplicates", label: "Duplicates", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M7 3a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V5a2 2 0 00-2-2H7z"/><path d="M3 7a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>' }
@@ -1524,6 +1527,7 @@ const route = function (): void {
     else if (first === "retention") { go(pages.retention); }
     else if (first === "goproxy") { go(pages.goproxy); }
     else if (first === "run-files") { go(pages.runFiles); }
+    else if (first === "cache") { go(pages.cache); }
     else if (first === "duplicates") { go(pages.duplicates); }
     else { go(pages.dashboard); }
 };
@@ -1575,6 +1579,37 @@ const demoRunFiles = function (): RunFilesData {
             at: ago(0.06), duration_ms: 412, deferred: false, checked: 2, check_failures: 0,
             ended: 0, deleted: 1, pressure_deleted: 0, freed_bytes: 2_150_000_000
         }
+    };
+};
+
+// Entries on master and on a pull request, one restored often and one near its expiry.
+const demoCache = function (): CacheData {
+    const ago = function (hours: number): string { return new Date(Date.now() - hours * 3600000).toISOString(); };
+    const keep = 7 * 24;
+    const entry = function (repo: string, ref: string, key: string, size: number, created: number, used: number, reads: number): CacheEntryRow {
+        return {
+            repo: repo, ref: ref, key: key, size: size, sha256: (key + "0".repeat(64)).replace(/[^0-9a-f]/g, "a").slice(0, 64),
+            created_at: ago(created), used_at: ago(used), reads: reads, expires_at: ago(used - keep)
+        };
+    };
+    const entries = [
+        entry("myorg/compiler", "refs/heads/master", "dist-bootstrap-Linux-X64-9f1c2e", 410_000_000, 30, 0.2, 41),
+        entry("myorg/compiler", "refs/heads/master", "wasmtime-modules-wasip1-9f1c2e", 4_600_000_000, 30, 1.5, 12),
+        entry("myorg/compiler", "refs/pull/341/merge", "dist-bootstrap-Linux-X64-17bcab", 405_000_000, 9, 9, 0),
+        entry("myorg/registry", "refs/heads/main", "node-modules-3a77e1", 220_000_000, 160, 150, 3)
+    ];
+    let total = 0;
+    for (const e of entries) total += e.size;
+    return {
+        keep_seconds: keep * 3600,
+        check_interval_seconds: 300,
+        min_free_percent: 15,
+        total_bytes: total,
+        disk_total: 500_000_000_000,
+        disk_used: 438_000_000_000,
+        disk_free: 62_000_000_000,
+        entries: entries,
+        janitor: { at: ago(0.06), duration_ms: 38, deferred: false, entries: 5, expired: 1, pressure_deleted: 0, freed_bytes: 180_000_000 }
     };
 };
 
@@ -1644,6 +1679,7 @@ const demoData: Record<string, unknown> = {
     "/registries": { base_url: "https://builds.example.com", services: demoServices, projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
     "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com", services: demoServices },
     "/run-files": demoRunFiles(),
+    "/cache": demoCache(),
     // The demo shows a repo mid-rename, which is the state this page exists for.
     "/duplicates": {
         groups: [{
@@ -1910,7 +1946,7 @@ const renderRunFiles = function (d: RunFilesData): void {
     if (!d.runs.length) {
         html += '<section class="rf-panel"><p class="empty">No CI run holds run files.</p></section>';
         document.getElementById("content")!.innerHTML = html;
-        fillDiskChart(d);
+        fillDiskChart("rf-disk", "run files", d);
         return;
     }
     html += '<section class="rf-panel"><h2>Lifecycle <span class="rf-hint">solid: run live &middot; hatched: kept after the run ended &middot; pips: file sent</span></h2>' +
@@ -1920,7 +1956,7 @@ const renderRunFiles = function (d: RunFilesData): void {
         '<section class="rf-panel"><h2>Bytes per run</h2><bar-chart id="rf-bytes" show-values></bar-chart></section>' +
         "</div>";
     document.getElementById("content")!.innerHTML = html;
-    fillDiskChart(d);
+    fillDiskChart("rf-disk", "run files", d);
     fillTimeline(d, now);
     fillRunsTable(d);
     fillBytesChart(d);
@@ -1943,14 +1979,16 @@ const janitorLine = function (d: RunFilesData): string {
     return '<p class="rf-janitor">' + s + "</p>";
 };
 
-const fillDiskChart = function (d: RunFilesData): void {
-    const el = document.getElementById("rf-disk") as BarChartElement | null;
+type DiskShare = Pick<RunFilesData, "disk_total" | "disk_used" | "disk_free" | "total_bytes" | "min_free_percent">;
+
+const fillDiskChart = function (id: string, label: string, d: DiskShare): void {
+    const el = document.getElementById(id) as BarChartElement | null;
     if (!el || !d.disk_total) return;
     const used = d.disk_used ?? d.disk_total - (d.disk_free ?? 0);
     el.format = humanSize;
     el.max = d.disk_total;
     el.series = [
-        { key: "run", label: "run files", color: RF_RUN_COLOR },
+        { key: "run", label: label, color: RF_RUN_COLOR },
         { key: "other", label: "everything else", color: "#6b7178" },
         { key: "free", label: "free", muted: true }
     ];
@@ -2085,6 +2123,76 @@ const fillBytesChart = function (d: RunFilesData): void {
         values[run.ended_at ? "ended" : "live"] = run.bytes;
         return { id: run.repo + "#" + run.run_id, label: runLabel(run), values: values, href: runURL(run), detail: run.files.length + " files" };
     });
+};
+
+pages.cache = function (): void {
+    setTitle("CI Cache");
+    renderSidebar("cache");
+    Promise.all([apiFetch<CacheData>("/cache"), loadRunFilesCharts()]).then(function (res) {
+        renderCache(res[0]);
+    });
+};
+
+const renderCache = function (d: CacheData): void {
+    const repos = new Set<string>();
+    let reads = 0;
+    for (const e of d.entries) {
+        repos.add(e.repo);
+        reads += e.reads;
+    }
+    const keepDays = Math.round(d.keep_seconds / 86400);
+    let html = "<h1>CI Cache</h1>";
+    html += '<p class="rf-lede">Directories a CI job saves with <code>buildhost-cache-save</code> for later runs to restore with <code>buildhost-cache-restore</code>. ' +
+        "A run reads the entries of its own ref and of the default branch. An entry nothing restores for " + h(keepDays) +
+        "d goes, and the least recently used go sooner while free disk is under " + h(d.min_free_percent) + "%.</p>";
+    html += '<div class="rf-kpis">' +
+        kpi(d.entries.length, "entries") + kpi(repos.size, "repositories") + kpi(humanSize(d.total_bytes), "stored") + kpi(reads, "restores") +
+        "</div>";
+    html += cacheJanitorLine(d);
+    html += '<section class="rf-panel"><h2>Disk</h2>' +
+        (d.disk_total ? '<bar-chart id="cache-disk"></bar-chart>' : '<p class="empty">The data directory reports no filesystem size.</p>') + "</section>";
+    html += d.entries.length
+        ? '<section class="rf-panel"><h2>Entries</h2><data-table id="cache-entries"></data-table></section>'
+        : '<section class="rf-panel"><p class="empty">No cache entry is stored.</p></section>';
+    document.getElementById("content")!.innerHTML = html;
+    fillDiskChart("cache-disk", "cache", d);
+    fillCacheTable(d);
+};
+
+const cacheJanitorLine = function (d: CacheData): string {
+    const j = d.janitor;
+    const every = "sweeps every " + Math.round(d.check_interval_seconds / 60) + "m";
+    if (!j) return '<p class="rf-janitor">Janitor: no sweep yet since this server started (' + every + ").</p>";
+    if (j.deferred) return '<p class="rf-janitor">Janitor: last sweep ' + h(timeAgo(j.at)) + " was deferred, writes in flight (" + every + ").</p>";
+    let s = "Janitor: last sweep " + h(timeAgo(j.at)) + " in " + h(j.duration_ms) + "ms over " + h(j.entries) + " entries, expired " + h(j.expired) +
+        (j.pressure_deleted ? ", deleted " + h(j.pressure_deleted) + " for disk pressure" : "") + ", freed " + h(humanSize(j.freed_bytes)) + " &middot; " + every;
+    if (j.error) s += ' &middot; <span class="rf-bad">sweep failed: ' + h(j.error) + "</span>";
+    return '<p class="rf-janitor">' + s + "</p>";
+};
+
+const fillCacheTable = function (d: CacheData): void {
+    const el = document.getElementById("cache-entries") as DataTableElement<CacheEntryRow> | null;
+    if (!el) return;
+    const ago = function (iso: string): Node {
+        const span = document.createElement("span");
+        span.textContent = shortAgo(iso);
+        span.title = formatTime(iso);
+        return span;
+    };
+    el.columns = [
+        { key: "repo", label: "Repository", value: (e) => e.repo },
+        { key: "ref", label: "Ref", value: (e) => e.ref },
+        { key: "key", label: "Key", value: (e) => e.key },
+        { key: "size", label: "Size", value: (e) => e.size, render: (e) => humanSize(e.size), align: "end" },
+        { key: "created", label: "Saved", value: (e) => ms(e.created_at), render: (e) => ago(e.created_at), text: (e) => e.created_at },
+        { key: "used", label: "Last used", value: (e) => ms(e.used_at), render: (e) => ago(e.used_at), text: (e) => e.used_at },
+        { key: "expires", label: "Deleted", value: (e) => ms(e.expires_at), render: (e) => untilNode(e.expires_at), text: (e) => e.expires_at },
+        { key: "reads", label: "Restores", value: (e) => e.reads, align: "end" }
+    ];
+    el.facets = [{ key: "repo", label: "repository", of: (e) => e.repo }];
+    el.rowId = (e) => e.repo + "|" + e.ref + "|" + e.key;
+    el.sort = { key: "used", dir: "desc" };
+    el.rows = d.entries;
 };
 
 pages.duplicates = function (): void {
