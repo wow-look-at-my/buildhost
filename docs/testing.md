@@ -32,11 +32,13 @@ Docker pulls and runs the same image too. "Pullable" is a claim about the client
 
 ## homebrew-tap-e2e
 
-CI job `homebrew-tap-e2e` (`ci.yml`) runs the README-documented brew flows against a real spawned buildhost. The commands come from `scripts/brew-doc-flows.sh`. That script extracts the fenced blocks from `README.md` and substitutes only the host.
+CI job `homebrew-tap-e2e` (`ci.yml`) runs the README-documented brew flows against a real spawned buildhost.
 
-`test/dats/homebrew-public.dats` executes the public flow. It asserts that the served `/llms.txt` documents the same blocks. `homebrew-private.dats` executes the private flow and checks the authenticated tap. `homebrew-anon-leak.dats` clones the anonymous tap and probes the unauthorized formula paths.
+Each suite runs them on the runner's own Homebrew. The runner's brew prefix sits outside every sandbox the suites get, which is why they run with `--no-sandbox`. So the tap, the Cellar and the installed files are all real files on the runner. The assertions are about what brew did to those files. The private leg repoints in place the tap the public leg made, and every formula installed through it must survive the switch.
 
-What the job INSTALLS is the real thing. The public `go-toolchain` project is seeded from the live registry's own artifact, at `dl.pazer.build/go-toolchain?branch=v1&os=&arch=`. That download is public and needs no token. It comes from the same registry the `build` job's go-toolchain action already depends on. The job therefore asserts the actual user-facing claim: `brew install pazer/build/go-toolchain` yields a runnable binary. It runs `go-toolchain version`, which exits 0 even when its update check cannot reach GitHub.
+The commands come from `scripts/brew-doc-flows.sh`. It extracts the fenced blocks from `README.md` and substitutes only the host. `test/dats/homebrew-public.dats` executes the public flow and asserts the served `/llms.txt` documents the same blocks. `homebrew-private.dats` executes the private flow and checks the authenticated tap. `homebrew-anon-leak.dats` clones the anonymous tap and probes the unauthorized formula paths.
+
+What it INSTALLS is the real thing. The public `go-toolchain` project is seeded by downloading the live registry's own artifact, at `dl.pazer.build/go-toolchain?branch=v1&os=&arch=`. That download is public and needs no token. It comes from the same registry the `build` job's go-toolchain action already depends on. The job therefore asserts the actual user-facing claim: `brew install pazer/build/go-toolchain` yields a runnable binary. It runs `go-toolchain version`, which exits 0 even when its update check cannot reach GitHub.
 
 The fixture's FILE TYPE is the whole point. Homebrew's Cleaner decides an installed file's mode from it. The previous `#!/bin/sh` stand-in was classified executable whatever happened. No formula regression was therefore able to turn the job red. That is how a `0444`, unrunnable `brew install go-toolchain` shipped while CI stayed green.
 

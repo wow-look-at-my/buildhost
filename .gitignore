@@ -28,3 +28,4 @@ internal/repackage/shell/
 # scripts/build-admin-frontend.sh, never committed. Scoped to the output dir: a
 # repo-wide *.js would also silently swallow any JS that IS source.
 internal/admin/static/*.js
+

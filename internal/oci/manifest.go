@@ -22,6 +22,18 @@ import (
 
 var validDigest = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 
+// ociLinuxArtifacts filters a release's platform-slot artifacts down to linux
+// targets -- the only ones Docker can run as a container image.
+func ociLinuxArtifacts(arts []db.PlatformArtifact) []db.PlatformArtifact {
+	out := arts[:0]
+	for _, a := range arts {
+		if a.OS == db.OSLinux {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 // indexEntry is a platform's descriptor in an image index.
 type indexEntry struct {
 	MediaType string `json:"mediaType"`
@@ -89,6 +101,8 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, project *db
 		ociError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 		return
 	}
+	// Docker can only run linux images, so advertise only the linux children an APE artifact covers.
+	artifacts = ociLinuxArtifacts(artifacts)
 
 	var manifests []indexEntry
 	for _, a := range artifacts {
