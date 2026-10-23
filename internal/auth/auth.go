@@ -33,6 +33,8 @@ type OIDCRepoIdentity struct {
 	RunAttempt string
 	// Actor is the GitHub login that triggered the run.
 	Actor string
+	// Ref is the git ref the run is for, such as refs/heads/master or refs/pull/7/merge.
+	Ref string
 }
 
 func WithGitHubToken(ctx context.Context, token string) context.Context {

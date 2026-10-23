@@ -1,19 +1,14 @@
 package api
 
 import (
-	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
-	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
 // A run file is a file one job of a CI run hands to later jobs of the same
@@ -81,24 +76,8 @@ func (h *Handler) PutRunFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The client sends compressed bytes.
-	body := http.MaxBytesReader(w, r.Body, maxUploadSize)
-	var storageKey string
-	var size int64
-	var err error
-	if up, ok := h.Store.(storage.UncompressedPutter); ok {
-		storageKey, size, err = up.PutUncompressed(ctx, body)
-	} else {
-		storageKey, size, err = h.Store.Put(ctx, body)
-	}
-	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			jsonError(w, http.StatusRequestEntityTooLarge, "run file exceeds "+strconv.FormatInt(maxUploadSize, 10)+" bytes")
-			return
-		}
-		slog.ErrorContext(ctx, "run file: store", "err", err)
-		jsonError(w, http.StatusInternalServerError, "failed to store run file")
+	storageKey, size, ok := h.storeCIBody(w, r, "run file")
+	if !ok {
 		return
 	}
 
@@ -152,34 +131,7 @@ func (h *Handler) GetRunFile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("X-Content-SHA256", file.StorageKey)
-	if rg, ok := h.Store.(storage.RandomGetter); ok {
-		ra, size, err := rg.OpenReaderAt(ctx, file.StorageKey)
-		if err == nil {
-			defer ra.Close()
-			http.ServeContent(w, r, name, time.Time{}, io.NewSectionReader(ra, 0, size))
-			return
-		}
-		if !errors.Is(err, storage.ErrRandomUnsupported) {
-			slog.ErrorContext(ctx, "run file: open", "key", file.StorageKey, "err", err)
-			jsonError(w, http.StatusInternalServerError, "failed to open run file")
-			return
-		}
-	}
-	rc, size, err := h.Store.Get(ctx, file.StorageKey)
-	if err != nil {
-		slog.ErrorContext(ctx, "run file: open", "key", file.StorageKey, "err", err)
-		jsonError(w, http.StatusInternalServerError, "failed to open run file")
-		return
-	}
-	defer rc.Close()
-	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
-	w.WriteHeader(http.StatusOK)
-	if r.Method != http.MethodHead {
-		io.Copy(w, rc)
-	}
+	h.serveCIBlob(w, r, name, file.StorageKey, "run file")
 }
 
 // missingRunFile says what the run does hold, so a typo and a send that never

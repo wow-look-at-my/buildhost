@@ -20,6 +20,7 @@ const (
 	RoleOCIBlob  = "oci-blob"
 	RoleGoproxy  = "goproxy"
 	RoleRunFile  = "run-file"
+	RoleCache    = "cache"
 )
 
 // Hold values. A hold is the reason retention keeps a file. An empty hold means
@@ -37,6 +38,7 @@ const (
 	HoldOCIBlob    = "oci-blob"      // a project OCI blob, not release-scoped
 	HoldGoproxy    = "goproxy"       // a cached Go module zip, not a project
 	HoldRunFile    = "run-file"      // a CI run's hand-off, deleted by internal/runfiles
+	HoldCache      = "cache"         // a CI cache entry, evicted by internal/cicache
 	HoldUnknown    = "unknown"       // the plan and this reason disagree
 )
 
@@ -348,6 +350,20 @@ func (r *Retention) listFiles(ctx context.Context) ([]FileEntry, error) {
 			Holds:     []string{HoldRunFile},
 		}
 		out = appendFile(out, base, RoleRunFile, f.StorageKey, f.Size, f.StorageKey)
+	}
+
+	entries, err := r.db.ListCacheEntries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range entries {
+		base := FileEntry{
+			CreatedAt: e.CreatedAt,
+			Branch:    e.Ref,
+			Filename:  e.RepoPath + "/" + e.Key,
+			Holds:     []string{HoldCache},
+		}
+		out = appendFile(out, base, RoleCache, e.StorageKey, e.Size, e.StorageKey)
 	}
 
 	return out, nil

@@ -48,6 +48,7 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 							RepoID:     vr.RepoID,
 							RunID:      vr.RunID,
 							RunAttempt: vr.RunAttempt,
+							Ref:        vr.Ref,
 						})
 					}
 					r = r.WithContext(rctx)
@@ -68,6 +69,7 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 							RunID:      vr.RunID,
 							RunAttempt: vr.RunAttempt,
 							Actor:      vr.Actor,
+							Ref:        vr.Ref,
 						})
 					}
 					r = r.WithContext(rctx)
