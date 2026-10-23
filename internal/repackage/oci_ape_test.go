@@ -15,10 +15,45 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
-// apeOCIFixture is a file shaped like a Cosmopolitan APE: the MZqFpD shell
-// prologue followed by a working script.
+// apeELFHeaderFor returns the ELF64 header an APE trampoline stages for machine.
+func apeELFHeaderFor(machine uint16) []byte {
+	header := make([]byte, apeELFHeaderSize)
+	copy(header, "\x7fELF")
+	header[4] = 2 // ELFCLASS64
+	header[5] = 1 // ELFDATA2LSB
+	header[6] = 1 // EV_CURRENT
+	header[16] = 2 // ET_EXEC
+	header[18] = byte(machine)
+	header[19] = byte(machine >> 8)
+	header[20] = 1 // EV_CURRENT
+	return header
+}
+
+// apeOctalEscape spells every byte as a printf octal escape, so a shell
+// prologue can carry binary header bytes as text.
+func apeOctalEscape(b []byte) string {
+	var out strings.Builder
+	for _, c := range b {
+		out.WriteByte('\\')
+		out.WriteByte('0' + (c>>6)&7)
+		out.WriteByte('0' + (c>>3)&7)
+		out.WriteByte('0' + c&7)
+	}
+	return out.String()
+}
+
+// apeOCIFixture is a file shaped like a Cosmopolitan APE. It carries the
+// MZqFpD shell prologue, the trampoline printf that stages an ELF64 header per
+// platform, and a script body a shell can run.
 func apeOCIFixture() []byte {
-	return []byte("MZqFpD='fixture'\necho ape-oci-ok\n")
+	var b strings.Builder
+	b.WriteString("MZqFpD='ape-oci-fixture'\n")
+	// A real trampoline carries a header for every platform it runs on.
+	for _, machine := range []uint16{62, 183} { // EM_X86_64, EM_AARCH64
+		b.WriteString("printf '" + apeOctalEscape(apeELFHeaderFor(machine)) + "' >&7\n")
+	}
+	b.WriteString("echo ape-oci-ok\n")
+	return []byte(b.String())
 }
 
 // buildOCI runs the OCI repackage for one platform and returns the manifest
