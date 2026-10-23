@@ -82,7 +82,19 @@ func readNames(dir string) ([]string, error) {
 	return names, err
 }
 
+// tarMode is the permission field a packed entry carries. NT has no posix modes, only a read-only attribute, and the bits
+// it reports leave a directory untraversable on a posix host.
 func tarMode(mode fs.FileMode) int64 {
+	if hostOS() == "windows" {
+		switch {
+		case mode.IsDir():
+			return 0o755
+		case mode.Perm()&0o200 == 0:
+			return 0o444
+		default:
+			return 0o644
+		}
+	}
 	bits := int64(mode.Perm())
 	if mode&fs.ModeSetuid != 0 {
 		bits |= 0o4000

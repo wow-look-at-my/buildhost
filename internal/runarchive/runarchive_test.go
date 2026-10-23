@@ -143,6 +143,34 @@ func TestReadsAHostTarArchive(t *testing.T) {
 	assert.Equal(t, "gnu long name", string(data))
 }
 
+func TestNTEntriesCarryPosixModes(t *testing.T) {
+	// A tree packed on NT must extract traversable on a posix host: NT reports directory bits without the exec bit.
+	defer func(prev func() string) { hostOS = prev }(hostOS)
+	hostOS = func() string { return "windows" }
+	src := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(src, "dir"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(src, "dir", "rw.txt"), []byte("rw"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(src, "dir", "ro.txt"), []byte("ro"), 0o400))
+	var buf bytes.Buffer
+	require.NoError(t, Pack(&buf, src, nil))
+	zr, err := zstd.NewReader(&buf)
+	require.NoError(t, err)
+	defer zr.Close()
+	modes := map[string]int64{}
+	tr := tar.NewReader(zr)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		modes[hdr.Name] = hdr.Mode
+	}
+	assert.Equal(t, int64(0o755), modes["dir/"])
+	assert.Equal(t, int64(0o644), modes["dir/rw.txt"])
+	assert.Equal(t, int64(0o444), modes["dir/ro.txt"])
+}
+
 func TestMembersPackOnlyTheirPaths(t *testing.T) {
 	src := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(src, "keep", "sub"), 0o755))
