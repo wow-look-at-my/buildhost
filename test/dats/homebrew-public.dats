@@ -9,7 +9,7 @@
 # $BUILDHOST_BASE_URL, $BREW_HOST and $BREW_SOURCE come from it.
 #
 # The flow runs against a private Homebrew prefix built inside this file's temp
-# directory by scripts/brew-sandbox-prefix.sh, so the tap, the Cellar and the
+# directory by scripts/brew-sandbox-prefix.sh. So the tap, the Cellar and the
 # installed files are all somewhere a sandboxed command may write. The
 # assertions are unchanged: they are still about what brew did to a real file.
 #

@@ -1,18 +1,5 @@
 #!/usr/bin/env bash
-# Build a private Homebrew prefix inside a writable directory, and print the
-# environment that points brew at it.
-#
-# Usage: BREW_SOURCE=<repository> brew-sandbox-prefix.sh <work-dir>
-#
-# The prefix is a copy of the host's brew source, so tapping, trusting and
-# installing all land inside <work-dir>. A dats suite's temp directory is the
-# one place its commands may write, and every install format's guarantee here
-# is about what brew did to a real file, so the prefix goes there rather than
-# the flow going to the host.
-#
-# BREW_SOURCE names the repository to copy (`brew --repository`). It is
-# required: a suite that silently fell back to the host's own prefix would
-# install into it, which is exactly what this exists to prevent.
+# Build a private Homebrew prefix inside a writable directory, and print the environment that points brew at it.
 set -euo pipefail
 
 work="${1:?usage: brew-sandbox-prefix.sh <work-dir>}"
@@ -26,7 +13,7 @@ test -x "$src/bin/brew" || {
 prefix="$work/brew"
 mkdir -p "$work/home" "$work/cache" "$work/logs" "$work/temp"
 mkdir -p "$prefix"
-# bin and Library/Homebrew are brew itself, including its vendored ruby; the
+# bin and Library/Homebrew are brew itself, including its vendored ruby. The
 # rest of a host prefix is installed packages, which a fresh prefix has none of.
 cp -a "$src/bin" "$prefix/bin"
 mkdir -p "$prefix/Library"

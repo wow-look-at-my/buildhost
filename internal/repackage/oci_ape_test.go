@@ -63,11 +63,10 @@ func buildOCI(t *testing.T, exeFormat string, os db.OS, arch db.Arch) ([]byte, f
 	return manifest, fetch
 }
 
-// An APE is not a native Linux ELF, so a scratch container cannot exec it
-// directly -- the synthesized image must ship a static /bin/sh and run the
-// binary through it, which is the only thing that makes
-// ENTRYPOINT ["/bin/sh", "/<name>"] a runnable image rather than a
-// crash-looping one.
+// An APE is not a native Linux ELF. A scratch container cannot exec it
+// directly. The synthesized image must ship a static /bin/sh and run the
+// binary through it. That makes ENTRYPOINT ["/bin/sh", "/<name>"] a
+// runnable image rather than a crash-looping one.
 func TestOCIRepackage_APEImageIsRunnable(t *testing.T) {
 	manifest, fetch := buildOCI(t, "ape", db.OSLinux, db.ArchAMD64)
 
@@ -82,8 +81,7 @@ func TestOCIRepackage_APEImageIsRunnable(t *testing.T) {
 	require.NoError(t, json.Unmarshal(manifest, &man))
 	require.Len(t, man.Layers, 3, "an APE image carries base + busybox shell + binary layers")
 
-	// The middle layer is the busybox shell: /bin/busybox plus the applet
-	// symlinks the APE prologue needs, including /bin/sh itself.
+	// The middle layer is the busybox shell: /bin/busybox plus the applet symlinks the APE prologue needs.
 	shell := fetch(man.Layers[1].Digest)
 	zr, err := zstd.NewReader(bytes.NewReader(shell))
 	require.NoError(t, err)
@@ -142,7 +140,7 @@ func TestOCIRepackage_APEImageIsRunnable(t *testing.T) {
 }
 
 // A non-APE binary is a native ELF and keeps today's lean image: direct exec,
-// two layers, no shell.
+// no shell layer.
 func TestOCIRepackage_NonAPEImageUnchanged(t *testing.T) {
 	manifest, _ := buildOCI(t, "", db.OSLinux, db.ArchAMD64)
 
@@ -158,7 +156,7 @@ func TestOCIRepackage_NonAPEImageUnchanged(t *testing.T) {
 	require.Len(t, man.Layers, 2)
 }
 
-// The shell layer is built from pinned inputs in a fixed order, so repeated
+// The shell layer is built from pinned inputs in a fixed order. Repeated
 // generation is byte-identical (the pull path re-hashes everything), and each
 // target arch gets its own busybox, not whichever was built first.
 func TestBusyboxLayerDeterministicPerArch(t *testing.T) {

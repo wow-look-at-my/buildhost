@@ -6,8 +6,8 @@
 # not. Only a check against the real image sees this.
 #
 # The workflow builds the image, starts it on port 8080, and compiles the ELF
-# fixture this uploads -- the shipped binary is an APE, and an APE is not an
-# ELF for the stripper to work on.
+# fixture this uploads -- the shipped binary is an APE. An APE is not an ELF
+# for the stripper to work on.
 #
 # It bootstraps its token by exec'ing into the running container, so it needs
 # curl, jq, readelf and the docker CLI reaching the runner's daemon.
