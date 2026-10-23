@@ -1,0 +1,33 @@
+name: Buildhost - Cache save
+description: >
+  Saves a directory under a key for jobs of later workflow runs to restore with
+  buildhost-cache-restore. The entry belongs to the run's ref. A key is written
+  once, so a save of a key the ref holds already stores nothing. An entry no
+  restore uses for a week goes, and the least recently used go sooner when the
+  server's disk is low. The job needs id-token write.
+
+inputs:
+  path:
+    description: 'The directory to save. A leading ~ is the home directory'
+    required: true
+  key:
+    description: 'The cache key: 1-512 of [A-Za-z0-9._-]'
+    required: true
+  server:
+    description: 'Buildhost server URL'
+    required: false
+    default: 'https://pazer.build'
+  token:
+    description: "API token; omit to use the job's OIDC token, which names the repository and ref"
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - uses: wow-look-at-my/actions@typescript#latest
+      with:
+        inputs: ${{ toJSON(inputs) }}
+        script: |
+          const lib = require(${{ toJSON(format('{0}/../lib/cache.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/cache', github.action_path)) }});
+          await lib.saveCache({ core, github, context, octokit, exec, inputs, steps });

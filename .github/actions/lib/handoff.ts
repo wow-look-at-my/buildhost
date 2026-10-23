@@ -117,24 +117,46 @@ export async function handoff(g: ActionGlobals): Promise<void> {
 	if (!validName.test(name)) { g.core.setFailed(`invalid name '${name}': want 1-128 of [A-Za-z0-9._-], starting with a letter or digit`); return; }
 	if (mode !== 'send' && mode !== 'receive') { g.core.setFailed(`invalid mode '${mode}': want send or receive`); return; }
 	const urlPath = runFilePath(name);
-	const archive = join(process.env.RUNNER_TEMP || mkdtempSync('handoff-'), `handoff-${name}.tar.zst`);
 
-	try {
+	await withArchive(g, `${mode} ${name}`, async (archive) => {
 		if (mode === 'send') {
-			if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) { g.core.setFailed(`path ${dir} is not a directory`); return; }
-			await pack(dir, archive);
-			const resp = await uploadFile(g.core, server, token, urlPath, archive);
+			const resp = await packAndUpload(g, server, token, dir, archive, urlPath);
 			if (resp.status !== 201) { g.core.setFailed(`send ${name} failed (HTTP ${resp.status}): ${resp.text}`); return; }
 			g.core.info(`Sent ${dir} as run file ${name}: ${resp.text}`);
 			return;
 		}
-		await fetchRunFile(`${server}${urlPath}`, tokenSource(server, token).bearer, archive);
-		await unpack(archive, dir);
+		await downloadAndUnpack(`${server}${urlPath}`, tokenSource(server, token).bearer, archive, dir);
 		g.core.info(`Received run file ${name} into ${dir}`);
 		g.core.setOutput('path', dir);
+	});
+}
+
+/**
+ * Runs body with the path of a temporary archive, and deletes the archive afterwards. A throw fails the step, and the message
+ * starts with what.
+ */
+export async function withArchive(g: ActionGlobals, what: string, body: (archive: string) => Promise<void>): Promise<void> {
+	const archive = join(process.env.RUNNER_TEMP || mkdtempSync('buildhost-'), `buildhost-${process.pid}-${Date.now()}.tar.zst`);
+	try {
+		await body(archive);
 	} catch (e) {
-		g.core.setFailed(`${mode} ${name}: ${e instanceof Error ? e.message : String(e)}`);
+		g.core.setFailed(`${what}: ${e instanceof Error ? e.message : String(e)}`);
 	} finally {
 		rmSync(archive, { force: true });
 	}
+}
+
+/** Downloads the archive url serves, checked against its sha256, and extracts it into dir. */
+export async function downloadAndUnpack(url: string, bearer: () => Promise<string>, archive: string, dir: string): Promise<void> {
+	await fetchRunFile(url, bearer, archive);
+	await unpack(archive, dir);
+}
+
+/** Packs dir into archive and uploads it to urlPath. It throws when dir is not a directory. */
+export async function packAndUpload(
+	g: ActionGlobals, server: string, token: string, dir: string, archive: string, urlPath: string,
+): Promise<import('./client').Response> {
+	if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`path ${dir} is not a directory`);
+	await pack(dir, archive);
+	return uploadFile(g.core, server, token, urlPath, archive);
 }

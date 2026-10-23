@@ -1,0 +1,53 @@
+name: Buildhost - Cache restore
+description: >
+  Restores a directory a job of an earlier workflow run saved with
+  buildhost-cache-save. It reads the exact key first, then each restore key as
+  a prefix, newest first. It searches the run's own ref, then the default
+  branch, as GitHub's cache does. A miss leaves path as it is and sets
+  cache-hit to false. The job needs id-token write.
+
+inputs:
+  path:
+    description: 'The directory to restore into. A leading ~ is the home directory'
+    required: true
+  key:
+    description: 'The cache key: 1-512 of [A-Za-z0-9._-]'
+    required: true
+  restore-keys:
+    description: 'Key prefixes, one per line, tried in order when key has no entry'
+    required: false
+    default: ''
+  fail-on-cache-miss:
+    description: 'true fails the step when no entry matches'
+    required: false
+    default: 'false'
+  server:
+    description: 'Buildhost server URL'
+    required: false
+    default: 'https://pazer.build'
+  token:
+    description: "API token; omit to use the job's OIDC token, which names the repository and ref"
+    required: false
+    default: ''
+
+outputs:
+  cache-hit:
+    description: 'true when an entry matched key exactly'
+    value: ${{ steps.restore.outputs.cache-hit }}
+  cache-primary-key:
+    description: 'The key input'
+    value: ${{ steps.restore.outputs.cache-primary-key }}
+  cache-matched-key:
+    description: 'The key of the entry restored, or empty on a miss'
+    value: ${{ steps.restore.outputs.cache-matched-key }}
+
+runs:
+  using: composite
+  steps:
+    - id: restore
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        inputs: ${{ toJSON(inputs) }}
+        script: |
+          const lib = require(${{ toJSON(format('{0}/../lib/cache.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/cache', github.action_path)) }});
+          await lib.restoreCache({ core, github, context, octokit, exec, inputs, steps });

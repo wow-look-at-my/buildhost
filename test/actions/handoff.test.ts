@@ -1,4 +1,5 @@
-// Behavior tests for .github/actions/lib/handoff.ts: the archive round trip, and a download that breaks and resumes.
+// Behavior tests for .github/actions/lib/handoff.ts and the cache on top of it: the archive round trip. A download that
+// breaks and resumes, and a cache restore and save.
 
 import assert from 'node:assert';
 import { execFileSync } from 'node:child_process';
@@ -9,7 +10,8 @@ import { pipeline } from 'node:stream/promises';
 import { createZstdCompress } from 'node:zlib';
 import { pack, unpack, fetchRunFile, runFilePath, tarCommand } from '../../.github/actions/lib/handoff.ts';
 import { HTTPError } from '../../.github/actions/lib/download.ts';
-import { serve, tempDir } from './fakes.ts';
+import { cachePath, restoreKeyList, restoreCache, saveCache } from '../../.github/actions/lib/cache.ts';
+import { globalsOf, serve, stepCore, tempDir } from './fakes.ts';
 
 const noWait = async () => {};
 const bearer = async () => 't';
@@ -47,6 +49,84 @@ async function corruptArchiveFails(tmp: string) {
 	const archive = path.join(tmp, 'garbage.tar.zst');
 	fs.writeFileSync(archive, 'not zstd');
 	await assert.rejects(unpack(archive, path.join(tmp, 'garbage-dst')));
+}
+
+// The cache actions run as a pull request's job, so a restore can match an entry of the default branch.
+function cacheInputs(server: string, extra: Record<string, string>) {
+	process.env.GITHUB_REPOSITORY = 'wow-look-at-my/consumer';
+	process.env.GITHUB_REF = 'refs/pull/7/merge';
+	return { server: server.replace(/\/f$/, ''), token: 't', ...extra };
+}
+
+async function cacheRestoreHitReadsTheMatchedScope(tmp: string) {
+	const src = path.join(tmp, 'cache-src');
+	fs.mkdirSync(src);
+	fs.writeFileSync(path.join(src, 'entry'), 'cached');
+	const archive = path.join(tmp, 'cache-entry.tar.zst');
+	await pack(src, archive);
+	const body = fs.readFileSync(archive);
+	const sum = createHash('sha256').update(body).digest('hex');
+	const asked: string[] = [];
+	const s = await serve((req, res) => {
+		asked.push(req.url ?? '');
+		if (new URL(req.url ?? '', 'http://x').pathname === '/api/v1/cache') {
+			res.writeHead(200, { 'Content-Type': 'application/json' });
+			res.end(JSON.stringify({ key: 'deps-old', ref: 'refs/heads/master', size: body.length, exact: false, scopes: ['refs/pull/7/merge', 'refs/heads/master'] }));
+			return;
+		}
+		res.writeHead(200, { 'X-Content-SHA256': sum });
+		res.end(body);
+	});
+	const { core, out } = stepCore();
+	const dst = path.join(tmp, 'cache-dst');
+	await restoreCache(globalsOf({ core, inputs: cacheInputs(s.url, { path: dst, key: 'deps-new', 'restore-keys': 'nothing-\ndeps-\n' }) }));
+	await s.close();
+	assert.deepStrictEqual(out.failed, []);
+	assert.strictEqual(fs.readFileSync(path.join(dst, 'entry'), 'utf8'), 'cached', 'the matched entry is restored into path');
+	assert.strictEqual(out.outputs['cache-hit'], 'false', 'a prefix match is not a hit');
+	assert.strictEqual(out.outputs['cache-matched-key'], 'deps-old');
+	assert.deepStrictEqual(new URL(asked[0], 'http://x').searchParams.getAll('restore_keys'), ['nothing-', 'deps-'], 'the restore keys go in order');
+	assert.strictEqual(new URL(asked[1], 'http://x').searchParams.get('ref'), 'refs/heads/master', 'the download names the scope that matched');
+}
+
+async function cacheMissLeavesPathAlone(tmp: string, failOnMiss: string, wantFailed: number) {
+	const s = await serve((_req, res) => {
+		res.writeHead(404, { 'Content-Type': 'application/json' });
+		res.end(JSON.stringify({ scopes: ['refs/pull/7/merge'], default_branch: 'not read: GitHub did not answer the default branch' }));
+	});
+	const { core, out } = stepCore();
+	const dst = path.join(tmp, `cache-miss-${failOnMiss}`);
+	await restoreCache(globalsOf({ core, inputs: cacheInputs(s.url, { path: dst, key: 'k', 'fail-on-cache-miss': failOnMiss }) }));
+	await s.close();
+	assert.strictEqual(out.outputs['cache-hit'], 'false');
+	assert.strictEqual(fs.existsSync(dst), false, 'a miss creates nothing');
+	assert.strictEqual(out.failed.length, wantFailed);
+	if (wantFailed) assert.match(out.failed[0], /GitHub did not answer/, 'the miss says why the default branch was not searched');
+}
+
+async function cacheSaveOfAHeldKeySendsNothing(tmp: string) {
+	const asked: string[] = [];
+	const s = await serve((req, res) => {
+		asked.push(`${req.method} ${new URL(req.url ?? '', 'http://x').pathname}`);
+		res.writeHead(200, { 'Content-Type': 'application/json' });
+		res.end(JSON.stringify({ key: 'k', ref: 'refs/pull/7/merge', size: 1, exact: true, scopes: ['refs/pull/7/merge'] }));
+	});
+	const { core, out } = stepCore();
+	await saveCache(globalsOf({ core, inputs: cacheInputs(s.url, { path: tmp, key: 'k' }) }));
+	await s.close();
+	assert.deepStrictEqual(out.failed, []);
+	assert.deepStrictEqual(asked, ['GET /api/v1/cache'], 'the save asks once and sends no body');
+}
+
+async function cacheInputsAreChecked(tmp: string) {
+	assert.strictEqual(cachePath('~/.cache/wasmtime', '/home/u'), '/home/u/.cache/wasmtime');
+	assert.strictEqual(cachePath('~', '/home/u'), '/home/u');
+	assert.strictEqual(cachePath('pkg/obj/go-build\n'), path.resolve('pkg/obj/go-build'));
+	assert.throws(() => cachePath('a\nb'), /one directory/);
+	assert.deepStrictEqual(restoreKeyList(' a-\n\nb- \n'), ['a-', 'b-']);
+	const { core, out } = stepCore();
+	await restoreCache(globalsOf({ core, inputs: cacheInputs('http://127.0.0.1:1/f', { path: tmp, key: 'bad key' }) }));
+	assert.match(out.failed[0], /invalid key 'bad key'/);
 }
 
 async function resumes(tmp: string) {
@@ -93,6 +173,11 @@ async function run() {
 	await resumes(tmp);
 	await missIsFinal(tmp);
 	await corruptFails(tmp);
+	await cacheInputsAreChecked(tmp);
+	await cacheRestoreHitReadsTheMatchedScope(tmp);
+	await cacheMissLeavesPathAlone(tmp, 'false', 0);
+	await cacheMissLeavesPathAlone(tmp, 'true', 1);
+	await cacheSaveOfAHeldKeySendsNothing(tmp);
 	assert.strictEqual(
 		runFilePath('toolchain-Linux', { GITHUB_REPOSITORY: 'wow-look-at-my/gosmopolitan', GITHUB_RUN_ID: '42' }),
 		'/api/v1/run-files/toolchain-Linux?repository=wow-look-at-my%2Fgosmopolitan&run_id=42');

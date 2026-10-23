@@ -24,6 +24,7 @@ SELECT EXISTS(
     UNION ALL SELECT 1 FROM oci_blob_links obl    WHERE obl.storage_key = sqlc.arg(key)
     UNION ALL SELECT 1 FROM goproxy_versions gv   WHERE gv.zip_storage_key = sqlc.arg(key)
     UNION ALL SELECT 1 FROM run_files rf          WHERE rf.storage_key = sqlc.arg(key)
+    UNION ALL SELECT 1 FROM cache_entries ce      WHERE ce.storage_key = sqlc.arg(key)
 ) AS referenced;
 
 -- name: ListReleaseBlobKeys :many
