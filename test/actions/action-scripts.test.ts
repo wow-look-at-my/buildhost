@@ -150,10 +150,17 @@ for (const action of fs.readdirSync(path.join(root, '.github/actions'))) {
 }
 assert.ok(tsSteps.length > 0, 'no action has a typescript step');
 
+// The stripper parses its input as a script, where an inline import is module
+// syntax it refuses.
+const inlineImport = /^[ \t]*import\s+(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s+from\s+'[^']*';?[ \t]*$/gm;
+function withoutInlineImports(body: string): string {
+	return body.replace(inlineImport, (line) => ' '.repeat(line.length));
+}
+
 // A type belongs in a lib module, typed there, so a script that declares one fails. Type stripping erases a declaration and a type literal's braces.
 for (const step of tsSteps.filter((s) => s.input === 'INPUT_SCRIPT')) {
 	sampleContext['github.action_path'] = step.actionDir;
-	const src = `async function step() {\n${render(step.value)}\n}`;
+	const src = `async function step() {\n${withoutInlineImports(render(step.value))}\n}`;
 	const stripped: string = stripTypeScriptTypes(src);
 	let erased = '';
 	for (let k = 0; k < src.length; k++) if (stripped[k] !== src[k]) erased += src[k];
@@ -165,6 +172,8 @@ for (const step of tsSteps) {
 	const env: Record<string, string | undefined> = {
 		...process.env,
 		GITHUB_WORKSPACE: root,
+		// The runner sets this for a step of a composite action: it is the action's own directory.
+		GITHUB_ACTION_PATH: step.actionDir,
 		GITHUB_REPOSITORY: 'o/r',
 		GITHUB_REF_NAME: 'main',
 		GITHUB_SHA: '0'.repeat(40),

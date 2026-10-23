@@ -102,8 +102,8 @@ runs:
       with:
         inputs: ${{ toJSON(inputs) }}
         script: |
-          const lib = require(${{ toJSON(format('{0}/../lib/deployment.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/deployment', github.action_path)) }});
-          await lib.createPublishDeployment({ core, github, context, octokit, exec, inputs, steps });
+          import { createPublishDeployment } from '../lib/deployment';
+          await createPublishDeployment({ core, github, context, octokit, exec, inputs, steps });
 
     - id: publish
       uses: wow-look-at-my/actions@typescript#latest
@@ -113,8 +113,8 @@ runs:
       with:
         inputs: ${{ toJSON(inputs) }}
         script: |
-          const lib = require(${{ toJSON(format('{0}/../lib/publish.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/publish', github.action_path)) }});
-          await lib.publish({ core, github, context, octokit, exec, inputs, steps });
+          import { publish } from '../lib/publish';
+          await publish({ core, github, context, octokit, exec, inputs, steps });
 
     # Terminal status for the GitHub Deployment created above; runs even when
     - name: Finish GitHub Deployment
@@ -124,5 +124,5 @@ runs:
       with:
         steps: ${{ toJSON(steps) }}
         script: |
-          const lib = require(${{ toJSON(format('{0}/../lib/deployment.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/deployment', github.action_path)) }});
-          await lib.finishPublishDeployment({ core, github, context, octokit, exec, inputs, steps });
+          import { finishPublishDeployment } from '../lib/deployment';
+          await finishPublishDeployment({ core, github, context, octokit, exec, inputs, steps });
