@@ -144,7 +144,6 @@ func RunRepoFrom(ctx context.Context) (OIDCRepoIdentity, bool) {
 	return repo, ok && repo.RepoID != ""
 }
 
-
 // WithOIDCError records why OIDC verification failed for a presented JWT.
 func WithOIDCError(ctx context.Context, err error) context.Context {
 	return context.WithValue(ctx, oidcErrorKey, err)

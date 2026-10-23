@@ -29,8 +29,8 @@ type Input struct {
 	Reader io.Reader
 	Size   int64
 	// TmpDir is scratch space for formats that must spool a member to learn its size
-	TmpDir  string
-	BaseURL string
+	TmpDir      string
+	BaseURL     string
 	CacheSuffix string
 	DownloadURL func(name, version string, os db.OS, arch db.Arch, format string) string
 }

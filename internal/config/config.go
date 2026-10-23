@@ -12,7 +12,7 @@ import (
 const (
 	// defaultMaxUploadSize caps a single REST artifact upload (PUT .../artifacts).
 	defaultMaxUploadSize int64 = 2 << 30
-	defaultMaxBlobSize int64 = 10 << 30
+	defaultMaxBlobSize   int64 = 10 << 30
 	// defaultMaxDirectUploadSize is the size the server ADVERTISES (via
 	defaultMaxDirectUploadSize int64 = 95 << 20
 	// defaultUploadSessionTTL is how long an in-progress chunked upload session
@@ -108,9 +108,9 @@ type Config struct {
 	// GitHub App credentials for buildhost's own REST lookups (resolving a repo's
 	GitHubAppID         string
 	GitHubAppPrivateKey string
-	GitHubToken      string
-	OTELEndpoint     string
-	SiteFetchDomains []string
+	GitHubToken         string
+	OTELEndpoint        string
+	SiteFetchDomains    []string
 
 	// SiteDomain is an optional dedicated domain for project static sites.
 	SiteDomain string
