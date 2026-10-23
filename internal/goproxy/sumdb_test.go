@@ -21,6 +21,7 @@ func sumdbRequest(t *testing.T, name, rest string) *httptest.ResponseRecorder {
 }
 
 func TestSumDBMirrorForwardsLookupsAndTiles(t *testing.T) {
+	t.Serial()
 	var seen []string
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, r.URL.Path)
@@ -42,6 +43,7 @@ func TestSumDBMirrorForwardsLookupsAndTiles(t *testing.T) {
 }
 
 func TestSumDBMirrorAnswersSupportedWithoutAnUpstreamCall(t *testing.T) {
+	t.Serial()
 	prev := sumdbOrigin
 	sumdbOrigin = "http://127.0.0.1:1"
 	defer func() { sumdbOrigin = prev }()
@@ -58,6 +60,7 @@ func TestSumDBMirrorRefusesOtherDatabasesAndPaths(t *testing.T) {
 }
 
 func TestSumDBMirrorPassesAnUpstreamErrorThrough(t *testing.T) {
+	t.Serial()
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "not found: github.com/x/y@v9.9.9", http.StatusNotFound)
 	}))
@@ -72,6 +75,7 @@ func TestSumDBMirrorPassesAnUpstreamErrorThrough(t *testing.T) {
 }
 
 func TestSumDBMirrorReportsAnUnreachableOriginAs502(t *testing.T) {
+	t.Serial()
 	prev := sumdbOrigin
 	sumdbOrigin = "http://127.0.0.1:1"
 	defer func() { sumdbOrigin = prev }()
