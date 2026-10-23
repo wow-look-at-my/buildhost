@@ -8,7 +8,7 @@ description: >
 
 inputs:
   path:
-    description: 'The directory to restore into. A leading ~ is the home directory'
+    description: 'The paths the save named, one per line, from the workspace. A leading ~ is the home directory. The entry lands where it was saved from'
     required: true
   key:
     description: 'The cache key: 1-512 of [A-Za-z0-9._-]'

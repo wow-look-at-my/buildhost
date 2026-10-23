@@ -1,21 +1,25 @@
 # What the buildhost-cache-save and buildhost-cache-restore composites must have
-# done to a real server. The workflow saves SENT under SAVED_KEY twice, then
-# restores it by its exact key into EXACT, by a restore key into PREFIX. It
-# tries a key nothing holds into MISS. The *_HIT and PREFIX_MATCHED variables
-# are the restore steps' outputs. LOG is the server's log and BASE its host.
+# done to a real server. The workflow saves a copy of SENT outside the
+# workspace and a directory inside it under SAVED_KEY, twice. It restores them
+# by their exact key and moves the results to EXACT and EXACT_WORKSPACE. It
+# restores by a restore key into PREFIX, and tries a key nothing holds at MISS.
+# The *_HIT and PREFIX_MATCHED variables are the restore steps' outputs. LOG is
+# the server's log and BASE its host.
 #
 # see docs/cache.md
 
 tests:
-	- desc: an exact restore is a hit, and its tree is the saved tree
+	- desc: an exact restore is a hit, and puts back every saved path, inside the workspace and out
 	  cmd: |
 		set -eu
 		echo "hit=$EXACT_HIT"
 		diff -r --no-dereference "$SENT" "$EXACT"
+		cat "$EXACT_WORKSPACE/note"
 		echo "trees-identical"
 	  outputs:
 		stdout:
 			- "hit=true"
+			- "workspace"
 			- "trees-identical"
 
 	- desc: a restore key restores the entry its prefix matches, and is not a hit

@@ -4,6 +4,8 @@
 /__signout {GET}
 /__sso {GET}
 /_ui/style.css {GET}
+/api/v1/cache {GET}
+/api/v1/cache/{key} {GET,PUT}
 /api/v1/oidc/policies {GET,POST}
 /api/v1/oidc/policies/{id} {DELETE}
 /api/v1/projects {GET,POST}

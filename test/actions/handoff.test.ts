@@ -10,7 +10,7 @@ import { pipeline } from 'node:stream/promises';
 import { createZstdCompress } from 'node:zlib';
 import { pack, unpack, fetchRunFile, runFilePath, tarCommand } from '../../.github/actions/lib/handoff.ts';
 import { HTTPError } from '../../.github/actions/lib/download.ts';
-import { cachePath, restoreKeyList, restoreCache, saveCache } from '../../.github/actions/lib/cache.ts';
+import { cacheTree, restoreKeyList, restoreCache, saveCache } from '../../.github/actions/lib/cache.ts';
 import { globalsOf, serve, stepCore, tempDir } from './fakes.ts';
 
 const noWait = async () => {};
@@ -51,7 +51,7 @@ async function corruptArchiveFails(tmp: string) {
 	await assert.rejects(unpack(archive, path.join(tmp, 'garbage-dst')));
 }
 
-// The cache actions run as a pull request's job, so a restore can match an entry of the default branch.
+// The cache actions run as a pull request's job in workspace tmp, so a restore can match an entry of the default branch.
 function cacheInputs(server: string, extra: Record<string, string>) {
 	process.env.GITHUB_REPOSITORY = 'wow-look-at-my/consumer';
 	process.env.GITHUB_REF = 'refs/pull/7/merge';
@@ -59,11 +59,12 @@ function cacheInputs(server: string, extra: Record<string, string>) {
 }
 
 async function cacheRestoreHitReadsTheMatchedScope(tmp: string) {
-	const src = path.join(tmp, 'cache-src');
-	fs.mkdirSync(src);
-	fs.writeFileSync(path.join(src, 'entry'), 'cached');
+	process.env.GITHUB_WORKSPACE = tmp;
+	fs.mkdirSync(path.join(tmp, 'cache-dst'));
+	fs.writeFileSync(path.join(tmp, 'cache-dst', 'entry'), 'cached');
 	const archive = path.join(tmp, 'cache-entry.tar.zst');
-	await pack(src, archive);
+	await pack(tmp, archive, tarCommand(), ['cache-dst']);
+	fs.rmSync(path.join(tmp, 'cache-dst'), { recursive: true });
 	const body = fs.readFileSync(archive);
 	const sum = createHash('sha256').update(body).digest('hex');
 	const asked: string[] = [];
@@ -78,11 +79,10 @@ async function cacheRestoreHitReadsTheMatchedScope(tmp: string) {
 		res.end(body);
 	});
 	const { core, out } = stepCore();
-	const dst = path.join(tmp, 'cache-dst');
-	await restoreCache(globalsOf({ core, inputs: cacheInputs(s.url, { path: dst, key: 'deps-new', 'restore-keys': 'nothing-\ndeps-\n' }) }));
+	await restoreCache(globalsOf({ core, inputs: cacheInputs(s.url, { path: 'cache-dst', key: 'deps-new', 'restore-keys': 'nothing-\ndeps-\n' }) }));
 	await s.close();
 	assert.deepStrictEqual(out.failed, []);
-	assert.strictEqual(fs.readFileSync(path.join(dst, 'entry'), 'utf8'), 'cached', 'the matched entry is restored into path');
+	assert.strictEqual(fs.readFileSync(path.join(tmp, 'cache-dst', 'entry'), 'utf8'), 'cached', 'the matched entry lands at its path under the workspace');
 	assert.strictEqual(out.outputs['cache-hit'], 'false', 'a prefix match is not a hit');
 	assert.strictEqual(out.outputs['cache-matched-key'], 'deps-old');
 	assert.deepStrictEqual(new URL(asked[0], 'http://x').searchParams.getAll('restore_keys'), ['nothing-', 'deps-'], 'the restore keys go in order');
@@ -119,10 +119,13 @@ async function cacheSaveOfAHeldKeySendsNothing(tmp: string) {
 }
 
 async function cacheInputsAreChecked(tmp: string) {
-	assert.strictEqual(cachePath('~/.cache/wasmtime', '/home/u'), '/home/u/.cache/wasmtime');
-	assert.strictEqual(cachePath('~', '/home/u'), '/home/u');
-	assert.strictEqual(cachePath('pkg/obj/go-build\n'), path.resolve('pkg/obj/go-build'));
-	assert.throws(() => cachePath('a\nb'), /one directory/);
+	assert.deepStrictEqual(cacheTree('pkg/obj/go-build\n\nbin\nbin\n', '/home/u', '/w/repo'), { root: '/w/repo', members: ['bin', 'pkg/obj/go-build'] },
+		'paths inside the workspace are members of it, sorted once each, so another workspace directory restores them');
+	assert.deepStrictEqual(cacheTree('~/.cache/wasmtime\nout', '/home/u', '/w/repo'), { root: '/', members: ['home/u/.cache/wasmtime', 'w/repo/out'] },
+		'a path outside the workspace roots every path at the filesystem root');
+	assert.throws(() => cacheTree('src/**/*.o', '/home/u', '/w/repo'), /is a pattern/);
+	assert.throws(() => cacheTree('!skip', '/home/u', '/w/repo'), /is a pattern/);
+	assert.throws(() => cacheTree('\n', '/home/u', '/w/repo'), /names no path/);
 	assert.deepStrictEqual(restoreKeyList(' a-\n\nb- \n'), ['a-', 'b-']);
 	const { core, out } = stepCore();
 	await restoreCache(globalsOf({ core, inputs: cacheInputs('http://127.0.0.1:1/f', { path: tmp, key: 'bad key' }) }));

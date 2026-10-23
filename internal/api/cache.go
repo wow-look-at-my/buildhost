@@ -39,7 +39,11 @@ type cacheEntryResponse struct {
 // cacheFindResponse is a restore's answer. Scopes are the refs it searched, in
 // order. DefaultBranch says why the default branch was not among them.
 type cacheFindResponse struct {
-	*cacheEntryResponse
+	Key           string   `json:"key,omitempty"`
+	Ref           string   `json:"ref,omitempty"`
+	Size          int64    `json:"size,omitempty"`
+	SHA256        string   `json:"sha256,omitempty"`
+	Exact         bool     `json:"exact,omitempty"`
 	Scopes        []string `json:"scopes"`
 	DefaultBranch string   `json:"default_branch,omitempty"`
 }
@@ -119,9 +123,7 @@ func (h *Handler) FindCache(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, http.StatusNotFound, resp)
 		return
 	}
-	resp.cacheEntryResponse = &cacheEntryResponse{
-		Key: match.Key, Ref: match.Scope.Ref, Size: match.Size, SHA256: match.StorageKey, Exact: match.Key == key,
-	}
+	resp.Key, resp.Ref, resp.Size, resp.SHA256, resp.Exact = match.Key, match.Scope.Ref, match.Size, match.StorageKey, match.Key == key
 	jsonResponse(w, http.StatusOK, resp)
 }
 

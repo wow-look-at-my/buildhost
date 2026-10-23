@@ -1,7 +1,8 @@
 // buildhost-cache-restore and buildhost-cache-save: a directory kept across workflow runs under a key, through buildhost's cache.
 
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, parse, relative, resolve, sep } from 'node:path';
 import type { ActionGlobals } from './action-globals.ts';
 import { downloadAndUnpack, withArchive, packAndUpload } from './handoff.ts';
 import { tokenSource } from './oidc.ts';
@@ -18,12 +19,30 @@ export interface CacheFind {
 	default_branch?: string;
 }
 
-/** The directory path names: one path, with a leading ~ read as the home directory. */
-export function cachePath(path: string, home = homedir()): string {
-	const lines = path.split('\n').map((l) => l.trim()).filter(Boolean);
-	if (lines.length !== 1) throw new Error(`path must name one directory, got ${lines.length}: ${JSON.stringify(lines)}`);
-	const p = lines[0];
-	return resolve(p === '~' ? home : p.startsWith('~/') ? join(home, p.slice(2)) : p);
+/** The paths an entry holds, as members of one root. */
+export interface CacheTree {
+	root: string;
+	members: string[];
+}
+
+/**
+ * Reads the path input: one path per line, a relative path from the workspace, and a leading ~ as the home directory. A
+ * restore must name the same paths as the save, because they decide where the files land.
+ */
+export function cacheTree(text: string, home = homedir(), workspace = process.env.GITHUB_WORKSPACE || process.cwd()): CacheTree {
+	const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+	if (lines.length === 0) throw new Error('path names no path');
+	const pattern = lines.find((l) => l.startsWith('!') || /[*?[\]]/.test(l));
+	if (pattern) throw new Error(`path '${pattern}' is a pattern; the cache takes plain paths`);
+	const ws = resolve(workspace);
+	const abs = [...new Set(lines.map((p) => resolve(ws, p === '~' ? home : p.startsWith('~/') ? join(home, p.slice(2)) : p)))].sort();
+	if (abs.every((p) => p === ws || p.startsWith(ws + sep))) {
+		return { root: ws, members: abs.map((p) => relative(ws, p) || '.') };
+	}
+	const root = parse(abs[0]).root;
+	const other = abs.find((p) => parse(p).root !== root);
+	if (other) throw new Error(`paths ${abs[0]} and ${other} are on different drives; an entry holds paths of one drive`);
+	return { root, members: abs.map((p) => relative(root, p) || '.') };
 }
 
 /** The restore keys, one per line, in the order the restore tries them. */
@@ -63,7 +82,7 @@ export async function restoreCache(g: ActionGlobals): Promise<void> {
 	await withArchive(g, `restore ${key}`, async (archive) => {
 		checkKey(key, 'key');
 		restoreKeys.forEach((k) => checkKey(k, 'restore key'));
-		const dir = cachePath(String(g.inputs.path));
+		const tree = cacheTree(String(g.inputs.path));
 		const { bearer } = tokenSource(server, String(g.inputs.token));
 		g.core.setOutput('cache-primary-key', key);
 		const found = await findCache(server, bearer, key, restoreKeys);
@@ -78,10 +97,10 @@ export async function restoreCache(g: ActionGlobals): Promise<void> {
 		}
 		const q = repoQuery(process.env);
 		q.set('ref', found.ref!);
-		await downloadAndUnpack(`${server}/api/v1/cache/${encodeURIComponent(found.key)}?${q}`, bearer, archive, dir);
+		await downloadAndUnpack(`${server}/api/v1/cache/${encodeURIComponent(found.key)}?${q}`, bearer, archive, tree.root);
 		g.core.setOutput('cache-hit', found.exact ? 'true' : 'false');
 		g.core.setOutput('cache-matched-key', found.key);
-		g.core.info(`Restored cache key ${found.key} from ${found.ref} into ${dir} (${found.size} bytes; ${searched})`);
+		g.core.info(`Restored cache key ${found.key} from ${found.ref} into ${tree.members.join(', ')} under ${tree.root} (${found.size} bytes; ${searched})`);
 	});
 }
 
@@ -92,15 +111,18 @@ export async function saveCache(g: ActionGlobals): Promise<void> {
 	const key = String(g.inputs.key);
 	await withArchive(g, `save ${key}`, async (archive) => {
 		checkKey(key, 'key');
-		const dir = cachePath(String(g.inputs.path));
+		const tree = cacheTree(String(g.inputs.path));
+		const members = tree.members.filter((m) => existsSync(join(tree.root, m)));
+		for (const m of tree.members.filter((m) => !members.includes(m))) g.core.warning(`cache path ${join(tree.root, m)} does not exist, so the entry leaves it out`);
+		if (members.length === 0) throw new Error(`no path to save exists: ${tree.members.map((m) => join(tree.root, m)).join(', ')}`);
 		const found = await findCache(server, tokenSource(server, token).bearer, key, []);
 		if (found.key === key && found.ref === process.env.GITHUB_REF) {
 			g.core.info(`${found.ref} already holds cache key ${key}. A key is written once, so this save stores nothing.`);
 			return;
 		}
-		const resp = await packAndUpload(g, server, token, dir, archive, `/api/v1/cache/${encodeURIComponent(key)}?${repoQuery(process.env)}`);
+		const resp = await packAndUpload(g, server, token, tree.root, members, archive, `/api/v1/cache/${encodeURIComponent(key)}?${repoQuery(process.env)}`);
 		if (resp.status === 409) { g.core.info(`Another job saved cache key ${key} first: ${resp.text}`); return; }
 		if (resp.status !== 201) { g.core.setFailed(`save ${key} failed (HTTP ${resp.status}): ${resp.text}`); return; }
-		g.core.info(`Saved ${dir} as cache key ${key}: ${resp.text}`);
+		g.core.info(`Saved ${members.join(', ')} under ${tree.root} as cache key ${key}: ${resp.text}`);
 	});
 }

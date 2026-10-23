@@ -33,9 +33,9 @@ function exited(child: ChildProcess, what: string): Promise<void> {
 	});
 }
 
-/** Writes dir's contents to archive as a zstd-compressed tar. Modes and symlinks survive. */
-export async function pack(dir: string, archive: string, tar = tarCommand()): Promise<void> {
-	const child = spawn(tar, ['-cf', '-', '-C', dir, '.'], { stdio: ['ignore', 'pipe', 'inherit'] });
+/** Writes members of dir, by default all of it, to archive as a zstd-compressed tar. Modes and symlinks survive. */
+export async function pack(dir: string, archive: string, tar = tarCommand(), members = ['.']): Promise<void> {
+	const child = spawn(tar, ['-cf', '-', '-C', dir, ...members], { stdio: ['ignore', 'pipe', 'inherit'] });
 	await Promise.all([
 		exited(child, 'tar -c'),
 		pipeline(child.stdout!, createZstdCompress(), createWriteStream(archive)),
@@ -120,7 +120,8 @@ export async function handoff(g: ActionGlobals): Promise<void> {
 
 	await withArchive(g, `${mode} ${name}`, async (archive) => {
 		if (mode === 'send') {
-			const resp = await packAndUpload(g, server, token, dir, archive, urlPath);
+			if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`path ${dir} is not a directory`);
+			const resp = await packAndUpload(g, server, token, dir, ['.'], archive, urlPath);
 			if (resp.status !== 201) { g.core.setFailed(`send ${name} failed (HTTP ${resp.status}): ${resp.text}`); return; }
 			g.core.info(`Sent ${dir} as run file ${name}: ${resp.text}`);
 			return;
@@ -152,11 +153,10 @@ export async function downloadAndUnpack(url: string, bearer: () => Promise<strin
 	await unpack(archive, dir);
 }
 
-/** Packs dir into archive and uploads it to urlPath. It throws when dir is not a directory. */
+/** Packs members of dir into archive and uploads it to urlPath. */
 export async function packAndUpload(
-	g: ActionGlobals, server: string, token: string, dir: string, archive: string, urlPath: string,
+	g: ActionGlobals, server: string, token: string, dir: string, members: string[], archive: string, urlPath: string,
 ): Promise<import('./client').Response> {
-	if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`path ${dir} is not a directory`);
-	await pack(dir, archive);
+	await pack(dir, archive, tarCommand(), members);
 	return uploadFile(g.core, server, token, urlPath, archive);
 }

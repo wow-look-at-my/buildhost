@@ -8,7 +8,7 @@ description: >
 
 inputs:
   path:
-    description: 'The directory to save. A leading ~ is the home directory'
+    description: 'The files and directories to save, one per line, from the workspace. A leading ~ is the home directory. A path that does not exist is left out with a warning'
     required: true
   key:
     description: 'The cache key: 1-512 of [A-Za-z0-9._-]'

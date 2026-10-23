@@ -23,7 +23,8 @@ A cache entry is a directory a job of a GitHub Actions run saves under a key, fo
 - `cache-hit` is `true` only for an exact match. `cache-matched-key` names the entry restored. A miss leaves `path` as it is, unless `fail-on-cache-miss: true`.
 - A key is written once in a ref. A save of a key the ref holds stores nothing and reports so. The server answers such a save with 409.
 - buildhost reads the default branch from GitHub. When GitHub does not answer, a restore reads the run's own ref alone, and its answer and its log line say why.
-- `path` names one directory. A leading `~` is the home directory.
+- `path` names files and directories, one per line. A relative path is from the workspace. A leading `~` is the home directory. Name refuses a glob or a `!` exclusion. A save leaves out a path that does not exist, with a warning, and fails when none exists.
+- An entry restores to the paths it was saved from. A restore names the same paths as its save. When every path is inside the workspace, the entry holds them relative to it, and a runner with another workspace directory restores them there. Otherwise the entry holds them from the filesystem root, and every path must be on one drive.
 
 ## Authentication
 

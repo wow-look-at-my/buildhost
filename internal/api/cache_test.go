@@ -76,7 +76,6 @@ func TestCache_SaveThenRestoreExact(t *testing.T) {
 
 	rec, found := findCache(t, h, master, "dist-bootstrap-Linux-abc")
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	require.NotNil(t, found.cacheEntryResponse)
 	assert.True(t, found.Exact)
 	assert.Equal(t, "refs/heads/master", found.Ref)
 	assert.Equal(t, []string{"refs/heads/master"}, found.Scopes, "the default branch is the caller's ref, so it is searched once")
