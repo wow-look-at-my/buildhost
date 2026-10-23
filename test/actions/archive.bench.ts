@@ -1,21 +1,24 @@
-// Benchmark of .github/actions/lib/tar.ts against the host tar on the same trees. It asserts nothing; it prints a table.
+// Benchmark of `buildhost archive` against the host tar on the same trees. It
+// asserts nothing; it prints a table.
 //
-//	node test/actions/tar.bench.ts [extra-tree-dir]
+//	BUILDHOST_CLI=build/buildhost node test/actions/archive.bench.ts [extra-tree-dir]
 //
-// Each case runs a few times and reports the median. zstd is node's on both sides, so a difference is the tar alone.
+// Each case runs a few times and reports the median. The host tar pipes
+// through node's zstd, as the actions did.
 
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createZstdCompress, createZstdDecompress } from 'node:zlib';
-import { tarOf, untar } from '../../.github/actions/lib/tar.ts';
+import { runCli } from '../../.github/actions/lib/cli.ts';
 
 const runs = 3;
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tar-bench-'));
+const cli = process.env.BUILDHOST_CLI ?? '';
+if (!cli) throw new Error('BUILDHOST_CLI must name the buildhost binary to measure');
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'archive-bench-'));
 
 function makeSmall(dir: string): void {
 	for (let d = 0; d < 200; d++) {
@@ -52,33 +55,26 @@ function treeStats(dir: string): { files: number; bytes: number } {
 	return { files, bytes };
 }
 
-const sink = () => new Writable({ write(_c, _e, done) { done(); } });
-
 function exited(child: ReturnType<typeof spawn>): Promise<void> {
 	return new Promise((done, fail) => child.on('close', (code) => (code === 0 ? done() : fail(new Error(`tar exited ${code}`)))));
 }
 
-async function hostPackTo(dir: string, out: Writable, zstd: boolean): Promise<void> {
+async function hostPack(dir: string, out: string): Promise<void> {
 	const child = spawn('tar', ['-cf', '-', '-C', dir, '.'], { stdio: ['ignore', 'pipe', 'inherit'] });
 	const done = exited(child);
-	await (zstd ? pipeline(child.stdout!, createZstdCompress(), out) : pipeline(child.stdout!, out));
+	await pipeline(child.stdout!, createZstdCompress(), fs.createWriteStream(out));
 	await done;
 }
 
-async function hostUnpack(file: string, dst: string, zstd: boolean): Promise<void> {
+async function hostUnpack(file: string, dst: string): Promise<void> {
 	fs.mkdirSync(dst, { recursive: true });
 	const child = spawn('tar', ['-xf', '-', '-C', dst], { stdio: ['pipe', 'inherit', 'inherit'] });
 	const done = exited(child);
-	await (zstd ? pipeline(fs.createReadStream(file), createZstdDecompress(), child.stdin!) : pipeline(fs.createReadStream(file), child.stdin!));
+	await pipeline(fs.createReadStream(file), createZstdDecompress(), child.stdin!);
 	await done;
 }
 
-async function ourUnpack(file: string, dst: string, zstd: boolean): Promise<void> {
-	const src = fs.createReadStream(file);
-	await untar(zstd ? src.pipe(createZstdDecompress()) : src, dst);
-}
-
-async function median(fn: () => Promise<void>, reset?: () => void): Promise<number> {
+async function median(fn: () => Promise<void> | void, reset?: () => void): Promise<number> {
 	const times: number[] = [];
 	for (let i = 0; i < runs; i++) {
 		reset?.();
@@ -94,24 +90,23 @@ const rows: Row[] = [];
 
 async function bench(name: string, dir: string): Promise<void> {
 	const stats = treeStats(dir);
-	console.error(`${name}: ${stats.files} files, ${(stats.bytes / 2 ** 20).toFixed(1)} MiB`);
-	const plainHost = path.join(root, `${name}.host.tar`);
-	const plainOurs = path.join(root, `${name}.ours.tar`);
-	const zstHost = path.join(root, `${name}.host.tar.zst`);
-	const zstOurs = path.join(root, `${name}.ours.tar.zst`);
+	const label = `${name} (${stats.files} files, ${(stats.bytes / 2 ** 20).toFixed(0)} MiB)`;
+	const hostArchive = path.join(root, `${name}.host.tar.zst`);
+	const ourArchive = path.join(root, `${name}.ours.tar.zst`);
 	const dst = path.join(root, `${name}-dst`);
 	const clean = () => fs.rmSync(dst, { recursive: true, force: true });
-	await hostPackTo(dir, fs.createWriteStream(plainHost), false);
-	await pipeline(Readable.from(tarOf(dir)), fs.createWriteStream(plainOurs));
-	await hostPackTo(dir, fs.createWriteStream(zstHost), true);
-	await pipeline(Readable.from(tarOf(dir)), createZstdCompress(), fs.createWriteStream(zstOurs));
-	const add = (op: string, host: number, ours: number) => rows.push({ tree: `${name} (${stats.files} files, ${(stats.bytes / 2 ** 20).toFixed(0)} MiB)`, op, host, ours });
-	add('archive', await median(() => hostPackTo(dir, sink(), false)), await median(() => pipeline(Readable.from(tarOf(dir)), sink())));
-	add('extract', await median(() => hostUnpack(plainHost, dst, false), clean), await median(() => ourUnpack(plainOurs, dst, false), clean));
-	add('pack (tar+zstd)', await median(() => hostPackTo(dir, sink(), true)), await median(() => pipeline(Readable.from(tarOf(dir)), createZstdCompress(), sink())));
-	add('unpack (zstd+tar)', await median(() => hostUnpack(zstHost, dst, true), clean), await median(() => ourUnpack(zstOurs, dst, true), clean));
+	rows.push({
+		tree: label, op: 'pack',
+		host: await median(() => hostPack(dir, hostArchive)),
+		ours: await median(() => runCli(cli, ['archive', 'pack', dir, ourArchive])),
+	});
+	rows.push({
+		tree: label, op: 'unpack',
+		host: await median(() => hostUnpack(hostArchive, dst), clean),
+		ours: await median(() => runCli(cli, ['archive', 'unpack', ourArchive, dst]), clean),
+	});
 	const size = (p: string) => (fs.statSync(p).size / 2 ** 20).toFixed(1);
-	console.error(`  archive size: host ${size(plainHost)} MiB, ours ${size(plainOurs)} MiB; zstd: host ${size(zstHost)} MiB, ours ${size(zstOurs)} MiB`);
+	console.error(`${label}: archive host ${size(hostArchive)} MiB, ours ${size(ourArchive)} MiB`);
 	clean();
 }
 
@@ -123,7 +118,7 @@ async function main() {
 	await bench('small', small);
 	await bench('large', large);
 	if (process.argv[2]) await bench('extra', path.resolve(process.argv[2]));
-	console.log('| tree | operation | host tar (s) | tar.ts (s) | tar.ts / host |');
+	console.log('| tree | operation | host tar + node zstd (s) | buildhost archive (s) | ours / host |');
 	console.log('|---|---|---:|---:|---:|');
 	for (const r of rows) console.log(`| ${r.tree} | ${r.op} | ${r.host.toFixed(3)} | ${r.ours.toFixed(3)} | ${(r.ours / r.host).toFixed(2)}x |`);
 	fs.rmSync(root, { recursive: true, force: true });
