@@ -64,5 +64,5 @@ runs:
       with:
         inputs: ${{ toJSON(inputs) }}
         script: |
-          const lib = require(${{ toJSON(format('{0}/../lib/upload-artifact.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/upload-artifact', github.action_path)) }});
-          await lib.uploadArtifact({ core, github, context, octokit, exec, inputs, steps });
+          import { uploadArtifact } from '../lib/upload-artifact';
+          await uploadArtifact({ core, github, context, octokit, exec, inputs, steps });
