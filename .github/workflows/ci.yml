@@ -114,7 +114,6 @@ jobs:
       id-token: write
       contents: read
       pull-requests: write
-      id-token: write
     steps:
       # PR routes.
       - uses: wow-look-at-my/actions@cache-download#latest
@@ -181,7 +180,7 @@ jobs:
         working-directory: base
         run: |
           if [ -x .github/scripts/pin-org-deps.sh ]; then
-            git config --global url."https://${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+            git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
             .github/scripts/pin-org-deps.sh
           fi
           go generate ./internal/api
@@ -297,7 +296,7 @@ jobs:
       - uses: wow-look-at-my/actions@secret-server#latest
       - name: Pin org modules for stock Go
         run: |
-          git config --global url."https://${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
           .github/scripts/pin-org-deps.sh
       - name: Build the strip fixture
         run: go build -o "${{ runner.temp }}/strip-fixture" ./test/e2e/testdata/netcheck
@@ -328,7 +327,7 @@ jobs:
       - uses: wow-look-at-my/actions@secret-server#latest
       - name: Pin org modules for stock Go
         run: |
-          git config --global url."https://${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
           .github/scripts/pin-org-deps.sh
       - name: Build the marker entrypoint (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "${{ runner.temp }}/marker" ./test/e2e/testdata/marker
@@ -393,7 +392,7 @@ jobs:
       - uses: wow-look-at-my/actions@secret-server#latest
       - name: Pin org modules for stock Go
         run: |
-          git config --global url."https://${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
           .github/scripts/pin-org-deps.sh
       # Natively, never the shipped APE: SQLite's file locking fails under the APE's macOS syscall layer, and the server dies on SQLITE_IOERR_LOCK.
       - run: go generate ./internal/repackage
@@ -718,14 +717,14 @@ jobs:
       - uses: wow-look-at-my/actions@secret-server#latest
       - name: Pin org modules for stock Go
         run: |
-          git config --global url."https://${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
           .github/scripts/pin-org-deps.sh
       - name: Install crane (zstd-capable OCI client)
         run: |
           go install github.com/google/go-containerregistry/cmd/crane@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Build netcheck entrypoint (static linux/amd64)
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$RUNNER_TEMP/netcheck" ./test/e2e/testdata/netcheck
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "${{ runner.temp }}/netcheck" ./test/e2e/testdata/netcheck
       # The OCI endpoint is host-routed: the earliest Host label must be "oci".
       - name: Map the OCI host to the local server
         run: echo "127.0.0.1 oci.buildhost.test" | sudo tee -a /etc/hosts
@@ -799,7 +798,7 @@ jobs:
       - uses: wow-look-at-my/actions@secret-server#latest
       - name: Pin org modules for stock Go
         run: |
-          git config --global url."https://${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
           .github/scripts/pin-org-deps.sh
       - name: Build apt test package payload (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "${{ runner.temp }}/buildhost-apt-e2e" ./test/e2e/testdata/netcheck
