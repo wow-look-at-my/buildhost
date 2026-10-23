@@ -1006,7 +1006,7 @@ jobs:
             kill "$(cat "${{ runner.temp }}/buildhost.pid")" || true
           fi
 
-  # The hand-off composite against this PR's own server, with the job's real OIDC token as the run's identity.
+  # The hand-off and cache composites against this PR's own server, with the job's real OIDC token as the run's identity.
   handoff-action-e2e:
     needs: build
     runs-on: ubuntu-latest
@@ -1076,6 +1076,81 @@ jobs:
           RECEIVED: ${{ runner.temp }}/received
           BASE: http://localhost:18080
         run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/handoff.dats
+      # A cache entry restores to the paths it was saved from: one inside the workspace, one outside it.
+      - name: Lay out the paths to cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp -a "${{ runner.temp }}/sent" "${{ runner.temp }}/cached"
+          mkdir -p cached-in-workspace && printf 'workspace\n' > cached-in-workspace/note
+      - name: Save the cache
+        uses: ./.github/actions/buildhost-cache-save
+        with:
+          server: http://localhost:18080
+          key: cache-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/cached
+            cached-in-workspace
+            never-created
+      - name: Save the same key again
+        uses: ./.github/actions/buildhost-cache-save
+        with:
+          server: http://localhost:18080
+          key: cache-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/cached
+            cached-in-workspace
+      - name: Clear the cached paths
+        shell: bash
+        run: rm -rf "${{ runner.temp }}/cached" cached-in-workspace
+      - name: Restore the exact key
+        id: restore-exact
+        uses: ./.github/actions/buildhost-cache-restore
+        with:
+          server: http://localhost:18080
+          key: cache-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/cached
+            cached-in-workspace
+      - name: Keep the exact restore and clear the paths
+        shell: bash
+        run: mv "${{ runner.temp }}/cached" "${{ runner.temp }}/cache-exact" && mv cached-in-workspace "${{ runner.temp }}/cache-exact-workspace"
+      - name: Restore by a restore key
+        id: restore-prefix
+        uses: ./.github/actions/buildhost-cache-restore
+        with:
+          server: http://localhost:18080
+          key: cache-e2e-absent-${{ github.run_id }}
+          restore-keys: |
+            nothing-here-
+            cache-e2e-${{ github.run_id }}-
+          path: |
+            ${{ runner.temp }}/cached
+            cached-in-workspace
+      - name: Keep the prefix restore and clear the paths
+        shell: bash
+        run: mv "${{ runner.temp }}/cached" "${{ runner.temp }}/cache-prefix" && rm -rf cached-in-workspace
+      - name: Restore a key nothing holds
+        id: restore-miss
+        uses: ./.github/actions/buildhost-cache-restore
+        with:
+          server: http://localhost:18080
+          key: cache-e2e-absent-${{ github.run_id }}
+          path: ${{ runner.temp }}/cached
+      - env:
+          LOG: ${{ runner.temp }}/buildhost.log
+          SENT: ${{ runner.temp }}/sent
+          EXACT: ${{ runner.temp }}/cache-exact
+          EXACT_WORKSPACE: ${{ runner.temp }}/cache-exact-workspace
+          PREFIX: ${{ runner.temp }}/cache-prefix
+          MISS: ${{ runner.temp }}/cached
+          EXACT_HIT: ${{ steps.restore-exact.outputs.cache-hit }}
+          PREFIX_HIT: ${{ steps.restore-prefix.outputs.cache-hit }}
+          PREFIX_MATCHED: ${{ steps.restore-prefix.outputs.cache-matched-key }}
+          MISS_HIT: ${{ steps.restore-miss.outputs.cache-hit }}
+          SAVED_KEY: cache-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          BASE: http://localhost:18080
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/cache.dats
       - name: Server log
         if: always()
         shell: bash
