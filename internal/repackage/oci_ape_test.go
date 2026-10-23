@@ -79,6 +79,7 @@ func buildOCI(t *testing.T, exeFormat string, os db.OS, arch db.Arch) ([]byte, f
 	input := makeInput()
 	input.Artifact = *a
 	input.Reader = bytes.NewReader(payload)
+	input.Size = size
 
 	out, err := (&OCI{Store: store, DB: d}).Repackage(ctx, input)
 	require.NoError(t, err)
