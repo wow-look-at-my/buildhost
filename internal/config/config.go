@@ -114,7 +114,7 @@ type Config struct {
 
 	// SiteDomain is an optional dedicated domain for project static sites.
 	SiteDomain string
-	// PrimaryDomain is the apex the GitHub OAuth callback is registered on (e.g.
+	// PrimaryDomain is the apex the GitHub OAuth callback is registered on (e.g. "pazer.build").
 	PrimaryDomain string
 
 	// Sign in with GitHub (browser login for private resources). When the client
@@ -126,6 +126,16 @@ type Config struct {
 	RetentionInterval     time.Duration
 	RetentionRecencyGuard time.Duration // never evict releases newer than this
 	RetentionEnforce      bool          // actually delete; false = report-only
+
+	// Run files: how long a run's files outlive the run, and the free disk share below which ended runs go sooner.
+	RunFilesKeep           time.Duration
+	RunFilesMinFreePercent float64
+
+	// Cache: how long an entry nothing restores is kept.
+	CacheKeep           time.Duration
+	CacheMinFreePercent float64
+
+	janitorErr error
 }
 
 // resolvePEM returns PEM contents from a config value that is either the PEM
@@ -151,11 +161,73 @@ func unescapePEMNewlines(v string) string {
 	return v
 }
 
-// normalizeDomain canonicalizes a configured domain name: trimmed, lowercased,
+// PrimaryDomainAny is the explicit opt-in value for BUILDHOST_PRIMARY_DOMAIN that keeps the server fully host-agnostic.
+const PrimaryDomainAny = "*"
+
+// normalizeDomain canonicalizes a configured domain name: trimmed,
+// lowercased, with a leading "*." or "."
 func normalizeDomain(v string) string {
 	v = strings.ToLower(strings.TrimSpace(v))
+	if v == PrimaryDomainAny {
+		return v
+	}
 	v = strings.TrimPrefix(v, "*.")
 	return strings.Trim(v, ".")
+}
+
+// Validate reports a configuration that cannot serve correctly, so the process
+// exits at startup instead of degrading silently at request time.
+func (c Config) Validate() error {
+	if c.PrimaryDomain == "" {
+		return fmt.Errorf("BUILDHOST_PRIMARY_DOMAIN is required: set it to the apex " +
+			"that owns the web UI, /api/v1 and the GitHub OAuth callback (e.g. " +
+			"\"example.com\"), or to \"" + PrimaryDomainAny + "\" to serve every " +
+			"Host (the historical host-agnostic behavior)")
+	}
+	return c.janitorErr
+}
+
+// loadJanitors reads the run file and cache settings. A value that is set and
+// does not parse is an error for Validate, not a quiet return to the default.
+func (c *Config) loadJanitors() {
+	for _, err := range []error{
+		strictDuration("BUILDHOST_RUN_FILES_KEEP", "24h", &c.RunFilesKeep),
+		strictPercent("BUILDHOST_RUN_FILES_MIN_FREE_PERCENT", &c.RunFilesMinFreePercent),
+		strictDuration("BUILDHOST_CACHE_KEEP", "168h", &c.CacheKeep),
+		strictPercent("BUILDHOST_CACHE_MIN_FREE_PERCENT", &c.CacheMinFreePercent),
+	} {
+		if err != nil && c.janitorErr == nil {
+			c.janitorErr = err
+		}
+	}
+}
+
+// strictDuration sets dst from the variable name when it is set.
+func strictDuration(name, example string, dst *time.Duration) error {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return fmt.Errorf("%s=%q: want a non-negative Go duration, such as %s", name, v, example)
+	}
+	*dst = d
+	return nil
+}
+
+// strictPercent sets dst from the variable name when it is set.
+func strictPercent(name string, dst *float64) error {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return nil
+	}
+	p, err := strconv.ParseFloat(v, 64)
+	if err != nil || p < 0 || p >= 100 {
+		return fmt.Errorf("%s=%q: want a number from 0 up to 100", name, v)
+	}
+	*dst = p
+	return nil
 }
 
 func Load() Config {
@@ -171,7 +243,13 @@ func Load() Config {
 		RetentionInterval:     0,
 		RetentionRecencyGuard: 24 * time.Hour,
 		RetentionEnforce:      false,
+
+		RunFilesKeep:           24 * time.Hour,
+		RunFilesMinFreePercent: 10,
+		CacheKeep:              7 * 24 * time.Hour,
+		CacheMinFreePercent:    15,
 	}
+	c.loadJanitors()
 	if v := os.Getenv("BUILDHOST_LISTEN_ADDR"); v != "" {
 		c.ListenAddr = v
 	}

@@ -189,6 +189,10 @@ func (d *DB) RenameProject(ctx context.Context, id int64, oldName, newName strin
 	if err := q.InsertProjectAlias(ctx, InsertProjectAliasParams{Name: oldName, ProjectID: id}); err != nil {
 		return fmt.Errorf("alias %q -> %q: %w", oldName, newName, err)
 	}
+	// A dependent names this project in its deb Depends and its brew depends_on, so it must follow the rename.
+	if err := renameDepends(ctx, q, oldName, newName, id); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit rename: %w", err)
 	}

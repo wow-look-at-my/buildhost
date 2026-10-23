@@ -33,6 +33,8 @@ type OIDCRepoIdentity struct {
 	RunAttempt string
 	// Actor is the GitHub login that triggered the run.
 	Actor string
+	// Ref is the git ref the run is for, such as refs/heads/master or refs/pull/7/merge.
+	Ref string
 }
 
 func WithGitHubToken(ctx context.Context, token string) context.Context {
@@ -123,17 +125,16 @@ func OIDCRepoFrom(ctx context.Context) OIDCRepoIdentity {
 	return v
 }
 
-// withRunLockOnlyRepo records the identity of a verified token that the event
-// allowlist refused. Only RunLockRepoFrom reads it.
-func withRunLockOnlyRepo(ctx context.Context, identity OIDCRepoIdentity) context.Context {
+// withRunOnlyRepo records the identity of a verified token that the event
+// allowlist refused. Only RunRepoFrom reads it.
+func withRunOnlyRepo(ctx context.Context, identity OIDCRepoIdentity) context.Context {
 	return context.WithValue(ctx, runLockRepoKey, identity)
 }
 
-// RunLockRepoFrom returns the run identity a run lock request may act for.
-// That is an accepted OIDC token's identity, or a verified token's that only
-// the event allowlist refused. A run lock grants nothing but the run's own
-// locks, so a scheduled run can use them while the rest of the API refuses it.
-func RunLockRepoFrom(ctx context.Context) (OIDCRepoIdentity, bool) {
+// RunRepoFrom returns the run identity a run-scoped request may act for: a
+// run lock or a run file. That is an accepted OIDC token's identity, or a
+// verified token's that only the event allowlist refused.
+func RunRepoFrom(ctx context.Context) (OIDCRepoIdentity, bool) {
 	if t := TokenFrom(ctx); t != nil && t.HasScope("write") {
 		if repo := OIDCRepoFrom(ctx); repo.RepoID != "" {
 			return repo, true

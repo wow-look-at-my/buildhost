@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 	"github.com/wow-look-at-my/go-containers/set"
@@ -40,9 +41,20 @@ func GitHubWebhookSecret() string { return sharedGitHubWebhookSecret }
 // SiteDomain is the optional dedicated domain for project static sites
 func SiteDomain() string { return sharedSiteDomain }
 
-// PrimaryDomain is the apex carrying the GitHub OAuth callback
+// PrimaryDomain is the apex carrying the GitHub OAuth callback (BUILDHOST_PRIMARY_DOMAIN); "" when unset.
 func PrimaryDomain() string { return sharedPrimaryDomain }
 
+// PinnedPrimaryDomain is PrimaryDomain reduced to an actually-addressable
+// host, or "" when no single host is canonical.
+func PinnedPrimaryDomain() string {
+	if sharedPrimaryDomain == config.PrimaryDomainAny {
+		return ""
+	}
+	return sharedPrimaryDomain
+}
+
+// OnReady runs fn once auth.Init has wired the shared dependencies (DB,
+// store, data dir).
 func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
 }
@@ -116,12 +128,13 @@ func HandleRawPrimary(pattern string, handler http.HandlerFunc) {
 	mux.HandleFunc(pattern, router.Allow, primaryOnly(handler))
 }
 
-// primaryOnly gates a handler to the configured primary apex (exact host match,
-// port stripped, case-folded; PrimaryDomain() is stored lowercased). The gate
-// runs BEFORE requireProject on purpose: a request on a foreign host must
+// primaryOnly gates a handler to the configured primary apex (exact host
+// match, port stripped, case-folded; PrimaryDomain() is stored lowercased).
 func primaryOnly(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if pd := PrimaryDomain(); pd != "" && strings.ToLower(hostNoPort(r.Host)) != pd {
+		pd := PrimaryDomain()
+		pinned := pd != "" && pd != config.PrimaryDomainAny
+		if pinned && strings.ToLower(hostNoPort(r.Host)) != pd {
 			http.NotFound(w, r)
 			return
 		}

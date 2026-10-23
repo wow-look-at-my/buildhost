@@ -136,6 +136,8 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/retention", router.Allow, s.apiRetention)
 	mux.HandleFunc("PUT /api/retention", router.Allow, s.apiUpdateRetention)
 	mux.HandleFunc("GET /api/retention/inventory", router.Allow, s.apiRetentionInventory)
+	mux.HandleFunc("GET /api/run-files", router.Allow, s.apiRunFiles)
+	mux.HandleFunc("GET /api/cache", router.Allow, s.apiCache)
 	mux.HandleFunc("POST /api/retention/run", router.Allow, s.apiRunRetention)
 	mux.HandleFunc("GET /admin/inflight", router.Allow, InflightHandler)
 
@@ -158,13 +160,17 @@ func (s *Server) ListenAndServe() error {
 	return s.NewHTTPServer().ListenAndServe()
 }
 
+// jsSnippetsOrigin serves the js-snippets library the dashboard imports.
+const jsSnippetsOrigin = "https://sites.pazer.build"
+
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
-		w.Header().Set("Content-Security-Policy", "default-src 'self' data: 'unsafe-inline'")
+		// The charts are js-snippets modules, imported at run time from the library site.
+		w.Header().Set("Content-Security-Policy", "default-src 'self' data: 'unsafe-inline'; script-src 'self' 'unsafe-inline' "+jsSnippetsOrigin)
 		w.Header().Set("X-Permitted-Cross-Domain-Policies", "none")
 		w.Header().Set("Permissions-Policy", "interest-cohort=()")
 		next.ServeHTTP(w, r)

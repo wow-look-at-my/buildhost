@@ -14,11 +14,15 @@ import (
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/buildhost/internal/admin"
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/brew"
 	"github.com/wow-look-at-my/buildhost/internal/buildinfo"
+	"github.com/wow-look-at-my/buildhost/internal/cicache"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/diskusage"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
+	"github.com/wow-look-at-my/buildhost/internal/runfiles"
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	"github.com/wow-look-at-my/buildhost/internal/sites"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
@@ -35,6 +39,11 @@ var serveCmd = &cobra.Command{
 	Short: "Start the registry server",
 	RunE: func(_ *cobra.Command, _ []string) error {
 		cfg := config.Load()
+		// Refuse to start on a configuration that cannot serve correctly, rather
+		// than degrade silently at request time.
+		if err := cfg.Validate(); err != nil {
+			return err
+		}
 
 		// Make the Go runtime aware of the container's memory cgroup. Do this
 		// so the GC runs harder as we approach the limit instead of letting the
@@ -129,6 +138,25 @@ var serveCmd = &cobra.Command{
 		startRetentionSweeper(ctx, cfg, database, store)
 		// Sweep expired chunked-upload sessions (abandoned spool files).
 		uploads.StartJanitor(ctx)
+		(&runfiles.Janitor{
+			DB:             database,
+			Store:          store,
+			DataDir:        cfg.DataDir,
+			Keep:           cfg.RunFilesKeep,
+			MinFreePercent: cfg.RunFilesMinFreePercent,
+			RunEnded:       auth.GitHubRunEnded,
+			Disk:           diskusage.Get,
+			Busy:           func() bool { return admin.InflightWrites() > 0 },
+		}).Start(ctx)
+		(&cicache.Janitor{
+			DB:             database,
+			Store:          store,
+			DataDir:        cfg.DataDir,
+			Keep:           cfg.CacheKeep,
+			MinFreePercent: cfg.CacheMinFreePercent,
+			Disk:           diskusage.Get,
+			Busy:           func() bool { return admin.InflightWrites() > 0 },
+		}).Start(ctx)
 
 		select {
 		case err := <-errc:

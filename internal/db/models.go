@@ -48,6 +48,18 @@ type ArtifactPlatform struct {
 	Ordinal    int64 `json:"ordinal"`
 }
 
+type CacheEntry struct {
+	RepoID     string    `json:"repo_id"`
+	Ref        string    `json:"ref"`
+	Key        string    `json:"key"`
+	RepoPath   string    `json:"repo_path"`
+	StorageKey string    `json:"storage_key"`
+	Size       int64     `json:"size"`
+	CreatedAt  time.Time `json:"created_at"`
+	UsedAt     time.Time `json:"used_at"`
+	Reads      int64     `json:"reads"`
+}
+
 type DownloadCount struct {
 	ArtifactID int64 `json:"artifact_id"`
 	Count      int64 `json:"count"`
@@ -141,6 +153,7 @@ type Project struct {
 	DefaultBranch string     `json:"default_branch"`
 	CreateService bool       `json:"create_service"`
 	AptDepends    string     `json:"apt_depends"`
+	Depends       string     `json:"depends"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
@@ -186,6 +199,17 @@ type RetentionSetting struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+type RunFile struct {
+	RepoID     string     `json:"repo_id"`
+	RunID      string     `json:"run_id"`
+	Name       string     `json:"name"`
+	StorageKey string     `json:"storage_key"`
+	Size       int64      `json:"size"`
+	CreatedAt  time.Time  `json:"created_at"`
+	Reads      int64      `json:"reads"`
+	ReadAt     *time.Time `json:"read_at"`
+}
+
 type RunLock struct {
 	RepoID     string    `json:"repo_id"`
 	RunID      string    `json:"run_id"`
@@ -193,6 +217,16 @@ type RunLock struct {
 	Name       string    `json:"name"`
 	Value      string    `json:"value"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+type RunStorageRun struct {
+	RepoID    string     `json:"repo_id"`
+	RunID     string     `json:"run_id"`
+	RepoPath  string     `json:"repo_path"`
+	CreatedAt time.Time  `json:"created_at"`
+	UsedAt    time.Time  `json:"used_at"`
+	CheckedAt *time.Time `json:"checked_at"`
+	EndedAt   *time.Time `json:"ended_at"`
 }
 
 type Site struct {

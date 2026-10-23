@@ -4,6 +4,8 @@
 /__signout {GET}
 /__sso {GET}
 /_ui/style.css {GET}
+/api/v1/cache {GET}
+/api/v1/cache/{key} {GET,PUT}
 /api/v1/oidc/policies {GET,POST}
 /api/v1/oidc/policies/{id} {DELETE}
 /api/v1/projects {GET,POST}
@@ -14,6 +16,8 @@
 /api/v1/projects/{project}/releases/{version}/artifacts/ape {PUT}
 /api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch} {PUT}
 /api/v1/projects/{project}/releases/{version}/publish {POST}
+/api/v1/run-files {GET}
+/api/v1/run-files/{name} {GET,PUT}
 /api/v1/run-locks {GET,POST}
 /api/v1/server-info {GET}
 /api/v1/tokens {GET,POST}
@@ -26,6 +30,9 @@
 /projects/{project} {GET}
 /projects/{project}/releases/{version} {GET}
 apt.{domain}/llms.txt {GET}
+apt.{domain}/private/dists/{path...} {GET}
+apt.{domain}/private/key.asc {GET}
+apt.{domain}/private/pool/{path...} {GET}
 apt.{domain}/{path...} {GET}
 brew.{domain}/Formula/{path...} {GET}
 brew.{domain}/Formula/{project}.rb {GET}

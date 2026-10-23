@@ -1,5 +1,7 @@
 package auth
 
+import _ "embed"
+
 import (
 	"fmt"
 	"html/template"
@@ -95,7 +97,8 @@ func loginRedirectURL(r *http.Request) string {
 	next := RequestBaseURL(r) + r.URL.RequestURI()
 	base := apexRootURL(r)
 	if requestSiteApex(r) != "" {
-		pd := PrimaryDomain()
+		// A site-domain browser must be sent to a real apex to sign in.
+		pd := PinnedPrimaryDomain()
 		if pd == "" {
 			return ""
 		}
@@ -269,28 +272,13 @@ func signinFailedPage(w http.ResponseWriter, _ *http.Request, status int, reason
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	esc := template.HTMLEscapeString
-	fmt.Fprintf(w, `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign-in failed</title>
-<style>
-  body { font-family: system-ui, -apple-system, sans-serif; max-width: 34rem; margin: 12vh auto; padding: 0 1.25rem; line-height: 1.55; }
-  h1 { font-size: 1.4rem; margin-bottom: .5rem; }
-  a.btn { display: inline-block; margin-top: 1rem; padding: .55rem .9rem; border: 1px solid; border-radius: .4rem; text-decoration: none; }
-</style>
-</head>
-<body>
-<h1>Sign-in failed</h1>
-<p>%s</p>
-<div><a class="btn" href="%s">Try signing in again</a></div>
-</body>
-</html>
-`, esc(reason), esc(retry))
+	fmt.Fprintf(w, signinFailedPageHtml, esc(reason), esc(retry))
 }
 
 func handleSignout(w http.ResponseWriter, r *http.Request) {
 	clearCookie(w, r, sessionCookieName, "/")
 	http.Redirect(w, r, safeNextURL(r, r.URL.Query().Get("next")), http.StatusSeeOther)
 }
+
+//go:embed signin-failed-page.html
+var signinFailedPageHtml string

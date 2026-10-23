@@ -1,5 +1,7 @@
 package repackage
 
+import _ "embed"
+
 import (
 	"archive/tar"
 	"bytes"
@@ -221,18 +223,7 @@ func DebServiceUnitPath(pkgName string) string {
 
 // DebServiceUnit renders the systemd USER unit shipped when the project
 func DebServiceUnit(pkgName, description string) string {
-	return fmt.Sprintf(`[Unit]
-Description=%s
-After=graphical-session.target
-PartOf=graphical-session.target
-
-[Service]
-ExecStart=/usr/bin/%s
-Restart=on-failure
-
-[Install]
-WantedBy=graphical-session.target
-`, sanitizeControlField(description), pkgName)
+	return fmt.Sprintf(debServiceUnitToml, sanitizeControlField(description), pkgName)
 }
 
 type tarEntry struct {
@@ -284,31 +275,14 @@ func writeArMember(w io.Writer, name string, body io.Reader, size int64) error {
 }
 
 // debPostinst is the maintainer script that sets the create_service unit up
-// automatically at install. `systemctl --global enable` is pure symlink
-// manipulation under /etc/systemd/user (no running manager needed. Works in
-// chroots/containers), attaching the unit to every user's
-// graphical-session.target -- so the service starts at each user's NEXT
+// automatically at install.
 func debPostinst(pkgName string) string {
-	return fmt.Sprintf(`#!/bin/sh
-set -e
-if [ "$1" = "configure" ] && command -v systemctl >/dev/null 2>&1; then
-    systemctl --global enable %s.service >/dev/null 2>&1 || true
-    if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
-        systemctl --user -M "${SUDO_USER}@" start %s.service >/dev/null 2>&1 || true
-    fi
-fi
-`, pkgName, pkgName)
+	return fmt.Sprintf(debPostinstSh, pkgName, pkgName)
 }
 
-// debPrerm undoes the postinst enablement when the package is removed. The
-// unit file itself is removed by dpkg with the package; running instances end
+// debPrerm undoes the postinst enablement when the package is removed.
 func debPrerm(pkgName string) string {
-	return fmt.Sprintf(`#!/bin/sh
-set -e
-if [ "$1" = "remove" ] && command -v systemctl >/dev/null 2>&1; then
-    systemctl --global disable %s.service >/dev/null 2>&1 || true
-fi
-`, pkgName)
+	return fmt.Sprintf(debPrermSh, pkgName)
 }
 
 func debArch(a db.Arch) string {
@@ -331,17 +305,29 @@ func DebPackageName(project string) string {
 	return strings.NewReplacer("/", "-", "_", "-").Replace(project)
 }
 
-// DebDependsLine renders the project's apt_depends as a "Depends:" control
-// line with its newline, or "" when the project declares none. The deb and
-// the APT Packages entry both use it, so they always agree.
+// DebDependsLine renders the project's depends and apt_depends as a "Depends:"
+// control line with its newline, or "" when the project declares none. The deb
+// and the APT Packages entry both use it, so they always agree. Each buildhost
+// project in depends appears as its deb package name, ahead of apt_depends.
 func DebDependsLine(p db.Project) (string, error) {
-	if p.AptDepends == "" {
-		return "", nil
-	}
 	if err := db.ValidateAptDepends(p.AptDepends); err != nil {
 		return "", fmt.Errorf("project %s: %w", p.Name, err)
 	}
-	return "Depends: " + p.AptDepends + "\n", nil
+	var relations []string
+	for _, dep := range p.DependsOn() {
+		relations = append(relations, DebPackageName(dep))
+	}
+	if p.AptDepends != "" {
+		relations = append(relations, p.AptDepends)
+	}
+	if len(relations) == 0 {
+		return "", nil
+	}
+	line := strings.Join(relations, ", ")
+	if err := db.ValidateAptDepends(line); err != nil {
+		return "", fmt.Errorf("project %s: %w", p.Name, err)
+	}
+	return "Depends: " + line + "\n", nil
 }
 
 func sanitizeControlField(s string) string {
@@ -365,3 +351,12 @@ func debTarHeader(e tarEntry) *tar.Header {
 	}
 	return &tar.Header{Name: e.Name, Size: int64(len(e.Data)), Mode: e.Mode}
 }
+
+//go:embed deb-service-unit.toml
+var debServiceUnitToml string
+
+//go:embed deb-postinst.sh
+var debPostinstSh string
+
+//go:embed deb-prerm.sh
+var debPrermSh string

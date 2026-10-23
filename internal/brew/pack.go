@@ -23,15 +23,22 @@ type commitNode struct {
 	tree string
 }
 
-// walkCommits walks the lineage's commit graph from tip, bounded by depth
-func walkCommits(root *os.Root, tip string, depth int, clientShallow []string) (commits []commitNode, shallow, unshallow []string, err error) {
+// walkCommits walks the lineage's commit graph from tip, bounded by depth.
+// A commit in have is one the client already holds: the walk neither
+// includes it nor goes past it, and returns it in boundary.
+func walkCommits(root *os.Root, tip string, depth int, clientShallow []string, have set.Set[string]) (commits []commitNode, shallow, unshallow, boundary []string, err error) {
 	type qnode struct {
 		sha  string
 		dist int
 	}
-	queue := []qnode{{sha: tip, dist: 1}}
+	var queue []qnode
 	seen := set.Of(tip)
 	inShallow := set.New[string]()
+	if have.Contains(tip) {
+		boundary = append(boundary, tip)
+	} else {
+		queue = append(queue, qnode{sha: tip, dist: 1})
+	}
 
 	for len(queue) > 0 {
 		c := queue[0]
@@ -39,14 +46,14 @@ func walkCommits(root *os.Root, tip string, depth int, clientShallow []string) (
 
 		kind, body, rerr := readLooseObject(root, c.sha)
 		if rerr != nil {
-			return nil, nil, nil, rerr
+			return nil, nil, nil, nil, rerr
 		}
 		if kind != "commit" {
-			return nil, nil, nil, fmt.Errorf("object %s is a %s, expected commit", c.sha, kind)
+			return nil, nil, nil, nil, fmt.Errorf("object %s is a %s, expected commit", c.sha, kind)
 		}
 		tree, parents, perr := parseCommitHeaders(body)
 		if perr != nil {
-			return nil, nil, nil, perr
+			return nil, nil, nil, nil, perr
 		}
 		commits = append(commits, commitNode{sha: c.sha, tree: tree})
 
@@ -58,9 +65,14 @@ func walkCommits(root *os.Root, tip string, depth int, clientShallow []string) (
 			continue
 		}
 		for _, p := range parents {
-			if seen.Add(p) {
-				queue = append(queue, qnode{sha: p, dist: c.dist + 1})
+			if !seen.Add(p) {
+				continue
 			}
+			if have.Contains(p) {
+				boundary = append(boundary, p)
+				continue
+			}
+			queue = append(queue, qnode{sha: p, dist: c.dist + 1})
 		}
 	}
 
@@ -69,14 +81,52 @@ func walkCommits(root *os.Root, tip string, depth int, clientShallow []string) (
 			unshallow = append(unshallow, cs)
 		}
 	}
-	return commits, shallow, unshallow, nil
+	return commits, shallow, unshallow, boundary, nil
+}
+
+// reachesAny reports whether a commit in have is tip or one of its ancestors.
+// The walk stops at the first one it meets.
+func reachesAny(root *os.Root, tip string, have set.Set[string]) (bool, error) {
+	queue := []string{tip}
+	seen := set.Of(tip)
+	for len(queue) > 0 {
+		sha := queue[0]
+		queue = queue[1:]
+		if have.Contains(sha) {
+			return true, nil
+		}
+		kind, body, err := readLooseObject(root, sha)
+		if err != nil {
+			return false, err
+		}
+		if kind != "commit" {
+			return false, fmt.Errorf("object %s is a %s, expected commit", sha, kind)
+		}
+		_, parents, err := parseCommitHeaders(body)
+		if err != nil {
+			return false, err
+		}
+		for _, p := range parents {
+			if seen.Add(p) {
+				queue = append(queue, p)
+			}
+		}
+	}
+	return false, nil
 }
 
 // collectPackEntries expands the walked commits into the full object list for
 // the pack. Every commit, then each commit's tree closure, deduplicated -- the
 // lineage reuses unchanged trees and blobs across commits, so shared objects
-func collectPackEntries(root *os.Root, commits []commitNode) ([]string, error) {
+// go in once. The tree closure of each boundary commit is left out: the client
+// already holds it.
+func collectPackEntries(root *os.Root, commits []commitNode, boundary []string) ([]string, error) {
 	seen := set.New[string](len(commits) * 4)
+	for _, sha := range boundary {
+		if err := markTreeClosure(root, sha, &seen); err != nil {
+			return nil, err
+		}
+	}
 	var entries []string
 	add := func(sha string) {
 		seen.Add(sha)
@@ -121,6 +171,49 @@ func collectPackEntries(root *os.Root, commits []commitNode) ([]string, error) {
 		}
 	}
 	return entries, nil
+}
+
+// markTreeClosure adds the tree of commitSHA and every tree and blob under it
+// to seen. A subtree already in seen is not read again.
+func markTreeClosure(root *os.Root, commitSHA string, seen *set.Set[string]) error {
+	kind, body, err := readLooseObject(root, commitSHA)
+	if err != nil {
+		return err
+	}
+	if kind != "commit" {
+		return fmt.Errorf("object %s is a %s, expected commit", commitSHA, kind)
+	}
+	tree, _, err := parseCommitHeaders(body)
+	if err != nil {
+		return err
+	}
+	stack := []string{tree}
+	for len(stack) > 0 {
+		treeSHA := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if !seen.Add(treeSHA) {
+			continue
+		}
+		kind, body, err := readLooseObject(root, treeSHA)
+		if err != nil {
+			return err
+		}
+		if kind != "tree" {
+			return fmt.Errorf("object %s is a %s, expected tree", treeSHA, kind)
+		}
+		refs, err := parseTreeEntries(body)
+		if err != nil {
+			return err
+		}
+		for _, ref := range refs {
+			if ref.isTree {
+				stack = append(stack, ref.sha)
+				continue
+			}
+			seen.Add(ref.sha)
+		}
+	}
+	return nil
 }
 
 func writePack(dst io.Writer, root *os.Root, entries []string) error {

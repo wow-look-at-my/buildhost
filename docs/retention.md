@@ -22,7 +22,7 @@ NOTE: there is no standalone repackage-cache eviction. A non-OCI format is regen
 
 A reclaimable total says how much comes back. It never says what holds the rest. `GET /api/retention/inventory` on the admin port answers that. It returns one entry per stored file, plus the pins that keep it. The Retention page has a **Copy file inventory (JSON)** button and a **Download file inventory (JSON)** button. Both fetch this endpoint and hand you the whole document.
 
-`retention.Inventory` builds it. It reads every table that references a blob. Those are `artifacts` (raw, stripped and debug keys), `packaged_artifacts`, `sites`, `oci_blob_links` and `goproxy_versions`. It emits one entry per reference. Each entry carries the storage key, sha256, size, timestamp, project, version, branch, platform, kind and filename. `refs` counts the rows that share that storage key.
+`retention.Inventory` builds it. It reads every table that references a blob. Those are `artifacts` (raw, stripped and debug keys), `packaged_artifacts`, `sites`, `oci_blob_links`, `goproxy_versions`, `run_files` and `cache_entries`. It emits one entry per reference. Each entry carries the storage key, sha256, size, timestamp, project, version, branch, platform, kind and filename. `refs` counts the rows that share that storage key.
 
 A blob with multiple references therefore frees nothing until both releases go.
 
@@ -38,6 +38,8 @@ Each entry carries `holds`, every pin that applies, most permanent first, and `h
 | `draft` | a deliberate draft, never swept |
 | `shared-blob` | the release goes, another row still references the bytes |
 | `site`, `oci-blob`, `goproxy` | not release-scoped, so eviction never frees it |
+| `run-file` | a CI run's hand-off, which `internal/runfiles` deletes after the run (`docs/run-files.md`) |
+| `cache` | a CI cache entry, which `internal/cicache` evicts when unused or under disk pressure (`docs/cache.md`) |
 
 An empty `hold` with `reclaimable: true` means the current policy frees the blob now. `by_hold` groups the whole server by that reason, biggest first. The top row is the answer to why the reclaimable number is small. `by_role` groups by which table holds the reference.
 

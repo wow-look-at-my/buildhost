@@ -2,38 +2,19 @@ package apt
 
 import (
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"text/template"
 	"time"
-
-	"github.com/wow-look-at-my/buildhost/internal/auth"
-	"github.com/wow-look-at-my/buildhost/internal/db"
 )
 
-func (h *Handler) serveRelease(w http.ResponseWriter, r *http.Request, inRelease bool) {
-	project := auth.ProjectFrom(r.Context())
-
-	release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
-	if errors.Is(err, db.ErrNotFound) {
-		release = nil
-	} else if err != nil {
+func (h *Handler) serveRelease(w http.ResponseWriter, r *http.Request, idx aptIndex, inRelease bool) {
+	content, err := releaseContent(idx)
+	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-
-	var hashes []hashEntry
-	if release != nil {
-		hashes, err = h.computePackagesHashes(r, project, release)
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-	}
-
-	content := buildRelease(project.Name, hashes)
 
 	if inRelease && h.Signer != nil && h.Signer.Available() {
 		signed, err := h.Signer.ClearSign([]byte(content))
@@ -41,43 +22,26 @@ func (h *Handler) serveRelease(w http.ResponseWriter, r *http.Request, inRelease
 			http.Error(w, "signing failed", http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Content-Type", "text/plain")
-		w.Header().Set("Cache-Control", "no-cache")
+		idx.headers(w, "text/plain")
 		w.Write(signed)
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/plain")
-	w.Header().Set("Cache-Control", "no-cache")
+	idx.headers(w, "text/plain")
 	w.Write([]byte(content))
 }
 
-func (h *Handler) serveReleaseGPG(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) serveReleaseGPG(w http.ResponseWriter, r *http.Request, idx aptIndex) {
 	if h.Signer == nil || !h.Signer.Available() {
 		http.NotFound(w, r)
 		return
 	}
 
-	project := auth.ProjectFrom(r.Context())
-
-	release, err := h.DB.GetLatestRelease(r.Context(), project.ID)
-	if errors.Is(err, db.ErrNotFound) {
-		release = nil
-	} else if err != nil {
+	content, err := releaseContent(idx)
+	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-
-	var hashes []hashEntry
-	if release != nil {
-		hashes, err = h.computePackagesHashes(r, project, release)
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-	}
-
-	content := buildRelease(project.Name, hashes)
 
 	sig, err := h.Signer.DetachedSign([]byte(content))
 	if err != nil {
@@ -85,12 +49,21 @@ func (h *Handler) serveReleaseGPG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/pgp-signature")
-	w.Header().Set("Cache-Control", "no-cache")
+	idx.headers(w, "application/pgp-signature")
 	w.Write(sig)
 }
 
-func (h *Handler) serveKey(w http.ResponseWriter, r *http.Request) {
+// releaseContent renders the Release file of an index over the Packages renderer servePackages serves.
+func releaseContent(idx aptIndex) (string, error) {
+	hashes, err := packagesHashes(idx)
+	if err != nil {
+		return "", err
+	}
+	return buildRelease(idx.label, hashes), nil
+}
+
+// serveKey serves the public signing key. A credentialed scope passes its own cacheControl, so a shared cache never keeps the answer.
+func (h *Handler) serveKey(w http.ResponseWriter, r *http.Request, cacheControl string) {
 	if h.Signer == nil || !h.Signer.Available() {
 		http.NotFound(w, r)
 		return
@@ -103,7 +76,7 @@ func (h *Handler) serveKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/pgp-keys")
-	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Header().Set("Cache-Control", cacheControl)
 	w.Write(key)
 }
 
@@ -115,16 +88,15 @@ type hashEntry struct {
 	Size int
 }
 
-// computePackagesHashes renders each architecture's Packages index through
-// packagesEntry -- the same renderer servePackages serves -- and hashes the
-// rendered bytes. The Release/InRelease SHA256 lines can never disagree
-func (h *Handler) computePackagesHashes(r *http.Request, project *db.Project, release *db.Release) ([]hashEntry, error) {
+// packagesHashes renders each architecture's Packages index through the
+// index's renderer -- the one servePackages serves -- and hashes the rendered
+// bytes. The Release/InRelease SHA256 lines can never disagree
+func packagesHashes(idx aptIndex) ([]hashEntry, error) {
 	arches := []string{"amd64", "arm64", "i386", "armhf"}
-	baseURL := auth.RequestRootURL(r)
 	var entries []hashEntry
 
 	for _, arch := range arches {
-		data, err := h.packagesEntry(r.Context(), project, release, arch, baseURL)
+		data, err := idx.packages(arch)
 		if err != nil {
 			return nil, err
 		}

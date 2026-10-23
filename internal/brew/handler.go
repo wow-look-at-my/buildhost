@@ -100,10 +100,12 @@ type Handler struct {
 	// DataDir is the persistent data root. The tap's per-lineage git history
 	DataDir string
 
-	// tapMu guards tapSnaps and tapPins: the live tap lineages (an open
+	// tapMu guards tapSnaps, tapPins and tapRefreshes: the live tap lineages (an open
 	tapMu    sync.Mutex
 	tapSnaps map[string]*tapLineage
 	tapPins  map[string]int
+	// tapRefreshes holds the in-flight refresh of each lineage directory.
+	tapRefreshes map[string]*tapRefresh
 
 	// fillMu guards the background tar.gz digest filler (queueDigestFill).
 	fillMu      sync.Mutex
@@ -141,7 +143,7 @@ func (h *Handler) ServeFormula(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, err := h.formulaForRelease(r.Context(), *project, *release, artifacts, auth.RequestRootURL(r), repackage.BrewFormulaName(project.Name), mode)
+	out, err := h.formulaForRelease(r.Context(), *project, *release, artifacts, auth.RequestRootURL(r), repackage.BrewFormulaName(project.Name), nil, mode)
 	if errors.Is(err, db.ErrNotFound) {
 		http.NotFound(w, r)
 		return

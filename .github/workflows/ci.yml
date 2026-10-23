@@ -122,6 +122,7 @@ jobs:
     if: github.ref != format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: read
       pull-requests: write
     steps:
@@ -372,6 +373,8 @@ jobs:
     env:
       BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
       BUILDHOST_BASE_URL: http://localhost:18080
+      # Required. This e2e addresses the server as localhost AND as *.localhost service subdomains (brew.localhost, static.localhost). No single host is canonical: "*" is the explicit opt-in to serving every Host.
+      BUILDHOST_PRIMARY_DOMAIN: "*"
       # CI-speed hygiene only -- these do not alter whether the documented flow
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
@@ -578,6 +581,57 @@ jobs:
               'kind = "binary"' \
               > "${{ runner.temp }}/buildhost-release-versioned.toml"
             ./buildhost publish --manifest "${{ runner.temp }}/buildhost-release-versioned.toml"
+          done
+      # dep-app declares dep-lib in depends, so brew install of dep-app must install dep-lib too.
+      - name: Publish dep-lib and dep-app (public, dep-app depends on dep-lib)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)" in
+            Darwin) os=darwin ;;
+            Linux) os=linux ;;
+            *) echo "unsupported OS"; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64) arch=amd64 ;;
+            arm64|aarch64) arch=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          for spec in dep-lib: dep-app:dep-lib; do
+            name="${spec%%:*}"
+            ./buildhost project create --server "$BUILDHOST_BASE_URL" --token "$BUILDHOST_TOKEN" --name "$name" --versioning semver
+            mkdir -p "${{ runner.temp }}/$name"
+            printf '%s\n' '#!/bin/sh' "echo buildhost-homebrew-$name-ok" > "${{ runner.temp }}/$name/$name"
+            chmod +x "${{ runner.temp }}/$name/$name"
+            ./buildhost publish --server "$BUILDHOST_BASE_URL" --token "$BUILDHOST_TOKEN" --project "$name" \
+              --version 1.0.0 --git-branch master --os "$os" --arch "$arch" \
+              --artifact "${{ runner.temp }}/$name/$name" --depends "${spec#*:}"
+          done
+      # brew-pubapp is public and declares the PRIVATE brew-secret in depends. homebrew-private.dats installs it through the authenticated tap.
+      - name: Publish brew-secret (private) and brew-pubapp (public, depends on brew-secret)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)" in
+            Darwin) os=darwin ;;
+            Linux) os=linux ;;
+            *) echo "unsupported OS"; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64) arch=amd64 ;;
+            arm64|aarch64) arch=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          ./buildhost project create --server "$BUILDHOST_BASE_URL" --token "$BUILDHOST_TOKEN" --name brew-secret --versioning semver --private
+          ./buildhost project create --server "$BUILDHOST_BASE_URL" --token "$BUILDHOST_TOKEN" --name brew-pubapp --versioning semver
+          for spec in brew-secret: brew-pubapp:brew-secret; do
+            name="${spec%%:*}"
+            mkdir -p "${{ runner.temp }}/$name"
+            printf '%s\n' '#!/bin/sh' "echo buildhost-homebrew-$name-ok" > "${{ runner.temp }}/$name/$name"
+            chmod +x "${{ runner.temp }}/$name/$name"
+            ./buildhost publish --server "$BUILDHOST_BASE_URL" --token "$BUILDHOST_TOKEN" --project "$name" \
+              --version 1.0.0 --git-branch master --os "$os" --arch "$arch" \
+              --artifact "${{ runner.temp }}/$name/$name" --depends "${spec#*:}"
           done
       # Hostile-name fixtures for the formula-codegen guarantees the e2e
       - name: Publish hostile-name fixtures (public)
@@ -795,6 +849,8 @@ jobs:
     env:
       BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
       BUILDHOST_BASE_URL: http://localhost:18080
+      # Required; "*" = serve every Host (localhost plus the static.localhost subdomain the verify step downloads from).
+      BUILDHOST_PRIMARY_DOMAIN: "*"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/buildhost-download
@@ -942,6 +998,163 @@ jobs:
           else
             echo "buildhost log was not created"
           fi
+      - name: Stop local buildhost
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "${{ runner.temp }}/buildhost.pid" ]; then
+            kill "$(cat "${{ runner.temp }}/buildhost.pid")" || true
+          fi
+
+  # The hand-off and cache composites against this PR's own server, with the job's real OIDC token as the run's identity.
+  handoff-action-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
+      BUILDHOST_BASE_URL: http://localhost:18080
+      BUILDHOST_PRIMARY_DOMAIN: "*"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build-build.broot
+          path: build/
+      - run: chmod +x build/buildhost
+      - name: Start local buildhost (1 MiB direct-upload limit)
+        shell: bash
+        env:
+          BUILDHOST_DATA_DIR: ${{ runner.temp }}/buildhost-data
+          BUILDHOST_DB_PATH: ${{ runner.temp }}/buildhost-data/buildhost.db
+          BUILDHOST_ADMIN_LISTEN_ADDR: ""
+          BUILDHOST_MAX_DIRECT_UPLOAD_SIZE: "1048576"
+          BUILDHOST_OIDC_ORGS: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          ./build/buildhost serve > "${{ runner.temp }}/buildhost.log" 2>&1 &
+          echo "$!" > "${{ runner.temp }}/buildhost.pid"
+          for _ in {1..60}; do
+            if curl -fsS "$BUILDHOST_BASE_URL/healthz" >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "${{ runner.temp }}/buildhost.log"
+          exit 1
+      - name: Create the directory to hand off
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${{ runner.temp }}/sent/bin"
+          head -c 3158217 /dev/urandom > "${{ runner.temp }}/sent/bin/go"
+          chmod 0755 "${{ runner.temp }}/sent/bin/go"
+          ln -s ../bin/go "${{ runner.temp }}/sent/compile"
+          printf 'plain\n' > "${{ runner.temp }}/sent/notes.txt"
+      - name: Send
+        uses: ./.github/actions/buildhost-handoff
+        with:
+          mode: send
+          server: http://localhost:18080
+          name: toolchain-e2e
+          path: ${{ runner.temp }}/sent
+      - name: Receive
+        uses: ./.github/actions/buildhost-handoff
+        with:
+          mode: receive
+          server: http://localhost:18080
+          name: toolchain-e2e
+          path: ${{ runner.temp }}/received
+      - env:
+          LOG: ${{ runner.temp }}/buildhost.log
+          SENT: ${{ runner.temp }}/sent
+          RECEIVED: ${{ runner.temp }}/received
+          BASE: http://localhost:18080
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/handoff.dats
+      # A cache entry restores to the paths it was saved from: one inside the workspace, one outside it.
+      - name: Lay out the paths to cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp -a "${{ runner.temp }}/sent" "${{ runner.temp }}/cached"
+          mkdir -p cached-in-workspace && printf 'workspace\n' > cached-in-workspace/note
+      - name: Save the cache
+        uses: ./.github/actions/buildhost-cache-save
+        with:
+          server: http://localhost:18080
+          key: cache-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/cached
+            cached-in-workspace
+            never-created
+      - name: Save the same key again
+        uses: ./.github/actions/buildhost-cache-save
+        with:
+          server: http://localhost:18080
+          key: cache-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/cached
+            cached-in-workspace
+      - name: Clear the cached paths
+        shell: bash
+        run: rm -rf "${{ runner.temp }}/cached" cached-in-workspace
+      - name: Restore the exact key
+        id: restore-exact
+        uses: ./.github/actions/buildhost-cache-restore
+        with:
+          server: http://localhost:18080
+          key: cache-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/cached
+            cached-in-workspace
+      - name: Keep the exact restore and clear the paths
+        shell: bash
+        run: mv "${{ runner.temp }}/cached" "${{ runner.temp }}/cache-exact" && mv cached-in-workspace "${{ runner.temp }}/cache-exact-workspace"
+      - name: Restore by a restore key
+        id: restore-prefix
+        uses: ./.github/actions/buildhost-cache-restore
+        with:
+          server: http://localhost:18080
+          key: cache-e2e-absent-${{ github.run_id }}
+          restore-keys: |
+            nothing-here-
+            cache-e2e-${{ github.run_id }}-
+          path: |
+            ${{ runner.temp }}/cached
+            cached-in-workspace
+      - name: Keep the prefix restore and clear the paths
+        shell: bash
+        run: mv "${{ runner.temp }}/cached" "${{ runner.temp }}/cache-prefix" && rm -rf cached-in-workspace
+      - name: Restore a key nothing holds
+        id: restore-miss
+        uses: ./.github/actions/buildhost-cache-restore
+        with:
+          server: http://localhost:18080
+          key: cache-e2e-absent-${{ github.run_id }}
+          path: ${{ runner.temp }}/cached
+      - env:
+          LOG: ${{ runner.temp }}/buildhost.log
+          SENT: ${{ runner.temp }}/sent
+          EXACT: ${{ runner.temp }}/cache-exact
+          EXACT_WORKSPACE: ${{ runner.temp }}/cache-exact-workspace
+          PREFIX: ${{ runner.temp }}/cache-prefix
+          MISS: ${{ runner.temp }}/cached
+          EXACT_HIT: ${{ steps.restore-exact.outputs.cache-hit }}
+          PREFIX_HIT: ${{ steps.restore-prefix.outputs.cache-hit }}
+          PREFIX_MATCHED: ${{ steps.restore-prefix.outputs.cache-matched-key }}
+          MISS_HIT: ${{ steps.restore-miss.outputs.cache-hit }}
+          SAVED_KEY: cache-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          BASE: http://localhost:18080
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/cache.dats
+      - name: Server log
+        if: always()
+        shell: bash
+        run: cat "${{ runner.temp }}/buildhost.log" || echo "buildhost log was not created"
       - name: Stop local buildhost
         if: always()
         shell: bash

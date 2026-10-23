@@ -19,6 +19,11 @@ import type {
     ReleaseData,
     RetentionData,
     RetentionInventory,
+    RunFile,
+    RunFilesData,
+    RunFilesRun,
+    CacheData,
+    CacheEntryRow,
     ServiceURLs,
     SidebarData,
     SitesData,
@@ -28,6 +33,9 @@ import type {
     VisibilityFolder,
     VisibilityMode,
 } from "./types.ts";
+import type { TimelineHit, TimelineInterval, TimelineLane, TimelineViewElement } from "https://sites.pazer.build/js-snippets/@library/ui/timeline-view.js";
+import type { DataTableElement } from "https://sites.pazer.build/js-snippets/@library/ui/data-table.js";
+import type { BarChartElement } from "https://sites.pazer.build/js-snippets/@library/ui/bar-chart.js";
 
 
 let demo = false;
@@ -110,6 +118,8 @@ var NAV_ITEMS = [
     { id: "tokens", href: "#/tokens", label: "Tokens", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/></svg>' },
     { id: "sites", href: "#/sites", label: "Sites", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4.083 9h1.946c.089-1.546.383-2.97.837-4.118A6.004 6.004 0 004.083 9zM10 2a8 8 0 100 16 8 8 0 000-16zm0 2c-.076 0-.232.032-.465.262-.238.234-.497.623-.737 1.182-.389.907-.673 2.142-.766 3.556h3.936c-.093-1.414-.377-2.649-.766-3.556-.24-.56-.5-.948-.737-1.182C10.232 4.032 10.076 4 10 4zm3.971 5c-.089-1.546-.383-2.97-.837-4.118A6.004 6.004 0 0115.917 9h-1.946zm-2.003 2H8.032c.093 1.414.377 2.649.766 3.556.24.56.5.948.737 1.182.233.23.389.262.465.262.076 0 .232-.032.465-.262.238-.234.497-.623.737-1.182.389-.907.673-2.142.766-3.556zm1.166 4.118c.454-1.147.748-2.572.837-4.118h1.946a6.004 6.004 0 01-2.783 4.118zm-6.268 0C6.412 13.97 6.118 12.546 6.029 11H4.083a6.004 6.004 0 002.783 4.118z" clip-rule="evenodd"/></svg>' },
     { id: "goproxy", href: "#/goproxy", label: "Go Proxy", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>' },
+    { id: "run-files", href: "#/run-files", label: "Run Files", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm1 5a1 1 0 100 2h7a1 1 0 100-2H4z"/></svg>' },
+    { id: "cache", href: "#/cache", label: "CI Cache", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 5c0-1.1 3.1-2 7-2s7 .9 7 2v10c0 1.1-3.1 2-7 2s-7-.9-7-2V5zm7 2c3.9 0 7-.9 7-2s-3.1-2-7-2-7 .9-7 2 3.1 2 7 2z"/></svg>' },
     { id: "oidc", href: "#/oidc", label: "OIDC Policies", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' },
     { id: "retention", href: "#/retention", label: "Retention", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>' },
     { id: "duplicates", href: "#/duplicates", label: "Duplicates", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M7 3a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V5a2 2 0 00-2-2H7z"/><path d="M3 7a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>' }
@@ -1516,11 +1526,92 @@ const route = function (): void {
     else if (first === "storage") { go(pages.storage); }
     else if (first === "retention") { go(pages.retention); }
     else if (first === "goproxy") { go(pages.goproxy); }
+    else if (first === "run-files") { go(pages.runFiles); }
+    else if (first === "cache") { go(pages.cache); }
     else if (first === "duplicates") { go(pages.duplicates); }
     else { go(pages.dashboard); }
 };
 
 // --- Demo data ---
+
+// Live runs, ended runs inside the keep window, and one past it. Every
+// treatment of the Run Files charts is on screen in a preview.
+const demoRunFiles = function (): RunFilesData {
+    const ago = function (hours: number): string { return new Date(Date.now() - hours * 3600000).toISOString(); };
+    const sha = function (seed: string): string {
+        let out = "";
+        for (let i = 0; out.length < 64; i++) out += ((seed.charCodeAt(i % seed.length) * 7919 + i * 104729) % 65536).toString(16).padStart(4, "0");
+        return out.slice(0, 64);
+    };
+    const run = function (repo: string, id: string, start: number, end: number | null, files: [string, number, number, number][]): RunFilesData["runs"][number] {
+        let bytes = 0;
+        let reads = 0;
+        const list = files.map(function (f) {
+            bytes += f[1];
+            reads += f[3];
+            return { name: f[0], size: f[1], sha256: sha(repo + id + f[0]), created_at: ago(f[2]), reads: f[3], read_at: f[3] ? ago(Math.max(0, f[2] - 0.3)) : null };
+        });
+        return {
+            repo: repo, run_id: id, created_at: ago(start), used_at: ago(end == null ? 0.05 : end + 0.1), checked_at: ago(0.06),
+            ended_at: end == null ? null : ago(end), expires_at: end == null ? null : ago(end - 24),
+            bytes: bytes, reads: reads, files: list
+        };
+    };
+    const runs = [
+        run("myorg/compiler", "18300112233", 0.6, null, [["toolchain-Linux", 1_200_000_000, 0.5, 6], ["toolchain-macOS", 1_150_000_000, 0.45, 3], ["ape-binary-Linux", 300_000_000, 0.2, 0]]),
+        run("myorg/registry", "9120044817", 0.3, null, [["frontend-dist", 48_000_000, 0.25, 2]]),
+        run("myorg/compiler", "18299001122", 9, 7.5, [["toolchain-Linux", 1_210_000_000, 8.8, 7], ["toolchain-Windows", 1_300_000_000, 8.6, 2], ["distpack-linux-amd64", 400_000_000, 7.7, 1]]),
+        run("myorg/registry", "9119983001", 15, 14.6, [["frontend-dist", 47_500_000, 14.9, 1]]),
+        run("myorg/webhook-runner", "4410982211", 21, 20.2, [["dashboard-assets", 12_000_000, 20.9, 1], ["image-layout", 640_000_000, 20.5, 1]])
+    ];
+    let total = 0;
+    for (let i = 0; i < runs.length; i++) total += runs[i].bytes;
+    return {
+        keep_seconds: 86400,
+        check_interval_seconds: 300,
+        min_free_percent: 10,
+        total_bytes: total,
+        disk_total: 500_000_000_000,
+        disk_used: 438_000_000_000,
+        disk_free: 62_000_000_000,
+        runs: runs,
+        janitor: {
+            at: ago(0.06), duration_ms: 412, deferred: false, checked: 2, check_failures: 0,
+            ended: 0, deleted: 1, pressure_deleted: 0, freed_bytes: 2_150_000_000
+        }
+    };
+};
+
+// Entries on master and on a pull request, one restored often and one near its expiry.
+const demoCache = function (): CacheData {
+    const ago = function (hours: number): string { return new Date(Date.now() - hours * 3600000).toISOString(); };
+    const keep = 7 * 24;
+    const entry = function (repo: string, ref: string, key: string, size: number, created: number, used: number, reads: number): CacheEntryRow {
+        return {
+            repo: repo, ref: ref, key: key, size: size, sha256: (key + "0".repeat(64)).replace(/[^0-9a-f]/g, "a").slice(0, 64),
+            created_at: ago(created), used_at: ago(used), reads: reads, expires_at: ago(used - keep)
+        };
+    };
+    const entries = [
+        entry("myorg/compiler", "refs/heads/master", "dist-bootstrap-Linux-X64-9f1c2e", 410_000_000, 30, 0.2, 41),
+        entry("myorg/compiler", "refs/heads/master", "wasmtime-modules-wasip1-9f1c2e", 4_600_000_000, 30, 1.5, 12),
+        entry("myorg/compiler", "refs/pull/341/merge", "dist-bootstrap-Linux-X64-17bcab", 405_000_000, 9, 9, 0),
+        entry("myorg/registry", "refs/heads/main", "node-modules-3a77e1", 220_000_000, 160, 150, 3)
+    ];
+    let total = 0;
+    for (const e of entries) total += e.size;
+    return {
+        keep_seconds: keep * 3600,
+        check_interval_seconds: 300,
+        min_free_percent: 15,
+        total_bytes: total,
+        disk_total: 500_000_000_000,
+        disk_used: 438_000_000_000,
+        disk_free: 62_000_000_000,
+        entries: entries,
+        janitor: { at: ago(0.06), duration_ms: 38, deferred: false, entries: 5, expired: 1, pressure_deleted: 0, freed_bytes: 180_000_000 }
+    };
+};
 
 let demoServices = {
     dl: "https://dl.builds.example.com",
@@ -1587,6 +1678,8 @@ const demoData: Record<string, unknown> = {
     "/visibility-folders": [],
     "/registries": { base_url: "https://builds.example.com", services: demoServices, projects: [{ name: "myapp", is_private: false }, { name: "cli-tool", is_private: true }] },
     "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com", services: demoServices },
+    "/run-files": demoRunFiles(),
+    "/cache": demoCache(),
     // The demo shows a repo mid-rename, which is the state this page exists for.
     "/duplicates": {
         groups: [{
@@ -1788,6 +1881,318 @@ const setVersioning = function (name: string, versioning: string): void {
         if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); pages.project(name); });
         pages.project(name);
     }).catch(function () { alert("Could not change versioning (preview/demo mode has no backend)."); pages.project(name); });
+};
+
+pages.runFiles = function (): void {
+    setTitle("Run Files");
+    renderSidebar("run-files");
+    Promise.all([apiFetch<RunFilesData>("/run-files"), loadRunFilesCharts()]).then(function (res) {
+        renderRunFiles(res[0]);
+    });
+};
+
+// The charts are js-snippets components, loaded at run time from the library site.
+const loadRunFilesCharts = function (): Promise<unknown> {
+    return Promise.all([
+        import("https://sites.pazer.build/js-snippets/@library/ui/timeline-view.js"),
+        import("https://sites.pazer.build/js-snippets/@library/ui/data-table.js"),
+        import("https://sites.pazer.build/js-snippets/@library/ui/bar-chart.js")
+    ]);
+};
+
+const runURL = function (run: RunFilesRun): string {
+    return "https://github.com/" + run.repo + "/actions/runs/" + run.run_id;
+};
+
+const runLabel = function (run: RunFilesRun): string {
+    return run.repo + " #" + run.run_id;
+};
+
+const ms = function (s: string | null): number {
+    return s ? new Date(s).getTime() : 0;
+};
+
+const RF_RUN_COLOR = "#4a9eff";
+
+// A table cell has no room for timeAgo's "18 minutes ago".
+const shortAgo = function (iso: string): string {
+    const mins = Math.max(0, Math.round((Date.now() - ms(iso)) / 60000));
+    if (mins < 60) return mins + "m ago";
+    if (mins < 48 * 60) return Math.round(mins / 60) + "h ago";
+    return Math.round(mins / 1440) + "d ago";
+};
+
+const renderRunFiles = function (d: RunFilesData): void {
+    const now = Date.now();
+    let live = 0;
+    let files = 0;
+    let reads = 0;
+    for (const run of d.runs) {
+        if (!run.ended_at) live++;
+        files += run.files.length;
+        reads += run.reads;
+    }
+    const keepHours = Math.round(d.keep_seconds / 3600);
+    let html = "<h1>Run Files</h1>";
+    html += '<p class="rf-lede">Directories one job of a CI run hands to later jobs through <code>buildhost-handoff</code>. ' +
+        "They go " + h(keepHours) + "h after GitHub reports the run complete, sooner (oldest ended first) while free disk is under " +
+        h(d.min_free_percent) + "%. A live run's files never go early.</p>";
+    html += '<div class="rf-kpis">' +
+        kpi(d.runs.length, "runs") + kpi(live, "live") + kpi(files, "files") + kpi(humanSize(d.total_bytes), "stored") + kpi(reads, "reads") +
+        "</div>";
+    html += janitorLine(d);
+    html += '<section class="rf-panel"><h2>Disk</h2>' +
+        (d.disk_total ? '<bar-chart id="rf-disk"></bar-chart>' : '<p class="empty">The data directory reports no filesystem size.</p>') + "</section>";
+    if (!d.runs.length) {
+        html += '<section class="rf-panel"><p class="empty">No CI run holds run files.</p></section>';
+        document.getElementById("content")!.innerHTML = html;
+        fillDiskChart("rf-disk", "run files", d);
+        return;
+    }
+    html += '<section class="rf-panel"><h2>Lifecycle <span class="rf-hint">solid: run live &middot; hatched: kept after the run ended &middot; pips: file sent</span></h2>' +
+        '<timeline-view id="rf-timeline" no-minimap></timeline-view></section>';
+    html += '<div class="rf-split">' +
+        '<section class="rf-panel"><h2>Runs</h2><data-table id="rf-runs"></data-table></section>' +
+        '<section class="rf-panel"><h2>Bytes per run</h2><bar-chart id="rf-bytes" show-values></bar-chart></section>' +
+        "</div>";
+    document.getElementById("content")!.innerHTML = html;
+    fillDiskChart("rf-disk", "run files", d);
+    fillTimeline(d, now);
+    fillRunsTable(d);
+    fillBytesChart(d);
+};
+
+const kpi = function (value: string | number, label: string): string {
+    return '<span class="rf-kpi"><b>' + h(value) + "</b> " + h(label) + "</span>";
+};
+
+const janitorLine = function (d: RunFilesData): string {
+    const j = d.janitor;
+    const every = "sweeps every " + Math.round(d.check_interval_seconds / 60) + "m";
+    if (!j) return '<p class="rf-janitor">Janitor: no sweep yet since this server started (' + every + ").</p>";
+    if (j.deferred) return '<p class="rf-janitor">Janitor: last sweep ' + h(timeAgo(j.at)) + " was deferred, writes in flight (" + every + ").</p>";
+    let s = "Janitor: last sweep " + h(timeAgo(j.at)) + " in " + h(j.duration_ms) + "ms, asked GitHub about " + h(j.checked) + " live run" + (j.checked === 1 ? "" : "s") +
+        " (" + h(j.ended) + " ended), deleted " + h(j.deleted) + (j.pressure_deleted ? " (" + h(j.pressure_deleted) + " for disk pressure)" : "") +
+        ", freed " + h(humanSize(j.freed_bytes)) + " &middot; " + every;
+    if (j.check_failures) s += ' &middot; <span class="rf-bad">' + h(j.check_failures) + " status check" + (j.check_failures === 1 ? "" : "s") + " failed: " + h(j.last_check_error) + "</span>";
+    if (j.error) s += ' &middot; <span class="rf-bad">sweep failed: ' + h(j.error) + "</span>";
+    return '<p class="rf-janitor">' + s + "</p>";
+};
+
+type DiskShare = Pick<RunFilesData, "disk_total" | "disk_used" | "disk_free" | "total_bytes" | "min_free_percent">;
+
+const fillDiskChart = function (id: string, label: string, d: DiskShare): void {
+    const el = document.getElementById(id) as BarChartElement | null;
+    if (!el || !d.disk_total) return;
+    const used = d.disk_used ?? d.disk_total - (d.disk_free ?? 0);
+    el.format = humanSize;
+    el.max = d.disk_total;
+    el.series = [
+        { key: "run", label: label, color: RF_RUN_COLOR },
+        { key: "other", label: "everything else", color: "#6b7178" },
+        { key: "free", label: "free", muted: true }
+    ];
+    el.rows = [{ id: "disk", label: "data dir", values: { run: d.total_bytes, other: Math.max(0, used - d.total_bytes), free: d.disk_free ?? 0 } }];
+    el.markers = [{ value: d.disk_total * (1 - d.min_free_percent / 100), label: d.min_free_percent + "% free floor", kind: "warning" }];
+};
+
+const fillTimeline = function (d: RunFilesData, now: number): void {
+    const el = document.getElementById("rf-timeline") as TimelineViewElement | null;
+    if (!el) return;
+    const lanes: TimelineLane[] = [];
+    const intervals: TimelineInterval[] = [];
+    let first = now;
+    let last = now;
+    for (const run of d.runs) {
+        const lane = run.repo + "#" + run.run_id;
+        const start = ms(run.created_at);
+        const ended = run.ended_at ? ms(run.ended_at) : null;
+        const expires = run.expires_at ? ms(run.expires_at) : null;
+        first = Math.min(first, start);
+        if (expires) last = Math.max(last, expires);
+        lanes.push({ id: lane, label: runLabel(run), group: run.repo });
+        // The chart is static (maxTime is set), so a live run ends at now rather than running on to the right edge.
+        intervals.push({
+            id: lane, laneId: lane, start: start, end: expires ?? now, category: run.repo, label: humanSize(run.bytes),
+            segments: ended != null && expires != null ? [{ start: start, end: ended, kind: "" }, { start: ended, end: expires, kind: "hatch" }] : undefined,
+            data: run
+        });
+        for (const f of run.files) {
+            const t = ms(f.created_at);
+            intervals.push({ id: lane + "/" + f.name, laneId: lane, start: t, end: t, category: run.repo, label: f.name, data: f });
+        }
+    }
+    el.staleAfterMs = 0;
+    el.tooltipFor = function (hit: TimelineHit): string | null {
+        const data = hit.interval?.data as RunFilesRun | RunFile | undefined;
+        if (!data) return null;
+        if ("run_id" in data) {
+            return runLabel(data) + "\n" + humanSize(data.bytes) + " in " + data.files.length + " file" + (data.files.length === 1 ? "" : "s") +
+                "\nstarted " + formatTime(data.created_at) +
+                (data.ended_at ? "\nended " + formatTime(data.ended_at) + "\ndeleted after " + formatTime(data.expires_at) : "\nlive, last used " + timeAgo(data.used_at));
+        }
+        return data.name + "\n" + humanSize(data.size) + ", sent " + formatTime(data.created_at) +
+            "\nread " + data.reads + " time" + (data.reads === 1 ? "" : "s") + (data.read_at ? ", last " + timeAgo(data.read_at) : "");
+    };
+    // A fixed window from the oldest run to the last deletion shows each keep window in full; a live chart stops at now.
+    const pad = (last - first) * 0.03;
+    el.minTime = first - pad;
+    el.maxTime = last + pad;
+    el.setData({ lanes: lanes, intervals: intervals, markers: [{ time: now, label: "now" }] });
+    el.setViewport(first - pad, last + pad);
+    el.style.height = Math.min(560, 64 + lanes.length * 40) + "px";
+};
+
+interface RunTableRow {
+    key: string;
+    run: RunFilesRun;
+}
+
+const fillRunsTable = function (d: RunFilesData): void {
+    const el = document.getElementById("rf-runs") as DataTableElement<RunTableRow> | null;
+    if (!el) return;
+    const link = function (row: RunTableRow): Node {
+        const a = document.createElement("a");
+        a.href = runURL(row.run);
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = runLabel(row.run);
+        return a;
+    };
+    const when = function (iso: string | null, empty: string): (row: RunTableRow) => Node {
+        return function (): Node {
+            const span = document.createElement("span");
+            span.textContent = iso ? shortAgo(iso) : empty;
+            if (iso) span.title = formatTime(iso);
+            return span;
+        };
+    };
+    el.columns = [
+        { key: "run", label: "Run", value: (r) => runLabel(r.run), render: link },
+        { key: "state", label: "State", value: (r) => (r.run.ended_at ? "ended" : "live") },
+        { key: "created", label: "Started", value: (r) => ms(r.run.created_at), render: (r) => when(r.run.created_at, "")(r), text: (r) => r.run.created_at },
+        { key: "expires", label: "Deleted", value: (r) => ms(r.run.expires_at) || Infinity, render: (r) => untilNode(r.run.expires_at), text: (r) => r.run.expires_at ?? "" },
+        { key: "files", label: "Files", value: (r) => r.run.files.length, align: "end" },
+        { key: "bytes", label: "Size", value: (r) => r.run.bytes, render: (r) => humanSize(r.run.bytes), align: "end" },
+        { key: "reads", label: "Reads", value: (r) => r.run.reads, align: "end" }
+    ];
+    el.facets = [{ key: "state", label: "state", of: (r) => (r.run.ended_at ? "ended" : "live"), order: ["live", "ended"] }];
+    el.rowId = (r) => r.key;
+    el.sort = { key: "created", dir: "desc" };
+    el.detailFor = function (row: RunTableRow): Node {
+        const t = document.createElement("table");
+        t.className = "rf-files";
+        t.innerHTML = "<thead><tr><th>File</th><th>Size</th><th>Sent</th><th>Reads</th><th>Last read</th><th>sha256</th></tr></thead>";
+        const body = document.createElement("tbody");
+        for (const f of row.run.files) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = "<td><code>" + h(f.name) + "</code></td><td>" + h(humanSize(f.size)) + '</td><td title="' + h(formatTime(f.created_at)) + '">' +
+                h(timeAgo(f.created_at)) + "</td><td>" + h(f.reads) + '</td><td title="' + h(formatTime(f.read_at)) + '">' + h(f.read_at ? timeAgo(f.read_at) : "never") +
+                '</td><td><code title="' + h(f.sha256) + '">' + h(f.sha256.slice(0, 12)) + "</code></td>";
+            body.append(tr);
+        }
+        t.append(body);
+        return t;
+    };
+    el.rows = d.runs.map((run) => ({ key: run.repo + "#" + run.run_id, run: run }));
+};
+
+const untilNode = function (iso: string | null): Node {
+    const span = document.createElement("span");
+    if (!iso) {
+        span.textContent = "after end";
+        span.className = "rf-dim";
+        return span;
+    }
+    const left = ms(iso) - Date.now();
+    span.title = formatTime(iso);
+    span.textContent = left <= 0 ? "next sweep" : "in " + (left >= 3600000 ? Math.round(left / 3600000) + "h" : Math.max(1, Math.round(left / 60000)) + "m");
+    return span;
+};
+
+const fillBytesChart = function (d: RunFilesData): void {
+    const el = document.getElementById("rf-bytes") as BarChartElement | null;
+    if (!el) return;
+    el.format = humanSize;
+    el.series = [
+        { key: "live", label: "live run", color: RF_RUN_COLOR },
+        { key: "ended", label: "ended, kept", color: "#a78bfa" }
+    ];
+    el.rows = d.runs.slice().sort((a, b) => b.bytes - a.bytes).map(function (run) {
+        const values: Record<string, number> = {};
+        values[run.ended_at ? "ended" : "live"] = run.bytes;
+        return { id: run.repo + "#" + run.run_id, label: runLabel(run), values: values, href: runURL(run), detail: run.files.length + " files" };
+    });
+};
+
+pages.cache = function (): void {
+    setTitle("CI Cache");
+    renderSidebar("cache");
+    Promise.all([apiFetch<CacheData>("/cache"), loadRunFilesCharts()]).then(function (res) {
+        renderCache(res[0]);
+    });
+};
+
+const renderCache = function (d: CacheData): void {
+    const repos = new Set<string>();
+    let reads = 0;
+    for (const e of d.entries) {
+        repos.add(e.repo);
+        reads += e.reads;
+    }
+    const keepDays = Math.round(d.keep_seconds / 86400);
+    let html = "<h1>CI Cache</h1>";
+    html += '<p class="rf-lede">Directories a CI job saves with <code>buildhost-cache-save</code> for later runs to restore with <code>buildhost-cache-restore</code>. ' +
+        "A run reads the entries of its own ref and of the default branch. An entry nothing restores for " + h(keepDays) +
+        "d goes, and the least recently used go sooner while free disk is under " + h(d.min_free_percent) + "%.</p>";
+    html += '<div class="rf-kpis">' +
+        kpi(d.entries.length, "entries") + kpi(repos.size, "repositories") + kpi(humanSize(d.total_bytes), "stored") + kpi(reads, "restores") +
+        "</div>";
+    html += cacheJanitorLine(d);
+    html += '<section class="rf-panel"><h2>Disk</h2>' +
+        (d.disk_total ? '<bar-chart id="cache-disk"></bar-chart>' : '<p class="empty">The data directory reports no filesystem size.</p>') + "</section>";
+    html += d.entries.length
+        ? '<section class="rf-panel"><h2>Entries</h2><data-table id="cache-entries"></data-table></section>'
+        : '<section class="rf-panel"><p class="empty">No cache entry is stored.</p></section>';
+    document.getElementById("content")!.innerHTML = html;
+    fillDiskChart("cache-disk", "cache", d);
+    fillCacheTable(d);
+};
+
+const cacheJanitorLine = function (d: CacheData): string {
+    const j = d.janitor;
+    const every = "sweeps every " + Math.round(d.check_interval_seconds / 60) + "m";
+    if (!j) return '<p class="rf-janitor">Janitor: no sweep yet since this server started (' + every + ").</p>";
+    if (j.deferred) return '<p class="rf-janitor">Janitor: last sweep ' + h(timeAgo(j.at)) + " was deferred, writes in flight (" + every + ").</p>";
+    let s = "Janitor: last sweep " + h(timeAgo(j.at)) + " in " + h(j.duration_ms) + "ms over " + h(j.entries) + " entries, expired " + h(j.expired) +
+        (j.pressure_deleted ? ", deleted " + h(j.pressure_deleted) + " for disk pressure" : "") + ", freed " + h(humanSize(j.freed_bytes)) + " &middot; " + every;
+    if (j.error) s += ' &middot; <span class="rf-bad">sweep failed: ' + h(j.error) + "</span>";
+    return '<p class="rf-janitor">' + s + "</p>";
+};
+
+const fillCacheTable = function (d: CacheData): void {
+    const el = document.getElementById("cache-entries") as DataTableElement<CacheEntryRow> | null;
+    if (!el) return;
+    const ago = function (iso: string): Node {
+        const span = document.createElement("span");
+        span.textContent = shortAgo(iso);
+        span.title = formatTime(iso);
+        return span;
+    };
+    el.columns = [
+        { key: "repo", label: "Repository", value: (e) => e.repo },
+        { key: "ref", label: "Ref", value: (e) => e.ref },
+        { key: "key", label: "Key", value: (e) => e.key },
+        { key: "size", label: "Size", value: (e) => e.size, render: (e) => humanSize(e.size), align: "end" },
+        { key: "created", label: "Saved", value: (e) => ms(e.created_at), render: (e) => ago(e.created_at), text: (e) => e.created_at },
+        { key: "used", label: "Last used", value: (e) => ms(e.used_at), render: (e) => ago(e.used_at), text: (e) => e.used_at },
+        { key: "expires", label: "Deleted", value: (e) => ms(e.expires_at), render: (e) => untilNode(e.expires_at), text: (e) => e.expires_at },
+        { key: "reads", label: "Restores", value: (e) => e.reads, align: "end" }
+    ];
+    el.facets = [{ key: "repo", label: "repository", of: (e) => e.repo }];
+    el.rowId = (e) => e.repo + "|" + e.ref + "|" + e.key;
+    el.sort = { key: "used", dir: "desc" };
+    el.rows = d.entries;
 };
 
 pages.duplicates = function (): void {

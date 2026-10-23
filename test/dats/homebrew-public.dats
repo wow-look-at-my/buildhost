@@ -32,6 +32,8 @@ shared:
 			# contend for the same prefix.
 			brew install pazer/build/ape-fixture
 			brew install pazer/build/versioned-fixture
+			# dep-app declares depends_on dep-lib. Only dep-app is named here.
+			brew install pazer/build/dep-app
 			TAP="$(brew --repository pazer/build)"
 			# Pull until the tap history holds that release.
 			for _ in $(seq 60); do
@@ -80,17 +82,23 @@ tests:
 			- "docs-agree"
 
 	# The tripwire against smuggling CI-only crutches into the executed
-	# commands: every line is a plain brew command or a token export. The
+	# commands: every line is a plain brew command or a token export. The one
+	# exception is the git config header that carries the private tap's token,
+	# because brew has no command that stores a git credential. The
 	# tap/trust/install skeleton is present.
-	- desc: the documented flows are brew commands only, with tap, trust and install
+	- desc: the documented flows are brew commands only, plus the private token header
 	  cmd: |
 		set -eu
 		. {shared.env}
+		header="^git config --global \"http\\.http://$BREW_HOST/private/\\.extraHeader\" \"Authorization: Basic "
 		for leg in public private; do
 			"$REPO/scripts/brew-doc-flows.sh" "$leg" "$BREW_HOST" \
 				| grep -v '^[[:space:]]*$' | grep -v '^#' > {outputs.flow.txt}
-			if grep -qv '^\(brew\|export\) ' {outputs.flow.txt}; then
-				echo "$leg flow has a non-brew/export line:" >&2; cat {outputs.flow.txt} >&2; exit 1
+			if grep -v '^\(brew\|export\) ' {outputs.flow.txt} | grep -qv "$header"; then
+				echo "$leg flow has a line that is not brew, export or the token header:" >&2; cat {outputs.flow.txt} >&2; exit 1
+			fi
+			if [ "$leg" = private ]; then
+				grep -q "$header" {outputs.flow.txt} || { echo "private flow lost the token header" >&2; exit 1; }
 			fi
 			for want in 'brew tap ' 'brew trust ' 'brew install '; do
 				grep -q "^$want" {outputs.flow.txt} || { echo "$leg flow lost $want" >&2; exit 1; }
@@ -183,6 +191,18 @@ tests:
 	  outputs:
 		stdout:
 			- "one-per-project"
+
+	- desc: brew install of a formula installs the buildhost project it depends on
+	  cmd: |
+		set -euo pipefail
+		grep -n 'depends_on "pazer/build/dep-lib"' "$(brew --repository pazer/build)/Formula/dep-app.rb"
+		brew list --formula pazer/build/dep-lib >/dev/null
+		dep-lib
+		dep-app
+	  outputs:
+		stdout:
+			- "buildhost-homebrew-dep-lib-ok"
+			- "buildhost-homebrew-dep-app-ok"
 
 	- desc: an APE-shaped formula installs, keeps its mode, and runs
 	  cmd: |
