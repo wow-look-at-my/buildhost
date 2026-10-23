@@ -145,6 +145,7 @@ func TestReadsAHostTarArchive(t *testing.T) {
 
 func TestNTEntriesCarryPosixModes(t *testing.T) {
 	// A tree packed on NT must extract traversable on a posix host: NT reports directory bits without the exec bit.
+	t.Serial()
 	defer func(prev func() string) { hostOS = prev }(hostOS)
 	hostOS = func() string { return "windows" }
 	src := t.TempDir()
