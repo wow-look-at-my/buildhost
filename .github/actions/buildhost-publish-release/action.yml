@@ -33,5 +33,5 @@ runs:
       with:
         inputs: ${{ toJSON(inputs) }}
         script: |
-          const lib = require(${{ toJSON(format('{0}/../lib/resources.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/resources', github.action_path)) }});
-          await lib.publishRelease({ core, github, context, octokit, exec, inputs, steps });
+          import { publishRelease } from '../lib/resources';
+          await publishRelease({ core, github, context, octokit, exec, inputs, steps });
