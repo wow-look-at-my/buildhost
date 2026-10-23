@@ -1,11 +1,8 @@
 // buildhost-handoff: hands a directory from one job of a run to later jobs of the same run, through buildhost's run files.
 
-import { createReadStream, createWriteStream, existsSync, mkdtempSync, rmSync, statSync, type WriteStream } from 'node:fs';
+import { createWriteStream, existsSync, mkdtempSync, rmSync, statSync, type WriteStream } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { createZstdCompress, createZstdDecompress } from 'node:zlib';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
-import { tarOf, untar } from './tar.ts';
+import { buildhostCli, runCli } from './cli.ts';
 import type { ActionGlobals } from './action-globals.ts';
 import { uploadFile } from './upload-artifact.ts';
 import { fileSHA256 } from './portable-manifest.ts';
@@ -23,21 +20,13 @@ export function runFilePath(name: string, env: NodeJS.ProcessEnv = process.env):
 }
 
 /** Writes members of dir, by default all of it, to archive as a zstd-compressed tar. Modes, symlinks and hardlinks survive. */
-export async function pack(dir: string, archive: string, members = ['.']): Promise<void> {
-	await pipeline(Readable.from(tarOf(dir, members)), createZstdCompress(), createWriteStream(archive));
+export async function pack(dir: string, archive: string, members = ['.'], server = 'https://pazer.build'): Promise<void> {
+	runCli(await buildhostCli(server), ['archive', 'pack', dir, archive, ...members]);
 }
 
 /** Extracts a pack archive into dir. Extraction stops at the end-of-archive marker, so bytes after it are no failure. */
-export async function unpack(archive: string, dir: string): Promise<void> {
-	const file = createReadStream(archive);
-	const zstd = createZstdDecompress();
-	file.on('error', (e) => zstd.destroy(e));
-	try {
-		await untar(file.pipe(zstd), dir);
-	} finally {
-		file.destroy();
-		zstd.destroy();
-	}
+export async function unpack(archive: string, dir: string, server = 'https://pazer.build'): Promise<void> {
+	runCli(await buildhostCli(server), ['archive', 'unpack', archive, dir]);
 }
 
 /**
@@ -127,13 +116,13 @@ export async function withArchive(g: ActionGlobals, what: string, body: (archive
 /** Downloads the archive url serves, checked against its sha256, and extracts it into dir. */
 export async function downloadAndUnpack(url: string, bearer: () => Promise<string>, archive: string, dir: string): Promise<void> {
 	await fetchRunFile(url, bearer, archive);
-	await unpack(archive, dir);
+	await unpack(archive, dir, new URL(url).origin);
 }
 
 /** Packs members of dir into archive and uploads it to urlPath. */
 export async function packAndUpload(
 	g: ActionGlobals, server: string, token: string, dir: string, members: string[], archive: string, urlPath: string,
 ): Promise<import('./client').Response> {
-	await pack(dir, archive, members);
+	await pack(dir, archive, members, server);
 	return uploadFile(g.core, server, token, urlPath, archive);
 }
