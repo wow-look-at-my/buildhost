@@ -33,6 +33,7 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	tmp := filepath.Join(dataDir, "tmp")
 	require.NoError(t, os.MkdirAll(tmp, 0o755))
 	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, tmp), TmpDir: tmp, DataDir: dataDir}
+	t.Cleanup(h.waitTapRefreshes)
 	return h, d, store
 }
 
