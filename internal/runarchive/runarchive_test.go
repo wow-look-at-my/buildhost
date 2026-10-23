@@ -172,6 +172,22 @@ func TestNTEntriesCarryPosixModes(t *testing.T) {
 	assert.Equal(t, int64(0o444), modes["dir/ro.txt"])
 }
 
+func TestNTBackslashTargetGetsItsParents(t *testing.T) {
+	// node hands an NT path to the CLI with backslashes. The target and its missing parents must still be made.
+	t.Serial()
+	defer func(prev func() string) { hostOS = prev }(hostOS)
+	hostOS = func() string { return "windows" }
+	src := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(src, "f"), []byte("nested"), 0o644))
+	var buf bytes.Buffer
+	require.NoError(t, Pack(&buf, src, nil))
+	base := t.TempDir()
+	require.NoError(t, Unpack(&buf, base+`\build\bin`))
+	data, err := os.ReadFile(filepath.Join(base, "build", "bin", "f"))
+	require.NoError(t, err)
+	assert.Equal(t, "nested", string(data))
+}
+
 func TestMembersPackOnlyTheirPaths(t *testing.T) {
 	src := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(src, "keep", "sub"), 0o755))
