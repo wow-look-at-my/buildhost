@@ -86,5 +86,5 @@ runs:
       with:
         inputs: ${{ toJSON(inputs) }}
         script: |
-          const lib = require(${{ toJSON(format('{0}/../lib/resources.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/resources', github.action_path)) }});
-          await lib.createRelease({ core, github, context, octokit, exec, inputs, steps });
+          import { createRelease } from '../lib/resources';
+          await createRelease({ core, github, context, octokit, exec, inputs, steps });
