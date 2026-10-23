@@ -150,9 +150,9 @@ const renderSidebar = function (nav: string): void {
 };
 
 const badge = function (type: string, text: string): string { return '<span class="badge badge-' + type + '">' + h(text) + "</span>"; };
-// platformBadge renders an artifact's whole platform set as ONE badge. A file
-// covering several platforms is one artifact with one download link, so listing
-// it once with "APE: linux/amd64, darwin/arm64" is the honest row.
+// platformBadge renders an artifact's whole platform set as A single badge. Consider a file
+// covering several platforms. That file is a single artifact with a single download link, so
+// listing it a single time with "APE: linux/amd64, darwin/arm64" is the honest row.
 const platformBadge = function (platforms: Platform[] | undefined, exeFormat: string, os: string, arch: string): string {
     var list = platforms && platforms.length > 0
         ? platforms.map(function (p) { return p.os + "/" + p.arch; }).join(", ")
@@ -503,7 +503,7 @@ pages.project = function (name: string): void {
         html += '<tr><td class="info-label">Updated</td><td title="' + h(formatTime(p.updated_at)) + '">' + h(timeAgo(p.updated_at)) + "</td></tr>";
         html += "</table></div>";
 
-        // Download & Install (latest): non-versioned endpoints and commands.
+        // Download & Install (latest).
         var hasPublished = false;
         for (var ri = 0; ri < rels.length; ri++) { if (rels[ri].published) { hasPublished = true; break; } }
         if (hasPublished) {
@@ -907,6 +907,8 @@ const copyTempLink = function (btn: HTMLButtonElement, project: string, version:
 };
 
 // dlMintLink renders a download link for a private project's artifact.
+//
+// The href is still the artifact's REAL url, never "#". An anchor's href is what the browser copies, shows on hover, and opens in a new tab. A page-local "#" makes each of them useless -- "copy link address" yielded the dashboard's own URL.
 const dlMintLink = function (url: string, project: string, version: string, os: string, arch: string, fmt: string, debug: boolean, label: string, title: string): string {
     var call = "App.downloadArtifact(this,'" + project + "','" + version + "','" + os + "','" + arch + "','" + fmt + "'," + (debug ? "true" : "false") + ")";
     return '<a href="' + h(url) + '" class="dl-mint" onclick="return ' + h(call) + '" title="' + h(title) + '">' + h(label) + "</a>";

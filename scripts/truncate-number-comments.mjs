@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Truncate every Go comment at the first line go-toolchain's commentnumbers analyzer reports.
+// Truncate every Go comment at the earliest line go-toolchain's
+// commentnumbers analyzer reports.
 import fs from "node:fs";
 import path from "node:path";
 
