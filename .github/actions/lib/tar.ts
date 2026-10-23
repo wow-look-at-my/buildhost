@@ -271,8 +271,15 @@ export async function untar(source: AsyncIterable<Buffer | string>, dir: string)
 			if (p !== dir) dirs.push({ p, mode, mtime });
 		} else if (type === '0' || type === '7') {
 			ensureDir(path.dirname(p));
-			clear(p);
-			const fd = fs.openSync(p, 'w');
+			// wx refuses whatever stands at p, a symlink included, so only an entry in the way costs an extra lstat.
+			let fd: number;
+			try {
+				fd = fs.openSync(p, 'wx');
+			} catch (e) {
+				if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+				clear(p);
+				fd = fs.openSync(p, 'wx');
+			}
 			try {
 				let left = size;
 				while (left > 0n) {
@@ -281,13 +288,13 @@ export async function untar(source: AsyncIterable<Buffer | string>, dir: string)
 					fs.writeSync(fd, take(n));
 					left -= BigInt(n);
 				}
+				fs.futimesSync(fd, mtime, mtime);
+				fs.fchmodSync(fd, mode);
 			} finally {
 				fs.closeSync(fd);
 			}
 			if (!(await need(padded - Number(size)))) throw new Error(`tar: the archive ends inside ${name}`);
 			take(padded - Number(size));
-			fs.utimesSync(p, mtime, mtime);
-			fs.chmodSync(p, mode);
 		} else if (type === '1') {
 			ensureDir(path.dirname(p));
 			clear(p);
