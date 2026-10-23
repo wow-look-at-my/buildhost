@@ -36,6 +36,13 @@ A name is 1 to 128 of `[A-Za-z0-9._-]`, starting with a letter or digit.
 - A send or a receive marks the run live again. A re-run of a completed run therefore keeps its files until GitHub reports the re-run complete.
 - It waits while writes are in flight, as the release retention sweep does, so it cannot delete a blob an upload stored again.
 
-The admin dashboard's **Run Files** page (`GET /api/run-files` on the admin port) lists every run that holds files. It shows each file's name, size and sha256, whether the run is live or ended, and when the janitor deletes it.
+The admin dashboard's **Run Files** page reads `GET /api/run-files` on the admin port. It shows:
+
+- the disk of the data directory, split into run files, everything else and free, with the free floor marked
+- a lifecycle timeline with one lane per run: solid while live, hatched for the keep window after it ended, a pip per file sent
+- a runs table with live and ended filters. A row expands to its files with size, reads, last read and sha256
+- bytes per run, and a line on the janitor's last sweep: what it asked GitHub, what it deleted, any status check that failed
+
+A full `GET` of a run file counts as a read. A ranged `GET` does not, since one download can make many of them.
 
 A malformed `BUILDHOST_RUN_FILES_KEEP` or `BUILDHOST_RUN_FILES_MIN_FREE_PERCENT` fails startup.
