@@ -289,11 +289,11 @@ type fileJob struct {
 }
 
 func finishFile(f *os.File, p string, hdr *tar.Header) error {
-	if err := f.Chmod(fs.FileMode(hdr.Mode & 0o777)); err != nil {
-		f.Close()
+	if err := f.Close(); err != nil {
 		return err
 	}
-	if err := f.Close(); err != nil {
+	// Chmod by path: the cosmo NT fchmod drops the \\?\ prefix that a path past MAX_PATH needs.
+	if err := os.Chmod(p, fs.FileMode(hdr.Mode&0o777)); err != nil {
 		return err
 	}
 	return os.Chtimes(p, hdr.ModTime, hdr.ModTime)
