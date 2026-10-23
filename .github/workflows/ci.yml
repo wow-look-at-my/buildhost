@@ -966,8 +966,7 @@ jobs:
             kill "$(cat "${{ runner.temp }}/buildhost.pid")" || true
           fi
 
-  # The hand-off and cache composites against this PR's own server, with the job's real OIDC token as the run's identity.
-  # The archive runs on every host a consumer packs on. Windows' own tar crashed on trees that Linux packed fine.
+  # The hand-off and cache composites against this PR's own server, with the job's real OIDC token as the run's identity. The archive runs on every host a consumer packs on. Windows' own tar crashed on trees that Linux packed fine.
   handoff-archive:
     strategy:
       fail-fast: false
