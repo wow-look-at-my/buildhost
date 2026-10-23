@@ -125,8 +125,7 @@ async function main(): Promise<void> {
 	console.log('storage-record: all checks passed');
 }
 
-// Node runs this file directly, so the rejection has to become an exit code
-// here.
+// Node runs this file directly.
 main().catch((err: unknown) => {
 	console.error(err);
 	process.exit(1);

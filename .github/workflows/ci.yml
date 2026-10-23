@@ -32,15 +32,37 @@ jobs:
           if ! printf '%s\n' ':APE:M::\x4d\x5a\x71\x46\x70\x44\x3d\x27::/bin/sh:' | sudo tee "$dir/register" > /dev/null 2>&1; then
             echo "::warning::APE binfmt handler not registered; a bare exec of an APE still fails here"
           fi
-      # No fetch-cacerts step: the CA bundle is a generate directive (internal/repackage/oci.go), so `generate:` below fetches it. Keeping a step here would hide a broken directive from CI and leave a fresh clone unbuildable for everyone who is not this workflow. The setup-go jobs below still fetch explicitly: they run plain `go`, never generate. The org module proxy is gone, so modules come direct with sumdb off. autorelease publishes this binary to buildhost on every push, which is what makes the CLI downloadable. The publish composites fetch it from dl instead of building cmd/buildhost from a checkout that has none of the generated files it embeds. go-toolchain publishes through this repo's publish action, so a release that action broke must not block its repair. The published go-toolchain carries buildhost's release stamp after its embedded standard library's trailer. The go command reads that library from the end of the file, so the pipeline cannot run as the go command. Until a release carries the stamp ahead of the trailer, take the stamp out of the last bytes here.
+      # The published go-toolchain carries buildhost's release stamp after its embedded standard library's trailer. The go command reads that library from the end of the file, so the pipeline cannot run as the go command. Until a release carries the stamp ahead of the trailer, take the stamp out of the last bytes here. The dl endpoint is the same one buildhost-download fetches. This attempt carries the same bound and retries: an unbounded fetch lets one stalled connection kill the pipeline and skip every downstream job.
       - name: Take a go-toolchain the generators can run
         id: gotoolchain
         uses: wow-look-at-my/actions@typescript#latest
         with:
           script: |
-            const resp = await fetch("https://dl.pazer.build/go-toolchain?os=linux&arch=amd64");
-            if (!resp.ok) throw new Error(`downloading go-toolchain: HTTP ${resp.status}`);
-            let buf = Buffer.from(await resp.arrayBuffer());
+            const url = "https://dl.pazer.build/go-toolchain?os=linux&arch=amd64";
+            const stallMs = 60000;
+            const fetchOnce = async () => {
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(new Error(`no bytes for ${stallMs / 1000}s`)), stallMs);
+              try {
+                const resp = await fetch(url, { signal: controller.signal });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                return Buffer.from(await resp.arrayBuffer());
+              } finally {
+                clearTimeout(timer);
+              }
+            };
+            let buf: Buffer | undefined;
+            let problem = "";
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              try {
+                buf = await fetchOnce();
+                break;
+              } catch (err) {
+                problem = err instanceof Error ? err.message : String(err);
+                core.warning(`downloading go-toolchain failed (attempt ${attempt}), retrying: ${problem}`);
+              }
+            }
+            if (!buf) throw new Error(`downloading go-toolchain: ${problem}`);
             const magic = Buffer.from("BUILDHOST-STAMP1", "ascii");
             if (buf.length >= 84 && buf.subarray(buf.length - 16).equals(magic)) {
               const stamp = buf.length - 20 - buf.readUInt32BE(buf.length - 20);
@@ -162,6 +184,11 @@ jobs:
         with:
           ref: ${{ steps.base.outputs.sha }}
           path: base
+      # A base that predates the pin script still carries the v0.0.0 org placeholders. This job restores no pull-request source tree, so check this pull request's tree out beside the base to take the script from.
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          path: pr
       # Base may post-date the CA-bundle change and embed it; fetch before building it.
       - if: steps.cache.outputs.cache-hit != 'true'
         run: |
@@ -172,11 +199,23 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: base/go.mod
-      # The admin dashboard's JS is a generate directive too (internal/admin). It is embedded by name, so a base that has it fails to compile without this. Guarded on the script's existence: older base commits shipped the JS committed and have no script to run. Same works-on-older-base reasoning as the inlined cacerts fetch above. The busybox binaries embedded for APE OCI images are generated too. Embedded by a directory pattern, so a base that has them fails to compile without this. Guarded on the script's existence: older base commits have no script to run -- same works-on-older-base reasoning as the inlined cacerts fetch above.
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: wow-look-at-my/actions@secret-server#latest
+      # The admin dashboard's JS is a generate directive too (internal/admin),
       - if: steps.cache.outputs.cache-hit != 'true'
         working-directory: base
         run: |
-          if [ -x scripts/resolve-org-deps.sh ]; then ./scripts/resolve-org-deps.sh; fi
+          pin=""
+          if [ -x .github/scripts/pin-org-deps.sh ]; then
+            pin=.github/scripts/pin-org-deps.sh
+          elif [ -x ../pr/.github/scripts/pin-org-deps.sh ]; then
+            # The base tree predates this script, so resolve its placeholders with this pull request's copy.
+            pin=../pr/.github/scripts/pin-org-deps.sh
+          fi
+          if [ -n "$pin" ]; then
+            git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+            "$pin"
+          fi
           go generate ./internal/api
           if [ -x scripts/build-admin-frontend.sh ]; then ./scripts/build-admin-frontend.sh; fi
           if [ -d internal/repackage/shellgen ]; then go generate ./internal/repackage; fi
@@ -286,6 +325,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Stock Go cannot resolve the v0.0.0 placeholders go-toolchain keeps for org modules.
+      - uses: wow-look-at-my/actions@secret-server#latest
+      - name: Pin org modules for stock Go
+        run: |
+          git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          .github/scripts/pin-org-deps.sh
       - name: Build the strip fixture
         run: go build -o "${{ runner.temp }}/strip-fixture" ./test/e2e/testdata/netcheck
       - env:
@@ -311,6 +356,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Stock Go cannot resolve the v0.0.0 placeholders go-toolchain keeps for org modules.
+      - uses: wow-look-at-my/actions@secret-server#latest
+      - name: Pin org modules for stock Go
+        run: |
+          git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          .github/scripts/pin-org-deps.sh
       - name: Build the marker entrypoint (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "${{ runner.temp }}/marker" ./test/e2e/testdata/marker
       # The OCI endpoint is host-routed: the first Host label must be "oci".
@@ -364,15 +415,18 @@ jobs:
       - if: runner.os == 'Linux'
         name: Host prep for Homebrew's build sandbox (bubblewrap + user namespaces)
         run: |
+          sudo apt-get update
           sudo apt-get install -y bubblewrap
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      # Stock Go cannot resolve the org v0.0.0 placeholder. Some are private, so the checksum database skips them.
-      - env:
-          GONOSUMDB: github.com/wow-look-at-my
-        run: ./scripts/resolve-org-deps.sh
+      # Stock Go cannot resolve the v0.0.0 placeholders go-toolchain keeps for org modules.
+      - uses: wow-look-at-my/actions@secret-server#latest
+      - name: Pin org modules for stock Go
+        run: |
+          git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          .github/scripts/pin-org-deps.sh
       # Natively, never the shipped APE: SQLite's file locking fails under the APE's macOS syscall layer, and the server dies on SQLITE_IOERR_LOCK.
       - run: go generate ./internal/repackage
       - run: go generate ./internal/api
@@ -414,8 +468,9 @@ jobs:
             arm64|aarch64) arch=arm64 ;;
             *) echo "unsupported arch"; exit 1 ;;
           esac
-          # Publish the REAL go-toolchain binary from the live registry.
-          curl -fsSL --compressed \
+          # Publish the REAL go-toolchain binary from the live registry. The same endpoint stalls now and then, so the transfer is kept from hanging forever.
+          curl -fsSL --compressed --retry 5 --retry-all-errors --retry-delay 2 \
+            --connect-timeout 30 --speed-limit 1024 --speed-time 60 \
             "https://dl.pazer.build/go-toolchain?branch=v1&os=$os&arch=$arch" \
             -o "${{ runner.temp }}/go-toolchain"
           chmod +x "${{ runner.temp }}/go-toolchain"
@@ -692,13 +747,19 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Stock Go cannot resolve the v0.0.0 placeholders go-toolchain keeps for org modules.
+      - uses: wow-look-at-my/actions@secret-server#latest
+      - name: Pin org modules for stock Go
+        run: |
+          git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          .github/scripts/pin-org-deps.sh
       - name: Install crane (zstd-capable OCI client)
         run: |
           go install github.com/google/go-containerregistry/cmd/crane@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Build netcheck entrypoint (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "${{ runner.temp }}/netcheck" ./test/e2e/testdata/netcheck
-      # The OCI endpoint is host-routed: the first Host label must be "oci".
+      # The OCI endpoint is host-routed: the earliest Host label must be "oci".
       - name: Map the OCI host to the local server
         run: echo "127.0.0.1 oci.buildhost.test" | sudo tee -a /etc/hosts
       # buildhost's layers are zstd.
@@ -767,6 +828,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Stock Go cannot resolve the v0.0.0 placeholders go-toolchain keeps for org modules.
+      - uses: wow-look-at-my/actions@secret-server#latest
+      - name: Pin org modules for stock Go
+        run: |
+          git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          .github/scripts/pin-org-deps.sh
       - name: Build apt test package payload (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "${{ runner.temp }}/buildhost-apt-e2e" ./test/e2e/testdata/netcheck
       # Untimed, so the suite's 30s setup hook pays for neither.
