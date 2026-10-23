@@ -100,9 +100,9 @@ func buildOCI(t *testing.T, exeFormat string, os db.OS, arch db.Arch) ([]byte, f
 }
 
 // An APE is not a native Linux ELF. A scratch container cannot exec it
-// directly. The synthesized image must ship a static /bin/sh and run the
-// binary through it. That makes ENTRYPOINT ["/bin/sh", "/<name>"] a
-// runnable image rather than a crash-looping one.
+// directly. The synthesized image ships a static /bin/sh and an entrypoint
+// launcher that starts with `#!/bin/sh`, so the image runs rather than
+// crash-looping.
 func TestOCIRepackage_APEImageIsRunnable(t *testing.T) {
 	manifest, fetch := buildOCI(t, "ape", db.OSLinux, db.ArchAMD64)
 
@@ -164,7 +164,7 @@ func TestOCIRepackage_APEImageIsRunnable(t *testing.T) {
 		assert.Equal(t, "busybox", h.Linkname, "bin/%s must point at the busybox binary", name)
 	}
 
-	// The config execs the APE through that shell, not directly.
+	// The entrypoint is the launcher, whose interpreter is the shipped shell.
 	cfg := fetch(man.Config.Digest)
 	var config struct {
 		Rootfs struct {
@@ -175,8 +175,10 @@ func TestOCIRepackage_APEImageIsRunnable(t *testing.T) {
 		} `json:"config"`
 	}
 	require.NoError(t, json.Unmarshal(cfg, &config))
-	assert.Equal(t, []string{"/bin/sh", "/testapp"}, config.Config.Entrypoint,
-		"an APE must run through the shipped shell, not direct exec")
+	assert.Equal(t, []string{"/testapp"}, config.Config.Entrypoint)
+	files := readLayerFiles(t, fetch(man.Layers[1].Digest))
+	assert.True(t, strings.HasPrefix(string(files["testapp"]), "#!/bin/sh\n"),
+		"the entrypoint launcher must start with the shipped shell")
 	require.Len(t, config.Rootfs.DiffIDs, 2, "base + binary")
 }
 
