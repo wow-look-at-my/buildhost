@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/wow-look-at-my/go-containers/set"
+
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 )
 
@@ -114,8 +116,31 @@ func (h *Handler) serveTapUploadPack(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Walk the commit graph up front (it also computes the shallow boundary),
-	commits, shallow, unshallow, err := walkCommits(root, target, req.depth, req.clientShallow)
+	// The haves the lineage holds as commits.
+	var common []string
+	if req.multiAckDetailed && !req.hasDeepen {
+		common = commonHaves(root, req.haves)
+	}
+	have := set.Of(common...)
+
+	if !req.hasDeepen && !req.done {
+		// A flush-terminated batch of haves mid-negotiation.
+		ready := false
+		if len(common) > 0 {
+			ready, err = reachesAny(root, target, have)
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+		}
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		setTapCacheControl(w, r)
+		writeNegotiationRound(w, common, ready)
+		return
+	}
+
+	// The walk also computes the shallow boundary, and stops at every commit the client already has.
+	commits, shallow, unshallow, boundary, err := walkCommits(root, target, req.depth, req.clientShallow, have)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -132,15 +157,20 @@ func (h *Handler) serveTapUploadPack(w http.ResponseWriter, r *http.Request) {
 			// The depth negotiation round: the client sends wants + deepen
 			return
 		}
-	} else if !req.done {
-		// A flush-terminated batch of haves mid-negotiation: we never ACK
-		w.Write(pktLineString("NAK\n"))
-		return
 	}
 
-	w.Write(pktLineString("NAK\n"))
+	if len(common) > 0 {
+		w.Write(pktLineString("ACK " + common[len(common)-1] + "\n"))
+	} else {
+		w.Write(pktLineString("NAK\n"))
+	}
+	// The headers and the ACK/NAK reach the client before the pack is
+	// assembled. A proxy in front never times out waiting for a first byte.
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 
-	entries, err := collectPackEntries(root, commits)
+	entries, err := tapPackEntries(root, commits, boundary)
 	if err != nil {
 		// Headers are sent; abandoning the body fails the client's pack
 		return
@@ -229,13 +259,49 @@ func readUploadPackRequest(r *http.Request) ([]byte, error) {
 // maxUploadPackRefs caps how many want/shallow lines are honored per request.
 const maxUploadPackRefs = 32
 
+// tapPackEntries assembles a fetch's object list.
+var tapPackEntries = collectPackEntries
+
+// maxUploadPackHaves caps how many have lines are honored per request.
+const maxUploadPackHaves = 1024
+
 type uploadPackRequest struct {
-	wants         []string
-	clientShallow []string
-	depth         int
-	hasDeepen     bool // any deepen* pkt-line was present
-	done          bool
-	sideBand      bool
+	wants            []string
+	haves            []string
+	clientShallow    []string
+	depth            int
+	hasDeepen        bool // any deepen* pkt-line was present
+	done             bool
+	sideBand         bool
+	multiAckDetailed bool
+}
+
+// commonHaves returns the haves the lineage holds as commits, in request order.
+func commonHaves(root *os.Root, haves []string) []string {
+	var common []string
+	seen := set.New[string]()
+	for _, sha := range haves {
+		if !seen.Add(sha) {
+			continue
+		}
+		if kind, _, err := readLooseObject(root, sha); err == nil && kind == "commit" {
+			common = append(common, sha)
+		}
+	}
+	return common
+}
+
+// writeNegotiationRound answers one multi_ack_detailed round. They "ACK
+// <sha> common" per common have, "ACK <sha> ready" when the pack can be
+// cut, then NAK, exactly as git's upload-pack ends every round.
+func writeNegotiationRound(w io.Writer, common []string, ready bool) {
+	for _, sha := range common {
+		w.Write(pktLineString("ACK " + sha + " common\n"))
+	}
+	if ready {
+		w.Write(pktLineString("ACK " + common[len(common)-1] + " ready\n"))
+	}
+	w.Write(pktLineString("NAK\n"))
 }
 
 // parseUploadPackRequest decodes the pkt-line request body. Everything is
@@ -252,9 +318,16 @@ func parseUploadPackRequest(body []byte) uploadPackRequest {
 				req.wants = append(req.wants, fields[0])
 			}
 			for _, c := range fields[1:] {
-				if c == "side-band" || c == "side-band-64k" {
+				switch c {
+				case "side-band", "side-band-64k":
 					req.sideBand = true
+				case "multi_ack_detailed":
+					req.multiAckDetailed = true
 				}
+			}
+		case strings.HasPrefix(s, "have "):
+			if sha := s[len("have "):]; validLooseSHA(sha) && len(req.haves) < maxUploadPackHaves {
+				req.haves = append(req.haves, sha)
 			}
 		case strings.HasPrefix(s, "shallow "):
 			if sha := s[len("shallow "):]; validLooseSHA(sha) && len(req.clientShallow) < maxUploadPackRefs {
