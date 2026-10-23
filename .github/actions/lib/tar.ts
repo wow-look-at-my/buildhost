@@ -63,6 +63,7 @@ export async function* tarOf(root: string, members = ['.']): AsyncGenerator<Buff
 	const entries: Entry[] = [];
 	for (const m of members) walk(root, m, entries);
 	const inodes = new Map<string, string>();
+	const out = new Batch();
 	for (const e of entries) {
 		const name = e.name === '.' ? './' : e.st.isDirectory() ? `${e.name}/` : e.name;
 		const sec = e.st.mtimeNs / 1_000_000_000n;
@@ -92,22 +93,56 @@ export async function* tarOf(root: string, members = ['.']): AsyncGenerator<Buff
 		const pax = [paxRecord('path', name), paxRecord('mtime', `${sec}.${frac}`), paxRecord('size', size.toString())];
 		if (link) pax.push(paxRecord('linkpath', link));
 		const paxBody = Buffer.concat(pax);
-		yield header('PaxHeader', 'x', BigInt(paxBody.length), 0o644, sec);
-		yield paxBody;
-		yield pad(BigInt(paxBody.length));
-		yield header(name, type, size, Number(e.st.mode), sec, link);
-		if (type !== '0') continue;
-		let sent = 0n;
-		for await (const chunk of fs.createReadStream(e.abs, { highWaterMark: 1 << 20 })) {
-			const b = chunk as Buffer;
-			sent += BigInt(b.length);
-			if (sent > size) throw new Error(`tar: ${e.abs} grew while it was packed`);
-			yield b;
+		out.add(header('PaxHeader', 'x', BigInt(paxBody.length), 0o644, sec), paxBody, pad(BigInt(paxBody.length)));
+		out.add(header(name, type, size, Number(e.st.mode), sec, link));
+		if (type === '0') {
+			// A stream per file costs several times a sync read. The tree is small files more often than not.
+			const fd = fs.openSync(e.abs, 'r');
+			try {
+				let sent = 0n;
+				for (;;) {
+					const want = size - sent < BigInt(chunkSize) ? Number(size - sent) + 1 : chunkSize;
+					const buf = Buffer.allocUnsafe(want);
+					const got = fs.readSync(fd, buf, 0, want, null);
+					if (got === 0) break;
+					sent += BigInt(got);
+					if (sent > size) throw new Error(`tar: ${e.abs} grew while it was packed`);
+					out.add(buf.subarray(0, got));
+					if (out.full()) yield out.take();
+				}
+				if (sent !== size) throw new Error(`tar: ${e.abs} shrank while it was packed (${sent} of ${size} bytes)`);
+			} finally {
+				fs.closeSync(fd);
+			}
+			out.add(pad(size));
 		}
-		if (sent !== size) throw new Error(`tar: ${e.abs} shrank while it was packed (${sent} of ${size} bytes)`);
-		yield pad(size);
+		if (out.full()) yield out.take();
 	}
-	yield Buffer.alloc(block * 2);
+	out.add(Buffer.alloc(block * 2));
+	yield out.take();
+}
+
+const chunkSize = 1 << 20;
+
+/** Gathers small buffers into one, so each yield carries about a megabyte instead of one header. */
+class Batch {
+	private parts: Buffer[] = [];
+	private bytes = 0;
+	add(...bufs: Buffer[]): void {
+		for (const b of bufs) {
+			this.parts.push(b);
+			this.bytes += b.length;
+		}
+	}
+	full(): boolean {
+		return this.bytes >= chunkSize;
+	}
+	take(): Buffer {
+		const b = Buffer.concat(this.parts, this.bytes);
+		this.parts = [];
+		this.bytes = 0;
+		return b;
+	}
 }
 
 function field(h: Buffer, off: number, len: number): string {
