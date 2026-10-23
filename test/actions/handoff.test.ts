@@ -71,6 +71,20 @@ async function metadataRoundTrip(tmp: string) {
 	assert.strictEqual(fs.readlinkSync(path.join(dst, 'dangling')), 'no-such-target', 'a dangling symlink is kept');
 }
 
+// A cache path outside the workspace roots the entry at the filesystem root, which is a drive root on Windows.
+async function restoreIntoTheFilesystemRoot(tmp: string) {
+	const file = path.join(tmp, 'rooted', 'entry.txt');
+	fs.mkdirSync(path.dirname(file), { recursive: true });
+	fs.writeFileSync(file, 'rooted');
+	const root = path.parse(file).root;
+	const member = path.relative(root, file).split(path.sep).join('/');
+	const archive = path.join(tmp, 'rooted.tar.zst');
+	await pack(root, archive, [member]);
+	fs.rmSync(path.dirname(file), { recursive: true });
+	await unpack(archive, root);
+	assert.strictEqual(fs.readFileSync(file, 'utf8'), 'rooted', 'an entry rooted at the filesystem root restores');
+}
+
 async function escapingEntryIsRefused(tmp: string) {
 	const src = path.join(tmp, 'escape-src');
 	fs.mkdirSync(src);
@@ -233,6 +247,7 @@ async function run() {
 	const tmp = tempDir('handoff-', {});
 	await roundTrip(tmp);
 	await metadataRoundTrip(tmp);
+	await restoreIntoTheFilesystemRoot(tmp);
 	await escapingEntryIsRefused(tmp);
 	await bytesAfterTheEndMarker(tmp);
 	await corruptArchiveFails(tmp);

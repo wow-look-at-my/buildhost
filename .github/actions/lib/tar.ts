@@ -202,7 +202,14 @@ function clear(p: string): void {
  * their modes and mtimes after their contents.
  */
 export async function untar(source: AsyncIterable<Buffer | string>, dir: string): Promise<void> {
-	fs.mkdirSync(dir, { recursive: true });
+	// A recursive mkdir of a drive root is EPERM on Windows even when it exists.
+	const made = new Set<string>();
+	const ensureDir = (d: string) => {
+		if (made.has(d)) return;
+		if (!fs.statSync(d, { throwIfNoEntry: false })?.isDirectory()) fs.mkdirSync(d, { recursive: true });
+		made.add(d);
+	};
+	ensureDir(dir);
 	const it = source[Symbol.asyncIterator]();
 	let buf = Buffer.alloc(0);
 	const need = async (n: number): Promise<boolean> => {
@@ -258,13 +265,12 @@ export async function untar(source: AsyncIterable<Buffer | string>, dir: string)
 		longLink = '';
 		const p = inside(dir, name);
 		if (type === '5') {
-			if (!fs.lstatSync(p, { throwIfNoEntry: false })?.isDirectory()) {
-				clear(p);
-				fs.mkdirSync(p, { recursive: true });
-			}
-			dirs.push({ p, mode, mtime });
+			if (!fs.lstatSync(p, { throwIfNoEntry: false })?.isDirectory()) clear(p);
+			ensureDir(p);
+			// The root itself keeps its own mode and mtime: on a drive root neither can change.
+			if (p !== dir) dirs.push({ p, mode, mtime });
 		} else if (type === '0' || type === '7') {
-			fs.mkdirSync(path.dirname(p), { recursive: true });
+			ensureDir(path.dirname(p));
 			clear(p);
 			const fd = fs.openSync(p, 'w');
 			try {
@@ -283,7 +289,7 @@ export async function untar(source: AsyncIterable<Buffer | string>, dir: string)
 			fs.utimesSync(p, mtime, mtime);
 			fs.chmodSync(p, mode);
 		} else if (type === '1') {
-			fs.mkdirSync(path.dirname(p), { recursive: true });
+			ensureDir(path.dirname(p));
 			clear(p);
 			fs.linkSync(inside(dir, link), p);
 		} else if (type === '2') {
@@ -295,7 +301,7 @@ export async function untar(source: AsyncIterable<Buffer | string>, dir: string)
 	// Bytes after the marker are padding, so nothing reads them.
 	await it.return?.();
 	for (const l of links) {
-		fs.mkdirSync(path.dirname(l.p), { recursive: true });
+		ensureDir(path.dirname(l.p));
 		clear(l.p);
 		const target = l.target.split('/').join(path.sep);
 		const isDir = fs.statSync(path.resolve(path.dirname(l.p), target), { throwIfNoEntry: false })?.isDirectory() ?? false;
