@@ -116,7 +116,12 @@ func TestOCIRepackage_APEImageIsRunnable(t *testing.T) {
 	assert.Equal(t, int64(0o755), binHdr.Mode)
 	assert.Greater(t, binSize, int64(100*1024), "the busybox binary is ~1MB, not a stub")
 
-	for _, name := range apeShellApplets {
+	listed, err := shellFS.ReadFile("shell/applets-amd64")
+	require.NoError(t, err)
+	for _, name := range strings.Fields(string(listed)) {
+		if name == "busybox" {
+			continue
+		}
 		h, ok := entries["bin/"+name]
 		require.True(t, ok, "the shell layer must provide /bin/%s", name)
 		assert.Equal(t, byte(tar.TypeSymlink), h.Typeflag, "bin/%s", name)
@@ -160,11 +165,11 @@ func TestOCIRepackage_NonAPEImageUnchanged(t *testing.T) {
 // generation is byte-identical (the pull path re-hashes everything), and each
 // target arch gets its own busybox, not whichever was built first.
 func TestBusyboxLayerDeterministicPerArch(t *testing.T) {
-	amd1, diff1, err := busyboxLayer(db.OSLinux, db.ArchAMD64)
+	amd1, diff1, err := ShellLayer(db.ArchAMD64)
 	require.NoError(t, err)
-	amd2, diff2, err := busyboxLayer(db.OSLinux, db.ArchAMD64)
+	amd2, diff2, err := ShellLayer(db.ArchAMD64)
 	require.NoError(t, err)
-	arm, diffArm, err := busyboxLayer(db.OSLinux, db.ArchARM64)
+	arm, diffArm, err := ShellLayer(db.ArchARM64)
 	require.NoError(t, err)
 
 	assert.Equal(t, amd1, amd2)
