@@ -4,9 +4,23 @@
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, chmodSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { downloadURL, fetchBody } from './download.ts';
+import { downloadURL, fetchBody, HTTPError } from './download.ts';
 
 let cached: string | undefined;
+
+/**Downloads url to file. A broken or stalled transfer is tried again every few seconds until it completes. */
+export async function fetchCli(url: string, file: string, wait = (ms: number) => new Promise((r) => setTimeout(r, ms))): Promise<void> {
+	for (let attempt = 1; ; attempt++) {
+		try {
+			writeFileSync(file, await fetchBody(url, {}));
+			return;
+		} catch (e) {
+			if (e instanceof HTTPError && e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429) throw e;
+			console.warn(`buildhost CLI download attempt ${attempt} failed: ${e instanceof Error ? e.message : String(e)}`);
+			await wait(2000);
+		}
+	}
+}
 
 /** The argv that starts the CLI at path. An APE starts through its shell header on a posix host, and by its .exe name on NT. */
 export function cliArgv(path: string, platform = process.platform): [string, string[]] {
@@ -32,7 +46,7 @@ export async function buildhostCli(server: string): Promise<string> {
 	if (!path) {
 		path = join(process.env.RUNNER_TEMP || '.', 'buildhost-archive-cli');
 		const url = downloadURL({ server, project: 'buildhost', version: '', branch: '', os: '', arch: '', format: '' });
-		writeFileSync(path, await fetchBody(url, {}));
+		await fetchCli(url, path);
 		chmodSync(path, 0o755);
 	}
 	try {
