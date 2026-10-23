@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // A file at most this size is read or written whole by a worker. A larger one streams on the archive's own goroutine.
@@ -302,16 +303,16 @@ func Unpack(r io.Reader, dir string) error {
 	defer zr.Close()
 	tr := tar.NewReader(zr)
 
-	made := map[string]bool{}
+	made := set.New[string]()
 	ensureDir := func(d string) error {
-		if made[d] {
+		if made.Contains(d) {
 			return nil
 		}
 		// MkdirAll stats first, so an existing drive root is never made.
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
 		}
-		made[d] = true
+		made.Add(d)
 		return nil
 	}
 	if err := ensureDir(dir); err != nil {

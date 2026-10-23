@@ -1,6 +1,6 @@
 # CI cache
 
-A cache entry is a directory a job of a GitHub Actions run saves under a key, for jobs of later runs to restore. It replaces `actions/cache`, whose repository quota evicts an entry while runs still need it. `buildhost-cache-save` packs a directory as a zstd-compressed tar and stores it. `buildhost-cache-restore` restores it. A run file (`docs/run-files.md`) is the other half: it carries a directory between the jobs of one run, and goes when the run ends.
+A cache entry is a directory a job of a GitHub Actions run saves under a key, for jobs of later runs to restore. It replaces `actions/cache`, whose repository quota evicts an entry while runs still need it. `buildhost-cache-save` packs a directory as a zstd-compressed tar with `buildhost archive`, as the hand-off does, and stores it. `buildhost-cache-restore` restores it. A run file (`docs/run-files.md`) is the other half: it carries a directory between the jobs of one run, and goes when the run ends.
 
 ```yaml
 - uses: wow-look-at-my/buildhost/.github/actions/buildhost-cache-restore@lkgb

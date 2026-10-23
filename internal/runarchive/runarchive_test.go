@@ -120,9 +120,8 @@ func TestEscapingEntryIsRefused(t *testing.T) {
 func TestReadsAHostTarArchive(t *testing.T) {
 	// A cache entry an older action saved was written by the host tar, GNU long names included.
 	tarBin, err := exec.LookPath("tar")
-	if err != nil {
-		t.Fatalf("this test reads a host tar archive, and no tar is on PATH: %v", err)
-	}
+	require.Nil(t, err)
+
 	src := t.TempDir()
 	longName := strings.Repeat("g", 150) + ".txt"
 	require.NoError(t, os.WriteFile(filepath.Join(src, longName), []byte("gnu long name"), 0o644))
