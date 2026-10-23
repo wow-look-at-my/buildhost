@@ -19,6 +19,8 @@ func defaultBranch(project *db.Project) string {
 }
 
 // resolveRootBranch returns the branch the bare site root should resolve to.
+// It prefers the project's default branch (defaultBranch), but only when a
+// site has been published there.
 func resolveRootBranch(ctx context.Context, database *db.DB, project *db.Project) string {
 	preferred := defaultBranch(project)
 	if database == nil || siteExists(ctx, database, project.ID, preferred) {
