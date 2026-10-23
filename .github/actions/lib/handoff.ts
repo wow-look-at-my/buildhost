@@ -42,14 +42,25 @@ export async function pack(dir: string, archive: string, tar = tarCommand()): Pr
 	]);
 }
 
-/** Extracts a pack archive into dir. */
+/**
+ * Extracts a pack archive into dir. GNU tar stops at the end-of-archive marker and exits 0 while bytes after the marker
+ * are still unread. So a closed input after tar exits 0 is not a failure.
+ */
 export async function unpack(archive: string, dir: string, tar = tarCommand()): Promise<void> {
 	mkdirSync(dir, { recursive: true });
 	const child = spawn(tar, ['-xf', '-', '-C', dir], { stdio: ['pipe', 'inherit', 'inherit'] });
-	await Promise.all([
+	const [extract, feed] = await Promise.allSettled([
 		exited(child, 'tar -x'),
 		pipeline(createReadStream(archive), createZstdDecompress(), child.stdin!),
 	]);
+	if (extract.status === 'rejected') throw extract.reason;
+	if (feed.status === 'rejected' && !closedByTar(feed.reason)) throw feed.reason;
+}
+
+/** Reports whether err is the write side seeing the reader close, rather than a read or decompression error. */
+function closedByTar(err: unknown): boolean {
+	const code = (err as NodeJS.ErrnoException | undefined)?.code;
+	return code === 'EPIPE' || code === 'ERR_STREAM_PREMATURE_CLOSE';
 }
 
 /**
