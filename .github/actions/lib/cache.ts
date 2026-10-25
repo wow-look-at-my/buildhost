@@ -70,8 +70,13 @@ export async function findCache(server: string, bearer: () => Promise<string>, k
 	for (const k of restoreKeys) q.append('restore_keys', k);
 	const resp = await fetch(`${server}/api/v1/cache?${q}`, { headers: { Authorization: `Bearer ${await bearer()}` } });
 	const text = await resp.text();
-	if (resp.status !== 200 && resp.status !== 404) throw new Error(`cache lookup failed (HTTP ${resp.status}): ${text}`);
-	return JSON.parse(text) as CacheFind;
+	const failed = () => new Error(`cache lookup failed (HTTP ${resp.status}): ${text}`);
+	if (resp.status !== 200 && resp.status !== 404) throw failed();
+	// Only the cache answers a lookup with its scopes.
+	let found: CacheFind;
+	try { found = JSON.parse(text) as CacheFind; } catch { throw failed(); }
+	if (!Array.isArray(found?.scopes) || (resp.status === 200) !== Boolean(found.key)) throw failed();
+	return found;
 }
 
 /** buildhost-cache-restore: restores the entry key or restore-keys finds into path. A miss leaves path as it is. */
