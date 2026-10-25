@@ -114,7 +114,7 @@ type Config struct {
 	// SecretServerToken is the secret-server machine token the GitHub credential comes from.
 	SecretServerToken string
 	OTELEndpoint      string
-	SiteFetchDomains    []string
+	SiteFetchDomains  []string
 
 	// SiteDomain is an optional dedicated domain for project static sites.
 	SiteDomain string
