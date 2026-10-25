@@ -149,6 +149,24 @@ tests:
 		stdout:
 			- "bytes-identical"
 
+	# The identity download is stripped and packed in the image, and it must
+	# still be the same program. The fixture prints one line, so running both
+	# files compares the served bytes against the upload.
+	- desc: the identity download runs and prints what the upload prints
+	  cmd: |
+		set -eu
+		. {shared.env}
+		cd "$(mktemp -d)"
+		curl -fsSL -o out.bin "$STATIC/file?$QUERY&fmt=raw"
+		chmod +x out.bin
+		"$FIXTURE" > uploaded.txt
+		./out.bin > downloaded.txt
+		cmp uploaded.txt downloaded.txt
+		echo "download-runs"
+	  outputs:
+		stdout:
+			- "download-runs"
+
 	- desc: an APE is served exactly as uploaded, twice
 	  cmd: |
 		set -eu

@@ -333,7 +333,7 @@ jobs:
           git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
           .github/scripts/pin-org-deps.sh
       - name: Build the strip fixture
-        run: go build -o "${{ runner.temp }}/strip-fixture" ./test/e2e/testdata/netcheck
+        run: go build -o "${{ runner.temp }}/strip-fixture" ./test/e2e/testdata/marker
       - env:
           STRIP_FIXTURE: ${{ runner.temp }}/strip-fixture
         run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/image-strips.dats
