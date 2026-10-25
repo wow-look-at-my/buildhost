@@ -145,8 +145,8 @@ func testPacker(t *testing.T) *pack.Packer { return pack.New(t.TempDir()) }
 // optional: without upx the download is served stripped.
 func requireUPX(t *testing.T) {
 	t.Helper()
-	if _, err := exec.LookPath("upx"); err != nil {
-		t.Skip("no upx on PATH: the download is served stripped")
+	if !pack.New(t.TempDir()).Available() {
+		t.Skip("no upx executable: the download is served stripped")
 	}
 }
 
@@ -177,6 +177,7 @@ func TestRawIdentityIsPacked(t *testing.T) {
 func TestRawWithoutAPackerIsStillComplete(t *testing.T) {
 	t.Serial()
 	t.Setenv("PATH", t.TempDir())
+	t.Setenv(pack.EnvOverride, "")
 	f := newRawFixture(t, buildELFFixture(t))
 	sh := &Shaper{Pack: testPacker(t)}
 

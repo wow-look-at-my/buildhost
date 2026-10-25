@@ -1,6 +1,6 @@
-// Package pack shrinks a served executable with the UPX packer installed on
-// the host. The distroless image carries no packer, so a download there is
-// served stripped and not packed.
+// Package pack shrinks a served executable with UPX, a separate program the
+// image ships and the host may install. GPL stays with that program; nothing
+// of it is linked into the server.
 package pack
 
 import (
@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/exeformat"
 	"github.com/wow-look-at-my/buildhost/internal/scratch"
@@ -19,8 +20,14 @@ import (
 // TransformVersion identifies the bytes stripping and packing produce.
 const TransformVersion = "pack-1"
 
+// ImagePath is where the production image ships the packer.
+const ImagePath = "/usr/local/lib/buildhost/upx"
+
+// EnvOverride names a packer explicitly. It wins over the image path and PATH.
+const EnvOverride = "BUILDHOST_UPX"
+
 // ErrUnavailable reports that no packer is installed. The caller serves the stripped binary.
-var ErrUnavailable = errors.New("pack: no upx on PATH")
+var ErrUnavailable = errors.New("pack: no upx executable")
 
 // ErrNotSmaller reports that packing the input would not shrink it. The caller serves the bytes.
 var ErrNotSmaller = errors.New("pack: packed output is not smaller")
@@ -28,7 +35,7 @@ var ErrNotSmaller = errors.New("pack: packed output is not smaller")
 // ErrFormatChanged reports that the packed output is no longer the container format that went in, which is what an APE must never be.
 var ErrFormatChanged = errors.New("pack: packed output changed the executable format")
 
-// Packer runs the host's UPX binary.
+// Packer runs a UPX executable.
 type Packer struct {
 	dir string
 }
@@ -39,10 +46,33 @@ func Default() *Packer { return New(scratch.Root()) }
 // New returns a packer that keeps its scratch files in dir.
 func New(dir string) *Packer { return &Packer{dir: dir} }
 
-// Available reports whether a UPX executable is on PATH.
+// Available reports whether a packer can be resolved.
 func (p *Packer) Available() bool {
-	_, err := exec.LookPath("upx")
+	_, err := resolve()
 	return err == nil
+}
+
+// resolve finds the packer: an explicitly configured one, the image's copy,
+// then one on PATH.
+func resolve() (string, error) {
+	if configured := strings.TrimSpace(os.Getenv(EnvOverride)); configured != "" {
+		if isExecutable(configured) {
+			return configured, nil
+		}
+		return "", fmt.Errorf("%w: %s=%s", ErrUnavailable, EnvOverride, configured)
+	}
+	if isExecutable(ImagePath) {
+		return ImagePath, nil
+	}
+	if found, err := exec.LookPath("upx"); err == nil {
+		return found, nil
+	}
+	return "", ErrUnavailable
+}
+
+func isExecutable(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0
 }
 
 // Pack writes a packed copy of src to dst. It reports packed=false, with a
@@ -50,9 +80,9 @@ func (p *Packer) Available() bool {
 // would not be a smaller copy of the same executable. dst is removed in
 // that case, so a caller always falls back to bytes it already trusts.
 func (p *Packer) Pack(src, dst string) (bool, error) {
-	tool, err := exec.LookPath("upx")
+	tool, err := resolve()
 	if err != nil {
-		return false, ErrUnavailable
+		return false, err
 	}
 	srcInfo, err := os.Stat(src)
 	if err != nil {

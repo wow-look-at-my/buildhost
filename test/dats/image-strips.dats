@@ -78,27 +78,21 @@ tests:
 		stdout:
 			- "stripped"
 
-	# Checked against the SECTION TABLE, not by searching for the string. The
-	# section-name string table keeps every name it ever held. So ".debug_info"
-	# is still present as BYTES in a correctly stripped file.
-	- desc: the stripped download is a usable ELF with its debug sections gone
+	# UPX replaces an ELF's section table, so the section list is not the proof
+	# here. The packer signature is, and the symbols endpoint below still proves
+	# the debug sections were separated from the binary that was packed.
+	- desc: the identity download is a packed ELF
 	  cmd: |
 		set -eu
 		. {shared.env}
 		cd "$(mktemp -d)"
 		curl -fsSL -o out.bin "$STATIC/file?$QUERY&fmt=raw"
 		test "$(head -c 4 out.bin | od -An -tx1 | tr -d ' \n')" = "7f454c46"
-		sh {shared.sections.sh} out.bin > sections.txt
-		for gone in .symtab .debug_info .debug_line; do
-			if grep -qx -- "$gone" sections.txt; then echo "still has $gone" >&2; exit 1; fi
-		done
-		for want in .text .rodata; do
-			grep -qx -- "$want" sections.txt || { echo "lost $want -- it could not run" >&2; exit 1; }
-		done
-		echo "elf-stripped-clean"
+		grep -aq 'UPX!' out.bin || { echo "the download is not UPX-packed" >&2; exit 1; }
+		echo "elf-packed"
 	  outputs:
 		stdout:
-			- "elf-stripped-clean"
+			- "elf-packed"
 
 	# gzip and the identity response must decode to the same bytes, and the brotli
 	# body must be smaller than the identity one.

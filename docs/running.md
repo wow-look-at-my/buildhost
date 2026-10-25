@@ -66,7 +66,7 @@ Request-path scratch (binary stripping, packing, repackaging, site archives) and
 
 A value that does not parse stops the server at startup instead of reverting to a default.
 
-Packing an identity download runs the `upx` on `PATH`. A host without it serves the stripped binary, and the server warns once at startup. The distroless image carries no packer. An image download is served stripped.
+Packing an identity download runs UPX as a separate program. The image ships it at `/usr/local/lib/buildhost/upx`. `BUILDHOST_UPX` names another packer, and `upx` on `PATH` is the last resort. With none of them the download is served stripped, and the server warns once at startup.
 
 The load figure behind the ceiling is the host's one-minute load average per CPU. It is read from procfs, or from the host's own `sysctl` program where procfs is absent (a Cosmopolitan build runs on macOS too, and reports `cosmo` as its OS there).
 

@@ -16,8 +16,8 @@ import (
 // requireUPX skips when the host has no packer.
 func requireUPX(t *testing.T) {
 	t.Helper()
-	if _, err := exec.LookPath("upx"); err != nil {
-		t.Skip("no upx on PATH: packing is skipped on this host")
+	if !New(t.TempDir()).Available() {
+		t.Skip("no upx executable: packing is skipped on this host")
 	}
 }
 
@@ -125,6 +125,7 @@ func TestPackRefusesPlainData(t *testing.T) {
 func TestPackWithoutAPacker(t *testing.T) {
 	t.Serial()
 	t.Setenv("PATH", t.TempDir())
+	t.Setenv(EnvOverride, "")
 	p := New(t.TempDir())
 	assert.False(t, p.Available())
 	src := filepath.Join(t.TempDir(), "bin")
@@ -132,6 +133,27 @@ func TestPackWithoutAPacker(t *testing.T) {
 	ok, err := p.Pack(src, filepath.Join(t.TempDir(), "out"))
 	assert.False(t, ok)
 	assert.ErrorIs(t, err, ErrUnavailable)
+}
+
+// The image ships the packer beside the binary; an explicit setting wins over
+// it, and PATH is the last resort.
+func TestPackerResolution(t *testing.T) {
+	t.Serial()
+	dir := t.TempDir()
+	tool := filepath.Join(dir, "upx")
+	require.NoError(t, os.WriteFile(tool, []byte("#!/bin/sh\n"), 0o755))
+
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv(EnvOverride, tool)
+	assert.True(t, New(dir).Available())
+
+	plain := filepath.Join(dir, "not-executable")
+	require.NoError(t, os.WriteFile(plain, []byte("x"), 0o644))
+	t.Setenv(EnvOverride, plain)
+	assert.False(t, New(dir).Available(), "a configured path must be executable")
+
+	t.Setenv(EnvOverride, "")
+	assert.False(t, New(dir).Available(), "nothing on PATH and no image copy")
 }
 
 func TestPackRefusesAMissingInput(t *testing.T) {
