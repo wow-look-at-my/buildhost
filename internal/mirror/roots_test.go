@@ -65,12 +65,12 @@ func TestTrustedRootsRefuseABundleOfOnlyDistrustedCAs(t *testing.T) {
 	assert.ErrorContains(t, err, "no trusted certificate")
 }
 
-// Sectigo's AAA root cross-signed it, so a pool without eMudhra roots can still verify a
-// chain through it.
+// The fixture is the real EM OV TLS CA - G3C. Sectigo's AAA root cross-signed it, so a pool
+// without eMudhra roots can still verify a chain through it.
 func TestAChainThroughTheCompromisedIntermediateIsRefused(t *testing.T) {
 	intermediate := fixtureCerts(t, "em-ov-tls-ca-g3c.pem")[0]
 	sum := sha256.Sum256(intermediate.Raw)
-	assert.True(t, compromisedCerts[hex.EncodeToString(sum[:])], "the fingerprint list must hold the real certificate")
+	assert.True(t, compromisedCerts.Contains(hex.EncodeToString(sum[:])), "the fingerprint list must hold the real certificate")
 
 	err := refuseDistrustedChains(tls.ConnectionState{VerifiedChains: [][]*x509.Certificate{{intermediate}}})
 	assert.ErrorContains(t, err, "EM OV TLS CA - G3C")
