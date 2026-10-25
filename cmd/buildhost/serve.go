@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -21,8 +22,10 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/diskusage"
+	"github.com/wow-look-at-my/buildhost/internal/recompress"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
 	"github.com/wow-look-at-my/buildhost/internal/runfiles"
+	"github.com/wow-look-at-my/buildhost/internal/scratch"
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	"github.com/wow-look-at-my/buildhost/internal/sites"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
@@ -74,9 +77,18 @@ var serveCmd = &cobra.Command{
 		if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 			return fmt.Errorf("create data dir: %w", err)
 		}
+		// The spool directories for in-progress uploads stay on the data
+		// volume; everything else scratch goes to TMPDIR.
 		if err := os.MkdirAll(cfg.DataDir+"/tmp", 0o755); err != nil {
 			return fmt.Errorf("create temp dir: %w", err)
 		}
+		scratch.Configure(cfg.TempDir)
+		reclaimed := sweepScratch(cfg)
+		slog.Info("scratch root resolved", "dir", scratch.Root(), "reclaimed_bytes", reclaimed)
+
+		recomp := recompress.NewFromSettings(recompress.ConfigFrom(cfg))
+		recompress.Set(recomp)
+		defer recomp.Close()
 
 		database, err := db.Open(cfg.DBPath)
 		if err != nil {
@@ -94,7 +106,7 @@ var serveCmd = &cobra.Command{
 		}
 		store := storage.NewTraced(fsStore)
 
-		if err := sites.ConvertTarSites(context.Background(), database, store, cfg.DataDir+"/tmp"); err != nil {
+		if err := sites.ConvertTarSites(context.Background(), database, store, scratch.Root()); err != nil {
 			slog.Error("sites: tar conversion incomplete", "err", err)
 		}
 
@@ -136,6 +148,8 @@ var serveCmd = &cobra.Command{
 		}()
 
 		startRetentionSweeper(ctx, cfg, database, store)
+		// Reclaim leftover scratch for as long as the process runs.
+		go runScratchJanitor(ctx, cfg)
 		// Sweep expired chunked-upload sessions (abandoned spool files).
 		uploads.StartJanitor(ctx)
 		(&runfiles.Janitor{
@@ -187,6 +201,53 @@ var serveCmd = &cobra.Command{
 		slog.Info("shutdown complete")
 		return nil
 	},
+}
+
+// sweepScratch reclaims orphaned temporary files from the active scratch root
+// and from the {DataDir}/tmp an earlier version wrote. Downloads no longer
+// create anything there, so a backlog left by that version is reclaimed with
+// no operator action.
+func sweepScratch(cfg config.Config) scratch.SweepReport {
+	return scratchJanitor(cfg).Run()
+}
+
+func scratchJanitor(cfg config.Config) *scratch.Janitor {
+	return &scratch.Janitor{
+		Root:      scratch.Root(),
+		LegacyDir: filepath.Join(cfg.DataDir, "tmp"),
+		CacheDir:  filepath.Join(scratch.Root(), scratch.CacheDirName),
+		StaleAge:  cfg.ScratchAge,
+	}
+}
+
+// runScratchJanitor keeps reclaiming leftover scratch for as long as the
+// process runs. Only files past the stale age are eligible, so a request in
+// flight is never touched.
+func runScratchJanitor(ctx context.Context, cfg config.Config) {
+	jan := scratchJanitor(cfg)
+	t := time.NewTicker(sweepEvery(cfg.ScratchAge))
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			jan.Run()
+		}
+	}
+}
+
+// sweepEvery picks how often to sweep, well inside the age that makes a file
+// orphaned.
+func sweepEvery(staleAge time.Duration) time.Duration {
+	every := staleAge / 2
+	if every < 10*time.Minute {
+		every = 10 * time.Minute
+	}
+	if every > time.Hour {
+		every = time.Hour
+	}
+	return every
 }
 
 // startRetentionSweeper launches the background GC sweeper when a positive

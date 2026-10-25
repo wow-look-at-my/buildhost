@@ -13,6 +13,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/scratch"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -107,7 +108,7 @@ func init() {
 	registerRoutes()
 	auth.OnReady(func() {
 		startOnce.Do(func() {
-			s := newService(loadConfig(auth.OIDCOrgs()), auth.DB(), auth.Store(), auth.DataDir())
+			s := newService(loadConfig(auth.OIDCOrgs()), auth.DB(), auth.Store(), scratch.Root())
 			serviceMu.Lock()
 			service = s
 			serviceMu.Unlock()

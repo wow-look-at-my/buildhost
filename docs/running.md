@@ -51,6 +51,27 @@ To disable application-level zstd compression (e.g., on ZFS or Btrfs with filesy
 BUILDHOST_STORAGE_COMPRESS=false buildhost serve
 ```
 
+## Scratch root and download-time compression
+
+Request-path scratch (binary stripping, packing, repackaging, site archives) and the compressed-response cache live under `TMPDIR` by default (`os.TempDir()`). A container's durable volume therefore holds only durable data. `BUILDHOST_TEMP_DIR` names another root. These settings are read at startup and take effect without a rebuild.
+
+- `BUILDHOST_TEMP_DIR` -- scratch root. Default: `TMPDIR`.
+- `BUILDHOST_TEMP_STALE_AGE` -- how old an orphaned scratch file or cache entry must be before the janitor reclaims it. Default `1h`.
+- `BUILDHOST_RECOMPRESS_CACHE_SIZE` -- size bound of the compressed-response cache. Default `512M`.
+- `BUILDHOST_RECOMPRESS_CACHE_ENTRIES` -- entry-count bound. Default `512`.
+- `BUILDHOST_RECOMPRESS_CACHE_KEEP` -- TTL of a cached variant. Default `1h`.
+- `BUILDHOST_RECOMPRESS_PER_IP` -- recompressions one client IP may start per window. Default `20`. `0` switches on-the-fly recompression off.
+- `BUILDHOST_RECOMPRESS_WINDOW` -- length of that window. Default `1m`.
+- `BUILDHOST_RECOMPRESS_LOAD_CEILING` -- one-minute load average per CPU at which the allowance reaches zero. Default `1`. Zero means system load is not consulted.
+
+A value that does not parse stops the server at startup instead of reverting to a default.
+
+The load figure behind the ceiling is the host's one-minute load average per CPU. It is read from procfs, or from the host's own `sysctl` program where procfs is absent (a Cosmopolitan build runs on macOS too, and reports `cosmo` as its OS there).
+
+Starting `buildhost serve` sweeps the active root and the `{BUILDHOST_DATA_DIR}/tmp` an earlier version wrote, so a backlog of stripped binaries left there is reclaimed without operator action. Upload session spools in that directory are preserved.
+
+A container with a read-only root filesystem needs `BUILDHOST_TEMP_DIR` pointed at a writable mount.
+
 The admin dashboard starts automatically on a separate port (default `:9090`). Set `BUILDHOST_ADMIN_LISTEN_ADDR` to change the address, or set it to empty to disable.
 
 ```bash

@@ -12,6 +12,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
+	"github.com/wow-look-at-my/buildhost/internal/scratch"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -21,8 +22,8 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
-		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.DataDir()+"/tmp")
-		handler.TmpDir = auth.DataDir() + "/tmp"
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), scratch.Root())
+		handler.TmpDir = scratch.Root()
 		handler.DataDir = auth.DataDir()
 		// Drop live lineage entries from a previous wiring and sweep crash
 		handler.resetTapCache()

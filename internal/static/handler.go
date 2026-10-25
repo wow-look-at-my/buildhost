@@ -11,8 +11,11 @@ import (
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/recompress"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
+	"github.com/wow-look-at-my/buildhost/internal/scratch"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -25,7 +28,8 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
-		handler.TmpDir = auth.DataDir() + "/tmp"
+		handler.TmpDir = scratch.Root()
+		handler.Shaper = sharedShaper()
 
 		for _, format := range repackage.RegisteredFormats() {
 			RegisterRepackageFmt(format)
@@ -93,6 +97,19 @@ type staticHandler struct {
 	DB     *db.DB
 	Store  storage.Storage
 	TmpDir string
+	Shaper *Shaper
+}
+
+// sharedShaper returns the process-wide download shaper, building it from the
+// environment when nothing wired one first.
+func sharedShaper() *Shaper {
+	svc := recompress.Get()
+	if svc == nil {
+		cfg := config.Load()
+		svc = recompress.NewFromSettings(recompress.ConfigFrom(cfg))
+		recompress.Set(svc)
+	}
+	return &Shaper{Cache: svc.Cache, Throttle: svc.Limiter}
 }
 
 func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
@@ -147,6 +164,7 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 		StaticURL: auth.DeriveServiceURL(r, "static"),
 		BaseURL:   auth.RequestBaseURL(r),
 		TmpDir:    h.TmpDir,
+		Shaper:    h.Shaper,
 	}
 
 	if osStr != "any" && archStr != "any" {
@@ -169,6 +187,13 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	etag := computeETag(sctx, fmtStr)
+	// A recompressed raw download carries its own entity tag, because Vary
+	// alone does not stop a client replaying the identity tag onto a gzip
+	// response.
+	if fmtStr == "raw" {
+		w.Header().Set("Vary", "Accept-Encoding")
+		etag = computeETag(sctx, fmtStr+"-"+string(Negotiate(r.Header.Get("Accept-Encoding"))))
+	}
 	if match := r.Header.Get("If-None-Match"); match == etag {
 		w.WriteHeader(http.StatusNotModified)
 		return

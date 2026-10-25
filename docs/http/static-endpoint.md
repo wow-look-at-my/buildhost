@@ -16,6 +16,30 @@ The `raw` format serves the stored zstd blob **as it is**, with `Content-Encodin
 
 `canonicalQuery` also folds an `os` or `arch` platform-name alias to its canonical spelling. Every spelling therefore resolves to one cacheable URL through the canonicalization redirect.
 
+## Transfer coding
+
+The `raw` format negotiates the response coding from `Accept-Encoding` alone (`internal/static/encoding.go`). The order is zstd, then brotli, then gzip, then identity. An encoding the client did not name is never chosen, and a `q=0` entry is not an offer.
+
+zstd comes first because the stored blob already is a zstd stream. A zstd request is served that stream through `storage.CompressedGetter`, untouched, with no stripping, no packing and no cache lookup. When the blob was stored uncompressed the variant is generated and cached like any other.
+
+brotli and gzip wrap the payload the identity path serves, so every coding decodes to the same bytes. Every `raw` response carries `Vary: Accept-Encoding`, and the ETag covers the chosen coding: replaying an identity tag on a gzip response would otherwise serve the wrong bytes.
+
+`debug=1` is the upload byte for byte. It is never transformed or recompressed.
+
+## The recompression cache
+
+Generated variants live on disk under the scratch root (`<TMPDIR>/buildhost-recompress`) in `internal/recompress`. An entry is keyed by the artifact's storage key, the payload transform version, the coding and the debug flag, so one artifact's bytes can never be served for another. Writes are atomic (produce a temporary file, then rename it to mode 0600), so a reader never sees a partial body, and a live entry is never rewritten: a repeated download reads the same bytes.
+
+The cache is bounded by total bytes and by entry count, and it evicts the entry touched longest ago, which is not the entry created first. An entry expires after the TTL. A hit bypasses the throttle, because it performs no work.
+
+## The recompression throttle
+
+Starting a brotli or gzip variant costs CPU, and so does packing, so one client cannot start an unbounded number of them. `internal/recompress.Limiter` gives each client IP (the first `X-Forwarded-For` hop) an allowance per window. The allowance falls as the host's one-minute load average per CPU rises, and it is zero at or above the configured ceiling, where no new recompression starts.
+
+A request that is not admitted is still a complete, correct download: it is answered with the identity path, which serves the transformed payload without a transfer coding. Throttling never turns a download into an error or a truncated body. The reverse proxy still owns general request rate limiting; this bounds work the origin performs for one client.
+
+`canonicalQuery` also folds an `os` or `arch` platform-name alias to its canonical spelling. Every spelling therefore resolves to one cacheable URL through the canonicalization redirect.
+
 ## Download attribution
 
 Once a concrete artifact's bytes are served, `recordDownload` in `handler.go` appends a `download_events` row. Migration multiple defines it: artifact_id, fmt, the client IP from the first `X-Forwarded-For` hop, the User-Agent, and the authenticated `principal`. That principal is the session user or `token:<name>` on a private pull. It is `""` on an anonymous public pull. `recordDownload` then increments the previously-DEAD `download_counts`. `IncrementDownloadCount` had no caller, so every count read 0.

@@ -20,6 +20,9 @@ type ServeContext struct {
 	StaticURL *url.URL
 	BaseURL   string
 	TmpDir    string
+	// Shaper holds the cache, the throttle and the packer for download-time
+	// transforms. A nil Shaper still packs with the embedded tool.
+	Shaper *Shaper
 }
 
 type Fmt interface {

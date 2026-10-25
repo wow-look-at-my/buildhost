@@ -9,6 +9,7 @@ import (
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/scratch"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -21,7 +22,7 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 		handler.FetchDomains = auth.SiteFetchDomains()
-		handler.TmpDir = auth.DataDir() + "/tmp"
+		handler.TmpDir = scratch.Root()
 	})
 	// Config-conditional {project}.<site-domain> scheme (see subdomain.go).
 	auth.OnSiteDomain(registerSiteDomainRoutes)
