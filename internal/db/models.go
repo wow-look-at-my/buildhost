@@ -98,6 +98,26 @@ type GoproxyVersion struct {
 	FetchedAt     time.Time  `json:"fetched_at"`
 }
 
+type MirrorBlob struct {
+	Upstream   string    `json:"upstream"`
+	Digest     string    `json:"digest"`
+	MediaType  string    `json:"media_type"`
+	StorageKey string    `json:"storage_key"`
+	Size       int64     `json:"size"`
+	CreatedAt  time.Time `json:"created_at"`
+	UsedAt     time.Time `json:"used_at"`
+	Reads      int64     `json:"reads"`
+}
+
+type MirrorTag struct {
+	Upstream   string    `json:"upstream"`
+	Repository string    `json:"repository"`
+	Tag        string    `json:"tag"`
+	Digest     string    `json:"digest"`
+	MediaType  string    `json:"media_type"`
+	CheckedAt  time.Time `json:"checked_at"`
+}
+
 type OciBlobLink struct {
 	ID         int64     `json:"id"`
 	ProjectID  int64     `json:"project_id"`
