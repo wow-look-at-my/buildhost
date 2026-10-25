@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 	mmap "github.com/wow-look-at-my/go-mmap"
@@ -332,6 +334,36 @@ func (fs *Filesystem) Exists(_ context.Context, key string) (bool, error) {
 		return false, nil
 	}
 	return false, err
+}
+
+// TempMaxAge is how old a Put temp file must be before SweepTemp deletes it.
+const TempMaxAge = 24 * time.Hour
+
+// SweepTemp deletes the temp files that a Put killed by a crash or restart
+// left in the root. Nothing else deletes them. It returns the count and bytes.
+func (fs *Filesystem) SweepTemp(now time.Time) (int, int64, error) {
+	entries, err := os.ReadDir(fs.root.Name())
+	if err != nil {
+		return 0, 0, fmt.Errorf("read storage root: %w", err)
+	}
+	var n int
+	var freed int64
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !(strings.HasPrefix(name, ".upload-") || strings.HasPrefix(name, ".compress-")) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || now.Sub(info.ModTime()) < TempMaxAge {
+			continue
+		}
+		if err := fs.root.Remove(name); err != nil {
+			return n, freed, fmt.Errorf("remove %s: %w", name, err)
+		}
+		n++
+		freed += info.Size()
+	}
+	return n, freed, nil
 }
 
 func (fs *Filesystem) rel(key string) string {
