@@ -141,10 +141,20 @@ func buildELFFixture(t *testing.T) []byte {
 
 func testPacker(t *testing.T) *pack.Packer { return pack.New(t.TempDir()) }
 
+// requireUPX skips a packing assertion when the host has no packer. Packing is
+// optional: without upx the download is served stripped.
+func requireUPX(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("upx"); err != nil {
+		t.Skip("no upx on PATH: the download is served stripped")
+	}
+}
+
 // The identity download is the stripped, packed binary: smaller than the
 // upload, still an ELF, and the packer's signature is on it.
 func TestRawIdentityIsPacked(t *testing.T) {
 	t.Serial()
+	requireUPX(t)
 	f := newRawFixture(t, buildELFFixture(t))
 	sh := &Shaper{Pack: testPacker(t)}
 
@@ -160,6 +170,25 @@ func TestRawIdentityIsPacked(t *testing.T) {
 
 	again := f.get(t, sh, "", "", "")
 	assert.Equal(t, body, again.Body.Bytes(), "an immutable URL must serve identical bytes")
+}
+
+// A host without a packer serves the stripped binary: complete, smaller than
+// the upload and identical on a repeat.
+func TestRawWithoutAPackerIsStillComplete(t *testing.T) {
+	t.Serial()
+	t.Setenv("PATH", t.TempDir())
+	f := newRawFixture(t, buildELFFixture(t))
+	sh := &Shaper{Pack: testPacker(t)}
+
+	rec := f.get(t, sh, "", "", "")
+	requireStatus(t, rec)
+	body := rec.Body.Bytes()
+	assert.True(t, bytes.HasPrefix(body, []byte{0x7f, 'E', 'L', 'F'}))
+	assert.Less(t, len(body), len(f.upload), "the stripped download must still be smaller")
+	assert.NotContains(t, string(body), "UPX!", "packing must not have run")
+
+	again := f.get(t, sh, "", "", "")
+	assert.Equal(t, body, again.Body.Bytes())
 }
 
 // br and gzip decode to the same payload, and that payload is the packed

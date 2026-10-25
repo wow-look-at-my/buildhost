@@ -99,6 +99,8 @@ The admin dashboard on `:9090` has **no built-in authentication**. It must be pl
 
 Binary stripping needs no tools in the image. It is implemented natively in Go (`internal/strip/elf.go`). This is a fix for a real production defect. The image ships no binutils, so the previous shell-out implementation silently stripped NOTHING there. `container-healthcheck` now asserts against the built image that a published ELF comes back stripped. It also asserts that `fmt=symbols` serves the debug info, and that `?debug=1` returns the upload byte-for-byte.
 
+Packing is separate from stripping and needs a UPX on `PATH`. The distroless image carries none. An image download is stripped and not packed. Add `upx` to the image if you want packed downloads there, and the server reports the missing packer once at startup until you do.
+
 The server writes its request-path scratch to `TMPDIR` (`/tmp` in the image), not to the data volume. That covers stripping, packing, repackaging, site archives and the compressed-response cache, and it is why a durable volume no longer grows with transient bytes. `/tmp` already has to be writable, because the APE trampoline unpacks itself there before the server starts. `read_only: true` therefore needs a `tmpfs: [/tmp]` beside it as well as the data volume, or `BUILDHOST_TEMP_DIR` pointed at one.
 
 Only durable state stays on the volume: the database, blobs, tap history, run files, the CI cache and the upload session spools under `BUILDHOST_DATA_DIR/tmp`. The startup janitor reclaims orphaned scratch there, including the multi-gigabyte backlog an earlier version left behind, and never touches the spools.

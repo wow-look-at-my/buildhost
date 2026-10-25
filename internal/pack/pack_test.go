@@ -13,6 +13,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// requireUPX skips when the host has no packer.
+func requireUPX(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("upx"); err != nil {
+		t.Skip("no upx on PATH: packing is skipped on this host")
+	}
+}
+
 // buildELF compiles a real Linux executable to pack. A synthetic ELF is not
 // enough: the packer validates the program headers and refuses a stub.
 func buildELF(t *testing.T) string {
@@ -41,10 +49,10 @@ func buildELF(t *testing.T) string {
 
 func TestPackShrinksAnELFAndRoundTrips(t *testing.T) {
 	t.Serial()
-	require.True(t, HasAsset(runtime.GOOS, runtime.GOARCH), "the build must embed a packer for this platform")
+	requireUPX(t)
 	dir := t.TempDir()
 	src := buildELF(t)
-	p := New(filepath.Join(dir, "tools"))
+	p := New(dir)
 
 	dst := filepath.Join(t.TempDir(), "packed")
 	ok, err := p.Pack(src, dst)
@@ -85,13 +93,14 @@ func TestPackShrinksAnELFAndRoundTrips(t *testing.T) {
 
 func TestPackRefusesAnAPE(t *testing.T) {
 	t.Serial()
+	requireUPX(t)
 	dir := t.TempDir()
 	src := filepath.Join(dir, "ape")
 	ape := append([]byte("MZqFpD"), bytes.Repeat([]byte{0x90}, 64<<10)...)
 	require.NoError(t, os.WriteFile(src, ape, 0o755))
 	dst := filepath.Join(dir, "packed")
 
-	ok, err := New(filepath.Join(dir, "tools")).Pack(src, dst)
+	ok, err := New(dir).Pack(src, dst)
 	assert.False(t, ok, "an APE the packer cannot prove is refused")
 	assert.Error(t, err)
 	_, statErr := os.Stat(dst)
@@ -101,44 +110,35 @@ func TestPackRefusesAnAPE(t *testing.T) {
 // A non-executable input is refused rather than corrupted.
 func TestPackRefusesPlainData(t *testing.T) {
 	t.Serial()
+	requireUPX(t)
 	dir := t.TempDir()
 	src := filepath.Join(dir, "data")
 	require.NoError(t, os.WriteFile(src, bytes.Repeat([]byte("not-executable"), 4096), 0o644))
 	dst := filepath.Join(dir, "packed")
 
-	ok, err := New(filepath.Join(dir, "tools")).Pack(src, dst)
+	ok, err := New(dir).Pack(src, dst)
 	assert.False(t, ok)
 	assert.Error(t, err)
 }
 
-func TestHasAssetMatchesTheGeneratedPlatforms(t *testing.T) {
+// A host without a packer reports it, so the download path can strip alone.
+func TestPackWithoutAPacker(t *testing.T) {
 	t.Serial()
-	for _, platform := range []string{"linux-amd64", "linux-arm64"} {
-		assert.FileExists(t, "upx/upx-"+platform+".zst")
-	}
-	assert.False(t, HasAsset("plan9", "mips"))
-}
-
-// The embedded packer is unpacked once and reused, so a burst of downloads
-// does not rewrite the tool.
-func TestToolIsUnpackedOnce(t *testing.T) {
-	t.Serial()
-	dir := t.TempDir()
-	p := New(dir)
-	first, err := p.Tool()
-	require.NoError(t, err)
-	second, err := p.Tool()
-	require.NoError(t, err)
-	assert.Equal(t, first, second)
-	info, err := os.Stat(first)
-	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+	t.Setenv("PATH", t.TempDir())
+	p := New(t.TempDir())
+	assert.False(t, p.Available())
+	src := filepath.Join(t.TempDir(), "bin")
+	require.NoError(t, os.WriteFile(src, []byte("x"), 0o755))
+	ok, err := p.Pack(src, filepath.Join(t.TempDir(), "out"))
+	assert.False(t, ok)
+	assert.ErrorIs(t, err, ErrUnavailable)
 }
 
 func TestPackRefusesAMissingInput(t *testing.T) {
 	t.Serial()
+	requireUPX(t)
 	dir := t.TempDir()
-	ok, err := New(filepath.Join(dir, "tools")).Pack(filepath.Join(dir, "absent"), filepath.Join(dir, "out"))
+	ok, err := New(dir).Pack(filepath.Join(dir, "absent"), filepath.Join(dir, "out"))
 	assert.False(t, ok)
 	assert.Error(t, err)
 }

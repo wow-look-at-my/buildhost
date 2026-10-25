@@ -1,3 +1,5 @@
+// BuildVisibility applies the override of the release named by v.
+
 package static
 
 import (
@@ -13,6 +15,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/pack"
 	"github.com/wow-look-at-my/buildhost/internal/recompress"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
 	"github.com/wow-look-at-my/buildhost/internal/scratch"
@@ -109,6 +112,10 @@ func sharedShaper() *Shaper {
 		svc = recompress.NewFromSettings(recompress.ConfigFrom(cfg))
 		recompress.Set(svc)
 	}
+	if !pack.Default().Available() {
+		// Say it once, at startup.
+		slog.Warn("no upx on PATH: downloads are served stripped and not packed")
+	}
 	return &Shaper{Cache: svc.Cache, Throttle: svc.Limiter}
 }
 
@@ -187,9 +194,8 @@ func (h *staticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	etag := computeETag(sctx, fmtStr)
-	// A recompressed raw download carries its own entity tag, because Vary
-	// alone does not stop a client replaying the identity tag onto a gzip
-	// response.
+	// A recompressed raw download carries its own entity tag, because Vary alone
+	// does not stop a client replaying the identity tag onto a gzip response.
 	if fmtStr == "raw" {
 		w.Header().Set("Vary", "Accept-Encoding")
 		etag = computeETag(sctx, fmtStr+"-"+string(Negotiate(r.Header.Get("Accept-Encoding"))))

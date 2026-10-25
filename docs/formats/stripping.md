@@ -26,9 +26,9 @@ Both download paths peek the ELF magic with `LooksELF` BEFORE they spool. A non-
 
 ## Packing
 
-The identity (uncompressed) download of an executable is stripped and then packed with UPX (`internal/pack`). Packing a stripped Go binary shrinks it well below the upload and removes the debug payload in one step.
+The identity (uncompressed) download of an executable is stripped and then packed with the `upx` on `PATH` (`internal/pack`). Packing a stripped Go binary shrinks it well below the upload and removes the debug payload in one step.
 
-The packer ships INSIDE the server binary, fetched at build time by `internal/pack/upxgen` and embedded zstd-compressed. The production image is distroless and has no binutils. A packer looked up on `PATH` silently stops packing there, exactly as the old `strip(1)` shell-out did. `upxgen` pins the release and the SHA-256 of every download.
+UPX is a separate program, and its GPL license stays with it. A host with no `upx` serves the stripped binary. The server says so once at startup. The distroless image carries no binutils and no packer, so it serves the stripped binary, which is still smaller than the upload. Installing `upx` in the image or on the host turns packing on with no configuration.
 
 A packed output is only served after it is proven to be the same program. `Packer.Pack` unpacks the result and requires the result of THAT to be the stripped input byte for byte. It requires the packed file to still be the input's container format. Any failure, or an output that will not be smaller, leaves the caller with the stripped bytes it already trusts. Packing an already-packed input therefore cannot corrupt anything.
 

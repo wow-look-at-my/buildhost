@@ -14,9 +14,6 @@ import (
 // CacheDirName is the subdirectory of the root holding cached compressed responses.
 const CacheDirName = "buildhost-recompress"
 
-// ToolDirName is the subdirectory holding the packer extracted from the server binary.
-const ToolDirName = "buildhost-tools"
-
 var (
 	mu     sync.RWMutex
 	root   string

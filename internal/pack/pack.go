@@ -1,38 +1,26 @@
-// Package pack shrinks a served executable with the UPX packer that ships
-// inside the server binary. The production image is distroless, so the packer
-// is never looked up on PATH.
+// Package pack shrinks a served executable with the UPX packer installed on
+// the host. The distroless image carries no packer, so a download there is
+// served stripped and not packed.
 package pack
 
 import (
 	"bytes"
 	"crypto/sha256"
-	"embed"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
-	"sync"
 
-	"github.com/klauspost/compress/zstd"
 	"github.com/wow-look-at-my/buildhost/internal/exeformat"
 	"github.com/wow-look-at-my/buildhost/internal/scratch"
 )
 
-//go:generate go run ./upxgen upx
-//go:embed upx/*.zst
-var assets embed.FS
-
 // TransformVersion identifies the bytes stripping and packing produce.
 const TransformVersion = "pack-1"
 
-// Release is the UPX version embedded in the server.
-const Release = "5.2.1"
-
-// ErrUnavailable reports that no packer is embedded for this platform. The caller serves the stripped binary instead.
-var ErrUnavailable = errors.New("pack: no packer for this platform")
+// ErrUnavailable reports that no packer is installed. The caller serves the stripped binary.
+var ErrUnavailable = errors.New("pack: no upx on PATH")
 
 // ErrNotSmaller reports that packing the input would not shrink it. The caller serves the bytes.
 var ErrNotSmaller = errors.New("pack: packed output is not smaller")
@@ -40,35 +28,20 @@ var ErrNotSmaller = errors.New("pack: packed output is not smaller")
 // ErrFormatChanged reports that the packed output is no longer the container format that went in, which is what an APE must never be.
 var ErrFormatChanged = errors.New("pack: packed output changed the executable format")
 
-// Packer runs the embedded UPX binary.
+// Packer runs the host's UPX binary.
 type Packer struct {
-	dir  string
-	once sync.Once
-	tool string
-	err  error
+	dir string
 }
 
-// Default returns a packer that unpacks its tool under the scratch root.
-func Default() *Packer {
-	return New(filepath.Join(scratch.Root(), scratch.ToolDirName))
-}
+// Default returns a packer that keeps its scratch files under the scratch root.
+func Default() *Packer { return New(scratch.Root()) }
 
-// New returns a packer that unpacks its tool into dir.
+// New returns a packer that keeps its scratch files in dir.
 func New(dir string) *Packer { return &Packer{dir: dir} }
 
-// AssetName is the embedded asset for a platform, if there is one.
-func AssetName(goos, goarch string) string {
-	return "upx/upx-" + goos + "-" + goarch + ".zst"
-}
-
-// Available reports whether a packer is embedded for this platform.
+// Available reports whether a UPX executable is on PATH.
 func (p *Packer) Available() bool {
-	return HasAsset(runtime.GOOS, runtime.GOARCH)
-}
-
-// HasAsset reports whether a packer is embedded for a platform.
-func HasAsset(goos, goarch string) bool {
-	_, err := assets.ReadFile(AssetName(goos, goarch))
+	_, err := exec.LookPath("upx")
 	return err == nil
 }
 
@@ -77,9 +50,9 @@ func HasAsset(goos, goarch string) bool {
 // would not be a smaller copy of the same executable. dst is removed in
 // that case, so a caller always falls back to bytes it already trusts.
 func (p *Packer) Pack(src, dst string) (bool, error) {
-	tool, err := p.Tool()
+	tool, err := exec.LookPath("upx")
 	if err != nil {
-		return false, err
+		return false, ErrUnavailable
 	}
 	srcInfo, err := os.Stat(src)
 	if err != nil {
@@ -132,61 +105,6 @@ func (p *Packer) verify(tool, src, packed string) error {
 	return nil
 }
 
-// Tool unpacks the embedded packer for this platform once and returns its path.
-func (p *Packer) Tool() (string, error) {
-	p.once.Do(func() {
-		p.tool, p.err = p.extract()
-	})
-	return p.tool, p.err
-}
-
-func (p *Packer) extract() (string, error) {
-	name := AssetName(runtime.GOOS, runtime.GOARCH)
-	packed, err := assets.ReadFile(name)
-	if err != nil {
-		return "", ErrUnavailable
-	}
-	if err := os.MkdirAll(p.dir, 0o755); err != nil {
-		return "", err
-	}
-	target := filepath.Join(p.dir, "upx-"+Release+"-"+runtime.GOOS+"-"+runtime.GOARCH)
-	if info, err := os.Stat(target); err == nil && info.Mode().IsRegular() {
-		return target, nil
-	}
-	dec, err := zstd.NewReader(bytes.NewReader(packed))
-	if err != nil {
-		return "", err
-	}
-	data, err := io.ReadAll(dec)
-	dec.Close()
-	if err != nil {
-		return "", fmt.Errorf("pack: unpacking the embedded tool: %w", err)
-	}
-	tmp, err := os.CreateTemp(p.dir, "upx-incoming-*")
-	if err != nil {
-		return "", err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
-		return "", err
-	}
-	if err := tmp.Chmod(0o700); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
-		return "", err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmp.Name())
-		return "", err
-	}
-	if err := os.Rename(tmp.Name(), target); err != nil {
-		os.Remove(tmp.Name())
-		return "", err
-	}
-	return target, nil
-}
-
 // run executes the packer, turning a refusal into an error with its reason.
 func (p *Packer) run(tool string, args ...string) error {
 	cmd := exec.Command(tool, args...)
@@ -195,11 +113,10 @@ func (p *Packer) run(tool string, args ...string) error {
 	if err == nil {
 		return nil
 	}
-	msg := bytes.TrimSpace(out)
-	if len(msg) > 512 {
-		msg = msg[len(msg)-512:]
+	if len(out) > 512 {
+		out = out[len(out)-512:]
 	}
-	return fmt.Errorf("%w: %s", err, msg)
+	return fmt.Errorf("%w: %s", err, bytes.TrimSpace(out))
 }
 
 // sameExecutable requires the packed file to still be the container format
@@ -222,7 +139,9 @@ func sameExecutable(src, dst string) error {
 	return nil
 }
 
-func isELF(b []byte) bool { return len(b) >= 4 && bytes.Equal(b[:4], []byte{0x7f, 'E', 'L', 'F'}) }
+func isELF(b []byte) bool {
+	return len(b) >= 4 && bytes.Equal(b[:4], []byte{0x7f, 'E', 'L', 'F'})
+}
 
 func head(path string) ([]byte, error) {
 	f, err := os.Open(path)
