@@ -14,6 +14,10 @@ Further optional capabilities serve indexed containers. `PutUncompressed` (`Unco
 
 Storage keys are validated as hex SHA-256 to prevent path traversal. The storage layer rejects symlinks via an Lstat check.
 
+## Temp files
+
+A `Put` writes `.upload-*` and `.compress-*` files in the blob root, then renames or deletes them. A crash or a kill mid-`Put` leaves them behind. `serve` deletes the ones older than `storage.TempMaxAge` at startup. A younger one can belong to a live `Put` of the other server in a rolling update.
+
 ## Bounded memory
 
 A blob read is mmap-backed and decoded as a stream. Every download and repackage path streams too. There is no `io.ReadAll` of an artifact and no whole-archive `bytes.Buffer`. Per-request memory is therefore bounded by the compressor window instead of the artifact size. The server also sets `GOMEMLIMIT` from the container's memory cgroup at startup (`automemlimit`, 0.9 ratio). It no-ops when `GOMEMLIMIT` or `AUTOMEMLIMIT=off` is set.
