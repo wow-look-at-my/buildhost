@@ -118,3 +118,27 @@ func TestHasAssetMatchesTheGeneratedPlatforms(t *testing.T) {
 	}
 	assert.False(t, HasAsset("plan9", "mips"))
 }
+
+// The embedded packer is unpacked once and reused, so a burst of downloads
+// does not rewrite the tool.
+func TestToolIsUnpackedOnce(t *testing.T) {
+	t.Serial()
+	dir := t.TempDir()
+	p := New(dir)
+	first, err := p.Tool()
+	require.NoError(t, err)
+	second, err := p.Tool()
+	require.NoError(t, err)
+	assert.Equal(t, first, second)
+	info, err := os.Stat(first)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+}
+
+func TestPackRefusesAMissingInput(t *testing.T) {
+	t.Serial()
+	dir := t.TempDir()
+	ok, err := New(filepath.Join(dir, "tools")).Pack(filepath.Join(dir, "absent"), filepath.Join(dir, "out"))
+	assert.False(t, ok)
+	assert.Error(t, err)
+}

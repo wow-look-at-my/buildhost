@@ -185,3 +185,29 @@ func TestCacheIgnoresForeignFiles(t *testing.T) {
 	require.NoError(t, err)
 	assert.Zero(t, c.Len())
 }
+
+// An entry deleted underneath the index is a miss, not an error, and the
+// index drops it.
+func TestCacheOpenDropsAVanishedEntry(t *testing.T) {
+	t.Serial()
+	dir := t.TempDir()
+	c, err := NewCache(dir, 1<<20, 8, time.Hour)
+	require.NoError(t, err)
+	key := Key("blob-1", "t1", "br", false)
+	insert(t, c, key, "hello")
+	require.NoError(t, os.Remove(filepath.Join(dir, key)))
+
+	_, ok := read(t, c, key)
+	assert.False(t, ok)
+	assert.Zero(t, c.Len())
+}
+
+func TestNewCacheCreatesItsDirectory(t *testing.T) {
+	t.Serial()
+	dir := filepath.Join(t.TempDir(), "nested", "cache")
+	_, err := NewCache(dir, 1<<20, 8, time.Hour)
+	require.NoError(t, err)
+	info, err := os.Stat(dir)
+	require.NoError(t, err)
+	assert.True(t, info.IsDir())
+}
