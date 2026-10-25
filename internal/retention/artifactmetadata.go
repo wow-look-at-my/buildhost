@@ -1,3 +1,5 @@
+// gitHubAPIBase is the artifact-metadata API host, swapped in tests.
+
 package retention
 
 import (

@@ -1,3 +1,5 @@
+// upstreamGitHub is the Upstream name reported on an *Error from this source.
+
 package goproxy
 
 import (

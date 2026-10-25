@@ -1,3 +1,5 @@
+// Sign in with GitHub.
+
 package auth
 
 import _ "embed"

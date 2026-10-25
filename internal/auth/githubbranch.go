@@ -1,3 +1,5 @@
+// GitHubActionsIssuer is the canonical GitHub Actions OIDC issuer.
+
 package auth
 
 import (
