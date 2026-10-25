@@ -63,6 +63,8 @@ npm.{domain}/llms.txt {GET}
 npm.{domain}/{pkg} {GET}
 oci.{domain}/llms.txt {GET}
 oci.{domain}/v2/ {*}
+oci.{domain}/v2/dockerhub/{path...} {*}
+oci.{domain}/v2/ghcr/{path...} {*}
 oci.{domain}/v2/{$} {GET,HEAD}
 sites.{domain}/llms.txt {GET}
 sites.{domain}/{project} {GET}
