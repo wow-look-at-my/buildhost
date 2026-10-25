@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
@@ -318,4 +319,29 @@ func TestGetCompressedMissingKey(t *testing.T) {
 
 	_, err = fs.GetCompressed(context.Background(), "not-a-valid-key")
 	assert.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestSweepTempRemovesOnlyOldTempFiles(t *testing.T) {
+	t.Serial()
+	dir := t.TempDir()
+	fs, err := NewFilesystem(dir, true)
+	require.NoError(t, err)
+	key, _, err := fs.Put(context.Background(), bytes.NewReader([]byte("kept")))
+	require.NoError(t, err)
+	for _, name := range []string{".upload-old", ".compress-old", ".upload-new"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("12345"), 0o644))
+	}
+	old := time.Now().Add(-2 * TempMaxAge)
+	require.NoError(t, os.Chtimes(filepath.Join(dir, ".upload-old"), old, old))
+	require.NoError(t, os.Chtimes(filepath.Join(dir, ".compress-old"), old, old))
+
+	n, freed, err := fs.SweepTemp(time.Now())
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+	assert.Equal(t, int64(10), freed)
+	assert.NoFileExists(t, filepath.Join(dir, ".upload-old"))
+	assert.FileExists(t, filepath.Join(dir, ".upload-new"), "a young temp file can belong to a live Put of the other server in a rolling update")
+	exists, err := fs.Exists(context.Background(), key)
+	require.NoError(t, err)
+	assert.True(t, exists, "a stored blob is never a temp file")
 }
