@@ -1,6 +1,7 @@
 // Package runfiles deletes the files a CI run handed between its jobs, once
 // the run no longer needs them. A run's files go Keep after GitHub reports the
-// run complete. They go sooner, oldest-ended first, when free disk falls below
+// run complete, or Keep after their last use when GitHub cannot report the
+// run. They go sooner, oldest-ended first, when free disk falls below
 // MinFreePercent. A live run's files never go early: a job of that run still
 // waits for them.
 package runfiles
@@ -98,7 +99,8 @@ func (j *Janitor) Sweep(ctx context.Context, now time.Time) error {
 }
 
 func (j *Janitor) sweep(ctx context.Context, now time.Time, rep *Report) error {
-	if err := j.checkRuns(ctx, now, rep); err != nil {
+	unknown, err := j.checkRuns(ctx, now, rep)
+	if err != nil {
 		return err
 	}
 	runs, err := j.DB.RunStorageRuns(ctx)
@@ -110,6 +112,9 @@ func (j *Janitor) sweep(ctx context.Context, now time.Time, rep *Report) error {
 		switch {
 		case run.EndedAt != nil && now.Sub(*run.EndedAt) >= j.Keep:
 			j.deleteRun(ctx, run, "ended "+now.Sub(*run.EndedAt).Round(time.Minute).String()+" ago", rep)
+		// Without this, a server with no GitHub credential keeps every run's files for MaxRunLifetime.
+		case unknown[db.RunKey{RepoID: run.RepoID, RunID: run.RunID}] && now.Sub(run.UsedAt) >= j.Keep:
+			j.deleteRun(ctx, run, "GitHub cannot report its status and nothing used it for "+now.Sub(run.UsedAt).Round(time.Minute).String(), rep)
 		case now.Sub(run.CreatedAt) >= MaxRunLifetime:
 			j.deleteRun(ctx, run, "older than the longest a run can last, and GitHub never reported its end", rep)
 		case run.EndedAt != nil:
@@ -119,11 +124,13 @@ func (j *Janitor) sweep(ctx context.Context, now time.Time, rep *Report) error {
 	return j.relievePressure(ctx, ended, runs, rep)
 }
 
-func (j *Janitor) checkRuns(ctx context.Context, now time.Time, rep *Report) error {
+// checkRuns returns the runs whose status GitHub did not answer.
+func (j *Janitor) checkRuns(ctx context.Context, now time.Time, rep *Report) (map[db.RunKey]bool, error) {
 	runs, err := j.DB.RunsToCheck(ctx, now.Add(-CheckInterval))
 	if err != nil {
-		return err
+		return nil, err
 	}
+	unknown := map[db.RunKey]bool{}
 	for _, run := range runs {
 		key := db.RunKey{RepoID: run.RepoID, RunID: run.RunID}
 		rep.Checked++
@@ -131,7 +138,8 @@ func (j *Janitor) checkRuns(ctx context.Context, now time.Time, rep *Report) err
 		if err != nil {
 			rep.CheckFailures++
 			rep.LastCheckError = err.Error()
-			slog.Warn("run files: cannot read the run's status from GitHub; its files stay until it can", "repo", run.RepoPath, "run_id", run.RunID, "err", err)
+			unknown[key] = true
+			slog.Warn("run files: cannot read the run's status from GitHub; its files stay until nothing uses them for the keep period", "repo", run.RepoPath, "run_id", run.RunID, "keep", j.Keep, "err", err)
 			continue
 		}
 		var mark *time.Time
@@ -140,10 +148,10 @@ func (j *Janitor) checkRuns(ctx context.Context, now time.Time, rep *Report) err
 			rep.Ended++
 		}
 		if err := j.DB.MarkRunChecked(ctx, key, mark); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return unknown, nil
 }
 
 // relievePressure deletes ended runs, oldest-ended first, until free disk is
