@@ -11,8 +11,8 @@
 A fetched bundle is a generated build input, exactly like `internal/api`'s `gen_*.go`. It is produced the same way. A `//go:generate` directive next to the `//go:embed` in `oci.go` runs `scripts/fetch-cacerts.sh`. Nobody has to remember a separate step:
 
 ```sh
-go-toolchain --generate 55cd17232ba8   # runs every directive, this one included
-./scripts/fetch-cacerts.sh             # or fetch it alone
+go-toolchain                 # runs every directive, this one included
+./scripts/fetch-cacerts.sh   # or fetch it alone
 ```
 
 The hash is go-toolchain's approval gate over the directive set. It prints the current one when the recorded value is stale. Skip generate in a fresh clone and the build fails with `pattern cacerts/ca-certificates.crt: no matching files found`. The embed is compile-time on purpose, so a bundle-less binary can never ship. `CACERT_URL` overrides the source URL. `internal/repackage` has `TestCACertsBundleValid`, which fails CI when the fetched bundle is empty or unparseable.
