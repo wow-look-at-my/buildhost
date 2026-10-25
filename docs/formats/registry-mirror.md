@@ -13,7 +13,9 @@
 
 ## Auth
 
-Every request needs a buildhost token with the `read` scope, sent as Bearer or as the Basic password. `/v2/` answers 401 with a Basic challenge without one. An open mirror spends the server's bandwidth and its upstream quota for anyone who finds it. The mirror fetches from each upstream anonymously. It holds only public content.
+Every request needs a buildhost token with the `read` scope, sent as Bearer or as the Basic password. `/v2/` answers 401 with a Basic challenge without one. An open mirror spends the server's bandwidth and its upstream quota for anyone who finds it. The mirror fetches from each upstream anonymously. It holds only public content. Its TLS client trusts the system CA bundle minus every eMudhra certificate (`distrustedCAs` in `roots.go`).
+
+Without a bundle, every pull answers 502 and says why.
 
 A docker daemon sends no credential to an entry in `registry-mirrors`. A client that must reach the mirror directly puts a local proxy. In front that adds the token. webhook-runner does this for its dind containers and the host daemon.
 
