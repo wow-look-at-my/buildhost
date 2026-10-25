@@ -109,6 +109,17 @@ func TestSweep_UnknownStatusKeepsTheRun(t *testing.T) {
 	assert.Contains(t, rep.LastCheckError, "502")
 }
 
+func TestSweep_UnknownStatusGoesAfterKeepUnused(t *testing.T) {
+	t.Serial()
+	f := newFixture(t)
+	f.send(t, "1", "a")
+	f.fail["1"] = true
+	require.NoError(t, f.j.Sweep(t.Context(), time.Now().Add(23*time.Hour)))
+	assert.True(t, f.holds(t, "1"), "a run used within Keep keeps its files")
+	require.NoError(t, f.j.Sweep(t.Context(), time.Now().Add(25*time.Hour)))
+	assert.False(t, f.holds(t, "1"), "a run GitHub cannot report and nothing used for Keep loses its files, not after MaxRunLifetime")
+}
+
 func TestSweep_PressureDeletesEndedRunsOldestFirst(t *testing.T) {
 	t.Serial()
 	f := newFixture(t)

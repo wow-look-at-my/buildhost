@@ -106,6 +106,11 @@ var serveCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("init storage: %w", err)
 		}
+		if n, freed, err := fsStore.SweepTemp(time.Now()); err != nil {
+			slog.Error("storage: temp file sweep failed", "removed", n, "bytes", freed, "err", err)
+		} else if n > 0 {
+			slog.Warn("storage: removed temp files an interrupted upload left", "removed", n, "bytes", freed)
+		}
 		store := storage.NewTraced(fsStore)
 
 		if err := sites.ConvertTarSites(context.Background(), database, store, scratch.Root()); err != nil {
