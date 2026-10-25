@@ -35,6 +35,10 @@ Optional domain envs exist for the project-site-subdomain scheme. See `docs/site
 
 Left unset while SITE_DOMAIN is set, a site-domain browser gets the plain JSON 401. Setting it also scopes the web UI and `/api/v1` to that apex. See `docs/security/github-signin.md`. DNS for the site domain needs the apex plus a wildcard `*.<domain>`, both pointed at the same origin with Host passthrough. The proxy needs a wildcard TLS cert.
 
+## GitHub credential
+
+buildhost's own GitHub calls (run status for run files, default branches, collaborator checks, the Go proxy's GitHub source) go through github-state-mirror, which refuses a call with no token. Set the token on the admin dashboard's **GitHub** page. The page checks it with GitHub, stores it in the database and puts it in use at once. `BUILDHOST_GITHUB_TOKEN`, or a GitHub App (`BUILDHOST_GITHUB_APP_ID` + `BUILDHOST_GITHUB_APP_PRIVATE_KEY`), takes precedence. `/healthz` reports which one is in use as `github_credential`.
+
 ## Go module proxy
 
 `goproxy.{domain}` serves the protocol of the Go module download. It needs no configuration to run: private module prefixes default to `github.com/<org>` for each `BUILDHOST_OIDC_ORGS` entry, and it uses buildhost's existing GitHub credential (`BUILDHOST_GITHUB_APP_ID` + `BUILDHOST_GITHUB_APP_PRIVATE_KEY`, else `BUILDHOST_GITHUB_TOKEN`).

@@ -1,3 +1,5 @@
+// "auto" defers to the next level up: build -> project -> folder -> GitHub repo.
+
 export interface BuildInfo {
     version: string;
     commit: string;
@@ -356,6 +358,7 @@ export interface Pages {
     runFiles(): void;
     cache(): void;
     duplicates(): void;
+    github(): void;
 }
 
 // --- Projects split by a GitHub rename (admin GET /api/duplicates) ---
@@ -375,6 +378,14 @@ export interface DuplicateGroup {
 
 export interface DuplicatesData {
     groups: DuplicateGroup[];
+}
+
+export interface GitHubCredentialData {
+    source: "app" | "token" | "none";
+    env_token: boolean;
+    dashboard_set: boolean;
+    dashboard_updated_at?: string;
+    github_api: string;
 }
 
 export interface MergePlan {

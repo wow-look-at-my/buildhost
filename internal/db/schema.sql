@@ -292,3 +292,10 @@ CREATE TABLE cache_entries (
 
 CREATE INDEX IF NOT EXISTS idx_cache_entries_storage_key ON cache_entries(storage_key);
 CREATE INDEX IF NOT EXISTS idx_cache_entries_used_at ON cache_entries(used_at);
+
+-- GitHub credential (mirrored from migrations/025_github_credential.sql).
+CREATE TABLE github_credential (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    token      TEXT NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);

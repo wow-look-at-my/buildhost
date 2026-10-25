@@ -1,3 +1,5 @@
+// jsSnippetsOrigin serves the js-snippets library the dashboard imports.
+
 package admin
 
 import (
@@ -139,6 +141,9 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/run-files", router.Allow, s.apiRunFiles)
 	mux.HandleFunc("GET /api/cache", router.Allow, s.apiCache)
 	mux.HandleFunc("POST /api/retention/run", router.Allow, s.apiRunRetention)
+	mux.HandleFunc("GET /api/github-credential", router.Allow, s.apiGitHubCredential)
+	mux.HandleFunc("PUT /api/github-credential", router.Allow, s.apiSetGitHubCredential)
+	mux.HandleFunc("DELETE /api/github-credential", router.Allow, s.apiDeleteGitHubCredential)
 	mux.HandleFunc("GET /admin/inflight", router.Allow, InflightHandler)
 
 	mux.HandleFunc("GET /{path...}", router.Allow, s.serveSPA)

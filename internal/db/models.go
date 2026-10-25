@@ -75,6 +75,12 @@ type DownloadEvent struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+type GithubCredential struct {
+	ID        int64     `json:"id"`
+	Token     string    `json:"token"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type GoproxyModule struct {
 	ID            int64      `json:"id"`
 	ModulePath    string     `json:"module_path"`
