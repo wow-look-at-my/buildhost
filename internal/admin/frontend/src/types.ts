@@ -383,9 +383,14 @@ export interface DuplicatesData {
 
 export interface GitHubCredentialData {
     source: "app" | "token" | "none";
-    env_token: boolean;
-    dashboard_set: boolean;
-    dashboard_updated_at?: string;
+    env_credential: boolean;
+    secret_server: {
+        configured: boolean;
+        at?: string;
+        ok: boolean;
+        error?: string;
+        applied?: string;
+    };
     github_api: string;
 }
 

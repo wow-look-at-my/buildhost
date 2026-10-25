@@ -26,6 +26,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/mirror"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
 	"github.com/wow-look-at-my/buildhost/internal/runfiles"
+	"github.com/wow-look-at-my/buildhost/internal/secretserver"
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	"github.com/wow-look-at-my/buildhost/internal/sites"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
@@ -129,6 +130,17 @@ var serveCmd = &cobra.Command{
 		}
 
 		srv := server.New(cfg, database, store)
+		switch {
+		case cfg.SecretServerToken == "":
+			slog.Error("no BUILDHOST_SECRET_SERVER_TOKEN: buildhost gets no GitHub credential from secret-server", "github_credential", auth.GitHubCredentialSource())
+		case cfg.GitHubToken != "" || cfg.GitHubAppID != "":
+			slog.Warn("secret-server: the GitHub credential in the environment takes precedence; the machine token is not used")
+		default:
+			src := &secretserver.Source{URL: secretserver.URL, Token: cfg.SecretServerToken}
+			if err := src.Start(ctx); err != nil {
+				return err
+			}
+		}
 		// One background worker hashes what the brew tap history still lacks, so no tap request has to.
 		go func() {
 			if err := brew.BackfillHistoryDigests(ctx); err != nil {

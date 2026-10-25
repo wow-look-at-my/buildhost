@@ -318,10 +318,3 @@ CREATE TABLE mirror_tags (
     checked_at  DATETIME NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (upstream, repository, tag)
 );
-
--- GitHub credential (mirrored from migrations/026_github_credential.sql).
-CREATE TABLE github_credential (
-    id         INTEGER PRIMARY KEY CHECK (id = 1),
-    token      TEXT NOT NULL,
-    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
-);

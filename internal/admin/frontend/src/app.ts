@@ -1785,7 +1785,8 @@ const demoData: Record<string, unknown> = {
         disk_used: 120000000, disk_total: 500000000
     },
     "/github-credential": {
-        source: "none", env_token: false, dashboard_set: false, github_api: "https://github-state-mirror.pazer.io"
+        source: "token", env_credential: false, github_api: "https://github-state-mirror.pazer.io",
+        secret_server: { configured: true, ok: true, applied: "token", at: "2026-10-25T14:00:00Z" }
     },
     "/retention": {
         keep_n: 10, recency_hours: 24, sweeper_enabled: false, sweeper_enforce: false,
@@ -2245,49 +2246,26 @@ const fillCacheTable = function (d: CacheData): void {
 
 // --- GitHub credential ---
 
-const sendGitHubCredential = function (method: string, body?: string): void {
-    fetch("/api/github-credential", {
-        method: method,
-        headers: body ? { "Content-Type": "application/json" } : undefined,
-        body: body
-    }).then(function (res) {
-        if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); });
-        pages.github();
-    }).catch(function () { alert("Could not reach the server (preview/demo mode has no backend)."); });
-};
-
 pages.github = function (): void {
     setTitle("GitHub");
     renderSidebar("github");
     apiFetch<GitHubCredentialData>("/github-credential").then(function (d) {
         var source = d.source === "app" ? "GitHub App" : d.source === "token" ? "token" : "none";
+        var ss = d.secret_server;
         var html = "<h1>GitHub credential</h1>";
         html += '<div class="stat-grid"><div class="stat-card"><div class="stat-value">' + h(source) + '</div><div class="stat-label">In use</div></div></div>';
-        html += '<div class="card"><p>buildhost authenticates its own GitHub calls with this token: run status for run files, default branches, collaborator checks. Every call goes through <code>' + h(d.github_api) + "</code>, which refuses a call with no token.</p>";
-        if (d.env_token) {
-            html += "<p><code>BUILDHOST_GITHUB_TOKEN</code> is set in the environment and takes precedence. Remove it there to manage the token here.</p>";
+        html += '<div class="card"><p>buildhost authenticates its own GitHub calls with this credential: run status for run files, default branches, collaborator checks. Every call goes through <code>' + h(d.github_api) + "</code>, which refuses a call with no token.</p>";
+        if (d.env_credential) {
+            html += "<p>The credential comes from the environment (<code>BUILDHOST_GITHUB_TOKEN</code> or <code>BUILDHOST_GITHUB_APP_ID</code>), which takes precedence over secret-server.</p>";
+        } else if (!ss.configured) {
+            html += "<p>No <code>BUILDHOST_SECRET_SERVER_TOKEN</code> is set. Issue a secret-server machine token entitled to <code>BUILDHOST_GITHUB_TOKEN</code> (or <code>BUILDHOST_GITHUB_APP_ID</code> and <code>BUILDHOST_GITHUB_APP_PRIVATE_KEY</code>) and set it on the container.</p>";
+        } else if (ss.ok) {
+            html += "<p>secret-server vended the " + h(ss.applied === "app" ? "GitHub App" : "token") + " at " + h(ss.at || "") + ". buildhost fetches it again every 15 minutes.</p>";
         } else {
-            if (d.dashboard_set) {
-                html += "<p>A token set here is in use, last changed " + h(d.dashboard_updated_at || "") + '. <button type="button" class="btn" id="gh-clear">Remove</button></p>';
-            }
-            html += '<form id="gh-form"><label>Token <input type="password" id="gh-token" autocomplete="off" placeholder="github_pat_..." size="50"></label> <button type="submit" class="btn">Check and save</button></form>';
-            html += "<p>buildhost checks the token with GitHub before it saves it, and never sends it back to this page. The database backup holds it.</p>";
+            html += '<p class="error">The last secret-server fetch failed at ' + h(ss.at || "") + ": " + h(ss.error || "") + ". buildhost retries every minute.</p>";
         }
         html += "</div>";
         document.getElementById("content")!.innerHTML = html;
-
-        var form = document.getElementById("gh-form");
-        if (form) {
-            form.addEventListener("submit", function (e) {
-                e.preventDefault();
-                var token = (document.getElementById("gh-token") as HTMLInputElement).value;
-                sendGitHubCredential("PUT", JSON.stringify({ token: token }));
-            });
-        }
-        var clear = document.getElementById("gh-clear");
-        if (clear) {
-            clear.addEventListener("click", function () { sendGitHubCredential("DELETE"); });
-        }
     });
 };
 

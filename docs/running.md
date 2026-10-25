@@ -37,7 +37,9 @@ Left unset while SITE_DOMAIN is set, a site-domain browser gets the plain JSON 4
 
 ## GitHub credential
 
-buildhost's own GitHub calls (run status for run files, default branches, collaborator checks, the Go proxy's GitHub source) go through github-state-mirror, which refuses a call with no token. Set the token on the admin dashboard's **GitHub** page. The page checks it with GitHub, stores it in the database and puts it in use at once. `BUILDHOST_GITHUB_TOKEN`, or a GitHub App (`BUILDHOST_GITHUB_APP_ID` + `BUILDHOST_GITHUB_APP_PRIVATE_KEY`), takes precedence. `/healthz` reports which one is in use as `github_credential`.
+buildhost's own GitHub calls (run status for run files, default branches, collaborator checks, the Go proxy's GitHub source) go through github-state-mirror, which refuses a call with no token. The credential comes from secret-server (`https://secrets.pazer.io`). Set `BUILDHOST_SECRET_SERVER_TOKEN` to an `sst_` machine token entitled to `BUILDHOST_GITHUB_TOKEN`, or to both `BUILDHOST_GITHUB_APP_ID` and `BUILDHOST_GITHUB_APP_PRIVATE_KEY`. buildhost fetches them at startup and every few minutes. A rotated secret takes effect without a start. A failed fetch keeps the credential in use and retries every minute.
+
+The same names set in the environment take precedence, and the machine token is then not used. The admin dashboard's **GitHub** page shows which credential is in use and what the last fetch did. `/healthz` reports it as `github_credential`.
 
 ## Go module proxy
 
