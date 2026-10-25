@@ -1,3 +1,5 @@
+// EventNotAllowedError rejects a verified token whose event is outside the allowlist.
+
 package auth
 
 import (

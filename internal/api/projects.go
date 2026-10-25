@@ -1,3 +1,5 @@
+// Project names may contain multiple `/`-separated segments.
+
 package api
 
 // Project names may contain multiple `/`-separated segments. Each segment matches

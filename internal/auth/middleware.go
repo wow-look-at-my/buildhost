@@ -1,3 +1,5 @@
+// Sign in with GitHub browser session.
+
 package auth
 
 import (
