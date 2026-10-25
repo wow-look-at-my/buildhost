@@ -8,6 +8,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/repackage"
+	"github.com/wow-look-at-my/buildhost/internal/scratch"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
 
@@ -18,7 +19,7 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 
-		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), auth.DataDir()+"/tmp")
+		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), scratch.Root())
 		handler.Signer = NewSigner(auth.DataDir())
 	})
 	auth.ServiceHandleHandler("apt", "GET /{path...}", parseRoute, &handler)

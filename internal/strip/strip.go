@@ -1,3 +1,5 @@
+// StripReader spools r to a temp file under tmpDir, runs the file-based Strip.
+
 package strip
 
 import (
@@ -60,10 +62,43 @@ func StripReader(r io.Reader, tmpDir string) (io.ReadCloser, int64, error) {
 	return stripStream(r, tmpDir, false)
 }
 
-// StripReaderDebug is like StripReader but streams the extracted debug-symbols file
-// instead of the stripped binary.
+// StripReaderDebug streams the debug companion the strip step separates out,
+// rather than the stripped binary.
 func StripReaderDebug(r io.Reader, tmpDir string) (io.ReadCloser, int64, error) {
 	return stripStream(r, tmpDir, true)
+}
+
+// StripFile spools r to a temp file under tmpDir and strips it, returning the
+// paths of the stripped binary and its debug companion. Both are temporary
+// files the caller removes.
+func StripFile(r io.Reader, tmpDir string) (*Result, error) {
+	in, err := os.CreateTemp(tmpDir, "strip-input-*")
+	if err != nil {
+		return nil, err
+	}
+	name := in.Name()
+	if _, err := io.Copy(in, r); err != nil {
+		in.Close()
+		os.Remove(name)
+		return nil, err
+	}
+	if err := in.Close(); err != nil {
+		os.Remove(name)
+		return nil, err
+	}
+	res, err := Strip(name)
+	os.Remove(name)
+	if err != nil {
+		return nil, err
+	}
+	// The result is served as an executable, and a packer refuses an input
+	// without the executable bit.
+	if err := os.Chmod(res.StrippedPath, 0o755); err != nil {
+		os.Remove(res.StrippedPath)
+		os.Remove(res.DebugPath)
+		return nil, err
+	}
+	return res, nil
 }
 
 func stripStream(r io.Reader, tmpDir string, debug bool) (io.ReadCloser, int64, error) {

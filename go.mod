@@ -6,6 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/KimMachineGun/automemlimit v0.7.5
 	github.com/ProtonMail/go-crypto v1.4.1
+	github.com/andybalholm/brotli v1.2.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/klauspost/compress v1.19.1
 	github.com/spf13/cobra v1.10.2

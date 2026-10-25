@@ -4,7 +4,7 @@ Extracted verbatim from CLAUDE.md, no wording changed. The larger items moved to
 
 The following items was reviewed and addressed or are intentional design choices:
 
-- **Rate limiting**: Handled at the reverse proxy layer, not in the application
+- **Rate limiting**: General request limiting stays at the reverse proxy layer, not in the application. Download-time recompression is additionally bounded per client IP and scaled by host load (`internal/recompress`). A client cannot make the origin burn CPU on brotli, gzip or packing. That is a bound on work, not request admission
 - **No TLS termination**: Intentional -- runs behind a reverse proxy in Docker
 - **Strip temp file permissions**: Runs in a single-user Docker container. Permissions are 0600 anyway
 - **List endpoints**: No LIMIT -- all behind auth, SQLite serialized, not a DoS vector
@@ -15,7 +15,7 @@ The following items was reviewed and addressed or are intentional design choices
 - **Graceful shutdown**: Server handles SIGTERM/SIGINT with 5-minute timeout for clean connection draining
 - **Ready-to-update endpoint**: `GET /ready-to-update` on :8080 returns 200/503 with no body content -- reveals only idle/busy state, no sensitive data
 - **Inflight endpoint**: `GET /admin/inflight` on :9090 is unauthenticated. Same trust model as the rest of the admin dashboard (internal-only, behind reverse proxy)
-- **No writes outside data dir**: Temp files use BUILDHOST_DATA_DIR/tmp, not system /tmp
+- **No durable state outside the data dir**: The database, blobs, tap history and upload session spools stay on `BUILDHOST_DATA_DIR`. Request-path scratch (stripping, packing, repackaging, site archives) and the compressed-response cache live under the scratch root. That root is `TMPDIR` unless `BUILDHOST_TEMP_DIR` names another place. A container's durable volume does not fill with transient bytes. The scratch janitor reclaims only the files that carry a scratch name. It leaves the upload spools alone
 - **Admin error messages**: Admin API handlers return generic error messages. A raw error is logged server-side only
 - **Migrations**: Each migration runs in a single transaction (DDL + schema_migrations record) to prevent partial application on crash
 - **Sites decompression**: Decompressed tar size is capped at 1 GiB to prevent gzip bomb attacks. ZIP uploads are also bounded by the 256 MiB upload limit and the 1 GiB decompressed tar cap.
