@@ -58,6 +58,21 @@ func TestCreateProject_EmptyName(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "name is required")
 }
 
+func TestCreateProject_MirrorPrefixIsReserved(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+
+	for _, name := range []string{"ghcr", "dockerhub/library"} {
+		req := httptest.NewRequest("POST", "/api/projects", strings.NewReader(`{"name":"`+name+`"}`))
+		req = req.WithContext(writeToken(req.Context(), "read,write"))
+		rec := httptest.NewRecorder()
+		h.CreateProject(rec, req)
+
+		assert.Equal(t, http.StatusBadRequest, rec.Code, name)
+		assert.Contains(t, rec.Body.String(), "registry mirror prefix")
+	}
+}
+
 func TestCreateProject_InvalidBody(t *testing.T) {
 	t.Serial()
 	h := setupTestHandler(t)

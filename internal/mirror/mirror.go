@@ -1,7 +1,6 @@
 // Package mirror is a read-only pull-through mirror of public registries. Each
-// upstream has its own service subdomain, so a docker daemon can name it in
-// registry-mirrors. A manifest or blob comes from the upstream once and from
-// the blob store after that.
+// upstream is a path prefix on oci.{domain}: oci.{domain}/v2/ghcr/<repo>/...
+// A manifest or blob comes from the upstream once and from the blob store after that.
 package mirror
 
 import (
@@ -26,7 +25,7 @@ import (
 
 // Upstream is one public registry the mirror serves.
 type Upstream struct {
-	// Service is the subdomain label and the upstream column of each row.
+	// Service is the path prefix under oci.{domain}/v2/ and the upstream column of each row.
 	Service string
 	// Remote is the registry base URL.
 	Remote string
@@ -84,10 +83,15 @@ func init() {
 			}
 			h.Client = client
 		})
-		auth.ServiceHandleRaw(u.Service, "GET /v2/{path...}", h.ServeHTTP)
-		auth.ServiceHandleRaw(u.Service, "HEAD /v2/{path...}", h.ServeHTTP)
+		auth.ServiceHandleRaw(Subdomain, h.Pattern(), h.ServeHTTP)
 	}
 }
+
+// Subdomain is the service the mirror shares with buildhost's own registry.
+const Subdomain = "oci"
+
+// Pattern takes every method.
+func (h *Handler) Pattern() string { return "/v2/" + h.Up.Service + "/{path...}" }
 
 // authorized needs a token with the read scope.
 func authorized(r *http.Request) bool {
@@ -100,10 +104,14 @@ func unauthorized(w http.ResponseWriter) {
 	regError(w, http.StatusUnauthorized, "UNAUTHORIZED", "a buildhost token with the read scope is required")
 }
 
-// ServeHTTP serves every /v2/ path. One pattern per method keeps the router
-// free of a GET-versus-HEAD overlap between /v2/ and /v2/{path...}.
+// ServeHTTP serves every path under the upstream's prefix.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		regError(w, http.StatusMethodNotAllowed, "UNSUPPORTED", "the mirror is read-only")
+		return
+	}
 	if !authorized(r) {
 		unauthorized(w)
 		return

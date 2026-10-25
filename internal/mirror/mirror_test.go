@@ -117,16 +117,17 @@ func newFixture(t *testing.T) *fixture {
 	require.NoError(t, err)
 	up := newFakeRegistry(t)
 	h := &Handler{Up: Upstream{Service: "dockerhub", Remote: up.URL}, DB: d, Store: store, TmpDir: t.TempDir(), Client: up.Client()}
-	// The router the server runs, with the same patterns init registers.
+	// The router the server runs: the mirror's pattern beside the registry's own /v2/ handler.
 	rt := router.New()
-	rt.HandleFunc("GET /v2/{path...}", router.Allow, h.ServeHTTP)
-	rt.HandleFunc("HEAD /v2/{path...}", router.Allow, h.ServeHTTP)
+	rt.HandleFunc(h.Pattern(), router.Allow, h.ServeHTTP)
+	rt.HandleFunc("/v2/", router.Allow, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) })
 	return &fixture{h: h, up: up, rt: rt}
 }
 
+// do sends a request the way a client of the upstream would spell it, under the mirror's prefix.
 func (f *fixture) do(t *testing.T, method, path string, header http.Header, token bool) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, path, nil)
+	req := httptest.NewRequest(method, "/v2/"+f.h.Up.Service+strings.TrimPrefix(path, "/v2"), nil)
 	for k, v := range header {
 		req.Header[k] = v
 	}
@@ -151,8 +152,16 @@ func TestMirrorNeedsAReadToken(t *testing.T) {
 
 func TestMirrorRefusesWrites(t *testing.T) {
 	f := newFixture(t)
-	rec := f.do(t, http.MethodPost, "/v2/library/alpine/blobs/uploads/", nil, true)
-	assert.Equal(t, http.StatusMethodNotAllowed, rec.Code, "a job must never change what a later job pulls")
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		rec := f.do(t, method, "/v2/library/alpine/blobs/uploads/", nil, true)
+		assert.Equal(t, http.StatusMethodNotAllowed, rec.Code, "%s: a job must never change what a later job pulls, and a push must not reach the registry's own handler", method)
+	}
+}
+
+func TestEveryUpstreamPrefixIsAReservedProjectRoot(t *testing.T) {
+	for _, u := range Upstreams {
+		assert.True(t, auth.ReservedProjectName(u.Service+"/x"), "a project named %s would be unpullable behind the mirror", u.Service)
+	}
 }
 
 func TestManifestByTagIsFetchedOnceAndServedFromTheStore(t *testing.T) {

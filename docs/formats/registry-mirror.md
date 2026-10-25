@@ -1,23 +1,25 @@
 # Registry mirror
 
-`internal/mirror/`. A read-only pull-through mirror of public registries. Each upstream has its own subdomain, because a docker daemon's `registry-mirrors` entry cannot carry a path.
+`internal/mirror/`. A read-only pull-through mirror of public registries. Each upstream is a path prefix on `oci.{domain}`, beside buildhost's own images.
 
-| Subdomain | Upstream |
-| --- | --- |
-| `dockerhub.{domain}` | `https://registry-1.docker.io` |
-| `ghcr.{domain}` | `https://ghcr.io` |
+| Prefix | Upstream | Pull |
+| --- | --- | --- |
+| `oci.{domain}/v2/dockerhub/` | `https://registry-1.docker.io` | `docker pull oci.{domain}/dockerhub/library/alpine:3` |
+| `oci.{domain}/v2/ghcr/` | `https://ghcr.io` | `docker pull oci.{domain}/ghcr/<owner>/<image>:<tag>` |
+
+`dockerhub` and `ghcr` are reserved project roots (`auth.ReservedProjectRoots`). Project creation and OIDC provisioning refuse them, because the mirror owns every path under them.
+
+A docker daemon's `registry-mirrors` entry cannot carry a path. A daemon that uses the mirror that way goes through a local proxy that adds the prefix and the token, as webhook-runner does.
 
 ## What it serves
 
-`GET` and `HEAD` on `/v2/`, `/v2/<repository>/manifests/<tag or digest>` and `/v2/<repository>/blobs/<digest>`. Every other method answers 405. A job can never change what a later job pulls. A image of the Docker Hub official keeps its `library/` prefix, which is what a daemon sends to a mirror.
+`GET` and `HEAD` on `/v2/<prefix>/`, `/v2/<prefix>/<repository>/manifests/<tag or digest>` and `/v2/<prefix>/<repository>/blobs/<digest>`. Every other method answers 405, and never reaches the registry's push handler. A job can never change what a later job pulls. A image of the Docker Hub official keeps its `library/` prefix.
 
 ## Auth
 
-Every request needs a buildhost token with the `read` scope, sent as Bearer or as the Basic password. `/v2/` answers 401 with a Basic challenge without one. An open mirror spends the server's bandwidth and its upstream quota for anyone who finds it. The mirror fetches from each upstream anonymously. It holds only public content. Its TLS client trusts the system CA bundle minus every eMudhra certificate (`distrustedCAs` in `roots.go`).
+Every request needs a buildhost token with the `read` scope, sent as Bearer or as the Basic password. `/v2/<prefix>/` answers 401 with a Basic challenge without one. An open mirror spends the server's bandwidth and its upstream quota for anyone who finds it. The mirror fetches from each upstream anonymously. It holds only public content. Its TLS client trusts the system CA bundle minus every eMudhra certificate (`distrustedCAs` in `roots.go`).
 
 Without a bundle, every pull answers 502 and says why.
-
-A docker daemon sends no credential to an entry in `registry-mirrors`. A client that must reach the mirror directly puts a local proxy. In front that adds the token. webhook-runner does this for its dind containers and the host daemon.
 
 ## Storage
 

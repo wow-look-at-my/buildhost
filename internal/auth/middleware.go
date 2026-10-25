@@ -196,7 +196,7 @@ func oidcAuthorizesProject(oidcProject, requested string) bool {
 
 // validNamespacedProjectName reports whether name is a well-formed project name,
 func validNamespacedProjectName(name string) bool {
-	if name == "" {
+	if name == "" || ReservedProjectName(name) {
 		return false
 	}
 	for _, seg := range strings.Split(name, "/") {
