@@ -57,10 +57,10 @@ func (s *Server) apiGitHubCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := map[string]any{
-		"source":         auth.GitHubCredentialSource(),
-		"env_token":      s.cfg.GitHubToken != "",
-		"dashboard_set":  found,
-		"github_api":     auth.GitHubAPI,
+		"source":        auth.GitHubCredentialSource(),
+		"env_token":     s.cfg.GitHubToken != "",
+		"dashboard_set": found,
+		"github_api":    auth.GitHubAPI,
 	}
 	if found {
 		resp["dashboard_updated_at"] = updatedAt
