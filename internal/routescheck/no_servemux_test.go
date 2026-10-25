@@ -27,8 +27,8 @@ func TestNoStandardLibraryRouter(t *testing.T) {
 			return err
 		}
 		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "node_modules", "vendor":
+			// A hidden directory is not this repository's code: CI checks out go-toolchain into .go-toolchain.
+			if path != root && (strings.HasPrefix(d.Name(), ".") || d.Name() == "node_modules" || d.Name() == "vendor") {
 				return filepath.SkipDir
 			}
 			return nil
