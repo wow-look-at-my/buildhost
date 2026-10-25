@@ -1,3 +1,5 @@
+// An upload session's spool is durable state: a job may finish its chunks on the next request.
+
 package oci
 
 import (
@@ -21,8 +23,7 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 		handler.Gen = repackage.NewGenerator(auth.Store(), auth.DB(), scratch.Root())
-		// An upload session's spool is durable state: a job may finish its
-		// chunks on the next request, so it stays on the data volume.
+		// An upload session's spool is durable state: a job may finish its chunks on the next request.
 		handler.uploads = newUploadStore(auth.DataDir()+"/tmp/oci-uploads", config.MaxBlobSize())
 	})
 	auth.ServiceHandleRaw("oci", "GET /v2/{$}", handler.V2Root)

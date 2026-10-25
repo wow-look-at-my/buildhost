@@ -1,3 +1,5 @@
+// Refuse to start on a configuration that cannot serve correctly, rather than degrade silently at request time.
+
 package main
 
 import (
@@ -204,9 +206,7 @@ var serveCmd = &cobra.Command{
 }
 
 // sweepScratch reclaims orphaned temporary files from the active scratch root
-// and from the {DataDir}/tmp an earlier version wrote. Downloads no longer
-// create anything there, so a backlog left by that version is reclaimed with
-// no operator action.
+// and from the {DataDir}/tmp an earlier version wrote.
 func sweepScratch(cfg config.Config) scratch.SweepReport {
 	return scratchJanitor(cfg).Run()
 }
