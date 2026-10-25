@@ -133,14 +133,33 @@ func TestCache_ABranchReadsItsOwnRefThenTheDefaultBranch(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, rec.Code, "the default branch does not read a pull request's entries")
 }
 
-func TestCache_AnUnknownDefaultBranchIsNamed(t *testing.T) {
+func TestCache_ABranchReadsMasterWhenGitHubDoesNotAnswer(t *testing.T) {
 	t.Serial()
 	withDefaultBranch(t, "")
 	h := setupTestHandler(t)
-	rec, found := findCache(t, h, cacheRepo("refs/pull/7/merge"), "deps-1")
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-	assert.Equal(t, []string{"refs/pull/7/merge"}, found.Scopes)
-	assert.Contains(t, found.DefaultBranch, "GitHub did not answer")
+	master := cacheRepo("refs/heads/master")
+	branch := cacheRepo("refs/heads/feature")
+	require.Equal(t, http.StatusCreated, putCache(t, h, master, "base-image-1", []byte("master")).Code)
+
+	rec, found := findCache(t, h, branch, "base-image-1")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.True(t, found.Exact)
+	assert.Equal(t, "refs/heads/master", found.Ref)
+	assert.Equal(t, []string{"refs/heads/feature", "refs/heads/master"}, found.Scopes)
+	assert.Contains(t, found.DefaultBranch, "GitHub did not answer", "the restore says it fell back to master")
+
+	rec = getCache(t, h, branch, "base-image-1", "refs/heads/master")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, []byte("master"), rec.Body.Bytes())
+}
+
+func TestCache_GitHubsAnswerWinsOverTheMasterFallback(t *testing.T) {
+	t.Serial()
+	withDefaultBranch(t, "main")
+	h := setupTestHandler(t)
+	_, found := findCache(t, h, cacheRepo("refs/heads/feature"), "base-image-1")
+	assert.Equal(t, []string{"refs/heads/feature", "refs/heads/main"}, found.Scopes)
+	assert.Empty(t, found.DefaultBranch)
 }
 
 func TestCache_AKeyIsWrittenOnce(t *testing.T) {
