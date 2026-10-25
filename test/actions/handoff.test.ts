@@ -138,14 +138,8 @@ async function cacheRestoreHitReadsTheMatchedScope(tmp: string) {
 		res.end(body);
 	});
 	const { core, out } = stepCore();
-	process.env.GITHUB_EVENT_PATH = path.join(tmp, 'event.json');
-	fs.writeFileSync(process.env.GITHUB_EVENT_PATH, JSON.stringify({ repository: { default_branch: 'master' } }));
 	await restoreCache(globalsOf({ core, inputs: cacheInputs(s.url, { path: 'cache-dst', key: 'deps-new', 'restore-keys': 'nothing-\ndeps-\n' }) }));
-	delete process.env.GITHUB_EVENT_PATH;
 	await s.close();
-	for (const url of asked) {
-		assert.strictEqual(new URL(url, 'http://x').searchParams.get('default_branch'), 'master', 'every request names the default branch from the event payload');
-	}
 	assert.deepStrictEqual(out.failed, []);
 	assert.strictEqual(fs.readFileSync(path.join(tmp, 'cache-dst', 'entry'), 'utf8'), 'cached', 'the matched entry lands at its path under the workspace');
 	assert.strictEqual(out.outputs['cache-hit'], 'false', 'a prefix match is not a hit');

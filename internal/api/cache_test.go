@@ -43,16 +43,7 @@ func putCache(t *testing.T, h *Handler, repo auth.OIDCRepoIdentity, key string, 
 
 func findCache(t *testing.T, h *Handler, repo auth.OIDCRepoIdentity, key string, restoreKeys ...string) (*httptest.ResponseRecorder, cacheFindResponse) {
 	t.Helper()
-	return findCacheNaming(t, h, repo, "", key, restoreKeys...)
-}
-
-// findCacheNaming is findCache from a run that names defaultBranch, or none when it is "".
-func findCacheNaming(t *testing.T, h *Handler, repo auth.OIDCRepoIdentity, defaultBranch, key string, restoreKeys ...string) (*httptest.ResponseRecorder, cacheFindResponse) {
-	t.Helper()
 	q := url.Values{"repository": {repo.RepoPath}, "key": {key}, "restore_keys": restoreKeys}
-	if defaultBranch != "" {
-		q.Set("default_branch", defaultBranch)
-	}
 	req := httptest.NewRequest("GET", "/api/v1/cache?"+q.Encode(), nil)
 	req = req.WithContext(runLockCtx(req.Context(), repo))
 	rec := httptest.NewRecorder()
@@ -137,17 +128,7 @@ func TestCache_ABranchReadsItsOwnRefThenTheDefaultBranch(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, rec.Code, "the default branch does not read a pull request's entries")
 }
 
-func TestCache_AnUnknownDefaultBranchIsNamed(t *testing.T) {
-	t.Serial()
-	withDefaultBranch(t, "")
-	h := setupTestHandler(t)
-	rec, found := findCache(t, h, cacheRepo("refs/pull/7/merge"), "deps-1")
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-	assert.Equal(t, []string{"refs/pull/7/merge"}, found.Scopes)
-	assert.Contains(t, found.DefaultBranch, "GitHub did not answer")
-}
-
-func TestCache_ABranchReadsTheDefaultBranchItsRunNamesWhenGitHubDoesNotAnswer(t *testing.T) {
+func TestCache_ABranchReadsMasterWhenGitHubDoesNotAnswer(t *testing.T) {
 	t.Serial()
 	withDefaultBranch(t, "")
 	h := setupTestHandler(t)
@@ -155,34 +136,25 @@ func TestCache_ABranchReadsTheDefaultBranchItsRunNamesWhenGitHubDoesNotAnswer(t 
 	branch := cacheRepo("refs/heads/feature")
 	require.Equal(t, http.StatusCreated, putCache(t, h, master, "base-image-1", []byte("master")).Code)
 
-	rec, found := findCacheNaming(t, h, branch, "master", "base-image-1")
+	rec, found := findCache(t, h, branch, "base-image-1")
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.True(t, found.Exact)
 	assert.Equal(t, "refs/heads/master", found.Ref)
 	assert.Equal(t, []string{"refs/heads/feature", "refs/heads/master"}, found.Scopes)
-	assert.Empty(t, found.DefaultBranch)
+	assert.Contains(t, found.DefaultBranch, "GitHub did not answer", "the restore says it fell back to master")
 
-	q := url.Values{"repository": {branch.RepoPath}, "ref": {"refs/heads/master"}, "default_branch": {"master"}}
-	req := httptest.NewRequest("GET", "/api/v1/cache/base-image-1?"+q.Encode(), nil)
-	req.SetPathValue("key", "base-image-1")
-	req = req.WithContext(runLockCtx(req.Context(), branch))
-	rec = httptest.NewRecorder()
-	h.GetCache(rec, req)
+	rec = getCache(t, h, branch, "base-image-1", "refs/heads/master")
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Equal(t, []byte("master"), rec.Body.Bytes())
-
-	rec, found = findCacheNaming(t, h, branch, "bad name!", "base-image-1")
-	assert.Equal(t, http.StatusNotFound, rec.Code, "a name that is not a branch is not read")
-	assert.Equal(t, []string{"refs/heads/feature"}, found.Scopes)
-	assert.Contains(t, found.DefaultBranch, "named none")
 }
 
-func TestCache_GitHubsAnswerWinsOverTheBranchTheRunNames(t *testing.T) {
+func TestCache_GitHubsAnswerWinsOverTheMasterFallback(t *testing.T) {
 	t.Serial()
 	withDefaultBranch(t, "main")
 	h := setupTestHandler(t)
-	_, found := findCacheNaming(t, h, cacheRepo("refs/heads/feature"), "other", "base-image-1")
+	_, found := findCache(t, h, cacheRepo("refs/heads/feature"), "base-image-1")
 	assert.Equal(t, []string{"refs/heads/feature", "refs/heads/main"}, found.Scopes)
+	assert.Empty(t, found.DefaultBranch)
 }
 
 func TestCache_AKeyIsWrittenOnce(t *testing.T) {

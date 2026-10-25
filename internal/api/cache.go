@@ -30,6 +30,9 @@ var githubDefaultBranch = auth.GitHubDefaultBranch
 
 const cacheKeyRule = "1-512 of [A-Za-z0-9._-]"
 
+// cacheFallbackBranch is the default branch a restore reads when GitHub does not answer it.
+const cacheFallbackBranch = "master"
+
 type cacheEntryResponse struct {
 	Key    string `json:"key"`
 	Ref    string `json:"ref"`
@@ -71,12 +74,8 @@ func cacheCaller(w http.ResponseWriter, r *http.Request) (auth.OIDCRepoIdentity,
 }
 
 // cacheScopes returns the scopes a restore reads: the caller's ref, then the
-// default branch. note says why the default branch is absent.
-//
-// When GitHub does not answer, the restore uses the default branch the run
-// names in default_branch, from its event payload. A false name only widens
-// what this repository's own run reads. The default branch never reads
-// another ref, because its own ref comes first and is that branch.
+// default branch. note says why the default branch is absent, or that it is
+// master because GitHub did not answer.
 func cacheScopes(r *http.Request, repo auth.OIDCRepoIdentity) (scopes []db.CacheScope, note string) {
 	scopes = []db.CacheScope{{RepoID: repo.RepoID, Ref: repo.Ref}}
 	if repo.Issuer != auth.GitHubActionsIssuer {
@@ -84,18 +83,14 @@ func cacheScopes(r *http.Request, repo auth.OIDCRepoIdentity) (scopes []db.Cache
 	}
 	branch := githubDefaultBranch(r.Context(), repo.RepoPath)
 	if branch == "" {
-		named := r.URL.Query().Get("default_branch")
-		if !validGitBranch(named) {
-			slog.WarnContext(r.Context(), "cache: GitHub does not answer the default branch and the run names none; the restore reads the caller's ref alone", "repo", repo.RepoPath)
-			return scopes, "not read: GitHub did not answer the repository's default branch, and the run named none"
-		}
-		slog.WarnContext(r.Context(), "cache: GitHub does not answer the default branch; the restore reads the one the run names", "repo", repo.RepoPath, "branch", named)
-		branch = named
+		slog.WarnContext(r.Context(), "cache: GitHub does not answer the default branch; the restore reads "+cacheFallbackBranch, "repo", repo.RepoPath)
+		branch = cacheFallbackBranch
+		note = cacheFallbackBranch + ": GitHub did not answer the repository's default branch"
 	}
 	if ref := "refs/heads/" + branch; ref != repo.Ref {
 		scopes = append(scopes, db.CacheScope{RepoID: repo.RepoID, Ref: ref})
 	}
-	return scopes, ""
+	return scopes, note
 }
 
 // FindCache answers the entry a restore reads for key and restore_keys, as

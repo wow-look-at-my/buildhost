@@ -1,6 +1,6 @@
 // buildhost-cache-restore and buildhost-cache-save: a directory kept across workflow runs under a key, through buildhost's cache.
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, parse, relative, resolve, sep } from 'node:path';
 import type { ActionGlobals } from './action-globals.ts';
@@ -56,23 +56,11 @@ function checkKey(key: string, what: string): void {
 	if (!validKey.test(key)) throw new Error(`invalid ${what} '${key}': want 1-512 of [A-Za-z0-9._-]`);
 }
 
-/** The query that names the caller's repository, which the server checks against the token, and its default branch. Which the server reads when GitHub does not answer it. */
+/** The query that names the caller's repository, which the server checks against the token. */
 function repoQuery(env: NodeJS.ProcessEnv): URLSearchParams {
 	const repository = env.GITHUB_REPOSITORY;
 	if (!repository) throw new Error('GITHUB_REPOSITORY must be set: the cache belongs to a repository');
-	const q = new URLSearchParams({ repository });
-	const branch = eventDefaultBranch(env);
-	if (branch) q.set('default_branch', branch);
-	return q;
-}
-
-/** The default branch the run's event payload names, or '' when it names none. */
-export function eventDefaultBranch(env: NodeJS.ProcessEnv): string {
-	const file = env.GITHUB_EVENT_PATH;
-	if (!file || !existsSync(file)) return '';
-	const event = JSON.parse(readFileSync(file, 'utf8')) as { repository?: { default_branch?: unknown } };
-	const branch = event.repository?.default_branch;
-	return typeof branch === 'string' ? branch : '';
+	return new URLSearchParams({ repository });
 }
 
 /** Asks the server which entry a restore of key and restoreKeys reads. */
