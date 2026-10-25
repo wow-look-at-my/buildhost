@@ -17,6 +17,7 @@ import (
 	_ "github.com/wow-look-at-my/buildhost/internal/dl"
 	_ "github.com/wow-look-at-my/buildhost/internal/goproxy"
 	_ "github.com/wow-look-at-my/buildhost/internal/llms"
+	_ "github.com/wow-look-at-my/buildhost/internal/mirror"
 	_ "github.com/wow-look-at-my/buildhost/internal/npm"
 	_ "github.com/wow-look-at-my/buildhost/internal/oci"
 	_ "github.com/wow-look-at-my/buildhost/internal/sites"

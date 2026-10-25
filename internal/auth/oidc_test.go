@@ -310,6 +310,10 @@ func TestRepoProjectName(t *testing.T) {
 	assert.Equal(t, "my.repo", RepoProjectName("my.repo"))
 	assert.Equal(t, "", RepoProjectName(".-_"))
 	assert.Equal(t, "", RepoProjectName(""))
+	assert.Equal(t, "", RepoProjectName("ghcr"), "a mirror prefix on oci.{domain}/v2/ is no project")
+	assert.Equal(t, "", RepoProjectName("DockerHub"))
+	assert.Equal(t, "ghcr-tools", RepoProjectName("ghcr-tools"))
+	assert.False(t, validNamespacedProjectName("dockerhub/library"))
 }
 
 func TestOIDCClaimsProjectName_DotRepository(t *testing.T) {
