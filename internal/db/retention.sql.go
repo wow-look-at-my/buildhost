@@ -81,6 +81,7 @@ SELECT EXISTS(
     UNION ALL SELECT 1 FROM goproxy_versions gv   WHERE gv.zip_storage_key = ?1
     UNION ALL SELECT 1 FROM run_files rf          WHERE rf.storage_key = ?1
     UNION ALL SELECT 1 FROM cache_entries ce      WHERE ce.storage_key = ?1
+    UNION ALL SELECT 1 FROM mirror_blobs mb       WHERE mb.storage_key = ?1
 ) AS referenced
 `
 
@@ -342,6 +343,53 @@ func (q *Queries) ListGoproxyBlobFiles(ctx context.Context) ([]ListGoproxyBlobFi
 			&i.ZipStorageKey,
 			&i.ZipSize,
 			&i.FetchedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMirrorBlobFiles = `-- name: ListMirrorBlobFiles :many
+SELECT upstream, digest, media_type, storage_key, size, created_at
+FROM mirror_blobs
+ORDER BY upstream, digest
+`
+
+type ListMirrorBlobFilesRow struct {
+	Upstream   string    `json:"upstream"`
+	Digest     string    `json:"digest"`
+	MediaType  string    `json:"media_type"`
+	StorageKey string    `json:"storage_key"`
+	Size       int64     `json:"size"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// Every blob the registry mirror holds. Mirrored content is not a project, so
+// release eviction never frees it.
+func (q *Queries) ListMirrorBlobFiles(ctx context.Context) ([]ListMirrorBlobFilesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listMirrorBlobFiles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMirrorBlobFilesRow{}
+	for rows.Next() {
+		var i ListMirrorBlobFilesRow
+		if err := rows.Scan(
+			&i.Upstream,
+			&i.Digest,
+			&i.MediaType,
+			&i.StorageKey,
+			&i.Size,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

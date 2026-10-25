@@ -1,3 +1,5 @@
+// defaultMaxUploadSize caps a single REST artifact upload (PUT .../artifacts).
+
 package config
 
 import (
@@ -135,6 +137,10 @@ type Config struct {
 	CacheKeep           time.Duration
 	CacheMinFreePercent float64
 
+	// Registry mirror: how long a blob nothing reads is kept.
+	MirrorKeep           time.Duration
+	MirrorMinFreePercent float64
+
 	janitorErr error
 }
 
@@ -195,6 +201,8 @@ func (c *Config) loadJanitors() {
 		strictPercent("BUILDHOST_RUN_FILES_MIN_FREE_PERCENT", &c.RunFilesMinFreePercent),
 		strictDuration("BUILDHOST_CACHE_KEEP", "168h", &c.CacheKeep),
 		strictPercent("BUILDHOST_CACHE_MIN_FREE_PERCENT", &c.CacheMinFreePercent),
+		strictDuration("BUILDHOST_MIRROR_KEEP", "168h", &c.MirrorKeep),
+		strictPercent("BUILDHOST_MIRROR_MIN_FREE_PERCENT", &c.MirrorMinFreePercent),
 	} {
 		if err != nil && c.janitorErr == nil {
 			c.janitorErr = err
@@ -248,6 +256,8 @@ func Load() Config {
 		RunFilesMinFreePercent: 10,
 		CacheKeep:              7 * 24 * time.Hour,
 		CacheMinFreePercent:    15,
+		MirrorKeep:             7 * 24 * time.Hour,
+		MirrorMinFreePercent:   15,
 	}
 	c.loadJanitors()
 	if v := os.Getenv("BUILDHOST_LISTEN_ADDR"); v != "" {

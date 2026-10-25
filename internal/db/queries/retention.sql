@@ -25,6 +25,7 @@ SELECT EXISTS(
     UNION ALL SELECT 1 FROM goproxy_versions gv   WHERE gv.zip_storage_key = sqlc.arg(key)
     UNION ALL SELECT 1 FROM run_files rf          WHERE rf.storage_key = sqlc.arg(key)
     UNION ALL SELECT 1 FROM cache_entries ce      WHERE ce.storage_key = sqlc.arg(key)
+    UNION ALL SELECT 1 FROM mirror_blobs mb       WHERE mb.storage_key = sqlc.arg(key)
 ) AS referenced;
 
 -- name: ListReleaseBlobKeys :many
@@ -169,6 +170,13 @@ FROM goproxy_versions gv
 JOIN goproxy_modules gm ON gm.id = gv.module_id
 WHERE gv.zip_storage_key != ''
 ORDER BY gm.module_path, gv.version;
+
+-- name: ListMirrorBlobFiles :many
+-- Every blob the registry mirror holds. Mirrored content is not a project, so
+-- release eviction never frees it.
+SELECT upstream, digest, media_type, storage_key, size, created_at
+FROM mirror_blobs
+ORDER BY upstream, digest;
 
 -- name: ListReleaseRetentionFacts :many
 -- One row per release with the facts the keep-N and abandoned queries decide on:

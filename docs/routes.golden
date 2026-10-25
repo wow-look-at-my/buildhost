@@ -49,6 +49,10 @@ brew.{domain}/{project} {GET}
 dl.{domain}/llms.txt {GET}
 dl.{domain}/{project} {GET}
 docker.{domain}/{path...} {*}
+dockerhub.{domain}/v2/{$} {GET,HEAD}
+dockerhub.{domain}/v2/{path...} {GET,HEAD}
+ghcr.{domain}/v2/{$} {GET,HEAD}
+ghcr.{domain}/v2/{path...} {GET,HEAD}
 git.{domain}/brew/tap.git {GET}
 git.{domain}/brew/tap.git/git-upload-pack {POST}
 git.{domain}/brew/tap.git/info/refs {GET}

@@ -1,3 +1,5 @@
+// Refuse to start on a configuration that cannot serve correctly, rather than degrade silently at request time.
+
 package main
 
 import (
@@ -21,6 +23,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/diskusage"
+	"github.com/wow-look-at-my/buildhost/internal/mirror"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
 	"github.com/wow-look-at-my/buildhost/internal/runfiles"
 	"github.com/wow-look-at-my/buildhost/internal/server"
@@ -154,6 +157,15 @@ var serveCmd = &cobra.Command{
 			DataDir:        cfg.DataDir,
 			Keep:           cfg.CacheKeep,
 			MinFreePercent: cfg.CacheMinFreePercent,
+			Disk:           diskusage.Get,
+			Busy:           func() bool { return admin.InflightWrites() > 0 },
+		}).Start(ctx)
+		(&mirror.Janitor{
+			DB:             database,
+			Store:          store,
+			DataDir:        cfg.DataDir,
+			Keep:           cfg.MirrorKeep,
+			MinFreePercent: cfg.MirrorMinFreePercent,
 			Disk:           diskusage.Get,
 			Busy:           func() bool { return admin.InflightWrites() > 0 },
 		}).Start(ctx)
