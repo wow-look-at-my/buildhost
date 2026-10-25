@@ -56,11 +56,6 @@ func (f *fakeRegistry) serve(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"token": "t-" + r.URL.Query().Get("scope"), "expires_in": 300})
 		return
 	}
-	f.calls[r.Method+" "+r.URL.Path]++
-	if f.down {
-		http.Error(w, "down", http.StatusServiceUnavailable)
-		return
-	}
 	repo, rest, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/v2/"), "/manifests/")
 	kind := "manifests"
 	if rest == "" {
@@ -70,6 +65,12 @@ func (f *fakeRegistry) serve(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Authorization") != "Bearer t-repository:"+repo+":pull" {
 		w.Header().Set("Www-Authenticate", fmt.Sprintf(`Bearer realm="%s/token",service="fake",scope="repository:%s:pull"`, f.URL, repo))
 		http.Error(w, `{"errors":[{"code":"UNAUTHORIZED"}]}`, http.StatusUnauthorized)
+		return
+	}
+	// Only an authorized call counts, so the token handshake does not.
+	f.calls[r.Method+" "+r.URL.Path]++
+	if f.down {
+		http.Error(w, "down", http.StatusServiceUnavailable)
 		return
 	}
 	var body string
