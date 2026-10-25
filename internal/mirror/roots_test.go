@@ -1,65 +1,92 @@
 package mirror
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
+	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
-	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
-	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// selfSigned is a CA certificate whose subject names org, and its PEM.
-func selfSigned(t *testing.T, org string) (*x509.Certificate, string) {
+// fixtureCerts parses every certificate in a testdata file.
+func fixtureCerts(t *testing.T, name string) []*x509.Certificate {
 	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	b, err := os.ReadFile(filepath.Join("testdata", name))
 	require.NoError(t, err)
-	tmpl := &x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{Organization: []string{org}, CommonName: org + " Root"},
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(time.Hour),
-		IsCA:                  true,
-		BasicConstraintsValid: true,
-		KeyUsage:              x509.KeyUsageCertSign,
+	var out []*x509.Certificate
+	for rest := b; ; {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			return out
+		}
+		c, err := x509.ParseCertificate(block.Bytes)
+		require.NoError(t, err)
+		out = append(out, c)
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
-	require.NoError(t, err)
-	cert, err := x509.ParseCertificate(der)
-	require.NoError(t, err)
-	return cert, string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
 }
 
-func TestTrustedRootsDropEMudhra(t *testing.T) {
-	good, goodPEM := selfSigned(t, "Trusted Test CA")
-	bad, badPEM := selfSigned(t, "eMudhra Technologies Limited")
-	path := filepath.Join(t.TempDir(), "ca.crt")
-	require.NoError(t, os.WriteFile(path, []byte(goodPEM+badPEM), 0o644))
-	t.Setenv("SSL_CERT_FILE", path)
-
+// The fixture holds eMudhra's real emSign roots from Mozilla's bundle, and ISRG Root X1.
+func TestTrustedRootsDropTheRealEMudhraRoots(t *testing.T) {
+	t.Setenv("SSL_CERT_FILE", filepath.Join("testdata", "emudhra-roots.pem"))
 	pool, err := trustedRoots()
 	require.NoError(t, err)
-	_, err = good.Verify(x509.VerifyOptions{Roots: pool})
-	assert.NoError(t, err, "a CA in the system bundle stays trusted")
-	_, err = bad.Verify(x509.VerifyOptions{Roots: pool})
-	assert.Error(t, err, "the mirror must never trust an eMudhra certificate")
+	certs := fixtureCerts(t, "emudhra-roots.pem")
+	require.Len(t, certs, 5)
+	for _, c := range certs {
+		_, err := c.Verify(x509.VerifyOptions{Roots: pool})
+		if strings.HasPrefix(c.Subject.CommonName, "emSign") {
+			assert.Error(t, err, "%s must not be trusted", c.Subject.CommonName)
+			continue
+		}
+		assert.NoError(t, err, "%s stays trusted", c.Subject.CommonName)
+	}
 }
 
 func TestTrustedRootsRefuseABundleOfOnlyDistrustedCAs(t *testing.T) {
-	_, badPEM := selfSigned(t, "eMudhra Technologies Limited")
+	var emSign []byte
+	for _, c := range fixtureCerts(t, "emudhra-roots.pem") {
+		if strings.HasPrefix(c.Subject.CommonName, "emSign") {
+			emSign = append(emSign, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Raw})...)
+		}
+	}
 	path := filepath.Join(t.TempDir(), "ca.crt")
-	require.NoError(t, os.WriteFile(path, []byte(badPEM), 0o644))
+	require.NoError(t, os.WriteFile(path, emSign, 0o644))
 	t.Setenv("SSL_CERT_FILE", path)
 	_, err := trustedRoots()
 	assert.ErrorContains(t, err, "no trusted certificate")
+}
+
+// Sectigo's AAA root cross-signed it, so a pool without eMudhra roots can still verify a
+// chain through it.
+func TestAChainThroughTheCompromisedIntermediateIsRefused(t *testing.T) {
+	intermediate := fixtureCerts(t, "em-ov-tls-ca-g3c.pem")[0]
+	sum := sha256.Sum256(intermediate.Raw)
+	assert.True(t, compromisedCerts[hex.EncodeToString(sum[:])], "the fingerprint list must hold the real certificate")
+
+	err := refuseDistrustedChains(tls.ConnectionState{VerifiedChains: [][]*x509.Certificate{{intermediate}}})
+	assert.ErrorContains(t, err, "EM OV TLS CA - G3C")
+	err = refuseDistrustedChains(tls.ConnectionState{PeerCertificates: []*x509.Certificate{intermediate}})
+	assert.Error(t, err, "a presented certificate is checked as well as the verified chains")
+
+	isrg := fixtureCerts(t, "emudhra-roots.pem")[4]
+	assert.NoError(t, refuseDistrustedChains(tls.ConnectionState{VerifiedChains: [][]*x509.Certificate{{isrg}}}))
+}
+
+func TestTheMirrorClientRefusesDistrustedChains(t *testing.T) {
+	t.Setenv("SSL_CERT_FILE", filepath.Join("testdata", "emudhra-roots.pem"))
+	c, err := newClient()
+	require.NoError(t, err)
+	cfg := c.Transport.(*http.Transport).TLSClientConfig
+	require.NotNil(t, cfg.VerifyConnection, "the client must check every chain, not only the pool")
 }
 
 func TestTrustedRootsFailWithoutABundle(t *testing.T) {
