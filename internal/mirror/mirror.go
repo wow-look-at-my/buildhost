@@ -61,6 +61,8 @@ type Handler struct {
 	Client *http.Client
 
 	tokens tokenCache
+	// clientErr is why there is no upstream client. Every upstream call fails with it.
+	clientErr error
 }
 
 // Handlers are the registered handlers, one per upstream.
@@ -68,22 +70,23 @@ var Handlers []*Handler
 
 func init() {
 	for _, u := range Upstreams {
-		h := &Handler{Up: u, Client: newClient()}
+		h := &Handler{Up: u}
 		Handlers = append(Handlers, h)
 		auth.OnReady(func() {
 			h.DB = auth.DB()
 			h.Store = auth.Store()
 			h.TmpDir = auth.DataDir() + "/tmp/mirror"
+			client, err := newClient()
+			if err != nil {
+				slog.Error("mirror: no upstream client; every pull through the mirror fails", "upstream", u.Service, "err", err)
+				h.clientErr = err
+				return
+			}
+			h.Client = client
 		})
 		auth.ServiceHandleRaw(u.Service, "GET /v2/{path...}", h.ServeHTTP)
 		auth.ServiceHandleRaw(u.Service, "HEAD /v2/{path...}", h.ServeHTTP)
 	}
-}
-
-func newClient() *http.Client {
-	t := http.DefaultTransport.(*http.Transport).Clone()
-	t.ResponseHeaderTimeout = time.Minute
-	return &http.Client{Transport: t}
 }
 
 // authorized needs a token with the read scope.

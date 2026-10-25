@@ -51,6 +51,9 @@ func (h *Handler) upstream(ctx context.Context, method, repo, rest, accept strin
 }
 
 func (h *Handler) send(ctx context.Context, method, target, accept, token string) (*http.Response, error) {
+	if h.clientErr != nil {
+		return nil, &upstreamError{remote: h.Up.Remote, msg: h.clientErr.Error()}
+	}
 	req, err := http.NewRequestWithContext(ctx, method, target, nil)
 	if err != nil {
 		return nil, err
