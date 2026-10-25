@@ -20,7 +20,7 @@ import (
 var (
 	githubAuthorizeURL = "https://github.com/login/oauth/authorize"
 	githubTokenURL     = "https://github.com/login/oauth/access_token"
-	githubAPIBase      = "https://api.github.com"
+	githubAPIBase      = GitHubAPI
 )
 
 const (

@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 )
 
 // gitHubAPIBase is the artifact-metadata API host, swapped in tests.
-var gitHubAPIBase = "https://api.github.com"
+var gitHubAPIBase = auth.GitHubAPI
 
 var metadataHTTPClient = &http.Client{Timeout: 20 * time.Second}
 
