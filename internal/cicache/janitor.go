@@ -44,9 +44,9 @@ type Report struct {
 	Expired         int       `json:"expired"`
 	PressureDeleted int       `json:"pressure_deleted"`
 	// PressureKept counts the entries the grace kept while disk stayed low.
-	PressureKept int   `json:"pressure_kept"`
-	FreedBytes   int64 `json:"freed_bytes"`
-	Error           string    `json:"error,omitempty"`
+	PressureKept int    `json:"pressure_kept"`
+	FreedBytes   int64  `json:"freed_bytes"`
+	Error        string `json:"error,omitempty"`
 }
 
 var lastReport atomic.Pointer[Report]
