@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -63,7 +64,9 @@ func TestCreateProject_MirrorPrefixIsReserved(t *testing.T) {
 	h := setupTestHandler(t)
 
 	for _, name := range []string{"ghcr", "dockerhub/library"} {
-		req := httptest.NewRequest("POST", "/api/projects", strings.NewReader(`{"name":"`+name+`"}`))
+		body, err := json.Marshal(map[string]string{"name": name})
+		require.NoError(t, err)
+		req := httptest.NewRequest("POST", "/api/projects", bytes.NewReader(body))
 		req = req.WithContext(writeToken(req.Context(), "read,write"))
 		rec := httptest.NewRecorder()
 		h.CreateProject(rec, req)
