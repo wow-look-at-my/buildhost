@@ -34,4 +34,4 @@ runs:
         inputs: ${{ toJSON(inputs) }}
         script: |
           import { publishRelease } from '../lib/resources';
-          await publishRelease({ core, github, context, octokit, exec, inputs, steps });
+          await publishRelease({ core, github, context, octokit, getOctokit, exec, inputs, steps });
