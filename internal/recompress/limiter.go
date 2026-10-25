@@ -1,3 +1,5 @@
+// maxTrackedIPs bounds the per-IP window table.
+
 package recompress
 
 import (
@@ -5,8 +7,7 @@ import (
 	"time"
 )
 
-// maxTrackedIPs bounds the per-IP window table. A public registry sees many
-// addresses; a table that only grows is a slow leak.
+// maxTrackedIPs bounds the per-IP window table.
 const maxTrackedIPs = 4096
 
 // LimiterConfig is the recompression budget.
@@ -15,8 +16,7 @@ type LimiterConfig struct {
 	PerIP int
 	// Window is how long one allowance lasts.
 	Window time.Duration
-	// LoadCeiling is the host load average per CPU at which the allowance
-	// reaches zero. Zero or less means system load is not consulted.
+	// LoadCeiling is the host load average per CPU at which the allowance reaches zero.
 	LoadCeiling float64
 }
 
@@ -26,8 +26,7 @@ type ipWindow struct {
 }
 
 // Limiter bounds on-the-fly recompression per client IP, scaled by the host's
-// measured load. It is advisory: a denied request is served without
-// recompression, never failed.
+// measured load.
 type Limiter struct {
 	cfg  LimiterConfig
 	load func() float64
@@ -82,8 +81,7 @@ func (l *Limiter) Allow(ip string) bool {
 		l.purgeLocked(now)
 	}
 	// Compare before counting this request, so an allowance below one still
-	// admits the first request from a client. Nothing is counted when the
-	// request is denied: a denial must not consume an allowance.
+	// admits the first request from a client.
 	if float64(w.count) >= allowance {
 		return false
 	}

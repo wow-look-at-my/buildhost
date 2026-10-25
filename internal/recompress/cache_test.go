@@ -58,8 +58,8 @@ func TestCacheMissForUnknownKey(t *testing.T) {
 	assert.False(t, ok)
 }
 
-// A key covers every input that changes the bytes, so two variants can never
-// be served for each other.
+// A key covers every input that changes the bytes, so variants can never be
+// served for each other.
 func TestCacheKeyCoversEveryInput(t *testing.T) {
 	t.Serial()
 	base := Key("blob-1", "t1", "br", false)

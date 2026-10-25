@@ -1,3 +1,5 @@
+// defaultMaxUploadSize caps a single REST artifact upload (PUT .../artifacts).
+
 package config
 
 import (
@@ -135,27 +137,16 @@ type Config struct {
 	CacheKeep           time.Duration
 	CacheMinFreePercent float64
 
-	// TempDir is the scratch root for request-path temp files (binary
-	// stripping, repackaging, site archives) and the compressed-response
-	// cache. It defaults to os.TempDir(), which honours TMPDIR. The data
-	// volume is for durable data only; upload sessions keep their spool
-	// under {DataDir}/tmp.
+	// TempDir is the scratch root for request-path temp files.
 	TempDir string
 
-	// Download-time transfer encoding. RecompressCacheLimit caps the
-	// on-disk cache of compressed responses, RecompressEntryLimit caps how
-	// many entries it holds, and RecompressTTL is how long an entry stays
-	// servable. ScratchAge is the age past which the startup janitor
-	// deletes leftover temporary files.
+	// Download-time transfer encoding.
 	RecompressCacheLimit int64
 	RecompressEntryLimit int
 	RecompressTTL        time.Duration
 	ScratchAge           time.Duration
 
-	// RecompressPerIP is how many on-the-fly recompressions one client IP
-	// may start per RecompressWindow. The effective allowance falls as the
-	// host's load average rises and reaches zero at RecompressLoadCeiling
-	// (load average per CPU).
+	// RecompressPerIP is how many on-the-fly recompressions one client IP may start per RecompressWindow.
 	RecompressPerIP       int
 	RecompressWindow      time.Duration
 	RecompressLoadCeiling float64

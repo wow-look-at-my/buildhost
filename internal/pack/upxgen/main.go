@@ -2,7 +2,7 @@
 // for go:embed, the way shellgen does for the image's busybox.
 //
 // It runs at BUILD time because the production image is distroless and ships
-// no binutils: a packer looked up on PATH would silently stop packing there.
+// no binutils. A packer looked up on PATH would silently stop packing there.
 // UPX publishes Linux builds on GitHub Releases; on macOS the only prebuilt
 // binary is the Homebrew bottle, so that platform is fetched from ghcr.
 package main
@@ -28,8 +28,7 @@ import (
 	"github.com/ulikunitz/xz"
 )
 
-// release is the UPX version embedded in the server. The digest of every
-// download is pinned beside it, so a fetch cannot yield a different packer.
+// release is the UPX version embedded in the server.
 const release = "5.2.1"
 
 type source struct {

@@ -45,7 +45,7 @@ func writeAt(t *testing.T, path string, when time.Time) {
 	require.NoError(t, os.Chtimes(path, when, when))
 }
 
-// The sweep removes scratch this server creates and nothing else: an upload
+// The sweep removes scratch this server creates and nothing else. An upload
 // spool, a file with an unknown name and a file inside the stale age all
 // survive.
 func TestJanitorReclaimsOnlyOrphanedScratch(t *testing.T) {

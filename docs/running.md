@@ -68,7 +68,7 @@ A value that does not parse stops the server at startup instead of reverting to 
 
 The load figure behind the ceiling is the host's one-minute load average per CPU. It is read from procfs, or from the host's own `sysctl` program where procfs is absent (a Cosmopolitan build runs on macOS too, and reports `cosmo` as its OS there).
 
-Starting `buildhost serve` sweeps the active root and the `{BUILDHOST_DATA_DIR}/tmp` an earlier version wrote, so a backlog of stripped binaries left there is reclaimed without operator action. Upload session spools in that directory are preserved.
+Starting `buildhost serve` sweeps the active root and the `{BUILDHOST_DATA_DIR}/tmp` an earlier version wrote. A backlog of stripped binaries left there is reclaimed without operator action. Upload session spools in that directory are preserved.
 
 A container with a read-only root filesystem needs `BUILDHOST_TEMP_DIR` pointed at a writable mount.
 

@@ -1,3 +1,5 @@
+// Serve answers a raw download.
+
 package static
 
 import (
@@ -20,7 +22,7 @@ type rawFmt struct{}
 func (f *rawFmt) Name() string { return "raw" }
 
 // Serve answers a raw download. The order is deliberate: a zstd client gets
-// the stored stream untouched, a cached variant is served to anyone, a
+// the stored stream untouched. A cached variant is served to anyone. A
 // recompression nobody is allowed to start falls back to identity, and only
 // then is work done.
 func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext) error {
@@ -79,8 +81,7 @@ func (f *rawFmt) Serve(w http.ResponseWriter, r *http.Request, ctx ServeContext)
 		return copyBody(w, p.rc, p.size)
 	}
 
-	// Identity of a transformed payload is already a file; only a coding
-	// needs a second pass.
+	// Identity of a transformed payload is already a file; only a coding needs a second pass.
 	variant, size := p.path, p.size
 	if enc != codingIdentity {
 		variant, size, err = produce(sh, p, enc, ctx.TmpDir)
@@ -163,8 +164,7 @@ func serveCached(w http.ResponseWriter, sh *Shaper, key string) bool {
 		return false
 	}
 	defer f.Close()
-	// Headers are on the wire from the first byte; a copy error is the
-	// client's, and redoing the work would not help it.
+	// Headers are on the wire from the first byte; a copy error is the client's, and redoing the work would not help it.
 	serveReader(w, f, size)
 	return true
 }

@@ -1,5 +1,7 @@
 //go:build darwin
 
+// hostLoad1 reads the one-minute load average from vm.loadavg.
+
 package recompress
 
 import (
@@ -7,10 +9,8 @@ import (
 	"syscall"
 )
 
-// hostLoad1 reads the one-minute load average from vm.loadavg. The kernel
-// answers with struct loadavg: three fixed-point averages followed, after the
-// alignment padding of a 64-bit long, by the scale they are divided by. The
-// averages are 2048ths of a runnable thread.
+// hostLoad1 reads the one-minute load average from vm.loadavg. The averages
+// are 2048ths of a runnable thread.
 func hostLoad1() float64 {
 	raw, err := syscall.Sysctl("vm.loadavg")
 	if err != nil {

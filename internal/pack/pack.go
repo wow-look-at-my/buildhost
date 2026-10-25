@@ -25,24 +25,19 @@ import (
 //go:embed upx/*.zst
 var assets embed.FS
 
-// TransformVersion identifies the bytes stripping and packing produce. It is
-// part of every compressed-response cache key, so a cached variant is never
-// served after either step changes.
+// TransformVersion identifies the bytes stripping and packing produce.
 const TransformVersion = "pack-1"
 
 // Release is the UPX version embedded in the server.
 const Release = "5.2.1"
 
-// ErrUnavailable reports that no packer is embedded for this platform. The
-// caller serves the stripped binary instead.
+// ErrUnavailable reports that no packer is embedded for this platform. The caller serves the stripped binary instead.
 var ErrUnavailable = errors.New("pack: no packer for this platform")
 
-// ErrNotSmaller reports that packing the input would not shrink it. The caller
-// serves the previous bytes.
+// ErrNotSmaller reports that packing the input would not shrink it. The caller serves the bytes.
 var ErrNotSmaller = errors.New("pack: packed output is not smaller")
 
-// ErrFormatChanged reports that the packed output is no longer the container
-// format that went in, which is what an APE must never be.
+// ErrFormatChanged reports that the packed output is no longer the container format that went in, which is what an APE must never be.
 var ErrFormatChanged = errors.New("pack: packed output changed the executable format")
 
 // Packer runs the embedded UPX binary.
@@ -71,17 +66,16 @@ func (p *Packer) Available() bool {
 	return HasAsset(runtime.GOOS, runtime.GOARCH)
 }
 
-// HasAsset reports whether a packer is embedded for a platform. Only the
-// platforms the build fetches for have one; elsewhere the server strips alone.
+// HasAsset reports whether a packer is embedded for a platform.
 func HasAsset(goos, goarch string) bool {
 	_, err := assets.ReadFile(AssetName(goos, goarch))
 	return err == nil
 }
 
 // Pack writes a packed copy of src to dst. It reports packed=false, with a
-// reason, when the packer refuses the input or the result would not be a
-// smaller copy of the same executable. dst is removed in that case, so a
-// caller always falls back to bytes it already trusts.
+// reason. This happens when the packer refuses the input or the result
+// would not be a smaller copy of the same executable. dst is removed in
+// that case, so a caller always falls back to bytes it already trusts.
 func (p *Packer) Pack(src, dst string) (bool, error) {
 	tool, err := p.Tool()
 	if err != nil {
@@ -244,7 +238,7 @@ func head(path string) ([]byte, error) {
 	return buf[:n], nil
 }
 
-// sameContent reports whether two files hold identical bytes.
+// sameContent reports whether files hold identical bytes.
 func sameContent(a, b string) (bool, error) {
 	ha, err := digest(a)
 	if err != nil {

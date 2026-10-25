@@ -1,3 +1,5 @@
+// Shaper holds the cache, the throttle and the packer for download-time transforms.
+
 package static
 
 import (
@@ -20,8 +22,7 @@ type ServeContext struct {
 	StaticURL *url.URL
 	BaseURL   string
 	TmpDir    string
-	// Shaper holds the cache, the throttle and the packer for download-time
-	// transforms. A nil Shaper still packs with the embedded tool.
+	// Shaper holds the cache, the throttle and the packer for download-time transforms.
 	Shaper *Shaper
 }
 

@@ -1,3 +1,5 @@
+// coding is a response transfer coding.
+
 package static
 
 import (
@@ -21,8 +23,7 @@ const (
 
 // Negotiate picks the response coding from Accept-Encoding. zstd comes first
 // because the stored stream is already zstd and passing it through costs no
-// work; brotli beats gzip on size. Identity is the floor, and an encoding the
-// client did not name is never chosen.
+// work; brotli beats gzip on size.
 func Negotiate(accept string) coding {
 	switch {
 	case acceptsCoding(accept, "zstd"):

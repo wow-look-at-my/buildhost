@@ -1,3 +1,5 @@
+// scratchPrefixes are the temporary-file names this server creates and then removes itself.
+
 package scratch
 
 import (
@@ -24,8 +26,8 @@ var scratchPrefixes = []string{
 // scratchDirPrefixes are temporary DIRECTORIES with the same property.
 var scratchDirPrefixes = []string{"goproxy-src-"}
 
-// keptEntries are the durable spool directories an earlier version kept beside
-// the scratch root. They hold in-progress uploads and survive every sweep.
+// keptEntries are the durable spool directories an earlier version kept
+// beside the scratch root.
 var keptEntries = map[string]bool{
 	"uploads":     true,
 	"oci-uploads": true,
@@ -35,8 +37,7 @@ var keptEntries = map[string]bool{
 type Janitor struct {
 	// Root is the active scratch root.
 	Root string
-	// LegacyDir is the {DataDir}/tmp an earlier version wrote scratch into.
-	// Empty skips it.
+	// LegacyDir is the {DataDir}/tmp an earlier version wrote scratch into. Empty skips it.
 	LegacyDir string
 	// CacheDir is the compressed-response cache directory.
 	CacheDir string
@@ -62,7 +63,7 @@ func (j *Janitor) now() time.Time {
 }
 
 // Run removes orphaned scratch files and expired cache entries from the
-// active root and the legacy data-volume directory. A file is orphaned when it
+// active root and the data-volume directory. A file is orphaned when it
 // carries a scratch name and predates the stale age. Upload spools are never
 // touched: only names this server creates are eligible.
 func (j *Janitor) Run() SweepReport {

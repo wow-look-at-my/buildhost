@@ -13,8 +13,8 @@ import (
 )
 
 // Key derives a cache entry name from every input that changes the stored
-// bytes: the artifact, the payload transform version, the transfer coding and
-// the debug flag.
+// bytes: the artifact and the payload transform version. This also covers the
+// transfer coding and the debug flag.
 func Key(storageKey, transform, encoding string, debug bool) string {
 	h := sha256.New()
 	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%t", transform, storageKey, encoding, debug)
@@ -27,9 +27,7 @@ type cacheEntry struct {
 	used    time.Time
 }
 
-// Cache is a size and count bounded LRU of recompressed downloads. Entries are
-// keyed by Key and are never rewritten while they live, so repeated requests
-// see identical bytes.
+// Cache is a size and count bounded LRU of recompressed downloads.
 type Cache struct {
 	dir     string
 	limit   int64

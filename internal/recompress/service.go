@@ -1,3 +1,5 @@
+// Config is the process-wide cache and throttle settings.
+
 package recompress
 
 import (
@@ -89,9 +91,7 @@ func Get() *Service {
 	return shared
 }
 
-// NewFromSettings builds the service from already-resolved settings. The cache
-// lives under the scratch root, never on the data volume, so a container's
-// durable volume does not fill with recompressed bodies.
+// NewFromSettings builds the service from already-resolved settings.
 func NewFromSettings(cfg Config) *Service {
 	return NewService(cfg, filepath.Join(scratch.Root(), scratch.CacheDirName))
 }

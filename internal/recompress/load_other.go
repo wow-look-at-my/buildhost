@@ -1,5 +1,7 @@
 //go:build !linux && !darwin
 
+// hostLoad1 reads the one-minute load average from procfs where it exists, and from the host's sysctl program otherwise.
+
 package recompress
 
 // hostLoad1 reads the one-minute load average from procfs where it exists, and

@@ -1,3 +1,5 @@
+// maxPackMemo bounds the memory of packer refusals.
+
 package static
 
 import (
@@ -18,13 +20,11 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/strip"
 )
 
-// maxPackMemo bounds the memory of packer refusals. It is a cache of negative
-// results, not state that has to be complete.
+// maxPackMemo bounds the memory of packer refusals.
 const maxPackMemo = 1024
 
 // BinaryPacker shrinks a stripped binary into dst, reporting false when the
-// result would not be a smaller copy of the same executable. *pack.Packer
-// implements it.
+// result would not be a smaller copy of the same executable.
 type BinaryPacker interface {
 	Pack(src, dst string) (bool, error)
 }
@@ -69,8 +69,6 @@ func (s *Shaper) recompressionAllowed(ip string) bool {
 }
 
 // packRefused reports whether this artifact's packer attempt already failed.
-// A repeated download of the same immutable URL must not pay for it again, and
-// must serve identical bytes.
 func (s *Shaper) packRefused(key string) bool {
 	if s == nil {
 		return false
@@ -132,8 +130,8 @@ func streamStored(ctx context.Context, store storage.Storage, key string) (*payl
 }
 
 // openPayload returns the bytes the raw format serves for the identity coding.
-// An ELF is stripped and then packed; an APE is offered to the packer and
-// served unchanged when it is refused; anything else is served as uploaded.
+// An ELF is stripped and then packed. An APE is offered to the packer and
+// served unchanged when it is refused. Anything else is served as uploaded.
 func (s *Shaper) openPayload(ctx context.Context, store storage.Storage, artifact db.Artifact, tmpDir string, head []byte) (*payload, error) {
 	switch {
 	case strip.LooksELF(bytes.NewReader(head)):
@@ -146,7 +144,7 @@ func (s *Shaper) openPayload(ctx context.Context, store storage.Storage, artifac
 }
 
 // strippedPayload strips the upload and packs the result. Any failure falls
-// back to the bytes the previous step holds, never to an error.
+// back to the bytes the step holds, never to an error.
 func (s *Shaper) strippedPayload(ctx context.Context, store storage.Storage, artifact db.Artifact, tmpDir string) (*payload, error) {
 	rc, _, err := store.Get(ctx, artifact.StorageKey)
 	if err != nil {
@@ -210,9 +208,7 @@ func (s *Shaper) packBinary(ctx context.Context, src, tmpDir string) (*payload, 
 	}
 	ok, err := s.packer().Pack(src, dst)
 	if err != nil && !errors.Is(err, pack.ErrNotSmaller) && !errors.Is(err, pack.ErrFormatChanged) {
-		// A refusal that is not the ordinary "not smaller" case is a real
-		// failure and must not be silent: a packer that never runs is how a
-		// download quietly stops shrinking.
+		// A refusal that is not the ordinary "not smaller" case is a real failure.
 		slog.WarnContext(ctx, "packing a binary was skipped", "error", err)
 	}
 	if !ok {

@@ -1,3 +1,5 @@
+// Sampler caches the host load so a request never waits on the kernel for it.
+
 package recompress
 
 import (
@@ -10,9 +12,6 @@ import (
 	"time"
 )
 
-// HostLoad returns the host's one-minute load average per CPU, or 0 when the
-// platform does not report one. Normalizing by CPU count makes one ceiling
-// value mean "every core busy" on any machine.
 func HostLoad() float64 {
 	cpus := runtime.NumCPU()
 	if cpus < 1 {
@@ -35,7 +34,7 @@ type Sampler struct {
 }
 
 // NewSampler builds a sampler that refreshes every interval. A non-positive
-// interval means five seconds.
+// interval means a few seconds.
 func NewSampler(every time.Duration, read func() float64) *Sampler {
 	if every <= 0 {
 		every = 5 * time.Second
@@ -107,7 +106,7 @@ func readProcLoadavg() (float64, bool) {
 
 // sysctlLoadavg asks the host's own sysctl program for vm.loadavg. A
 // Cosmopolitan build reports GOOS "cosmo" on every platform and satisfies the
-// linux build tag, so a binary running on macOS needs this rather than procfs.
+// linux build tag. A binary running on macOS needs this rather than procfs.
 func sysctlLoadavg() float64 {
 	out, err := exec.Command("/usr/sbin/sysctl", "-n", "vm.loadavg").Output()
 	if err != nil {

@@ -1,3 +1,5 @@
+// StripReader spools r to a temp file under tmpDir, runs the file-based Strip.
+
 package strip
 
 import (

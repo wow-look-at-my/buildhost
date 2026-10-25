@@ -62,7 +62,7 @@ func TestPackShrinksAnELFAndRoundTrips(t *testing.T) {
 	assert.True(t, bytes.HasPrefix(head, []byte{0x7f, 'E', 'L', 'F'}), "packing must keep the ELF container")
 	assert.True(t, bytes.Contains(head, []byte("UPX!")), "the served file must be UPX-packed")
 
-	// Two downloads of an immutable URL are byte-identical.
+	// Downloads of an immutable URL are byte-identical.
 	again := filepath.Join(t.TempDir(), "packed-again")
 	ok, err = p.Pack(src, again)
 	require.NoError(t, err)
