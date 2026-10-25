@@ -20,6 +20,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/diskusage"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/router"
 )
 
 const indexType = "application/vnd.oci.image.index.v1+json"
@@ -102,9 +103,9 @@ func (f *fakeRegistry) count(key string) int {
 }
 
 type fixture struct {
-	h   *Handler
-	up  *fakeRegistry
-	mux *http.ServeMux
+	h  *Handler
+	up *fakeRegistry
+	rt *router.Router
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -116,10 +117,11 @@ func newFixture(t *testing.T) *fixture {
 	require.NoError(t, err)
 	up := newFakeRegistry(t)
 	h := &Handler{Up: Upstream{Service: "dockerhub", Remote: up.URL}, DB: d, Store: store, TmpDir: t.TempDir(), Client: up.Client()}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v2/{path...}", h.ServeHTTP)
-	mux.HandleFunc("HEAD /v2/{path...}", h.ServeHTTP)
-	return &fixture{h: h, up: up, mux: mux}
+	// The router the server runs, with the same patterns init registers.
+	rt := router.New()
+	rt.HandleFunc("GET /v2/{path...}", router.Allow, h.ServeHTTP)
+	rt.HandleFunc("HEAD /v2/{path...}", router.Allow, h.ServeHTTP)
+	return &fixture{h: h, up: up, rt: rt}
 }
 
 func (f *fixture) do(t *testing.T, method, path string, header http.Header, token bool) *httptest.ResponseRecorder {
@@ -132,7 +134,7 @@ func (f *fixture) do(t *testing.T, method, path string, header http.Header, toke
 		req = req.WithContext(auth.WithToken(req.Context(), &db.APIToken{Scopes: "read"}))
 	}
 	rec := httptest.NewRecorder()
-	f.mux.ServeHTTP(rec, req)
+	f.rt.ServeHTTP(rec, req)
 	return rec
 }
 
