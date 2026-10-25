@@ -18,6 +18,7 @@ import (
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/pack"
 	"github.com/wow-look-at-my/buildhost/internal/recompress"
@@ -34,13 +35,9 @@ type rawFixture struct {
 func newRawFixture(t *testing.T, upload []byte) *rawFixture {
 	t.Helper()
 	store, err := storage.NewFilesystem(t.TempDir(), true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	key, size, err := store.Put(context.Background(), bytes.NewReader(upload))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return &rawFixture{
 		store:    store,
 		tmp:      t.TempDir(),
@@ -67,46 +64,34 @@ func (f *rawFixture) get(t *testing.T, shaper *Shaper, accept, query, ip string)
 	}
 	rec := httptest.NewRecorder()
 	format := &rawFmt{}
-	if err := format.Serve(rec, req, ctx); err != nil {
-		t.Fatalf("serve: %v", err)
-	}
+	require.NoError(t, format.Serve(rec, req, ctx), "serve")
 	return rec
 }
 
 func decodeZstd(t *testing.T, data []byte) []byte {
 	t.Helper()
 	r, err := zstd.NewReader(bytes.NewReader(data))
-	if err != nil {
-		t.Fatalf("zstd reader: %v", err)
-	}
+	require.NoError(t, err, "zstd reader")
 	defer r.Close()
 	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("zstd decode: %v", err)
-	}
+	require.NoError(t, err, "zstd decode")
 	return out
 }
 
 func decodeBrotli(t *testing.T, body []byte) []byte {
 	t.Helper()
 	out, err := io.ReadAll(brotli.NewReader(bytes.NewReader(body)))
-	if err != nil {
-		t.Fatalf("brotli decode: %v", err)
-	}
+	require.NoError(t, err, "brotli decode")
 	return out
 }
 
 func decodeGzip(t *testing.T, body []byte) []byte {
 	t.Helper()
 	zr, err := gzip.NewReader(bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("gzip decode: %v", err)
-	}
+	require.NoError(t, err, "gzip decode")
 	defer zr.Close()
 	out, err := io.ReadAll(zr)
-	if err != nil {
-		t.Fatalf("gzip read: %v", err)
-	}
+	require.NoError(t, err, "gzip read")
 	return out
 }
 
@@ -115,10 +100,8 @@ func buildELFFixture(t *testing.T) []byte {
 	t.Helper()
 	dir := t.TempDir()
 	src := filepath.Join(dir, "main.go")
-	if err := os.WriteFile(src, []byte(
-		"package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"packed-fixture\") }\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.WriteFile(src, []byte(
+		"package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"packed-fixture\") }\n"), 0o644))
 	out := filepath.Join(dir, "fixture")
 	cmd := exec.Command("go", "build", "-o", out, src)
 	env := make([]string, 0, len(os.Environ())+3)
@@ -133,9 +116,7 @@ func buildELFFixture(t *testing.T) []byte {
 		t.Skipf("cannot build an ELF fixture (no go toolchain?): %s: %s", err, b)
 	}
 	data, err := os.ReadFile(out)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return data
 }
 
@@ -230,9 +211,7 @@ func TestRawCacheServesRepeatsWithoutRewriting(t *testing.T) {
 	t.Serial()
 	f := newRawFixture(t, buildELFFixture(t))
 	cache, err := recompress.NewCache(t.TempDir(), 8<<20, 16, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	sh := &Shaper{Cache: cache, Pack: testPacker(t)}
 
 	first := f.get(t, sh, "br", "", "")
@@ -240,13 +219,9 @@ func TestRawCacheServesRepeatsWithoutRewriting(t *testing.T) {
 	assert.Equal(t, "br", first.Header().Get("Content-Encoding"))
 
 	entries := cacheFiles(t, sh.Cache.Dir())
-	if len(entries) != 1 {
-		t.Fatalf("want one cache entry, got %d: %v", len(entries), entries)
-	}
+	require.Len(t, entries, 1, "want one cache entry")
 	info, err := os.Stat(filepath.Join(cache.Dir(), entries[0]))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	stamp := info.ModTime()
 
 	time.Sleep(10 * time.Millisecond)
@@ -254,9 +229,7 @@ func TestRawCacheServesRepeatsWithoutRewriting(t *testing.T) {
 	assert.Equal(t, first.Body.String(), second.Body.String())
 	assert.Equal(t, entries, cacheFiles(t, sh.Cache.Dir()), "a hit must not add an entry")
 	info, err = os.Stat(filepath.Join(cache.Dir(), entries[0]))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	assert.Equal(t, stamp, info.ModTime(), "a hit must not rewrite the entry")
 }
 
@@ -352,17 +325,13 @@ func (c *countingPacker) Pack(_, _ string) (bool, error) {
 
 func requireStatus(t *testing.T, rec *httptest.ResponseRecorder) {
 	t.Helper()
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
-	}
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
 }
 
 func cacheFiles(t *testing.T, dir string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
 		if e.Type().IsRegular() {

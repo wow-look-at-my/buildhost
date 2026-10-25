@@ -107,15 +107,14 @@ func TestCacheEvictsLeastRecentlyUsed(t *testing.T) {
 	insert(t, c, newKey, "ccc")
 
 	assert.Equal(t, 2, c.Len())
-	if _, ok := read(t, c, b); ok {
-		t.Fatal("the least recently used entry survived")
-	}
-	if body, ok := read(t, c, a); !ok || body != "aaa" {
-		t.Fatal("the recently read entry was evicted")
-	}
-	if body, ok := read(t, c, newKey); !ok || body != "ccc" {
-		t.Fatal("the newly inserted entry is missing")
-	}
+	_, ok = read(t, c, b)
+	require.False(t, ok, "the least recently used entry survived")
+	body, ok := read(t, c, a)
+	require.True(t, ok, "the recently read entry was evicted")
+	assert.Equal(t, "aaa", body)
+	body, ok = read(t, c, newKey)
+	require.True(t, ok, "the newly inserted entry is missing")
+	assert.Equal(t, "ccc", body)
 }
 
 // The byte bound evicts the same way, and the newest entry is never the
@@ -134,9 +133,8 @@ func TestCacheEvictsBySize(t *testing.T) {
 
 	assert.Equal(t, 1, c.Len())
 	assert.Equal(t, int64(8), c.Bytes())
-	if _, ok := read(t, c, a); ok {
-		t.Fatal("the older entry survived a size bound")
-	}
+	_, ok = read(t, c, a)
+	require.False(t, ok, "the older entry survived a size bound")
 }
 
 // A variant larger than the whole cache is not stored, so one big response
@@ -170,9 +168,9 @@ func TestCacheLoadsExistingEntries(t *testing.T) {
 	reopened, err := NewCache(dir, 1<<20, 8, time.Hour)
 	require.NoError(t, err)
 	assert.Equal(t, 1, reopened.Len())
-	if body, ok := read(t, reopened, key); !ok || body != "hello" {
-		t.Fatal("an entry on disk was not indexed")
-	}
+	body, ok := read(t, reopened, key)
+	require.True(t, ok, "an entry on disk was not indexed")
+	assert.Equal(t, "hello", body)
 }
 
 // A file whose name is not a key is not an entry, so a stray temporary file

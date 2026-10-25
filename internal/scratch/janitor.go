@@ -8,10 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // scratchPrefixes are the temporary-file names this server creates and then
-// removes itself. A file left behind by a crash carries one of these names.
+// removes itself.
 var scratchPrefixes = []string{
 	"strip-input-",
 	"stripped-",
@@ -26,12 +28,8 @@ var scratchPrefixes = []string{
 // scratchDirPrefixes are temporary DIRECTORIES with the same property.
 var scratchDirPrefixes = []string{"goproxy-src-"}
 
-// keptEntries are the durable spool directories an earlier version kept
-// beside the scratch root.
-var keptEntries = map[string]bool{
-	"uploads":     true,
-	"oci-uploads": true,
-}
+// keptEntries are the durable spool directories an earlier version kept beside the scratch root.
+var keptEntries = set.Of("uploads", "oci-uploads")
 
 // Janitor reclaims orphaned temporary files and expired cache entries.
 type Janitor struct {
@@ -103,7 +101,7 @@ func (j *Janitor) sweepDir(dir string, cutoff time.Time) SweepReport {
 	}
 	for _, e := range entries {
 		name := e.Name()
-		if keptEntries[name] {
+		if keptEntries.Contains(name) {
 			continue
 		}
 		rep.Scanned++
