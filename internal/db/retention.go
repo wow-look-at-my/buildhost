@@ -1,3 +1,5 @@
+// RetentionSettings is the UI-editable retention policy (stored as a single row).
+
 package db
 
 import (
@@ -187,6 +189,11 @@ func (d *DB) ListOCIBlobFiles(ctx context.Context) ([]ListOCIBlobFilesRow, error
 // ListGoproxyBlobFiles returns every cached Go module zip.
 func (d *DB) ListGoproxyBlobFiles(ctx context.Context) ([]ListGoproxyBlobFilesRow, error) {
 	return d.q.ListGoproxyBlobFiles(ctx)
+}
+
+// ListMirrorBlobFiles returns every blob the registry mirror holds.
+func (d *DB) ListMirrorBlobFiles(ctx context.Context) ([]ListMirrorBlobFilesRow, error) {
+	return d.q.ListMirrorBlobFiles(ctx)
 }
 
 // ListReleaseRetentionFacts returns, for every release, the facts the eviction

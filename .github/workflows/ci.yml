@@ -1,3 +1,5 @@
+# A generate directive spelling `go run` builds an APE the runner cannot exec.
+
 name: CI
 
 on:
@@ -99,7 +101,6 @@ jobs:
           GOPROXY: direct
         with:
           binary: ${{ steps.gotoolchain.outputs.binary }}
-          generate: 3ed2a7fd952f
           timeout: '25'
           allow-source-build: 'true'
       # The step above just ran every generate directive. If that changed a TRACKED file, this repo is carrying a build artifact in git. A tracked artifact is free to drift from the source it claims to be built from, silently, for as long as nobody rebuilds. That is exactly how the admin dashboard shipped a bundle nothing in frontend/src produced. See docs/no-committed-build-artifacts.md.

@@ -1,3 +1,5 @@
+// Project names may contain multiple `/`-separated segments.
+
 package api
 
 // Project names may contain multiple `/`-separated segments. Each segment matches
@@ -54,6 +56,10 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validProjectName(req.Name) {
 		jsonError(w, http.StatusBadRequest, "name must be 1-255 chars; each '/'-separated segment must match [a-z0-9][a-z0-9._-]*")
+		return
+	}
+	if auth.ReservedProjectName(req.Name) {
+		jsonError(w, http.StatusBadRequest, "the root of "+req.Name+" is a registry mirror prefix on oci.{domain}/v2/")
 		return
 	}
 

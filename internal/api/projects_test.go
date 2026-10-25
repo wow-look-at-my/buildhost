@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -56,6 +57,23 @@ func TestCreateProject_EmptyName(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Contains(t, rec.Body.String(), "name is required")
+}
+
+func TestCreateProject_MirrorPrefixIsReserved(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+
+	for _, name := range []string{"ghcr", "dockerhub/library"} {
+		body, err := json.Marshal(map[string]string{"name": name})
+		require.NoError(t, err)
+		req := httptest.NewRequest("POST", "/api/projects", bytes.NewReader(body))
+		req = req.WithContext(writeToken(req.Context(), "read,write"))
+		rec := httptest.NewRecorder()
+		h.CreateProject(rec, req)
+
+		assert.Equal(t, http.StatusBadRequest, rec.Code, name)
+		assert.Contains(t, rec.Body.String(), "registry mirror prefix")
+	}
 }
 
 func TestCreateProject_InvalidBody(t *testing.T) {
