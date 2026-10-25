@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/router"
 )
 
 // waitTapRefreshes blocks until no lineage refresh is in flight.
@@ -128,9 +129,9 @@ func TestSmartFetch_IncrementalPackFastForwards(t *testing.T) {
 
 	var mu sync.Mutex
 	var lastPackObjects int
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /brew/tap.git/info/refs", h.ServeTapInfoRefs)
-	mux.HandleFunc("POST /brew/tap.git/git-upload-pack", func(w http.ResponseWriter, r *http.Request) {
+	rt := router.New()
+	rt.HandleFunc("GET /brew/tap.git/info/refs", router.Allow, h.ServeTapInfoRefs)
+	rt.HandleFunc("POST /brew/tap.git/git-upload-pack", router.Allow, func(w http.ResponseWriter, r *http.Request) {
 		rec := httptest.NewRecorder()
 		h.ServeTapUploadPack(rec, r)
 		body := rec.Body.Bytes()
@@ -145,7 +146,7 @@ func TestSmartFetch_IncrementalPackFastForwards(t *testing.T) {
 		w.WriteHeader(rec.Code)
 		w.Write(body)
 	})
-	ts := httptest.NewServer(mux)
+	ts := httptest.NewServer(rt)
 	t.Cleanup(ts.Close)
 
 	dir := filepath.Join(gitScratchDir(t), "tap")
