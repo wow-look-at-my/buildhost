@@ -12,17 +12,18 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/router"
 )
 
 // smartTapServer serves the handler's smart+dumb tap endpoints under the real
 // git-subdomain paths so an actual git client can talk to them.
 func smartTapServer(t *testing.T, h *Handler) *httptest.Server {
 	t.Helper()
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /brew/tap.git/info/refs", h.ServeTapInfoRefs)
-	mux.HandleFunc("POST /brew/tap.git/git-upload-pack", h.ServeTapUploadPack)
-	mux.HandleFunc("GET /brew/tap.git/", h.ServeTap)
-	ts := httptest.NewServer(mux)
+	rt := router.New()
+	rt.HandleFunc("GET /brew/tap.git/info/refs", router.Allow, h.ServeTapInfoRefs)
+	rt.HandleFunc("POST /brew/tap.git/git-upload-pack", router.Allow, h.ServeTapUploadPack)
+	rt.HandleFunc("GET /brew/tap.git/", router.Allow, h.ServeTap)
+	ts := httptest.NewServer(rt)
 	t.Cleanup(ts.Close)
 	return ts
 }

@@ -1,3 +1,5 @@
+// "auto" defers to the next level up: build -> project -> folder -> GitHub repo.
+
 export interface BuildInfo {
     version: string;
     commit: string;
@@ -355,6 +357,7 @@ export interface Pages {
     goproxy(): void;
     runFiles(): void;
     cache(): void;
+    mirror(): void;
     duplicates(): void;
 }
 
@@ -548,6 +551,55 @@ export interface CacheJanitor {
     pressure_deleted: number;
     freed_bytes: number;
     error?: string;
+}
+
+/** One blob or manifest the registry mirror holds. media_type is empty for a layer or a config. */
+export interface MirrorBlobRow {
+    upstream: string;
+    digest: string;
+    media_type: string;
+    size: number;
+    created_at: string;
+    used_at: string;
+    reads: number;
+    expires_at: string;
+}
+
+/** The digest a tag named the last time its upstream answered. */
+export interface MirrorTagRow {
+    upstream: string;
+    repository: string;
+    tag: string;
+    digest: string;
+    media_type: string;
+    checked_at: string;
+}
+
+/** One pass of the mirror janitor (mirror.Report). */
+export interface MirrorJanitor {
+    at: string;
+    duration_ms: number;
+    deferred: boolean;
+    blobs: number;
+    expired: number;
+    pressure_deleted: number;
+    freed_bytes: number;
+    error?: string;
+}
+
+export interface MirrorData {
+    keep_seconds: number;
+    check_interval_seconds: number;
+    tag_ttl_seconds: number;
+    min_free_percent: number;
+    total_bytes: number;
+    disk_free?: number;
+    disk_total?: number;
+    disk_used?: number;
+    upstreams: { service: string; remote: string }[];
+    blobs: MirrorBlobRow[];
+    tags: MirrorTagRow[];
+    janitor: MirrorJanitor | null;
 }
 
 export interface CacheData {

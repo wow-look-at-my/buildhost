@@ -24,6 +24,9 @@ import type {
     RunFilesRun,
     CacheData,
     CacheEntryRow,
+    MirrorBlobRow,
+    MirrorData,
+    MirrorTagRow,
     ServiceURLs,
     SidebarData,
     SitesData,
@@ -120,6 +123,7 @@ var NAV_ITEMS = [
     { id: "goproxy", href: "#/goproxy", label: "Go Proxy", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>' },
     { id: "run-files", href: "#/run-files", label: "Run Files", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm1 5a1 1 0 100 2h7a1 1 0 100-2H4z"/></svg>' },
     { id: "cache", href: "#/cache", label: "CI Cache", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 5c0-1.1 3.1-2 7-2s7 .9 7 2v10c0 1.1-3.1 2-7 2s-7-.9-7-2V5zm7 2c3.9 0 7-.9 7-2s-3.1-2-7-2-7 .9-7 2 3.1 2 7 2z"/></svg>' },
+    { id: "mirror", href: "#/mirror", label: "Registry Mirror", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 6a1 1 0 011-1h12a1 1 0 011 1v2H3V6zm0 4h14v4a1 1 0 01-1 1H4a1 1 0 01-1-1v-4zm3 2a1 1 0 100 2h2a1 1 0 100-2H6z"/></svg>' },
     { id: "oidc", href: "#/oidc", label: "OIDC Policies", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' },
     { id: "retention", href: "#/retention", label: "Retention", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>' },
     { id: "duplicates", href: "#/duplicates", label: "Duplicates", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M7 3a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V5a2 2 0 00-2-2H7z"/><path d="M3 7a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>' }
@@ -1530,6 +1534,7 @@ const route = function (): void {
     else if (first === "goproxy") { go(pages.goproxy); }
     else if (first === "run-files") { go(pages.runFiles); }
     else if (first === "cache") { go(pages.cache); }
+    else if (first === "mirror") { go(pages.mirror); }
     else if (first === "duplicates") { go(pages.duplicates); }
     else { go(pages.dashboard); }
 };
@@ -1615,6 +1620,40 @@ const demoCache = function (): CacheData {
     };
 };
 
+const demoMirror = function (): MirrorData {
+    const ago = function (hours: number): string { return new Date(Date.now() - hours * 3600000).toISOString(); };
+    const keep = 7 * 24;
+    const digest = function (seed: string): string { return "sha256:" + (seed + "0".repeat(64)).replace(/[^0-9a-f]/g, "c").slice(0, 64); };
+    const blob = function (upstream: string, seed: string, mediaType: string, size: number, created: number, used: number, reads: number): MirrorBlobRow {
+        return { upstream: upstream, digest: digest(seed), media_type: mediaType, size: size, created_at: ago(created), used_at: ago(used), reads: reads, expires_at: ago(used - keep) };
+    };
+    const blobs = [
+        blob("dockerhub", "a1pine", "application/vnd.oci.image.index.v1+json", 9_218, 50, 0.1, 212),
+        blob("dockerhub", "a1pine1ayer", "", 3_640_000, 50, 0.1, 212),
+        blob("ghcr", "runner", "application/vnd.oci.image.manifest.v1+json", 2_104, 20, 2, 33),
+        blob("ghcr", "runner1ayer", "", 210_000_000, 20, 2, 33)
+    ];
+    let total = 0;
+    for (const b of blobs) total += b.size;
+    return {
+        keep_seconds: keep * 3600,
+        check_interval_seconds: 300,
+        tag_ttl_seconds: 60,
+        min_free_percent: 15,
+        total_bytes: total,
+        disk_total: 500_000_000_000,
+        disk_used: 438_000_000_000,
+        disk_free: 62_000_000_000,
+        upstreams: [{ service: "dockerhub", remote: "https://registry-1.docker.io" }, { service: "ghcr", remote: "https://ghcr.io" }],
+        blobs: blobs,
+        tags: [
+            { upstream: "dockerhub", repository: "library/alpine", tag: "latest", digest: digest("a1pine"), media_type: "application/vnd.oci.image.index.v1+json", checked_at: ago(0.1) },
+            { upstream: "ghcr", repository: "actions/actions-runner", tag: "2.330.0", digest: digest("runner"), media_type: "application/vnd.oci.image.manifest.v1+json", checked_at: ago(2) }
+        ],
+        janitor: { at: ago(0.06), duration_ms: 12, deferred: false, blobs: 5, expired: 1, pressure_deleted: 0, freed_bytes: 52_000_000 }
+    };
+};
+
 let demoServices = {
     dl: "https://dl.builds.example.com",
     apt: "https://apt.builds.example.com",
@@ -1682,6 +1721,7 @@ const demoData: Record<string, unknown> = {
     "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com", services: demoServices },
     "/run-files": demoRunFiles(),
     "/cache": demoCache(),
+    "/mirror": demoMirror(),
     // The demo shows a repo mid-rename, which is the state this page exists for.
     "/duplicates": {
         groups: [{
@@ -2195,6 +2235,97 @@ const fillCacheTable = function (d: CacheData): void {
     el.rowId = (e) => e.repo + "|" + e.ref + "|" + e.key;
     el.sort = { key: "used", dir: "desc" };
     el.rows = d.entries;
+};
+
+pages.mirror = function (): void {
+    setTitle("Registry Mirror");
+    renderSidebar("mirror");
+    apiFetch<MirrorData>("/mirror").then(renderMirror);
+};
+
+const renderMirror = function (d: MirrorData): void {
+    let manifests = 0;
+    let reads = 0;
+    for (const b of d.blobs) {
+        if (b.media_type) manifests++;
+        reads += b.reads;
+    }
+    const keepDays = Math.round(d.keep_seconds / 86400);
+    const hosts = d.upstreams.map((u) => "<code>" + h(u.service) + ".</code> fronts " + h(u.remote)).join(", ");
+    let html = "<h1>Registry Mirror</h1>";
+    html += '<p class="rf-lede">A read-only pull-through mirror: ' + hosts + ". A pull needs a token with the read scope. " +
+        "A tag is asked of its upstream again after " + h(d.tag_ttl_seconds) + "s, and the last digest still serves while the upstream is down. " +
+        "A blob nothing reads for " + h(keepDays) + "d goes, and the least recently used go sooner while free disk is under " + h(d.min_free_percent) + "%.</p>";
+    html += '<div class="rf-kpis">' +
+        kpi(d.blobs.length - manifests, "blobs") + kpi(manifests, "manifests") + kpi(d.tags.length, "tags") + kpi(humanSize(d.total_bytes), "stored") + kpi(reads, "reads") +
+        "</div>";
+    html += mirrorJanitorLine(d);
+    html += '<section class="rf-panel"><h2>Disk</h2>' +
+        (d.disk_total ? '<bar-chart id="mirror-disk"></bar-chart>' : '<p class="empty">The data directory reports no filesystem size.</p>') + "</section>";
+    html += d.tags.length
+        ? '<section class="rf-panel"><h2>Tags</h2><data-table id="mirror-tags"></data-table></section>'
+        : '<section class="rf-panel"><p class="empty">No tag was pulled through the mirror.</p></section>';
+    html += d.blobs.length
+        ? '<section class="rf-panel"><h2>Stored</h2><data-table id="mirror-blobs"></data-table></section>'
+        : '<section class="rf-panel"><p class="empty">The mirror stores nothing.</p></section>';
+    document.getElementById("content")!.innerHTML = html;
+    fillDiskChart("mirror-disk", "mirror", d);
+    fillMirrorTables(d);
+};
+
+const mirrorJanitorLine = function (d: MirrorData): string {
+    const j = d.janitor;
+    const every = "sweeps every " + Math.round(d.check_interval_seconds / 60) + "m";
+    if (!j) return '<p class="rf-janitor">Janitor: no sweep yet since this server started (' + every + ").</p>";
+    if (j.deferred) return '<p class="rf-janitor">Janitor: last sweep ' + h(timeAgo(j.at)) + " was deferred, writes in flight (" + every + ").</p>";
+    let s = "Janitor: last sweep " + h(timeAgo(j.at)) + " in " + h(j.duration_ms) + "ms over " + h(j.blobs) + " blobs, expired " + h(j.expired) +
+        (j.pressure_deleted ? ", deleted " + h(j.pressure_deleted) + " for disk pressure" : "") + ", freed " + h(humanSize(j.freed_bytes)) + " &middot; " + every;
+    if (j.error) s += ' &middot; <span class="rf-bad">sweep failed: ' + h(j.error) + "</span>";
+    return '<p class="rf-janitor">' + s + "</p>";
+};
+
+const fillMirrorTables = function (d: MirrorData): void {
+    const ago = function (iso: string): Node {
+        const span = document.createElement("span");
+        span.textContent = shortAgo(iso);
+        span.title = formatTime(iso);
+        return span;
+    };
+    const short = (digest: string): string => digest.slice(0, 19);
+    const tags = document.getElementById("mirror-tags") as DataTableElement<MirrorTagRow> | null;
+    if (tags) {
+        tags.columns = [
+            { key: "upstream", label: "Upstream", value: (t) => t.upstream },
+            { key: "image", label: "Image", value: (t) => t.repository + ":" + t.tag },
+            { key: "digest", label: "Digest", value: (t) => t.digest, render: (t) => short(t.digest) },
+            { key: "type", label: "Type", value: (t) => t.media_type },
+            { key: "checked", label: "Checked", value: (t) => ms(t.checked_at), render: (t) => ago(t.checked_at), text: (t) => t.checked_at }
+        ];
+        tags.facets = [{ key: "upstream", label: "upstream", of: (t) => t.upstream }];
+        tags.rowId = (t) => t.upstream + "|" + t.repository + "|" + t.tag;
+        tags.sort = { key: "checked", dir: "desc" };
+        tags.rows = d.tags;
+    }
+    const blobs = document.getElementById("mirror-blobs") as DataTableElement<MirrorBlobRow> | null;
+    if (blobs) {
+        blobs.columns = [
+            { key: "upstream", label: "Upstream", value: (b) => b.upstream },
+            { key: "digest", label: "Digest", value: (b) => b.digest, render: (b) => short(b.digest) },
+            { key: "kind", label: "Kind", value: (b) => (b.media_type ? "manifest" : "blob") },
+            { key: "size", label: "Size", value: (b) => b.size, render: (b) => humanSize(b.size), align: "end" },
+            { key: "created", label: "Fetched", value: (b) => ms(b.created_at), render: (b) => ago(b.created_at), text: (b) => b.created_at },
+            { key: "used", label: "Last read", value: (b) => ms(b.used_at), render: (b) => ago(b.used_at), text: (b) => b.used_at },
+            { key: "expires", label: "Deleted", value: (b) => ms(b.expires_at), render: (b) => untilNode(b.expires_at), text: (b) => b.expires_at },
+            { key: "reads", label: "Reads", value: (b) => b.reads, align: "end" }
+        ];
+        blobs.facets = [
+            { key: "upstream", label: "upstream", of: (b) => b.upstream },
+            { key: "kind", label: "kind", of: (b) => (b.media_type ? "manifest" : "blob") }
+        ];
+        blobs.rowId = (b) => b.upstream + "|" + b.digest;
+        blobs.sort = { key: "used", dir: "desc" };
+        blobs.rows = d.blobs;
+    }
 };
 
 pages.duplicates = function (): void {
