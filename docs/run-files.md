@@ -32,7 +32,7 @@ A name is 1 to 128 of `[A-Za-z0-9._-]`, starting with a letter or digit.
 - It deletes a run's files `BUILDHOST_RUN_FILES_KEEP` after the run ended. The default is `24h`.
 - It deletes ended runs sooner, oldest-ended first, and stops once free disk is back above it. This happens while free disk on the data directory is below `BUILDHOST_RUN_FILES_MIN_FREE_PERCENT` (default `10`). `0` turns this off.
 - It never deletes a live run early, because a job of that run still waits for its files. When only live runs are left and disk is still low, it logs an error with the bytes the live runs hold.
-- A status GitHub does not answer is not an end. The run keeps its files, the janitor logs a warning, and it asks again on the next pass. A run whose end GitHub never reports goes after `MaxRunLifetime`, the longest a run can last.
+- A status GitHub does not answer is not an end while the run still uses its files. The janitor logs a warning and asks again on the next pass. A run whose status GitHub does not answer and that nothing used for `BUILDHOST_RUN_FILES_KEEP` goes. Without this, a server with no GitHub credential (`github_credential: none` on `/healthz`) keeps every run's files for `MaxRunLifetime`, many days. A run whose end GitHub never reports goes after `MaxRunLifetime`, the longest a run can last.
 - A send or a receive marks the run live again. A re-run of a completed run therefore keeps its files until GitHub reports the re-run complete.
 - It waits while writes are in flight, as the release retention sweep does, so it cannot delete a blob an upload stored again.
 
