@@ -3,6 +3,7 @@ package mirror
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -52,7 +53,7 @@ func (f *fakeRegistry) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if r.URL.Path == "/token" {
-		fmt.Fprintf(w, `{"token":"t-%s","expires_in":300}`, r.URL.Query().Get("scope"))
+		json.NewEncoder(w).Encode(map[string]any{"token": "t-" + r.URL.Query().Get("scope"), "expires_in": 300})
 		return
 	}
 	f.calls[r.Method+" "+r.URL.Path]++
