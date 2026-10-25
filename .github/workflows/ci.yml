@@ -99,7 +99,7 @@ jobs:
           GOPROXY: direct
         with:
           binary: ${{ steps.gotoolchain.outputs.binary }}
-          generate: 3ed2a7fd952f
+          generate: 55cd17232ba8
           timeout: '25'
           allow-source-build: 'true'
       # The step above just ran every generate directive, which is what makes
