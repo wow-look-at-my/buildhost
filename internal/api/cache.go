@@ -1,3 +1,5 @@
+// A cache entry is a directory a CI job saves under a key, for jobs of later runs to restore.
+
 package api
 
 import (
@@ -27,6 +29,9 @@ var validCacheKey = regexp.MustCompile(`^[A-Za-z0-9._-]{1,512}$`)
 var githubDefaultBranch = auth.GitHubDefaultBranch
 
 const cacheKeyRule = "1-512 of [A-Za-z0-9._-]"
+
+// cacheFallbackBranch is the default branch a restore reads when GitHub does not answer it.
+const cacheFallbackBranch = "master"
 
 type cacheEntryResponse struct {
 	Key    string `json:"key"`
@@ -69,7 +74,8 @@ func cacheCaller(w http.ResponseWriter, r *http.Request) (auth.OIDCRepoIdentity,
 }
 
 // cacheScopes returns the scopes a restore reads: the caller's ref, then the
-// default branch. note says why the default branch is absent.
+// default branch. note says why the default branch is absent, or that it is
+// master because GitHub did not answer.
 func cacheScopes(r *http.Request, repo auth.OIDCRepoIdentity) (scopes []db.CacheScope, note string) {
 	scopes = []db.CacheScope{{RepoID: repo.RepoID, Ref: repo.Ref}}
 	if repo.Issuer != auth.GitHubActionsIssuer {
@@ -77,13 +83,14 @@ func cacheScopes(r *http.Request, repo auth.OIDCRepoIdentity) (scopes []db.Cache
 	}
 	branch := githubDefaultBranch(r.Context(), repo.RepoPath)
 	if branch == "" {
-		slog.WarnContext(r.Context(), "cache: GitHub does not answer the default branch; the restore reads the caller's ref alone", "repo", repo.RepoPath)
-		return scopes, "not read: GitHub did not answer the repository's default branch"
+		slog.WarnContext(r.Context(), "cache: GitHub does not answer the default branch; the restore reads "+cacheFallbackBranch, "repo", repo.RepoPath)
+		branch = cacheFallbackBranch
+		note = cacheFallbackBranch + ": GitHub did not answer the repository's default branch"
 	}
 	if ref := "refs/heads/" + branch; ref != repo.Ref {
 		scopes = append(scopes, db.CacheScope{RepoID: repo.RepoID, Ref: ref})
 	}
-	return scopes, ""
+	return scopes, note
 }
 
 // FindCache answers the entry a restore reads for key and restore_keys, as
