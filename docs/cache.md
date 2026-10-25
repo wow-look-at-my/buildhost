@@ -22,7 +22,7 @@ A cache entry is a directory a job of a GitHub Actions run saves under a key, fo
 - A restore tries the exact key in each scope first. Then it tries each restore key, in order, as a prefix, in each scope. A prefix takes the newest entry it matches.
 - `cache-hit` is `true` only for an exact match. `cache-matched-key` names the entry restored. A miss leaves `path` as it is, unless `fail-on-cache-miss: true`.
 - A key is written once in a ref. A save of a key the ref holds stores nothing and reports so. The server answers such a save with 409.
-- buildhost reads the default branch from GitHub. When GitHub does not answer, a restore reads the run's own ref alone, and its answer and its log line say why.
+- buildhost reads the default branch from GitHub. When GitHub does not answer, it uses the branch the request names in `default_branch`. The actions take that from the run's event payload. A false name only widens what the repository's own run reads: the default branch searches its own ref first, which is that branch. With neither, a restore reads the run's own ref alone, and its answer and its log line say why.
 - `path` names files and directories, one per line. A relative path is from the workspace. A leading `~` is the home directory. Name refuses a glob or a `!` exclusion. A save leaves out a path that does not exist, with a warning, and fails when none exists.
 - An entry restores to the paths it was saved from. A restore names the same paths as its save. When every path is inside the workspace, the entry holds them relative to it, and a runner with another workspace directory restores them there. Otherwise the entry holds them from the filesystem root, and every path must be on one drive.
 
@@ -32,6 +32,7 @@ The job's OIDC token, minted with the server URL as its audience, with `permissi
 
 ## Endpoints
 
+- Both reads take an optional `default_branch=`, used only when GitHub does not answer the default branch.
 - `GET /api/v1/cache?repository=&key=&restore_keys=...` answers the entry a restore reads: `{"key", "ref", "size", "sha256", "exact", "scopes"}`. A miss is 404 with `scopes` and, when the default branch was not read, `default_branch`.
 - `GET /api/v1/cache/{key}?repository=&ref=` serves an entry. `ref` must be one the caller's restore reads. It honors `Range` and carries `X-Content-SHA256`.
 - `PUT /api/v1/cache/{key}?repository=` stores the body for the caller's ref, or a finished upload session through `upload_session`. It answers 201, or 409 when the ref holds the key.
