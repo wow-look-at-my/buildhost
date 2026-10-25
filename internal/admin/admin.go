@@ -140,6 +140,7 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/retention/inventory", router.Allow, s.apiRetentionInventory)
 	mux.HandleFunc("GET /api/run-files", router.Allow, s.apiRunFiles)
 	mux.HandleFunc("GET /api/cache", router.Allow, s.apiCache)
+	mux.HandleFunc("GET /api/mirror", router.Allow, s.apiMirror)
 	mux.HandleFunc("POST /api/retention/run", router.Allow, s.apiRunRetention)
 	mux.HandleFunc("GET /api/github-credential", router.Allow, s.apiGitHubCredential)
 	mux.HandleFunc("PUT /api/github-credential", router.Allow, s.apiSetGitHubCredential)

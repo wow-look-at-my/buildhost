@@ -293,7 +293,33 @@ CREATE TABLE cache_entries (
 CREATE INDEX IF NOT EXISTS idx_cache_entries_storage_key ON cache_entries(storage_key);
 CREATE INDEX IF NOT EXISTS idx_cache_entries_used_at ON cache_entries(used_at);
 
--- GitHub credential (mirrored from migrations/025_github_credential.sql).
+-- Registry mirror (mirrored from migrations/025_registry_mirror.sql).
+CREATE TABLE mirror_blobs (
+    upstream    TEXT NOT NULL,
+    digest      TEXT NOT NULL,
+    media_type  TEXT NOT NULL DEFAULT '',
+    storage_key TEXT NOT NULL,
+    size        INTEGER NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    used_at     DATETIME NOT NULL DEFAULT (datetime('now')),
+    reads       INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (upstream, digest)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mirror_blobs_storage_key ON mirror_blobs(storage_key);
+CREATE INDEX IF NOT EXISTS idx_mirror_blobs_used_at ON mirror_blobs(used_at);
+
+CREATE TABLE mirror_tags (
+    upstream    TEXT NOT NULL,
+    repository  TEXT NOT NULL,
+    tag         TEXT NOT NULL,
+    digest      TEXT NOT NULL,
+    media_type  TEXT NOT NULL,
+    checked_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (upstream, repository, tag)
+);
+
+-- GitHub credential (mirrored from migrations/026_github_credential.sql).
 CREATE TABLE github_credential (
     id         INTEGER PRIMARY KEY CHECK (id = 1),
     token      TEXT NOT NULL,

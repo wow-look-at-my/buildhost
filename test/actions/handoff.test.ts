@@ -163,6 +163,17 @@ async function cacheMissLeavesPathAlone(tmp: string, failOnMiss: string, wantFai
 	if (wantFailed) assert.match(out.failed[0], /GitHub did not answer/, 'the miss says why the default branch was not searched');
 }
 
+// A lookup the cache did not answer is a failure with its status and body, even with fail-on-cache-miss false.
+async function cacheLookupFailureIsNoMiss(tmp: string, status: number, body: string) {
+	const s = await serve((_req, res) => { res.writeHead(status); res.end(body); });
+	const { core, out } = stepCore();
+	await restoreCache(globalsOf({ core, inputs: cacheInputs(s.url, { path: path.join(tmp, 'cache-err'), key: 'k', 'fail-on-cache-miss': 'false' }) }));
+	await s.close();
+	assert.strictEqual(out.failed.length, 1, `HTTP ${status} fails the restore`);
+	assert.match(out.failed[0], new RegExp(`cache lookup failed \\(HTTP ${status}\\)`));
+	assert.doesNotMatch(out.failed[0], /No cache entry/);
+}
+
 async function cacheSaveOfAHeldKeySendsNothing(tmp: string) {
 	const asked: string[] = [];
 	const s = await serve((req, res) => {
@@ -243,6 +254,10 @@ async function run() {
 	await cacheRestoreHitReadsTheMatchedScope(tmp);
 	await cacheMissLeavesPathAlone(tmp, 'false', 0);
 	await cacheMissLeavesPathAlone(tmp, 'true', 1);
+	await cacheLookupFailureIsNoMiss(tmp, 500, '{"error":"failed to read the cache"}');
+	await cacheLookupFailureIsNoMiss(tmp, 429, 'rate limited');
+	await cacheLookupFailureIsNoMiss(tmp, 404, '404 page not found');
+	await cacheLookupFailureIsNoMiss(tmp, 404, '{"error":"not found"}');
 	await cacheSaveOfAHeldKeySendsNothing(tmp);
 	assert.strictEqual(
 		runFilePath('toolchain-Linux', { GITHUB_REPOSITORY: 'wow-look-at-my/gosmopolitan', GITHUB_RUN_ID: '42' }),
