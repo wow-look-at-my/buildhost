@@ -117,8 +117,6 @@ func newFixture(t *testing.T) *fixture {
 	up := newFakeRegistry(t)
 	h := &Handler{Up: Upstream{Service: "dockerhub", Remote: up.URL}, DB: d, Store: store, TmpDir: t.TempDir(), Client: up.Client()}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v2/{$}", h.Root)
-	mux.HandleFunc("HEAD /v2/{$}", h.Root)
 	mux.HandleFunc("GET /v2/{path...}", h.ServeHTTP)
 	mux.HandleFunc("HEAD /v2/{path...}", h.ServeHTTP)
 	return &fixture{h: h, up: up, mux: mux}
