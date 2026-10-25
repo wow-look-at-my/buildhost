@@ -32,7 +32,7 @@ The job's OIDC token, minted with the server URL as its audience, with `permissi
 
 ## Endpoints
 
-- `GET /api/v1/cache?repository=&key=&restore_keys=...` answers the entry a restore reads: `{"key", "ref", "size", "sha256", "exact", "scopes"}`. A miss is 404 with `scopes` and, when the default branch was not read, `default_branch`.
+- `GET /api/v1/cache?repository=&key=&restore_keys=...` answers the entry a restore reads: `{"key", "ref", "size", "sha256", "exact", "scopes"}`. A miss is 404 with `scopes` and, when the default branch was not read, `default_branch`. The restore action reports a miss only for that answer. Any other status or body fails the step with the status and body.
 - `GET /api/v1/cache/{key}?repository=&ref=` serves an entry. `ref` must be one the caller's restore reads. It honors `Range` and carries `X-Content-SHA256`.
 - `PUT /api/v1/cache/{key}?repository=` stores the body for the caller's ref, or a finished upload session through `upload_session`. It answers 201, or 409 when the ref holds the key.
 
@@ -44,6 +44,7 @@ A key is 1 to 512 of `[A-Za-z0-9._-]`.
 
 - It deletes an entry no restore used for `BUILDHOST_CACHE_KEEP`. The default is `168h`. A restore moves the entry's last use to now.
 - While free disk on the data directory is below `BUILDHOST_CACHE_MIN_FREE_PERCENT` (default `15`), it deletes the least recently used entries until free disk is back above it. `0` turns this off.
+- Disk pressure never deletes an entry saved or restored within the last many hours (`cicache.PressureGrace`). A later job of a live run can still restore it. When only such entries are left and disk stays low, the janitor keeps them, logs an error, and counts them as `pressure_kept` in its report.
 - The cache floor sits above the run files floor (`BUILDHOST_RUN_FILES_MIN_FREE_PERCENT`, default `10`). A cache entry therefore goes before a hand-off that a live run still waits for.
 - It waits while writes are in flight. It cannot delete a blob an upload stored again.
 

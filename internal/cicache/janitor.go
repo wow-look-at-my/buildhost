@@ -19,6 +19,9 @@ import (
 // CheckInterval is how often the janitor runs.
 const CheckInterval = 5 * time.Minute
 
+// PressureGrace is how long after its save or its last restore an entry is safe from disk pressure.
+const PressureGrace = 24 * time.Hour
+
 type Janitor struct {
 	DB             *db.DB
 	Store          storage.Storage
@@ -40,7 +43,9 @@ type Report struct {
 	Entries         int       `json:"entries"`
 	Expired         int       `json:"expired"`
 	PressureDeleted int       `json:"pressure_deleted"`
-	FreedBytes      int64     `json:"freed_bytes"`
+	// PressureKept counts the entries the grace kept while disk stayed low.
+	PressureKept int   `json:"pressure_kept"`
+	FreedBytes   int64 `json:"freed_bytes"`
 	Error           string    `json:"error,omitempty"`
 }
 
@@ -103,28 +108,49 @@ func (j *Janitor) sweep(ctx context.Context, now time.Time, rep *Report) error {
 		}
 		kept = append(kept, e)
 	}
-	return j.relievePressure(ctx, kept, rep)
+	return j.relievePressure(ctx, kept, now, rep)
 }
 
 // relievePressure deletes entries, least recently used first, until free
-// disk is back above MinFreePercent. entries is in that order already.
-func (j *Janitor) relievePressure(ctx context.Context, entries []db.CacheEntry, rep *Report) error {
+// disk is back above MinFreePercent. entries is in that order already. An
+// entry used within PressureGrace stays: a live run can still restore it.
+func (j *Janitor) relievePressure(ctx context.Context, entries []db.CacheEntry, now time.Time, rep *Report) error {
 	if j.MinFreePercent <= 0 {
 		return nil
 	}
 	floor := strconv.FormatFloat(j.MinFreePercent, 'f', -1, 64) + "%"
-	for _, e := range entries {
+	low := func() (bool, error) {
 		du, err := j.Disk(j.DataDir)
 		if err != nil {
-			return err
+			return false, err
 		}
-		if du.Total == 0 || float64(du.Free)*100/float64(du.Total) >= j.MinFreePercent {
-			return nil
+		return du.Total != 0 && float64(du.Free)*100/float64(du.Total) < j.MinFreePercent, nil
+	}
+	var recent []db.CacheEntry
+	for _, e := range entries {
+		if now.Sub(e.UsedAt) < PressureGrace {
+			recent = append(recent, e)
+			continue
+		}
+		isLow, err := low()
+		if err != nil || !isLow {
+			return err
 		}
 		if j.delete(ctx, e, "free disk is below "+floor, rep) {
 			rep.PressureDeleted++
 		}
 	}
+	isLow, err := low()
+	if err != nil || !isLow || len(recent) == 0 {
+		return err
+	}
+	var bytes int64
+	for _, e := range recent {
+		bytes += e.Size
+	}
+	rep.PressureKept = len(recent)
+	slog.Error("cache: free disk is below the floor, and every entry left was used within the grace, so the janitor keeps them",
+		"min_free_percent", j.MinFreePercent, "grace", PressureGrace, "kept_entries", len(recent), "kept_bytes", bytes)
 	return nil
 }
 

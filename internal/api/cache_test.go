@@ -7,11 +7,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/cicache"
+	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/diskusage"
 )
 
 // cacheRepo returns testRunRepo as a run of ref.
@@ -167,4 +172,59 @@ func TestCache_RefusesAMismatchedOrIncompleteCaller(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, rec.Code, "the request names another repository than its token")
 
 	assert.Equal(t, http.StatusBadRequest, putCache(t, h, master, "bad%20key", []byte("x")).Code)
+}
+
+// Restores of one key from many jobs at once. That key is with a janitor
+// pass under disk pressure among them, must all hit the entry an earlier job
+// saved.
+func TestCache_ConcurrentRestoresOfOneKeyAllHitThroughAPressureSweep(t *testing.T) {
+	t.Serial()
+	withDefaultBranch(t, "main")
+	h := setupTestHandler(t)
+	branch := cacheRepo("refs/heads/claude/funny-pascal")
+	payload := bytes.Repeat([]byte("stage1 "), 8192)
+	key := "rust-stage1-x86_64-linux-6ed81d93"
+	require.Equal(t, http.StatusCreated, putCache(t, h, branch, key, payload).Code)
+
+	janitor := &cicache.Janitor{
+		DB: h.DB, Store: h.Store, DataDir: t.TempDir(), Keep: 7 * 24 * time.Hour, MinFreePercent: 15,
+		Disk: func(string) (diskusage.Usage, error) { return diskusage.Usage{Total: 100, Free: 5, Used: 95}, nil },
+	}
+	const legs = 10
+	codes := make([]int, legs)
+	bodies := make([][]byte, legs)
+	var wg sync.WaitGroup
+	for i := range legs {
+		wg.Go(func() {
+			if i == legs/2 {
+				assert.NoError(t, janitor.Sweep(t.Context(), time.Now()))
+			}
+			q := url.Values{"repository": {branch.RepoPath}, "key": {key}}
+			req := httptest.NewRequest("GET", "/api/v1/cache?"+q.Encode(), nil)
+			req = req.WithContext(runLockCtx(req.Context(), branch))
+			rec := httptest.NewRecorder()
+			h.FindCache(rec, req)
+			codes[i] = rec.Code
+			if rec.Code != http.StatusOK {
+				bodies[i] = rec.Body.Bytes()
+				return
+			}
+			q = url.Values{"repository": {branch.RepoPath}, "ref": {branch.Ref}}
+			req = httptest.NewRequest("GET", "/api/v1/cache/"+key+"?"+q.Encode(), nil)
+			req.SetPathValue("key", key)
+			req = req.WithContext(runLockCtx(req.Context(), branch))
+			rec = httptest.NewRecorder()
+			h.GetCache(rec, req)
+			codes[i] = rec.Code
+			bodies[i] = rec.Body.Bytes()
+		})
+	}
+	wg.Wait()
+	for i := range legs {
+		require.Equal(t, http.StatusOK, codes[i], "leg %d: %s", i, bodies[i])
+		assert.Equal(t, payload, bodies[i], "leg %d", i)
+	}
+	_, found, err := h.DB.GetCache(t.Context(), db.CacheScope{RepoID: branch.RepoID, Ref: branch.Ref}, key)
+	require.NoError(t, err)
+	assert.True(t, found, "the pressure sweep keeps an entry saved and restored minutes ago")
 }
