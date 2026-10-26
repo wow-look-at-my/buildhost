@@ -40,7 +40,7 @@ With `tags` omitted, a push is tagged with the commit SHA and the sanitized bran
 
 Pass `tags`, newline-separated, to override that. A bare tag expands to `<registry>/<project>:<tag>`. A reference that contains `/` or `:` is used as-is. You can therefore also push to another registry you are logged in to.
 
-A build that needs an org secret names it in `build-secrets`, one name per line. The action fetches each from secret-server and gives it to BuildKit under the same id, for a `RUN --mount=type=secret,id=<name>` step. An unnamed secret never reaches the build. A named one the repository is not entitled to fails the publish.
+The action fetches the org secrets the repository is entitled to from secret-server and gives each to BuildKit under its own name. A `RUN --mount=type=secret,id=<name>` step reads one. No layer holds it.
 
 To fetch an artifact back in a workflow, use `buildhost-download`. It resolves the same way the URL does, and it defaults to the runner's own platform.
 

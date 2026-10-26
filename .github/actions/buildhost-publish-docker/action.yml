@@ -54,10 +54,6 @@ inputs:
     description: 'Newline-separated build args (KEY=value).'
     required: false
     default: ''
-  build-secrets:
-    description: 'Newline-separated names of org secrets the build mounts. The action fetches each from secret-server and hands it to BuildKit under the same id. A name the caller is not entitled to fails the publish.'
-    required: false
-    default: ''
   labels:
     description: 'Newline-separated image labels. OCI revision/source labels are added automatically.'
     required: false
@@ -212,20 +208,10 @@ runs:
           fi
         } >> "${GITHUB_OUTPUT}"
 
-    # Only the secrets the caller names reach the build. Each becomes a BuildKit secret of the same name, read only by a RUN step that mounts it.
+    # Each org secret becomes a BuildKit secret of the same id, read only by a RUN step that mounts it.
     - name: Fetch the org secrets for the build
-      if: ${{ inputs.build-secrets != '' }}
+      id: org-secrets
       uses: wow-look-at-my/actions@secret-server#latest
-
-    - name: Name the build secrets
-      id: build-secrets
-      if: ${{ inputs.build-secrets != '' }}
-      shell: bash
-      env:
-        NAMES: ${{ inputs.build-secrets }}
-      run: |
-        envs="$(bash "${{ github.action_path }}/build-secrets.sh" "${NAMES}")"
-        { echo 'envs<<BUILDHOST_SECRET_ENVS'; echo "${envs}"; echo 'BUILDHOST_SECRET_ENVS'; } >> "${GITHUB_OUTPUT}"
 
     # When any tag targets buildhost, the build EXPORTS an OCI layout instead of
     - name: Build and push
@@ -240,7 +226,7 @@ runs:
         tags: ${{ steps.refs.outputs.tags }}
         labels: ${{ steps.refs.outputs.labels }}
         build-args: ${{ inputs.build-args }}
-        secret-envs: ${{ steps.build-secrets.outputs.envs }}
+        secret-envs: ${{ steps.org-secrets.outputs.buildkit-secret-envs }}
         cache-from: ${{ steps.refs.outputs.cache_from }}
         cache-to: ${{ steps.refs.outputs.cache_to }}
 
@@ -267,7 +253,7 @@ runs:
         tags: ${{ steps.refs.outputs.foreign_refs }}
         labels: ${{ steps.refs.outputs.labels }}
         build-args: ${{ inputs.build-args }}
-        secret-envs: ${{ steps.build-secrets.outputs.envs }}
+        secret-envs: ${{ steps.org-secrets.outputs.buildkit-secret-envs }}
         cache-from: ${{ steps.refs.outputs.cache_from }}
 
     # Publishing is not finished until the image can be PULLED back. This lives
