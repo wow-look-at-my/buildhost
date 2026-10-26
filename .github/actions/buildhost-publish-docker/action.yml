@@ -54,6 +54,13 @@ inputs:
     description: 'Newline-separated build args (KEY=value).'
     required: false
     default: ''
+  secrets:
+    description: >-
+      Newline-separated BuildKit secrets (id=value), passed to the build and
+      never stored in the image. A Dockerfile reads one with
+      `RUN --mount=type=secret,id=...`.
+    required: false
+    default: ''
   labels:
     description: 'Newline-separated image labels. OCI revision/source labels are added automatically.'
     required: false
@@ -221,6 +228,7 @@ runs:
         tags: ${{ steps.refs.outputs.tags }}
         labels: ${{ steps.refs.outputs.labels }}
         build-args: ${{ inputs.build-args }}
+        secrets: ${{ inputs.secrets }}
         cache-from: ${{ steps.refs.outputs.cache_from }}
         cache-to: ${{ steps.refs.outputs.cache_to }}
 
@@ -247,6 +255,7 @@ runs:
         tags: ${{ steps.refs.outputs.foreign_refs }}
         labels: ${{ steps.refs.outputs.labels }}
         build-args: ${{ inputs.build-args }}
+        secrets: ${{ inputs.secrets }}
         cache-from: ${{ steps.refs.outputs.cache_from }}
 
     # Publishing is not finished until the image can be PULLED back. This lives
