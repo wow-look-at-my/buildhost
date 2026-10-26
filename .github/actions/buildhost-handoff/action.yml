@@ -41,4 +41,4 @@ runs:
         inputs: ${{ toJSON(inputs) }}
         script: |
           const lib = require(${{ toJSON(format('{0}/../lib/handoff.ts', github.action_path)) }}) as typeof import(${{ toJSON(format('{0}/../lib/handoff', github.action_path)) }});
-          await lib.handoff({ core, github, context, octokit, exec, inputs, steps });
+          await lib.handoff({ core, github, context, octokit, getOctokit, exec, inputs, steps });

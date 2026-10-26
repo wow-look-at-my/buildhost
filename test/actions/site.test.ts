@@ -26,14 +26,20 @@ function stub(directLimit: number) {
 }
 
 function globals(inputs: Record<string, string>, pr?: number) {
-	const out = { failed: [] as string[], outputs: {} as Record<string, string>, recorded: [] as any[], comments: [] as any[] };
+	const out = { failed: [] as string[], outputs: {} as Record<string, string>, recorded: [] as any[], comments: [] as any[], baseUrls: [] as (string | undefined)[] };
 	const g = {
 		core: { info: () => {}, warning: () => {}, setFailed: (m: string) => out.failed.push(m), setOutput: (k: string, v: string) => { out.outputs[k] = v; } },
 		github: { repository: 'o/r', sha: 'c0ffee', ref_name: 'main' },
 		context: { repo: { owner: 'o', repo: 'r' }, payload: pr ? { pull_request: { number: pr } } : {} },
 		octokit: {
-			request: async (_route: string, p: unknown) => { out.recorded.push(p); },
-			rest: { issues: { listComments: async () => ({ data: [] }), createComment: async (p: unknown) => { out.comments.push(p); } }, pulls: { list: async () => ({ data: [] }) } },
+			auth: async () => ({ token: 'job-token' }),
+		},
+		getOctokit: (_token: string, opts: { baseUrl?: string }) => {
+			out.baseUrls.push(opts.baseUrl);
+			return {
+				request: async (_route: string, p: unknown) => { out.recorded.push(p); },
+				rest: { issues: { listComments: async () => ({ data: [] }), createComment: async (p: unknown) => { out.comments.push(p); } }, pulls: { list: async () => ({ data: [] }) } },
+			};
 		},
 		exec: { exec: async (_cmd: string, args: string[]) => { nodeFs.writeFileSync(args[1], 'archive-bytes'); return 0; } },
 		steps: {},
@@ -62,6 +68,7 @@ function globals(inputs: Record<string, string>, pr?: number) {
 	assert.strictEqual(r.out.outputs.site_url, 'https://sites.bh.example/r/@main/');
 	assert.strictEqual(r.out.recorded[0].path, 'branch/feature-x', 'the site is recorded');
 	assert.match(r.out.comments[0].body, /buildhost-preview:r\/feature-x/, 'the URL is commented on the pull request');
+	assert.deepStrictEqual(r.out.baseUrls, ['https://github-state-mirror.pazer.io'], 'the record and the comment go through the mirror');
 
 	calls = stub(4);
 	r = globals({ chunk_size: '5' });

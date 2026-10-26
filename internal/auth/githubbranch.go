@@ -1,3 +1,5 @@
+// GitHubActionsIssuer is the canonical GitHub Actions OIDC issuer.
+
 package auth
 
 import (
@@ -13,8 +15,11 @@ import (
 // GitHubActionsIssuer is the canonical GitHub Actions OIDC issuer. Default-branch
 const GitHubActionsIssuer = "https://token.actions.githubusercontent.com"
 
+// GitHubAPI is the REST base every buildhost GitHub call uses. The mirror caches and forwards api.github.com.
+const GitHubAPI = "https://github-state-mirror.pazer.io"
+
 // gitHubAPIBase is the GitHub REST base. A var (not const) so tests can point it
-var gitHubAPIBase = "https://api.github.com"
+var gitHubAPIBase = GitHubAPI
 
 // githubToken, when set (BUILDHOST_GITHUB_TOKEN), authenticates default-branch
 var (

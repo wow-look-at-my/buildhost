@@ -1,3 +1,5 @@
+// upstreamGitHub is the Upstream name reported on an *Error from this source.
+
 package goproxy
 
 import (
@@ -22,7 +24,7 @@ import (
 	modzip "golang.org/x/mod/zip"
 )
 
-const defaultGitHubAPI = "https://api.github.com"
+const defaultGitHubAPI = auth.GitHubAPI
 
 // upstreamGitHub is the Upstream name reported on an *Error from this source.
 const upstreamGitHub = "github"
