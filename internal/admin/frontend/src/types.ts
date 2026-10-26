@@ -359,6 +359,7 @@ export interface Pages {
     cache(): void;
     mirror(): void;
     duplicates(): void;
+    github(): void;
 }
 
 // --- Projects split by a GitHub rename (admin GET /api/duplicates) ---
@@ -378,6 +379,19 @@ export interface DuplicateGroup {
 
 export interface DuplicatesData {
     groups: DuplicateGroup[];
+}
+
+export interface GitHubCredentialData {
+    source: "app" | "token" | "none";
+    env_credential: boolean;
+    secret_server: {
+        configured: boolean;
+        at?: string;
+        ok: boolean;
+        error?: string;
+        applied?: string;
+    };
+    github_api: string;
 }
 
 export interface MergePlan {

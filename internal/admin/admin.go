@@ -142,6 +142,7 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/cache", router.Allow, s.apiCache)
 	mux.HandleFunc("GET /api/mirror", router.Allow, s.apiMirror)
 	mux.HandleFunc("POST /api/retention/run", router.Allow, s.apiRunRetention)
+	mux.HandleFunc("GET /api/github-credential", router.Allow, s.apiGitHubCredential)
 	mux.HandleFunc("GET /admin/inflight", router.Allow, InflightHandler)
 
 	mux.HandleFunc("GET /{path...}", router.Allow, s.serveSPA)

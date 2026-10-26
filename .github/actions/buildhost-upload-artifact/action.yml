@@ -65,4 +65,4 @@ runs:
         inputs: ${{ toJSON(inputs) }}
         script: |
           import { uploadArtifact } from '../lib/upload-artifact';
-          await uploadArtifact({ core, github, context, octokit, exec, inputs, steps });
+          await uploadArtifact({ core, github, context, octokit, getOctokit, exec, inputs, steps });
