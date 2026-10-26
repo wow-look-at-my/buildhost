@@ -1,3 +1,5 @@
+// Config controls retention policy.
+
 package retention
 
 import (
@@ -72,6 +74,9 @@ type Report struct {
 	ReclaimableBytes  int64        // exact bytes freed / that would be freed
 	FreedBlobs        []BlobRef    // the blobs ReclaimableBytes sums, keyed by storage key
 
+	DeletedBranchReleases []ReleaseRef  // on a branch GitHub confirms is gone
+	BranchChecks          []BranchCheck // every branch the deleted-branch pass asked GitHub about
+
 	// Artifact-metadata bookkeeping for the evicted releases. An artifact whose
 	RecordsMarkedDeleted int // records successfully marked deleted
 	RecordsUnmarked      int // records that could NOT be marked (see RecordErrors)
@@ -79,7 +84,9 @@ type Report struct {
 }
 
 // Releases is the total number of releases evicted (or that would be).
-func (r Report) Releases() int { return len(r.EvictedReleases) + len(r.AbandonedReleases) }
+func (r Report) Releases() int {
+	return len(r.EvictedReleases) + len(r.AbandonedReleases) + len(r.DeletedBranchReleases)
+}
 
 // Plan computes what eviction would do without changing anything.
 func (r *Retention) Plan(ctx context.Context) (Report, error) { return r.run(ctx, false) }
@@ -112,16 +119,24 @@ func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
 		ids = append(ids, e.ID)
 	}
 
+	refs := append(append([]ReleaseRef{}, rep.EvictedReleases...), rep.AbandonedReleases...)
+	return rep, r.evict(ctx, &rep, refs, ids, enforce)
+}
+
+// evict deletes the given releases, frees the blobs nothing else references,
+// and retracts their storage records. With enforce false it changes nothing
+// and fills rep with what it would do.
+func (r *Retention) evict(ctx context.Context, rep *Report, refs []ReleaseRef, ids []int64, enforce bool) error {
 	if len(ids) == 0 {
-		return rep, nil
+		return nil
 	}
 
 	// Capture what each doomed release holds BEFORE the rows go: after eviction
-	doomed := r.collectRecords(ctx, append(append([]ReleaseRef{}, rep.EvictedReleases...), rep.AbandonedReleases...))
+	doomed := r.collectRecords(ctx, refs)
 
 	freed, candidates, err := r.db.EvictReleases(ctx, ids, enforce)
 	if err != nil {
-		return rep, fmt.Errorf("evict releases: %w", err)
+		return fmt.Errorf("evict releases: %w", err)
 	}
 	rep.BlobsDeleted = len(freed)
 	rep.BlobsRetained = candidates - len(freed)
@@ -140,12 +155,12 @@ func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
 	// Only a run that deleted has anything to retract. A dry run reports the
 	// count it WOULD mark, so an operator sees the work before
 	if enforce {
-		r.markRecordsDeleted(ctx, &rep, doomed)
+		r.markRecordsDeleted(ctx, rep, doomed)
 	} else {
 		rep.RecordsUnmarked = len(doomed)
 	}
 
-	return rep, nil
+	return nil
 }
 
 type doomedRecord struct {
