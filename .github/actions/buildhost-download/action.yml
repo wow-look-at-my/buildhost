@@ -71,4 +71,4 @@ runs:
         inputs: ${{ toJSON(inputs) }}
         script: |
           import { download } from '../lib/download';
-          await download({ core, github, context, octokit, exec, inputs, steps });
+          await download({ core, github, context, octokit, getOctokit, exec, inputs, steps });
