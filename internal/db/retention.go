@@ -162,6 +162,12 @@ func (d *DB) ListAbandonedReleases(ctx context.Context, cutoff time.Time) ([]Lis
 	return d.q.ListAbandonedReleases(ctx, sqliteDatetime(cutoff))
 }
 
+// ListNonDefaultBranchReleases returns the releases older than the cutoff on a
+// branch other than their project's default, for projects linked to GitHub.
+func (d *DB) ListNonDefaultBranchReleases(ctx context.Context, cutoff time.Time) ([]ListNonDefaultBranchReleasesRow, error) {
+	return d.q.ListNonDefaultBranchReleases(ctx, sqliteDatetime(cutoff))
+}
+
 // SumReclaimableBytes returns an upper bound on the logical bytes keep-N eviction
 // would free (it does not subtract blobs shared with surviving releases). For the
 // admin dashboard estimate; the gc CLI and sweeper report the exact figure.
