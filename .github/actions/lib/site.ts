@@ -13,6 +13,7 @@ import { fileSHA256 } from './portable-manifest.ts';
 import { recordSite } from './storage-record.ts';
 import { commentPreview } from './preview-comment.ts';
 import { downloadRunArtifact } from './run-artifact.ts';
+import { githubAPI } from './github-api.ts';
 
 /** The sites endpoint: buildhost dispatches each service by the first Host label, so it is sites.<domain>. */
 export function sitesBase(apex: string): string {
@@ -37,7 +38,8 @@ async function finish(g: ActionGlobals, r: Response, site: Site): Promise<void> 
 	g.core.info(JSON.stringify(reply, null, 2));
 	g.core.setOutput('response', r.text);
 	g.core.setOutput('site_url', siteURL);
-	if (!await recordSite(g.octokit, g.core, g.context, { server: site.apex, project: site.project, branch: site.branch, version: site.gitCommit, sha256: site.sha256 })) return;
+	const api = await githubAPI(g);
+	if (!await recordSite(api, g.core, g.context, { server: site.apex, project: site.project, branch: site.branch, version: site.gitCommit, sha256: site.sha256 })) return;
 	// every `with:` value reaches a composite action as a string, so a bool arrives spelled out
 	const comment = String(g.inputs.comment);
 	if (comment !== 'true' && comment !== 'false') {
@@ -49,7 +51,7 @@ async function finish(g: ActionGlobals, r: Response, site: Site): Promise<void> 
 		return;
 	}
 	const pr = g.context.payload.pull_request as { number?: number; head?: { ref?: string } } | undefined;
-	await commentPreview(g.octokit, g.core, g.context, {
+	await commentPreview(api, g.core, g.context, {
 		project: site.project, branch: site.branch, siteURL,
 		prNumber: pr?.number ?? 0,
 		headRef: pr?.head?.ref ?? (g.github.ref_name || ''),

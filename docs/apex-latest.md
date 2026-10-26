@@ -4,7 +4,7 @@ Extracted verbatim from CLAUDE.md. Paragraph breaks go at the existing topic bou
 
 Apex `latest` (a download with no `?v=` and no `?branch=` -- e.g. `dl/{project}/latest/{os}/{arch}`) resolves to the newest published release on the project's **default branch** -- a per-project field (`projects.default_branch`, `migrations/011_project_default_branch.sql`) that defaults to `master` (`db.LatestBranch`).
 
-buildhost learns the real default branch **itself. The publish sends nothing**. On a GitHub-OIDC write the centralized `requireProject` reads `owner/repo` from the verified OIDC subject (`repo:OWNER/REPO:...`). It then asks GitHub for that repo's default branch (`auth.GitHubDefaultBranch`, a `GET api.github.com/repos/{owner}/{repo}`). The call is best-effort, cached, and gated on the GitHub Actions issuer. It records the answer through `db.SetProjectDefaultBranch`.
+buildhost learns the real default branch **itself. The publish sends nothing**. On a GitHub-OIDC write the centralized `requireProject` reads `owner/repo` from the verified OIDC subject (`repo:OWNER/REPO:...`). It then asks GitHub for that repo's default branch (`auth.GitHubDefaultBranch`, a `GET /repos/{owner}/{repo}` through github-state-mirror (`auth.GitHubAPI`)). The call is best-effort, cached, and gated on the GitHub Actions issuer. It records the answer through `db.SetProjectDefaultBranch`.
 
 A repo that releases off another branch, such as go-toolchain on `v1`, therefore gets a correct `latest` with no publisher cooperation.
 
@@ -16,7 +16,7 @@ A push to a feature branch never hijacks `latest`. When the default branch has n
 
 ## Security notes on the lookup
 
-On a GitHub-OIDC write, buildhost resolves the repo's default branch through `GET api.github.com/repos/{owner}/{repo}` (`auth.GitHubDefaultBranch`). The `owner/repo` comes only from the **verified** OIDC subject. `validRepoPath` validates it before it goes into the fixed-host URL. There is therefore no SSRF surface and no injection surface. `validRefName` re-validates the returned branch before it is stored. The lookup is gated on the GitHub Actions issuer, so another OIDC provider triggers no call.
+On a GitHub-OIDC write, buildhost resolves the repo's default branch through `GET /repos/{owner}/{repo}` on github-state-mirror (`auth.GitHubDefaultBranch`). The `owner/repo` comes only from the **verified** OIDC subject. `validRepoPath` validates it before it goes into the fixed-host URL. There is therefore no SSRF surface and no injection surface. `validRefName` re-validates the returned branch before it is stored. The lookup is gated on the GitHub Actions issuer, so another OIDC provider triggers no call.
 
 It is best-effort: a failure leaves the existing default branch. It never fails a publish. It is cached for 1h on a positive answer and 5m on a negative one. It therefore cannot hammer GitHub.
 

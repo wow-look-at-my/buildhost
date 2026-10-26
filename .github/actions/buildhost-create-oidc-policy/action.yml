@@ -47,4 +47,4 @@ runs:
         inputs: ${{ toJSON(inputs) }}
         script: |
           import { createOidcPolicy } from '../lib/resources';
-          await createOidcPolicy({ core, github, context, octokit, exec, inputs, steps });
+          await createOidcPolicy({ core, github, context, octokit, getOctokit, exec, inputs, steps });

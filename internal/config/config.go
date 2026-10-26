@@ -111,8 +111,10 @@ type Config struct {
 	GitHubAppID         string
 	GitHubAppPrivateKey string
 	GitHubToken         string
-	OTELEndpoint        string
-	SiteFetchDomains    []string
+	// SecretServerToken is the secret-server machine token the GitHub credential comes from.
+	SecretServerToken string
+	OTELEndpoint      string
+	SiteFetchDomains  []string
 
 	// SiteDomain is an optional dedicated domain for project static sites.
 	SiteDomain string
@@ -319,6 +321,9 @@ func Load() Config {
 	}
 	if v := strings.TrimSpace(os.Getenv("BUILDHOST_GITHUB_APP_PRIVATE_KEY")); v != "" {
 		c.GitHubAppPrivateKey = resolvePEM(v)
+	}
+	if v := strings.TrimSpace(os.Getenv("BUILDHOST_SECRET_SERVER_TOKEN")); v != "" {
+		c.SecretServerToken = v
 	}
 	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
 		c.OTELEndpoint = v
