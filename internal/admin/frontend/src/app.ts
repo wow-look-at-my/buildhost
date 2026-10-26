@@ -1288,7 +1288,7 @@ const renderRetention = function (d: RetentionData): void {
 
     html += '<div class="card"><h2>Deleted branches</h2>';
     html += '<p class="muted">Deletes every build on a non-default branch that GitHub confirms is gone from the project&#39;s repo. A branch, a tag, or an open pull request with that name keeps its builds. So does any branch GitHub does not answer for, and anything inside the recency guard. Site deployments are not included: a site stores a sanitized branch name, so GitHub cannot confirm it.</p>';
-    html += '<div id="deleted-branches"></div>';
+    html += '<div id="deleted-branches" style="margin-top:16px"></div>';
     html += '<div class="row-actions" style="margin-top:16px">';
     html += '<button class="btn" onclick="App.checkDeletedBranches(this)">Check branches on GitHub</button> ';
     html += '<button class="btn btn-danger" onclick="App.runDeletedBranches(this)">Delete builds of deleted branches</button>';
