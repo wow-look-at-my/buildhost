@@ -120,10 +120,7 @@ func TestSigninCallback_UserFetchUnreachable_NamesCause(t *testing.T) {
 	dead.Close()
 	origToken, origAPI := githubTokenURL, githubAPIBase
 	githubTokenURL, githubAPIBase = gh.URL, deadURL
-<<<<<<< HEAD
 	defer setDirectAPI(deadURL)()
-=======
->>>>>>> origin/master
 	defer func() { githubTokenURL, githubAPIBase = origToken, origAPI }()
 
 	d := openTestDB(t)
