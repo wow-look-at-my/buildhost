@@ -14,6 +14,7 @@ function fakeGlobals(over: { inputs?: Record<string, string>; steps?: unknown; c
 		setOutput: (k: string, v: string) => { outputs[k] = v; },
 	};
 	const octokit = {
+		auth: async () => ({ token: 'job-token' }),
 		rest: {
 			repos: {
 				createDeployment: async (a: any) => { calls.push({ name: 'createDeployment', args: a }); return over.createDeployment ? over.createDeployment(a) : { status: 201, data: { id: 7 } }; },
@@ -28,7 +29,9 @@ function fakeGlobals(over: { inputs?: Record<string, string>; steps?: unknown; c
 	};
 	const github = { repository: 'o/r', ref_name: 'main' };
 	const inputs = { server: 'https://pazer.build', project: '', deployment_environment: '', deployment_ref: '', git_commit: '', git_branch: '', ...(over.inputs ?? {}) };
-	return { g: globalsOf({ core, github, context, octokit, exec: {}, inputs, steps: over.steps ?? {} }), calls, failed, outputs };
+	const clients: { token: string; baseUrl?: string }[] = [];
+	const getOctokit = (token: string, opts: { baseUrl?: string }) => { clients.push({ token, baseUrl: opts.baseUrl }); return octokit; };
+	return { g: globalsOf({ core, github, context, octokit, getOctokit, exec: {}, inputs, steps: over.steps ?? {} }), calls, clients, failed, outputs };
 }
 
 const steps = (outcome: string) => ({ publish: { outcome, outputs: { deployment_url: 'https://pazer.build/projects/r' } }, deployment: { outputs: { deployment_id: '7' } } });
@@ -50,6 +53,7 @@ const steps = (outcome: string) => ({ publish: { outcome, outputs: { deployment_
 	assert.strictEqual(plain.calls[1].args.log_url, 'https://github.com/o/r/actions/runs/42');
 	assert.strictEqual(plain.outputs.deployment_id, '7');
 	assert.deepStrictEqual(plain.failed, []);
+	assert.deepStrictEqual(plain.clients, [{ token: 'job-token', baseUrl: 'https://github-state-mirror.pazer.io' }], 'the deployment goes through the mirror with the job token');
 
 	const named = fakeGlobals({ inputs: { project: 'p', deployment_ref: 'feature', git_branch: 'feature' } });
 	await createDeployment(named.g);
