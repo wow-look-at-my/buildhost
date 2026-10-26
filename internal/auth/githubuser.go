@@ -69,7 +69,8 @@ func (g *GitHubAuth) fetchLogin(ctx context.Context, token string) (string, erro
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("GET /user -> %d", resp.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
+		return "", fmt.Errorf("GET %s/user -> %d: %s", githubAPIBase, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	var user struct {
 		Login string `json:"login"`
