@@ -129,6 +129,7 @@ func TestSigninCallback_ValidLogin_SetsSession(t *testing.T) {
 	defer gh.Close()
 	origToken, origAPI := githubTokenURL, githubAPIBase
 	githubTokenURL, githubAPIBase = gh.URL, gh.URL
+	defer setDirectAPI(gh.URL)()
 	defer func() { githubTokenURL, githubAPIBase = origToken, origAPI }()
 
 	d := openTestDB(t)
@@ -183,6 +184,7 @@ func TestSigninCallback_ExchangeRequestContract(t *testing.T) {
 	defer gh.Close()
 	origToken, origAPI := githubTokenURL, githubAPIBase
 	githubTokenURL, githubAPIBase = gh.URL, gh.URL
+	defer setDirectAPI(gh.URL)()
 	defer func() { githubTokenURL, githubAPIBase = origToken, origAPI }()
 
 	d := openTestDB(t)

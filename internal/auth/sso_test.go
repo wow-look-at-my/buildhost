@@ -159,6 +159,7 @@ func TestSigninStart_InstantHandoff_RoundTrip(t *testing.T) {
 	defer gh.Close()
 	origAPI := githubAPIBase
 	githubAPIBase = gh.URL
+	defer setDirectAPI(gh.URL)()
 	defer func() { githubAPIBase = origAPI }()
 
 	d := openTestDB(t)
@@ -233,6 +234,7 @@ func TestSigninStart_InstantHandoff_DeadTokenFallsThroughToOAuth(t *testing.T) {
 	defer gh.Close()
 	origAPI := githubAPIBase
 	githubAPIBase = gh.URL
+	defer setDirectAPI(gh.URL)()
 	defer func() { githubAPIBase = origAPI }()
 
 	d := openTestDB(t)
@@ -272,6 +274,7 @@ func TestSigninCallback_SiteNext_MintsHandoff(t *testing.T) {
 	defer gh.Close()
 	origToken, origAPI := githubTokenURL, githubAPIBase
 	githubTokenURL, githubAPIBase = gh.URL, gh.URL
+	defer setDirectAPI(gh.URL)()
 	defer func() { githubTokenURL, githubAPIBase = origToken, origAPI }()
 
 	d := openTestDB(t)
@@ -448,6 +451,7 @@ func TestSSOHandoff_EndToEnd_AuthorizesSiteDomainRead(t *testing.T) {
 	defer gh.Close()
 	orig := githubAPIBase
 	githubAPIBase = gh.URL
+	defer setDirectAPI(gh.URL)()
 	defer func() { githubAPIBase = orig }()
 
 	d := openTestDB(t)

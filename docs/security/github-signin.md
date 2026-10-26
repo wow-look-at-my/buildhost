@@ -16,7 +16,7 @@ The browser is parked on the fixed callback URL. A reload there re-submits the c
 
 A nonce cookie that is missing or mismatched is another (a second sign-in tab overwrites it). The `retry` marker rides the **signed state** (`signinState.retried`). A restarted flow that fails again therefore renders the terminal page instead of a loop. The marker never relaxes any validation.
 
-Terminal failures render a small `signinFailedHTML` 4xx page. They are forged or corrupt state, GitHub's `?error=`, a failed code exchange, and a failed `GET /user`. The page carries one sanitized sentence and a "Try signing in again" link to `/__signin` with the verified next. Forged state leaves out the next. The page is **never a 5xx**. Cloudflare replaces an origin 5xx body with its own bare error page.
+Terminal failures render a small `signinFailedHTML` 4xx page. They are forged or corrupt state, GitHub's `?error=`, a failed code exchange, and a failed `GET /user`. The page carries one sentence and a "Try signing in again" link to `/__signin` with the verified next. Forged state leaves out the next. The page is **never a 5xx**. Cloudflare replaces an origin 5xx body with its own bare error page.
 
 That used to strand users at the callback with `error code: 502` and nothing in the logs. Validation semantics stay as they were: state MAC and expiry, the double-submit nonce, and `safeNextURL`.
 
@@ -29,6 +29,10 @@ It mints a buildhost-signed `bh_session` cookie that carries **login and the Git
 Each project records the GitHub `owner/repo` it was provisioned from. The field is `projects.github_repo`, set from the OIDC publish subject `repo:OWNER/NAME:...` through `WithOIDCRepo` on create. Each write re-syncs it. `Authenticate` verifies `bh_session` and puts `WithUser(login)` and `WithGitHubToken` on the request. `requireProject` then calls `userCanReadProject`. That grants read only when the signed-in user can reach the repo.
 
 The probe is `GET /repos/{owner}/{repo}` with the user's token, and access means a `200` (`canAccessRepo`, cached per login, repo and token-fingerprint for 5m).
+
+Both user-token calls (`GET /user` and this probe) go to github-state-mirror first. A `200` or `404` from the mirror is last. Any other answer, or no connection, sends the same call to `api.github.com` with the same token. It logs an error that names the mirror failure (`userTokenGet`). These calls spend the user's own quota. The fallback costs the org nothing.
+
+A failed `GET /user` page states the cause.
 
 `checkRepoAccess` classifies the probe multiple ways. A `200` is access. A `404` is a definite no, because GitHub 404s a repo the token cannot see. A `401` means **the session's embedded token itself is dead**, revoked or expired mid-session. On this fixed-host authenticated GET, rate limiting answers 403 or 429 and never 401. A 401 is therefore unambiguous.
 

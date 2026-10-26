@@ -58,21 +58,49 @@ func (g *GitHubAuth) exchangeCode(ctx context.Context, code, redirectURI string)
 	return body.AccessToken, nil
 }
 
-// fetchLogin returns the authenticated user's GitHub login (GET /user).
-func (g *GitHubAuth) fetchLogin(ctx context.Context, token string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", githubAPIBase+"/user", nil)
+// githubDirectAPIBase answers a user-token call only when the mirror gives no definite answer.
+var githubDirectAPIBase = "https://api.github.com"
+
+// userTokenGet sends GET path with the user's token to the mirror. On any
+// other result, the call goes to GitHub directly, and an error log names the
+// mirror failure. Sign-in must not stop when the mirror is down or cannot
+// reach GitHub.
+func (g *GitHubAuth) userTokenGet(ctx context.Context, token, path string) (*http.Response, error) {
+	resp, err := g.getWithToken(ctx, githubAPIBase+path, token)
+	if err == nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNotFound) {
+		return resp, nil
+	}
+	cause := ""
 	if err != nil {
-		return "", err
+		cause = err.Error()
+	} else {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
+		resp.Body.Close()
+		cause = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	slog.ErrorContext(ctx, "github-state-mirror failed a user-token call; sending it to GitHub directly", "path", path, "mirror", githubAPIBase, "cause", cause)
+	return g.getWithToken(ctx, githubDirectAPIBase+path, token)
+}
+
+func (g *GitHubAuth) getWithToken(ctx context.Context, u, token string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, err
 	}
 	setGitHubHeaders(req, token)
-	resp, err := g.http.Do(req)
+	return g.http.Do(req)
+}
+
+// fetchLogin returns the authenticated user's GitHub login (GET /user).
+func (g *GitHubAuth) fetchLogin(ctx context.Context, token string) (string, error) {
+	resp, err := g.userTokenGet(ctx, token, "/user")
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
-		return "", fmt.Errorf("GET %s/user -> %d: %s", githubAPIBase, resp.StatusCode, strings.TrimSpace(string(body)))
+		return "", fmt.Errorf("GET %s -> %d: %s", resp.Request.URL, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	var user struct {
 		Login string `json:"login"`
@@ -112,12 +140,7 @@ func (g *GitHubAuth) canAccessRepo(ctx context.Context, login, token, ownerRepo 
 
 // checkRepoAccess performs GET /repos/{owner}/{repo} and classifies the result
 func (g *GitHubAuth) checkRepoAccess(ctx context.Context, token, ownerRepo string) repoCheckResult {
-	req, err := http.NewRequestWithContext(ctx, "GET", githubAPIBase+"/repos/"+ownerRepo, nil)
-	if err != nil {
-		return repoCheckTransient
-	}
-	setGitHubHeaders(req, token)
-	resp, err := g.http.Do(req)
+	resp, err := g.userTokenGet(ctx, token, "/repos/"+ownerRepo)
 	if err != nil {
 		slog.WarnContext(ctx, "github repo-access check failed", "repo", ownerRepo, "err", err)
 		return repoCheckTransient

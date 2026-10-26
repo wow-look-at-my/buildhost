@@ -29,6 +29,7 @@ func TestCanAccessRepo(t *testing.T) {
 	defer gh.Close()
 	orig := githubAPIBase
 	githubAPIBase = gh.URL
+	defer setDirectAPI(gh.URL)()
 	defer func() { githubAPIBase = orig }()
 
 	g := NewGitHubAuth("cid", "secret")
@@ -62,6 +63,7 @@ func TestCanAccessRepo_TransientFailureNotCached(t *testing.T) {
 	defer gh.Close()
 	orig := githubAPIBase
 	githubAPIBase = gh.URL
+	defer setDirectAPI(gh.URL)()
 	defer func() { githubAPIBase = orig }()
 
 	g := NewGitHubAuth("cid", "secret")
@@ -92,6 +94,7 @@ func TestCanAccessRepo_NewTokenNotShadowedByStaleNegative(t *testing.T) {
 	defer gh.Close()
 	orig := githubAPIBase
 	githubAPIBase = gh.URL
+	defer setDirectAPI(gh.URL)()
 	defer func() { githubAPIBase = orig }()
 
 	g := NewGitHubAuth("cid", "secret")
@@ -145,6 +148,7 @@ func TestSessionCookie_RepoAccessGatesPrivateProject(t *testing.T) {
 	defer gh.Close()
 	orig := githubAPIBase
 	githubAPIBase = gh.URL
+	defer setDirectAPI(gh.URL)()
 	defer func() { githubAPIBase = orig }()
 
 	d := openTestDB(t)
@@ -182,6 +186,7 @@ func TestRequireProject_Browser_SignedInButForbidden_HTMLPage(t *testing.T) {
 	defer gh.Close()
 	orig := githubAPIBase
 	githubAPIBase = gh.URL
+	defer setDirectAPI(gh.URL)()
 	defer func() { githubAPIBase = orig }()
 
 	d := openTestDB(t)

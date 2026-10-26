@@ -86,6 +86,7 @@ func TestSigninCallback_UserFetchFailure_RecoverablePage(t *testing.T) {
 	defer gh.Close()
 	origToken, origAPI := githubTokenURL, githubAPIBase
 	githubTokenURL, githubAPIBase = gh.URL, gh.URL
+	defer setDirectAPI(gh.URL)()
 	defer func() { githubTokenURL, githubAPIBase = origToken, origAPI }()
 
 	d := openTestDB(t)
@@ -119,6 +120,7 @@ func TestSigninCallback_UserFetchUnreachable_NamesCause(t *testing.T) {
 	dead.Close()
 	origToken, origAPI := githubTokenURL, githubAPIBase
 	githubTokenURL, githubAPIBase = gh.URL, deadURL
+	defer setDirectAPI(deadURL)()
 	defer func() { githubTokenURL, githubAPIBase = origToken, origAPI }()
 
 	d := openTestDB(t)
@@ -177,6 +179,7 @@ func TestSigninCallback_NoFailurePathReturns5xx(t *testing.T) {
 	defer gh.Close()
 	origToken, origAPI := githubTokenURL, githubAPIBase
 	githubTokenURL, githubAPIBase = gh.URL, gh.URL
+	defer setDirectAPI(gh.URL)()
 	defer func() { githubTokenURL, githubAPIBase = origToken, origAPI }()
 
 	d := openTestDB(t)

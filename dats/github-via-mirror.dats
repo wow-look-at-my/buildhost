@@ -2,10 +2,12 @@
 # githubAPI(g) in the action libs. A direct call spends the org's quota and skips the cache.
 
 tests:
+	# The one exception: sign-in sends a user-token call to GitHub when the mirror gives no definite answer.
+	# That call spends the user's own quota, not the org's.
 	- desc: no shipped Go file calls api.github.com directly
 	  cmd: |
 		set -eu
-		if grep -rn --include='*.go' --exclude='*_test.go' 'https://api\.github\.com' cmd internal; then
+		if grep -rn --include='*.go' --exclude='*_test.go' 'https://api\.github\.com' cmd internal | grep -v '^internal/auth/githubuser.go:[0-9]*:var githubDirectAPIBase = "https://api.github.com"$'; then
 			echo "call auth.GitHubAPI instead"
 			exit 1
 		fi

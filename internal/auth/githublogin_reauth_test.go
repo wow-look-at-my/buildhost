@@ -32,6 +32,7 @@ func TestCanAccessRepo_TokenDead401_CachedPerToken(t *testing.T) {
 	defer gh.Close()
 	orig := githubAPIBase
 	githubAPIBase = gh.URL
+	defer setDirectAPI(gh.URL)()
 	defer func() { githubAPIBase = orig }()
 
 	g := NewGitHubAuth("cid", "secret")
@@ -66,6 +67,7 @@ func TestCanAccessRepo_TransientStatuses_NotTokenDead(t *testing.T) {
 			defer gh.Close()
 			orig := githubAPIBase
 			githubAPIBase = gh.URL
+			defer setDirectAPI(gh.URL)()
 			defer func() { githubAPIBase = orig }()
 
 			g := NewGitHubAuth("cid", "secret")
@@ -94,6 +96,7 @@ func TestRequireProject_Browser_SessionTokenDead_ClearsSessionAndReauths(t *test
 	defer gh.Close()
 	orig := githubAPIBase
 	githubAPIBase = gh.URL
+	defer setDirectAPI(gh.URL)()
 	defer func() { githubAPIBase = orig }()
 
 	d := openTestDB(t)
@@ -145,6 +148,7 @@ func TestRequireProject_Browser_NoAccessAndTransient_NoReauth(t *testing.T) {
 			defer gh.Close()
 			orig := githubAPIBase
 			githubAPIBase = gh.URL
+			defer setDirectAPI(gh.URL)()
 			defer func() { githubAPIBase = orig }()
 
 			d := openTestDB(t)
