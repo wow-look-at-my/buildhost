@@ -1,3 +1,5 @@
+// exchangeCode trades an authorization code for a user access token.
+
 package auth
 
 import (
