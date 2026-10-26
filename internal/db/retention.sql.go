@@ -404,6 +404,62 @@ func (q *Queries) ListMirrorBlobFiles(ctx context.Context) ([]ListMirrorBlobFile
 	return items, nil
 }
 
+const listNonDefaultBranchReleases = `-- name: ListNonDefaultBranchReleases :many
+SELECT r.id, r.project_id, p.name AS project_name, p.github_repo, p.default_branch,
+       r.git_branch, r.version
+FROM releases r
+JOIN projects p ON p.id = r.project_id
+WHERE r.git_branch != ''
+  AND r.git_branch != p.default_branch
+  AND p.github_repo != ''
+  AND r.created_at < datetime(?1)
+ORDER BY p.name, r.git_branch, r.version_num DESC
+`
+
+type ListNonDefaultBranchReleasesRow struct {
+	ID            int64  `json:"id"`
+	ProjectID     int64  `json:"project_id"`
+	ProjectName   string `json:"project_name"`
+	GithubRepo    string `json:"github_repo"`
+	DefaultBranch string `json:"default_branch"`
+	GitBranch     string `json:"git_branch"`
+	Version       string `json:"version"`
+}
+
+// Every release, published or not, on a branch other than its project's
+// default, older than the cutoff, for a project linked to a GitHub repo. The
+// deleted-branch sweep asks GitHub which of these branches are gone.
+func (q *Queries) ListNonDefaultBranchReleases(ctx context.Context, cutoff interface{}) ([]ListNonDefaultBranchReleasesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listNonDefaultBranchReleases, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListNonDefaultBranchReleasesRow{}
+	for rows.Next() {
+		var i ListNonDefaultBranchReleasesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.ProjectName,
+			&i.GithubRepo,
+			&i.DefaultBranch,
+			&i.GitBranch,
+			&i.Version,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOCIBlobFiles = `-- name: ListOCIBlobFiles :many
 SELECT obl.id, obl.project_id, p.name AS project_name, obl.storage_key,
        obl.media_type, obl.size, obl.is_manifest, obl.created_at
