@@ -10,6 +10,7 @@ import { pipeline } from 'node:stream/promises';
 import { createZstdCompress } from 'node:zlib';
 import { pack, unpack, fetchRunFile, runFilePath } from '../../.github/actions/lib/handoff.ts';
 import { HTTPError } from '../../.github/actions/lib/download.ts';
+import { fetchCli } from '../../.github/actions/lib/cli.ts';
 import { cacheTree, restoreKeyList, restoreCache, saveCache } from '../../.github/actions/lib/cache.ts';
 import { globalsOf, serve, stepCore, tempDir } from './fakes.ts';
 
@@ -240,6 +241,33 @@ async function corruptFails(tmp: string) {
 	await s.close();
 }
 
+async function cliDownloadSurvivesACutTransfer(tmp: string) {
+	const body = Buffer.from('the buildhost cli');
+	let requests = 0;
+	const s = await serve((_req, res) => {
+		requests++;
+		res.writeHead(200);
+		if (requests < 3) {
+			res.write(body.subarray(0, 4), () => setTimeout(() => res.destroy(), 100));
+			return;
+		}
+		res.end(body);
+	});
+	const file = path.join(tmp, 'cli');
+	await fetchCli(s.url, file, noWait);
+	assert.deepStrictEqual(fs.readFileSync(file), body, 'a cut CLI download is tried again until it completes');
+	assert.strictEqual(requests, 3);
+	await s.close();
+}
+
+async function cliDownloadMissIsFinal(tmp: string) {
+	let requests = 0;
+	const s = await serve((_req, res) => { requests++; res.writeHead(404); res.end('no such project'); });
+	await assert.rejects(fetchCli(s.url, path.join(tmp, 'cli-miss'), noWait), (e: unknown) => e instanceof HTTPError && e.status === 404);
+	assert.strictEqual(requests, 1, 'a 404 is not asked again');
+	await s.close();
+}
+
 async function run() {
 	const tmp = tempDir('handoff-', {});
 	await roundTrip(tmp);
@@ -250,6 +278,8 @@ async function run() {
 	await resumes(tmp);
 	await missIsFinal(tmp);
 	await corruptFails(tmp);
+	await cliDownloadSurvivesACutTransfer(tmp);
+	await cliDownloadMissIsFinal(tmp);
 	await cacheInputsAreChecked(tmp);
 	await cacheRestoreHitReadsTheMatchedScope(tmp);
 	await cacheMissLeavesPathAlone(tmp, 'false', 0);
