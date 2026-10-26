@@ -296,6 +296,22 @@ export interface RetentionPreview {
     releases: RetentionRelease[];
 }
 
+// One non-default branch the deleted-branch pass asked GitHub about
+// (GET/POST /api/retention/deleted-branches). Only "deleted" builds go.
+export interface RetentionBranch {
+    project_name: string;
+    github_repo: string;
+    branch: string;
+    state: "deleted" | "present" | "default" | "unknown";
+    error: string;
+    releases: number;
+}
+
+export interface DeletedBranchesReport extends RetentionPreview {
+    enforced: boolean;
+    branches: RetentionBranch[];
+}
+
 export interface RetentionData {
     keep_n: number;
     recency_hours: number;
