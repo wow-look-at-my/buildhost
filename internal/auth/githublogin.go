@@ -232,7 +232,8 @@ func handleSigninCallback(w http.ResponseWriter, r *http.Request) {
 	login, err := g.fetchLogin(r.Context(), token)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "github signin: fetching user identity failed", "err", err)
-		signinFailedHTML(w, r, http.StatusForbidden, "Could not read your GitHub identity.", st.next)
+		// The cause goes on the page: an operator reads it there without the server log.
+		signinFailedHTML(w, r, http.StatusForbidden, "Could not read your GitHub identity: "+err.Error(), st.next)
 		return
 	}
 	slog.InfoContext(r.Context(), "github signin: signed in", "login", login)
