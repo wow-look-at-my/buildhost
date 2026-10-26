@@ -1,3 +1,5 @@
+// apiRetention (GET /api/retention) returns the current policy plus a dry-run preview of exactly what enforcing now would evict.
+
 package admin
 
 import (

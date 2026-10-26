@@ -1,3 +1,5 @@
+// Config controls retention policy.
+
 package retention
 
 import (
