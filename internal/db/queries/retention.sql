@@ -196,3 +196,17 @@ SELECT r.id, r.project_id, p.name AS project_name, r.version, r.version_num,
 FROM releases r
 JOIN projects p ON p.id = r.project_id
 ORDER BY p.name, r.version_num;
+
+-- name: ListNonDefaultBranchReleases :many
+-- Every release, published or not, on a branch other than its project's
+-- default, older than the cutoff, for a project linked to a GitHub repo. The
+-- deleted-branch sweep asks GitHub which of these branches are gone.
+SELECT r.id, r.project_id, p.name AS project_name, p.github_repo, p.default_branch,
+       r.git_branch, r.version
+FROM releases r
+JOIN projects p ON p.id = r.project_id
+WHERE r.git_branch != ''
+  AND r.git_branch != p.default_branch
+  AND p.github_repo != ''
+  AND r.created_at < datetime(sqlc.arg(cutoff))
+ORDER BY p.name, r.git_branch, r.version_num DESC;
