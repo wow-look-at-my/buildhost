@@ -54,13 +54,6 @@ inputs:
     description: 'Newline-separated build args (KEY=value).'
     required: false
     default: ''
-  secrets:
-    description: >-
-      Newline-separated BuildKit secrets (id=value), passed to the build and
-      never stored in the image. A Dockerfile reads one with
-      `RUN --mount=type=secret,id=...`.
-    required: false
-    default: ''
   labels:
     description: 'Newline-separated image labels. OCI revision/source labels are added automatically.'
     required: false
@@ -215,6 +208,20 @@ runs:
           fi
         } >> "${GITHUB_OUTPUT}"
 
+    # Each secret the caller is entitled to becomes a BuildKit secret of the same name. Only a RUN step that mounts it reads it, and no layer holds it.
+    - name: Fetch the org secrets for the build
+      id: org-secrets
+      uses: wow-look-at-my/actions@secret-server#latest
+
+    - name: Name the org secrets for the build
+      id: build-secrets
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        steps: ${{ toJSON(steps) }}
+        script: |
+          const secrets: Record<string, string> = JSON.parse(steps['org-secrets'].outputs.secrets || '{}');
+          core.setOutput('envs', Object.keys(secrets).map((name) => `${name}=${name}`).join('\n'));
+
     # When any tag targets buildhost, the build EXPORTS an OCI layout instead of
     - name: Build and push
       id: build
@@ -228,7 +235,7 @@ runs:
         tags: ${{ steps.refs.outputs.tags }}
         labels: ${{ steps.refs.outputs.labels }}
         build-args: ${{ inputs.build-args }}
-        secrets: ${{ inputs.secrets }}
+        secret-envs: ${{ steps.build-secrets.outputs.envs }}
         cache-from: ${{ steps.refs.outputs.cache_from }}
         cache-to: ${{ steps.refs.outputs.cache_to }}
 
@@ -255,7 +262,7 @@ runs:
         tags: ${{ steps.refs.outputs.foreign_refs }}
         labels: ${{ steps.refs.outputs.labels }}
         build-args: ${{ inputs.build-args }}
-        secrets: ${{ inputs.secrets }}
+        secret-envs: ${{ steps.build-secrets.outputs.envs }}
         cache-from: ${{ steps.refs.outputs.cache_from }}
 
     # Publishing is not finished until the image can be PULLED back. This lives
