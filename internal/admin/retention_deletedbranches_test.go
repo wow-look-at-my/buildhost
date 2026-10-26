@@ -12,9 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
-type stubRefs struct{ present map[string]bool }
+type stubRefs struct{ present set.Set[string] }
 
 func (stubRefs) DefaultBranch(_ context.Context, repo string) (string, error) {
 	if repo != "o/app" {
@@ -24,7 +25,7 @@ func (stubRefs) DefaultBranch(_ context.Context, repo string) (string, error) {
 }
 
 func (s stubRefs) RefPresent(_ context.Context, _, name string) (bool, error) {
-	return s.present[name], nil
+	return s.present.Contains(name), nil
 }
 
 func TestAdminRetention_DeletedBranches(t *testing.T) {
@@ -33,7 +34,7 @@ func TestAdminRetention_DeletedBranches(t *testing.T) {
 	ctx := context.Background()
 
 	prev := refChecker
-	refChecker = stubRefs{present: map[string]bool{"live": true}}
+	refChecker = stubRefs{present: set.Of("live")}
 	t.Cleanup(func() { refChecker = prev })
 
 	p := &db.Project{Name: "app", Versioning: db.VersioningAuto, GithubRepo: "o/app"}

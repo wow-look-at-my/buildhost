@@ -10,13 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // fakeRefs is a RefChecker over a fixed set of refs per repo.
 type fakeRefs struct {
 	defaults map[string]string
-	present  map[string]bool // repo + ":" + name
-	broken   map[string]bool // repo + ":" + name answers an error
+	present  set.Set[string] // repo + ":" + name
+	broken   set.Set[string] // repo + ":" + name answers an error
 }
 
 func (f fakeRefs) DefaultBranch(_ context.Context, repo string) (string, error) {
@@ -27,10 +28,10 @@ func (f fakeRefs) DefaultBranch(_ context.Context, repo string) (string, error) 
 }
 
 func (f fakeRefs) RefPresent(_ context.Context, repo, name string) (bool, error) {
-	if f.broken[repo+":"+name] {
+	if f.broken.Contains(repo + ":" + name) {
 		return false, errors.New("GitHub answered 403")
 	}
-	return f.present[repo+":"+name], nil
+	return f.present.Contains(repo + ":" + name), nil
 }
 
 func linkedProject(t *testing.T, d *db.DB, name, repo, defaultBranch string) *db.Project {
@@ -66,8 +67,8 @@ func TestDeletedBranches_EvictsOnlyConfirmedGone(t *testing.T) {
 	rc := fakeRefs{
 		// GitHub reports trunk as the default although buildhost still stores main.
 		defaults: map[string]string{"o/app": "trunk"},
-		present:  map[string]bool{"o/app:live": true, "o/app:v1.0.0": true},
-		broken:   map[string]bool{"o/app:flaky": true},
+		present:  set.Of("o/app:live", "o/app:v1.0.0"),
+		broken:   set.Of("o/app:flaky"),
 	}
 
 	ret := New(d, store, Config{RecencyGuard: time.Hour, Enforce: true})
