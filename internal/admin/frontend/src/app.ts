@@ -18,6 +18,7 @@ import type {
     ProjectSummary,
     RegistriesData,
     ReleaseData,
+    DeletedBranchesReport,
     RetentionData,
     RetentionInventory,
     RunFile,
@@ -1285,6 +1286,14 @@ const renderRetention = function (d: RetentionData): void {
     html += '<p class="muted" style="margin-top:8px">' + h(INVENTORY_HINT) + "</p>";
     html += "</div>";
 
+    html += '<div class="card"><h2>Deleted branches</h2>';
+    html += '<p class="muted">Deletes every build on a non-default branch that GitHub confirms is gone from the project&#39;s repo. A branch, a tag, or an open pull request with that name keeps its builds. So does any branch GitHub does not answer for, and anything inside the recency guard. Site deployments are not included: a site stores a sanitized branch name, so GitHub cannot confirm it.</p>';
+    html += '<div id="deleted-branches" style="margin-top:16px"></div>';
+    html += '<div class="row-actions" style="margin-top:16px">';
+    html += '<button class="btn" onclick="App.checkDeletedBranches(this)">Check branches on GitHub</button> ';
+    html += '<button class="btn btn-danger" onclick="App.runDeletedBranches(this)">Delete builds of deleted branches</button>';
+    html += "</div></div>";
+
     document.getElementById("content")!.innerHTML = html;
 
     var form = document.getElementById("retention-form");
@@ -1372,6 +1381,63 @@ const runRetention = function (): void {
             pages.retention();
         });
     }).catch(function () { alert("Could not run GC (preview/demo mode has no backend)."); });
+};
+
+const BRANCH_STATE_BADGE: Record<string, string> = { deleted: "danger", present: "success", default: "info", unknown: "warning" };
+
+const renderDeletedBranches = function (rep: DeletedBranchesReport): void {
+    var el = document.getElementById("deleted-branches");
+    if (!el) return;
+    var branches = rep.branches || [];
+    var unknown = branches.filter(function (b) { return b.state === "unknown"; }).length;
+    var html = '<div class="stat-grid">';
+    html += '<div class="stat-card"><div class="stat-value">' + h(rep.release_count || 0) + '</div><div class="stat-label">' + (rep.enforced ? "Builds deleted" : "Builds to delete") + "</div></div>";
+    html += '<div class="stat-card"><div class="stat-value">' + h(humanSize(rep.reclaimable_bytes || 0)) + '</div><div class="stat-label">' + (rep.enforced ? "Freed" : "Reclaimable") + "</div></div>";
+    html += '<div class="stat-card"><div class="stat-value">' + h(branches.length) + '</div><div class="stat-label">Branches checked</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + h(unknown) + '</div><div class="stat-label">Not confirmed (kept)</div></div>';
+    html += "</div>";
+    html += '<table class="data-table"><thead><tr><th>Project</th><th>Repo</th><th>Branch</th><th>Builds</th><th>GitHub</th></tr></thead><tbody>';
+    if (branches.length === 0) {
+        html += '<tr><td colspan="5" class="empty">No non-default branch builds outside the recency guard</td></tr>';
+    }
+    for (var i = 0; i < branches.length; i++) {
+        var b = branches[i];
+        html += "<tr><td><a href='#/projects/" + h(b.project_name) + "'>" + h(b.project_name) + "</a></td>";
+        html += "<td>" + h(b.github_repo) + "</td><td>" + h(b.branch) + "</td><td>" + h(b.releases) + "</td>";
+        html += "<td>" + badge(BRANCH_STATE_BADGE[b.state] || "neutral", b.state) + (b.error ? ' <span class="muted">' + h(b.error) + "</span>" : "") + "</td></tr>";
+    }
+    html += "</tbody></table>";
+    el.innerHTML = html;
+};
+
+// deletedBranchesRequest never falls back to demo data on a failed request:
+// a fixture would read as what GitHub answered.
+const deletedBranchesRequest = function (btn: HTMLButtonElement, method: string, busy: string): void {
+    var orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = busy;
+    var req: Promise<DeletedBranchesReport> = demo
+        ? Promise.resolve().then(function () { return demoFetch<DeletedBranchesReport>("/retention/deleted-branches"); })
+        : fetch("/api/retention/deleted-branches", { method: method }).then(function (res) {
+            if (!res.ok) return res.text().then(function (t) { throw new Error(t || "HTTP " + res.status); });
+            return res.json();
+        });
+    req.then(renderDeletedBranches).catch(function (e: Error) {
+        alert("Error: " + (e && e.message ? e.message : "request failed"));
+    }).then(function () {
+        btn.textContent = orig;
+        btn.disabled = false;
+    });
+};
+
+const checkDeletedBranches = function (btn: HTMLButtonElement): void {
+    deletedBranchesRequest(btn, "GET", "Asking GitHub...");
+};
+
+const runDeletedBranches = function (btn: HTMLButtonElement): void {
+    if (demo) { alert("Could not delete (preview/demo mode has no backend)."); return; }
+    if (!confirm("Permanently delete every build on a non-default branch that GitHub confirms is gone, and reclaim its storage? This cannot be undone.")) return;
+    deletedBranchesRequest(btn, "POST", "Deleting...");
 };
 
 // --- Go module proxy ---
@@ -1799,6 +1865,19 @@ const demoData: Record<string, unknown> = {
                 { project_name: "cli-tool", project_id: 2, branch: "feature-x", version: "3", reason: "abandoned" }
             ]
         }
+    },
+    "/retention/deleted-branches": {
+        enforced: false, release_count: 2, keep_n_count: 0, abandoned_count: 0,
+        blobs: 2, blobs_retained: 0, reclaimable_bytes: 12582912,
+        releases: [
+            { project_name: "myapp", project_id: 1, branch: "feature-x", version: "5", reason: "deleted-branch" },
+            { project_name: "myapp", project_id: 1, branch: "feature-x", version: "4", reason: "deleted-branch" }
+        ],
+        branches: [
+            { project_name: "myapp", github_repo: "myorg/myapp", branch: "feature-x", state: "deleted", error: "", releases: 2 },
+            { project_name: "myapp", github_repo: "myorg/myapp", branch: "release", state: "present", error: "", releases: 3 },
+            { project_name: "cli-tool", github_repo: "myorg/cli-tool", branch: "fix-y", state: "unknown", error: "GitHub answered 403 for myorg/cli-tool/branches/fix-y", releases: 1 }
+        ]
     },
     "/retention/inventory": {
         generated_at: new Date().toISOString(),
@@ -2413,4 +2492,4 @@ window.addEventListener("unhandledrejection", function (ev) {
 });
 
 // Exported == reachable as App.x from the inline onclick handlers above.
-export { applyMerge, copyInventory, copyTempLink, copyText, deleteToken, downloadArtifact, downloadBackup, downloadInventory, editToken, pages, previewMerge, recheckGoproxy, reloadTokens, runRetention, saveToken, setVersioning, setVisibility };
+export { applyMerge, checkDeletedBranches, copyInventory, copyTempLink, copyText, deleteToken, downloadArtifact, downloadBackup, downloadInventory, editToken, pages, previewMerge, recheckGoproxy, reloadTokens, runDeletedBranches, runRetention, saveToken, setVersioning, setVisibility };
