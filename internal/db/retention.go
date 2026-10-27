@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // RetentionSettings is the UI-editable retention policy (stored as a single row).
@@ -77,20 +79,20 @@ func (d *DB) EvictReleases(ctx context.Context, releaseIDs []int64, commit bool)
 	}
 
 	// Each batch commits alone, so the writer connection is free between batches.
-	seen := make(map[string]struct{})
+	seen := set.New[string]()
 	for start := 0; start < len(releaseIDs); start += evictBatchSize {
 		batch := releaseIDs[start:min(start+evictBatchSize, len(releaseIDs))]
 		part, candidates, err := d.evictBatch(ctx, batch, true)
 		for key := range candidates {
-			seen[key] = struct{}{}
+			seen.Add(key)
 		}
 		freed = append(freed, part...)
 		if err != nil {
-			return freed, len(seen), err
+			return freed, seen.Len(), err
 		}
 	}
 	sort.Slice(freed, func(i, j int) bool { return freed[i].Key < freed[j].Key })
-	return freed, len(seen), nil
+	return freed, seen.Len(), nil
 }
 
 // evictBatchSize is how many releases one eviction transaction deletes.
