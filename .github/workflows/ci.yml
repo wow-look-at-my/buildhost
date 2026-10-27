@@ -34,37 +34,24 @@ jobs:
           if ! printf '%s\n' ':APE:M::\x4d\x5a\x71\x46\x70\x44\x3d\x27::/bin/sh:' | sudo tee "$dir/register" > /dev/null 2>&1; then
             echo "::warning::APE binfmt handler not registered; a bare exec of an APE still fails here"
           fi
-      # The published go-toolchain carries buildhost's release stamp after its embedded standard library's trailer. The go command reads that library from the end of the file, so the pipeline cannot run as the go command. Until a release carries the stamp ahead of the trailer, take the stamp out of the last bytes here. The dl endpoint is the same one buildhost-download fetches. This attempt carries the same bound and retries: an unbounded fetch lets one stalled connection kill the pipeline and skip every downstream job.
+      # The published go-toolchain carries buildhost's release stamp after its embedded standard library's trailer. The go command reads that library from the end of the file, so the pipeline cannot run as the go command. Until a release carries the stamp ahead of the trailer, take the stamp out of the last bytes here. The dl endpoint is the same one buildhost-download fetches. A stalled transfer is tried again every 5s until the job timeout, so a server outage does not fail the pipeline.
       - name: Take a go-toolchain the generators can run
         id: gotoolchain
         uses: wow-look-at-my/actions@typescript#latest
         with:
           script: |
+            const dl = require(${{ toJSON(format('{0}/.github/actions/lib/download.ts', github.workspace)) }}) as typeof import(${{ toJSON(format('{0}/.github/actions/lib/download', github.workspace)) }});
             const url = "https://dl.pazer.build/go-toolchain?os=linux&arch=amd64";
-            const stallMs = 60000;
-            const fetchOnce = async () => {
-              const controller = new AbortController();
-              const timer = setTimeout(() => controller.abort(new Error(`no bytes for ${stallMs / 1000}s`)), stallMs);
-              try {
-                const resp = await fetch(url, { signal: controller.signal });
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                return Buffer.from(await resp.arrayBuffer());
-              } finally {
-                clearTimeout(timer);
-              }
-            };
             let buf: Buffer | undefined;
-            let problem = "";
-            for (let attempt = 1; attempt <= 3; attempt++) {
+            for (let attempt = 1; !buf; attempt++) {
               try {
-                buf = await fetchOnce();
-                break;
+                buf = await dl.fetchBody(url, {});
               } catch (err) {
-                problem = err instanceof Error ? err.message : String(err);
-                core.warning(`downloading go-toolchain failed (attempt ${attempt}), retrying: ${problem}`);
+                if (err instanceof dl.HTTPError && err.status < 500) throw err;
+                core.warning(`downloading go-toolchain failed (attempt ${attempt}), trying again in 5s: ${err instanceof Error ? err.message : String(err)}`);
+                await new Promise((r) => setTimeout(r, 5000));
               }
             }
-            if (!buf) throw new Error(`downloading go-toolchain: ${problem}`);
             const magic = Buffer.from("BUILDHOST-STAMP1", "ascii");
             if (buf.length >= 84 && buf.subarray(buf.length - 16).equals(magic)) {
               const stamp = buf.length - 20 - buf.readUInt32BE(buf.length - 20);
