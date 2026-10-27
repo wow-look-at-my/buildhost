@@ -70,7 +70,7 @@ func TestGetDoesNotRetryAnAnswerThatWillNotChange(t *testing.T) {
 func TestGetGivesUpAtTheDeadlineAndSaysSo(t *testing.T) {
 	t.Serial()
 	fastRetries(t)
-	fetchDeadline = 100 * time.Millisecond
+	fetchDeadline = time.Second
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))
