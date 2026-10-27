@@ -32,7 +32,7 @@ The job's OIDC token, minted with the server URL as its audience, with `permissi
 
 ## Endpoints
 
-- `GET /api/v1/cache?repository=&key=&restore_keys=...` answers the entry a restore reads: `{"key", "ref", "size", "sha256", "exact", "scopes"}`. A miss is 404 with `scopes`. `default_branch` says why the default branch was not read, or that it is `master` because GitHub did not answer. The restore action reports a miss only for that answer. Any other status or body fails the step with the status and body.
+- `GET /api/v1/cache?repository=&key=&restore_keys=...` answers the entry a restore reads: `{"key", "ref", "size", "sha256", "exact", "scopes"}`. A miss is 404 with `scopes`. `default_branch` says why the default branch was not read, or that it is `master` because GitHub did not answer. The restore action reports a miss for that answer. An outage is a miss too. That outage is with a warning that names the error: a 5xx, 408 or 429, a dropped connection. A lookup slower than 60s, or a download that stalls past its retries or loses its entry. The run then builds without the cache, like `actions/cache`. `fail-on-cache-miss: true` fails on an outage as on any miss. A refusal (401, 403), any other status, or a body that is not the cache's answer fails the step with the status and body.
 - `GET /api/v1/cache/{key}?repository=&ref=` serves an entry. `ref` must be one the caller's restore reads. It honors `Range` and carries `X-Content-SHA256`.
 - `PUT /api/v1/cache/{key}?repository=` stores the body for the caller's ref, or a finished upload session through `upload_session`. It answers 201, or 409 when the ref holds the key.
 
