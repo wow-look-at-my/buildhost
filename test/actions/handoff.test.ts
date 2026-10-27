@@ -8,7 +8,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createZstdCompress } from 'node:zlib';
-import { pack, unpack, fetchRunFile, runFilePath } from '../../.github/actions/lib/handoff.ts';
+import { pack, unpack, fetchRunFile, runFilePath, RunFileRetryMs } from '../../.github/actions/lib/handoff.ts';
 import { HTTPError } from '../../.github/actions/lib/download.ts';
 import { fetchCli } from '../../.github/actions/lib/cli.ts';
 import { cacheTree, restoreKeyList, restoreCache, saveCache } from '../../.github/actions/lib/cache.ts';
@@ -236,8 +236,36 @@ async function missIsFinal(tmp: string) {
 }
 
 async function corruptFails(tmp: string) {
-	const s = await serve((_req, res) => { res.writeHead(200, { 'X-Content-SHA256': '0'.repeat(64) }); res.end('corrupt'); });
-	await assert.rejects(fetchRunFile(s.url, bearer, path.join(tmp, 'bad'), noWait, 2), /downloaded sha256 .* the server holds 0{64}/);
+	let calls = 0;
+	const s = await serve((_req, res) => { calls++; res.writeHead(200, { 'X-Content-SHA256': '0'.repeat(64) }); res.end('corrupt'); });
+	await assert.rejects(fetchRunFile(s.url, bearer, path.join(tmp, 'bad'), noWait), /downloaded sha256 .* the server holds 0{64}/);
+	assert.strictEqual(calls, 1, 'a whole download that does not match is what the server stores, so it is not asked again');
+	await s.close();
+}
+
+async function outlastsAnOutage(tmp: string) {
+	// The server cuts transfers, then sends nothing, for more tries than a capped retry allows.
+	const body = Buffer.from('the dependency cache');
+	const sum = createHash('sha256').update(body).digest('hex');
+	let requests = 0;
+	const waits: number[] = [];
+	const s = await serve((req, res) => {
+		requests++;
+		if (requests <= 4) {
+			res.writeHead(200, { 'X-Content-SHA256': sum });
+			res.write(body.subarray(0, 4), () => setTimeout(() => res.destroy(), 20));
+			return;
+		}
+		if (requests <= 8) return;
+		const range = req.headers.range ?? '';
+		res.writeHead(range ? 206 : 200, { 'X-Content-SHA256': sum });
+		res.end(body.subarray(range ? Number(/bytes=(\d+)-/.exec(range)![1]) : 0));
+	});
+	const file = path.join(tmp, 'outage');
+	await fetchRunFile(s.url, bearer, file, async (ms: number) => { waits.push(ms); }, 100);
+	assert.deepStrictEqual(fs.readFileSync(file), body, 'the download completes once the server answers again');
+	assert.strictEqual(requests, 9);
+	assert.deepStrictEqual(waits, Array(8).fill(RunFileRetryMs), 'every try waits the same fixed interval');
 	await s.close();
 }
 
@@ -278,6 +306,7 @@ async function run() {
 	await resumes(tmp);
 	await missIsFinal(tmp);
 	await corruptFails(tmp);
+	await outlastsAnOutage(tmp);
 	await cliDownloadSurvivesACutTransfer(tmp);
 	await cliDownloadMissIsFinal(tmp);
 	await cacheInputsAreChecked(tmp);
