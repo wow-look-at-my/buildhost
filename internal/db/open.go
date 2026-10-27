@@ -19,8 +19,8 @@ type DB struct {
 	rq     *Queries
 }
 
-// readConns bounds the readers that run beside the writer.
-const readConns = 4
+// readIdleConns is how many reader connections stay open between requests.
+const readIdleConns = 16
 
 func Open(path string) (*DB, error) {
 	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_time_format=sqlite"
@@ -41,7 +41,8 @@ func Open(path string) (*DB, error) {
 		sqlDB.Close()
 		return nil, fmt.Errorf("open read pool: %w", err)
 	}
-	readDB.SetMaxOpenConns(readConns)
+	readDB.SetMaxOpenConns(0)
+	readDB.SetMaxIdleConns(readIdleConns)
 	d.readDB, d.rq = readDB, New(readDB)
 	return d, nil
 }

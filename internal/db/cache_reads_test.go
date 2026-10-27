@@ -25,6 +25,21 @@ func TestConnectionsRunInWALWithABusyTimeout(t *testing.T) {
 	}
 }
 
+// Every concurrent reader gets its own connection, however many hold one at once.
+func TestEachConcurrentReaderGetsItsOwnConnection(t *testing.T) {
+	t.Serial()
+	d := openTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	const readers = 40
+	for i := range readers {
+		conn, err := d.readDB.Conn(ctx)
+		require.NoError(t, err, "reader %d waited for a free connection", i)
+		t.Cleanup(func() { conn.Close() })
+	}
+}
+
 // A cache lookup must answer while a write transaction holds the writer connection.
 func TestCacheLookupAnswersWhileAWriteTransactionIsOpen(t *testing.T) {
 	t.Serial()
