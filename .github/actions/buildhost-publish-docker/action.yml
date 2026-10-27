@@ -208,6 +208,11 @@ runs:
           fi
         } >> "${GITHUB_OUTPUT}"
 
+    # Each org secret becomes a BuildKit secret of the same id, read only by a RUN step that mounts it.
+    - name: Fetch the org secrets for the build
+      id: org-secrets
+      uses: wow-look-at-my/actions@secret-server#latest
+
     # When any tag targets buildhost, the build EXPORTS an OCI layout instead of
     - name: Build and push
       id: build
@@ -221,6 +226,7 @@ runs:
         tags: ${{ steps.refs.outputs.tags }}
         labels: ${{ steps.refs.outputs.labels }}
         build-args: ${{ inputs.build-args }}
+        secret-envs: ${{ steps.org-secrets.outputs.buildkit-secret-envs }}
         cache-from: ${{ steps.refs.outputs.cache_from }}
         cache-to: ${{ steps.refs.outputs.cache_to }}
 
@@ -247,6 +253,7 @@ runs:
         tags: ${{ steps.refs.outputs.foreign_refs }}
         labels: ${{ steps.refs.outputs.labels }}
         build-args: ${{ inputs.build-args }}
+        secret-envs: ${{ steps.org-secrets.outputs.buildkit-secret-envs }}
         cache-from: ${{ steps.refs.outputs.cache_from }}
 
     # Publishing is not finished until the image can be PULLED back. This lives
