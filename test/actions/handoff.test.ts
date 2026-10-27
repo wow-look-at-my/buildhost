@@ -164,7 +164,7 @@ async function cacheMissLeavesPathAlone(tmp: string, failOnMiss: string, wantFai
 	if (wantFailed) assert.match(out.failed[0], /GitHub did not answer/, 'the miss says why the default branch was not searched');
 }
 
-// A lookup the cache did not answer is a failure with its status and body, even with fail-on-cache-miss false.
+// A that is not the cache's own answer is a wrong server, not an outage: it fails with its status and body.
 async function cacheLookupFailureIsNoMiss(tmp: string, status: number, body: string) {
 	const s = await serve((_req, res) => { res.writeHead(status); res.end(body); });
 	const { core, out } = stepCore();
@@ -173,6 +173,32 @@ async function cacheLookupFailureIsNoMiss(tmp: string, status: number, body: str
 	assert.strictEqual(out.failed.length, 1, `HTTP ${status} fails the restore`);
 	assert.match(out.failed[0], new RegExp(`cache lookup failed \\(HTTP ${status}\\)`));
 	assert.doesNotMatch(out.failed[0], /No cache entry/);
+}
+
+// An outage of the server or the link is a miss with a warning, so the run builds without the cache. fail-on-cache-miss still fails it.
+async function cacheOutageIsAWarnedMiss(tmp: string, failOnMiss: string, lookupStatus: number, downloadStatus = 0) {
+	const s = await serve((req, res) => {
+		if (new URL(req.url ?? '', 'http://x').pathname === '/api/v1/cache') {
+			if (lookupStatus !== 200) { res.writeHead(lookupStatus); res.end('busy'); return; }
+			res.writeHead(200, { 'Content-Type': 'application/json' });
+			res.end(JSON.stringify({ key: 'k', ref: 'refs/heads/master', size: 1, exact: true, scopes: ['refs/heads/master'] }));
+			return;
+		}
+		res.writeHead(downloadStatus);
+		res.end('gone');
+	});
+	const { core, out } = stepCore();
+	const dst = path.join(tmp, `cache-outage-${failOnMiss}-${lookupStatus}-${downloadStatus}`);
+	await restoreCache(globalsOf({ core, inputs: cacheInputs(s.url, { path: dst, key: 'k', 'fail-on-cache-miss': failOnMiss }) }));
+	await s.close();
+	const what = `lookup ${lookupStatus}, download ${downloadStatus}, fail-on-cache-miss ${failOnMiss}`;
+	assert.strictEqual(out.outputs['cache-hit'], 'false', what);
+	assert.strictEqual(out.outputs['cache-matched-key'], '', what);
+	assert.strictEqual(fs.existsSync(dst), false, `an outage restores nothing (${what})`);
+	const said = failOnMiss === 'true' ? out.failed : out.warned;
+	assert.strictEqual(said.length, 1, `exactly one ${failOnMiss === 'true' ? 'failure' : 'warning'} (${what})`);
+	assert.match(said[0], /builds as a cache miss/, what);
+	if (failOnMiss === 'false') assert.deepStrictEqual(out.failed, [], `an outage never fails the step (${what})`);
 }
 
 async function cacheSaveOfAHeldKeySendsNothing(tmp: string) {
@@ -313,8 +339,10 @@ async function run() {
 	await cacheRestoreHitReadsTheMatchedScope(tmp);
 	await cacheMissLeavesPathAlone(tmp, 'false', 0);
 	await cacheMissLeavesPathAlone(tmp, 'true', 1);
-	await cacheLookupFailureIsNoMiss(tmp, 500, '{"error":"failed to read the cache"}');
-	await cacheLookupFailureIsNoMiss(tmp, 429, 'rate limited');
+	await cacheOutageIsAWarnedMiss(tmp, 'false', 500);
+	await cacheOutageIsAWarnedMiss(tmp, 'false', 429);
+	await cacheOutageIsAWarnedMiss(tmp, 'true', 503);
+	await cacheOutageIsAWarnedMiss(tmp, 'false', 200, 404);
 	await cacheLookupFailureIsNoMiss(tmp, 404, '404 page not found');
 	await cacheLookupFailureIsNoMiss(tmp, 404, '{"error":"not found"}');
 	await cacheSaveOfAHeldKeySendsNothing(tmp);
