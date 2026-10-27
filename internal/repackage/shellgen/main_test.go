@@ -36,6 +36,7 @@ func fastRetries(t *testing.T) {
 }
 
 func TestGetAsksAgainAfterARateLimitOrServerError(t *testing.T) {
+	t.Serial()
 	fastRetries(t)
 	s, asked := answers(t, "layer", http.StatusTooManyRequests, http.StatusBadGateway)
 	oldURL := registryURL
@@ -53,6 +54,7 @@ func TestGetAsksAgainAfterARateLimitOrServerError(t *testing.T) {
 }
 
 func TestGetDoesNotRetryAnAnswerThatWillNotChange(t *testing.T) {
+	t.Serial()
 	fastRetries(t)
 	s, asked := answers(t, "", http.StatusNotFound)
 	oldURL := registryURL
@@ -66,6 +68,7 @@ func TestGetDoesNotRetryAnAnswerThatWillNotChange(t *testing.T) {
 }
 
 func TestGetGivesUpAtTheDeadlineAndSaysSo(t *testing.T) {
+	t.Serial()
 	fastRetries(t)
 	fetchDeadline = 100 * time.Millisecond
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +88,7 @@ func TestGetGivesUpAtTheDeadlineAndSaysSo(t *testing.T) {
 }
 
 func TestFetchTokenAsksAgainAfterARateLimit(t *testing.T) {
+	t.Serial()
 	fastRetries(t)
 	s, asked := answers(t, `{"token":"abc"}`, http.StatusTooManyRequests)
 	oldURL := tokenURL
