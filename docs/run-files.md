@@ -9,7 +9,7 @@ A run file is not a release, a project or an artifact. Nothing outside its run r
 - A file belongs to one workflow run of one repository. The key is the repository id and `run_id` from the caller's verified OIDC token, plus a name. `run_attempt` is not part of the key, so a re-run of a failed job reads what the first try sent.
 - A put of a name the run holds replaces it. The blob it held is deleted when nothing else references it.
 - A get of a name the run does not hold answers 404, and the message names every file the run does hold.
-- A get honors `Range`, and carries the blob's sha256 as `X-Content-SHA256`. The action resumes a broken download from the bytes it has, then checks the whole file against that sum. A transport failure is tried again every few seconds until the job timeout, so a server outage costs only its length. A 401, 403 or 404, or a whole download whose sum differs, is final.
+- A get honors `Range`, and carries the blob's sha256 as `X-Content-SHA256`. The action resumes a broken download from the bytes it has, then checks the whole file against that sum. A transport failure is tried again every few seconds until the job timeout. A server outage costs only its length. A 401, 403 or 404, or a whole download whose sum differs, is last.
 - The body is stored as sent, without the storage layer's own compression, because the action compresses it already. That is also what makes it seekable for `Range`.
 
 ## Authentication
