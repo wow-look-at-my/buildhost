@@ -70,8 +70,17 @@ export function downloadURL(f: { server: string; project: string; version: strin
 	return `https://dl.${host}/${f.project}?${query}`;
 }
 
-/**buildhost-download: writes the artifact and outputs path and downloaded. It retries a registry blip a bounded
- * number of times. With required false, a miss is a warning and downloaded=false, so a caller can fall back. */
+/** How long download waits between tries of a transfer that stalled or failed on the server side. */
+export const RetryMs = 5_000;
+
+/** A 4xx answer is the registry's verdict, so a try again gets the same answer. */
+function isFinal(e: unknown): boolean {
+	return e instanceof HTTPError && e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429;
+}
+
+/**buildhost-download: writes the artifact and outputs path and downloaded. A stall, a network error or a 5xx gets
+ * a new try every RetryMs until the job timeout stops it. With required false, a miss is a warning and downloaded=false,
+ * so a caller can fall back. */
 export async function download(g: ActionGlobals, wait = (ms: number) => new Promise((r) => setTimeout(r, ms))): Promise<void> {
 	const { core, inputs } = g;
 	const project = String(inputs.project);
@@ -86,7 +95,7 @@ export async function download(g: ActionGlobals, wait = (ms: number) => new Prom
 	const destination: string = String(inputs.path) || path.join(process.env.RUNNER_TEMP!, project.split("/").pop()!);
 
 	let lastError = "";
-	for (let attempt = 1; attempt <= 3; attempt++) {
+	for (let attempt = 1; ; attempt++) {
 		try {
 			const auth = await bearer.bearer();
 			const body = await fetchBody(url, auth ? { Authorization: `Bearer ${auth}` } : {});
@@ -99,7 +108,9 @@ export async function download(g: ActionGlobals, wait = (ms: number) => new Prom
 			return;
 		} catch (e) {
 			lastError = e instanceof Error ? e.message : String(e);
-			if (attempt < 3) await wait(attempt * 1000);
+			if (isFinal(e)) break;
+			core.warning(`Try ${attempt} to download ${url} failed, next try in ${RetryMs / 1000}s: ${lastError}`);
+			await wait(RetryMs);
 		}
 	}
 
