@@ -23,7 +23,7 @@ type DB struct {
 const readConns = 4
 
 func Open(path string) (*DB, error) {
-	dsn := path + "?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=ON&_time_format=sqlite"
+	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_time_format=sqlite"
 	sqlDB, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)

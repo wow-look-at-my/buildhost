@@ -2,11 +2,28 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+// The driver reads only _pragma parameters, so this proves the settings are in force on both pools.
+func TestConnectionsRunInWALWithABusyTimeout(t *testing.T) {
+	t.Serial()
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	for name, pool := range map[string]*sql.DB{"writer": d.DB, "reader": d.readDB} {
+		var mode string
+		require.NoError(t, pool.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode), name)
+		require.Equal(t, "wal", mode, name)
+		var timeout int
+		require.NoError(t, pool.QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&timeout), name)
+		require.Equal(t, 5000, timeout, name)
+	}
+}
 
 // A cache lookup must answer while a write transaction holds the writer connection.
 func TestCacheLookupAnswersWhileAWriteTransactionIsOpen(t *testing.T) {
