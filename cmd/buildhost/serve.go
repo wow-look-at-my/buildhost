@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -43,6 +44,27 @@ var serveCmd = &cobra.Command{
 	Short: "Start the registry server",
 	RunE: func(_ *cobra.Command, _ []string) error {
 		cfg := config.Load()
+		if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+			return fmt.Errorf("create data dir: %w", err)
+		}
+		if err := os.MkdirAll(cfg.DataDir+"/tmp", 0o755); err != nil {
+			return fmt.Errorf("create temp dir: %w", err)
+		}
+
+		database, err := db.Open(cfg.DBPath)
+		if err != nil {
+			return fmt.Errorf("open database: %w", err)
+		}
+		defer database.Close()
+
+		// The dashboard's stored settings sit in front of the environment.
+		stored, err := database.ServerSettings(context.Background())
+		if err != nil {
+			return err
+		}
+		config.SetStored(stored)
+		cfg = config.Load()
+		config.MarkStarted()
 		// Refuse to start on a configuration that cannot serve correctly, rather
 		// than degrade silently at request time.
 		if err := cfg.Validate(); err != nil {
@@ -75,19 +97,6 @@ var serveCmd = &cobra.Command{
 			slog.Info("telemetry enabled", "endpoint", cfg.OTELEndpoint)
 		}
 
-		if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
-			return fmt.Errorf("create data dir: %w", err)
-		}
-		if err := os.MkdirAll(cfg.DataDir+"/tmp", 0o755); err != nil {
-			return fmt.Errorf("create temp dir: %w", err)
-		}
-
-		database, err := db.Open(cfg.DBPath)
-		if err != nil {
-			return fmt.Errorf("open database: %w", err)
-		}
-		defer database.Close()
-
 		if err := database.SeedRetentionSettings(context.Background(), cfg.RetentionKeepN, int(cfg.RetentionRecencyGuard.Hours())); err != nil {
 			return fmt.Errorf("seed retention settings: %w", err)
 		}
@@ -109,6 +118,8 @@ var serveCmd = &cobra.Command{
 
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer stop()
+		ctx, restart := context.WithCancelCause(ctx)
+		defer restart(nil)
 
 		errc := make(chan error, 2)
 
@@ -120,6 +131,7 @@ var serveCmd = &cobra.Command{
 				Date:    buildinfo.Date(),
 				RepoURL: "https://github.com/wow-look-at-my/buildhost",
 			})
+			adminDash.SetRestart(func() { restart(errRestartRequested) })
 			adminHTTP = adminDash.NewHTTPServer()
 			go func() {
 				slog.Info("starting admin dashboard", "addr", cfg.AdminListenAddr)
@@ -214,9 +226,15 @@ var serveCmd = &cobra.Command{
 			return shutdownErr
 		}
 		slog.Info("shutdown complete")
+		// A non-zero exit makes the container restart policy start the server again.
+		if errors.Is(context.Cause(ctx), errRestartRequested) {
+			return errRestartRequested
+		}
 		return nil
 	},
 }
+
+var errRestartRequested = errors.New("restart requested from the admin dashboard")
 
 // startRetentionSweeper launches the background GC sweeper when a positive
 // interval is configured. It is report-only unless BUILDHOST_RETENTION_ENFORCE is

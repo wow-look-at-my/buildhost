@@ -945,6 +945,24 @@ copy-btn {
 	color: var(--red);
 }
 
+.settings-table td {
+	vertical-align: top;
+}
+
+.settings-name {
+	width: 55%;
+}
+
+.settings-form {
+	display: flex;
+	gap: 6px;
+}
+
+.settings-form .form-input {
+	flex: 1;
+	min-width: 0;
+}
+
 .rf-dim {
 	color: var(--text-dim);
 }
