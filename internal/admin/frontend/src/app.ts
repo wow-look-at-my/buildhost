@@ -30,6 +30,8 @@ import type {
     MirrorData,
     MirrorTagRow,
     ServiceURLs,
+    SettingRow,
+    SettingsData,
     SidebarData,
     SitesData,
     StorageData,
@@ -126,6 +128,7 @@ var NAV_ITEMS = [
     { id: "run-files", href: "#/run-files", label: "Run Files", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm1 5a1 1 0 100 2h7a1 1 0 100-2H4z"/></svg>' },
     { id: "cache", href: "#/cache", label: "CI Cache", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 5c0-1.1 3.1-2 7-2s7 .9 7 2v10c0 1.1-3.1 2-7 2s-7-.9-7-2V5zm7 2c3.9 0 7-.9 7-2s-3.1-2-7-2-7 .9-7 2 3.1 2 7 2z"/></svg>' },
     { id: "github", href: "#/github", label: "GitHub", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/></svg>' },
+    { id: "settings", href: "#/settings", label: "Settings", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.53 1.53 0 01-2.29.95c-1.37-.84-2.94.73-2.1 2.1.54.89.07 2.04-.95 2.29-1.56.38-1.56 2.6 0 2.98a1.53 1.53 0 01.95 2.29c-.84 1.37.73 2.94 2.1 2.1a1.53 1.53 0 012.29.95c.38 1.56 2.6 1.56 2.98 0a1.53 1.53 0 012.29-.95c1.37.84 2.94-.73 2.1-2.1a1.53 1.53 0 01.95-2.29c1.56-.38 1.56-2.6 0-2.98a1.53 1.53 0 01-.95-2.29c.84-1.37-.73-2.94-2.1-2.1a1.53 1.53 0 01-2.29-.95zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>' },
     { id: "mirror", href: "#/mirror", label: "Registry Mirror", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 6a1 1 0 011-1h12a1 1 0 011 1v2H3V6zm0 4h14v4a1 1 0 01-1 1H4a1 1 0 01-1-1v-4zm3 2a1 1 0 100 2h2a1 1 0 100-2H6z"/></svg>' },
     { id: "oidc", href: "#/oidc", label: "OIDC Policies", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' },
     { id: "retention", href: "#/retention", label: "Retention", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>' },
@@ -1246,7 +1249,7 @@ const renderRetention = function (d: RetentionData): void {
     }
 
     var html = "<h1>Retention &amp; Garbage Collection</h1>";
-    html += '<div class="card"><p class="muted">Eviction keeps the newest <strong>keep-N</strong> published releases on each <code>(project, branch)</code> and sweeps abandoned uploads, then deletes any blob nothing else references. Each branch&#39;s latest published build, tagged images, pushed-docker builds, and anything inside the recency guard are <strong>never</strong> deleted. Nothing happens until you run it below (or enable the background sweeper via env).</p><p>' + sweeper + "</p></div>";
+    html += '<div class="card"><p class="muted">Eviction keeps the newest <strong>keep-N</strong> published releases on each <code>(project, branch)</code> and sweeps abandoned uploads, then deletes any blob nothing else references. Each branch&#39;s latest published build, tagged images, pushed-docker builds, and anything inside the recency guard are <strong>never</strong> deleted. Nothing happens until you run it below (or enable the background sweeper on the <a href=\"#/settings\">Settings</a> page).</p><p>' + sweeper + "</p></div>";
 
     html += '<div class="card"><h2>Policy</h2><form id="retention-form">';
     html += '<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end">';
@@ -1605,6 +1608,7 @@ const route = function (): void {
     else if (first === "mirror") { go(pages.mirror); }
     else if (first === "duplicates") { go(pages.duplicates); }
     else if (first === "github") { go(pages.github); }
+    else if (first === "settings") { go(pages.settings); }
     else { go(pages.dashboard); }
 };
 
@@ -1629,6 +1633,7 @@ const demoRunFiles = function (): RunFilesData {
         });
         return {
             repo: repo, run_id: id, created_at: ago(start), used_at: ago(end == null ? 0.05 : end + 0.1), checked_at: ago(0.06),
+            state: end == null ? "live" as const : "ended" as const,
             ended_at: end == null ? null : ago(end), expires_at: end == null ? null : ago(end - 24),
             bytes: bytes, reads: reads, files: list
         };
@@ -1854,6 +1859,16 @@ const demoData: Record<string, unknown> = {
         source: "token", env_credential: false, github_api: "https://github-state-mirror.pazer.io",
         secret_server: { configured: true, ok: true, applied: "token", at: "2026-10-25T14:00:00Z" }
     },
+    "/settings": {
+        can_restart: true,
+        settings: [
+            { name: "BUILDHOST_PRIMARY_DOMAIN", group: "Domains", kind: "string", default: "", description: "The apex that owns the web UI.", env_only: false, live: false, value: "example.com", set: true, source: "environment", restart_pending: false },
+            { name: "BUILDHOST_SECRET_SERVER_TOKEN", group: "GitHub", kind: "secret", default: "", description: "secret-server machine token.", env_only: false, live: false, value: "", set: true, source: "dashboard", restart_pending: true },
+            { name: "BUILDHOST_RUN_FILES_KEEP", group: "Janitors", kind: "duration", default: "24h", description: "How long a run's files outlive the run.", env_only: false, live: false, value: "", set: false, source: "default", restart_pending: false },
+            { name: "BUILDHOST_MAX_UPLOAD_SIZE", group: "Uploads", kind: "bytes", default: "2G", description: "Cap on one REST artifact upload.", env_only: false, live: true, value: "4G", set: true, source: "dashboard", restart_pending: false },
+            { name: "BUILDHOST_DATA_DIR", group: "Server", kind: "string", default: "./data", description: "Blob store and temp directory.", env_only: true, live: false, value: "/data", set: true, source: "environment", restart_pending: false }
+        ]
+    },
     "/retention": {
         keep_n: 10, recency_hours: 24, sweeper_enabled: false, sweeper_enforce: false,
         preview: {
@@ -2053,10 +2068,12 @@ const shortAgo = function (iso: string): string {
 const renderRunFiles = function (d: RunFilesData): void {
     const now = Date.now();
     let live = 0;
+    let unknown = 0;
     let files = 0;
     let reads = 0;
     for (const run of d.runs) {
-        if (!run.ended_at) live++;
+        if (run.state === "live") live++;
+        if (run.state === "unknown") unknown++;
         files += run.files.length;
         reads += run.reads;
     }
@@ -2066,7 +2083,7 @@ const renderRunFiles = function (d: RunFilesData): void {
         "They go " + h(keepHours) + "h after GitHub reports the run complete, sooner (oldest ended first) while free disk is under " +
         h(d.min_free_percent) + "%. A live run's files never go early.</p>";
     html += '<div class="rf-kpis">' +
-        kpi(d.runs.length, "runs") + kpi(live, "live") + kpi(files, "files") + kpi(humanSize(d.total_bytes), "stored") + kpi(reads, "reads") +
+        kpi(d.runs.length, "runs") + kpi(live, "live") + (unknown ? kpi(unknown, "status unknown") : "") + kpi(files, "files") + kpi(humanSize(d.total_bytes), "stored") + kpi(reads, "reads") +
         "</div>";
     html += janitorLine(d);
     html += '<section class="rf-panel"><h2>Disk</h2>' +
@@ -2157,7 +2174,9 @@ const fillTimeline = function (d: RunFilesData, now: number): void {
         if ("run_id" in data) {
             return runLabel(data) + "\n" + humanSize(data.bytes) + " in " + data.files.length + " file" + (data.files.length === 1 ? "" : "s") +
                 "\nstarted " + formatTime(data.created_at) +
-                (data.ended_at ? "\nended " + formatTime(data.ended_at) + "\ndeleted after " + formatTime(data.expires_at) : "\nlive, last used " + timeAgo(data.used_at));
+                (data.ended_at ? "\nended " + formatTime(data.ended_at) + "\ndeleted after " + formatTime(data.expires_at) :
+                    data.state === "unknown" ? "\nstatus unknown: " + data.check_error + "\ndeleted after " + formatTime(data.expires_at) :
+                    "\nlive, last used " + timeAgo(data.used_at));
         }
         return data.name + "\n" + humanSize(data.size) + ", sent " + formatTime(data.created_at) +
             "\nread " + data.reads + " time" + (data.reads === 1 ? "" : "s") + (data.read_at ? ", last " + timeAgo(data.read_at) : "");
@@ -2197,14 +2216,14 @@ const fillRunsTable = function (d: RunFilesData): void {
     };
     el.columns = [
         { key: "run", label: "Run", value: (r) => runLabel(r.run), render: link },
-        { key: "state", label: "State", value: (r) => (r.run.ended_at ? "ended" : "live") },
+        { key: "state", label: "State", value: (r) => r.run.state, render: stateNode },
         { key: "created", label: "Started", value: (r) => ms(r.run.created_at), render: (r) => when(r.run.created_at, "")(r), text: (r) => r.run.created_at },
         { key: "expires", label: "Deleted", value: (r) => ms(r.run.expires_at) || Infinity, render: (r) => untilNode(r.run.expires_at), text: (r) => r.run.expires_at ?? "" },
         { key: "files", label: "Files", value: (r) => r.run.files.length, align: "end" },
         { key: "bytes", label: "Size", value: (r) => r.run.bytes, render: (r) => humanSize(r.run.bytes), align: "end" },
         { key: "reads", label: "Reads", value: (r) => r.run.reads, align: "end" }
     ];
-    el.facets = [{ key: "state", label: "state", of: (r) => (r.run.ended_at ? "ended" : "live"), order: ["live", "ended"] }];
+    el.facets = [{ key: "state", label: "state", of: (r) => r.run.state, order: ["live", "unknown", "ended"] }];
     el.rowId = (r) => r.key;
     el.sort = { key: "created", dir: "desc" };
     el.detailFor = function (row: RunTableRow): Node {
@@ -2223,6 +2242,17 @@ const fillRunsTable = function (d: RunFilesData): void {
         return t;
     };
     el.rows = d.runs.map((run) => ({ key: run.repo + "#" + run.run_id, run: run }));
+};
+
+// An unknown run carries the status check error as its tooltip.
+const stateNode = function (r: RunTableRow): Node {
+    const span = document.createElement("span");
+    span.textContent = r.run.state;
+    if (r.run.state === "unknown") {
+        span.className = "rf-bad";
+        span.title = "GitHub could not report this run's status: " + (r.run.check_error ?? "");
+    }
+    return span;
 };
 
 const untilNode = function (iso: string | null): Node {
@@ -2244,11 +2274,12 @@ const fillBytesChart = function (d: RunFilesData): void {
     el.format = humanSize;
     el.series = [
         { key: "live", label: "live run", color: RF_RUN_COLOR },
+        { key: "unknown", label: "status unknown", color: "#f59e0b" },
         { key: "ended", label: "ended, kept", color: "#a78bfa" }
     ];
     el.rows = d.runs.slice().sort((a, b) => b.bytes - a.bytes).map(function (run) {
         const values: Record<string, number> = {};
-        values[run.ended_at ? "ended" : "live"] = run.bytes;
+        values[run.state] = run.bytes;
         return { id: run.repo + "#" + run.run_id, label: runLabel(run), values: values, href: runURL(run), detail: run.files.length + " files" };
     });
 };
@@ -2337,7 +2368,7 @@ pages.github = function (): void {
         if (d.env_credential) {
             html += "<p>The credential comes from the environment (<code>BUILDHOST_GITHUB_TOKEN</code> or <code>BUILDHOST_GITHUB_APP_ID</code>), which takes precedence over secret-server.</p>";
         } else if (!ss.configured) {
-            html += "<p>No <code>BUILDHOST_SECRET_SERVER_TOKEN</code> is set. Issue a secret-server machine token entitled to <code>BUILDHOST_GITHUB_TOKEN</code> (or <code>BUILDHOST_GITHUB_APP_ID</code> and <code>BUILDHOST_GITHUB_APP_PRIVATE_KEY</code>) and set it on the container.</p>";
+            html += '<p class="error">No <code>BUILDHOST_SECRET_SERVER_TOKEN</code> is set, so every GitHub call fails: run files never learn that their run ended. Issue a secret-server machine token entitled to <code>BUILDHOST_GITHUB_TOKEN</code> (or <code>BUILDHOST_GITHUB_APP_ID</code> and <code>BUILDHOST_GITHUB_APP_PRIVATE_KEY</code>) and save it on the <a href="#/settings">Settings</a> page.</p>';
         } else if (ss.ok) {
             html += "<p>secret-server vended the " + h(ss.applied === "app" ? "GitHub App" : "token") + " at " + h(ss.at || "") + ". buildhost fetches it again every 15 minutes.</p>";
         } else {
@@ -2346,6 +2377,84 @@ pages.github = function (): void {
         html += "</div>";
         document.getElementById("content")!.innerHTML = html;
     });
+};
+
+pages.settings = function (): void {
+    setTitle("Settings");
+    renderSidebar("settings");
+    apiFetch<SettingsData>("/settings").then(renderSettings);
+};
+
+const SETTING_SOURCE_BADGE: Record<string, string> = { dashboard: "badge-info", environment: "badge-neutral", default: "badge-neutral" };
+
+const renderSettings = function (d: SettingsData): void {
+    const pending = d.settings.filter((s) => s.restart_pending);
+    let html = "<h1>Settings</h1>";
+    html += '<div class="card"><p class="muted">A value saved here takes precedence over the environment variable of the same name. Clear it to fall back to the environment, then the default. ' +
+        "Upload limits apply at once. Every other setting applies when the server restarts. A change after which the server would not start is refused.</p>";
+    if (pending.length) {
+        html += '<p class="error">' + h(pending.length) + " saved setting" + (pending.length === 1 ? " waits" : "s wait") + " for a restart: " +
+            pending.map((s) => "<code>" + h(s.name) + "</code>").join(", ") + ".</p>";
+    }
+    if (d.can_restart) {
+        html += '<p><button class="btn btn-danger" id="settings-restart">Restart server</button> <span class="muted">Finishes in-flight requests, then exits so the container restart policy starts it again.</span></p>';
+    }
+    html += "</div>";
+    const groups: string[] = [];
+    for (const s of d.settings) if (groups.indexOf(s.group) < 0) groups.push(s.group);
+    for (const g of groups) {
+        html += '<div class="card"><h2>' + h(g) + '</h2><table class="data-table settings-table"><tbody>';
+        for (const s of d.settings.filter((x) => x.group === g)) html += settingRowHTML(s);
+        html += "</tbody></table></div>";
+    }
+    document.getElementById("content")!.innerHTML = html;
+    document.querySelectorAll<HTMLFormElement>("form[data-setting]").forEach(function (f) {
+        f.addEventListener("submit", function (e) {
+            e.preventDefault();
+            const input = f.querySelector("input") as HTMLInputElement;
+            saveSetting(f.dataset.setting!, "PUT", input.value);
+        });
+    });
+    document.querySelectorAll<HTMLButtonElement>("button[data-clear]").forEach(function (b) {
+        b.addEventListener("click", function () { saveSetting(b.dataset.clear!, "DELETE", null); });
+    });
+    document.getElementById("settings-restart")?.addEventListener("click", restartServer);
+};
+
+const settingRowHTML = function (s: SettingRow): string {
+    const secret = s.kind === "secret";
+    let html = '<tr><td class="settings-name"><code>' + h(s.name) + '</code> <span class="badge ' + (SETTING_SOURCE_BADGE[s.source] ?? "badge-neutral") + '">' + h(s.source) + "</span>";
+    if (s.restart_pending) html += ' <span class="badge badge-warning">restart pending</span>';
+    html += '<div class="muted">' + h(s.description) + (s.default ? " Default: <code>" + h(s.default) + "</code>." : "") + "</div></td><td>";
+    if (s.env_only) {
+        html += "<code>" + h(s.value || "(empty)") + '</code><div class="muted">Environment only.</div>';
+    } else {
+        const placeholder = secret ? (s.set ? "set (hidden)" : "not set") : s.default;
+        html += '<form class="settings-form" data-setting="' + h(s.name) + '"><input class="form-input" type="' + (secret ? "password" : "text") +
+            '" autocomplete="off" value="' + h(secret ? "" : s.value) + '" placeholder="' + h(placeholder) + '">' +
+            '<button class="btn btn-primary btn-sm" type="submit">Save</button>' +
+            (s.source === "dashboard" ? '<button class="btn btn-sm" type="button" data-clear="' + h(s.name) + '">Clear</button>' : "") + "</form>";
+    }
+    return html + "</td></tr>";
+};
+
+const saveSetting = function (name: string, method: "PUT" | "DELETE", value: string | null): void {
+    fetch("/api/settings/" + encodeURIComponent(name), {
+        method: method,
+        headers: { "Content-Type": "application/json" },
+        body: value === null ? undefined : JSON.stringify({ value: value })
+    }).then(function (res) {
+        if (!res.ok) return res.text().then(function (t) { alert("Not saved: " + t); });
+        return res.json().then(renderSettings);
+    }).catch(function () { alert("Could not save (preview/demo mode has no backend)."); });
+};
+
+const restartServer = function (): void {
+    if (!confirm("Restart buildhost? It finishes in-flight requests first.")) return;
+    fetch("/api/restart", { method: "POST" }).then(function (res) {
+        if (!res.ok) return res.text().then(function (t) { alert("Not restarted: " + t); });
+        alert("The server is restarting. Reload this page in a moment.");
+    }).catch(function () { alert("Could not restart (preview/demo mode has no backend)."); });
 };
 
 pages.mirror = function (): void {

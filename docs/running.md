@@ -9,6 +9,15 @@ buildhost bootstrap          # Creates initial admin token (only works when no t
 buildhost bootstrap --name admin-token
 ```
 
+## Settings
+
+The admin dashboard's **Settings** page lists every `BUILDHOST_*` variable, with where its value comes from. A value saved there lives in the `server_settings` table and takes precedence over the environment. Clear it to fall back to the environment, then the default. `config.Settings` is the list. A test fails when the server reads a variable it does not list.
+
+- The upload limits apply at once. Every other setting applies at the next start. The page marks such a setting "restart pending" and has a **Start server** button. The button shuts down gracefully and exits non-zero, so the container start policy starts the server again.
+- A change after which `Config.Validate` fails is refused. A server that cannot start takes the dashboard down with it.
+- `BUILDHOST_LISTEN_ADDR`, `BUILDHOST_ADMIN_LISTEN_ADDR`, `BUILDHOST_DATA_DIR` and `BUILDHOST_DB_PATH` stay environment only. The server needs them before the database opens, or a bad stored value locks the operator out of the dashboard.
+- A secret's value never goes back to the browser. It is stored in plain text in the database. A database backup holds it.
+
 ## Listing routes
 
 ```bash
@@ -37,7 +46,9 @@ Left unset while SITE_DOMAIN is set, a site-domain browser gets the plain JSON 4
 
 ## GitHub credential
 
-buildhost's own GitHub calls (run status for run files, default branches, collaborator checks, the Go proxy's GitHub source) go through github-state-mirror, which refuses a call with no token. The credential comes from secret-server (`https://secrets.pazer.io`). Set `BUILDHOST_SECRET_SERVER_TOKEN` to an `sst_` machine token entitled to `BUILDHOST_GITHUB_TOKEN`, or to both `BUILDHOST_GITHUB_APP_ID` and `BUILDHOST_GITHUB_APP_PRIVATE_KEY`. buildhost fetches them at startup and every few minutes. A rotated secret takes effect without a start. A failed fetch keeps the credential in use and retries every minute.
+buildhost's own GitHub calls (run status for run files, default branches, collaborator checks, the Go proxy's GitHub source) go through github-state-mirror, which refuses a call with no token. Without one, no run ever learns that it ended, and the Run Files page shows each such run as unknown. The credential comes from secret-server (`https://secrets.pazer.io`). Set `BUILDHOST_SECRET_SERVER_TOKEN` (on the Settings page or in the environment) to an `sst_` machine token entitled to `BUILDHOST_GITHUB_TOKEN`, or to both `BUILDHOST_GITHUB_APP_ID`. And `BUILDHOST_GITHUB_APP_PRIVATE_KEY`. buildhost fetches them at startup and every few minutes. A rotated secret takes effect without a start.
+
+A failed fetch keeps the credential in use and retries every minute.
 
 The same names set in the environment take precedence, and the machine token is then not used. The admin dashboard's **GitHub** page shows which credential is in use and what the last fetch did. `/healthz` reports it as `github_credential`.
 

@@ -6,12 +6,12 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
 )
@@ -32,7 +32,7 @@ type Config struct {
 func loadConfig(orgs []string) Config {
 	c := Config{Upstream: defaultUpstream}
 
-	if v := strings.TrimSpace(os.Getenv("BUILDHOST_GOPROXY_PRIVATE_PREFIXES")); v != "" {
+	if v := strings.TrimSpace(config.Getenv("BUILDHOST_GOPROXY_PRIVATE_PREFIXES")); v != "" {
 		for _, p := range strings.Split(v, ",") {
 			if p = strings.Trim(strings.TrimSpace(p), "/"); p != "" {
 				c.PrivatePrefixes = append(c.PrivatePrefixes, p)
@@ -45,10 +45,10 @@ func loadConfig(orgs []string) Config {
 			}
 		}
 	}
-	if v := strings.TrimSpace(os.Getenv("BUILDHOST_GOPROXY_UPSTREAM")); v != "" {
+	if v := strings.TrimSpace(config.Getenv("BUILDHOST_GOPROXY_UPSTREAM")); v != "" {
 		c.Upstream = strings.TrimSuffix(v, "/")
 	}
-	c.ReadinessModule = strings.TrimSpace(os.Getenv("BUILDHOST_GOPROXY_READINESS_MODULE"))
+	c.ReadinessModule = strings.TrimSpace(config.Getenv("BUILDHOST_GOPROXY_READINESS_MODULE"))
 	return c
 }
 
