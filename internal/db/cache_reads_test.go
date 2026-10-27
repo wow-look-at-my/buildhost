@@ -22,6 +22,9 @@ func TestConnectionsRunInWALWithABusyTimeout(t *testing.T) {
 		var timeout int
 		require.NoError(t, pool.QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&timeout), name)
 		require.Equal(t, 5000, timeout, name)
+		var foreignKeys int
+		require.NoError(t, pool.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&foreignKeys), name)
+		require.Equal(t, 1, foreignKeys, name)
 	}
 }
 
