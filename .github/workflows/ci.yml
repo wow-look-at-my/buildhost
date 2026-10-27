@@ -82,7 +82,6 @@ jobs:
             if (after === before) throw new Error(`${file} names no remote buildhost-publish ref, so this step no longer retargets the publish`);
             fs.writeFileSync(file, after);
             fs.appendFileSync(path.join(env.GITHUB_WORKSPACE!, ".git", "info", "exclude"), ".go-toolchain/\n");
-      # No fetch-cacerts step: the CA bundle is a generate directive The org module proxy is gone, so modules come direct with sumdb off. go-toolchain publishes through this repo's publish action, so a release that action broke must not block its repair.
       - uses: ./.go-toolchain
         env:
           GOPROXY: direct
@@ -125,7 +124,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      # PR routes.
+      # PR routes: from the go-build hand-off the build job already produced for this ref. go-toolchain saves build/ via cache-upload (run-keyed cache entry) instead of a GHA artifact. It must be restored with the matching cache-download action, not actions/download-artifact.
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
           name: go-build-build.broot
@@ -691,7 +690,7 @@ jobs:
               > "${{ runner.temp }}/buildhost-release-hostile.toml"
             ./buildhost publish --manifest "${{ runner.temp }}/buildhost-release-hostile.toml"
           done
-      # Each suite runs the documented flow in its own setup and then asserts
+      # Each suite runs the documented flow in its own setup and then asserts what it produced: what brew did to a real file. --no-sandbox because brew's prefix is outside any sandbox and the point is what brew did to a real file.
       - env:
           BREW_HOST: brew.localhost:18080
         run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/homebrew-public.dats

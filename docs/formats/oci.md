@@ -58,6 +58,14 @@ A shebang script is execable, so every spelling reaches the binary and no such w
 
 `test/dats/synthesized-ape-image.dats` starts a real synthesized APE image. It also starts one under each entrypoint spelling an older container can carry.
 
+### APE artifacts
+
+An APE (Actually Portable Executable) is not a native Linux ELF. The kernel cannot exec it inside a scratch/distroless container, so a direct entrypoint dies with `exec format error`. But an APE's header is itself a valid shell script. It runs when exec'd through a shell -- its own prologue assimilates a native ELF on first run (the container's writable overlayfs absorbs that self-rewrite). For an APE artifact the image therefore carries a third layer with a **static busybox at `/bin/busybox` plus a symlink for every applet it holds**. The entrypoint becomes `["/bin/sh", "/<project>"]`.
+
+`internal/repackage/shellgen` fetches those busybox binaries at build time. It pulls a pinned `library/busybox:musl` manifest for each linux arch. It writes the binary and its applet list into the tree for `go:embed`. It runs from a `//go:generate` directive, the same gate the CA bundle uses. The built layer is memoized per arch, like the essentials base layer.
+
+The index advertises **only `linux/*` children** (`ociLinuxArtifacts` in `internal/oci/manifest.go`). Docker can only run linux images. A `darwin/*` or `windows/*` child -- both of which an APE genuinely covers -- is not a runnable container image. Advertising one is a broken promise: Docker selects it and the container cannot start (`exec format error` / immediate exit). A release whose artifacts cover no linux platform serves 404 rather than an unpullable image.
+
 ## Push side
 
 The push side is `push.go`, `upload.go` and `putmanifest.go`. It accepts a monolithic or chunked blob upload, streamed to `DataDir/tmp/oci-uploads`. It accepts a manifest PUT and an index PUT. It records a `kind=docker` artifact.

@@ -1,0 +1,217 @@
+package repackage
+
+import (
+	"archive/tar"
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"strings"
+	"testing"
+
+	"github.com/klauspost/compress/zstd"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/buildhost/internal/db"
+)
+
+// apeELFHeaderFor returns the ELF64 header an APE trampoline stages for machine.
+func apeELFHeaderFor(machine uint16) []byte {
+	header := make([]byte, apeELFHeaderSize)
+	copy(header, "\x7fELF")
+	header[4] = 2  // ELFCLASS64
+	header[5] = 1  // ELFDATA2LSB
+	header[6] = 1  // EV_CURRENT
+	header[16] = 2 // ET_EXEC
+	header[18] = byte(machine)
+	header[19] = byte(machine >> 8)
+	header[20] = 1 // EV_CURRENT
+	return header
+}
+
+// apeOctalEscape spells every byte as a printf octal escape, so a shell
+// prologue can carry binary header bytes as text.
+func apeOctalEscape(b []byte) string {
+	var out strings.Builder
+	for _, c := range b {
+		out.WriteByte('\\')
+		out.WriteByte('0' + (c>>6)&7)
+		out.WriteByte('0' + (c>>3)&7)
+		out.WriteByte('0' + c&7)
+	}
+	return out.String()
+}
+
+// apeOCIFixture is a file shaped like a Cosmopolitan APE. It carries the
+// MZqFpD shell prologue, the trampoline printf that stages an ELF64 header per
+// platform, and a script body a shell can run.
+func apeOCIFixture() []byte {
+	var b strings.Builder
+	b.WriteString("MZqFpD='ape-oci-fixture'\n")
+	// A real trampoline carries a header for every platform it runs on.
+	for _, machine := range []uint16{62, 183} { // EM_X86_64, EM_AARCH64
+		b.WriteString("printf '" + apeOctalEscape(apeELFHeaderFor(machine)) + "' >&7\n")
+	}
+	b.WriteString("echo ape-oci-ok\n")
+	return []byte(b.String())
+}
+
+// buildOCI runs the OCI repackage for one platform and returns the manifest
+// bytes plus a lookup into the store by digest.
+func buildOCI(t *testing.T, exeFormat string, os db.OS, arch db.Arch) ([]byte, func(digest string) []byte) {
+	t.Helper()
+	d := openTestDB(t)
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	payload := apeOCIFixture()
+	if exeFormat == "" {
+		payload = testBinary
+	}
+	key, size, err := store.Put(ctx, strings.NewReader(string(payload)))
+	require.NoError(t, err)
+	a := &db.Artifact{
+		ReleaseID: 1, OS: os, Arch: arch, Kind: db.KindBinary,
+		StorageKey: key, Size: size, SHA256: key, ExeFormat: exeFormat,
+	}
+	require.NoError(t, d.CreateArtifact(ctx, a))
+
+	input := makeInput()
+	input.Artifact = *a
+	input.Reader = bytes.NewReader(payload)
+	input.Size = size
+
+	out, err := (&OCI{Store: store, DB: d}).Repackage(ctx, input)
+	require.NoError(t, err)
+	manifest, err := io.ReadAll(out.Reader)
+	require.NoError(t, err)
+	require.NoError(t, out.Reader.Close())
+
+	fetch := func(digest string) []byte {
+		key := strings.TrimPrefix(digest, "sha256:")
+		rc, _, err := store.Get(ctx, key)
+		require.NoError(t, err)
+		defer rc.Close()
+		blob, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		return blob
+	}
+	return manifest, fetch
+}
+
+// An APE is not a native Linux ELF. A scratch container cannot exec it
+// directly. The synthesized image ships a static /bin/sh and an entrypoint
+// launcher that starts with `#!/bin/sh`, so the image runs rather than
+// crash-looping.
+func TestOCIRepackage_APEImageIsRunnable(t *testing.T) {
+	manifest, fetch := buildOCI(t, "ape", db.OSLinux, db.ArchAMD64)
+
+	var man struct {
+		Config struct {
+			Digest string `json:"digest"`
+		} `json:"config"`
+		Layers []struct {
+			Digest string `json:"digest"`
+		} `json:"layers"`
+	}
+	require.NoError(t, json.Unmarshal(manifest, &man))
+	require.Len(t, man.Layers, 2, "an APE image carries the base, shell included, and the binary")
+
+	// The base layer carries the busybox shell: /bin/busybox plus the applet symlinks.
+	base := fetch(man.Layers[0].Digest)
+	zr, err := zstd.NewReader(bytes.NewReader(base))
+	require.NoError(t, err)
+	defer zr.Close()
+	tr := tar.NewReader(zr)
+
+	binSize := int64(0)
+	entries := map[string]tar.Header{}
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		entries[hdr.Name] = *hdr
+		if hdr.Name == "bin/busybox" {
+			magic := make([]byte, 6)
+			_, err := io.ReadFull(tr, magic)
+			require.NoError(t, err)
+			assert.Equal(t, "\x7fELF", string(magic[:4]), "busybox must be a native Linux ELF")
+			assert.Equal(t, byte(2), magic[4], "64-bit ELF class")
+			assert.Equal(t, byte(1), magic[5], "little-endian ELF data encoding")
+			n, err := io.Copy(io.Discard, tr)
+			require.NoError(t, err)
+			binSize = n + int64(len(magic))
+		}
+	}
+
+	binHdr, ok := entries["bin/busybox"]
+	require.True(t, ok, "the base layer must contain /bin/busybox")
+	assert.Equal(t, byte(tar.TypeReg), binHdr.Typeflag)
+	assert.Equal(t, int64(0o755), binHdr.Mode)
+	assert.Greater(t, binSize, int64(100*1024), "the busybox binary is ~1MB, not a stub")
+
+	listed, err := shellFS.ReadFile("shell/applets-amd64")
+	require.NoError(t, err)
+	for _, name := range strings.Fields(string(listed)) {
+		if name == "busybox" {
+			continue
+		}
+		h, ok := entries["bin/"+name]
+		require.True(t, ok, "the shell layer must provide /bin/%s", name)
+		assert.Equal(t, byte(tar.TypeSymlink), h.Typeflag, "bin/%s", name)
+		assert.Equal(t, "busybox", h.Linkname, "bin/%s must point at the busybox binary", name)
+	}
+
+	// The entrypoint is the launcher, whose interpreter is the shipped shell.
+	cfg := fetch(man.Config.Digest)
+	var config struct {
+		Rootfs struct {
+			DiffIDs []string `json:"diff_ids"`
+		} `json:"rootfs"`
+		Config struct {
+			Entrypoint []string `json:"Entrypoint"`
+		} `json:"config"`
+	}
+	require.NoError(t, json.Unmarshal(cfg, &config))
+	assert.Equal(t, []string{"/testapp"}, config.Config.Entrypoint)
+	files := readLayerFiles(t, fetch(man.Layers[1].Digest))
+	assert.True(t, strings.HasPrefix(string(files["testapp"]), "#!/bin/sh\n"),
+		"the entrypoint launcher must start with the shipped shell")
+	require.Len(t, config.Rootfs.DiffIDs, 2, "base + binary")
+}
+
+// A non-APE binary is a native ELF and keeps today's lean image: direct exec,
+// no shell layer.
+func TestOCIRepackage_NonAPEImageUnchanged(t *testing.T) {
+	manifest, _ := buildOCI(t, "", db.OSLinux, db.ArchAMD64)
+
+	var man struct {
+		Config struct {
+			Digest string `json:"digest"`
+		} `json:"config"`
+		Layers []struct {
+			Digest string `json:"digest"`
+		} `json:"layers"`
+	}
+	require.NoError(t, json.Unmarshal(manifest, &man))
+	require.Len(t, man.Layers, 2)
+}
+
+// The shell layer is built from pinned inputs in a fixed order. Repeated
+// generation is byte-identical (the pull path re-hashes everything), and each
+// target arch gets its own busybox, not whichever was built first.
+func TestBusyboxLayerDeterministicPerArch(t *testing.T) {
+	amd1, diff1, err := ShellLayer(db.ArchAMD64)
+	require.NoError(t, err)
+	amd2, diff2, err := ShellLayer(db.ArchAMD64)
+	require.NoError(t, err)
+	arm, diffArm, err := ShellLayer(db.ArchARM64)
+	require.NoError(t, err)
+
+	assert.Equal(t, amd1, amd2)
+	assert.Equal(t, diff1, diff2)
+	assert.NotEqual(t, diff1, diffArm, "each arch embeds its own busybox binary")
+	assert.NotEqual(t, amd1, arm)
+}
