@@ -40,7 +40,7 @@ func UploadSessionTTL() time.Duration {
 // envDuration parses a Go duration (e.g. "1h", "30m", "720h") from an env var,
 // falling back to def on empty or invalid input.
 func envDuration(name string, def time.Duration) time.Duration {
-	v := strings.TrimSpace(os.Getenv(name))
+	v := strings.TrimSpace(Getenv(name))
 	if v == "" {
 		return def
 	}
@@ -54,7 +54,7 @@ func envDuration(name string, def time.Duration) time.Duration {
 // envBytes parses a byte size from an env var, accepting a plain integer or an
 // integer with a single-letter binary suffix (K, M, G, T).
 func envBytes(name string, def int64) int64 {
-	v := strings.TrimSpace(os.Getenv(name))
+	v := strings.TrimSpace(Getenv(name))
 	if v == "" {
 		return def
 	}
@@ -214,7 +214,7 @@ func (c *Config) loadJanitors() {
 
 // strictDuration sets dst from the variable name when it is set.
 func strictDuration(name, example string, dst *time.Duration) error {
-	v := strings.TrimSpace(os.Getenv(name))
+	v := strings.TrimSpace(Getenv(name))
 	if v == "" {
 		return nil
 	}
@@ -228,7 +228,7 @@ func strictDuration(name, example string, dst *time.Duration) error {
 
 // strictPercent sets dst from the variable name when it is set.
 func strictPercent(name string, dst *float64) error {
-	v := strings.TrimSpace(os.Getenv(name))
+	v := strings.TrimSpace(Getenv(name))
 	if v == "" {
 		return nil
 	}
@@ -262,23 +262,23 @@ func Load() Config {
 		MirrorMinFreePercent:   15,
 	}
 	c.loadJanitors()
-	if v := os.Getenv("BUILDHOST_LISTEN_ADDR"); v != "" {
+	if v := Getenv("BUILDHOST_LISTEN_ADDR"); v != "" {
 		c.ListenAddr = v
 	}
-	if v := os.Getenv("BUILDHOST_DATA_DIR"); v != "" {
+	if v := Getenv("BUILDHOST_DATA_DIR"); v != "" {
 		c.DataDir = v
 	}
-	if v := os.Getenv("BUILDHOST_DB_PATH"); v != "" {
+	if v := Getenv("BUILDHOST_DB_PATH"); v != "" {
 		c.DBPath = v
 	}
 	// Empty is a decision, not an absence: serve reads it as "no admin server".
-	if v, ok := os.LookupEnv("BUILDHOST_ADMIN_LISTEN_ADDR"); ok {
+	if v, ok := LookupEnv("BUILDHOST_ADMIN_LISTEN_ADDR"); ok {
 		c.AdminListenAddr = v
 	}
-	if v := os.Getenv("BUILDHOST_STORAGE_COMPRESS"); v == "false" || v == "0" {
+	if v := Getenv("BUILDHOST_STORAGE_COMPRESS"); v == "false" || v == "0" {
 		c.StorageCompress = false
 	}
-	if v := os.Getenv("BUILDHOST_OIDC_ISSUERS"); v != "" {
+	if v := Getenv("BUILDHOST_OIDC_ISSUERS"); v != "" {
 		c.OIDCIssuers = nil
 		for _, iss := range strings.Split(v, ",") {
 			if iss = strings.TrimSpace(iss); iss != "" {
@@ -286,14 +286,14 @@ func Load() Config {
 			}
 		}
 	}
-	if v := os.Getenv("BUILDHOST_OIDC_ORGS"); v != "" {
+	if v := Getenv("BUILDHOST_OIDC_ORGS"); v != "" {
 		for _, org := range strings.Split(v, ",") {
 			if org = strings.TrimSpace(org); org != "" {
 				c.OIDCOrgs = append(c.OIDCOrgs, org)
 			}
 		}
 	}
-	if v := os.Getenv("BUILDHOST_OIDC_EVENTS"); v != "" {
+	if v := Getenv("BUILDHOST_OIDC_EVENTS"); v != "" {
 		for _, ev := range strings.Split(v, ",") {
 			if ev = strings.TrimSpace(ev); ev != "" {
 				c.OIDCEvents = append(c.OIDCEvents, ev)
@@ -304,54 +304,54 @@ func Load() Config {
 		// workflow_dispatch is in the default set because GitHub only lets users
 		c.OIDCEvents = []string{"push", "pull_request", "workflow_dispatch"}
 	}
-	if v := os.Getenv("BUILDHOST_GITHUB_WEBHOOK_SECRET"); v != "" {
+	if v := Getenv("BUILDHOST_GITHUB_WEBHOOK_SECRET"); v != "" {
 		c.GitHubWebhookSecret = v
 	}
-	if v := os.Getenv("BUILDHOST_GITHUB_CLIENT_ID"); v != "" {
+	if v := Getenv("BUILDHOST_GITHUB_CLIENT_ID"); v != "" {
 		c.GitHubClientID = v
 	}
-	if v := os.Getenv("BUILDHOST_GITHUB_CLIENT_SECRET"); v != "" {
+	if v := Getenv("BUILDHOST_GITHUB_CLIENT_SECRET"); v != "" {
 		c.GitHubClientSecret = v
 	}
-	if v := strings.TrimSpace(os.Getenv("BUILDHOST_GITHUB_TOKEN")); v != "" {
+	if v := strings.TrimSpace(Getenv("BUILDHOST_GITHUB_TOKEN")); v != "" {
 		c.GitHubToken = v
 	}
-	if v := strings.TrimSpace(os.Getenv("BUILDHOST_GITHUB_APP_ID")); v != "" {
+	if v := strings.TrimSpace(Getenv("BUILDHOST_GITHUB_APP_ID")); v != "" {
 		c.GitHubAppID = v
 	}
-	if v := strings.TrimSpace(os.Getenv("BUILDHOST_GITHUB_APP_PRIVATE_KEY")); v != "" {
+	if v := strings.TrimSpace(Getenv("BUILDHOST_GITHUB_APP_PRIVATE_KEY")); v != "" {
 		c.GitHubAppPrivateKey = resolvePEM(v)
 	}
-	if v := strings.TrimSpace(os.Getenv("BUILDHOST_SECRET_SERVER_TOKEN")); v != "" {
+	if v := strings.TrimSpace(Getenv("BUILDHOST_SECRET_SERVER_TOKEN")); v != "" {
 		c.SecretServerToken = v
 	}
-	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
+	if v := Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
 		c.OTELEndpoint = v
 	}
-	if v := os.Getenv("BUILDHOST_SITE_FETCH_DOMAINS"); v != "" {
+	if v := Getenv("BUILDHOST_SITE_FETCH_DOMAINS"); v != "" {
 		for _, d := range strings.Split(v, ",") {
 			if d = strings.TrimSpace(d); d != "" {
 				c.SiteFetchDomains = append(c.SiteFetchDomains, d)
 			}
 		}
 	}
-	if v := os.Getenv("BUILDHOST_SITE_DOMAIN"); v != "" {
+	if v := Getenv("BUILDHOST_SITE_DOMAIN"); v != "" {
 		c.SiteDomain = normalizeDomain(v)
 	}
-	if v := os.Getenv("BUILDHOST_PRIMARY_DOMAIN"); v != "" {
+	if v := Getenv("BUILDHOST_PRIMARY_DOMAIN"); v != "" {
 		c.PrimaryDomain = normalizeDomain(v)
 	}
-	if v := os.Getenv("BUILDHOST_RETENTION_KEEP_N"); v != "" {
+	if v := Getenv("BUILDHOST_RETENTION_KEEP_N"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			c.RetentionKeepN = n
 		}
 	}
 	c.RetentionInterval = envDuration("BUILDHOST_RETENTION_INTERVAL", c.RetentionInterval)
 	c.RetentionRecencyGuard = envDuration("BUILDHOST_RETENTION_RECENCY_GUARD", c.RetentionRecencyGuard)
-	if v := os.Getenv("BUILDHOST_RETENTION_ENFORCE"); v == "true" || v == "1" {
+	if v := Getenv("BUILDHOST_RETENTION_ENFORCE"); v == "true" || v == "1" {
 		c.RetentionEnforce = true
 	}
-	if v := os.Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
+	if v := Getenv("BUILDHOST_OTEL_ENDPOINT"); v != "" {
 		c.OTELEndpoint = v
 	}
 	return c
