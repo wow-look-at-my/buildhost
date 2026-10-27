@@ -249,6 +249,12 @@ type RunStorageRun struct {
 	EndedAt   *time.Time `json:"ended_at"`
 }
 
+type ServerSetting struct {
+	Name      string    `json:"name"`
+	Value     string    `json:"value"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type Site struct {
 	ID         int64     `json:"id"`
 	ProjectID  int64     `json:"project_id"`

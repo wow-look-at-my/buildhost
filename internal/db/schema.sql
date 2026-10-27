@@ -172,6 +172,12 @@ CREATE TABLE retention_settings (
     updated_at    DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE server_settings (
+    name       TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Retention/GC indexes (mirrored from migrations/009_retention_indexes.sql).
 CREATE INDEX IF NOT EXISTS idx_releases_project_branch_version ON releases(project_id, git_branch, version_num DESC);
 CREATE INDEX IF NOT EXISTS idx_artifacts_storage_key  ON artifacts(storage_key);
