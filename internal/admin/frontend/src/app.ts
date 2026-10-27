@@ -1645,6 +1645,12 @@ const demoRunFiles = function (): RunFilesData {
         run("myorg/registry", "9119983001", 15, 14.6, [["frontend-dist", 47_500_000, 14.9, 1]]),
         run("myorg/webhook-runner", "4410982211", 21, 20.2, [["dashboard-assets", 12_000_000, 20.9, 1], ["image-layout", 640_000_000, 20.5, 1]])
     ];
+    const unreadable = run("myorg/tools", "7730015521", 5, null, [["tool-bundle", 210_000_000, 4.9, 2]]);
+    unreadable.state = "unknown";
+    unreadable.check_error = "GitHub answered 401 for run myorg/tools#7730015521: unauthorized: missing Authorization header";
+    unreadable.used_at = ago(4.5);
+    unreadable.expires_at = ago(4.5 - 24);
+    runs.push(unreadable);
     let total = 0;
     for (let i = 0; i < runs.length; i++) total += runs[i].bytes;
     return {
@@ -1657,7 +1663,7 @@ const demoRunFiles = function (): RunFilesData {
         disk_free: 62_000_000_000,
         runs: runs,
         janitor: {
-            at: ago(0.06), duration_ms: 412, deferred: false, checked: 2, check_failures: 0,
+            at: ago(0.06), duration_ms: 412, deferred: false, checked: 3, check_failures: 1, last_check_error: unreadable.check_error,
             ended: 0, deleted: 1, pressure_deleted: 0, freed_bytes: 2_150_000_000
         }
     };
