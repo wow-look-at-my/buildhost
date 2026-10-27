@@ -1,3 +1,5 @@
+// CacheScope names the entries one ref of one repository holds.
+
 package db
 
 import (
@@ -27,7 +29,7 @@ type CacheMatch struct {
 // first. Each is tried in every scope, in the order scopes names them.
 func (d *DB) FindCache(ctx context.Context, scopes []CacheScope, key string, restoreKeys []string) (CacheMatch, bool, error) {
 	for _, s := range scopes {
-		row, err := d.q.GetCacheEntry(ctx, GetCacheEntryParams{RepoID: s.RepoID, Ref: s.Ref, Key: key})
+		row, err := d.rq.GetCacheEntry(ctx, GetCacheEntryParams{RepoID: s.RepoID, Ref: s.Ref, Key: key})
 		if err == nil {
 			return CacheMatch{Scope: s, Key: row.Key, StorageKey: row.StorageKey, Size: row.Size}, true, nil
 		}
@@ -37,7 +39,7 @@ func (d *DB) FindCache(ctx context.Context, scopes []CacheScope, key string, res
 	}
 	for _, prefix := range restoreKeys {
 		for _, s := range scopes {
-			row, err := d.q.FindCacheEntryByPrefix(ctx, FindCacheEntryByPrefixParams{RepoID: s.RepoID, Ref: s.Ref, Prefix: prefix})
+			row, err := d.rq.FindCacheEntryByPrefix(ctx, FindCacheEntryByPrefixParams{RepoID: s.RepoID, Ref: s.Ref, Prefix: prefix})
 			if err == nil {
 				return CacheMatch{Scope: s, Key: row.Key, StorageKey: row.StorageKey, Size: row.Size}, true, nil
 			}
@@ -51,7 +53,7 @@ func (d *DB) FindCache(ctx context.Context, scopes []CacheScope, key string, res
 
 // GetCache returns the entry the scope holds under key, and whether it holds one.
 func (d *DB) GetCache(ctx context.Context, s CacheScope, key string) (CacheMatch, bool, error) {
-	row, err := d.q.GetCacheEntry(ctx, GetCacheEntryParams{RepoID: s.RepoID, Ref: s.Ref, Key: key})
+	row, err := d.rq.GetCacheEntry(ctx, GetCacheEntryParams{RepoID: s.RepoID, Ref: s.Ref, Key: key})
 	if errors.Is(err, sql.ErrNoRows) {
 		return CacheMatch{}, false, nil
 	}
