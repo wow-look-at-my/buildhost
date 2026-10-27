@@ -376,6 +376,7 @@ export interface Pages {
     mirror(): void;
     duplicates(): void;
     github(): void;
+    settings(): void;
 }
 
 // --- Projects split by a GitHub rename (admin GET /api/duplicates) ---
@@ -395,6 +396,26 @@ export interface DuplicateGroup {
 
 export interface DuplicatesData {
     groups: DuplicateGroup[];
+}
+
+/** One BUILDHOST_* variable (admin GET /api/settings). A secret's value is always empty. */
+export interface SettingRow {
+    name: string;
+    group: string;
+    kind: "string" | "secret" | "bool" | "duration" | "percent" | "bytes" | "int" | "list";
+    default: string;
+    description: string;
+    env_only: boolean;
+    live: boolean;
+    value: string;
+    set: boolean;
+    source: "dashboard" | "environment" | "default";
+    restart_pending: boolean;
+}
+
+export interface SettingsData {
+    settings: SettingRow[];
+    can_restart: boolean;
 }
 
 export interface GitHubCredentialData {
@@ -523,6 +544,9 @@ export interface RunFilesRun {
     created_at: string;
     used_at: string;
     checked_at: string | null;
+    /** "unknown": GitHub could not report the run's status; check_error says why. */
+    state: "live" | "ended" | "unknown";
+    check_error?: string;
     ended_at: string | null;
     expires_at: string | null;
     bytes: number;
