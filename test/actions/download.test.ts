@@ -5,7 +5,7 @@ import assert from 'node:assert';
 import { readFileSync, statSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { download, downloadURL } from '../../.github/actions/lib/download.ts';
+import { download, downloadURL, RetryMs } from '../../.github/actions/lib/download.ts';
 import { globalsOf, oidcIssuer } from './fakes.ts';
 
 // A runner can mint OIDC tokens. These checks start from a job that cannot.
@@ -55,7 +55,7 @@ function step(inputs: Record<string, string>) {
 	const tries = answer(404, '');
 	const missing = step({ path: join(dir, 'gone'), required: 'false' });
 	await download(missing.g, async () => {});
-	assert.strictEqual(tries.length, 3, 'a miss is retried');
+	assert.strictEqual(tries.length, 1, 'a miss is final, so it is not tried again');
 	assert.deepStrictEqual(missing.out.outputs, { path: '', downloaded: 'false' });
 	assert.match(missing.out.warned[0], /HTTP 404/);
 	assert.deepStrictEqual(missing.out.failed, [], 'required false reports the miss without failing');
@@ -64,6 +64,18 @@ function step(inputs: Record<string, string>) {
 	const required = step({ path: join(dir, 'gone') });
 	await download(required.g, async () => {});
 	assert.match(required.out.failed[0], /Could not download https:\/\/dl\.pazer\.build\/org\/tool/);
+
+	// A server-side failure has no try limit. The job timeout is the only bound.
+	let flaky = 0;
+	globalThis.fetch = (async () => (++flaky <= 5 ? new Response('busy', { status: 503 }) : new Response('binary', { status: 200 }))) as any;
+	const waits: number[] = [];
+	const recovered = step({ path: join(dir, 'recovered') });
+	await download(recovered.g, async (ms) => { waits.push(ms); });
+	assert.strictEqual(flaky, 6, 'a 503 is tried again until the server answers');
+	assert.deepStrictEqual(waits, [RetryMs, RetryMs, RetryMs, RetryMs, RetryMs], 'every wait is the same length');
+	assert.strictEqual(recovered.out.warned.length, 5, 'each failed try is logged');
+	assert.deepStrictEqual(recovered.out.failed, []);
+	assert.strictEqual(readFileSync(join(dir, 'recovered'), 'utf8'), 'binary');
 
 	// With no token input, a job that may mint one sends its OIDC token, which is what reads a private project.
 	oidcIssuer('https://issuer.example/token?api-version=2.0');
