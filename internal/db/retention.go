@@ -70,20 +70,47 @@ func (d *DB) EvictReleases(ctx context.Context, releaseIDs []int64, commit bool)
 	if len(releaseIDs) == 0 {
 		return nil, 0, nil
 	}
+	// A dry run changes nothing, so it keeps one transaction and reports the exact total.
+	if !commit {
+		freed, candidates, err := d.evictBatch(ctx, releaseIDs, false)
+		return freed, len(candidates), err
+	}
 
+	// Each batch commits alone, so the writer connection is free between batches.
+	seen := make(map[string]struct{})
+	for start := 0; start < len(releaseIDs); start += evictBatchSize {
+		batch := releaseIDs[start:min(start+evictBatchSize, len(releaseIDs))]
+		part, candidates, err := d.evictBatch(ctx, batch, true)
+		for key := range candidates {
+			seen[key] = struct{}{}
+		}
+		freed = append(freed, part...)
+		if err != nil {
+			return freed, len(seen), err
+		}
+	}
+	sort.Slice(freed, func(i, j int) bool { return freed[i].Key < freed[j].Key })
+	return freed, len(seen), nil
+}
+
+// evictBatchSize is how many releases one eviction transaction deletes.
+var evictBatchSize = 25
+
+// evictBatch deletes the releases in one transaction and answers the blobs nothing references afterwards, with every candidate blob it looked at.
+func (d *DB) evictBatch(ctx context.Context, releaseIDs []int64, commit bool) (freed []BlobRef, candidates map[string]int64, err error) {
 	tx, err := d.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, 0, fmt.Errorf("begin tx: %w", err)
+		return nil, nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
 
 	q := New(tx)
 
-	candidates := make(map[string]int64) // key -> max recorded size
+	candidates = make(map[string]int64) // key -> max recorded size
 	for _, id := range releaseIDs {
 		rows, err := q.ListReleaseBlobKeys(ctx, id)
 		if err != nil {
-			return nil, 0, fmt.Errorf("collect blob keys for release %d: %w", id, err)
+			return nil, nil, fmt.Errorf("collect blob keys for release %d: %w", id, err)
 		}
 		for _, row := range rows {
 			if row.K == "" {
@@ -94,14 +121,14 @@ func (d *DB) EvictReleases(ctx context.Context, releaseIDs []int64, commit bool)
 			}
 		}
 		if err := deleteReleaseRows(ctx, q, id); err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 	}
 
 	for key, size := range candidates {
 		n, err := q.IsBlobReferenced(ctx, key)
 		if err != nil {
-			return nil, 0, fmt.Errorf("check blob references: %w", err)
+			return nil, nil, fmt.Errorf("check blob references: %w", err)
 		}
 		if n == 0 {
 			freed = append(freed, BlobRef{Key: key, Size: size})
@@ -111,12 +138,12 @@ func (d *DB) EvictReleases(ctx context.Context, releaseIDs []int64, commit bool)
 
 	if commit {
 		if err := tx.Commit(); err != nil {
-			return nil, 0, fmt.Errorf("commit: %w", err)
+			return nil, nil, fmt.Errorf("commit: %w", err)
 		}
 	}
 	// When commit is false the deferred Rollback discards every change.
 
-	return freed, len(candidates), nil
+	return freed, candidates, nil
 }
 
 func deleteReleaseRows(ctx context.Context, q *Queries, releaseID int64) error {
