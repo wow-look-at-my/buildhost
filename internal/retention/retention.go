@@ -134,9 +134,9 @@ func (r *Retention) evict(ctx context.Context, rep *Report, refs []ReleaseRef, i
 	// Capture what each doomed release holds BEFORE the rows go: after eviction
 	doomed := r.collectRecords(ctx, refs)
 
-	freed, candidates, err := r.db.EvictReleases(ctx, ids, enforce)
-	if err != nil {
-		return fmt.Errorf("evict releases: %w", err)
+	freed, candidates, evictErr := r.db.EvictReleases(ctx, ids, enforce)
+	if evictErr != nil && len(freed) == 0 {
+		return fmt.Errorf("evict releases: %w", evictErr)
 	}
 	rep.BlobsDeleted = len(freed)
 	rep.BlobsRetained = candidates - len(freed)
@@ -150,6 +150,12 @@ func (r *Retention) evict(ctx context.Context, rep *Report, refs []ReleaseRef, i
 				slog.WarnContext(ctx, "retention: failed to delete freed blob", "key", ref.Key, "err", err)
 			}
 		}
+	}
+
+	if evictErr != nil {
+		// Earlier batches committed and their blobs are deleted above. Which releases they held is unknown here, so no record is retracted.
+		slog.ErrorContext(ctx, "retention: eviction stopped part way; storage records of the releases it deleted are not retracted", "releases", len(ids), "err", evictErr)
+		return fmt.Errorf("evict releases: %w", evictErr)
 	}
 
 	// Only a run that deleted has anything to retract. A dry run reports the
