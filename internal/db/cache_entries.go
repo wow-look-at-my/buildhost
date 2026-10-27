@@ -1,3 +1,5 @@
+// CacheScope names the entries one ref of one repository holds.
+
 package db
 
 import (
