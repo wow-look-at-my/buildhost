@@ -4,8 +4,12 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, parse, relative, resolve, sep } from 'node:path';
 import type { ActionGlobals } from './action-globals.ts';
-import { downloadAndUnpack, withArchive, packAndUpload } from './handoff.ts';
+import { fetchRunFile, unpack, withArchive, packAndUpload } from './handoff.ts';
+import { HTTPError } from './download.ts';
 import { tokenSource } from './oidc.ts';
+
+/** How long the lookup may take. */
+const LookupTimeoutMs = 60_000;
 
 const validKey = /^[A-Za-z0-9._-]{1,512}$/;
 
@@ -68,15 +72,33 @@ export async function findCache(server: string, bearer: () => Promise<string>, k
 	const q = repoQuery(env);
 	q.set('key', key);
 	for (const k of restoreKeys) q.append('restore_keys', k);
-	const resp = await fetch(`${server}/api/v1/cache?${q}`, { headers: { Authorization: `Bearer ${await bearer()}` } });
+	const resp = await fetch(`${server}/api/v1/cache?${q}`, {
+		headers: { Authorization: `Bearer ${await bearer()}` },
+		signal: AbortSignal.timeout(LookupTimeoutMs),
+	});
 	const text = await resp.text();
 	const failed = () => new Error(`cache lookup failed (HTTP ${resp.status}): ${text}`);
-	if (resp.status !== 200 && resp.status !== 404) throw failed();
+	if (resp.status !== 200 && resp.status !== 404) {
+		const err = new HTTPError(resp.status, text);
+		err.message = failed().message;
+		throw err;
+	}
 	// Only the cache answers a lookup with its scopes.
 	let found: CacheFind;
 	try { found = JSON.parse(text) as CacheFind; } catch { throw failed(); }
 	if (!Array.isArray(found?.scopes) || (resp.status === 200) !== Boolean(found.key)) throw failed();
 	return found;
+}
+
+/** Whether e is a server or link outage. A restore reads an outage as a miss, as actions/cache does. A refusal stays a failure. */
+export function serverOrLinkFailure(e: unknown): boolean {
+	if (e instanceof HTTPError) return e.status >= 500 || [404, 408, 429].includes(e.status);
+	if (e instanceof TypeError) return true;
+	return e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError');
+}
+
+function errorText(e: unknown): string {
+	return e instanceof Error ? e.message : String(e);
 }
 
 /** buildhost-cache-restore: restores the entry key or restore-keys finds into path. A miss leaves path as it is. */
@@ -92,7 +114,20 @@ export async function restoreCache(g: ActionGlobals): Promise<void> {
 		const tree = cacheTree(String(g.inputs.path));
 		const { bearer } = tokenSource(server, String(g.inputs.token));
 		g.core.setOutput('cache-primary-key', key);
-		const found = await findCache(server, bearer, key, restoreKeys);
+		const miss = (why: string) => {
+			g.core.setOutput('cache-hit', 'false');
+			g.core.setOutput('cache-matched-key', '');
+			if (failOnMiss === 'true') { g.core.setFailed(why); return; }
+			g.core.warning(why);
+		};
+		let found: CacheFind;
+		try {
+			found = await findCache(server, bearer, key, restoreKeys);
+		} catch (e) {
+			if (!serverOrLinkFailure(e)) throw e;
+			miss(`cache restore of ${key} failed, so this run builds as a cache miss: ${errorText(e)}`);
+			return;
+		}
 		const searched = `searched ${found.scopes.join(', ')}` + (found.default_branch ? `; the default branch was ${found.default_branch}` : '');
 		if (!found.key) {
 			g.core.setOutput('cache-hit', 'false');
@@ -104,7 +139,17 @@ export async function restoreCache(g: ActionGlobals): Promise<void> {
 		}
 		const q = repoQuery(process.env);
 		q.set('ref', found.ref!);
-		await downloadAndUnpack(`${server}/api/v1/cache/${encodeURIComponent(found.key)}?${q}`, bearer, archive, tree.root);
+		const url = `${server}/api/v1/cache/${encodeURIComponent(found.key)}?${q}`;
+		try {
+			await fetchRunFile(url, bearer, archive);
+		} catch (e) {
+			// Past its retries, fetchRunFile throws a plain Error for a stall or a damaged body.
+			if (e instanceof HTTPError && !serverOrLinkFailure(e)) throw e;
+			miss(`cache restore of ${found.key} failed, so this run builds as a cache miss: ${errorText(e)}`);
+			return;
+		}
+		// The download is whole and checked before this point, so a failed unpack is a defect, not an outage.
+		await unpack(archive, tree.root, new URL(url).origin);
 		g.core.setOutput('cache-hit', found.exact ? 'true' : 'false');
 		g.core.setOutput('cache-matched-key', found.key);
 		g.core.info(`Restored cache key ${found.key} from ${found.ref} into ${tree.members.join(', ')} under ${tree.root} (${found.size} bytes; ${searched})`);
