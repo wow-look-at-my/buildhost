@@ -40,7 +40,7 @@ The admin dashboard's **Run Files** page reads `GET /api/run-files` on the admin
 
 - the disk of the data directory, split into run files, everything else and free, with the free floor marked
 - a lifecycle timeline with one lane per run: solid while live, hatched for the keep window after it ended, a pip per file sent
-- a runs table with live and ended filters. A row expands to its files with size, reads, last read and sha256
+- a runs table with live, unknown and ended filters. A row expands to its files with size, reads, last read and sha256. A run is unknown when its last status check failed. Its tooltip carries the error, and its Deleted column shows `BUILDHOST_RUN_FILES_KEEP` after its last use
 - bytes per run, and a line on the janitor's last sweep: what it asked GitHub, what it deleted, any status check that failed
 
 A full `GET` of a run file counts as a read. A ranged `GET` does not, since one download can make many of them.
