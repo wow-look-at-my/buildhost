@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
@@ -192,7 +194,28 @@ func (c Config) Validate() error {
 			"\"example.com\"), or to \"" + PrimaryDomainAny + "\" to serve every " +
 			"Host (the historical host-agnostic behavior)")
 	}
+	if err := c.validateGitHubApp(); err != nil {
+		return err
+	}
 	return c.janitorErr
+}
+
+// validateGitHubApp refuses a GitHub App credential that cannot work. With
+// only one half set, buildhost makes every GitHub call with no credential, and
+// it also skips the secret-server token.
+func (c Config) validateGitHubApp() error {
+	id, key := c.GitHubAppID != "", c.GitHubAppPrivateKey != ""
+	switch {
+	case id && !key:
+		return fmt.Errorf("BUILDHOST_GITHUB_APP_ID is set but BUILDHOST_GITHUB_APP_PRIVATE_KEY is empty: set both, or remove both and use BUILDHOST_SECRET_SERVER_TOKEN")
+	case key && !id:
+		return fmt.Errorf("BUILDHOST_GITHUB_APP_PRIVATE_KEY is set but BUILDHOST_GITHUB_APP_ID is empty: set both, or remove both and use BUILDHOST_SECRET_SERVER_TOKEN")
+	case id && key:
+		if _, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(c.GitHubAppPrivateKey)); err != nil {
+			return fmt.Errorf("BUILDHOST_GITHUB_APP_PRIVATE_KEY is not an RSA private key in PEM form: %w", err)
+		}
+	}
+	return nil
 }
 
 // loadJanitors reads the run file and cache settings. A value that is set and
