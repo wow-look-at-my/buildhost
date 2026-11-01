@@ -14,6 +14,7 @@ export interface SidebarData {
     cpu_percent: string;
     disk_used: string;
     disk_total: string;
+    problems: string[];
 }
 
 export interface DashboardStats {

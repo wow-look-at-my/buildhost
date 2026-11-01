@@ -142,10 +142,13 @@ var serveCmd = &cobra.Command{
 		}
 
 		srv := server.New(cfg, database, store)
+		if p := cfg.GitHubAppProblem(); p != "" {
+			slog.Error("GitHub App credential ignored; fix it on the admin Settings page", "problem", p)
+		}
 		switch {
 		case cfg.SecretServerToken == "":
 			slog.Error("no BUILDHOST_SECRET_SERVER_TOKEN: buildhost gets no GitHub credential from secret-server", "github_credential", auth.GitHubCredentialSource())
-		case cfg.GitHubToken != "" || cfg.GitHubAppID != "":
+		case cfg.GitHubToken != "" || cfg.HasGitHubApp():
 			slog.Warn("secret-server: the GitHub credential in the environment takes precedence; the machine token is not used")
 		default:
 			src := &secretserver.Source{URL: secretserver.URL, Token: cfg.SecretServerToken}
