@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
@@ -193,6 +195,28 @@ func (c Config) Validate() error {
 			"Host (the historical host-agnostic behavior)")
 	}
 	return c.janitorErr
+}
+
+// GitHubAppProblem says why the GitHub App credential cannot work, or returns "".
+// It is not a Validate error: the server must stay up so that the dashboard can fix it.
+func (c Config) GitHubAppProblem() string {
+	id, key := c.GitHubAppID != "", c.GitHubAppPrivateKey != ""
+	switch {
+	case id && !key:
+		return "BUILDHOST_GITHUB_APP_ID is set but BUILDHOST_GITHUB_APP_PRIVATE_KEY is empty: set both, or clear both"
+	case key && !id:
+		return "BUILDHOST_GITHUB_APP_PRIVATE_KEY is set but BUILDHOST_GITHUB_APP_ID is empty: set both, or clear both"
+	case id && key:
+		if _, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(c.GitHubAppPrivateKey)); err != nil {
+			return "BUILDHOST_GITHUB_APP_PRIVATE_KEY is not an RSA private key in PEM form: " + err.Error()
+		}
+	}
+	return ""
+}
+
+// HasGitHubApp reports a GitHub App credential that can work.
+func (c Config) HasGitHubApp() bool {
+	return c.GitHubAppID != "" && c.GitHubAppProblem() == ""
 }
 
 // loadJanitors reads the run file and cache settings. A value that is set and
