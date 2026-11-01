@@ -28,6 +28,7 @@ func (s *Server) apiSidebar(w http.ResponseWriter, r *http.Request) {
 		},
 		"build_age":   s.buildAge(),
 		"cpu_percent": fmt.Sprintf("%.1f%%", cpuPct),
+		"problems":    s.configProblems(),
 	}
 
 	if du, err := diskusage.Get(s.cfg.DataDir); err == nil && du.Total > 0 {

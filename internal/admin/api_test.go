@@ -443,4 +443,20 @@ func TestAPISidebar(t *testing.T) {
 	assert.Equal(t, "v1.2.3", build["version"])
 	assert.Equal(t, "abc123def456", build["short_commit"])
 	assert.Contains(t, resp["cpu_percent"], "%")
+	assert.Equal(t, []any{}, resp["problems"])
+}
+
+func TestAPISidebarReportsBrokenGitHubApp(t *testing.T) {
+	t.Serial()
+	srv, _ := newTestServer(t)
+	srv.cfg.GitHubAppID = "123"
+
+	w := serve(srv, http.MethodGet, "/api/sidebar", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp struct {
+		Problems []string `json:"problems"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.Problems, 1, "the banner must name the half-set App credential")
+	assert.Contains(t, resp.Problems[0], "BUILDHOST_GITHUB_APP_PRIVATE_KEY is empty")
 }

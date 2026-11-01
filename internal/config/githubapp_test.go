@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestValidateGitHubApp(t *testing.T) {
+func TestGitHubAppProblem(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	goodPEM := string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
@@ -28,13 +28,15 @@ func TestValidateGitHubApp(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := Config{PrimaryDomain: "example.com", GitHubAppID: tc.id, GitHubAppPrivateKey: tc.key}
-			err := c.Validate()
+			require.NoError(t, c.Validate(), "a broken credential must not stop the server, or the dashboard cannot fix it")
+			problem := c.GitHubAppProblem()
 			if tc.wantErr == "" {
-				require.NoError(t, err)
+				assert.Empty(t, problem)
+				assert.Equal(t, tc.id != "", c.HasGitHubApp())
 				return
 			}
-			require.Error(t, err, "a GitHub App credential that cannot work must stop the server at startup")
-			assert.Contains(t, err.Error(), tc.wantErr)
+			assert.Contains(t, problem, tc.wantErr)
+			assert.False(t, c.HasGitHubApp(), "a broken App must not take precedence over secret-server")
 		})
 	}
 }

@@ -194,28 +194,29 @@ func (c Config) Validate() error {
 			"\"example.com\"), or to \"" + PrimaryDomainAny + "\" to serve every " +
 			"Host (the historical host-agnostic behavior)")
 	}
-	if err := c.validateGitHubApp(); err != nil {
-		return err
-	}
 	return c.janitorErr
 }
 
-// validateGitHubApp refuses a GitHub App credential that cannot work. With
-// only one half set, buildhost makes every GitHub call with no credential, and
-// it also skips the secret-server token.
-func (c Config) validateGitHubApp() error {
+// GitHubAppProblem says why the GitHub App credential cannot work, or returns "".
+// It is not a Validate error: the server must stay up so that the dashboard can fix it.
+func (c Config) GitHubAppProblem() string {
 	id, key := c.GitHubAppID != "", c.GitHubAppPrivateKey != ""
 	switch {
 	case id && !key:
-		return fmt.Errorf("BUILDHOST_GITHUB_APP_ID is set but BUILDHOST_GITHUB_APP_PRIVATE_KEY is empty: set both, or remove both and use BUILDHOST_SECRET_SERVER_TOKEN")
+		return "BUILDHOST_GITHUB_APP_ID is set but BUILDHOST_GITHUB_APP_PRIVATE_KEY is empty: set both, or clear both"
 	case key && !id:
-		return fmt.Errorf("BUILDHOST_GITHUB_APP_PRIVATE_KEY is set but BUILDHOST_GITHUB_APP_ID is empty: set both, or remove both and use BUILDHOST_SECRET_SERVER_TOKEN")
+		return "BUILDHOST_GITHUB_APP_PRIVATE_KEY is set but BUILDHOST_GITHUB_APP_ID is empty: set both, or clear both"
 	case id && key:
 		if _, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(c.GitHubAppPrivateKey)); err != nil {
-			return fmt.Errorf("BUILDHOST_GITHUB_APP_PRIVATE_KEY is not an RSA private key in PEM form: %w", err)
+			return "BUILDHOST_GITHUB_APP_PRIVATE_KEY is not an RSA private key in PEM form: " + err.Error()
 		}
 	}
-	return nil
+	return ""
+}
+
+// HasGitHubApp reports a GitHub App credential that can work.
+func (c Config) HasGitHubApp() bool {
+	return c.GitHubAppID != "" && c.GitHubAppProblem() == ""
 }
 
 // loadJanitors reads the run file and cache settings. A value that is set and
