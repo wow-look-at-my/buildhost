@@ -1,3 +1,5 @@
+// apiSiteFiles lists the files of a single site branch.
+
 package admin
 
 import (
