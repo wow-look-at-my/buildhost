@@ -135,6 +135,15 @@ var NAV_ITEMS = [
     { id: "duplicates", href: "#/duplicates", label: "Duplicates", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M7 3a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V5a2 2 0 00-2-2H7z"/><path d="M3 7a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>' }
 ];
 
+// renderBanner shows each setting that is set but cannot work, above every page.
+const renderBanner = function (problems: string[]): void {
+    var el = document.getElementById("banner")!;
+    el.hidden = problems.length === 0;
+    el.innerHTML = problems.map(function (p) {
+        return "<p>" + h(p) + ' &mdash; fix it on the <a href="#/settings">Settings</a> page, then restart.</p>';
+    }).join("");
+};
+
 const renderSidebar = function (nav: string): void {
     var sb = sidebarCache;
     var build = sb ? sb.build : null;
@@ -1745,7 +1754,7 @@ let demoServices = {
 };
 
 const demoData: Record<string, unknown> = {
-    "/sidebar": { build: { version: "v0.0.0-demo", commit: "demo", commit_url: "", short_commit: "demo", date: "" }, build_age: "", cpu_percent: "0.0%", disk_used: "0 B", disk_total: "0 B" },
+    "/sidebar": { build: { version: "v0.0.0-demo", commit: "demo", commit_url: "", short_commit: "demo", date: "" }, build_age: "", cpu_percent: "0.0%", disk_used: "0 B", disk_total: "0 B", problems: [] },
     "/dashboard": {
         stats: { project_count: 2, release_count: 5, artifact_count: 12, total_storage_bytes: 52428800, token_count: 3, site_count: 3 },
         recent: [
@@ -2592,6 +2601,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (window.location.pathname !== "/") demo = true;
     apiFetch<SidebarData>("/sidebar").then(function (data) {
         sidebarCache = data;
+        renderBanner(data.problems);
         route();
     });
 });

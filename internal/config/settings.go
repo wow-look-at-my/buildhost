@@ -155,7 +155,8 @@ func Source(name string) string {
 	if _, ok := StoredValue(name); ok {
 		return "dashboard"
 	}
-	if _, ok := os.LookupEnv(name); ok {
+	// An empty variable sets nothing, so the page must not report it as a source.
+	if v, ok := os.LookupEnv(name); ok && v != "" {
 		return "environment"
 	}
 	return "default"
