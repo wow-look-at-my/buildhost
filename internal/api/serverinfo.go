@@ -1,3 +1,5 @@
+// serverinfo.go holds the serverinfo code.
+
 package api
 
 import (

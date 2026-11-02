@@ -24,6 +24,9 @@ SELECT EXISTS(
     UNION ALL SELECT 1 FROM sites s               WHERE s.storage_key = sqlc.arg(key)
     UNION ALL SELECT 1 FROM oci_blob_links obl    WHERE obl.storage_key = sqlc.arg(key)
     UNION ALL SELECT 1 FROM goproxy_versions gv   WHERE gv.zip_storage_key = sqlc.arg(key)
+    UNION ALL SELECT 1 FROM run_files rf          WHERE rf.storage_key = sqlc.arg(key)
+    UNION ALL SELECT 1 FROM cache_entries ce      WHERE ce.storage_key = sqlc.arg(key)
+    UNION ALL SELECT 1 FROM mirror_blobs mb       WHERE mb.storage_key = sqlc.arg(key)
 ) AS referenced;
 
 -- name: ListReleaseBlobKeys :many
@@ -192,6 +195,13 @@ JOIN goproxy_modules gm ON gm.id = gv.module_id
 WHERE gv.zip_storage_key != ''
 ORDER BY gm.module_path, gv.version;
 
+-- name: ListMirrorBlobFiles :many
+-- Every blob the registry mirror holds. Mirrored content is not a project, so
+-- release eviction never frees it.
+SELECT upstream, digest, media_type, storage_key, size, created_at
+FROM mirror_blobs
+ORDER BY upstream, digest;
+
 -- name: ListReleaseRetentionFacts :many
 -- One row per release with the facts the keep-N and abandoned queries decide on:
 -- how many newer published releases share its branch, whether an OCI tag or a
@@ -210,3 +220,17 @@ SELECT r.id, r.project_id, p.name AS project_name, r.version, r.version_num,
 FROM releases r
 JOIN projects p ON p.id = r.project_id
 ORDER BY p.name, r.version_num;
+
+-- name: ListNonDefaultBranchReleases :many
+-- Every release, published or not, on a branch other than its project's
+-- default, older than the cutoff, for a project linked to a GitHub repo. The
+-- deleted-branch sweep asks GitHub which of these branches are gone.
+SELECT r.id, r.project_id, p.name AS project_name, p.github_repo, p.default_branch,
+       r.git_branch, r.version
+FROM releases r
+JOIN projects p ON p.id = r.project_id
+WHERE r.git_branch != ''
+  AND r.git_branch != p.default_branch
+  AND p.github_repo != ''
+  AND r.created_at < datetime(sqlc.arg(cutoff))
+ORDER BY p.name, r.git_branch, r.version_num DESC;

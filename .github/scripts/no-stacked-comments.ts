@@ -1,3 +1,4 @@
+// Most of these actions only execute on some triggers.
 import * as fs from "node:fs";
 
 type Run = { file: string; start: number; end: number };

@@ -1,3 +1,5 @@
+// state.go holds the state code.
+
 package goproxy
 
 import (

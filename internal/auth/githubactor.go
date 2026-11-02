@@ -1,3 +1,5 @@
+// githubactor.go holds the githubactor code.
+
 package auth
 
 import (

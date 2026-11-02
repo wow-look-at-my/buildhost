@@ -1,3 +1,5 @@
+// expression-length.ts holds the expression length code.
+
 import * as fs from "node:fs";
 
 // GitHub refuses the whole workflow when a string that holds an expression is longer than this.

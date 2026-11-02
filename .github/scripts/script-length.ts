@@ -1,3 +1,5 @@
+// script-length.ts holds the script length code.
+
 import * as fs from "node:fs";
 
 // GitHub refuses a `with:` value whose expression text is longer than this, and fails the step before it runs.

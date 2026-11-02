@@ -1,3 +1,5 @@
+// GitHubActionsIssuer is the canonical GitHub Actions OIDC issuer.
+
 package auth
 
 import (
@@ -14,8 +16,11 @@ import (
 // GitHubActionsIssuer is the canonical GitHub Actions OIDC issuer. Default-branch
 const GitHubActionsIssuer = "https://token.actions.githubusercontent.com"
 
+// GitHubAPI is the REST base every buildhost GitHub call uses. The mirror caches and forwards api.github.com.
+const GitHubAPI = "https://github-state-mirror.pazer.io"
+
 // gitHubAPIBase is the GitHub REST base. A var (not const) so tests can point it
-var gitHubAPIBase = "https://api.github.com"
+var gitHubAPIBase = GitHubAPI
 
 // githubToken, when set (BUILDHOST_GITHUB_TOKEN), authenticates default-branch
 var (
@@ -151,24 +156,14 @@ func validGitHubSegment(s string) bool {
 const (
 	// branchListPageSize is the largest page GitHub serves for a branch list.
 	branchListPageSize = 100
-	// branchListMaxPages caps one repository's pagination. Hitting the cap is an
-	// error rather than a partial list, because a truncated list makes a live
-	// branch look deleted.
+	// branchListMaxPages caps one repository's pagination.
 	branchListMaxPages = 40
-	// branchListBudget bounds one repository's whole paginated walk. It is
-	// larger than branchLookupBudget because it may cover several pages.
+	// branchListBudget bounds one repository's whole paginated walk.
 	branchListBudget  = 30 * time.Second
 	branchListBodyCap = 4 << 20
 )
 
-// BranchLister answers branch existence from GitHub, the authoritative ref list
-// for a repository. It satisfies the retention package's branch-liveness seam,
-// so a reclaim pass asks the same client, base URL and bearer resolver the
-// default-branch lookup already uses.
-//
-// It caches nothing: a pass asks once per repository and holds that answer for
-// the pass, so no decision is ever made from a stored branch table that a push
-// or a branch deletion has moved on from.
+// BranchLister answers branch existence from GitHub, the authoritative ref list for a repository.
 type BranchLister struct{}
 
 // LiveBranches implements retention's branch-liveness lookup.
@@ -176,10 +171,10 @@ func (BranchLister) LiveBranches(ctx context.Context, repoPath string) ([]string
 	return LiveBranches(ctx, repoPath)
 }
 
-// LiveBranches returns every branch name owner/repo currently has, walking
-// every page so a branch past the first one is never mistaken for a deleted
-// branch. Any error means the answer is unknown, and the caller must not treat
-// an unknown repository as one whose branches were deleted.
+// LiveBranches returns every branch name owner/repo has, walking every page
+// so a branch past the first one is never mistaken for a deleted branch. Any
+// error means the answer is unknown, and the caller must not treat an unknown
+// repository as one whose branches.
 func LiveBranches(ctx context.Context, repoPath string) ([]string, error) {
 	if !validRepoPath(repoPath) {
 		return nil, fmt.Errorf("not an owner/repo path: %q", repoPath)
@@ -199,10 +194,7 @@ func LiveBranches(ctx context.Context, repoPath string) ([]string, error) {
 		names = append(names, pageNames...)
 		if entries < branchListPageSize {
 			if len(names) == 0 {
-				// Every repository buildhost published a release from has at
-				// least one branch, so an empty answer is a wrong answer.
-				// Acting on it would mark every branch of that project deleted
-				// at once, so it fails closed instead.
+				// Every repository buildhost published a release from has at least one branch.
 				return nil, fmt.Errorf("%s reported no branches", repoPath)
 			}
 			return names, nil

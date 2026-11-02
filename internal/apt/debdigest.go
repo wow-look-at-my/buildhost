@@ -1,3 +1,5 @@
+// debdigest.go holds the debdigest code.
+
 package apt
 
 import (

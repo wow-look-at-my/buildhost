@@ -1,6 +1,7 @@
 // The GitHub Deployment a buildhost publish registers in the calling repo, for buildhost-publish, -publish-docker and -publish-site.
 
 import type { ActionGlobals } from './action-globals';
+import { githubAPI } from './github-api.ts';
 
 /** What one publish registers: the ref, the environment it names when deployment_environment is empty, and how its statuses read. */
 export interface DeploymentSpec {
@@ -25,7 +26,7 @@ export function siteBranch(branch: string): string {
 
 /** Registers an in-progress GitHub Deployment, and sets the deployment_id output. A loopback or plain-http server registers nothing. */
 export async function createDeployment(g: ActionGlobals, spec: DeploymentSpec): Promise<void> {
-	const { core, context, octokit, inputs } = g;
+	const { core, context, inputs } = g;
 	core.setOutput('deployment_id', '');
 	const deployServer: string = String(inputs.server);
 	const deployHost: string = new URL(deployServer).hostname;
@@ -35,6 +36,7 @@ export async function createDeployment(g: ActionGlobals, spec: DeploymentSpec): 
 		return;
 	}
 	try {
+		const octokit = await githubAPI(g);
 		const environment: string = String(inputs.deployment_environment || spec.environment);
 		const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
 		// every publish to a real server registers -- there's no opt-out
@@ -74,8 +76,9 @@ export async function createDeployment(g: ActionGlobals, spec: DeploymentSpec): 
 
 /** Posts the terminal status of a deployment createDeployment registered. */
 export async function finishDeployment(g: ActionGlobals, ok: boolean, environmentUrl: string, descriptions: { success: string; failure: string }): Promise<void> {
-	const { core, context, octokit, steps } = g;
+	const { core, context, steps } = g;
 	try {
+		const octokit = await githubAPI(g);
 		const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
 		await octokit.rest.repos.createDeploymentStatus({
 			owner: context.repo.owner,

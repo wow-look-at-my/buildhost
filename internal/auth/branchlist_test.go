@@ -90,7 +90,7 @@ func TestLiveBranches_ErrorsOnHTTPFailure(t *testing.T) {
 }
 
 // An empty branch list is a wrong answer for a repository buildhost published
-// from, so it fails closed rather than marking every branch deleted at once.
+// from. It fails closed rather than marking every branch deleted at once.
 func TestLiveBranches_ErrorsOnEmptyList(t *testing.T) {
 	t.Serial()
 	withStubGitHub(t, "", func(w http.ResponseWriter, r *http.Request) {

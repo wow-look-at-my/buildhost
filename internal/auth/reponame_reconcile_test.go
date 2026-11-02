@@ -18,8 +18,6 @@ func reconcileProject(t *testing.T, d *db.DB, name, repo, repoID string) *db.Pro
 	return p
 }
 
-// The whole point: a publish under the repo's new name must find the renamed
-// project, rather than provisioning a second one beside it.
 func TestReconcileRepoNamespace_RenamesTheWholeFamily(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)

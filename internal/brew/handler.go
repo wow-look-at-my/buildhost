@@ -1,3 +1,5 @@
+// handler.go holds the handler code.
+
 package brew
 
 import (
@@ -100,10 +102,12 @@ type Handler struct {
 	// DataDir is the persistent data root. The tap's per-lineage git history
 	DataDir string
 
-	// tapMu guards tapSnaps and tapPins: the live tap lineages (an open
+	// tapMu guards tapSnaps, tapPins and tapRefreshes: the live tap lineages (an open
 	tapMu    sync.Mutex
 	tapSnaps map[string]*tapLineage
 	tapPins  map[string]int
+	// tapRefreshes holds the in-flight refresh of each lineage directory.
+	tapRefreshes map[string]*tapRefresh
 
 	// fillMu guards the background tar.gz digest filler (queueDigestFill).
 	fillMu      sync.Mutex

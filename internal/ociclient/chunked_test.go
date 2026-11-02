@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/router"
 )
 
 func TestPush_LargeBlobChunked(t *testing.T) {
@@ -113,12 +114,12 @@ func TestPush_NoProgressAborts(t *testing.T) {
 func TestPush_ServerInfoLimitRespected(t *testing.T) {
 	t.Serial()
 	f := newFakeRegistry(t)
-	mux := http.NewServeMux()
-	mux.Handle("/v2/", f.handler("proj"))
-	mux.HandleFunc("/api/v1/server-info", func(w http.ResponseWriter, _ *http.Request) {
+	rt := router.New()
+	rt.Handle("/v2/", router.Allow, f.handler("proj"))
+	rt.HandleFunc("/api/v1/server-info", router.Allow, func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"max_direct_upload_bytes":1000}`)
 	})
-	srv := httptest.NewServer(mux)
+	srv := httptest.NewServer(rt)
 	defer srv.Close()
 
 	layer := make([]byte, 2500)
@@ -138,12 +139,12 @@ func TestPush_ServerInfoLimitRespected(t *testing.T) {
 func TestPush_ChunkSizeClampedToServerLimit(t *testing.T) {
 	t.Serial()
 	f := newFakeRegistry(t)
-	mux := http.NewServeMux()
-	mux.Handle("/v2/", f.handler("proj"))
-	mux.HandleFunc("/api/v1/server-info", func(w http.ResponseWriter, _ *http.Request) {
+	rt := router.New()
+	rt.Handle("/v2/", router.Allow, f.handler("proj"))
+	rt.HandleFunc("/api/v1/server-info", router.Allow, func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"max_direct_upload_bytes":800}`)
 	})
-	srv := httptest.NewServer(mux)
+	srv := httptest.NewServer(rt)
 	defer srv.Close()
 
 	layer := make([]byte, 2000)

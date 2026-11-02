@@ -1,3 +1,5 @@
+// RetentionSettings is the UI-editable retention policy (stored as a single row).
+
 package db
 
 import (
@@ -7,15 +9,15 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // RetentionSettings is the UI-editable retention policy (stored as a single row).
 type RetentionSettings struct {
 	KeepN        int
 	RecencyHours int
-	// DeletedBranchDays is the age past which a published release whose branch
-	// no longer exists on the origin repository becomes eligible. 0 disables
-	// the rule.
+	// DeletedBranchDays is the age past which a published release whose branch no longer exists on the origin repository becomes eligible.
 	DeletedBranchDays int
 }
 
@@ -37,7 +39,7 @@ func (d *DB) GetRetentionSettings(ctx context.Context) (RetentionSettings, error
 	}, nil
 }
 
-// SeedRetentionSettings inserts the initial policy row if absent (INSERT OR
+// SeedRetentionSettings inserts the initial policy row if absent (INSERT.
 func (d *DB) SeedRetentionSettings(ctx context.Context, keepN, recencyHours, deletedBranchDays int) error {
 	return d.q.SeedRetentionSettings(ctx, SeedRetentionSettingsParams{
 		KeepN:             int64(keepN),
@@ -79,20 +81,47 @@ func (d *DB) EvictReleases(ctx context.Context, releaseIDs []int64, commit bool)
 	if len(releaseIDs) == 0 {
 		return nil, 0, nil
 	}
+	// A dry run changes nothing, so it keeps one transaction and reports the exact total.
+	if !commit {
+		freed, candidates, err := d.evictBatch(ctx, releaseIDs, false)
+		return freed, len(candidates), err
+	}
 
+	// Each batch commits alone, so the writer connection is free between batches.
+	seen := set.New[string]()
+	for start := 0; start < len(releaseIDs); start += evictBatchSize {
+		batch := releaseIDs[start:min(start+evictBatchSize, len(releaseIDs))]
+		part, candidates, err := d.evictBatch(ctx, batch, true)
+		for key := range candidates {
+			seen.Add(key)
+		}
+		freed = append(freed, part...)
+		if err != nil {
+			return freed, seen.Len(), err
+		}
+	}
+	sort.Slice(freed, func(i, j int) bool { return freed[i].Key < freed[j].Key })
+	return freed, seen.Len(), nil
+}
+
+// evictBatchSize is how many releases one eviction transaction deletes.
+var evictBatchSize = 25
+
+// evictBatch deletes the releases in one transaction and answers the blobs nothing references afterwards, with every candidate blob it looked at.
+func (d *DB) evictBatch(ctx context.Context, releaseIDs []int64, commit bool) (freed []BlobRef, candidates map[string]int64, err error) {
 	tx, err := d.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, 0, fmt.Errorf("begin tx: %w", err)
+		return nil, nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
 
 	q := New(tx)
 
-	candidates := make(map[string]int64) // key -> max recorded size
+	candidates = make(map[string]int64) // key -> max recorded size
 	for _, id := range releaseIDs {
 		rows, err := q.ListReleaseBlobKeys(ctx, id)
 		if err != nil {
-			return nil, 0, fmt.Errorf("collect blob keys for release %d: %w", id, err)
+			return nil, nil, fmt.Errorf("collect blob keys for release %d: %w", id, err)
 		}
 		for _, row := range rows {
 			if row.K == "" {
@@ -103,14 +132,14 @@ func (d *DB) EvictReleases(ctx context.Context, releaseIDs []int64, commit bool)
 			}
 		}
 		if err := deleteReleaseRows(ctx, q, id); err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 	}
 
 	for key, size := range candidates {
 		n, err := q.IsBlobReferenced(ctx, key)
 		if err != nil {
-			return nil, 0, fmt.Errorf("check blob references: %w", err)
+			return nil, nil, fmt.Errorf("check blob references: %w", err)
 		}
 		if n == 0 {
 			freed = append(freed, BlobRef{Key: key, Size: size})
@@ -120,12 +149,12 @@ func (d *DB) EvictReleases(ctx context.Context, releaseIDs []int64, commit bool)
 
 	if commit {
 		if err := tx.Commit(); err != nil {
-			return nil, 0, fmt.Errorf("commit: %w", err)
+			return nil, nil, fmt.Errorf("commit: %w", err)
 		}
 	}
 	// When commit is false the deferred Rollback discards every change.
 
-	return freed, len(candidates), nil
+	return freed, candidates, nil
 }
 
 func deleteReleaseRows(ctx context.Context, q *Queries, releaseID int64) error {
@@ -166,9 +195,7 @@ func (d *DB) ListEvictableReleases(ctx context.Context, keepN int64, recencyCuto
 }
 
 // ListDeletedBranchCandidates returns published releases older than ageCutoff
-// that are not pinned by an oci tag or a pushed-docker artifact. Each row
-// carries the project's github_repo and default_branch, which is what the caller
-// needs to ask the origin repository whether the branch still exists.
+// that are not pinned by an oci tag or a pushed-docker artifact.
 func (d *DB) ListDeletedBranchCandidates(ctx context.Context, ageCutoff time.Time) ([]ListDeletedBranchCandidatesRow, error) {
 	return d.q.ListDeletedBranchCandidates(ctx, sqliteDatetime(ageCutoff))
 }
@@ -177,6 +204,12 @@ func (d *DB) ListDeletedBranchCandidates(ctx context.Context, ageCutoff time.Tim
 // older than the cutoff.
 func (d *DB) ListAbandonedReleases(ctx context.Context, cutoff time.Time) ([]ListAbandonedReleasesRow, error) {
 	return d.q.ListAbandonedReleases(ctx, sqliteDatetime(cutoff))
+}
+
+// ListNonDefaultBranchReleases returns the releases older than the cutoff on a
+// branch other than their project's default, for projects linked to GitHub.
+func (d *DB) ListNonDefaultBranchReleases(ctx context.Context, cutoff time.Time) ([]ListNonDefaultBranchReleasesRow, error) {
+	return d.q.ListNonDefaultBranchReleases(ctx, sqliteDatetime(cutoff))
 }
 
 // SumReclaimableBytes returns an upper bound on the logical bytes keep-N eviction
@@ -206,6 +239,11 @@ func (d *DB) ListOCIBlobFiles(ctx context.Context) ([]ListOCIBlobFilesRow, error
 // ListGoproxyBlobFiles returns every cached Go module zip.
 func (d *DB) ListGoproxyBlobFiles(ctx context.Context) ([]ListGoproxyBlobFilesRow, error) {
 	return d.q.ListGoproxyBlobFiles(ctx)
+}
+
+// ListMirrorBlobFiles returns every blob the registry mirror holds.
+func (d *DB) ListMirrorBlobFiles(ctx context.Context) ([]ListMirrorBlobFilesRow, error) {
+	return d.q.ListMirrorBlobFiles(ctx)
 }
 
 // ListReleaseRetentionFacts returns, for every release, the facts the eviction

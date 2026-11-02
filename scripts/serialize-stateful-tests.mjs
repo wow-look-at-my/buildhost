@@ -1,4 +1,5 @@
-// Inserts t.Serial() as the first statement of every top-level Test function in the packages named on the command line.
+// Inserts t.Serial() as the earliest statement of every top-level Test function
+// in the packages named on the command line.
 
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";

@@ -4,6 +4,8 @@
 /__signout {GET}
 /__sso {GET}
 /_ui/style.css {GET}
+/api/v1/cache {GET}
+/api/v1/cache/{key} {GET,PUT}
 /api/v1/oidc/policies {GET,POST}
 /api/v1/oidc/policies/{id} {DELETE}
 /api/v1/projects {GET,POST}
@@ -14,6 +16,8 @@
 /api/v1/projects/{project}/releases/{version}/artifacts/ape {PUT}
 /api/v1/projects/{project}/releases/{version}/artifacts/{os}/{arch} {PUT}
 /api/v1/projects/{project}/releases/{version}/publish {POST}
+/api/v1/run-files {GET}
+/api/v1/run-files/{name} {GET,PUT}
 /api/v1/run-locks {GET,POST}
 /api/v1/server-info {GET}
 /api/v1/tokens {GET,POST}
@@ -52,12 +56,15 @@ git.{domain}/brew/tap.git/{path...} {GET}
 git.{domain}/llms.txt {GET}
 goproxy.{domain}/health {GET}
 goproxy.{domain}/llms.txt {GET}
+goproxy.{domain}/sumdb/{name}/{rest...} {GET}
 goproxy.{domain}/{path...} {GET,HEAD}
 npm.{domain}/@buildhost/{project}/-/{filename} {GET}
 npm.{domain}/llms.txt {GET}
 npm.{domain}/{pkg} {GET}
 oci.{domain}/llms.txt {GET}
 oci.{domain}/v2/ {*}
+oci.{domain}/v2/dockerhub/{path...} {*}
+oci.{domain}/v2/ghcr/{path...} {*}
 oci.{domain}/v2/{$} {GET,HEAD}
 sites.{domain}/llms.txt {GET}
 sites.{domain}/{project} {GET}
