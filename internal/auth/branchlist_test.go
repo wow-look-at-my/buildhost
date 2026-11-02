@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -25,14 +26,13 @@ func branchPage(t *testing.T, w http.ResponseWriter, r *http.Request) {
 
 	switch page {
 	case 1:
-		fmt.Fprint(w, `[`)
+		bulk := make([]map[string]string, 0, branchListPageSize)
 		for i := 0; i < branchListPageSize; i++ {
-			if i > 0 {
-				fmt.Fprint(w, `,`)
-			}
-			fmt.Fprintf(w, `{"name":"bulk-%d"}`, i)
+			bulk = append(bulk, map[string]string{"name": "bulk-" + strconv.Itoa(i)})
 		}
-		fmt.Fprint(w, `]`)
+		body, err := json.Marshal(bulk)
+		require.NoError(t, err)
+		_, _ = w.Write(body)
 	case 2:
 		fmt.Fprint(w, `[{"name":"master"},{"name":"v1"}]`)
 	default:
