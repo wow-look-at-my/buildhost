@@ -451,6 +451,7 @@ Environment variables:
 | `BUILDHOST_RETENTION_INTERVAL` | (off) | Background GC sweep cadence (e.g. `1h`); empty/`0` disables the sweeper |
 | `BUILDHOST_RETENTION_KEEP_N` | `10` | Initial published releases kept per `(project, git branch)` -- seeds the dashboard policy on first start, then managed in the UI |
 | `BUILDHOST_RETENTION_RECENCY_GUARD` | `24h` | Initial recency guard (never evict releases newer than this) -- seeds the dashboard policy, then managed in the UI |
+| `BUILDHOST_RETENTION_DELETED_BRANCH_DAYS` | `30` | Initial deleted-branch reclaim window, in days -- seeds the dashboard policy on first start, then managed in the UI |
 | `BUILDHOST_RETENTION_ENFORCE` | `false` | Whether the background sweeper actually deletes; default is report-only. Manual runs from the dashboard/CLI delete when you confirm regardless |
 
 ## GitHub organization webhook
