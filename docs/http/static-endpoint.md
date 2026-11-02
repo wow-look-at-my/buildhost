@@ -30,7 +30,7 @@ brotli and gzip wrap the payload the identity path serves, so every coding decod
 
 Generated variants live on disk under the scratch root (`<TMPDIR>/buildhost-recompress`) in `internal/recompress`. Each entry's key covers the artifact's storage key, the payload transform version, the coding and the debug flag. One artifact's bytes can never be served for another. Writes are atomic: a temporary file is renamed into place at mode 0600, so a reader never sees a partial body. A live entry is never rewritten. A repeated download reads the same bytes.
 
-The cache is bounded by total bytes and by entry count. Eviction drops the entry touched longest ago, which is not the entry created first. An entry expires after the TTL. A hit bypasses the throttle, because it performs no work.
+Total bytes and by entry count bounds the cache. Eviction drops the entry touched longest ago, which is not the entry created first. An entry expires after the TTL. A hit bypasses the throttle, because it performs no work.
 
 ## The recompression throttle
 

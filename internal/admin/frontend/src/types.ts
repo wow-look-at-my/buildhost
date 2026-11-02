@@ -1,3 +1,5 @@
+// "auto" defers to the next level up: build -> project -> folder -> GitHub repo.
+
 export interface BuildInfo {
     version: string;
     commit: string;
@@ -12,6 +14,7 @@ export interface SidebarData {
     cpu_percent: string;
     disk_used: string;
     disk_total: string;
+    problems: string[];
 }
 
 export interface DashboardStats {
@@ -294,6 +297,22 @@ export interface RetentionPreview {
     releases: RetentionRelease[];
 }
 
+// One non-default branch the deleted-branch pass asked GitHub about
+// (GET/POST /api/retention/deleted-branches). Only "deleted" builds go.
+export interface RetentionBranch {
+    project_name: string;
+    github_repo: string;
+    branch: string;
+    state: "deleted" | "present" | "default" | "unknown";
+    error: string;
+    releases: number;
+}
+
+export interface DeletedBranchesReport extends RetentionPreview {
+    enforced: boolean;
+    branches: RetentionBranch[];
+}
+
 export interface RetentionData {
     keep_n: number;
     recency_hours: number;
@@ -355,7 +374,10 @@ export interface Pages {
     goproxy(): void;
     runFiles(): void;
     cache(): void;
+    mirror(): void;
     duplicates(): void;
+    github(): void;
+    settings(): void;
 }
 
 // --- Projects split by a GitHub rename (admin GET /api/duplicates) ---
@@ -375,6 +397,39 @@ export interface DuplicateGroup {
 
 export interface DuplicatesData {
     groups: DuplicateGroup[];
+}
+
+/** One BUILDHOST_* variable (admin GET /api/settings). A secret's value is always empty. */
+export interface SettingRow {
+    name: string;
+    group: string;
+    kind: "string" | "secret" | "bool" | "duration" | "percent" | "bytes" | "int" | "list";
+    default: string;
+    description: string;
+    env_only: boolean;
+    live: boolean;
+    value: string;
+    set: boolean;
+    source: "dashboard" | "environment" | "default";
+    restart_pending: boolean;
+}
+
+export interface SettingsData {
+    settings: SettingRow[];
+    can_restart: boolean;
+}
+
+export interface GitHubCredentialData {
+    source: "app" | "token" | "none";
+    env_credential: boolean;
+    secret_server: {
+        configured: boolean;
+        at?: string;
+        ok: boolean;
+        error?: string;
+        applied?: string;
+    };
+    github_api: string;
 }
 
 export interface MergePlan {
@@ -490,6 +545,9 @@ export interface RunFilesRun {
     created_at: string;
     used_at: string;
     checked_at: string | null;
+    /** "unknown": GitHub could not report the run's status; check_error says why. */
+    state: "live" | "ended" | "unknown";
+    check_error?: string;
     ended_at: string | null;
     expires_at: string | null;
     bytes: number;
@@ -548,6 +606,55 @@ export interface CacheJanitor {
     pressure_deleted: number;
     freed_bytes: number;
     error?: string;
+}
+
+/** One blob or manifest the registry mirror holds. media_type is empty for a layer or a config. */
+export interface MirrorBlobRow {
+    upstream: string;
+    digest: string;
+    media_type: string;
+    size: number;
+    created_at: string;
+    used_at: string;
+    reads: number;
+    expires_at: string;
+}
+
+/** The digest a tag named the last time its upstream answered. */
+export interface MirrorTagRow {
+    upstream: string;
+    repository: string;
+    tag: string;
+    digest: string;
+    media_type: string;
+    checked_at: string;
+}
+
+/** One pass of the mirror janitor (mirror.Report). */
+export interface MirrorJanitor {
+    at: string;
+    duration_ms: number;
+    deferred: boolean;
+    blobs: number;
+    expired: number;
+    pressure_deleted: number;
+    freed_bytes: number;
+    error?: string;
+}
+
+export interface MirrorData {
+    keep_seconds: number;
+    check_interval_seconds: number;
+    tag_ttl_seconds: number;
+    min_free_percent: number;
+    total_bytes: number;
+    disk_free?: number;
+    disk_total?: number;
+    disk_used?: number;
+    upstreams: { service: string; remote: string }[];
+    blobs: MirrorBlobRow[];
+    tags: MirrorTagRow[];
+    janitor: MirrorJanitor | null;
 }
 
 export interface CacheData {

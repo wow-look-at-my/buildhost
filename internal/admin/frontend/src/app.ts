@@ -8,6 +8,7 @@ import type {
     DashboardData,
     DownloadLink,
     DuplicatesData,
+    GitHubCredentialData,
     GoproxyData,
     MergePlan,
     OIDCPolicy,
@@ -17,6 +18,7 @@ import type {
     ProjectSummary,
     RegistriesData,
     ReleaseData,
+    DeletedBranchesReport,
     RetentionData,
     RetentionInventory,
     RunFile,
@@ -24,7 +26,12 @@ import type {
     RunFilesRun,
     CacheData,
     CacheEntryRow,
+    MirrorBlobRow,
+    MirrorData,
+    MirrorTagRow,
     ServiceURLs,
+    SettingRow,
+    SettingsData,
     SidebarData,
     SitesData,
     StorageData,
@@ -120,10 +127,22 @@ var NAV_ITEMS = [
     { id: "goproxy", href: "#/goproxy", label: "Go Proxy", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>' },
     { id: "run-files", href: "#/run-files", label: "Run Files", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm1 5a1 1 0 100 2h7a1 1 0 100-2H4z"/></svg>' },
     { id: "cache", href: "#/cache", label: "CI Cache", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 5c0-1.1 3.1-2 7-2s7 .9 7 2v10c0 1.1-3.1 2-7 2s-7-.9-7-2V5zm7 2c3.9 0 7-.9 7-2s-3.1-2-7-2-7 .9-7 2 3.1 2 7 2z"/></svg>' },
+    { id: "github", href: "#/github", label: "GitHub", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/></svg>' },
+    { id: "settings", href: "#/settings", label: "Settings", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.53 1.53 0 01-2.29.95c-1.37-.84-2.94.73-2.1 2.1.54.89.07 2.04-.95 2.29-1.56.38-1.56 2.6 0 2.98a1.53 1.53 0 01.95 2.29c-.84 1.37.73 2.94 2.1 2.1a1.53 1.53 0 012.29.95c.38 1.56 2.6 1.56 2.98 0a1.53 1.53 0 012.29-.95c1.37.84 2.94-.73 2.1-2.1a1.53 1.53 0 01.95-2.29c1.56-.38 1.56-2.6 0-2.98a1.53 1.53 0 01-.95-2.29c.84-1.37-.73-2.94-2.1-2.1a1.53 1.53 0 01-2.29-.95zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>' },
+    { id: "mirror", href: "#/mirror", label: "Registry Mirror", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 6a1 1 0 011-1h12a1 1 0 011 1v2H3V6zm0 4h14v4a1 1 0 01-1 1H4a1 1 0 01-1-1v-4zm3 2a1 1 0 100 2h2a1 1 0 100-2H6z"/></svg>' },
     { id: "oidc", href: "#/oidc", label: "OIDC Policies", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' },
     { id: "retention", href: "#/retention", label: "Retention", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>' },
     { id: "duplicates", href: "#/duplicates", label: "Duplicates", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M7 3a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V5a2 2 0 00-2-2H7z"/><path d="M3 7a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>' }
 ];
+
+// renderBanner shows each setting that is set but cannot work, above every page.
+const renderBanner = function (problems: string[]): void {
+    var el = document.getElementById("banner")!;
+    el.hidden = problems.length === 0;
+    el.innerHTML = problems.map(function (p) {
+        return "<p>" + h(p) + ' &mdash; fix it on the <a href="#/settings">Settings</a> page, then restart.</p>';
+    }).join("");
+};
 
 const renderSidebar = function (nav: string): void {
     var sb = sidebarCache;
@@ -1239,7 +1258,7 @@ const renderRetention = function (d: RetentionData): void {
     }
 
     var html = "<h1>Retention &amp; Garbage Collection</h1>";
-    html += '<div class="card"><p class="muted">Eviction keeps the newest <strong>keep-N</strong> published releases on each <code>(project, branch)</code> and sweeps abandoned uploads, then deletes any blob nothing else references. Each branch&#39;s latest published build, tagged images, pushed-docker builds, and anything inside the recency guard are <strong>never</strong> deleted. Nothing happens until you run it below (or enable the background sweeper via env).</p><p>' + sweeper + "</p></div>";
+    html += '<div class="card"><p class="muted">Eviction keeps the newest <strong>keep-N</strong> published releases on each <code>(project, branch)</code> and sweeps abandoned uploads, then deletes any blob nothing else references. Each branch&#39;s latest published build, tagged images, pushed-docker builds, and anything inside the recency guard are <strong>never</strong> deleted. Nothing happens until you run it below (or enable the background sweeper on the <a href=\"#/settings\">Settings</a> page).</p><p>' + sweeper + "</p></div>";
 
     html += '<div class="card"><h2>Policy</h2><form id="retention-form">';
     html += '<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end">';
@@ -1278,6 +1297,14 @@ const renderRetention = function (d: RetentionData): void {
     html += "</div>";
     html += '<p class="muted" style="margin-top:8px">' + h(INVENTORY_HINT) + "</p>";
     html += "</div>";
+
+    html += '<div class="card"><h2>Deleted branches</h2>';
+    html += '<p class="muted">Deletes every build on a non-default branch that GitHub confirms is gone from the project&#39;s repo. A branch, a tag, or an open pull request with that name keeps its builds. So does any branch GitHub does not answer for, and anything inside the recency guard. Site deployments are not included: a site stores a sanitized branch name, so GitHub cannot confirm it.</p>';
+    html += '<div id="deleted-branches" style="margin-top:16px"></div>';
+    html += '<div class="row-actions" style="margin-top:16px">';
+    html += '<button class="btn" onclick="App.checkDeletedBranches(this)">Check branches on GitHub</button> ';
+    html += '<button class="btn btn-danger" onclick="App.runDeletedBranches(this)">Delete builds of deleted branches</button>';
+    html += "</div></div>";
 
     document.getElementById("content")!.innerHTML = html;
 
@@ -1366,6 +1393,63 @@ const runRetention = function (): void {
             pages.retention();
         });
     }).catch(function () { alert("Could not run GC (preview/demo mode has no backend)."); });
+};
+
+const BRANCH_STATE_BADGE: Record<string, string> = { deleted: "danger", present: "success", default: "info", unknown: "warning" };
+
+const renderDeletedBranches = function (rep: DeletedBranchesReport): void {
+    var el = document.getElementById("deleted-branches");
+    if (!el) return;
+    var branches = rep.branches || [];
+    var unknown = branches.filter(function (b) { return b.state === "unknown"; }).length;
+    var html = '<div class="stat-grid">';
+    html += '<div class="stat-card"><div class="stat-value">' + h(rep.release_count || 0) + '</div><div class="stat-label">' + (rep.enforced ? "Builds deleted" : "Builds to delete") + "</div></div>";
+    html += '<div class="stat-card"><div class="stat-value">' + h(humanSize(rep.reclaimable_bytes || 0)) + '</div><div class="stat-label">' + (rep.enforced ? "Freed" : "Reclaimable") + "</div></div>";
+    html += '<div class="stat-card"><div class="stat-value">' + h(branches.length) + '</div><div class="stat-label">Branches checked</div></div>';
+    html += '<div class="stat-card"><div class="stat-value">' + h(unknown) + '</div><div class="stat-label">Not confirmed (kept)</div></div>';
+    html += "</div>";
+    html += '<table class="data-table"><thead><tr><th>Project</th><th>Repo</th><th>Branch</th><th>Builds</th><th>GitHub</th></tr></thead><tbody>';
+    if (branches.length === 0) {
+        html += '<tr><td colspan="5" class="empty">No non-default branch builds outside the recency guard</td></tr>';
+    }
+    for (var i = 0; i < branches.length; i++) {
+        var b = branches[i];
+        html += "<tr><td><a href='#/projects/" + h(b.project_name) + "'>" + h(b.project_name) + "</a></td>";
+        html += "<td>" + h(b.github_repo) + "</td><td>" + h(b.branch) + "</td><td>" + h(b.releases) + "</td>";
+        html += "<td>" + badge(BRANCH_STATE_BADGE[b.state] || "neutral", b.state) + (b.error ? ' <span class="muted">' + h(b.error) + "</span>" : "") + "</td></tr>";
+    }
+    html += "</tbody></table>";
+    el.innerHTML = html;
+};
+
+// deletedBranchesRequest never falls back to demo data on a failed request:
+// a fixture would read as what GitHub answered.
+const deletedBranchesRequest = function (btn: HTMLButtonElement, method: string, busy: string): void {
+    var orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = busy;
+    var req: Promise<DeletedBranchesReport> = demo
+        ? Promise.resolve().then(function () { return demoFetch<DeletedBranchesReport>("/retention/deleted-branches"); })
+        : fetch("/api/retention/deleted-branches", { method: method }).then(function (res) {
+            if (!res.ok) return res.text().then(function (t) { throw new Error(t || "HTTP " + res.status); });
+            return res.json();
+        });
+    req.then(renderDeletedBranches).catch(function (e: Error) {
+        alert("Error: " + (e && e.message ? e.message : "request failed"));
+    }).then(function () {
+        btn.textContent = orig;
+        btn.disabled = false;
+    });
+};
+
+const checkDeletedBranches = function (btn: HTMLButtonElement): void {
+    deletedBranchesRequest(btn, "GET", "Asking GitHub...");
+};
+
+const runDeletedBranches = function (btn: HTMLButtonElement): void {
+    if (demo) { alert("Could not delete (preview/demo mode has no backend)."); return; }
+    if (!confirm("Permanently delete every build on a non-default branch that GitHub confirms is gone, and reclaim its storage? This cannot be undone.")) return;
+    deletedBranchesRequest(btn, "POST", "Deleting...");
 };
 
 // --- Go module proxy ---
@@ -1530,7 +1614,10 @@ const route = function (): void {
     else if (first === "goproxy") { go(pages.goproxy); }
     else if (first === "run-files") { go(pages.runFiles); }
     else if (first === "cache") { go(pages.cache); }
+    else if (first === "mirror") { go(pages.mirror); }
     else if (first === "duplicates") { go(pages.duplicates); }
+    else if (first === "github") { go(pages.github); }
+    else if (first === "settings") { go(pages.settings); }
     else { go(pages.dashboard); }
 };
 
@@ -1555,6 +1642,7 @@ const demoRunFiles = function (): RunFilesData {
         });
         return {
             repo: repo, run_id: id, created_at: ago(start), used_at: ago(end == null ? 0.05 : end + 0.1), checked_at: ago(0.06),
+            state: end == null ? "live" as const : "ended" as const,
             ended_at: end == null ? null : ago(end), expires_at: end == null ? null : ago(end - 24),
             bytes: bytes, reads: reads, files: list
         };
@@ -1566,6 +1654,12 @@ const demoRunFiles = function (): RunFilesData {
         run("myorg/registry", "9119983001", 15, 14.6, [["frontend-dist", 47_500_000, 14.9, 1]]),
         run("myorg/webhook-runner", "4410982211", 21, 20.2, [["dashboard-assets", 12_000_000, 20.9, 1], ["image-layout", 640_000_000, 20.5, 1]])
     ];
+    const unreadable = run("myorg/tools", "7730015521", 5, null, [["tool-bundle", 210_000_000, 4.9, 2]]);
+    unreadable.state = "unknown";
+    unreadable.check_error = "GitHub answered 401 for run myorg/tools#7730015521: unauthorized: missing Authorization header";
+    unreadable.used_at = ago(4.5);
+    unreadable.expires_at = ago(4.5 - 24);
+    runs.push(unreadable);
     let total = 0;
     for (let i = 0; i < runs.length; i++) total += runs[i].bytes;
     return {
@@ -1578,7 +1672,7 @@ const demoRunFiles = function (): RunFilesData {
         disk_free: 62_000_000_000,
         runs: runs,
         janitor: {
-            at: ago(0.06), duration_ms: 412, deferred: false, checked: 2, check_failures: 0,
+            at: ago(0.06), duration_ms: 412, deferred: false, checked: 3, check_failures: 1, last_check_error: unreadable.check_error,
             ended: 0, deleted: 1, pressure_deleted: 0, freed_bytes: 2_150_000_000
         }
     };
@@ -1615,6 +1709,40 @@ const demoCache = function (): CacheData {
     };
 };
 
+const demoMirror = function (): MirrorData {
+    const ago = function (hours: number): string { return new Date(Date.now() - hours * 3600000).toISOString(); };
+    const keep = 7 * 24;
+    const digest = function (seed: string): string { return "sha256:" + (seed + "0".repeat(64)).replace(/[^0-9a-f]/g, "c").slice(0, 64); };
+    const blob = function (upstream: string, seed: string, mediaType: string, size: number, created: number, used: number, reads: number): MirrorBlobRow {
+        return { upstream: upstream, digest: digest(seed), media_type: mediaType, size: size, created_at: ago(created), used_at: ago(used), reads: reads, expires_at: ago(used - keep) };
+    };
+    const blobs = [
+        blob("dockerhub", "a1pine", "application/vnd.oci.image.index.v1+json", 9_218, 50, 0.1, 212),
+        blob("dockerhub", "a1pine1ayer", "", 3_640_000, 50, 0.1, 212),
+        blob("ghcr", "runner", "application/vnd.oci.image.manifest.v1+json", 2_104, 20, 2, 33),
+        blob("ghcr", "runner1ayer", "", 210_000_000, 20, 2, 33)
+    ];
+    let total = 0;
+    for (const b of blobs) total += b.size;
+    return {
+        keep_seconds: keep * 3600,
+        check_interval_seconds: 300,
+        tag_ttl_seconds: 60,
+        min_free_percent: 15,
+        total_bytes: total,
+        disk_total: 500_000_000_000,
+        disk_used: 438_000_000_000,
+        disk_free: 62_000_000_000,
+        upstreams: [{ service: "dockerhub", remote: "https://registry-1.docker.io" }, { service: "ghcr", remote: "https://ghcr.io" }],
+        blobs: blobs,
+        tags: [
+            { upstream: "dockerhub", repository: "library/alpine", tag: "latest", digest: digest("a1pine"), media_type: "application/vnd.oci.image.index.v1+json", checked_at: ago(0.1) },
+            { upstream: "ghcr", repository: "actions/actions-runner", tag: "2.330.0", digest: digest("runner"), media_type: "application/vnd.oci.image.manifest.v1+json", checked_at: ago(2) }
+        ],
+        janitor: { at: ago(0.06), duration_ms: 12, deferred: false, blobs: 5, expired: 1, pressure_deleted: 0, freed_bytes: 52_000_000 }
+    };
+};
+
 let demoServices = {
     dl: "https://dl.builds.example.com",
     apt: "https://apt.builds.example.com",
@@ -1626,7 +1754,7 @@ let demoServices = {
 };
 
 const demoData: Record<string, unknown> = {
-    "/sidebar": { build: { version: "v0.0.0-demo", commit: "demo", commit_url: "", short_commit: "demo", date: "" }, build_age: "", cpu_percent: "0.0%", disk_used: "0 B", disk_total: "0 B" },
+    "/sidebar": { build: { version: "v0.0.0-demo", commit: "demo", commit_url: "", short_commit: "demo", date: "" }, build_age: "", cpu_percent: "0.0%", disk_used: "0 B", disk_total: "0 B", problems: [] },
     "/dashboard": {
         stats: { project_count: 2, release_count: 5, artifact_count: 12, total_storage_bytes: 52428800, token_count: 3, site_count: 3 },
         recent: [
@@ -1682,6 +1810,7 @@ const demoData: Record<string, unknown> = {
     "/sites": { sites: [{ project_name: "myapp", branch: "main", file_count: 12, size: 45000, git_commit: "abc123def456", updated_at: new Date(Date.now() - 3600000).toISOString() }, { project_name: "myapp", branch: "staging", file_count: 15, size: 52000, git_commit: "def456abc789", updated_at: new Date(Date.now() - 7200000).toISOString() }, { project_name: "cli-tool", branch: "main", file_count: 8, size: 23000, git_commit: "fff000111222", updated_at: new Date(Date.now() - 86400000).toISOString() }], base_url: "https://builds.example.com", services: demoServices },
     "/run-files": demoRunFiles(),
     "/cache": demoCache(),
+    "/mirror": demoMirror(),
     // The demo shows a repo mid-rename, which is the state this page exists for.
     "/duplicates": {
         groups: [{
@@ -1741,6 +1870,20 @@ const demoData: Record<string, unknown> = {
         total_bytes: 52428800, logical_bytes: 58000000, physical_bytes: 48000000, disk_bytes: 50000000,
         disk_used: 120000000, disk_total: 500000000
     },
+    "/github-credential": {
+        source: "token", env_credential: false, github_api: "https://github-state-mirror.pazer.io",
+        secret_server: { configured: true, ok: true, applied: "token", at: "2026-10-25T14:00:00Z" }
+    },
+    "/settings": {
+        can_restart: true,
+        settings: [
+            { name: "BUILDHOST_PRIMARY_DOMAIN", group: "Domains", kind: "string", default: "", description: "The apex that owns the web UI.", env_only: false, live: false, value: "example.com", set: true, source: "environment", restart_pending: false },
+            { name: "BUILDHOST_SECRET_SERVER_TOKEN", group: "GitHub", kind: "secret", default: "", description: "secret-server machine token.", env_only: false, live: false, value: "", set: true, source: "dashboard", restart_pending: true },
+            { name: "BUILDHOST_RUN_FILES_KEEP", group: "Janitors", kind: "duration", default: "24h", description: "How long a run's files outlive the run.", env_only: false, live: false, value: "", set: false, source: "default", restart_pending: false },
+            { name: "BUILDHOST_MAX_UPLOAD_SIZE", group: "Uploads", kind: "bytes", default: "2G", description: "Cap on one REST artifact upload.", env_only: false, live: true, value: "4G", set: true, source: "dashboard", restart_pending: false },
+            { name: "BUILDHOST_DATA_DIR", group: "Server", kind: "string", default: "./data", description: "Blob store and temp directory.", env_only: true, live: false, value: "/data", set: true, source: "environment", restart_pending: false }
+        ]
+    },
     "/retention": {
         keep_n: 10, recency_hours: 24, sweeper_enabled: false, sweeper_enforce: false,
         preview: {
@@ -1752,6 +1895,19 @@ const demoData: Record<string, unknown> = {
                 { project_name: "cli-tool", project_id: 2, branch: "feature-x", version: "3", reason: "abandoned" }
             ]
         }
+    },
+    "/retention/deleted-branches": {
+        enforced: false, release_count: 2, keep_n_count: 0, abandoned_count: 0,
+        blobs: 2, blobs_retained: 0, reclaimable_bytes: 12582912,
+        releases: [
+            { project_name: "myapp", project_id: 1, branch: "feature-x", version: "5", reason: "deleted-branch" },
+            { project_name: "myapp", project_id: 1, branch: "feature-x", version: "4", reason: "deleted-branch" }
+        ],
+        branches: [
+            { project_name: "myapp", github_repo: "myorg/myapp", branch: "feature-x", state: "deleted", error: "", releases: 2 },
+            { project_name: "myapp", github_repo: "myorg/myapp", branch: "release", state: "present", error: "", releases: 3 },
+            { project_name: "cli-tool", github_repo: "myorg/cli-tool", branch: "fix-y", state: "unknown", error: "GitHub answered 403 for myorg/cli-tool/branches/fix-y", releases: 1 }
+        ]
     },
     "/retention/inventory": {
         generated_at: new Date().toISOString(),
@@ -1927,10 +2083,12 @@ const shortAgo = function (iso: string): string {
 const renderRunFiles = function (d: RunFilesData): void {
     const now = Date.now();
     let live = 0;
+    let unknown = 0;
     let files = 0;
     let reads = 0;
     for (const run of d.runs) {
-        if (!run.ended_at) live++;
+        if (run.state === "live") live++;
+        if (run.state === "unknown") unknown++;
         files += run.files.length;
         reads += run.reads;
     }
@@ -1940,7 +2098,7 @@ const renderRunFiles = function (d: RunFilesData): void {
         "They go " + h(keepHours) + "h after GitHub reports the run complete, sooner (oldest ended first) while free disk is under " +
         h(d.min_free_percent) + "%. A live run's files never go early.</p>";
     html += '<div class="rf-kpis">' +
-        kpi(d.runs.length, "runs") + kpi(live, "live") + kpi(files, "files") + kpi(humanSize(d.total_bytes), "stored") + kpi(reads, "reads") +
+        kpi(d.runs.length, "runs") + kpi(live, "live") + (unknown ? kpi(unknown, "status unknown") : "") + kpi(files, "files") + kpi(humanSize(d.total_bytes), "stored") + kpi(reads, "reads") +
         "</div>";
     html += janitorLine(d);
     html += '<section class="rf-panel"><h2>Disk</h2>' +
@@ -2031,7 +2189,9 @@ const fillTimeline = function (d: RunFilesData, now: number): void {
         if ("run_id" in data) {
             return runLabel(data) + "\n" + humanSize(data.bytes) + " in " + data.files.length + " file" + (data.files.length === 1 ? "" : "s") +
                 "\nstarted " + formatTime(data.created_at) +
-                (data.ended_at ? "\nended " + formatTime(data.ended_at) + "\ndeleted after " + formatTime(data.expires_at) : "\nlive, last used " + timeAgo(data.used_at));
+                (data.ended_at ? "\nended " + formatTime(data.ended_at) + "\ndeleted after " + formatTime(data.expires_at) :
+                    data.state === "unknown" ? "\nstatus unknown: " + data.check_error + "\ndeleted after " + formatTime(data.expires_at) :
+                    "\nlive, last used " + timeAgo(data.used_at));
         }
         return data.name + "\n" + humanSize(data.size) + ", sent " + formatTime(data.created_at) +
             "\nread " + data.reads + " time" + (data.reads === 1 ? "" : "s") + (data.read_at ? ", last " + timeAgo(data.read_at) : "");
@@ -2071,14 +2231,14 @@ const fillRunsTable = function (d: RunFilesData): void {
     };
     el.columns = [
         { key: "run", label: "Run", value: (r) => runLabel(r.run), render: link },
-        { key: "state", label: "State", value: (r) => (r.run.ended_at ? "ended" : "live") },
+        { key: "state", label: "State", value: (r) => r.run.state, render: stateNode },
         { key: "created", label: "Started", value: (r) => ms(r.run.created_at), render: (r) => when(r.run.created_at, "")(r), text: (r) => r.run.created_at },
         { key: "expires", label: "Deleted", value: (r) => ms(r.run.expires_at) || Infinity, render: (r) => untilNode(r.run.expires_at), text: (r) => r.run.expires_at ?? "" },
         { key: "files", label: "Files", value: (r) => r.run.files.length, align: "end" },
         { key: "bytes", label: "Size", value: (r) => r.run.bytes, render: (r) => humanSize(r.run.bytes), align: "end" },
         { key: "reads", label: "Reads", value: (r) => r.run.reads, align: "end" }
     ];
-    el.facets = [{ key: "state", label: "state", of: (r) => (r.run.ended_at ? "ended" : "live"), order: ["live", "ended"] }];
+    el.facets = [{ key: "state", label: "state", of: (r) => r.run.state, order: ["live", "unknown", "ended"] }];
     el.rowId = (r) => r.key;
     el.sort = { key: "created", dir: "desc" };
     el.detailFor = function (row: RunTableRow): Node {
@@ -2097,6 +2257,17 @@ const fillRunsTable = function (d: RunFilesData): void {
         return t;
     };
     el.rows = d.runs.map((run) => ({ key: run.repo + "#" + run.run_id, run: run }));
+};
+
+// An unknown run carries the status check error as its tooltip.
+const stateNode = function (r: RunTableRow): Node {
+    const span = document.createElement("span");
+    span.textContent = r.run.state;
+    if (r.run.state === "unknown") {
+        span.className = "rf-bad";
+        span.title = "GitHub could not report this run's status: " + (r.run.check_error ?? "");
+    }
+    return span;
 };
 
 const untilNode = function (iso: string | null): Node {
@@ -2118,11 +2289,12 @@ const fillBytesChart = function (d: RunFilesData): void {
     el.format = humanSize;
     el.series = [
         { key: "live", label: "live run", color: RF_RUN_COLOR },
+        { key: "unknown", label: "status unknown", color: "#f59e0b" },
         { key: "ended", label: "ended, kept", color: "#a78bfa" }
     ];
     el.rows = d.runs.slice().sort((a, b) => b.bytes - a.bytes).map(function (run) {
         const values: Record<string, number> = {};
-        values[run.ended_at ? "ended" : "live"] = run.bytes;
+        values[run.state] = run.bytes;
         return { id: run.repo + "#" + run.run_id, label: runLabel(run), values: values, href: runURL(run), detail: run.files.length + " files" };
     });
 };
@@ -2197,6 +2369,200 @@ const fillCacheTable = function (d: CacheData): void {
     el.rows = d.entries;
 };
 
+// --- GitHub credential ---
+
+pages.github = function (): void {
+    setTitle("GitHub");
+    renderSidebar("github");
+    apiFetch<GitHubCredentialData>("/github-credential").then(function (d) {
+        var source = d.source === "app" ? "GitHub App" : d.source === "token" ? "token" : "none";
+        var ss = d.secret_server;
+        var html = "<h1>GitHub credential</h1>";
+        html += '<div class="stat-grid"><div class="stat-card"><div class="stat-value">' + h(source) + '</div><div class="stat-label">In use</div></div></div>';
+        html += '<div class="card"><p>buildhost authenticates its own GitHub calls with this credential: run status for run files, default branches, collaborator checks. Every call goes through <code>' + h(d.github_api) + "</code>, which refuses a call with no token.</p>";
+        if (d.env_credential) {
+            html += "<p>The credential comes from the environment (<code>BUILDHOST_GITHUB_TOKEN</code> or <code>BUILDHOST_GITHUB_APP_ID</code>), which takes precedence over secret-server.</p>";
+        } else if (!ss.configured) {
+            html += '<p class="error">No <code>BUILDHOST_SECRET_SERVER_TOKEN</code> is set, so every GitHub call fails: run files never learn that their run ended. Issue a secret-server machine token entitled to <code>BUILDHOST_GITHUB_TOKEN</code> (or <code>BUILDHOST_GITHUB_APP_ID</code> and <code>BUILDHOST_GITHUB_APP_PRIVATE_KEY</code>) and save it on the <a href="#/settings">Settings</a> page.</p>';
+        } else if (ss.ok) {
+            html += "<p>secret-server vended the " + h(ss.applied === "app" ? "GitHub App" : "token") + " at " + h(ss.at || "") + ". buildhost fetches it again every 15 minutes.</p>";
+        } else {
+            html += '<p class="error">The last secret-server fetch failed at ' + h(ss.at || "") + ": " + h(ss.error || "") + ". buildhost retries every minute.</p>";
+        }
+        html += "</div>";
+        document.getElementById("content")!.innerHTML = html;
+    });
+};
+
+pages.settings = function (): void {
+    setTitle("Settings");
+    renderSidebar("settings");
+    apiFetch<SettingsData>("/settings").then(renderSettings);
+};
+
+const SETTING_SOURCE_BADGE: Record<string, string> = { dashboard: "badge-info", environment: "badge-neutral", default: "badge-neutral" };
+
+const renderSettings = function (d: SettingsData): void {
+    const pending = d.settings.filter((s) => s.restart_pending);
+    let html = "<h1>Settings</h1>";
+    html += '<div class="card"><p class="muted">A value saved here takes precedence over the environment variable of the same name. Clear it to fall back to the environment, then the default. ' +
+        "Upload limits apply at once. Every other setting applies when the server restarts. A change after which the server would not start is refused.</p>";
+    if (pending.length) {
+        html += '<p class="error">' + h(pending.length) + " saved setting" + (pending.length === 1 ? " waits" : "s wait") + " for a restart: " +
+            pending.map((s) => "<code>" + h(s.name) + "</code>").join(", ") + ".</p>";
+    }
+    if (d.can_restart) {
+        html += '<p><button class="btn btn-danger" id="settings-restart">Restart server</button> <span class="muted">Finishes in-flight requests, then exits so the container restart policy starts it again.</span></p>';
+    }
+    html += "</div>";
+    const groups: string[] = [];
+    for (const s of d.settings) if (groups.indexOf(s.group) < 0) groups.push(s.group);
+    for (const g of groups) {
+        html += '<div class="card"><h2>' + h(g) + '</h2><table class="data-table settings-table"><tbody>';
+        for (const s of d.settings.filter((x) => x.group === g)) html += settingRowHTML(s);
+        html += "</tbody></table></div>";
+    }
+    document.getElementById("content")!.innerHTML = html;
+    document.querySelectorAll<HTMLFormElement>("form[data-setting]").forEach(function (f) {
+        f.addEventListener("submit", function (e) {
+            e.preventDefault();
+            const input = f.querySelector("input") as HTMLInputElement;
+            saveSetting(f.dataset.setting!, "PUT", input.value);
+        });
+    });
+    document.querySelectorAll<HTMLButtonElement>("button[data-clear]").forEach(function (b) {
+        b.addEventListener("click", function () { saveSetting(b.dataset.clear!, "DELETE", null); });
+    });
+    document.getElementById("settings-restart")?.addEventListener("click", restartServer);
+};
+
+const settingRowHTML = function (s: SettingRow): string {
+    const secret = s.kind === "secret";
+    let html = '<tr><td class="settings-name"><code>' + h(s.name) + '</code> <span class="badge ' + (SETTING_SOURCE_BADGE[s.source] ?? "badge-neutral") + '">' + h(s.source) + "</span>";
+    if (s.restart_pending) html += ' <span class="badge badge-warning">restart pending</span>';
+    html += '<div class="muted">' + h(s.description) + (s.default ? " Default: <code>" + h(s.default) + "</code>." : "") + "</div></td><td>";
+    if (s.env_only) {
+        html += "<code>" + h(s.value || "(empty)") + '</code><div class="muted">Environment only.</div>';
+    } else {
+        const placeholder = secret ? (s.set ? "set (hidden)" : "not set") : s.default;
+        html += '<form class="settings-form" data-setting="' + h(s.name) + '"><input class="form-input" type="' + (secret ? "password" : "text") +
+            '" autocomplete="off" value="' + h(secret ? "" : s.value) + '" placeholder="' + h(placeholder) + '">' +
+            '<button class="btn btn-primary btn-sm" type="submit">Save</button>' +
+            (s.source === "dashboard" ? '<button class="btn btn-sm" type="button" data-clear="' + h(s.name) + '">Clear</button>' : "") + "</form>";
+    }
+    return html + "</td></tr>";
+};
+
+const saveSetting = function (name: string, method: "PUT" | "DELETE", value: string | null): void {
+    fetch("/api/settings/" + encodeURIComponent(name), {
+        method: method,
+        headers: { "Content-Type": "application/json" },
+        body: value === null ? undefined : JSON.stringify({ value: value })
+    }).then(function (res) {
+        if (!res.ok) return res.text().then(function (t) { alert("Not saved: " + t); });
+        return res.json().then(renderSettings);
+    }).catch(function () { alert("Could not save (preview/demo mode has no backend)."); });
+};
+
+const restartServer = function (): void {
+    if (!confirm("Restart buildhost? It finishes in-flight requests first.")) return;
+    fetch("/api/restart", { method: "POST" }).then(function (res) {
+        if (!res.ok) return res.text().then(function (t) { alert("Not restarted: " + t); });
+        alert("The server is restarting. Reload this page in a moment.");
+    }).catch(function () { alert("Could not restart (preview/demo mode has no backend)."); });
+};
+
+pages.mirror = function (): void {
+    setTitle("Registry Mirror");
+    renderSidebar("mirror");
+    apiFetch<MirrorData>("/mirror").then(renderMirror);
+};
+
+const renderMirror = function (d: MirrorData): void {
+    let manifests = 0;
+    let reads = 0;
+    for (const b of d.blobs) {
+        if (b.media_type) manifests++;
+        reads += b.reads;
+    }
+    const keepDays = Math.round(d.keep_seconds / 86400);
+    const hosts = d.upstreams.map((u) => "<code>" + h(u.service) + ".</code> fronts " + h(u.remote)).join(", ");
+    let html = "<h1>Registry Mirror</h1>";
+    html += '<p class="rf-lede">A read-only pull-through mirror: ' + hosts + ". A pull needs a token with the read scope. " +
+        "A tag is asked of its upstream again after " + h(d.tag_ttl_seconds) + "s, and the last digest still serves while the upstream is down. " +
+        "A blob nothing reads for " + h(keepDays) + "d goes, and the least recently used go sooner while free disk is under " + h(d.min_free_percent) + "%.</p>";
+    html += '<div class="rf-kpis">' +
+        kpi(d.blobs.length - manifests, "blobs") + kpi(manifests, "manifests") + kpi(d.tags.length, "tags") + kpi(humanSize(d.total_bytes), "stored") + kpi(reads, "reads") +
+        "</div>";
+    html += mirrorJanitorLine(d);
+    html += '<section class="rf-panel"><h2>Disk</h2>' +
+        (d.disk_total ? '<bar-chart id="mirror-disk"></bar-chart>' : '<p class="empty">The data directory reports no filesystem size.</p>') + "</section>";
+    html += d.tags.length
+        ? '<section class="rf-panel"><h2>Tags</h2><data-table id="mirror-tags"></data-table></section>'
+        : '<section class="rf-panel"><p class="empty">No tag was pulled through the mirror.</p></section>';
+    html += d.blobs.length
+        ? '<section class="rf-panel"><h2>Stored</h2><data-table id="mirror-blobs"></data-table></section>'
+        : '<section class="rf-panel"><p class="empty">The mirror stores nothing.</p></section>';
+    document.getElementById("content")!.innerHTML = html;
+    fillDiskChart("mirror-disk", "mirror", d);
+    fillMirrorTables(d);
+};
+
+const mirrorJanitorLine = function (d: MirrorData): string {
+    const j = d.janitor;
+    const every = "sweeps every " + Math.round(d.check_interval_seconds / 60) + "m";
+    if (!j) return '<p class="rf-janitor">Janitor: no sweep yet since this server started (' + every + ").</p>";
+    if (j.deferred) return '<p class="rf-janitor">Janitor: last sweep ' + h(timeAgo(j.at)) + " was deferred, writes in flight (" + every + ").</p>";
+    let s = "Janitor: last sweep " + h(timeAgo(j.at)) + " in " + h(j.duration_ms) + "ms over " + h(j.blobs) + " blobs, expired " + h(j.expired) +
+        (j.pressure_deleted ? ", deleted " + h(j.pressure_deleted) + " for disk pressure" : "") + ", freed " + h(humanSize(j.freed_bytes)) + " &middot; " + every;
+    if (j.error) s += ' &middot; <span class="rf-bad">sweep failed: ' + h(j.error) + "</span>";
+    return '<p class="rf-janitor">' + s + "</p>";
+};
+
+const fillMirrorTables = function (d: MirrorData): void {
+    const ago = function (iso: string): Node {
+        const span = document.createElement("span");
+        span.textContent = shortAgo(iso);
+        span.title = formatTime(iso);
+        return span;
+    };
+    const short = (digest: string): string => digest.slice(0, 19);
+    const tags = document.getElementById("mirror-tags") as DataTableElement<MirrorTagRow> | null;
+    if (tags) {
+        tags.columns = [
+            { key: "upstream", label: "Upstream", value: (t) => t.upstream },
+            { key: "image", label: "Image", value: (t) => t.repository + ":" + t.tag },
+            { key: "digest", label: "Digest", value: (t) => t.digest, render: (t) => short(t.digest) },
+            { key: "type", label: "Type", value: (t) => t.media_type },
+            { key: "checked", label: "Checked", value: (t) => ms(t.checked_at), render: (t) => ago(t.checked_at), text: (t) => t.checked_at }
+        ];
+        tags.facets = [{ key: "upstream", label: "upstream", of: (t) => t.upstream }];
+        tags.rowId = (t) => t.upstream + "|" + t.repository + "|" + t.tag;
+        tags.sort = { key: "checked", dir: "desc" };
+        tags.rows = d.tags;
+    }
+    const blobs = document.getElementById("mirror-blobs") as DataTableElement<MirrorBlobRow> | null;
+    if (blobs) {
+        blobs.columns = [
+            { key: "upstream", label: "Upstream", value: (b) => b.upstream },
+            { key: "digest", label: "Digest", value: (b) => b.digest, render: (b) => short(b.digest) },
+            { key: "kind", label: "Kind", value: (b) => (b.media_type ? "manifest" : "blob") },
+            { key: "size", label: "Size", value: (b) => b.size, render: (b) => humanSize(b.size), align: "end" },
+            { key: "created", label: "Fetched", value: (b) => ms(b.created_at), render: (b) => ago(b.created_at), text: (b) => b.created_at },
+            { key: "used", label: "Last read", value: (b) => ms(b.used_at), render: (b) => ago(b.used_at), text: (b) => b.used_at },
+            { key: "expires", label: "Deleted", value: (b) => ms(b.expires_at), render: (b) => untilNode(b.expires_at), text: (b) => b.expires_at },
+            { key: "reads", label: "Reads", value: (b) => b.reads, align: "end" }
+        ];
+        blobs.facets = [
+            { key: "upstream", label: "upstream", of: (b) => b.upstream },
+            { key: "kind", label: "kind", of: (b) => (b.media_type ? "manifest" : "blob") }
+        ];
+        blobs.rowId = (b) => b.upstream + "|" + b.digest;
+        blobs.sort = { key: "used", dir: "desc" };
+        blobs.rows = d.blobs;
+    }
+};
+
 pages.duplicates = function (): void {
     setTitle("Duplicates");
     renderSidebar("duplicates");
@@ -2235,6 +2601,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (window.location.pathname !== "/") demo = true;
     apiFetch<SidebarData>("/sidebar").then(function (data) {
         sidebarCache = data;
+        renderBanner(data.problems);
         route();
     });
 });
@@ -2250,4 +2617,4 @@ window.addEventListener("unhandledrejection", function (ev) {
 });
 
 // Exported == reachable as App.x from the inline onclick handlers above.
-export { applyMerge, copyInventory, copyTempLink, copyText, deleteToken, downloadArtifact, downloadBackup, downloadInventory, editToken, pages, previewMerge, recheckGoproxy, reloadTokens, runRetention, saveToken, setVersioning, setVisibility };
+export { applyMerge, checkDeletedBranches, copyInventory, copyTempLink, copyText, deleteToken, downloadArtifact, downloadBackup, downloadInventory, editToken, pages, previewMerge, recheckGoproxy, reloadTokens, runDeletedBranches, runRetention, saveToken, setVersioning, setVisibility };

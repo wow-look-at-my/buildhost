@@ -186,6 +186,13 @@ code {
 	opacity: 1;
 }
 
+.banner {
+	margin-left: var(--sidebar-width);
+	padding: 12px 32px;
+	background: var(--badge-warning-bg);
+	color: var(--text-bright);
+}
+
 .content {
 	margin-left: var(--sidebar-width);
 	padding: 32px;
@@ -943,6 +950,24 @@ copy-btn {
 
 .rf-bad {
 	color: var(--red);
+}
+
+.settings-table td {
+	vertical-align: top;
+}
+
+.settings-name {
+	width: 55%;
+}
+
+.settings-form {
+	display: flex;
+	gap: 6px;
+}
+
+.settings-form .form-input {
+	flex: 1;
+	min-width: 0;
 }
 
 .rf-dim {

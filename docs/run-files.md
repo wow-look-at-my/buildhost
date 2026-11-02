@@ -9,7 +9,7 @@ A run file is not a release, a project or an artifact. Nothing outside its run r
 - A file belongs to one workflow run of one repository. The key is the repository id and `run_id` from the caller's verified OIDC token, plus a name. `run_attempt` is not part of the key, so a re-run of a failed job reads what the first try sent.
 - A put of a name the run holds replaces it. The blob it held is deleted when nothing else references it.
 - A get of a name the run does not hold answers 404, and the message names every file the run does hold.
-- A get honors `Range`, and carries the blob's sha256 as `X-Content-SHA256`. The action resumes a broken download from the bytes it has, then checks the whole file against that sum.
+- A get honors `Range`, and carries the blob's sha256 as `X-Content-SHA256`. The action resumes a broken download from the bytes it has, then checks the whole file against that sum. A transport failure is tried again every few seconds until the job timeout. A server outage costs only its length. A 401, 403 or 404, or a whole download whose sum differs, is last.
 - The body is stored as sent, without the storage layer's own compression, because the action compresses it already. That is also what makes it seekable for `Range`.
 
 ## Authentication
@@ -40,7 +40,7 @@ The admin dashboard's **Run Files** page reads `GET /api/run-files` on the admin
 
 - the disk of the data directory, split into run files, everything else and free, with the free floor marked
 - a lifecycle timeline with one lane per run: solid while live, hatched for the keep window after it ended, a pip per file sent
-- a runs table with live and ended filters. A row expands to its files with size, reads, last read and sha256
+- a runs table with live, unknown and ended filters. A row expands to its files with size, reads, last read and sha256. A run is unknown when its last status check failed. Its tooltip carries the error, and its Deleted column shows `BUILDHOST_RUN_FILES_KEEP` after its last use
 - bytes per run, and a line on the janitor's last sweep: what it asked GitHub, what it deleted, any status check that failed
 
 A full `GET` of a run file counts as a read. A ranged `GET` does not, since one download can make many of them.

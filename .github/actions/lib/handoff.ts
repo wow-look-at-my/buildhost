@@ -29,18 +29,22 @@ export async function unpack(archive: string, dir: string, server = 'https://paz
 	runCli(await buildhostCli(server), ['archive', 'unpack', archive, dir]);
 }
 
+/** The fixed pause between tries of a run file download. */
+export const RunFileRetryMs = 5_000;
+
 /**
  * Downloads url to file. A broken transfer resumes from the bytes it has with a Range request, and the whole file is checked
- * against the sha256 the server sends. A refusal or a miss is final: asking again cannot change it.
+ * against the sha256 the server sends. A transport failure is tried again on a fixed cadence until the job timeout ends it,
+ * so a server outage costs the time it lasts. A refusal, a miss, or a whole download that does not match is final.
  */
 export async function fetchRunFile(
 	url: string, bearer: () => Promise<string>, file: string,
-	wait = (ms: number) => new Promise((r) => setTimeout(r, ms)), attempts = 5, stallMs = DefaultStallMs,
+	wait = (ms: number) => new Promise((r) => setTimeout(r, ms)), stallMs = DefaultStallMs,
 ): Promise<void> {
 	rmSync(file, { force: true });
 	let want = '';
 	let failure = '';
-	for (let attempt = 1; attempt <= attempts; attempt++) {
+	for (let attempt = 1; ; attempt++) {
 		const have = existsSync(file) ? statSync(file).size : 0;
 		const headers: Record<string, string> = { Authorization: `Bearer ${await bearer()}` };
 		if (have > 0) headers.Range = `bytes=${have}-`;
@@ -66,11 +70,12 @@ export async function fetchRunFile(
 			if (got === want) return;
 			rmSync(file, { force: true });
 			failure = `downloaded sha256 ${got}, the server holds ${want}`;
+			// A resumed file can join a couple of versions. A whole download that differs is what the server stores.
+			if (have === 0) throw new Error(`run file download failed: ${failure}`);
 		}
-		console.warn(`run file download attempt ${attempt}/${attempts} failed: ${failure}`);
-		if (attempt < attempts) await wait(attempt * 2000);
+		console.warn(`run file download attempt ${attempt} failed: ${failure}; trying again in ${RunFileRetryMs / 1000}s`);
+		await wait(RunFileRetryMs);
 	}
-	throw new Error(`run file download failed after ${attempts} attempts: ${failure}`);
 }
 
 /** buildhost-handoff: send packs path and stores it under name for this run. receive restores it into path. */

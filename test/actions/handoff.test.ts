@@ -8,8 +8,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createZstdCompress } from 'node:zlib';
-import { pack, unpack, fetchRunFile, runFilePath } from '../../.github/actions/lib/handoff.ts';
+import { pack, unpack, fetchRunFile, runFilePath, RunFileRetryMs } from '../../.github/actions/lib/handoff.ts';
 import { HTTPError } from '../../.github/actions/lib/download.ts';
+import { fetchCli } from '../../.github/actions/lib/cli.ts';
 import { cacheTree, restoreKeyList, restoreCache, saveCache } from '../../.github/actions/lib/cache.ts';
 import { globalsOf, serve, stepCore, tempDir } from './fakes.ts';
 
@@ -163,6 +164,43 @@ async function cacheMissLeavesPathAlone(tmp: string, failOnMiss: string, wantFai
 	if (wantFailed) assert.match(out.failed[0], /GitHub did not answer/, 'the miss says why the default branch was not searched');
 }
 
+// A that is not the cache's own answer is a wrong server, not an outage: it fails with its status and body.
+async function cacheLookupFailureIsNoMiss(tmp: string, status: number, body: string) {
+	const s = await serve((_req, res) => { res.writeHead(status); res.end(body); });
+	const { core, out } = stepCore();
+	await restoreCache(globalsOf({ core, inputs: cacheInputs(s.url, { path: path.join(tmp, 'cache-err'), key: 'k', 'fail-on-cache-miss': 'false' }) }));
+	await s.close();
+	assert.strictEqual(out.failed.length, 1, `HTTP ${status} fails the restore`);
+	assert.match(out.failed[0], new RegExp(`cache lookup failed \\(HTTP ${status}\\)`));
+	assert.doesNotMatch(out.failed[0], /No cache entry/);
+}
+
+// An outage of the server or the link is a miss with a warning, so the run builds without the cache. fail-on-cache-miss still fails it.
+async function cacheOutageIsAWarnedMiss(tmp: string, failOnMiss: string, lookupStatus: number, downloadStatus = 0) {
+	const s = await serve((req, res) => {
+		if (new URL(req.url ?? '', 'http://x').pathname === '/api/v1/cache') {
+			if (lookupStatus !== 200) { res.writeHead(lookupStatus); res.end('busy'); return; }
+			res.writeHead(200, { 'Content-Type': 'application/json' });
+			res.end(JSON.stringify({ key: 'k', ref: 'refs/heads/master', size: 1, exact: true, scopes: ['refs/heads/master'] }));
+			return;
+		}
+		res.writeHead(downloadStatus);
+		res.end('gone');
+	});
+	const { core, out } = stepCore();
+	const dst = path.join(tmp, `cache-outage-${failOnMiss}-${lookupStatus}-${downloadStatus}`);
+	await restoreCache(globalsOf({ core, inputs: cacheInputs(s.url, { path: dst, key: 'k', 'fail-on-cache-miss': failOnMiss }) }));
+	await s.close();
+	const what = `lookup ${lookupStatus}, download ${downloadStatus}, fail-on-cache-miss ${failOnMiss}`;
+	assert.strictEqual(out.outputs['cache-hit'], 'false', what);
+	assert.strictEqual(out.outputs['cache-matched-key'], '', what);
+	assert.strictEqual(fs.existsSync(dst), false, `an outage restores nothing (${what})`);
+	const said = failOnMiss === 'true' ? out.failed : out.warned;
+	assert.strictEqual(said.length, 1, `exactly one ${failOnMiss === 'true' ? 'failure' : 'warning'} (${what})`);
+	assert.match(said[0], /builds as a cache miss/, what);
+	if (failOnMiss === 'false') assert.deepStrictEqual(out.failed, [], `an outage never fails the step (${what})`);
+}
+
 async function cacheSaveOfAHeldKeySendsNothing(tmp: string) {
 	const asked: string[] = [];
 	const s = await serve((req, res) => {
@@ -224,8 +262,63 @@ async function missIsFinal(tmp: string) {
 }
 
 async function corruptFails(tmp: string) {
-	const s = await serve((_req, res) => { res.writeHead(200, { 'X-Content-SHA256': '0'.repeat(64) }); res.end('corrupt'); });
-	await assert.rejects(fetchRunFile(s.url, bearer, path.join(tmp, 'bad'), noWait, 2), /downloaded sha256 .* the server holds 0{64}/);
+	let calls = 0;
+	const s = await serve((_req, res) => { calls++; res.writeHead(200, { 'X-Content-SHA256': '0'.repeat(64) }); res.end('corrupt'); });
+	await assert.rejects(fetchRunFile(s.url, bearer, path.join(tmp, 'bad'), noWait), /downloaded sha256 .* the server holds 0{64}/);
+	assert.strictEqual(calls, 1, 'a whole download that does not match is what the server stores, so it is not asked again');
+	await s.close();
+}
+
+async function outlastsAnOutage(tmp: string) {
+	// The server cuts transfers, then sends nothing, for more tries than a capped retry allows.
+	const body = Buffer.from('the dependency cache');
+	const sum = createHash('sha256').update(body).digest('hex');
+	let requests = 0;
+	const waits: number[] = [];
+	const s = await serve((req, res) => {
+		requests++;
+		if (requests <= 4) {
+			res.writeHead(200, { 'X-Content-SHA256': sum });
+			res.write(body.subarray(0, 4), () => setTimeout(() => res.destroy(), 20));
+			return;
+		}
+		if (requests <= 8) return;
+		const range = req.headers.range ?? '';
+		res.writeHead(range ? 206 : 200, { 'X-Content-SHA256': sum });
+		res.end(body.subarray(range ? Number(/bytes=(\d+)-/.exec(range)![1]) : 0));
+	});
+	const file = path.join(tmp, 'outage');
+	await fetchRunFile(s.url, bearer, file, async (ms: number) => { waits.push(ms); }, 100);
+	assert.deepStrictEqual(fs.readFileSync(file), body, 'the download completes once the server answers again');
+	assert.strictEqual(requests, 9);
+	assert.deepStrictEqual(waits, Array(8).fill(RunFileRetryMs), 'every try waits the same fixed interval');
+	await s.close();
+}
+
+async function cliDownloadSurvivesACutTransfer(tmp: string) {
+	const body = Buffer.from('the buildhost cli');
+	let requests = 0;
+	const s = await serve((_req, res) => {
+		requests++;
+		res.writeHead(200);
+		if (requests < 3) {
+			res.write(body.subarray(0, 4), () => setTimeout(() => res.destroy(), 100));
+			return;
+		}
+		res.end(body);
+	});
+	const file = path.join(tmp, 'cli');
+	await fetchCli(s.url, file, noWait);
+	assert.deepStrictEqual(fs.readFileSync(file), body, 'a cut CLI download is tried again until it completes');
+	assert.strictEqual(requests, 3);
+	await s.close();
+}
+
+async function cliDownloadMissIsFinal(tmp: string) {
+	let requests = 0;
+	const s = await serve((_req, res) => { requests++; res.writeHead(404); res.end('no such project'); });
+	await assert.rejects(fetchCli(s.url, path.join(tmp, 'cli-miss'), noWait), (e: unknown) => e instanceof HTTPError && e.status === 404);
+	assert.strictEqual(requests, 1, 'a 404 is not asked again');
 	await s.close();
 }
 
@@ -239,10 +332,19 @@ async function run() {
 	await resumes(tmp);
 	await missIsFinal(tmp);
 	await corruptFails(tmp);
+	await outlastsAnOutage(tmp);
+	await cliDownloadSurvivesACutTransfer(tmp);
+	await cliDownloadMissIsFinal(tmp);
 	await cacheInputsAreChecked(tmp);
 	await cacheRestoreHitReadsTheMatchedScope(tmp);
 	await cacheMissLeavesPathAlone(tmp, 'false', 0);
 	await cacheMissLeavesPathAlone(tmp, 'true', 1);
+	await cacheOutageIsAWarnedMiss(tmp, 'false', 500);
+	await cacheOutageIsAWarnedMiss(tmp, 'false', 429);
+	await cacheOutageIsAWarnedMiss(tmp, 'true', 503);
+	await cacheOutageIsAWarnedMiss(tmp, 'false', 200, 404);
+	await cacheLookupFailureIsNoMiss(tmp, 404, '404 page not found');
+	await cacheLookupFailureIsNoMiss(tmp, 404, '{"error":"not found"}');
 	await cacheSaveOfAHeldKeySendsNothing(tmp);
 	assert.strictEqual(
 		runFilePath('toolchain-Linux', { GITHUB_REPOSITORY: 'wow-look-at-my/gosmopolitan', GITHUB_RUN_ID: '42' }),

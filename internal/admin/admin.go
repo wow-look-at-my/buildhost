@@ -1,3 +1,5 @@
+// jsSnippetsOrigin serves the js-snippets library the dashboard imports.
+
 package admin
 
 import (
@@ -57,7 +59,12 @@ type Server struct {
 
 	staticFS  fs.FS
 	indexHTML []byte
+
+	restart func()
 }
+
+// SetRestart sets what the dashboard's restart button calls.
+func (s *Server) SetRestart(f func()) { s.restart = f }
 
 func New(cfg config.Config, database *db.DB, store storage.Storage, build BuildInfo) *Server {
 	staticFS, _ := fs.Sub(content, "static")
@@ -138,7 +145,15 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/retention/inventory", router.Allow, s.apiRetentionInventory)
 	mux.HandleFunc("GET /api/run-files", router.Allow, s.apiRunFiles)
 	mux.HandleFunc("GET /api/cache", router.Allow, s.apiCache)
+	mux.HandleFunc("GET /api/mirror", router.Allow, s.apiMirror)
 	mux.HandleFunc("POST /api/retention/run", router.Allow, s.apiRunRetention)
+	mux.HandleFunc("GET /api/retention/deleted-branches", router.Allow, s.apiDeletedBranches)
+	mux.HandleFunc("POST /api/retention/deleted-branches", router.Allow, s.apiRunDeletedBranches)
+	mux.HandleFunc("GET /api/github-credential", router.Allow, s.apiGitHubCredential)
+	mux.HandleFunc("GET /api/settings", router.Allow, s.apiSettings)
+	mux.HandleFunc("PUT /api/settings/{name}", router.Allow, s.apiSetSetting)
+	mux.HandleFunc("DELETE /api/settings/{name}", router.Allow, s.apiDeleteSetting)
+	mux.HandleFunc("POST /api/restart", router.Allow, s.apiRestart)
 	mux.HandleFunc("GET /admin/inflight", router.Allow, InflightHandler)
 
 	mux.HandleFunc("GET /{path...}", router.Allow, s.serveSPA)

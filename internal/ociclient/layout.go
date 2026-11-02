@@ -1,3 +1,5 @@
+// layout.go holds the layout code.
+
 package ociclient
 
 import (

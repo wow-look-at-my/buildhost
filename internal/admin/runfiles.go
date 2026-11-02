@@ -1,3 +1,5 @@
+// State is "live", "ended" or "unknown".
+
 package admin
 
 import (
@@ -20,16 +22,19 @@ type runFileRow struct {
 }
 
 type runFilesRun struct {
-	Repo      string       `json:"repo"`
-	RunID     string       `json:"run_id"`
-	CreatedAt time.Time    `json:"created_at"`
-	UsedAt    time.Time    `json:"used_at"`
-	CheckedAt *time.Time   `json:"checked_at"`
-	EndedAt   *time.Time   `json:"ended_at"`
-	ExpiresAt *time.Time   `json:"expires_at"`
-	Bytes     int64        `json:"bytes"`
-	Reads     int64        `json:"reads"`
-	Files     []runFileRow `json:"files"`
+	Repo      string     `json:"repo"`
+	RunID     string     `json:"run_id"`
+	CreatedAt time.Time  `json:"created_at"`
+	UsedAt    time.Time  `json:"used_at"`
+	CheckedAt *time.Time `json:"checked_at"`
+	// State is "live", "ended" or "unknown". Unknown means GitHub could not report the run's status.
+	State      string       `json:"state"`
+	CheckError string       `json:"check_error,omitempty"`
+	EndedAt    *time.Time   `json:"ended_at"`
+	ExpiresAt  *time.Time   `json:"expires_at"`
+	Bytes      int64        `json:"bytes"`
+	Reads      int64        `json:"reads"`
+	Files      []runFileRow `json:"files"`
 }
 
 // apiRunFiles lists every CI run that holds run files, its files, and when
@@ -55,8 +60,16 @@ func (s *Server) apiRunFiles(w http.ResponseWriter, r *http.Request) {
 			Repo: run.RepoPath, RunID: run.RunID, CreatedAt: run.CreatedAt, UsedAt: run.UsedAt, CheckedAt: run.CheckedAt,
 			EndedAt: run.EndedAt, Bytes: run.Bytes, Files: make([]runFileRow, 0, len(files)),
 		}
+		row.State = "live"
 		if run.EndedAt != nil {
+			row.State = "ended"
 			expires := run.EndedAt.Add(s.cfg.RunFilesKeep)
+			row.ExpiresAt = &expires
+		} else if msg := runfiles.CheckError(db.RunKey{RepoID: run.RepoID, RunID: run.RunID}); msg != "" {
+			// The janitor deletes such a run once nothing used it for the keep period.
+			row.State = "unknown"
+			row.CheckError = msg
+			expires := run.UsedAt.Add(s.cfg.RunFilesKeep)
 			row.ExpiresAt = &expires
 		}
 		for _, f := range files {

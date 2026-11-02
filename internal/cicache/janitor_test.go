@@ -81,9 +81,9 @@ func TestSweep_DiskPressureDeletesLeastRecentlyUsedFirst(t *testing.T) {
 	t.Serial()
 	f := newFixture(t)
 	keys := []string{"oldest", "middle", "newest"}
-	f.save(t, "oldest", "a", 3*time.Hour)
-	f.save(t, "middle", "b", 2*time.Hour)
-	f.save(t, "newest", "c", time.Hour)
+	f.save(t, "oldest", "a", PressureGrace+3*time.Hour)
+	f.save(t, "middle", "b", PressureGrace+2*time.Hour)
+	f.save(t, "newest", "c", PressureGrace+time.Hour)
 	f.j.Disk = func(string) (diskusage.Usage, error) {
 		var free uint64 = 10
 		for _, k := range keys {
@@ -99,6 +99,26 @@ func TestSweep_DiskPressureDeletesLeastRecentlyUsedFirst(t *testing.T) {
 	assert.False(t, f.holds(t, "middle"))
 	assert.True(t, f.holds(t, "newest"), "the deletions stop once free disk is back above the floor")
 	assert.Equal(t, 2, LastReport().PressureDeleted)
+}
+
+// A disk that the cache does not fill stays below the floor whatever the
+// janitor deletes. The pass must still keep the entries that a live run saved
+// or restored, and say that it kept them.
+func TestSweep_PressureTheCacheCannotRelieveKeepsRecentEntries(t *testing.T) {
+	t.Serial()
+	f := newFixture(t)
+	f.free = 5
+	f.save(t, "idle", "a", PressureGrace+time.Hour)
+	f.save(t, "restored", "b", time.Minute)
+	f.save(t, "just-saved", "c", 0)
+
+	require.NoError(t, f.j.Sweep(t.Context(), time.Now()))
+	assert.False(t, f.holds(t, "idle"), "an entry idle past the grace still goes for disk pressure")
+	assert.True(t, f.holds(t, "restored"), "an entry restored a minute ago stays: the run that restored it can restore it again")
+	assert.True(t, f.holds(t, "just-saved"), "an entry saved by an earlier job of a live run stays")
+	rep := LastReport()
+	assert.Equal(t, 1, rep.PressureDeleted)
+	assert.Equal(t, 2, rep.PressureKept)
 }
 
 func TestSweep_NoPressureDeletesNothingRecent(t *testing.T) {

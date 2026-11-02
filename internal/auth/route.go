@@ -1,3 +1,5 @@
+// route.go holds the route code.
+
 package auth
 
 import (

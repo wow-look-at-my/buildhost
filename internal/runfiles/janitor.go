@@ -10,6 +10,7 @@ import (
 	"context"
 	"log/slog"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -59,6 +60,17 @@ var lastReport atomic.Pointer[Report]
 
 // LastReport returns the most recent pass, or nil before the first one.
 func LastReport() *Report { return lastReport.Load() }
+
+// checkErrors holds, per run, why the last status check failed.
+var checkErrors sync.Map // db.RunKey -> string
+
+// CheckError returns why GitHub could not report the run's status on the last
+// check.
+func CheckError(key db.RunKey) string {
+	v, _ := checkErrors.Load(key)
+	s, _ := v.(string)
+	return s
+}
 
 // Start runs Sweep every CheckInterval until ctx is done.
 func (j *Janitor) Start(ctx context.Context) {
@@ -138,10 +150,12 @@ func (j *Janitor) checkRuns(ctx context.Context, now time.Time, rep *Report) (ma
 		if err != nil {
 			rep.CheckFailures++
 			rep.LastCheckError = err.Error()
+			checkErrors.Store(key, err.Error())
 			unknown[key] = true
 			slog.Warn("run files: cannot read the run's status from GitHub; its files stay until nothing uses them for the keep period", "repo", run.RepoPath, "run_id", run.RunID, "keep", j.Keep, "err", err)
 			continue
 		}
+		checkErrors.Delete(key)
 		var mark *time.Time
 		if done {
 			mark = &endedAt
@@ -204,6 +218,7 @@ func (j *Janitor) deleteRun(ctx context.Context, run db.ListRunStorageRunsRow, r
 			slog.Error("run files: delete blob failed", "key", key, "err", err)
 		}
 	}
+	checkErrors.Delete(db.RunKey{RepoID: run.RepoID, RunID: run.RunID})
 	rep.Deleted++
 	rep.FreedBytes += run.Bytes
 	slog.Info("run files deleted", "repo", run.RepoPath, "run_id", run.RunID, "bytes", run.Bytes, "reason", reason)

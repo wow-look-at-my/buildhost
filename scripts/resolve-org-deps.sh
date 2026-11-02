@@ -1,4 +1,6 @@
 #!/bin/sh
+# resolve-org-deps.sh holds the resolve org deps code.
+
 set -eu
 
 mods="$(go mod edit -json | jq -r '

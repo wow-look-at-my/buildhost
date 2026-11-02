@@ -1,3 +1,5 @@
+// apiRetention (GET /api/retention) returns the current policy plus a dry-run preview of exactly what enforcing now would evict.
+
 package admin
 
 import (
@@ -119,6 +121,46 @@ func (s *Server) apiRunRetention(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, reportJSON(rep))
 }
 
+// refChecker answers which branches GitHub still holds. Tests replace it.
+var refChecker retention.RefChecker = retention.GitHubRefChecker{}
+
+// apiDeletedBranches (GET /api/retention/deleted-branches) previews the
+// deleted-branch pass: every non-default branch build, with what GitHub said
+// about its branch.
+func (s *Server) apiDeletedBranches(w http.ResponseWriter, r *http.Request) {
+	s.deletedBranches(w, r, false)
+}
+
+// apiRunDeletedBranches (POST /api/retention/deleted-branches) deletes every
+// build older than the recency guard on a non-default branch that GitHub
+// confirms is gone.
+func (s *Server) apiRunDeletedBranches(w http.ResponseWriter, r *http.Request) {
+	if n := InflightWrites(); n > 0 {
+		http.Error(w, fmt.Sprintf("%d write(s) in flight; retry when idle", n), http.StatusConflict)
+		return
+	}
+	s.deletedBranches(w, r, true)
+}
+
+func (s *Server) deletedBranches(w http.ResponseWriter, r *http.Request, enforce bool) {
+	ctx := r.Context()
+	settings, err := s.db.GetRetentionSettings(ctx)
+	if err != nil {
+		s.retentionError(w, r, err)
+		return
+	}
+	rep, err := retention.New(s.db, s.store, retention.ConfigFromSettings(settings, enforce)).RunDeletedBranches(ctx, refChecker)
+	if err != nil {
+		s.retentionError(w, r, err)
+		return
+	}
+	if enforce {
+		slog.Warn("deleted-branch builds removed via admin dashboard",
+			"releases", rep.Releases(), "blobs_freed", rep.BlobsDeleted, "bytes_freed", rep.ReclaimableBytes)
+	}
+	s.writeJSON(w, reportJSON(rep))
+}
+
 func (s *Server) retentionError(w http.ResponseWriter, r *http.Request, err error) {
 	slog.Error("admin api error", "err", err, "path", r.URL.Path)
 	http.Error(w, "internal error", http.StatusInternalServerError)
@@ -150,7 +192,20 @@ func reportJSON(rep retention.Report) map[string]any {
 	}
 	add(rep.EvictedReleases, "keep-n")
 	add(rep.AbandonedReleases, "abandoned")
+	add(rep.DeletedBranchReleases, "deleted-branch")
+	branches := make([]map[string]any, 0, len(rep.BranchChecks))
+	for _, c := range rep.BranchChecks {
+		branches = append(branches, map[string]any{
+			"project_name": c.ProjectName,
+			"github_repo":  c.GithubRepo,
+			"branch":       c.Branch,
+			"state":        c.State,
+			"error":        c.Error,
+			"releases":     c.Releases,
+		})
+	}
 	return map[string]any{
+		"branches":          branches,
 		"enforced":          rep.Enforced,
 		"release_count":     rep.Releases(),
 		"keep_n_count":      len(rep.EvictedReleases),

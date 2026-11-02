@@ -6,6 +6,7 @@ export interface ActionGlobals {
 	github: typeof github;
 	context: typeof context;
 	octokit: typeof octokit;
+	getOctokit: typeof getOctokit;
 	exec: typeof exec;
 	inputs: typeof inputs;
 	steps: typeof steps;

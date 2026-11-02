@@ -1,3 +1,5 @@
+// EventNotAllowedError rejects a verified token whose event is outside the allowlist.
+
 package auth
 
 import (
@@ -278,7 +280,7 @@ func (c *oidcClaims) projectName() string {
 func RepoProjectName(repo string) string {
 	// A project name opens with a letter or digit, so `.github` owns `github`.
 	name := strings.TrimLeft(strings.ToLower(repo), "._-")
-	if !validOIDCProjectName(name) {
+	if !validOIDCProjectName(name) || ReservedProjectName(name) {
 		return ""
 	}
 	return name

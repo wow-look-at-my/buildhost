@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -24,10 +25,12 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/diskusage"
+	"github.com/wow-look-at-my/buildhost/internal/mirror"
 	"github.com/wow-look-at-my/buildhost/internal/recompress"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
 	"github.com/wow-look-at-my/buildhost/internal/runfiles"
 	"github.com/wow-look-at-my/buildhost/internal/scratch"
+	"github.com/wow-look-at-my/buildhost/internal/secretserver"
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	"github.com/wow-look-at-my/buildhost/internal/sites"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
@@ -44,6 +47,27 @@ var serveCmd = &cobra.Command{
 	Short: "Start the registry server",
 	RunE: func(_ *cobra.Command, _ []string) error {
 		cfg := config.Load()
+		if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+			return fmt.Errorf("create data dir: %w", err)
+		}
+		if err := os.MkdirAll(cfg.DataDir+"/tmp", 0o755); err != nil {
+			return fmt.Errorf("create temp dir: %w", err)
+		}
+
+		database, err := db.Open(cfg.DBPath)
+		if err != nil {
+			return fmt.Errorf("open database: %w", err)
+		}
+		defer database.Close()
+
+		// The dashboard's stored settings sit in front of the environment.
+		stored, err := database.ServerSettings(context.Background())
+		if err != nil {
+			return err
+		}
+		config.SetStored(stored)
+		cfg = config.Load()
+		config.MarkStarted()
 		// Refuse to start on a configuration that cannot serve correctly, rather
 		// than degrade silently at request time.
 		if err := cfg.Validate(); err != nil {
@@ -76,14 +100,7 @@ var serveCmd = &cobra.Command{
 			slog.Info("telemetry enabled", "endpoint", cfg.OTELEndpoint)
 		}
 
-		if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
-			return fmt.Errorf("create data dir: %w", err)
-		}
-		// The spool directories for in-progress uploads stay on the data
-		// volume; everything else scratch goes to TMPDIR.
-		if err := os.MkdirAll(cfg.DataDir+"/tmp", 0o755); err != nil {
-			return fmt.Errorf("create temp dir: %w", err)
-		}
+		// The spool directories for in-progress uploads stay on the data volume; everything else scratch goes to TMPDIR.
 		scratch.Configure(cfg.TempDir)
 		reclaimed := sweepScratch(cfg)
 		slog.Info("scratch root resolved", "dir", scratch.Root(), "reclaimed_bytes", reclaimed)
@@ -91,12 +108,6 @@ var serveCmd = &cobra.Command{
 		recomp := recompress.NewFromSettings(recompress.ConfigFrom(cfg))
 		recompress.Set(recomp)
 		defer recomp.Close()
-
-		database, err := db.Open(cfg.DBPath)
-		if err != nil {
-			return fmt.Errorf("open database: %w", err)
-		}
-		defer database.Close()
 
 		if err := database.SeedRetentionSettings(context.Background(), cfg.RetentionKeepN, int(cfg.RetentionRecencyGuard.Hours())); err != nil {
 			return fmt.Errorf("seed retention settings: %w", err)
@@ -119,6 +130,8 @@ var serveCmd = &cobra.Command{
 
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer stop()
+		ctx, restart := context.WithCancelCause(ctx)
+		defer restart(nil)
 
 		errc := make(chan error, 2)
 
@@ -130,6 +143,7 @@ var serveCmd = &cobra.Command{
 				Date:    buildinfo.Date(),
 				RepoURL: "https://github.com/wow-look-at-my/buildhost",
 			})
+			adminDash.SetRestart(func() { restart(errRestartRequested) })
 			adminHTTP = adminDash.NewHTTPServer()
 			go func() {
 				slog.Info("starting admin dashboard", "addr", cfg.AdminListenAddr)
@@ -140,6 +154,20 @@ var serveCmd = &cobra.Command{
 		}
 
 		srv := server.New(cfg, database, store)
+		if p := cfg.GitHubAppProblem(); p != "" {
+			slog.Error("GitHub App credential ignored; fix it on the admin Settings page", "problem", p)
+		}
+		switch {
+		case cfg.SecretServerToken == "":
+			slog.Error("no BUILDHOST_SECRET_SERVER_TOKEN: buildhost gets no GitHub credential from secret-server", "github_credential", auth.GitHubCredentialSource())
+		case cfg.GitHubToken != "" || cfg.HasGitHubApp():
+			slog.Warn("secret-server: the GitHub credential in the environment takes precedence; the machine token is not used")
+		default:
+			src := &secretserver.Source{URL: secretserver.URL, Token: cfg.SecretServerToken}
+			if err := src.Start(ctx); err != nil {
+				return err
+			}
+		}
 		// One background worker hashes what the brew tap history still lacks, so no tap request has to.
 		go func() {
 			if err := brew.BackfillHistoryDigests(ctx); err != nil {
@@ -178,6 +206,15 @@ var serveCmd = &cobra.Command{
 			Disk:           diskusage.Get,
 			Busy:           func() bool { return admin.InflightWrites() > 0 },
 		}).Start(ctx)
+		(&mirror.Janitor{
+			DB:             database,
+			Store:          store,
+			DataDir:        cfg.DataDir,
+			Keep:           cfg.MirrorKeep,
+			MinFreePercent: cfg.MirrorMinFreePercent,
+			Disk:           diskusage.Get,
+			Busy:           func() bool { return admin.InflightWrites() > 0 },
+		}).Start(ctx)
 
 		select {
 		case err := <-errc:
@@ -206,6 +243,10 @@ var serveCmd = &cobra.Command{
 			return shutdownErr
 		}
 		slog.Info("shutdown complete")
+		// A non-zero exit makes the container restart policy start the server again.
+		if errors.Is(context.Cause(ctx), errRestartRequested) {
+			return errRestartRequested
+		}
 		return nil
 	},
 }
@@ -254,6 +295,8 @@ func sweepEvery(staleAge time.Duration) time.Duration {
 	}
 	return every
 }
+
+var errRestartRequested = errors.New("restart requested from the admin dashboard")
 
 // startRetentionSweeper launches the background GC sweeper when a positive
 // interval is configured. It is report-only unless BUILDHOST_RETENTION_ENFORCE is

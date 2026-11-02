@@ -1,5 +1,7 @@
 //go:build unix
 
+// fileid_unix.go holds the fileid unix code.
+
 package runarchive
 
 import (

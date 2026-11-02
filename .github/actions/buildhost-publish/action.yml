@@ -103,7 +103,7 @@ runs:
         inputs: ${{ toJSON(inputs) }}
         script: |
           import { createPublishDeployment } from '../lib/deployment';
-          await createPublishDeployment({ core, github, context, octokit, exec, inputs, steps });
+          await createPublishDeployment({ core, github, context, octokit, getOctokit, exec, inputs, steps });
 
     - id: publish
       uses: wow-look-at-my/actions@typescript#latest
@@ -114,7 +114,7 @@ runs:
         inputs: ${{ toJSON(inputs) }}
         script: |
           import { publish } from '../lib/publish';
-          await publish({ core, github, context, octokit, exec, inputs, steps });
+          await publish({ core, github, context, octokit, getOctokit, exec, inputs, steps });
 
     # Terminal status for the GitHub Deployment created above; runs even when
     - name: Finish GitHub Deployment
@@ -125,4 +125,4 @@ runs:
         steps: ${{ toJSON(steps) }}
         script: |
           import { finishPublishDeployment } from '../lib/deployment';
-          await finishPublishDeployment({ core, github, context, octokit, exec, inputs, steps });
+          await finishPublishDeployment({ core, github, context, octokit, getOctokit, exec, inputs, steps });

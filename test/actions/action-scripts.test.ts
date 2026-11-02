@@ -184,7 +184,8 @@ for (const step of tsSteps) {
 		INPUT_STEPS: JSON.stringify(sampleSteps),
 		'INPUT_GITHUB-TOKEN': 'token',
 	};
-	const run = spawnSync(process.execPath, [typescriptAction], { env, encoding: 'utf8' });
+	// A download retries the unreachable sample server until the job ends, so the run has a limit.
+	const run = spawnSync(process.execPath, [typescriptAction], { env, encoding: 'utf8', timeout: 30_000 });
 	const out = `${run.stdout}${run.stderr}`;
 	assert.ok(out.includes('Type-check passed.'), `${step.action}/action.yml:${step.line}: the step fails the typescript action's type-check:\n${out}`);
 }

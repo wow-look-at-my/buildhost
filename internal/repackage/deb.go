@@ -1,3 +1,5 @@
+// deb.go holds the deb code.
+
 package repackage
 
 import _ "embed"

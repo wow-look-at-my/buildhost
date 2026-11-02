@@ -1,3 +1,5 @@
+// apeelf.go holds the apeelf code.
+
 package repackage
 
 import (

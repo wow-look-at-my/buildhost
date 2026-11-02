@@ -94,4 +94,4 @@ runs:
         inputs: ${{ toJSON(inputs) }}
         script: |
           import { dockerPush } from '../lib/docker';
-          await dockerPush({ core, github, context, octokit, exec, inputs, steps });
+          await dockerPush({ core, github, context, octokit, getOctokit, exec, inputs, steps });

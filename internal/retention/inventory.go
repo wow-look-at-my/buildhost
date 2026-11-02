@@ -1,3 +1,5 @@
+// Roles a stored file can have.
+
 package retention
 
 import (
@@ -21,6 +23,7 @@ const (
 	RoleGoproxy  = "goproxy"
 	RoleRunFile  = "run-file"
 	RoleCache    = "cache"
+	RoleMirror   = "mirror"
 )
 
 // Hold values. A hold is the reason retention keeps a file. An empty hold means
@@ -39,6 +42,7 @@ const (
 	HoldGoproxy    = "goproxy"       // a cached Go module zip, not a project
 	HoldRunFile    = "run-file"      // a CI run's hand-off, deleted by internal/runfiles
 	HoldCache      = "cache"         // a CI cache entry, evicted by internal/cicache
+	HoldMirror     = "mirror"        // a registry mirror blob, evicted by internal/mirror
 	HoldUnknown    = "unknown"       // the plan and this reason disagree
 )
 
@@ -364,6 +368,20 @@ func (r *Retention) listFiles(ctx context.Context) ([]FileEntry, error) {
 			Holds:     []string{HoldCache},
 		}
 		out = appendFile(out, base, RoleCache, e.StorageKey, e.Size, e.StorageKey)
+	}
+
+	mirrored, err := r.db.ListMirrorBlobFiles(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list mirror files: %w", err)
+	}
+	for _, m := range mirrored {
+		base := FileEntry{
+			CreatedAt: m.CreatedAt,
+			Filename:  m.Upstream + "@" + m.Digest,
+			MediaType: m.MediaType,
+			Holds:     []string{HoldMirror},
+		}
+		out = appendFile(out, base, RoleMirror, m.StorageKey, m.Size, m.StorageKey)
 	}
 
 	return out, nil
