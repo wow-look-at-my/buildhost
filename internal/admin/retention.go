@@ -36,8 +36,9 @@ func (s *Server) apiRetention(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiUpdateRetention(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var body struct {
-		KeepN        *int `json:"keep_n"`
-		RecencyHours *int `json:"recency_hours"`
+		KeepN             *int `json:"keep_n"`
+		RecencyHours      *int `json:"recency_hours"`
+		DeletedBranchDays *int `json:"deleted_branch_days"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRetentionBody)).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -51,7 +52,22 @@ func (s *Server) apiUpdateRetention(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "keep_n must be 0..100000 and recency_hours 0..87600", http.StatusBadRequest)
 		return
 	}
-	if err := s.db.UpdateRetentionSettings(ctx, *body.KeepN, *body.RecencyHours); err != nil {
+	// An omitted deleted_branch_days carries the stored value forward.
+	current, err := s.db.GetRetentionSettings(ctx)
+	if err != nil {
+		s.retentionError(w, r, err)
+		return
+	}
+	deletedBranchDays := current.DeletedBranchDays
+	if body.DeletedBranchDays != nil {
+		deletedBranchDays = *body.DeletedBranchDays
+	}
+	if deletedBranchDays < 0 || deletedBranchDays > 36500 {
+		http.Error(w, "deleted_branch_days must be 0..36500", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.db.UpdateRetentionSettings(ctx, *body.KeepN, *body.RecencyHours, deletedBranchDays); err != nil {
 		s.retentionError(w, r, err)
 		return
 	}
@@ -168,8 +184,9 @@ func (s *Server) retentionError(w http.ResponseWriter, r *http.Request, err erro
 
 func (s *Server) retentionResponse(settings db.RetentionSettings, preview retention.Report) map[string]any {
 	return map[string]any{
-		"keep_n":        settings.KeepN,
-		"recency_hours": settings.RecencyHours,
+		"keep_n":              settings.KeepN,
+		"recency_hours":       settings.RecencyHours,
+		"deleted_branch_days": settings.DeletedBranchDays,
 		// The background sweeper is deploy-level config the dashboard cannot change.
 		"sweeper_enabled": s.cfg.RetentionInterval > 0,
 		"sweeper_enforce": s.cfg.RetentionEnforce,
