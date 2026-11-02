@@ -61,10 +61,16 @@ func pause(ctx context.Context, what string, status int, wait time.Duration) err
 	fmt.Fprintf(os.Stderr, "shellgen: %s: HTTP %d; asking again in %s\n", what, status, wait)
 	select {
 	case <-ctx.Done():
-		return fmt.Errorf("%s: HTTP %d, and the %s deadline passed while waiting", what, status, fetchDeadline)
+		return giveUp(what, status)
 	case <-time.After(wait):
 		return nil
 	}
+}
+
+// giveUp reports the status that was being retried and the deadline that
+// ended the retries.
+func giveUp(what string, status int) error {
+	return fmt.Errorf("%s: HTTP %d, and the %s deadline passed", what, status, fetchDeadline)
 }
 
 // images pins the busybox:musl manifest per architecture. The pin is what makes
@@ -158,6 +164,7 @@ func fetchToken(ctx context.Context) (string, error) {
 }
 
 func get(ctx context.Context, token, p, accept string) (io.ReadCloser, error) {
+	var lastStatus int
 	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL+p, nil)
 		if err != nil {
@@ -169,6 +176,11 @@ func get(ctx context.Context, token, p, accept string) (io.ReadCloser, error) {
 		}
 		resp, err := client().Do(req)
 		if err != nil {
+			// The deadline can end the loop inside the request as well as in the
+			// wait between some of them. Both give up for the same reason.
+			if lastStatus != 0 && ctx.Err() != nil {
+				return nil, giveUp("GET "+p, lastStatus)
+			}
 			return nil, fmt.Errorf("GET %s: %w", p, err)
 		}
 		if resp.StatusCode == http.StatusOK {
@@ -179,6 +191,7 @@ func get(ctx context.Context, token, p, accept string) (io.ReadCloser, error) {
 		if !retryable(status) {
 			return nil, fmt.Errorf("GET %s: HTTP %d", p, status)
 		}
+		lastStatus = status
 		if err := pause(ctx, "GET "+p, status, wait); err != nil {
 			return nil, err
 		}
