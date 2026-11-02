@@ -361,7 +361,7 @@ func Load() Config {
 		MirrorMinFreePercent: 15,
 	}
 	c.loadSettings()
-	if v := strings.TrimSpace(os.Getenv("BUILDHOST_TEMP_DIR")); v != "" {
+	if v := strings.TrimSpace(Getenv("BUILDHOST_TEMP_DIR")); v != "" {
 		c.TempDir = v
 	}
 	if v := Getenv("BUILDHOST_LISTEN_ADDR"); v != "" {

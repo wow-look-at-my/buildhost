@@ -38,6 +38,8 @@ func TestServiceWiresTheCacheAndLimiter(t *testing.T) {
 	require.NotNil(t, svc.Cache)
 	require.NotNil(t, svc.Limiter)
 	assert.Equal(t, 4, svc.Cache.entries)
+	// The allowance scales with the host's load average, so pin the reading.
+	svc.Limiter.load = func() float64 { return 0 }
 	assert.True(t, svc.Limiter.Allow("203.0.113.9"))
 }
 
