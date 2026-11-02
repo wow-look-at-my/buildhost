@@ -132,7 +132,7 @@ type Config struct {
 	RetentionInterval     time.Duration
 	RetentionRecencyGuard time.Duration // never evict releases newer than this
 	RetentionEnforce      bool          // actually delete; false = report-only
-	// RetentionDeletedBranchDays seeds the age past which a published release whose branch is gone from the origin repository is reclaimed.
+	// RetentionDeletedBranchDays seeds the stored deleted-branch window, in days; the dashboard owns the value after that.
 	RetentionDeletedBranchDays int
 
 	// Run files: how long a run's files outlive the run, and the free disk share below which ended runs go sooner.

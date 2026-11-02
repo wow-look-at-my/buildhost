@@ -1,7 +1,7 @@
 # The shipped binary's reclaim pass must carry the deleted-branch reason beside
 # the keep-N and abandoned figures it already reports. The rule itself is gated
 # by the unit tests in internal/retention, which drive the real pass with only
-# the branch lister faked. A deterministic CLI case cannot seed a 30-day-old
+# the GitHub ref checker faked. A deterministic CLI case cannot seed a 30-day-old
 # build on a branch that GitHub has forgotten. This is because the GitHub API
 # root is a package variable and not env-configurable.
 #
@@ -11,7 +11,7 @@
 #
 # $BUILDHOST_BIN comes from the workflow.
 #
-# see docs/testing.md, internal/retention/deletedbranch.go
+# see docs/testing.md, internal/retention/deletedbranches.go
 
 tests:
 	- desc: buildhost gc reports the deleted-branch reason beside the existing ones

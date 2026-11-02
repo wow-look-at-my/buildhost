@@ -52,12 +52,34 @@ var gcCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("gc: %w", err)
 		}
+		// The deleted-branch rule is its own pass: it asks GitHub which branches are gone.
+		dead, err := ret.RunDeletedBranches(cmd.Context(), retention.GitHubRefChecker{})
+		if err != nil {
+			return fmt.Errorf("gc deleted branches: %w", err)
+		}
+		rep = mergeReports(rep, dead)
 		printGCReport(rep, settings)
 		if rep.RecordsUnmarked > 0 && rep.Enforced {
 			return fmt.Errorf("%d artifact storage record(s) could not be marked deleted; the org's linked artifacts page still lists evicted artifacts as stored", rep.RecordsUnmarked)
 		}
 		return nil
 	},
+}
+
+// mergeReports folds the deleted-branch pass into the sweep's report, so the CLI
+// prints one set of numbers for everything it reclaimed. Each pass refcounts its
+// own batch, so the blob and byte totals are sums of freed blobs, never of
+// shared ones.
+func mergeReports(rep, dead retention.Report) retention.Report {
+	rep.DeletedBranchReleases = dead.DeletedBranchReleases
+	rep.BlobsDeleted += dead.BlobsDeleted
+	rep.BlobsRetained += dead.BlobsRetained
+	rep.ReclaimableBytes += dead.ReclaimableBytes
+	rep.FreedBlobs = append(rep.FreedBlobs, dead.FreedBlobs...)
+	rep.RecordsMarkedDeleted += dead.RecordsMarkedDeleted
+	rep.RecordsUnmarked += dead.RecordsUnmarked
+	rep.RecordErrors = append(rep.RecordErrors, dead.RecordErrors...)
+	return rep
 }
 
 // recordDeleterFor builds the sink that retracts an evicted release's
@@ -78,8 +100,8 @@ func printGCReport(rep retention.Report, settings db.RetentionSettings) {
 	} else {
 		fmt.Println("buildhost gc -- DRY RUN (nothing deleted; pass --enforce to apply)")
 	}
-	fmt.Printf("  keep-N per (project, branch): %d   recency guard: %dh   deleted-branch window: %dd\n",
-		settings.KeepN, settings.RecencyHours, settings.DeletedBranchDays)
+	fmt.Printf("  keep-N per (project, branch): %d   recency guard: %dh\n",
+		settings.KeepN, settings.RecencyHours)
 	fmt.Printf("  releases: %d (%d past keep-N, %d abandoned, %d on deleted branches)\n",
 		rep.Releases(), len(rep.EvictedReleases), len(rep.AbandonedReleases), len(rep.DeletedBranchReleases))
 
@@ -98,6 +120,8 @@ func printGCReport(rep retention.Report, settings db.RetentionSettings) {
 		verb = "freed"
 	}
 	fmt.Printf("  blobs %s: %d (%s); %d shared blobs kept\n", verb, rep.BlobsDeleted, humanBytes(rep.ReclaimableBytes), rep.BlobsRetained)
+	// The deleted-branch reason's own line.
+	fmt.Printf("  deleted-branch builds: %d\n", len(rep.DeletedBranchReleases))
 
 	// An evicted artifact whose storage record still says "stored" is a lie on
 	// the org's linked artifacts page, so the numbers are always printed --
