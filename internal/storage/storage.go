@@ -1,3 +1,5 @@
+// storage.go holds the storage code.
+
 package storage
 
 import (

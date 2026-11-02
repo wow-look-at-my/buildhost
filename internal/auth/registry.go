@@ -1,3 +1,5 @@
+// registry.go holds the registry code.
+
 package auth
 
 import (

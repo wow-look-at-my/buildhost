@@ -1,3 +1,5 @@
+// deps.go holds the deps code.
+
 package api
 
 // Pins the generated validators' runtime through a fresh clone's pre-generate tidy.

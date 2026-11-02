@@ -1,3 +1,5 @@
+// fmt_raw.go holds the fmt raw code.
+
 package static
 
 import (

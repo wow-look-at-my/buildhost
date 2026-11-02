@@ -1,3 +1,5 @@
+// upstream.go holds the upstream code.
+
 package goproxy
 
 import (

@@ -68,10 +68,16 @@ func buildOCI(t *testing.T, exeFormat string, os db.OS, arch db.Arch) ([]byte, f
 	if exeFormat == "" {
 		payload = testBinary
 	}
+	// The artifact row points at a real release: the schema enforces the foreign key.
+	proj := &db.Project{Name: "testapp", Versioning: db.VersioningSemver}
+	require.NoError(t, d.CreateProject(ctx, proj))
+	rel := &db.Release{ProjectID: proj.ID, Version: "v1.2.3", VersionNum: 1}
+	require.NoError(t, d.CreateRelease(ctx, rel))
+
 	key, size, err := store.Put(ctx, strings.NewReader(string(payload)))
 	require.NoError(t, err)
 	a := &db.Artifact{
-		ReleaseID: 1, OS: os, Arch: arch, Kind: db.KindBinary,
+		ReleaseID: rel.ID, OS: os, Arch: arch, Kind: db.KindBinary,
 		StorageKey: key, Size: size, SHA256: key, ExeFormat: exeFormat,
 	}
 	require.NoError(t, d.CreateArtifact(ctx, a))

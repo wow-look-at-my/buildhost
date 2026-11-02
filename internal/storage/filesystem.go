@@ -1,3 +1,5 @@
+// filesystem.go holds the filesystem code.
+
 package storage
 
 import (

@@ -1,3 +1,5 @@
+// aptdepends.go holds the aptdepends code.
+
 package db
 
 import (

@@ -1,3 +1,5 @@
+// static.go holds the static code.
+
 package static
 
 import (

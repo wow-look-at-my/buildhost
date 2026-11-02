@@ -1,3 +1,5 @@
+// ape.go holds the ape code.
+
 package repackage
 
 import _ "embed"

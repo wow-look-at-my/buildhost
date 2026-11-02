@@ -1,5 +1,7 @@
 //go:build !cosmo
 
+// hostos_other.go holds the hostos other code.
+
 package runarchive
 
 import "runtime"

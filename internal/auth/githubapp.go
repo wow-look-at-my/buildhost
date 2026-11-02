@@ -1,3 +1,5 @@
+// githubapp.go holds the githubapp code.
+
 package auth
 
 import (

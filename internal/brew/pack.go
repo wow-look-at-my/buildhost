@@ -1,3 +1,5 @@
+// pack.go holds the pack code.
+
 package brew
 
 // Packfile assembly for the smart-HTTP tap (smart.go): the response pack is

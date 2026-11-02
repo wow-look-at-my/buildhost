@@ -1,3 +1,5 @@
+// upload.go holds the upload code.
+
 package ociclient
 
 // Blob upload paths for Pusher: the HEAD existence skip, the cross-repository
