@@ -1,3 +1,5 @@
+// packages.go holds the packages code.
+
 package apt
 
 import (

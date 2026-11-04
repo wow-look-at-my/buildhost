@@ -1,3 +1,5 @@
+// upload.go holds the upload code.
+
 package sites
 
 import (

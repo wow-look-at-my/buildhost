@@ -1,3 +1,5 @@
+// auth.go holds the auth code.
+
 package auth
 
 import (

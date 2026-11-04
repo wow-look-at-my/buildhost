@@ -1,3 +1,5 @@
+// sso.go holds the sso code.
+
 package auth
 
 import (

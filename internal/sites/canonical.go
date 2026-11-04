@@ -1,3 +1,5 @@
+// canonical.go holds the canonical code.
+
 package sites
 
 // Canonicalization: which URL is THE URL for a file, and how every other

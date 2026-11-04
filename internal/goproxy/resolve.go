@@ -1,3 +1,5 @@
+// resolve.go holds the resolve code.
+
 package goproxy
 
 import (

@@ -1,3 +1,5 @@
+// publish.go holds the publish code.
+
 package api
 
 import (

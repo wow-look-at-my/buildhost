@@ -1,3 +1,5 @@
+// downloadtoken.go holds the downloadtoken code.
+
 package auth
 
 import (

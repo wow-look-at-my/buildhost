@@ -1,3 +1,5 @@
+// resolve.go holds the resolve code.
+
 package sites
 
 // Ref resolution.

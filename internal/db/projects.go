@@ -1,3 +1,5 @@
+// projects.go holds the projects code.
+
 package db
 
 import (

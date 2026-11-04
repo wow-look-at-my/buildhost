@@ -1,3 +1,5 @@
+// unauthorized.go holds the unauthorized code.
+
 package auth
 
 import _ "embed"
