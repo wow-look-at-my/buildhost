@@ -56,12 +56,22 @@ func retryWait(resp *http.Response) time.Duration {
 	return retryEvery
 }
 
+// deadlineErr names the status that was still coming back when the deadline
+// arrived. A request the deadline cut off reports the same way as a wait it cut
+// short, so the caller always learns which status was repeating.
+func deadlineErr(what string, status int) error {
+	if status == 0 {
+		return fmt.Errorf("%s: the %s deadline passed before the registry answered", what, fetchDeadline)
+	}
+	return fmt.Errorf("%s: HTTP %d, and the %s deadline passed", what, status, fetchDeadline)
+}
+
 // pause logs a retry and waits, or fails when the deadline has passed.
 func pause(ctx context.Context, what string, status int, wait time.Duration) error {
 	fmt.Fprintf(os.Stderr, "shellgen: %s: HTTP %d; asking again in %s\n", what, status, wait)
 	select {
 	case <-ctx.Done():
-		return fmt.Errorf("%s: HTTP %d, and the %s deadline passed while waiting", what, status, fetchDeadline)
+		return deadlineErr(what, status)
 	case <-time.After(wait):
 		return nil
 	}
@@ -123,6 +133,7 @@ func client() *http.Client { return &http.Client{Timeout: 2 * time.Minute} }
 
 func fetchToken(ctx context.Context) (string, error) {
 	var resp *http.Response
+	status := 0
 	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenURL, nil)
 		if err != nil {
@@ -130,12 +141,17 @@ func fetchToken(ctx context.Context) (string, error) {
 		}
 		resp, err = client().Do(req)
 		if err != nil {
+			// A request the deadline cut off is the same outcome as a wait it cut short.
+			if ctx.Err() != nil {
+				return "", deadlineErr("registry token", status)
+			}
 			return "", fmt.Errorf("registry token: %w", err)
 		}
 		if !retryable(resp.StatusCode) {
 			break
 		}
-		status, wait := resp.StatusCode, retryWait(resp)
+		status = resp.StatusCode
+		wait := retryWait(resp)
 		resp.Body.Close()
 		if err := pause(ctx, "registry token", status, wait); err != nil {
 			return "", err
@@ -158,6 +174,7 @@ func fetchToken(ctx context.Context) (string, error) {
 }
 
 func get(ctx context.Context, token, p, accept string) (io.ReadCloser, error) {
+	status := 0
 	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL+p, nil)
 		if err != nil {
@@ -169,12 +186,17 @@ func get(ctx context.Context, token, p, accept string) (io.ReadCloser, error) {
 		}
 		resp, err := client().Do(req)
 		if err != nil {
+			// A request the deadline cut off is the same outcome as a wait it cut short.
+			if ctx.Err() != nil {
+				return nil, deadlineErr("GET "+p, status)
+			}
 			return nil, fmt.Errorf("GET %s: %w", p, err)
 		}
 		if resp.StatusCode == http.StatusOK {
 			return resp.Body, nil
 		}
-		status, wait := resp.StatusCode, retryWait(resp)
+		status = resp.StatusCode
+		wait := retryWait(resp)
 		resp.Body.Close()
 		if !retryable(status) {
 			return nil, fmt.Errorf("GET %s: HTTP %d", p, status)
