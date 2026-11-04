@@ -1,3 +1,5 @@
+// modpath.go holds the modpath code.
+
 package goproxy
 
 import (

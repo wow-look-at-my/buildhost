@@ -1,3 +1,5 @@
+// depends.go holds the depends code.
+
 package db
 
 import (

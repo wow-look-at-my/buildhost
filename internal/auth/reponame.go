@@ -1,3 +1,5 @@
+// reponame.go holds the reponame code.
+
 package auth
 
 import (

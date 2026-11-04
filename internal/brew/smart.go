@@ -1,3 +1,5 @@
+// smart.go holds the smart code.
+
 package brew
 
 // Smart-HTTP git serving (protocol v0 upload-pack) for the generated Homebrew
