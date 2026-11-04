@@ -113,6 +113,12 @@ const apiFetch = function <T>(path: string): Promise<T> {
     });
 };
 
+// failText is the alert for a failed write. The live dashboard names the real error, not demo mode.
+const failText = function (what: string, err: unknown): string {
+    if (demo) return "Could not " + what + " (preview/demo mode has no backend).";
+    return "Could not " + what + ": " + (err instanceof Error ? err.message : String(err));
+};
+
 // Only the preview site ships demo.json. The admin server does not embed it and
 // answers that path with index.html, so the live dashboard never reads the marker.
 const detectDemo = function (): Promise<boolean> {
@@ -373,7 +379,7 @@ const setVisibility = function (sel: HTMLSelectElement): void {
     }).then(function (res) {
         if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); reload(); });
         reload();
-    }).catch(function () { alert("Could not change visibility (preview/demo mode has no backend)."); reload(); });
+    }).catch(function (e) { alert(failText("change visibility", e)); reload(); });
 };
 
 const projectNameCell = function (project: ProjectSummary, depth: number): string {
@@ -1330,7 +1336,7 @@ const renderRetention = function (d: RetentionData): void {
             }).then(function (res) {
                 if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); });
                 return res.json().then(renderRetention);
-            }).catch(function () { alert("Could not save policy (preview/demo mode has no backend)."); });
+            }).catch(function (e) { alert(failText("save policy", e)); });
         });
     }
 };
@@ -1401,7 +1407,7 @@ const runRetention = function (): void {
                 humanSize(rep.reclaimable_bytes || 0) + " across " + (rep.blobs || 0) + " blobs.");
             pages.retention();
         });
-    }).catch(function () { alert("Could not run GC (preview/demo mode has no backend)."); });
+    }).catch(function (e) { alert(failText("run GC", e)); });
 };
 
 const BRANCH_STATE_BADGE: Record<string, string> = { deleted: "danger", present: "success", default: "info", unknown: "warning" };
@@ -1467,7 +1473,7 @@ const recheckGoproxy = function (): void {
     fetch("/api/goproxy/recheck", { method: "POST" }).then(function (res) {
         if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); });
         return res.json().then(function () { pages.goproxy(); });
-    }).catch(function () { alert("Could not re-check (preview/demo mode has no backend)."); });
+    }).catch(function (e) { alert(failText("re-check", e)); });
 };
 
 pages.goproxy = function (): void {
@@ -2032,7 +2038,7 @@ const applyMerge = function (from: string, into: string): void {
             alert("Merged " + p.from + " into " + p.into + ".\nSnapshot: " + (p.snapshot || "(none)"));
             pages.duplicates();
         });
-    }).catch(function () { alert("Could not merge (preview/demo mode has no backend)."); });
+    }).catch(function (e) { alert(failText("merge", e)); });
 };
 
 const setVersioning = function (name: string, versioning: string): void {
@@ -2047,7 +2053,7 @@ const setVersioning = function (name: string, versioning: string): void {
     }).then(function (res) {
         if (!res.ok) return res.text().then(function (t) { alert("Error: " + t); pages.project(name); });
         pages.project(name);
-    }).catch(function () { alert("Could not change versioning (preview/demo mode has no backend)."); pages.project(name); });
+    }).catch(function (e) { alert(failText("change versioning", e)); pages.project(name); });
 };
 
 pages.runFiles = function (): void {
@@ -2470,7 +2476,7 @@ const saveSetting = function (name: string, method: "PUT" | "DELETE", value: str
     }).then(function (res) {
         if (!res.ok) return res.text().then(function (t) { alert("Not saved: " + t); });
         return res.json().then(renderSettings);
-    }).catch(function () { alert("Could not save (preview/demo mode has no backend)."); });
+    }).catch(function (e) { alert(failText("save", e)); });
 };
 
 const restartServer = function (): void {
@@ -2478,7 +2484,7 @@ const restartServer = function (): void {
     fetch("/api/restart", { method: "POST" }).then(function (res) {
         if (!res.ok) return res.text().then(function (t) { alert("Not restarted: " + t); });
         alert("The server is restarting. Reload this page in a moment.");
-    }).catch(function () { alert("Could not restart (preview/demo mode has no backend)."); });
+    }).catch(function (e) { alert(failText("restart", e)); });
 };
 
 pages.mirror = function (): void {
