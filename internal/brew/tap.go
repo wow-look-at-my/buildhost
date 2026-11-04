@@ -1,3 +1,5 @@
+// tap.go holds the tap code.
+
 package brew
 
 import (

@@ -1,3 +1,5 @@
+// sites.go holds the sites code.
+
 package db
 
 import _ "embed"

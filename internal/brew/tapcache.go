@@ -1,3 +1,5 @@
+// tapcache.go holds the tapcache code.
+
 package brew
 
 import (

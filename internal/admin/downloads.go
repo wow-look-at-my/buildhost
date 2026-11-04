@@ -1,3 +1,5 @@
+// downloads.go holds the downloads code.
+
 package admin
 
 import (

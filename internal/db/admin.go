@@ -1,3 +1,5 @@
+// admin.go holds the admin code.
+
 package db
 
 import (

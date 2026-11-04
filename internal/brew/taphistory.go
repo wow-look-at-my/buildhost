@@ -1,3 +1,5 @@
+// taphistory.go holds the taphistory code.
+
 package brew
 
 // Persistent tap history. Every tap build used to mint a single PARENTLESS

@@ -1,3 +1,5 @@
+// serveblob.go holds the serveblob code.
+
 package api
 
 import (

@@ -430,7 +430,7 @@ jobs:
         with:
           project: dats
       - if: runner.os == 'Linux'
-        uses: Homebrew/actions/setup-homebrew@main
+        uses: Homebrew/actions/setup-homebrew@2026.11.02.1
       - if: runner.os == 'Linux'
         name: Host prep for Homebrew's build sandbox (bubblewrap + user namespaces)
         run: |

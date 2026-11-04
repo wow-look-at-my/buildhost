@@ -1,3 +1,5 @@
+// serve.go holds the serve code.
+
 package sites
 
 import (

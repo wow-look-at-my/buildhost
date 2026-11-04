@@ -1,3 +1,5 @@
+// handler.go holds the handler code.
+
 package sites
 
 import (

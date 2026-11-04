@@ -1,3 +1,5 @@
+// artifacts.go holds the artifacts code.
+
 package api
 
 import (

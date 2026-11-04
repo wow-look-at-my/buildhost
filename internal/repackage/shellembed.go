@@ -1,3 +1,5 @@
+// shellembed.go holds the shellembed code.
+
 package repackage
 
 import (

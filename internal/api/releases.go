@@ -1,3 +1,5 @@
+// releases.go holds the releases code.
+
 package api
 
 //go:generate go run github.com/wow-look-at-my/go-regex-compiler/cmd/go-regex-compiler@latest --regex "^[a-zA-Z0-9][a-zA-Z0-9._+-]{0,127}$" --func validVersion --package api --output gen_version.go --match full

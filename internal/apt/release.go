@@ -1,3 +1,5 @@
+// release.go holds the release code.
+
 package apt
 
 import (

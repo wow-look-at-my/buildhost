@@ -1,3 +1,5 @@
+// manifest.go holds the manifest code.
+
 package oci
 
 import (
