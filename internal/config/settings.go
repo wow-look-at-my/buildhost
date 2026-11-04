@@ -74,6 +74,7 @@ var Settings = []Setting{
 	{Name: "BUILDHOST_RETENTION_ENFORCE", Group: "Retention", Kind: KindBool, Default: "false", Description: "Delete what retention evicts. False only reports."},
 	{Name: "BUILDHOST_RETENTION_KEEP_N", Group: "Retention", Kind: KindInt, Default: "10", Description: "Seeds the retention policy on first start. The Retention page edits the live policy."},
 	{Name: "BUILDHOST_RETENTION_RECENCY_GUARD", Group: "Retention", Kind: KindDuration, Default: "24h", Description: "Seeds the retention policy on first start. The Retention page edits the live policy."},
+	{Name: "BUILDHOST_RETENTION_DELETED_BRANCH_DAYS", Group: "Retention", Kind: KindInt, Default: "30", Description: "Seeds the deleted-branch reclaim window on first start. The Retention page edits the live policy."},
 
 	{Name: "BUILDHOST_MAX_UPLOAD_SIZE", Group: "Uploads", Kind: KindBytes, Default: "2G", Live: true, Description: "Cap on one REST artifact upload."},
 	{Name: "BUILDHOST_MAX_BLOB_SIZE", Group: "Uploads", Kind: KindBytes, Default: "10G", Live: true, Description: "Cap on one OCI blob."},
