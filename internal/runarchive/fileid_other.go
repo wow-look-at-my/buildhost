@@ -1,5 +1,7 @@
 //go:build !unix
 
+// fileid_other.go holds the fileid other code.
+
 package runarchive
 
 import "io/fs"

@@ -1,3 +1,5 @@
+// visibility.go holds the visibility code.
+
 package db
 
 import (

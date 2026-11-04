@@ -1,5 +1,7 @@
 //go:build cosmo
 
+// hostos_cosmo.go holds the hostos cosmo code.
+
 package runarchive
 
 import "runtime"

@@ -1,3 +1,5 @@
+// publish_site.go holds the publish site code.
+
 package main
 
 import (

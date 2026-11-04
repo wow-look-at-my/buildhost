@@ -1,3 +1,5 @@
+// redirect.go holds the redirect code.
+
 package npm
 
 import (

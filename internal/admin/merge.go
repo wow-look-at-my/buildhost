@@ -1,3 +1,5 @@
+// merge.go holds the merge code.
+
 package admin
 
 import (

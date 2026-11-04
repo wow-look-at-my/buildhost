@@ -1,3 +1,5 @@
+// brew.go holds the brew code.
+
 package repackage
 
 import (

@@ -1,3 +1,5 @@
+// generate.go holds the generate code.
+
 package repackage
 
 import (

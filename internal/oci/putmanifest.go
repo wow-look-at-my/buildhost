@@ -1,3 +1,5 @@
+// putmanifest.go holds the putmanifest code.
+
 package oci
 
 import (
