@@ -1,3 +1,5 @@
+// fetch.go holds the fetch code.
+
 package goproxy
 
 import (

@@ -1,3 +1,5 @@
+// view.go holds the view code.
+
 package web
 
 import _ "embed"

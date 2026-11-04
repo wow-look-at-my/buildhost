@@ -1,3 +1,5 @@
+// middleware.go holds the middleware code.
+
 package uploads
 
 import (

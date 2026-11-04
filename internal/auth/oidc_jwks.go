@@ -1,3 +1,5 @@
+// oidc_jwks.go holds the oidc jwks code.
+
 package auth
 
 // JWKS discovery, fetching, caching, and RSA key parsing for OIDC token

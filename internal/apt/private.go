@@ -1,3 +1,5 @@
+// private.go holds the private code.
+
 package apt
 
 import (

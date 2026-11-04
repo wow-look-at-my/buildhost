@@ -1,3 +1,5 @@
+// githubrun.go holds the githubrun code.
+
 package auth
 
 import (

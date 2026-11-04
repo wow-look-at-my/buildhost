@@ -1,3 +1,5 @@
+// gc.go holds the gc code.
+
 package main
 
 import (

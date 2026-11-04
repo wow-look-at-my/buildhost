@@ -1,3 +1,5 @@
+// cache.go holds the cache code.
+
 package admin
 
 import (

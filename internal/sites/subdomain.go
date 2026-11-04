@@ -1,3 +1,5 @@
+// subdomain.go holds the subdomain code.
+
 package sites
 
 import (

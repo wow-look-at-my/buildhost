@@ -1,3 +1,5 @@
+// githubsession.go holds the githubsession code.
+
 package auth
 
 import (

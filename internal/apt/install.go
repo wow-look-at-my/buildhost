@@ -1,3 +1,5 @@
+// install.go holds the install code.
+
 package apt
 
 import _ "embed"

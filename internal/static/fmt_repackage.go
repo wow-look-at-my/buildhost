@@ -1,3 +1,5 @@
+// fmt_repackage.go holds the fmt repackage code.
+
 package static
 
 import (

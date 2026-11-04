@@ -1,3 +1,5 @@
+// sumdb.go holds the sumdb code.
+
 package goproxy
 
 import (
