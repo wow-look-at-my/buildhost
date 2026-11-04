@@ -22,6 +22,25 @@ COPY build/buildhost build/apestage /in/
 # executable. The APE's own directory list starts there, so name /tmp instead.
 RUN APE_LOADERDIR=/tmp sh /in/apestage /in/buildhost /buildhost "$TARGETARCH"
 
+# UPX is its own GPL program. The image ships it as a separate executable and
+# the server runs it, so no GPL code is linked into buildhost. The release and
+# the tarball digest are pinned.
+FROM alpine:3.20 AS upx
+ARG TARGETARCH
+ARG UPX_VERSION=5.2.1
+RUN apk add --no-cache curl xz
+RUN set -eux; \
+    case "$TARGETARCH" in \
+      amd64) digest=402162aad30af47e60dbd767fb2e64ca394ace9727ba1f40283641f1d1b91657 ;; \
+      arm64) digest=a72d112c5970a904a31da0b9c84f919bc16b9a311787c12245508544a78c7d36 ;; \
+      *) echo "no UPX build for TARGETARCH=$TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL --proto '=https' --tlsv1.2 -o /tmp/upx.tar.xz \
+      "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-${TARGETARCH}_linux.tar.xz"; \
+    echo "$digest  /tmp/upx.tar.xz" | sha256sum -c -; \
+    tar -xJf /tmp/upx.tar.xz -C /opt; \
+    install -m 0755 "/opt/upx-${UPX_VERSION}-${TARGETARCH}_linux/upx" /upx
+
 FROM gcr.io/distroless/static-debian12:nonroot
 
 ARG VERSION=dev
@@ -41,6 +60,7 @@ COPY --from=dirs /tmpdir /tmp
 # PATH, the same shape the deb repackager gives an APE.
 COPY --from=staged --chmod=755 /buildhost /usr/local/lib/buildhost/buildhost
 COPY --chmod=755 scripts/image-launcher.sh /usr/local/bin/buildhost
+COPY --from=upx --chmod=755 /upx /usr/local/lib/buildhost/upx
 COPY --from=dirs --chown=65532:65532 /data /var/lib/buildhost
 
 ENV BUILDHOST_DATA_DIR=/var/lib/buildhost

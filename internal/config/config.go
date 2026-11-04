@@ -141,11 +141,25 @@ type Config struct {
 	CacheKeep           time.Duration
 	CacheMinFreePercent float64
 
+	// TempDir is the scratch root for request-path temp files.
+	TempDir string
+
+	// Download-time transfer encoding.
+	RecompressCacheLimit int64
+	RecompressEntryLimit int
+	RecompressTTL        time.Duration
+	ScratchAge           time.Duration
+
+	// RecompressPerIP is how many on-the-fly recompressions one client IP may start per RecompressWindow.
+	RecompressPerIP       int
+	RecompressWindow      time.Duration
+	RecompressLoadCeiling float64
+
 	// Registry mirror: how long a blob nothing reads is kept.
 	MirrorKeep           time.Duration
 	MirrorMinFreePercent float64
 
-	janitorErr error
+	settingsErr error
 }
 
 // resolvePEM returns PEM contents from a config value that is either the PEM
@@ -194,7 +208,7 @@ func (c Config) Validate() error {
 			"\"example.com\"), or to \"" + PrimaryDomainAny + "\" to serve every " +
 			"Host (the historical host-agnostic behavior)")
 	}
-	return c.janitorErr
+	return c.settingsErr
 }
 
 // GitHubAppProblem says why the GitHub App credential cannot work, or returns "".
@@ -219,21 +233,72 @@ func (c Config) HasGitHubApp() bool {
 	return c.GitHubAppID != "" && c.GitHubAppProblem() == ""
 }
 
-// loadJanitors reads the run file and cache settings. A value that is set and
-// does not parse is an error for Validate, not a quiet return to the default.
-func (c *Config) loadJanitors() {
+// loadSettings reads the run file, cache and download-transform settings. A
+// value that is set and does not parse is an error for Validate, not a quiet
+// return to the default.
+func (c *Config) loadSettings() {
 	for _, err := range []error{
 		strictDuration("BUILDHOST_RUN_FILES_KEEP", "24h", &c.RunFilesKeep),
 		strictPercent("BUILDHOST_RUN_FILES_MIN_FREE_PERCENT", &c.RunFilesMinFreePercent),
 		strictDuration("BUILDHOST_CACHE_KEEP", "168h", &c.CacheKeep),
 		strictPercent("BUILDHOST_CACHE_MIN_FREE_PERCENT", &c.CacheMinFreePercent),
+		strictBytes("BUILDHOST_RECOMPRESS_CACHE_SIZE", &c.RecompressCacheLimit),
+		strictInt("BUILDHOST_RECOMPRESS_CACHE_ENTRIES", &c.RecompressEntryLimit),
+		strictDuration("BUILDHOST_RECOMPRESS_CACHE_KEEP", "1h", &c.RecompressTTL),
+		strictDuration("BUILDHOST_TEMP_STALE_AGE", "1h", &c.ScratchAge),
+		strictInt("BUILDHOST_RECOMPRESS_PER_IP", &c.RecompressPerIP),
+		strictDuration("BUILDHOST_RECOMPRESS_WINDOW", "1m", &c.RecompressWindow),
+		strictFloat("BUILDHOST_RECOMPRESS_LOAD_CEILING", &c.RecompressLoadCeiling),
 		strictDuration("BUILDHOST_MIRROR_KEEP", "168h", &c.MirrorKeep),
 		strictPercent("BUILDHOST_MIRROR_MIN_FREE_PERCENT", &c.MirrorMinFreePercent),
 	} {
-		if err != nil && c.janitorErr == nil {
-			c.janitorErr = err
+		if err != nil && c.settingsErr == nil {
+			c.settingsErr = err
 		}
 	}
+}
+
+// strictBytes sets dst from a byte-size variable (a plain integer or a K/M/G/T
+// suffix) when it is set.
+func strictBytes(name string, dst *int64) error {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return nil
+	}
+	n, err := ParseByteSize(v)
+	if err != nil || n <= 0 {
+		return fmt.Errorf("%s=%q: want a positive byte size, such as 512M", name, v)
+	}
+	*dst = n
+	return nil
+}
+
+// strictInt sets dst from the variable name when it is set.
+func strictInt(name string, dst *int) error {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return fmt.Errorf("%s=%q: want a non-negative integer", name, v)
+	}
+	*dst = n
+	return nil
+}
+
+// strictFloat sets dst from the variable name when it is set.
+func strictFloat(name string, dst *float64) error {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return nil
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil || f < 0 {
+		return fmt.Errorf("%s=%q: want a non-negative number, such as 1.0", name, v)
+	}
+	*dst = f
+	return nil
 }
 
 // strictDuration sets dst from the variable name when it is set.
@@ -282,10 +347,23 @@ func Load() Config {
 		RunFilesMinFreePercent: 10,
 		CacheKeep:              7 * 24 * time.Hour,
 		CacheMinFreePercent:    15,
-		MirrorKeep:             7 * 24 * time.Hour,
-		MirrorMinFreePercent:   15,
+
+		TempDir:               os.TempDir(),
+		RecompressCacheLimit:  512 << 20,
+		RecompressEntryLimit:  512,
+		RecompressTTL:         time.Hour,
+		ScratchAge:            time.Hour,
+		RecompressPerIP:       20,
+		RecompressWindow:      time.Minute,
+		RecompressLoadCeiling: 1,
+
+		MirrorKeep:           7 * 24 * time.Hour,
+		MirrorMinFreePercent: 15,
 	}
-	c.loadJanitors()
+	c.loadSettings()
+	if v := strings.TrimSpace(Getenv("BUILDHOST_TEMP_DIR")); v != "" {
+		c.TempDir = v
+	}
 	if v := Getenv("BUILDHOST_LISTEN_ADDR"); v != "" {
 		c.ListenAddr = v
 	}

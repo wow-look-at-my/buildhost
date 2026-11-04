@@ -69,6 +69,14 @@ var Settings = []Setting{
 	{Name: "BUILDHOST_CACHE_MIN_FREE_PERCENT", Group: "Janitors", Kind: KindPercent, Default: "15", Description: "Below this free disk share, the least recently used cache entries go."},
 	{Name: "BUILDHOST_MIRROR_KEEP", Group: "Janitors", Kind: KindDuration, Default: "168h", Description: "How long a mirrored blob nothing reads is kept."},
 	{Name: "BUILDHOST_MIRROR_MIN_FREE_PERCENT", Group: "Janitors", Kind: KindPercent, Default: "15", Description: "Below this free disk share, the least recently read mirror blobs go."},
+	{Name: "BUILDHOST_TEMP_STALE_AGE", Group: "Janitors", Kind: KindDuration, Default: "1h", Description: "How old an orphaned scratch file or cache entry must be before the janitor reclaims it. Upload spools are never touched."},
+
+	{Name: "BUILDHOST_RECOMPRESS_CACHE_SIZE", Group: "Downloads", Kind: KindBytes, Default: "512M", Description: "Size bound of the compressed-response cache."},
+	{Name: "BUILDHOST_RECOMPRESS_CACHE_ENTRIES", Group: "Downloads", Kind: KindInt, Default: "512", Description: "Entry-count bound of the compressed-response cache."},
+	{Name: "BUILDHOST_RECOMPRESS_CACHE_KEEP", Group: "Downloads", Kind: KindDuration, Default: "1h", Description: "How long a cached compressed response lives."},
+	{Name: "BUILDHOST_RECOMPRESS_PER_IP", Group: "Downloads", Kind: KindInt, Default: "20", Description: "Recompressions one client IP may start per window. 0 turns on-the-fly recompression off."},
+	{Name: "BUILDHOST_RECOMPRESS_WINDOW", Group: "Downloads", Kind: KindDuration, Default: "1m", Description: "Length of that per-IP window."},
+	{Name: "BUILDHOST_RECOMPRESS_LOAD_CEILING", Group: "Downloads", Kind: KindString, Default: "1", Description: "One-minute load average per CPU at which the allowance reaches zero. 0 ignores host load."},
 
 	{Name: "BUILDHOST_RETENTION_INTERVAL", Group: "Retention", Kind: KindDuration, Default: "0s", Description: "How often the retention sweeper runs. 0 disables it."},
 	{Name: "BUILDHOST_RETENTION_ENFORCE", Group: "Retention", Kind: KindBool, Default: "false", Description: "Delete what retention evicts. False only reports."},
@@ -85,6 +93,7 @@ var Settings = []Setting{
 	{Name: "BUILDHOST_LISTEN_ADDR", Group: "Server", Kind: KindString, Default: ":8080", EnvOnly: true, Description: "Main server address. The deployment's port wiring depends on it."},
 	{Name: "BUILDHOST_ADMIN_LISTEN_ADDR", Group: "Server", Kind: KindString, Default: ":9090", EnvOnly: true, Description: "Admin dashboard address. Empty disables the dashboard."},
 	{Name: "BUILDHOST_DATA_DIR", Group: "Server", Kind: KindString, Default: "./data", EnvOnly: true, Description: "Blob store and temp directory."},
+	{Name: "BUILDHOST_TEMP_DIR", Group: "Server", Kind: KindString, Description: "Scratch root for request-path temporary files. Empty means TMPDIR."},
 	{Name: "BUILDHOST_DB_PATH", Group: "Server", Kind: KindString, Default: "./data/buildhost.db", EnvOnly: true, Description: "SQLite database. The stored settings live in it."},
 }
 
