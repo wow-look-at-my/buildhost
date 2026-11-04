@@ -70,7 +70,9 @@ The suite refuses to run when an APE binfmt handler is registered. The kernel th
 
 ## The preview dashboard's links
 
-`test/dats/admin-demo-links.dats` is a step in `sites-cors-e2e`. It serves the built `internal/admin/static` under a path prefix, which is what puts the SPA in demo mode. It then walks every `#/` link the SPA renders, breadth-first, from the dashboard outward. A page must draw a heading that is not the error page.
+`test/dats/admin-demo-links.dats` is a step in `sites-cors-e2e`. It serves the built `internal/admin/static` under a path prefix. That directory ships `demo.json`, which is what puts the SPA in demo mode. It then walks every `#/` link the SPA renders, breadth-first, from the dashboard outward. A page must draw a heading that is not the error page.
+
+The same suite serves the SPA the way the admin server does: at the root, without `demo.json`, with an API that answers 502. Every page must then draw the error page and no fixture value. The admin server does not embed `demo.json`, and `TestAdminServerNeverServesDemoMarker` holds that. A failed request on the live dashboard once switched the whole tab to the demo dataset.
 
 It exists because the demo dataset linked to a page it had no fixture for. The missing fixture resolved to `{}`. The renderer threw on that value, and the previous page stayed on screen. The link therefore did nothing. `apiFetch` now throws on an unknown demo path, and the router paints the failure. The same defect is therefore loud instead of invisible.
 

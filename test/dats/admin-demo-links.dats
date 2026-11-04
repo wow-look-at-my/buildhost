@@ -18,5 +18,6 @@ tests:
 	  outputs:
 		stdout:
 			- "every in-app link rendered"
+			- "the live dashboard never drew demo data"
 		!stdout:
 			- "rendered the error page"
