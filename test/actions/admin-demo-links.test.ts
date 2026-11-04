@@ -151,11 +151,13 @@ const main = async () => {
 	await live.goto(LIVE + "#/");
 	await expectLiveError("#/");
 	// demo mode once stuck for the rest of the tab after one failed request.
+	// These callbacks run in the PAGE; this file type-checks without DOM types.
 	await live.evaluate(() => {
-		document.getElementById("content")!.innerHTML = "";
-		location.hash = "#/projects";
+		const w = globalThis as any;
+		w.document.getElementById("content").innerHTML = "";
+		w.location.hash = "#/projects";
 	});
-	await live.waitForFunction(() => document.querySelector("#content h1") !== null);
+	await live.waitForFunction(() => (globalThis as any).document.querySelector("#content h1") !== null);
 	await expectLiveError("#/projects");
 	// The admin server serves the SPA at every path, not only at "/".
 	await live.goto(LIVE + "index.html#/");
