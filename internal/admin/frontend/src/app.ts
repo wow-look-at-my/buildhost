@@ -103,15 +103,24 @@ const demoFetch = function <T>(path: string): T {
     return demoData[path] as T;
 };
 
+// A failed request is an error on the page. It never selects demo mode:
+// fixture values on the live dashboard read as real server state.
 const apiFetch = function <T>(path: string): Promise<T> {
     if (demo) return Promise.resolve().then(function () { return demoFetch<T>(path); });
     return fetch("/api" + path).then(function (r) {
-        if (!r.ok) throw new Error(String(r.status));
+        if (!r.ok) throw new Error("GET /api" + path + ": HTTP " + r.status);
         return r.json();
-    }).catch(function () {
-        demo = true;
-        return demoFetch<T>(path);
     });
+};
+
+// Only the preview site ships demo.json. The admin server does not embed it and
+// answers that path with index.html, so the live dashboard never reads the marker.
+const detectDemo = function (): Promise<boolean> {
+    return fetch("demo.json", { cache: "no-store" }).then(function (r) {
+        return r.ok ? r.json() : null;
+    }).then(function (j: { demo?: unknown } | null) {
+        return !!j && j.demo === true;
+    }).catch(function () { return false; });
 };
 
 const setTitle = function (t: string): void {
@@ -2598,8 +2607,10 @@ pages.duplicates = function (): void {
 };
 
 document.addEventListener("DOMContentLoaded", function () {
-    if (window.location.pathname !== "/") demo = true;
-    apiFetch<SidebarData>("/sidebar").then(function (data) {
+    detectDemo().then(function (d) {
+        demo = d;
+        return apiFetch<SidebarData>("/sidebar");
+    }).then(function (data) {
         sidebarCache = data;
         renderBanner(data.problems);
         route();
