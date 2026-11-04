@@ -1,4 +1,4 @@
-// Shaper holds the cache, the throttle and the packer for download-time transforms.
+// static.go holds the static code.
 
 package static
 

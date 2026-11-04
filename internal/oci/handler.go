@@ -1,4 +1,4 @@
-// An upload session's spool is durable state: a job may finish its chunks on the next request.
+// handler.go holds the handler code.
 
 package oci
 

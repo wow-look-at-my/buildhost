@@ -1,4 +1,4 @@
-// BuildVisibility applies the override of the release named by v.
+// handler.go holds the handler code.
 
 package static
 

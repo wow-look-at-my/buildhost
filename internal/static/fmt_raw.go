@@ -1,4 +1,4 @@
-// Serve answers a raw download.
+// fmt_raw.go holds the fmt raw code.
 
 package static
 

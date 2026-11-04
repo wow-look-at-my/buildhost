@@ -1,4 +1,4 @@
-// StripReader spools r to a temp file under tmpDir, runs the file-based Strip.
+// strip.go holds the strip code.
 
 package strip
 
