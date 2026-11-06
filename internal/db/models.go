@@ -48,12 +48,6 @@ type ArtifactPlatform struct {
 	Ordinal    int64 `json:"ordinal"`
 }
 
-type DeletedBranch struct {
-	ProjectID int64     `json:"project_id"`
-	Branch    string    `json:"branch"`
-	DeletedAt time.Time `json:"deleted_at"`
-}
-
 type CacheEntry struct {
 	RepoID     string    `json:"repo_id"`
 	Ref        string    `json:"ref"`
@@ -64,6 +58,12 @@ type CacheEntry struct {
 	CreatedAt  time.Time `json:"created_at"`
 	UsedAt     time.Time `json:"used_at"`
 	Reads      int64     `json:"reads"`
+}
+
+type DeletedBranch struct {
+	ProjectID int64     `json:"project_id"`
+	Branch    string    `json:"branch"`
+	DeletedAt time.Time `json:"deleted_at"`
 }
 
 type DownloadCount struct {
