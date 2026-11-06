@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Truncates the Go doc comments go-toolchain's commentspan analyzer reports.
 
+
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const CHAR_BUDGET = 120;

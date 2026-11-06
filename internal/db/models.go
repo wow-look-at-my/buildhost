@@ -60,6 +60,12 @@ type CacheEntry struct {
 	Reads      int64     `json:"reads"`
 }
 
+type DeletedBranch struct {
+	ProjectID int64     `json:"project_id"`
+	Branch    string    `json:"branch"`
+	DeletedAt time.Time `json:"deleted_at"`
+}
+
 type DownloadCount struct {
 	ArtifactID int64 `json:"artifact_id"`
 	Count      int64 `json:"count"`
@@ -213,10 +219,12 @@ type ReleaseVisibility struct {
 }
 
 type RetentionSetting struct {
-	ID           int64     `json:"id"`
-	KeepN        int64     `json:"keep_n"`
-	RecencyHours int64     `json:"recency_hours"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID            int64     `json:"id"`
+	KeepN         int64     `json:"keep_n"`
+	RecencyHours  int64     `json:"recency_hours"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	BranchKeepN   int64     `json:"branch_keep_n"`
+	BranchTtlDays int64     `json:"branch_ttl_days"`
 }
 
 type RunFile struct {
